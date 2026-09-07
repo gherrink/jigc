@@ -484,11 +484,13 @@ impl<'de> Deserialize<'de> for FieldType {
                 name,
                 adjudicator: None,
                 check: None,
+                hint: None,
             })))
     }
 }
 
-/// A pack-declared field type: a `(name, adjudicator-probe)` pair.
+/// A pack-declared field type: its spelling, the probe bound to adjudicate it, the
+/// predicate that probe runs, and the value grammar the pack states for authors.
 ///
 /// The pack declares the type's spelling (`code-anchor`) and the **probe** that
 /// adjudicates it (`doc-code`); the binding falls out of the type — a leaf of
@@ -512,16 +514,30 @@ pub struct PackFieldType {
     /// it per-field. See `design/architecture-documentation.md` → The
     /// per-field-type predicate selector.
     pub check: Option<String>,
+
+    /// The type's **value grammar** — the shape an author must write, in the pack's
+    /// own words (the dev pack's `code-anchor` entry states the anchor form). Carried
+    /// as opaque pack prose the engine renders and never parses: a pack-declared type's
+    /// value shape is invisible to the engine (its adjudicator is a probe), so the
+    /// pack is the only place that can state it. `None` until [`load_schema`]
+    /// resolves the name, and `None` for a declaration that states no grammar.
+    ///
+    /// Presentation only, and deliberately outside every machine contract: it rides
+    /// no schema-hash (a [`FieldType`] serializes to its bare spelling) and no pinned
+    /// `--format json` key — it is a property of the declared `type` those surfaces
+    /// already carry (M50 Increment 12 / T4 — the RC-m50 F-1 gap: every surface named
+    /// the type and none named its shape).
+    pub hint: Option<String>,
 }
 
-/// A pack's field-type declaration: the `(name, adjudicator-probe)` pair a pack
-/// supplies so a schema field may name it. The engine ships none; the dev pack
-/// declares `code-anchor` → `doc-code`. Threaded into [`load_schema_with_types`]
-/// as the set against which an unresolved [`FieldType::Pack`] is resolved.
+/// A pack's field-type declaration — the entry a pack supplies so a schema field may
+/// name the type. The engine ships none; the dev pack declares `code-anchor` →
+/// `doc-code`. Threaded into [`load_schema_with_types`] as the set against which an
+/// unresolved [`FieldType::Pack`] is resolved.
 ///
 /// Deserializes directly from the pack's config-family declaration file (a YAML
-/// sequence of `{ name, adjudicator }` entries) — the on-disk form the dev pack
-/// supplies at `config/field-types.yaml`, the CLI reads, and threads in here.
+/// sequence of `{ name, adjudicator, check, hint? }` entries) — the on-disk form the
+/// dev pack supplies at `config/field-types.yaml`, the CLI reads, and threads in here.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PackTypeDecl {
@@ -536,6 +552,13 @@ pub struct PackTypeDecl {
     /// override it per-field. See `design/architecture-documentation.md` → The
     /// per-field-type predicate selector (the absent-default trap).
     pub check: String,
+    /// The type's **value grammar**, as prose the surfaces render verbatim. Optional —
+    /// a pack that states none leaves its type's shape unstated, exactly as before.
+    /// The grammar itself is never spelled in engine source: the pack is its one home,
+    /// fenced by `crates/cli/tests/code_anchor_grammar_sites.rs`. See
+    /// [`PackFieldType::hint`].
+    #[serde(default)]
+    pub hint: Option<String>,
 }
 
 /// Why loading a schema from raw YAML failed.
@@ -1072,6 +1095,7 @@ fn resolve_field(field: &mut Field, pack_types: &[PackTypeDecl]) -> Result<(), S
             Some(decl) => {
                 pack.adjudicator = Some(decl.adjudicator.clone());
                 pack.check = Some(decl.check.clone());
+                pack.hint = decl.hint.clone();
             }
             None => {
                 return Err(SchemaError::UnknownFieldType {
@@ -1353,6 +1377,7 @@ pub(crate) fn dev_pack_field_types() -> Vec<PackTypeDecl> {
         name: "code-anchor".to_owned(),
         adjudicator: "doc-code".to_owned(),
         check: "symbol-exists".to_owned(),
+        hint: None,
     }]
 }
 
@@ -1553,6 +1578,7 @@ sections:
                 name: "code-anchor".to_owned(),
                 adjudicator: Some("doc-code".to_owned()),
                 check: Some("symbol-exists".to_owned()),
+                hint: None,
             })
         );
     }
@@ -2153,6 +2179,7 @@ sections:
                 name: "code-anchor".to_owned(),
                 adjudicator: Some("doc-code".to_owned()),
                 check: Some("symbol-exists".to_owned()),
+                hint: None,
             }),
             "the nested code-anchor resolves through the recursive loader",
         );

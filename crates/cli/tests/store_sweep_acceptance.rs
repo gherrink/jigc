@@ -168,6 +168,7 @@ fn schemas() -> BTreeMap<String, Schema> {
         name: "code-anchor".to_owned(),
         adjudicator: "doc-code".to_owned(),
         check: "symbol-exists".to_owned(),
+        hint: None,
     }];
     let mut m = BTreeMap::new();
     m.insert(

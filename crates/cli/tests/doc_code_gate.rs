@@ -514,6 +514,7 @@ fn adr_schema() -> engine::schema::Schema {
         name: "code-anchor".to_owned(),
         adjudicator: "doc-code".to_owned(),
         check: "symbol-exists".to_owned(),
+        hint: None,
     }];
     let mut schema =
         engine::schema::load_schema_with_types(ADR_YAML, &types).expect("adr.yaml loads");

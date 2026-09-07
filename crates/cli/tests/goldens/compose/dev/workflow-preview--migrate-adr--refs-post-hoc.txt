@@ -20,7 +20,7 @@ The `adr` schema — each instance a managed file at `docs/decisions/<slug>.md`,
     - `status`: enum, one of: proposed | accepted | superseded — defaults to `proposed` unless authored
     - `date`: date — CLI-stamped (on-create) unless authored
     - `supersedes`: ref -> adr (0..*) — optional
-    - `cites-code`: code-anchor — optional; adjudicated at finalize
+    - `cites-code`: code-anchor <repo-relative-path>[#<symbol>] — optional; adjudicated at finalize
     - `schema-version`: int — CLI-stamped (schema-version) unless authored
 - `context`: prose slot — Why a decision was needed — the forces at play.
 - `options`: prose slot (optional) — Alternatives weighed and why they lost — leave it empty when the call was obvious; the heading renders either way.

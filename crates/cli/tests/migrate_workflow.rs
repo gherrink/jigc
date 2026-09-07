@@ -697,6 +697,7 @@ fn shipped_adr_schema(pack: &Path) -> engine::schema::Schema {
         name: "code-anchor".to_owned(),
         adjudicator: "doc-code".to_owned(),
         check: "symbol-exists".to_owned(),
+        hint: None,
     }];
     engine::schema::load_schema_with_types(&yaml, &types).expect("shipped adr schema loads")
 }

@@ -8,4 +8,16 @@
 # (the file/symbol-existence + criterion→test probe) is built later in the arc.
 # See document-type-schema.md → Pack-declared field types;
 # DECISIONS.md 2026-06-06 → M10 Increment 1 / T1 + T3.
-- { name: code-anchor, adjudicator: doc-code, check: symbol-exists }
+#
+# `hint:` is the type's **value grammar** — the shape an author has to write. It is
+# declared HERE because a pack-declared type's value shape is invisible to the engine
+# (a probe adjudicates it), so the pack is the only place that can state it, and every
+# surface that names the type renders this one string verbatim: the `jigc doc schema`
+# listing, the `{{schema:<doctype>}}` authoring projection, and `jigc doc set-field
+# --help`. Authored once, rendered three times — RC-m50's F-1 was four surfaces naming
+# the type and none naming its shape. It rides no schema-hash and no pinned json key (a
+# field type serializes to its bare spelling), so editing it is a prose edit.
+- name: code-anchor
+  adjudicator: doc-code
+  check: symbol-exists
+  hint: "<repo-relative-path>[#<symbol>]"

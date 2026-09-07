@@ -9,6 +9,6 @@ sections:
   - overview: slot (set-slot: arch-doc:<slug>#overview)
   - components: repeatable (add-item: arch-doc:<slug>#components)
     - title: string (add-item: arch-doc:<slug>#components) (retitle-item: arch-doc:<slug>#components/<id>) (write-key: --title) *
-    - implemented-by: code-anchor (set-field: arch-doc:<slug>#components/<id>/implemented-by)
+    - implemented-by: code-anchor <repo-relative-path>[#<symbol>] (set-field: arch-doc:<slug>#components/<id>/implemented-by)
     - description: slot (set-slot: arch-doc:<slug>#components/<id>/description)
 --- stderr ---

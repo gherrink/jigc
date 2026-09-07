@@ -131,7 +131,16 @@ jigc doc schema adr                   # the shape a write has to fill
 
 Drop `--task` and the first two serve the committed store instead. `jigc doc
 schema` needs no task — it projects the resolved schema: required slots and
-fields, each field's enum members, and every address a write can take.
+fields, each field's enum members, the value grammar of any pack-declared field
+type, and every address a write can take.
+
+A `code-anchor` field — `adr.cites-code`, `spec.criteria/maps-to-test`,
+`arch-doc.components/implemented-by` — takes `<repo-relative-path>[#<symbol>]`:
+a path from the repository root, optionally `#` and the name of a unit *declared*
+in that file (`src/router.ts#createRouter`). It is not `file:line` and not
+`Class.method`; a bare path with no `#` is legal and asserts only that the file
+exists. `jigc doc schema <doctype>` and `jigc doc set-field --help` both print the
+grammar, so there is nothing to remember.
 
 ## 3. `jigc task finalize <id>` — the commit boundary
 

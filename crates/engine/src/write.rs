@@ -8169,6 +8169,7 @@ Each service drops its local limiter.
                 name: "code-anchor".into(),
                 adjudicator: Some("doc-code".into()),
                 check: Some("symbol-exists".into()),
+                hint: None,
             }),
             None,
         );
@@ -8245,6 +8246,7 @@ Each service drops its local limiter.
             name: "code-anchor".into(),
             adjudicator: Some("doc-code".into()),
             check: Some("symbol-exists".into()),
+            hint: None,
         }));
         assert!(check_value(&anchor, &scalar("[]")).is_err());
         assert!(check_value(&anchor, &scalar("src/foo.rs#bar")).is_ok());

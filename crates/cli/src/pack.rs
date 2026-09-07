@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 const FIELD_TYPES_ID: &str = "field-types";
 
 /// The pack-declared field types, read from `config/field-types.yaml` (a YAML
-/// sequence of `{ name, adjudicator }`). An absent file is **no** declared types
+/// sequence of `{ name, adjudicator, check, hint? }`). An absent file is **no** declared types
 /// (an empty set), never an error — a pack need not declare any. This is the set
 /// every CLI schema load threads in via [`load_pack_schema`], so a pack-declared
 /// `code-anchor` field resolves (and an undeclared type is rejected loudly by the

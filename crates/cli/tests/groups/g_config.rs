@@ -12,6 +12,8 @@ mod changelog_step_subset;
 mod changelog_write_touch;
 #[path = "../checkpoint_acceptance.rs"]
 mod checkpoint_acceptance;
+#[path = "../code_anchor_grammar_sites.rs"]
+mod code_anchor_grammar_sites;
 #[path = "../cold_start_zero_commit.rs"]
 mod cold_start_zero_commit;
 #[path = "../config_ack_uncommitted.rs"]

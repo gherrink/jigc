@@ -10,6 +10,6 @@ sections:
   - context: slot (set-slot: spec:<slug>#context)
   - criteria: repeatable (add-item: spec:<slug>#criteria)
     - title: string (add-item: spec:<slug>#criteria) (retitle-item: spec:<slug>#criteria/<id>) (write-key: --title) *
-    - maps-to-test: code-anchor (set-field: spec:<slug>#criteria/<id>/maps-to-test)
+    - maps-to-test: code-anchor <repo-relative-path>[#<symbol>] (set-field: spec:<slug>#criteria/<id>/maps-to-test)
     - statement: slot (set-slot: spec:<slug>#criteria/<id>/statement)
 --- stderr ---

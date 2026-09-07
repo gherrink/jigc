@@ -22,7 +22,7 @@ The `spec` schema — each instance a managed file at `docs/specs/<slug>.md`, it
 - `criteria`: repeatable items, one per `title`:
     - `title`: string — the item's id-source (authored as the item's `title:` payload key)
     - `statement`: prose slot — The criterion, testably phrased.
-    - `maps-to-test`: code-anchor — optional; adjudicated at finalize
+    - `maps-to-test`: code-anchor <repo-relative-path>[#<symbol>] — optional; adjudicated at finalize
 
 Author the whole document in ONE `jigc doc author` batch payload — fill each `<…>` value. The `<<…>>` wrapping on slot prose is REQUIRED literal syntax: keep the `<<`/`>>` markers and replace only the text between them (an inline field takes a bare value — wrapping one is rejected). Inside slot prose, headings must sit at `####` depth or deeper — `##`/`###` are schema-reserved, and Setext headings are rejected. An entry marked `# optional` may be omitted entirely. A repeatable's demonstrated item entry is a template — repeat one `- title:` entry per item. Multi-line slot prose wraps WHOLE inside one `<<…>>` pair within its block scalar — a two-line slot is authored as
 

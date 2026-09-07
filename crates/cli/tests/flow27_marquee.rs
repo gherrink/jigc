@@ -187,6 +187,7 @@ fn shipped_schema(pack: &Path, doctype: &str) -> engine::schema::Schema {
             name: "code-anchor".to_owned(),
             adjudicator: "doc-code".to_owned(),
             check: "symbol-exists".to_owned(),
+            hint: None,
         }];
         engine::schema::load_schema_with_types(&yaml, &types)
             .unwrap_or_else(|e| panic!("shipped {doctype} schema loads: {e:?}"))

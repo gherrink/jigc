@@ -1346,7 +1346,14 @@ fn field_tree_line(field: &crate::schema::Field, id_from: Option<&str>) -> Strin
 }
 
 /// A field's rendered type: enum members spelled out (`of:`), a ref's target +
-/// cardinality, a pack-declared type by its name, the native spelling otherwise.
+/// cardinality, a pack-declared type by its name **followed by its declared value
+/// grammar**, the native spelling otherwise.
+///
+/// A native type's shape is legible from its spelling (`date`, `int`, `enum, one of:
+/// …`); a pack-declared one's is not — `code-anchor` names an adjudicator, not a
+/// shape — so the pack's `hint:` rides here, verbatim ([`crate::schema::PackFieldType::hint`]).
+/// This is the authoring projection an agent fills a doc from, and RC-m50's F-1 was a
+/// worker reverse-engineering that shape from two rejected writes.
 fn field_type_text(field: &crate::schema::Field) -> String {
     use crate::schema::FieldType;
     match &field.ty {
@@ -1364,7 +1371,10 @@ fn field_type_text(field: &crate::schema::Field) -> String {
             let card = field.card.as_deref().unwrap_or("0..1");
             format!("ref -> {to} ({card})")
         }
-        FieldType::Pack(pack) => pack.name.clone(),
+        FieldType::Pack(pack) => match &pack.hint {
+            Some(hint) => format!("{} {hint}", pack.name),
+            None => pack.name.clone(),
+        },
     }
 }
 
