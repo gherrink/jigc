@@ -3871,6 +3871,15 @@ pub struct SubTaskContribution {
     /// **Bound: visible, not prevented** — a `discard`-style refusal is new surface
     /// (M46).
     pub discarded: Vec<DiscardedWork>,
+    /// This sub-task's **own** boundary commit — the abbreviated sha of the commit that
+    /// carries its worktree code, or `None` when the boundary minted no commit for it
+    /// (M50 Inc 11 / N12). `Some` only on the `squash: false` chain, and only for a
+    /// **code-carrying** sub-task: `squash: true` folds every sub-task into one aggregate,
+    /// and a sub-task that staged nothing contributes no commit to attribute. The merged
+    /// docs are a milestone-level artifact and ride the aggregate, so this names the code
+    /// channel alone — which is exactly what a fix-round orchestrator asks the envelope
+    /// for ("which commit landed this fix?").
+    pub hash: Option<String>,
 }
 
 /// One path a landed fan-out teardown destroys, with the reason it was not committed —
@@ -3917,6 +3926,26 @@ impl DiscardState {
     }
 }
 
+/// One commit a landed `jigc milestone finalize` boundary made, with the paths **that**
+/// commit landed (M50 Inc 11 / N12).
+///
+/// The boundary is not always one commit: `squash: false` lands one commit per
+/// code-carrying sub-task in id order and then the merged-docs aggregate
+/// (`design/finalize.md` → `fan-out` finalize). Until M50 the ack named the aggregate
+/// alone beside a boundary-wide `manifest` — so it attributed every sub-task's files to a
+/// sha that does not contain them, on the pinned envelope a fix-round orchestrator reads.
+#[derive(Serialize)]
+pub struct LandedCommit {
+    /// The commit's abbreviated sha.
+    pub hash: String,
+    /// The commit's subject line.
+    pub subject: String,
+    /// The repo-relative paths this ONE commit changed (`git show --name-only`), as git
+    /// reports them. A path may appear under more than one commit — see
+    /// [`MilestoneLanded::manifest`] for the resolution rule.
+    pub paths: Vec<String>,
+}
+
 /// The landed-boundary facts a successful `jigc milestone finalize` confirms back
 /// (C2, round-2 surface fixes — the highest-stakes commit boundary previously
 /// succeeded with EMPTY stdout, driving the reader around the tool to raw `git
@@ -3936,7 +3965,24 @@ pub struct MilestoneLanded {
     pub files: usize,
     /// Every path the boundary landed, tagged by how it entered ([`ManifestKind`]:
     /// promoted docs, added/modified/deleted code from the combined worktrees).
+    ///
+    /// **Membership is boundary-wide and de-duplicated** — one entry per path, from the
+    /// single whole-range `git diff --name-status <pre-boundary-HEAD> HEAD`. Under
+    /// `squash: false` a path can be landed by more than one chain commit (a sub-agent
+    /// that staged a file at a promoted doc's destination, say); it is still **one**
+    /// entry here, and its **owning sha is the LAST [`commits`](Self::commits) member
+    /// that lists it** — the commit whose bytes are the ones at HEAD. Reading the first
+    /// claimant instead would name a sha whose version of the path was overwritten before
+    /// the boundary ended.
     pub manifest: Vec<ManifestEntry>,
+    /// **Every** commit the boundary made, oldest first — the chain's per-sub-task
+    /// commits followed by the merged-docs aggregate under `squash: false`, and the one
+    /// aggregate under `squash: true` (M50 Inc 11 / N12). Read from git over
+    /// `<pre-boundary-HEAD>..HEAD`, so it is complete by construction rather than by the
+    /// commit path remembering to report itself. This is the attribution channel:
+    /// [`manifest`](Self::manifest) says what the boundary landed, `commits` says which
+    /// sha landed it.
+    pub commits: Vec<LandedCommit>,
     /// Each sub-task's contribution, id-sorted — the no-work one visible.
     pub sub_tasks: Vec<SubTaskContribution>,
     /// The captured non-blocking hook output the landed boundary's hooks emitted
@@ -3953,7 +3999,9 @@ pub struct MilestoneLanded {
 /// Render a **landed** `jigc milestone finalize` to the surface `format` selects
 /// (surfacing, never blocking — the M42 print posture): `agent` / `human` emit
 /// `finalized <hash> — <subject>`, one [`manifest_line`] per landed path, the
-/// `  <n> file(s) committed` tally, and the `  sub-tasks:` contribution line
+/// `  <n> file(s) committed` tally, the `  commits (oldest first, …)` attribution block
+/// when the boundary made more than one commit ([`LandedCommit`]), and the
+/// `  sub-tasks:` contribution line
 /// (`<id>: 1 doc, 1 code file · <id>: nothing staged, no worktree provisioned`), then —
 /// only when the teardown destroyed something — the `  discarded with the fan-out
 /// worktrees` block naming each lost path and why it was not committed
@@ -3971,6 +4019,21 @@ pub fn milestone_finalized(format: Format, landed: &MilestoneLanded) -> String {
             }
             let noun = if landed.files == 1 { "file" } else { "files" };
             out.push_str(&format!("  {} {noun} committed\n", landed.files));
+            // The attribution block (M50 Inc 11 / N12) — printed only when the boundary
+            // made MORE than one commit. With a single commit the header's `finalized
+            // <hash>` already names it and every manifest line above belongs to it, so
+            // the block would restate the manifest under a heading; its presence is
+            // therefore itself the signal that the landed set is partitioned across
+            // several shas. The machine arm carries `commits` either way.
+            if landed.commits.len() > 1 {
+                out.push_str("  commits (oldest first, each with the paths it landed):\n");
+                for commit in &landed.commits {
+                    out.push_str(&format!("    {} {}\n", commit.hash, commit.subject));
+                    for path in &commit.paths {
+                        out.push_str(&format!("      {path}\n"));
+                    }
+                }
+            }
             if !landed.sub_tasks.is_empty() {
                 let parts: Vec<String> = landed.sub_tasks.iter().map(contribution_label).collect();
                 out.push_str(&format!("  sub-tasks: {}\n", parts.join(" · ")));
@@ -4043,6 +4106,13 @@ fn contribution_label(contribution: &SubTaskContribution) -> String {
         ));
     } else if !contribution.provisioned {
         parts.push("no worktree provisioned".to_owned());
+    }
+    // The sub-task's own commit, where the boundary minted one (`squash: false` over a
+    // code-carrying sub-task) — the prose half of `sub_tasks[].hash` (M50 Inc 11 / N12),
+    // so the reader can go straight to the sha that carries this sub-task's code instead
+    // of re-deriving it from the chain's order.
+    if let Some(hash) = &contribution.hash {
+        parts.push(format!("committed as {hash}"));
     }
     format!("{}: {}", contribution.id, parts.join(", "))
 }
@@ -5795,6 +5865,10 @@ mod tests {
                             state: DiscardState::NeverStaged,
                         },
                     ],
+                    // M50 Inc 11 / N12 — the `squash: false` chain minted this sub-task
+                    // its own commit, so the ack names it instead of leaving the reader
+                    // to attribute `lru.py` to the aggregate that does not contain it.
+                    hash: Some("41c0de1".to_string()),
                 },
                 // The never-provisioned sub-task: no worktree ever existed, so its
                 // `code_files: 0` is structural, and the label says so (M47 Inc 3 (b)(ii)).
@@ -5806,6 +5880,23 @@ mod tests {
                     provisioned: false,
                     worktree_unreadable: false,
                     discarded: Vec::new(),
+                    // No worktree, no code, no commit of its own to name.
+                    hash: None,
+                },
+            ],
+            commits: vec![
+                LandedCommit {
+                    hash: "41c0de1".to_string(),
+                    subject: "feat: implement LRU eviction".to_string(),
+                    paths: vec!["lru.py".to_string()],
+                },
+                LandedCommit {
+                    hash: "b546ca8".to_string(),
+                    subject: "Finalize milestone cache-rework (2 sub-tasks)".to_string(),
+                    paths: vec![
+                        "docs/milestone-records/cache-rework.md".to_string(),
+                        "docs/decisions/eviction-policy.md".to_string(),
+                    ],
                 },
             ],
             hook_output: "hook: fmt clean".to_string(),
@@ -5818,7 +5909,13 @@ mod tests {
           promoted docs/decisions/eviction-policy.md
           added lru.py
           3 files committed
-          sub-tasks: implement-lru-eviction: 1 doc, 1 code file · wire-cache-metrics-into: nothing staged, no worktree provisioned
+          commits (oldest first, each with the paths it landed):
+            41c0de1 feat: implement LRU eviction
+              lru.py
+            b546ca8 Finalize milestone cache-rework (2 sub-tasks)
+              docs/milestone-records/cache-rework.md
+              docs/decisions/eviction-policy.md
+          sub-tasks: implement-lru-eviction: 1 doc, 1 code file, committed as 41c0de1 · wire-cache-metrics-into: nothing staged, no worktree provisioned
           discarded with the fan-out worktrees (not committed, not recoverable):
             implement-lru-eviction: README.md (staged only in part) · notes/scratch.py (never staged)
         — jigc · run `jigc start` for orientation; all writes through `jigc`.
@@ -5837,6 +5934,18 @@ mod tests {
             "wire-cache-metrics-into"
         );
         assert_eq!(value["committed"]["sub_tasks"][1]["docs"], 0);
+        // M50 Inc 11 / N12 — the attribution channel is data on the machine surface, and
+        // the per-sub-task sha discriminates: the code-carrying sub-task names its own
+        // commit, the one that minted none reads `null` rather than borrowing the
+        // aggregate's sha.
+        assert_eq!(value["committed"]["commits"][0]["hash"], "41c0de1");
+        assert_eq!(
+            value["committed"]["commits"][0]["paths"],
+            serde_json::json!(["lru.py"]),
+        );
+        assert_eq!(value["committed"]["commits"][1]["hash"], "b546ca8");
+        assert_eq!(value["committed"]["sub_tasks"][0]["hash"], "41c0de1");
+        assert!(value["committed"]["sub_tasks"][1]["hash"].is_null());
         // M47 Inc 3 (b)(ii) — the degrade is data on the machine surface too, not only prose.
         assert_eq!(value["committed"]["sub_tasks"][0]["provisioned"], true);
         assert_eq!(value["committed"]["sub_tasks"][1]["provisioned"], false);

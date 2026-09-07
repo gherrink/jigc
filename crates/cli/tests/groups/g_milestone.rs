@@ -27,6 +27,8 @@ mod milestone_fanout_concurrency;
 mod milestone_finalize_base_guard;
 #[path = "../milestone_join_collision.rs"]
 mod milestone_join_collision;
+#[path = "../milestone_landed_attribution.rs"]
+mod milestone_landed_attribution;
 #[path = "../milestone_path_subject.rs"]
 mod milestone_path_subject;
 #[path = "../milestone_provision_handoff.rs"]

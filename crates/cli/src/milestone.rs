@@ -3721,8 +3721,8 @@ fn run_milestone_finalize(
         // squash:true WIP-safety, mirrored onto the honest-rework path). The merged docs ride
         // the aggregate (review B1/B2: the by-task-id doc-join is a milestone-level merge
         // artifact, not cleanly partitionable per sub-task). No reconcile sweep → `None`.
-        let subtasks =
-            subtask_patches_and_messages(&jigc_home, milestone_id, &worktrees, &schemas)?;
+        let chain = subtask_patches_and_messages(&jigc_home, milestone_id, &worktrees, &schemas)?;
+        let chain_subtask_ids = chain.ids;
         match crate::task::try_execute_finalize_plan(
             &repo_root,
             &jigc_root,
@@ -3732,7 +3732,7 @@ fn run_milestone_finalize(
             &schemas,
             None,
             crate::task::StagePolicy::ChainPerSubtask {
-                subtasks,
+                subtasks: chain.patches,
                 record: record_pathspec,
             },
         )? {
@@ -3750,6 +3750,9 @@ fn run_milestone_finalize(
                     &plan,
                     contributions,
                     &hook_output,
+                    // The chain minted one commit per code-carrying sub-task, in this
+                    // order — so each one's own sha is attributable (M50 Inc 11 / N12).
+                    &chain_subtask_ids,
                 )?;
                 print!("{}", render::milestone_finalized(format, &landed));
                 if format != Format::Json {
@@ -3844,6 +3847,9 @@ fn run_milestone_finalize(
                     &plan,
                     contributions,
                     &hook_output,
+                    // `squash: true` folds every sub-task into the one aggregate, so no
+                    // sub-task owns a commit of its own to name.
+                    &[],
                 )?;
                 print!("{}", render::milestone_finalized(format, &landed));
                 if format != Format::Json {
@@ -4467,7 +4473,7 @@ fn subtask_patches_and_messages(
     milestone_id: &str,
     worktrees: &[PathBuf],
     schemas: &BTreeMap<String, Schema>,
-) -> Result<Vec<(Vec<u8>, String)>> {
+) -> Result<ChainSubtasks> {
     let commit_schema = schemas
         .get(COMMIT_TYPE)
         .with_context(|| format!("the embedded pack ships no `{COMMIT_TYPE}` schema"))?;
@@ -4495,12 +4501,29 @@ fn subtask_patches_and_messages(
                 })
         })?;
 
-    // Pair each worktree's staged patch with its rendered message, in id order.
-    Ok(coded
-        .into_iter()
-        .map(|(_, patch)| patch)
-        .zip(messages)
-        .collect())
+    // Pair each worktree's staged patch with its rendered message, in id order. The ids
+    // ride out alongside: the chain mints one commit per member in exactly this order, so
+    // the landing ack reads them back to attribute each sub-task's own sha (M50 Inc 11 /
+    // N12; [`milestone_landed_summary`]).
+    Ok(ChainSubtasks {
+        ids,
+        patches: coded
+            .into_iter()
+            .map(|(_, patch)| patch)
+            .zip(messages)
+            .collect(),
+    })
+}
+
+/// The `squash: false` chain's per-sub-task inputs, id-ordered — what
+/// [`subtask_patches_and_messages`] hands the boundary.
+struct ChainSubtasks {
+    /// The **code-carrying** sub-task ids, in the order the chain commits them. The
+    /// landing ack reads them back to attribute each sub-task's own sha (M50 Inc 11 /
+    /// N12; [`milestone_landed_summary`]).
+    ids: Vec<String>,
+    /// Each one's `(staged patch, rendered commit message)` pair, in the same order.
+    patches: Vec<(Vec<u8>, String)>,
 }
 
 /// The **code-carrying** sub-tasks, id-ordered: each provisioned worktree that staged
@@ -4601,6 +4624,9 @@ fn subtask_contributions(
             provisioned: live,
             worktree_unreadable: sub.state == WorktreeState::Unreadable,
             discarded,
+            // Filled in AFTER the boundary lands, by [`milestone_landed_summary`] — the
+            // sha does not exist yet at this pre-commit snapshot (M50 Inc 11 / N12).
+            hash: None,
         });
     }
     Ok(out)
@@ -4832,12 +4858,29 @@ pub(crate) fn narrate_removal(path: &Path) {
 /// path among the plan's promotion destinations tags `Promoted`; otherwise the status
 /// letter maps `A`→added / `D`→deleted / else modified (the
 /// `crate::task::classify_landed_manifest` mapping).
+///
+/// **The manifest states membership; [`boundary_commits`] states attribution** (M50 Inc
+/// 11 / N12). The whole-range diff is de-duplicating by construction — one entry per
+/// path — while `squash: false` can land one path in more than one chain commit; the
+/// stated resolution rule is that such an entry's **owning sha is the LAST commit that
+/// lists it**, the one whose bytes are at HEAD (`render::MilestoneLanded::manifest`).
+/// Until M50 the ack named the aggregate alone beside the boundary-wide manifest, so it
+/// attributed each sub-task's files to a sha that does not contain them.
+///
+/// `chain_subtask_ids` is the id-ordered list of **code-carrying** sub-tasks the
+/// `squash: false` chain minted a commit for (empty on the `squash: true` arm, which
+/// mints none). The chain lays those commits down in exactly that order and then the
+/// aggregate, so pairing them with the boundary's commits is the construction read back —
+/// and it is **guarded by the length check**: if the landed chain is not `ids + 1` long
+/// (a hook that committed something of its own, say), no sub-task hash is claimed at all
+/// rather than a wrong one being asserted.
 fn milestone_landed_summary(
     repo_root: &Path,
     pre_boundary_head: &str,
     plan: &engine::finalize::FinalizePlan,
     sub_tasks: Vec<render::SubTaskContribution>,
     hook_output: &str,
+    chain_subtask_ids: &[String],
 ) -> Result<render::MilestoneLanded> {
     let hash = crate::task::git_capture(repo_root, &["rev-parse", "--short", "HEAD"])?;
     let subject = crate::task::git_capture(repo_root, &["log", "-1", "--pretty=format:%s"])?;
@@ -4873,17 +4916,74 @@ fn milestone_landed_summary(
         };
         manifest.push(render::ManifestEntry { path, kind });
     }
+    let commits = boundary_commits(repo_root, pre_boundary_head)?;
+    let mut sub_tasks = sub_tasks;
+    if commits.len() == chain_subtask_ids.len() + 1 {
+        for (id, commit) in chain_subtask_ids.iter().zip(&commits) {
+            if let Some(sub) = sub_tasks.iter_mut().find(|sub| sub.id == *id) {
+                sub.hash = Some(commit.hash.clone());
+            }
+        }
+    }
     Ok(render::MilestoneLanded {
         hash,
         subject,
         files: manifest.len(),
         manifest,
+        commits,
         sub_tasks,
         // M45 — the SAME captured boundary-commit hook string the stderr relay carries at
         // the call site (one capture, two channels; `design/command-output-contract.md` →
         // Stream discipline). The join path folds into this same envelope.
         hook_output: hook_output.to_owned(),
     })
+}
+
+/// **Every** commit the boundary landed, oldest first, each with the paths it changed —
+/// the attribution channel of the landing ack (M50 Inc 11 / N12).
+///
+/// Read from **git** over `<pre-boundary-HEAD>..HEAD` rather than reported by the commit
+/// path, so completeness is a property of the range and not of every commit site
+/// remembering to hand its sha back: the `squash: false` chain builds its commits in a
+/// dedicated worktree and fast-forwards main, and this reads the shas that actually
+/// survived that fast-forward.
+///
+/// A boundary that made the repo's **first** commit pins `pre_boundary_head` to the
+/// empty-tree sentinel (`crate::task::EMPTY_TREE_SHA`, the unborn-HEAD case
+/// [`crate::task::git_head`] returns), which is a tree and not a commit — so the range
+/// degenerates to the whole history, which is exactly the set that boundary landed.
+fn boundary_commits(
+    repo_root: &Path,
+    pre_boundary_head: &str,
+) -> Result<Vec<render::LandedCommit>> {
+    let range = if pre_boundary_head == crate::task::EMPTY_TREE_SHA {
+        "HEAD".to_owned()
+    } else {
+        format!("{pre_boundary_head}..HEAD")
+    };
+    let listed = crate::task::git_capture(repo_root, &["rev-list", "--reverse", &range])?;
+    let mut commits = Vec::new();
+    for sha in listed.lines().map(str::trim).filter(|sha| !sha.is_empty()) {
+        // Two reads rather than one combined `--format=%h%n%s --name-only`: an empty
+        // subject would make the blank separator line ambiguous, and the paths must be
+        // git's own unadorned `--name-only` set.
+        let identity =
+            crate::task::git_capture(repo_root, &["show", "--no-patch", "--format=%h%n%s", sha])?;
+        let (hash, subject) = identity.split_once('\n').unwrap_or((identity.as_str(), ""));
+        let names =
+            crate::task::git_capture(repo_root, &["show", "--name-only", "--format=", sha])?;
+        commits.push(render::LandedCommit {
+            hash: hash.trim().to_owned(),
+            subject: subject.trim().to_owned(),
+            paths: names
+                .lines()
+                .map(str::trim)
+                .filter(|path| !path.is_empty())
+                .map(str::to_owned)
+                .collect(),
+        });
+    }
+    Ok(commits)
 }
 
 /// Read HEAD as a [`BasePin`] (full + short SHA) via the user's `git` — the same

@@ -68,10 +68,10 @@ use cli::relocate::RelocationReport;
 use cli::rename::RenameReport;
 use cli::render::{
     AckTarget, ConfigAck, DiscardState, DiscardedWork, DocAck, DroppedStaged, KnobReading,
-    ManifestEntry, ManifestKind, MilestoneLanded, RejectedSet, StagedDoc, SubTaskContribution,
-    TaskAck, TaskDiffView, config_ack, config_get, config_list, describe, doc_ack,
-    freeze_exempt_relocation, ingest, milestone_finalized, milestone_join, rename, setup_success,
-    task_ack, task_diff, task_list, uninstall_success, unmanage, validation_upgrade,
+    LandedCommit, ManifestEntry, ManifestKind, MilestoneLanded, RejectedSet, StagedDoc,
+    SubTaskContribution, TaskAck, TaskDiffView, config_ack, config_get, config_list, describe,
+    doc_ack, freeze_exempt_relocation, ingest, milestone_finalized, milestone_join, rename,
+    setup_success, task_ack, task_diff, task_list, uninstall_success, unmanage, validation_upgrade,
 };
 use cli::setup::{InstallCommit, RemovedArtifacts, SetupSummary, UninstallSummary};
 use cli::task::TaskListRow;
@@ -1383,6 +1383,20 @@ fn milestone_finalized_parity() {
             path: "docs/decisions/cache-strategy.md".to_owned(),
             kind: ManifestKind::Promoted,
         }],
+        // Two commits, so the text's attribution block is exercised (it is withheld on a
+        // single-commit boundary, where the header hash already names it) — M50 Inc 11.
+        commits: vec![
+            LandedCommit {
+                hash: "9f0e1d2".to_owned(),
+                subject: "feat: warm the read cache".to_owned(),
+                paths: vec!["src/cache.rs".to_owned()],
+            },
+            LandedCommit {
+                hash: "a1b2c3d".to_owned(),
+                subject: "Finalize milestone cache-rework (1 sub-task)".to_owned(),
+                paths: vec!["docs/decisions/cache-strategy.md".to_owned()],
+            },
+        ],
         sub_tasks: vec![SubTaskContribution {
             id: "warm-the-read-cache".to_owned(),
             docs: 1,
@@ -1393,6 +1407,7 @@ fn milestone_finalized_parity() {
                 path: "src/scratch.rs".to_owned(),
                 state: DiscardState::NeverStaged,
             }],
+            hash: Some("9f0e1d2".to_owned()),
         }],
         hook_output: String::new(),
     };
@@ -1401,6 +1416,7 @@ fn milestone_finalized_parity() {
         subject,
         files,
         manifest,
+        commits,
         sub_tasks,
         hook_output,
     } = &landed;
@@ -1421,6 +1437,13 @@ fn milestone_finalized_parity() {
     carries(committed, "subject", subject, label, "subject");
     carries(committed, "files", files, label, "files");
     carries(committed, "manifest", manifest, label, "manifest");
+    // The attribution channel (M50 Inc 11 / N12): the text names every boundary commit's
+    // sha, and the envelope carries the whole set — including the paths each one landed,
+    // which is the half the prose block prints under it.
+    for commit in commits {
+        text_prints(&text, &commit.hash, label, "commits[].hash");
+    }
+    carries(committed, "commits", commits, label, "commits");
     carries(committed, "sub_tasks", sub_tasks, label, "sub_tasks");
     carries(committed, "hook_output", hook_output, label, "hook_output");
 }
