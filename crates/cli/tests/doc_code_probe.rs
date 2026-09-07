@@ -1006,3 +1006,139 @@ fn closure_registered_test_name_reports_what_the_probe_compared_not_an_absence()
          and keep the staging clause the probe's evidence leaves possible",
     );
 }
+
+// ----- M50 inc-12 / T5: the anchor miss names the grammar (RC-m50 F-2) -----
+
+/// The trial's fixture, rebuilt: a TypeScript module declaring exactly one unit. F-2's
+/// three probes ran against a `src/pad.ts` shaped like this one.
+const PAD_TS: &str = "\
+export function pad(n: number): string {
+    return String(n).padStart(2, \"0\");
+}
+";
+
+/// The anchor grammar, in the one spelling every surface states it. `code_anchor_grammar_sites.rs`
+/// fences the shipping homes; this literal is a test's expectation of the emitted bytes.
+const ANCHOR_GRAMMAR: &str = "<repo-relative-path>[#<symbol>]";
+
+/// Drive the **real probe binary** over the invoker + the engine's ingestion against a
+/// staged index holding `src/pad.ts`, for one anchor value — task scope, because the task
+/// gate is where the trial's worker typed the value and read the answer.
+fn pad_ts_findings(anchor_value: &str) -> Vec<engine::finding::Finding> {
+    let probe = build_doc_code_probe();
+
+    let root = TempDir::new("padtree");
+    fs::create_dir_all(root.path().join("src")).expect("mk src dir");
+    fs::write(root.path().join("src/pad.ts"), PAD_TS.as_bytes()).expect("write the fixture");
+
+    let scratch = TempDir::new("padscratch");
+    let snapshot = EffectiveStateSnapshot::new(
+        vec![TargetAnchor {
+            address: "adr:probe#status/cites-code".to_string(),
+            anchor_value: anchor_value.to_string(),
+            check_id: "symbol-exists".to_string(),
+        }],
+        root.path().to_path_buf(),
+        RootKind::StagedIndex,
+    );
+    let snapshot_path = scratch.path().join("snapshot.json");
+    fs::write(
+        &snapshot_path,
+        serde_json::to_vec(&snapshot).expect("serialize snapshot"),
+    )
+    .expect("write snapshot");
+
+    let request = ProbeRequest::new(
+        "doc-code",
+        "adr:probe#status/cites-code",
+        snapshot_path,
+        serde_json::Map::new(),
+    );
+    let request_bytes = serde_json::to_vec(&request).expect("serialize request");
+
+    let outcome = invoke::invoke_probe(&probe, &request_bytes, Duration::from_secs(60))
+        .expect("invoker drives the doc-code probe");
+    assert_eq!(
+        outcome.status,
+        ProbeStatus::Exited { code: Some(0) },
+        "a well-behaved probe exits 0: stdout={}",
+        String::from_utf8_lossy(&outcome.stdout),
+    );
+    let findings = ingest_probe_run("doc-code", &into_run(outcome));
+    assert!(
+        findings.iter().all(|f| f.probe != "pack-probe-integrity"),
+        "a well-behaved probe synthesizes no meta-finding: {findings:?}",
+    );
+    findings
+}
+
+/// The wire-byte proof of F-2's three cells, in the order the trial's worker hit them: a
+/// `file:line` value, the anchor that works, and a `#symbol` the file does not declare.
+/// Asserted on the **emitted bytes** the engine ingested — the sentence an agent reads —
+/// never on a reconstruction.
+#[test]
+fn a_file_line_value_names_the_grammar_and_the_symbol_side_is_unmoved() {
+    // The value that works — the control. A grammar-naming message is worth nothing if the
+    // grammar it names is not the one that resolves.
+    let clean = pad_ts_findings("src/pad.ts#pad");
+    assert!(clean.is_empty(), "`src/pad.ts#pad` resolves: {clean:?}");
+
+    // The miss. `src/pad.ts` IS in the staged index, so "absent from the staged index" was a
+    // true sentence about a reading nobody meant and a false one about the file the worker
+    // cited — F-2's *"true and misleading"*.
+    let miss = pad_ts_findings("src/pad.ts:5");
+    assert_eq!(miss.len(), 1, "exactly one finding: {miss:?}");
+    let miss = &miss[0];
+    assert_eq!(miss.severity, Severity::Blocking, "the verdict is unmoved");
+    assert_eq!(miss.code, "doc-code.symbol-exists");
+    assert_eq!(miss.check, "symbol-exists");
+    assert_eq!(
+        miss.location.as_ref().and_then(|l| l.address.as_deref()),
+        Some("adr:probe#status/cites-code"),
+    );
+    assert!(
+        miss.message.contains(ANCHOR_GRAMMAR),
+        "the emitted message must name the grammar: {}",
+        miss.message,
+    );
+    assert_eq!(
+        miss.message,
+        "anchor `src/pad.ts:5` does not match the anchor grammar `<repo-relative-path>[#<symbol>]` \
+         — `src/pad.ts` is a file in the staged index and the trailing `:5` is not part of an \
+         anchor",
+    );
+    assert_eq!(
+        miss.route.as_deref(),
+        Some(
+            "drop the trailing `:5` — an anchor is `src/pad.ts` alone (which buys the file's \
+             presence, not that a test exists) or `src/pad.ts#<symbol>` naming a unit the file \
+             declares"
+        ),
+        "the emitted route must be runnable as written: the edit that makes the value an anchor, \
+         then both legal shapes",
+    );
+
+    // The sibling producer keeps its shipped wording byte-for-byte: this value DOES parse as
+    // an anchor, so its miss is a symbol miss, not a grammar miss.
+    let symbol = pad_ts_findings("src/pad.ts#pad.method");
+    assert_eq!(symbol.len(), 1, "exactly one finding: {symbol:?}");
+    let symbol = &symbol[0];
+    assert_eq!(
+        symbol.message,
+        "anchor `src/pad.ts#pad.method` resolves to no symbol (`pad.method` is absent from \
+         `src/pad.ts` in the staged index)",
+    );
+    assert_eq!(
+        symbol.route.as_deref(),
+        Some(
+            "if the cited code is on disk but unstaged, `git add` it — finalize adjudicates the \
+             staged index, not the working tree; otherwise update the citation to match the \
+             renamed/moved code, or restore the cited symbol (e.g. revert the change)"
+        ),
+    );
+    assert!(
+        !symbol.message.contains(ANCHOR_GRAMMAR),
+        "a value that parses as an anchor is not a grammar miss: {}",
+        symbol.message,
+    );
+}

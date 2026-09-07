@@ -57,6 +57,15 @@ use std::process::ExitCode;
 /// (3 since M50 Increment 5, which bumped the one integer every result envelope carries).
 const SCHEMA_VERSION: u32 = 3;
 
+/// The **anchor grammar**, in the one spelling every surface that names the `code-anchor`
+/// type states it (M50 Increment 12 / T4). A shared `const` is impossible here and that is
+/// deliberate: this probe's `Cargo.toml` declares an empty `[workspace]` so its tree-sitter
+/// grammars stay out of the engine/cli lock graph, so it cannot depend on `engine`. The
+/// token is therefore re-declared and **fenced by a source scan** —
+/// `crates/cli/tests/code_anchor_grammar_sites.rs` is total in both directions, so this
+/// spelling cannot drift from the pack's without reddening.
+const ANCHOR_GRAMMAR: &str = "<repo-relative-path>[#<symbol>]";
+
 /// The **request** envelope the engine writes to this probe's stdin — the re-declared
 /// projection of `engine::probe::ProbeRequest` (the locked field order).
 #[derive(Debug, Deserialize)]
@@ -181,6 +190,51 @@ impl Finding {
                 root.tree(),
             ),
         )
+    }
+
+    /// One blocking `doc-code.<check_id>` finding for a value that **is not an anchor** —
+    /// the miss is the grammar, not an absence (RC-m50 F-2).
+    ///
+    /// `dangling_file` reads the whole literal as a filename, which is right when the literal
+    /// *is* one. It is not when the worker typed another tool's address convention — an
+    /// editor's `file:line`, a compiler's `file:line:col` — over a path that exists:
+    /// *"`src/pad.ts:5` is absent from the staged index"* is then true of a reading nobody meant
+    /// and false about the file actually cited, so a worker cannot tell a wrong line number from
+    /// an unsupported scheme (surface-contract law 1, the same class as `dangling_symbol`'s
+    /// split one branch over).
+    ///
+    /// The split is made on **evidence the probe already holds**, never a guess at the shape:
+    /// the value takes this sentence only when a `:`-cut prefix of it *names a file in the root
+    /// the finding names* ([`grammar_miss`]). Where no prefix does, the absence claim is true of
+    /// every reading and the shipped sentence stands.
+    ///
+    /// **The verdict does not move**: a value that is not an anchor still resolves to nothing,
+    /// so this is blocking, keyed and located exactly as [`dangling_file`] is
+    /// ([`Finding::dangling`] builds both). And it carries **no staging clause**: the cited file
+    /// is present in the root read, so `git add` would be a repair for a state the probe did not
+    /// observe.
+    ///
+    /// [`dangling_file`]: Finding::dangling_file
+    fn not_an_anchor(anchor: &TargetAnchor, root: RootKind, prefix: &str, suffix: &str) -> Self {
+        let mut finding = Self::dangling(
+            anchor,
+            root,
+            format!(
+                "anchor `{}` does not match the anchor grammar `{ANCHOR_GRAMMAR}` — `{prefix}` \
+                 is a file in {} and the trailing `{suffix}` is not part of an anchor",
+                anchor.anchor_value,
+                root.tree(),
+            ),
+        );
+        // The route is the edit that makes the value an anchor, followed by both legal shapes.
+        // The file-only arm states what it does **not** buy, because a recommendation of the
+        // quietest path owes its bound ([validation.md] → The file-only fallback).
+        finding.route = Some(format!(
+            "drop the trailing `{suffix}` — an anchor is `{prefix}` alone (which buys the file's \
+             presence, not that a test exists) or `{prefix}#<symbol>` naming a unit the file \
+             declares"
+        ));
+        finding
     }
 
     /// One blocking `doc-code.<check_id>` finding for an anchor whose file is present but
@@ -426,6 +480,25 @@ fn symbol_text_present(src: &str, symbol: &str) -> bool {
     src.contains(symbol)
 }
 
+/// Whether the value's file portion is another convention's address over a path that exists
+/// — the evidence that splits *"this file is absent"* from *"this is not an anchor"*
+/// ([`Finding::not_an_anchor`]). Returns the `(prefix, suffix)` the sentence names.
+///
+/// The reading is: the **first `:`-cut prefix that names a file** in the root the engine handed
+/// over. First-that-is-a-file rather than first-colon, because a path may legitimately carry a
+/// `:` — a file called `a:b.ts` cited as `a:b.ts:5` must be named whole. And a *file*, not any
+/// entry, because the sentence says "is a file in <root>": a directory prefix would make it
+/// false, so that cell keeps the absence sentence instead.
+///
+/// Like every other split in this probe it reads only what it already has — the root's own
+/// directory entries — so no git, build, network or wall-clock enters, and the sentence it
+/// produces is a fact about the root the finding names.
+fn grammar_miss<'a>(root: &std::path::Path, file: &'a str) -> Option<(&'a str, &'a str)> {
+    file.match_indices(':')
+        .map(|(at, _)| file.split_at(at))
+        .find(|(prefix, _)| root.join(prefix).is_file())
+}
+
 /// Split an anchor value into its file portion (before the first `#`) and an optional
 /// `#symbol` (a bare path has no `#`, so the symbol is `None`).
 fn split_anchor(anchor_value: &str) -> (&str, Option<&str>) {
@@ -460,7 +533,14 @@ fn check_anchors(snapshot: &EffectiveStateSnapshot) -> Vec<Finding> {
                 return Some(Finding::symlink_anchor(anchor, file));
             }
             if !path.exists() {
-                return Some(Finding::dangling_file(anchor, root, file));
+                // The literal names nothing in the root read — but *which* miss it is depends
+                // on whether a `:`-cut prefix of it does: another tool's `file:line` over a
+                // real path is a grammar miss, and reporting it as an absence is true of a
+                // reading nobody meant (RC-m50 F-2).
+                return Some(match grammar_miss(&snapshot.working_tree_root, file) {
+                    Some((prefix, suffix)) => Finding::not_an_anchor(anchor, root, prefix, suffix),
+                    None => Finding::dangling_file(anchor, root, file),
+                });
             }
             let symbol = symbol?;
             let src = std::fs::read_to_string(&path).ok()?;
@@ -1185,5 +1265,217 @@ it('rejects a burst beyond the cap', () => {
                 );
             }
         }
+    }
+
+    // ----- M50 inc-12 / T5: the `file:line` miss names the grammar (RC-m50 F-2) -----
+
+    /// The trial's fixture, rebuilt: a TypeScript module declaring exactly one unit. `#pad`
+    /// resolves against it; `:5` is another convention's `file:line`; `#pad.method` names a
+    /// unit it does not declare.
+    const PAD_TS: &str = "\
+export function pad(n: number): string {
+    return String(n).padStart(2, \"0\");
+}
+";
+
+    /// Run one cell over a root holding `src/pad.ts` (and the `src/` directory that contains
+    /// it, which is what makes the directory-prefix negative cell reachable).
+    fn check_pad(anchor_value: &str, check_id: &str, root_kind: RootKind) -> Vec<Finding> {
+        let root = temp_root();
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::write(root.join("src").join("pad.ts"), PAD_TS).unwrap();
+        let snapshot = EffectiveStateSnapshot {
+            anchors: vec![anchor_with_check(anchor_value, check_id)],
+            working_tree_root: root,
+            root_kind,
+        };
+        check_anchors(&snapshot)
+    }
+
+    /// Exactly one finding, returned.
+    fn only(findings: Vec<Finding>) -> Finding {
+        let mut findings = findings;
+        assert_eq!(findings.len(), 1, "exactly one finding, got {findings:?}");
+        findings.remove(0)
+    }
+
+    /// The **suffix axis** — the non-anchor suffixes a worker actually types after a real
+    /// path, hand-enumerated *with the reason it must be*: these are other tools' address
+    /// conventions (an editor's `file:line`, a compiler's `file:line:col`), which live in no
+    /// registry this probe or the engine holds — there is nothing to derive from. What makes
+    /// the set total is the **predicate**, not the list: any suffix at all is caught, because
+    /// the split is on whether a `:`-cut prefix names a file in the root read. The third
+    /// member carries a trailing `#symbol` too, the cell where a grammar miss and a symbol
+    /// citation arrive together.
+    const NON_ANCHOR_SUFFIXES: [&str; 3] = [":5", ":5:12", ":5#pad"];
+
+    #[test]
+    fn a_file_line_value_names_the_grammar_over_check_id_root_and_suffix() {
+        // The axis: suffix × check-id × RootKind. The producer is check-id-blind and
+        // root-aware, so every cell is driven rather than one standing in for the rest.
+        for suffix in NON_ANCHOR_SUFFIXES {
+            for check_id in CHECK_IDS {
+                for root in ROOT_KINDS {
+                    let read = root.tree();
+                    let unread = match root {
+                        RootKind::StagedIndex => RootKind::WorkingTree.tree(),
+                        RootKind::WorkingTree => RootKind::StagedIndex.tree(),
+                    };
+                    let value = format!("src/pad.ts{suffix}");
+                    // The suffix the sentence names is the non-anchor tail of the FILE
+                    // portion — everything after the path, up to any `#symbol`.
+                    let tail = suffix.split('#').next().unwrap();
+                    let cell = format!("[{value} × {check_id} × {read}]");
+                    let finding = only(check_pad(&value, check_id, root));
+
+                    // The verdict does not move: a value that is not an anchor still blocks,
+                    // under the same check id, code and location.
+                    assert_verdict_unmoved(&finding, check_id);
+
+                    assert!(
+                        !finding.message.contains("is absent from"),
+                        "{cell} `src/pad.ts` is a file in the root the probe read — the miss \
+                         must not be reported as an absence: {}",
+                        finding.message,
+                    );
+                    assert!(
+                        finding.message.contains(ANCHOR_GRAMMAR),
+                        "{cell} the message must name the grammar the value failed to match: \
+                         {}",
+                        finding.message,
+                    );
+                    assert!(
+                        finding.message.contains("`src/pad.ts`")
+                            && finding.message.contains(&format!("`{tail}`")),
+                        "{cell} the message names both sides of the comparison — the path that \
+                         resolved and the suffix that did not: {}",
+                        finding.message,
+                    );
+                    assert!(
+                        finding.message.contains(read) && !finding.message.contains(unread),
+                        "{cell} the finding names the root it read, never the other: {}",
+                        finding.message,
+                    );
+
+                    let route = finding.route.as_deref().unwrap_or_default();
+                    assert!(
+                        route.starts_with(&format!("drop the trailing `{tail}`")),
+                        "{cell} the route leads with the edit that makes the value an anchor: \
+                         {route}",
+                    );
+                    assert!(
+                        route.contains("`src/pad.ts#<symbol>`"),
+                        "{cell} …and offers the symbol form, which is what the worker wanted: \
+                         {route}",
+                    );
+                    assert!(
+                        route.contains("not that a test exists"),
+                        "{cell} the file-only arm it recommends states what it does not buy: \
+                         {route}",
+                    );
+                    assert!(
+                        !route.contains("`git add`"),
+                        "{cell} nothing is unstaged here — the cited file is present in the \
+                         root read, so the staging clause would be a repair for a state the \
+                         probe did not observe: {route}",
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_prefix_named_is_the_first_one_that_is_a_file_not_the_first_colon() {
+        // A path may legitimately carry a `:`. The split is evidence — the first `:`-cut
+        // prefix that NAMES A FILE in the root read — not a guess at the first separator, so
+        // a file called `a:b.ts` is named whole.
+        let root = temp_root();
+        std::fs::write(root.join("a:b.ts"), PAD_TS).unwrap();
+        let snapshot = EffectiveStateSnapshot {
+            anchors: vec![anchor("a:b.ts:5")],
+            working_tree_root: root,
+            root_kind: RootKind::WorkingTree,
+        };
+        let finding = only(check_anchors(&snapshot));
+        assert!(
+            finding.message.contains("`a:b.ts` is a file"),
+            "the prefix that resolved is the one named: {}",
+            finding.message,
+        );
+        assert!(
+            finding
+                .route
+                .as_deref()
+                .unwrap_or_default()
+                .contains("drop the trailing `:5`"),
+            "…and the suffix dropped is what follows it: {:?}",
+            finding.route,
+        );
+    }
+
+    #[test]
+    fn a_value_whose_prefix_names_nothing_keeps_the_shipped_absence_sentence() {
+        // The negative half of the split, over the same axis the positive one runs. Where no
+        // `:`-cut prefix names a file, the absence claim is TRUE of every reading of the
+        // value, so the shipped sentence and its shipped repairs stand — and the grammar is
+        // not named, because a grammar miss is not what the probe observed.
+        for (value, why) in [
+            ("src/ghost.ts:5", "no prefix of it names a file"),
+            ("src/ghost.ts", "the shipped bare-path miss, untouched"),
+            (
+                "src:5",
+                "`src` is a directory, not a file — the sentence would be false",
+            ),
+        ] {
+            for check_id in CHECK_IDS {
+                for root in ROOT_KINDS {
+                    let finding = only(check_pad(value, check_id, root));
+                    assert_verdict_unmoved(&finding, check_id);
+                    assert!(
+                        finding.message.contains(&format!(
+                            "anchor `{value}` resolves to no file (`{value}` is absent from {})",
+                            root.tree()
+                        )),
+                        "[{value}] {why}: the shipped absence sentence stands: {}",
+                        finding.message,
+                    );
+                    assert!(
+                        !finding.message.contains(ANCHOR_GRAMMAR),
+                        "[{value}] {why}: the grammar is named only where a grammar miss was \
+                         observed: {}",
+                        finding.message,
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_symbol_side_of_the_grammar_is_untouched() {
+        // The sibling producer keeps its shipped wording: `#pad` resolves clean, and a
+        // `#symbol` the file does not declare takes `dangling_symbol`'s sentence — which
+        // already states the comparison it made (M46 inc-7) and must not gain grammar text,
+        // because the value it was handed DOES parse as an anchor.
+        for check_id in CHECK_IDS {
+            let clean = check_pad("src/pad.ts#pad", "symbol-exists", RootKind::WorkingTree);
+            assert!(clean.is_empty(), "`#pad` resolves: {clean:?}");
+            let _ = check_id;
+        }
+        let finding = only(check_pad(
+            "src/pad.ts#pad.method",
+            "symbol-exists",
+            RootKind::StagedIndex,
+        ));
+        assert_eq!(
+            finding.message,
+            "anchor `src/pad.ts#pad.method` resolves to no symbol (`pad.method` is absent from \
+             `src/pad.ts` in the staged index)",
+            "the symbol-side sentence is unmoved, byte-for-byte",
+        );
+        assert!(
+            !finding.message.contains(ANCHOR_GRAMMAR),
+            "a value that parses as an anchor is not a grammar miss: {}",
+            finding.message,
+        );
     }
 }

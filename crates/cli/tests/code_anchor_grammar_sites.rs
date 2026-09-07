@@ -1,4 +1,6 @@
-//! The **`code-anchor` grammar site fence** (M50 Increment 12 / T4 — RC-m50 F-1).
+//! The **`code-anchor` grammar site fence** (M50 Increment 12 / T4 — RC-m50 F-1; joined
+//! by the `doc-code` probe at T5, where a value that is **not** an anchor names the grammar
+//! it failed to match — RC-m50 F-2).
 //!
 //! **What F-1 measured.** A blind worker had to reverse-engineer `path#Symbol` from
 //! two failed attempts, because every surface that named the type named *only* the
@@ -63,10 +65,13 @@ struct Site {
     feeds: &'static str,
 }
 
-/// The declared homes. Two, because the other surfaces are **generated** from the
-/// first: the pack declaration feeds `doc schema`'s listing, the `{{schema:}}` compose
-/// seam and `doc set-field --help` alike, so the grammar is authored once and rendered
-/// three times rather than typed four times.
+/// The declared homes. The pack declaration is the one **authored** home of the surfaces a
+/// worker is routed to: it feeds `doc schema`'s listing, the `{{schema:}}` compose seam and
+/// `doc set-field --help` alike, so the grammar is authored once and rendered three times
+/// rather than typed four times. The guide states it in prose, and the `doc-code` probe
+/// re-declares it because it structurally cannot read the pack's — its `Cargo.toml` declares
+/// an empty `[workspace]` to keep the tree-sitter grammars out of the engine/cli lock graph,
+/// which is exactly why this table is a source scan rather than a shared `const`.
 const SOURCE_SITES: &[Site] = &[
     Site {
         path: "crates/cli/pack/config/field-types.yaml",
@@ -77,6 +82,11 @@ const SOURCE_SITES: &[Site] = &[
         path: "QUICKSTART.md",
         feeds: "the shipped guide `jigc setup` installs at `.claude/skills/jigc/SKILL.md`",
     },
+    Site {
+        path: "crates/cli/probes/doc-code/src/main.rs",
+        feeds: "the `doc-code` finding a value that is not an anchor takes (M50 / T5, RC-m50 \
+                F-2) — the probe re-declares the token because it cannot depend on `engine`",
+    },
 ];
 
 /// The shipping roots the reverse scan walks — engine + CLI sources, both packs, both
@@ -84,6 +94,7 @@ const SOURCE_SITES: &[Site] = &[
 const SCANNED_ROOTS: &[&str] = &[
     "crates/engine/src",
     "crates/cli/src",
+    "crates/cli/probes/doc-code/src",
     "crates/cli/pack",
     "packs",
     "QUICKSTART.md",
