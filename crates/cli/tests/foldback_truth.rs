@@ -520,3 +520,123 @@ fn the_pack_step_count_is_stated_once_and_names_its_measurement_point() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// 5. The shipped guides describe the destroying door as it behaves.
+// ---------------------------------------------------------------------------
+
+/// **The guides are a product surface, not documentation** (M50 Increment 13 / T4;
+/// [settle-record.md](../../../completions/artifacts/M50/settle-record.md) → *Docs that
+/// move*, "priced, not assumed"). `crates/cli/src/setup.rs` `include_str!`s them into
+/// `.claude/skills/jigc/SKILL.md`, the artifact `jigc setup` installs and owns, so their
+/// bytes reach every adopter's repo and editing them moves `jigc-body-blake3`.
+///
+/// Both stated `jigc task discard` as unconditionally safe — *"it removes only the working
+/// area … no commit is made"* — which stopped being the whole truth when M50 Increment 3
+/// gave the door the shared staged-prose guard: it now **refuses** while the task's area
+/// stages docs no commit has a copy of (`task-discard.staged-prose`), and `--force` is the
+/// single consent that removes them anyway. A guide that describes the door without naming
+/// the refusal sends a reader at a command that will not run, and one that names the
+/// refusal without the consent leaves them with no exit — so both tokens are owed wherever
+/// the door is named.
+///
+/// **The subject is derived, not hand-listed.** The set is read out of `setup.rs`'s own
+/// `include_str!` sites, so a third guide joining the shipped artifact joins this fence
+/// with no test edit — and a guide leaving it stops being asserted here for the same
+/// reason. The predicate iterates **every** unit of each guide that names the door, not the
+/// one the finding reported: a second paragraph describing the discard door owes the same
+/// two facts as the first.
+///
+/// The behaviour itself is pinned through the real binary elsewhere —
+/// `crates/cli/tests/staged_prose_consent_axis.rs` drives both doors that carry the guard,
+/// their codes and their `--force` consent. This arm asserts only that the shipped prose
+/// says what that suite proves.
+const GUIDE_INCLUDE_PREFIX: &str = "include_str!(\"../../../";
+
+/// Every guide `setup.rs` embeds into the installed artifact, in declaration order.
+fn shipped_guides() -> Vec<String> {
+    let setup = fs::read_to_string(repo_root().join("crates/cli/src/setup.rs"))
+        .expect("crates/cli/src/setup.rs must be readable");
+    let mut guides = Vec::new();
+    for (at, _) in setup.match_indices(GUIDE_INCLUDE_PREFIX) {
+        let tail = &setup[at + GUIDE_INCLUDE_PREFIX.len()..];
+        let Some(end) = tail.find('"') else { continue };
+        guides.push(tail[..end].to_string());
+    }
+    assert!(
+        !guides.is_empty(),
+        "setup.rs must `include_str!` the guides it ships — the subject of this fence is \
+         read from those sites, never hand-listed",
+    );
+    guides
+}
+
+/// The doc's units of prose: a blank-line paragraph, and every list item within one as its
+/// own unit — a numbered back-out ladder is a single blank-line block, so paragraph
+/// splitting alone would let one gate's honesty be paid for by its neighbour's.
+fn prose_units(body: &str) -> Vec<String> {
+    let mut units: Vec<String> = Vec::new();
+    let mut current = String::new();
+    let starts_item = |line: &str| {
+        let t = line.trim_start();
+        t.starts_with("- ")
+            || t.starts_with("* ")
+            || t.split_once(". ")
+                .is_some_and(|(n, _)| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()))
+    };
+    for line in body.lines() {
+        if line.trim().is_empty() || starts_item(line) {
+            if !current.trim().is_empty() {
+                units.push(std::mem::take(&mut current));
+            } else {
+                current.clear();
+            }
+            if line.trim().is_empty() {
+                continue;
+            }
+        }
+        current.push_str(line);
+        current.push('\n');
+    }
+    if !current.trim().is_empty() {
+        units.push(current);
+    }
+    units
+}
+
+#[test]
+fn the_shipped_guides_name_the_discard_refusal_and_its_consent() {
+    let mut checked = 0usize;
+    for guide in shipped_guides() {
+        let body = read_doc(&guide);
+        let describing: Vec<String> = prose_units(&body)
+            .into_iter()
+            .filter(|unit| unit.contains("jigc task discard"))
+            .collect();
+        assert!(
+            !describing.is_empty(),
+            "{guide} ships to every adopter and must describe how to back a task out; \
+             no unit of it names `jigc task discard`",
+        );
+        for unit in describing {
+            for owed in [
+                // the refusal, by the identity the door actually prints
+                "task-discard.staged-prose",
+                // the single consent, so the reader is not left without an exit
+                "--force",
+            ] {
+                assert!(
+                    unit.contains(owed),
+                    "{guide} describes `jigc task discard` without naming `{owed}` — the \
+                     door refuses over staged docs and `--force` is its one consent; the \
+                     unit reads:\n{unit}",
+                );
+            }
+            checked += 1;
+        }
+    }
+    assert!(
+        checked >= 2,
+        "both shipped guides describe the door; only {checked} unit(s) were checked",
+    );
+}

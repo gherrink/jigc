@@ -41,10 +41,12 @@ standard English/technical terms an AI knows for these purposes (§6 records the
 
 All three are **methodology-pack** doctypes (the human's call: forming a vision is
 *how-you-work*, not code-specific; and it keeps the `grounded-in` edge **pack-local**,
-off the recorded unexercised cross-pack surface). They sit **outside the frozen-v1 gate**
-(the methodology pack ships no `schema-manifest.yaml`), so no version machinery is touched
-and a later shape change needs no corpus migration ([doctype-map.md](../implementation/doctype-map.md)
-→ The v1 freeze, scope-pin).
+off the recorded unexercised cross-pack surface). At M37 they sat **outside every freeze**,
+the methodology pack shipping no manifest of its own — **that ended at M40**, when the pack
+adopted its own `config/schema-manifest.yaml`: all three are frozen there at
+`schema-version: 1`, so a shape change to any of them bumps that version and ships a corpus
+migration exactly like a dev-pack doctype ([doctype-map.md](../implementation/doctype-map.md)
+→ The v1 freeze, scope-pin — the one home for what each pack's manifest governs).
 
 `vision —grounded-in→ research` is the **methodology pack's first internal managed ref**
 of any kind. It honors — does not reopen — the M16 "methodology composes alone, no managed

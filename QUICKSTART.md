@@ -178,8 +178,14 @@ with `--carry-staged`.
 
 Changed your mind? **`jigc task discard <id>`** abandons the task — it removes
 only the working area under `.jigc/tasks/`; no commit is made and the committed
-store is untouched. The full reconcile/back-out ladder (the migration review
-hold, the carryover gate, the hook rejection above, out-of-band edits) is in
+store is untouched. It **refuses first if that area stages docs no commit has a
+copy of** — one blocking `task-discard.staged-prose` naming each of them, so you
+can read them back (`jigc doc show <address> --task <id>`) or land them
+(`jigc task finalize <id>`) before deciding. **`--force` is the single consent**
+that discards them along with the area. Minting a task stages its commit doc, so
+expect that refusal on any task you have actually started. The full
+reconcile/back-out ladder (the migration review hold, the carryover gate, the
+hook rejection above, out-of-band edits) is in
 [MIGRATING.md](MIGRATING.md) → Reconciling and backing out.
 
 **What lands in your repo:** finalize promotes each managed doc under the
