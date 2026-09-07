@@ -38,6 +38,105 @@ Cut [Increment 13](implementation/roadmap.md) (*the close*) into **7 ordered sin
 
 **Scope coverage, bullet for bullet** ([roadmap](implementation/roadmap.md) → Increment 13 *Deliverable* + *Grouped scope*): **flow 51 + `flow51_acceptance.rs`, each arm naming the kind of set it iterates — `DOCTYPE_DOORS ▸ DoctypeArg::Address`, family 1's derived door set, `SchemaChangeKind::ALL × loci` with the count derived, `OrientationView`'s exhaustive match, `write_miss_shape_axis::CELLS`, `ENTRIES`' complement stated as a derivation, and the adapter arm as a manufactured case** → **T5**, with family 2's `SLUG_ARG_IDS` joining arm 1 so all four families the claim names are reached · **the conversion ledger — all `UNPINNED` rows plus the two owed regardless, the data-loss rows pinned to the fixed behaviour or keeping a stated why, the count reported honestly** → **T1** · **D14's 19 dispositions** → **T2** · **the post-hoc sweep of the archived RC invocation logs for degenerate-id calls, and the recorded decision that no adopter disclosure is owed** → **T3** · **the docs fold-back, including the priced product-surface change (`QUICKSTART.md` + `MIGRATING.md` → the shipped `SKILL.md`) and `implementation/pinning.md:15`'s claim of a prerequisite that shipped at M45** → **T4**, joined by `design/design-altitude-doctypes.md:43-47` and any undischarged *Docs that move* row · **the full golden regeneration from an emptied root, whose empty diff is the assertion** → **T6**, sequenced after every surface-changing task for exactly that reason · **the record fold-back the close owes** (CLAUDE.md naming M50 *built, not audited*, the roadmap's forward tense, the owed build named rather than performed) → **T7**. Nothing is deferred out of the increment, and nothing rides along to *"a later task"*.
 
+## 2026-09-08 — M50 Increment 13 / T3: the degenerate-id sweep comes back empty, and the disclosure decision is recorded rather than assumed
+
+**Decided:** D13's three owed acts land together. **(i)** The post-hoc sweep of every archived RC invocation log for degenerate-id calls is **run, and its subject, predicate and denominator are stated** — `files=28 records=3351 | tokens examined=4201 | refused-by-is_slug=0`. **(ii)** **No adopter disclosure is owed**, recorded here as a decision with its ground, never by silence. **(iii)** [decisions-pending.md](implementation/decisions-pending.md)'s observer-briefing entry is **filled from the twelve increment records**, not from memory, with its trigger intact.
+
+**The sweep, verbatim and re-runnable — run from the repository root at `f993930`.** The three door sets are **derived from the shipped registries**, never a remembered list: `DOCTYPE_DOORS`' `DoctypeArg::Address` rows (family 4), and the `WORK_UNIT_ID_DOORS` / `SLUG_DOORS` rows (families 1 and 2), each row's own `argv` giving the position its id or override arrives in. The predicate is `engine::slug::is_slug` transcribed as one regex — non-empty, `[a-z0-9-]` only, no leading, trailing or doubled `-` — the same predicate `work-unit.malformed-id`, `store.malformed-slug` and `write.malformed-slug` all ask.
+
+```sh
+python3 - <<'PY'
+import collections, glob, json, re, sys
+# Door sets DERIVED from the shipped registries, never a remembered list: DOCTYPE_DOORS'
+# `DoctypeArg::Address` rows (family 4) and the WORK_UNIT_ID_DOORS / SLUG_DOORS rows
+# (families 1 and 2), each row's own argv giving the position its id/override arrives in.
+src = open("crates/cli/src/cli.rs").read()
+K = {"WORK_UNIT_ID_SLOT": "<id>", "SLUG_OVERRIDE_SLOT": "<slug>",
+     "WORK_UNIT_ID_DOOR_PAYLOAD": "payload.yaml", "SLUG_DOOR_SOURCE": "foreign-changelog.md"}
+addr = {tuple(re.findall(r'"([^"]+)"', d))
+        for d in re.findall(r"\(&\[([^\]]*)\],\s*DoctypeArg::Address\)", src)}
+flags, pos = set(), {}
+for door_lit, arg, argv_lit in re.findall(
+        r'door:\s*&\[([^\]]*)\],\s*arg:\s*"([^"]+)",\s*argv:\s*&\[(.*?)\],\s*\}', src, re.S):
+    door = tuple(re.findall(r'"([^"]+)"', door_lit))
+    toks = [K[m[1]] if m[1] else m[0]
+            for m in re.findall(r'"([^"]*)"|\b([A-Z][A-Z0-9_]*)\b', argv_lit)]
+    i = toks.index("<slug>" if arg == "slug" else "<id>")
+    if toks[i - 1].startswith("--"):
+        flags.add(toks[i - 1]); continue
+    n = expect = 0
+    for j, t in enumerate(toks[len(door):], len(door)):
+        if expect: expect = 0
+        elif t.startswith("--"): expect = 1
+        elif j == i: pos[door] = n; break
+        else: n += 1
+    else: sys.exit(f"no positional index derived for {door}")
+# engine::slug::is_slug: non-empty, [a-z0-9-] only, no leading/trailing/doubled `-`.
+is_slug = lambda s: re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", s) is not None
+def candidates(argv):
+    # Deliberately over-approximating: a flag is read wherever it appears, and every
+    # `:`-bearing positional at an address door yields its head -- may add, never miss.
+    out = [(f, argv[i + 1] if i + 1 < len(argv) else None)
+           for i, t in enumerate(argv) for f in sorted(flags) if t == f]
+    out += [(f, t.split("=", 1)[1]) for t in argv for f in flags if t.startswith(f + "=")]
+    door = next((d for d in (tuple(argv[:2]), tuple(argv[:1])) if d in pos or d in addr), None)
+    if door is None: return out
+    p, expect = [], 0
+    for t in argv[len(door):]:
+        if expect: expect = 0
+        elif t.startswith("--"): expect = 1
+        else: p.append(t)
+    if door in pos:
+        k = pos[door]; out.append(("positional id", p[k] if k < len(p) else None))
+    if door in addr:
+        out += [("address slug head", re.split(r"[#/]", t.split(":", 1)[1])[0]) for t in p if ":" in t]
+    return out
+files = sorted(glob.glob("completions/**/*invocations.jsonl", recursive=True))
+records, seen, refused, absent = 0, collections.Counter(), [], []
+for f in files:
+    for line in open(f, errors="replace"):
+        if not line.strip(): continue
+        records += 1; rec = json.loads(line); argv = rec.get("argv") or []
+        for where, tok in candidates(argv):
+            if tok is None: absent.append((f, where, argv, rec["exit_code"]))
+            else:
+                seen[where] += 1
+                if not is_slug(tok): refused.append((f, where, tok, argv, rec["exit_code"]))
+for f, w, t, a, c in refused: print(f"REFUSED-BY-is_slug {f}: {w}={t!r} exit={c} argv={a}")
+for f, w, a, c in absent: print(f"NO-TOKEN-IN-POSITION {f}: {w} exit={c} argv={a}")
+print(f"files={len(files)} records={records} | doors: address={len(addr)} "
+      f"positional-id={len(pos)} flags={sorted(flags)}")
+print(f"tokens examined={sum(seen.values())} {dict(seen)} | "
+      f"refused-by-is_slug={len(refused)} no-token={len(absent)}")
+PY
+```
+
+**The output, verbatim.**
+
+```
+NO-TOKEN-IN-POSITION completions/artifacts/RC-1.0-final/evidence/B1i-invocations.jsonl: --task exit=2 argv=['doc', 'list', '--task']
+NO-TOKEN-IN-POSITION completions/artifacts/RC-1.0-final/evidence/B1i-invocations.jsonl: --task exit=2 argv=['doc', 'list', '--task']
+NO-TOKEN-IN-POSITION completions/artifacts/RC-1.0-gate/evidence/pinegrove-invocations.jsonl: positional id exit=0 argv=['milestone', 'join', '--help']
+NO-TOKEN-IN-POSITION completions/artifacts/RC-1.0-gate/evidence/pinegrove-invocations.jsonl: positional id exit=0 argv=['milestone', 'finalize', '--help']
+NO-TOKEN-IN-POSITION completions/artifacts/RC-adoption/rerun-rc7/invocations.jsonl: positional id exit=0 argv=['task', 'finalize', '--help']
+NO-TOKEN-IN-POSITION completions/artifacts/RC-m50/evidence/B4-s-turn01/invocations.jsonl: positional id exit=0 argv=['milestone', 'finalize', '--help']
+NO-TOKEN-IN-POSITION completions/artifacts/RC-m50/evidence/B4-s-turn02/invocations.jsonl: positional id exit=0 argv=['milestone', 'finalize', '--help']
+files=28 records=3351 | doors: address=9 positional-id=13 flags=['--slug', '--task']
+tokens examined=4201 {'--task': 1970, 'address slug head': 1727, 'positional id': 460, '--slug': 44} | refused-by-is_slug=0 no-token=7
+```
+
+**Zero is a result here, because the denominator is stated.** The sweep examined **4 201 tokens** in a family-1, family-2 or family-4 position across **3 351 records** in **28** logs — 1 970 `--task` values, 1 727 address slug heads, 460 positional ids, 44 `--slug` overrides — and **not one** of them is a token `is_slug` would refuse. The seven residual records carry **no token in the position at all** and are adjudicated rather than swallowed: five are `--help` short-circuits at a positional-id door (clap prints help and exits 0 before any id is read), and two are `jigc doc list --task` with the value missing, which clap refuses at **exit 2**. Neither shape reaches a path join, so neither is a degenerate-id call.
+
+**What makes the zero informative rather than vacuous: the doors were used.** `jigc task discard` — the door whose empty-id cell removed the repository at exit 0, W-13 — appears **35 times** in the archive, every one of them with a well-formed id. So the class M50 Increment 1 closed was never *exercised* in a recorded trial: the destruction was reachable and never reached. Every defect of the family in the record (`task discard ""`, `task discard "../.."`, `doc set-slot … --task ""`, `doc show 'research:../../outside'`) was found by **driving at plan time**, which is the instrument working — and is why the sweep is a check on the field record rather than a source of new findings.
+
+**Two bounds, stated because they bound the claim.** The subject is what the invocation log recorded: a call made where the log knob was OFF, or before the log existed (M17's self-hosting run has no `invocations.jsonl`), is outside it — and `log_invocation` reads `args_os` lossily, so a non-UTF-8 argument would appear as `U+FFFD` rather than as its bytes. Against that, the log is written **after dispatch on every path including clap's own error arm** (`main.rs`), so a refused call is logged exactly like an accepted one and no exit code hides a record.
+
+**No adopter disclosure is owed — decided, not assumed.** The class M50 Increment 1 and Increment 2 closed includes silent, uncommitted data loss at exit 0, which is the shape that would ordinarily owe a disclosure. It does not here, on two grounds that are checked rather than remembered: **no third party holds the binary** — every release through `1.0.0-rc.13` was installed on the operator's own host or built from a pinned sha inside a trial container, and the 1.0.0 call has not been taken — and **there is no root `CHANGELOG.md` in this repository** to land a disclosure entry on (the `changelog` doctype ships and homes at the repo root; this repo has never adopted an instance). Recording the decision is the point: a wave that closes a data-loss class and says nothing about disclosure cannot later be read as having considered it.
+
+**The briefing entry is filled from the increment records, and it is longer than the plan's floor.** [decisions-pending.md](implementation/decisions-pending.md) → *The trial that follows M50 — protocol inputs* now carries M50's declared behaviour changes as a two-tier list — *met on every arm within minutes* and *met on the arm that reaches it* — each item naming the increment that landed it. The plan's floor named ten items drawn from Increments 1–5 plus `1799a2d`; deriving from all twelve records rather than from that floor found the rest — all twelve build increments are represented, and Increment 5's `also open:` block is the push half of the very finding the next trial re-measures — and three of them are the ones an unbriefed observer would most likely score as a regression: **the two exit-0 → non-zero flips** (Inc 1), the **`deny` floor's two new members** (Inc 3), which make a worker's `jigc uninstall` / `jigc milestone discard` a *harness* denial rather than a jigc answer, and **`1799a2d`'s milestone-boundary tightening**, under which a fan-out that landed clean on rc.13 may now block. `engine::result::SCHEMA_VERSION` **2 → 3** (Inc 5) is carried in the same list because a driver pinned to 2 is the one adopter-shaped consumer the trial can contain.
+
+**The line citations that move, named rather than left to be rediscovered.** Filling a one-line entry with a twenty-line list grows `decisions-pending.md` by **19** lines, so every citation into that file below `:185` shifts by 19: the three live ones are **`:510` → `:529`** (the empty-`--task` admission, cited by the M50 [settle-record](completions/artifacts/M50/settle-record.md) and [gap-findings](completions/artifacts/M50/gap-findings.md) as fired trigger #1), **`:513` → `:532`** (the unquoted adoption-route path token, this increment's T2 precedent for carrying a plan-time observation) and **`:541` → `:560`** (the un-markered listed-pack path). The dated artifacts that cite them are **not** rewritten — they are records of what was true when written — so the standing rule holds and is restated here rather than assumed: a citation into this ledger is located by **content**, and the line number is a convenience that decays (`DECISIONS.md` → 2026-08-09 M47 Inc 11 T7, *the record-truth targets are located by content, because the Settle's line numbers have moved*).
+
 ## 2026-09-07 — M50 Increment 13 / T2: every driven defect carries a disposition, and the carried ones carry a trigger
 
 **Decided:** D14's obligation is discharged **as a ledger, not a paragraph** — a disposition row appended per finding id in its home artifact ([baseline-ledger.md](completions/artifacts/M50/baseline-ledger.md) → §7 for N1–N20, [gap-findings.md](completions/artifacts/M50/gap-findings.md) → §J for N21–N28 **and N31**), each verdict one of *admitted* (naming the increment **and task** that took it), *refused* (naming the razor leg it fails and its citation), or *carried* (resolving to an [decisions-pending.md](implementation/decisions-pending.md) entry with a written `*Trigger:*`). The prose of §§0–6 and §§A–I is **not** rewritten: it is a dated record of what was driven at `d9e91f1` and stays one, so where the two disagree the disagreement is stated in the appendix rather than edited out.
