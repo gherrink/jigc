@@ -2145,6 +2145,13 @@ fn prune_empty_dirs(repo_root: &Path, artifact: &Path, keep: &[PathBuf]) {
 /// operator's action is the same either way — make the fan-out worktrees safe, then re-run.
 /// Removing on an unverified probe is the very defect this guard closes.
 ///
+/// **And it fails closed for that path alone** (M50 Increment 12 / T2; RC-m50 N9). The probe's
+/// failure used to propagate with `?`, so an unreadable path ended the walk: over a directory
+/// holding work **and** a leftover file, this door named the file, dropped the directory's
+/// good refusal on the floor, and printed a route about `git` being on PATH. The failure is a
+/// [`crate::milestone::LeftoverShape::Unreadable`] hold now, collected with its siblings, so
+/// the refusal names every path it would take.
+///
 /// **Each hold also carries whether *this* repo registered the path** — the fact the
 /// refusal's route rests on, not decoration. Widening the *subject* to the path widened the
 /// guard's domain past what its response was written for: the milestone teardown removes
@@ -2159,12 +2166,10 @@ fn dirty_fanout_worktrees(repo_root: &Path) -> Result<Vec<HeldWorktreePath>, Fin
 
     let mut holds: Vec<HeldWorktreePath> = Vec::new();
     for path in paths {
-        if let Some(hold) = crate::milestone::probe_leftover(repo_root, &path)
-            .map_err(unverified_worktrees_finding)?
-        {
+        if let Some(hold) = crate::milestone::probe_leftover(repo_root, &path) {
             holds.push(HeldWorktreePath {
                 path,
-                entries: hold.entries,
+                hold,
                 registered: None,
             });
         }
@@ -2572,9 +2577,10 @@ struct HeldWorktreePath {
     /// The `<repo>/.jigc/worktrees/<name>` path, as read (the refusal prints it).
     path: PathBuf,
     /// What removing it would destroy — `git status --porcelain` entries for a worktree of
-    /// its own, the directory's sorted child names otherwise
+    /// its own, the directory's sorted child names for one nothing vouches for, the bare fact
+    /// that the path is a file, or the reason nothing could be read at all
     /// ([`crate::milestone::LeftoverHold`]).
-    entries: Vec<String>,
+    hold: crate::milestone::LeftoverHold,
     /// Whether **this** repository has the path registered as a worktree, and therefore
     /// whether a milestone teardown reaches it at all. `None` when `git worktree list` could
     /// not be read: the route then claims nothing either way rather than guessing — the same
@@ -2607,21 +2613,27 @@ fn dirty_worktree_finding(repo_root: &Path, dirty: &[HeldWorktreePath]) -> Findi
         .iter()
         .map(|held| {
             let fate = match held.registered {
-                Some(true) => " — registered as a worktree of this repository",
-                Some(false) => " — registered as a worktree nowhere in this repository",
+                Some(true) => "; registered as a worktree of this repository",
+                Some(false) => "; registered as a worktree nowhere in this repository",
                 None => "",
             };
             format!(
-                "  {}: {}{fate}",
-                crate::render::repo_relative(repo_root, &held.path),
-                held.entries.join(", ")
+                "  {} — {}{fate}",
+                crate::milestone::hold_line(repo_root, &held.path, &held.hold),
+                crate::milestone::because(&held.hold),
             )
         })
         .collect();
     let any_registered = dirty.iter().any(|held| held.registered == Some(true));
     let any_unregistered = dirty.iter().any(|held| held.registered == Some(false));
+    // A path that is not a readable directory is not a worktree either, so every worktree
+    // remedy named below is inert over it — the route says so rather than leaving the reader
+    // to discover it (RC-m50 W-2: this door routed at `git` being on PATH over a plain file).
+    let any_non_worktree = dirty
+        .iter()
+        .any(|held| !matches!(held.hold.shape, crate::milestone::LeftoverShape::Directory));
     let mut route = String::from(
-        "get the work out of those worktrees first (commit, stash, or copy it), then re-run \
+        "get the work out of those paths first (commit, stash, or copy it), then re-run \
          `jigc uninstall`",
     );
     if any_registered {
@@ -2641,12 +2653,19 @@ fn dirty_worktree_finding(repo_root: &Path, dirty: &[HeldWorktreePath]) -> Findi
              the worktrees this repository has registered, and none of these paths is",
         );
     }
+    if any_non_worktree {
+        route.push_str(
+            " (a path listed above as a file, or as one nothing could be read at, is not a \
+             worktree at all, so no worktree removal clears it — look at it and move it \
+             aside or delete it yourself)",
+        );
+    }
     route.push_str("; `jigc uninstall --force` deletes them with the install");
     Finding::block(
         "uninstall.dirty-worktree",
         format!(
-            "`.jigc/` holds content in {} fan-out sub-task worktree path(s) that removing it \
-             would destroy:\n{}",
+            "`.jigc/` holds {} fan-out sub-task worktree path(s) that removing it would \
+             destroy and nothing can say are disposable:\n{}",
             dirty.len(),
             listing.join("\n"),
         ),
@@ -2654,9 +2673,15 @@ fn dirty_worktree_finding(repo_root: &Path, dirty: &[HeldWorktreePath]) -> Findi
     )
 }
 
-/// The fail-closed half of [`dirty_fanout_worktrees`]: the probe could not run, so the
-/// teardown refuses rather than remove `.jigc/` with the fan-out worktrees' safety
-/// unknown. Same code as the dirty refusal — the operator's next action is identical.
+/// The fail-closed half of [`dirty_fanout_worktrees`]: the worktrees root itself could not be
+/// enumerated, so the teardown refuses rather than remove `.jigc/` with the fan-out worktrees'
+/// safety unknown. Same code as the dirty refusal — the operator's next action is identical.
+///
+/// **Its subject is the enumeration, not a path** (M50 Increment 12 / T2). A path the probe
+/// cannot read is a hold now ([`crate::milestone::LeftoverShape::Unreadable`]) and is answered
+/// by [`dirty_worktree_finding`] beside its siblings; what is left here is the one failure
+/// with no path to name — `read_dir` on `.jigc/worktrees/` itself — where there is no set to
+/// enumerate at all.
 fn unverified_worktrees_finding(err: anyhow::Error) -> Finding {
     Finding::block(
         "uninstall.dirty-worktree",

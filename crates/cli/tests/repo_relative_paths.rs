@@ -366,10 +366,11 @@ const PATH_TEXT_SITES: &[(&str, &str, Disposition, &str)] = &[
     ),
     (
         "crates/cli/src/milestone.rs",
-        "unprobeable_leftover_finding",
+        "hold_line",
         Disposition::Relative,
-        "the fail-closed refusal's message AND its `at:` locus, shared by `provision` and \
-         `discard`",
+        "the one line every refusing door lists a held path with — the fail-closed cell \
+         among them, which since M50 Increment 12 / T2 is a hold beside its siblings rather \
+         than a producer of its own",
     ),
     (
         "crates/cli/src/milestone.rs",
@@ -382,8 +383,8 @@ const PATH_TEXT_SITES: &[(&str, &str, Disposition, &str)] = &[
         "child_names",
         Disposition::Relative,
         "earned by the derivation, not named in the report: its `with_context` bytes ride \
-         VERBATIM inside `unprobeable_leftover_finding`'s and \
-         `setup::unverified_worktrees_finding`'s messages, so a relative locus over an \
+         VERBATIM inside every refusal's `hold_line` and inside \
+         `setup::unverified_worktrees_finding`'s message, so a relative locus over an \
          absolute cause names one path two ways on one screen",
     ),
     (
@@ -597,10 +598,24 @@ fn every_path_a_door_prints_carries_a_disposition_the_source_backs() {
         };
         match disposition {
             Disposition::Relative => {
-                if !site.code.contains(REPO_RELATIVE) {
+                // The shared home counts whether it is reached directly or **through
+                // another `Relative` site**. The class's whole claim is that one home
+                // renders every path, so factoring a renderer out into one — `hold_line`,
+                // the line all three refusing doors list a held path with — must not read
+                // as a site that stopped reaching it. The extracted home is itself a row,
+                // so the chain always ends at a checked one.
+                let reaches = site.code.contains(REPO_RELATIVE)
+                    || PATH_TEXT_SITES
+                        .iter()
+                        .any(|(_, other, other_disposition, _)| {
+                            *other_disposition == Disposition::Relative
+                                && *other != *name
+                                && site.code.contains(&format!("{other}("))
+                        });
+                if !reaches {
                     offenders.push(format!(
                         "  {file}: `{name}` is declared `Relative` but never reaches \
-                         `{REPO_RELATIVE}`"
+                         `{REPO_RELATIVE}`, directly or through another `Relative` site"
                     ));
                 }
                 if site.code.contains(".display()") {

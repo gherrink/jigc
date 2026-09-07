@@ -294,10 +294,20 @@ fn the_partial_advisory_leaves_the_json_document_alone() {
 }
 
 /// **Half 2 — a provision that fails mid-phase-2 blocks with a code and a route, and the
-/// state it leaves is exactly what half 1 reports.** A regular *file* planted at the
-/// second sub-task's worktree path makes phase 2's `remove_dir_all` fail after the first
-/// path has already been provisioned: the failure is real, it is mid-walk, and it leaves
-/// the PARTIAL set behind.
+/// state it leaves is exactly what half 1 reports.** A **read-only** directory holding a
+/// file, planted at the second sub-task's worktree path, makes phase 2's removal fail
+/// (`EACCES` — the unlink needs write on the directory) after the first path has already
+/// been provisioned: the failure is real, it is mid-walk, and it leaves the PARTIAL set
+/// behind.
+///
+/// **The mechanism moved at M50 Increment 12 / T2.** It used to be a plain *file* at that
+/// path, which failed because `remove_dir_all` is a directory verb — i.e. the fixture
+/// manufactured its mid-walk failure out of the very defect that task closes (the door
+/// narrated the file's removal, then did not perform it). That shape now clears and
+/// provisions, so the failure is re-manufactured from a removal that genuinely cannot
+/// happen. **Declared bound:** run as `root`, permission bits do not bind and the removal
+/// would succeed — the `set_dir_readonly` idiom this borrows from `tests/setup.rs` carries
+/// the same exposure.
 #[test]
 fn a_provision_that_fails_mid_walk_blocks_with_a_code_and_a_route() {
     let repo = TempDir::new("mid-walk");
@@ -305,11 +315,13 @@ fn a_provision_that_fails_mid_walk_blocks_with_a_code_and_a_route() {
     let home = TempDir::new("home");
     mint_milestone(repo.path(), home.path());
 
-    // A file, not a directory, at the LAST path the walk reaches: `remove_dir_all` fails
-    // on it (ENOTDIR) after `alpha-fix` has already been added. `--force` skips phase 1's
-    // probe, so the walk genuinely reaches the mutating phase.
-    fs::create_dir_all(repo.path().join(".jigc").join("worktrees")).expect("mk worktrees root");
-    fs::write(worktree_dir(repo.path(), "zebra-fix"), b"not a directory\n").expect("plant file");
+    // A read-only directory holding a file, at the LAST path the walk reaches: the removal
+    // fails on it (EACCES) after `alpha-fix` has already been added. `--force` skips phase
+    // 1's probe, so the walk genuinely reaches the mutating phase.
+    let leftover = worktree_dir(repo.path(), "zebra-fix");
+    fs::create_dir_all(&leftover).expect("mk the leftover dir");
+    fs::write(leftover.join("keep.txt"), b"sole copy\n").expect("plant the leftover content");
+    set_dir_readonly(&leftover, true);
 
     let out = run(
         repo.path(),
@@ -356,4 +368,18 @@ fn a_provision_that_fails_mid_walk_blocks_with_a_code_and_a_route() {
         composed.contains(&format!("advisory · {PARTIAL_CODE}")) && composed.contains("zebra-fix"),
         "the handoff reports the state the failed provision left; got:\n{composed}",
     );
+    // Hand the directory back so the fixture's own teardown can remove it.
+    set_dir_readonly(&leftover, false);
+}
+
+/// Toggle a directory between read-only (`0o555`) and writable (`0o755`) — the
+/// `tests/setup.rs` idiom, borrowed so a removal can be made to fail for a reason that is
+/// not a bug of jigc's own.
+#[cfg(unix)]
+fn set_dir_readonly(dir: &Path, readonly: bool) {
+    use std::os::unix::fs::PermissionsExt;
+    let mode = if readonly { 0o555 } else { 0o755 };
+    let mut perms = fs::metadata(dir).expect("stat dir for chmod").permissions();
+    perms.set_mode(mode);
+    fs::set_permissions(dir, perms).expect("chmod dir");
 }

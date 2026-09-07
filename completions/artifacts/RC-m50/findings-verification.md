@@ -195,13 +195,20 @@ the refusal's shape — the probe-error arm's route (git on PATH, `git worktree 
 fit a plain file, the sibling directory leftover is not listed, and the consent `--force` that
 cell A's refusal names is absent here.
 
-`pinned-by: crates/cli/tests/leftover_probe_fail_closed.rs::every_refusing_door_answers_an_unprobeable_leftover_with_a_code_and_a_route`
-(line 178) — plants exactly this subject (`fs::write(&leftover, PRECIOUS)` at
-`.jigc/worktrees/area-zed`) and asserts non-success, `blocking · <code>`, `route:` present,
-`at:` naming the path, bytes intact — **the class is pinned; the route's content, the sibling
-enumeration and the `--force` mention are not** (it asserts `contains("route:")` only).
+`pinned-by: crates/cli/tests/leftover_probe_fail_closed.rs::every_refusing_door_answers_every_leftover_shape_and_never_narrates_a_removal_it_did_not_make`
+— **all three sub-claims are pinned as of M50 Increment 12 / T2.** The suite iterates
+`DESTROYING_DOORS`(refusing) × `{directory, file, both}` × `{plain, --force}` and asserts, per
+cell: every planted leftover is named in the refusal (the sibling enumeration), `--force`
+appears, and every concrete consent command the route names, run **verbatim**, does not
+reproduce the same `(code, target)` — plus the outcome rule the fix turns on, narrated ⇔
+removed, proven on the planted bytes.
 
-**M50 rider:** cheap.
+*(At the time of writing, the fix's predecessor test pinned the class only: it planted this
+subject and asserted non-success, `blocking · <code>`, `contains("route:")`, `at:` naming the
+path and bytes intact — the route's content, the sibling enumeration and the `--force` mention
+were not pinned.)*
+
+**M50 rider:** cheap. **Shipped** — M50 Increment 12 / T2.
 
 ## W-5 · a listed pack's missing catalog is blamed on the embedded pack — CONFIRMED · §1 surface row (a law-1 lie) · SHIPS RECORDED → M50
 
@@ -336,7 +343,7 @@ relevant. `UNPINNED` (the orientation goldens pin bytes, not this absence).
 | W-14 | half A `pinned-by: untrackable_home_axis.rs:272`; half B `UNPINNED: no destroying-door test plants a tracked file directly under .jigc/` |
 | W-15 | `UNPINNED: write_miss_shape_axis.rs carries no section-only set-field row` |
 | W-1 | `UNPINNED: milestone_boundary_gate.rs drives JSON only; located_finding_text.rs checks the locus, not the prefix` |
-| W-2 | class `pinned-by: leftover_probe_fail_closed.rs:178`; the three sub-claims `UNPINNED` |
+| W-2 | `pinned-by: leftover_probe_fail_closed.rs::every_refusing_door_answers_every_leftover_shape_and_never_narrates_a_removal_it_did_not_make` — the class **and** all three sub-claims, as of M50 Increment 12 / T2 |
 | W-5 | `UNPINNED: no listed-pack-missing-resource test exists` |
 | W-6 | `UNPINNED` |
 | W-7 | `pinned-by: describe.rs:499` (the commands arm) |
