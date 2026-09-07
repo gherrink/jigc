@@ -43,12 +43,17 @@ walk 17** — 25 doors — and the fix is owed *over that class*, not at this do
 `""` at exit 0 (`task validate` — PT-1; `doc list --task`; `task discard`), and `TaskArea::resolve`
 is the one seam all three pass through.
 
-`UNPINNED`: no standing test drives an empty id at any door. Nearest:
-`crates/cli/tests/no_such_task_route.rs::task_verb_with_unknown_id_routes_to_task_list` (line 141)
-asserts `exit 1` + the byte-equal converged message for `"nonexistent"` — a non-existent
-*directory*, so the guard fires; `""` is an existing one. `clap_error_kind_axis.rs` carries no
-empty token among its 17 kinds; `not_in_repo_axis.rs:152` drives `task discard` with `"a-task"`.
-The fix's test must iterate walk 17's table.
+`pinned-by: crates/cli/tests/malformed_work_unit_id.rs::task_discard_refuses_an_empty_id_and_the_task_roster_survives`,
+with its traversal sibling `::task_discard_refuses_a_traversal_and_the_repository_survives` —
+**pinned to the fixed behaviour, never to the destruction**, which is D12's carve-out applied at
+the one row that needed it. Each drives the door over a live `refs-post-hoc` corpus and asserts
+the refusal *together with the tree that survived it*: `.jigc/tasks/`, the live task's own
+working area, `.git/`, and every tracked file. The class is
+`crates/cli/tests/work_unit_id_axis.rs::every_work_unit_id_door_answers_the_whole_token_axis`,
+which iterates walk 17's table as a **code-side set** — `WORK_UNIT_ID_DOORS`, derived from the
+clap leaf tree — crossed with `{"", "../..", <an absolute path>, <an unknown id>}`, requiring the
+family's code, the token as typed and exactly one route in every malformed cell, and re-asserting
+the fixture's tree after each one. Shipped: M50 Increment 1.
 
 ## W-16 / PT-1 · the empty-id axis: 25 doors, 42 of 50 cells without a code — CONFIRMED · §1 wrong-result row · SHIPS RECORDED → M50
 
@@ -75,8 +80,14 @@ release binary never pays or panics"*) and is why the handover saw a panic.
 **M50 rider:** cheap now (one resolver guard + one axis test); after 1.0.0 a driver may have
 learned that `""` means *the whole tasks root* — expensive to take back.
 
-`UNPINNED`: the route fence's tests (`crates/cli/src/route_fence.rs:175/231/251`) construct
-synthetic argvs in-process and cannot exercise release posture; `no_such_task_route.rs` as above.
+`pinned-by: crates/cli/tests/malformed_work_unit_id.rs::the_read_doors_stop_reporting_a_clean_nonexistent_task`
+— this row's two exit-0 false greens (`jigc task validate ""`, `jigc doc list --task ""`) driven
+through the real binary and asserted to refuse — with
+`::a_write_verb_with_an_empty_task_mints_no_phantom_area` covering the write door that resolved
+`.jigc/tasks/` itself as a working area, and the whole 25-door × 4-token cell space at
+`work_unit_id_axis.rs::every_work_unit_id_door_answers_the_whole_token_axis`. The debug-only
+route fence no longer carries the claim: the refusal is asserted on the door's **emitted bytes**,
+which is a posture-independent fact. Shipped: M50 Increment 1.
 
 ## W-14 · `placement-root .jigc` accepted, then `uninstall` removes the relocated committed docs unnamed — CONFIRMED · §1 surface row (silent destruction, recoverable) · SHIPS RECORDED → M50
 
@@ -105,12 +116,19 @@ sibling of the `config.untrackable-root` refusal that guards `.git` (walk 15 dro
 and it holds). **Half A is pinned and deliberate:**
 `pinned-by: crates/cli/tests/untrackable_home_axis.rs::a_gitignored_root_still_relocates_because_ignoring_is_not_untrackable`
 (line 272 — asserts the move *lands* under `.jigc` and stages as `R`; the code comment at
-`config.rs:365-378` says a gitignored root *"keeps working"*). **Half B is UNPINNED:**
-`narrate_teardown` (`setup.rs:2211`) iterates `fanout_worktree_paths` + staged task prose only;
-`flow48_acceptance.rs::every_destroying_door_names_the_bytes_it_is_about_to_destroy` (line 743)
-plants under a worktree and never a tracked file directly under `.jigc/`. M50's choice: refuse
-`.jigc` as a placement root, or make `uninstall` narrate tracked children — either way the axis
-is *tracked files under `.jigc/`*.
+`config.rs:365-378` says a gitignored root *"keeps working"*). **Half B is pinned as of M50 Increment 5, and the wave took *both* exits this row named.** The
+door that creates the state is refused:
+`pinned-by: crates/cli/tests/root_knob_rules.rs::no_root_knob_accepts_jigcs_own_workbench_as_a_home`
+— every `cli::config::ROOT_KNOBS` member × every spelling that reaches the workbench (sixteen
+cells), each blocking with `config.workbench-root` and each asserted **inert**: nothing moves, the
+index is unchanged, and the knob does not land. And the teardown stops taking workbench bytes no
+index holds:
+`pinned-by: crates/cli/tests/uninstall_workbench_subject.rs::a_tracked_but_modified_workbench_file_blocks_the_teardown`
+and `::a_hand_dropped_workbench_file_blocks_and_the_install_survives`, which plant a file
+**directly under `.jigc/`** (`.jigc/config/packs.yaml` — the axis this row named) and assert the
+refusal carries its code, names the path, leaves the operator's bytes standing, and claims no
+`git checkout` restorability it cannot back. `::a_tracked_workbench_file_edited_and_staged_is_still_narrated`
+holds the other side, so the fix trades no false green for a false refusal.
 
 **M50 rider:** cheap now; after 1.0.0 an adopter who chose `.jigc` has a corpus the guard would
 then refuse.
@@ -134,11 +152,23 @@ blocking · write.unknown-section — … route: `jigc doc schema vision` …
 **Class:** the one un-swept cell of M49 T3's four-producer sweep — `doc.rs:6060-6082`'s
 `Fragment::Unit` arm never calls `undeclared_section_guard`. Not destructive, not a false green.
 
-`UNPINNED` at the cell: `crates/cli/tests/write_miss_shape_axis.rs` `CELLS` (lines 854-885) carry
-`set-slot` at `#no-such-section` but both `set-field` rows at `#no-such-section/link` (a leaf);
-the completeness fence at `:1330` requires *some* `write.unknown-section` row per verb and is
-satisfied by the leaf-bearing ones. The fix's test adds the section-only row for `--value` and
-`--unset`.
+`pinned-by: crates/cli/tests/write_miss_shape_axis.rs` `CELLS` — the rows *set-field --value at a
+single hop no section declares as a field* and its `--unset` twin, driven by
+`::every_write_miss_names_its_own_miss_and_routes_the_recovery`.
+
+**The adjudication moved, and this row records it rather than its own prediction.** M50 Increment 9
+read the single-hop `#<name>` form as a field-id search across *every* declared section, so
+`write.unknown-section` would have been a law-1 lie about sections that all exist. The cell earns
+`write.unknown-field` — the contract's member for *the schema declares no such leaf here* — with
+the `jigc doc schema <doctype>` route. This row's own repro, driven at M50 HEAD:
+
+```
+$ jigc doc set-field vision:vision#nosection --value x --task $T
+blocking · write.unknown-field — no field "nosection" declared on any section of `vision` (the single-hop `#<field>` form searches every declared section)
+  at: vision:vision#nosection
+  route: `jigc doc schema vision` to see the declared shape, then re-run the write at a declared address
+[exit 1]
+```
 
 **M50 rider:** cheap; a stable-key `(code, target)` minted at a cell that today emits none.
 
@@ -169,11 +199,21 @@ with `--task` · the route runs verbatim (walk 21). The codes are
 `schema-conformance.field-value-conformant` (unset `type` is `""`, not an enum member) and
 `required-slot-present` (`summary`).
 
-`UNPINNED`: `crates/cli/tests/milestone_boundary_gate.rs::assert_unfilled_commit_leaf_blocks`
-(line 545) drives `--format json` only and asserts exit 3 + `contains("commit:code-area")` +
-no-commit + teardown — no code, no text render. `located_finding_text.rs:299` registers the site
-as `Carries` and checks only the `at:` locus. `text_json_parity_axis.rs:379` fences the *landed*
-envelope. The `HANDLED_COMMIT_LEAVES` axis (line 461) pins *which* leaves gate, not the render.
+`pinned-by: crates/cli/tests/located_finding_text.rs::every_text_render_of_a_finding_is_disposed`
+— the **source-derived sweep**, which is the axis this row sits on: every production read of a
+`Finding`'s message owes a verdict, and a `Carries` site owes *both* `render::finding_head` and
+the locus renderer. `milestone.rs`'s `fn blocked` — the exact site this row named — now reads no
+`.message` at all: it delegates to `crate::render::finding_line` (`milestone.rs:4299`), so it
+holds no `MESSAGE_SITES` row and the sweep reddens the moment it re-implements one. The
+**emitted-bytes** half is carried at the sibling milestone loop by
+`crates/cli/tests/flow9_seam.rs::a_real_two_area_overlap_on_a_committed_slug_blocks_same_doc_clash`,
+whose expected code is cross-read from the same milestone's `--format json` rather than spelled
+in the test, so it cannot pass over a reconstruction.
+
+**Stated altitude, because a citation is only worth what it asserts:** at *this* door the pin is
+structural (the site reaches the house renderer) plus that renderer's own suites; no arm drives
+`jigc milestone finalize` over a blocked sub-task gate and greps its first stderr line. Shipped:
+M50 Increment 11.
 
 **M50 rider:** cheap (route the text arm through the house renderer); a driver scraping text
 for `blocking ·` at this door gets nothing today.
@@ -224,17 +264,26 @@ resource id only; the same literal sits at `config.rs:223`, `config.rs:329`, `do
 Vendoring `commands: []` clears it (multi-pack.md's bound 1 predicts the fault; the message points
 at the wrong pack).
 
-`UNPINNED`: `project_pack_composition.rs` (7 tests) and flow50 arm 6 seed complete packs only;
-`unknown_doctype_axis.rs:368` fenced this leak out of the *doctype* doors (`DOCTYPE_DOORS` ×
-`nosuch`) and never reaches a config resource. No test can assert the right pack because the
-message structurally cannot name it.
+`pinned-by: crates/cli/tests/pack_resource_miss_axis.rs::every_pack_resource_miss_names_the_searched_packs_with_a_code_and_a_route`
+— a cell table over the doors that read a pack resource, each asserting the family's code, the
+missing resource named, the **repo-real** pack roots in precedence order, and a route that
+repairs the state when run verbatim — with
+`::the_front_doors_pack_id_read_names_the_searched_roots_with_a_code_and_a_route` carrying the
+`jigc start` site this row captured, including the assertion that *"the embedded pack"* appears
+nowhere over a composition that holds no embedded pack. Shipped: M50 Increment 11.
 
 **M50 rider:** cheap; the first door a pack author meets.
 
 ## W-6 · `--explain` labels one pack `house/vfs-local` and `house/fs-local` — CONFIRMED (walk 20 capture) · surface · SHIPS RECORDED
 
 The workflow line prefixes every version with `v`, so the `fs-local` sentinel renders as a
-non-version. `UNPINNED` (no `--explain` test drives a local pack's label). Cheap.
+non-version.
+`pinned-by: crates/cli/tests/project_pack_composition.rs::a_version_less_packs_label_does_not_read_as_a_version`,
+with `::one_pack_is_named_one_way_on_every_surface_that_names_one` fencing the class: the four
+pack-naming surfaces (`Pack: `, `workflow:`, `collision:`, `Pack input:`) are scanned off the
+**emitted bytes** and required to carry exactly one spelling of one pack's `(id, version)` pair,
+with the surface set itself asserted so the claim cannot pass vacuously over a surface that
+rendered nothing. Shipped: M50 Increment 12.
 
 ## W-7 · `describe` carries no origin pack per definition — CONFIRMED · capability gap · SHIPS RECORDED
 
@@ -256,7 +305,7 @@ $ jigc doc set-field --help | grep -c anchor
 $ grep -n -i 'code-anchor\|anchor' .claude/skills/jigc/SKILL.md
 37:probe copy, and code-anchor finalize / `jigc validate` work out of the box.                # one mention, no form shown
 ```
-The worker reverse-engineered `path#Symbol` (a top-level declared identifier, not `Class.method`, not `file:line`) from two failed attempts. `UNPINNED` (a documentation absence; the fix is a `hint:` on the field type, projected by `doc schema`, and one SKILL.md line).
+The worker reverse-engineered `path#Symbol` (a top-level declared identifier, not `Class.method`, not `file:line`) from two failed attempts. `pinned-by: crates/cli/tests/code_anchor_grammar_sites.rs::every_declared_site_states_the_grammar_verbatim` — the grammar is declared once in `crates/cli/pack/config/field-types.yaml` and every shipping site that names the field type must state it verbatim, with `::withdrawing_the_grammar_from_any_one_site_reddens_the_fence` proving the fence bites, and `::doc_schema_names_the_grammar_beside_every_code_anchor_field` / `::set_field_long_help_names_the_type_and_its_grammar` / `::the_installed_guide_states_the_grammar` pinning the three surfaces this row measured as silent. Shipped: M50 Increment 12.
 
 **F-2 · the `file:line` miss says "resolves to no file", which is true and misleading — CONFIRMED · surface · SHIPS RECORDED → M50 tier 2**
 
@@ -267,7 +316,7 @@ $ … --value src/pad.ts#pad.method …
 blocking · doc-code.symbol-exists — anchor `src/pad.ts#pad.method` resolves to no symbol (`pad.method` is absent from `src/pad.ts` …)
 $ … --value src/pad.ts#pad …                                                                    # clean
 ```
-The probe treats the whole literal as a filename; the message never says the grammar is `path#Symbol`, so a worker cannot tell a wrong number from an unsupported scheme. `UNPINNED` at this cell (the `doc-code` suites pin resolution, not the miss's wording).
+The probe treats the whole literal as a filename; the message never says the grammar is `path#Symbol`, so a worker cannot tell a wrong number from an unsupported scheme. `pinned-by: crates/cli/tests/doc_code_probe.rs::a_file_line_value_names_the_grammar_and_the_symbol_side_is_unmoved` — the real probe binary driven over this row's own `src/pad.ts` fixture: the `file:line` miss names the grammar, and the symbol-side message is asserted **unmoved**, so the wording fix cannot have been bought by breaking the cell that already read correctly. Shipped: M50 Increment 12.
 
 **F-3 · no jigc verb unstages a carried path; the carryover route names git — by design, recorded.** M43's gate names *unstage it, or pass `--carry-staged`*; the CLI orchestrates git and does not wrap `git restore --staged`. The worker followed the route exactly, both paths survived (` M src/router.ts`, `?? scripts/`). A capability gap by the razor's own refusals (M46), not a defect.
 
@@ -291,7 +340,18 @@ starting fresh"*; it found the task via `task list`. M43's *composed output name
 --task <id>` and states the single-active-task default* binds the **post-mint** composition, not
 the two doors an agent meets first. This is the pull-tier shape exactly: the capability (`task
 list`, `start --task`) exists and the orienting surface does not name the state that makes it
-relevant. `UNPINNED` (the orientation goldens pin bytes, not this absence).
+relevant.
+`pinned-by: crates/cli/tests/orientation_active_task.rs::the_agent_text_names_the_task_and_routes_with_the_discard_consent`
+(bare `jigc start` — the first door), with `::the_active_block_renders_byte_for_byte`,
+`::two_live_tasks_render_two_rows_under_one_tag`,
+`::a_sub_task_is_routed_to_the_milestone_door_and_omits_the_unneeded_consent` and
+`::a_task_less_project_still_renders_clean_byte_identical` holding the shape and its
+task-less complement; and
+`crates/cli/tests/start_compose.rs::the_router_form_names_the_task_already_open` (the intent
+form this row's worker typed first), with
+`::the_named_workflow_form_names_the_open_task_and_still_mints` and
+`::the_composed_json_is_unchanged_while_a_task_is_already_open` fencing its two neighbours.
+Shipped: M50 Increment 6.
 
 **F-6 · no `ref`-typed field on `adr` cites a `research` doc — CONFIRMED · capability gap · SHIPS RECORDED.** `jigc doc schema adr` exposes `supersedes` (adr→adr) and `cites-code`; the worker named the research doc in prose, unvalidated. M46's razor refused a managed `roadmap-entry → milestone-record` edge as a feature; this is the same shape on a frozen doctype (a one-way door), and it goes to M50 under the human's criterion, not this trial's.
 
@@ -334,21 +394,55 @@ relevant. `UNPINNED` (the orientation goldens pin bytes, not this absence).
 | I-4 | `carry` handed `ARM-OUTPUT.txt` on as corpus (I-1's fix, one layer out) | `abb64dd` · `test_session.py::CarryLeavesTheWalksOwnOutputBehind` |
 | I-5 | `find <task dir> -type f \| xargs … cat {}` scored FILESYSTEM **0** — `find` is not a reader and the `cat` stage carries no path, and the `;` inside `sh -c` split the statement before the `cat` was seen. **B2's duress read, the cell the headline rests on, misfiled by a second mechanism.** Found from the worker's own feedback, not by the reader | this commit · `test_observe.py::AFindPipedIntoCatIsARead` (the archive's `find \| grep -v` false positive kept dead) |
 
-## Not pinned, and said so — the conversion ledger
+## The conversion ledger — closed
+
+Eleven rows carried a stated reason instead of a citation when this file was written. **All
+eleven now carry a `pinned-by:`**, each verified by reading what the cited test asserts rather
+than by matching a name ([pinning.md](../../../implementation/pinning.md) §3, which refuses a
+`pinned-by:` symbol parser by name — so this table is a claim about test *content*).
+
+The count is reported as measured, not as predicted: D12 said *all 21* such rows, and the file
+carried 20 lines containing the token, two of which were not rows at all (the header's statement
+of the convention and this section's closing paragraph) — **18 occurrences over 11 distinct
+rows**.
+D12's two owed-regardless items are *inside* those eleven, not beside them: plant E's rename, and
+the milestone door's finding codes, which is W-1.
 
 | row | status |
 |---|---|
-| W-13 | `UNPINNED: no test drives an empty id at any door` — owed by the fix wave, iterating walk 17's table |
-| W-16 / PT-1 | `UNPINNED: the route fence is debug-only and synthetic` — same test as W-13 |
-| W-14 | half A `pinned-by: untrackable_home_axis.rs:272`; half B `UNPINNED: no destroying-door test plants a tracked file directly under .jigc/` |
-| W-15 | `UNPINNED: write_miss_shape_axis.rs carries no section-only set-field row` |
-| W-1 | `UNPINNED: milestone_boundary_gate.rs drives JSON only; located_finding_text.rs checks the locus, not the prefix` |
+| W-13 | `pinned-by: malformed_work_unit_id.rs::task_discard_refuses_an_empty_id_and_the_task_roster_survives` + `work_unit_id_axis.rs::every_work_unit_id_door_answers_the_whole_token_axis` — **the data-loss carve-out**: pinned to the *fixed* behaviour (the refusal, and the tree that survived it), never to the destruction |
+| W-16 / PT-1 | `pinned-by: malformed_work_unit_id.rs::the_read_doors_stop_reporting_a_clean_nonexistent_task` + `::a_write_verb_with_an_empty_task_mints_no_phantom_area`, class at `work_unit_id_axis.rs::every_work_unit_id_door_answers_the_whole_token_axis` |
+| W-14 | half A `pinned-by: untrackable_home_axis.rs::a_gitignored_root_still_relocates_because_ignoring_is_not_untrackable`; half B `pinned-by: root_knob_rules.rs::no_root_knob_accepts_jigcs_own_workbench_as_a_home` + `uninstall_workbench_subject.rs::a_tracked_but_modified_workbench_file_blocks_the_teardown` — the wave took **both** exits the row named |
+| W-15 | `pinned-by: write_miss_shape_axis.rs` `CELLS` (the single-hop `set-field` rows, `--value` and `--unset`) via `::every_write_miss_names_its_own_miss_and_routes_the_recovery` — the code is `write.unknown-field`, **not** the `write.unknown-section` this row predicted; the adjudication is recorded at the row |
+| W-1 | `pinned-by: located_finding_text.rs::every_text_render_of_a_finding_is_disposed` (the source-derived sweep; `milestone.rs`'s `blocked` now delegates to `render::finding_line`), emitted bytes at the sibling loop via `flow9_seam.rs::a_real_two_area_overlap_on_a_committed_slug_blocks_same_doc_clash` — **stated altitude:** structural at *this* door |
 | W-2 | `pinned-by: leftover_probe_fail_closed.rs::every_refusing_door_answers_every_leftover_shape_and_never_narrates_a_removal_it_did_not_make` — the class **and** all three sub-claims, as of M50 Increment 12 / T2 |
-| W-5 | `UNPINNED: no listed-pack-missing-resource test exists` |
-| W-6 | `UNPINNED` |
-| W-7 | `pinned-by: describe.rs:499` (the commands arm) |
-| plant E's rename preserving status/date/slots (R3, B3) | `UNPINNED: doc_rename_in_task.rs asserts identity movement and the old id's absence, never the header fields' or slot bodies' survival` — worth a row in M50's test batch |
+| W-5 | `pinned-by: pack_resource_miss_axis.rs::every_pack_resource_miss_names_the_searched_packs_with_a_code_and_a_route` + `::the_front_doors_pack_id_read_names_the_searched_roots_with_a_code_and_a_route` |
+| W-6 | `pinned-by: project_pack_composition.rs::a_version_less_packs_label_does_not_read_as_a_version` + `::one_pack_is_named_one_way_on_every_surface_that_names_one` |
+| W-7 | `pinned-by: describe.rs::describe_commands_carry_the_union_of_every_declaring_pack` (the commands arm) |
+| F-1 | `pinned-by: code_anchor_grammar_sites.rs::every_declared_site_states_the_grammar_verbatim` (+ its withdrawal fence and the three surface arms) |
+| F-2 | `pinned-by: doc_code_probe.rs::a_file_line_value_names_the_grammar_and_the_symbol_side_is_unmoved` |
+| F-5 | `pinned-by: orientation_active_task.rs::the_agent_text_names_the_task_and_routes_with_the_discard_consent` + `start_compose.rs::the_router_form_names_the_task_already_open` |
+| plant E's rename preserving status/date/slots (R3, B3) | `pinned-by: doc_rename_in_task.rs::a_rename_preserves_every_header_field_and_slot_body_of_the_staged_doc` — M50 Increment 13 / T1 |
 
-**Every row above carries a citation or a stated reason. The human's gate — no 1.0.0 call until
-the ledger is closed — is met by this file only if the M50 wave pins the UNPINNED rows as it
-fixes them.**
+**Plant E's row is the one nothing asserted, and it got a test rather than a reason.** The arm
+iterates `adr`'s **declared leaf surface read off the loaded schema** — every header field, every
+slot-bearing section — so the fixture is maximal by fence rather than by hand, authors all four
+header leaves and three of the four slots (`options` stays empty on purpose), and then asserts the
+claim at two altitudes: the pinned `jigc doc show <addr> --task <id> --format json` read is equal
+**modulo `slug`** before and after, and the staged bytes differ in **exactly one line**, which is
+the `# H1`. It was proven red by mutation, not by assertion: a one-line content-touching mutant in
+`run_doc_rename` **survived all 13 pre-existing arms of its own suite** and was killed only by the
+new one — which is what *"never the header fields' or slot bodies' survival"* meant, measured.
+
+**The closure check.** Every occurrence of the token that remains in this file is the convention's
+own placeholder, never a verdict:
+
+```
+$ awk '/UNPINNED/ && !/UNPINNED: <why>/ {print FNR": "$0; bad=1} END {exit bad+0}' \
+    completions/artifacts/RC-m50/findings-verification.md
+$ echo $?
+0
+```
+
+**The human's gate — no 1.0.0 call until the ledger is closed — is met.** Every row of this file
+carries a `pinned-by:` citation, verified by reading what the cited test asserts.

@@ -1543,3 +1543,248 @@ fn a_rename_onto_a_migrations_own_destination_is_not_a_collision() {
         "the staged doc moved to the in-place identity"
     );
 }
+
+// ───────── arm H — the rename moves the identity and nothing else ─────────
+
+/// **The conversion-ledger row plant E left open** (`RC-m50/findings-verification.md`
+/// → *The conversion ledger — closed*, the last row, which cites this arm as its
+/// `pinned-by:`; M50 Increment 13 / T1). Two blind
+/// workers (R3, B3) repaired plant E's contradicting title through `jigc doc rename`
+/// on a staged doc that already carried authored content — the header fields and the
+/// slot prose. Every arm above asserts what the rename **moves** (the file, the `# H1`,
+/// the bound role, the provenance manifest, a staged referrer's ref field) and what it
+/// **refuses**; none asserted what it must leave **untouched**, so a rename that
+/// re-stamped the `on-create` date, dropped an unset-then-set header field, or
+/// re-rendered a slot would have passed the whole suite.
+///
+/// The set iterated is **the doctype's own declared leaf surface, read off the loaded
+/// schema** — every header field id and every slot-bearing section id of `adr` — so
+/// the fixture is *maximal by fence*: a leaf added to the schema reddens the coverage
+/// assertion until the fixture authors it, rather than silently leaving a leaf
+/// unpinned. `options` is deliberately left empty: an optional slot that was empty
+/// must survive as empty, not vanish and not gain filler.
+///
+/// The claim is asserted twice, at two altitudes:
+///
+///   * through the **pinned read contract** — `jigc doc show <addr> --task <id>
+///     --format json` before and after are equal **modulo `slug`**, which is the
+///     whole claim stated as an equality rather than as a checklist of leaves;
+///   * on the **staged bytes** — the file before and after differ in **exactly one
+///     line**, and that line is the `# H1`. The JSON projection erases blank-line
+///     structure and trailing space; the byte fence does not.
+#[test]
+fn a_rename_preserves_every_header_field_and_slot_body_of_the_staged_doc() {
+    let corpus = TrialCorpus::build(State::Fresh);
+
+    // A committed `adr` for the `supersedes` ref to point at — the create-gate binds
+    // one `decision` role per task, so the ref target cannot be a second in-task doc.
+    let earlier = corpus.start_workflow("single-task", "pick the cache");
+    author_adr_at(&corpus, &earlier, "Adopt Redis", "adopt-redis");
+    corpus.finalize(&earlier, "cache", "pick the cache", false);
+
+    // A real symbol for the `code-anchor` field, so the fixture's fourth header leaf
+    // carries a value that resolves rather than a plausible-looking literal.
+    fs::create_dir_all(corpus.repo().join("src")).expect("create the src dir");
+    fs::write(
+        corpus.repo().join("src/pad.ts"),
+        "export function pad(n: number): string {\n  return String(n);\n}\n",
+    )
+    .expect("write the anchored source file");
+
+    let task = corpus.start_workflow("single-task", "reject the newest sample");
+    corpus.jigc_ok(&[
+        "doc",
+        "create",
+        "adr",
+        "--title",
+        "Reject The Newest Sample",
+        "--task",
+        &task,
+    ]);
+    let old_uri = "adr:reject-the-newest-sample";
+
+    // Every author-settable header leaf `adr` declares. `date` is `set: on-create`
+    // and is therefore *not* written here — it is the leaf a re-stamping rename
+    // would silently move, and the equality below is what catches that.
+    for (leaf, value) in [
+        ("status", "accepted"),
+        ("supersedes", "adr:adopt-redis"),
+        ("cites-code", "src/pad.ts#pad"),
+    ] {
+        corpus.jigc_ok(&[
+            "doc",
+            "set-field",
+            &format!("{old_uri}#status/{leaf}"),
+            "--value",
+            value,
+            "--task",
+            &task,
+        ]);
+    }
+    // Three of the four slots are authored; `options` stays empty on purpose.
+    let authored: BTreeMap<&str, &str> = BTreeMap::from([
+        ("context", "The newest sample is the noisiest."),
+        ("decision", "Prefer the oldest sample in the window."),
+        ("consequences", "The window has to be bounded."),
+    ]);
+    for (section, prose) in &authored {
+        corpus.jigc_stdin_ok(
+            &[
+                "doc",
+                "set-slot",
+                &format!("{old_uri}#{section}"),
+                "--from-file",
+                "-",
+                "--task",
+                &task,
+            ],
+            prose,
+        );
+    }
+
+    let show = |addr: &str| -> Value {
+        let (ok, stdout, stderr) = json(&corpus, &["doc", "show", addr, "--task", &task]);
+        assert!(
+            ok,
+            "`doc show {addr} --task` must serve the staged doc; stdout:\n{stdout}\nstderr:\n{stderr}"
+        );
+        serde_json::from_str(stdout.trim()).expect("the read contract emits one JSON doc")
+    };
+    let before = show(old_uri);
+
+    // ── the coverage fence: the fixture covers the doctype's whole declared surface ──
+    let (schema, _) = census().remove("adr").expect("`adr` is a loaded doctype");
+    let mut declared_fields = Vec::new();
+    let mut declared_slots = Vec::new();
+    for section in &schema.sections {
+        if let engine::schema::SectionBody::Simple { slot, fields } = &section.body {
+            if slot.is_some() {
+                declared_slots.push(section.id.clone());
+            }
+            declared_fields.extend(fields.iter().map(|f| f.id.clone()));
+        }
+    }
+    assert!(
+        !declared_fields.is_empty() && !declared_slots.is_empty(),
+        "`adr` must declare both header fields and slots — the fence has no subject otherwise"
+    );
+    for field in &declared_fields {
+        assert!(
+            before["fields"].get(field).is_some(),
+            "the fixture must carry a value for every declared header leaf; `{field}` is \
+             absent from the read-back, so the rename's effect on it would go unpinned:\n{before:#}"
+        );
+    }
+    for section in &declared_slots {
+        assert!(
+            before["sections"].get(section).is_some(),
+            "every declared slot must read back; `{section}` is absent:\n{before:#}"
+        );
+    }
+    // …and non-vacuously: the read-back carries what was authored, not empty strings.
+    assert_eq!(before["fields"]["status"], "accepted");
+    assert_eq!(before["fields"]["supersedes"], "adr:adopt-redis");
+    assert_eq!(before["fields"]["cites-code"], "src/pad.ts#pad");
+    assert!(
+        before["fields"]["date"]
+            .as_str()
+            .is_some_and(|d| !d.is_empty()),
+        "the `on-create` date is stamped — the leaf a re-stamping rename would move:\n{before:#}"
+    );
+    for (section, prose) in &authored {
+        assert_eq!(
+            before["sections"][section], *prose,
+            "the fixture's authored prose reads back before the rename:\n{before:#}"
+        );
+    }
+    assert_eq!(
+        before["sections"]["options"], "",
+        "the optional slot is empty going in — the case the rename must leave empty"
+    );
+
+    let task_dir = corpus.repo().join(".jigc/tasks").join(&task);
+    let staged_before = fs::read_to_string(task_dir.join(format!("docs/{old_uri}.md")))
+        .expect("read the staged doc");
+
+    let (ok, stdout, stderr) = json(
+        &corpus,
+        &[
+            "doc",
+            "rename",
+            old_uri,
+            "--to",
+            "Prefer The Oldest Sample",
+            "--task",
+            &task,
+        ],
+    );
+    assert!(
+        ok,
+        "the in-task rename must land; stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    let ack: Value = serde_json::from_str(stdout.trim()).expect("the rename ack is one JSON doc");
+    assert_eq!(ack["reslugged"], Value::Bool(true), "the identity moved");
+    let new_uri = "adr:prefer-the-oldest-sample";
+    assert_eq!(ack["target"]["slug"], "prefer-the-oldest-sample");
+
+    // ── the claim, through the pinned read contract ──
+    let after = show(new_uri);
+    let strip_identity = |mut doc: Value| -> Value {
+        doc.as_object_mut()
+            .expect("the read contract emits an object")
+            .remove("slug");
+        doc
+    };
+    assert_eq!(
+        strip_identity(before.clone()),
+        strip_identity(after.clone()),
+        "a rename changes the identity and nothing else: every header field and every \
+         slot body must read back byte-equal.\nbefore:\n{before:#}\nafter:\n{after:#}"
+    );
+    assert_ne!(
+        before["slug"], after["slug"],
+        "…and the identity really did move, or the equality above is trivially true"
+    );
+
+    // ── the claim, on the staged bytes ──
+    let staged_after = fs::read_to_string(task_dir.join(format!("docs/{new_uri}.md")))
+        .expect("read the renamed staged doc");
+    let before_lines: Vec<&str> = staged_before.lines().collect();
+    let after_lines: Vec<&str> = staged_after.lines().collect();
+    assert_eq!(
+        before_lines.len(),
+        after_lines.len(),
+        "the rename must not add or drop a line.\nbefore:\n{staged_before}\nafter:\n{staged_after}"
+    );
+    let differing: Vec<(usize, &str, &str)> = before_lines
+        .iter()
+        .zip(after_lines.iter())
+        .enumerate()
+        .filter(|(_, (b, a))| b != a)
+        .map(|(i, (b, a))| (i + 1, *b, *a))
+        .collect();
+    assert_eq!(
+        differing.len(),
+        1,
+        "exactly one line may differ across the rename; got {differing:?}\nbefore:\n\
+         {staged_before}\nafter:\n{staged_after}"
+    );
+    let (_, was, now) = differing[0];
+    assert_eq!(
+        was, "# Reject The Newest Sample",
+        "the one differing line is the `# H1`"
+    );
+    assert_eq!(
+        now, "# Prefer The Oldest Sample",
+        "…rewritten to the new title"
+    );
+
+    // The old address is gone from the task area, as every re-slug arm requires.
+    assert!(
+        !corpus
+            .jigc(&["doc", "show", old_uri, "--task", &task])
+            .status
+            .success(),
+        "the old address no longer resolves in the task area"
+    );
+}
