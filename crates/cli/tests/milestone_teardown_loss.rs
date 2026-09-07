@@ -34,8 +34,11 @@
 //!    build the landing manifest, so both must narrate.
 //!
 //! …across both output surfaces (`agent` text and the pinned `--format json` envelope),
-//! and on **both** channels the call names: the pre-removal warning on stderr and the
-//! landing manifest on stdout.
+//! and on **both** channels the call names: the loss warning on stderr and the landing
+//! manifest on stdout. (Since the M50 Increment 12 audit that warning is printed *after* the
+//! removal it describes and lists only what the removal took — `cli::milestone::PendingLoss`
+//! — so on this landed path, where every worktree is genuinely removed, its content is
+//! unchanged.)
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -264,15 +267,15 @@ fn setup_fanout(repo: &Path, home: &Path, squash: bool) {
     stage_wholly(repo, "area-zed", "src/zed.rs", "pub fn zed() {}\n");
 }
 
-/// The pre-removal warning block for one worktree — the stderr lines from the
+/// The loss-warning block for one worktree — the stderr lines from the
 /// `warning: removing the fan-out worktree …<sub>…` header through its indented body.
 fn warning_block(stderr: &str, sub: &str) -> String {
     let mut lines = stderr.lines().skip_while(|line| {
         !(line.starts_with("warning: removing the fan-out worktree") && line.contains(sub))
     });
-    let header = lines.next().unwrap_or_else(|| {
-        panic!("no pre-removal teardown warning for `{sub}`; stderr:\n{stderr}")
-    });
+    let header = lines
+        .next()
+        .unwrap_or_else(|| panic!("no teardown loss warning for `{sub}`; stderr:\n{stderr}"));
     let mut block = header.to_owned();
     for line in lines {
         if !line.starts_with(' ') {
@@ -352,7 +355,7 @@ fn a_landed_fan_out_finalize_names_the_work_its_teardown_discards() {
             "[{label}] only the STAGED half of the partly-staged path may land; got:\n{readme}",
         );
 
-        // (3) The pre-removal warning names the two discarded cells and NOT the wholly
+        // (3) The loss warning names the two discarded cells and NOT the wholly
         // staged one — the over-report the completion audit caught, fixed at birth.
         let warning = warning_block(&stderr, "area-low");
         assert!(

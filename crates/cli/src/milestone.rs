@@ -2204,12 +2204,15 @@ fn provision_worktrees(
         };
         if !reuse {
             if path.exists() {
-                // Name the loss BEFORE the removal ([`narrate_removal`], law 1). Phase 1
-                // refused on any content unless `force`, so reaching here over a non-empty
-                // path means the operator consented — and consent is a reason to proceed,
-                // never a reason to destroy in silence.
-                narrate_removal(repo_root, &path);
-                remove_leftover(&path)
+                // Read the loss BEFORE the removal, name what the removal actually TOOK
+                // after it ([`PendingLoss`], law 1). Phase 1 refused on any content unless
+                // `force`, so reaching here over a non-empty path means the operator
+                // consented — and consent is a reason to proceed, never a reason to destroy
+                // in silence, nor a licence to claim a destruction that then failed.
+                let pending = pending_loss(repo_root, &path);
+                let cleared = remove_leftover(&path);
+                pending.narrate_taken(repo_root);
+                cleared
                     .with_context(|| {
                         format!(
                             "could not clear the leftover at `{}`",
@@ -2385,7 +2388,8 @@ pub const LEFTOVER_VERDICTS: [LeftoverVerdict; 3] = [
 /// A **destroying door**: a verb that removes a worktree-shaped path under
 /// `.jigc/worktrees/` from disk.
 ///
-/// Every door **narrates** the bytes it is about to take ([`narrate_removal`]) — a door
+/// Every door **narrates** the bytes it took ([`PendingLoss`], read before the removal and
+/// printed after it, so neither half of the claim can be false) — a door
 /// that destroys what it never named is the law-1 half-truth (`design/surface-contract.md`).
 /// A door reached *before* those bytes could have landed anywhere also **refuses** first,
 /// and [`DestroyingDoor::code`] carries that refusal's identity; it is the axis's
@@ -3064,19 +3068,23 @@ fn run_discard(cwd: &Path, milestone_id: &str, force: bool) -> Result<(String, S
     // (5) Teardown — the workbench outlives nothing: the sub-task areas, the registered fan-out
     // worktrees, and the milestone area itself.
     //
-    // Name the authored prose FIRST. The sub-task areas hold `docs/*.md` that is in no object
-    // DB at all — on the abandon path nothing landed, so the workbench is their only copy —
-    // and this door took them at exit 0 in silence while `jigc uninstall` refused over
-    // byte-identical state (M46 Inc 2 validation; the law-1 half-truth this increment
-    // removes). Scoped to THIS milestone's sub-task ids, because that is exactly the set
-    // [`cleanup_subtask_areas`] removes: an unrelated open task's prose survives and must not
-    // be named. After the record commit, so a rejected commit narrates no loss it never took.
-    crate::setup::narrate_staged_prose(
+    // Read the authored prose FIRST and name it once the removal has actually taken it. The
+    // sub-task areas hold `docs/*.md` that is in no object DB at all — on the abandon path
+    // nothing landed, so the workbench is their only copy — and this door took them at exit 0
+    // in silence while `jigc uninstall` refused over byte-identical state (M46 Inc 2
+    // validation; the law-1 half-truth that increment removed). Scoped to THIS milestone's
+    // sub-task ids, because that is exactly the set [`cleanup_subtask_areas`] removes: an
+    // unrelated open task's prose survives and must not be named. Captured after the record
+    // commit, so a rejected commit narrates no loss it never took — and narrated after the
+    // removal, so an area the removal could not clear is not narrated as gone either
+    // ([`PendingLoss`]; `cleanup_subtask_areas` is best-effort and logs its failures).
+    let prose = crate::setup::pending_staged_prose(
         &jigc_home,
         &format!("discarding milestone:{milestone_id}"),
         Some(&list.enumerate()),
     );
     cleanup_subtask_areas(&jigc_root, &list);
+    prose.narrate_taken(&jigc_home);
     remove_worktrees(&repo_root, &jigc_home, &list);
     remove_milestone_area(&repo_root, &dir);
 
@@ -4124,7 +4132,7 @@ fn flip_record_for_finalize(
 /// retry (respecting the F1 rollback path). [`run_discard`] runs it on the **abandon** path,
 /// where nothing landed and the area is the only copy of the sub-agent's authored prose — so
 /// that caller, and only that caller, names those bytes first
-/// ([`crate::setup::narrate_staged_prose`]).
+/// ([`crate::setup::pending_staged_prose`]).
 fn cleanup_subtask_areas(jigc_root: &Path, list: &engine::milestone::TaskList) {
     let tasks_root = jigc_root.join("tasks");
     for sub_id in list.enumerate() {
@@ -4191,11 +4199,14 @@ fn remove_worktrees(repo_root: &Path, jigc_home: &Path, list: &engine::milestone
             eprintln!("warning: fan-out worktree path {path:?} is not valid UTF-8 (left in place)");
             continue;
         };
-        // Name the loss BEFORE the removal (law 1 — nothing lies: a boundary that exits 0
-        // must not also have silently destroyed work), through the emitter every destroying
-        // door shares.
-        narrate_removal(repo_root, &path);
-        if let Err(err) = git_worktree(repo_root, &["worktree", "remove", "--force", path_str]) {
+        // Read the loss BEFORE the removal and name what it actually TOOK after it (law 1
+        // — nothing lies: a boundary that exits 0 must not have silently destroyed work,
+        // and must not claim a destruction that did not happen either), through the
+        // emitter every destroying door shares.
+        let pending = pending_loss(repo_root, &path);
+        let removed = git_worktree(repo_root, &["worktree", "remove", "--force", path_str]);
+        pending.narrate_taken(repo_root);
+        if let Err(err) = removed {
             // A2 — pinned non-blocking warning, naming the leaked path + the prune remedy.
             eprintln!(
                 "warning: could not remove the fan-out worktree {path_str}: {err:#}\n  \
@@ -4894,7 +4905,23 @@ struct Doomed {
     /// One line per doomed item — the `git status` path plus its [`render::DiscardState`]
     /// label where git can read the worktree, the directory's sorted child names where it
     /// cannot.
-    lines: Vec<String>,
+    lines: Vec<DoomedLine>,
+}
+
+/// One doomed item: the line the narration prints, and the path on disk it stands for.
+///
+/// **The path is what makes the narration outcome-keyed** ([`PendingLoss::narrate_taken`]).
+/// The line's *text* cannot be compared before and after a removal: a failed
+/// `git worktree remove` drops the worktree's own linkage, so the identical byte comes back
+/// through the other [`LeftoverVerdict`] arm rendered as a bare child name instead of
+/// `path (never staged)`, and a text comparison reads that re-spelling as a destruction.
+/// Whether the bytes are still there is a question about the filesystem, and it is asked of
+/// the filesystem.
+struct DoomedLine {
+    /// What the narration prints for this item.
+    text: String,
+    /// Where those bytes are — gone afterwards iff the removal took them.
+    at: PathBuf,
 }
 
 /// Probe what a removal at `path` would take. An empty `lines` means the removal destroys
@@ -4917,12 +4944,15 @@ fn doomed_at(repo_root: &Path, path: &Path) -> Result<Doomed> {
             subject: "leftover file",
             // The bare file name, and — for the pathological path with none (a trailing
             // `..`) — the repo-relative spelling rather than `as_os_str()`'s host path,
-            // which is the same law-1 leak one fallback deeper.
-            lines: vec![
-                path.file_name()
+            // which is the same law-1 leak one fallback deeper. The path it stands for is
+            // the leftover itself: a non-directory leftover *is* the bytes.
+            lines: vec![DoomedLine {
+                text: path
+                    .file_name()
                     .map(|name| name.to_string_lossy().into_owned())
                     .unwrap_or_else(|| render::repo_relative(repo_root, path)),
-            ],
+                at: path.to_path_buf(),
+            }],
         });
     }
     match classify_leftover(path) {
@@ -4930,54 +4960,112 @@ fn doomed_at(repo_root: &Path, path: &Path) -> Result<Doomed> {
             subject: WORKTREE,
             lines: discarded_work(path)?
                 .into_iter()
-                .map(|work| format!("{} ({})", work.path, work.state.label()))
+                .map(|work| DoomedLine {
+                    text: format!("{} ({})", work.path, work.state.label()),
+                    at: path.join(&work.path),
+                })
                 .collect(),
         }),
         // Nothing vouches for these bytes, so nothing may be claimed about them beyond their
         // names — the [`child_names`] listing the two fail-closed refusals already print.
         LeftoverVerdict::Unverifiable | LeftoverVerdict::NoOwnLinkage => Ok(Doomed {
             subject: "leftover directory",
-            lines: child_names(repo_root, path)?,
+            lines: child_names(repo_root, path)?
+                .into_iter()
+                .map(|name| DoomedLine {
+                    at: path.join(&name),
+                    text: name,
+                })
+                .collect(),
         }),
     }
 }
 
-/// Name the bytes a destroying door is about to remove, on stderr, **before** it removes
-/// them — the law-1 minimum every member of [`DESTROYING_DOORS`] owes
-/// (`design/surface-contract.md`: a door that exits 0 must not also have silently destroyed
-/// work).
+/// What a removal at `path` would take, read **before** the removal runs so the narration
+/// afterwards can name what it actually took — the capture half of the pair whose other half
+/// is [`PendingLoss::narrate_taken`].
+///
+/// **The narration is keyed on the outcome, not on the intent** (M50 Increment 12 audit).
+/// Until this pair existed, [`narrate_removal`] printed *"they are not recoverable"*
+/// immediately **before** the removal, so a removal that then failed left the door claiming a
+/// destruction it had not performed. T2 closed that for one *shape* — `remove_dir_all` aimed
+/// at a plain file — and the class is not a shape, it is *any* cause a removal can fail for: a
+/// read-only parent directory, a lock, a busy path. Driven at `ee8c3e2` it was live at three
+/// of this pair's call sites at once, on one `chmod 555` state: `jigc milestone provision
+/// --force` (exit 1), `jigc uninstall --force` (exit 1) and `jigc milestone discard --force`
+/// (**exit 0**) each printed `not recoverable` over bytes still on disk afterwards. Keying the
+/// narration on what the removal *did* is complete over every cause by construction, and it is
+/// the rule [`remove_leftover`] already states: *a door either performs the removal it
+/// narrated or refuses before narrating it; there is no third honest outcome.*
+///
+/// **Best-effort**, like the emitter: a path this cannot read yields no warning rather than
+/// failing the door.
+///
+/// `pub(crate)` for `crate::setup::uninstall`, whose `remove_dir_all(<repo>/.jigc)` takes
+/// exactly these paths with it.
+pub(crate) struct PendingLoss {
+    /// The path the removal is aimed at — re-read afterwards to tell taken from survived.
+    path: PathBuf,
+    /// What was there before it ran. `None` when the probe could not read the path at all.
+    doomed: Option<Doomed>,
+}
+
+/// Read [`PendingLoss`] at `path`. Call it immediately before the removal.
+pub(crate) fn pending_loss(repo_root: &Path, path: &Path) -> PendingLoss {
+    PendingLoss {
+        path: path.to_path_buf(),
+        doomed: doomed_at(repo_root, path).ok(),
+    }
+}
+
+impl PendingLoss {
+    /// Name what the removal actually took, and nothing it did not. Call it immediately
+    /// after the removal, on **both** its outcomes — the failure path is the whole point.
+    ///
+    /// The taken set is **per item**: a line is printed iff the bytes it stands for
+    /// ([`DoomedLine::at`]) are no longer on disk. So a **partial** removal — the case that
+    /// would make a plain narrate-on-success silent about a real loss — still names every
+    /// line it took, and a removal that failed outright prints nothing at all.
+    pub(crate) fn narrate_taken(&self, repo_root: &Path) {
+        let Some(before) = &self.doomed else {
+            return;
+        };
+        let taken: Vec<String> = before
+            .lines
+            .iter()
+            // `symlink_metadata`, not `exists()`: a dangling symlink the removal left behind
+            // reads as absent through `exists()`, and the door would report bytes it still
+            // has in the way.
+            .filter(|line| std::fs::symlink_metadata(&line.at).is_err())
+            .map(|line| line.text.clone())
+            .collect();
+        narrate_removal(repo_root, &self.path, before.subject, &taken);
+    }
+}
+
+/// Print the bytes a destroying door **took** at `path`, on stderr — the law-1 minimum every
+/// member of [`DESTROYING_DOORS`] owes (`design/surface-contract.md`: a door that exits 0 must
+/// not also have silently destroyed work, and none of them may claim a destruction that did
+/// not happen).
 ///
 /// **One emitter for all four doors**, not one per door. `finalize` and `discard` narrated
 /// from M47 Inc 3 while `jigc milestone provision --force` cleared a leftover in silence and
 /// `jigc uninstall --force` removed `.jigc/` reporting only `- removed .jigc/` — and three
 /// call sites of one rule drift, so a fourth door would have arrived with a fourth phrasing.
+/// Its callers reach it through [`PendingLoss::narrate_taken`], never directly, because
+/// *which* lines a door may print is the outcome question that pair answers.
 ///
-/// **Best-effort**: an unreadable path yields no warning rather than failing the door. The
-/// narration is surface *over* removals the refusals already cleared or the operator already
-/// consented to, never itself a gate — which is the declared bound stated plainly: at these
-/// doors the loss is made **visible, not prevented**.
-///
-/// `pub(crate)` for `crate::setup::uninstall`, whose `remove_dir_all(<repo>/.jigc)` takes
-/// exactly these paths with it.
-pub(crate) fn narrate_removal(repo_root: &Path, path: &Path) {
-    let Ok(doomed) = doomed_at(repo_root, path) else {
-        return;
-    };
-    if doomed.lines.is_empty() {
+/// An empty `taken` prints nothing: the removal took none of what it was aimed at.
+fn narrate_removal(repo_root: &Path, path: &Path, subject: &str, taken: &[String]) {
+    if taken.is_empty() {
         return;
     }
-    let listing: Vec<String> = doomed
-        .lines
-        .iter()
-        .map(|line| format!("    {line}"))
-        .collect();
+    let listing: Vec<String> = taken.iter().map(|line| format!("    {line}")).collect();
     eprintln!(
-        "warning: removing the {} {} discards work that is not in git:\n{}\n  note: the {} is \
-         the only copy of these bytes — they are not recoverable.",
-        doomed.subject,
+        "warning: removing the {subject} {} discards work that is not in git:\n{}\n  note: the \
+         {subject} is the only copy of these bytes — they are not recoverable.",
         render::repo_relative(repo_root, path),
         listing.join("\n"),
-        doomed.subject,
     );
 }
 

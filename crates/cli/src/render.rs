@@ -3955,7 +3955,7 @@ pub struct SubTaskContribution {
 }
 
 /// One path a landed fan-out teardown destroys, with the reason it was not committed —
-/// the unit of the law-1 loss narration on both channels (the pre-removal stderr warning
+/// the unit of the law-1 loss narration on both channels (the stderr loss warning
 /// and the landing manifest).
 #[derive(Serialize)]
 pub struct DiscardedWork {

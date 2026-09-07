@@ -2016,11 +2016,15 @@ fn uninstall(
 
     let jigc_dir = repo_root.join(".jigc");
     if jigc_dir.exists() {
-        // Name the loss BEFORE the removal ([`narrate_teardown`], law 1) — the guards above
-        // either cleared this tree or `force` consented past them, and neither is a reason to
-        // destroy bytes in silence.
-        narrate_teardown(repo_root);
-        std::fs::remove_dir_all(&jigc_dir).map_err(|err| {
+        // Read the loss BEFORE the removal and name what it actually TOOK after it
+        // ([`pending_teardown`], law 1) — the guards above either cleared this tree or
+        // `force` consented past them, and neither is a reason to destroy bytes in silence;
+        // nor is either a reason to report bytes as gone that a failed `remove_dir_all` left
+        // exactly where they were (`crate::milestone::PendingLoss`).
+        let pending = pending_teardown(repo_root);
+        let outcome = std::fs::remove_dir_all(&jigc_dir);
+        pending.narrate_taken(repo_root);
+        outcome.map_err(|err| {
             Finding::block(
                 "uninstall.remove-jigc",
                 format!("cannot remove the repo-local `.jigc/` tree: {err}"),
@@ -2262,7 +2266,7 @@ fn dirty_fanout_worktrees(repo_root: &Path) -> Result<Vec<HeldWorktreePath>, Fin
 }
 
 /// Every worktree-shaped path under `<repo>/.jigc/worktrees/` — the subject both this
-/// door's refusal ([`dirty_fanout_worktrees`]) and its loss narration ([`narrate_teardown`])
+/// door's refusal ([`dirty_fanout_worktrees`]) and its loss narration ([`pending_teardown`])
 /// work over, enumerated once so the two cannot drift into disagreeing about which paths the
 /// teardown takes.
 ///
@@ -2514,52 +2518,92 @@ fn unverified_workbench_finding(err: anyhow::Error) -> Finding {
     )
 }
 
-/// Name what `remove_dir_all(<repo>/.jigc)` is about to destroy, on stderr, **before** it
-/// runs — [`crate::milestone::DESTROYING_DOORS`]' narration law at this door
+/// Read what `remove_dir_all(<repo>/.jigc)` would destroy, **before** it runs, so
+/// [`PendingTeardown::narrate_taken`] can name what it actually took afterwards —
+/// [`crate::milestone::DESTROYING_DOORS`]' narration law at this door
 /// (`design/surface-contract.md` → law 1: a door that exits 0 must not also have silently
 /// destroyed work). Until M46 Inc 2 this teardown reported only `- removed .jigc/`.
 ///
-/// Its two subjects are exactly the two the guards in [`uninstall`] refuse on, and for the
-/// same reason: the tree holds the sole copy of both. So the narration is **not** conditional
+/// Its three subjects are exactly the ones the guards in [`uninstall`] refuse on, and for the
+/// same reason: the tree holds the sole copy of them. So the narration is **not** conditional
 /// on `force` — `force` is what skips the *guards* — and a teardown those guards cleared
 /// still takes any gitignored byte their probe deliberately does not look at (the *visible,
 /// not prevented* bound: `crate::milestone::narrate_removal`).
 ///
+/// **It is conditional on the removal having happened**, which is the other half of the same
+/// law: driven, `jigc uninstall --force` over a read-only `.jigc/worktrees/<id>/` printed
+/// *"they are not recoverable"* and then exited 1 with every byte still on disk
+/// (`crate::milestone::PendingLoss`, the outcome-keyed pair this returns into).
+///
 /// Best-effort throughout: an unreadable workbench yields no warning rather than failing a
 /// teardown that has already been cleared to run.
-fn narrate_teardown(repo_root: &Path) {
-    for path in fanout_worktree_paths(repo_root).unwrap_or_default() {
-        crate::milestone::narrate_removal(repo_root, &path);
+fn pending_teardown(repo_root: &Path) -> PendingTeardown {
+    PendingTeardown {
+        worktrees: fanout_worktree_paths(repo_root)
+            .unwrap_or_default()
+            .iter()
+            .map(|path| crate::milestone::pending_loss(repo_root, path))
+            .collect(),
+        // The second subject, which no worktree probe can see: `.jigc/tasks/<id>/docs/*.md` is
+        // in no object DB at all. A door that names only half of what it takes is a law-1
+        // half-truth, so the set [`crate::task::staged_task_prose`] refuses on is the set
+        // named here.
+        prose: pending_staged_prose(repo_root, "removing `.jigc/`", None),
+        // The third subject ([`workbench_paths`]), in both of its halves — because both are
+        // removed. The untracked half reaches here only under `--force` (the guard refuses on
+        // it otherwise), and is the half that is gone for good; the tracked half is what the
+        // guard deliberately lets through, and law 1 owes it a name too — a teardown that took
+        // a file in silence is a half-truth whether or not the file is recoverable. Each line
+        // says which of the two it is, so the reader is not left to guess.
+        workbench: classify_workbench_paths(repo_root).unwrap_or_default(),
     }
-    // The second subject, which no worktree probe can see: `.jigc/tasks/<id>/docs/*.md` is in
-    // no object DB at all. A door that names only half of what it takes is a law-1
-    // half-truth, so the set [`crate::task::staged_task_prose`] refuses on is the set named
-    // here.
-    narrate_staged_prose(repo_root, "removing `.jigc/`", None);
-    // The third subject ([`workbench_paths`]), in both of its halves — because both are
-    // removed. The untracked half reaches here only under `--force` (the guard refuses on
-    // it otherwise), and is the half that is gone for good; the tracked half is what the
-    // guard deliberately lets through, and law 1 owes it a name too — a teardown that took
-    // a file in silence is a half-truth whether or not the file is recoverable. Each line
-    // says which of the two it is, so the reader is not left to guess.
-    narrate_workbench_files(repo_root);
 }
 
-/// Name the workbench files `remove_dir_all(<repo>/.jigc)` is about to take that are
-/// neither a fan-out worktree nor an open task's staged prose — [`workbench_paths`]'
-/// subject, split on recoverability by [`classify_workbench_paths`].
+/// Everything `jigc uninstall`'s `remove_dir_all(<repo>/.jigc)` was aimed at, read before it
+/// ran — [`pending_teardown`]'s capture, narrated by [`PendingTeardown::narrate_taken`] once
+/// the removal's outcome is known.
+struct PendingTeardown {
+    /// The fan-out worktree paths, each carrying its own pre-read listing.
+    worktrees: Vec<crate::milestone::PendingLoss>,
+    /// The open tasks' staged docs.
+    prose: PendingProse,
+    /// The rest of the workbench, split `(untracked, tracked)` by
+    /// [`classify_workbench_paths`] — two claims, so two lines.
+    workbench: (Vec<String>, Vec<String>),
+}
+
+impl PendingTeardown {
+    /// Name what the teardown actually took, in the order the three subjects were read.
+    fn narrate_taken(&self, repo_root: &Path) {
+        for worktree in &self.worktrees {
+            worktree.narrate_taken(repo_root);
+        }
+        self.prose.narrate_taken(repo_root);
+        narrate_workbench_files(repo_root, &self.workbench);
+    }
+}
+
+/// Name the workbench files `remove_dir_all(<repo>/.jigc)` **took** that are neither a
+/// fan-out worktree nor an open task's staged prose — [`workbench_paths`]' subject, split on
+/// recoverability by [`classify_workbench_paths`] and read before the removal ran.
 ///
 /// Two lines because they are two claims: bytes no index has a copy of are **not
 /// recoverable**, and bytes the index carries are restored by `git checkout` after the
 /// teardown. Collapsing them into one warning would overclaim on the tracked half and
 /// underclaim on the untracked half, which is the same law-1 lie in both directions.
 ///
+/// **Each path is filtered on its own survival**, so a `remove_dir_all` that failed — wholly
+/// or part way — names what is gone and stays silent about what is still there
+/// (`crate::milestone::PendingLoss`, the same rule at the worktree-shaped subject).
+///
 /// Best-effort, like every narration: an unreadable workbench or an unrunnable `git`
 /// yields no warning rather than failing a teardown the guards already cleared.
-fn narrate_workbench_files(repo_root: &Path) {
-    let Ok((untracked, tracked)) = classify_workbench_paths(repo_root) else {
-        return;
-    };
+fn narrate_workbench_files(repo_root: &Path, workbench: &(Vec<String>, Vec<String>)) {
+    // `symlink_metadata`, not `exists()`: a dangling symlink the teardown left behind reads
+    // as absent through `exists()`, and the door would report bytes it did not take.
+    let gone = |path: &&String| std::fs::symlink_metadata(repo_root.join(path.as_str())).is_err();
+    let untracked: Vec<String> = workbench.0.iter().filter(gone).cloned().collect();
+    let tracked: Vec<String> = workbench.1.iter().filter(gone).cloned().collect();
     if !untracked.is_empty() {
         eprintln!(
             "warning: removing `.jigc/` destroys {} file(s) under it that no index has a copy \
@@ -2594,7 +2638,7 @@ fn narrate_workbench_files(repo_root: &Path) {
 /// [`crate::milestone::narrate_removal`]'s worktree-shaped subject and for the same reason:
 /// two call sites of one rule drift. Its callers are the two doors that take those bytes
 /// without a commit having carried them — `jigc uninstall`
-/// ([`narrate_teardown`], whose `remove_dir_all(<repo>/.jigc)` takes the whole workbench)
+/// ([`pending_teardown`], whose `remove_dir_all(<repo>/.jigc)` takes the whole workbench)
 /// and `jigc milestone discard` ([`crate::milestone::run_discard`], whose teardown
 /// `remove_dir_all`s each sub-task area). The abandon door destroyed them **silently at
 /// exit 0** until M46 Inc 2's validation, while `uninstall` refused over byte-identical
@@ -2613,26 +2657,81 @@ fn narrate_workbench_files(repo_root: &Path) {
 /// Best-effort, like every narration: an in-scope area it cannot read yields no warning
 /// rather than failing a teardown the guards already cleared. It is surface over a removal,
 /// never itself a gate — the declared bound stays *visible, not prevented*.
-pub(crate) fn narrate_staged_prose(repo_root: &Path, action: &str, only: Option<&[String]>) {
-    let Ok(staged) =
-        crate::task::staged_task_prose(repo_root, only, &crate::task::unverified_prose_finding)
-    else {
-        return;
-    };
-    if staged.is_empty() {
-        return;
+pub(crate) fn pending_staged_prose(
+    repo_root: &Path,
+    action: &str,
+    only: Option<&[String]>,
+) -> PendingProse {
+    PendingProse {
+        action: action.to_owned(),
+        staged: crate::task::staged_task_prose(
+            repo_root,
+            only,
+            &crate::task::unverified_prose_finding,
+        )
+        .unwrap_or_default(),
     }
-    let listing: Vec<String> = staged
-        .iter()
-        .map(|(task, docs)| format!("    {task}: {}", docs.join(", ")))
-        .collect();
-    eprintln!(
-        "warning: {action} discards the staged docs of {} open task(s), which no commit \
-         has a copy of:\n{}\n  note: the workbench is the only copy of those bytes — they are \
-         not recoverable.",
-        staged.len(),
-        listing.join("\n"),
-    );
+}
+
+/// The staged prose a door was about to destroy, read before its removal ran —
+/// [`pending_staged_prose`]'s capture.
+pub(crate) struct PendingProse {
+    /// What the door is doing, in the door's own words.
+    action: String,
+    /// The task ids and their staged doc identities, as the probe read them.
+    staged: Vec<(String, Vec<String>)>,
+}
+
+impl PendingProse {
+    /// Name the staged docs the removal actually **took** — each identity filtered on
+    /// whether its `.jigc/tasks/<id>/docs/<identity>.md` is still there, so a removal that
+    /// failed (`cleanup_subtask_areas` is best-effort; `remove_dir_all(.jigc)` can hit a
+    /// read-only path) narrates no loss it did not cause. The outcome-keyed rule
+    /// `crate::milestone::PendingLoss` states, at the prose-shaped subject.
+    pub(crate) fn narrate_taken(&self, repo_root: &Path) {
+        let tasks_root = repo_root.join(".jigc").join("tasks");
+        let taken: Vec<(&String, Vec<&String>)> = self
+            .staged
+            .iter()
+            .filter_map(|(task, docs)| {
+                let gone: Vec<&String> = docs
+                    .iter()
+                    .filter(|doc| {
+                        // `symlink_metadata`, like every sibling filter: a dangling symlink
+                        // is a byte still in the way, not a byte the removal took.
+                        std::fs::symlink_metadata(
+                            tasks_root.join(task).join("docs").join(format!("{doc}.md")),
+                        )
+                        .is_err()
+                    })
+                    .collect();
+                (!gone.is_empty()).then_some((task, gone))
+            })
+            .collect();
+        if taken.is_empty() {
+            return;
+        }
+        let listing: Vec<String> = taken
+            .iter()
+            .map(|(task, docs)| {
+                format!(
+                    "    {task}: {}",
+                    docs.iter()
+                        .map(|doc| doc.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                )
+            })
+            .collect();
+        eprintln!(
+            "warning: {} discards the staged docs of {} open task(s), which no commit \
+             has a copy of:\n{}\n  note: the workbench is the only copy of those bytes — they \
+             are not recoverable.",
+            self.action,
+            taken.len(),
+            listing.join("\n"),
+        );
+    }
 }
 
 /// One worktree-shaped path [`uninstall`] would destroy, and what git can say about it —
