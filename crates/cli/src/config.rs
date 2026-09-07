@@ -236,9 +236,7 @@ impl ConfigCommand {
 fn read_knobs(cwd: &Path) -> Result<Vec<KnobReading>> {
     let project_config = require_project_layer(cwd)?;
     let pack = make_pack()?;
-    let knobs_bytes = pack
-        .read(PackResourceKind::Config, &ResourceId::from("knobs"))
-        .context("the embedded pack is missing `config/knobs`")?;
+    let knobs_bytes = crate::start::read_pack(pack.as_ref(), PackResourceKind::Config, "knobs")?;
     let knobs = engine::knobs::load_knobs(&knobs_bytes).context("`config/knobs` is malformed")?;
     let declared: Vec<String> = knobs.keys().map(str::to_owned).collect();
 
@@ -358,9 +356,7 @@ fn run_set(cwd: &Path, key: &str, value: &str) -> Result<ConfigAck> {
 
     // Step 1 — the key must be a declared knob (the closed surface).
     let pack = make_pack()?;
-    let knobs_bytes = pack
-        .read(PackResourceKind::Config, &ResourceId::from("knobs"))
-        .context("the embedded pack is missing `config/knobs`")?;
+    let knobs_bytes = crate::start::read_pack(pack.as_ref(), PackResourceKind::Config, "knobs")?;
     let knobs = engine::knobs::load_knobs(&knobs_bytes).context("`config/knobs` is malformed")?;
     let Some(field) = knobs.field(key) else {
         // The closed surface now has a verb of its own to name (M48 Inc 6): `jigc config

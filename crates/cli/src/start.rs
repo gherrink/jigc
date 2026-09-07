@@ -3675,10 +3675,67 @@ pub(crate) fn enumerate_store_workflows(
     Ok(out)
 }
 
-/// Read a pack resource by kind + id, mapping a missing resource to an error.
-fn read_pack(pack: &dyn PackSource, kind: PackResourceKind, id: &str) -> Result<Vec<u8>> {
+/// Read a pack resource by kind + id, mapping a missing resource to the **one** routed
+/// refusal the composed pack-set can honestly give ([`pack_resource_missing`]).
+///
+/// **The single producer for the whole family** (M50 Increment 10 / T3): `config.rs`'s two
+/// knob reads and `doc.rs`'s task-bound workflow read hand-copied this read and its message,
+/// so one literal answered at four sites and every one of them blamed *"the embedded pack"*
+/// — a pack that need not be in the composition at all. They call this now.
+pub(crate) fn read_pack(
+    pack: &dyn PackSource,
+    kind: PackResourceKind,
+    id: &str,
+) -> Result<Vec<u8>> {
     pack.read(kind, &ResourceId::from(id))
-        .with_context(|| format!("the embedded pack is missing `{id}`"))
+        .map_err(|_| pack_resource_missing(pack, kind, id))
+}
+
+/// The refusal for a resource **no composed pack ships** — the code, the searched pack-set,
+/// and the route the four `read_pack` doors had none of until M50 Increment 10 / T3.
+///
+/// **It names what was searched, never the precedence winner.** The decomposition proposed
+/// splitting the sites — the *origin pack* here, the pack *set* elsewhere — on
+/// [`PackSource::origin_pack`]. Driven, that split does not hold: `origin_pack` falls back to
+/// `self` when no constituent owns the id, so at a **miss** — the only state this finding
+/// exists for — it names the winner rather than what was searched, which is the same lie one
+/// word over. So this names **its receiver's own** provenance instead
+/// ([`PackSource::provenance_segments`] zipped with [`PackSource::provenance_entries`] — the
+/// ids/versions the `Pack:` header renders, each with its resolving path, highest-precedence
+/// first), and no site is special-cased. That is honest *per door* rather than uniformly
+/// composite, which is the sharper form of the split: [`load_catalog`] is handed a workflow's
+/// **origin pack** by the pack-local body-reference rule, so a `config/commands` miss there
+/// genuinely searched one pack and says so, while the two `config` doors and `doc`'s
+/// create-gate hold the composite and name both (`DECISIONS.md` → 2026-09-07).
+///
+/// **The route is `Human` by adjudication, not by omission.** No jigc verb restores a pack
+/// resource, and under a `config/knobs` miss `jigc start`, `describe`, `validate`, `upgrade`,
+/// `ingest` and `doc list` all block on this very finding — so a mechanical route would
+/// either repair nothing or hard-reject, which `design/surface-contract.md` names as law 2
+/// failing one level down (and which M46's PT-1 caught once already). The printed pack roots
+/// are what make it followable: they say where to put the file back.
+///
+/// The family flattens through [`finding_to_err`] at every site, so it projects no envelope
+/// key and is declared **outside the envelope**
+/// (`design/command-output-contract.md` → The membership test).
+fn pack_resource_missing(pack: &dyn PackSource, kind: PackResourceKind, id: &str) -> anyhow::Error {
+    let searched = pack
+        .provenance_segments()
+        .into_iter()
+        .zip(pack.provenance_entries())
+        .map(|((pack_id, version), entry)| format!("{pack_id}/{version} ({})", entry.path))
+        .collect::<Vec<_>>()
+        .join(", ");
+    finding_to_err(Finding::block(
+        "pack.resource-missing",
+        format!(
+            "no composed pack ships `{kind}/{id}` — searched, highest-precedence first: {searched}"
+        ),
+        engine::finding::Route::human(format!(
+            "restore `{kind}/{id}.yaml` in a pack the composition already searches, or add the \
+             pack that ships it to `.jigc/config/packs.yaml`"
+        )),
+    ))
 }
 
 /// Map an engine [`Finding`] to an `anyhow` error carrying its **key** + message +

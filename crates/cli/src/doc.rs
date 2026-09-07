@@ -22,7 +22,7 @@ use engine::address::{Address, Fragment};
 use engine::compose::{WorkflowDef, load_workflow_def};
 use engine::field_block::Value;
 use engine::finding::{Finding, Findings, Location, Severity};
-use engine::packsource::{PackResourceKind, PackSource, ResourceId};
+use engine::packsource::{PackResourceKind, PackSource};
 use engine::schema::{FieldType, Leaf, Repeatable, Schema, SectionBody};
 use engine::state;
 use engine::write::{
@@ -5798,13 +5798,11 @@ impl ActiveTask {
                     engine::finding::Route::mechanical(["jigc", "start"], ""),
                 )
             })?;
-        let bytes = self
-            .pack
-            .read(
-                PackResourceKind::Workflows,
-                &ResourceId::from(workflow_id.as_str()),
-            )
-            .with_context(|| format!("the embedded pack is missing `{workflow_id}`"))?;
+        let bytes = crate::start::read_pack(
+            self.pack.as_ref(),
+            PackResourceKind::Workflows,
+            workflow_id.as_str(),
+        )?;
         load_workflow_def(&bytes).map_err(finding_to_err)
     }
 }
@@ -6592,6 +6590,9 @@ fn finding_to_err(finding: Finding) -> anyhow::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // Only this module reads pack resources by id now: the production read is the shared
+    // `start::read_pack` (M50 Increment 10 / T3), so the import is test-scoped.
+    use engine::packsource::ResourceId;
     use engine::schema::load_schema;
 
     /// The shipped `commit` schema, loaded from the embedded pack source tree.
