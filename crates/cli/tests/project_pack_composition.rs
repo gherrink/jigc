@@ -305,7 +305,7 @@ fn explain_names_the_pack_that_actually_provided_each_resolved_id() {
     // workflow, every pack attribution `--explain` prints must name a pack BELOW the
     // top of the precedence order. Verified live at HEAD, which printed all three
     // attributions as `house`:
-    //   workflow:single-task    (pack-default · house/v0.0.1)
+    //   workflow:single-task    (pack-default · house/v0.0.1)   [the pre-M50 label]
     //   collision: default-workflow → won by house/0.0.1
     //   collision: doctype:commit → won by house/0.0.1
     // `design/overrides.md` makes cascade provenance a hard determinism contract; a
@@ -348,7 +348,7 @@ fn explain_names_the_pack_that_actually_provided_each_resolved_id() {
     assert_eq!(
         attribution_lines(&text),
         vec![
-            format!("workflow:single-task    (pack-default · dev/v{BINARY_VERSION})"),
+            format!("workflow:single-task    (pack-default · dev/{BINARY_VERSION})"),
             format!("collision: doctype:commit → won by dev/{BINARY_VERSION}"),
             format!("collision: config:knobs → won by dev/{BINARY_VERSION}"),
         ],
@@ -422,6 +422,228 @@ fn explain_names_the_demoted_project_doctype_as_the_loss_it_is() {
         "`doc schema commit` must render DEV's frozen shape, matching the named \
          winner; got {:?}\n{rendered}",
         schema.status,
+    );
+}
+
+// ---------------------------------------------------------------------------
+// M50 Increment 12 / T6 (W-6) — **one pack is named one way on every surface that
+// names one.** Four surfaces render a `(pack-id, version)` pair: the orientation
+// `Pack:` header, the `--explain` workflow label, its `collision:` lines and its
+// `Pack input:` lines. Driven at the increment base, one `--explain` screen named the
+// SAME pack twice, two ways:
+//
+//     workflow:single-task    (pack-default · dev/vfs-local)
+//       Pack input: dev/fs-local = <…>/crates/cli/pack  (blake3 …)
+//
+// The label glued a literal `v` onto whatever the pack reported as its version
+// (`start.rs`'s `format!("{pack_id}/v{version}")`), so a reader is asked to believe
+// one pack ships two versions. `design/multi-pack.md` → Provenance states the segment
+// as `Pack: <id>/<version>`, and `design/surface-contract.md` law 1 forbids a surface
+// that says something untrue — a pack named two ways on one screen is exactly that.
+// ---------------------------------------------------------------------------
+
+/// The four `--explain` / orientation line kinds that name a pack. Matched on the
+/// **trimmed** line so the two-space-indented `--explain` body lines are reached.
+const PACK_NAMING_PREFIXES: [&str; 4] = ["Pack: ", "workflow:", "collision:", "Pack input:"];
+
+/// Every `(surface, spelling)` pair in `out` that names `pack_id` — scanned off the
+/// **emitted bytes**, never a reconstruction, so the assertion runs on what a reader
+/// actually sees. `surface` is the [`PACK_NAMING_PREFIXES`] entry the line matched;
+/// `spelling` is `<pack_id>/<token>` with the token taken as the run of version
+/// characters that follows.
+///
+/// A `Pack input:` line is cut at its ` = ` first: everything after is the pack's
+/// resolving directory path, which may itself contain the pack id as a path segment
+/// and would otherwise be scanned as a naming.
+fn pack_namings(out: &str, pack_id: &str) -> Vec<(&'static str, String)> {
+    let needle = format!("{pack_id}/");
+    let mut found = Vec::new();
+    for line in out.lines() {
+        let line = line.trim_start();
+        let Some(surface) = PACK_NAMING_PREFIXES
+            .iter()
+            .find(|prefix| line.starts_with(**prefix))
+        else {
+            continue;
+        };
+        let scanned = match line.split_once(" = ") {
+            Some((head, _)) if *surface == "Pack input:" => head,
+            _ => line,
+        };
+        let mut rest = scanned;
+        while let Some(at) = rest.find(&needle) {
+            let tail = &rest[at + needle.len()..];
+            let end = tail
+                .find(|c: char| !(c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | '+')))
+                .unwrap_or(tail.len());
+            found.push((*surface, format!("{needle}{}", &tail[..end])));
+            rest = &tail[end..];
+        }
+    }
+    found
+}
+
+/// The distinct spellings in a [`pack_namings`] result, sorted — the set the
+/// one-spelling assertion is about.
+fn distinct(namings: &[(&'static str, String)]) -> Vec<String> {
+    let mut spellings: Vec<String> = namings.iter().map(|(_, s)| s.clone()).collect();
+    spellings.sort();
+    spellings.dedup();
+    spellings
+}
+
+/// The surfaces present in a [`pack_namings`] result, sorted — asserted so the
+/// one-spelling claim can never pass vacuously over a surface that rendered nothing.
+fn surfaces(namings: &[(&'static str, String)]) -> Vec<&'static str> {
+    let mut kinds: Vec<&'static str> = namings.iter().map(|(k, _)| *k).collect();
+    kinds.sort_unstable();
+    kinds.dedup();
+    kinds
+}
+
+#[test]
+fn one_pack_is_named_one_way_on_every_surface_that_names_one() {
+    // T6 — one `(pack_id, version)` pair, `dev`'s, rendered through all four
+    // pack-naming surfaces of one composition, asserted to have exactly ONE spelling.
+    // The three-pack shape is the provenance arm's: the house pack ships neither the
+    // workflow nor the colliding doctype, so `dev` is the workflow line's pack, the
+    // collision winner, a `Pack input:` entry and a segment of the orientation header
+    // — all four surfaces name the same pair, which is what makes them comparable.
+    let (repo, home) = marker_plus_pack_repo("one-spelling", &|root: &Path| {
+        write_extension_only_pack(root);
+        write_house_identity(root);
+    });
+
+    let explain = run(
+        repo.path(),
+        home.path(),
+        &[
+            "start",
+            "--explain",
+            "--workflow",
+            "single-task",
+            "add a thing",
+        ],
+    );
+    assert!(
+        explain.status.success(),
+        "`jigc start --explain` must exit 0; got {:?}\nstderr:\n{}",
+        explain.status,
+        String::from_utf8_lossy(&explain.stderr),
+    );
+    let explain_text = String::from_utf8(explain.stdout).expect("utf-8 stdout");
+
+    let orient = run(repo.path(), home.path(), &["start"]);
+    assert!(
+        orient.status.success(),
+        "bare `jigc start` (orientation) must exit 0; got {:?}\nstderr:\n{}",
+        orient.status,
+        String::from_utf8_lossy(&orient.stderr),
+    );
+    let orient_text = String::from_utf8(orient.stdout).expect("utf-8 stdout");
+
+    let mut namings = pack_namings(&explain_text, "dev");
+    namings.extend(pack_namings(&orient_text, "dev"));
+
+    // Non-vacuity: every one of the four surfaces actually rendered a `dev` naming.
+    assert_eq!(
+        surfaces(&namings),
+        vec!["Pack input:", "Pack: ", "collision:", "workflow:"],
+        "all four pack-naming surfaces must name `dev`, else the one-spelling claim \
+         passes over a surface that rendered nothing; explain:\n{explain_text}\n\
+         orientation:\n{orient_text}",
+    );
+
+    // The claim: one pack, one spelling — `<id>/<version>`, the segment
+    // `design/multi-pack.md` → Provenance states and the orientation goldens carry.
+    assert_eq!(
+        distinct(&namings),
+        vec![format!("dev/{BINARY_VERSION}")],
+        "one pack must be named ONE way on every surface that names one; \
+         explain:\n{explain_text}\norientation:\n{orient_text}",
+    );
+}
+
+/// The dev pack **as a directory** — the same tree the binary embeds, reached through
+/// the explicit `JIGC_PACK_DIR` channel. It declares no `version:` in
+/// `config/defaults.yaml`, so a `FilesystemPack` reports the `fs-local` sentinel; the
+/// embedded copy answers `CARGO_PKG_VERSION` instead, so this is the only way to drive
+/// a version-less pack through the real binary.
+fn dev_pack_tree() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("pack")
+}
+
+/// Like [`run`] but with `JIGC_PACK_DIR` **set** — the explicit channel, used only by
+/// the version-less arm below (every other arm in this suite is about the marker path
+/// and requires the variable absent).
+fn run_with_pack_dir(
+    repo: &Path,
+    home: &Path,
+    pack_dir: &Path,
+    args: &[&str],
+) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(args)
+        .current_dir(repo)
+        .env("HOME", home)
+        .env("JIGC_PACK_DIR", pack_dir)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("run the jigc binary")
+}
+
+#[test]
+fn a_version_less_packs_label_does_not_read_as_a_version() {
+    // T6, the arm that shows WHY a glued prefix is a lie rather than a style: a pack
+    // that declares no `version:` reports the `fs-local` sentinel, and `v` + `fs-local`
+    // reads as a version — `vfs-local` — that no pack anywhere declares. Both spellings
+    // shipped on the SAME screen at the increment base (the workflow line against its
+    // own `Pack input:` line), which is the driven observation this arm pins.
+    let repo = TempDir::new("version-less");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+    let pack = dev_pack_tree();
+
+    let setup = run_with_pack_dir(repo.path(), home.path(), &pack, &["setup"]);
+    assert!(
+        setup.status.success(),
+        "`jigc setup` under JIGC_PACK_DIR must exit 0; got {:?}\nstderr:\n{}",
+        setup.status,
+        String::from_utf8_lossy(&setup.stderr),
+    );
+
+    let explain = run_with_pack_dir(
+        repo.path(),
+        home.path(),
+        &pack,
+        &[
+            "start",
+            "--explain",
+            "--workflow",
+            "single-task",
+            "add a thing",
+        ],
+    );
+    assert!(
+        explain.status.success(),
+        "`jigc start --explain` under JIGC_PACK_DIR must exit 0; got {:?}\nstderr:\n{}",
+        explain.status,
+        String::from_utf8_lossy(&explain.stderr),
+    );
+    let text = String::from_utf8(explain.stdout).expect("utf-8 stdout");
+
+    let namings = pack_namings(&text, "dev");
+    assert!(
+        surfaces(&namings).contains(&"workflow:") && surfaces(&namings).contains(&"Pack input:"),
+        "both the workflow label and the `Pack input:` line must name `dev`, else the \
+         same-screen comparison is vacuous; got:\n{text}",
+    );
+    assert_eq!(
+        distinct(&namings),
+        vec!["dev/fs-local".to_string()],
+        "a version-less pack reports the `fs-local` sentinel; no surface may dress it \
+         as the version `vfs-local`, which no pack declares; got:\n{text}",
     );
 }
 

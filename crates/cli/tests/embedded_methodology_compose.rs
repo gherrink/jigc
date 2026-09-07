@@ -336,7 +336,7 @@ fn without_marker_surface_is_byte_identical_to_the_dev_only_floor() {
     // binary's own version — the composite-of-one is its own origin pack.
     assert!(
         explain_out.starts_with(&format!(
-            "workflow:router    (pack-default · dev/v{})\n",
+            "workflow:router    (pack-default · dev/{})\n",
             env!("CARGO_PKG_VERSION"),
         )),
         "(iv) `default-workflow` must resolve to dev's `router` from dev alone, labelled \

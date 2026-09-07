@@ -2,6 +2,16 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-09-07 — M50 Increment 12 / T6: one pack is named one way on every surface that names one
+
+**Decided:** the `--explain` workflow label drops its glued `v` prefix and renders `<pack-id>/<version>` — the one spelling every other pack-naming surface already used (the orientation `Pack:` header, the `collision:` lines, the `Pack input:` lines, and `design/multi-pack.md` → Provenance, which states the segment as `Pack: <id>/<version>`).
+
+**Why:** RC-m50 → W-6, driven. One `--explain` screen named one pack twice, two ways — `workflow:single-task    (pack-default · dev/vfs-local)` against `  Pack input: dev/fs-local = …` — because the label alone composed `format!("{pack_id}/v{version}")` while every sibling rendered the pair unadorned. The version is whatever the pack *reports*, not a numeral: a directory pack declaring no `version:` reports the `fs-local` sentinel, so the prefix dressed it as `vfs-local`, a version no pack anywhere declares. `design/surface-contract.md` law 1: a surface may not say something untrue, and one pack with two names on one screen is exactly that.
+
+**The spelling was chosen, not defaulted:** v-less is what the engine's `Provenance::pack_segment()` renders, what the ten `start-orient*` goldens carry, and what the two multi-pack `--explain` lines minted at M43/M49 render — the label was the lone outlier, so removing the prefix moves one site instead of thirteen. `design/workflow-dialect.md`'s and `design/bootstrap.md`'s illustrative `dev/v0.3.0` are unaffected: they are `{id}/{version}` over a version literal that happens to begin with `v`, and both docs disclaim their notation.
+
+**The pin is cross-surface, not per-site:** `one_pack_is_named_one_way_on_every_surface_that_names_one` scans the **emitted bytes** of one composition for every `dev/<token>` on a pack-naming line, asserts all four surfaces contributed (so the claim cannot pass vacuously) and asserts the distinct set has exactly one member. A second driven arm points `JIGC_PACK_DIR` at the dev pack **as a directory** — the only way to reach a version-less pack through the real binary, since the embedded copy answers `CARGO_PKG_VERSION` — and pins that `fs-local` is never dressed as a version.
+
 ## 2026-09-07 — M50 Increment 12 / T5: the anchor miss names the grammar instead of asserting an absence
 
 **Decided:** the `doc-code` probe's bare-path miss **splits**. A value whose file portion is another tool's address convention over a path that exists — `src/pad.ts:5`, `src/pad.ts:5:12` — now reads *"does not match the anchor grammar `<repo-relative-path>[#<symbol>]` — `src/pad.ts` is a file in the staged index and the trailing `:5` is not part of an anchor"*, routed *"drop the trailing `:5` — an anchor is `src/pad.ts` alone (which buys the file's presence, not that a test exists) or `src/pad.ts#<symbol>` naming a unit the file declares"*. Everything else is untouched.

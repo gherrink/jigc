@@ -574,8 +574,9 @@ fn also_open_block(open: &[crate::start::OpenTask]) -> String {
 /// with each step's source layer and any `← replaces … at position` annotation),
 /// followed by the routing footer; `json` emits the **generic** JSON projection of
 /// the tree with **no** footer (tooling-consumed). The `pack_label`
-/// (`<pack-id>/v<version>`) is CLI-side framing — the engine tree carries only the
-/// structural fact (which layer won), not the displayed label
+/// (`<pack-id>/<version>` — the one spelling every pack-naming surface renders, the
+/// `collision:` and `Pack input:` lines below included) is CLI-side framing — the
+/// engine tree carries only the structural fact (which layer won), not the label
 /// (`design/workflow-dialect.md` → `--explain` output contract; `design/worked-
 /// examples.md` → 3a). Sibling of [`composed`].
 pub fn explain(format: Format, tree: &ResolutionTree, pack_label: &str) -> String {

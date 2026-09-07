@@ -1687,8 +1687,16 @@ pub fn compose_explain_in_repo(
         PackResourceKind::Workflows,
         &ResourceId::from(workflow_id.as_str()),
     );
+    // `<id>/<version>`, the one spelling every pack-naming surface uses — the
+    // orientation `Pack:` header, the `collision:` lines and the `Pack input:` lines
+    // all render the pair unadorned (`design/multi-pack.md` → Provenance states the
+    // segment as `Pack: <id>/<version>`). The label glued a literal `v` on until M50,
+    // so one `--explain` screen named one pack two ways — `dev/vfs-local` on this line
+    // against `dev/fs-local` on its own `Pack input:` line, dressing the `fs-local`
+    // sentinel a version-less pack reports as a version no pack declares
+    // (`design/surface-contract.md` → law 1).
     let pack_label = owning_pack_segment(origin)
-        .map(|(pack_id, version)| format!("{pack_id}/v{version}"))
+        .map(|(pack_id, version)| format!("{pack_id}/{version}"))
         .unwrap_or_default();
     Ok((tree, pack_label))
 }
