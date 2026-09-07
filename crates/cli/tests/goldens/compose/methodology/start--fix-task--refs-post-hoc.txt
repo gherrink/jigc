@@ -1,0 +1,87 @@
+exit: 0
+--- stdout ---
+task minted: sweep-the-compose-surface
+
+Fix exactly one confirmed finding. The finding you are closing:
+
+sweep the compose surface
+
+Derive the axis before you touch code. An audit finds a defect by hitting it —
+one repro, one site — so the sites it reports are a lead, not the scope: name the
+class the defect belongs to (the registry it enumerates, the call set it ranges
+over, the file family the rule binds), then report that class's full membership,
+converting every member or saying why one is out. A fixer handed a list fixes the
+list, and the class ships half-closed.
+
+The red test is the finding reproduced. Drive it until it fails for the defect
+itself, not for an incidental compile error standing in for it, and make it
+iterate the axis you derived rather than pin the one site the audit named — a
+rule-shaped fix whose test pins its reported instance is itself a finding. Only
+then the minimal green, and refactor only what this fix touches.
+
+`git add` the paths this fix touched, inside THIS worktree — your own paths and
+no others. A sibling fixer is closing its own finding in its own worktree at the
+same time, and a sweep of the tree would carry its in-flight edit into your
+change.
+
+Never `git commit` and never `jigc task finalize` here. The milestone's finalize
+is the only commit boundary of a fix round: either command lands a commit on this
+worktree's detached HEAD and strands the fix outside that boundary.
+
+Run your project's own test, lint, and build gate — the commands this project
+already uses to prove a change is sound — and confirm every one passes before
+you finalize. Use whatever the project's configured gate is; do not assume a
+particular toolchain. A green gate is what separates a finished change from one
+that merely compiles in your head.
+
+finalize renders the commit doc; it does not fill it, so set its header and prose
+first. Inside slot prose, the reserved heading depths are schema-relative to the
+address you write — the CLI owns the section, item, and sub-label heading levels
+there, so your headings sit below them; Setext headings are rejected at every
+depth, and a rejected write names the shallowest depth free at that address.
+
+Set the Conventional-Commits type:
+
+Run: `jigc doc set-field commit:sweep-the-compose-surface#type --value <TYPE> --task sweep-the-compose-surface`
+The `type` value is one of: feat | fix | docs | style | refactor | perf | test | build | ci | chore | revert
+
+The `commit` schema is the authority on what you write into it — its required
+slots and fields, each field's enum members, and every address a write can take:
+
+jigc doc schema commit
+
+Set the scope — the area this change touches:
+
+Run: `jigc doc set-field commit:sweep-the-compose-surface#scope --value <SCOPE> --task sweep-the-compose-surface`
+
+Set the subject line — it renders as `<type>(<scope>): <summary>`, so write the
+summary without a type or scope prefix of its own (the `type` field already
+carries it):
+
+Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
+directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which
+jigc itself accepts but an agent harness that statically analyses shell commands
+can refuse to run:
+
+jigc doc set-slot commit:sweep-the-compose-surface#summary --from-file - --task sweep-the-compose-surface <<'EOF'
+<one line saying what changed>
+EOF
+
+Run: `jigc doc set-slot commit:sweep-the-compose-surface#summary --from-file - --task sweep-the-compose-surface`
+
+Set the body — why this change:
+
+Run: `jigc doc set-slot commit:sweep-the-compose-surface#body --from-file - --task sweep-the-compose-surface`
+
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show commit:sweep-the-compose-surface --task sweep-the-compose-surface
+resume: `jigc start --task sweep-the-compose-surface`   — re-composes this workflow if context is lost
+what's-left: `jigc task validate sweep-the-compose-surface`   — previews part of the finalize gate: this task's content findings, the carryover gate, the owner-artifact causes that need no staging, and the granted-but-unused changelog gate; the staged set, promotion and the commit surface at finalize
+task scope: `jigc doc` writes default to the single active task; `--task sweep-the-compose-surface` is the explicit override and wins when several are active — several open tasks are legal, each addressed by its own `--task`, so you can run them in parallel while their work stays disjoint; once a sibling task commits a path this one also touches, resuming or finalizing here blocks and names the overlapping paths
+also open: 1 other task was already open before this call — nothing here touched it; several open tasks are legal, each addressed by its own `--task`:
+  - `ground-the-vision-in-research` (workflow `form-vision`) — resume it with `jigc start --task ground-the-vision-in-research`
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+--- stderr ---

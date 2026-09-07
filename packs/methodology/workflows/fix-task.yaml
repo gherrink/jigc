@@ -1,0 +1,12 @@
+---
+description: One confirmed audit finding fixed in its own worktree — derive the axis the fix is owed over, reproduce the finding as a red test, run the project's gate, and author a commit for the milestone's join.
+usage: a completion audit's Fix phase fans its confirmed findings out as milestone sub-tasks, one worktree each; it is not selected directly.
+creates-task: true
+selectable: false
+suppressed:
+  reason: spawned by a completion audit's Fix-phase fan-out and joined at the milestone's finalize — it has no commit boundary of its own, so a router pick could never land
+  expires: never
+---
+{{ include: step:fix-finding }}
+{{ include: step:gate }}
+{{ include: step:author-commit }}
