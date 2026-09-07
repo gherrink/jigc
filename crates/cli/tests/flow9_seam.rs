@@ -417,6 +417,41 @@ fn a_real_two_area_overlap_on_a_committed_slug_blocks_same_doc_clash() {
         "the block must be `join.same-doc-clash` naming the address + both real sub-tasks \
          + a route; got:\n{stderr}",
     );
+    // **The blocked join leads with the house head** (M50 Increment 10 / T1). This loop
+    // rendered `finding.message` alone, so the only door in the fan-out that refuses a
+    // merge told a text-scraping driver *what* broke and never the `join.*` code it keys
+    // on. The code is **cross-read from the same milestone's `--format json` join**, never
+    // spelled here, so the assertion cannot pass over a reconstruction.
+    let json = run(
+        repo.path(),
+        home.path(),
+        &["milestone", "join", "cache-rework", "--format", "json"],
+    );
+    let envelope: serde_json::Value =
+        serde_json::from_slice(&json.stdout).expect("the join renders a JSON outcome on stdout");
+    let code = envelope["findings"]
+        .as_array()
+        .expect("a findings array")
+        .iter()
+        .find(|f| f["severity"] == "blocking")
+        .and_then(|f| f["code"].as_str())
+        .unwrap_or_else(|| {
+            panic!(
+                "the JSON join must carry the blocking finding; got:\n{}",
+                String::from_utf8_lossy(&json.stdout),
+            )
+        })
+        .to_owned();
+    let blocking_line = stderr
+        .lines()
+        .find(|l| l.contains("same-doc clash"))
+        .expect("the clash line");
+    assert!(
+        blocking_line.starts_with(&format!("blocking · {code} — ")),
+        "the blocked join's agent text must lead with the same head the JSON carries — one \
+         `(code, target)` for both readers (`design/command-output-contract.md` → The \
+         stable finding key).\nexpected prefix: blocking · {code} — \ngot: {blocking_line}",
+    );
     assert_eq!(
         git(repo.path(), &["rev-parse", "HEAD"]),
         before_head,

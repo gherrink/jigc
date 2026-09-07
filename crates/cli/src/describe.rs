@@ -228,20 +228,20 @@ fn require_project_layer(cwd: &Path) -> Result<PathBuf> {
     Ok(jigc_home)
 }
 
-/// Map an engine [`Finding`] to an `anyhow` error carrying its message + route — the
-/// same envelope the rest of the CLI surfaces blocking findings through.
+/// Map an engine [`Finding`] to an `anyhow` error carrying its **key** + message +
+/// route — the same envelope the rest of the CLI surfaces blocking findings through.
+///
+/// **One shape, one site** (M50 Increment 10 / T1): this delegates to
+/// [`crate::render::finding_error`], whose [`BlockedFinding`](crate::render::BlockedFinding)
+/// `Display` **is** the house findings line — `severity · code — message`, the `at:` locus,
+/// the `route:`. Until M50 the six modules that own a funnel each re-derived that shape, and
+/// four of them (`describe` / `doc` / `start` / `task`) rendered `finding.message` **alone**: the code a driver keys on
+/// reached `--format json` and never the text (`design/command-output-contract.md` → The
+/// stable finding key; `design/surface-contract.md` → law 1). Carrying the finding rather
+/// than only its rendering also lets the dispatch log the identity it prints
+/// ([`crate::render::blocked_finding`]).
 fn finding_to_err(finding: Finding) -> anyhow::Error {
-    // The locus rides between the message and the route, exactly as it does on the findings
-    // surface ([`crate::render::finding_line`]) — one funnel must not describe a break in
-    // fewer facts than another (M49 Increment 8 / T4).
-    let at = crate::render::finding_locus(&finding)
-        .map(|locus| format!("\n  at: {locus}"))
-        .unwrap_or_default();
-    let route = finding
-        .route
-        .map(|r| format!("\n  route: {r}"))
-        .unwrap_or_default();
-    anyhow::anyhow!("{}{at}{route}", finding.message)
+    crate::render::finding_error(&finding)
 }
 
 #[cfg(test)]

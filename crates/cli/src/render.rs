@@ -2841,25 +2841,48 @@ pub fn finding_locus(finding: &Finding) -> Option<String> {
     }
 }
 
-/// One agent-text finding line: `<severity> · <code> — <message>`, plus an indented
-/// `route:` line when the finding carries a repair direction (the settled
-/// block-payload envelope — a hard block is a blocking finding carrying a route), and an
-/// indented `at:` line between the two when the finding is **located** ([`finding_locus`]).
-/// A route-less **advisory** is purely informational, and says so — the agent must
-/// never be left inferring whether output wants something from it.
+/// The **head** of an agent-text finding line: `<severity> · <code>`, the identity the
+/// ` — <message>` follows.
+///
+/// It is a named renderer for the same reason [`finding_locus`] is, and the split falls
+/// exactly where the defect did: the head is the `code` half of the `(code, target)` key a
+/// text-scraping driver reads (`design/command-output-contract.md` → The stable finding
+/// key), and until M50 Increment 10 four of the six `finding_to_err` funnels printed
+/// `finding.message` **alone** — the finding's own words with no identity in front of them
+/// — while two more hand-copied this `format!`. Eight sites re-implementing one shape, four
+/// of them dropping the identity. Every one of them now reaches this through
+/// [`finding_line`], and `crates/cli/tests/located_finding_text.rs` checks the head exactly
+/// as it checks the locus: a `Carries` site owes **both** renderers, because a check of one
+/// is a check of a strictly weaker claim.
 ///
 /// `gates` annotates the severity token as `blocking (gates at finalize)` (M42 Inc 12 / T5) — the
 /// **store** view's per-finding gate label, decided by [`gates_at_finalize`]. Every other surface
 /// passes `false`: at task scope the severity token already *is* the verdict, and the `setup` /
 /// `ingest` finding lines are not store-sweep rows at all.
-fn finding_line(finding: &Finding, gates: bool) -> String {
+fn finding_head(finding: &Finding, gates: bool) -> String {
     let severity = match finding.severity {
         Severity::Blocking if gates => "blocking (gates at finalize)",
         Severity::Blocking => "blocking",
         Severity::Warning => "warning",
         Severity::Advisory => "advisory",
     };
-    let mut line = format!("{severity} · {} — {}", finding.code, finding.message);
+    format!("{severity} · {}", finding.code)
+}
+
+/// One agent-text finding line: the [`finding_head`], plus an indented
+/// `route:` line when the finding carries a repair direction (the settled
+/// block-payload envelope — a hard block is a blocking finding carrying a route), and an
+/// indented `at:` line between the two when the finding is **located** ([`finding_locus`]).
+/// A route-less **advisory** is purely informational, and says so — the agent must
+/// never be left inferring whether output wants something from it.
+///
+/// **The one house shape, reachable from outside this module** (M50 Increment 10 / T1):
+/// `milestone`'s two stderr loops render each blocking finding through it rather than
+/// re-deriving the three lines, and every `finding_to_err` funnel reaches it through
+/// [`finding_error`]'s [`BlockedFinding`] carrier. The line ends in `\n`, so a caller
+/// prints it with `print!`/`eprint!`, not `println!`.
+pub(crate) fn finding_line(finding: &Finding, gates: bool) -> String {
+    let mut line = format!("{} — {}", finding_head(finding, gates), finding.message);
     if finding.route.is_none() && matches!(finding.severity, Severity::Advisory) {
         line.push_str("   (no action needed)");
     }

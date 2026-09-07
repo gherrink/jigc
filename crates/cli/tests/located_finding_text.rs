@@ -20,7 +20,23 @@
 //!    nowhere else;
 //! 3. the **source-derived** sweep: every production read of a `Finding`'s `message` in
 //!    `crates/cli/src` — the act that turns a finding into text — carries a verdict and a
-//!    reason, and a `Carries` verdict is checked against the source rather than believed.
+//!    reason, and a `Carries` verdict is checked against the source rather than believed;
+//! 4. the **driven** arm, one door per module: `jigc describe`, `jigc doc create`,
+//!    `jigc task validate` and `jigc start --workflow <unknown>` each lead their stderr
+//!    with the house head, the code cross-read from the same run's `--format json`.
+//!
+//! **M50 Increment 10 / T1 — the head is the other half of the locus.** M49's pass gave
+//! every funnel the *where* and left four of them with no *what*: `describe`, `doc`,
+//! `start` and `task` rendered `finding.message` alone, so a driven `jigc describe` over a
+//! malformed workflow said *"workflow definition has no `---`-fenced front-matter block"*
+//! while the same run's `--format json` carried `workflow-refs.missing-front-matter` —
+//! **the identity a text-scraping driver keys on reached one surface and not the other**,
+//! which is `design/command-output-contract.md`'s stable `(code, target)` key failing at
+//! the door, not a wording nicety. `config` and `milestone` carried the head by
+//! **hand-copying** it, which is the mechanical cause: eight sites re-implementing one
+//! shape. They now all reach the house renderer — so they no longer read `.message` at
+//! all, and the sweep below is what remains: the fence against the *next* hand-rolled
+//! render, with the head checked exactly as the locus is.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -233,9 +249,21 @@ fn a_location_less_finding_renders_exactly_as_before() {
 /// What a site does with the `Finding` message it reads.
 #[derive(Clone, Copy, PartialEq)]
 enum Verdict {
-    /// Renders the finding as text **and** reads its location to say where — checked
-    /// against the source: the enclosing function must reach the shared locus renderer.
+    /// Renders the finding as the **house agent-text finding line** — checked against the
+    /// source: the enclosing function must reach BOTH shared renderers, the head
+    /// ([`HEAD_RENDERER`]) and the locus ([`LOCUS_RENDERER`]).
+    ///
+    /// **Both, because a check of one is a check of a strictly weaker claim.** M49 checked
+    /// the locus alone and four funnels passed it while printing no `severity · code —`
+    /// head at all; a driver scraping their text got a message and no identity.
     Carries,
+    /// Reads a finding's message into a **different composed text** — a pack-load
+    /// diagnostic, a report row, a joined relay — rather than the house line. It still owes
+    /// the *where* ([`LOCUS_RENDERER`]), because the locus is a fact about the break that
+    /// no enclosing shape excuses; it does not owe the house head, because the enclosing
+    /// text supplies its own. The reason states which shape it composes and why that shape
+    /// is the right one there.
+    Relays,
     /// Reads a message for something other than rendering the finding to a reader. The
     /// reason states what, and is the site's disposition.
     NotARender,
@@ -246,26 +274,18 @@ enum Verdict {
 /// `is_declared_singleton` / `ROUTE_PLACEHOLDERS` shape.
 ///
 /// Keyed on `(file, enclosing fn)`: a new render site lands in no row and reddens here,
-/// naming itself, rather than shipping a finding whose locus reaches only the JSON.
+/// naming itself, rather than shipping a finding whose locus — or, since M50 Increment 10,
+/// whose **code** — reaches only the JSON.
+///
+/// **The set is derived from the sweep, never from the task that shipped it.** M50's
+/// decomposition named *two* legitimate relays; driving the sweep found **three**
+/// (`pack.rs::def_load_failure` and `render.rs::corpus_migration` are the two it did not
+/// name), and each is disposed with a stated reason rather than skipped for being off the
+/// list. In the other direction, the eight sites the increment repaired — the six
+/// `finding_to_err` funnels and `milestone`'s two stderr loops — hold **no row at all**
+/// now: they delegate to the house renderer, so they read no `.message`, and a site that
+/// cannot re-implement the shape is not a site the fence needs to watch.
 const MESSAGE_SITES: &[(&str, &str, Verdict, &str)] = &[
-    (
-        "config.rs",
-        "finding_to_err",
-        Verdict::Carries,
-        "the cascade's operational-error funnel",
-    ),
-    (
-        "describe.rs",
-        "finding_to_err",
-        Verdict::Carries,
-        "the introspection funnel",
-    ),
-    (
-        "doc.rs",
-        "finding_to_err",
-        Verdict::Carries,
-        "the write-verb funnel — every `write.*` reject reaches an agent through it",
-    ),
     (
         "ingest.rs",
         "adopt_annotations",
@@ -291,40 +311,29 @@ const MESSAGE_SITES: &[(&str, &str, Verdict, &str)] = &[
     (
         "migrate_corpus.rs",
         "relayed",
-        Verdict::Carries,
-        "relays the gate's/parser's own words into the refusal message — the diagnostics \
-         that say WHERE the buffer broke, so the locus rides with each",
-    ),
-    (
-        "milestone.rs",
-        "blocked",
-        Verdict::Carries,
-        "the blocked milestone finalize's stderr render",
-    ),
-    (
-        "milestone.rs",
-        "dispatch_join",
-        Verdict::Carries,
-        "the blocked join's stderr render",
-    ),
-    (
-        "milestone.rs",
-        "finding_to_err",
-        Verdict::Carries,
-        "the milestone operational-error funnel",
+        Verdict::Relays,
+        "joins the gate's/parser's OWN words into an enclosing refusal message (`…: <a>; \
+         <b>`) — the diagnostics that say WHERE the buffer broke. The enclosing finding \
+         supplies the head, so a second `severity · code —` inside its own message would \
+         be two identities for one refusal; the locus rides with each relayed diagnostic",
     ),
     (
         "pack.rs",
         "def_load_failure",
-        Verdict::Carries,
-        "the one funnel all five pack-load fences raise a def-parse failure through",
+        Verdict::Relays,
+        "composes the pack-load fence's own diagnostic — `pack-load <sweep> sweep failed \
+         on <id>: <message> (at <locus>)` — whose subject is the SWEEP and the RESOURCE, \
+         not the finding: it is a pack-authoring defect surfaced at load, raised through \
+         the operational funnel with no findings envelope to key. The locus rides",
     ),
     (
         "render.rs",
         "corpus_migration",
-        Verdict::Carries,
-        "the migration report's blocked / unadopted / unfilled rows — the row head IS the \
-         locus, rendered from the finding's own location",
+        Verdict::Relays,
+        "the migration report's blocked / unadopted / unfilled rows — a three-line report \
+         shape (`<row-label> <locus>` / `<code>: <message>` / `route:`) whose row head IS \
+         the locus, so the code and the where both ride, in the report's own columns \
+         rather than the house line's",
     ),
     (
         "render.rs",
@@ -333,21 +342,10 @@ const MESSAGE_SITES: &[(&str, &str, Verdict, &str)] = &[
         "the house agent-text finding line every findings surface renders through — and, \
          since M49 Increment 11 / T4, the flattened refusal too: `BlockedFinding`'s \
          `Display` delegates here rather than re-deriving the shape, so the shared \
-         finding→`anyhow` funnel the four operational-funnel doors (`migrate` / \
-         `relocate` / `rename` / `task bind`) refuse through is this one site, not a \
-         second row",
-    ),
-    (
-        "start.rs",
-        "finding_to_err",
-        Verdict::Carries,
-        "the front door's operational-error funnel",
-    ),
-    (
-        "task.rs",
-        "finding_to_err",
-        Verdict::Carries,
-        "the task funnel",
+         finding→`anyhow` funnel every operational-funnel door refuses through is this one \
+         site. Since M50 Increment 10 / T1 that set is ALL six `finding_to_err` funnels \
+         plus `milestone`'s two stderr loops: they delegate, so they read no `.message` \
+         and hold no row here — one shape, one site, and nothing left to keep in step",
     ),
     (
         "task.rs",
@@ -358,8 +356,16 @@ const MESSAGE_SITES: &[(&str, &str, Verdict, &str)] = &[
     ),
 ];
 
-/// The token every `Carries` site must reach — the one renderer of a finding's locus.
+/// The token every `Carries` and every `Relays` site must reach — the one renderer of a
+/// finding's locus.
 const LOCUS_RENDERER: &str = "finding_locus";
+
+/// The **second** checked token, and the one M49's pass did not have: the one renderer of a
+/// finding's head (`severity · code — message`). A `Carries` site must reach it, because the
+/// head is where the `(code, target)` key a driver scrapes actually appears — a text render
+/// that names the break and not its code is the JSON envelope's identity going missing at
+/// the door (`design/command-output-contract.md` → The stable finding key).
+const HEAD_RENDERER: &str = "finding_head";
 
 /// The `crates/cli` production tree.
 fn cli_src() -> PathBuf {
@@ -430,23 +436,39 @@ fn every_text_render_of_a_finding_is_disposed() {
                 ));
                 continue;
             };
-            if *verdict == Verdict::Carries
-                && !enclosing_fn_body(&code, at).contains(LOCUS_RENDERER)
-            {
-                offenders.push(format!(
-                    "  {file}:{line}: `{owner}` is declared `Carries` but never reaches \
-                     `{LOCUS_RENDERER}`"
-                ));
+            // A `Carries` site owes BOTH renderers; a `Relays` site owes the locus alone
+            // (its enclosing text supplies its own head). `NotARender` owes neither — its
+            // reason is its disposition.
+            let owed: &[&str] = match verdict {
+                Verdict::Carries => &[HEAD_RENDERER, LOCUS_RENDERER],
+                Verdict::Relays => &[LOCUS_RENDERER],
+                Verdict::NotARender => &[],
+            };
+            let body = enclosing_fn_body(&code, at);
+            for token in owed {
+                if !body.contains(token) {
+                    offenders.push(format!(
+                        "  {file}:{line}: `{owner}` is declared `{}` but never reaches \
+                         `{token}`",
+                        match verdict {
+                            Verdict::Carries => "Carries",
+                            Verdict::Relays => "Relays",
+                            Verdict::NotARender => "NotARender",
+                        },
+                    ));
+                }
             }
         }
     }
 
     assert!(
         offenders.is_empty(),
-        "every production read of a `Finding`'s message owes a verdict, and a `Carries` \
-         verdict owes the source to back it — a finding whose locus reaches only the JSON \
-         envelope leaves the `conformance.*` route exemption resting on a fact the text \
-         surface withholds (`design/validation.md`).\n{}",
+        "every production read of a `Finding`'s message owes a verdict, and a verdict owes \
+         the source to back it — a finding whose locus reaches only the JSON envelope \
+         leaves the `conformance.*` route exemption resting on a fact the text surface \
+         withholds (`design/validation.md`), and one whose CODE reaches only the JSON \
+         leaves a text-scraping driver with no key to dedup on \
+         (`design/command-output-contract.md`).\n{}",
         offenders.join("\n"),
     );
 
@@ -462,4 +484,169 @@ fn every_text_render_of_a_finding_is_disposed() {
          the code it described:\n{}",
         stale.join("\n"),
     );
+}
+
+// ---------------------------------------------------------------------------------
+// Arm 4 — the driven arm: one door per module leads with the house head
+// ---------------------------------------------------------------------------------
+
+/// A dev-pack copy whose `single-task` workflow is **malformed**, with the copy's
+/// `config/schema-manifest.yaml` removed.
+///
+/// Both halves are load-bearing, and the second is the non-obvious one: pack-load's own
+/// eager workflow-front-matter sweep would otherwise catch the break first and refuse
+/// through `pack.rs::def_load_failure`, so the verbs' own funnels would never be reached.
+/// A manifest-less constituent is **skip-on-absent** by design (`crates/cli/src/pack.rs` →
+/// the eager sweep's scope: *a pack opts into the pack-load fences by shipping a manifest*),
+/// which is exactly the seeded / project-local pack posture — so removing the manifest is
+/// not a trick to dodge a fence, it is the shipped state in which a definition defect is
+/// **supposed** to reach the lazy compose-path loaders that these four doors are.
+fn broken_workflow_pack(root: &Path) {
+    crate::support::frozen_pack::copy_dev_pack(root);
+    fs::remove_file(root.join("config").join("schema-manifest.yaml"))
+        .expect("the copied dev pack ships a manifest to remove");
+    fs::write(
+        root.join("workflows").join("single-task.yaml"),
+        "not a workflow definition at all\n",
+    )
+    .expect("break the copied workflow");
+}
+
+/// Run `jigc <args>` against the on-disk pack at `pack`.
+fn jigc_with_pack(cwd: &Path, home: &Path, pack: &Path, args: &[&str]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(args)
+        .current_dir(cwd)
+        .env("HOME", home)
+        .env("JIGC_PACK_DIR", pack)
+        .output()
+        .expect("run the jigc binary")
+}
+
+/// **One named door per module that owns a `finding_to_err` funnel**, driven through the
+/// real binary: `describe.rs`, `doc.rs`, `task.rs` and `start.rs`. Each must lead its stderr
+/// with the house head — `blocking · <code> — ` — and the `<code>` is **cross-read from the
+/// same run's `--format json` `error` string**, never spelled in the test, so the assertion
+/// cannot pass over a reconstruction of a code the binary never emitted.
+///
+/// `config.rs` and `milestone.rs` are the two modules that already led with a head, by
+/// hand-copying it; they are covered by the source sweep above (they now hold no row at
+/// all, because they delegate and read no `.message`) and by their own suites' emitted
+/// bytes. The four here are the four that printed a message and no identity.
+#[test]
+fn every_funnel_module_leads_its_stderr_with_the_finding_head() {
+    let repo = TempDir::new("funnel-head");
+    let home = TempDir::new("funnel-home");
+    let pack = TempDir::new("funnel-pack");
+    crate::support::frozen_pack::copy_dev_pack(pack.path());
+
+    git(repo.path(), &["init", "-q"]);
+    git(repo.path(), &["config", "user.email", "test@example.com"]);
+    git(repo.path(), &["config", "user.name", "Test"]);
+    fs::write(repo.path().join("README.md"), "hello\n").expect("write README");
+    git(repo.path(), &["add", "."]);
+    git(repo.path(), &["commit", "-q", "-m", "initial"]);
+
+    // Setup + mint run against the INTACT copy: the corpus has to be real before the
+    // definition is broken, exactly as it is for a pack author who breaks a workflow after
+    // work is already in flight.
+    let out = jigc_with_pack(repo.path(), home.path(), pack.path(), &["setup"]);
+    assert!(
+        out.status.success(),
+        "`jigc setup` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let out = jigc_with_pack(
+        repo.path(),
+        home.path(),
+        pack.path(),
+        &["start", "--workflow", "single-task", "do a thing"],
+    );
+    assert!(
+        out.status.success(),
+        "`jigc start` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    broken_workflow_pack(pack.path());
+
+    let title = crate::support::create_title("adr", "T");
+    let doors: &[(&str, &[&str])] = &[
+        ("describe.rs — jigc describe", &["describe"]),
+        (
+            "doc.rs — jigc doc create adr --title T",
+            &["doc", "create", "adr", "--title", "T"],
+        ),
+        (
+            "task.rs — jigc task validate do-a-thing",
+            &["task", "validate", "do-a-thing"],
+        ),
+        (
+            "start.rs — jigc start --workflow no-such-wf",
+            &["start", "--workflow", "no-such-wf", "an intent"],
+        ),
+    ];
+
+    for (what, args) in doors {
+        let mut owned: Vec<String> = args.iter().map(|a| (*a).to_string()).collect();
+        if *args == ["doc", "create", "adr", "--title", "T"] {
+            owned[4] = title.clone();
+        }
+        let text_argv: Vec<&str> = owned.iter().map(String::as_str).collect();
+        let text = jigc_with_pack(repo.path(), home.path(), pack.path(), &text_argv);
+        assert!(
+            !text.status.success(),
+            "{what} must refuse for this arm to be about a refusal's head; stdout:\n{}",
+            String::from_utf8_lossy(&text.stdout),
+        );
+        let stderr = String::from_utf8(text.stderr).expect("utf-8");
+        let first = stderr.lines().next().unwrap_or_default().to_owned();
+
+        // The same run's machine contract, read for the code — the cross-read that makes
+        // the text assertion an assertion about the binary's own identity for this break.
+        let mut json_argv = owned.clone();
+        json_argv.push("--format".to_owned());
+        json_argv.push("json".to_owned());
+        let json_argv: Vec<&str> = json_argv.iter().map(String::as_str).collect();
+        let json = jigc_with_pack(repo.path(), home.path(), pack.path(), &json_argv);
+        let envelope: serde_json::Value =
+            serde_json::from_slice(&json.stderr).unwrap_or_else(|e| {
+                panic!(
+                    "{what} --format json must emit a parseable envelope on stderr ({e}); \
+                 stderr:\n{}",
+                    String::from_utf8_lossy(&json.stderr),
+                )
+            });
+        let error = envelope["error"]
+            .as_str()
+            .unwrap_or_else(|| panic!("{what} --format json must carry an `error`: {envelope:#?}"))
+            .to_owned();
+        let head = error.lines().next().unwrap_or_default().to_owned();
+        let code = head
+            .strip_prefix("blocking · ")
+            .and_then(|rest| rest.split_once(" — "))
+            .map(|(code, _)| code.to_owned())
+            .unwrap_or_else(|| {
+                panic!(
+                    "{what}: the flattened refusal must lead with the house head \
+                     `blocking · <code> — `, so a driver reading the `{{\"error\": …}}` \
+                     envelope gets the same identity the findings envelope carries \
+                     (`design/command-output-contract.md` → The stable finding key).\n\
+                     got: {head}"
+                )
+            });
+        assert!(
+            !code.is_empty() && !code.contains(' '),
+            "{what}: the head's code must be a finding code, not prose; got `{code}`",
+        );
+        assert!(
+            first.starts_with(&format!("blocking · {code} — ")),
+            "{what}: the agent text must lead with the SAME head the JSON envelope carries \
+             — a text-scraping driver and a JSON-reading one must key on one \
+             `(code, target)` (`design/command-output-contract.md`; \
+             `design/surface-contract.md` → law 1).\n\
+             expected prefix: blocking · {code} — \nfirst stderr line: {first}\n\
+             full stderr:\n{stderr}",
+        );
+    }
 }

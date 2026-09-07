@@ -3283,15 +3283,12 @@ fn dispatch_join(cwd: &Path, format: Format, milestone_id: &str) -> Outcome {
     } else {
         let mut finding_codes = Vec::with_capacity(blocking.len());
         for finding in blocking {
-            eprintln!("{}", finding.message);
-            // Where, then the repair — the same order and the same words the findings
-            // surface uses ([`crate::render::finding_locus`], M49 Increment 8 / T4).
-            if let Some(locus) = crate::render::finding_locus(finding) {
-                eprintln!("  at: {locus}");
-            }
-            if let Some(route) = &finding.route {
-                eprintln!("  route: {route}");
-            }
+            // The **house** findings line, whole — head, locus, route, in that order
+            // ([`crate::render::finding_line`], M50 Increment 10 / T1). A blocked join
+            // printed its message and pushed its code into the invocation log in the same
+            // loop, while the reader got no code at all. `eprint!`, not `eprintln!`: the
+            // house line already ends in `\n`.
+            eprint!("{}", crate::render::finding_line(finding, false));
             finding_codes.push(finding.code.clone());
         }
         // A blocked join is a reject that is not a task-scope gate — the taxonomy
@@ -4139,15 +4136,12 @@ fn blocked(jigc_home: &Path, format: Format, findings: Vec<Finding>) -> Result<O
         print!("{}", render::validation(format, &report));
     } else {
         for finding in &report.findings {
-            eprintln!("{}", finding.message);
-            // Where, then the repair — the same order and the same words the findings
-            // surface uses ([`crate::render::finding_locus`], M49 Increment 8 / T4).
-            if let Some(locus) = crate::render::finding_locus(finding) {
-                eprintln!("  at: {locus}");
-            }
-            if let Some(route) = &finding.route {
-                eprintln!("  route: {route}");
-            }
+            // The **house** findings line, whole — head, locus, route, in that order
+            // ([`crate::render::finding_line`], M50 Increment 10 / T1). This loop used to
+            // re-derive two of those three and drop the head, so a blocked milestone
+            // finalize named the break and not its code. `eprint!`, not `eprintln!`: the
+            // house line already ends in `\n`.
+            eprint!("{}", crate::render::finding_line(finding, false));
         }
     }
     Ok(Outcome::with_findings(
@@ -4936,25 +4930,19 @@ fn discover_repo_root(start: &Path) -> Option<PathBuf> {
 /// route — the `severity · code — message` line shape the findings envelope prints
 /// (round-2 D6h: a milestone finding surfaced through the operational-error funnel
 /// used to drop its stable `(code, target)` key, so `milestone.no-criteria` — unlike
-/// every envelope-rendered sibling — was undiscriminable to a driver; the funnel now
-/// carries the key for every milestone finding it converts).
+/// every envelope-rendered sibling — was undiscriminable to a driver).
+///
+/// **One shape, one site** (M50 Increment 10 / T1): this delegates to
+/// [`crate::render::finding_error`], whose [`BlockedFinding`](crate::render::BlockedFinding)
+/// `Display` **is** the house findings line — `severity · code — message`, the `at:` locus,
+/// the `route:`. Until M50 the six modules that own a funnel each re-derived that shape, and
+/// four of them (`describe` / `doc` / `start` / `task`) rendered `finding.message` **alone**: the code a driver keys on
+/// reached `--format json` and never the text (`design/command-output-contract.md` → The
+/// stable finding key; `design/surface-contract.md` → law 1). Carrying the finding rather
+/// than only its rendering also lets the dispatch log the identity it prints
+/// ([`crate::render::blocked_finding`]).
 fn finding_to_err(finding: Finding) -> anyhow::Error {
-    let severity = match finding.severity {
-        engine::finding::Severity::Blocking => "blocking",
-        engine::finding::Severity::Warning => "warning",
-        engine::finding::Severity::Advisory => "advisory",
-    };
-    let head = format!("{severity} · {} — {}", finding.code, finding.message);
-    // The locus rides between the message and the route, exactly as it does on the findings
-    // surface ([`crate::render::finding_line`]) — one funnel must not describe a break in
-    // fewer facts than another (M49 Increment 8 / T4).
-    let at = crate::render::finding_locus(&finding)
-        .map(|locus| format!("\n  at: {locus}"))
-        .unwrap_or_default();
-    match finding.route {
-        Some(route) => anyhow::anyhow!("{head}{at}\n  route: {route}"),
-        None => anyhow::anyhow!("{head}{at}"),
-    }
+    crate::render::finding_error(&finding)
 }
 
 #[cfg(test)]
