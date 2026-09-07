@@ -73,6 +73,8 @@ mod placement_acceptance;
 mod provision_leftover_guard;
 #[path = "../read_verb_acts_nothing.rs"]
 mod read_verb_acts_nothing;
+#[path = "../repo_relative_paths.rs"]
+mod repo_relative_paths;
 #[path = "../spawn_template_executes.rs"]
 mod spawn_template_executes;
 #[path = "../staged_prose_consent_axis.rs"]

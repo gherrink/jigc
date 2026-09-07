@@ -88,6 +88,25 @@ impl Drop for TempDir {
     }
 }
 
+/// How a refusal spells a path it names, since **M50 Increment 12 / T1**: repo-relative and
+/// `/`-separated, because a surface prints no host filesystem
+/// (`design/surface-contract.md` → The printed-path fence; the axis suite is
+/// `crates/cli/tests/repo_relative_paths.rs`). Asserting the absolute spelling here was
+/// asserting the defect — and it is why this file used to normalize macOS's `/private/`
+/// prefix by hand: a repo-relative path has no such prefix to normalize.
+fn as_printed(repo: &Path, path: &Path) -> String {
+    let (root, real) = match (repo.canonicalize(), path.canonicalize()) {
+        (Ok(root), Ok(real)) => (root, real),
+        _ => (repo.to_path_buf(), path.to_path_buf()),
+    };
+    real.strip_prefix(&root)
+        .unwrap_or(&real)
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
 /// Run `git <args>` in `cwd`, asserting success.
 fn git_ok(cwd: &Path, args: &[&str]) {
     let out = Command::new("git")
@@ -335,9 +354,9 @@ fn every_verdict_refuses_a_non_empty_leftover_and_leaves_the_planted_bytes_intac
             provision_code(),
         );
         assert!(
-            stderr.contains(&f.leftover.display().to_string()),
+            stderr.contains(&as_printed(&f.repo, &f.leftover)),
             "[{verdict:?}] the refusal must name the leftover path `{}`; got:\n{stderr}",
-            f.leftover.display(),
+            as_printed(&f.repo, &f.leftover),
         );
         assert!(
             stderr.contains("precious.txt"),
@@ -399,10 +418,11 @@ fn a_refusal_leaves_every_path_unprovisioned_wherever_the_leftover_sits() {
             refused.status,
         );
         assert!(
-            stderr.contains(provision_code()) && stderr.contains(&leftover.display().to_string()),
+            stderr.contains(provision_code())
+                && stderr.contains(&as_printed(repo.path(), &leftover)),
             "[position {position} of {ids:?}] the refusal must carry `{}` and name `{}`; got:\n{stderr}",
             provision_code(),
-            leftover.display(),
+            as_printed(repo.path(), &leftover),
         );
         assert_eq!(
             fs::read_to_string(&planted).expect("the planted file must survive the refusal"),

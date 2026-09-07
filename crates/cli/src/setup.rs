@@ -1923,7 +1923,7 @@ fn uninstall(
     if !force {
         let dirty = dirty_fanout_worktrees(repo_root)?;
         if !dirty.is_empty() {
-            return Err(dirty_worktree_finding(&dirty));
+            return Err(dirty_worktree_finding(repo_root, &dirty));
         }
         let staged = crate::task::staged_task_prose(
             repo_root,
@@ -2159,8 +2159,8 @@ fn dirty_fanout_worktrees(repo_root: &Path) -> Result<Vec<HeldWorktreePath>, Fin
 
     let mut holds: Vec<HeldWorktreePath> = Vec::new();
     for path in paths {
-        if let Some(hold) =
-            crate::milestone::probe_leftover(&path).map_err(unverified_worktrees_finding)?
+        if let Some(hold) = crate::milestone::probe_leftover(repo_root, &path)
+            .map_err(unverified_worktrees_finding)?
         {
             holds.push(HeldWorktreePath {
                 path,
@@ -2285,13 +2285,7 @@ fn workbench_paths(repo_root: &Path) -> std::io::Result<Vec<String>> {
             }
             continue;
         }
-        let rel = path.strip_prefix(repo_root).unwrap_or(&path);
-        paths.push(
-            rel.components()
-                .map(|c| c.as_os_str().to_string_lossy().into_owned())
-                .collect::<Vec<_>>()
-                .join("/"),
-        );
+        paths.push(crate::render::repo_relative(repo_root, &path));
     }
     paths.sort();
     Ok(paths)
@@ -2465,7 +2459,7 @@ fn unverified_workbench_finding(err: anyhow::Error) -> Finding {
 /// teardown that has already been cleared to run.
 fn narrate_teardown(repo_root: &Path) {
     for path in fanout_worktree_paths(repo_root).unwrap_or_default() {
-        crate::milestone::narrate_removal(&path);
+        crate::milestone::narrate_removal(repo_root, &path);
     }
     // The second subject, which no worktree probe can see: `.jigc/tasks/<id>/docs/*.md` is in
     // no object DB at all. A door that names only half of what it takes is a law-1
@@ -2608,7 +2602,7 @@ struct HeldWorktreePath {
 /// appears only when some listed path is registered here, says what it leaves behind when
 /// only some are, and is replaced by the plain statement that no abandon reaches them when
 /// none is. Unknown registrations (`git worktree list` unreadable) promise neither.
-fn dirty_worktree_finding(dirty: &[HeldWorktreePath]) -> Finding {
+fn dirty_worktree_finding(repo_root: &Path, dirty: &[HeldWorktreePath]) -> Finding {
     let listing: Vec<String> = dirty
         .iter()
         .map(|held| {
@@ -2619,7 +2613,7 @@ fn dirty_worktree_finding(dirty: &[HeldWorktreePath]) -> Finding {
             };
             format!(
                 "  {}: {}{fate}",
-                held.path.display(),
+                crate::render::repo_relative(repo_root, &held.path),
                 held.entries.join(", ")
             )
         })

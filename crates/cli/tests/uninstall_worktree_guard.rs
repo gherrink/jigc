@@ -65,6 +65,25 @@ impl Drop for TempDir {
     }
 }
 
+/// How a refusal spells a path it names, since **M50 Increment 12 / T1**: repo-relative and
+/// `/`-separated, because a surface prints no host filesystem
+/// (`design/surface-contract.md` → The printed-path fence; the axis suite is
+/// `crates/cli/tests/repo_relative_paths.rs`). Asserting the absolute spelling here was
+/// asserting the defect — and it is why this file used to normalize macOS's `/private/`
+/// prefix by hand: a repo-relative path has no such prefix to normalize.
+fn as_printed(repo: &Path, path: &Path) -> String {
+    let (root, real) = match (repo.canonicalize(), path.canonicalize()) {
+        (Ok(root), Ok(real)) => (root, real),
+        _ => (repo.to_path_buf(), path.to_path_buf()),
+    };
+    real.strip_prefix(&root)
+        .unwrap_or(&real)
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
 /// Run `git <args>` in `cwd`, asserting success.
 fn git_ok(cwd: &Path, args: &[&str]) -> String {
     let out = Command::new("git")
@@ -363,16 +382,9 @@ fn uninstall_refuses_while_an_aborted_fan_outs_worktrees_hold_uncommitted_work()
         // (2) It names every dirty worktree and the porcelain entries that make it dirty —
         // the `milestone.dirty-worktree` sibling's shape.
         for (sub, rel) in [("area-low", "src/low.rs"), ("area-zed", "src/zed.rs")] {
-            let path = worktree_dir(repo.path(), sub);
-            let shown = path
-                .canonicalize()
-                .unwrap_or(path)
-                .display()
-                .to_string()
-                .replace("/private/", "/");
-            let stderr_norm = stderr.replace("/private/", "/");
+            let shown = as_printed(repo.path(), &worktree_dir(repo.path(), sub));
             assert!(
-                stderr_norm.contains(&shown),
+                stderr.contains(&shown),
                 "[{label}] the refusal must name the dirty worktree `{shown}`; stderr:\n{stderr}",
             );
             assert!(
@@ -780,14 +792,9 @@ fn uninstall_refuses_a_non_empty_worktree_path_no_registered_probe_can_see() {
         stderr.contains("uninstall.dirty-worktree"),
         "the refusal must carry the `uninstall.dirty-worktree` code; stderr:\n{stderr}",
     );
-    let shown = ghost
-        .canonicalize()
-        .unwrap_or(ghost.clone())
-        .display()
-        .to_string()
-        .replace("/private/", "/");
+    let shown = as_printed(repo.path(), &ghost);
     assert!(
-        stderr.replace("/private/", "/").contains(&shown),
+        stderr.contains(&shown),
         "the refusal must name the path `{shown}`; stderr:\n{stderr}",
     );
     assert!(

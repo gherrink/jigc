@@ -2130,12 +2130,19 @@ fn provision_worktrees(
 ) -> Result<Vec<PathBuf>> {
     // Canonicalize jigc_home so the per-id paths match `git worktree list`'s canonical
     // absolute paths (git resolves symlinks at `add` time) — the reuse comparison below.
-    let canonical_home = jigc_home
-        .canonicalize()
-        .with_context(|| format!("could not canonicalize {jigc_home:?}"))?;
+    let canonical_home = jigc_home.canonicalize().with_context(|| {
+        format!(
+            "could not canonicalize the jigc home `{}`",
+            render::repo_relative(repo_root, jigc_home),
+        )
+    })?;
     let worktrees_root = canonical_home.join(".jigc").join("worktrees");
-    std::fs::create_dir_all(&worktrees_root)
-        .with_context(|| format!("could not create {worktrees_root:?}"))?;
+    std::fs::create_dir_all(&worktrees_root).with_context(|| {
+        format!(
+            "could not create `{}`",
+            render::repo_relative(repo_root, &worktrees_root),
+        )
+    })?;
 
     // Drop admin records for any worktree dir deleted out from under git by a crashed
     // run, so a later `add` at that path is not rejected as a stale registration.
@@ -2155,9 +2162,10 @@ fn provision_worktrees(
         // exists"), so it has to go — but only once the probe can prove it holds nothing
         // (or `--force` says so): the binary cannot tell `junk.txt` from `precious.txt`.
         if !reuse && !force {
-            let probed = probe_leftover(&path).map_err(|err| {
+            let probed = probe_leftover(repo_root, &path).map_err(|err| {
                 finding_to_err(unprobeable_leftover_finding(
                     &PROVISION_DOOR,
+                    repo_root,
                     &path,
                     &err,
                     // **No `--force`.** This arm is reachable only unforced (`--force`
@@ -2175,7 +2183,12 @@ fn provision_worktrees(
                 ))
             })?;
             if let Some(hold) = probed {
-                return Err(finding_to_err(leftover_finding(milestone_id, &path, &hold)));
+                return Err(finding_to_err(leftover_finding(
+                    milestone_id,
+                    repo_root,
+                    &path,
+                    &hold,
+                )));
             }
         }
         plan.push((id.clone(), path, reuse));
@@ -2190,12 +2203,15 @@ fn provision_worktrees(
     for (id, path, reuse) in plan {
         let stopped = |err: anyhow::Error, landed: usize| {
             finding_to_err(provision_failed_finding(
-                milestone_id,
-                &id,
-                &path,
-                landed,
-                total,
-                force,
+                &ProvisionStop {
+                    milestone_id,
+                    repo_root,
+                    sub_id: &id,
+                    path: &path,
+                    landed,
+                    total,
+                    force,
+                },
                 &err,
             ))
         };
@@ -2205,14 +2221,24 @@ fn provision_worktrees(
                 // refused on any content unless `force`, so reaching here over a non-empty
                 // path means the operator consented — and consent is a reason to proceed,
                 // never a reason to destroy in silence.
-                narrate_removal(&path);
+                narrate_removal(repo_root, &path);
                 std::fs::remove_dir_all(&path)
-                    .with_context(|| format!("could not clear the stale worktree dir {path:?}"))
+                    .with_context(|| {
+                        format!(
+                            "could not clear the stale worktree dir `{}`",
+                            render::repo_relative(repo_root, &path),
+                        )
+                    })
                     .map_err(|err| stopped(err, paths.len()))?;
             }
             let path_str = path
                 .to_str()
-                .with_context(|| format!("worktree path {path:?} is not valid UTF-8"))
+                .with_context(|| {
+                    format!(
+                        "worktree path `{}` is not valid UTF-8",
+                        render::repo_relative(repo_root, &path),
+                    )
+                })
                 .map_err(|err| stopped(err, paths.len()))?;
             git_worktree(
                 repo_root,
@@ -2238,16 +2264,17 @@ fn provision_worktrees(
 /// The underlying git/IO failure rides the message verbatim (`{err:#}`, the whole `anyhow`
 /// chain), because *"could not clear the stale worktree dir … Not a directory"* is the only
 /// sentence that says what the operator has to deal with before the re-run can work.
-fn provision_failed_finding(
-    milestone_id: &str,
-    sub_id: &str,
-    path: &Path,
-    landed: usize,
-    total: usize,
-    force: bool,
-    err: &anyhow::Error,
-) -> Finding {
-    let address = path.display().to_string();
+fn provision_failed_finding(stop: &ProvisionStop<'_>, err: &anyhow::Error) -> Finding {
+    let ProvisionStop {
+        milestone_id,
+        repo_root,
+        sub_id,
+        path,
+        landed,
+        total,
+        force,
+    } = *stop;
+    let address = render::repo_relative(repo_root, path);
     Finding::graded(
         Severity::Blocking,
         PROVISION_FAILED_CODE,
@@ -2266,6 +2293,27 @@ fn provision_failed_finding(
              every worktree that landed and adds only the rest",
         )),
     )
+}
+
+/// The state a **phase-2** provision failure stopped in — [`provision_failed_finding`]'s
+/// whole subject, in one value.
+///
+/// A struct rather than seven positional arguments: the block's claim is *"`landed` of
+/// `total` are on disk and `sub_id`'s is not"*, and those counts only mean anything together.
+/// It also keeps the finding's `repo_root` — the block renders its own locus through
+/// [`crate::render::repo_relative`], so the rule that a printed path is repo-real stays a
+/// property of the producer rather than of whichever caller happened to pre-render it.
+struct ProvisionStop<'a> {
+    milestone_id: &'a str,
+    repo_root: &'a Path,
+    sub_id: &'a str,
+    /// The worktree path the walk stopped at.
+    path: &'a Path,
+    /// How many worktrees landed before it, and how many the milestone asked for.
+    landed: usize,
+    total: usize,
+    /// Whether the run that stopped carried `--force` — the re-run route echoes it.
+    force: bool,
 }
 
 /// The canonical absolute paths of the repo's currently-registered worktrees, parsed
@@ -2480,7 +2528,7 @@ pub struct LeftoverHold {
 ///
 /// `pub(crate)` for its sibling doors: [`DESTROYING_DOORS`] all remove worktree-shaped paths
 /// under `.jigc/worktrees/`, and they ask one probe rather than growing three that drift.
-pub(crate) fn probe_leftover(path: &Path) -> Result<Option<LeftoverHold>> {
+pub(crate) fn probe_leftover(repo_root: &Path, path: &Path) -> Result<Option<LeftoverHold>> {
     if !path.exists() {
         return Ok(None);
     }
@@ -2504,7 +2552,9 @@ pub(crate) fn probe_leftover(path: &Path) -> Result<Option<LeftoverHold>> {
         // place the bytes, so the project's own ignore rules are readable and the ordinary
         // fan-out success path is full of build output; here git places nothing, so no
         // ignored/tracked distinction exists to scope a refusal with.
-        LeftoverVerdict::Unverifiable | LeftoverVerdict::NoOwnLinkage => child_names(path)?,
+        LeftoverVerdict::Unverifiable | LeftoverVerdict::NoOwnLinkage => {
+            child_names(repo_root, path)?
+        }
     };
     if entries.is_empty() {
         Ok(None)
@@ -2520,7 +2570,12 @@ pub(crate) fn probe_leftover(path: &Path) -> Result<Option<LeftoverHold>> {
 /// The route is the mechanical `--force` re-run (the M43 route fence checks that argv against
 /// the real CLI at construction). Its tail carries the honest first move: the refusal is not a
 /// puzzle to solve, it is a directory to look inside.
-fn leftover_finding(milestone_id: &str, path: &Path, hold: &LeftoverHold) -> Finding {
+fn leftover_finding(
+    milestone_id: &str,
+    repo_root: &Path,
+    path: &Path,
+    hold: &LeftoverHold,
+) -> Finding {
     let because = match hold.verdict {
         LeftoverVerdict::OwnWorktree => {
             "it is a live git worktree holding uncommitted work, registered here or not"
@@ -2537,7 +2592,7 @@ fn leftover_finding(milestone_id: &str, path: &Path, hold: &LeftoverHold) -> Fin
         .iter()
         .map(|entry| format!("  {entry}"))
         .collect();
-    let address = path.display().to_string();
+    let address = render::repo_relative(repo_root, path);
     Finding::graded(
         Severity::Blocking,
         PROVISION_CODE,
@@ -2560,13 +2615,14 @@ fn leftover_finding(milestone_id: &str, path: &Path, hold: &LeftoverHold) -> Fin
 /// The sorted immediate child names of `path` — the "what would be deleted" listing for the
 /// two verdicts with no git to ask. Sorted, so the refusal text does not vary with readdir
 /// order.
-fn child_names(path: &Path) -> Result<Vec<String>> {
+fn child_names(repo_root: &Path, path: &Path) -> Result<Vec<String>> {
     let mut names = Vec::new();
+    let at = render::repo_relative(repo_root, path);
     for entry in std::fs::read_dir(path)
-        .with_context(|| format!("could not read the leftover directory {path:?}"))?
+        .with_context(|| format!("could not read the leftover directory `{at}`"))?
     {
         let entry =
-            entry.with_context(|| format!("could not read an entry of the directory {path:?}"))?;
+            entry.with_context(|| format!("could not read an entry of the directory `{at}`"))?;
         names.push(entry.file_name().to_string_lossy().into_owned());
     }
     names.sort();
@@ -2598,11 +2654,12 @@ fn child_names(path: &Path) -> Result<Vec<String>> {
 /// entirely and does abandon the milestone.
 fn unprobeable_leftover_finding(
     door: &DestroyingDoor,
+    repo_root: &Path,
     path: &Path,
     err: &anyhow::Error,
     route: engine::finding::Route,
 ) -> Finding {
-    let address = path.display().to_string();
+    let address = render::repo_relative(repo_root, path);
     Finding::graded(
         Severity::Blocking,
         door.code
@@ -2785,7 +2842,7 @@ fn partial_worktree_advisories(
                 ),
                 WorktreeState::Live => unreachable!("a live worktree is not missing"),
             };
-            let address = sub.path.display().to_string();
+            let address = render::repo_relative(repo_root, &sub.path);
             Finding::graded(
                 Severity::Advisory,
                 PARTIAL_WORKTREES_CODE,
@@ -2916,7 +2973,11 @@ fn run_discard(cwd: &Path, milestone_id: &str, force: bool) -> Result<(String, S
     if !force {
         let held = held_subtask_worktrees(milestone_id, &repo_root, &jigc_home, &list)?;
         if !held.is_empty() {
-            return Err(finding_to_err(dirty_worktree_finding(milestone_id, &held)));
+            return Err(finding_to_err(dirty_worktree_finding(
+                milestone_id,
+                &repo_root,
+                &held,
+            )));
         }
     }
 
@@ -2963,7 +3024,7 @@ fn run_discard(cwd: &Path, milestone_id: &str, force: bool) -> Result<(String, S
     );
     cleanup_subtask_areas(&jigc_root, &list);
     remove_worktrees(&repo_root, &jigc_home, &list);
-    remove_milestone_area(&dir);
+    remove_milestone_area(&repo_root, &dir);
 
     Ok((
         format!(
@@ -2998,6 +3059,14 @@ fn run_discard(cwd: &Path, milestone_id: &str, force: bool) -> Result<(String, S
 /// exactly the same bytes (the worktrees live under `.jigc/worktrees/`), so it guards on this
 /// same probe rather than growing a second, drifting one
 /// (`crate::setup::dirty_fanout_worktrees`).
+///
+/// **Its failure names the host path, deliberately** (M50 Increment 12 / T1). Every other path
+/// this module puts on a surface renders through [`crate::render::repo_relative`]; this one
+/// does not, because the line is **quoting an invocation** rather than addressing a doc —
+/// `` `git status --porcelain` in worktree <wt> failed: <git's own stderr> `` — and the path is
+/// the argument jigc handed git, printed beside git's own words naming that same absolute.
+/// Relativizing one half would misquote the command that failed. Disposed as
+/// `DeclaredAbsolute` in `crates/cli/tests/repo_relative_paths.rs`.
 pub(crate) fn dirty_worktrees(worktrees: &[PathBuf]) -> Result<Vec<(PathBuf, Vec<String>)>> {
     let mut dirty = Vec::new();
     for wt in worktrees {
@@ -3072,9 +3141,10 @@ fn held_subtask_worktrees(
         // floor cannot see ([`unprobeable_leftover_finding`]). `--force` is named here and
         // not at `provision` because it genuinely works at this door: it skips this guard
         // and abandons the milestone, leaving a path nothing vouches for on disk.
-        let probed = probe_leftover(&path).map_err(|err| {
+        let probed = probe_leftover(repo_root, &path).map_err(|err| {
             finding_to_err(unprobeable_leftover_finding(
                 &DISCARD_DOOR,
+                repo_root,
                 &path,
                 &err,
                 format!(
@@ -3109,7 +3179,7 @@ fn held_subtask_worktrees(
 /// The route names both honest exits — get the content out, or `--force` to abandon anyway (the
 /// [`crate::combine::detect_code_collision`] finding idiom) — and states what `--force` really
 /// costs on each disposition, since on the orphaning one it costs nothing on disk.
-fn dirty_worktree_finding(milestone_id: &str, held: &[HeldWorktree]) -> Finding {
+fn dirty_worktree_finding(milestone_id: &str, repo_root: &Path, held: &[HeldWorktree]) -> Finding {
     let listing: Vec<String> = held
         .iter()
         .map(|w| {
@@ -3118,10 +3188,14 @@ fn dirty_worktree_finding(milestone_id: &str, held: &[HeldWorktree]) -> Finding 
             } else {
                 "not registered here, so the teardown leaves it on disk with no milestone naming it"
             };
-            format!("  {}: {} — {fate}", w.path.display(), w.entries.join(", "))
+            format!(
+                "  {}: {} — {fate}",
+                render::repo_relative(repo_root, &w.path),
+                w.entries.join(", ")
+            )
         })
         .collect();
-    let address = held[0].path.display().to_string();
+    let address = render::repo_relative(repo_root, &held[0].path);
     Finding::graded(
         Severity::Blocking,
         DISCARD_CODE,
@@ -3152,11 +3226,14 @@ fn dirty_worktree_finding(milestone_id: &str, held: &[HeldWorktree]) -> Finding 
 /// executor: without it an abandoned milestone leaves a cache `provision` would re-provision
 /// worktrees from. Best-effort, logged-not-raised — the record commit has already landed, so a
 /// cleanup failure must not fail it (the [`cleanup_subtask_areas`] self-heal stance).
-fn remove_milestone_area(dir: &Path) {
+fn remove_milestone_area(repo_root: &Path, dir: &Path) {
     if dir.exists()
         && let Err(err) = std::fs::remove_dir_all(dir)
     {
-        eprintln!("note: milestone workbench removal at {dir:?} failed (self-heals): {err:#}");
+        eprintln!(
+            "note: milestone workbench removal at `{}` failed (self-heals): {err:#}",
+            render::repo_relative(repo_root, dir),
+        );
     }
 }
 
@@ -4045,6 +4122,14 @@ fn cleanup_subtask_areas(jigc_root: &Path, list: &engine::milestone::TaskList) {
 /// *prevented* — a `discard`-style refusal on the landed path is new surface, chartered
 /// to M46 (`implementation/decisions-pending.md` → the capability wave).
 fn remove_worktrees(repo_root: &Path, jigc_home: &Path, list: &engine::milestone::TaskList) {
+    // **This function's two warnings name the host path, deliberately** (M50 Increment 12 /
+    // T1). The second carries a `git worktree remove --force <path>` the operator pastes, and
+    // git resolves a worktree path against the CALLER's cwd — so a repo-relative remedy works
+    // only from the repo root, which nothing here can promise. The first warning then names
+    // the same path the same way, because one screen spelling one path two ways is the law-1
+    // break this pass closes, not a fix for it. Disposed as `DeclaredAbsolute` in
+    // `crates/cli/tests/repo_relative_paths.rs`; the loss narration these warnings sit beside
+    // goes through [`narrate_removal`], which is repo-relative like every other surface.
     let registered = registered_worktrees(repo_root).unwrap_or_default();
     // Match `provision_worktrees`' canonical-path convention (git stores canonical paths at
     // `add` time); fall back to the raw path if canonicalization fails (then nothing matches
@@ -4065,7 +4150,7 @@ fn remove_worktrees(repo_root: &Path, jigc_home: &Path, list: &engine::milestone
         // Name the loss BEFORE the removal (law 1 — nothing lies: a boundary that exits 0
         // must not also have silently destroyed work), through the emitter every destroying
         // door shares.
-        narrate_removal(&path);
+        narrate_removal(repo_root, &path);
         if let Err(err) = git_worktree(repo_root, &["worktree", "remove", "--force", path_str]) {
             // A2 — pinned non-blocking warning, naming the leaked path + the prune remedy.
             eprintln!(
@@ -4771,7 +4856,7 @@ struct Doomed {
 /// Probe what a removal at `path` would take. An empty `lines` means the removal destroys
 /// nothing that is not already in git: an absent path, an empty directory, or a worktree
 /// whose whole content is staged.
-fn doomed_at(path: &Path) -> Result<Doomed> {
+fn doomed_at(repo_root: &Path, path: &Path) -> Result<Doomed> {
     const WORKTREE: &str = "fan-out worktree";
     if !path.exists() {
         return Ok(Doomed {
@@ -4786,11 +4871,13 @@ fn doomed_at(path: &Path) -> Result<Doomed> {
     if !path.is_dir() {
         return Ok(Doomed {
             subject: "leftover file",
+            // The bare file name, and — for the pathological path with none (a trailing
+            // `..`) — the repo-relative spelling rather than `as_os_str()`'s host path,
+            // which is the same law-1 leak one fallback deeper.
             lines: vec![
                 path.file_name()
-                    .unwrap_or(path.as_os_str())
-                    .to_string_lossy()
-                    .into_owned(),
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| render::repo_relative(repo_root, path)),
             ],
         });
     }
@@ -4806,7 +4893,7 @@ fn doomed_at(path: &Path) -> Result<Doomed> {
         // names — the [`child_names`] listing the two fail-closed refusals already print.
         LeftoverVerdict::Unverifiable | LeftoverVerdict::NoOwnLinkage => Ok(Doomed {
             subject: "leftover directory",
-            lines: child_names(path)?,
+            lines: child_names(repo_root, path)?,
         }),
     }
 }
@@ -4828,8 +4915,8 @@ fn doomed_at(path: &Path) -> Result<Doomed> {
 ///
 /// `pub(crate)` for `crate::setup::uninstall`, whose `remove_dir_all(<repo>/.jigc)` takes
 /// exactly these paths with it.
-pub(crate) fn narrate_removal(path: &Path) {
-    let Ok(doomed) = doomed_at(path) else {
+pub(crate) fn narrate_removal(repo_root: &Path, path: &Path) {
+    let Ok(doomed) = doomed_at(repo_root, path) else {
         return;
     };
     if doomed.lines.is_empty() {
@@ -4844,7 +4931,7 @@ pub(crate) fn narrate_removal(path: &Path) {
         "warning: removing the {} {} discards work that is not in git:\n{}\n  note: the {} is \
          the only copy of these bytes — they are not recoverable.",
         doomed.subject,
-        path.display(),
+        render::repo_relative(repo_root, path),
         listing.join("\n"),
         doomed.subject,
     );

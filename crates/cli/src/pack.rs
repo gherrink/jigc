@@ -384,6 +384,15 @@ fn assert_project_schema_shadows(
         })?;
         let actual = engine::manifest::schema_hash(&schema);
         if actual != entry.schema_hash {
+            // **Both halves name the host path, deliberately** (M50 Increment 12 / T1).
+            // Every path a *verb* prints renders through `crate::render::repo_relative`;
+            // pack-load has no repo-root subject to be relative to — this check receives a
+            // project-config path, and it runs before any verb has resolved a repository —
+            // and the `route:` below is bytes pasted into a shell whose cwd nothing here
+            // knows. The *message* stays absolute with the route for the reason
+            // `crate::milestone::remove_worktrees` states: one screen, one spelling.
+            // Disposed as `DeclaredAbsolute` in `crates/cli/tests/repo_relative_paths.rs`.
+            //
             // The `route:` span is the **only** stated exit from a state in which every
             // door exits non-zero, and it is bytes an operator pastes into a shell — so
             // the one interpolated token in it is rendered through the same

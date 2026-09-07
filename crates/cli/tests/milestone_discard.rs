@@ -119,6 +119,25 @@ const ACTIVE_SUB: &str = "purge-stale-keys";
 /// The bytes planted in the non-registered leftover — a refusal must leave them exactly this.
 const PRECIOUS: &str = "precious, uncommitted, in no object DB\n";
 
+/// How a refusal spells a path it names, since **M50 Increment 12 / T1**: repo-relative and
+/// `/`-separated, because a surface prints no host filesystem
+/// (`design/surface-contract.md` → The printed-path fence; the axis suite is
+/// `crates/cli/tests/repo_relative_paths.rs`). Asserting the absolute spelling here was
+/// asserting the defect — and it is why this file used to normalize macOS's `/private/`
+/// prefix by hand: a repo-relative path has no such prefix to normalize.
+fn as_printed(repo: &Path, path: &Path) -> String {
+    let (root, real) = match (repo.canonicalize(), path.canonicalize()) {
+        (Ok(root), Ok(real)) => (root, real),
+        _ => (repo.to_path_buf(), path.to_path_buf()),
+    };
+    real.strip_prefix(&root)
+        .unwrap_or(&real)
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
 /// Run a `git` command in `repo`, asserting success, returning trimmed stdout.
 fn git(repo: &Path, args: &[&str]) -> String {
     let out = Command::new("git")
@@ -440,9 +459,9 @@ fn a_non_registered_leftover_at_a_subtask_worktree_path_refuses_the_discard() {
         discard_code(),
     );
     assert!(
-        stderr.contains(&leftover.display().to_string()),
+        stderr.contains(&as_printed(repo.path(), &leftover)),
         "the refusal names the leftover path `{}`; stderr:\n{stderr}",
-        leftover.display(),
+        as_printed(repo.path(), &leftover),
     );
     assert!(
         stderr.contains("precious.txt"),
