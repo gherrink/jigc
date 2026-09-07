@@ -571,6 +571,33 @@ fn flow9_cross_area_ref_blocks_with_naive_union_control() {
     );
 }
 
+/// Build the shipped `join.same-doc-clash` fixture in `repo`: milestone
+/// `cache-hardening`, two sub-tasks, and BOTH areas staging the SAME
+/// committed-at-base slug `edited-from-base` — the partition violation the join
+/// refuses. One fixture, so the two arms that drive it (the `finalize` block below
+/// and the blocked-join surface arm) cannot drift apart on what "a clash" is.
+fn stage_same_doc_clash(repo: &Path, home: &Path) {
+    expect_ok(
+        &run_milestone(repo, home, &["create", "Cache hardening"]),
+        "create",
+    );
+    for intent in ["Tune eviction thresholds", "Document eviction policy"] {
+        expect_ok(
+            &run_milestone(repo, home, &["add-task", "cache-hardening", intent]),
+            "add-task",
+        );
+    }
+    for sub in ["tune-eviction-thresholds", "document-eviction-policy"] {
+        stage_doc(
+            repo,
+            sub,
+            "adr:eviction-policy",
+            &adr_plain("Eviction policy"),
+            "edited-from-base",
+        );
+    }
+}
+
 /// **Supporting — two sub-tasks `edited-from-base` the same committed-at-base slug → a
 /// blocking `join.same-doc-clash`, committing nothing.** A partition violation the join
 /// routes to a human rather than blind-merging (no section-merge, no last-writer-win).
@@ -579,30 +606,7 @@ fn flow9_same_doc_clash_blocks_and_commits_nothing() {
     let home = TempDir::new("home");
     let repo = TempDir::new("clash");
     init_repo(repo.path());
-    expect_ok(
-        &run_milestone(repo.path(), home.path(), &["create", "Cache hardening"]),
-        "create",
-    );
-    for intent in ["Tune eviction thresholds", "Document eviction policy"] {
-        expect_ok(
-            &run_milestone(
-                repo.path(),
-                home.path(),
-                &["add-task", "cache-hardening", intent],
-            ),
-            "add-task",
-        );
-    }
-    // Both areas edit the SAME committed-at-base slug — a same-doc clash.
-    for sub in ["tune-eviction-thresholds", "document-eviction-policy"] {
-        stage_doc(
-            repo.path(),
-            sub,
-            "adr:eviction-policy",
-            &adr_plain("Eviction policy"),
-            "edited-from-base",
-        );
-    }
+    stage_same_doc_clash(repo.path(), home.path());
 
     let before_head = git(repo.path(), &["rev-parse", "HEAD"]);
     let finalized = run_milestone(repo.path(), home.path(), &["finalize", "cache-hardening"]);
@@ -628,5 +632,108 @@ fn flow9_same_doc_clash_blocks_and_commits_nothing() {
     assert!(
         !repo.path().join("docs").join("decisions").exists(),
         "a same-doc clash must promote nothing",
+    );
+}
+
+/// **Supporting — a blocked `jigc milestone join` states the block, and its envelope
+/// names its version** (M50 Increment 10 / T2; `design/surface-contract.md` → law 1;
+/// `design/command-output-contract.md` → The third version integer; baseline-ledger
+/// **N10**). Driven over the shipped `join.same-doc-clash` fixture, the door used to
+/// open `joined milestone:<id> — 0 doc(s) merged`, close with the routing footer, and
+/// only THEN print the blocking finding — so stdout narrated a join that merged
+/// nothing, and the verdict arrived after the line an agent reads as the end of the
+/// output. Its `--format json` arm carried `findings` with no `schema_version`, while
+/// the block envelope a refused write returns carries it beside the same key — so of
+/// the two envelopes that hand a driver a blocking finding as data, only the join's was
+/// unversioned.
+///
+/// Three assertions, one per leg of the defect:
+///
+///   a. the clash run's **stdout** carries no completed-join claim;
+///   b. the blocking finding is legible **ahead of** the routing footer in the merged
+///      read (both streams into one file — the ordering an agent actually sees, which
+///      two separately-captured pipes cannot prove);
+///   c. `--format json` carries `schema_version` beside `findings`, read from
+///      `engine::result::SCHEMA_VERSION` rather than retyped — the constant is global,
+///      so a test spelling `3` would keep passing through a bump.
+///
+/// Stream discipline is untouched: the finding stays on stderr, the ack on stdout.
+#[test]
+fn flow9_blocked_join_states_the_block_and_versions_its_envelope() {
+    let home = TempDir::new("home");
+    let repo = TempDir::new("blocked-join");
+    init_repo(repo.path());
+    stage_same_doc_clash(repo.path(), home.path());
+
+    // (a) The separated-stream run: stdout must not claim a join that did not happen.
+    let joined = run_milestone(repo.path(), home.path(), &["join", "cache-hardening"]);
+    assert!(
+        !joined.status.success(),
+        "a same-doc clash join must exit non-zero; got {:?}",
+        joined.status,
+    );
+    let stdout = String::from_utf8(joined.stdout).expect("utf-8 stdout");
+    assert!(
+        !stdout.contains("joined milestone:"),
+        "a blocked join must not narrate a completed join on stdout (law 1 — the join \
+         merged nothing and committed nothing); got:\n{stdout}",
+    );
+
+    // (c) The JSON envelope: the version integer beside the findings. The blocking
+    // code is read back here and reused by (b), so the merged-read assertion keys on
+    // the identity the WIRE carries rather than one spelled in this test.
+    let json = run_milestone(
+        repo.path(),
+        home.path(),
+        &["join", "cache-hardening", "--format", "json"],
+    );
+    let envelope: serde_json::Value =
+        serde_json::from_slice(&json.stdout).expect("the join renders a JSON outcome on stdout");
+    assert_eq!(
+        envelope["schema_version"],
+        serde_json::json!(engine::result::SCHEMA_VERSION),
+        "the join envelope must carry the result-contract version beside its findings, \
+         as the block envelope a refused write returns already does; got:\n{envelope:#}",
+    );
+    let code = envelope["findings"]
+        .as_array()
+        .expect("a findings array beside `schema_version`")
+        .iter()
+        .find(|f| f["severity"] == "blocking")
+        .and_then(|f| f["code"].as_str())
+        .expect("the blocked join's envelope carries the blocking finding")
+        .to_owned();
+
+    // (b) The merged read — both streams into ONE file, so the assertion is about the
+    // order an agent sees, not about two independently-buffered captures.
+    let merged_path = home.path().join("merged.txt");
+    let sink = fs::File::create(&merged_path).expect("create the merged sink");
+    let dup = sink
+        .try_clone()
+        .expect("share the sink between both streams");
+    let status = Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(["milestone", "join", "cache-hardening"])
+        .current_dir(repo.path())
+        .env("HOME", home.path())
+        .stdout(std::process::Stdio::from(sink))
+        .stderr(std::process::Stdio::from(dup))
+        .status()
+        .expect("run the jigc binary");
+    assert!(
+        !status.success(),
+        "the merged run blocks too; got {status:?}"
+    );
+    let merged = fs::read_to_string(&merged_path).expect("utf-8 merged output");
+    let head = format!("blocking · {code} — ");
+    let at_finding = merged
+        .find(&head)
+        .unwrap_or_else(|| panic!("the merged read must carry `{head}`; got:\n{merged}"));
+    let at_footer = merged
+        .find(cli::render::ROUTING_FOOTER)
+        .unwrap_or_else(|| panic!("the merged read must carry the routing footer; got:\n{merged}"));
+    assert!(
+        at_finding < at_footer,
+        "the blocking finding must be legible AHEAD of the routing footer — a reader \
+         that stops at the footer stopped before the verdict; got:\n{merged}",
     );
 }

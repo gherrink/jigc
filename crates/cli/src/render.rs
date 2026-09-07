@@ -3678,10 +3678,11 @@ pub fn milestone(format: Format, summary: &str, hook_output: &str) -> String {
     }
 }
 
-/// Render a **successful** `jigc milestone join` outcome to the surface `format`
-/// selects: `agent` / `human` emit the merged-overlay summary (one `  - <address>`
-/// line per merged doc, id-sorted, naming each doc's provenance + contributing
-/// sub-task, and — for a collision-suffixed instance — the `← suffixed -N on
+/// Render a `jigc milestone join` outcome to the surface `format` selects — the door
+/// runs to completion whether or not the merge is legal, so this renders both the clean
+/// join and the **blocked** one. `agent` / `human` emit the merged-overlay summary (one
+/// `  - <address>` line per merged doc, id-sorted, naming each doc's provenance +
+/// contributing sub-task, and — for a collision-suffixed instance — the `← suffixed -N on
 /// collision` decision plus `; self-ref rewritten` when its own reference was
 /// rewritten in lockstep), then — C3 (round-2 surface fixes) — a `no docs staged
 /// from:` line naming every sub-task in `sub_tasks` (the milestone's full id-sorted
@@ -3689,7 +3690,19 @@ pub fn milestone(format: Format, summary: &str, hook_output: &str) -> String {
 /// of silently crediting a no-work sub-task; followed by the routing footer. The line
 /// says "no docs" deliberately — the join merges docs only, and a sub-task may still
 /// carry staged worktree code the finalize folds. `json` emits the **generic**
-/// projection of the [`JoinOutcome`], with no footer (tooling-consumed).
+/// projection of the [`JoinOutcome`] plus the result-contract `schema_version`, with no
+/// footer (tooling-consumed).
+///
+/// **The headline states the verdict** (M50 Increment 10 / T2). An outcome carrying a
+/// blocking finding — a same-doc clash, a cross-area ref, a code collision — merged
+/// nothing and committed nothing, so it opens `join blocked: milestone:<id> — <k>
+/// blocking finding(s); <n> doc(s) would merge, nothing committed` rather than `joined
+/// milestone:<id>`. Until then both verdicts printed the same success-shaped line and
+/// the block reached the reader only on stderr, *after* the routing footer
+/// ([`crate::milestone`]'s join dispatch prints the findings first for the same reason).
+/// The body below the headline is unchanged either way: under a block it is the merge
+/// the join **would** have produced, which is the diagnostic the contenders are read
+/// against.
 ///
 /// The suffix decision is read straight off the merged overlay (a pure function of
 /// it, like the merge itself): an entry is a collision suffix iff its address ends
@@ -3717,6 +3730,18 @@ pub fn milestone_join(
             let object = envelope
                 .as_object_mut()
                 .expect("the join outcome serializes as an object");
+            // The result-contract version marker every other envelope this contract rides
+            // already carries (`design/command-output-contract.md` → The third version
+            // integer). The join's envelope carried `findings` without it — the one
+            // findings-bearing surface a driver could not version-check. The integer is
+            // **read**, never retyped: it is global, so a literal here would silently
+            // survive a bump (M50 Increment 10 / T2; the Settle's ordering constraint 1
+            // sends any item that *moves* the integer to Increment 5, and this moves it
+            // nowhere).
+            object.insert(
+                "schema_version".to_owned(),
+                serde_json::Value::from(engine::result::SCHEMA_VERSION),
+            );
             object.insert(
                 "milestone".to_owned(),
                 serde_json::Value::String(milestone_id.to_owned()),
@@ -3733,10 +3758,28 @@ pub fn milestone_join(
             json(&envelope)
         }
         Format::Agent | Format::Human => {
-            let mut out = format!(
-                "joined milestone:{milestone_id} — {} doc(s) merged\n",
-                outcome.overlay.len(),
-            );
+            // Law 1: a join carrying a blocking finding merged nothing and committed
+            // nothing, so the headline may not open `joined milestone:…` (M50 Increment
+            // 10 / T2; `design/surface-contract.md` → law 1). The overlay is still
+            // reported — under a block it is the merge the join *would* have produced,
+            // which is exactly the diagnostic the contending sub-tasks are read against.
+            let blocking = outcome
+                .findings
+                .iter()
+                .filter(|finding| finding.severity == Severity::Blocking)
+                .count();
+            let mut out = if blocking == 0 {
+                format!(
+                    "joined milestone:{milestone_id} — {} doc(s) merged\n",
+                    outcome.overlay.len(),
+                )
+            } else {
+                format!(
+                    "join blocked: milestone:{milestone_id} — {blocking} blocking finding(s); \
+                     {} doc(s) would merge, nothing committed\n",
+                    outcome.overlay.len(),
+                )
+            };
             for (address, doc) in &outcome.overlay {
                 out.push_str("  - ");
                 out.push_str(address);

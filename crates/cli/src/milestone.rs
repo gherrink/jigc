@@ -3250,11 +3250,12 @@ fn run_execute(
 /// Dispatch `jigc milestone join <milestone-id>`: run the by-task-id join, render the
 /// merged outcome, and map it to the exit code. A locator/IO error or an unknown
 /// milestone (an `Err(Finding)`) routes to stderr and exits non-zero **before** any
-/// summary. A successful merge always renders the outcome on stdout (so the agent sees
-/// the suffix/rewrite decisions); if any **blocking** finding rode inside the outcome —
-/// a same-doc clash, an isolation violation — its route also goes to stderr and the
-/// process exits non-zero. The verb **commits nothing** (Increment 4 wires the
-/// suffix-resolved overlay into finalize); a clash leaves the working tree untouched.
+/// summary. The outcome always renders on stdout (so the agent sees the suffix/rewrite
+/// decisions); if any **blocking** finding rode inside it — a same-doc clash, an
+/// isolation violation — the house finding line goes to stderr **first** and the process
+/// exits non-zero, and the stdout headline says `join blocked:` rather than claiming a
+/// join. The verb **commits nothing** (Increment 4 wires the suffix-resolved overlay
+/// into finalize); a clash leaves the working tree untouched.
 fn dispatch_join(cwd: &Path, format: Format, milestone_id: &str) -> Outcome {
     let (outcome, sub_tasks) = match run_join(cwd, milestone_id) {
         Ok(outcome) => outcome,
@@ -3263,34 +3264,42 @@ fn dispatch_join(cwd: &Path, format: Format, milestone_id: &str) -> Outcome {
             return Outcome::failure();
         }
     };
-    // The merged-overlay summary always prints (the agent reads the suffix/rewrite
-    // decisions even when the join is clean). The milestone's full id-sorted sub-task
-    // list rides along so the ack can name the doc-less sub-tasks (C3).
-    println!(
-        "{}",
-        render::milestone_join(format, milestone_id, &outcome, &sub_tasks)
-    );
-
     // A blocking finding inside the outcome (e.g. `join.same-doc-clash`) routes to
-    // stderr and gates the exit code — nothing is committed regardless.
+    // stderr and gates the exit code — nothing is committed regardless. It prints
+    // **before** the stdout ack (M50 Increment 10 / T2): that ack ends in the routing
+    // footer, and a reader that stops at the footer stopped before the verdict, so in
+    // the merged read an agent actually gets the block used to arrive after the line
+    // that reads as the end of the output. Stream discipline is unchanged — the finding
+    // is on stderr, the ack on stdout; only the order moved.
     let blocking: Vec<&Finding> = outcome
         .findings
         .iter()
         .filter(|f| f.severity == engine::finding::Severity::Blocking)
         .collect();
+    let mut finding_codes = Vec::with_capacity(blocking.len());
+    for finding in &blocking {
+        // The **house** findings line, whole — head, locus, route, in that order
+        // ([`crate::render::finding_line`], M50 Increment 10 / T1). A blocked join
+        // printed its message and pushed its code into the invocation log in the same
+        // loop, while the reader got no code at all. `eprint!`, not `eprintln!`: the
+        // house line already ends in `\n`.
+        eprint!("{}", crate::render::finding_line(finding, false));
+        finding_codes.push(finding.code.clone());
+    }
+
+    // The merged-overlay summary always prints (the agent reads the suffix/rewrite
+    // decisions even when the join is clean). The milestone's full id-sorted sub-task
+    // list rides along so the ack can name the doc-less sub-tasks (C3). Its headline
+    // states which verdict this run had — [`render::milestone_join`] opens `join
+    // blocked:` over a blocking outcome, never `joined milestone:`.
+    println!(
+        "{}",
+        render::milestone_join(format, milestone_id, &outcome, &sub_tasks)
+    );
+
     if blocking.is_empty() {
         Outcome::success()
     } else {
-        let mut finding_codes = Vec::with_capacity(blocking.len());
-        for finding in blocking {
-            // The **house** findings line, whole — head, locus, route, in that order
-            // ([`crate::render::finding_line`], M50 Increment 10 / T1). A blocked join
-            // printed its message and pushed its code into the invocation log in the same
-            // loop, while the reader got no code at all. `eprint!`, not `eprintln!`: the
-            // house line already ends in `\n`.
-            eprint!("{}", crate::render::finding_line(finding, false));
-            finding_codes.push(finding.code.clone());
-        }
         // A blocked join is a reject that is not a task-scope gate — the taxonomy
         // constant, never a bare literal (the exit-code table's one origin).
         Outcome {
