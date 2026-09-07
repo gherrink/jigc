@@ -1333,6 +1333,20 @@ fn install(repo_root: &Path, profile: &AdapterProfile) -> Result<SetupSummary, F
     )
     .map_err(|rejection| rejection.finding())?;
 
+    // 8. The forecast (M50 Increment 12 / T3, D5): the install is done — now say what the
+    //    **next** door will refuse. `setup` is the one door that meets a repo whose project
+    //    layer breaks pack-load and says nothing about it, so an adopter installs at exit 0
+    //    and then meets a block on their next command with no idea the install had already
+    //    seen it. Deliberately **after** every write and the install commit: this reports on
+    //    the state the install leaves behind, and it must not be able to change it.
+    //
+    //    Never `?`-propagated — the declared bound (D5) is that the bootstrap door itself
+    //    refuses nothing, so the probe's failure is an advisory on the existing `findings`
+    //    key, never this function's `Err` arm.
+    if let Err(err) = crate::pack::make_pack() {
+        findings.push(pack_load_finding(&err));
+    }
+
     Ok(SetupSummary {
         line_file,
         allowlist_file,
@@ -1342,6 +1356,57 @@ fn install(repo_root: &Path, profile: &AdapterProfile) -> Result<SetupSummary, F
         findings: findings.into(),
         install_commit,
     })
+}
+
+/// The finding code the install's forecast raises. **Un-keyed** — not a `CHECK_INVENTORY`
+/// row — so the engine's severity post-pass leaves it advisory, the same mold
+/// [`GUIDE_MODIFIED_CODE`] rides.
+pub const PACK_LOAD_CODE: &str = "setup.pack-load";
+
+/// The **advisory** `jigc setup` raises when the pack set the repo resolves does not load
+/// (M50 Increment 12 / T3; `design/project-setup.md` → What the install says about the corpus
+/// it installed into; `design/corpus-migration.md` → The freeze).
+///
+/// **The subject is the pack LOAD, not the freeze.** The motivating instance is a
+/// shape-changing project schema shadow, which the freeze refuses at every layer — but a
+/// *malformed* shadow reaches the identical exit-0 silence through the loader, and the block
+/// it produces at the next door carries no code and no route at all. So the forecast is keyed
+/// on [`crate::pack::make_pack`] failing, whichever fence refused it, and it carries a route
+/// of its own rather than relaying one that may not exist.
+///
+/// Advisory, never blocking, by decision: `setup` installs the adapter, it does not adjudicate
+/// the corpus, and refusing to install over a drifted project layer is circular — the install
+/// is what puts the tool in reach of repairing it. What the install owes the reader is
+/// therefore the **consequence**: the state it just met is one every other door refuses over.
+///
+/// The cause is the pack-load error's **first line**, which in every shipped arm is the line
+/// naming the offending file — relayed rather than re-composed, so the install and the door it
+/// forecasts spell that path the same way on one screen (the reason
+/// `crate::pack::assert_project_schema_shadows` is disposed `DeclaredAbsolute` in
+/// `crates/cli/tests/repo_relative_paths.rs`). The freeze block's own trailing `route:` span is
+/// **not** carried: two routes on one finding is the ambiguity the route floor exists to
+/// forbid, and this finding's route names where to read that one in full. It says *any*
+/// repair route rather than *the* one, because the malformed arm's block carries none —
+/// promising a repair the next door does not print would be the law-1 break this task closes,
+/// one door further along.
+fn pack_load_finding(err: &anyhow::Error) -> Finding {
+    let rendered = format!("{err:#}");
+    let cause = rendered.lines().next().unwrap_or_default().trim_end();
+    Finding::graded(
+        Severity::Advisory,
+        PACK_LOAD_CODE,
+        format!(
+            "the install completed, but this repo's pack set does not load, so every `jigc` \
+             command that reads, composes or writes will refuse until it does: {cause}"
+        ),
+        None,
+        Some(
+            "fix or remove what the message names, then run `jigc validate` — it re-prints \
+             that block in full, including any repair route the refusing fence carries, and \
+             exits 0 once the pack set loads"
+                .into(),
+        ),
+    )
 }
 
 /// The repo-relative install files `jigc setup` itself writes that are meant to be

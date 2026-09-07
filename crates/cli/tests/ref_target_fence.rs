@@ -189,6 +189,13 @@ enum Reach {
     /// The door completes at **exit 0**, because it loads no pack at all. The string
     /// states why that is the right answer rather than a hole.
     PackFree(&'static str),
+    /// The door **loads the pack and completes at exit 0 anyway**, reporting the failure
+    /// as an advisory forecast rather than a refusal (M50 Increment 12 / T3). Distinct
+    /// from [`Reach::PackFree`], and the distinction is the point: a pack-free door is
+    /// asserted to say *nothing* about the fence, and this one is asserted to **name it**
+    /// — so a forecast that silently stopped forecasting reddens here instead of passing
+    /// as an exemption. The string states why exit 0 is the right answer.
+    Forecasts(&'static str),
 }
 
 /// One door — the argv after `jigc`, plus what a ref-target fault does to it.
@@ -242,12 +249,15 @@ const REF_FENCE_DOORS: &[RefFenceDoor] = &[
     },
     RefFenceDoor {
         argv: &["setup"],
-        reach: Reach::PackFree(
+        reach: Reach::Forecasts(
             "the BOOTSTRAP door: it wires the adapter into the repo and resolves no \
              doctype, so refusing to install over a pack whose ref dangles would be \
              circular — the install is how the operator's agent learns `jigc` exists at \
-             all. The diagnosis, with its route, is emitted by the first door that does \
-             load the pack. Its freeze twin is dispositioned identically.",
+             all. That bound is unchanged; since M50 Increment 12 / T3 its SILENCE is: \
+             the install probes `make_pack` after its writes and reports one \
+             `setup.pack-load` advisory naming what the next door will refuse, rather \
+             than leaving the operator to meet this block for the first time on their \
+             next command. Its freeze twin is dispositioned identically.",
         ),
     },
     RefFenceDoor {
@@ -557,6 +567,30 @@ fn assert_broken_door(
                 argv.join(" "),
             );
         }
+        Reach::Forecasts(why) => {
+            assert!(
+                out.status.success(),
+                "[{label}] `jigc {}` is declared a forecasting door ({why}) — it must \
+                 complete at exit 0; {said}",
+                argv.join(" "),
+            );
+            assert!(
+                stdout.contains(FENCE_BANNER),
+                "[{label}] the forecasting door `jigc {}` must NAME the fence — silence \
+                 there is the defect M50 Increment 12 / T3 closed; {said}",
+                argv.join(" "),
+            );
+            assert!(
+                stdout.contains(cli::setup::PACK_LOAD_CODE),
+                "[{label}] the forecasting door `jigc {}` must name the fence through its \
+                 advisory code, not in prose of its own; {said}",
+                argv.join(" "),
+            );
+            // `needles` is deliberately not asserted here: like every acting door this one
+            // runs on its **own** fixture, so the shared fixture's subject is not the one
+            // this run met. That the forecast names its own cause is pinned where the
+            // fixture is the subject — `crates/cli/tests/setup_pack_load_advisory.rs`.
+        }
     }
 }
 
@@ -565,7 +599,8 @@ fn assert_broken_door(
 /// `needles`.
 ///
 /// The doors that never act share one fixture — sound, because *a blocked door acting*
-/// is precisely what the sweep denies. Each [`Reach::PackFree`] door gets its own,
+/// is precisely what the sweep denies. Each door that **acts** — [`Reach::PackFree`] and
+/// [`Reach::Forecasts`], the two that complete at exit 0 — gets its own,
 /// because `jigc uninstall` removes the `.jigc/` tree and `jigc setup` rewrites it, so
 /// sharing would erase the state the remaining doors are meant to meet.
 fn sweep_broken(label: &str, reshape: impl Fn(&str) -> String, needles: &[&str]) {
@@ -575,7 +610,7 @@ fn sweep_broken(label: &str, reshape: impl Fn(&str) -> String, needles: &[&str])
     init_repo(shared_repo.path());
 
     for door in REF_FENCE_DOORS {
-        if matches!(door.reach, Reach::PackFree(_)) {
+        if matches!(door.reach, Reach::PackFree(_) | Reach::Forecasts(_)) {
             let repo = TempDir::new(&format!("{label}-solo-repo"));
             let home = TempDir::new(&format!("{label}-solo-home"));
             let pack = reshaped_pack(&format!("{label}-solo-pack"), |body| reshape(body));

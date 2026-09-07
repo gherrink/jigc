@@ -21,6 +21,16 @@ M9 does **not** re-touch the install machinery (idempotency, the structure-aware
 
 The unset-project orientation copy is corrected accordingly ([bootstrap.md](bootstrap.md) → orientation state 1): it routes to `jigc setup` for the install and names the real `project-setup` / `ingest-existing` workflows as the next step — it no longer advertises an install command that "walks the pack choice" (**vacuous in a single-pack MVP** — there is one pack; pack *choice* stays deferred with multi-pack composition, [VISION.md](../VISION.md) → Open questions).
 
+### What the install says about the corpus it installed into (M50)
+
+`jigc setup` **installs**; it does not adjudicate the corpus, and it does not refuse over one. That bound is deliberate and it stands: the install is what puts the tool within reach of repairing a broken project layer, so refusing to install over a drifted one is circular. What the pre-v1 baseline found is that the bound had been read as a licence to say *nothing*: a repo whose project layer breaks **pack-load** gets `jigc setup` at exit 0, silent — and then every other door (`describe` / `doc schema` / `validate` / `start` / `doc list`) exits 1 with a block the install had already met and swallowed.
+
+So the install **forecasts the next door**: when the pack set the repo resolves does not load, `setup` still installs, still exits 0, and reports one **advisory** — `setup.pack-load` — on the `findings` key it already ships on both surfaces ([command-output-contract.md](command-output-contract.md) → findings-as-data). Three properties make that honest rather than decorative:
+
+- **The subject is the pack *load*, not any one fence.** The motivating instance is a shape-changing project schema shadow, which the freeze refuses at every layer ([corpus-migration.md](corpus-migration.md) → The freeze); a **malformed** shadow reaches the same exit-0 silence through the loader, and the block *it* produces at the next door carries no code and no route at all. The forecast is therefore keyed on the pack set failing to load, whichever fence refused it, and it **carries a route of its own** rather than relaying one that may not exist.
+- **It relays the cause rather than re-composing it**, so the install and the door it forecasts name the offending file the same way on one screen.
+- **The probe runs after every write and after the install commit.** It reports on the state the install leaves behind and cannot change it; its failure is never the install's `Err` arm.
+
 ## Flow 1 — new project + idea development
 
 The greenfield on-ramp: a fresh repo, `jigc setup` installs the adapter, then the agent develops a raw idea into the project's first managed document — a **`prd`** (product requirements).

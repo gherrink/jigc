@@ -487,6 +487,13 @@ enum FreezeCheck {
     /// all. The string states why that is the right answer rather than a hole — the
     /// difference between a disposition and an oversight.
     Exempt(&'static str),
+    /// The door **loads the pack and completes at exit 0 anyway**, reporting the drift as
+    /// an advisory forecast rather than a refusal (M50 Increment 12 / T3). Distinct from
+    /// [`FreezeCheck::Exempt`], and the distinction is the point: an exempt door is
+    /// asserted to say *nothing* about the freeze, and this one is asserted to **name
+    /// it** — so a forecast that silently stopped forecasting reddens here instead of
+    /// passing as an exemption. The string states why exit 0 is the right answer.
+    Forecasts(&'static str),
 }
 
 /// Whether a door's argv exits 0 against a fixture carrying **no drift** and no task,
@@ -553,18 +560,20 @@ const FREEZE_DOORS: &[FreezeDoor] = &[
     },
     FreezeDoor {
         argv: &["setup"],
-        check: FreezeCheck::Exempt(
+        check: FreezeCheck::Forecasts(
             "the BOOTSTRAP door, and it reads no doctype by design: it wires the \
              adapter into the repo (the CLAUDE.md reference, the allowlist, the \
              SessionStart hook, the pre-commit hook, the guides) and none of that \
              resolves a schema. Refusing to install over a drifted corpus would be \
              circular — the install is how the operator's agent learns `jigc` exists \
-             at all, and the freeze's own diagnosis, with a route that runs, is \
-             emitted by the first door that does load the pack (`jigc start` among \
-             them, the command setup's trailer points at). What setup asserts at exit \
-             0 is true of what it asserts: it names the files it wrote, and it wrote \
-             them. Declared here rather than left as an absence; it predates M49 — \
-             the pack-layer arm had the same blind spot.",
+             at all — and that bound is unchanged. What changed at M50 Increment 12 / \
+             T3 is the SILENCE beside it: this row used to say the freeze's diagnosis \
+             is emitted by the first door that does load the pack, which left the \
+             operator meeting the block for the first time on their next command. The \
+             install now probes `make_pack` after its writes and reports one \
+             `setup.pack-load` advisory naming what that next door will refuse — still \
+             at exit 0, still having installed. Its ref-target twin is dispositioned \
+             identically.",
         ),
         clean: CleanExit::Zero,
     },
@@ -990,6 +999,32 @@ fn assert_drifted_door(
             );
             None
         }
+        FreezeCheck::Forecasts(why) => {
+            assert!(
+                out.status.success(),
+                "[{label}] `jigc {}` is declared a forecasting door ({why}) — it must \
+                 complete at exit 0 over the drift; {said}",
+                argv.join(" "),
+            );
+            assert!(
+                stdout.contains(FREEZE_BANNER),
+                "[{label}] the forecasting door `jigc {}` must NAME the freeze — silence \
+                 there is the defect M50 Increment 12 / T3 closed; {said}",
+                argv.join(" "),
+            );
+            assert!(
+                stdout.contains(cli::setup::PACK_LOAD_CODE),
+                "[{label}] the forecasting door `jigc {}` must name the freeze through \
+                 its advisory code, not in prose of its own; {said}",
+                argv.join(" "),
+            );
+            // `needles` is deliberately not asserted here: like every acting door this one
+            // runs on its **own** fixture (`solo`), so the shared fixture's shadow path is
+            // not the path this run met. That the forecast names its own shadow is pinned
+            // where the fixture is the subject —
+            // `crates/cli/tests/setup_pack_load_advisory.rs`.
+            None
+        }
     }
 }
 
@@ -999,7 +1034,8 @@ fn assert_drifted_door(
 ///
 /// `shared` serves the doors that never act — which is sound because *a blocked door
 /// acting* is precisely what the sweep denies. The doors that **do** act
-/// ([`FreezeCheck::Exempt`] — they complete at exit 0) each get their own fixture from
+/// ([`FreezeCheck::Exempt`] and [`FreezeCheck::Forecasts`] — the two that complete at
+/// exit 0) each get their own fixture from
 /// `solo`: `jigc uninstall` removes the `.jigc/` tree the project-layer drift lives
 /// in, and `jigc setup` rewrites `packs.yaml`, so sharing would erase the very state
 /// the remaining doors are meant to meet.
@@ -1013,7 +1049,7 @@ fn sweep_drifted(
     for door in FREEZE_DOORS {
         let acting;
         let site = match door.check {
-            FreezeCheck::Exempt(_) => {
+            FreezeCheck::Exempt(_) | FreezeCheck::Forecasts(_) => {
                 acting = solo(label);
                 &acting
             }
