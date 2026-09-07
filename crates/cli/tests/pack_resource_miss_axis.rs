@@ -365,6 +365,23 @@ fn emitted_pack_roots(line: &str) -> Vec<String> {
 fn every_pack_resource_miss_names_the_searched_packs_with_a_code_and_a_route() {
     let rig = Rig::build();
 
+    // Site 0 — **`jigc start`, the front door**. `orient.rs` carried its own private
+    // copies of the two pack-default reads (`config/defaults` for the `pack-id`,
+    // `config/knobs` for the scalar surface), so at the increment's first pass the one
+    // door its own rationale names FIRST still answered with the pre-fix bare
+    // `with_context` — no code, no route, no pack named — while `describe`, `validate`,
+    // `upgrade`, `ingest` and `doc list` all blocked on this finding. Both copies read
+    // through the shared `read_pack` now (M50 Increment 10 / T3, the audit fix).
+    drive(
+        &rig,
+        &Cell {
+            argv: &["start"],
+            kind: "config",
+            id: "knobs",
+            searched: &["methodology/", "dev/"],
+        },
+    );
+
     // Site 1 + 2 — `config.rs`'s two hand-copied reads. `config get`/`list` share the
     // first (`read_knobs`); `config set` has the second, and both said "the embedded
     // pack" over a composition holding no embedded pack.
@@ -434,5 +451,68 @@ fn every_pack_resource_miss_names_the_searched_packs_with_a_code_and_a_route() {
     assert!(
         error.starts_with(&format!("blocking · {CODE} — ")),
         "the flattened refusal carries the code inside the envelope too; got: {error}",
+    );
+}
+
+/// The **second** site `orient.rs` carried privately: the `config/defaults` read behind
+/// the pack's own cascade id. It gets its own test rather than a table cell because the
+/// resource it misses is the one `provenance_segments()` reads the pack-id *from*, so the
+/// producer degrades to `/<version> (<path>)` — the id half is genuinely unavailable, and
+/// a cell asserting `methodology/` / `dev/` prefixes could not hold here without asserting
+/// a name nothing could have known. What must hold is everything else: the code, the
+/// resource named, the **repo-real** pack roots in precedence order, and a route that
+/// repairs the state when followed verbatim.
+#[test]
+fn the_front_doors_pack_id_read_names_the_searched_roots_with_a_code_and_a_route() {
+    let rig = Rig::build();
+    let saved = rig.break_resource("config", "defaults");
+
+    let out = rig.run(&["start"]);
+    let stderr = String::from_utf8(out.stderr).expect("utf-8 stderr");
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "`jigc start` must block at exit 1 on a missing `config/defaults`; stderr:\n{stderr}",
+    );
+    let first = stderr.lines().next().unwrap_or_default();
+    assert!(
+        first.starts_with(&format!("blocking · {CODE} — ")),
+        "the front door leads with the house findings line; got:\n{stderr}",
+    );
+    assert!(
+        first.contains("`config/defaults`"),
+        "the message names the missing resource; got:\n{stderr}",
+    );
+    assert!(
+        !stderr.contains("the embedded pack"),
+        "no composed pack here is the embedded one:\n{stderr}",
+    );
+
+    // The roots it printed are the two it searched, in precedence order, and both real.
+    let roots = emitted_pack_roots(first);
+    assert_eq!(
+        roots,
+        vec![
+            rig.listed.display().to_string(),
+            rig.base.display().to_string()
+        ],
+        "the message names exactly the roots this door searched; got:\n{stderr}",
+    );
+
+    // Follow the route verbatim, off the emitted bytes.
+    let route = stderr
+        .lines()
+        .find(|line| line.trim_start().starts_with("route: "))
+        .expect("the refusal carries a route");
+    let named = first_backticked(route).expect("the route names a file to restore");
+    let dest = Path::new(roots.last().expect("a root")).join(&named);
+    fs::create_dir_all(dest.parent().expect("the resource dir")).expect("the resource dir exists");
+    fs::write(&dest, &saved).expect("restore the resource the route named");
+
+    let after = rig.run(&["start"]);
+    assert!(
+        after.status.success(),
+        "following the route must repair the front door; stderr:\n{}",
+        String::from_utf8_lossy(&after.stderr),
     );
 }

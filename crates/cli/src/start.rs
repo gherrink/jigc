@@ -3682,6 +3682,20 @@ pub(crate) fn enumerate_store_workflows(
 /// knob reads and `doc.rs`'s task-bound workflow read hand-copied this read and its message,
 /// so one literal answered at four sites and every one of them blamed *"the embedded pack"*
 /// — a pack that need not be in the composition at all. They call this now.
+///
+/// **The class was six read sites, not four.** T3's first pass swept the four that shared the
+/// *"the embedded pack is missing"* literal and missed `orient.rs`'s two — private copies of
+/// `pack_id_from_config` and the `config/knobs` scalar seed carrying a *different* bare
+/// `with_context` (*"the pack must ship a `config/knobs` declaration"*) — so grepping the
+/// literal found four and enumerating the **mechanism** finds six. The two missed ones sit
+/// behind bare `jigc start`, the door the adjudication below names first, so the fix's own
+/// rationale was false at its first clause until they were converted (the M45/M49
+/// incomplete-sweep shape: a fence applied where its wave pointed is not applied at all).
+/// Out of the mechanism with a stated reason: `config.rs::resolve_fork_bytes` already mints
+/// its own routed `config.anchor-absent`; the pack-load fences in `pack.rs` read ids they got
+/// from `list()`, so a failing read there is an I/O fault rather than a *no pack ships it*
+/// miss; and the tolerant probes (`pack.rs`'s `doc_write_command_ids`, `resolve_step_body`'s
+/// pack-body arm) map a miss to `None`, never to a refusal.
 pub(crate) fn read_pack(
     pack: &dyn PackSource,
     kind: PackResourceKind,

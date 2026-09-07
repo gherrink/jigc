@@ -29,7 +29,7 @@ use crate::start::selectable_workflows;
 use anyhow::{Context, Result};
 use engine::cascade::{self, OverrideLayer, PackDefaultLayer};
 use engine::knobs::load_knobs;
-use engine::packsource::{PackResourceKind, PackSource, ResourceId};
+use engine::packsource::{PackResourceKind, PackSource};
 use engine::result::{ActiveTask, Catalog, NextStep, OrientationView};
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -202,10 +202,18 @@ fn compose_pack_header(pack: &dyn PackSource, provenance: &engine::cascade::Prov
 /// Read the pack's own cascade id from its `config/defaults` `pack-id` field.
 /// The pack-default layer carries its identity, so the provenance header's pack
 /// segment is cascade-sourced, never a CLI constant (`overrides.md`).
+///
+/// **Through the shared [`read_pack`](crate::start::read_pack), like every other
+/// door.** This and [`pack_default_scalars`] were private copies of `start.rs`'s two
+/// pack-default reads, and the M50 Increment 10 / T3 sweep converted the copies in
+/// `config.rs` and `doc.rs` but not these — so the **front door** answered a
+/// pack-resource miss with the pre-fix bare `with_context` (code-less, route-less,
+/// blaming a pack it had not searched) while the five doors T3's own rationale lists
+/// beside it all blocked on `pack.resource-missing`. The rationale is a statement about
+/// what `jigc start` does, so leaving these unconverted falsified it at its first
+/// clause.
 fn pack_id_from_config(pack: &dyn PackSource) -> Result<String> {
-    let bytes = pack
-        .read(PackResourceKind::Config, &ResourceId::from("defaults"))
-        .context("the pack must ship a `config/defaults` resource")?;
+    let bytes = crate::start::read_pack(pack, PackResourceKind::Config, "defaults")?;
     let text = String::from_utf8(bytes).context("`config/defaults` is not UTF-8")?;
     let value: serde_yaml_ng::Value =
         serde_yaml_ng::from_str(&text).context("`config/defaults` is not valid YAML")?;
@@ -222,10 +230,10 @@ fn pack_id_from_config(pack: &dyn PackSource) -> Result<String> {
 /// loader builds the pack-default layer's scalar surface). It replaces the empty
 /// feed orientation used before the knob surface existed, so a no-override
 /// `resolved.scalar(...)` returns the declared default rather than `None`.
+///
+/// Reads through [`read_pack`](crate::start::read_pack) — see [`pack_id_from_config`].
 fn pack_default_scalars(pack: &dyn PackSource) -> Result<BTreeMap<String, String>> {
-    let bytes = pack
-        .read(PackResourceKind::Config, &ResourceId::from("knobs"))
-        .context("the pack must ship a `config/knobs` declaration")?;
+    let bytes = crate::start::read_pack(pack, PackResourceKind::Config, "knobs")?;
     let knobs = load_knobs(&bytes).context("`config/knobs` is malformed")?;
     Ok(knobs.base_scalars())
 }
