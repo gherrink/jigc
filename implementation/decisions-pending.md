@@ -71,7 +71,9 @@ This is a *decision/discussion* backlog, not a *task* backlog — tasks are stil
 **Grouped scope.** The gate's subject widened to the materialized sub-task commit docs · a red test at the milestone door for an author-required field · the axis stated (every `squash: false` fan-out, not the reported cell) · `validation.md`'s claim made true rather than softened.
 **Proves.** A pre-existing defect on any `squash: false` fan-out, and a **hard precondition** of the increment below — routing every audit fix through the milestone boundary would otherwise ship worse commit messages than the serial path it replaces.
 
-#### Increment — the completion workflow's Fix phase composes fan-out/join over confirmed findings
+#### Increment — the completion workflow's Fix phase composes fan-out/join over confirmed findings — ✅ SHIPPED 2026-09-07 (M50 Increment 11)
+
+*(The argument below is the record of the fork as it stood; what landed differs on two points, both settled at D11. Partitioning is by each fix's **projected write-set**, not one-sub-task-per-file — this repo's own group roots refute that — and `fix-task` ships **without** `allows-create`, since a fix that would revise a settled decision is contested and belongs at the human gate. `fix-gate.yaml` no longer says "strictly serial over the one shared working tree"; §3 states the composition the step composes.)*
 
 **Deliverable.** A confirmed audit finding becomes a milestone sub-task, provisioned into its own git worktree at the audited base pin, fixed concurrently, and joined at the barrier — so **two fixers physically cannot race one index**, and the concurrency rule stops being a thing an orchestrator must remember. **Zero engine or CLI change; no new `fan-out:` marker in the methodology pack** — the fan-out already ships in the dev pack's `milestone-execution` walk, and `jigc milestone execute <id>` composes it whole.
 

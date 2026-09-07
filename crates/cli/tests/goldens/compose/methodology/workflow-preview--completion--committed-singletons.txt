@@ -42,12 +42,46 @@ proposer's lone cheap recommendation.
 
 Checkpoint: fix-rounds-exhausted
 For each blocking finding, run a dev-workflow fix task — a red that fails because
-of the defect, a minimal green, the gate, one commit — then re-validate. One
-fixer per finding, strictly serial over the one shared working tree: two
-tree-mutating agents at once race the git index and each other's gate. Brief the
+of the defect, a minimal green, the gate, one commit — then re-validate. Brief the
 fixer with the finding, never with the finding's boundary — a fixer handed a list
 of sites fixes the list, so it derives the axis the fix is owed over and reports
 its full membership instead.
+
+Each fixer is its own agent in its own worktree: the round is a fan-out, not a
+queue, so two fixers cannot race one index. Partition the confirmed findings by
+each fix's projected write-set — the paths that fix will touch. A finding
+spanning two files is one sub-task; two findings landing in one file are one
+sub-task. The partition is what makes the fan-out safe: the join disjoint-applies
+code and never text-merges a shared file, so two sub-tasks staging one path stop
+there with `combine.code-collision`, and nothing is committed.
+
+Keep shared artifacts out of the partition and apply them serially after the
+join. A shared artifact is one every fixer would have to edit to land its own
+change — a test-registry root a new suite has to be listed in, a generated
+snapshot set, a lockfile or manifest, the doc every fix folds back into. No
+partition makes those disjoint, and no fixer knows what its siblings will need
+until they are done.
+
+The round, one command per line:
+
+jigc config set finalize.fan-out.squash false
+jigc milestone create "<the fix round>"
+jigc milestone add-task <fix-milestone-id> "<the finding>" --workflow fix-task
+jigc milestone provision <fix-milestone-id>
+jigc milestone execute <fix-milestone-id>
+jigc milestone join <fix-milestone-id>
+jigc milestone finalize <fix-milestone-id>
+
+One `add-task` per partition, and `execute` prints one `Spawn:` line per
+sub-task — those lines are the fan-out. The knob is what gives each fix its own
+commit; under its default the whole round lands as one. It is a project setting
+rather than a per-round flag: the write itself lands uncommitted, and the
+milestone's own finalize stages the `.jigc/config/` layer into its aggregate
+commit, so it stays in effect for every later fan-out until you set it back.
+
+If a round's write-sets cannot be made disjoint — every finding lands in one
+file — say so before you mint anything and fall back to running the fixers one at
+a time in the main working tree, each staging only the paths it touched.
 
 This is bounded to three rounds. If blocking findings remain after the
 fix-round cap, stop and surface it: thrash is a signal for a human, not for

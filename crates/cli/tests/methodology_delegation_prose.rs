@@ -169,12 +169,14 @@ const DISPOSITIONS: &[(&str, Disposition)] = &[
     ),
     (
         "fix-gate",
-        // increment:110 ("one agent per blocking finding") + completion:34 ("delegated
-        // to an executor agent"; "never run two tree-mutating agents concurrently on
-        // one working tree"; "Brief the fixer with the finding, never with the
-        // finding's boundary").
+        // increment:110 ("one agent per blocking finding") + completion:34 ("each
+        // confirmed fix is its own agent … provisioned into its own worktree";
+        // "Brief the fixer with the finding, never with the finding's boundary").
+        // M50 replaced the serial-over-one-tree clause with the fan-out the doc had
+        // named as the encode since M42 — the actor and the instrument both moved,
+        // so the fact this fence holds moved with them.
         In(&[
-            "One fixer per finding, strictly serial over the one shared working tree",
+            "Each fixer is its own agent in its own worktree",
             "Brief the fixer with the finding, never with the finding's boundary",
         ]),
     ),
