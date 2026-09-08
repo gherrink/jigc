@@ -1315,6 +1315,21 @@ fn run_add_from_spec(
     spec_addr: &str,
     workflow: &str,
 ) -> Result<(String, String)> {
+    // **The `<slug>` head is adjudicated at the door** — the fourth user-address parse
+    // boundary, joining `doc::parse_verb_addr`, `TaskArea::bind` and `rename::parse_addr`
+    // (M50 Inc 2 / T1; `crate::task::reject_malformed_slug_head`). A doc's slug *is* its
+    // path component, and the engine's spec read joins it onto `<docs-root>/<location>/`
+    // and opens the result: driven before this guard,
+    // `jigc milestone add-from-spec <m> 'spec:../../../../<outside>/planted'` read a file
+    // from **outside the repository**, seeded a sub-task from its criteria and landed a
+    // commit naming the foreign source, at exit 0. Ahead of `jigc_home`, the workflow
+    // check and every mutation: an address that names no doc anywhere is refused before
+    // anything is resolved, read or minted. An address that does not *parse* falls
+    // through untouched — the engine's own read owns that fault and answers it with
+    // `store.unparseable`, so this guard adds a code rather than replacing one.
+    if let Ok(address) = engine::address::Address::parse(spec_addr) {
+        crate::task::reject_malformed_slug_head(spec_addr, address.slug.as_str())?;
+    }
     // The committed spec read + the `.jigc/` sub-task mint both bind to jigc_home (the
     // main checkout); no git read here (sub-tasks pin to the milestone's stored base).
     let jigc_home = crate::start::jigc_home_or_repo(cwd)?;

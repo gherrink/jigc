@@ -19,7 +19,7 @@
 //!
 //! **The door set is derived, not remembered.** [`DOCTYPE_DOORS`] is fenced ⇔ against the
 //! real clap tree by the argument ids that carry a doctype
-//! ([`DOCTYPE_ARG_IDS`]; `cli_parse::every_doctype_door_is_registered`), so this suite
+//! ([`doctype_arg_ids`]; `cli_parse::every_doctype_door_is_registered`), so this suite
 //! enumerates the binary's doors rather than the seven an audit happened to walk — and the
 //! roadmap's "7 doors" is corrected to **15** on that derivation.
 //!
@@ -43,7 +43,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use cli::cli::{DOCTYPE_ARG_IDS, DOCTYPE_DOORS, DoctypeArg};
+use cli::cli::{DOCTYPE_DOORS, DoctypeArg, doctype_arg_ids};
 use engine::packsource::PackResourceKind;
 
 /// The doctype id no pack ships — the axis's single input.
@@ -52,6 +52,11 @@ const UNKNOWN: &str = "nosuch";
 /// The fixture's one open task — every in-task cell scopes to it explicitly, so no cell
 /// depends on active-task resolution.
 const TASK: &str = "axis";
+
+/// The fixture's one milestone — `milestone add-from-spec` reads the named spec only after
+/// the milestone resolves, so the cell needs a **real** one or the door would answer about
+/// the milestone instead of about the doctype.
+const MILESTONE: &str = "axis-m";
 
 /// The two answers the axis is allowed to give (the create-gate / already-exists split).
 const CREATE_CODE: &str = "create.unknown-doctype";
@@ -123,6 +128,17 @@ impl Fixture {
             start.status.success(),
             "minting the fixture task must succeed: {}",
             String::from_utf8_lossy(&start.stderr),
+        );
+        let milestone = fixture.run(&["milestone", "create", "Axis M"]);
+        assert!(
+            milestone.status.success(),
+            "minting the fixture milestone must succeed: {}",
+            String::from_utf8_lossy(&milestone.stderr),
+        );
+        assert!(
+            String::from_utf8_lossy(&milestone.stdout).contains(MILESTONE),
+            "the fixture milestone must be `{MILESTONE}`; got: {}",
+            String::from_utf8_lossy(&milestone.stdout),
         );
         fixture
     }
@@ -313,6 +329,11 @@ fn axis() -> Vec<Cell> {
             argv: &["task", "bind", "spec", "nosuch:thing", TASK],
             code: STORE_CODE,
         },
+        Cell {
+            door: &["milestone", "add-from-spec"],
+            argv: &["milestone", "add-from-spec", MILESTONE, "nosuch:thing"],
+            code: STORE_CODE,
+        },
     ]
 }
 
@@ -445,7 +466,7 @@ fn the_axis_drives_every_registered_doctype_door() {
         );
     }
     assert!(
-        !DOCTYPE_ARG_IDS.is_empty(),
+        !doctype_arg_ids().is_empty(),
         "the derivation vocabulary must be non-empty, else the ⇔ fence is vacuous",
     );
 }

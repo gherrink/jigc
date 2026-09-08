@@ -19,7 +19,7 @@
 //!
 //! ## The axis is the shipped registry, not a list
 //!
-//! The subject is [`SLUG_DOORS`], **derived** from the clap tree by [`SLUG_ARG_IDS`] and
+//! The subject is [`SLUG_DOORS`], **derived** from the clap tree by [`slug_arg_ids`] and
 //! fenced ⇔ against it by `cli_parse::every_slug_door_is_registered`, so a seventh
 //! `--slug` door cannot ship without joining it. Six doors reaching **four** separate
 //! guards (`start`'s mint, `migrate`'s adoption, `doc.rs`'s shared reject over
@@ -48,7 +48,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use cli::cli::{SLUG_ARG_IDS, SLUG_DOOR_SOURCE, SLUG_DOORS, SLUG_OVERRIDE_SLOT};
+use cli::cli::{SLUG_DOOR_SOURCE, SLUG_DOORS, SLUG_OVERRIDE_SLOT, slug_arg_ids};
 
 /// The grammar sentence every `--slug` refusal states — the **one** shipped literal
 /// (`crate::task::WORK_UNIT_ID_GRAMMAR`, fenced against `design/structural-grammar.md` by
@@ -267,7 +267,7 @@ fn every_slug_door_refuses_a_malformed_override() {
          class's axis and must be read, not absorbed",
     );
     assert!(
-        !SLUG_ARG_IDS.is_empty(),
+        !slug_arg_ids().is_empty(),
         "the derivation vocabulary must be non-empty, else the ⇔ fence is vacuous",
     );
 }

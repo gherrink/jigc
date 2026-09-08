@@ -25,7 +25,7 @@
 //!       registries**: [`DOCTYPE_DOORS`] filtered to [`DoctypeArg::Address`] (the strongest
 //!       set available, already fenced ⇔ against the real clap tree by
 //!       `cli_parse::every_doctype_door_is_registered`) and [`SLUG_DOORS`], derived from the
-//!       clap tree by [`SLUG_ARG_IDS`] and fenced the same way. **Family 2 is not dropped**:
+//!       clap tree by [`slug_arg_ids`] and fenced the same way. **Family 2 is not dropped**:
 //!       the claim names four families, so an acceptance reaching three of them would be the
 //!       wave's own failure shape. *Adds over `address_slug_head_axis.rs` /
 //!       `slug_override_axis.rs`:* those sweep each door over the whole token cell space and
@@ -37,7 +37,7 @@
 //!
 //!   (2) **Family 1 — the token that names a working area** — over
 //!       [`WORK_UNIT_ID_DOORS`], **derived** from the clap tree by
-//!       [`WORK_UNIT_ID_ARG_IDS`] and fenced ⇔ against it, with each row carrying its own
+//!       [`work_unit_id_arg_ids`] and fenced ⇔ against it, with each row carrying its own
 //!       runnable argv so this arm reads the registry and writes no cell list of its own.
 //!       *Adds over `work_unit_id_axis.rs`:* that suite sweeps four token cells per door and
 //!       adjudicates codes, messages and routes; this arm drives the **one token that
@@ -136,8 +136,9 @@
 use crate::support;
 
 use cli::cli::{
-    DOCTYPE_DOORS, DoctypeArg, SLUG_ARG_IDS, SLUG_DOOR_SOURCE, SLUG_DOORS, SLUG_OVERRIDE_SLOT,
-    WORK_UNIT_ID_ARG_IDS, WORK_UNIT_ID_DOOR_PAYLOAD, WORK_UNIT_ID_DOORS, WORK_UNIT_ID_SLOT,
+    DOCTYPE_DOORS, DoctypeArg, SLUG_DOOR_SOURCE, SLUG_DOORS, SLUG_OVERRIDE_SLOT,
+    WORK_UNIT_ID_DOOR_PAYLOAD, WORK_UNIT_ID_DOORS, WORK_UNIT_ID_SLOT, slug_arg_ids,
+    work_unit_id_arg_ids,
 };
 use cli::config::ROOT_KNOBS;
 use engine::result::{ActiveTask, Catalog, OrientationView};
@@ -229,7 +230,7 @@ fn json(payload: &str) -> Value {
 /// The runnable argv for one `DoctypeArg::Address` door, with `<slug>` standing in for the
 /// address's slug head.
 ///
-/// Exhaustive over the registered address doors **by panic**: a tenth address-taking verb
+/// Exhaustive over the registered address doors **by panic**: an eleventh address-taking verb
 /// joining [`DOCTYPE_DOORS`] with no row here fails this arm naming itself, rather than
 /// being silently skipped — which is the only way a registry sweep can lie.
 fn address_argv(door: &[&str], task: &str) -> Vec<String> {
@@ -289,6 +290,16 @@ fn address_argv(door: &[&str], task: &str) -> Vec<String> {
         ],
         ["doc", "show"] => vec!["doc", "show", "adr:<slug>"],
         ["task", "bind"] => vec!["task", "bind", "spec", "spec:<slug>", task],
+        // The milestone is real (minted by the arm), so this row reaches the spec read —
+        // the seam whose escape served bytes from outside the repository at exit 0.
+        ["milestone", "add-from-spec"] => {
+            vec![
+                "milestone",
+                "add-from-spec",
+                ADDRESS_MILESTONE,
+                "spec:<slug>",
+            ]
+        }
         other => panic!(
             "`jigc {}` is a registered `DoctypeArg::Address` door with no cell in flow 51 \
              — a new address-taking verb owes this arm the argv that reaches its address \
@@ -340,6 +351,10 @@ Effects.
 /// The foreign source `jigc migrate --slug` adopts, so that row answers about the override.
 const FOREIGN_CHANGELOG: &str = "# Change Log\n\n## v1\n\n- did a thing\n";
 
+/// The milestone `jigc milestone add-from-spec` seeds into — real, so its row reaches the
+/// door's spec read rather than refusing on the id.
+const ADDRESS_MILESTONE: &str = "axis-milestone";
+
 /// The prose planted **outside** the repository — the bytes a family-4 escape used to serve
 /// through the 1.0-pinned JSON contract at exit 0.
 const CANARY: &str = "PRIVATE-BYTES-NO-DOOR-MAY-SERVE";
@@ -349,7 +364,7 @@ const CANARY: &str = "PRIVATE-BYTES-NO-DOOR-MAY-SERVE";
 /// **The sets are code-side registries, and the strongest ones available.**
 /// [`DOCTYPE_DOORS`] filtered to [`DoctypeArg::Address`] is bijectively fenced against the
 /// real clap tree (`cli_parse::every_doctype_door_is_registered`), and [`SLUG_DOORS`] the
-/// same way against [`SLUG_ARG_IDS`] — so neither set can drift from the binary's own door
+/// same way against [`slug_arg_ids`] — so neither set can drift from the binary's own door
 /// set without a fence reddening. Family 2 rides this arm rather than being folded away:
 /// the claim names **four** families, and an acceptance that reached three of them would be
 /// the wave's own failure shape wearing the wave's own name.
@@ -405,6 +420,15 @@ fn no_address_or_override_token_becomes_a_path_component_and_the_tree_is_untouch
     // `implement-from-spec` is the one shipped workflow declaring a `reads` role, so the
     // `task bind` row reaches its address parse instead of stopping at the role check.
     let task = corpus.start_workflow("implement-from-spec", "the token families");
+    // The `milestone add-from-spec` row's milestone is REAL — its escape sits behind the
+    // milestone resolve, so a bogus id would refuse for an unrelated reason and the row
+    // would pass while proving nothing. Minted before `before_head`: the record-only
+    // commit it lands is the fixture, not a door under test.
+    let minted = corpus.jigc_ok(&["milestone", "create", "Axis Milestone"]);
+    assert!(
+        minted.contains(ADDRESS_MILESTONE),
+        "the arm's milestone must be `{ADDRESS_MILESTONE}`; got: {minted}",
+    );
     let before_head = git(&repo, &["rev-parse", "HEAD"]);
 
     let traversal = "../../src/planted".to_string();
@@ -493,7 +517,7 @@ fn no_address_or_override_token_becomes_a_path_component_and_the_tree_is_untouch
         "every registered `--slug` door is driven exactly once",
     );
     assert!(
-        !SLUG_ARG_IDS.is_empty(),
+        !slug_arg_ids().is_empty(),
         "the derivation vocabulary must be non-empty, else the ⇔ fence is vacuous",
     );
 
@@ -545,7 +569,7 @@ fn no_address_or_override_token_becomes_a_path_component_and_the_tree_is_untouch
 /// repository is still there afterwards.
 ///
 /// **The set is [`WORK_UNIT_ID_DOORS`] — derived, not remembered.** It is built from the
-/// clap tree by [`WORK_UNIT_ID_ARG_IDS`] and fenced **⇔** against it by
+/// clap tree by [`work_unit_id_arg_ids`] and fenced **⇔** against it by
 /// `cli_parse::every_work_unit_id_door_is_registered`, so a twenty-sixth door taking a task
 /// or milestone id cannot ship without joining it. Each row carries its **own** runnable
 /// argv with [`WORK_UNIT_ID_SLOT`] where the id goes, so this arm writes no cell list of
@@ -619,7 +643,7 @@ fn every_work_unit_id_door_refuses_the_traversal_and_the_repository_survives() {
         "every registered work-unit-id door is driven exactly once",
     );
     assert!(
-        !WORK_UNIT_ID_ARG_IDS.is_empty(),
+        !work_unit_id_arg_ids().is_empty(),
         "the derivation vocabulary must be non-empty, else the ⇔ fence is vacuous",
     );
 

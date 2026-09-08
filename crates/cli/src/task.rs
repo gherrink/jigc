@@ -1046,10 +1046,19 @@ pub(crate) fn reject_malformed_work_unit_id(id: &str) -> Result<()> {
 pub(crate) const MALFORMED_SLUG_HEAD: &str = "store.malformed-slug";
 
 /// Refuse a caller-typed address whose `<slug>` head is not a well-formed slug — the guard
-/// at the **three** user-address parse boundaries (`crate::doc::parse_verb_addr`,
-/// [`TaskArea::bind`]'s own parse, and `crate::rename::parse_addr`), covering the nine
-/// `DoctypeArg::Address` doors (`completions/artifacts/M50/settle-record.md` → D2, family
-/// 4; `DECISIONS.md` → 2026-09-05 M50 Increment 2 planning).
+/// at the **four** user-address parse boundaries (`crate::doc::parse_verb_addr`,
+/// [`TaskArea::bind`]'s own parse, `crate::rename::parse_addr`, and
+/// `crate::milestone::run_add_from_spec`), covering the ten `DoctypeArg::Address` doors
+/// (`completions/artifacts/M50/settle-record.md` → D2, family 4; `DECISIONS.md` →
+/// 2026-09-05 M50 Increment 2 planning).
+///
+/// The fourth boundary joined at the M50 completion audit: the door set was derived from a
+/// hand-kept allowlist of clap **argument names**, and `jigc milestone add-from-spec` takes
+/// its address through `spec_addr` — a name nobody had listed — so it carried no
+/// `DOCTYPE_DOORS` row and no guard. Driven, its `<slug>` head reached
+/// `engine::store::canonical_path` and **read a file outside the repository** at exit 0.
+/// The registry is now derived from `crate::cli::ARG_TOKENS`, a *total* classification of
+/// every clap argument, so an unlisted name cannot hide a door again.
 ///
 /// A doc's slug *is* its path component — `<docs-root>/<location>/<slug>.md` — and
 /// [`engine::address`] splits on `:` / `#` / `/` and sanitizes nothing, so until M50 the
@@ -2253,7 +2262,7 @@ impl TaskArea {
         };
 
         // Parse the address (it must name a `<type>:<slug>`), then ask whether the slug
-        // head is a slug at all — the guard the nine `DoctypeArg::Address` doors share
+        // head is a slug at all — the guard the ten `DoctypeArg::Address` doors share
         // (M50 Inc 2 / T1). This door's refusal was route-less; it gains the route with it.
         let address = Address::parse(addr)
             .map_err(|err| anyhow::anyhow!("malformed address `{addr}`: {err}"))?;

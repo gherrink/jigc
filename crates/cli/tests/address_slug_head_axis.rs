@@ -22,11 +22,22 @@
 //!
 //! The subject is [`DOCTYPE_DOORS`] filtered to [`DoctypeArg::Address`] — the door set
 //! `cli_parse::every_doctype_door_is_registered` already fences **⇔** against the real
-//! clap tree, so a tenth address-taking verb cannot ship without joining it. Nine doors,
-//! reaching **three** different parsers (`doc::parse_verb_addr` over seven `doc` verbs,
-//! `task bind`'s own `Address::parse`, and `rename`'s hand-split `parse_addr`), which is
+//! clap tree, so an eleventh address-taking verb cannot ship without joining it. Ten
+//! doors, reaching **four** different parsers (`doc::parse_verb_addr` over seven `doc`
+//! verbs, `task bind`'s own `Address::parse`, `rename`'s hand-split `parse_addr`, and
+//! `milestone add-from-spec`'s door-side parse ahead of the engine's spec read), which is
 //! exactly why the door set and not the function is the acceptance: a guard at any one of
-//! them covers a third of the class.
+//! them covers a quarter of the class.
+//!
+//! **The tenth door joined late, and that is the finding this count records.** Until the
+//! M50 completion audit the registry was derived from an allowlist of clap *argument
+//! names*, and `milestone add-from-spec` takes its address through `spec_addr` — a name
+//! nobody had listed — so the door was invisible to the derivation the Settle called the
+//! strongest available. Driven: `jigc milestone add-from-spec <m> 'spec:../../../..
+//! /<outside>/planted'` read the file **outside the repository**, seeded a sub-task from
+//! its criteria and landed a commit naming the foreign source, at exit 0. The registry is
+//! now derived from `cli::cli::ARG_TOKENS`, a **total** classification of every clap
+//! argument, so an argument nobody classifies cannot ship at all.
 //!
 //! **A row with no cell is a hard panic, never a skip** — [`argv_for`] matches the door
 //! path exhaustively and panics on an unregistered one, and the driven set is compared
@@ -80,6 +91,10 @@ const GRAMMAR: &str =
 /// The placeholder every door's argv carries in place of the address slug, so one row
 /// serves all three cells instead of three hand-written argvs per door.
 const SLUG_SLOT: &str = "<slug>";
+
+/// The milestone id the `milestone add-from-spec` row names — well-formed, so the door
+/// answers about the **address** and not about the id.
+const MILESTONE: &str = "axis-milestone";
 
 /// A payload file the `set-slot` row's `--from-file` reads, so that row's door answers
 /// about the address and not about a missing file.
@@ -147,6 +162,11 @@ fn argv_for(door: &[&str], task: &str) -> Vec<String> {
         ],
         ["doc", "show"] => vec!["doc", "show", "research:<slug>"],
         ["task", "bind"] => vec!["task", "bind", "spec", "spec:<slug>", task],
+        // The milestone is real (minted by the fixture), so the cell reaches the spec
+        // read — the seam whose escape served bytes from outside the repository.
+        ["milestone", "add-from-spec"] => {
+            vec!["milestone", "add-from-spec", MILESTONE, "spec:<slug>"]
+        }
         other => panic!(
             "`jigc {}` is a registered `DoctypeArg::Address` door with no cell here — a \
              new address-taking verb owes this axis the argv that reaches its address \
@@ -235,6 +255,14 @@ fn every_address_door_refuses_a_malformed_slug_head() {
     // The rename row's destination home must exist on disk or `..` is refused for an
     // unrelated reason (driven; macOS resolves `..` physically).
     fs::create_dir_all(repo.join("docs").join("research")).expect("create the research home");
+    // The `milestone add-from-spec` row's milestone must be REAL, or the door would answer
+    // `milestone.unknown` and the cell would pass while proving nothing about the address:
+    // the escape it closes is the spec **read**, which sits behind the milestone resolve.
+    let minted = corpus.jigc_ok(&["milestone", "create", "Axis Milestone"]);
+    assert!(
+        minted.contains(MILESTONE),
+        "the axis milestone must be `{MILESTONE}`; got: {minted}",
+    );
 
     let absolute = repo.to_string_lossy().into_owned();
     let cells: Vec<String> = vec!["../..".to_string(), absolute, "Odd Name".to_string()];
@@ -292,8 +320,8 @@ fn every_address_door_refuses_a_malformed_slug_head() {
         "every registered address door is driven exactly once",
     );
     assert_eq!(
-        registered, 9,
-        "the registry ships nine `DoctypeArg::Address` doors; a change to that count is \
+        registered, 10,
+        "the registry ships ten `DoctypeArg::Address` doors; a change to that count is \
          a change to this class's axis and must be read, not absorbed",
     );
 }

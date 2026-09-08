@@ -1524,21 +1524,182 @@ pub enum DoctypeArg {
     Address,
 }
 
-/// The clap **argument ids** that carry a doctype — the vocabulary the door set is
-/// *derived* from rather than remembered.
+/// **What one clap argument's value is** — the classification the three door registries
+/// take their vocabularies from.
 ///
-/// [`DOCTYPE_DOORS`] is not a hand-kept list: `every_doctype_door_is_registered` walks
-/// the real clap tree and asserts that a leaf verb carries a row **iff** one of its
-/// arguments is named here, so a new verb taking a doctype cannot ship without an
-/// answer for an unknown one. The ids are the derive macro's field names — `type`
-/// (`doc create`, `relocate`), `doctype` (`doc author`/`schema`/`list`), `as`
-/// (`migrate`), `addr` (every addressed `doc` verb and `task bind`), and `old_slug`
-/// (`rename`) — and each one names a doctype at every leaf that carries it, which is
-/// what makes the ⇔ hold.
-pub const DOCTYPE_ARG_IDS: &[&str] = &["type", "doctype", "as", "addr", "old_slug"];
+/// Three of the four variants name a *caller-supplied token jigc turns into an identity
+/// or a path component*; [`ArgToken::Plain`] is everything else, and it is a **stated
+/// verdict, not an absence**.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArgToken {
+    /// A **doctype id**, in the shape [`DoctypeArg`] names — the vocabulary
+    /// [`DOCTYPE_DOORS`] is derived from.
+    Doctype(DoctypeArg),
+    /// A **work-unit id** — a task id or a milestone id; [`WORK_UNIT_ID_DOORS`].
+    WorkUnitId,
+    /// A **mint-time slug override** (`--slug`), taken verbatim; [`SLUG_DOORS`].
+    SlugOverride,
+    /// **None of the three identity families.** Prose, flags, pack ids — and *file
+    /// paths*, which are the deliberate exception worth naming: `path`, `from`, `file`,
+    /// `from_file` and `target` do become paths, but a path argument is a path the caller
+    /// *means* as one, adjudicated by the filesystem and by their own doors, not a token
+    /// jigc turns into an identity behind the caller's back. That is the fault line these
+    /// three families sit on.
+    ///
+    /// Written per argument on purpose — nothing here is classified by omission.
+    Plain,
+}
+
+/// **Every argument of every leaf verb, classified** — a *total* function over the clap
+/// tree, and the one vocabulary [`DOCTYPE_DOORS`], [`WORK_UNIT_ID_DOORS`] and
+/// [`SLUG_DOORS`] are derived from.
+///
+/// **Why total, and what it replaced.** Each of the three door registries used to be
+/// derived from its own hand-kept list of argument *names* — `DOCTYPE_ARG_IDS =
+/// ["type","doctype","as","addr","old_slug"]` and two siblings — with a ⇔ fence against
+/// that list. An allowlist of names is a **finder, not a fence**: a door whose address
+/// argument is named anything else is invisible to it, and one was. `jigc milestone
+/// add-from-spec` takes its address through `spec_addr`, so it carried no
+/// [`DOCTYPE_DOORS`] row, no `<slug>`-head guard ran on it, and driven at `d9e91f1` the
+/// address `spec:../../../../<outside>/planted` **read a file from outside the
+/// repository**, seeded a sub-task from its criteria and landed a commit naming the
+/// foreign source — at exit 0, on the wave whose claim is that no caller-supplied token
+/// becomes a path component unvalidated (the M50 completion audit, finding 1).
+///
+/// **A strictly-derived membership rule is not expressible against the clap tree**, and
+/// that is measured rather than assumed: clap's introspection offers an argument's id,
+/// its help and its value name — never the Rust type of the field it fills or where the
+/// value flows, and every argument here is a `String`. Membership therefore cannot be
+/// *computed*; it can only be *asked of the author*. **Totality is what forces the
+/// question.** The complement is erased, so a new argument — address-shaped or not —
+/// reddens `cli_parse::every_clap_argument_is_classified` until someone says what it
+/// carries; saying [`ArgToken::Doctype`] reddens `every_doctype_door_is_registered`
+/// until the door joins [`DOCTYPE_DOORS`]; and joining that reddens the axis suites
+/// (`address_slug_head_axis.rs`, `unknown_doctype_axis.rs`, flow 51 arm 1) until the
+/// door is actually driven. The old shape asked none of those questions of a door whose
+/// argument nobody had thought to list.
+///
+/// One id, one classification: an id that appears on several leaves carries the same
+/// kind of value at each of them, which is what makes the per-id table (rather than a
+/// per-leaf one) sound — and `every_clap_argument_is_classified` holds the ⇔ against the
+/// real tree in both directions, so neither a new argument nor a deleted one can pass.
+///
+/// **Declared bound.** The table can be answered *wrongly* — an author who classifies a
+/// new address argument `Plain` gets a green gate, exactly as before. What it cannot be
+/// is answered *silently*: the question is now asked of every argument that ships, which
+/// is the strongest thing expressible against a tree that carries no types. The
+/// [`DoctypeArg`] half is checked rather than believed —
+/// `every_doctype_door_is_registered` asserts a door's registered shape equals the shape
+/// its own argument carries — but nothing can check `Plain` from the outside.
+pub const ARG_TOKENS: &[(&str, ArgToken)] = &[
+    // ── The doctype family: a bare id, or the `<type>` head of an address ──
+    ("addr", ArgToken::Doctype(DoctypeArg::Address)),
+    ("as", ArgToken::Doctype(DoctypeArg::Bare)),
+    ("doctype", ArgToken::Doctype(DoctypeArg::Bare)),
+    ("old_slug", ArgToken::Doctype(DoctypeArg::Address)),
+    // `jigc milestone add-from-spec <milestone> <spec-addr>` — the door the name-list
+    // derivation could not see.
+    ("spec_addr", ArgToken::Doctype(DoctypeArg::Address)),
+    ("type", ArgToken::Doctype(DoctypeArg::Bare)),
+    // ── The work-unit family: a task id or a milestone id ──
+    ("id", ArgToken::WorkUnitId),
+    ("milestone_id", ArgToken::WorkUnitId),
+    ("task", ArgToken::WorkUnitId),
+    // ── The mint-override family ──
+    ("slug", ArgToken::SlugOverride),
+    // ── Plain: prose, flags, pack ids, and file paths meant as paths — no identity ──
+    ("after", ArgToken::Plain),
+    ("approve", ArgToken::Plain),
+    ("before", ArgToken::Plain),
+    ("carry_staged", ArgToken::Plain),
+    ("commands", ArgToken::Plain),
+    ("doctypes", ArgToken::Plain),
+    ("dry_run", ArgToken::Plain),
+    ("explain", ArgToken::Plain),
+    ("file", ArgToken::Plain),
+    ("force", ArgToken::Plain),
+    ("from", ArgToken::Plain),
+    ("from_file", ArgToken::Plain),
+    ("intent", ArgToken::Plain),
+    ("key", ArgToken::Plain),
+    ("no_commit", ArgToken::Plain),
+    ("path", ArgToken::Plain),
+    ("preview", ArgToken::Plain),
+    ("role", ArgToken::Plain),
+    ("target", ArgToken::Plain),
+    ("title", ArgToken::Plain),
+    ("to", ArgToken::Plain),
+    ("unset", ArgToken::Plain),
+    ("value", ArgToken::Plain),
+    ("workflow", ArgToken::Plain),
+    ("workflows", ArgToken::Plain),
+];
+
+/// The [`ArgToken`] one clap argument id carries — `None` for an id the table does not
+/// classify, which `cli_parse::every_clap_argument_is_classified` proves the real tree
+/// never contains.
+pub fn arg_token(id: &str) -> Option<ArgToken> {
+    ARG_TOKENS
+        .iter()
+        .find(|(known, _)| *known == id)
+        .map(|(_, token)| *token)
+}
+
+/// The clap argument ids that carry a **doctype** — [`ARG_TOKENS`]' `Doctype` projection,
+/// and the vocabulary [`DOCTYPE_DOORS`] is fenced ⇔ against. `type` (`doc create`,
+/// `relocate`), `doctype` (`doc author`/`schema`/`list`), `as` (`migrate`), `addr` (every
+/// addressed `doc` verb and `task bind`), `old_slug` (`rename`) and `spec_addr`
+/// (`milestone add-from-spec`).
+pub fn doctype_arg_ids() -> Vec<&'static str> {
+    ARG_TOKENS
+        .iter()
+        .filter(|(_, token)| matches!(token, ArgToken::Doctype(_)))
+        .map(|(id, _)| *id)
+        .collect()
+}
+
+/// The **shape** a doctype-carrying argument's value arrives in — `None` for an id that
+/// carries no doctype. The door registry's own `DoctypeArg` is asserted equal to this, so
+/// a row cannot describe its door's argument wrongly.
+pub fn doctype_arg_shape(id: &str) -> Option<DoctypeArg> {
+    match arg_token(id) {
+        Some(ArgToken::Doctype(shape)) => Some(shape),
+        _ => None,
+    }
+}
+
+/// The clap argument ids that carry a **work-unit id** — `id` (`task diff`/`validate`/
+/// `discard`/`finalize`/`bind`), `task` (the `--task <id>` scope flag on `start`,
+/// `workflow` and every `doc` verb) and `milestone_id` (every operating `milestone`
+/// verb).
+///
+/// The family exists because `.jigc/tasks/<id>/` and `.jigc/milestones/<id>/` are built
+/// by joining a caller token onto a path, and *"every door asks whether that token is an
+/// id"* is a claim about **every** door that takes one — which nobody had counted until
+/// `jigc task discard "../.."` removed the repository (`DECISIONS.md` → 2026-09-05).
+pub fn work_unit_id_arg_ids() -> Vec<&'static str> {
+    ARG_TOKENS
+        .iter()
+        .filter(|(_, token)| matches!(token, ArgToken::WorkUnitId))
+        .map(|(id, _)| *id)
+        .collect()
+}
+
+/// The clap argument ids that carry a **mint-time slug override**. One member: a `--slug`
+/// value drives a minted identity **verbatim** — it is never re-slugified — and a doc's
+/// slug *is* its path component (`<docs-root>/<location>/<slug>.md`), so an override that
+/// is not a slug names a file nobody addressed. `old_slug` on `jigc rename` is a doctype
+/// **address**, classified in that family and guarded as its slug head.
+pub fn slug_arg_ids() -> Vec<&'static str> {
+    ARG_TOKENS
+        .iter()
+        .filter(|(_, token)| matches!(token, ArgToken::SlugOverride))
+        .map(|(id, _)| *id)
+        .collect()
+}
 
 /// **Every leaf verb that takes a doctype**, with the shape it arrives in — derived
-/// from the clap tree by [`DOCTYPE_ARG_IDS`] and fenced against it, so the set is the
+/// from the clap tree by [`doctype_arg_ids`] and fenced against it, so the set is the
 /// binary's, not a remembered one.
 ///
 /// The **answer** each door owes is decided by what the doctype is *for*, not by which
@@ -1572,29 +1733,15 @@ pub const DOCTYPE_DOORS: &[(&[&str], DoctypeArg)] = &[
     (&["doc", "show"], DoctypeArg::Address),
     // `jigc task` — the task lifecycle.
     (&["task", "bind"], DoctypeArg::Address),
+    // `jigc milestone` — the fan-out surface. `add-from-spec` names the committed spec it
+    // seeds sub-tasks from, so it takes an address exactly as the `doc` read doors do.
+    (&["milestone", "add-from-spec"], DoctypeArg::Address),
 ];
 
 /// The token a [`WORK_UNIT_ID_DOORS`] row's `argv` carries **in place of** the work-unit
 /// id, so one row serves every cell of the axis (`""`, a traversal, an absolute path, a
 /// well-formed-but-unknown id) instead of four hand-written argvs per door.
 pub const WORK_UNIT_ID_SLOT: &str = "<id>";
-
-/// The clap **argument ids** that carry a **work-unit id** — a task id or a milestone id
-/// — the vocabulary the door set is *derived* from rather than remembered.
-///
-/// The shipped [`DOCTYPE_ARG_IDS`] mold, applied to the second identity a caller hands
-/// jigc. It exists because `.jigc/tasks/<id>/` and `.jigc/milestones/<id>/` are built by
-/// joining a caller token onto a path, and *"every door asks whether that token is an
-/// id"* is a claim about **every** door that takes one — which nobody had counted. Driven
-/// at `M50 Inc 1 / T1`'s parent, `jigc task discard "../.."` removed the repository
-/// (`DECISIONS.md` → 2026-09-05).
-///
-/// The ids are the derive macro's field names — `id` (`task diff`/`validate`/`discard`/
-/// `finalize`/`bind`), `task` (the `--task <id>` scope flag on `start`, `workflow` and
-/// every `doc` verb) and `milestone_id` (every operating `milestone` verb) — and each one
-/// names a work-unit id at **every** leaf that carries it, which is what makes the ⇔ in
-/// `cli_parse::every_work_unit_id_door_is_registered` hold.
-pub const WORK_UNIT_ID_ARG_IDS: &[&str] = &["id", "task", "milestone_id"];
 
 /// The payload path the two `--from-file` rows of [`WORK_UNIT_ID_DOORS`] name.
 ///
@@ -1610,7 +1757,7 @@ pub struct WorkUnitIdDoor {
     /// The leaf verb path, as an operator types it after `jigc`.
     pub door: &'static [&'static str],
     /// The clap argument id the work-unit id arrives through — a member of
-    /// [`WORK_UNIT_ID_ARG_IDS`], fenced against what `argv` actually parses into, so a
+    /// [`work_unit_id_arg_ids`], fenced against what `argv` actually parses into, so a
     /// renamed argument reddens rather than reading as documentation.
     pub arg: &'static str,
     /// A **runnable** argv for this door with [`WORK_UNIT_ID_SLOT`] standing in for the
@@ -1620,7 +1767,7 @@ pub struct WorkUnitIdDoor {
 }
 
 /// **Every leaf verb that takes a work-unit id** — derived from the clap tree by
-/// [`WORK_UNIT_ID_ARG_IDS`] and fenced ⇔ against it
+/// [`work_unit_id_arg_ids`] and fenced ⇔ against it
 /// (`cli_parse::every_work_unit_id_door_is_registered`), so the set is the binary's, not
 /// a remembered one.
 ///
@@ -1829,17 +1976,6 @@ pub const WORK_UNIT_ID_DOORS: &[WorkUnitIdDoor] = &[
 /// one row serves every cell of the axis instead of three hand-written argvs per door.
 pub const SLUG_OVERRIDE_SLOT: &str = "<slug>";
 
-/// The clap **argument ids** that carry a **mint-time slug override** — the vocabulary
-/// [`SLUG_DOORS`] is *derived* from rather than remembered.
-///
-/// One member. A `--slug` value drives a minted identity **verbatim** — it is never
-/// re-slugified — and a doc's slug *is* its path component (`<docs-root>/<location>/
-/// <slug>.md`), so an override that is not a slug names a file nobody addressed. Six
-/// leaves carry it, and no leaf carries a mint slug under any other name: `old_slug` on
-/// `jigc rename` is a doctype **address**, already a [`DOCTYPE_ARG_IDS`] member and
-/// guarded as the address family's slug head.
-pub const SLUG_ARG_IDS: &[&str] = &["slug"];
-
 /// The foreign source path the `jigc migrate` row of [`SLUG_DOORS`] names.
 ///
 /// That row must carry a source that is *not itself* a fault, or the door could answer
@@ -1855,7 +1991,7 @@ pub const SLUG_DOOR_SOURCE: &str = "foreign-changelog.md";
 pub struct SlugDoor {
     /// The leaf verb path, as an operator types it after `jigc`.
     pub door: &'static [&'static str],
-    /// The clap argument id the override arrives through — a member of [`SLUG_ARG_IDS`],
+    /// The clap argument id the override arrives through — a member of [`slug_arg_ids`],
     /// fenced against what `argv` actually parses into, so a renamed argument reddens
     /// rather than reading as documentation.
     pub arg: &'static str,
@@ -1867,7 +2003,7 @@ pub struct SlugDoor {
 }
 
 /// **Every leaf verb that takes a `--slug` override** — derived from the clap tree by
-/// [`SLUG_ARG_IDS`] and fenced ⇔ against it (`cli_parse::every_slug_door_is_registered`),
+/// [`slug_arg_ids`] and fenced ⇔ against it (`cli_parse::every_slug_door_is_registered`),
 /// so the set is the binary's, not a remembered one.
 ///
 /// Six doors. Five of them refused a malformed override byte-identically from M39
@@ -2619,10 +2755,57 @@ mod cli_parse {
         }
     }
 
+    /// **Every clap argument is classified — the complement is erased.**
+    ///
+    /// [`ARG_TOKENS`] is a *total* function over the tree's argument ids, and this is the
+    /// ⇔ that keeps it total in both directions: no argument reaches a leaf verb without a
+    /// classification, and no classification names an argument the tree no longer has.
+    ///
+    /// It exists because the three door registries were each derived from a hand-kept
+    /// **allowlist of argument names**, which cannot see an argument nobody listed —
+    /// `jigc milestone add-from-spec`'s `spec_addr` was one, and its unguarded `<slug>`
+    /// head read a file from outside the repository at exit 0 (the M50 completion audit,
+    /// finding 1). Clap exposes no type information for a `String` argument, so
+    /// address-shapedness cannot be *computed* from the tree; making the classification
+    /// total is what makes it *asked*. This assertion is the question: a new argument
+    /// reddens here until an author says what its value is, and answering
+    /// [`ArgToken::Doctype`] reddens [`every_doctype_door_is_registered`] until the door
+    /// joins the registry the axis suites sweep.
+    #[test]
+    fn every_clap_argument_is_classified() {
+        let mut seen: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+        for (id, _) in ARG_TOKENS {
+            assert!(
+                seen.insert(id),
+                "`{id}` is classified twice — one id, one classification",
+            );
+        }
+        let mut in_tree: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        for (path, args) in clap_leaves_with_args() {
+            for id in args {
+                assert!(
+                    arg_token(&id).is_some(),
+                    "`jigc {}` takes the argument `{id}`, which ARG_TOKENS does not \
+                     classify — say what its value is (a doctype, a work-unit id, a slug \
+                     override, or Plain), because an unclassified argument is invisible to \
+                     every door registry derived from it",
+                    path.join(" "),
+                );
+                in_tree.insert(id);
+            }
+        }
+        for (id, _) in ARG_TOKENS {
+            assert!(
+                in_tree.contains(*id),
+                "ARG_TOKENS classifies `{id}`, which no leaf verb of the clap tree takes",
+            );
+        }
+    }
+
     /// **The doctype-door set is derived from the clap tree, not remembered.**
     ///
     /// A leaf verb carries a [`DOCTYPE_DOORS`] row **iff** one of its clap arguments is
-    /// named in [`DOCTYPE_ARG_IDS`] — the ⇔ that makes *"one unknown doctype, one
+    /// named in [`doctype_arg_ids`] — the ⇔ that makes *"one unknown doctype, one
     /// answer, at every door that takes one"* a claim about the whole surface rather
     /// than about the seven doors an audit happened to walk. A new verb taking a
     /// doctype reddens here until it declares how the id arrives, and a row for a verb
@@ -2630,7 +2813,9 @@ mod cli_parse {
     #[test]
     fn every_doctype_door_is_registered() {
         for (path, args) in clap_leaves_with_args() {
-            let carries = args.iter().any(|id| DOCTYPE_ARG_IDS.contains(&id.as_str()));
+            let carries = args
+                .iter()
+                .any(|id| doctype_arg_ids().contains(&id.as_str()));
             let registered = DOCTYPE_DOORS
                 .iter()
                 .any(|(known, _)| known.iter().eq(path.iter()));
@@ -2655,12 +2840,32 @@ mod cli_parse {
                 path.join(" "),
             );
         }
+        // …and a row's declared SHAPE is the shape its own argument carries, so a door
+        // cannot be registered `Bare` while taking an address (or the reverse) and be
+        // swept by the wrong axis.
+        for (path, args) in clap_leaves_with_args() {
+            let Some((_, shape)) = DOCTYPE_DOORS
+                .iter()
+                .find(|(known, _)| known.iter().eq(path.iter()))
+            else {
+                continue;
+            };
+            let carried: Vec<DoctypeArg> =
+                args.iter().filter_map(|id| doctype_arg_shape(id)).collect();
+            assert_eq!(
+                carried,
+                vec![*shape],
+                "`jigc {}` is registered {shape:?}, but its arguments [{}] carry {carried:?}",
+                path.join(" "),
+                args.join(", "),
+            );
+        }
     }
 
     /// **The work-unit-id door set is derived from the clap tree, not remembered.**
     ///
     /// A leaf verb carries a [`WORK_UNIT_ID_DOORS`] row **iff** one of its clap arguments
-    /// is named in [`WORK_UNIT_ID_ARG_IDS`] — the same ⇔ that fences the doctype doors,
+    /// is named in [`work_unit_id_arg_ids`] — the same ⇔ that fences the doctype doors,
     /// applied to the second identity a caller hands jigc. Without it *"a malformed
     /// work-unit id is refused at every door"* would be a claim about the five resolve
     /// **seams** an audit read in the source, and a door is not a seam: the guard could
@@ -2676,7 +2881,7 @@ mod cli_parse {
     ///      the row names, and delivers [`WORK_UNIT_ID_SLOT`]'s stand-in into the row's
     ///      declared `arg` — so a row cannot describe a door it does not reach, and
     ///      `arg` is checked rather than believed;
-    ///   3. every declared `arg` is a member of [`WORK_UNIT_ID_ARG_IDS`], so the
+    ///   3. every declared `arg` is a member of [`work_unit_id_arg_ids`], so the
     ///      vocabulary the derivation reads and the vocabulary the rows use are one set.
     #[test]
     fn every_work_unit_id_door_is_registered() {
@@ -2684,7 +2889,7 @@ mod cli_parse {
         for (path, args) in clap_leaves_with_args() {
             let carries = args
                 .iter()
-                .any(|id| WORK_UNIT_ID_ARG_IDS.contains(&id.as_str()));
+                .any(|id| work_unit_id_arg_ids().contains(&id.as_str()));
             let registered = WORK_UNIT_ID_DOORS
                 .iter()
                 .any(|row| row.door.iter().eq(path.iter()));
@@ -2703,7 +2908,7 @@ mod cli_parse {
         for row in WORK_UNIT_ID_DOORS {
             let shown = row.door.join(" ");
             assert!(
-                WORK_UNIT_ID_ARG_IDS.contains(&row.arg),
+                work_unit_id_arg_ids().contains(&row.arg),
                 "`jigc {shown}` declares `{}`, which is not a work-unit-id argument",
                 row.arg,
             );
@@ -2751,7 +2956,7 @@ mod cli_parse {
     ///
     /// The same ⇔ that fences the doctype and work-unit-id doors, applied to the third
     /// token a caller hands jigc: a leaf verb carries a [`SLUG_DOORS`] row **iff** one of
-    /// its clap arguments is named in [`SLUG_ARG_IDS`]. Without it *"every `--slug` door
+    /// its clap arguments is named in [`slug_arg_ids`]. Without it *"every `--slug` door
     /// refuses a value that is not a slug"* would be a claim about the five doors M39
     /// happened to build plus the sixth this increment fixed — and the sixth is precisely
     /// what a remembered list missed.
@@ -2759,12 +2964,12 @@ mod cli_parse {
     /// Three assertions, the second being the one a renamed argument trips: the ⇔ over
     /// every leaf; each row's `argv` actually parsing against the real CLI, landing on the
     /// leaf the row names and delivering [`SLUG_OVERRIDE_SLOT`]'s stand-in into the row's
-    /// declared `arg`; and every declared `arg` being a member of [`SLUG_ARG_IDS`].
+    /// declared `arg`; and every declared `arg` being a member of [`slug_arg_ids`].
     #[test]
     fn every_slug_door_is_registered() {
         // (1) The ⇔ over every leaf of the real clap tree.
         for (path, args) in clap_leaves_with_args() {
-            let carries = args.iter().any(|id| SLUG_ARG_IDS.contains(&id.as_str()));
+            let carries = args.iter().any(|id| slug_arg_ids().contains(&id.as_str()));
             let registered = SLUG_DOORS.iter().any(|row| row.door.iter().eq(path.iter()));
             assert_eq!(
                 carries,
@@ -2781,7 +2986,7 @@ mod cli_parse {
         for row in SLUG_DOORS {
             let shown = row.door.join(" ");
             assert!(
-                SLUG_ARG_IDS.contains(&row.arg),
+                slug_arg_ids().contains(&row.arg),
                 "`jigc {shown}` declares `{}`, which is not a slug-override argument",
                 row.arg,
             );

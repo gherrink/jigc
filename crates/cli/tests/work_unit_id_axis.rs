@@ -16,7 +16,7 @@
 //! pointed rather than over its class's axis has been this repo's most expensive shape
 //! (M49's own centrepiece; `implementation/pinning.md`). So this suite's subject is
 //! [`WORK_UNIT_ID_DOORS`] — **derived from the clap tree** by the argument ids that carry
-//! a work-unit id ([`WORK_UNIT_ID_ARG_IDS`]) and fenced ⇔ against it by
+//! a work-unit id ([`work_unit_id_arg_ids`]) and fenced ⇔ against it by
 //! `cli_parse::every_work_unit_id_door_is_registered`, the shipped `DOCTYPE_DOORS` mold.
 //! Twenty-five doors, and a door the binary grows cannot ship without joining them.
 //!
@@ -55,8 +55,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use cli::cli::{
-    VERB_KINDS, VerbKind, WORK_UNIT_ID_ARG_IDS, WORK_UNIT_ID_DOOR_PAYLOAD, WORK_UNIT_ID_DOORS,
-    WORK_UNIT_ID_SLOT,
+    VERB_KINDS, VerbKind, WORK_UNIT_ID_DOOR_PAYLOAD, WORK_UNIT_ID_DOORS, WORK_UNIT_ID_SLOT,
+    work_unit_id_arg_ids,
 };
 use engine::slug::is_slug;
 use engine::state::MINT_DOORS;
@@ -188,7 +188,7 @@ fn family_of(arg: &str) -> Family {
         "milestone_id" => Family::Milestone,
         other => panic!(
             "`{other}` is a work-unit-id argument with no family — a fourth member of \
-             WORK_UNIT_ID_ARG_IDS owes this suite the answer its doors give"
+             work_unit_id_arg_ids() owes this suite the answer its doors give"
         ),
     }
 }
@@ -370,7 +370,7 @@ fn every_work_unit_id_door_answers_the_whole_token_axis() {
          never a skip",
     );
     assert!(
-        !WORK_UNIT_ID_ARG_IDS.is_empty(),
+        !work_unit_id_arg_ids().is_empty(),
         "the derivation vocabulary must be non-empty, else the ⇔ fence is vacuous",
     );
 }
