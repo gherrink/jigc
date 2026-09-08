@@ -770,12 +770,16 @@ fn jigc_with_pack(repo: &Path, home: &Path, pack: &Path, args: &[&str]) -> Outpu
 /// **The set is [`SchemaChangeKind::ALL`] × the loci, and the locus count is DERIVED.**
 /// [`LOCI`] is `MAX_NESTING_DEPTH + 1`, and [`MAX_NESTING_DEPTH`] is itself derived from
 /// the address grammar's hop budget — so this arm follows the constants rather than
-/// pinning today's `3`. That is a rule the Settle states by name: *any increment
-/// hardcoding "three loci" re-enacts M45's statement-equals-constant failure*
-/// (`completions/artifacts/M50/settle-record.md` → D6), and a literal here would re-enact
-/// it **inside the test written to prevent it**. The kind set is the discriminant enum the
-/// increment minted for exactly this, because `SchemaChange::ALL` cannot exist — every
-/// variant carries data — and a count is not a set.
+/// pinning today's `3`. The **domain is `1..=LOCI`** — the section itself is locus 1, its item
+/// block 2, a nested item block 3 ([`engine::schema_diff::Locus::index`]) — and the arm asserts it
+/// walks *that* set rather than one merely of the right size: a `LOCI`-long range based at 0
+/// satisfies the cell count below while asking a non-locus, where every kind answers
+/// `Unreachable`, and never asking locus 3 — the locus Increments 6/7 built. The derivation is a
+/// rule the Settle states by name: *any increment hardcoding "three loci" re-enacts M45's
+/// statement-equals-constant failure* (`completions/artifacts/M50/settle-record.md` → D6), and a
+/// literal here would re-enact it **inside the test written to prevent it**. The kind set is the
+/// discriminant enum the increment minted for exactly this, because `SchemaChange::ALL` cannot
+/// exist — every variant carries data — and a count is not a set.
 ///
 /// **What this adds over `migrate_locus_axis.rs`** is the adopter's walk. That suite owns
 /// the `kind × locus` table's own arms and drives the classifier kind by kind against a
@@ -795,8 +799,21 @@ fn every_change_kind_has_a_verdict_at_every_derived_locus_and_locus_three_folds(
          failure this arm exists to prevent",
     );
     let mut cells = 0usize;
-    for kind in SchemaChangeKind::ALL {
-        for locus in 0..LOCI {
+    for locus in 1..=LOCI {
+        // A locus is a place a change can be **applied**. An index outside the domain answers
+        // `Unreachable`/`DoctypeLevel` for every kind, so this is what tells the arm it is
+        // walking the loci rather than an index set of the right SIZE — the count guard below
+        // cannot, since any `LOCI`-long range satisfies it.
+        let applied = SchemaChangeKind::ALL
+            .iter()
+            .filter(|kind| matches!(locus_disposition(**kind, locus), LocusDisposition::Applied))
+            .count();
+        assert!(
+            applied > 0,
+            "locus {locus} applies no kind at all — that is not a locus, and this arm is \
+             iterating the wrong index set (the domain is `1..=LOCI`)",
+        );
+        for kind in SchemaChangeKind::ALL {
             let verdict = locus_disposition(kind, locus);
             assert!(
                 !matches!(verdict, LocusDisposition::Unbuilt),
