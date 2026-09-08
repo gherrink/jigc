@@ -407,17 +407,36 @@ const REGISTRY: &[(&[&str], Tier)] = &[
     (
         &["milestone", "discard"],
         Tier::Judgment(
-            "a prose summary carried whole inside `text`",
-            MILESTONE_PROSE_SUMMARY,
+            "a prose summary carried whole inside `text` — plus one computed side channel",
+            Disposition::DeclaredOut(
+                "`render::milestone` puts the ENTIRE agent summary on the wire as `text` \
+                 (beside `hook_output`), as at its five siblings. It leaves the shared \
+                 rationale over one word: the abandon DOES compute a side channel — the \
+                 staged-prose loss narration, read before the teardown and printed after it \
+                 — so *\"nothing is computed, printed, and withheld\"* is not the true \
+                 sentence here. It is not withheld, it is MOVED by stream discipline, \
+                 exactly as `milestone execute`'s partial-provision advisory is: the warning \
+                 goes to stderr under BOTH formats, so a driver reading the pinned document \
+                 gets one JSON value and still receives the loss on its own stream \
+                 (`staged_prose_consent_axis::\
+                 the_forced_abandons_loss_narration_rides_stderr_under_format_json`). \
+                 Since the M50 completion audit's finding 4 the un-forced staged-prose cell \
+                 does not reach the narration at all — it REFUSES, and a blocking refusal is \
+                 the findings surface's shape, not this envelope's",
+            ),
         ),
     ),
 ];
 
-/// The six prose-summary `milestone` verbs' shared census disposition — one statement
+/// The prose-summary `milestone` verbs' shared census disposition — one statement
 /// because they share one renderer (`render::milestone`), and a per-verb copy would be
-/// six places for the same fact to rot in. `milestone execute` left this set at M49
+/// several places for the same fact to rot in. `milestone execute` left this set at M49
 /// Increment 10 / T5: it never rendered through `render::milestone` at all, and it now has
 /// a computed side channel of its own, so it carries its own disposition above.
+/// `milestone discard` left it at the M50 completion audit (finding 4) for the second
+/// clause rather than the first: it *does* render through `render::milestone`, but it also
+/// computes the staged-prose loss narration, so the sentence below was false of it — and
+/// the repair is the `execute` one, stream discipline rather than a new envelope key.
 const MILESTONE_PROSE_SUMMARY: Disposition = Disposition::DeclaredOut(
     "`render::milestone` puts the ENTIRE agent summary on the wire as `text` (beside \
      `hook_output`); the agent surface differs from it only by the routing footer, which is \

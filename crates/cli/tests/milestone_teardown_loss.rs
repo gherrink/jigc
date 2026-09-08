@@ -546,6 +546,12 @@ fn a_gitignored_only_worktree_still_clears_the_discard_refusal() {
 /// name the milestone's sub-tasks that hold staged docs, must **not** name a sub-task holding
 /// none (the over-report that makes a loss warning untrustworthy), and must not name — or
 /// touch — an unrelated open task, whose area this door never removes.
+///
+/// **Since the M50 completion audit (finding 4) this arm drives the FORCED abandon**, because
+/// the state it plants *is* the loss cell the door now refuses over (`milestone.staged-prose`)
+/// — the refusal is asserted first, and every narration assertion below then runs against
+/// `--force`, unchanged. That split is the point: M46 pinned that consent buys the teardown
+/// and never silence, so a `--force` that suppressed the warning would redden here.
 #[test]
 fn the_abandon_names_the_authored_task_prose_it_destroys() {
     let repo = TempDir::new("abandon-prose");
@@ -593,14 +599,37 @@ fn the_abandon_names_the_authored_task_prose_it_destroys() {
         String::from_utf8_lossy(&provisioned.stderr),
     );
 
-    let discarded = run_milestone(repo.path(), home.path(), &["discard", "cache-rework"]);
+    // Since the M50 completion audit (finding 4) the staged prose this arm is *about* is
+    // exactly what the door now refuses over: `area-low` stages `adr:low-policy`, the
+    // worktrees are clean, and that is cell D of the `{staged prose} × {dirty worktree}`
+    // 2×2 — the loss cell the worktree probe structurally cannot see. So the un-forced run
+    // no longer reaches the teardown, and this arm carries the consent.
+    let refused = run_milestone(repo.path(), home.path(), &["discard", "cache-rework"]);
+    let refusal = format!(
+        "{}{}",
+        String::from_utf8_lossy(&refused.stdout),
+        String::from_utf8_lossy(&refused.stderr),
+    );
+    assert!(
+        !refused.status.success() && refusal.contains("milestone.staged-prose"),
+        "the un-forced abandon must now REFUSE over the very prose this arm is about — the \
+         narration is what the door says once consent is given, never instead of it; \
+         got:\n{refusal}",
+    );
+
+    let discarded = run_milestone(
+        repo.path(),
+        home.path(),
+        &["discard", "cache-rework", "--force"],
+    );
     let stdout = String::from_utf8(discarded.stdout).expect("utf-8 stdout");
     let stderr = String::from_utf8(discarded.stderr).expect("utf-8 stderr");
 
-    // (1) The worktrees are clean, so no refusal fires — this is the ordinary abandon.
+    // (1) The consent runs, and it buys the teardown — never silence: every narration
+    // assertion below is asserted against the FORCED run, unchanged from before the guard.
     assert!(
         discarded.status.success(),
-        "the un-forced abandon must reach its teardown; stdout:\n{stdout}\nstderr:\n{stderr}",
+        "the consented abandon must reach its teardown; stdout:\n{stdout}\nstderr:\n{stderr}",
     );
 
     // (2) The door names the authored prose it is about to destroy.

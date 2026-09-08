@@ -180,15 +180,20 @@ pub enum MilestoneCommand {
     /// uncommitted work, and equally a path this repository has not registered as a
     /// worktree (a `cp -R` or `mv` of the repo leaves the copy's worktrees registered
     /// at the source's path), whose contents no git here vouches for, committed or
-    /// not. Get that content out and re-run, or pass `--force`.
+    /// not. Refuses with `milestone.staged-prose` when a sub-task's working area under
+    /// `.jigc/tasks/` stages a doc no commit has a copy of — a subject no worktree
+    /// contains, so the worktree probe reads clean over it. Get that content out and
+    /// re-run, or pass `--force`, the single consent for both guards.
     Discard {
         /// The milestone id (the slug under `.jigc/milestones/`).
         milestone_id: String,
         /// Settle the record and tear the workbench down even when a sub-task worktree
-        /// path holds content — the explicit consent, and what it costs differs by
-        /// path: a worktree this repository has registered is removed with everything
-        /// uncommitted in it, while a path registered nowhere is left orphaned on disk
-        /// for you to deal with. Inert when the guard is already clean.
+        /// path holds content, or a sub-task's working area stages a doc no commit has
+        /// a copy of — the explicit consent for both guards, and what it costs differs
+        /// by path: a worktree this repository has registered is removed with everything
+        /// uncommitted in it, a path registered nowhere is left orphaned on disk for you
+        /// to deal with, and a staged doc is gone for good. Inert when both guards are
+        /// already clean; it never buys silence — the loss is narrated either way.
         #[arg(long)]
         force: bool,
     },
@@ -2412,6 +2417,16 @@ pub struct DestroyingDoor {
     /// `Some(code)` — the **door-scoped** blocking finding code its refusal carries, so a
     /// reader can tell which door refused without parsing prose.
     ///
+    /// **It is this table's subject, not an inventory of the door's refusals.** The axis is
+    /// *worktree-shaped paths under `.jigc/worktrees/`*, so this is the code the door refuses
+    /// with **over such a path**; a door may refuse over other subjects under other codes,
+    /// and both `jigc uninstall` and `jigc milestone discard` do — each pairs its
+    /// `*.dirty-worktree` with a staged-prose refusal over `.jigc/tasks/<id>/docs/`, a
+    /// subject no worktree contains ([`DISCARD_STAGED_PROSE_CODE`],
+    /// `crate::setup::staged_prose_finding`). Reading this field as "the door's one refusal"
+    /// is what left the abandon destroying staged prose at exit 0 until the M50 completion
+    /// audit.
+    ///
     /// `None` — the door does not refuse ([`FINALIZE_DOOR`]): the boundary it stands at has
     /// already committed the staged set, so what the removal takes is by definition what no
     /// commit was ever going to carry, and a refusal there would fire on the ordinary
@@ -3048,6 +3063,11 @@ fn run_discard(cwd: &Path, milestone_id: &str, force: bool) -> Result<(String, S
                 &held,
             )));
         }
+        // (2b) The staged-prose guard — the abandon's OTHER uncommitted subject
+        // (M50 completion audit, finding 4). Second, so the worktree refusal keeps its
+        // precedence where both hold, and inside the same `!force` block, because
+        // `--force` is the single consent for both arms of this door.
+        refuse_over_subtask_staged_prose(&jigc_home, milestone_id, &list)?;
     }
 
     // (3) Settle the committed record + (4) commit ONLY it. Dev-only resolves no schema → no
@@ -3106,6 +3126,143 @@ fn run_discard(cwd: &Path, milestone_id: &str, force: bool) -> Result<(String, S
         ),
         hook_output,
     ))
+}
+
+/// [`DISCARD_DOOR`]'s **second** blocking identity — the staged-prose arm, distinct from
+/// [`DISCARD_CODE`]'s worktree arm because the two refusals have different subjects and
+/// different exits, and a reader must be able to tell which one fired without parsing prose
+/// (`design/surface-contract.md` → law 1; the shipped `uninstall.dirty-worktree` /
+/// `uninstall.staged-prose` pair is the same split at the install door).
+///
+/// It is **not** [`DestroyingDoor::code`]: that field is the destroying-door table's
+/// refuse-vs-narrate discriminator over *worktree-shaped paths*, which is the axis
+/// [`DESTROYING_DOORS`] iterates. This refusal is about `.jigc/tasks/<sub-id>/docs/`, which
+/// no worktree contains — which is precisely why the worktree guard could not see it.
+///
+/// A door refusal, not a probe result and not a commit-phase rejection, so it joins neither
+/// `engine::result::CHECK_INVENTORY` nor [`crate::invocation_log::ERROR_CODE_REGISTRY`] —
+/// exactly like the `task-discard.staged-prose` sibling it pairs with.
+const DISCARD_STAGED_PROSE_CODE: &str = "milestone.staged-prose";
+
+/// The `jigc milestone discard` door's WIP guard over its sub-tasks' **staged docs** — the
+/// third door of the pair M50's D1 exists to reconcile (M50 completion audit, finding 4).
+///
+/// This door already read [`crate::task::staged_task_prose`] through
+/// [`crate::setup::pending_staged_prose`], but only for **narration**: it named the bytes and
+/// then took them at exit 0, while `jigc task discard` refused over the identical files under
+/// `task-discard.staged-prose`. That is D1's own contradiction — one probe, two doors, opposite
+/// answers — one door over.
+///
+/// **Why the worktree guard was not already enough**, which is the warrant that was retired
+/// rather than reworded: `design/team-ready-state.md` justified the narrating arm here with
+/// *"the refusal it does carry is the worktree one"*, and driven over the 2×2 that clause is
+/// false in the only cell where bytes die. An agent authoring through jigc writes into
+/// `.jigc/tasks/<sub-id>/docs/`, which is **not inside the worktree**, so
+/// `git status --porcelain` reads clean while the sub-task's `commit:<sub-id>.md` holds
+/// authored prose. The worktree probe cannot see this subject at all.
+///
+/// **Scoped to this milestone's sub-tasks** — [`cleanup_subtask_areas`]'s exact set, the same
+/// scope the narration uses. A door must neither claim nor refuse over prose it will not
+/// touch, so an unrelated open task's staged docs are none of this door's business.
+///
+/// **The guard is keyed on staged bytes, not on being a milestone.** `milestone add-task` and
+/// `milestone provision` stage nothing, so a milestone abandoned before anyone re-entered a
+/// sub-task still discards with no consent — the omitting context that keeps this from being
+/// a `--force` trainer on the ordinary path (M46 Inc 2's measured objection, which is why the
+/// *landed* [`FINALIZE_DOOR`] still narrates rather than refuses).
+fn refuse_over_subtask_staged_prose(
+    jigc_home: &Path,
+    milestone_id: &str,
+    list: &engine::milestone::TaskList,
+) -> Result<()> {
+    let only = list.enumerate();
+    let staged = crate::task::staged_task_prose(jigc_home, Some(&only), &|err| {
+        unverified_subtask_prose_finding(milestone_id, err)
+    })
+    .map_err(finding_to_err)?;
+    if staged.is_empty() {
+        return Ok(());
+    }
+    Err(finding_to_err(subtask_staged_prose_finding(
+        milestone_id,
+        &staged,
+    )))
+}
+
+/// The abandon door's staged-doc refusal: a blocking, route-bearing finding naming each of
+/// **this milestone's** sub-tasks and the doc identities its area stages.
+///
+/// **It claims "staged doc(s)", not "authored prose"** — the claim discipline both siblings
+/// carry ([`crate::setup::staged_prose_finding`], `crate::task`'s discard finding): that the
+/// docs are staged and in no commit is exactly what the probe measured, and whether a human
+/// or the mint wrote their bytes is not something it can tell.
+///
+/// **Three exits, at this door's unit kind**, mirroring the task door's read → land → consent
+/// order: `jigc doc show <address> --task <sub-id>` reads what is about to be lost (the listed
+/// identities *are* the addresses it takes), `jigc milestone finalize <id>` lands the whole
+/// boundary, and the consent comes last carrying the real milestone id. Naming
+/// `jigc task finalize` here would be the wrong unit kind — a milestone sub-task's only commit
+/// boundary is the milestone's (`design/write-commands.md` → Abandoning a milestone).
+///
+/// **The land exit's caveat is this door's, not the task door's** — driven, not copied. The
+/// task door says *"refuses while a required slot is empty"*, which is true of `jigc task
+/// finalize` over an empty commit skeleton; at *this* door the dominant cell (a sub-task
+/// staging only its transient `commit:<sub-id>`, no promotable doc and no staged code)
+/// refuses **earlier and for a different reason** — `milestone.zero-contribution`, driven
+/// at `c344396`. Naming the task door's reason here would state a cause that does not fire,
+/// which is the same law-1 defect this whole guard exists to close, so the caveat names
+/// both conditions and claims neither exclusively.
+fn subtask_staged_prose_finding(milestone_id: &str, staged: &[(String, Vec<String>)]) -> Finding {
+    let listing: Vec<String> = staged
+        .iter()
+        .map(|(task, docs)| format!("  {task}: {}", docs.join(", ")))
+        .collect();
+    let docs: usize = staged.iter().map(|(_, docs)| docs.len()).sum();
+    Finding::block(
+        DISCARD_STAGED_PROSE_CODE,
+        format!(
+            "milestone:{milestone_id}: {} sub-task(s) stage {docs} doc(s) that no commit \
+             has a copy of — abandoning the milestone would destroy them:\n{}",
+            staged.len(),
+            listing.join("\n"),
+        ),
+        format!(
+            "read what is in them with `jigc doc show <address> --task <sub-task-id>` (the \
+             sub-task ids are listed above), or land the milestone with \
+             `jigc milestone finalize {milestone_id}` (which refuses, with its own route, \
+             while the milestone has nothing to land or a required slot is empty) — or, \
+             once you have confirmed the milestone holds nothing you need, \
+             `jigc milestone discard {milestone_id} --force` settles the record and tears \
+             the workbench down with them"
+        ),
+    )
+}
+
+/// The abandon door's fail-closed sibling, keyed to **this** door (D1's per-door-identity
+/// rule): the staged set could not be enumerated, so the workbench is not torn down with its
+/// sub-tasks' staged docs' existence unknown — "enumerated nothing" and "there is nothing" are
+/// the same bytes to a caller about to `remove_dir_all`, and only one of them is safe.
+///
+/// Minting one identity for all three doors would put *"re-run `jigc uninstall`"* in front of
+/// an operator standing at `jigc milestone discard` — the cross-door misdirection this family
+/// exists to close, reintroduced by the very sharing that closes it.
+///
+/// Same claim discipline: the probe never ran, so it names only what it was looking for.
+fn unverified_subtask_prose_finding(milestone_id: &str, err: std::io::Error) -> Finding {
+    Finding::block(
+        DISCARD_STAGED_PROSE_CODE,
+        format!(
+            "cannot check milestone:{milestone_id}'s sub-task working areas for staged \
+             docs, so abandoning it could destroy work no commit has a copy of: {err}"
+        ),
+        format!(
+            "make sure `.jigc/tasks/` is readable, then re-run \
+             `jigc milestone discard {milestone_id}` — or, once you have confirmed the \
+             milestone holds nothing you need, \
+             `jigc milestone discard {milestone_id} --force` tears the workbench down \
+             unchecked"
+        ),
+    )
 }
 
 /// The milestone's provisioned worktrees that hold **uncommitted work**, each paired with the

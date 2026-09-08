@@ -1,4 +1,4 @@
-//! M50 Increment 3 / T2 — **the destroying-door consent pair, driven over one workbench**
+//! M50 Increment 3 / T2 — **the destroying-door consent set, driven over one workbench**
 //! (`completions/artifacts/M50/settle-record.md` → D1; `design/team-ready-state.md` → The
 //! lifecycle · `jigc task discard <sub-id>`; `design/project-setup.md` → the two states
 //! `uninstall` refuses).
@@ -32,6 +32,37 @@
 //!   pinned here, on purpose, so a later narrowing of the predicate reddens instead of
 //!   quietly re-opening the pair's disagreement (`DECISIONS.md` → 2026-09-05 M50 Increment 3
 //!   planning, declared bounds (i) and (ii)).
+//!
+//! **The M50 completion audit added the third door** (finding 4). `jigc milestone discard`
+//! read the *same* probe for **narration** and never as a **guard**, so it destroyed a
+//! sub-task's staged prose at exit 0 while `jigc task discard` refused over the identical
+//! bytes — D1's own contradiction, one door over. Its warrant was that *"the refusal it does
+//! carry is the worktree one"* (`design/team-ready-state.md` → The workbench is actually
+//! removed), and that clause is **false in the only cell where bytes die**: an agent
+//! authoring through jigc writes into `.jigc/tasks/<sub-id>/docs/`, which is **not inside the
+//! worktree**, so `git status --porcelain` reads clean over authored prose. The arms below
+//! are the `{staged prose} × {dirty worktree}` 2×2's cells that this door owns, plus the
+//! machine-surface fact the audit's scope item 6 turned on:
+//!
+//! - **(e) cell D — staged prose, clean worktree.** The loss cell. The door refuses under
+//!   **its own** code `milestone.staged-prose`, names its sub-task's staged identity, does
+//!   not name a task outside the milestone, and takes nothing.
+//! - **(f) the consent performs this door's act** — and `--force` never suppresses the
+//!   narration M46 pinned, so the loss is still named as it is taken.
+//! - **(g) the guard is keyed on staged bytes, not on being a milestone.** `milestone
+//!   add-task` and `milestone provision` stage nothing, so a milestone abandoned before
+//!   anyone re-entered a sub-task still discards at exit 0 with no consent — the omitting
+//!   context that makes this guard safe rather than a `--force` trainer.
+//! - **(h) the loss is moved, not withheld.** The narration is a *computed* side channel, so
+//!   `text_json_parity_axis`' shared *"nothing is computed, printed, and withheld"* was false
+//!   of this verb; it now carries its own disposition and cites this arm, which drives the
+//!   forced abandon under `--format json` and finds one undiluted JSON value on stdout with
+//!   the loss on stderr — `milestone execute`'s shipped stream-discipline shape.
+//!
+//! Cells B and C of that 2×2 (dirty worktree, prose or not) are unchanged and stay where
+//! they already live: `milestone_discard.rs` and `flow49_acceptance.rs`. The new guard sits
+//! **after** the worktree one inside the same `!force` block, so where both hold the door
+//! still answers `milestone.dirty-worktree`.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -437,5 +468,284 @@ fn a_freshly_minted_task_needs_the_consent_from_the_moment_it_exists() {
     assert!(
         !repo.join(".jigc").join("tasks").join(minted).exists(),
         "and it takes the area",
+    );
+}
+
+/// The milestone door's own refusal code — its own, never the task door's
+/// (`task-discard.staged-prose`) or the install door's (`uninstall.staged-prose`).
+const MILESTONE_STAGED_PROSE: &str = "blocking · milestone.staged-prose";
+
+/// Put the milestone's sub-task into **cell D**: provision its worktree, then compose its
+/// recorded workflow *from that worktree* — which is exactly how a fanned sub-agent reaches
+/// its area, and it stages `commit:<sub-id>.md` while leaving the worktree itself clean.
+///
+/// Driving the mint rather than writing the file is the point of the cell: the bytes the
+/// door destroys are the ones the product itself put there, and the worktree probe reads
+/// clean over them because `.jigc/tasks/<sub-id>/docs/` is **not inside the worktree**.
+fn enter_sub_task(repo: &Path, home: &Path) -> PathBuf {
+    ok(
+        repo,
+        home,
+        &["milestone", "provision", MILESTONE_ID],
+        "milestone provision",
+    );
+    let worktree = repo.join(".jigc").join("worktrees").join(SUB_TASK);
+    let composed = jigc(
+        &worktree,
+        home,
+        &["workflow", "sub-task", "--task", SUB_TASK],
+    );
+    assert!(
+        composed.status.success(),
+        "composing the sub-task's recorded workflow from its worktree must exit 0; \
+         stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&composed.stdout),
+        String::from_utf8_lossy(&composed.stderr),
+    );
+    assert!(
+        staged_doc(repo, SUB_TASK).exists(),
+        "the premise of cell D: re-entering the sub-task stages `commit:{SUB_TASK}.md`",
+    );
+    // …and the worktree the *other* guard probes is clean, so cell D is genuinely reached
+    // rather than shadowed by `milestone.dirty-worktree`.
+    let status = Command::new("git")
+        .args(["status", "--porcelain"])
+        .current_dir(&worktree)
+        .output()
+        .expect("run git status in the sub-task worktree");
+    assert!(
+        String::from_utf8_lossy(&status.stdout).trim().is_empty(),
+        "the premise of cell D: the worktree is CLEAN — the worktree refusal structurally \
+         cannot see prose staged outside it; got:\n{}",
+        String::from_utf8_lossy(&status.stdout),
+    );
+    worktree
+}
+
+/// **Arm (e)** — cell D of the 2×2: staged prose, clean worktree. The abandon refuses under
+/// its own code, names its own sub-task's staged doc, names no task it would not touch, and
+/// takes nothing.
+#[test]
+fn the_milestone_door_refuses_its_sub_tasks_staged_bytes_under_its_own_code() {
+    let (repo, home) = workbench("milestone-cell-d");
+    let (repo, home) = (repo.path(), home.path());
+    enter_sub_task(repo, home);
+    let staged = staged_doc(repo, SUB_TASK);
+    let before = fs::read(&staged).expect("the sub-task's staged commit doc is on disk");
+
+    let refused = jigc(repo, home, &["milestone", "discard", MILESTONE_ID]);
+    let text = both_streams(&refused);
+    assert!(
+        !refused.status.success(),
+        "`jigc milestone discard` must refuse over a sub-task's staged docs, as \
+         `jigc task discard` does over the identical bytes; got:\n{text}",
+    );
+    assert!(
+        text.contains(MILESTONE_STAGED_PROSE),
+        "the abandon door refuses under its OWN code — a shared identity would put the wrong \
+         door's re-run in front of the operator; got:\n{text}",
+    );
+    let routes = route_lines(&text);
+    assert_eq!(
+        routes.len(),
+        1,
+        "the refusal carries exactly one route; got:\n{text}",
+    );
+    for exit in [
+        "jigc doc show <address> --task <sub-task-id>".to_string(),
+        format!("jigc milestone finalize {MILESTONE_ID}"),
+        format!("jigc milestone discard {MILESTONE_ID} --force"),
+    ] {
+        assert!(
+            routes[0].contains(&exit),
+            "the route names its three exits — read, land, consent — each at THIS door's \
+             unit kind (`jigc task finalize` would be the wrong one: a sub-task's only \
+             commit boundary is the milestone's); `{exit}` is missing from:\n{}",
+            routes[0],
+        );
+    }
+    assert!(
+        text.contains(&format!("{SUB_TASK}: commit:{SUB_TASK}")),
+        "the refusal names the sub-task and the staged identity it will not destroy — which \
+         is what makes the route's `<sub-task-id>` placeholder substitutable; got:\n{text}",
+    );
+    assert!(
+        !text.contains(TOP_TASK),
+        "and names nothing outside the milestone — this door never removes an unrelated \
+         open task's area, so claiming it would be a destruction it does not perform; \
+         got:\n{text}",
+    );
+
+    // Nothing moved: the bytes, the workbench, and the record are all as they were.
+    assert_eq!(
+        fs::read(&staged).expect("the staged doc survives the refusal"),
+        before,
+        "a refusal removes nothing",
+    );
+    assert!(
+        repo.join(".jigc")
+            .join("milestones")
+            .join(MILESTONE_ID)
+            .is_dir(),
+        "the milestone workbench is untouched",
+    );
+    let record: serde_json::Value = serde_json::from_str(&ok(
+        repo,
+        home,
+        &[
+            "doc",
+            "show",
+            &format!("milestone-record:{MILESTONE_ID}"),
+            "--format",
+            "json",
+        ],
+        "doc show milestone-record --format json",
+    ))
+    .expect("the pinned read contract parses");
+    assert_eq!(
+        record["fields"]["status"].as_str(),
+        Some("active"),
+        "the refusal ran before the settle — the record must not claim the milestone was \
+         abandoned; got:\n{record}",
+    );
+}
+
+/// **Arm (f)** — the consent performs *this* door's act, and it does not buy silence:
+/// `--force` still narrates the loss it takes (M46 pinned the narration deliberately).
+#[test]
+fn the_milestone_doors_force_takes_the_workbench_and_still_narrates_the_loss() {
+    let (repo, home) = workbench("milestone-force");
+    let (repo, home) = (repo.path(), home.path());
+    enter_sub_task(repo, home);
+
+    let forced = jigc(
+        repo,
+        home,
+        &["milestone", "discard", MILESTONE_ID, "--force"],
+    );
+    let stderr = String::from_utf8_lossy(&forced.stderr).into_owned();
+    assert!(
+        forced.status.success(),
+        "the printed consent runs as printed; stdout:\n{}\nstderr:\n{stderr}",
+        String::from_utf8_lossy(&forced.stdout),
+    );
+    assert!(
+        stderr.contains(&format!("{SUB_TASK}: commit:{SUB_TASK}"))
+            && stderr.contains("not recoverable"),
+        "`--force` is consent, never silence — the narration survives it verbatim; \
+         stderr:\n{stderr}",
+    );
+    assert!(
+        !repo.join(".jigc").join("tasks").join(SUB_TASK).exists(),
+        "the forced abandon really takes the sub-task area (visible AND consented)",
+    );
+    assert!(
+        staged_doc(repo, TOP_TASK).exists(),
+        "and takes only its own sub-tasks — the unrelated open task's prose survives",
+    );
+}
+
+/// **Arm (g)** — the omitting context, and the property that makes this guard safe: the
+/// milestone doors that *precede* authoring stage nothing, so a milestone abandoned before
+/// anyone re-entered a sub-task discards at exit 0 with no consent at all.
+///
+/// Without this cell the guard would be indistinguishable from one that fires on every
+/// abandon — which is the `--force`-into-reflex failure M46 refused on measured evidence.
+#[test]
+fn a_milestone_whose_sub_tasks_stage_nothing_discards_without_the_consent() {
+    let (repo, home) = workbench("milestone-bare");
+    let (repo, home) = (repo.path(), home.path());
+    ok(
+        repo,
+        home,
+        &["milestone", "provision", MILESTONE_ID],
+        "milestone provision",
+    );
+    assert!(
+        !repo
+            .join(".jigc")
+            .join("tasks")
+            .join(SUB_TASK)
+            .join("docs")
+            .exists(),
+        "the premise: `milestone add-task` and `milestone provision` stage nothing",
+    );
+
+    let discarded = jigc(repo, home, &["milestone", "discard", MILESTONE_ID]);
+    let text = both_streams(&discarded);
+    assert!(
+        discarded.status.success(),
+        "a milestone holding no staged prose must still abandon with no consent; got:\n{text}",
+    );
+    assert!(
+        !text.contains("milestone.staged-prose"),
+        "and the guard must stay silent where it has nothing to refuse over; got:\n{text}",
+    );
+    assert!(
+        !repo
+            .join(".jigc")
+            .join("milestones")
+            .join(MILESTONE_ID)
+            .exists(),
+        "the abandon really ran",
+    );
+    assert!(
+        staged_doc(repo, TOP_TASK).exists(),
+        "and left the unrelated open task's staged prose alone",
+    );
+}
+
+/// **The parity disposition's citation** (M50 completion audit, finding 4, scope item 6).
+///
+/// `crates/cli/tests/text_json_parity_axis.rs` dispositioned `milestone discard` as
+/// *"nothing is computed, printed, and withheld"*. Driven, the loss narration **is**
+/// computed and printed and is not in the envelope — so the rationale was corrected rather
+/// than the envelope grown (the pre-1.0 additive-key window closed at M48): the warning
+/// rides **stderr** under `--format json` exactly as `milestone execute`'s partial-provision
+/// advisory does, so the pinned document stays one JSON value and the driver still receives
+/// the loss on its own stream.
+#[test]
+fn the_forced_abandons_loss_narration_rides_stderr_under_format_json() {
+    let (repo, home) = workbench("milestone-json");
+    let (repo, home) = (repo.path(), home.path());
+    enter_sub_task(repo, home);
+
+    let forced = jigc(
+        repo,
+        home,
+        &[
+            "milestone",
+            "discard",
+            MILESTONE_ID,
+            "--force",
+            "--format",
+            "json",
+        ],
+    );
+    let stdout = String::from_utf8_lossy(&forced.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&forced.stderr).into_owned();
+    assert!(
+        forced.status.success(),
+        "the forced abandon exits 0; stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+
+    let envelope: serde_json::Value =
+        serde_json::from_str(&stdout).expect("stdout is ONE pinned JSON value, undiluted");
+    assert!(
+        envelope["text"]
+            .as_str()
+            .expect("`text` carries the whole agent summary")
+            .contains("workbench removed"),
+        "the summary rides `text` whole, as the shared disposition says; got:\n{stdout}",
+    );
+    assert!(
+        !stdout.contains(&format!("commit:{SUB_TASK}")),
+        "the loss is NOT a key of the envelope — the additive-key window closed at M48; \
+         got:\n{stdout}",
+    );
+    assert!(
+        stderr.contains(&format!("{SUB_TASK}: commit:{SUB_TASK}")),
+        "…and it is not withheld either: stream discipline puts it on stderr under the \
+         machine format too; got:\n{stderr}",
     );
 }
