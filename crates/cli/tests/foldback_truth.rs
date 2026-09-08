@@ -24,7 +24,7 @@
 //!      the law-1 lie, the completed claim is required, and the cited verdict artifact must
 //!      actually exist. It has run in both directions at every wave since M47, and at each
 //!      new wave's close it is **re-aimed rather than duplicated**, so the suite carries one
-//!      live pin rather than one dead pin per wave — it now points at M49.
+//!      live pin rather than one dead pin per wave — it now points at M50.
 //!
 //! A fourth claim joined at M48 Increment 12 (T1):
 //!
@@ -203,79 +203,69 @@ fn milestone_span<'a>(body: &'a str, marker: &str) -> &'a str {
 /// completed wave cites what its audit found and may not say *audited clean* over three LOW
 /// findings. Both directions are the same rule: **the paragraph may say no more about the
 /// audit than the audit found.** M48 moved it forward, then flipped it again at that
-/// wave's completion fold-back; M46 moved it forward at its Increment 10 close, and M49
-/// Increment 1 flipped it, one wave late, when M46's audit had already run.
+/// wave's completion fold-back; M46 moved it forward at its Increment 10 close, M49
+/// Increment 1 flipped it, one wave late, when M46's audit had already run, M49 Increment
+/// 12 moved it forward again, and the M49 completion fold-back flipped it a fourth time.
 ///
-/// At M49 Increment 12 it moves forward once more, to the wave this build closes. M46's
-/// claim is settled prose now — its audit ran, its verdict is persisted, and nothing in
-/// this build can move it — while M49's claim is the one a fold-back can overstate, and the
-/// overstatement available *today* is the premature one: the completion audit, its persisted
-/// verdict and the version bump + install are the milestone-completion workflow's next acts
-/// ([roadmap.md](../../../implementation/roadmap.md) → Milestone 49 Increment 12, whose
-/// grouped scope says *built and installed after the audit fixes, not before*). So the arm
-/// is **re-aimed, not duplicated**, a third time: the assertions invert back to their
-/// pre-audit direction and follow the marker, rather than accumulating one dead pin per
-/// wave.
+/// At M50 Increment 13 it moves forward once more, to the wave this build closes. M49's
+/// claim is settled prose now — its audit ran, its verdict is persisted, `1.0.0-rc.13` is
+/// built, and nothing in this build can move any of it — while M50's claim is the one a
+/// fold-back can overstate, and the overstatement available *today* is the premature one:
+/// the completion audit, its persisted verdict and the version bump + install are the
+/// milestone-completion workflow's next acts
+/// ([milestone-completion-workflow.md](../../../implementation/milestone-completion-workflow.md);
+/// [roadmap.md](../../../implementation/roadmap.md) → Milestone 50 Increment 13, whose
+/// grouped scope discharges the wave's obligations and stops short of adjudicating them).
+/// So the arm is **re-aimed, not duplicated**, a fourth time: the assertions invert back to
+/// their pre-audit direction and follow the marker, rather than accumulating one dead pin
+/// per wave.
 ///
-/// **Flipped at the M49 completion fold-back (2026-09-02), which is this fence working.**
-/// The audit ran, its verdict is persisted, and the overstatement available *now* is the
-/// opposite of the one available during the build: a wave that took **7 findings — one of
-/// them a HIGH that lost committed docs to `.git/` — may not call itself *audited clean*.
-/// So the assertions invert, for the fourth time in this arm's life, rather than
-/// accumulating a dead pin per wave.
-///
-/// The **version bump** leaves this fence's exclusion list at the same moment. It was held
-/// out during the build because the roadmap named no numeral and the 1.0.0 call is the
-/// human's; it is now performed and discharged (`1.0.0-rc.13`), so the claim may cite it —
-/// but this fence still does not assert the string, for the same reason it never did.
+/// The owed **version bump** is deliberately outside this fence, exactly as it was at M49's
+/// build close. It is discharged as a named obligation rather than performed here, and it
+/// carries **no numeral**: the roadmap's M50 section names no target version and the 1.0.0
+/// call is the human's, so asserting a version string would be this fence choosing it.
 #[test]
-fn claude_md_names_m49_and_cites_what_its_audit_found() {
+fn claude_md_names_m50_and_claims_only_the_build() {
     let body = read_doc("CLAUDE.md");
     // The project-state paragraph is a single line; the sections that follow it (build /
-    // lint / test, quickstart, code architecture) are not milestone claims, and M49 is the
+    // lint / test, quickstart, code architecture) are not milestone claims, and M50 is the
     // last marker in the paragraph — so the span is bounded at the paragraph's own end
     // rather than running to EOF and forbidding these words to the whole file.
-    let span = milestone_span(&body, "**M49 —")
+    let span = milestone_span(&body, "**M50 —")
         .split('\n')
         .next()
         .expect("splitting a str always yields at least one part");
 
     for owed in [
         "implementation/roadmap.md",
-        "Milestone 49",
-        "flow 50",
-        "flow50_acceptance.rs",
+        "Milestone 50",
+        "flow 51",
+        "flow51_acceptance.rs",
     ] {
         assert!(
             span.contains(owed),
-            "the M49 project-state claim must name `{owed}`; it reads:\n{span}",
+            "the M50 project-state claim must name `{owed}`; it reads:\n{span}",
         );
     }
 
-    // The audit has run, so the claim owes its result — and the persisted verdict is the
-    // record, not this paragraph, so the paragraph must point at it.
+    // The bound is stated, not merely implied by an absence: a reader must be able to see
+    // that the audit is owed, and a paragraph that simply omits the word cannot say so.
     assert!(
-        span.contains("built + audited"),
-        "M49's audit has run and the claim must say so in those words:\n{span}",
-    );
-    assert!(
-        span.contains("VERDICT"),
-        "the M49 claim must cite the persisted verdict now that it exists:\n{span}",
+        span.contains("built, not audited"),
+        "M50 is built and not yet audited, and the claim must say so in those words:\n{span}",
     );
     for forbidden in [
-        // The pre-audit bound, now false: leaving it standing would be the stale-claim
-        // failure this arm exists to catch, in the direction nobody watches for.
-        "built, not audited",
-        // 7 findings landed, one of them a HIGH with committed-doc loss. "Clean" is a
-        // verdict this audit did not reach, and the paragraph may say no more than it found.
+        // No audit has run, so every one of these claims a verdict nobody reached.
         "audited clean",
         "audit is CLEAN",
         "audit ran clean",
+        // The verdict artifact does not exist yet; a link to one would be a law-1 lie.
+        "VERDICT",
     ] {
         assert!(
             !span.contains(forbidden),
-            "the M49 claim may say no more about the audit than the audit found, but \
-             contains `{forbidden}`:\n{span}",
+            "the M50 claim may not claim an audit that has not run, but contains \
+             `{forbidden}`:\n{span}",
         );
     }
 }
