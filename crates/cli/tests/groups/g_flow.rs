@@ -33,6 +33,8 @@ mod flow48_acceptance;
 mod flow49_acceptance;
 #[path = "../flow50_acceptance.rs"]
 mod flow50_acceptance;
+#[path = "../flow51_acceptance.rs"]
+mod flow51_acceptance;
 #[path = "../flow9_milestone_join.rs"]
 mod flow9_milestone_join;
 #[path = "../flow9_seam.rs"]

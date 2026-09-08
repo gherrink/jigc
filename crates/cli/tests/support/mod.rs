@@ -20,6 +20,7 @@ pub mod goldens;
 pub mod rust_source;
 pub mod shape_space;
 pub mod trial_corpus;
+pub mod write_miss_cells;
 
 /// The `--title` a `jigc doc create <doctype>` must carry against the **shipped** packs.
 ///
