@@ -43,16 +43,34 @@
 //! *the machine jigc is installed on*. `setup::dirty_worktree_finding` and
 //! `setup::workbench_paths` are in, because they are `jigc uninstall`'s own text.
 //!
-//! Three arms:
+//! **Widened by the M50 completion audit (finding 3), which found the rule enforced HERE and
+//! nowhere else.** Two sites outside the four doors printed the host filesystem: `jigc config
+//! set placement-root`, through `crate::trackable::untrackable_reason` — the *shared*
+//! predicate that hands its text to four doors, three of whose five reasons composed an
+//! absolute, and which Increment 12 / T3 had recorded by name while teaching `rename` alone to
+//! compose around it — and `store.not-found` on the **1.0-pinned** `doc show --format json`
+//! read contract, whose own `route:` already spelled the same doc repo-relative, so one JSON
+//! object named one file two ways. The predicate is fixed, not its caller; the read path is
+//! fixed at both of its blocks and in `add-from-spec`'s copy of them; and the standing fence's
+//! subject becomes a **list of guarded modules** rather than one file, because a fence whose
+//! subject is one file is a fence a sibling walks around.
+//!
+//! Five arms:
 //!
 //! 1. the **driven** arm — a door table over a fixture root minted by `mktemp -d`, each row
 //!    run for real and its whole stdout+stderr scanned for that root's absolute prefix;
-//! 2. the **disposition** arm — one row per site, `Relative` or `DeclaredAbsolute(reason)`,
+//! 2. the **driven arm outside the four doors** — the same scan over `config set
+//!    placement-root` (each of the predicate's three absolute-composing reasons) and over the
+//!    committed read path's two `store.*` blocks on the pinned JSON contract;
+//! 3. the **disposition** arm — one row per site, `Relative` or `DeclaredAbsolute(reason)`,
 //!    each verdict checked against the source rather than believed (the
 //!    `located_finding_text::MESSAGE_SITES` third-verdict idiom);
-//! 3. the **standing fence** — no production `.display()` in `crates/cli/src/milestone.rs`
-//!    outside a `DeclaredAbsolute` site, so the next hand-rolled absolute render reddens here
-//!    rather than shipping.
+//! 4. the **standing fence** — no production `.display()` in any `GUARDED_SRC` module outside
+//!    a `DeclaredAbsolute` site, so the next hand-rolled absolute render reddens here rather
+//!    than shipping;
+//! 5. the **counted remainder** — what this class has NOT swept, one row per file with its
+//!    measured site count, so the bound is checked against the source instead of asserted in
+//!    prose.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -331,7 +349,152 @@ fn no_door_prints_the_host_path_of_the_machine_it_ran_on() {
 }
 
 // ---------------------------------------------------------------------------------
-// Arm 2 — the disposition table
+// Arm 2 — the driven arm, outside the four doors
+// ---------------------------------------------------------------------------------
+
+/// What the fixture plants so a cell can reach its refusal.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Plant {
+    /// Nothing beyond `jigc setup`.
+    Nothing,
+    /// A second, embedded git repository at `vendored/` — the predicate's **ownership**
+    /// reason, which composes the owning repo's toplevel.
+    EmbeddedRepo,
+    /// The repository re-pointed at a git dir that is **inside the tree but not called
+    /// `.git`** — the only shape that reaches the predicate's *git-dir* reason, since the
+    /// literal-`.git`-component reason answers first for every ordinary layout.
+    SeparateGitDir,
+    /// A committed-store file at the `adr` home that does not parse — the read path's
+    /// `store.unparseable` block.
+    BrokenAdr,
+}
+
+/// A door outside `DESTROYING_DOORS`, its argv, and the plant it is asked over.
+struct ReadDoor {
+    label: &'static str,
+    argv: &'static [&'static str],
+    plant: Plant,
+}
+
+/// **The cells the M50 completion audit's finding 3 drove, plus the ones the derivation
+/// earned.** The report named two: `config set placement-root ..` and `doc show <missing>
+/// --format json`. The class is *what the shared trackability predicate hands its four doors*
+/// and *what the committed read path names a file with* — so the three absolute-composing
+/// reasons are each driven through the one door that can reach them, and the read path is
+/// driven on both of its blocks rather than only the reported one.
+const READ_DOORS: &[ReadDoor] = &[
+    ReadDoor {
+        label: "config set placement-root .. (outside the repository)",
+        argv: &["config", "set", "placement-root", ".."],
+        plant: Plant::Nothing,
+    },
+    ReadDoor {
+        label: "config set placement-root <embedded repo> (another repository)",
+        argv: &["config", "set", "placement-root", "vendored"],
+        plant: Plant::EmbeddedRepo,
+    },
+    ReadDoor {
+        label: "config set placement-root <git dir> (this repository's git directory)",
+        argv: &["config", "set", "placement-root", "gitstore"],
+        plant: Plant::SeparateGitDir,
+    },
+    ReadDoor {
+        label: "doc show <missing> --format json (store.not-found, the pinned contract)",
+        argv: &["doc", "show", "adr:nosuch", "--format", "json"],
+        plant: Plant::Nothing,
+    },
+    ReadDoor {
+        label: "doc show <unparseable> --format json (store.unparseable, the same read path)",
+        argv: &["doc", "show", "adr:broken", "--format", "json"],
+        plant: Plant::BrokenAdr,
+    },
+];
+
+/// `<root>/repo` + `<root>/home`: a set-up jigc project with `plant` in place.
+fn read_fixture(root: &Path, tag: &str, plant: Plant) -> (PathBuf, PathBuf) {
+    let repo = root.join(format!("repo-{tag}"));
+    let home = root.join(format!("home-{tag}"));
+    fs::create_dir_all(&repo).expect("mk repo");
+    fs::create_dir_all(&home).expect("mk home");
+    init_repo(&repo);
+
+    let out = run_jigc(&repo, &home, &["setup"]);
+    assert!(
+        out.status.success(),
+        "jigc setup must exit 0: {}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    match plant {
+        Plant::Nothing => {}
+        Plant::EmbeddedRepo => {
+            let inner = repo.join("vendored");
+            fs::create_dir_all(&inner).expect("mk embedded repo dir");
+            git_ok(&inner, &["init", "-q"]);
+        }
+        Plant::SeparateGitDir => {
+            // Re-init in place: git moves the object store to `gitstore/` and leaves `.git`
+            // as a pointer file, so the destination `gitstore` is inside the working tree,
+            // is git's own dir, and carries no `.git` path component.
+            git_ok(&repo, &["init", "-q", "--separate-git-dir=gitstore"]);
+        }
+        Plant::BrokenAdr => {
+            let decisions = repo.join("docs").join("decisions");
+            fs::create_dir_all(&decisions).expect("mk decisions dir");
+            fs::write(decisions.join("broken.md"), "not an adr at all\n").expect("write broken");
+        }
+    }
+    (repo, home)
+}
+
+#[test]
+fn no_read_or_config_door_prints_the_host_path_of_the_machine_it_ran_on() {
+    let root = MkTemp::new();
+    let prefixes = host_prefixes(root.path());
+    let mut offenders: Vec<String> = Vec::new();
+
+    for (i, door) in READ_DOORS.iter().enumerate() {
+        let (repo, home) = read_fixture(root.path(), &format!("r{i}"), door.plant);
+        let out = run_jigc(&repo, &home, door.argv);
+        let mut text = String::from_utf8_lossy(&out.stdout).into_owned();
+        text.push_str(&String::from_utf8_lossy(&out.stderr));
+
+        for line in text.lines() {
+            if let Some(prefix) = prefixes.iter().find(|p| line.contains(p.as_str())) {
+                offenders.push(format!(
+                    "  `jigc {}` [{}] printed the host path `{prefix}`:\n      {line}",
+                    door.argv.join(" "),
+                    door.label,
+                ));
+            }
+        }
+        // The cell has to reach a refusal, or it proves nothing — a door that quietly
+        // succeeded would pass the scan above vacuously.
+        assert!(
+            !out.status.success(),
+            "`{}` must refuse — the cell reached no refusal to check:\n{text}",
+            door.label,
+        );
+        assert!(
+            !text.trim().is_empty(),
+            "`{}` printed nothing — the cell reached no surface to check",
+            door.label,
+        );
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "law 1 is stated universally (`design/surface-contract.md`: *every printed path is \
+         repo-real or a typed identity*; `design/write-commands.md`: *a surface prints no host \
+         filesystem*) — a shared predicate that hands four doors a host path, and a read \
+         contract pinned at 1.0 that carries one, break it just as the destroying doors \
+         did:\n{}",
+        offenders.join("\n"),
+    );
+}
+
+// ---------------------------------------------------------------------------------
+// Arm 3 — the disposition table
 // ---------------------------------------------------------------------------------
 
 /// What a site does with the path it renders.
@@ -439,6 +602,43 @@ const PATH_TEXT_SITES: &[(&str, &str, Disposition, &str)] = &[
          hand-written strip; it now reads the shared home, which is what makes the home \
          shared rather than a seventh copy",
     ),
+    // --- the shared trackability predicate (M50 audit, finding 3) ---------------------
+    (
+        "crates/cli/src/trackable.rs",
+        "untrackable_reason",
+        Disposition::Relative,
+        "the one predicate `config set placement-root`, `jigc rename`, `jigc setup` and \
+         `jigc relocate` all ask, three of whose five reasons composed the host path — the \
+         repo root, git's own dir, and the owning repository's toplevel. `rename` had been \
+         taught to compose its own message around it one door at a time; fixing the predicate \
+         is what makes the other three doors right too. The `..` reason names no path at all \
+         now: the subject IS the repository, whose repo-relative spelling is `.`, and `at .` \
+         is noise",
+    ),
+    // --- the committed-doc read path, on the 1.0-pinned contract ----------------------
+    (
+        "crates/engine/src/store.rs",
+        "read_slice",
+        Disposition::Relative,
+        "`store.not-found`'s message rides `jigc doc show --format json`, the read contract \
+         pinned at 1.0 — and its own `route:` already spelled the same doc repo-relative, so \
+         one JSON object named one file two ways",
+    ),
+    (
+        "crates/engine/src/store.rs",
+        "read_parse_slice",
+        Disposition::Relative,
+        "`store.unparseable`, the read path's other block, shared by the committed and the \
+         staged arm — it takes the repo root so both arms render against the same origin",
+    ),
+    (
+        "crates/engine/src/milestone.rs",
+        "read_spec_criteria",
+        Disposition::Relative,
+        "earned by the derivation, not named in the report: `milestone add-from-spec` composes \
+         the SAME two `store.*` blocks in the same shape from its own copy, so a fix at the \
+         reported site alone would have left the class open one file over",
+    ),
     // --- the five that stay absolute, each saying why ---------------------------------
     (
         "crates/cli/src/milestone.rs",
@@ -491,11 +691,165 @@ const PATH_TEXT_SITES: &[(&str, &str, Disposition, &str)] = &[
     ),
 ];
 
-/// The module the standing fence guards — where all four doors' path text originates.
-const MILESTONE_SRC: &str = "crates/cli/src/milestone.rs";
+/// The modules the standing fence guards.
+///
+/// **Widened by the M50 completion audit's finding 3.** The fence's first subject was
+/// `crates/cli/src/milestone.rs` alone — where all four destroying/provisioning doors' path
+/// text originates — while law 1 is stated **universally**. Two sites outside that one module
+/// were then found printing the host filesystem: `config set placement-root`, through the
+/// *shared* predicate `rename` had been taught to work around locally, and `store.not-found`
+/// on the **1.0-pinned** `doc show --format json` read contract. A module joins this list when
+/// its path text has been swept; the modules that have not been swept are named in
+/// `UNSWEPT_PRODUCERS` rather than left unsaid.
+const GUARDED_SRC: &[&str] = &[
+    "crates/cli/src/milestone.rs",
+    // The shared trackability predicate — one home, four doors (`config`, `rename`, `setup`,
+    // `relocate`), three of whose five refusal reasons composed the host path.
+    "crates/cli/src/trackable.rs",
+    // The committed-doc read path, whose `store.not-found` / `store.unparseable` blocks ride
+    // the pinned `doc show --format json` contract.
+    "crates/engine/src/store.rs",
+    // `add-from-spec`'s spec read — the same two `store.*` blocks in the same shape.
+    "crates/engine/src/milestone.rs",
+];
+
+/// The producer set this fix did **not** close, named with its size so the remainder is a
+/// stated bound rather than a silence (the M50 audit's own honest-scoping rule). Each entry is
+/// `(file, production sites, why it is not here yet)`, and
+/// [`the_unswept_remainder_is_counted_not_described`] checks every count against the source —
+/// a bound nothing measures is a sentence, not a bound.
+const UNSWEPT_PRODUCERS: &[(&str, usize, &str)] = &[
+    (
+        "crates/engine/src/finalize.rs",
+        11,
+        "five I/O-fault finding helpers (`provenance_io`, `promote_io`, `source_path_io`, \
+         `task_missing`, `render_io`) name a task dir or a staged doc in message, route AND \
+         `file_location` locus; none of them is handed a repo root, so closing them means \
+         threading one through the finalize plan — its own increment, not a triage fix",
+    ),
+    (
+        "crates/cli/src/start.rs",
+        22,
+        "TWO of the 22 reach a finding: `overrides.project-step-missing` names the project \
+         layer's step file (under `.jigc/config/`, so a repo-relative spelling exists) in \
+         message and route. The other 20 are `anyhow` load faults over cascade homes and \
+         delta manifests — an error channel, not a finding surface",
+    ),
+    (
+        "crates/cli/src/config.rs",
+        20,
+        "`with_context` I/O faults on cascade-layer writes — an error channel, not a finding \
+         surface; the door's own finding text is closed by `trackable.rs`",
+    ),
+    (
+        "crates/cli/src/pack.rs",
+        9,
+        "pack-load and `--explain`; the four that reach a surface \
+         (`assert_project_schema_shadows`) are already disposed `DeclaredAbsolute` above — \
+         pack-load has no repo-root subject to be relative to",
+    ),
+    (
+        "crates/cli/src/setup.rs",
+        8,
+        "declared out of this class by M50 Increment 12 / T1 with a stated reason — install's \
+         subject is the installing binary and the git hooks dir, neither a repo path; \
+         `uninstall`'s own two sites are disposed `Relative` above",
+    ),
+    (
+        "crates/cli/src/task.rs",
+        3,
+        "two `with_context` promote/probe faults and one `git archive --prefix=`, which is an \
+         argument handed to a subprocess (the `dirty_worktrees` precedent)",
+    ),
+    (
+        "crates/cli/src/locate.rs",
+        1,
+        "`not_in_repo_message` is absolute BY ITS SUBJECT — it reports where jigc looked and \
+         found no repository, so there is no repo to be relative to",
+    ),
+    (
+        "crates/cli/src/migrate.rs",
+        1,
+        "an `anyhow` read fault on the operator's own supplied path, quoted back as given",
+    ),
+    (
+        "crates/cli/src/doc.rs",
+        2,
+        "one hand-written `strip_prefix` that already relativizes, and one `with_context` \
+         persist fault",
+    ),
+    (
+        "crates/cli/src/adapter.rs",
+        1,
+        "the `{{worktree}}` substitution in a spawn template — bytes the sub-agent `cd`s to \
+         from an unknown cwd (the `remove_worktrees` precedent)",
+    ),
+    (
+        "crates/cli/src/orient.rs",
+        1,
+        "the cascade layer's `config_path`, whose surface render is already disposed \
+         `DeclaredAbsolute` above (`engine/src/cascade.rs::header`)",
+    ),
+];
 
 /// The one shared home every `Relative` site must reach.
 const REPO_RELATIVE: &str = "repo_relative";
+
+/// Every production `.display()` in `file`, by enclosing function — the same reader the
+/// standing fence uses, so "swept" and "unswept" are counted the same way.
+fn production_display_sites(file: &str) -> Vec<String> {
+    let path = workspace_root().join(file);
+    let body = fs::read_to_string(&path).unwrap_or_else(|_| panic!("read {file}"));
+    let code = rust_source::code_only(&body);
+    let regions = rust_source::cfg_test_regions(&code);
+    code.match_indices(".display()")
+        .filter(|(at, _)| !rust_source::is_test_domain(&path, &regions, *at))
+        .map(|(at, _)| {
+            format!(
+                "{file}:{}: {}",
+                body[..at].lines().count(),
+                rust_source::enclosing_fn(&code, at).unwrap_or("<top level>"),
+            )
+        })
+        .collect()
+}
+
+/// **The remainder is a count, not a sentence.** The audit's honest-scoping rule says a fix
+/// that cannot reach its whole producer set must *state the rest with its size*; a stated size
+/// nothing checks goes stale the first time someone edits one of these files. So each
+/// `UNSWEPT_PRODUCERS` row is measured against the source it names, and a file cannot sit in
+/// both lists.
+///
+/// Closing one of these is meant to redden this test: the row's count moves, and whoever moved
+/// it either updates the row or promotes the file into `GUARDED_SRC`.
+#[test]
+fn the_unswept_remainder_is_counted_not_described() {
+    let mut offenders: Vec<String> = Vec::new();
+
+    for (file, count, reason) in UNSWEPT_PRODUCERS {
+        assert!(!reason.trim().is_empty(), "{file}: carries no reason");
+        assert!(
+            !GUARDED_SRC.contains(file),
+            "{file} is both guarded and unswept — one of the two rows is a lie",
+        );
+        let sites = production_display_sites(file);
+        if sites.len() != *count {
+            offenders.push(format!(
+                "  {file}: the remainder says {count} production `.display()` site(s), the \
+                 source has {}:\n      {}",
+                sites.len(),
+                sites.join("\n      "),
+            ));
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "a bound nothing measures is a sentence — update the row (or promote the file into \
+         `GUARDED_SRC` once its path text is swept):\n{}",
+        offenders.join("\n"),
+    );
+}
 
 /// The `{…:?}` render shapes a `Relative` site may not carry inside a message it composes —
 /// listed by binding name, because Rust's inline captures are the shape these sites used.
@@ -654,53 +1008,65 @@ fn every_path_a_door_prints_carries_a_disposition_the_source_backs() {
 }
 
 // ---------------------------------------------------------------------------------
-// Arm 3 — the standing fence
+// Arm 4 — the standing fence
+// (arm 5, the counted remainder, sits with `UNSWEPT_PRODUCERS` above)
 // ---------------------------------------------------------------------------------
 
-/// No production `.display()` in `milestone.rs` outside a `DeclaredAbsolute` site.
+/// No production `.display()` in any **guarded** module outside a `DeclaredAbsolute` site.
 ///
 /// **A fence over an empty set is still a fence** — the whole point is that the next
 /// hand-rolled absolute render reddens here instead of shipping. `.display()` on a `Path` is
-/// the shape every one of this module's leaks took, and `milestone.rs` is where all four
-/// doors' path text originates, so the rule is stated where it binds rather than as a
-/// repo-wide grep that would have to except every legitimate absolute in the binary.
+/// the shape every one of these modules' leaks took, so the rule is stated where it binds
+/// rather than as a repo-wide grep that would have to except every legitimate absolute in the
+/// binary.
+///
+/// **The subject is a list, not a module** (the M50 completion audit's finding 3). A fence
+/// whose subject is one file is a fence a sibling walks around: the shared trackability
+/// predicate handed four doors a host path while `rename` alone was taught to compose its own
+/// message, and the engine's committed read leaked one onto the 1.0-pinned JSON contract. Each
+/// module joins `GUARDED_SRC` when its path text is swept; what is not swept is counted in
+/// `UNSWEPT_PRODUCERS`.
 ///
 /// **Declared bound:** the fence reads `.display()` only. The `{…:?}` half is checked per-row
-/// in arm 2 (over `RAW_DEBUG_RENDERS`) and end-to-end in arm 1; a `{…:?}` render introduced in
-/// a function this class does not name is caught by arm 1 only if a door prints it.
+/// in arm 3 (over `RAW_DEBUG_RENDERS`) and end-to-end in arms 1 and 2; a `{…:?}` render
+/// introduced in a function this class does not name is caught by those only if a door prints
+/// it.
 #[test]
-fn milestone_renders_no_host_path_outside_a_declared_absolute() {
-    let path = workspace_root().join(MILESTONE_SRC);
-    let body = fs::read_to_string(&path).expect("read milestone.rs");
-    let code = rust_source::code_only(&body);
-    let regions = rust_source::cfg_test_regions(&code);
-
-    let declared: Vec<&str> = PATH_TEXT_SITES
-        .iter()
-        .filter(|(file, _, d, _)| *file == MILESTONE_SRC && *d == Disposition::DeclaredAbsolute)
-        .map(|(_, name, _, _)| *name)
-        .collect();
-
+fn a_guarded_module_renders_no_host_path_outside_a_declared_absolute() {
     let mut offenders: Vec<String> = Vec::new();
-    for (at, _) in code.match_indices(".display()") {
-        if rust_source::is_test_domain(&path, &regions, at) {
-            continue;
+
+    for src in GUARDED_SRC {
+        let path = workspace_root().join(src);
+        let body = fs::read_to_string(&path).unwrap_or_else(|_| panic!("read {src}"));
+        let code = rust_source::code_only(&body);
+        let regions = rust_source::cfg_test_regions(&code);
+
+        let declared: Vec<&str> = PATH_TEXT_SITES
+            .iter()
+            .filter(|(file, _, d, _)| file == src && *d == Disposition::DeclaredAbsolute)
+            .map(|(_, name, _, _)| *name)
+            .collect();
+
+        for (at, _) in code.match_indices(".display()") {
+            if rust_source::is_test_domain(&path, &regions, at) {
+                continue;
+            }
+            let owner = rust_source::enclosing_fn(&code, at).unwrap_or("<top level>");
+            if declared.contains(&owner) {
+                continue;
+            }
+            offenders.push(format!(
+                "  {src}:{}: `{owner}` renders a path with `.display()`",
+                body[..at].lines().count(),
+            ));
         }
-        let owner = rust_source::enclosing_fn(&code, at).unwrap_or("<top level>");
-        if declared.contains(&owner) {
-            continue;
-        }
-        offenders.push(format!(
-            "  milestone.rs:{}: `{owner}` renders a path with `.display()`",
-            body[..at].lines().count(),
-        ));
     }
 
     assert!(
         offenders.is_empty(),
-        "`.display()` on a path is how every one of this module's host-path leaks reached a \
-         surface — render through the shared `render::repo_relative`, or declare the site \
-         absolute in `PATH_TEXT_SITES` with the reason it stays:\n{}",
+        "`.display()` on a path is how every one of these modules' host-path leaks reached a \
+         surface — render through the shared `engine::path::repo_relative`, or declare the \
+         site absolute in `PATH_TEXT_SITES` with the reason it stays:\n{}",
         offenders.join("\n"),
     );
 }

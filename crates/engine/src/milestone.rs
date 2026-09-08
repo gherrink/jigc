@@ -601,7 +601,7 @@ fn read_spec_criteria(
             "store.not-found",
             format!(
                 "could not read `{spec_addr}` at `{}`: {err}",
-                path.display()
+                crate::path::repo_relative(repo_root, &path)
             ),
             spec_addr,
             "create the referenced spec, or fix the address to an existing one".to_string(),
@@ -618,7 +618,7 @@ fn read_spec_criteria(
             "store.unparseable",
             format!(
                 "`{spec_addr}` at `{}` does not parse: {why}",
-                path.display()
+                crate::path::repo_relative(repo_root, &path)
             ),
             spec_addr,
             "fix the committed spec so it conforms to its schema".to_string(),

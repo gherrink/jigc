@@ -141,6 +141,7 @@ pub fn read_slice(
     };
 
     read_parse_slice(
+        repo_root,
         schema,
         &path,
         address,
@@ -151,7 +152,7 @@ pub fn read_slice(
                 "store.not-found",
                 format!(
                     "could not read `{address_str}` at `{}`: {err}",
-                    path.display()
+                    crate::path::repo_relative(repo_root, &path)
                 ),
                 &address_str,
                 format!(
@@ -191,6 +192,7 @@ pub fn read_slice_staged(
     let path =
         crate::state::instance_path(task_dir, address.r#type.as_str(), address.slug.as_str());
     read_parse_slice(
+        repo_root,
         schema,
         &path,
         address,
@@ -251,7 +253,15 @@ fn resolve_read_schema<'a>(
 /// parse against `schema`, and serve the whole doc or the addressed `#fragment` —
 /// **one path**, so a staged read can never diverge from the committed read's
 /// parse/slice/render semantics (M43 — the source-selection extraction).
+///
+/// `repo_root` is a **rendering origin, not a read root** — the file to read is `path`,
+/// already resolved by the caller. It is here because both blocks this function composes name
+/// that file on a surface, and since the M50 completion audit (finding 3) a surface names it
+/// repo-relative ([`crate::path::repo_relative`]; `design/surface-contract.md` → law 1). The
+/// staged arm's subject is under `<repo>/.jigc/tasks/`, so both arms have a repo-relative
+/// spelling.
 fn read_parse_slice(
+    repo_root: &Path,
     schema: &Schema,
     path: &Path,
     address: &Address,
@@ -275,7 +285,7 @@ fn read_parse_slice(
             "store.unparseable",
             format!(
                 "`{address_str}` at `{}` does not parse: {why}",
-                path.display()
+                crate::path::repo_relative(repo_root, path)
             ),
             address_str,
             fix_route.to_string(),

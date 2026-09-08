@@ -64,10 +64,12 @@ pub(crate) fn untrackable_reason(repo_root: &Path, relative: &str) -> Option<Str
     let root = std::fs::canonicalize(repo_root).ok()?;
     let target = resolve(&root, relative)?;
     if !target.starts_with(&root) {
-        return Some(format!(
-            "`{relative}` resolves outside the repository at {}",
-            root.display()
-        ));
+        // No path at all: the subject IS the repository, whose repo-relative spelling is
+        // `.`, and `resolves outside the repository at .` is noise. Naming the host root
+        // here was the M50 completion audit's finding 3 — law 1 (`a surface prints no host
+        // filesystem`) enforced at the four destroying doors and nowhere else, while this
+        // one predicate hands its text to four more.
+        return Some(format!("`{relative}` resolves outside the repository root"));
     }
 
     // 2 — git's own `invalid path` rule: no `.git` component, at any depth. Compared
@@ -102,6 +104,12 @@ pub(crate) fn untrackable_reason(repo_root: &Path, relative: &str) -> Option<Str
             }
             // A git dir that does not resolve cannot contain the destination.
             if std::fs::canonicalize(git_dir).is_ok_and(|dir| target.starts_with(&dir)) {
+                // Rendered against the root, not printed as git handed it over: a git dir
+                // reachable from a destination *under* the root is itself under the root
+                // (`.git`, or a `--separate-git-dir` inside the tree), so this has a
+                // repo-relative spelling. The helper's absolute fallback covers the
+                // pathological case where it does not.
+                let git_dir = engine::path::repo_relative(&root, Path::new(git_dir));
                 return Some(format!(
                     "`{relative}` is inside this repository's git directory ({git_dir}) — \
                      git records nothing there"
@@ -127,6 +135,10 @@ pub(crate) fn untrackable_reason(repo_root: &Path, relative: &str) -> Option<Str
     {
         let toplevel = String::from_utf8_lossy(&out.stdout).trim().to_string();
         if std::fs::canonicalize(&toplevel).is_ok_and(|owner| owner != root) {
+            // The owning repo was found by walking UP from a destination under the root and
+            // stopping at the root, so its toplevel is under the root and has a
+            // repo-relative spelling by construction.
+            let toplevel = engine::path::repo_relative(&root, Path::new(&toplevel));
             return Some(format!(
                 "`{relative}` is inside another repository ({toplevel}) — a submodule or an \
                  embedded repo, whose paths this index cannot record"
@@ -341,6 +353,62 @@ mod tests {
                 "`{relative}` is a path git can record — refusing it would break a \
                  legitimate move",
             );
+        }
+    }
+
+    /// **No refusal names the host filesystem** (the M50 completion audit, finding 3).
+    ///
+    /// Three of the five reasons composed an absolute path — the repo root, git's own dir,
+    /// and the owning repository's toplevel — and this is the *shared* predicate four doors
+    /// ask (`config set placement-root`, `jigc rename`, `jigc setup`, `jigc relocate`). Law 1
+    /// is stated universally (`design/surface-contract.md`: *every printed path is repo-real
+    /// or a typed identity*), so the rule belongs to the predicate, not to whichever caller
+    /// last got a bug report. Each reason is reached through the shape that is the ONLY way
+    /// to reach it — the `.git`-component reason answers first for every ordinary layout, so
+    /// the git-dir reason needs a `--separate-git-dir` inside the tree.
+    #[test]
+    fn no_refusal_names_the_host_path_of_the_machine_it_ran_on() {
+        let repo = TempRepo::new("host-path");
+        // The owning-repository reason.
+        let inner = repo.path().join("vendored");
+        std::fs::create_dir_all(&inner).expect("inner dir");
+        let out = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&inner)
+            .args(["init", "-q"])
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_SYSTEM", "/dev/null")
+            .output()
+            .expect("run git init");
+        assert!(out.status.success(), "the embedded repo initializes");
+        // The git-dir reason: a git dir inside the tree that is not called `.git`.
+        repo.git(&["init", "-q", "--separate-git-dir=gitstore"]);
+
+        // Both spellings of the root, because a canonicalizing filesystem (macOS
+        // `/var` → `/private/var`) can put either one on the surface.
+        let mut prefixes = vec![repo.path().to_string_lossy().into_owned()];
+        if let Ok(real) = repo.path().canonicalize() {
+            let real = real.to_string_lossy().into_owned();
+            if !prefixes.contains(&real) {
+                prefixes.push(real);
+            }
+        }
+
+        for relative in [
+            "../escaped.md",
+            "gitstore/roadmap.md",
+            "vendored/roadmap.md",
+        ] {
+            let reason = untrackable_reason(repo.path(), relative).unwrap_or_else(|| {
+                panic!("`{relative}` must be refused — the cell reached no reason to check")
+            });
+            for prefix in &prefixes {
+                assert!(
+                    !reason.contains(prefix.as_str()),
+                    "the refusal for `{relative}` prints the host path `{prefix}`, which is \
+                     neither repo-real nor a typed identity: {reason}",
+                );
+            }
         }
     }
 

@@ -26,6 +26,7 @@ pub mod manifest;
 pub mod milestone;
 pub mod override_default;
 pub mod parse;
+pub mod path;
 pub mod registry;
 pub mod schema;
 pub mod schema_diff;

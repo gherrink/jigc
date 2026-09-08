@@ -2828,62 +2828,17 @@ pub fn config_list(format: Format, readings: &[KnobReading]) -> String {
     }
 }
 
-/// A filesystem path as a **surface** may name it: repo-relative and `/`-separated when it
-/// lies inside `repo_root`, `.` for the root itself, and the honest absolute for a path that
-/// is genuinely outside the repository.
+/// A filesystem path as a **surface** may name it — **the CLI's door to the one home**,
+/// [`engine::path::repo_relative`], which owns the rule and its whole rationale.
 ///
-/// **The one home for a rule that had none** (M50 Increment 12 / T1; RC-m50 → N25). Law 1
-/// says *every printed path is repo-real or a typed identity*
-/// ([surface-contract.md](../../../design/surface-contract.md)) and
-/// [write-commands.md](../../../design/write-commands.md) states the same rule as *a surface
-/// prints no host filesystem* — yet `strip_prefix(repo_root)` was hand-written at seven
-/// sites, none of them a surface renderer, so the four destroying/provisioning doors named
-/// their subject with the host path of the machine they ran on: a locus that is not portable
-/// across the two checkouts of the same repo a fan-out is made of, printed one line under a
-/// `Spawn:` line that spells the same path `.jigc/worktrees/<id>`.
-///
-/// **Both spellings are tried, because the doors build their paths off a canonicalized
-/// home.** `provision` and `discard` join onto `jigc_home.canonicalize()` to match the
-/// canonical paths git stores at `worktree add` time, so on macOS the subject reads
-/// `/private/var/...` while `repo_root` reads `/var/...` and the plain strip misses. The
-/// canonicalizing retry is what makes the relative spelling reachable at all there — and the
-/// root-only retry after it is what keeps it reachable for a path that no longer exists (a
-/// narration printed after the removal), where `path.canonicalize()` itself fails.
-///
-/// **The absolute fallback is the honest answer, not a failure**: a path outside the
-/// repository has no repo-relative spelling, and inventing one with `../..` would name a
-/// location that means something different from every other cwd. The sites that reach this
-/// helper knowing their subject is outside the repo say so where they call it.
+/// The rule moved into the engine at the M50 completion audit (finding 3): the engine's own
+/// `store.*` read blocks name a committed doc's path on the 1.0-pinned `doc show --format
+/// json` contract, and a crate that cannot reach the rule's home cannot obey it. This wrapper
+/// stays because every CLI site already spells the call `render::repo_relative` and the
+/// standing fence in `crates/cli/tests/repo_relative_paths.rs` reads that name — one home,
+/// one door per crate, no second implementation.
 pub(crate) fn repo_relative(repo_root: &std::path::Path, path: &std::path::Path) -> String {
-    fn render(relative: &std::path::Path) -> String {
-        let joined = relative
-            .components()
-            .map(|c| c.as_os_str().to_string_lossy().into_owned())
-            .collect::<Vec<_>>()
-            .join("/");
-        if joined.is_empty() {
-            // The root itself. `.` is the repo-real spelling of "here"; the empty string
-            // names nothing, and a message that interpolates it reads as a missing value.
-            ".".to_string()
-        } else {
-            joined
-        }
-    }
-
-    if let Ok(relative) = path.strip_prefix(repo_root) {
-        return render(relative);
-    }
-    if let (Ok(root), Ok(real)) = (repo_root.canonicalize(), path.canonicalize())
-        && let Ok(relative) = real.strip_prefix(&root)
-    {
-        return render(relative);
-    }
-    if let Ok(root) = repo_root.canonicalize()
-        && let Ok(relative) = path.strip_prefix(&root)
-    {
-        return render(relative);
-    }
-    path.to_string_lossy().into_owned()
+    engine::path::repo_relative(repo_root, path)
 }
 
 /// The **locus** of a located [`Finding`] — the one renderer of `location`, so every text
