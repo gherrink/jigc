@@ -84,10 +84,7 @@ pub fn run(
             }
             Outcome::success()
         }
-        Err(err) => {
-            eprintln!("{}", render::operational_error(format, &err));
-            Outcome::failure()
-        }
+        Err(err) => crate::invocation_log::operational_failure(format, &err),
     }
 }
 

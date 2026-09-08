@@ -293,15 +293,13 @@ impl TaskCommand {
                         // `rename` precedent): it travels as a `render::BlockedFinding`, so
                         // the identity the surface prints is the identity the invocation log
                         // records — a refused discard is legible there rather than one more
-                        // exit-1-with-nothing. The printed bytes are the house findings line,
-                        // emitted through the same operational funnel.
-                        if let Some(finding) = render::blocked_finding(&err) {
-                            eprintln!("{}", render::operational_error(format, &err));
-                            return Outcome::with_findings(
-                                EXIT_ERROR,
-                                std::slice::from_ref(finding),
-                            );
-                        }
+                        // exit-1-with-nothing. The read-back is no longer written out here:
+                        // this door and `rename` were the only two that had it, which is
+                        // precisely why the other ~29 dropped the identity (M50 completion
+                        // audit, Finding 2). It rides the one funnel
+                        // `surface_commit_rejection` falls through to
+                        // ([`crate::invocation_log::operational_failure`]); the printed bytes
+                        // are unchanged.
                         surface_commit_rejection(format, &err, &frame)
                     }
                 };
@@ -318,10 +316,7 @@ impl TaskCommand {
         };
         match result {
             Ok(()) => Outcome::success(),
-            Err(err) => {
-                eprintln!("{}", render::operational_error(format, &err));
-                Outcome::failure()
-            }
+            Err(err) => crate::invocation_log::operational_failure(format, &err),
         }
     }
 }
@@ -428,8 +423,7 @@ fn run_validate(cwd: &Path, id: &str, format: Format, carry_staged: bool) -> Out
     let task = match TaskArea::resolve(cwd, id) {
         Ok(task) => task,
         Err(err) => {
-            eprintln!("{}", render::operational_error(format, &err));
-            return Outcome::failure();
+            return crate::invocation_log::operational_failure(format, &err);
         }
     };
     // The post-sweep record is dropped: a standalone `validate` is a pure reader —
@@ -448,10 +442,7 @@ fn run_validate(cwd: &Path, id: &str, format: Format, carry_staged: bool) -> Out
             };
             Outcome::with_findings(code, &report.findings)
         }
-        Err(err) => {
-            eprintln!("{}", render::operational_error(format, &err));
-            Outcome::failure()
-        }
+        Err(err) => crate::invocation_log::operational_failure(format, &err),
     }
 }
 
@@ -921,16 +912,12 @@ fn run_finalize(
     let task = match TaskArea::resolve(cwd, id) {
         Ok(task) => task,
         Err(err) => {
-            eprintln!("{}", render::operational_error(format, &err));
-            return Outcome::failure();
+            return crate::invocation_log::operational_failure(format, &err);
         }
     };
     match task.finalize(id, format, approve, dry_run, carry_staged) {
         Ok(outcome) => outcome,
-        Err(err) => {
-            eprintln!("{}", render::operational_error(format, &err));
-            Outcome::failure()
-        }
+        Err(err) => crate::invocation_log::operational_failure(format, &err),
     }
 }
 
@@ -3552,8 +3539,7 @@ pub(crate) fn surface_commit_rejection(
         );
         return Outcome::error(frame.code);
     }
-    eprintln!("{}", render::operational_error(format, err));
-    Outcome::failure()
+    crate::invocation_log::operational_failure(format, err)
 }
 
 /// Render one argv token into a copy-runnable command line: **bare** when every byte is

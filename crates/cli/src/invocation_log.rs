@@ -281,6 +281,45 @@ impl Outcome {
     }
 }
 
+/// Render an operational failure to **stderr** and return the [`Outcome`] it earns — the one
+/// pairing of the render with the exit record, and the only production caller of
+/// [`crate::render::operational_error`].
+///
+/// **Why the two halves may not be separated.** A refusal raised through
+/// [`crate::render::finding_error`] travels as a `render::BlockedFinding` carrying the whole
+/// [`Finding`], and M49 Increment 11 / T4 minted that carrier for one stated reason — *"so a
+/// dispatch handler can log the identity it prints"*. The read-back was then installed at
+/// **two hand-listed handlers** (`cli::run_rename`, `task discard`), so
+/// `jigc rename 'research:../../x'` recorded `store.malformed-slug` while
+/// `jigc doc show 'adr:../../x'` recorded `finding_codes: []` for the same code at the same
+/// corpus: one code, logged at one door of its family and dropped at the ~29 others (M50
+/// completion audit, Finding 2). *A guard that has to ask to be called is not a guard*
+/// ([dev-workflow.md](../../../implementation/dev-workflow.md) → *a grep is not a fence*), so
+/// the read-back moves to where membership is decided — the act of rendering an operational
+/// error — and `crates/cli/tests/blocked_finding_log_axis.rs` fences the funnel against a
+/// direct caller.
+///
+/// **The printed bytes do not move**, at any door: this emits exactly
+/// `eprintln!("{}", render::operational_error(format, err))`, which for a carried finding is
+/// already the house findings line (`render::BlockedFinding`'s `Display`). What changes is the
+/// record: [`Outcome::with_findings`] instead of [`Outcome::failure`] — same exit code
+/// ([`crate::task::EXIT_ERROR`] either way), a name instead of an anonymous exit 1.
+///
+/// **Declared bound, unchanged by this:** flattening puts the block in the *message*, so under
+/// `--format json` these doors still carry it inside the `{"error": …}` envelope rather than as
+/// the structured finding projection (`design/command-output-contract.md` → *the complement*).
+/// This funnel repairs the log half, which the contract already promised; it does not move the
+/// envelope half, which the contract deliberately declares.
+pub fn operational_failure(format: crate::cli::Format, err: &anyhow::Error) -> Outcome {
+    eprintln!("{}", crate::render::operational_error(format, err));
+    match crate::render::blocked_finding(err) {
+        Some(finding) => {
+            Outcome::with_findings(crate::task::EXIT_ERROR, std::slice::from_ref(finding))
+        }
+        None => Outcome::failure(),
+    }
+}
+
 /// Append one JSONL record for this invocation to `logs_dir` (the caller resolved it via
 /// [`enabled_logs_dir`], so the knob is already ON). `output_bytes` is the true stdout+stderr
 /// total the run emitted, measured by `main()`'s fd-level tee. Best-effort — any filesystem

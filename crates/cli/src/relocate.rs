@@ -98,10 +98,7 @@ pub fn run(cwd: &Path, ty: &str, from: &str, format: Format) -> Outcome {
             println!("{}", render::freeze_exempt_relocation(format, &report));
             Outcome::success()
         }
-        Err(err) => {
-            eprintln!("{}", render::operational_error(format, &err));
-            Outcome::failure()
-        }
+        Err(err) => crate::invocation_log::operational_failure(format, &err),
     }
 }
 

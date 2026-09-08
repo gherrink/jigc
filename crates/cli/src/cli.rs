@@ -487,10 +487,7 @@ fn run_describe(format: Format, kinds: describe::Kinds) -> Outcome {
             println!("{}", render::describe(format, &description));
             Outcome::success()
         }
-        Err(err) => {
-            eprintln!("{}", render::operational_error(format, &err));
-            Outcome::failure()
-        }
+        Err(err) => crate::invocation_log::operational_failure(format, &err),
     }
 }
 
@@ -641,10 +638,7 @@ fn run_upgrade(format: Format) -> Outcome {
             let code = if report.has_blocking() { 1 } else { 0 };
             Outcome::with_findings(code, &report.findings)
         }
-        Err(err) => {
-            eprintln!("{}", render::operational_error(format, &err));
-            Outcome::failure()
-        }
+        Err(err) => crate::invocation_log::operational_failure(format, &err),
     }
 }
 
@@ -668,10 +662,7 @@ fn run_ingest(format: Format) -> Outcome {
             println!("{}", render::ingest(format, &report));
             Outcome::success()
         }
-        Err(err) => {
-            eprintln!("{}", render::operational_error(format, &err));
-            Outcome::failure()
-        }
+        Err(err) => crate::invocation_log::operational_failure(format, &err),
     }
 }
 
@@ -755,10 +746,7 @@ fn run_unmanage(format: Format, path: &str) -> Outcome {
             println!("{}", render::unmanage(format, &report));
             Outcome::success()
         }
-        Err(err) => {
-            eprintln!("{}", render::operational_error(format, &err));
-            Outcome::failure()
-        }
+        Err(err) => crate::invocation_log::operational_failure(format, &err),
     }
 }
 
@@ -791,16 +779,13 @@ fn run_rename(format: Format, old_slug: &str, to: &str, slug: Option<&str>) -> O
             // A **pre-transaction refusal** (`rename::RefusalKind`) names itself: it travels
             // as a `render::BlockedFinding`, so the identity the surface prints is the
             // identity the invocation log records — a refused rename is legible there rather
-            // than one more exit-1-with-nothing (M49 Inc 11 T4, PT-A). The printed bytes do
-            // not move: the carrier's `Display` is the house findings line, emitted through
-            // the same operational funnel every other `anyhow` refusal here uses.
-            if let Some(finding) = render::blocked_finding(&err) {
-                eprintln!("{}", render::operational_error(format, &err));
-                return Outcome::with_findings(
-                    crate::task::EXIT_ERROR,
-                    std::slice::from_ref(finding),
-                );
-            }
+            // than one more exit-1-with-nothing (M49 Inc 11 T4, PT-A). That read-back used to
+            // be written out here, and being written out *here* was the defect: two doors had
+            // it and ~29 did not (M50 completion audit, Finding 2). It now lives in the one
+            // funnel `surface_commit_rejection` falls through to
+            // ([`crate::invocation_log::operational_failure`]), so this door keeps the
+            // behaviour without owning it — and the printed bytes are unchanged.
+            //
             // The atomic rename transaction rolls back in full on any pre-commit failure
             // (`rollback_rename`), so a hook rejection leaves the store exactly as it was —
             // stated here as this door's half of the survivable frame, with its own re-run
@@ -888,10 +873,7 @@ fn run_validate_store(format: Format) -> Outcome {
             };
             Outcome::with_findings(code, &report.findings)
         }
-        Err(err) => {
-            eprintln!("{}", render::operational_error(format, &err));
-            Outcome::failure()
-        }
+        Err(err) => crate::invocation_log::operational_failure(format, &err),
     }
 }
 
@@ -1214,10 +1196,7 @@ fn run_compose(format: Format, intent: &str, slug: Option<&str>) -> Outcome {
             println!("{}", render::composed(format, &view));
             Outcome::success()
         }
-        Err(err) => {
-            eprintln!("{}", render::operational_error(format, &err));
-            Outcome::failure()
-        }
+        Err(err) => crate::invocation_log::operational_failure(format, &err),
     }
 }
 
@@ -1243,10 +1222,7 @@ fn run_compose_named(format: Format, intent: &str, workflow: &str, slug: Option<
             println!("{}", render::composed(format, &view));
             Outcome::success()
         }
-        Err(err) => {
-            eprintln!("{}", render::operational_error(format, &err));
-            Outcome::failure()
-        }
+        Err(err) => crate::invocation_log::operational_failure(format, &err),
     }
 }
 
@@ -1271,10 +1247,7 @@ fn run_compose_named_no_intent(format: Format, workflow: &str) -> Outcome {
             println!("{}", render::composed(format, &view));
             Outcome::success()
         }
-        Err(err) => {
-            eprintln!("{}", render::operational_error(format, &err));
-            Outcome::failure()
-        }
+        Err(err) => crate::invocation_log::operational_failure(format, &err),
     }
 }
 
@@ -1298,10 +1271,7 @@ fn run_explain(format: Format, intent: Option<&str>, workflow: Option<&str>) -> 
             println!("{}", render::explain(format, &tree, &pack_label));
             Outcome::success()
         }
-        Err(err) => {
-            eprintln!("{}", render::operational_error(format, &err));
-            Outcome::failure()
-        }
+        Err(err) => crate::invocation_log::operational_failure(format, &err),
     }
 }
 
@@ -1325,10 +1295,7 @@ fn run_resume(format: Format, id: &str) -> Outcome {
             println!("{}", render::composed(format, &view));
             Outcome::success()
         }
-        Err(err) => {
-            eprintln!("{}", render::operational_error(format, &err));
-            Outcome::failure()
-        }
+        Err(err) => crate::invocation_log::operational_failure(format, &err),
     }
 }
 
@@ -1353,10 +1320,7 @@ fn run_reenter(format: Format, workflow: &str, task: &str) -> Outcome {
             println!("{}", render::composed(format, &view));
             Outcome::success()
         }
-        Err(err) => {
-            eprintln!("{}", render::operational_error(format, &err));
-            Outcome::failure()
-        }
+        Err(err) => crate::invocation_log::operational_failure(format, &err),
     }
 }
 
@@ -1378,10 +1342,7 @@ fn run_preview(format: Format, workflow: &str) -> Outcome {
             println!("{}", render::composed_preview(format, &view, workflow));
             Outcome::success()
         }
-        Err(err) => {
-            eprintln!("{}", render::operational_error(format, &err));
-            Outcome::failure()
-        }
+        Err(err) => crate::invocation_log::operational_failure(format, &err),
     }
 }
 
@@ -1401,10 +1362,7 @@ fn run_orient(format: Format) -> Outcome {
             println!("{}", render::orientation(format, &view));
             Outcome::success()
         }
-        Err(err) => {
-            eprintln!("{}", render::operational_error(format, &err));
-            Outcome::failure()
-        }
+        Err(err) => crate::invocation_log::operational_failure(format, &err),
     }
 }
 

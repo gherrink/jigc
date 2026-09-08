@@ -210,8 +210,7 @@ impl MilestoneCommand {
         if let Some(id) = self.milestone_id()
             && let Err(err) = crate::task::reject_malformed_work_unit_id(id)
         {
-            eprintln!("{}", render::operational_error(format, &err));
-            return Outcome::failure();
+            return crate::invocation_log::operational_failure(format, &err);
         }
         // The `join` verb reports a `JoinOutcome` (overlay + findings), not a one-line
         // summary, and a same-doc clash is a *blocking finding inside an Ok outcome*
@@ -285,10 +284,7 @@ impl MilestoneCommand {
                 // the plain operational-error envelope.
                 Some(frame) => crate::task::surface_commit_rejection(format, &err, frame),
                 // A read-only verb — it runs no commit, so no `CommitRejected` can reach here.
-                None => {
-                    eprintln!("{}", render::operational_error(format, &err));
-                    Outcome::failure()
-                }
+                None => crate::invocation_log::operational_failure(format, &err),
             },
         }
     }
@@ -3332,10 +3328,7 @@ fn dispatch_execute(cwd: &Path, format: Format, milestone_id: &str) -> Outcome {
             println!("{}", render::composed(format, &view));
             Outcome::success()
         }
-        Err(err) => {
-            eprintln!("{}", render::operational_error(format, &err));
-            Outcome::failure()
-        }
+        Err(err) => crate::invocation_log::operational_failure(format, &err),
     }
 }
 
@@ -3404,8 +3397,7 @@ fn dispatch_join(cwd: &Path, format: Format, milestone_id: &str) -> Outcome {
     let (outcome, sub_tasks) = match run_join(cwd, milestone_id) {
         Ok(outcome) => outcome,
         Err(err) => {
-            eprintln!("{}", render::operational_error(format, &err));
-            return Outcome::failure();
+            return crate::invocation_log::operational_failure(format, &err);
         }
     };
     // A blocking finding inside the outcome (e.g. `join.same-doc-clash`) routes to
@@ -3542,10 +3534,7 @@ fn dispatch_finalize(
         // commit-model arm frames itself (M47 Inc 3 T7). A `CommitRejected` therefore
         // cannot reach here, and the arm-specific identity is minted where the arm is
         // known; a plain failure carries no identity, as before.
-        Err(err) => {
-            eprintln!("{}", render::operational_error(format, &err));
-            Outcome::failure()
-        }
+        Err(err) => crate::invocation_log::operational_failure(format, &err),
     }
 }
 

@@ -211,10 +211,7 @@ impl ConfigCommand {
                 println!("{surface}");
                 Outcome::success()
             }
-            Err(err) => {
-                eprintln!("{}", crate::render::operational_error(format, &err));
-                Outcome::failure()
-            }
+            Err(err) => crate::invocation_log::operational_failure(format, &err),
         }
     }
 }

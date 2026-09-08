@@ -643,8 +643,7 @@ impl DocCommand {
                 let resolved = match crate::cascade_util::no_delta_resolved() {
                     Ok(resolved) => resolved,
                     Err(err) => {
-                        eprintln!("{}", render::operational_error(format, &err));
-                        return Outcome::failure();
+                        return crate::invocation_log::operational_failure(format, &err);
                     }
                 };
                 let report = engine::result::ValidationReport::new(vec![*finding], &resolved);
@@ -655,8 +654,7 @@ impl DocCommand {
                 Outcome::with_findings(1, &report.findings)
             }
             Err(DocFailure::Orchestration(err)) => {
-                eprintln!("{}", render::operational_error(format, &err));
-                Outcome::failure()
+                crate::invocation_log::operational_failure(format, &err)
             }
         }
     }
