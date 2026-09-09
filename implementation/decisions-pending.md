@@ -19,7 +19,9 @@ This is a *decision/discussion* backlog, not a *task* backlog — tasks are stil
 
 *(The **M39** pre-1.0 RC-findings wave graduated + **shipped 2026-07-07** — planned, decomposed, built, audited, and complete ([DECISIONS.md](../DECISIONS.md) → 2026-07-07 M39 completion; [completions/artifacts/M39/VERDICT.md](../completions/artifacts/M39/VERDICT.md)); doc-read-surface, the team-ready `milestone-record` doctype, the freeze-exempt relocation floor, the output-size fd-tee, and the slug/form-vision riders all shipped. `state-aware-compose` stays stretch → 1.1. Removed from pending.)*
 
-### M50 — the last wave before 1.0.0 — **SETTLED 2026-09-04**
+### M50 — the last wave before 1.0.0 (the unvalidated-token wave) — ✅ **SHIPPED 2026-09-09** as `1.0.0-rc.14`
+
+*(Built + audited: 4 audit findings, all confirmed live before any fix and all fixed axis-complete, re-verified **3341 passed / 0 failed** — [VERDICT](../completions/artifacts/M50/VERDICT.md); [DECISIONS.md](../DECISIONS.md) → 2026-09-09 M50 completion audit. Settled 2026-09-04, below.)*
 
 *(Settled and decomposed: [settle-record.md](../completions/artifacts/M50/settle-record.md) · [baseline-ledger.md](../completions/artifacts/M50/baseline-ledger.md) · [gap-findings.md](../completions/artifacts/M50/gap-findings.md) · [planning-gate-record.md](../completions/artifacts/M50/planning-gate-record.md) · [roadmap](roadmap.md) → Milestone 50 · [DECISIONS.md](../DECISIONS.md) → 2026-09-04 M50 planned. **The baseline falsified the charter's Tier 0 in all three nouns** and the design review found a fourth token family, so the chartered forks below are superseded by the settled record rather than answered in place.)*
 
