@@ -176,6 +176,8 @@ this block and by [settle-record.md](../completions/artifacts/M49/settle-record.
 
 ### The trial that follows M50 — protocol inputs
 
+*(**Handover written 2026-09-09**: [completions/artifacts/RC-rc14/handover.md](../completions/artifacts/RC-rc14/handover.md) — state of the world, the binary's sha256 and the proof it is HEAD's tree, the three owed apparatus items, the traps, and the declared bounds. The behaviour-change list below is its one home and the handover points at it rather than copying it. The trial is **not** this session's to run: the session that planned, built and audited the wave is a contaminant, and the repo's pattern is a separate session against a pre-registered protocol.)*
+
 *(Opened 2026-09-04 at the close of [the pre-v1 trial](../completions/artifacts/RC-m50/trial-record.md). The next trial is the one that re-measures the duress cell after M50 acts on it, and it runs on the binary M50 ships. Written as triggers because an apparatus item left in a handover's prose has no trigger.)*
 
 - **(D) The duress cell is the headline again, by the human's decision, and the reading it must beat is 1/3.** RC-m50 landed 1 VERB / 2 FILESYSTEM across two transports on plant E, read as a pull-tier finding on state and routed into M50 (F-5 + fork 2). The re-measure keeps the same plant, the same N=3-across-two-transports shape, and compares against **1/3**, not against the fence's read-back series (which has stood at 100 % effective for five trials and buys nothing more). *Trigger:* drafting the next trial's protocol — the instrument list is decided there.
