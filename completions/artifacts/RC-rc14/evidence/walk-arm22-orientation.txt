@@ -1,0 +1,440 @@
+image      : jigc-gate:rc14 (jigc 1.0.0-rc.14)
+jigc sha   : 21ffc0d47c9be41ae93f7d9f69dad24110a783a3
+model      : claude-sonnet-5
+permissions: bypassPermissions
+corpus     : /Users/maurice/ideas/walk-rc14
+out        : /Users/maurice/out/RC14-walk3/22-m50-orientation-and-carried
+container  : 7f713181c9eb14dbeff28e6bb5f6d254a2442a2159e75dfce318e7c64306028a
+  (a mid-stream plant runs with: docker exec -it -u node 7f713181c9eb14dbeff28e6bb5f6d254a2442a2159e75dfce318e7c64306028a bash -l)
+
+running /Users/maurice/projects/gherrink-jigc/completions/trial-driver/arms/walk/22-m50-orientation-and-carried.sh in the container
+-------------------------------------------------------------
+
+=== 0 · adopt
+jigc 1.0.0-rc.14
+
+=== 1 · OrientationView::Clean — a repo holding no task
+state=clean  envelope schema_version=3
+  OK    a repo with no task is 'clean'
+  OK    the envelope carries schema_version 3
+
+=== 2 · mint a task and stage prose in it
+task minted: record-the-ingest-queue-overflow
+
+Record a decision you have already made as an ADR — from what you know, with no
+code to write. The decision is:
+record the ingest queue overflow policy
+
+Create the ADR — safe whether or not it already exists (an existing committed ADR
+of the same slug is copied in for revise) — then author its slots: a line per slot
+usually suffices; an ADR earns its keep by capturing the *why*, not by running long:
+
+Run: `jigc doc create adr --title <TITLE> --task record-the-ingest-queue-overflow`
+
+The `adr` schema is the authority on what you write into it — its required slots
+and fields, each field's enum members, and every address a write can take:
+
+jigc doc schema adr
+
+Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
+directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which
+jigc itself accepts but an agent harness that statically analyses shell commands
+can refuse to run:
+
+jigc doc set-slot adr:<slug>#context --from-file - --task record-the-ingest-queue-overflow <<'EOF'
+<the forces that made this decision necessary>
+EOF
+
+Author its three required slots on the address `create` prints — `context` (the
+forces that made a decision necessary), `decision` (the call itself), and
+`consequences` (the tradeoffs and follow-on effects it commits you to):
+
+jigc doc set-slot adr:<slug>#context --from-file - --task record-the-ingest-queue-overflow
+jigc doc set-slot adr:<slug>#decision --from-file - --task record-the-ingest-queue-overflow
+jigc doc set-slot adr:<slug>#consequences --from-file - --task record-the-ingest-queue-overflow
+
+The `options` slot is optional — fill it only when alternatives were genuinely
+weighed. Its `## Options` heading renders either way; an empty optional slot is
+conformant and never blocks finalize. The `status` defaults to `proposed`; set it
+on the `status` section only when the decision is already `accepted`:
+
+jigc doc set-slot adr:<slug>#options --from-file - --task record-the-ingest-queue-overflow
+jigc doc set-field adr:<slug>#status --value accepted --task record-the-ingest-queue-overflow
+
+Or make it one call — the batch alternative to the whole sequence above (run it
+instead of the create + per-leaf verbs, or after them — the create it implies
+over a doc this task already staged acks `already existed — copied in for
+update` and changes nothing): the batch verb reads one declarative payload from
+stdin (grammar: `jigc doc author --help`) and places every slot in a single
+write; the payload's `title:` mints the slug exactly like the create above:
+
+jigc doc author adr --from-file - --task record-the-ingest-queue-overflow
+
+`<slug>` is the slug the title minted, and this task's own index names it back —
+every doc the task stages, each by the `<type>:<slug>` identity the read takes:
+
+jigc doc list adr --task record-the-ingest-queue-overflow
+
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show adr:<slug> --task record-the-ingest-queue-overflow
+
+If your decision supersedes an earlier one, set `supersedes` on the ADR; the
+superseded decision then appears below for reference, so your consequences can
+explain what changes (nothing appears if it supersedes none).
+
+When done, set the required Conventional-Commits type — your editorial call on
+what this change does. The subject renders as `<type>(<scope>): <summary>`, so
+write the summary without a type or scope prefix of its own — the `type` field
+already carries it. Inside slot prose, the reserved heading depths are schema-relative to
+the address you write — the CLI owns the section, item, and sub-label heading
+levels there, so your headings sit below them; Setext headings are rejected at
+every depth, and a rejected write names the shallowest depth free at that
+address.
+
+Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
+directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which
+jigc itself accepts but an agent harness that statically analyses shell commands
+can refuse to run:
+
+jigc doc set-slot commit:record-the-ingest-queue-overflow#summary --from-file - --task record-the-ingest-queue-overflow <<'EOF'
+<one line saying what changed>
+EOF
+
+Set the type, then stage the summary prose:
+
+Run: `jigc doc set-field commit:record-the-ingest-queue-overflow#type --value <COMMIT_TYPE> --task record-the-ingest-queue-overflow`
+The `type` value is one of: feat | fix | docs | style | refactor | perf | test | build | ci | chore | revert
+Run: `jigc doc set-slot commit:record-the-ingest-queue-overflow#summary --from-file - --task record-the-ingest-queue-overflow`
+<<author: commit:record-the-ingest-queue-overflow#summary>>
+
+The `commit` schema is the authority on what you write into it — its required
+slots and fields, each field's enum members, and every address a write can take:
+
+jigc doc schema commit
+
+The `scope` and `body` are optional: add a `scope` to name the area touched, or
+author a `body` to explain the motivation, only when they earn their place —
+
+jigc doc set-field commit:record-the-ingest-queue-overflow#scope --value <area> --task record-the-ingest-queue-overflow
+jigc doc set-slot commit:record-the-ingest-queue-overflow#body --from-file - --task record-the-ingest-queue-overflow
+
+When the work shares authorship — a co-author, or an agent that wrote it — record
+it in a commit trailer. Add one trailer item, then set its value on the address
+`add-item` prints:
+
+jigc doc add-item commit:record-the-ingest-queue-overflow#trailers --title Co-Authored-By --task record-the-ingest-queue-overflow
+jigc doc set-field commit:record-the-ingest-queue-overflow#trailers/<id>/value --value "Name <email>" --task record-the-ingest-queue-overflow
+
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show commit:record-the-ingest-queue-overflow --task record-the-ingest-queue-overflow
+
+Validate and commit the task as one logical commit. Finalize commits only the
+staged set plus the docs it manages; unstaged edits and untracked files are left
+out, and with nothing staged over a dirty tree it refuses. Anything still staged
+from BEFORE this task was minted makes finalize refuse too (one blocking finding
+per carried path): unstage it, or pass `--carry-staged` to declare the carryover
+deliberate.
+
+To see what's left before committing, run `jigc task validate record-the-ingest-queue-overflow` — it
+previews part of what finalize gates on (this task's content findings, the
+carryover gate, the owner-artifact causes that need no staging, and the
+granted-but-unused changelog gate), without committing anything; the staged set,
+promotion and the commit itself are decided at finalize.
+
+Run: `jigc task finalize record-the-ingest-queue-overflow`
+resume: `jigc start --task record-the-ingest-queue-overflow`   — re-composes this workflow if context is lost
+what's-left: `jigc task validate record-the-ingest-queue-overflow`   — previews part of the finalize gate: this task's content findings, the carryover gate, the owner-artifact causes that need no staging, and the granted-but-unused changelog gate; the staged set, promotion and the commit surface at finalize
+task scope: `jigc doc` writes default to the single active task; `--task record-the-ingest-queue-overflow` is the explicit override and wins when several are active — several open tasks are legal, each addressed by its own `--task`, so you can run them in parallel while their work stays disjoint; once a sibling task commits a path this one also touches, resuming or finalizing here blocks and names the overlapping paths
+create-gates: adr   — the doc-types this task is allowed to create; any other type is refused
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+
+=== 3 · OrientationView::ActiveTask — the lie M50 killed
+
+$ jigc start
+jigc — orientation
+
+Pack: dev/1.0.0-rc.14 | methodology/1.0.0-rc.14 · Project config: /work/.jigc/config
+
+Active task: record-the-ingest-queue-overflow
+  workflow: record-decision
+  intent:   record the ingest queue overflow policy
+  base:     50774e9
+  staged:   adr:drop-the-oldest-sample, commit:record-the-ingest-queue-overflow
+  findings: 4 blocking, 1 advisory
+advisory · file-state.staged-copy — staged copy of `docs/decisions/drop-the-oldest-sample.md` — this task's in-flight version of the doc
+  at: docs/decisions/drop-the-oldest-sample.md
+  route: no action needed — the staged copy is validated in-task and baselined when its finalize lands
+blocking · schema-conformance.required-slot-present — `docs/decisions/drop-the-oldest-sample.md`: required slot in section `decision` is empty
+  at: adr:drop-the-oldest-sample#decision · line 18
+  route: `jigc doc set-slot adr:drop-the-oldest-sample#decision --task record-the-ingest-queue-overflow --from-file -` to fill the empty slot
+blocking · schema-conformance.required-slot-present — `docs/decisions/drop-the-oldest-sample.md`: required slot in section `consequences` is empty
+  at: adr:drop-the-oldest-sample#consequences · line 22
+  route: `jigc doc set-slot adr:drop-the-oldest-sample#consequences --task record-the-ingest-queue-overflow --from-file -` to fill the empty slot
+blocking · schema-conformance.field-value-conformant — `commit:record-the-ingest-queue-overflow`: field `type` in section `header`: "" is not a member of enum "type" (allowed: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert)
+  at: commit:record-the-ingest-queue-overflow#header/type
+  route: `jigc doc set-field commit:record-the-ingest-queue-overflow#header/type --task record-the-ingest-queue-overflow --value <value>` to correct the value
+blocking · schema-conformance.required-slot-present — `commit:record-the-ingest-queue-overflow`: required slot in section `summary` is empty
+  at: commit:record-the-ingest-queue-overflow#summary · line 9
+  route: `jigc doc set-slot commit:record-the-ingest-queue-overflow#summary --task record-the-ingest-queue-overflow --from-file -` to fill the empty slot
+
+Run: `jigc start --task record-the-ingest-queue-overflow`   — resume: re-composes this task's own workflow where it left off
+Run: `jigc task validate record-the-ingest-queue-overflow`   — previews part of the finalize gate: this task's content findings, the carryover gate, the owner-artifact causes that need no staging, and the granted-but-unused changelog gate; the staged set, promotion and the commit surface at finalize
+Run: `jigc task finalize record-the-ingest-queue-overflow`   — validate + commit
+Run: `jigc task discard record-the-ingest-queue-overflow --force`   — abandon: removes the working area and the doc(s) staged in it, which no commit has a copy of; `--force` is the consent this door refuses without
+
+Available workflows:
+  - architecture-documentation — document the architecture of a part of the system, tying its components to the code that implements them
+  - decided-task — implement one scoped change test-first, recording its design decision on the running decisions log
+  - dev-task — implement one scoped change test-first, recording no decision, touching no documented code (code a managed doc names)
+  - do-research — you need to investigate or gather evidence before forming a vision or making a decision
+  - form-vision — you're forming or revising the project's vision from research
+  - implement-from-spec — a committed spec already covers the intent, with acceptance criteria to build against
+  - park-idea — a shaped-but-unscheduled idea occurs mid-work and is worth keeping
+  - plan — draft the specification for upcoming work before writing any code
+  - project-setup — bootstrap a brand-new project by developing the idea into its first product requirements
+  - quick-fix — apply a small commit-only fix that touches no documented code (code a managed doc names) and records no decision
+  - record-decision — capture a choice you have settled, preserving its rationale with no code to write
+  - single-task — implement one scoped change end-to-end, recording its decisions as ADRs and user-facing effects on the changelog
+
+Run: `jigc start "<intent>"`   — presents the workflows above; pick one, then re-run with `--workflow <chosen>` to compose it
+Preview: `jigc workflow <id> --preview`   — read a task-minting workflow's step text without minting a task; a workflow that mints nothing has no preview — `jigc start --workflow <id>` composes it directly, and mints nothing either
+Run: `jigc start --workflow planning`   — plan a milestone — decompose it into increments and tasks
+Run: `jigc start --workflow ingest-existing`   — bring an existing repo's docs under management
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+[exit 0]
+state=active-task
+  OK    a repo holding a live task is NOT reported clean
+  OK    it is the active-task view
+  OK    the view names the task
+  OK    it names what the task stages
+  OK    the staged line names the doc identity
+  OK    findings is stated, never silently absent
+  OK    it routes at resume
+  OK    it routes at validate
+  OK    it routes at finalize
+  OK    the abandon route carries the consent the door needs
+  NOTE  the active-task view names NO read verb — resume/validate/finalize/discard only (protocol.md §3.1)
+
+=== 4 · the 'also open:' block on the minting form
+task minted: second-unrelated-decision
+
+Record a decision you have already made as an ADR — from what you know, with no
+code to write. The decision is:
+a second, unrelated decision
+
+Create the ADR — safe whether or not it already exists (an existing committed ADR
+of the same slug is copied in for revise) — then author its slots: a line per slot
+usually suffices; an ADR earns its keep by capturing the *why*, not by running long:
+
+Run: `jigc doc create adr --title <TITLE> --task second-unrelated-decision`
+
+The `adr` schema is the authority on what you write into it — its required slots
+and fields, each field's enum members, and every address a write can take:
+
+jigc doc schema adr
+
+Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
+directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which
+jigc itself accepts but an agent harness that statically analyses shell commands
+can refuse to run:
+
+jigc doc set-slot adr:<slug>#context --from-file - --task second-unrelated-decision <<'EOF'
+<the forces that made this decision necessary>
+EOF
+
+Author its three required slots on the address `create` prints — `context` (the
+forces that made a decision necessary), `decision` (the call itself), and
+`consequences` (the tradeoffs and follow-on effects it commits you to):
+
+jigc doc set-slot adr:<slug>#context --from-file - --task second-unrelated-decision
+jigc doc set-slot adr:<slug>#decision --from-file - --task second-unrelated-decision
+jigc doc set-slot adr:<slug>#consequences --from-file - --task second-unrelated-decision
+
+The `options` slot is optional — fill it only when alternatives were genuinely
+weighed. Its `## Options` heading renders either way; an empty optional slot is
+conformant and never blocks finalize. The `status` defaults to `proposed`; set it
+on the `status` section only when the decision is already `accepted`:
+
+jigc doc set-slot adr:<slug>#options --from-file - --task second-unrelated-decision
+jigc doc set-field adr:<slug>#status --value accepted --task second-unrelated-decision
+
+Or make it one call — the batch alternative to the whole sequence above (run it
+instead of the create + per-leaf verbs, or after them — the create it implies
+over a doc this task already staged acks `already existed — copied in for
+update` and changes nothing): the batch verb reads one declarative payload from
+stdin (grammar: `jigc doc author --help`) and places every slot in a single
+write; the payload's `title:` mints the slug exactly like the create above:
+
+jigc doc author adr --from-file - --task second-unrelated-decision
+
+`<slug>` is the slug the title minted, and this task's own index names it back —
+every doc the task stages, each by the `<type>:<slug>` identity the read takes:
+
+jigc doc list adr --task second-unrelated-decision
+
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show adr:<slug> --task second-unrelated-decision
+
+If your decision supersedes an earlier one, set `supersedes` on the ADR; the
+superseded decision then appears below for reference, so your consequences can
+explain what changes (nothing appears if it supersedes none).
+
+When done, set the required Conventional-Commits type — your editorial call on
+what this change does. The subject renders as `<type>(<scope>): <summary>`, so
+write the summary without a type or scope prefix of its own — the `type` field
+already carries it. Inside slot prose, the reserved heading depths are schema-relative to
+the address you write — the CLI owns the section, item, and sub-label heading
+levels there, so your headings sit below them; Setext headings are rejected at
+every depth, and a rejected write names the shallowest depth free at that
+address.
+
+Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
+directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which
+jigc itself accepts but an agent harness that statically analyses shell commands
+can refuse to run:
+
+jigc doc set-slot commit:second-unrelated-decision#summary --from-file - --task second-unrelated-decision <<'EOF'
+<one line saying what changed>
+EOF
+
+Set the type, then stage the summary prose:
+
+Run: `jigc doc set-field commit:second-unrelated-decision#type --value <COMMIT_TYPE> --task second-unrelated-decision`
+The `type` value is one of: feat | fix | docs | style | refactor | perf | test | build | ci | chore | revert
+Run: `jigc doc set-slot commit:second-unrelated-decision#summary --from-file - --task second-unrelated-decision`
+<<author: commit:second-unrelated-decision#summary>>
+
+The `commit` schema is the authority on what you write into it — its required
+slots and fields, each field's enum members, and every address a write can take:
+
+jigc doc schema commit
+
+The `scope` and `body` are optional: add a `scope` to name the area touched, or
+author a `body` to explain the motivation, only when they earn their place —
+
+jigc doc set-field commit:second-unrelated-decision#scope --value <area> --task second-unrelated-decision
+jigc doc set-slot commit:second-unrelated-decision#body --from-file - --task second-unrelated-decision
+
+When the work shares authorship — a co-author, or an agent that wrote it — record
+it in a commit trailer. Add one trailer item, then set its value on the address
+`add-item` prints:
+
+jigc doc add-item commit:second-unrelated-decision#trailers --title Co-Authored-By --task second-unrelated-decision
+jigc doc set-field commit:second-unrelated-decision#trailers/<id>/value --value "Name <email>" --task second-unrelated-decision
+
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show commit:second-unrelated-decision --task second-unrelated-decision
+
+Validate and commit the task as one logical commit. Finalize commits only the
+staged set plus the docs it manages; unstaged edits and untracked files are left
+out, and with nothing staged over a dirty tree it refuses. Anything still staged
+from BEFORE this task was minted makes finalize refuse too (one blocking finding
+per carried path): unstage it, or pass `--carry-staged` to declare the carryover
+deliberate.
+
+To see what's left before committing, run `jigc task validate second-unrelated-decision` — it
+previews part of what finalize gates on (this task's content findings, the
+carryover gate, the owner-artifact causes that need no staging, and the
+granted-but-unused changelog gate), without committing anything; the staged set,
+promotion and the commit itself are decided at finalize.
+
+Run: `jigc task finalize second-unrelated-decision`
+resume: `jigc start --task second-unrelated-decision`   — re-composes this workflow if context is lost
+what's-left: `jigc task validate second-unrelated-decision`   — previews part of the finalize gate: this task's content findings, the carryover gate, the owner-artifact causes that need no staging, and the granted-but-unused changelog gate; the staged set, promotion and the commit surface at finalize
+task scope: `jigc doc` writes default to the single active task; `--task second-unrelated-decision` is the explicit override and wins when several are active — several open tasks are legal, each addressed by its own `--task`, so you can run them in parallel while their work stays disjoint; once a sibling task commits a path this one also touches, resuming or finalizing here blocks and names the overlapping paths
+create-gates: adr   — the doc-types this task is allowed to create; any other type is refused
+also open: 1 other task was already open before this call — nothing here touched it; several open tasks are legal, each addressed by its own `--task`:
+  - `record-the-ingest-queue-overflow` (workflow `record-decision`) — resume it with `jigc start --task record-the-ingest-queue-overflow`
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+  OK    a second mint reports the work already open
+  OK    it names the open task by id
+  OK    it does not suppress the mint
+  NOTE  the also-open block carries RESUME ONLY — the four directives are the orientation view's (handover correction C3)
+
+=== 5 · N27 (EXPECTED RED) — task diff's cold-start form
+
+$ jigc task diff record-the-ingest-queue-overflow
+# staged docs
+--- adr:drop-the-oldest-sample.md
+---
+status: proposed
+date: 2026-09-10
+schema-version: 2
+---
+
+# Drop the oldest sample on ingest queue overflow
+
+## Context
+
+Prose authored by the walk arm.
+
+## Options
+
+
+
+## Decision
+
+
+
+## Consequences
+--- commit:record-the-ingest-queue-overflow.md
+---
+type: 
+scope: 
+---
+
+# record-the-ingest-queue-overflow
+
+## Summary
+
+
+
+## Body
+
+
+
+## Trailers
+[exit 0]
+  OK    N27: the cold-start diff names the task id
+  FAIL  N27: it names the workflow the task was minted from
+  FAIL  N27: it names the intent
+  FAIL  N27: --format json carries the workflow
+  FAIL  N27: --format json carries the intent
+
+=== 6 · N15 (EXPECTED RED) — a --task read of an address that resolves nowhere
+
+$ jigc doc show adr:no-such-decision --task record-the-ingest-queue-overflow
+blocking · store.not-staged — `adr:no-such-decision` is not staged in this task and has no committed copy — nothing to read yet
+  at: adr:no-such-decision
+  route: create or author the doc in this task first — a staged copy exists only after a write
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+[exit 1]
+  OK    N15: the task-scoped miss is NOT byte-identical to the task-less one
+  FAIL  N15: the task-scoped miss does not claim the address names no COMMITTED doc
+  OK    N15: its route keeps --task rather than dropping it
+
+=== 7 · nothing above destroyed the task it was reading
+  OK    the task is still open
+  OK    its staged doc is still there
+  OK    no tracked file was modified by reading
+
+ARM 22 RED — see the N15/N27 bars, which are MEASUREMENTS (expected red), and any others
+-------------------------------------------------------------
+evidence in /Users/maurice/out/RC14-walk3/22-m50-orientation-and-carried (corpus + .session-transcript/ + PROVENANCE.txt)
+  invocation records : 16
+  doc show --task    : 2
+  doc show (any)     : 3
+  §3.3 adjacent      : 3   (task diff · task validate · doc list --task)
+  ^ indicative only — score with: completions/trial-driver/run.py observe "/Users/maurice/out/RC14-walk3/22-m50-orientation-and-carried"

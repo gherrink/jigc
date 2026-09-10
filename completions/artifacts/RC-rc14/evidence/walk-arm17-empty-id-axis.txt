@@ -1,0 +1,480 @@
+image      : jigc-gate:rc14 (jigc 1.0.0-rc.14)
+jigc sha   : 21ffc0d47c9be41ae93f7d9f69dad24110a783a3
+model      : claude-sonnet-5
+permissions: bypassPermissions
+corpus     : /Users/maurice/ideas/walk-rc14
+out        : /Users/maurice/out/RC14-walk/17-empty-id-axis
+container  : 892c0c1e5450f720131196504763581af67ef872b9798d374f3e801d914c745c
+  (a mid-stream plant runs with: docker exec -it -u node 892c0c1e5450f720131196504763581af67ef872b9798d374f3e801d914c745c bash -l)
+
+running /Users/maurice/projects/gherrink-jigc/completions/trial-driver/arms/walk/17-empty-id-axis.sh in the container
+-------------------------------------------------------------
+jigc 1.0.0-rc.14
+
+=== FIXTURE · one live task holding a staged doc, so destruction is measurable
+
+$ jigc task list
+jigc task list — 1 active task(s)
+
+  keep-one-task-live  [record-decision]  keep one task live
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+[exit 0]
+
+$ jigc doc list --task keep-one-task-live
+id  path  state
+adr:keep-the-oldest-sample  docs/decisions/keep-the-oldest-sample.md  managed
+commit:keep-one-task-live  commit:keep-one-task-live  managed
+[exit 0]
+  OK    the live task exists
+  OK    …and stages a doc
+
+=== COLUMN · id=[no-such-task]
+
+$ jigc task validate no-such-task
+no task `no-such-task` — list live tasks with `jigc task list`
+[exit 1]
+  OK    [nonexistent] task validate · refuses: no success ack, no panic (exit 1)
+  FAIL  [nonexistent] task validate · the refusal carries a code AND a route
+
+$ jigc task diff no-such-task
+no task `no-such-task` — list live tasks with `jigc task list`
+[exit 1]
+  OK    [nonexistent] task diff · refuses: no success ack, no panic (exit 1)
+  FAIL  [nonexistent] task diff · the refusal carries a code AND a route
+
+$ jigc task finalize no-such-task --dry-run
+no task `no-such-task` — list live tasks with `jigc task list`
+[exit 1]
+  OK    [nonexistent] task finalize --dry-run · refuses: no success ack, no panic (exit 1)
+  FAIL  [nonexistent] task finalize --dry-run · the refusal carries a code AND a route
+
+$ jigc task bind decision adr:nothing no-such-task
+no task `no-such-task` — list live tasks with `jigc task list`
+[exit 1]
+  OK    [nonexistent] task bind · refuses: no success ack, no panic (exit 1)
+  FAIL  [nonexistent] task bind · the refusal carries a code AND a route
+
+$ jigc start --task no-such-task
+no task `no-such-task` — list live tasks with `jigc task list`
+[exit 1]
+  OK    [nonexistent] start --task · refuses: no success ack, no panic (exit 1)
+  FAIL  [nonexistent] start --task · the refusal carries a code AND a route
+
+$ jigc workflow sub-task --task no-such-task
+no task `no-such-task` — list a milestone's sub-tasks with `jigc milestone list-tasks <milestone-id>`
+[exit 1]
+  OK    [nonexistent] workflow --task · refuses: no success ack, no panic (exit 1)
+  FAIL  [nonexistent] workflow --task · the refusal carries a code AND a route
+
+$ jigc doc show adr:keep-the-oldest-sample --task no-such-task
+no task `no-such-task` — list live tasks with `jigc task list`
+[exit 1]
+  OK    [nonexistent] doc show --task · refuses: no success ack, no panic (exit 1)
+  FAIL  [nonexistent] doc show --task · the refusal carries a code AND a route
+
+$ jigc doc list --task no-such-task
+no task `no-such-task` — list live tasks with `jigc task list`
+[exit 1]
+  OK    [nonexistent] doc list --task · refuses: no success ack, no panic (exit 1)
+  FAIL  [nonexistent] doc list --task · the refusal carries a code AND a route
+
+$ jigc doc create adr --title Probe --task no-such-task
+no task `no-such-task` — list live tasks with `jigc task list`
+[exit 1]
+  OK    [nonexistent] doc create --task · refuses: no success ack, no panic (exit 1)
+  FAIL  [nonexistent] doc create --task · the refusal carries a code AND a route
+
+$ jigc doc add-item spec:nothing#criteria --title Probe --task no-such-task
+no task `no-such-task` — list live tasks with `jigc task list`
+[exit 1]
+  OK    [nonexistent] doc add-item --task · refuses: no success ack, no panic (exit 1)
+  FAIL  [nonexistent] doc add-item --task · the refusal carries a code AND a route
+
+$ jigc doc remove-item spec:nothing#criteria/probe --task no-such-task
+no task `no-such-task` — list live tasks with `jigc task list`
+[exit 1]
+  OK    [nonexistent] doc remove-item --task · refuses: no success ack, no panic (exit 1)
+  FAIL  [nonexistent] doc remove-item --task · the refusal carries a code AND a route
+
+$ jigc doc retitle-item spec:nothing#criteria/probe --title Probe --task no-such-task
+no task `no-such-task` — list live tasks with `jigc task list`
+[exit 1]
+  OK    [nonexistent] doc retitle-item --task · refuses: no success ack, no panic (exit 1)
+  FAIL  [nonexistent] doc retitle-item --task · the refusal carries a code AND a route
+
+$ jigc doc rename adr:keep-the-oldest-sample --to Probe --task no-such-task
+no task `no-such-task` — list live tasks with `jigc task list`
+[exit 1]
+  OK    [nonexistent] doc rename --task · refuses: no success ack, no panic (exit 1)
+  FAIL  [nonexistent] doc rename --task · the refusal carries a code AND a route
+
+$ jigc doc set-field adr:keep-the-oldest-sample#header/status --value accepted --task no-such-task
+no task `no-such-task` — list live tasks with `jigc task list`
+[exit 1]
+  OK    [nonexistent] doc set-field --task · refuses: no success ack, no panic (exit 1)
+  FAIL  [nonexistent] doc set-field --task · the refusal carries a code AND a route
+
+$ sh -c echo x | jigc doc set-slot 'adr:keep-the-oldest-sample#context' --from-file - --task 'no-such-task'
+no task `no-such-task` — list live tasks with `jigc task list`
+[exit 1]
+  OK    [nonexistent] doc set-slot --task · refuses: no success ack, no panic (exit 1)
+  FAIL  [nonexistent] doc set-slot --task · the refusal carries a code AND a route
+
+$ sh -c printf 'title: Probe\nsections: []\n' | jigc doc author adr --from-file - --task 'no-such-task'
+no task `no-such-task` — list live tasks with `jigc task list`
+[exit 1]
+  OK    [nonexistent] doc author --task · refuses: no success ack, no panic (exit 1)
+  FAIL  [nonexistent] doc author --task · the refusal carries a code AND a route
+
+$ jigc milestone execute no-such-task
+milestone `no-such-task` does not exist
+  route: create it first with `jigc milestone create "<title>"`
+[exit 1]
+  OK    [nonexistent] milestone execute · refuses: no success ack, no panic (exit 1)
+  FAIL  [nonexistent] milestone execute · the refusal carries a code AND a route
+
+$ jigc milestone provision no-such-task
+milestone `no-such-task` does not exist
+  route: create it first with `jigc milestone create "<title>"`
+[exit 1]
+  OK    [nonexistent] milestone provision · refuses: no success ack, no panic (exit 1)
+  FAIL  [nonexistent] milestone provision · the refusal carries a code AND a route
+
+$ jigc milestone join no-such-task
+blocking · milestone.unknown — milestone `no-such-task` does not exist
+  at: milestone:no-such-task
+  route: create it first with `jigc milestone create "<title>"`
+[exit 1]
+  OK    [nonexistent] milestone join · refuses: no success ack, no panic (exit 1)
+  OK    [nonexistent] milestone join · the refusal carries a code AND a route
+
+$ jigc milestone finalize no-such-task
+milestone `no-such-task` does not exist
+  route: create it first with `jigc milestone create "<title>"`
+[exit 1]
+  OK    [nonexistent] milestone finalize · refuses: no success ack, no panic (exit 1)
+  FAIL  [nonexistent] milestone finalize · the refusal carries a code AND a route
+
+$ jigc milestone list-tasks no-such-task
+milestone `no-such-task` does not exist
+  route: create it first with `jigc milestone create "<title>"`
+[exit 1]
+  OK    [nonexistent] milestone list-tasks · refuses: no success ack, no panic (exit 1)
+  FAIL  [nonexistent] milestone list-tasks · the refusal carries a code AND a route
+
+$ jigc milestone add-task no-such-task some intent
+blocking · milestone.unknown — milestone `no-such-task` does not exist
+  at: milestone:no-such-task
+  route: create it first with `jigc milestone create "<title>"`
+[exit 1]
+  OK    [nonexistent] milestone add-task · refuses: no success ack, no panic (exit 1)
+  OK    [nonexistent] milestone add-task · the refusal carries a code AND a route
+
+$ jigc milestone add-from-spec no-such-task spec:nothing
+blocking · milestone.unknown — milestone `no-such-task` does not exist
+  at: milestone:no-such-task
+  route: create it first with `jigc milestone create "<title>"`
+[exit 1]
+  OK    [nonexistent] milestone add-from-spec · refuses: no success ack, no panic (exit 1)
+  OK    [nonexistent] milestone add-from-spec · the refusal carries a code AND a route
+
+$ jigc milestone discard no-such-task
+milestone `no-such-task` does not exist
+  route: check the milestone id (`jigc milestone list-tasks <milestone-id>` names a live milestone's sub-tasks); nothing was discarded
+[exit 1]
+  OK    [nonexistent] milestone discard · refuses: no success ack, no panic (exit 1)
+  FAIL  [nonexistent] milestone discard · the refusal carries a code AND a route
+
+$ jigc task discard no-such-task
+no task `no-such-task` — list live tasks with `jigc task list`
+[exit 1]
+  OK    [nonexistent] task discard · refuses: no success ack, no panic (exit 1)
+  FAIL  [nonexistent] task discard · the refusal carries a code AND a route
+
+=== AFTER the column · did the live task survive?
+
+$ jigc task list
+jigc task list — 1 active task(s)
+
+  keep-one-task-live  [record-decision]  keep one task live
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+[exit 0]
+
+$ ls -la .jigc/tasks
+total 12
+drwxr-xr-x 3 node node 4096 Sep 10 05:31 .
+drwxr-xr-x 6 node node 4096 Sep 10 05:31 ..
+drwxr-xr-x 3 node node 4096 Sep 10 05:31 keep-one-task-live
+[exit 0]
+  OK    [nonexistent] the live task `keep-one-task-live` is still listed
+  OK    [nonexistent] …its working area is still on disk
+  OK    [nonexistent] …and its staged doc is still readable
+  OBSERVE  if the three bars above FAIL in the [nonexistent] column: the last door of the column,
+           `jigc task discard 'no-such-task'`, took the LIVE task's working area with it — `.jigc/tasks/`
+           joined to an empty id is the tasks directory itself — and acked at exit 0.
+           That is loss of staged prose no commit holds, on a non-destructive-looking path.
+
+=== COLUMN · id=[]
+
+$ jigc task validate 
+blocking · work-unit.malformed-id — "" is not a valid work-unit id
+  route: use lowercase letters, digits, and single hyphens (no leading, trailing, or doubled `-`)
+[exit 1]
+  OK    [empty] task validate · refuses: no success ack, no panic (exit 1)
+  OK    [empty] task validate · the refusal carries a code AND a route
+
+$ jigc task diff 
+blocking · work-unit.malformed-id — "" is not a valid work-unit id
+  route: use lowercase letters, digits, and single hyphens (no leading, trailing, or doubled `-`)
+[exit 1]
+  OK    [empty] task diff · refuses: no success ack, no panic (exit 1)
+  OK    [empty] task diff · the refusal carries a code AND a route
+
+$ jigc task finalize  --dry-run
+blocking · work-unit.malformed-id — "" is not a valid work-unit id
+  route: use lowercase letters, digits, and single hyphens (no leading, trailing, or doubled `-`)
+[exit 1]
+  OK    [empty] task finalize --dry-run · refuses: no success ack, no panic (exit 1)
+  OK    [empty] task finalize --dry-run · the refusal carries a code AND a route
+
+$ jigc task bind decision adr:nothing 
+blocking · work-unit.malformed-id — "" is not a valid work-unit id
+  route: use lowercase letters, digits, and single hyphens (no leading, trailing, or doubled `-`)
+[exit 1]
+  OK    [empty] task bind · refuses: no success ack, no panic (exit 1)
+  OK    [empty] task bind · the refusal carries a code AND a route
+
+$ jigc start --task 
+blocking · work-unit.malformed-id — "" is not a valid work-unit id
+  route: use lowercase letters, digits, and single hyphens (no leading, trailing, or doubled `-`)
+[exit 1]
+  OK    [empty] start --task · refuses: no success ack, no panic (exit 1)
+  OK    [empty] start --task · the refusal carries a code AND a route
+
+$ jigc workflow sub-task --task 
+blocking · work-unit.malformed-id — "" is not a valid work-unit id
+  route: use lowercase letters, digits, and single hyphens (no leading, trailing, or doubled `-`)
+[exit 1]
+  OK    [empty] workflow --task · refuses: no success ack, no panic (exit 1)
+  OK    [empty] workflow --task · the refusal carries a code AND a route
+
+$ jigc doc show adr:keep-the-oldest-sample --task 
+blocking · work-unit.malformed-id — "" is not a valid work-unit id
+  route: use lowercase letters, digits, and single hyphens (no leading, trailing, or doubled `-`)
+[exit 1]
+  OK    [empty] doc show --task · refuses: no success ack, no panic (exit 1)
+  OK    [empty] doc show --task · the refusal carries a code AND a route
+
+$ jigc doc list --task 
+blocking · work-unit.malformed-id — "" is not a valid work-unit id
+  route: use lowercase letters, digits, and single hyphens (no leading, trailing, or doubled `-`)
+[exit 1]
+  OK    [empty] doc list --task · refuses: no success ack, no panic (exit 1)
+  OK    [empty] doc list --task · the refusal carries a code AND a route
+
+$ jigc doc create adr --title Probe --task 
+blocking · work-unit.malformed-id — "" is not a valid work-unit id
+  route: use lowercase letters, digits, and single hyphens (no leading, trailing, or doubled `-`)
+[exit 1]
+  OK    [empty] doc create --task · refuses: no success ack, no panic (exit 1)
+  OK    [empty] doc create --task · the refusal carries a code AND a route
+
+$ jigc doc add-item spec:nothing#criteria --title Probe --task 
+blocking · work-unit.malformed-id — "" is not a valid work-unit id
+  route: use lowercase letters, digits, and single hyphens (no leading, trailing, or doubled `-`)
+[exit 1]
+  OK    [empty] doc add-item --task · refuses: no success ack, no panic (exit 1)
+  OK    [empty] doc add-item --task · the refusal carries a code AND a route
+
+$ jigc doc remove-item spec:nothing#criteria/probe --task 
+blocking · work-unit.malformed-id — "" is not a valid work-unit id
+  route: use lowercase letters, digits, and single hyphens (no leading, trailing, or doubled `-`)
+[exit 1]
+  OK    [empty] doc remove-item --task · refuses: no success ack, no panic (exit 1)
+  OK    [empty] doc remove-item --task · the refusal carries a code AND a route
+
+$ jigc doc retitle-item spec:nothing#criteria/probe --title Probe --task 
+blocking · work-unit.malformed-id — "" is not a valid work-unit id
+  route: use lowercase letters, digits, and single hyphens (no leading, trailing, or doubled `-`)
+[exit 1]
+  OK    [empty] doc retitle-item --task · refuses: no success ack, no panic (exit 1)
+  OK    [empty] doc retitle-item --task · the refusal carries a code AND a route
+
+$ jigc doc rename adr:keep-the-oldest-sample --to Probe --task 
+blocking · work-unit.malformed-id — "" is not a valid work-unit id
+  route: use lowercase letters, digits, and single hyphens (no leading, trailing, or doubled `-`)
+[exit 1]
+  OK    [empty] doc rename --task · refuses: no success ack, no panic (exit 1)
+  OK    [empty] doc rename --task · the refusal carries a code AND a route
+
+$ jigc doc set-field adr:keep-the-oldest-sample#header/status --value accepted --task 
+blocking · work-unit.malformed-id — "" is not a valid work-unit id
+  route: use lowercase letters, digits, and single hyphens (no leading, trailing, or doubled `-`)
+[exit 1]
+  OK    [empty] doc set-field --task · refuses: no success ack, no panic (exit 1)
+  OK    [empty] doc set-field --task · the refusal carries a code AND a route
+
+$ sh -c echo x | jigc doc set-slot 'adr:keep-the-oldest-sample#context' --from-file - --task ''
+blocking · work-unit.malformed-id — "" is not a valid work-unit id
+  route: use lowercase letters, digits, and single hyphens (no leading, trailing, or doubled `-`)
+[exit 1]
+  OK    [empty] doc set-slot --task · refuses: no success ack, no panic (exit 1)
+  OK    [empty] doc set-slot --task · the refusal carries a code AND a route
+
+$ sh -c printf 'title: Probe\nsections: []\n' | jigc doc author adr --from-file - --task ''
+blocking · work-unit.malformed-id — "" is not a valid work-unit id
+  route: use lowercase letters, digits, and single hyphens (no leading, trailing, or doubled `-`)
+[exit 1]
+  OK    [empty] doc author --task · refuses: no success ack, no panic (exit 1)
+  OK    [empty] doc author --task · the refusal carries a code AND a route
+
+$ jigc milestone execute 
+blocking · work-unit.malformed-id — "" is not a valid work-unit id
+  route: use lowercase letters, digits, and single hyphens (no leading, trailing, or doubled `-`)
+[exit 1]
+  OK    [empty] milestone execute · refuses: no success ack, no panic (exit 1)
+  OK    [empty] milestone execute · the refusal carries a code AND a route
+
+$ jigc milestone provision 
+blocking · work-unit.malformed-id — "" is not a valid work-unit id
+  route: use lowercase letters, digits, and single hyphens (no leading, trailing, or doubled `-`)
+[exit 1]
+  OK    [empty] milestone provision · refuses: no success ack, no panic (exit 1)
+  OK    [empty] milestone provision · the refusal carries a code AND a route
+
+$ jigc milestone join 
+blocking · work-unit.malformed-id — "" is not a valid work-unit id
+  route: use lowercase letters, digits, and single hyphens (no leading, trailing, or doubled `-`)
+[exit 1]
+  OK    [empty] milestone join · refuses: no success ack, no panic (exit 1)
+  OK    [empty] milestone join · the refusal carries a code AND a route
+
+$ jigc milestone finalize 
+blocking · work-unit.malformed-id — "" is not a valid work-unit id
+  route: use lowercase letters, digits, and single hyphens (no leading, trailing, or doubled `-`)
+[exit 1]
+  OK    [empty] milestone finalize · refuses: no success ack, no panic (exit 1)
+  OK    [empty] milestone finalize · the refusal carries a code AND a route
+
+$ jigc milestone list-tasks 
+blocking · work-unit.malformed-id — "" is not a valid work-unit id
+  route: use lowercase letters, digits, and single hyphens (no leading, trailing, or doubled `-`)
+[exit 1]
+  OK    [empty] milestone list-tasks · refuses: no success ack, no panic (exit 1)
+  OK    [empty] milestone list-tasks · the refusal carries a code AND a route
+
+$ jigc milestone add-task  some intent
+blocking · work-unit.malformed-id — "" is not a valid work-unit id
+  route: use lowercase letters, digits, and single hyphens (no leading, trailing, or doubled `-`)
+[exit 1]
+  OK    [empty] milestone add-task · refuses: no success ack, no panic (exit 1)
+  OK    [empty] milestone add-task · the refusal carries a code AND a route
+
+$ jigc milestone add-from-spec  spec:nothing
+blocking · work-unit.malformed-id — "" is not a valid work-unit id
+  route: use lowercase letters, digits, and single hyphens (no leading, trailing, or doubled `-`)
+[exit 1]
+  OK    [empty] milestone add-from-spec · refuses: no success ack, no panic (exit 1)
+  OK    [empty] milestone add-from-spec · the refusal carries a code AND a route
+
+$ jigc milestone discard 
+blocking · work-unit.malformed-id — "" is not a valid work-unit id
+  route: use lowercase letters, digits, and single hyphens (no leading, trailing, or doubled `-`)
+[exit 1]
+  OK    [empty] milestone discard · refuses: no success ack, no panic (exit 1)
+  OK    [empty] milestone discard · the refusal carries a code AND a route
+
+$ jigc task discard 
+blocking · work-unit.malformed-id — "" is not a valid work-unit id
+  route: use lowercase letters, digits, and single hyphens (no leading, trailing, or doubled `-`)
+[exit 1]
+  OK    [empty] task discard · refuses: no success ack, no panic (exit 1)
+  OK    [empty] task discard · the refusal carries a code AND a route
+
+=== AFTER the column · did the live task survive?
+
+$ jigc task list
+jigc task list — 1 active task(s)
+
+  keep-one-task-live  [record-decision]  keep one task live
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+[exit 0]
+
+$ ls -la .jigc/tasks
+total 12
+drwxr-xr-x 3 node node 4096 Sep 10 05:31 .
+drwxr-xr-x 6 node node 4096 Sep 10 05:31 ..
+drwxr-xr-x 3 node node 4096 Sep 10 05:31 keep-one-task-live
+[exit 0]
+  OK    [empty] the live task `keep-one-task-live` is still listed
+  OK    [empty] …its working area is still on disk
+  OK    [empty] …and its staged doc is still readable
+  OBSERVE  if the three bars above FAIL in the [empty] column: the last door of the column,
+           `jigc task discard ''`, took the LIVE task's working area with it — `.jigc/tasks/`
+           joined to an empty id is the tasks directory itself — and acked at exit 0.
+           That is loss of staged prose no commit holds, on a non-destructive-looking path.
+
+=== THE TABLE · what M50 receives (release binary jigc 1.0.0-rc.14)
+  door                      id=""                             id=no-such-task
+  task validate             exit 1 code route                 exit 1 NOCODE route
+  task diff                 exit 1 code route                 exit 1 NOCODE route
+  task finalize --dry-run   exit 1 code route                 exit 1 NOCODE route
+  task bind                 exit 1 code route                 exit 1 NOCODE route
+  start --task              exit 1 code route                 exit 1 NOCODE route
+  workflow --task           exit 1 code route                 exit 1 NOCODE route
+  doc show --task           exit 1 code route                 exit 1 NOCODE route
+  doc list --task           exit 1 code route                 exit 1 NOCODE route
+  doc create --task         exit 1 code route                 exit 1 NOCODE route
+  doc add-item --task       exit 1 code route                 exit 1 NOCODE route
+  doc remove-item --task    exit 1 code route                 exit 1 NOCODE route
+  doc retitle-item --task   exit 1 code route                 exit 1 NOCODE route
+  doc rename --task         exit 1 code route                 exit 1 NOCODE route
+  doc set-field --task      exit 1 code route                 exit 1 NOCODE route
+  doc set-slot --task       exit 1 code route                 exit 1 NOCODE route
+  doc author --task         exit 1 code route                 exit 1 NOCODE route
+  milestone execute         exit 1 code route                 exit 1 NOCODE route
+  milestone provision       exit 1 code route                 exit 1 NOCODE route
+  milestone join            exit 1 code route                 exit 1 code route
+  milestone finalize        exit 1 code route                 exit 1 NOCODE route
+  milestone list-tasks      exit 1 code route                 exit 1 NOCODE route
+  milestone add-task        exit 1 code route                 exit 1 code route
+  milestone add-from-spec   exit 1 code route                 exit 1 code route
+  milestone discard         exit 1 code route                 exit 1 NOCODE route
+  task discard              exit 1 code route                 exit 1 NOCODE route
+
+  cells failing the pass condition: 22 of 50
+    [nonexistent] task validate: exit 1 NOCODE route — "no task `no-such-task` — list live tasks with `jigc task list`"
+    [nonexistent] task diff: exit 1 NOCODE route — "no task `no-such-task` — list live tasks with `jigc task list`"
+    [nonexistent] task finalize --dry-run: exit 1 NOCODE route — "no task `no-such-task` — list live tasks with `jigc task list`"
+    [nonexistent] task bind: exit 1 NOCODE route — "no task `no-such-task` — list live tasks with `jigc task list`"
+    [nonexistent] start --task: exit 1 NOCODE route — "no task `no-such-task` — list live tasks with `jigc task list`"
+    [nonexistent] workflow --task: exit 1 NOCODE route — "no task `no-such-task` — list a milestone's sub-tasks with `jigc milestone list-tasks <milestone-id>`"
+    [nonexistent] doc show --task: exit 1 NOCODE route — "no task `no-such-task` — list live tasks with `jigc task list`"
+    [nonexistent] doc list --task: exit 1 NOCODE route — "no task `no-such-task` — list live tasks with `jigc task list`"
+    [nonexistent] doc create --task: exit 1 NOCODE route — "no task `no-such-task` — list live tasks with `jigc task list`"
+    [nonexistent] doc add-item --task: exit 1 NOCODE route — "no task `no-such-task` — list live tasks with `jigc task list`"
+    [nonexistent] doc remove-item --task: exit 1 NOCODE route — "no task `no-such-task` — list live tasks with `jigc task list`"
+    [nonexistent] doc retitle-item --task: exit 1 NOCODE route — "no task `no-such-task` — list live tasks with `jigc task list`"
+    [nonexistent] doc rename --task: exit 1 NOCODE route — "no task `no-such-task` — list live tasks with `jigc task list`"
+    [nonexistent] doc set-field --task: exit 1 NOCODE route — "no task `no-such-task` — list live tasks with `jigc task list`"
+    [nonexistent] doc set-slot --task: exit 1 NOCODE route — "no task `no-such-task` — list live tasks with `jigc task list`"
+    [nonexistent] doc author --task: exit 1 NOCODE route — "no task `no-such-task` — list live tasks with `jigc task list`"
+    [nonexistent] milestone execute: exit 1 NOCODE route — "milestone `no-such-task` does not exist"
+    [nonexistent] milestone provision: exit 1 NOCODE route — "milestone `no-such-task` does not exist"
+    [nonexistent] milestone finalize: exit 1 NOCODE route — "milestone `no-such-task` does not exist"
+    [nonexistent] milestone list-tasks: exit 1 NOCODE route — "milestone `no-such-task` does not exist"
+    [nonexistent] milestone discard: exit 1 NOCODE route — "milestone `no-such-task` does not exist"
+    [nonexistent] task discard: exit 1 NOCODE route — "no task `no-such-task` — list live tasks with `jigc task list`"
+
+=== SUMMARY
+  25 id-taking doors derived from the binary's help × 2 columns; the table above is the
+  deliverable. Expected RED on rc.13 (PT-1): the bars that FAIL are the measurement.
+ARM 17 FAIL
+(the arm exited 1 — that is data, not necessarily failure)
+-------------------------------------------------------------
+evidence in /Users/maurice/out/RC14-walk/17-empty-id-axis (corpus + .session-transcript/ + PROVENANCE.txt)
+  invocation records : 65
+  doc show --task    : 4
+  doc show (any)     : 4
+  §3.3 adjacent      : 8   (task diff · task validate · doc list --task)
+  ^ indicative only — score with: completions/trial-driver/run.py observe "/Users/maurice/out/RC14-walk/17-empty-id-axis"

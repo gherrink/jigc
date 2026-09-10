@@ -1,0 +1,9 @@
+image        jigc-gate:rc14
+image-id     sha256:e71fe0e8b227d51b10cf9f583bdd4ecc3e693d717cd29f15b33d9bdc2ac3402f
+jigc-version jigc 1.0.0-rc.14
+jigc-sha     21ffc0d47c9be41ae93f7d9f69dad24110a783a3
+model        claude-sonnet-5
+permissions  bypassPermissions
+corpus-src   /Users/maurice/ideas/wickfield
+session-start 2026-09-10T12:53:09Z
+exit-code    0

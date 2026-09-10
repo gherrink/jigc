@@ -1,0 +1,1 @@
+Someone on the team started a piece of work in this repo and left before finishing it — there is a half-done task sitting in the project. Pick it up and land it. The project's docs are managed with `jigc`, so the thinking goes in through it. Finish with a clean task finalize.

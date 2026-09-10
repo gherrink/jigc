@@ -18,7 +18,22 @@
 #
 #   PAIR_PROBES=m48   the 1.0.0-gate set: rc.10 -> rc.11
 #   PAIR_PROBES=m46   the 1.0.0 set:      rc.11 -> rc.12
-#   PAIR_PROBES=m49   the pre-v1 set:     rc.12 -> rc.13   (default)
+#   PAIR_PROBES=m49   the pre-v1 set:     rc.12 -> rc.13
+#   PAIR_PROBES=m50   the duress-remeasure set: rc.13 -> rc.14   (default)
+#
+# The m50 set (2026-09-09): M50 shipped no new verb, so every probe is behavioural, and
+# each was DRIVEN on both images before it was written down rather than derived from the
+# behaviour-change ledger. Two of the four corrected the prediction:
+#   * the orientation probe reads BOTH halves in one token — `state` (the lie M50 killed:
+#     a repo holding a live task answered `clean`) and the ENVELOPE `schema_version`
+#     (2 -> 3). It is deliberately not `doc show`'s top-level `schema-version`, which is
+#     the DOCTYPE's version and a different key — M49's own probe reads that one, and
+#     conflating the two makes both vacuous.
+#   * the malformed-slug probe keys on the CODE, not the exit. Driven, rc.13 already
+#     exits non-zero on `adr:../../outside/leak` (`store.not-found`) and on the staged
+#     path (`store.not-staged`), because the committed read resolves through git's index
+#     rather than through a path — so an exit-code probe here discriminates NOTHING.
+#     What moved is which refusal you get, and that is what a driver keys on.
 #
 # The m49 set (2026-09-04): M49 shipped one new verb flag (`doc add-item --slug`) and
 # many behaviour changes; the three probes below are picked from the changes an adopter
@@ -36,16 +51,17 @@
 # is refused outright.
 set -uo pipefail
 
-OLD="${1:-jigc-gate:rc12}"
-NEW="${2:-jigc-gate:rc13}"
-PAIR_PROBES="${PAIR_PROBES:-m49}"
+OLD="${1:-jigc-gate:rc13}"
+NEW="${2:-jigc-gate:rc14}"
+PAIR_PROBES="${PAIR_PROBES:-m50}"
 
 # Trial-specific, and therefore overridable — the harness outlives any one trial.
 case "$PAIR_PROBES" in
   m48) DEF_SHA=8979f163d628c72aa2b05821b0059606e2f8267a; DEF_VER="jigc 1.0.0-rc.10" ;;
   m46) DEF_SHA=9a37f0152744f0cba5f9140483e1ca1b1c453c46; DEF_VER="jigc 1.0.0-rc.11" ;;
   m49) DEF_SHA=314f59ecc1c32c0ccf16685b83f2797fd2e13fc2; DEF_VER="jigc 1.0.0-rc.12" ;;
-  *)   echo "refusing: unknown PAIR_PROBES='$PAIR_PROBES' (want m48, m46 or m49)" >&2; exit 2 ;;
+  m50) DEF_SHA=979bacaf31cbf513ca8afcb0bade447a88c06ba1; DEF_VER="jigc 1.0.0-rc.13" ;;
+  *)   echo "refusing: unknown PAIR_PROBES='$PAIR_PROBES' (want m48, m46, m49 or m50)" >&2; exit 2 ;;
 esac
 EXPECT_OLD_SHA="${EXPECT_OLD_SHA:-$DEF_SHA}"
 EXPECT_OLD_VERSION="${EXPECT_OLD_VERSION:-$DEF_VER}"
@@ -175,6 +191,32 @@ case "$PAIR_PROBES" in
       "$TASKREPO"'
        jigc describe --commands --format json > /tmp/dc.json 2>&1
        node -e "const o=require(\"/tmp/dc.json\");process.stdout.write((o.commands||[]).some(c=>\"pack\" in c)?\"PRESENT\":\"absent\")" ; echo'
+    ;;
+  m50)
+    echo "M50 behaviour — the differences a driver meets first (each driven on both images):"
+    # Increment 1: a degenerate work-unit id was a false green at exit 0 on the RELEASE
+    # binary — `task validate ""` answered *the task validates clean*. It now blocks.
+    probe "task validate \"\"" exit0 nonzero \
+      "$TASKREPO"'
+       jigc task validate "" >/dev/null 2>&1 && echo exit0 || echo nonzero'
+    # Increment 5: the orientation lie AND the result-contract bump, in one token.
+    # `state` was `clean` over a repo holding a live task; the envelope version was 2.
+    probe "start state/envelope-ver" clean/2 active-task/3 \
+      "$TASKREPO"'
+       jigc start --format json > /tmp/st.json 2>&1
+       node -e "const o=require(\"/tmp/st.json\");process.stdout.write((o.state||\"?\")+\"/\"+(o.schema_version??\"?\"))" ; echo'
+    # Increment 8: the schema projection gains a `ref`'s `to:` target, and says so in its
+    # own separately-pinned contract version.
+    probe "doc schema contract-ver" 5 6 \
+      "$TASKREPO"'
+       jigc doc schema adr --format json > /tmp/sc.json 2>&1
+       node -e "const o=require(\"/tmp/sc.json\");process.stdout.write(String(o[\"contract-version\"]??\"?\"))" ; echo'
+    # Increment 2: a caller-typed address whose `<slug>` head is not a slug. Keyed on the
+    # CODE, never the exit — see the header: rc.13 refuses too, just for the wrong reason.
+    probe "malformed slug head" store.not-found store.malformed-slug \
+      "$TASKREPO"'
+       jigc doc show "adr:../../outside/leak" > /tmp/sl.txt 2>&1
+       grep -o "store\.[a-z-]*" /tmp/sl.txt | head -1'
     ;;
 esac
 
