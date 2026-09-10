@@ -224,8 +224,21 @@ fn milestone_span<'a>(body: &'a str, marker: &str) -> &'a str {
 /// build close. It is discharged as a named obligation rather than performed here, and it
 /// carries **no numeral**: the roadmap's M50 section names no target version and the 1.0.0
 /// call is the human's, so asserting a version string would be this fence choosing it.
+///
+/// **Inverted 2026-09-09, late — and the lateness is the finding.** The audit landed at
+/// `95c79be6`, which rewrote CLAUDE.md's M50 paragraph to `built + audited` with a
+/// `VERDICT` citation and touched fifteen files — **not** this one. The fence went red on
+/// the spot, exactly as its module doc says it must, and stayed red through two further
+/// commits while [the RC-rc14 handover](../../../completions/artifacts/RC-rc14/handover.md)
+/// recorded *"Gate at HEAD: PASS · 3341 passed / 0 failed … re-run after the version bump
+/// and the golden regen"* at that same sha. So the fence caught the record overstating
+/// itself, and then the record overstated the fence. The inversion is performed here, at
+/// the trial that verified the handover; what it now asserts is the post-audit direction
+/// the module doc always specified — the completed claim required, the stale bound
+/// forbidden, and **the cited verdict artifact checked against the filesystem** rather
+/// than accepted as a string, because an unchecked citation is how this got here.
 #[test]
-fn claude_md_names_m50_and_claims_only_the_build() {
+fn claude_md_names_m50_and_claims_exactly_what_the_audit_reached() {
     let body = read_doc("CLAUDE.md");
     // The project-state paragraph is a single line; the sections that follow it (build /
     // lint / test, quickstart, code architecture) are not milestone claims, and M50 is the
@@ -248,26 +261,43 @@ fn claude_md_names_m50_and_claims_only_the_build() {
         );
     }
 
-    // The bound is stated, not merely implied by an absence: a reader must be able to see
-    // that the audit is owed, and a paragraph that simply omits the word cannot say so.
+    // INVERTED 2026-09-09, which is this fence doing its job rather than failing at it.
+    // The audit ran, so the pre-audit bound is now itself the law-1 lie: a paragraph
+    // still saying *built, not audited* would understate a verdict that exists.
     assert!(
-        span.contains("built, not audited"),
-        "M50 is built and not yet audited, and the claim must say so in those words:\n{span}",
+        span.contains("built + audited"),
+        "M50's audit has run, and the claim must say so in those words:\n{span}",
     );
     for forbidden in [
-        // No audit has run, so every one of these claims a verdict nobody reached.
-        "audited clean",
-        "audit is CLEAN",
-        "audit ran clean",
-        // The verdict artifact does not exist yet; a link to one would be a law-1 lie.
-        "VERDICT",
+        // The stale bound, now the overstatement's mirror: it claims LESS than happened.
+        "built, not audited",
+        // The 1.0.0 call is the human's and was deliberately not taken at this wave
+        // (`completions/artifacts/M50/VERDICT.md` -> What is next). A paragraph claiming
+        // it would be the overstatement available *today*, exactly as a premature audit
+        // claim was the one available before.
+        "1.0.0 is called",
+        "1.0.0 shipped",
     ] {
         assert!(
             !span.contains(forbidden),
-            "the M50 claim may not claim an audit that has not run, but contains \
-             `{forbidden}`:\n{span}",
+            "the M50 claim may not say `{forbidden}`:\n{span}",
         );
     }
+
+    // The citation is checked against the filesystem, not merely required as a string.
+    // A link to a verdict that does not exist is the same law-1 lie the pre-audit
+    // direction forbade, wearing the opposite costume — and the failure this whole
+    // inversion is owed to was a claim nobody drove.
+    assert!(
+        span.contains("VERDICT"),
+        "the audited M50 claim must cite its persisted verdict:\n{span}",
+    );
+    let verdict = repo_root().join("completions/artifacts/M50/VERDICT.md");
+    assert!(
+        verdict.is_file(),
+        "the M50 claim cites a verdict artifact that does not exist at {}",
+        verdict.display(),
+    );
 }
 
 // ---------------------------------------------------------------------------
