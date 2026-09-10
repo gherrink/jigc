@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { IngestQueue, parseSample } from "../src/ingest.ts";
+import { createService } from "../src/index.ts";
 import { ValidationError } from "../src/validate.ts";
 
 describe("parseSample", () => {
@@ -57,5 +58,25 @@ describe("IngestQueue", () => {
 
   it("refuses a non-positive capacity", () => {
     assert.throws(() => new IngestQueue(0), RangeError);
+  });
+});
+
+describe("the ingest path", () => {
+  it("buffers a posted sample and lands it on the next tick", () => {
+    const service = createService(
+      { windowMs: 1_000, retentionMs: 60_000, maxSamples: 4 },
+      { now: () => 1_000 },
+    );
+
+    const reply = service.router.dispatch("POST", "/samples", "cpu.load 0.5 1000");
+    assert.equal(reply.status, 202);
+    assert.deepEqual(
+      service.store.series(),
+      [],
+      "a posted sample is buffered, not stored — the store is only current after a tick",
+    );
+
+    service.tick();
+    assert.deepEqual(service.store.series(), ["cpu.load"]);
   });
 });

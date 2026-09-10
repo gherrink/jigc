@@ -86,6 +86,12 @@ run_case branch         "expected main"               'git branch -m main other'
 run_case stray-md       "tracked .md files are"       'echo "# x" > NOTES.md && git add -A && git -c user.name=t -c user.email=t@x commit -q -m n'
 run_case suite          "node --test: expected"       'f="$(ls test/*.js test/*.ts 2>/dev/null | head -1)"; printf "\nthrow new Error(\"boom\");\n" >> "$f"'
 run_case anchor         "missing symbols"             'perl -pi -e "s/class MemoryStore/class RenamedStore/" src/store.ts'
+# PT-D's bar, proven able to fail. The mutation is the DEFECT ITSELF as it stood for
+# three trials — the router writing straight to the store — so this case is a
+# regression test on the corpus's own history, not a synthetic break. Note it leaves
+# every one of the 24 unit tests passing except the one wiring test, which is exactly
+# why presence-greps and a green suite were both insufficient.
+run_case reach          "a plant symbol is unreachable" 'perl -pi -e "s/this\.queue\.push\(/this.store.put(/" src/router.ts'
 run_case prose          "forwarding-shaped claim survives" 'printf "\nA cache in front of whatever long-term store you already have.\n" >> README.md'
 
 echo

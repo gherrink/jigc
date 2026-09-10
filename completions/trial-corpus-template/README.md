@@ -23,18 +23,19 @@ Run it once per corpus. Each instantiation is an independent git repo with a 7-c
 clean tree, so parallel blind sessions cannot contaminate each other.
 
 **Always run `check-corpus.sh` before a corpus is frozen and pointed at a session.** It asserts the
-starting state a trial protocol assumes and has never verified — **11 bars**, in script order:
+starting state a trial protocol assumes and has never verified — **12 bars**, in script order:
 7 commits · clean working tree · no `.jigc`/`.claude`/`CLAUDE.md` residue **including a non-sample
 file in git's hooks dir** (a `pre-commit` survives `git reset --hard` and `git clean -fdx` and is
 invisible to `git status`) · no remote URL · `core.hooksPath` unset · a 7-entry reflog · on `main` ·
-`README.md` the only tracked `.md` · the suite green 23/23 · the `doc-code` anchor symbols present ·
-and, under `--clean-prose`, no surviving forwarding-shaped claim. RC-pre-1.0 stated a shorter version
+`README.md` the only tracked `.md` · the suite green 24/24 · the `doc-code` anchor symbols present ·
+**those symbols reached from the live write path, driven rather than grepped** · and, under
+`--clean-prose`, no surviving forwarding-shaped claim. RC-pre-1.0 stated a shorter version
 of that checklist as prose and nothing ever checked it — a corpus carrying a rehearsal's leftover
 `.jigc/` is not a cold start, and nothing a worker does in one measures what the protocol says it
 measures.
 
-Its bars are demonstrated to fail, not assumed to: `self-test.sh` runs **12 mutations** against the
-11 bars — including a dirty tree, an already-adopted corpus, a leftover hook, a second tracked `.md`,
+Its bars are demonstrated to fail, not assumed to: `self-test.sh` runs **13 mutations** against the
+12 bars — including a dirty tree, an already-adopted corpus, a leftover hook, a second tracked `.md`,
 and a wart corpus asked for clean prose — and requires that the *named* bar is the one reporting
 FAIL, never merely that the gate went red.
 
@@ -50,11 +51,31 @@ Each property was chosen for a probe, so changing it changes what a trial can me
 |---|---|
 | **TypeScript** source (`.ts`) | `symbol-exists` resolves through the vendored TS grammar (`grammar_for`, `crates/cli/probes/doc-code/src/resolve.rs`), so `cites-code` / `implemented-by` anchors bind to **real** symbols |
 | 9 modules with exported classes **and** functions | gives both symbol kinds real targets, and gives an arch-doc genuine components |
-| 3 test files, 23 passing tests | `maps-to-test` — **0 writes in its entire history** — finally has somewhere to point |
+| 3 test files, 24 passing tests | `maps-to-test` — **0 writes in its entire history** — finally has somewhere to point |
 | `node --test` with **zero dependencies** | the suite actually runs on any machine with Node ≥ 22.6, with no `npm install`, no network, no `node_modules` to pollute the ingest funnel |
 | **zero managed docs**, README only | the "from nothing" premise is exact rather than approximated; the lone tracked `.md` is a realistic README, and whether the ingest funnel handles it sensibly is itself observable |
 | 7 commits in dependency order | a plausible history for `git log` orientation, and each commit is a coherent working tree |
 | an injectable `Clock`, a bounded queue, a per-series cap | real design decisions worth recording as ADRs — the corpus has something to *decide about*, which a toy CRUD app does not |
+
+## A second wart, and this one is closed (PT-D)
+
+`IngestQueue.push()` was called from **no live path** and `tick()` from nothing at all — the router
+wrote straight to the store, so the queue's overflow policy, its dropped counter and
+`MemoryStore.prune` were all unreachable outside the unit tests. It survived **three trials**. In
+RC-m50 four workers found it and two filed it as a deferral, which is worker budget spent on the
+fixture rather than on the product; worse, **plant E's entire subject is that overflow policy**, and
+a plant whose subject is dead code has *"the worker fixes the code instead"* as its falsifier.
+
+Closed 2026-09-09, before the trial that follows M50: `Router` takes the queue and buffers into it,
+`main()` ticks, and the gate gained a **12th bar that drives the path rather than grepping for it** —
+POST, assert the store is still empty, tick, assert the sample landed. It fails both ways, when the
+queue is bypassed and when the drain is severed, and `self-test.sh`'s 13th mutation is the historical
+defect itself (`this.queue.push(` → `this.store.put(`), so the bar is proven able to fail on the
+exact shape it exists for. The suite moves 23 → 24 for the one test that covers the wiring.
+
+**`src/ingest.ts` is deliberately untouched** — its doc-comment (*"Overflow drops the \*oldest\*
+sample, not the newest"*) is the committed naming authority plant E's own bar greps verbatim, and the
+plant is md5-pinned.
 
 ## A known wart, deliberately left in
 

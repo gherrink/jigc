@@ -6,7 +6,7 @@
 
 import type { Clock } from "./clock.ts";
 import type { Config } from "./config.ts";
-import { parseSample } from "./ingest.ts";
+import { IngestQueue, parseSample } from "./ingest.ts";
 import { rollup } from "./rollup.ts";
 import { MemoryStore } from "./store.ts";
 import { formatSummary, summarize } from "./summary.ts";
@@ -19,11 +19,18 @@ export interface Reply {
 
 export class Router {
   private readonly store: MemoryStore;
+  private readonly queue: IngestQueue;
   private readonly config: Config;
   private readonly clock: Clock;
 
-  constructor(store: MemoryStore, config: Config, clock: Clock) {
+  constructor(
+    store: MemoryStore,
+    queue: IngestQueue,
+    config: Config,
+    clock: Clock,
+  ) {
     this.store = store;
+    this.queue = queue;
     this.config = config;
     this.clock = clock;
   }
@@ -46,7 +53,10 @@ export class Router {
     let accepted = 0;
     try {
       for (const line of lines) {
-        this.store.put(parseSample(line, this.clock.now()));
+        // Buffered, not stored: the queue is what absorbs a burst, and `tick()`
+        // is what moves a sample into the store. A write that went straight to
+        // the store would make the queue's overflow policy unreachable.
+        this.queue.push(parseSample(line, this.clock.now()));
         accepted += 1;
       }
     } catch (error) {
@@ -72,8 +82,9 @@ export class Router {
 
 export function createRouter(
   store: MemoryStore,
+  queue: IngestQueue,
   config: Config,
   clock: Clock,
 ): Router {
-  return new Router(store, config, clock);
+  return new Router(store, queue, config, clock);
 }

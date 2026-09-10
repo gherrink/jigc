@@ -24,7 +24,7 @@ WANT_CLEAN_PROSE=0
 [ "${2:-}" = "--clean-prose" ] && WANT_CLEAN_PROSE=1
 
 EXPECT_COMMITS=7
-EXPECT_TESTS=23
+EXPECT_TESTS=24
 
 PASS=0; FAIL=0
 ok()   { echo "  PASS  $1"; PASS=$((PASS+1)); }
@@ -134,6 +134,47 @@ for sym in "class IngestQueue" "class MemoryStore" "prune(" "export function rol
   grep -rqF -- "$sym" src/ || MISSING="$MISSING '$sym'"
 done
 [ -z "$MISSING" ] && ok "doc-code anchor symbols present" || bad "missing symbols:$MISSING"
+
+# --- and they are REACHED, not merely present (PT-D) ---------------------------------
+# Presence is not the property a plant needs. Through three trials `IngestQueue.push()`
+# was called from no live path and `tick()` from nothing at all: `MemoryStore.prune` was
+# dead for the same reason. Four workers in the RC-m50 trial found it and two filed it as
+# a deferral — worker budget spent on the fixture instead of on the product, and worse, a
+# plant whose subject is dead code has "the worker fixes the code instead" as its
+# falsifier. Plant E's whole subject is this queue's overflow policy.
+#
+# Driven, not grepped: a grep proves a call site is written down, and what a plant needs
+# is that the behaviour happens. The probe POSTs through the router, asserts the store is
+# still EMPTY (the sample is buffered, not stored), ticks, and asserts it landed — so it
+# fails both ways, when the queue is bypassed and when the drain is severed.
+#
+# The probe file lives OUTSIDE the corpus, in its own mktemp dir: writing it inside would
+# dirty the tree that bar 2 above just certified clean.
+if command -v node >/dev/null 2>&1; then
+  PROBE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/corpus-reach.XXXXXX")"
+  ABS="$(pwd -P)"
+  cat > "$PROBE_DIR/reach.ts" <<PROBE
+import { createService } from "$ABS/src/index.ts";
+const svc = createService(
+  { windowMs: 1000, retentionMs: 60000, maxSamples: 8 } as any,
+  { now: () => 1000 } as any,
+);
+svc.router.dispatch("POST", "/samples", "cpu.load 0.5 1000");
+console.log("before:" + JSON.stringify(svc.store.series()));
+svc.tick();
+console.log("after:" + JSON.stringify(svc.store.series()));
+PROBE
+  REACH="$(node "$PROBE_DIR/reach.ts" 2>&1)"
+  if printf '%s\n' "$REACH" | grep -qx 'before:\[\]' \
+     && printf '%s\n' "$REACH" | grep -qx 'after:\["cpu.load"\]'; then
+    ok "the queue is on the live write path (POST buffers; tick lands it)"
+  else
+    bad "a plant symbol is unreachable — POST/tick did not go through the queue:
+$REACH"
+  fi
+else
+  skip "node not on PATH — reachability not driven (the corpus still ships the wiring)"
+fi
 
 # --- prose/code consistency, only when it was asked for ------------------------------
 if [ "$WANT_CLEAN_PROSE" = 1 ]; then

@@ -27,7 +27,7 @@ export function createService(
 ): Service {
   const store = new MemoryStore(config.maxSamples);
   const queue = new IngestQueue(config.maxSamples);
-  const router = createRouter(store, config, clock);
+  const router = createRouter(store, queue, config, clock);
 
   return {
     config,
@@ -43,9 +43,14 @@ export function createService(
 
 export function main(): void {
   const service = createService();
+  // Drain whatever the queue holds and expire anything past retention before
+  // reporting: the numbers below are about the store, and the store is only
+  // current once the queue has been moved into it.
+  service.tick();
   const series = service.store.series();
   process.stdout.write(
-    `rollup service ready — window ${service.config.windowMs}ms, ${series.length} series\n`,
+    `rollup service ready — window ${service.config.windowMs}ms, ` +
+      `${series.length} series, ${service.queue.droppedCount()} dropped\n`,
   );
 }
 
