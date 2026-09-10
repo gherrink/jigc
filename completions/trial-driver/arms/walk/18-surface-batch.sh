@@ -107,7 +107,11 @@ T="$(newtask)"
 door create.unknown-doctype jigc doc create nosuch --title X --task "$T"
 bar "…and it names the authorable set, routing at jigc describe" "printf '%s' \"\$OUT\" | grep -q 'known doctypes' && printf '%s' \"\$OUT\" | grep -q 'jigc describe'"
 door create.unknown-doctype sh -c "printf 'title: X\nsections: []\n' | jigc doc author nosuch --from-file - --task $T"
-jigc task discard "$T" >/dev/null 2>&1
+# `--force` is the consent this door refuses without since M50 Increment 3: minting a
+# task stages its commit doc, so an ordinary discard is refused from the moment the task
+# exists (`task-discard.staged-prose`). This is CLEANUP, not a subject under test — the
+# refusal itself is driven, both sides, in pre-trial-findings.md PT-8.
+jigc task discard "$T" --force >/dev/null 2>&1
 door store.unknown-type jigc doc show nosuch:x
 door store.unknown-type jigc doc schema nosuch
 door store.unknown-type jigc doc list nosuch
@@ -135,23 +139,32 @@ jigc start --workflow record-decision "probe the section miss" >/dev/null 2>&1
 T="$(newtask)"
 A="$(jigc doc create adr --title 'Probe decision' --task "$T" 2>&1 | addr adr)"
 echo "staged: $A"
-sec() { # <label> <argv…> — asserts code + route on one captured run
-  local label="$1"; shift
+# CORRECTED 2026-09-09 (RC-rc14): the bar asked every verb for `write.unknown-section`,
+# and that is the wrong expectation for `set-field`, not a defect in it. On `set-field`
+# a single-hop `#x` IS a field address, so the miss is `write.unknown-field` — and the
+# message says so, naming the grammar rather than asserting an absence: *no field
+# "nosection" declared on any section of `adr` (the single-hop `#<field>` form searches
+# every declared section)*. Code, `at:` locus, and a route that runs verbatim at exit 0.
+# That closes RC-m50's W-15 ("the section-only set-field miss is bare"), which is a
+# RESULT this arm should record rather than a bar it should fail. The code each verb owes
+# is therefore per-verb, and the route/non-zero bars stay common.
+sec() { # <label> <expected-code> <argv…> — asserts code + route on one captured run
+  local label="$1" code="$2"; shift 2
   cap "$@"
-  bar "$label · write.unknown-section"            "printf '%s' \"\$OUT\" | grep -q 'write.unknown-section'"
+  bar "$label · $code"                            "printf '%s' \"\$OUT\" | grep -q '$code'"
   bar "$label · routes at jigc doc schema adr"    "printf '%s' \"\$OUT\" | grep -q 'jigc doc schema adr'"
   bar "$label · non-zero"                          "test $RC -ne 0"
 }
-sec "set-slot"          sh -c "echo x | jigc doc set-slot '$A#nosection' --from-file - --task $T"
-sec "set-field --value" jigc doc set-field "$A#nosection" --value x --task "$T"
-sec "set-field --unset" jigc doc set-field "$A#nosection" --unset --task "$T"
-sec "author payload"    sh -c "printf 'title: Probe decision\nsections:\n  - id: nosection\n    set:\n      context: |\n        <<x>>\n' | jigc doc author adr --from-file - --task $T"
+sec "set-slot"          write.unknown-section sh -c "echo x | jigc doc set-slot '$A#nosection' --from-file - --task $T"
+sec "set-field --value" write.unknown-field   jigc doc set-field "$A#nosection" --value x --task "$T"
+sec "set-field --unset" write.unknown-field   jigc doc set-field "$A#nosection" --unset --task "$T"
+sec "author payload"    write.unknown-section sh -c "printf 'title: Probe decision\nsections:\n  - id: nosection\n    set:\n      context: |\n        <<x>>\n' | jigc doc author adr --from-file - --task $T"
 # The contrast cell, recorded not required: the same miss addressed one level deeper.
 cap jigc doc set-field "$A#nosection/status" --value x --task "$T"
 echo "  OBSERVE  if the two set-field cells above FAIL while this deeper form carries the code,"
 echo "           the miss is the SECTION-level address shape at set-field only (M49 Increment 11's"
 echo "           'four producers of the bare form' claim, re-measured on the binary)."
-jigc task discard "$T" >/dev/null 2>&1
+jigc task discard "$T" --force >/dev/null 2>&1
 
 say "(e) · a non-UTF-8 argv byte with the invocation log ON — must not panic"
 NOUT="$(jigc doc show $'\xff' 2>&1)"; jigc doc show $'\xff' >/dev/null 2>&1; NRC=$?
@@ -194,7 +207,7 @@ say "(d) · jigc rename — nine of the eleven refusals, reached from the store 
 # names — on an EXISTING doc, because `store.not-found` is checked before the guard.
 refusal "in-flight (task $TX open)" "rename.in-flight" jigc rename "$A1" --to "Drop the newest sample"
 bar "…the in-flight route names BOTH exits for that task" "printf '%s' \"\$OUT\" | grep -q \"jigc task finalize $TX\" && printf '%s' \"\$OUT\" | grep -q \"jigc task discard $TX\""
-jigc task discard "$TX" >/dev/null 2>&1
+jigc task discard "$TX" --force >/dev/null 2>&1
 TL="$(jigc task list 2>&1)"
 bar "the store is settled again: no live task, clean tree" "! printf '%s' \"\$TL\" | grep -q '^  [a-z0-9]' && test -z \"\$(git status --porcelain)\""
 refusal "unknown type"       "store.unknown-type"     jigc rename nosuch:x --to "Y"
@@ -234,7 +247,7 @@ bar "…names the granting workflow"                  "printf '%s' \"\$H\" | gre
 bar "…carries a route naming the create + add-item pair AND the no-action exit" \
     "printf '%s' \"\$H\" | grep -q 'jigc doc create changelog' && printf '%s' \"\$H\" | grep -q 'no action is needed'"
 bar "…at exit 0 — advisory, not a block"            "test $HRC -eq 0"
-jigc task discard "$TS" >/dev/null 2>&1
+jigc task discard "$TS" --force >/dev/null 2>&1
 
 say "SUMMARY"
 echo "  8 of DOCTYPE_DOORS' 15 · 9 of RefusalKind::ALL's 11 (+ the no-op) · the non-git pair ·"

@@ -69,7 +69,11 @@ bar "…and states the precondition rather than handing over an argv that would 
     "printf '%s' \"\$R10\" | grep -q 'once this task is finalized or discarded'"
 bar "the same-slug retitle is named as the thing that IS supported" \
     "printf '%s' \"\$R10\" | grep -q 'same-slug retitle'"
-jigc task discard "$TR" >/dev/null 2>&1
+# `--force` is the consent this door refuses without since M50 Increment 3: minting a
+# task stages its commit doc, so an ordinary discard is refused from the moment the task
+# exists (`task-discard.staged-prose`). This is CLEANUP, not a subject under test — the
+# refusal itself is driven, both sides, in pre-trial-findings.md PT-8.
+jigc task discard "$TR" --force >/dev/null 2>&1
 
 say "T11 · doc rename against a SINGLETON doctype — nothing to rename at all"
 jigc start --workflow form-vision "the project vision" >/dev/null 2>&1
@@ -83,7 +87,7 @@ bar "it says the H1 is the SCHEMA's, not the author's"  "printf '%s' \"\$R11\" |
 bar "its route says there is nothing to rename — a pack change, not a write" \
     "printf '%s' \"\$R11\" | grep -q 'nothing to rename'"
 bar "…and points at the verb that DOES edit it"         "printf '%s' \"\$R11\" | grep -q 'jigc doc set-slot'"
-jigc task discard "$TV" >/dev/null 2>&1
+jigc task discard "$TV" --force >/dev/null 2>&1
 
 say "OCCUPANCY · two committed docs, one identity — arm 01's declared bound, discharged"
 A2="$(land_adr 'Cap distinct series at a ceiling')"

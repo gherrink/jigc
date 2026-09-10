@@ -97,7 +97,11 @@ say "C · the promoted severity — the door parity M46 shipped this for"
 jigc config set "$KEY" blocking >/dev/null 2>&1
 jigc task validate "$T" >/dev/null 2>&1; PROMOTED_CLEAN=$?
 # put the task back into the un-recorded state the gate objects to
-jigc task discard "$T" >/dev/null 2>&1
+# `--force` is the consent this door refuses without since M50 Increment 3: minting a
+# task stages its commit doc, so an ordinary discard is refused from the moment the task
+# exists (`task-discard.staged-prose`). This is CLEANUP, not a subject under test — the
+# refusal itself is driven, both sides, in pre-trial-findings.md PT-8.
+jigc task discard "$T" --force >/dev/null 2>&1
 jigc start --workflow single-task "add a second rate limiter" >/dev/null 2>&1
 T2="$(jigc task list | awk '/^  [a-z]/{print $1; exit}')"
 jigc doc set-field "commit:$T2#header/type" --value feat --task "$T2" >/dev/null 2>&1

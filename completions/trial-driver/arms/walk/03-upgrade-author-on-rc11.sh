@@ -114,7 +114,11 @@ TV="$(jigc task validate "$TS" 2>&1)"
 echo "rc11-task-validate-clean=$(printf '%s' "$TV" | grep -c 'no findings')" > /work/.upgrade-baseline
 bar "§0.2 baseline: on rc.11 a conformant task validates CLEAN" \
     "printf '%s' \"\$TV\" | grep -q 'no findings'"
-jigc task discard "$TS" >/dev/null 2>&1
+# `--force` is the consent this door refuses without since M50 Increment 3: minting a
+# task stages its commit doc, so an ordinary discard is refused from the moment the task
+# exists (`task-discard.staged-prose`). This is CLEANUP, not a subject under test — the
+# refusal itself is driven, both sides, in pre-trial-findings.md PT-8.
+jigc task discard "$TS" --force >/dev/null 2>&1
 
 printf '# Changelog\n\n## [0.1.0] - 2026-01-04\n### Added\n- first release\n' > CHANGELOG.md
 git add CHANGELOG.md
