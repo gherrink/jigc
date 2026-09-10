@@ -19,6 +19,7 @@ reader is wrong and nothing it says about a fresh session should be believed.
 from __future__ import annotations
 
 import argparse
+import json
 import pathlib
 import sys
 
@@ -40,14 +41,32 @@ RECORD = {
 }
 
 
-def _find(out: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path | None]:
-    """Locate a session's two channels inside a `run-session.sh` out-dir."""
+def _find(out: pathlib.Path) -> tuple[pathlib.Path, list[pathlib.Path]]:
+    """Locate a session's channels inside a `run-session.sh` out-dir.
+
+    Returns every transcript the session produced, **main first**: the main session,
+    then one file per subagent. `observe` reads the whole list for the FILESYSTEM
+    channel and the first element alone for the seed marker.
+
+    This used to return one path — the largest `.jsonl`, on the reasoning that
+    *"the largest is the session itself; sidecars are small"*. That reasoning was
+    the defect: a subagent transcript IS that small sidecar, so a worker that
+    delegated its orientation moved its reads into a file the reader never opened
+    and the cell scored clean for the wrong reason. B2's two subagent transcripts
+    (58 KB and 105 KB against a 586 KB main) are exactly the shape that hid.
+    """
     log = out / ".jigc" / "logs" / "invocations.jsonl"
-    transcripts = sorted((out / ".session-transcript").rglob("*.jsonl")) \
-        if (out / ".session-transcript").is_dir() else []
-    # The largest is the session itself; sidecars are small.
-    transcript = max(transcripts, key=lambda p: p.stat().st_size) if transcripts else None
-    return log, transcript
+    root = out / ".session-transcript"
+    if not root.is_dir():
+        return log, []
+    every = sorted(root.rglob("*.jsonl"))
+    # A subagent file lives under a `subagents/` directory and is named by its
+    # agentId, never by the session id — which is also why `session._find_transcript`
+    # cannot find one by globbing the session id.
+    delegated = [p for p in every if "subagents" in p.parts]
+    own = [p for p in every if p not in delegated]
+    main = max(own, key=lambda p: p.stat().st_size) if own else None
+    return log, ([main] if main else []) + delegated
 
 
 def _row(o: Observation) -> str:
@@ -60,6 +79,48 @@ def _row(o: Observation) -> str:
 def _header() -> None:
     print(f"{'session':16} {'recs':>5} {'wrote':>5} {'VERB':>5} {'adj':>4} {'fs':>3}  outcome")
     print("-" * 84)
+
+
+def _provenance_verdict(out: pathlib.Path,
+                        record: "pathlib.Path | None") -> tuple[bool, str]:
+    """Whose evidence is this, and is it this round's? (I-2)
+
+    `run-session.sh` refuses to write into a pre-existing out-dir, which is right —
+    but the reader then scored whatever was already there **without a word**, and
+    `~/out/<name>` is shared across trials, so a rerun under a reused name silently
+    graded the previous trial's sessions. Refusing here rather than warning, on the
+    same reasoning as `interact.screen()`: a warning at the bottom of a table is a
+    thing a reader compensates for by hand, every time, until once they do not.
+
+    The comparison key is `jigc-sha`. The image *tag* is mutable — the whole reason
+    `gate.py` keys on `image_id` — and `image-id` is the one strong key the evidence
+    did not carry until this trial started recording it, so a dir written before
+    then is checked on the sha and said to be.
+    """
+    got = session_mod.provenance(out)
+    if not got:
+        return False, ("no PROVENANCE.txt — this directory was not produced by "
+                       "run-session.sh, so nothing says which binary or which "
+                       "trial it belongs to")
+    stamped = got.get("jigc-sha", "")
+    if record is None:
+        return True, (f"ungated: {got.get('image', '?')} / {stamped[:12] or '?'} "
+                      f"(pass --gate <record.json> to check it)")
+    if not record.is_file():
+        return False, f"no gate record at {record}"
+    want = json.loads(record.read_text()).get("identity", {})
+    want_sha = want.get("jigc_sha", "")
+    if stamped and want_sha and stamped != want_sha:
+        return False, (f"this evidence is from jigc {stamped[:12]}, the round's "
+                       f"record covers {want_sha[:12]} — a different binary, so "
+                       f"scoring it here would attribute one trial's sessions to "
+                       f"another")
+    if got.get("image-id") and want.get("image_id") \
+            and got["image-id"] != want["image_id"]:
+        return False, (f"same sha, different image ({got['image-id'][:19]}… vs "
+                       f"{want['image_id'][:19]}…) — a rebuilt tag is a different "
+                       f"image and the record no longer covers it")
+    return True, f"{got.get('image', '?')} / jigc {stamped[:12] or '?'}"
 
 
 def do_observe(args: argparse.Namespace) -> int:
@@ -94,14 +155,21 @@ def do_observe(args: argparse.Namespace) -> int:
     rc = 0
     for raw in args.out:
         out = pathlib.Path(raw).expanduser().resolve()
-        log, transcript = _find(out)
+        record = pathlib.Path(args.gate).expanduser().resolve() if args.gate else None
+        covered, whose = _provenance_verdict(out, record)
+        if not covered:
+            print(f"{out.name:16} REFUSED — {whose}", file=sys.stderr)
+            rc = 1
+            continue
+        print(f"  provenance: {whose}")
+        log, transcripts = _find(out)
         stream = out / "stream.jsonl"
         halted, why = halted_awaiting_human(stream)
         asked, question = ended_asking(stream)
         # The CLI's own exit code, not run-session.sh's — it exits 0 on a failed arm
         # by design, so without this a dead session scores as a product result.
         arm_rc = session_mod.arm_exit_code(out)
-        o = observe(out.name, log, transcript, halted_for_human=halted,
+        o = observe(out.name, log, transcripts, halted_for_human=halted,
                     rc_failed=bool(arm_rc),
                     session_start=session_mod.session_start(out))
         print(_row(o))
@@ -136,7 +204,8 @@ def do_observe(args: argparse.Namespace) -> int:
             rc = 1
         for r in o.filesystem_reads:
             kind = "DOC " if r.is_document else "wkbn"
-            print(f"  fs? {kind} [{r.tool}] {r.detail[:104]}")
+            who = f" ({r.agent})" if r.agent else ""
+            print(f"  fs? {kind} [{r.tool}]{who} {r.detail[:104]}")
         if o.filesystem_reads:
             docs = sum(1 for r in o.filesystem_reads if r.is_document)
             print(f"  fs split: {docs} managed-document read(s), "
@@ -144,6 +213,17 @@ def do_observe(args: argparse.Namespace) -> int:
                   f"— only the first is the adapter bypass the invariant is about")
             print("  (heuristic: check each against the corpus — an unregistered "
                   "foreign doc is not a managed one)")
+        # The write channel. Reads got a fence after a debrief found what the reader
+        # missed; writes got the same lesson one trial later (RC-rc14 F-9/F-10).
+        for w in o.commit_writes:
+            who = f" ({w.agent})" if w.agent else ""
+            print(f"  git! {w.verb:<11}[{w.tool}]{who} {w.detail[:96]}")
+        for line in o.history_surgery:
+            print(f"  HISTORY REWRITTEN — {line}")
+        if o.commit_writes or o.history_surgery:
+            print("  ^ a commit produced or rewritten outside jigc. The CLI owns the commit "
+                  "boundary; git is a blessed HUMAN channel, so this is evidence for review, "
+                  "not a verdict — check whether the commit carried a managed doc.")
         if o.adjacent_counter_gap:
             print(f"  note: run-session.sh's own counter would report "
                   f"{o.shipped_adjacent} adjacent, not {o.adjacent} (§3.3)")
@@ -245,9 +325,9 @@ def do_fork(args: argparse.Namespace) -> int:
     stream = out / "stream.jsonl"
     new = session_mod.forked_id(stream)
     log = out / ".jigc" / "logs" / "invocations.jsonl"
-    transcript = session_mod._find_transcript(out, new) if new else None
+    transcripts = session_mod._find_transcript(out, new) if new else []
     halted, why = halted_awaiting_human(stream)
-    o = observe(out.name, log, transcript, seed_expected=True,
+    o = observe(out.name, log, transcripts, seed_expected=True,
                 seed_marker=fixture.seed_marker, halted_for_human=halted,
                 rc_failed=arm_rc != 0)
     _header()
@@ -300,6 +380,9 @@ def main(argv: list[str] | None = None) -> int:
     p_obs.add_argument("out", nargs="*", help="a run-session.sh out-dir")
     p_obs.add_argument("--archive", action="store_true",
                        help="score the committed 1.0.0-gate evidence instead")
+    p_obs.add_argument("--gate",
+                       help="the round's isolation record; evidence from another "
+                            "binary is refused rather than silently scored")
     p_obs.set_defaults(fn=do_observe)
 
     p_gate = sub.add_parser("gate", help="refuse a round the isolation record misses")

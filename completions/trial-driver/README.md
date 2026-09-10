@@ -20,7 +20,7 @@ and which cost a whole session before.
 
 | file | what it is |
 |---|---|
-| `run.py` | the one entry point: `observe`, `test` |
+| `run.py` | the one entry point: `observe` · `gate` · `record-gate` · `carry` · `seed` · `fork` · `plant` · `test` |
 | `driver/channels.py` | protocol §3.3's four channels, as predicates. The *registration* |
 | `driver/observe.py` | reads a finished session's channels off its own evidence |
 | `driver/cascade.py` | ordered outcomes, first match wins, apparatus failures **voided** |
@@ -30,7 +30,7 @@ and which cost a whole session before.
 | `driver/interact.py` | answer from the key or halt; the operator log, written as it happens |
 | `driver/gate.py` | refuse a round the isolation record does not cover |
 | `walk.py` · `arms/walk/` | the operator walk as scripted arms, unrun ones visibly blank |
-| `test_*.py` | six suites — `python3 run.py test` |
+| `test_*.py` | seven suites — `python3 run.py test` |
 
 Driving happens through `../trial-harness/run-session.sh --headless`, not through a
 second container path. That is the flag's own stated rule for `--exec`: *"a control
@@ -89,6 +89,63 @@ corrected `3` rather than the running note's `5`.
 
 The pattern holds: none was found by reading. Two of the three sat on the cell the headline rests
 on, and the second was invisible to the reader until a worker said what it had done.
+
+### Found preparing the RC-rc14 trial (2026-09-09) — three, and the first is the worst
+
+- **A third of `test_observe.py` had never run.** An
+  `if __name__ == "__main__": unittest.main()` block sat **mid-file**, left behind when the
+  RC-m50 fixes were appended after it. `unittest.main()` collects the module namespace *as it
+  stands when it is called*, so every class defined below that line did not exist yet. The
+  suite reported `Ran 46 tests … OK` while thirteen tests — including
+  `ABashReadOfAStagedDocumentIsADocumentRead` and `AFindPipedIntoCatIsARead`, **both fixes for
+  the duress cell's own misfilings** — were fenced by tests that had never executed once.
+  Removing the stray entry point: `Ran 59 tests … OK`. A green suite that silently drops a
+  third of itself is this directory's own warning coming true, and it was found the way every
+  other defect here was: by running it.
+- **The reader read one transcript.** `_find` took the largest `.jsonl` on the reasoning that
+  *"the largest is the session itself; sidecars are small"* — and a subagent transcript is
+  exactly that sidecar, so a worker that delegated its orientation moved the FILESYSTEM
+  channel into a file nobody opened. Fixed in `run._find` **and** `session._find_transcript`
+  (the `fork` path, which globs the *session* id while subagent files are named by `agentId`),
+  with the read now labelled by the agent that made it rather than merely counted.
+- **A reused out-dir scored the previous trial's evidence in silence.** `run-session.sh`
+  refuses a pre-existing out-dir correctly; `observe` then graded whatever was there, reading
+  `PROVENANCE.txt` for `session-start` and `exit-code` and never for `jigc-sha`. Now
+  `observe --gate <record.json>` refuses evidence from another binary, refuses a rebuilt tag
+  at the same sha, refuses a directory `run-session.sh` never wrote — and on a match **says
+  whose evidence it read**, because silence is what let a stale directory score.
+
+**One wart recorded rather than fixed:** the archived evidence directories are *flat* — no
+`.session-transcript/` tree — so `run.py observe <archived dir>` finds neither channel through
+`_find`, which `artifacts/*/evidence/README.md` implies it can. `--archive` uses its own paths
+and is unaffected. Stated here so the claim does not stand unqualified.
+
+### Found on the RC-rc14 trial (2026-09-10) — the reader had no write channel
+
+**A managed doc's commit was rewritten outside jigc and the reader scored the session clean.**
+B1 ran `git reset --soft HEAD~1` and a manual `git commit` over the commit `jigc task finalize`
+had made — a commit containing a managed doc. `observe` reported `fs 0` and
+`read back through the fence's verb`, which was true and beside the point: **there was a
+FILESYSTEM channel for reads and nothing for writes.** It surfaced because the worker said so in
+its debrief, and was sized only because a human read the record and asked.
+
+That is the **second time this directory has learned the same lesson on the same axis** — the
+class above exists because a duress *read* (`find | xargs cat`) was likewise found from a debrief
+rather than by the reader. Reads were then fenced and writes were not, which is precisely the
+incomplete-fix shape the trials keep finding in the product.
+
+Fixed: `commit_writes()` reads the transcript for git verbs that produce or rewrite a **commit**
+(deliberately not `add`/`restore`/`rm`/`mv` — staging is a blessed human channel and a channel
+that fired on it would cry wolf on every arm), and `history_surgery()` asks the **corpus's
+reflog**, which is exact and does not depend on the worker's account of itself. Both walk the
+subagent set. Fenced by `test_observe.py::ACommitMadeOutsideJigcIsSeen` against **B1's archived
+transcript**, not a mock.
+
+**The bound, stated:** git is a blessed human channel
+([CLAUDE.md](../../CLAUDE.md) — *humans review and edit through git regardless of the CLI*), so
+this channel is **evidence for review, never a verdict**. A `git commit` on a corpus holding no
+managed doc is unremarkable. What the row asks the reader to check is whether the commit carried
+one.
 
 ## Bounds — read these before believing a number
 

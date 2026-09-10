@@ -32,6 +32,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
+from driver import session
 from driver.observe import observe
 
 HERE = pathlib.Path(__file__).resolve().parent
@@ -56,12 +57,7 @@ def run_arm(arm: pathlib.Path, corpus: pathlib.Path, out: pathlib.Path,
     """One arm, through the same chain a blind session uses."""
     argv = [str(RUN_SESSION), "--exec", str(arm), str(corpus), str(out), tag]
     got = subprocess.run(argv, cwd=str(REPO), capture_output=True, text=True)
-    rc = 0
-    provenance = out / "PROVENANCE.txt"
-    if provenance.is_file():
-        for line in provenance.read_text().splitlines():
-            if line.startswith("exit-code"):
-                rc = int(line.split()[1])
+    rc = session.arm_exit_code(out) or 0
     # Persist the arm's own output beside its evidence. Before this, the bar lines
     # lived only in the pass that ran the arm: a record assembled from several
     # `--only` passes (the M50 trial's first walk) kept every exit code and lost
@@ -87,13 +83,9 @@ def render(results: list[dict], every: list[pathlib.Path], out: pathlib.Path) ->
         one is hidden.
         """
         d = out / arm.stem
-        provenance = d / "PROVENANCE.txt"
-        if not provenance.is_file():
+        if not (d / "PROVENANCE.txt").is_file():
             return None
-        rc = 0
-        for line in provenance.read_text().splitlines():
-            if line.startswith("exit-code"):
-                rc = int(line.split()[1])
+        rc = session.arm_exit_code(d) or 0
         stdout = (d / ARM_OUTPUT).read_text() if (d / ARM_OUTPUT).is_file() else ""
         stderr = (d / ARM_STDERR).read_text() if (d / ARM_STDERR).is_file() else ""
         return {"arm": arm.name, "rc": rc, "out": d, "stdout": stdout,

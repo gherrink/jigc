@@ -69,6 +69,17 @@ _SHELL_READERS = frozenset(
     ("cat", "sed", "head", "tail", "less", "more", "grep", "rg", "awk", "nl", "bat")
 )
 
+#: Git subcommands that CHANGE history or the index. A managed doc's committed
+#: state is the CLI's to produce (`CLAUDE.md` → *the CLI owns placement, cross-ref
+#: wiring, versioning, and commit*), so one of these landing on a corpus that holds
+#: managed docs is the write-side counterpart of a `cat` on a staged one.
+#:
+#: `add`/`restore`/`rm`/`mv` are index moves and are NOT here: a worker legitimately
+#: stages source files around its task, and `CLAUDE.md` blesses git as a human
+#: channel outright. What this set is about is a worker producing or rewriting a
+#: COMMIT, which is the boundary jigc claims.
+_GIT_HISTORY_VERBS = frozenset(("commit", "reset", "revert", "rebase", "cherry-pick", "am"))
+
 #: Statement separators, and — separately — the pipe. The two are split in
 #: sequence rather than together because position in a *pipeline* decides whether
 #: a reader touches a file at all.
@@ -134,6 +145,12 @@ class Read:
     tool: str
     detail: str
     path: str
+    #: Which transcript this read came from — "" for the worker's own session, and
+    #: the subagent's file stem for a delegated one. The channel counts both (a read
+    #: is a read whoever ran it), but *who* read is the difference between a worker
+    #: bypassing the adapter and a worker delegating orientation, and a number that
+    #: cannot tell them apart is a number a human has to go and re-derive.
+    agent: str = ""
 
     @property
     def is_document(self) -> bool:
@@ -162,6 +179,31 @@ class Read:
 
 
 @dataclasses.dataclass(frozen=True)
+class Write:
+    """One act that produced or rewrote a COMMIT outside jigc, kept as evidence.
+
+    **Why this channel exists.** The RC-rc14 trial's only adapter bypass was B1
+    rewriting the commit jigc's `finalize` had made — `git reset --soft HEAD~1`
+    plus a manual `git commit` — over a commit that contained a managed doc. The
+    reader did not see it. It surfaced because the *worker volunteered it in its
+    debrief*, and was only sized because a human read the record and asked.
+
+    That is the second time this apparatus has learned the same lesson on the same
+    axis: `AFindPipedIntoCatIsARead` exists because a duress READ was found from a
+    debrief rather than by the reader. Reads were then fenced and writes were not,
+    which is the incomplete-fix shape this repo keeps finding in its own work.
+
+    Like `Read`, this is a **heuristic** over the transcript and is returned as
+    evidence for review, never as a verdict: `git commit` on a corpus with no
+    managed doc is unremarkable, and the human call stays the human's.
+    """
+    tool: str
+    detail: str
+    verb: str
+    agent: str = ""
+
+
+@dataclasses.dataclass(frozen=True)
 class Observation:
     """A session's channels, flat and complete at construction.
 
@@ -184,6 +226,10 @@ class Observation:
     verb_lines: tuple[str, ...]
     adjacent_lines: tuple[str, ...]
     filesystem_reads: tuple[Read, ...]
+    #: Commit-producing acts outside jigc, from the transcript (heuristic).
+    commit_writes: tuple[Write, ...] = ()
+    #: Reflog lines proving history was rewritten, from the corpus (exact).
+    history_surgery: tuple[str, ...] = ()
     filesystem_is_heuristic: bool = True
 
     #: Records in the log OLDER than this session's start — written by the
@@ -411,7 +457,7 @@ def _managed_match(text: str) -> Optional[tuple[str, str]]:
     return None
 
 
-def filesystem_reads(path: pathlib.Path) -> list[Read]:
+def filesystem_reads(path: pathlib.Path, agent: str = "") -> list[Read]:
     """Direct reads of a managed doc or the staged workbench, as §3.3 defines them.
 
     A heuristic, and returned as evidence rather than as a number so the call can
@@ -441,7 +487,7 @@ def filesystem_reads(path: pathlib.Path) -> list[Read]:
             target = str(inp.get("file_path") or "")
             hint = _looks_managed(target)
             if hint:
-                hits.append(Read(tool=tool, detail=target, path=target))
+                hits.append(Read(tool=tool, detail=target, path=target, agent=agent))
         elif tool == "Bash":
             cmd = str(inp.get("command") or "")
             for program, segment in _segments(cmd):
@@ -450,12 +496,79 @@ def filesystem_reads(path: pathlib.Path) -> list[Read]:
                 got = _managed_match(segment)
                 if got:
                     hint, candidate = got
-                    hits.append(Read(tool="Bash", detail=segment[:200], path=candidate))
+                    hits.append(Read(tool="Bash", detail=segment[:200],
+                                     path=candidate, agent=agent))
     return hits
 
 
+def _transcript_set(transcript) -> tuple[list[pathlib.Path], Optional[pathlib.Path]]:
+    """Normalize `observe`'s transcript argument to (every readable file, the main one).
+
+    Accepts a single path (every caller before 2026-09-09), `None`, or a sequence
+    whose **first element is the main session** and whose rest are subagent
+    transcripts. The order is the contract: `seed_marker` is searched in the main
+    file only, because a subagent never inherits the seed and searching all of them
+    would make `seed_inherited` report a fork as warm that began cold.
+    """
+    if transcript is None:
+        paths: list[pathlib.Path] = []
+    elif isinstance(transcript, (str, pathlib.Path)):
+        paths = [pathlib.Path(transcript)]
+    else:
+        paths = [pathlib.Path(p) for p in transcript]
+    live = [p for p in paths if p.is_file()]
+    return live, (live[0] if live else None)
+
+
+def commit_writes(path: pathlib.Path, agent: str = "") -> list[Write]:
+    """Acts in one transcript that produced or rewrote a commit outside jigc.
+
+    Keys on the Bash tool only. A `jigc` invocation that commits (`task finalize`,
+    `milestone finalize`, `rename`, `migrate-corpus`) is the CLI doing its job and is
+    excluded by the same `program == "jigc"` guard the read side uses.
+    """
+    hits: list[Write] = []
+    for tool, inp in _tool_uses(path):
+        if tool != "Bash":
+            continue
+        cmd = str(inp.get("command") or "")
+        for program, segment in _segments(cmd):
+            if program != "git":
+                continue
+            # the git subcommand is the first non-flag token after `git`
+            rest = segment.split()[1:]
+            verb = next((w for w in rest if not w.startswith("-")), "")
+            if verb in _GIT_HISTORY_VERBS:
+                hits.append(Write(tool="Bash", detail=segment[:200], verb=verb, agent=agent))
+    return hits
+
+
+def history_surgery(corpus: pathlib.Path) -> list[str]:
+    """Reflog entries proving history was rewritten. **Exact, not heuristic.**
+
+    The transcript half above can miss a rewrite (a format change, a command shape
+    nobody anticipated). The corpus cannot: `git reflog` records a `reset:` or an
+    amend whatever produced it, so this is the check that does not depend on
+    reading the worker's own account of itself.
+
+    Returns the offending reflog lines, newest first; empty means the branch only
+    ever moved forward by commits.
+    """
+    import subprocess
+    git = corpus / ".git"
+    if not git.exists():
+        return []
+    got = subprocess.run(
+        ["git", "-C", str(corpus), "reflog", "--format=%h %gd %gs"],
+        capture_output=True, text=True)
+    if got.returncode != 0:
+        return []
+    return [ln for ln in got.stdout.splitlines()
+            if ln.split(" ", 2)[-1].startswith(("reset:", "rebase", "revert:", "commit (amend)"))]
+
+
 def observe(session: str, log: pathlib.Path,
-            transcript: Optional[pathlib.Path] = None,
+            transcript=None,
             *, rc_failed: bool = False, seed_expected: bool = False,
             seed_marker: Optional[str] = None,
             halted_for_human: bool = False,
@@ -512,16 +625,36 @@ def observe(session: str, log: pathlib.Path,
     adj_ok = sum(1 for r in adj_recs if r.exit_code == 0)
     shipped = sum(1 for r in records if channels.is_shipped_adjacent(list(r.argv)))
 
-    transcript_missing = transcript is None or not transcript.is_file()
-    reads = tuple(filesystem_reads(transcript)) if not transcript_missing else ()
+    # Every transcript the session produced, not just the biggest one. `_find`'s old
+    # comment — "the largest is the session itself; sidecars are small" — WAS the bug:
+    # a subagent transcript is exactly that sidecar, so a worker that delegated its
+    # orientation moved the FILESYSTEM channel into a file the reader never opened and
+    # the cell scored clean for the wrong reason.
+    transcripts, main_transcript = _transcript_set(transcript)
+    transcript_missing = not transcripts
+    reads = tuple(
+        r
+        for p in transcripts
+        for r in filesystem_reads(p, agent="" if p == main_transcript else p.stem)
+    )
+    # The write side, symmetric to the read side and walked over the same set —
+    # a delegated `git commit` is a commit.
+    writes = tuple(
+        w
+        for p in transcripts
+        for w in commit_writes(p, agent="" if p == main_transcript else p.stem)
+    )
+    # `log` is `<out>/.jigc/logs/invocations.jsonl`; the corpus is its grandparent's
+    # parent. Exact, and independent of anything the worker said about itself.
+    surgery = tuple(history_surgery(log.parent.parent.parent))
 
     authoring = sum(1 for r in records
                     if _is_authoring(list(r.argv)) and r.exit_code == 0)
 
     inherited = True
     if seed_expected and seed_marker:
-        inherited = (not transcript_missing
-                     and seed_marker in transcript.read_text(errors="replace"))
+        inherited = (main_transcript is not None
+                     and seed_marker in main_transcript.read_text(errors="replace"))
 
     return Observation(
         verb_succeeded=verb_ok,
@@ -537,6 +670,8 @@ def observe(session: str, log: pathlib.Path,
         adjacent=len(adj_lines),
         shipped_adjacent=shipped,
         filesystem=len(reads),
+        commit_writes=writes,
+        history_surgery=surgery,
         log_missing=log_missing,
         log_unreadable=log_unreadable,
         transcript_missing=transcript_missing,

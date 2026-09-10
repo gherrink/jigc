@@ -180,13 +180,20 @@ def carry_forward(out: pathlib.Path, dest: pathlib.Path) -> pathlib.Path:
     return dest
 
 
-def _find_transcript(out: pathlib.Path, session_id: str) -> Optional[pathlib.Path]:
-    """The transcript `run-session.sh` copied out, for exactly this session id."""
+def _find_transcript(out: pathlib.Path, session_id: str) -> list[pathlib.Path]:
+    """The transcripts `run-session.sh` copied out for this session — main first.
+
+    The main file is found by session id, which is exact. Its **subagents** cannot
+    be: they are named by `agentId`, so a glob on the session id misses every one
+    of them — the same hole `run._find` had, one door over, and it has to be closed
+    here too or `fork` keeps scoring the FILESYSTEM channel off one file.
+    """
     root = out / ".session-transcript"
     if not root.is_dir():
-        return None
-    hits = list(root.rglob(f"{session_id}.jsonl"))
-    return hits[0] if hits else None
+        return []
+    hits = [p for p in root.rglob(f"{session_id}.jsonl") if "subagents" not in p.parts]
+    delegated = [p for p in root.rglob("*.jsonl") if "subagents" in p.parts]
+    return (hits[:1]) + delegated
 
 
 def _drive(corpus: pathlib.Path, out: pathlib.Path, prompt: str, *,
@@ -211,12 +218,8 @@ def _drive(corpus: pathlib.Path, out: pathlib.Path, prompt: str, *,
     # because for a scripted arm that "is data, not necessarily failure". For a seed
     # turn it is neither: a failed turn leaves the next `--resume` with nothing. So the
     # arm's OWN exit code is read back out of the provenance it writes.
-    provenance = out / "PROVENANCE.txt"
-    if provenance.is_file():
-        for line in provenance.read_text().splitlines():
-            if line.startswith("exit-code"):
-                return int(line.split()[1])
-    return rc
+    own = arm_exit_code(out)
+    return own if own is not None else rc
 
 
 def _gate_or_say_ungated(gate_record: "Optional[pathlib.Path]", tag: str) -> None:
@@ -400,6 +403,26 @@ def forked_id(stream: pathlib.Path) -> Optional[str]:
     return None
 
 
+def provenance(out: pathlib.Path) -> dict:
+    """Everything `run-session.sh` wrote about a run, as a dict.
+
+    One reader, because there were four inline single-key scanners and each one
+    silently returned "absent" for a directory `run-session.sh` never produced —
+    which is how `observe` came to score a **previous trial's** evidence at a
+    reused out-dir without a word. An empty dict means no `PROVENANCE.txt`, and
+    that is a fact a caller must be able to act on rather than a missing key.
+    """
+    file = out / "PROVENANCE.txt"
+    if not file.is_file():
+        return {}
+    got: dict = {}
+    for line in file.read_text().splitlines():
+        parts = line.split(None, 1)
+        if parts:
+            got[parts[0]] = parts[1].strip() if len(parts) > 1 else ""
+    return got
+
+
 def session_start(out: pathlib.Path) -> "Optional[str]":
     """When the session began, from the provenance the run wrote.
 
@@ -409,14 +432,7 @@ def session_start(out: pathlib.Path) -> "Optional[str]":
     for a run predating the stamp, which means "do not filter": scoring a
     session's own records is worth more than excluding a rig's.
     """
-    provenance = out / "PROVENANCE.txt"
-    if not provenance.is_file():
-        return None
-    for line in provenance.read_text().splitlines():
-        if line.startswith("session-start"):
-            value = line.split(None, 1)[1].strip() if len(line.split(None, 1)) > 1 else ""
-            return value or None
-    return None
+    return provenance(out).get("session-start") or None
 
 
 def arm_exit_code(out: pathlib.Path) -> "Optional[int]":
@@ -427,10 +443,5 @@ def arm_exit_code(out: pathlib.Path) -> "Optional[int]":
     know whether the CLI itself died has to read this, and a caller that does not
     will score a dead session as a product result.
     """
-    provenance = out / "PROVENANCE.txt"
-    if not provenance.is_file():
-        return None
-    for line in provenance.read_text().splitlines():
-        if line.startswith("exit-code"):
-            return int(line.split()[1])
-    return None
+    raw = provenance(out).get("exit-code")
+    return int(raw) if raw and raw.lstrip("-").isdigit() else None

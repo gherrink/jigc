@@ -251,6 +251,7 @@ fi
 # Provenance travels with the evidence, so the record never has to reconstruct it.
 cat > "$OUT/PROVENANCE.txt" <<EOF
 image        $TAG
+image-id     $(docker image inspect "$TAG" --format '{{.Id}}' 2>/dev/null || echo unknown)
 jigc-version $STAMP
 jigc-sha     $SHA
 model        $MODEL

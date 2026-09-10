@@ -646,8 +646,16 @@ class ChannelPredicates(unittest.TestCase):
         self.assertEqual(verdict.outcome, "apparatus — no invocation log")
 
 
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
+# NOTE (2026-09-09): an `if __name__ == "__main__": unittest.main()` block sat HERE,
+# mid-file, left behind when the RC-m50 fixes were appended after it. `unittest.main()`
+# collects the module namespace **as it stands when it is called**, so every class below
+# this point was never defined when the runner started and never ran: the suite reported
+# `Ran 46 tests ... OK` while the two fixes for the duress cell's own misfilings
+# (`ABashReadOfAStagedDocumentIsADocumentRead`, `AFindPipedIntoCatIsARead`) were fenced by
+# tests that had never executed once. A green suite that silently drops a third of itself
+# is the apparatus failure this directory's README warns about in general terms — found,
+# as every other one here was, by running it rather than by reading it. The entry point
+# lives at the end of the file, and only there.
 
 
 class ABashReadOfAStagedDocumentIsADocumentRead(unittest.TestCase):
@@ -695,3 +703,260 @@ class AFindPipedIntoCatIsARead(unittest.TestCase):
         from driver import observe
         segs = list(observe._segments('find /work -type d | grep -v "/work/.jigc/worktrees"'))
         self.assertEqual(segs[0][0], "find", "the archive's false positive must stay dead")
+
+
+# ---------------------------------------------------------------------------
+# The two apparatus items owed before this trial's first figure is read.
+# ---------------------------------------------------------------------------
+
+#: The one real `subagents/` tree in the repo — B2 of the RC-m50 trial, whose worker
+#: delegated twice. It is the shape the reader used to drop, so the fixture is the
+#: archive rather than a mock: a mock proves the glob, this proves the layout.
+RC_M50_B2 = (pathlib.Path(__file__).resolve().parents[1]
+             / "artifacts" / "RC-m50" / "evidence" / "B2")
+
+
+class TheReaderWalksSubagentTranscripts(unittest.TestCase):
+    """`_find` returned the LARGEST `.jsonl` on the reasoning that *"the largest is
+    the session itself; sidecars are small"* — and a subagent transcript is exactly
+    that sidecar. A worker that delegates its orientation moves the FILESYSTEM
+    channel into a file the reader never opens, and the duress cell then scores
+    clean for the wrong reason (`decisions-pending.md` -> the trial that follows M50).
+
+    B2's two subagent transcripts read nothing managed, so the archived figure does
+    not move — which is why this was invisible and why it is pinned here rather than
+    left to the next session that delegates."""
+
+    def _outdir(self, tmp: pathlib.Path, *, with_subagents: bool) -> pathlib.Path:
+        out = tmp / "RC14-probe"
+        (out / ".session-transcript" / "projects").mkdir(parents=True)
+        (out / ".jigc" / "logs").mkdir(parents=True)
+        (out / ".jigc" / "logs" / "invocations.jsonl").write_text("")
+        # The main session: deliberately the LARGEST file, so the old rule picks it.
+        (out / ".session-transcript" / "projects" / "main.jsonl").write_text(
+            self._turn("Read", {"file_path": "/work/docs/decisions/a-decision.md"})
+            + "x" * 4096 + "\n")
+        if with_subagents:
+            sub = out / ".session-transcript" / "subagents"
+            sub.mkdir(parents=True)
+            (sub / "agent-a0b447359ae72c2bd.jsonl").write_text(
+                self._turn("Bash", {"command": "cat .jigc/tasks/t1/docs/adr:a-decision.md"}))
+        return out
+
+    @staticmethod
+    def _turn(tool: str, inp: dict) -> str:
+        return json.dumps({
+            "type": "assistant",
+            "message": {"content": [{"type": "tool_use", "name": tool, "input": inp}]},
+        }) + "\n"
+
+    def test_a_delegated_read_is_found_and_attributed(self) -> None:
+        import run
+        with tempfile.TemporaryDirectory() as d:
+            out = self._outdir(pathlib.Path(d), with_subagents=True)
+            _, transcripts = run._find(out)
+            self.assertEqual(len(transcripts), 2, transcripts)
+            self.assertEqual(transcripts[0].name, "main.jsonl",
+                             "the main session must come first — `seed_marker` is "
+                             "searched in it alone")
+            o = observe("probe", out / ".jigc" / "logs" / "invocations.jsonl", transcripts)
+            agents = {r.agent for r in o.filesystem_reads}
+            self.assertIn("agent-a0b447359ae72c2bd", agents,
+                          "the delegated read must be found AND labelled; a count that "
+                          "cannot say who read cannot tell a bypass from a delegation")
+            self.assertIn("", agents, "the worker's own read keeps an empty label")
+            self.assertEqual(len(o.filesystem_reads), 2)
+
+    def test_without_the_fix_the_delegated_read_is_invisible(self) -> None:
+        """The half that proves the fix is load-bearing: the old rule, applied to the
+        same tree, sees one file and one read."""
+        with tempfile.TemporaryDirectory() as d:
+            out = self._outdir(pathlib.Path(d), with_subagents=True)
+            every = sorted((out / ".session-transcript").rglob("*.jsonl"))
+            old_pick = max(every, key=lambda p: p.stat().st_size)
+            self.assertEqual(old_pick.name, "main.jsonl")
+            self.assertEqual(len(filesystem_reads(old_pick)), 1,
+                             "the pre-fix reader saw exactly the main session's read")
+
+    def test_the_archived_b2_tree_is_the_shape_this_fixes(self) -> None:
+        import run
+        if not RC_M50_B2.is_dir():
+            self.skipTest("the RC-m50 B2 evidence is not present")
+        # The archive is flattened (no `.session-transcript/`), so `_find` cannot be
+        # pointed at it — that flattening is itself recorded as a wart. What IS
+        # assertable is that the subagent transcripts parse and are countable.
+        subs = sorted((RC_M50_B2 / "subagents").glob("*.jsonl"))
+        self.assertEqual(len(subs), 2, "B2 delegated twice")
+        for s in subs:
+            filesystem_reads(s, agent=s.stem)  # must not raise on the real shape
+
+    def test_the_seed_marker_is_searched_in_the_main_transcript_only(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            out = self._outdir(pathlib.Path(d), with_subagents=True)
+            sub = out / ".session-transcript" / "subagents" / "agent-a0b447359ae72c2bd.jsonl"
+            sub.write_text(sub.read_text() + "SEED-MARKER-TEXT\n")
+            import run
+            _, transcripts = run._find(out)
+            o = observe("probe", out / ".jigc" / "logs" / "invocations.jsonl", transcripts,
+                        seed_expected=True, seed_marker="SEED-MARKER-TEXT")
+            self.assertFalse(
+                o.seed_inherited,
+                "a marker found only in a subagent must NOT count as inheritance — a "
+                "subagent never inherits the seed, and counting it would report a fork "
+                "that began cold as warm")
+
+
+class TheReaderSaysWhoseEvidenceItIsReading(unittest.TestCase):
+    """I-2. `run-session.sh` refuses a pre-existing out-dir; the reader then scored
+    whatever was already there in silence, and `~/out/<name>` is shared across trials.
+    A stale directory must be refused, not annotated."""
+
+    RECORD = {"identity": {"tag": "jigc-gate:rc14",
+                           "image_id": "sha256:aaaa",
+                           "jigc_sha": "21ffc0d47c9be41ae93f7d9f69dad24110a783a3"}}
+
+    def _out(self, tmp: pathlib.Path, provenance: "str | None") -> pathlib.Path:
+        out = tmp / "RC14-B2"
+        out.mkdir(parents=True)
+        if provenance is not None:
+            (out / "PROVENANCE.txt").write_text(provenance)
+        return out
+
+    def _record(self, tmp: pathlib.Path) -> pathlib.Path:
+        rec = tmp / "gate.json"
+        rec.write_text(json.dumps(self.RECORD))
+        return rec
+
+    def test_evidence_from_another_binary_is_refused(self) -> None:
+        import run
+        with tempfile.TemporaryDirectory() as d:
+            tmp = pathlib.Path(d)
+            out = self._out(tmp, "image        jigc-gate:rc13\n"
+                                 "jigc-sha     979bacaf31cbf513ca8afcb0bade447a88c06ba1\n")
+            ok, why = run._provenance_verdict(out, self._record(tmp))
+            self.assertFalse(ok)
+            self.assertIn("979bacaf31cb", why)
+            self.assertIn("21ffc0d47c9b", why, "the refusal must name BOTH, or a reader "
+                                               "cannot tell which dir to go and find")
+
+    def test_a_directory_run_session_never_wrote_is_refused(self) -> None:
+        import run
+        with tempfile.TemporaryDirectory() as d:
+            tmp = pathlib.Path(d)
+            ok, why = run._provenance_verdict(self._out(tmp, None), self._record(tmp))
+            self.assertFalse(ok)
+            self.assertIn("PROVENANCE.txt", why)
+
+    def test_the_matching_round_is_accepted_and_named(self) -> None:
+        import run
+        with tempfile.TemporaryDirectory() as d:
+            tmp = pathlib.Path(d)
+            out = self._out(tmp, "image        jigc-gate:rc14\n"
+                                 "image-id     sha256:aaaa\n"
+                                 "jigc-sha     21ffc0d47c9be41ae93f7d9f69dad24110a783a3\n")
+            ok, why = run._provenance_verdict(out, self._record(tmp))
+            self.assertTrue(ok, why)
+            self.assertIn("jigc-gate:rc14", why,
+                          "on a match the reader still SAYS whose evidence it read — "
+                          "silence is what let a stale dir score")
+
+    def test_a_rebuilt_tag_at_the_same_sha_is_refused(self) -> None:
+        import run
+        with tempfile.TemporaryDirectory() as d:
+            tmp = pathlib.Path(d)
+            out = self._out(tmp, "image        jigc-gate:rc14\n"
+                                 "image-id     sha256:bbbb\n"
+                                 "jigc-sha     21ffc0d47c9be41ae93f7d9f69dad24110a783a3\n")
+            ok, why = run._provenance_verdict(out, self._record(tmp))
+            self.assertFalse(ok, "a rebuilt tag is a different image")
+            self.assertIn("rebuilt tag", why)
+
+    def test_without_a_record_it_is_ungated_and_says_so(self) -> None:
+        import run
+        with tempfile.TemporaryDirectory() as d:
+            tmp = pathlib.Path(d)
+            out = self._out(tmp, "image        jigc-gate:rc14\njigc-sha     21ffc0d4\n")
+            ok, why = run._provenance_verdict(out, None)
+            self.assertTrue(ok)
+            self.assertIn("ungated", why, "an ungated read must never LOOK gated")
+
+
+#: B1 of the RC-rc14 trial — the session that rewrote jigc's finalize commit. Archived
+#: in-repo precisely so this fence runs against the real thing.
+RC_RC14_B1 = (pathlib.Path(__file__).resolve().parents[1]
+              / "artifacts" / "RC-rc14" / "evidence" / "B1")
+
+
+class ACommitMadeOutsideJigcIsSeen(unittest.TestCase):
+    """RC-rc14 F-9/F-10: B1 ran `git reset --soft HEAD~1` and a manual `git commit`
+    over a commit that contained a managed doc — the trial's only adapter bypass. The
+    reader saw **nothing**. It surfaced because the worker volunteered it in its
+    debrief, and was sized only because a human read the record and asked.
+
+    That is the same lesson `AFindPipedIntoCatIsARead` records, one axis over: reads
+    were fenced after a debrief caught what the reader missed, and writes were left
+    unfenced. Fixing a class at the cell it was reported in, and not over its axis, is
+    the shape this repo keeps finding in its own work — here in its own apparatus."""
+
+    def test_the_real_b1_transcript_yields_both_acts(self) -> None:
+        from driver.observe import commit_writes
+        tr = RC_RC14_B1 / "transcript.jsonl"
+        if not tr.is_file():
+            self.skipTest("the RC-rc14 B1 evidence is not present")
+        verbs = [w.verb for w in commit_writes(tr)]
+        self.assertIn("reset", verbs, "the history rewrite must be seen")
+        self.assertIn("commit", verbs, "the manual commit must be seen")
+
+    def test_a_jigc_commit_is_not_a_bypass(self) -> None:
+        """`jigc task finalize` commits. That is the CLI doing its job, and the same
+        `program == "jigc"` guard the read side uses must exclude it."""
+        from driver.observe import commit_writes
+        with tempfile.TemporaryDirectory() as d:
+            f = pathlib.Path(d) / "t.jsonl"
+            f.write_text(json.dumps({
+                "type": "assistant",
+                "message": {"content": [{"type": "tool_use", "name": "Bash", "input": {
+                    "command": "jigc task finalize my-task"}}]},
+            }) + "\n")
+            self.assertEqual(commit_writes(f), [])
+
+    def test_staging_is_not_a_commit(self) -> None:
+        """`git add`/`restore` are index moves. A worker legitimately stages source
+        files around its task and CLAUDE.md blesses git as a human channel, so a
+        channel that fired on those would cry wolf on every arm."""
+        from driver.observe import commit_writes
+        with tempfile.TemporaryDirectory() as d:
+            f = pathlib.Path(d) / "t.jsonl"
+            f.write_text("".join(json.dumps({
+                "type": "assistant",
+                "message": {"content": [{"type": "tool_use", "name": "Bash",
+                                         "input": {"command": c}}]},
+            }) + "\n" for c in ("git add -A", "git restore --staged src/x.ts",
+                                 "git status", "git log --oneline")))
+            self.assertEqual(commit_writes(f), [])
+
+    def test_the_reflog_half_is_exact_and_needs_no_transcript(self) -> None:
+        """The transcript half can miss a shape nobody anticipated; the corpus cannot.
+        This is the check that does not rest on the worker's account of itself."""
+        import subprocess
+        from driver.observe import history_surgery
+        with tempfile.TemporaryDirectory() as d:
+            repo = pathlib.Path(d)
+            def git(*a):
+                subprocess.run(["git", "-C", str(repo), *a], capture_output=True, check=False)
+            git("init", "-q", "-b", "main")
+            git("config", "user.email", "a@b.c"); git("config", "user.name", "A")
+            (repo / "f.txt").write_text("one\n")
+            git("add", "-A"); git("commit", "-qm", "one")
+            self.assertEqual(history_surgery(repo), [],
+                             "a branch that only moved forward is clean")
+            (repo / "f.txt").write_text("two\n")
+            git("add", "-A"); git("commit", "-qm", "two")
+            git("reset", "--soft", "HEAD~1")
+            got = history_surgery(repo)
+            self.assertTrue(got, "a reset must be seen whatever produced it")
+            self.assertIn("reset:", got[0])
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=1)
