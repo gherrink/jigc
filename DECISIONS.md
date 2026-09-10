@@ -2,6 +2,46 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-09-10 — The trial that follows M50: the duress cell moves 1/3 → 3/3, and nothing blocks
+
+**Why it ran, and what it settles.** M50's VERDICT declared its second claim-half — whether the
+orientation variant moves the duress cell — **unprovable from inside the wave**. It is now
+measured from outside it: **3/3 across two transports**, against the 1/3 that routed F-5 and the
+orientation fork into M50. The reading of that number is the human's, beside the 1.0.0 call.
+
+**Decisions taken during the trial, each recorded where it was made rather than after:**
+
+1. **Breadth: full regression net + a blind milestone arm** (the human's, 2026-09-09) — over a
+   39-file rc.13→rc.14 diff, a headline-only trial would have left most of it reached by nothing
+   but its own unit tests going into the 1.0.0 call.
+2. **The fold-back fence was inverted, not suppressed** — the gate was **red at the sha the
+   handover certifies green**. M50's audit-closing commit `95c79be6` rewrote CLAUDE.md's M50
+   sentence and did not touch `foldback_truth.rs`, whose own doc-comment says the fence must
+   *invert* when the audit lands. Inverted here, with the cited verdict artifact now checked
+   against the filesystem, because an unchecked citation is how it got there.
+3. **A mid-trial answer-key amendment, recorded as one** (the human's, 2026-09-10) — B2 asked the
+   operator to settle a product judgement and **none of the seven entries matched**, which is a
+   halt by the key's own rule. A new `project-judgement` entry was added **reusing
+   `title-authority`'s already-screened reply verbatim**; only the pattern is new, and it was
+   checked not to swallow four neighbours. It changes which questions the key *reaches*, never
+   what it *says*, and it could not touch the headline — measured twenty invocations earlier.
+4. **The apparatus gained a write channel** — the trial's only adapter bypass was invisible to
+   `run.py observe`, which fenced *reads* and not *writes*. Closed with a heuristic transcript
+   half and an **exact corpus-reflog half**, fenced against B1's archived transcript rather than a
+   mock. Recorded because the lesson generalises: **a channel fenced on one direction of an axis
+   is fenced on none of it.**
+
+**Findings: 13, none blocking**, disposed with triggers in
+[decisions-pending.md](implementation/decisions-pending.md) → *The rc.14 trial's findings*.
+Zero data loss, zero corruption, zero regressions. Two arms that looked like regressions were the
+instrument meeting M50's **declared** `task discard` change — driven on both binaries before the
+word was used.
+
+**Carried, in writing:** the conversion ledger is **open**; a fan-out boundary is unmeasured on
+this binary and **F-13 says why**; and the instrument produced seven defects of its own this
+round, which is the strongest single caution against reading 3/3 as settled.
+
+
 ## 2026-09-09 — M50 completion audit: four findings, four fixed, and every one a larger class than reported
 
 **The audit found four; the fixers found the classes.** 1 HIGH, 1 MEDIUM, 2 LOW, **all confirmed live before any fix and all fixed axis-complete**, re-verified **3341 passed / 0 failed**. Nothing deferred. That every finding was larger than its report is now true of **four consecutive waves** (M46, M48, M49, M50) and is recorded as a property of the audit instrument rather than a coincidence: the auditors find the *instance* reliably and the *class* only when someone drives the axis afterwards.
@@ -10,7 +50,7 @@ Running log of what we decided and **why**, dated. Short and punchy — this rot
 
 **The MEDIUM's real axis was 31 sites, and the recommended fix was declined with measurements.** `render::blocked_finding` had two production consumers, so a code named on the surface was named in the invocation log at two doors of ~34. The sweep moved the funnel to where membership is decided — **8 of 10 driven doors** dropped the code before, the two working doors as controls, so the fix reads as the table going uniform, and `config.*`, `pack.resource-missing`, `workflow-refs.*` and all 11 `rename::RefusalKind` refusals now name themselves too. The orchestrator recommended routing the new codes into the pinned envelope; the fixer **refused**, on two grounds now written into `command-output-contract.md`: both guards build `Finding` with `location: None`, so the key would be `(code, null)` — **strictly less informative than the flattened message**, which names the offending address verbatim — and enveloping at the one door owning a block arm would trade a within-door divergence for a cross-door one in the same code. It also **falsified the finding's premise**: `store.malformed-slug` is not the first `store.*` outside the envelope — `rename` flattens `store.not-found`, the very code `doc show` envelopes — so the divergence is the **door's**, predating this wave.
 
-**The two LOWs were law 1 and a third destroying door.** The printed-path rule bound only the four destroying/provisioning doors: the shared `untrackable_reason` composed 3 of its 5 reasons from absolute paths and had four callers, one of which M50's own Increment 2 had taught to work around it locally while leaving the predicate — fixed at the predicate, plus **4 read-path sites, not the 1 reported** (`store.not-found` *and* `store.unparseable`, both engine arms plus `engine::milestone`'s copies), so one JSON object had been naming one file two ways. `repo_relative` moved into `engine::path` as a pure render-against-a-root function; the engine stays empty by invariant. **The remainder is countable, not hand-waved:** 60 producers across 11 files, each with a measured count in `UNSWEPT_PRODUCERS`, so closing one reddens the row.
+**The two LOWs were law 1 and a third destroying door.** The printed-path rule bound only the four destroying/provisioning doors: the shared `untrackable_reason` composed 3 of its 5 reasons from absolute paths and had four callers, one of which M50's own Increment 2 had taught to work around it locally while leaving the predicate — fixed at the predicate, plus **4 read-path sites, not the 1 reported** (`store.not-found` *and* `store.unparseable`, both engine arms plus `engine::milestone`'s copies), so one JSON object had been naming one file two ways. `repo_relative` moved into `engine::path` as a pure render-against-a-root function; the engine stays empty by invariant. **The remainder is countable, not hand-waved:** 79 producers across 11 files, each with a measured count in `UNSWEPT_PRODUCERS`, so closing one reddens the row. *(Corrected 2026-09-09: this entry, the VERDICT's declared bound 2 and the RC-rc14 handover all said **60**; the table sums **79**, and the per-file counts — the half a test checks — were right all along.)*
 
 **And `jigc milestone discard` destroyed a sub-task's staged prose at exit 0 while `jigc task discard` refused over identical bytes.** Contested, so it went to the human **against an independent robust-advocate**, never on a lone recommendation — and it is recorded as a **basis-has-changed reconciliation, not an override**. M46 decided that door's narrating arm deliberately, on the warrant *"its worktree refusal already carries the consent"* — driven **false in the only cell where bytes die**, because an agent authoring through jigc writes into `.jigc/tasks/<id>/docs/`, which is not inside the worktree (its `git status --porcelain` was empty while the staged doc held authored prose). The guard-killer counter was driven false too: `add-task` and `provision` stage nothing, so the guard fires only after real work exists — a **strictly better** false-positive profile than the `task discard` guard already accepted, which fires from the instant of mint. Exactly one cell of the driven 2×2 changed. `team-ready-state.md`'s falsified sentence was **struck with the datum**, so the M50 sentence eleven lines below is now true as written; one doc had been proving both.
 

@@ -160,8 +160,13 @@ infrastructure. *If the razor cannot refuse, the claim is wrong*; it can.
    new argument reddens until answered — but not *mis-answering*: an author who classifies a new
    address argument `Plain` still gets a green gate. Only the `Doctype` half is verified
    shape ⇔ argument.
-2. **60 host-path producers remain across 11 files**, each with a measured count and a stated reason
-   in `UNSWEPT_PRODUCERS`, so closing one reddens the row. Two are genuine law-1 siblings left
+2. **79 host-path producers remain across 11 files**, each with a measured count and a stated reason
+   in `UNSWEPT_PRODUCERS`, so closing one reddens the row. *(Corrected 2026-09-09 at the RC-rc14
+   handover verification: this bound and its two siblings said **60**, which the table it cites has
+   never summed to — `UNSWEPT_PRODUCERS` is 11+22+20+9+8+3+1+1+2+1+1 = **79**, and the const did not
+   exist before `b34a8c72`, the commit that also wrote the 60. The **per-file** counts hold and are
+   mechanically fenced by `the_unswept_remainder_is_counted_not_described`; only the unchecked
+   summary was wrong — a bound nothing measures is a sentence.)* Two are genuine law-1 siblings left
    deliberately: `engine::finalize` (11 sites / 5 finding helpers, none handed a repo root —
    threading one is its own increment) and `cli::start` (2 of 22 reaching a finding).
 3. **`rename`'s flattening door predates this wave** and stays outside the findings envelope;
