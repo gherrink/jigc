@@ -2790,7 +2790,15 @@ pub(crate) fn try_execute_finalize_plan(
     // restored on a stage/commit failure, so a rejected finalize leaves the index byte-identical
     // to its pre-finalize state — never a stray-staged stamp/config the owner-artifact axis (and
     // the promotions axis) did not cover.
-    let mut config_index: Vec<ConfigLayerIndexEntry> = Vec::new();
+    //
+    // `Option`, not a bare `Vec`, and the distinction is load-bearing (M51 Inc 1 validation):
+    // unlike the other four axes — each keyed per captured path, so an empty capture restores
+    // nothing — this one's drop arm is a SET DIFFERENCE taken at rollback time ("under the
+    // pathspecs now, absent from the capture → `--force-remove`"). An empty `Vec` therefore
+    // reads as *the whole config layer was absent from the index pre-finalize* and drops every
+    // tracked `.jigc/` entry; `None` says *the capture never ran*, which the rollback must
+    // treat as "nothing staged here is mine", never as "everything here is mine".
+    let mut config_index: Option<Vec<ConfigLayerIndexEntry>> = None;
     // The FIFTH staged-path family's fan-out member (M47 Inc 3 T5, `design/finalize.md` →
     // Rollback discipline, the record row): the milestone record's pre-finalize index entry.
     // Both fan-out arms reach `overlay_docs_commit_and_ff`, which `git add`s the record into
@@ -2800,7 +2808,47 @@ pub(crate) fn try_execute_finalize_plan(
     let record_paths = stage.live_index_record_pathspecs();
     let mut record_index: Vec<OwnerArtifactIndexEntry> = Vec::new();
     let commit_result = (|| -> Result<String> {
-        // Phase 4 — promote: copy each staged managed doc to `<repo>/<destination>`,
+        // Phase 4a — the pre-images, taken FIRST (M51 Inc 1 validation; `design/finalize.md`
+        // → Rollback discipline). **Every index axis's capture precedes every failure point
+        // inside this closure.** The rule is over the failure-POINT axis, not over one
+        // refusal: a rollback must never run against an axis that has no pre-image, because
+        // "no pre-image" and "a genuinely empty pre-image" are the same value and the
+        // config-layer axis acts *destructively* on the second. These four reads touch only
+        // the INDEX, while promote / retire / `gitignore::ensure` below touch only the
+        // WORKTREE — so taking them here is exactly as genuine a pre-finalize read as taking
+        // them after, and it is genuine at every failure point, which it was not: the
+        // in-closure `retire` sink refusal (and every other `?` that fired above the old
+        // capture site) left the config axis holding an empty `Vec`, which then
+        // `--force-remove`d the whole tracked `.jigc/` layer out of the index.
+        //
+        // The THIRD rollback axis: each owner-artifact path's pre-finalize index entry, taken
+        // before the stage below stages (and possibly overwrites) it. Inert (empty) unless the
+        // plan records an owner-artifact.
+        owner_index = capture_owner_artifact_index(repo_root, &plan.owner_artifacts)?;
+        // The PROMOTIONS index axis, on the same capture/restore primitive as the third: each
+        // promotion destination's pre-finalize index entry, before any stage arm `git add`s it
+        // (and before `promote` writes that destination in the worktree).
+        let promo_paths: Vec<String> = plan
+            .promotions
+            .iter()
+            .map(|p| p.destination.clone())
+            .collect();
+        promo_index = capture_owner_artifact_index(repo_root, &promo_paths)?;
+        // The FOURTH axis: jigc's config-layer index, before any stage arm refreshes the stamp
+        // / (re)stages the config layer. Covers every arm — the two per-task stages add these
+        // paths to the live index, and the fan-out `overlay_docs_commit_and_ff` stages the
+        // config layer into the live index before its `--ff-only` (where a collision aborts to
+        // this same rollback). Assigned as `Some(..)`, so a failure of the capture ITSELF —
+        // the one failure point a hoist cannot precede — leaves `None` and makes the rollback
+        // a no-op rather than a set difference against nothing.
+        config_index = Some(capture_config_layer_index(repo_root)?);
+        // The FIFTH family's fan-out member: the milestone record's pre-finalize index entry,
+        // on the same shared index primitive (which already models "absent", so a record not
+        // yet in the index is restored to *absent*, never conjured). The record's WORKTREE
+        // bytes are the `RecordFlipGuard`'s half; this is the index half the guard never
+        // covered.
+        record_index = capture_owner_artifact_index(repo_root, &record_paths)?;
+        // Phase 4b — promote: copy each staged managed doc to `<repo>/<destination>`,
         // capturing any displaced pre-existing destination bytes for the rollback. The
         // captures accumulate into the outer `displaced` (&mut, not returned-on-`Ok`),
         // so a MID-promote failure still hands the `Err` arm every capture taken so far
@@ -2818,35 +2866,6 @@ pub(crate) fn try_execute_finalize_plan(
         // Ensure it exists so the `git add --all` stage picks up `config/` + the promoted
         // docs + the code changes.
         crate::gitignore::ensure(jigc_root)?;
-        // Capture each owner-artifact path's pre-finalize index entry BEFORE the stage below
-        // stages (and possibly overwrites) it — the third rollback axis. Nothing above touches
-        // those index entries, so this is the genuine pre-finalize state. Inert (empty) unless
-        // the plan records an owner-artifact.
-        owner_index = capture_owner_artifact_index(repo_root, &plan.owner_artifacts)?;
-        // Capture each promotion destination's pre-finalize index entry BEFORE any stage arm
-        // `git add`s it — the promotions index axis, on the same capture/restore primitive as
-        // the third axis. The promote/retire above touched only the worktree, so this reads
-        // the genuine pre-finalize index state.
-        let promo_paths: Vec<String> = plan
-            .promotions
-            .iter()
-            .map(|p| p.destination.clone())
-            .collect();
-        promo_index = capture_owner_artifact_index(repo_root, &promo_paths)?;
-        // Capture jigc's config-layer index BEFORE any stage arm refreshes the stamp / (re)stages
-        // the config layer — the fourth rollback axis. The index is untouched by the promote /
-        // retire / gitignore-ensure above (they touch only the worktree), so this reads the
-        // genuine pre-finalize state. Covers every arm: the two per-task stages add these paths to
-        // the live index, and the fan-out `overlay_docs_commit_and_ff` stages the config layer into
-        // the live index before its `--ff-only` (where a collision aborts to this same rollback).
-        config_index = capture_config_layer_index(repo_root)?;
-        // Capture the milestone record's pre-finalize index entry — the fifth family's
-        // fan-out member, on the same shared index primitive (which already models "absent",
-        // so a record not yet in the index is restored to *absent*, never conjured). The
-        // record's WORKTREE bytes are the `RecordFlipGuard`'s half; this is the index half
-        // the guard never covered. Read here, before the stage arm's live `git add`, so it is
-        // the genuine pre-finalize state (the flip touched only the worktree file).
-        record_index = capture_owner_artifact_index(repo_root, &record_paths)?;
         match stage {
             // Narrowed migration stage (`design/auto-migration.md` → Hardening #9a/#9;
             // `DECISIONS.md` B2): a migration touches no code, so stage ONLY its own
@@ -2921,7 +2940,7 @@ pub(crate) fn try_execute_finalize_plan(
             // The fourth scoped axis (M45 milestone-audit fix): restore jigc's own config-layer
             // stage — the `.jigc/version` stamp `refresh_version_stamp` rewrote and the config
             // layer the stage (re)added — so the stamp/config entries are never left staged.
-            rollback_config_layer_index(repo_root, &config_index);
+            rollback_config_layer_index(repo_root, config_index.as_deref());
             // The fifth family's fan-out member (M47 Inc 3 T5): restore the milestone
             // record's captured pre-finalize index entry, so a refused boundary leaves no
             // `joined` blob staged for a milestone that never finalized (the
@@ -3580,7 +3599,14 @@ fn capture_config_layer_index(repo_root: &Path) -> Result<Vec<ConfigLayerIndexEn
 ///   stays). A user who *pre-staged* `.jigc/version` themselves captured a present entry, so it is
 ///   restored, never dropped — the "restore only what jigc's stage changed, never clobber a user's
 ///   pre-staged blob" discipline the third axis established.
-fn rollback_config_layer_index(repo_root: &Path, captured: &[ConfigLayerIndexEntry]) {
+fn rollback_config_layer_index(repo_root: &Path, captured: Option<&[ConfigLayerIndexEntry]>) {
+    // `None` — the capture never ran, so nothing under the pathspecs is this finalize's doing
+    // and the set difference below has no subject (M51 Inc 1 validation). Distinct from
+    // `Some(&[])`, which says the layer was genuinely absent from the index pre-finalize, so
+    // anything under the pathspecs now IS the stage's and is dropped.
+    let Some(captured) = captured else {
+        return;
+    };
     for item in captured {
         let _ = git_run(
             repo_root,

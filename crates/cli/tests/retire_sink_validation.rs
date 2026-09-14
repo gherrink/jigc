@@ -32,8 +32,10 @@
 //! closure and is therefore a refusal of the whole transaction, not of one step: exit **1**
 //! with `finalize.retire-untrackable` and exactly one route (the `settle-record.md` → §10
 //! mold), the canary byte-identical, `HEAD` unmoved, the promoted doc **gone** from the
-//! worktree, and its index entry back where it was — the captured-pre-image rollback the
-//! wave is extending, reached through a new refusal point.
+//! worktree, and the **whole index** back where it was — the captured-pre-image rollback the
+//! wave is extending, reached through a new refusal point. That last assertion is
+//! deliberately unscoped: the property is *the index is byte-identical*, and a per-path scope
+//! cannot see a rollback axis that drops paths nobody named.
 
 use std::fs;
 use std::path::PathBuf;
@@ -112,6 +114,13 @@ struct Staged {
     source_path: PathBuf,
     /// `HEAD` before `finalize` ran, so an arm can assert the transaction moved nothing.
     head: String,
+    /// The **whole** pre-finalize index (`git ls-files --stage`) and working-tree status
+    /// (unscoped `git status --porcelain`). The axis a rolled-back transaction has to
+    /// restore is *the index*, not the promote destination: a path-scoped assertion is
+    /// satisfied by a rollback that leaves four other tracked files staged for deletion, so
+    /// these two snapshots are compared whole.
+    index: String,
+    status: String,
 }
 
 /// Drive one committed in-repo `docs/direction.md` through migrate + author + commit-doc
@@ -183,10 +192,19 @@ fn staged_migration(corpus: &TrialCorpus) -> Staged {
         "the migrate door records the source path the sink reads back",
     );
     let head = corpus.git(&["rev-parse", "HEAD"]);
+    let index = corpus.git(&["ls-files", "--stage"]);
+    let status = corpus.git(&["status", "--porcelain"]);
+    assert!(
+        status.is_empty(),
+        "the fixture stops with a clean tree, so any porcelain output after a refusal is \
+         the refusal's own doing; got:\n{status}",
+    );
     Staged {
         task,
         source_path,
         head,
+        index,
+        status,
     }
 }
 
@@ -229,11 +247,20 @@ fn assert_transaction_refused(
         !corpus.repo().join(PROMOTED).exists(),
         "{what} must roll the promote back out of the worktree",
     );
-    let status = corpus.git(&["status", "--porcelain", "--", PROMOTED]);
-    assert!(
-        status.is_empty(),
-        "{what} must leave the promote destination's index entry where it was; \
-         `git status --porcelain -- {PROMOTED}` reads:\n{status}",
+    // The axis is the index, not one path (M51 Inc 1 validation): the captured-pre-image
+    // discipline's claim is that a refused finalize leaves the index byte-identical to its
+    // pre-finalize state, so the assertion is over the WHOLE index and the WHOLE porcelain —
+    // a `-- VISION.md` scope is satisfied by a rollback that stages four `.jigc/` files for
+    // deletion on its way past.
+    assert_eq!(
+        corpus.git(&["ls-files", "--stage"]),
+        staged.index,
+        "{what} must leave the whole index byte-identical to its pre-finalize state",
+    );
+    assert_eq!(
+        corpus.git(&["status", "--porcelain"]),
+        staged.status,
+        "{what} must leave the working tree and index exactly as it found them",
     );
     assert!(
         corpus.repo().join("docs/direction.md").is_file(),
