@@ -967,6 +967,55 @@ fn reroot(rel: &str, old_root: &str, new_root: &str) -> Option<String> {
     })
 }
 
+/// Adjudicate the `<file>` argument of `insert-step` / `replace-step` **before the read and
+/// before any write** (M51 Increment 1 / T4; `completions/artifacts/M51/settle-record.md` →
+/// §2 · the §10 mold; `design/overrides.md` → Authoring deltas).
+///
+/// Both verbs took the token as an opaque path: `fs::read(file)`, `file_stem()`, and the bytes
+/// landed at `.jigc/config/steps/<stem>.yaml` — an in-repo, committable file that **composes
+/// into the step text `jigc start` hands the agent**. Driven at `dddc11a5`:
+/// `jigc config insert-step … .git/config` exits **0** and copies this repository's git config
+/// in. That the copy then renders `repositoryformatversion = 0` into that step text is the
+/// baseline's own drive (`completions/artifacts/M51/baseline-tokens.md` §2d).
+///
+/// The rule itself is [`crate::trackable::source_read_reason`] — one home, both occurrences of
+/// the `file` argument, which is why the M51 path-argument registry is keyed by *occurrence*
+/// rather than by deduplicated argument id. What is door-local is the code and the sentence:
+/// **one** code for both legs, with the reason in the message
+/// (`config.untrackable-root`'s five-reasons-one-code precedent — the operator's fix is the
+/// same either way: name a different file), and a **`Human`** route, because no `jigc` argv
+/// resolves this state; only naming a different source does.
+///
+/// The consequence clause belongs to the door, not to the predicate: the predicate states
+/// where the bytes are, and this door is the one that knows what it was about to do with them
+/// (`crate::trackable`'s own leg-shared-but-sentence-local rule, from T1).
+fn adjudicate_step_source(cwd: &Path, project_config: &Path, file: &Path) -> Result<()> {
+    // The repo root is the project layer's grandparent (`<repo>/.jigc/config`), the same
+    // derivation the two root-knob rules use. A layer with no grandparent is not a shape any
+    // door reaches — `require_project_layer` built this path — and abstaining is the
+    // conservative answer if one ever does.
+    let Some(repo_root) = project_config.parent().and_then(Path::parent) else {
+        return Ok(());
+    };
+    match crate::trackable::source_read_reason(cwd, repo_root, file) {
+        None => Ok(()),
+        Some(reason) => Err(finding_to_err(Finding::block(
+            "config.step-source-untrackable",
+            format!(
+                "{reason}, and a step source is copied verbatim into \
+                 `.jigc/config/steps/` and composed into the step text every `jigc start` \
+                 renders"
+            ),
+            engine::finding::Route::human(
+                "name a step source outside git's own directory and outside jigc's transient \
+                 workbench (`.jigc/tasks/`, `.jigc/state/` and their siblings) — a file \
+                 anywhere else, in this repository or not, is copied in verbatim and lands in \
+                 your next diff",
+            ),
+        ))),
+    }
+}
+
 /// `jigc config insert-step --workflow <id> (--after|--before) <step-id> <file>` —
 /// record an `insert-step` `structural-op` + write the native step file
 /// (`design/overrides.md` → Authoring deltas; `design/worked-examples.md` → 3a).
@@ -992,6 +1041,11 @@ fn run_insert_step(
     file: &Path,
 ) -> Result<ConfigAck> {
     let project_config = require_project_layer(cwd)?;
+
+    // Adjudicate `<file>` BEFORE the read and before the basename derivation: the bytes this
+    // reads are copied into the cascade and composed into step text, so a source the door has
+    // not adjudicated must never be opened at all.
+    adjudicate_step_source(cwd, &project_config, file)?;
 
     // The native step's id is the source file's basename (`overrides.md` →
     // Native-file id = filename basename).
@@ -1062,6 +1116,10 @@ fn run_replace_step(cwd: &Path, target: &str, file: &Path) -> Result<ConfigAck> 
     let project_config = require_project_layer(cwd)?;
     let parsed = StructuralTarget::parse(target, None).map_err(finding_to_err)?;
     let step_id = at_step(&parsed);
+
+    // The same adjudication as `insert-step`, at the sibling occurrence of the `file`
+    // argument — asked before the read, for the same reason.
+    adjudicate_step_source(cwd, &project_config, file)?;
 
     let basename = file
         .file_stem()
@@ -1163,6 +1221,10 @@ fn run_remove_step(cwd: &Path, target: &str) -> Result<ConfigAck> {
 fn run_fill(cwd: &Path, target: &str, from_file: &str) -> Result<ConfigAck> {
     let project_config = require_project_layer(cwd)?;
     let parsed = SlotFillTarget::parse(target).map_err(finding_to_err)?;
+    // `from_file` occurrence 1 of 3. Its path-rule disposition — **no rule**, with the reason
+    // — is stated once at [`crate::doc::read_handoff`]. Note the asymmetry with this module's
+    // own `<file>` argument two verbs up: that one takes the source rule, because `-` is not
+    // stdin there.
     let content = crate::doc::read_handoff(from_file)?;
 
     // Both write-time checks run before any write — a rejection touches nothing.

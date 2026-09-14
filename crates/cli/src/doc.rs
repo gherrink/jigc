@@ -1338,6 +1338,8 @@ fn run_set_slot(
     let schema = task.schema(address.r#type.as_str())?;
     let target = slot_target(&schema, &address).map_err(DocFailure::block)?;
 
+    // `from_file` occurrence 2 of 3. Its path-rule disposition — **no rule**, with the reason
+    // — is stated once at [`read_handoff`]; it is not restated here.
     let prose = read_handoff(from_file)?;
 
     let path = staged_path(&task.dir, &address, &task.id)?;
@@ -3695,6 +3697,7 @@ fn run_author(
 ) -> Result<(), DocFailure> {
     machine_maintained_guard(doctype, "author", doctype)?;
     let task = ActiveTask::resolve(cwd, task_id)?;
+    // `from_file` occurrence 3 of 3 — disposition at [`read_handoff`], stated once.
     let payload = read_handoff(from_file)?;
     let schemas = task.schemas()?;
     let gate = task.workflow_gate()?;
@@ -6228,6 +6231,55 @@ fn persist(path: &Path, bytes: &str) -> Result<()> {
 /// Read the slot handoff: `-` ⇒ stdin, else a file path (`design/write-commands.md`
 /// → Content handoff: slots via stdin / `--from-file`, never inline). Shared with
 /// `jigc config fill`, whose fill content arrives the same way.
+///
+/// # The `from_file` family's disposition in the path-argument registry (M51 Increment 1 / T4)
+///
+/// The M51 registry carries **one stated rule, or one stated no-rule-and-why, per
+/// occurrence** (`completions/artifacts/M51/settle-record.md` → D1 part 3, as amended by §2).
+/// `from_file` occurs three times and each occurrence has two conditional arms — which is
+/// exactly why the registry is keyed by `(leaf, argument id, conditional arm)` rather than by
+/// deduplicated id:
+///
+/// | occurrence | arm | disposition |
+/// |---|---|---|
+/// | `jigc config fill --from-file` | `-` | **no rule** — the sentinel is not a path |
+/// | `jigc config fill --from-file` | a path | **no rule**, for the reasons below |
+/// | `jigc doc set-slot --from-file` | `-` | **no rule** — the sentinel is not a path |
+/// | `jigc doc set-slot --from-file` | a path | **no rule**, for the reasons below |
+/// | `jigc doc author --from-file` | `-` | **no rule** — the sentinel is not a path |
+/// | `jigc doc author --from-file` | a path | **no rule**, for the reasons below |
+///
+/// **Why no rule — stated, rather than left as silence.** Three reasons, in the order that
+/// decides it:
+///
+///   1. **The door's own declared grammar hands the identical bytes through `-`.** A path rule
+///      here would refuse a *spelling* and not an outcome: `--from-file .git/config` would be
+///      rejected while `cat .git/config | … --from-file -` is the same door, the same
+///      invocation shape, the same bytes. A fence the door's own `--help` defeats is a false
+///      completeness claim on the record — the shape this wave was chartered to correct — so
+///      the honest disposition is to name the gap rather than dress it.
+///   2. **The destination is declared and the content is visible.** These three doors write
+///      into a schema-declared slot or a step's declared `{{fill:}}` point: the two doc doors
+///      read back through `jigc doc show … --task <id>`, and `config fill` lands a file the
+///      next diff shows (`.jigc/config/fills/<id>.md`). That is the `ArgToken::Plain` premise
+///      working as stated (`crate::cli`: *"a path argument is a path the caller **means** as
+///      one"*), not an escape from it.
+///   3. **An out-of-repo source is admitted at the `file` doors too** (§2), so refusing one
+///      here would make the family disagree with its own sibling rule.
+///
+/// **What this disposition does NOT claim.** The route floor at these three doors is a real,
+/// named gap and stays open: a miss (a path that does not exist, a directory, the empty
+/// string) answers with a bare `anyhow` + errno, carrying no code and no route — four such
+/// shapes were counted across the three doors
+/// (`completions/artifacts/M51/baseline-tokens.md` §2e). This paragraph disposes the *path
+/// rule* question; it neither closes that gap nor excuses it.
+///
+/// **The contrast that makes this a rule and not a preference.** The sibling `file` argument
+/// at `jigc config insert-step` / `replace-step` **does** take a source rule
+/// (`crate::config`'s `adjudicate_step_source`), and the discriminator is reason 1 above:
+/// `-` is **not** stdin at that door — it is read as a filename and fails with `os error 2`
+/// — so the path token is that door's only channel, and refusing a source there refuses the
+/// outcome rather than the spelling.
 pub(crate) fn read_handoff(from_file: &str) -> Result<String> {
     if from_file == "-" {
         let mut buf = String::new();

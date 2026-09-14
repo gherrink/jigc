@@ -99,6 +99,8 @@ mod setup;
 mod setup_pack_load_advisory;
 #[path = "../snapshot_store_two_snapshots.rs"]
 mod snapshot_store_two_snapshots;
+#[path = "../step_source_rules.rs"]
+mod step_source_rules;
 #[path = "../test_target_registration.rs"]
 mod test_target_registration;
 #[path = "../verb_suite_coverage.rs"]

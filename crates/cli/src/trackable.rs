@@ -16,6 +16,13 @@
 //! and left the doc surviving only in history — gone from the next clone. An exit code
 //! is therefore not a trackability test; this is.
 //!
+//! **Two families live here, and they are not the same question** (M51 Increment 1). The
+//! original is the *destination* rule above. The second is the **source** rule
+//! ([`resolve_source_token`], [`source_read_reason`]) — asked by the doors that read a
+//! caller-named file *in*, where the question is not *can git record this path* but *is this a
+//! file jigc is willing to open*. They answer differently on purpose: a destination outside
+//! the repository is refused, a source outside it is admitted and copied in.
+//!
 //! **What is *not* asked: gitignore.** A gitignored destination is a perfectly
 //! trackable path git has merely been told to skip — `git mv docs/x.md .jigc/x.md`
 //! stages a real `R` rename — and the workbench relocation
@@ -229,6 +236,176 @@ pub(crate) fn resolve_source_token(repo_root: &Path, token: &str) -> Result<Stri
         ));
     }
     Ok(relative)
+}
+
+/// Why the door will **not read** `token` as a source file — `None` when it will (M51
+/// Increment 1 / T4; `completions/artifacts/M51/settle-record.md` → §2, *"`file` and
+/// `from_file` get a SOURCE rule (S11)"*).
+///
+/// **A source rule, and the distinction is the whole of §2's correction.** D1 part 1 had
+/// pre-committed `jigc config insert-step` / `replace-step` to [`untrackable_reason`] +
+/// [`crate::config::is_workbench_root`] — *destination* predicates, which ask the wrong
+/// question of a source twice over: the first refuses *"resolves outside the repository
+/// root"*, which kills a shared team steps library at `~/steps/foo.yaml`, and the second
+/// refuses every path under `.jigc/`, which is precisely where those two verbs **write**
+/// (`.jigc/config/steps/<basename>.yaml`). A destination must be a path git can record; a
+/// source only has to be one jigc is willing to open.
+///
+/// The two legs, and what each is about:
+///
+///   1. **git's own directory** — by the literal `.git` component *and* by the git dirs git
+///      itself reports, so a `--separate-git-dir` / `GIT_DIR` repository whose object store is
+///      not called `.git` is covered too. Git's private files are not authored content, and
+///      the harm was exactly this: driven at `dddc11a5`,
+///      `jigc config insert-step … .git/config` exits **0** and copies this repository's git
+///      config into `.jigc/config/steps/config.yaml`; that the copy then **composes** —
+///      `repositoryformatversion = 0` rendered into the step text `jigc start` hands the
+///      agent — is the baseline's own drive
+///      (`completions/artifacts/M51/baseline-tokens.md` §2d).
+///   2. **jigc's own *transient* workbench** — `.jigc/tasks/`, `.jigc/state/` and their
+///      siblings: the subtrees jigc rewrites per task and `jigc uninstall` removes whole. A
+///      shadow sourced from there copies a transient into the cascade, where it outlives the
+///      thing it was copied from.
+///
+///      **Transient, not the whole `.jigc/` tree, and the narrowing is forced rather than
+///      cautious.** §2's own argument against the *destination* predicate is that
+///      [`crate::config::is_workbench_root`] *"refuses any path under `.jigc` — precisely
+///      where `insert-step` **writes**"*, so a rule that refused all of `.jigc/` would
+///      re-commit the error §2 struck: `.jigc/config/` is the **committed** cascade layer,
+///      and sourcing a step from a shadow already there is a shipped, tested affordance
+///      (`e2e_audit::scenario_7_structural_op_shifts_composed_bytes_vs_no_override` writes
+///      its source to `.jigc/config/extra.yaml`; the first cut of this leg reddened it, which
+///      is how the contradiction surfaced). The transient set is
+///      [`crate::gitignore::ENTRIES`] — jigc's own declaration of which parts of its
+///      workbench are rewritten rather than authored — so a subtree joins this rule by
+///      joining that set, and no second list can drift from it.
+///
+/// **Out-of-repo is deliberately admitted**, and that is a decision rather than an omission:
+/// the caller names the file, the bytes are *copied in*, and what lands in the repository is a
+/// file their next diff shows. Refusing it would narrow a shipped affordance to close nothing.
+///
+/// **Readability is not asked here.** §2 states the shared rule as *readable · no `.git`
+/// component · not reached through the workbench*; the readable leg is answered by the read
+/// itself, one statement later at each door, and its route-floor gap (a bare `anyhow` + errno
+/// on the missing/directory shapes) is a pre-existing one this rule neither closes nor widens
+/// (`completions/artifacts/M51/baseline-tokens.md` §2d).
+///
+/// **The leaf IS canonicalized here**, the opposite of [`place_inside`]'s rule, and for the
+/// same reason: there, the leaf is the *subject* of a later retire, so resolving it would
+/// retire the wrong path; here, the door is about to **read bytes**, and the read follows the
+/// link — so the bytes' real home is what the rule has to be asked of. A symlink pointing into
+/// `.git/` or `.jigc/` is refused because of where it lands, which is also how *"not reached
+/// through the workbench"* is satisfied rather than merely tested for.
+pub(crate) fn source_read_reason(cwd: &Path, repo_root: &Path, token: &Path) -> Option<String> {
+    let resolved = resolve_source(cwd, token);
+    let root = std::fs::canonicalize(repo_root).unwrap_or_else(|_| repo_root.to_path_buf());
+    let inside = resolved.strip_prefix(&root).ok();
+    // Law 1 (`design/surface-contract.md`: every printed path is repo-real or a typed
+    // identity): the repo-relative spelling when the source is inside the repository, and the
+    // caller's own argument — the one string they can edit — when it is not, which is the
+    // `locate::not_in_repo_message` carve-out [`resolve_source_token`] already takes.
+    let shown = match inside {
+        Some(tail) => tail.to_string_lossy().into_owned(),
+        None => token.to_string_lossy().into_owned(),
+    };
+
+    // 1 — git's own directory. The component test is asked of the repo-relative tail when the
+    // source is inside the repository, so a repository that itself lives under a directory
+    // named `.git` does not refuse its own ordinary files.
+    let named_git = inside
+        .unwrap_or(resolved.as_path())
+        .components()
+        .any(|part| part.as_os_str().eq_ignore_ascii_case(".git"));
+    if named_git || git_dirs(cwd).iter().any(|dir| resolved.starts_with(dir)) {
+        return Some(format!(
+            "`{shown}` is inside git's own directory — git's private files are not \
+             authored content"
+        ));
+    }
+
+    // 2 — jigc's own TRANSIENT workbench. A source outside the repository reaches no
+    // workbench of this repository's, so the question is only asked of an inside tail.
+    if let Some(tail) = inside
+        && let Some(subdir) = transient_workbench_subdir(&tail.to_string_lossy())
+    {
+        return Some(format!(
+            "`{shown}` is inside jigc's own transient workbench (`.jigc/{subdir}`) — the \
+             tree jigc rewrites per task and `jigc uninstall` removes whole"
+        ));
+    }
+
+    None
+}
+
+/// The **transient** workbench subdirectory `relative` lies inside, when it lies inside one —
+/// `None` for every other path, `.jigc/config/` and `.jigc/AGENT.md` included.
+///
+/// The set is [`crate::gitignore::ENTRIES`], jigc's own declaration of which parts of its
+/// workbench are rewritten rather than authored — the lines it writes into `.jigc/.gitignore`.
+/// Reading it rather than restating it is the point: a subtree becomes transient by joining
+/// that constant, and a second list here would be one `ENTRIES` edit away from lying.
+///
+/// The first component is asked through [`crate::config::is_workbench_root`] so the
+/// case-insensitivity rule for `.jigc` keeps one home; the subject is a repo-relative spelling
+/// with `.`/`..` already folded out, which is what the resolved tail is.
+fn transient_workbench_subdir(relative: &str) -> Option<&'static str> {
+    if !crate::config::is_workbench_root(relative) {
+        return None;
+    }
+    let mut components = Path::new(relative)
+        .components()
+        .filter_map(|part| match part {
+            std::path::Component::Normal(name) => name.to_str(),
+            _ => None,
+        });
+    let _workbench = components.next()?;
+    let subdir = components.next()?;
+    crate::gitignore::ENTRIES
+        .lines()
+        .map(|entry| entry.trim_end_matches('/'))
+        .find(|entry| *entry == subdir)
+}
+
+/// Resolve a **source** token to the real path its bytes live at: absolute as typed, else
+/// joined onto `cwd` (which is what the doors' own `fs::read` does), then canonicalized
+/// whole — leaf included, per [`source_read_reason`]'s stated asymmetry. A path that does not
+/// resolve falls back to the lexical fold: the read one statement later answers it, and the
+/// rule still gets a placed subject to ask its questions of.
+fn resolve_source(cwd: &Path, token: &Path) -> PathBuf {
+    let joined = if token.is_absolute() {
+        token.to_path_buf()
+    } else {
+        cwd.join(token)
+    };
+    std::fs::canonicalize(&joined)
+        .unwrap_or_else(|_| fold_lexically(&joined).unwrap_or_else(|| joined.clone()))
+}
+
+/// The git directories git itself reports for the repository at `cwd` — `--git-dir` and
+/// `--git-common-dir`, canonicalized — so a `--separate-git-dir` / `GIT_DIR` object store that
+/// is not called `.git` is covered by the same leg as the literal component. Empty when git
+/// cannot be asked: the predicate form, a git that cannot answer abstains.
+fn git_dirs(cwd: &Path) -> Vec<PathBuf> {
+    let Some(out) = git_output(
+        cwd,
+        [
+            "rev-parse",
+            "--path-format=absolute",
+            "--git-dir",
+            "--git-common-dir",
+        ],
+    ) else {
+        return Vec::new();
+    };
+    if !out.status.success() {
+        return Vec::new();
+    }
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .filter_map(|line| std::fs::canonicalize(line).ok())
+        .collect()
 }
 
 /// Place `token` inside `repo_root`, answering with its clean repo-relative spelling — `None`
