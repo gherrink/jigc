@@ -5806,7 +5806,7 @@ impl ActiveTask {
     /// (`design/auto-migration.md` → Hardening #6): a migration's dateless release must
     /// not fabricate the migration day, so the `set: on-create` stamp is dropped here.
     fn is_migration(&self) -> Result<bool> {
-        Ok(state::read_source_path(&self.dir)
+        Ok(state::read_migration_source(&self.dir)
             .context("could not read the task's migration source path")?
             .is_some())
     }

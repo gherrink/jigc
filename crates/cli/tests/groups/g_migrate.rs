@@ -89,6 +89,8 @@ mod record_two_loci_retired;
 mod record_unbuilt_cells_retired;
 #[path = "../registry_seam.rs"]
 mod registry_seam;
+#[path = "../retire_sink_validation.rs"]
+mod retire_sink_validation;
 #[path = "../schema_change_kind_registry.rs"]
 mod schema_change_kind_registry;
 #[path = "../setup.rs"]

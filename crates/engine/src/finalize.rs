@@ -126,7 +126,7 @@ pub struct FinalizePlan {
     /// **inside** the commit closure (before `git add --all`) so the deletion stages
     /// into the same commit as the promoted doc — the first byte-destructive write,
     /// transactional with promote + commit. Populated from the migration task's recorded
-    /// `source-path` ([`crate::state::read_source_path`]); **empty** on every
+    /// `source-path` ([`crate::state::read_migration_source`]); **empty** on every
     /// non-migration task (the milestone sibling never sets it).
     pub retirements: Vec<PathBuf>,
     /// The **recorded owner-artifact paths** (`design/finalize.md` → 5. Stage; M45 Inc 8):
@@ -373,7 +373,7 @@ pub fn plan_owner_artifacts(task_dir: &Path, schemas: &BTreeMap<String, Schema>)
 }
 
 /// Read the migration task's recorded foreign source path
-/// ([`crate::state::read_source_path`]) into the retire set. A non-migration task has
+/// ([`crate::state::read_migration_source`]) into the retire set. A non-migration task has
 /// no `source-path` → an empty set (inert). An I/O failure reading it is a blocking
 /// [`Finding`] (the file is written at mint, so a read fault is a real fault — the
 /// promote/render I/O precedent).
@@ -402,14 +402,14 @@ fn plan_retirements(
     task_dir: &Path,
     promotions: &[Promotion],
 ) -> Result<Vec<PathBuf>, Vec<Finding>> {
-    match crate::state::read_source_path(task_dir) {
-        Ok(Some(path)) if !path.trim().is_empty() => {
+    match crate::state::read_migration_source(task_dir) {
+        Ok(Some(source)) => {
             // F1: no managed replacement was promoted — refuse to retire (block), never
             // delete the foreign original with nothing to take its place.
             if promotions.is_empty() {
-                return Err(vec![migration_no_replacement_finding(path.trim())]);
+                return Err(vec![migration_no_replacement_finding(source.recorded())]);
             }
-            let foreign = crate::store::lexical_normalize(Path::new(path.trim()));
+            let foreign = source.normalized();
             if promotions
                 .iter()
                 .any(|p| crate::store::lexical_normalize(Path::new(&p.destination)) == foreign)
@@ -419,7 +419,7 @@ fn plan_retirements(
                 Ok(vec![foreign])
             }
         }
-        Ok(_) => Ok(Vec::new()),
+        Ok(None) => Ok(Vec::new()),
         Err(err) => Err(vec![source_path_io_finding(unit, task_dir, &err)]),
     }
 }
@@ -469,13 +469,11 @@ fn plan_clobber_guard(
         .map_err(|err| vec![provenance_io_finding(unit, task_dir, &err)])?;
     // The migration's recorded foreign source path (if any) — kept as recorded for the
     // finding's naming, normalized for the in-place (source == destination) comparison.
-    let source = crate::state::read_source_path(task_dir)
-        .map_err(|err| vec![source_path_io_finding(unit, task_dir, &err)])?
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
+    let source = crate::state::read_migration_source(task_dir)
+        .map_err(|err| vec![source_path_io_finding(unit, task_dir, &err)])?;
     let in_place = source
-        .as_deref()
-        .map(|s| crate::store::lexical_normalize(Path::new(s)));
+        .as_ref()
+        .map(crate::state::MigrationSource::normalized);
 
     let mut clobbers = Vec::new();
     for promotion in promotions {
@@ -490,7 +488,10 @@ fn plan_clobber_guard(
             continue; // in-place rewrite — replacing the very foreign original (M43, fork 5).
         }
         if repo_root.join(&promotion.destination).is_file() {
-            clobbers.push(clobber_finding(&promotion.destination, source.as_deref()));
+            clobbers.push(clobber_finding(
+                &promotion.destination,
+                source.as_ref().map(crate::state::MigrationSource::recorded),
+            ));
         }
     }
     if clobbers.is_empty() {
@@ -717,7 +718,7 @@ impl CarryoverBoundary {
 /// task's own work), or it is a snapshot staged-deletion still staged (an entry-only
 /// comparison is structurally blind to a pre-task `git rm` — the trial's A7 case).
 /// `retire_exempt` is a migration task's recorded retire pathspec
-/// ([`crate::state::read_source_path`]) — that deletion is the task's own, never a
+/// ([`crate::state::read_migration_source`]) — that deletion is the task's own, never a
 /// carryover. `owner_exempt` is the task's recorded owner-artifact paths
 /// ([`FinalizePlan::owner_artifacts`]; M45 Inc 8): an agent stages the audit artifact
 /// **before** minting the recording task (the natural authoring order), so the recorded

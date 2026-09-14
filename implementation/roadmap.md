@@ -391,7 +391,7 @@ Encoding the harness's **harder** workflows (increment / planning / completion) 
 **Deliverable:** a migration over a **dateless** source renders releases with **no date** (not the migration day), and the migration task is named `migrate-<doctype>` (no collision with `--task`/the doctype id).
 
 **Grouped scope:**
-- **The migration-mode discriminator** — read `read_source_path(task_dir)` at the mint/add-item seam; `on_create_item_fields` (`crates/cli/src/doc.rs`) **suppresses** the `set: on-create` date stamp in migration mode (authoring still stamps today; an explicit payload date still writes). **No schema change** (an absent `set: on-create` date already finalizes clean).
+- **The migration-mode discriminator** — read `read_migration_source(task_dir)` at the mint/add-item seam; `on_create_item_fields` (`crates/cli/src/doc.rs`) **suppresses** the `set: on-create` date stamp in migration mode (authoring still stamps today; an explicit payload date still writes). **No schema change** (an absent `set: on-create` date already finalizes clean).
 - **Task naming** — the empty-intent mint (`crates/cli/src/start.rs`) slugs the task id to `migrate-<doctype>`, not the bare doctype name.
 
 **Proves (red on real input):** a migration batch/`add-item` of a dateless release renders **no date line** and finalizes clean; an authoring (`record-change`) release still stamps **today**; an explicit date in the payload still writes; the task id is `migrate-changelog` and a second migration of the same doctype does not serial-collide on the doctype name. Built against [auto-migration.md](../design/auto-migration.md) → Hardening #6/#9b; [changelog.md](../design/changelog.md) → date posture.

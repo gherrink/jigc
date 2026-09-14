@@ -272,6 +272,7 @@ The presence half **alone** passes a degenerate key, and that is not a hypotheti
 | `promote-io` | `engine::finalize` | **the staged doc** it could not read | **the file path** |
 | `provenance-io` | `engine::finalize` | the work unit whose provenance manifest could not be read | **the work-unit ref** |
 | `render-io` | `engine::finalize` | **the staged commit doc** | **the file path** |
+| `retire-untrackable` (M51) | `cli::task` → `retire_untrackable_finding`, asked one statement above the `remove_file` it guards | **the recorded migration source** the retire sink refused to unlink — a path this repository cannot record or recover, so it may carry no repo-relative spelling at all ([auto-migration.md](auto-migration.md) → Retire-the-foreign-original) | **the file path** — one finding per inadmissible retirement, so two in one plan are two keys and not one `(code, null)` |
 | `source-path-io` | `engine::finalize` | the work unit whose recorded source path could not be read | **the work-unit ref** |
 | `stage-failed` | `cli::task` | the work unit whose own stage phase git rejected | **the work-unit ref** |
 

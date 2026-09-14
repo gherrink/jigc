@@ -58,7 +58,8 @@ const WORKFLOW_FILE: &str = "workflow";
 /// path (`jigc migrate <path>`), read back at finalize to retire the foreign original
 /// (`design/auto-migration.md` → Retire-the-foreign-original). Absent on every
 /// non-migration task — the retire set is then empty. Public so the CLI `migrate`
-/// verb writes it under the same name the engine planner reads ([`read_source_path`]).
+/// verb writes it under the same name the engine planner reads
+/// ([`read_migration_source`]).
 pub const SOURCE_PATH_FILE: &str = "source-path";
 
 /// The working-area file recording a migration task's `--slug` override
@@ -690,15 +691,63 @@ pub fn read_workflow_id(task_dir: &Path) -> std::io::Result<Option<String>> {
     }
 }
 
-/// Read the persisted **foreign source path** of a migration task from its working
-/// area (`<task_dir>/source-path`) — the repo-relative path of the foreign original
-/// `jigc migrate` recorded at mint, read back at finalize to name the
-/// retire-the-foreign-original target (`design/auto-migration.md` →
-/// Retire-the-foreign-original). A missing file yields [`None`] — the clear
-/// non-migration case (the retire set is then empty), never an error.
-pub fn read_source_path(task_dir: &Path) -> std::io::Result<Option<String>> {
+/// The **foreign source a migration task recorded** at mint (`jigc migrate`), read back
+/// from its working area — and the only shape that read comes out in
+/// (`design/auto-migration.md` → Retire-the-foreign-original; M51 Increment 1 / T3,
+/// `completions/artifacts/M51/settle-record.md` → §2, the sink).
+///
+/// **It is a type rather than a `String` because of what the value *is*:** the path
+/// `jigc task finalize --approve` **deletes**. It reaches that deletion from a plain file
+/// in a mutable, gitignored working area (`.jigc/tasks/<id>/source-path`) one commit
+/// closure after the door that adjudicated it, so at the sink it is **caller-supplied
+/// again** — a door-only guard guards the typing, not the unlink. Keeping the raw read
+/// private to [`read_migration_source`] is what makes that structural instead of
+/// remembered: no consumer can hand a bare string to a destructive op, because no consumer
+/// can obtain one.
+///
+/// What this type asserts is **provenance, not admissibility**: these bytes were recorded
+/// as a migration source and are non-empty. The admissibility question — *may this
+/// repository unlink that path?* — is asked CLI-side, immediately before the unlink and in
+/// the same function as it, and its answer is `cli::task::ValidatedRetirement`. The engine
+/// cannot ask it: the predicate needs `git` and a symlink syscall, and the engine hosts
+/// neither (`crates/engine` contains no `Command::new` and no `symlink_metadata`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MigrationSource {
+    /// The recorded spelling, trimmed.
+    recorded: String,
+}
+
+impl MigrationSource {
+    /// The recorded spelling — the form the carryover gate's retire exemption and the
+    /// conflict route name, and the form the CLI sink re-adjudicates. A *reference* to a
+    /// path, never a licence to act on one.
+    #[must_use]
+    pub fn recorded(&self) -> &str {
+        &self.recorded
+    }
+
+    /// Its [`crate::store::lexical_normalize`]d form — the comparison form both retire-side
+    /// guards use, so a `./`-prefixed or redundant-component spelling still matches the
+    /// canonical destination (review C1/F2). Derived here rather than at each guard, so the
+    /// two cannot normalize differently.
+    #[must_use]
+    pub fn normalized(&self) -> PathBuf {
+        crate::store::lexical_normalize(Path::new(&self.recorded))
+    }
+}
+
+/// Read the persisted foreign source path of a migration task from its working area
+/// (`<task_dir>/source-path`) as a [`MigrationSource`].
+///
+/// A missing file yields [`None`] — the clear non-migration case (the retire set is then
+/// empty), never an error. So does a **blank** recording: an empty or whitespace-only value
+/// names no file, and every consumer already spelled that test inline. Folding it here is
+/// what makes "is this a migration task?" one question with one answer.
+pub fn read_migration_source(task_dir: &Path) -> std::io::Result<Option<MigrationSource>> {
     match std::fs::read_to_string(task_dir.join(SOURCE_PATH_FILE)) {
-        Ok(path) => Ok(Some(path)),
+        Ok(path) => Ok(Some(path.trim().to_string())
+            .filter(|recorded| !recorded.is_empty())
+            .map(|recorded| MigrationSource { recorded })),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(err) => Err(err),
     }
@@ -1445,7 +1494,7 @@ pub fn bound_instance_present(
 /// Does a **migration** task target this slug's own canonical destination? — the
 /// create-side half of the in-location-squatter discriminator (`design/auto-migration.md`
 /// → Path-collision guard / Hardening #8). Reads the task's recorded `source-path`
-/// ([`read_source_path`]); when present and **canonically equal** — via the shared
+/// ([`read_migration_source`]); when present and **canonically equal** — via the shared
 /// [`crate::store::lexical_normalize`], so a `./`-prefixed or `..`-round-tripping spelling
 /// still matches (review C1/F2) — to this slug's repo-relative canonical destination
 /// `<location>/<slug>.md` (the same destination form the retire-side guard compares
@@ -1479,15 +1528,10 @@ fn migration_targets_canonical_destination(
     } else {
         return Ok(false);
     };
-    let Some(source) = read_source_path(task_dir)? else {
+    let Some(source) = read_migration_source(task_dir)? else {
         return Ok(false);
     };
-    let source = source.trim();
-    if source.is_empty() {
-        return Ok(false);
-    }
-    Ok(crate::store::lexical_normalize(Path::new(source))
-        == crate::store::lexical_normalize(Path::new(&destination)))
+    Ok(source.normalized() == crate::store::lexical_normalize(Path::new(&destination)))
 }
 
 /// The unknown-doctype block: a blocking finding naming the unrecognized type, the

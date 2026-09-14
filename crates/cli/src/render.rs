@@ -1352,6 +1352,14 @@ pub const FINALIZE_FAMILY: &[FinalizeCode] = &[
         subject_note: "the staged commit doc",
     },
     FinalizeCode {
+        code: "finalize.retire-untrackable",
+        producer: "cli::task",
+        subject: FinalizeSubject::FilePath,
+        subject_note: "the recorded migration source the sink refused to unlink — a path this \
+                       repository cannot record or recover, so it may carry no repo-relative \
+                       spelling at all",
+    },
+    FinalizeCode {
         code: "finalize.source-path-io",
         producer: "engine::finalize",
         subject: FinalizeSubject::WorkUnit,
@@ -1397,15 +1405,6 @@ pub const FINALIZE_NON_MEMBERS: &[(&str, &str)] = &[
         "a declared **contract identifier** only (`crate::pack`'s ambush-class set): the M42 \
          settle chose print-over-refuse, so the staging contract's sole production surface is \
          the pre/post-commit left-out print and no producer mints it as a `Finding`",
-    ),
-    (
-        "finalize.retire-untrackable",
-        "named by `implementation/roadmap.md` as **planned** work (M51 Increment 1 / T3 — the \
-         retire sink's re-validation) and minted by no production producer yet, which is \
-         exactly what this list means. It is declared here rather than pre-added as a member, \
-         because arm 1 derives membership from the production scan and would redden on a row \
-         with no producer; when T3 mints it, arm 2 reddens on this row and forces the move — \
-         the mechanism working, not a hole",
     ),
 ];
 

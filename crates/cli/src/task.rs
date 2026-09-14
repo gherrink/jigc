@@ -1293,7 +1293,7 @@ impl TaskArea {
         let base_tree = self.materialize_head_subset(&changed_code)?;
         // The migration source this task is replacing, when it is a migration — the same
         // recorded path the carryover gate reads as its retire exemption.
-        let migration_source = state::read_source_path(&self.dir).with_context(|| {
+        let migration_source = state::read_migration_source(&self.dir).with_context(|| {
             format!("could not read the source path for task at {:?}", self.dir)
         })?;
         // The managed-vs-foreign discriminator's three pack facts (M48 Inc 4 / T1): the
@@ -1326,7 +1326,12 @@ impl TaskArea {
             // forbids over a managed doc, on a file that was already hand-broken out of
             // band. So the source path rides along and carries its own exit; every other
             // conflicting path, here and at a non-migration task, keeps the general one.
-            &engine::file_state::ConflictBlock::task(&self.id, migration_source.as_deref()),
+            &engine::file_state::ConflictBlock::task(
+                &self.id,
+                migration_source
+                    .as_ref()
+                    .map(state::MigrationSource::recorded),
+            ),
             &engine::validate::AdoptionInputs::new(&versions, &priors, &migratable),
         )
         .with_context(|| format!("validating task at {:?}", self.dir))?;
@@ -1423,13 +1428,13 @@ impl TaskArea {
                     self.dir
                 )
             })?;
-            let retire_exempt = state::read_source_path(&self.dir).with_context(|| {
+            let retire_exempt = state::read_migration_source(&self.dir).with_context(|| {
                 format!("could not read the source path for task at {:?}", self.dir)
             })?;
             previewed.extend(decide_carryover(
                 snapshot.as_ref(),
                 &git_staged_snapshot(&self.repo_root)?,
-                retire_exempt.as_deref(),
+                retire_exempt.as_ref().map(state::MigrationSource::recorded),
                 &engine::finalize::plan_owner_artifacts(&self.dir, schemas),
                 CarryoverBoundary::TaskPreview,
             ));
@@ -1791,13 +1796,13 @@ impl TaskArea {
                     self.dir
                 )
             })?;
-            let retire_exempt = state::read_source_path(&self.dir).with_context(|| {
+            let retire_exempt = state::read_migration_source(&self.dir).with_context(|| {
                 format!("could not read the source path for task at {:?}", self.dir)
             })?;
             decide_carryover(
                 snapshot.as_ref(),
                 &git_staged_snapshot(&self.repo_root)?,
-                retire_exempt.as_deref(),
+                retire_exempt.as_ref().map(state::MigrationSource::recorded),
                 // The recorded owner-artifact paths are exempt: an agent stages the audit
                 // artifact before minting this recording task (the natural authoring
                 // order), so the pre-task staged entry is the task's own subject, never a
@@ -2006,6 +2011,19 @@ impl TaskArea {
                 // them; the untracked cause is the only one it could not have).
                 if let Some(block) = err.downcast_ref::<OwnerArtifactBlock>() {
                     return self.blocked(block.0.clone(), format);
+                }
+                // M51 Increment 1 / T3 — the **retire sink** refused: the recorded
+                // `source-path` is not a path this repository can unlink, asked one statement
+                // above the `remove_file` that would have done it. Re-raised rather than
+                // reframed, because it is neither of the two things the frames below say: not
+                // a git failure in jigc's own stage phase, and emphatically not a hook
+                // rejection — no hook ran, and dressing it as one would tell the operator to
+                // satisfy a hook that was never consulted (law 1). The rollback already ran in
+                // the executor, so the transaction is whole; the shared error funnel
+                // (`invocation_log::operational_failure`) prints the house findings line and
+                // records the code, at [`EXIT_ERROR`] — the §10 destroying-door mold's exit.
+                if render::blocked_finding(&err).is_some() {
+                    return Err(err);
                 }
                 // M40 F7 item 2 — a failure in jigc's OWN stage phase (the marked
                 // `git add` in `stage_migration`/`stage_index_honoring`) surfaces as a
@@ -2488,7 +2506,7 @@ impl TaskArea {
             let Some(title) = schema.fixed_title() else {
                 return Ok(None);
             };
-            let migration = state::read_source_path(&self.dir)
+            let migration = state::read_migration_source(&self.dir)
                 .context("could not read the task's migration source path")?
                 .is_some();
             let on_create = crate::doc::on_create_doc_fields(
@@ -2995,10 +3013,140 @@ fn promote(
     Ok(())
 }
 
+/// A retirement whose recorded path has been **adjudicated against the repository it is about
+/// to be unlinked from** — the only value [`retire`] will act on (M51 Increment 1 / T3;
+/// `completions/artifacts/M51/settle-record.md` → §2, the sink).
+///
+/// **Why a second adjudication at all.** T1 made the `jigc migrate` door refuse a `<path>` it
+/// cannot record, which closes the door and nothing else. What the door produces is a line in
+/// a **mutable, gitignored working area** (`.jigc/tasks/<id>/source-path`), and one commit
+/// closure later [`retire`] reads it back and hands it to `std::fs::remove_file`. Between
+/// those two moments the value is caller-supplied *again*, so a guard that only ran at the
+/// door is a guard on the typing, not on the deletion. Driven at `c5f7a85`: rewriting that
+/// file to an absolute path outside the repository and running `finalize --approve` deleted a
+/// file in another tree at **exit 0**, inside a commit that said it had migrated a document.
+///
+/// **The two fields are what makes it a value and not a re-check.** The *normalized literal
+/// path* is the repo-relative spelling [`crate::trackable::resolve_source_token`] answered
+/// with — not the recorded string, which may spell the same file differently or no file at
+/// all — and the *bound repository identity* is the root that answer was computed against, so
+/// [`Self::target`] joins against the root that adjudicated it rather than whichever root
+/// happens to be in scope at the call. `engine::state::MigrationSource` is the other half of
+/// the pair: it carries provenance (*these bytes were recorded as a migration source*) and
+/// deliberately not admissibility, because admissibility needs `git` and a symlink syscall and
+/// the engine hosts neither.
+///
+/// **Why the predicate lives CLI-side**, stated rather than assumed: `crates/engine` contains
+/// no `Command::new` and no `symlink_metadata`/`read_link` — it is the deterministic core, and
+/// asking git who owns a path is not a deterministic-core act. The engine's own precedent for
+/// a CLI-supplied predicate is `engine::validate`'s injected `tracked`.
+#[derive(Debug)]
+struct ValidatedRetirement {
+    /// The normalized, repo-relative literal path to unlink.
+    path: String,
+    /// The repository this adjudication was bound to — the root [`Self::target`] joins against.
+    repo_root: PathBuf,
+}
+
+impl ValidatedRetirement {
+    /// Adjudicate one planned retirement, answering with the value [`retire`] may unlink — or
+    /// with the blocking [`Finding`] that refuses the whole transaction.
+    ///
+    /// **Two questions, in this order.**
+    ///
+    ///   1. **Git pathspec magic** — a recorded path beginning with `:`. This one is asked
+    ///      here and at no door, because it is a *sink* property: `git add -- <path>` prevents
+    ///      **option** parsing and nothing else, so a recorded `:(top)…` reaching
+    ///      [`stage_migration`] is a pathspec rather than a file name and stages a set nobody
+    ///      named. At the `jigc migrate` door the same token is already refused, for the
+    ///      unrelated reason that it names no readable file — so refusing it there would be
+    ///      refusing it twice for two different reasons and here for none.
+    ///   2. **[`crate::trackable::resolve_source_token`]** — the door's own four-step rule,
+    ///      asked again of the recorded value: resolve inside the repository or refuse an
+    ///      absolute one outright, then git's `.git`-component and git-dir rules, ownership
+    ///      and the index's gitlinks, then jigc's own workbench, then a symlinked component.
+    ///      One home, two callers: the door and the sink cannot get different answers about
+    ///      the same path, which is the property that makes "the door already checked it" a
+    ///      safe thing for a reader to believe.
+    fn adjudicate(repo_root: &Path, recorded: &Path) -> Result<Self, Finding> {
+        let recorded = recorded.to_string_lossy();
+        if recorded.starts_with(':') {
+            return Err(retire_untrackable_finding(
+                &recorded,
+                format!(
+                    "`{recorded}` begins with `:`, which git reads as pathspec magic \
+                     (`:(top)`, `:!`) and not as a file name — `git add -- <path>` \
+                     prevents option parsing, never magic, so staging the retirement \
+                     would match a set of files nobody named"
+                ),
+            ));
+        }
+        let path = crate::trackable::resolve_source_token(repo_root, &recorded)
+            .map_err(|reason| retire_untrackable_finding(&recorded, reason))?;
+        Ok(Self {
+            path,
+            repo_root: repo_root.to_path_buf(),
+        })
+    }
+
+    /// The absolute path to unlink — the adjudicated repo-relative spelling joined against the
+    /// **bound** root. Joining the *recorded* string instead is the hole itself: in Rust
+    /// `root.join(<absolute>)` **is** that absolute path, so a recorded host path silently
+    /// escaped the repository at the one call that mattered.
+    fn target(&self) -> PathBuf {
+        self.repo_root.join(&self.path)
+    }
+}
+
+/// The sink's refusal (`settle-record.md` → §10's table row; `design/validation.md` → the
+/// finding inventory): one blocking code for every reason, the reason carried in the message
+/// on `config.untrackable-root`'s precedent, and a [`engine::finding::Route::human`] because
+/// no `jigc` argv resolves this state — the recorded value is task state the operator repairs
+/// or abandons, and a route the state refuses is worse than none (M50's `write.not-present`
+/// lesson).
+///
+/// It is **not** the door's `migrate.source-untrackable`. That code's subject is an argument
+/// the operator just typed and can retype; this one's is task state written by a door which
+/// had already adjudicated it, so reaching this finding means something changed the value
+/// afterwards. A different act repairs it, so it is a different identity.
+///
+/// **It keys at the recorded path** ([`FinalizeSubject::FilePath`](crate::render::FinalizeSubject)),
+/// which is the one form that discriminates: two inadmissible retirements in one plan are two
+/// findings, not one `(code, null)`. The quoted value may have no repo-real spelling — that is
+/// precisely what the finding says about it — and it is also the only string an operator can
+/// search their working area for, so law 1's printed-path rule is met the way the `jigc
+/// migrate` door meets it (`design/surface-contract.md`; the `locate::not_in_repo_message`
+/// case), by naming the subject that has no relative form rather than inventing one.
+fn retire_untrackable_finding(recorded: &str, reason: impl Into<String>) -> Finding {
+    Finding::graded(
+        Severity::Blocking,
+        "finalize.retire-untrackable",
+        format!(
+            "this migration's recorded source is not a path this repository can retire: {}",
+            reason.into()
+        ),
+        Some(Location::addressed(recorded.to_string(), 1, 1)),
+        Some(engine::finding::Route::human(
+            "nothing was committed and the promote was rolled back. The retire target is \
+             recorded in the task's working area at `source-path`: restore it to the \
+             path `jigc migrate` recorded, or abandon the migration and re-run \
+             `jigc migrate` against a file inside this repository",
+        )),
+    )
+}
+
 /// The retire step (`design/auto-migration.md` → Retire-the-foreign-original) — the
-/// first byte-destructive write on a repo file. Remove each recorded foreign original
-/// (repo-relative) so the subsequent `git add --all` stages the deletion into the same
-/// commit as the promoted managed doc. Runs inside the commit closure, so a failure
+/// first byte-destructive write on a repo file. Adjudicate each planned retirement
+/// ([`ValidatedRetirement`]) and remove it so the subsequent `git add --all` stages the
+/// deletion into the same commit as the promoted managed doc.
+///
+/// **The adjudication is inside this loop on purpose** (M51 Increment 1 / T3,
+/// `settle-record.md` → §2): one statement above the unlink, not once before the commit
+/// closure is entered — a check at the closure's mouth spans promotion, staging and hooks
+/// and widens the window in which the recorded value can be substituted for another. An
+/// inadmissible retirement is a refusal of the **whole transaction**, not of one step: the
+/// `Err` propagates out of the closure, the caller's rollback restores the promote and the
+/// captured pre-images, and nothing is committed. Runs inside the commit closure, so a failure
 /// aborts the transaction (rolling back the promotions). An already-absent path is not
 /// an error (idempotent — the goal is the file gone). Empty on every non-migration
 /// finalize, so this is inert there.
@@ -3019,7 +3167,12 @@ fn retire(
     captured: &mut Vec<(PathBuf, Vec<u8>)>,
 ) -> Result<()> {
     for retirement in retirements {
-        let path = repo_root.join(retirement);
+        // The sink's own adjudication (M51 Increment 1 / T3), asked HERE — one statement
+        // above the unlink, in the same function as it, so nothing runs between the answer
+        // and the act it authorizes.
+        let validated = ValidatedRetirement::adjudicate(repo_root, retirement)
+            .map_err(|finding| crate::render::finding_error(&finding))?;
+        let path = validated.target();
         match std::fs::read(&path) {
             Ok(bytes) => {
                 captured.push((retirement.clone(), bytes));
@@ -4924,6 +5077,58 @@ fn discover_repo_root(start: &Path) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **Every leading-`:` spelling is refused at the sink** — the pathspec-magic leg of
+    /// [`ValidatedRetirement::adjudicate`], swept over git's own magic forms rather than
+    /// pinned at the one an end-to-end arm happens to drive.
+    ///
+    /// It is a unit test and not a second integration arm for a stated reason: the
+    /// parenthesised forms cannot *reach* this predicate through the binary, because
+    /// `engine::file_state::ConflictBlock::task` composes `jigc unmanage <source>` as a
+    /// `Route::mechanical` eagerly on every migration finalize and the route fence's
+    /// `shell_safe` leg refuses `(`/`)` long before the commit closure opens — a pre-existing
+    /// defect on its own trigger (`implementation/decisions-pending.md`), whose subject is a
+    /// route's quoting rather than this sink. Asking the predicate directly is what keeps the
+    /// leg swept over its whole axis anyway.
+    ///
+    /// The refusal is decided **before any filesystem access**, which is why an arbitrary root
+    /// is enough here: a `:`-led token is not a path this door will resolve at all.
+    #[test]
+    fn every_leading_colon_spelling_is_refused_at_the_sink() {
+        let root = Path::new("/nonexistent-repo-root");
+        for spelling in [
+            ":(top)keepme.md",
+            ":(exclude)keepme.md",
+            ":!keepme.md",
+            ":/keepme.md",
+            ":",
+        ] {
+            let finding = ValidatedRetirement::adjudicate(root, Path::new(spelling))
+                .expect_err(&format!("`{spelling}` must be refused at the sink"));
+            assert_eq!(finding.code, "finalize.retire-untrackable");
+            assert!(
+                finding.message.contains("pathspec magic"),
+                "`{spelling}` must be refused AS pathspec magic, not as some other reason; \
+                 got: {}",
+                finding.message,
+            );
+        }
+    }
+
+    /// …and an ordinary repo-relative spelling is **not** refused, so the leg above cannot be
+    /// satisfied by a predicate that says no to everything. Driven against **this** repository,
+    /// because every step after the `:` test asks the filesystem and git, and a bare temp
+    /// directory answers neither question the way a repository does.
+    #[test]
+    fn an_ordinary_in_repo_spelling_survives_the_sink() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("crates/cli sits two levels under the repo root");
+        let validated = ValidatedRetirement::adjudicate(root, Path::new("docs/direction.md"))
+            .expect("an ordinary repo-relative source is admissible");
+        assert_eq!(validated.target(), root.join("docs/direction.md"));
+    }
 
     /// The **shell-safety fence on the re-run seam** (M47 Inc 3 T7 fix). The frame's re-run
     /// line is bytes an operator or agent pastes into a shell, and the tokens it embeds are
