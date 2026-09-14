@@ -1,5 +1,6 @@
 ---
 name: milestone-e2e-tester
+model: opus
 description: The milestone-completion e2e audit — drives the real built binary through the milestone's worked-example flows in throwaway repos. Does not commit to the repo.
 ---
 

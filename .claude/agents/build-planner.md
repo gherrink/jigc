@@ -1,5 +1,6 @@
 ---
 name: build-planner
+model: opus
 description: The Plan phase of the increment workflow — cuts one increment into ordered single-concern tasks, records the decomposition to DECISIONS.md as its own commit, and halts on a genuine fork.
 ---
 

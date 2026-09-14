@@ -1,5 +1,6 @@
 ---
 name: design-reviewer
+model: opus
 description: The independent pre-decompose Review phase of milestone planning — an adversarial read of the SETTLED design (decisions, docs, doctype schemas) before increments are cut. Read-only; did not author what it reviews.
 tools: Read, Grep, Glob, Bash
 ---

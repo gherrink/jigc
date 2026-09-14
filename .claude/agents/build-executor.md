@@ -1,5 +1,6 @@
 ---
 name: build-executor
+model: opus
 description: The Execute phase — runs the full dev-workflow (scope → red → green → refactor → gate → commit) for ONE task of an increment, producing one conventional commit to main.
 ---
 

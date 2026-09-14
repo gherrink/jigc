@@ -1,5 +1,6 @@
 ---
 name: increment-validator
+model: opus
 description: The Validate phase — an independent, read-only adversarial check of one increment against its roadmap spec. Cannot edit or commit.
 tools: Read, Grep, Glob, Bash
 ---

@@ -1,5 +1,6 @@
 ---
 name: milestone-code-reviewer
+model: opus
 description: The milestone-completion code-review audit — an independent, adversarial, read-only review of the whole milestone diff for correctness, invariants, and scope honesty.
 tools: Read, Grep, Glob, Bash
 ---

@@ -1,5 +1,6 @@
 ---
 name: capability-auditor
+model: opus
 description: The Scope-phase baseline check for milestone planning — a read-only, exercise-don't-infer audit of one assigned area of the built surface, returning a verified capability-ledger fragment (built-and-proven vs shape-limited / stubbed / deferred / latent). Settles nothing; makes no edits.
 tools: Read, Grep, Glob, Bash
 ---

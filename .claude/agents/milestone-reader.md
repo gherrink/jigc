@@ -1,5 +1,6 @@
 ---
 name: milestone-reader
+model: opus
 description: Reads implementation/roadmap.md for a named milestone and returns its ordered increment decomposition. Read-only enumeration — does not plan tasks or touch code.
 tools: Read, Grep, Glob, Bash
 ---

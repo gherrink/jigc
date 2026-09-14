@@ -1,5 +1,6 @@
 ---
 name: gap-detector
+model: opus
 description: One forward-looking, adversarial gap probe for milestone planning — given one assigned dimension (decisions / docs / doctypes / capabilities), finds what is missing or unfit to build the milestone cleanly. Read-only; settles nothing.
 tools: Read, Grep, Glob, Bash
 ---

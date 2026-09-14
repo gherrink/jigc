@@ -1,5 +1,6 @@
 ---
 name: build-fixer
+model: opus
 description: The Fix phase — resolves ONE blocking validation finding via the dev-workflow (reproduce as red → minimal green → gate → one commit).
 ---
 
