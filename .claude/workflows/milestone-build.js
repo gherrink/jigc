@@ -139,6 +139,8 @@
 //               skips increments 1..skipThrough and starts at skipThrough+1; the audit
 //               still covers the whole milestone via `base`. Use a fresh run (no
 //               resumeFromRunId). Default 0 (build everything).
+//   model     — OPTIONAL model class pinned onto every agent() call ('opus' by default).
+//               Part of each call's cache key: re-pass the same value on every resume.
 
 export const meta = {
   name: 'milestone-build',
@@ -178,6 +180,13 @@ const base = a.base ? String(a.base) : null
 // milestone). Use a FRESH run (no resumeFromRunId) — this path does not rely on the
 // agent-call cache at all, so it is immune to a cache-replay that won't fast-forward.
 const skipThrough = a.skipThrough != null ? Number(a.skipThrough) : 0
+// model — the model class EVERY agent call in this run is pinned to. Default 'opus'.
+// The `model:` frontmatter key in .claude/agents/*.md is NOT honored when the Workflow
+// runtime resolves a role by `agentType` (measured 2026-09-14 on the first M51 launch: the
+// milestone-reader ran on the session model with `model: opus` present in its definition),
+// so the pin has to ride the agent() opts. It is part of the (prompt, opts) cache key, so a
+// resume must re-pass the same value (RULE 0 applies to `model` exactly as to `milestone`).
+const model = a.model ? String(a.model) : 'opus'
 
 // resumeLine — the EXACT correct resume invocation, surfaced IN every halt return so the
 // operator sees it at the moment they need it (not buried in the RULE 0 header they won't
@@ -485,7 +494,8 @@ async function agentR(prompt, opts) {
       're-derive and report your structured result from the existing commit.'
     )
     try {
-      const result = await agent(prompt + note, opts)
+      // `model` is merged UNDER opts, so a call that names its own model still wins.
+      const result = await agent(prompt + note, Object.assign({ model }, opts))
       if (result != null) return result
       // null return = the subagent died on a terminal error after its own retries, or was
       // skipped. Same transient class as a throw — fall through to retry rather than return it.
