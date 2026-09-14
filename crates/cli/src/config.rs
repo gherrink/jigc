@@ -470,8 +470,8 @@ fn run_set(cwd: &Path, key: &str, value: &str) -> Result<ConfigAck> {
             "config.unusable-root",
             format!("`{typed}` cannot be the `{key}`: {reason}"),
             "re-run with a repo-relative directory — an existing one, or one jigc should create; \
-             never a file, an absolute path, or a path through a symlink; `jigc config list` \
-             shows the value in force and the layer it wins from",
+             never a file, an absolute path, a path through a symlink, or a value padded with \
+             whitespace; `jigc config list` shows the value in force and the layer it wins from",
         )));
     }
 
@@ -687,6 +687,19 @@ fn unusable_root_reason(repo_root: &Path, value: &str) -> Option<String> {
         ));
     }
 
+    if let Some(shown) = whitespace_padded_component(value) {
+        let as_read = if shown.trim().is_empty() {
+            "unset".to_owned()
+        } else {
+            format!("`{}`", shown.trim())
+        };
+        return Some(format!(
+            "`{shown}` carries whitespace at its edge — a root has to read back as itself, and \
+             `jigc config get` renders this one indistinguishably from {as_read}, so the value \
+             in force and the directory every managed doc is moved under cannot be told apart"
+        ));
+    }
+
     match offending_component(repo_root, value) {
         // Every named component walked and none of them refused — including the case of no
         // named component at all (`""`, `.`), which is the repo root and the flat layout both
@@ -702,6 +715,48 @@ fn unusable_root_reason(repo_root: &Path, value: &str) -> Option<String> {
              lands anyway, and the store then resolves its docs to homes nothing is at"
         )),
     }
+}
+
+/// The first component of `value` carrying **leading or trailing whitespace**, as its own
+/// spelling — `None` when every component reads back as itself (M51 Increment 1 / T5, EC-27).
+///
+/// The whitespace leg of [`unusable_root_reason`], and the only one of its four that asks
+/// nothing of the filesystem: the defect is on the **read** surface, not on disk. Driven at
+/// `b9e13cf`, `jigc config set docs-root '   '` exited 0 and `jigc config get docs-root` then
+/// printed `docs-root =      (project)` — a reading no operator can tell from unset — while
+/// every managed doc would finalize under a directory literally named three spaces.
+/// `'  x  '` is the same defect one step less total. [`normalize_root_value`] folds `.` and
+/// `..` and never trims, so a whitespace run survives the fold as an ordinary
+/// `Component::Normal` and reaches the store as a home.
+///
+/// **Edge whitespace, not any whitespace.** An interior space (`my notes`) reads back as
+/// itself and names a directory the operator can see and type, so refusing it would refuse a
+/// legitimate home; and a tab never arrives here at all — `engine::write::check_value`'s
+/// control-character floor refuses it two steps earlier under `config.value-rejected`. What is
+/// left is exactly the class that is invisible at an edge, which `str::trim` names (Unicode
+/// `White_Space`, so a non-breaking space is caught with the ASCII one).
+///
+/// **The subject is every component, not the leaf** — the correction [`offending_component`]
+/// already carries for its own two shapes, applied here from the start: `docs/ notes` names an
+/// invisible directory exactly as `  x  ` does, and the component is what the message quotes
+/// so the refusal points at the half of the value that is wrong.
+fn whitespace_padded_component(value: &str) -> Option<String> {
+    use std::path::Component;
+
+    Path::new(value)
+        .components()
+        .find_map(|component| match component {
+            Component::Normal(part) => {
+                let shown = part.to_string_lossy();
+                (shown.trim() != shown.as_ref()).then(|| shown.into_owned())
+            }
+            // `.`/`..` name no component to read back, and a root or prefix component belongs to
+            // the absolute value its caller refuses one leg above.
+            Component::CurDir
+            | Component::ParentDir
+            | Component::RootDir
+            | Component::Prefix(_) => None,
+        })
 }
 
 /// The two on-disk shapes an **existing component** of a relative value can have that a door

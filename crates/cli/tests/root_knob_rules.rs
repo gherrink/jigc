@@ -325,7 +325,10 @@ impl Corpus {
 /// path** and therefore carries its own code (`design/storage.md` → Placement) — asserting a
 /// shape is refused without saying *which* rule refused it would let either rule cover for the
 /// other's absence.
-fn assert_refused_and_inert(corpus: &Corpus, key: &str, value: &str, code: &str) {
+///
+/// Returns the refusal's `stderr`, so an arm whose rule earns a sentence of its own can
+/// adjudicate what the reason *says* without re-driving the door (M51 Increment 1 / T5).
+fn assert_refused_and_inert(corpus: &Corpus, key: &str, value: &str, code: &str) -> String {
     let before = corpus.manifest();
     let out = corpus.jigc(&["config", "set", key, value]);
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
@@ -363,6 +366,7 @@ fn assert_refused_and_inert(corpus: &Corpus, key: &str, value: &str, code: &str)
         "a refused set records nothing — a landed knob with no move leaves the store pointing \
          at a home no doc is at",
     );
+    stderr
 }
 
 /// **The sixteen cells.** Every [`cli::config::ROOT_KNOBS`] member × every spelling that
@@ -668,5 +672,90 @@ fn a_hop_spelled_move_lands_the_canonical_path_in_the_store() {
             reading.contains(&format!("{key} = notes")),
             "`jigc config get {key}` reads back the value that landed; got:\n{reading}",
         );
+    }
+}
+
+// ---------------------------------------------------------------------------------------
+// M51 Increment 1 / T5 — **a root value that does not read back as itself is refused**
+// (EC-27; `settle-record.md` → D1 part 5; `design/storage.md` → What a root knob refuses).
+//
+// The three rules above all ask a question about the *home* a value reaches. This one asks a
+// question about the **value**: can the operator read it back and see what they set? Driven at
+// `b9e13cf` on a `committed-singletons` rig, all three cells at exit 0:
+//
+// ```text
+// $ jigc config set docs-root '   '     # three spaces
+// config: set `docs-root` = `   ` — written to `.jigc/config/` …                       rc=0
+// $ jigc config get docs-root
+// docs-root =      (project)            # visually identical to unset
+// $ jigc config set docs-root '  x  '
+// $ jigc config get docs-root
+// docs-root =   x    (project)          # a directory literally named `  x  `
+// ```
+//
+// …and every managed doc then finalizes under a directory whose name nobody can see or type
+// back. `cli::config::normalize_root_value` folds `.` and `..` and never trims, so a whitespace
+// run survives the fold as an ordinary `Component::Normal` and reaches the store as a home.
+//
+// **The class joins `config.unusable-root` rather than minting a code**, on that code's own
+// five-reasons-one-code precedent: the operator's fix is the same as for a file-shaped,
+// absolute or symlinked root — supply a different root. `ROOT_KNOBS` is the one home, so the
+// rule lands at both knobs by construction, which is what this arm's outer loop asserts.
+//
+// **The subject is every component, not the leaf** — the correction M50 already had to make to
+// the on-disk walk beside it (`README.md/sub`), applied here before it could be driven wrong:
+// `docs/ notes` names an invisible directory exactly as `  x  ` does.
+//
+// **The predicate is edge whitespace, not any whitespace.** A tab never reaches this leg —
+// `engine::write::check_value`'s control-character floor refuses it two steps earlier under
+// `config.value-rejected` — and an interior space (`my notes`) reads back as itself, so
+// refusing it would refuse a home the operator can see and type.
+//
+// The set iterated is the code-side registry `cli::config::ROOT_KNOBS` × the six spellings of
+// the class: the whole value as whitespace (two runs, since one space and three spaces read
+// back as the same nothing), padded on both sides, padded on one side each way, and a padded
+// component that is **not** the first. The over-refusal guard is the shipped admitting arm
+// `every_usable_root_is_still_admitted_and_the_store_still_describes_its_docs`, whose first
+// two cells are `""` and `.` at both knobs — the two values that carry no named component at
+// all, and the ones a trim-shaped rule would be most likely to swallow.
+// ---------------------------------------------------------------------------------------
+
+/// The six values that do not read back as themselves — every position edge whitespace can
+/// take, in the value and in a component.
+const WHITESPACE_VALUES: [&str; 6] = ["   ", " ", "  x  ", "notes ", " notes", "docs/ notes"];
+
+/// **The twelve cells.** Every [`cli::config::ROOT_KNOBS`] member × every spelling of the
+/// whitespace class, each refused before anything moves and before the knob lands, each
+/// refusal naming the value and carrying exactly one route.
+///
+/// One corpus for all twelve, on the same reasoning as the two arms above: a refused cell
+/// leaves the store byte-identical, so the twelfth cell adjudicates the corpus the first did.
+#[test]
+fn no_root_knob_accepts_a_value_that_does_not_read_back_as_itself() {
+    let corpus = Corpus::new("whitespace");
+    for key in cli::config::ROOT_KNOBS {
+        for value in WHITESPACE_VALUES {
+            let stderr = assert_refused_and_inert(&corpus, key, value, "config.unusable-root");
+            assert!(
+                stderr.contains(&format!("`{value}`")),
+                "the refusal quotes the value the operator typed, so the one thing they cannot \
+                 see on the read surface is visible on the refusal; stderr:\n{stderr}",
+            );
+            assert!(
+                stderr.contains("whitespace"),
+                "the reason names the whitespace — `config.unusable-root` carries four reasons \
+                 under one code, so a refusal that does not say which one it is leaves the \
+                 operator reading about files and symlinks; stderr:\n{stderr}",
+            );
+            let routes = stderr
+                .lines()
+                .filter(|line| line.trim_start().starts_with("route:"))
+                .count();
+            assert_eq!(
+                routes, 1,
+                "one refusal, one route (`design/surface-contract.md` → the route floor); \
+                 stderr:\n{stderr}",
+            );
+        }
     }
 }

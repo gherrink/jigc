@@ -2,6 +2,19 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-09-14 — M51 Increment 1 / T5: a root value that does not read back as itself is refused (EC-27)
+
+Driven at `b9e13cf`: `jigc config set docs-root '   '`, `' '` and `'  x  '` all exited **0**, and `jigc config get docs-root` then printed `docs-root =      (project)` — a reading no operator can tell from unset — while every managed doc would finalize under a directory literally named three spaces. `normalize_root_value` folds `.` and `..` and never trims, so a whitespace run survives the fold as an ordinary `Component::Normal` and reaches the store as a home.
+
+**No new code: the class joins the shipped `config.unusable-root`**, on that code's own five-reasons-one-code precedent — the operator's fix is the same as for a file-shaped, absolute or symlinked root, *supply a different root* — which is how EC-27 lands **by membership** in the path-argument registry rather than in Tier 3 under an unshared predicate ([settle-record.md](completions/artifacts/M51/settle-record.md) → D1 part 5; **G-30 closed**). `cli::config::ROOT_KNOBS` is the one home, so the rule binds `placement-root` by construction rather than by a second edit.
+
+Two elaborations decided at the code, both narrowing what *"a value that reads back as itself"* means:
+
+- **Edge whitespace, over every component — not any whitespace, and not the leaf.** An interior space (`my notes`) reads back as itself and names a home the operator can see and type, so refusing it would refuse a legitimate root; a tab never reaches the leg at all, since `engine::write::check_value`'s control-character floor refuses it two steps earlier under `config.value-rejected`. The subject is **every** component (`docs/ notes` names an invisible directory exactly as `  x  ` does) — the correction the on-disk walk beside it already had to take at M50 (`README.md/sub`), applied here before it could be driven wrong.
+- **The leg is lexical and sits after the absolute leg, before the on-disk walk.** A value refused twice over keeps the stronger sentence: `/tmp/x  ` still answers *an absolute path*, the reason that survives trimming.
+
+The refusal's **route was widened in the same motion** — it enumerated *"never a file, an absolute path, or a path through a symlink"* and would have understated the fourth shape it now refuses, which is law 1 on the surface the refusal itself prints.
+
 ## 2026-09-14 — M51 Increment 1 / T4: a step source is read as a source, and the handoff family takes its explicit disposition
 
 Shipped **`config.step-source-untrackable`** on §10's mold at **both** occurrences of the `file` argument (`jigc config insert-step`, `jigc config replace-step`), asked **before the read** by one shared predicate, `trackable::source_read_reason`. Driven at `dddc11a5`, `jigc config insert-step … .git/config` exited **0** and copied this repository's git config into `.jigc/config/steps/config.yaml`; that the copy then **composes** — `repositoryformatversion = 0` rendered into the step text `jigc start` hands the agent — is the baseline's own drive ([baseline-tokens.md](completions/artifacts/M51/baseline-tokens.md) §2d), relayed and marked as such. The rule is §2's — **readable · no `.git` component · not reached through the workbench** — and an **out-of-repo source stays admitted**: the caller names it and the bytes land in the next diff, so refusing it would narrow a shipped affordance (a team steps library at `~/steps/foo.yaml`) to close nothing.
