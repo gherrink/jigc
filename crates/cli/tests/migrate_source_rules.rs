@@ -56,6 +56,7 @@
 //! `migrate_retire_safety::migrate_records_a_canonical_source_path_for_redundant_spellings`
 //! pins from the other side.
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -667,5 +668,176 @@ fn a_source_committed_then_unstaged_is_admitted_because_git_still_holds_a_copy()
         1,
         "a source `HEAD` still holds migrates — the leg refuses *no copy anywhere*, never \
          *not in the index*",
+    );
+}
+
+// ───────── (h) the finding inventory registers exactly this increment's codes ─────────
+
+/// The design doc that owns the finding inventory — `validation.md`'s **Severity inventory**
+/// is the one home a check's severity class, its intrinsic-or-tunable classification and its
+/// keyed-or-unkeyed status are stated in, and the M45 / M49 registration sections are the
+/// precedent for a wave that mints findings without minting keyed check ids.
+const INVENTORY_DOC: &str = "design/validation.md";
+
+/// The section heading this increment's registration table sits under, verbatim.
+///
+/// **Keyed per increment, deliberately.** M51 mints ten codes across the wave
+/// (`completions/artifacts/M51/settle-record.md` → §10's table), and each increment's own
+/// arm asserts **equality** over its own mints. One shared section would make every such arm
+/// red the moment a sibling increment registered its codes — equality over a set that is not
+/// the arm's subject. So each increment registers under its own sibling heading, and this
+/// arm's subject is exactly the four Increment 1 ships.
+const INVENTORY_HEADING: &str = "### The M51 registrations — Increment 1: the path-argument rules";
+
+/// **The four codes Increment 1 mints**, spelled here and deliberately **not** imported from
+/// the production constants — the `design/structural-grammar.md` literal-equality precedent
+/// (`crates/cli/tests/malformed_work_unit_id.rs` →
+/// `the_design_doc_states_the_shipped_grammar_verbatim`).
+///
+/// The chain that makes this a fence rather than a spell-check has three links, and the arm
+/// below asserts all three:
+///
+/// 1. **doc == these literals.** The registration table's code column is *scraped* and
+///    compared as a **set**, so a fifth row, a missing row or a re-spelled code reddens —
+///    `contains` alone would pass a table that registered a code the binary never emits.
+/// 2. **these literals == what the binary emits.** Every member is asserted to be a code some
+///    shipped production registry declares — `cli::cli::PATH_ARG_OCCURRENCES` for the three
+///    minted at a door argument (itself ⇔-fenced against the real clap tree, so it cannot
+///    drift into documentation) and `cli::render::FINALIZE_FAMILY` for the sink's, which is
+///    minted one statement above the `remove_file` it guards and therefore belongs to no
+///    argument. On the wire: arms (a)–(g) above drive `migrate.source-untrackable` and
+///    `migrate.source-untracked` through the real binary, and the two siblings in this group
+///    target drive the others (`retire_sink_validation.rs`, `step_source_rules.rs`).
+/// 3. **none of them is an `ERROR_CODE_REGISTRY` member** (`settle-record.md` → §10). That
+///    registry mirrors **door identities** derived from `COMMITTING_DOORS`, and a blocking
+///    `Finding` is not an `Outcome` identity; registering one there would put a finding in a
+///    set whose own fence is a doc mirror of a different thing.
+const INCREMENT_CODES: [&str; 4] = [
+    "config.step-source-untrackable",
+    "finalize.retire-untrackable",
+    "migrate.source-untrackable",
+    "migrate.source-untracked",
+];
+
+/// The repository root, two levels above `crates/cli`.
+fn repo_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("the repo root sits two levels above crates/cli")
+        .to_path_buf()
+}
+
+/// The block of [`INVENTORY_DOC`] under [`INVENTORY_HEADING`], up to the next heading of the
+/// same or a higher level — the section, never the rest of the file.
+fn registration_section(doc: &str) -> &str {
+    let start = doc.find(INVENTORY_HEADING).unwrap_or_else(|| {
+        panic!(
+            "{INVENTORY_DOC} must carry the section `{INVENTORY_HEADING}` — this increment \
+             mints four blocking findings, and `validation.md`'s Severity inventory is the \
+             home the wave's Settle named for registering them (settle-record.md → §10)",
+        )
+    });
+    let body = &doc[start + INVENTORY_HEADING.len()..];
+    let end = body
+        .match_indices('\n')
+        .map(|(at, _)| at + 1)
+        .find(|at| body[*at..].starts_with("## ") || body[*at..].starts_with("### "))
+        .unwrap_or(body.len());
+    &body[..end]
+}
+
+/// Every code the registration table's **first column** names, as a set.
+fn registered_codes(section: &str) -> BTreeSet<String> {
+    section
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with('|'))
+        // Drop the header row and the `|---|` separator: neither carries a backticked code.
+        .filter_map(|line| line.trim_start_matches('|').split('|').next())
+        .flat_map(|first_cell| {
+            first_cell
+                .split('`')
+                .skip(1)
+                .step_by(2)
+                .map(str::trim)
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+/// **The inventory names exactly the codes this increment's binary emits, and none of them
+/// joins the door-identity registry** (`settle-record.md` → §10; the roadmap's *Codes it
+/// registers*).
+///
+/// Red at this task's start, and at the section-absent panic rather than the equality: T9
+/// began with `validation.md` carrying no M51 registration at all, so the codes T1–T4 had
+/// already minted were named in no inventory. It is the one mechanical check on a task whose
+/// deliverable is otherwise prose — the rest of T9's loci state *rules*, and a byte-assert
+/// over a rule's wording would pin editorial phrasing rather than a contract, which is why
+/// they are verified by reading against the stated command in `DECISIONS.md` instead.
+#[test]
+fn the_finding_inventory_registers_exactly_this_increments_codes() {
+    let root = repo_root();
+    let doc = fs::read_to_string(root.join(INVENTORY_DOC))
+        .unwrap_or_else(|err| panic!("read {INVENTORY_DOC}: {err}"));
+    let section = registration_section(&doc);
+
+    // 1 — doc == these literals, as a SET.
+    let registered = registered_codes(section);
+    let expected: BTreeSet<String> = INCREMENT_CODES
+        .iter()
+        .map(|code| (*code).to_owned())
+        .collect();
+    assert_eq!(
+        registered, expected,
+        "{INVENTORY_DOC} → `{INVENTORY_HEADING}` must register EXACTLY the codes this \
+         increment mints — one table row per code, the code alone in the first column. A \
+         row for a code the binary never emits is a lie on the inventory that calls itself \
+         *the single source of truth* for what the engine emits; a missing row is the \
+         silence §10 exists to end.\nsection read:\n{section}",
+    );
+
+    // 2 — these literals == what the binary emits, sourced from the shipped registries.
+    let door_codes: BTreeSet<&str> = cli::cli::PATH_ARG_OCCURRENCES
+        .iter()
+        .flat_map(|occurrence| occurrence.arms)
+        .filter_map(|arm| match arm.disposition {
+            cli::cli::PathArgDisposition::Adjudicated { codes, .. } => Some(codes),
+            cli::cli::PathArgDisposition::NoRule { .. } => None,
+        })
+        .flatten()
+        .copied()
+        .collect();
+    let finalize_codes: BTreeSet<&str> = cli::render::FINALIZE_FAMILY
+        .iter()
+        .map(|member| member.code)
+        .collect();
+    for code in INCREMENT_CODES {
+        assert!(
+            door_codes.contains(code) || finalize_codes.contains(code),
+            "`{code}` must be declared by a shipped production registry — \
+             `cli::cli::PATH_ARG_OCCURRENCES` for a code minted at a door argument, \
+             `cli::render::FINALIZE_FAMILY` for one minted inside the finalize transaction. \
+             A code the inventory registers and no registry declares is a doc entry with \
+             nothing behind it.",
+        );
+    }
+
+    // 3 — and none of them joins the door-identity registry (§10).
+    for code in INCREMENT_CODES {
+        assert!(
+            !cli::invocation_log::ERROR_CODE_REGISTRY.contains(&code),
+            "`{code}` must stay OUT of `ERROR_CODE_REGISTRY`: that registry mirrors door \
+             identities derived from `COMMITTING_DOORS`, and a blocking `Finding` is not an \
+             `Outcome` identity (settle-record.md → §10)",
+        );
+    }
+    assert!(
+        section.contains("ERROR_CODE_REGISTRY"),
+        "…and the section must SAY so — the reason a blocking finding is not a door identity \
+         is the half a reader cannot derive from the table, and §10 decided it once for the \
+         whole family",
     );
 }
