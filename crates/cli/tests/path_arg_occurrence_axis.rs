@@ -29,12 +29,29 @@
 //! is path-like only when `key ∈ ROOT_KNOBS`; and `from_file` carries the `-` stdin
 //! sentinel, which is not a path at all. Each of those is its own row with its own answer.
 //!
-//! ## The eight cells
+//! ## The nine cells
 //!
 //! `{absolute, ../ escape, symlink escape, .git/ component, workbench root, untracked
-//! in-repo, leading-colon pathspec magic, the - stdin sentinel}` — the escape shapes the
-//! wave was chartered on, plus the sentinel that is **not** an escape and is driven for
-//! exactly that reason: it is the arm split the registry's key exists to express.
+//! in-repo, leading-colon pathspec magic, a wildmatch glob, the - stdin sentinel}` — the
+//! escape shapes the wave was chartered on, plus the sentinel that is **not** an escape and
+//! is driven for exactly that reason: it is the arm split the registry's key exists to
+//! express.
+//!
+//! **The ninth cell is the eighth's own hole, and it is why the axis has a *magic* dimension
+//! rather than a `:` one.** Git has two pathspec magics: the `:` prefix, and wildmatch (`*`,
+//! `?`, `[`, `\`), which needs no prefix at all. The colon cell's token — `:(top)README.md` —
+//! names **no readable file**, so every door that reads before it adjudicates answered
+//! `NotFound`, and the expectation table recorded that as a disposition rather than as a
+//! blind spot: the whole class was left to the sink on the stated ground that the door
+//! refuses such a token anyway. `*.md` is the spelling that ground is false for. Driven at
+//! `8bc6f4e`, on a corpus holding six tracked `.md` files, with the literal file `*.md`
+//! planted untracked: `jigc migrate '*.md' --as changelog` read it, asked
+//! `git ls-files -- '*.md'` whether git held a copy, was told **yes** about six other
+//! people's files, and minted at exit 0 — after which `--approve` unlinked the source
+//! (recoverable from no git object) and `git add -- '*.md'` swept an unrelated unstaged edit
+//! into a commit naming the changelog. The cell therefore plants a file that **exists** and
+//! whose name **matches files git holds**; a cell naming nothing can only ever prove that
+//! nothing is named.
 //!
 //! **A row with no cell is a hard panic, never a skip.** The cell expectation is an
 //! exhaustive `match` over [`Cell`] per row — the compiler is the fence on that dimension
@@ -105,6 +122,12 @@ const REPLACEMENT_STEP: &str = "id: replacement-step\nbody: Replacement.\n";
 /// [`CANARY`]'s bytes so it reads as a payload wherever a payload is what the door wants.
 const UNTRACKED_SOURCE: &str = "untracked-source.yaml";
 
+/// The glob cell's spelling: a file whose **name is a pattern**, planted so the token names
+/// a file that genuinely exists *and* matches tracked files git holds. It carries [`CANARY`]
+/// too, so the doors that read a source answer about the payload exactly as the untracked
+/// cell's does — the only difference between the two cells is the name.
+const GLOB_SOURCE: &str = "*.md";
+
 /// The in-repo symlink the third cell reaches through — **relative**, so a copied corpus's
 /// link points at the copy's own outside directory and never back at the source fixture.
 const SYMLINK_DIR: &str = "linkdir";
@@ -126,12 +149,16 @@ enum Cell {
     UntrackedInRepo,
     /// A leading `:` — what git reads as pathspec magic (`:(top)`, `:!`), never as a name.
     PathspecMagic,
+    /// Git's OTHER magic: a wildmatch pattern (`*`) that names a file which **exists** while
+    /// matching files git holds. The cell above could not reach this, and that is why it is
+    /// its own cell rather than a second spelling of one (see the module header).
+    PathspecGlob,
     /// `-`, the declared stdin sentinel. Not an escape: the arm split itself.
     StdinSentinel,
 }
 
 impl Cell {
-    const ALL: [Cell; 8] = [
+    const ALL: [Cell; 9] = [
         Cell::Absolute,
         Cell::ParentEscape,
         Cell::Symlink,
@@ -139,6 +166,7 @@ impl Cell {
         Cell::WorkbenchRoot,
         Cell::UntrackedInRepo,
         Cell::PathspecMagic,
+        Cell::PathspecGlob,
         Cell::StdinSentinel,
     ];
 }
@@ -180,6 +208,7 @@ fn token(cell: Cell, subject: PathArgSubject, repo: &Path) -> String {
             Cell::WorkbenchRoot => ".jigc/state/file-state.json".to_owned(),
             Cell::UntrackedInRepo => UNTRACKED_SOURCE.to_owned(),
             Cell::PathspecMagic => ":(top)README.md".to_owned(),
+            Cell::PathspecGlob => GLOB_SOURCE.to_owned(),
             Cell::StdinSentinel => "-".to_owned(),
         }
     };
@@ -193,6 +222,7 @@ fn token(cell: Cell, subject: PathArgSubject, repo: &Path) -> String {
             Cell::WorkbenchRoot => ".jigc/docs".to_owned(),
             Cell::UntrackedInRepo => "untracked-home".to_owned(),
             Cell::PathspecMagic => ":(top)docs".to_owned(),
+            Cell::PathspecGlob => "do*s".to_owned(),
             Cell::StdinSentinel => "-".to_owned(),
         },
         // The head is held valid so the door answers about the TAIL — the component that
@@ -216,27 +246,38 @@ fn expectation(door: &str, arg: &str, arm: &PathArgArm, cell: Cell) -> Outcome {
                 PathRuleBlocks("migrate.source-untrackable")
             }
             UntrackedInRepo => PathRuleBlocks("migrate.source-untracked"),
-            // Both name no readable file. Pathspec magic is a SINK property by decision —
-            // a recorded `:(top)…` is refused by `finalize.retire-untrackable` (T3), where
-            // it would reach `git add`; refusing it here too would be refusing it twice for
-            // two different reasons and there for none.
-            PathspecMagic | StdinSentinel => NotFound,
+            // The door refuses git's magic as a CLASS, at the same code as the other
+            // location legs — and BOTH magic cells moved here, which is the shape of the
+            // defect rather than a bonus. The row used to read *"pathspec magic is a SINK
+            // property by decision: at the door the same token is already refused, for the
+            // unrelated reason that it names no readable file"*. That is true of
+            // `:(top)README.md` and false of `*.md`: a glob names a file that **exists**, so
+            // the door read it, asked its trackedness leg a `git ls-files` that answered
+            // about six OTHER tracked files, and minted at exit 0 a deletion target no git
+            // object holds. One spelling of a rule is not the rule, so the class is asked in
+            // the home the door and the sink share — and the colon cell stops being answered
+            // by a read miss that names the wrong problem.
+            PathspecMagic | PathspecGlob => PathRuleBlocks("migrate.source-untrackable"),
+            StdinSentinel => NotFound,
         },
         // `jigc unmanage <path>` — a lookup key over the recorded store, never a path op.
         ("unmanage", "path", _, _) => match cell {
             Absolute | ParentEscape | Symlink | GitComponent | WorkbenchRoot | UntrackedInRepo
-            | PathspecMagic | StdinSentinel => Accepted,
+            | PathspecMagic | PathspecGlob | StdinSentinel => Accepted,
         },
         // `jigc relocate --from <prior-home>` — a prefix over committed spellings.
         ("relocate", "from", _, _) => match cell {
             Absolute | ParentEscape | Symlink | GitComponent | WorkbenchRoot | UntrackedInRepo
-            | PathspecMagic | StdinSentinel => Accepted,
+            | PathspecMagic | PathspecGlob | StdinSentinel => Accepted,
         },
         // The two `<file>` occurrences — a SOURCE rule: an out-of-repo source is admitted
         // and copied in; git's own directory and jigc's transient workbench are not.
         ("config insert-step" | "config replace-step", "file", _, _) => match cell {
             GitComponent | WorkbenchRoot => PathRuleBlocks("config.step-source-untrackable"),
-            Absolute | ParentEscape | Symlink | UntrackedInRepo => Accepted,
+            // The glob cell joins the accepting set rather than the refusing one, and that is
+            // the class boundary stated as an outcome: these doors `std::fs::read` the token
+            // and never hand it to git, so a name that is a pattern is just a name.
+            Absolute | ParentEscape | Symlink | UntrackedInRepo | PathspecGlob => Accepted,
             // `-` is read as a file name at these two doors, not as stdin — which is the
             // discriminator that earns them a rule while `--from-file` takes none.
             PathspecMagic | StdinSentinel => NotFound,
@@ -245,27 +286,26 @@ fn expectation(door: &str, arg: &str, arm: &PathArgArm, cell: Cell) -> Outcome {
         ("config fill" | "doc set-slot", "from_file", ArmToken::Literal(_), _) => match cell {
             StdinSentinel => Accepted,
             Absolute | ParentEscape | Symlink | GitComponent | WorkbenchRoot | UntrackedInRepo
-            | PathspecMagic => {
+            | PathspecMagic | PathspecGlob => {
                 unreachable!("the sentinel arm answers for `-` and no other token")
             }
         },
         ("config fill" | "doc set-slot", "from_file", ArmToken::Caller, _) => match cell {
             // Any bytes are prose / fill content — the token was a source to open.
-            Absolute | ParentEscape | Symlink | GitComponent | WorkbenchRoot | UntrackedInRepo => {
-                Accepted
-            }
+            Absolute | ParentEscape | Symlink | GitComponent | WorkbenchRoot | UntrackedInRepo
+            | PathspecGlob => Accepted,
             PathspecMagic => NotFound,
             StdinSentinel => unreachable!("the sentinel arm claims this cell"),
         },
         ("doc author", "from_file", ArmToken::Literal(_), _) => match cell {
             StdinSentinel => Accepted,
             Absolute | ParentEscape | Symlink | GitComponent | WorkbenchRoot | UntrackedInRepo
-            | PathspecMagic => {
+            | PathspecMagic | PathspecGlob => {
                 unreachable!("the sentinel arm answers for `-` and no other token")
             }
         },
         ("doc author", "from_file", ArmToken::Caller, _) => match cell {
-            Absolute | ParentEscape | Symlink | UntrackedInRepo => Accepted,
+            Absolute | ParentEscape | Symlink | UntrackedInRepo | PathspecGlob => Accepted,
             // Read, then answered about the PAYLOAD — the no-rule claim in its plainest
             // form: git's config and jigc's own state file are opened like any other
             // source and rejected for what they say, not for where they are.
@@ -277,14 +317,16 @@ fn expectation(door: &str, arg: &str, arm: &PathArgArm, cell: Cell) -> Outcome {
         ("config replace-step" | "config remove-step" | "config fork", "target", _, _) => {
             match cell {
                 Absolute | ParentEscape | Symlink | GitComponent | WorkbenchRoot
-                | UntrackedInRepo | PathspecMagic | StdinSentinel => {
+                | UntrackedInRepo | PathspecMagic | PathspecGlob | StdinSentinel => {
                     AnswersElsewhere("config.anchor-absent")
                 }
             }
         }
         ("config fill", "target", _, _) => match cell {
             Absolute | ParentEscape | Symlink | GitComponent | WorkbenchRoot | UntrackedInRepo
-            | PathspecMagic | StdinSentinel => AnswersElsewhere("config.fill-point-absent"),
+            | PathspecMagic | PathspecGlob | StdinSentinel => {
+                AnswersElsewhere("config.fill-point-absent")
+            }
         },
         // `jigc config set <key> <value>` — the root-knob arm is the one that resolves a
         // HOME, and it is the arm that refuses.
@@ -292,20 +334,24 @@ fn expectation(door: &str, arg: &str, arm: &PathArgArm, cell: Cell) -> Outcome {
             ParentEscape | Symlink | GitComponent => PathRuleBlocks("config.untrackable-root"),
             WorkbenchRoot => PathRuleBlocks("config.workbench-root"),
             // The absolute cell, and — as of T6 — the pathspec-magic cell, which landed at
-            // exit 0 until this task.
-            Absolute | PathspecMagic => PathRuleBlocks("config.unusable-root"),
+            // exit 0 until this task. The glob cell joins them for the same reason one leg
+            // out: a root knob is the first component of every pathspec built from it, and
+            // wildmatch needs no leading `:` to make one a pattern.
+            Absolute | PathspecMagic | PathspecGlob => PathRuleBlocks("config.unusable-root"),
             // A new relative directory is the ordinary case; `-` reads back as itself and
             // is an ordinary (if odd) directory name, so refusing it would refuse a home.
             UntrackedInRepo | StdinSentinel => Accepted,
         },
         ("config set", "value", _, PathArgSubject::FieldValue) => match cell {
             Absolute | ParentEscape | Symlink | GitComponent | WorkbenchRoot | UntrackedInRepo
-            | PathspecMagic | StdinSentinel => AnswersElsewhere("config.value-rejected"),
+            | PathspecMagic | PathspecGlob | StdinSentinel => {
+                AnswersElsewhere("config.value-rejected")
+            }
         },
         // `jigc doc set-field --value` — the value is document content.
         ("doc set-field", "value", _, _) => match cell {
             Absolute | ParentEscape | Symlink | GitComponent | WorkbenchRoot | UntrackedInRepo
-            | PathspecMagic | StdinSentinel => Accepted,
+            | PathspecMagic | PathspecGlob | StdinSentinel => Accepted,
         },
         _ => panic!(
             "`jigc {door}`'s `{arg}` [{}] joined PATH_ARG_OCCURRENCES with no cell \
@@ -377,6 +423,7 @@ fn plant(corpus: &TrialCorpus) {
         std::os::unix::fs::symlink("../outside", &link).expect("plant the symlink");
     }
     fs::write(repo.join(UNTRACKED_SOURCE), CANARY).expect("plant the untracked source");
+    fs::write(repo.join(GLOB_SOURCE), CANARY).expect("plant the glob-named source");
     fs::write(repo.join("replacement-step.yaml"), REPLACEMENT_STEP).expect("plant the step");
 }
 

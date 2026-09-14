@@ -18,10 +18,14 @@
 //!   * (a) an **absolute path outside the repository** — the cell that makes this a data-loss
 //!     class rather than a hygiene one: the planted canary lives on somebody else's
 //!     filesystem, and `repo_root.join(<absolute>)` *is* that absolute path;
-//!   * (b) a **leading-`:` pathspec-magic** spelling — `git add -- <path>` prevents option
-//!     parsing, never magic, so a recorded `:(top)…` reaches `stage_migration` and stages a
-//!     set of files nobody named. This is a **sink cell only**: at the door the same token is
-//!     already refused, for the unrelated reason that it names no readable file;
+//!   * (b) a **pathspec-magic** spelling — `git add -- <path>` prevents option parsing, never
+//!     magic, so a recorded `:(top)…` (or a wildmatch `*.md`) reaches `stage_migration` and
+//!     stages a set of files nobody named. It was a **sink cell only** while the rule was
+//!     `starts_with(':')`, on the ground that the door refuses such a token anyway *for the
+//!     unrelated reason that it names no readable file* — true of `:(top)…`, false of a glob
+//!     naming a file that exists, which is why the class now lives in the home the door and
+//!     the sink share (`crate::trackable::pathspec_magic_reason`) and the arm below is the
+//!     sink's own re-ask of it;
 //!   * (c) a **`.git/` component** — git records nothing there, so the deletion could only ever
 //!     be one no index has a copy of.
 //!
@@ -305,17 +309,17 @@ fn an_absolute_recorded_source_is_refused_at_the_sink_and_the_canary_survives() 
     );
 }
 
-// ───────────────────── (b) leading-`:` pathspec magic ─────────────────────
+// ───────────────────── (b) pathspec magic ─────────────────────
 
-/// A recorded path beginning with `:` is refused. `git add -- <path>` prevents *option*
+/// A recorded path git reads as a pattern is refused. `git add -- <path>` prevents *option*
 /// parsing and nothing else, so `:/keepme.md` reaching `stage_migration` is a pathspec, not a
 /// file name — `:/` is git's own *from the top of the tree* magic, and it stages whatever it
 /// matches from wherever that puts it.
 ///
 /// **The spelling is `:/…` rather than `:(top)…`, and the reason is stated rather than
 /// convenient.** Both are leading-`:` magic and the sink's rule refuses the two identically —
-/// `cli::task::tests::every_leading_colon_spelling_is_refused_at_the_sink` drives the
-/// parenthesised forms directly at the predicate. What `:(top)…` additionally trips, **before
+/// `cli::task::tests::every_pathspec_magic_spelling_is_refused_at_the_sink` drives the
+/// parenthesised forms, and the whole wildmatch half of the class, directly at the predicate. What `:(top)…` additionally trips, **before
 /// this sink is reached**, is an unrelated pre-existing defect this task neither introduces nor
 /// owns: `engine::file_state::ConflictBlock::task` builds `jigc unmanage <source>` as a
 /// `Route::mechanical` **eagerly**, on every migration finalize, so any recorded source

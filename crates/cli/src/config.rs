@@ -471,7 +471,8 @@ fn run_set(cwd: &Path, key: &str, value: &str) -> Result<ConfigAck> {
             format!("`{typed}` cannot be the `{key}`: {reason}"),
             "re-run with a repo-relative directory — an existing one, or one jigc should create; \
              never a file, an absolute path, a path through a symlink, a value padded with \
-             whitespace, or one beginning with `:`; `jigc config list` shows the value in force \
+             whitespace, or one git reads as a pathspec rather than a name (a leading `:`, or \
+             a `*`, `?`, `[` or `\\` anywhere); `jigc config list` shows the value in force \
              and the layer it wins from",
         )));
     }
@@ -712,12 +713,11 @@ fn unusable_root_reason(repo_root: &Path, value: &str) -> Option<String> {
         ));
     }
 
-    if let Some(shown) = pathspec_magic_root(value) {
+    if let Some(clause) = pathspec_magic_root(value) {
         return Some(format!(
-            "`{shown}` begins with `:`, which git reads as pathspec magic (`:(top)`, `:!`) \
-             and not as a directory name — every managed doc's path starts with this value, \
-             so the `git add`/`git mv` that stages one would match a set of files nobody \
-             named instead of the doc"
+            "{clause} — every managed doc's path is built from this value, so the \
+             `git add`/`git mv` that stages one would match a set of files nobody named \
+             instead of the doc"
         ));
     }
 
@@ -780,8 +780,9 @@ fn whitespace_padded_component(value: &str) -> Option<String> {
         })
 }
 
-/// The **first** component of `value` when it begins with `:` — `None` otherwise (M51
-/// Increment 1 / T6).
+/// The clause naming the **git pathspec magic** a component of `value` carries — `None` when
+/// every component is the literal directory name it looks like (M51 Increment 1 / T6, widened
+/// from the leading-`:` spelling to the class by the increment's own validation).
 ///
 /// The pathspec-magic leg of [`unusable_root_reason`], and the second of its legs that asks
 /// nothing of the filesystem. A root knob prefixes **every** managed doc's path, so its first
@@ -796,18 +797,26 @@ fn whitespace_padded_component(value: &str) -> Option<String> {
 /// spelling is the sharper half: the stage would match the *same-named file at the repository
 /// top*, committing a file nobody named.
 ///
-/// **The first component, not any component.** Git reads magic only at the **start** of a
-/// pathspec, so a directory named `:x` deeper inside the value is an ordinary literal
-/// component and refusing it would refuse a legitimate home. That is the same narrowing the
-/// sink takes — [`crate::task`]'s `ValidatedRetirement::adjudicate` refuses a recorded path on
-/// `starts_with(':')` — asked here of the value that *prefixes* the path rather than of the
-/// path itself. One rule, two places it can enter a git argv.
+/// **Two positions, because git has two magics.** The `:` prefix is read only at the **start**
+/// of a pathspec, so it is asked of the **first named component** alone — a directory named
+/// `:x` deeper inside the value is an ordinary literal component and refusing it would refuse a
+/// legitimate home. Wildmatch (`*`, `?`, `[`, `\`) carries no position rule at all: a pattern
+/// byte in *any* component patterns the whole pathspec, which is why every component is asked
+/// [`crate::trackable::wildmatch_magic_reason`]. Shipping only the first half is what left
+/// `jigc config set docs-root 'd*cs'` admissible — every promoted doc's `git add` pathspec a
+/// pattern — while its sibling spelling was refused.
+///
+/// The rule itself is [`crate::trackable`]'s, shared with the migrate source door and the
+/// retire sink: one home, so the three places a caller token can enter a git argv cannot get
+/// different answers about the same bytes. The *sentence* stays the caller's, because this
+/// value **prefixes** the pathspec rather than being one.
 fn pathspec_magic_root(value: &str) -> Option<String> {
     use std::path::Component;
 
+    let mut first = true;
     Path::new(value)
         .components()
-        .find_map(|component| match component {
+        .filter_map(|component| match component {
             Component::Normal(part) => Some(part.to_string_lossy().into_owned()),
             // `./` names no component; a `..` hop, a root or a prefix belongs to the legs that
             // refuse those shapes, and none of them can begin a pathspec with `:`.
@@ -816,7 +825,15 @@ fn pathspec_magic_root(value: &str) -> Option<String> {
             | Component::RootDir
             | Component::Prefix(_) => None,
         })
-        .filter(|first| first.starts_with(':'))
+        .find_map(|part| {
+            let reason = if first {
+                crate::trackable::pathspec_magic_reason(&part)
+            } else {
+                crate::trackable::wildmatch_magic_reason(&part)
+            };
+            first = false;
+            reason
+        })
 }
 
 /// The two on-disk shapes an **existing component** of a relative value can have that a door

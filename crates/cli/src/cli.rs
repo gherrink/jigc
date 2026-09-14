@@ -2238,7 +2238,8 @@ pub const PATH_ARG_OCCURRENCES: &[PathArgOccurrence] = &[
             subject: PathArgSubject::SourceFile,
             argv: &["migrate", PATH_ARG_SLOT, "--as", "changelog"],
             disposition: PathArgDisposition::Adjudicated {
-                predicate: "crate::trackable::resolve_source_token (resolve-or-refuse, then \
+                predicate: "crate::trackable::resolve_source_token (git pathspec magic — \
+                            the `:` prefix and wildmatch alike — then resolve-or-refuse, then \
                             untrackable_reason · is_workbench_root · the symlink leg of \
                             unusable_root_reason), then the index-or-HEAD trackedness leg",
                 codes: &["migrate.source-untrackable", "migrate.source-untracked"],

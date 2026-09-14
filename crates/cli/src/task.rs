@@ -3097,34 +3097,30 @@ impl ValidatedRetirement {
     ///
     /// **Two questions, in this order.**
     ///
-    ///   1. **Git pathspec magic** — a recorded path beginning with `:`. This one is asked
-    ///      here and at no door, because it is a *sink* property: `git add -- <path>` prevents
-    ///      **option** parsing and nothing else, so a recorded `:(top)…` reaching
-    ///      [`stage_migration`] is a pathspec rather than a file name and stages a set nobody
-    ///      named. At the `jigc migrate` door the same token is already refused, for the
-    ///      unrelated reason that it names no readable file — so refusing it there would be
-    ///      refusing it twice for two different reasons and here for none.
-    ///   2. **[`crate::trackable::resolve_source_token`]** — the door's own four-step rule,
-    ///      asked again of the recorded value: resolve inside the repository or refuse an
-    ///      absolute one outright, then git's `.git`-component and git-dir rules, ownership
-    ///      and the index's gitlinks, then jigc's own workbench, then a symlinked component.
-    ///      One home, two callers: the door and the sink cannot get different answers about
-    ///      the same path, which is the property that makes "the door already checked it" a
-    ///      safe thing for a reader to believe.
+    ///   1. **Git pathspec magic** — a recorded path git reads as a pattern rather than a
+    ///      name: the `:` prefix (`:(top)`, `:!`) or a wildmatch byte (`*`, `?`, `[`, `\`)
+    ///      anywhere in it. `git add -- <path>` prevents **option** parsing and nothing else,
+    ///      so such a token reaching [`stage_migration`] is a pathspec and stages a set nobody
+    ///      named.
+    ///   2. **[`crate::trackable::resolve_source_token`]** — the door's own rule, asked again
+    ///      of the recorded value: the magic question above, then resolve inside the
+    ///      repository or refuse an absolute one outright, then git's `.git`-component and
+    ///      git-dir rules, ownership and the index's gitlinks, then jigc's own workbench, then
+    ///      a symlinked component. One home, two callers: the door and the sink cannot get
+    ///      different answers about the same path, which is the property that makes "the door
+    ///      already checked it" a safe thing for a reader to believe.
+    ///
+    ///      **The magic leg moved INTO that home** (M51 Increment 1, the axis fix). It was a
+    ///      sink-local `recorded.starts_with(':')` on the stated ground that the door refuses
+    ///      the same token anyway *"for the unrelated reason that it names no readable file"*.
+    ///      That ground holds for `:(top)…` and fails for the rest of the class: a file whose
+    ///      name is literally `*.md` **is** readable, so the door read it, asked its
+    ///      trackedness leg a `git ls-files -- '*.md'` that answered about six other files,
+    ///      and minted at exit 0 — after which `--approve` unlinked bytes no git object held.
+    ///      One spelling of a rule is not the rule, so the class is asked once, in the home
+    ///      both callers share.
     fn adjudicate(repo_root: &Path, recorded: &Path, state: StateTruth) -> Result<Self, Finding> {
         let recorded = recorded.to_string_lossy();
-        if recorded.starts_with(':') {
-            return Err(retire_untrackable_finding(
-                &recorded,
-                state,
-                format!(
-                    "`{recorded}` begins with `:`, which git reads as pathspec magic \
-                     (`:(top)`, `:!`) and not as a file name — `git add -- <path>` \
-                     prevents option parsing, never magic, so staging the retirement \
-                     would match a set of files nobody named"
-                ),
-            ));
-        }
         let path = crate::trackable::resolve_source_token(repo_root, &recorded)
             .map_err(|reason| retire_untrackable_finding(&recorded, state, reason))?;
         Ok(Self {
@@ -5005,9 +5001,19 @@ fn classify_landed_manifest(
 /// refuses — *"an untracked foreign was never in the index (nothing to stage)"* — which is
 /// precisely the silent-loss cell the door now refuses up front. Two spellings of one
 /// question would let the door admit a source the stage then drops.
+///
+/// **The path is handed to git as `:(literal)`, and that is the difference between asking
+/// about this file and asking about a pattern** (M51 Increment 1, the axis fix). `--` prevents
+/// option parsing and nothing else: driven, `git ls-files -- '*.md'` printed six tracked files
+/// for a token naming a file git had never seen, so this predicate answered **tracked** for an
+/// untracked source and the door's trackedness leg passed the one cell it exists to catch.
+/// `crate::trackable::pathspec_magic_reason` refuses such a token at both doors that reach
+/// here; the magic prefix is the belt to that pair of braces, so a caller that has not asked —
+/// including a future one — gets an answer about the file it named.
 pub(crate) fn path_in_index(repo_root: &Path, path: &str) -> bool {
+    let literal = format!(":(literal){path}");
     Command::new("git")
-        .args(["ls-files", "--", path])
+        .args(["ls-files", "--", literal.as_str()])
         .current_dir(repo_root)
         .output()
         .map(|out| out.status.success() && !out.stdout.is_empty())
@@ -5160,9 +5166,16 @@ fn discover_repo_root(start: &Path) -> Option<PathBuf> {
 mod tests {
     use super::*;
 
-    /// **Every leading-`:` spelling is refused at the sink** — the pathspec-magic leg of
+    /// **Every pathspec-magic spelling is refused at the sink** — the magic leg of
     /// [`ValidatedRetirement::adjudicate`], swept over git's own magic forms rather than
     /// pinned at the one an end-to-end arm happens to drive.
+    ///
+    /// **The axis is git's two magics, not its prefix one.** The leg shipped as
+    /// `starts_with(':')` and the wildmatch half — `*`, `?`, `[`, `\` — was open at every
+    /// site: driven, a recorded `*.md` reached `git add -- '*.md'` and staged an unrelated
+    /// worktree edit into the migration commit while the literal file it named was unlinked
+    /// with no git object holding it. Both halves are asked in one home
+    /// ([`crate::trackable::pathspec_magic_reason`]) and swept here in one list.
     ///
     /// It is a unit test and not a second integration arm for a stated reason: the
     /// parenthesised forms cannot *reach* this predicate through the binary, because
@@ -5174,25 +5187,30 @@ mod tests {
     /// leg swept over its whole axis anyway.
     ///
     /// The refusal is decided **before any filesystem access**, which is why an arbitrary root
-    /// is enough here: a `:`-led token is not a path this door will resolve at all.
+    /// is enough here: a token git reads as a pattern is not a path this door will resolve at
+    /// all.
     #[test]
-    fn every_leading_colon_spelling_is_refused_at_the_sink() {
+    fn every_pathspec_magic_spelling_is_refused_at_the_sink() {
         let root = Path::new("/nonexistent-repo-root");
-        for spelling in [
-            ":(top)keepme.md",
-            ":(exclude)keepme.md",
-            ":!keepme.md",
-            ":/keepme.md",
-            ":",
+        for (spelling, names) in [
+            (":(top)keepme.md", "pathspec magic"),
+            (":(exclude)keepme.md", "pathspec magic"),
+            (":!keepme.md", "pathspec magic"),
+            (":/keepme.md", "pathspec magic"),
+            (":", "pathspec magic"),
+            ("*.md", "pathspec wildmatch"),
+            ("keepme.?d", "pathspec wildmatch"),
+            ("docs/*.md", "pathspec wildmatch"),
+            ("keep[me].md", "pathspec wildmatch"),
+            ("keep\\me.md", "pathspec wildmatch"),
         ] {
             let finding =
                 ValidatedRetirement::adjudicate(root, Path::new(spelling), StateTruth::RolledBack)
                     .expect_err(&format!("`{spelling}` must be refused at the sink"));
             assert_eq!(finding.code, "finalize.retire-untrackable");
             assert!(
-                finding.message.contains("pathspec magic"),
-                "`{spelling}` must be refused AS pathspec magic, not as some other reason; \
-                 got: {}",
+                finding.message.contains(names),
+                "`{spelling}` must be refused AS {names}, not as some other reason; got: {}",
                 finding.message,
             );
         }

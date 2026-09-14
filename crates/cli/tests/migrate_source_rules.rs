@@ -499,6 +499,70 @@ fn a_committed_source_is_unaffected_by_the_trackedness_leg() {
     );
 }
 
+// ───────────────────── (g2) git pathspec magic at the door ─────────────────────
+
+/// **A glob-named source is refused at the door, and the sink's magic leg is the door's too.**
+///
+/// The location legs and the trackedness leg were both defeated by one spelling. `git ls-files
+/// -- <token>` takes a **pathspec**, and `--` prevents option parsing and nothing else — so on
+/// a corpus holding six tracked `.md` files, a token naming the untracked file `*.md` made the
+/// trackedness leg answer about *those six* and report **tracked**. Driven at `8bc6f4e`:
+///
+/// ```text
+/// jigc migrate '*.md' --as changelog      -> task minted: migrate-changelog-…   exit 0
+/// jigc task finalize <id> --approve       -> finalized …  2 files committed      exit 0
+/// ls '*.md'                               -> gone
+/// git log --all -- ':(literal)*.md'       -> (empty)   the bytes are in NO git object
+/// git show --stat HEAD                    -> CHANGELOG.md | 19 +  notes.md | 2 +-
+/// ```
+///
+/// — the loss `migrate.source-untracked` exists to prevent, plus an unrelated unstaged edit
+/// swept into a commit naming a different subject, because `stage_migration`'s `git add --`
+/// reads the same token as the same pattern.
+///
+/// The arm asserts **both halves**: the source survives, and nothing was staged. The unrelated
+/// `notes.md` is left dirty on purpose — it is the file the pattern would have taken.
+#[test]
+fn a_glob_named_source_is_refused_before_git_answers_about_other_peoples_files() {
+    let corpus = TrialCorpus::build(State::Fresh);
+    let repo = corpus.repo();
+
+    // An unrelated tracked file with an unstaged edit — the second half of the loss.
+    fs::write(repo.join("notes.md"), "ORIGINAL NOTES\n").expect("plant the unrelated file");
+    corpus.git(&["add", "notes.md"]);
+    corpus.git(&["commit", "-q", "-m", "notes"]);
+    fs::write(repo.join("notes.md"), "UNRELATED WORK IN PROGRESS\n").expect("dirty it");
+
+    // …and the source: a file whose NAME is a pattern matching the tracked `.md` files.
+    fs::write(repo.join("*.md"), FOREIGN).expect("plant the glob-named source");
+
+    let out = corpus.jigc(&["migrate", "*.md", "--as", "changelog"]);
+    let stderr = assert_refused_with(&corpus, &out, CODE, "migrate <a glob-named source>");
+    assert!(
+        stderr.contains("wildmatch"),
+        "the refusal must name the MAGIC — a token git reads as a pattern — and not some \
+         other reason that happens to fire; got:\n{stderr}",
+    );
+
+    assert!(
+        repo.join("*.md").exists(),
+        "the glob-named source must survive: the door refused before it recorded a deletion \
+         target, which is the whole of this leg",
+    );
+    assert_eq!(
+        corpus.git(&["diff", "--cached", "--name-only"]),
+        "",
+        "a refusal stages nothing — the unrelated worktree edit the pattern matches must \
+         still be unstaged",
+    );
+    assert_eq!(
+        corpus.git(&["diff", "--name-only"]),
+        "notes.md",
+        "…and that edit must still be there, so the arm is asserting over the very file \
+         `git add -- '*.md'` swept into the migration commit",
+    );
+}
+
 // ───────────── the step text, checked against both admissible cells ─────────────
 
 /// The foreign `vision` source the two cells below migrate — a non-conformant document

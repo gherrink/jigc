@@ -208,7 +208,89 @@ pub(crate) fn untrackable_reason(repo_root: &Path, relative: &str) -> Option<Str
 /// identity; a source that resolves outside the repository *has no repo-real spelling* — the
 /// `locate::not_in_repo_message` case, absolute by its subject — and the string is the
 /// operator's own argument, which is the one thing they can edit.
+/// One git **pathspec magic** form carried by `token`, as the clause that names it — `None`
+/// when git reads the token as the literal file name it looks like (M51 Increment 1, the
+/// axis fix).
+///
+/// **The rule is a class, and it shipped as one spelling of it.** T3 refused a *recorded*
+/// retirement path `starts_with(':')` and T6 refused a *root-knob value* the same way, both
+/// on the same true sentence: `git add -- <path>` prevents **option** parsing and nothing
+/// else, so a token git reads as a pathspec stages a set nobody named. But `:` is only git's
+/// *prefix* magic; its **wildmatch** magic needs no prefix at all, and that half was left
+/// open at every site. Driven at `8bc6f4e` on a corpus holding six tracked `.md` files, with
+/// an untracked file whose name is literally `*.md`:
+///
+/// ```text
+/// $ git ls-files -- '*.md'
+/// .jigc/AGENT.md CHANGELOG.md CLAUDE.md README.md notes.md …   <- non-empty
+/// $ git cat-file -e 'HEAD:*.md'   ->  fatal: path '*.md' does not exist in 'HEAD'
+/// ```
+///
+/// so `jigc migrate '*.md' --as changelog` asked the trackedness leg about **other people's
+/// files**, was told `tracked`, minted at exit 0 — and `jigc task finalize --approve` then
+/// unlinked the literal `*.md` (recoverable from no git object at all: the exact loss
+/// `migrate.source-untracked` was built to prevent) while `git add -- '*.md'` swept an
+/// unrelated unstaged `notes.md` into a commit whose message named the changelog.
+///
+/// **The four metacharacters are git's, not a guess**: `dir.c` matches a pathspec with
+/// `wildmatch()` unless `:(literal)` is given, and wildmatch reads `*` and `?` as wildcards,
+/// `[` as the opening of a character class, and `\` as escaping the byte after it. Each one
+/// makes the token match paths it does not name, so each one is a name this door cannot hand
+/// git.
+///
+/// **It names the magic and stops there.** The consequence is the caller's sentence — a
+/// source is *read and then deleted*, a root knob *prefixes every managed doc's path* — which
+/// is the same split every other rule in this module takes, and the reason the clause is
+/// returned rather than a `bool`.
+pub(crate) fn pathspec_magic_reason(token: &str) -> Option<String> {
+    if token.starts_with(':') {
+        return Some(format!(
+            "`{token}` begins with `:`, which git reads as pathspec magic (`:(top)`, `:!`) \
+             and not as a name"
+        ));
+    }
+    wildmatch_magic_reason(token)
+}
+
+/// The **wildmatch half** of [`pathspec_magic_reason`], asked on its own — `None` when the
+/// token carries none of git's pattern bytes.
+///
+/// It is split out for the one subject whose *prefix* magic is not this rule's to refuse: a
+/// root knob's second and later components sit in the middle of every pathspec built from
+/// them, and git reads `:` only at the **start** of one, so `docs/:x` is an ordinary home
+/// ([`crate::config`]'s root leg takes that narrowing deliberately). Wildmatch has no such
+/// position rule — a `*` in any component patterns the whole pathspec — so that is the half
+/// every component is asked.
+pub(crate) fn wildmatch_magic_reason(token: &str) -> Option<String> {
+    token
+        .chars()
+        .find(|ch| WILDMATCH_METACHARS.contains(ch))
+        .map(|found| {
+            format!(
+                "`{token}` contains `{found}`, which git reads as pathspec wildmatch \
+                 (`*`, `?`, `[…]`, `\\`) and not as part of a name"
+            )
+        })
+}
+
+/// The bytes git's `wildmatch()` reads as something other than themselves — the wildcard half
+/// of [`pathspec_magic_reason`], and the whole of it: a pathspec is wildmatched unless the
+/// caller asks for `:(literal)`, so any of these in a token makes it a pattern.
+const WILDMATCH_METACHARS: &[char] = &['*', '?', '[', '\\'];
+
 pub(crate) fn resolve_source_token(repo_root: &Path, token: &str) -> Result<String, String> {
+    // 0 — pathspec magic, before anything touches the filesystem, because a token git reads
+    // as a pattern is not a path to resolve at all: both callers hand this value to git as a
+    // pathspec (the door's trackedness leg `git ls-files`, the sink's `git add`), where a
+    // pattern answers about files it does not name. Asked here rather than at each caller for
+    // the reason step 1 is: one home, so the door and the sink cannot get different answers.
+    if let Some(clause) = pathspec_magic_reason(token) {
+        return Err(format!(
+            "{clause} — `git add -- <path>` prevents option parsing, never magic, so git \
+             would answer about a set of files nobody named instead of about this source, \
+             and the retirement would delete bytes no index holds a copy of"
+        ));
+    }
     let relative = place_inside(repo_root, token).ok_or_else(|| {
         format!(
             "`{token}` resolves outside the repository — `jigc migrate` reads its source and, \

@@ -225,8 +225,9 @@ fn adjudicate_source_path(repo_root: &Path, path: &str, doctype: &str) -> Result
             format!("`{path}` cannot be migrated as a `{doctype}` source: {reason}"),
             Route::human(
                 "name a source this repository can record and recover: a file under the \
-                 repository root, outside `.git/` and jigc's own `.jigc/` workbench, and not \
-                 reached through a symlink",
+                 repository root, outside `.git/` and jigc's own `.jigc/` workbench, not \
+                 reached through a symlink, and named in bytes git reads literally (no \
+                 leading `:`, no `*`, `?`, `[` or `\\`)",
             ),
         ))
     })
