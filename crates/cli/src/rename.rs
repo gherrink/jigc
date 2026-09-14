@@ -774,7 +774,7 @@ fn apply_and_commit(
         format!("rename {old_rel} -> {new_rel}\n\nRepoint every persisted referrer in lockstep.\n"),
     )
     .context("could not write the rename commit message")?;
-    let commit = git_commit(repo_root, &msg_path);
+    let commit = git_commit(&crate::repo::SeamSubject::live(repo_root), &msg_path);
     let _ = std::fs::remove_file(&msg_path);
     // The landed commit's captured non-blocking hook stream, threaded to the report
     // (the hook_output producer axis — this was the site that discarded it).

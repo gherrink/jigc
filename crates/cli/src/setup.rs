@@ -1516,6 +1516,12 @@ enum InstallCommitRejection {
     Stage(String),
     /// `git commit` refused: the install files are staged, so a re-run commits them.
     Commit(String),
+    /// The **repository posture** refused, re-probed at the seam immediately before the
+    /// commit (M51 Increment 2). It carries the probe's own blocking [`Finding`] — code,
+    /// message and the git command that resolves the state — rather than being dressed as
+    /// a git rejection, because git rejected nothing (surface-contract law 1). Like
+    /// [`Self::Commit`], the install files are staged and a re-run commits them.
+    Posture(Finding),
 }
 
 impl InstallCommitRejection {
@@ -1528,6 +1534,8 @@ impl InstallCommitRejection {
         let (step, git, staged) = match self {
             Self::Stage(git) => ("git add", git, false),
             Self::Commit(git) => ("git commit", git, true),
+            // The posture probe already built the finding it refuses with, route included.
+            Self::Posture(finding) => return finding.clone(),
         };
         let message = if staged {
             format!(
@@ -1702,6 +1710,34 @@ fn commit_install(
             commit: InstallCommit::Nothing,
             hook_committed,
         });
+    }
+
+    // Re-probe the repository posture immediately before the commit (M51 Increment 2;
+    // `settle-record.md` → Review amendments §3): the door adjudicated it before setup
+    // wrote a byte, and everything above — the writes, the stage, git's own answers — has
+    // run since. `jigc setup` is the one door exempt from the **unborn** member, for the
+    // reason quoted at `cli::SETUP_UNBORN_EXEMPTION` and restated in this function's own
+    // comment above; detached and operation-in-progress still refuse here, and the files
+    // are already staged, so a re-run commits them once the user resolves the state.
+    if let Err(err) =
+        crate::repo::SeamSubject::live_exempt(repo_root, &[crate::repo::PostureMember::HeadUnborn])
+            .verify(crate::repo::SeamAct::Commit)
+    {
+        return Err(InstallCommitRejection::Posture(
+            crate::render::blocked_finding(&err)
+                .cloned()
+                .unwrap_or_else(|| {
+                    Finding::block(
+                        "setup.install-commit",
+                        format!(
+                            "the jigc install files were written and staged, but the \
+                             repository is not in a state jigc may commit in (no install \
+                             commit was made):\n{err:#}"
+                        ),
+                        "resolve the repository state named above, then re-run `jigc setup`",
+                    )
+                }),
+        ));
     }
 
     // Commit only our paths: a pathspec-limited commit commits exactly those files and

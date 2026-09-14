@@ -819,7 +819,7 @@ fn commit_record_transaction(
 /// nothing committed, and a success returns the captured non-blocking hook stream.
 fn git_commit_pathspec(repo_root: &Path, message_file: &Path, pathspec: &str) -> Result<String> {
     crate::task::git_commit_capture(
-        repo_root,
+        &crate::repo::SeamSubject::live(repo_root),
         &[
             std::ffi::OsStr::new("-F"),
             message_file.as_os_str(),

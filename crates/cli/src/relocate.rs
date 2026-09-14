@@ -47,7 +47,22 @@ use crate::task::git_run;
 /// placement-root`, `jigc relocate`, `jigc rename`) are covered by one guard rather than
 /// four — including when the destination comes from a hand-edited manifest no door
 /// adjudicated.
-pub(crate) fn move_doc(
+///
+/// **The `git mv` batch re-probes the repository posture immediately before it runs**
+/// (M51 Increment 2; `settle-record.md` → Review amendments §3), as
+/// [`crate::repo::SeamAct::Move`]: *operation in progress* only, because which commit the
+/// move joins stays the user's to decide while moving a tracked file out from under a
+/// half-finished merge is not. The door adjudicated the same member before anything was
+/// resolved; this asks again at the act, where a hook, a concurrent process or an earlier
+/// phase of this same run could have started one in between.
+///
+/// **The subject is not a parameter, and that is the decision, not an omission.** There is
+/// exactly one `git mv` in the product and no mover ever runs in a fan-out worktree, so a
+/// `&SeamSubject` here would carry no choice — while a subject threaded in from a caller
+/// would be a *stale* expectation by the time it reached this line, which is the opposite
+/// of what §3 asks for. [`crate::task::git_commit_capture`] is told its subject because it
+/// genuinely cannot tell live from dedicated; this one can.
+pub fn move_doc(
     repo_root: &Path,
     jigc_root: &Path,
     old_rel: &str,
@@ -60,6 +75,7 @@ pub(crate) fn move_doc(
                 "refusing to move `{old_rel}` to a destination git cannot track: {reason}"
             ));
         }
+        crate::repo::SeamSubject::live(repo_root).verify(crate::repo::SeamAct::Move)?;
         git_run(repo_root, &["mv", old_rel, new_rel])?;
     }
     let mut record = FileStateRecord::load(jigc_root)

@@ -31,6 +31,7 @@ use crate::cli::Format;
 use crate::invocation_log::{self, Outcome};
 use crate::pack::make_pack;
 use crate::render;
+use crate::repo::{SeamAct, SeamSubject};
 use anyhow::{Context, Result, bail};
 use engine::address::Address;
 use engine::compose::{WorkflowDef, load_workflow_def};
@@ -2866,6 +2867,11 @@ pub(crate) fn try_execute_finalize_plan(
         // Ensure it exists so the `git add --all` stage picks up `config/` + the promoted
         // docs + the code changes.
         crate::gitignore::ensure(jigc_root)?;
+        // The commit seam's typed subject: this finalize commits in the USER's checkout,
+        // and the subject records which ref that was when the act was decided
+        // (`crate::repo::SeamSubject`). The two fan-out arms below never reach this one —
+        // they commit in a dedicated worktree and say so from its handle.
+        let live = SeamSubject::live(repo_root);
         match stage {
             // Narrowed migration stage (`design/auto-migration.md` → Hardening #9a/#9;
             // `DECISIONS.md` B2): a migration touches no code, so stage ONLY its own
@@ -2878,7 +2884,7 @@ pub(crate) fn try_execute_finalize_plan(
             StagePolicy::MigrationFixed => {
                 staged = stage_migration(repo_root, plan)?;
                 gate_owner_artifacts_post_stage(repo_root, cleanup_dir, schemas, plan)?;
-                git_commit(repo_root, &msg_path)
+                git_commit(&live, &msg_path)
             }
             // Per-task IndexHonoring (M30 G6): honor the agent's existing index and add
             // ONLY jigc's promoted docs + the config layer into it; never sweep the
@@ -2891,7 +2897,7 @@ pub(crate) fn try_execute_finalize_plan(
                 // shared `Err` arm below rolls back (promotions + the third index axis) and
                 // the per-task surface routes it through `self.blocked()` at exit 3.
                 gate_owner_artifacts_post_stage(repo_root, cleanup_dir, schemas, plan)?;
-                git_commit(repo_root, &msg_path)
+                git_commit(&live, &msg_path)
             }
             // The `squash: true` fan-out boundary (M31 Inc 4 / Inc 5): fold the N
             // worktree-staged code-sets onto the base tree off-line, overlay the promoted docs
@@ -4474,15 +4480,16 @@ pub(crate) fn git_run(repo_root: &Path, args: &[&str]) -> Result<()> {
 
 /// `git commit -F <message-file>` (`design/finalize.md` → 6. Commit) — the message-file
 /// form of the one hook-capable commit seam [`git_commit_capture`]; see there for the
-/// hook posture + the captured-stream contract.
-pub(crate) fn git_commit(repo_root: &Path, message_file: &Path) -> Result<String> {
+/// hook posture, the captured-stream contract, and the typed subject.
+pub fn git_commit(subject: &SeamSubject, message_file: &Path) -> Result<String> {
     git_commit_capture(
-        repo_root,
+        subject,
         &[std::ffi::OsStr::new("-F"), message_file.as_os_str()],
     )
 }
 
-/// The ONE **hook-capable commit seam**: `git commit <args…>` in `repo_root`. **Never**
+/// The ONE **hook-capable commit seam**: `git commit <args…>` in the checkout `subject`
+/// names. **Never**
 /// passes `--no-verify`: the user's `pre-commit` / `commit-msg` hooks are policy and the
 /// CLI respects them — a hook rejection surfaces git's stdout+stderr verbatim in the
 /// typed [`CommitRejected`] (the correction signal), and no commit lands.
@@ -4505,11 +4512,25 @@ pub(crate) fn git_commit(repo_root: &Path, message_file: &Path) -> Result<String
 /// `setup`'s install commit, `--no-verify` by recorded design (its hook must not
 /// self-trigger on the commit that installs it). A new commit site joins the axis by
 /// calling this and surfacing the returned stream (`tests/hook_output_axis.rs`).
-pub(crate) fn git_commit_capture(repo_root: &Path, args: &[&std::ffi::OsStr]) -> Result<String> {
+///
+/// **The subject is typed, and re-probed here — immediately before the act** (M51
+/// Increment 2; `settle-record.md` → Review amendments §3). The door adjudicated the
+/// repository posture before anything was resolved; a per-task finalize then validates,
+/// promotes, retires and stages, and the fan-out boundary runs the user's hooks in a
+/// worktree sharing this `.git` — so a hook, a concurrent process or an earlier phase of
+/// this same run can move HEAD in between. [`SeamSubject`] also records **which checkout
+/// this is**, because the seam cannot tell: a fan-out worktree answers `git symbolic-ref
+/// -q HEAD` exactly as a user's detached HEAD does, so a caller must say, from a live
+/// `DedicatedWorktree` handle. A breach refuses here and **no commit is made**.
+pub(crate) fn git_commit_capture(
+    subject: &SeamSubject,
+    args: &[&std::ffi::OsStr],
+) -> Result<String> {
+    subject.verify(SeamAct::Commit)?;
     let out = Command::new("git")
         .arg("commit")
         .args(args)
-        .current_dir(repo_root)
+        .current_dir(subject.path())
         .output()
         .context("could not run `git commit` (is git on PATH?)")?;
     let stderr = String::from_utf8_lossy(&out.stderr);
@@ -4665,6 +4686,10 @@ fn overlay_docs_commit_and_ff(
     plan: &engine::finalize::FinalizePlan,
     msg_path: &Path,
 ) -> Result<String> {
+    // The live checkout's expectation, recorded BEFORE the boundary's own commit: the
+    // dedicated commit below runs the user's hooks, which share this `.git`, so the ref
+    // this fast-forward was decided for can move between here and the `--ff-only`.
+    let live = SeamSubject::live(repo_root);
     let index = CombineIndex::new();
     git_index(repo_root, index.path(), &["read-tree", base_treeish])?;
     let mut pathspecs: Vec<String> = plan
@@ -4697,6 +4722,11 @@ fn overlay_docs_commit_and_ff(
         args.extend(pathspecs.iter().map(String::as_str));
         git_run(repo_root, &args)?;
     }
+    // Re-probe immediately before the act: a fast-forward advances whatever ref HEAD is
+    // on, so landing it on a ref that moved under us would put the boundary's commit on a
+    // branch nobody asked for. The dedicated commit already ran; refusing here lands
+    // nothing on the live checkout and the caller's rollback restores the promoted docs.
+    live.verify(SeamAct::Commit)?;
     git_run(repo_root, &["merge", "--ff-only", &commit])?;
     Ok(hook_output)
 }
@@ -4739,6 +4769,11 @@ fn chain_commit(
     // checkout, so an abort leaves main untouched (no `git reset --hard`).
     let dedicated = DedicatedWorktree::add(repo_root, &head)?;
     let wt = dedicated.path();
+    // The seam's subject, built from the live handle — the only way the dedicated variant
+    // exists (`SeamSubject::dedicated`). Every commit in this loop runs in a
+    // worktree jigc detached itself, so `repo.head-detached` is exempt here and nowhere
+    // else; a merge left un-concluded INSIDE it still refuses.
+    let subject = SeamSubject::dedicated(&dedicated);
     let sub_msg = wt.join(".jigc-subtask-message.tmp");
     let mut streams: Vec<String> = Vec::new();
     for (patch, message) in subtasks {
@@ -4746,7 +4781,7 @@ fn chain_commit(
         std::fs::write(&sub_msg, message).with_context(|| {
             format!("could not write the sub-task commit message to {sub_msg:?}")
         })?;
-        let commit_result = git_commit(wt, &sub_msg);
+        let commit_result = git_commit(&subject, &sub_msg);
         let _ = std::fs::remove_file(&sub_msg);
         // Every fan-out commit runs the user's hooks (M31 Inc 5; `design/finalize.md` →
         // 6. Commit); each captured stream folds into the one returned string below.
@@ -4793,7 +4828,10 @@ fn commit_combined_tree_with_hooks(
     // combined tree as the commit's tree. `--reset -u` forces both (the worktree was freshly
     // checked out at `parent` and has no local changes to preserve).
     git_run(wt, &["read-tree", "--reset", "-u", tree])?;
-    let hook_output = git_commit(wt, msg_path)?;
+    // The seam is TOLD this is a worktree jigc provisioned, from the handle itself — it
+    // cannot be sniffed: this throwaway worktree is not a registered sub-task, so
+    // `repo::posture_subject` would classify it live and refuse jigc's own commit site.
+    let hook_output = git_commit(&SeamSubject::dedicated(&dedicated), msg_path)?;
     let commit = git_head(wt)?;
     Ok((commit, hook_output))
 }
@@ -5394,13 +5432,20 @@ mod tests {
         run(&["config", "user.email", "t@example.com"]);
         run(&["config", "user.name", "Test"]);
         run(&["config", "commit.gpgsign", "false"]);
+        // Birth HEAD before the seam is ever entered. Since M51 Increment 2 the seam
+        // re-probes the repository posture and refuses `repo.head-unborn`, and this
+        // fixture is about the captured **hook stream**, not about committing onto an
+        // unborn HEAD — that cell is `posture_door_axis`'s, where `jigc setup` is the one
+        // exempt door. `--no-verify` so this birth commit never runs the hooks installed
+        // below and cannot contribute a stream of its own.
+        run(&["commit", "-q", "--allow-empty", "--no-verify", "-m", "init"]);
         let msg = dir.join("msg.txt");
         std::fs::write(&msg, "test: a commit\n").expect("write msg");
 
         // Control: no hook, a real (non-empty) commit — returns empty captured output.
         std::fs::write(dir.join("a.txt"), "a\n").expect("write a");
         run(&["add", "--all"]);
-        let captured = git_commit(&dir, &msg).expect("no-hook commit lands");
+        let captured = git_commit(&SeamSubject::live(&dir), &msg).expect("no-hook commit lands");
         assert!(
             captured.trim().is_empty(),
             "a no-hook commit returns empty captured output, got {captured:?}"
@@ -5424,7 +5469,7 @@ mod tests {
         }
         std::fs::write(dir.join("b.txt"), "b\n").expect("write b");
         run(&["add", "--all"]);
-        let captured = git_commit(&dir, &msg).expect("hook commit lands");
+        let captured = git_commit(&SeamSubject::live(&dir), &msg).expect("hook commit lands");
         assert!(
             captured.contains("doc-code backstop says hi"),
             "a successful non-blocking hook's output is captured, got {captured:?}"
@@ -5444,7 +5489,7 @@ mod tests {
         }
         std::fs::write(dir.join("c.txt"), "c\n").expect("write c");
         run(&["add", "--all"]);
-        let err = git_commit(&dir, &msg).expect_err("a rejecting hook bails");
+        let err = git_commit(&SeamSubject::live(&dir), &msg).expect_err("a rejecting hook bails");
         assert!(
             format!("{err:#}").contains("this is rejected"),
             "the rejection surfaces the hook's stderr, got {err:#}"

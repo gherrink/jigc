@@ -7,6 +7,8 @@ mod support;
 
 #[path = "../anyhow_route_spans.rs"]
 mod anyhow_route_spans;
+#[path = "../commit_seam_posture.rs"]
+mod commit_seam_posture;
 #[path = "../docs_root.rs"]
 mod docs_root;
 #[path = "../doctype_map_versions.rs"]

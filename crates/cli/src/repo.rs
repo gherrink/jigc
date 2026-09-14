@@ -341,6 +341,215 @@ pub fn posture_subject(repo_root: &Path) -> PostureSubject {
     PostureSubject(Checkout::Dedicated)
 }
 
+/// **What a seam is about to do** — the class whose posture family it adjudicates
+/// ([`settle-record.md`](../../../completions/artifacts/M51/settle-record.md) → Review
+/// amendments §3: *the two classes take different postures*).
+///
+/// The same split [`crate::cli::ActsOnBehalf`] makes at the door, re-stated at the act,
+/// because the act is what the family is about: a `git commit` the user did not type
+/// adjudicates all three members, a `git mv` of a committed file adjudicates only the
+/// operation in progress.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SeamAct {
+    /// A `git commit` the user did not type — or the fast-forward that lands one on their
+    /// branch. The **full** family, minus the subject's stated exemptions.
+    Commit,
+    /// A `git mv` of a committed file, committing nothing:
+    /// [`PostureMember::OperationInProgress`] only. Which commit the move joins stays the
+    /// user's to decide, so a detached or unborn HEAD is none of the mover's business.
+    Move,
+}
+
+/// **The typed subject of a commit / move / fast-forward seam** — *which checkout is this,
+/// and what was it when this act was decided?*
+///
+/// `settle-record.md` → Review amendments §3 requires the subject to be **typed and
+/// re-probed at the seam**, *"not only at the door, because an ordinary commit still
+/// reaches `git_commit_capture` and a hook, a concurrent process or an earlier phase can
+/// move HEAD in between"*. Two properties follow, and both are why this is a value rather
+/// than a `&Path`:
+///
+///   * **It cannot be sniffed.** A fan-out worktree answers `git symbolic-ref -q HEAD`
+///     with exit 1 — byte-identical to a user's detached HEAD (driven,
+///     `tests/repo_posture.rs`) — and the throwaway worktree
+///     [`crate::task::commit_combined_tree_with_hooks`] commits in is not even a
+///     registered sub-task, so [`posture_subject`]'s three legs would classify it *live*
+///     and refuse jigc's own provisioning. The seam is **told**, from a live
+///     `DedicatedWorktree` handle, or it is live.
+///   * **It cannot be forged.** [`SeamSubject::dedicated`] takes a
+///     `&`[`crate::task::DedicatedWorktree`] — a handle whose own constructor is private
+///     to `task.rs` and whose fields are private — so no caller can hand a seam a
+///     dedicated subject it did not provision. A public variant or a caller-supplied
+///     boolean is forgeable inside the codebase, the class M50's completion audit
+///     condemned in `fanout_worktree_paths`' `is_dir()`.
+///
+/// **What [`verify`](SeamSubject::verify) re-probes is repository *identity* and *expected
+/// ref*, not merely "HEAD is attached":** the canonical git dir this subject was built
+/// against, and the symbolic ref HEAD pointed at then. A commit that lands on a branch
+/// nobody asked for is the damage; *attached* does not exclude it.
+pub struct SeamSubject {
+    /// The checkout the seam runs `git` in — `current_dir` for every command below.
+    path: PathBuf,
+    /// The canonical per-worktree git dir at construction; `None` when unanswerable.
+    identity: Option<PathBuf>,
+    /// The symbolic ref HEAD pointed at when the subject was built: `Some(Some(ref))`
+    /// attached, `Some(None)` detached, **`None` unanswerable**. A dedicated worktree
+    /// records `Some(None)` — git created it `--detach` — so *"what it was"* is one field
+    /// for both variants, and the drift check is one comparison.
+    head: Option<Option<String>>,
+    /// The exemption half, reused rather than re-derived: [`PostureSubject::adjudicates`]
+    /// is the one home of *a dedicated worktree is exempt from `HeadDetached` and from
+    /// that member only*.
+    posture: PostureSubject,
+    /// The members **this door** does not adjudicate, from its [`crate::cli::BEHALF_DOORS`]
+    /// row. Empty everywhere but `jigc setup`'s install commit.
+    exempt: &'static [PostureMember],
+}
+
+impl SeamSubject {
+    /// The user's checkout, on whatever ref it is on now — the subject of every seam but
+    /// the two fan-out commit sites.
+    pub fn live(repo_root: &Path) -> SeamSubject {
+        SeamSubject::live_exempt(repo_root, &[])
+    }
+
+    /// [`live`](SeamSubject::live) with the door's stated exemptions carried through.
+    ///
+    /// One caller ships: `jigc setup`'s install commit, exempt from
+    /// [`PostureMember::HeadUnborn`] with the M30 audit rationale quoted at
+    /// [`crate::cli::SETUP_UNBORN_EXEMPTION`]. A hole in a family is a decision or it is a
+    /// bug, and this parameter is how a seam states which.
+    pub fn live_exempt(repo_root: &Path, exempt: &'static [PostureMember]) -> SeamSubject {
+        SeamSubject {
+            path: repo_root.to_path_buf(),
+            identity: git_dir_identity(repo_root),
+            head: head_ref(repo_root),
+            posture: PostureSubject(Checkout::Live),
+            exempt,
+        }
+    }
+
+    /// A worktree **jigc provisioned and still holds the handle to** — the one
+    /// constructor of the dedicated variant, and it takes neither a path nor a boolean.
+    ///
+    /// The handle is the evidence: [`crate::task::DedicatedWorktree::add`] is private to
+    /// `task.rs` and its fields are private, so a `&DedicatedWorktree` in hand is a
+    /// worktree this process created with `git worktree add --detach` and has not yet
+    /// dropped. That is what makes the [`PostureMember::HeadDetached`] exemption an answer
+    /// about jigc's own provisioning rather than about a directory that looks like one.
+    pub(crate) fn dedicated(worktree: &crate::task::DedicatedWorktree) -> SeamSubject {
+        let path = worktree.path();
+        SeamSubject {
+            path: path.to_path_buf(),
+            identity: git_dir_identity(path),
+            head: head_ref(path),
+            posture: PostureSubject(Checkout::Dedicated),
+            exempt: &[],
+        }
+    }
+
+    /// The checkout the seam runs `git` in.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// **Re-probe, immediately before the act.** `Ok(())` iff this is still the checkout
+    /// the subject was built against, still on the ref it was built on, and in a posture
+    /// `act` may run in.
+    ///
+    /// Three questions, in this order, because each is only meaningful once the one before
+    /// it has held:
+    ///
+    ///   1. **Identity** — the canonical git dir is the one this subject was built
+    ///      against. (The `GIT_DIR` **redirect** is a declared bound, module header: this
+    ///      compares the path's *own* git dir before and after, and does not adjudicate an
+    ///      ambient environment pointing git elsewhere.)
+    ///   2. **The posture family**, filtered by `act` and by the subject's exemptions —
+    ///      the same three members the door adjudicated, re-asked at the act, each
+    ///      refusing with its registered `repo.*` code and a [`Route::human`] naming the
+    ///      git command that resolves it.
+    ///   3. **The expected ref** — the drift the family cannot express: HEAD is attached,
+    ///      to a *different* branch than the one this act was decided for, or a dedicated
+    ///      worktree has been re-attached under us.
+    ///
+    /// A probe that cannot answer reads as **no breach** (module header): an unanswerable
+    /// identity or head on either side skips that comparison rather than refusing on a
+    /// fact nobody has.
+    pub fn verify(&self, act: SeamAct) -> anyhow::Result<()> {
+        if let (Some(built), Some(now)) = (&self.identity, git_dir_identity(&self.path))
+            && *built != now
+        {
+            anyhow::bail!(
+                "refusing to act in {:?}: it is no longer the repository this command began \
+                 in (its git dir moved from {built:?} to {now:?})\n\
+                 route: re-run this command from the repository you meant",
+                self.path,
+            );
+        }
+        if let Some(breach) = posture(&self.path)
+            .into_iter()
+            .find(|breach| self.adjudicates(breach.member(), act))
+        {
+            return Err(crate::render::finding_error(&breach.finding()));
+        }
+        if let (Some(built), Some(now)) = (&self.head, head_ref(&self.path))
+            && *built != now
+        {
+            anyhow::bail!("{}", self.drift_message(built.as_deref(), now.as_deref()));
+        }
+        Ok(())
+    }
+
+    /// Whether this subject owes an answer for `member` while doing `act` — the door's
+    /// two rules, composed: a [`SeamAct::Move`] adjudicates the operation in progress and
+    /// nothing else, and a commit adjudicates everything this subject does not exempt.
+    fn adjudicates(&self, member: PostureMember, act: SeamAct) -> bool {
+        match act {
+            SeamAct::Move => member == PostureMember::OperationInProgress,
+            SeamAct::Commit => self.posture.adjudicates(member) && !self.exempt.contains(&member),
+        }
+    }
+
+    /// The refusal for a ref that moved under us — stated as *what this act was decided
+    /// for* versus *what is there now*, with a route naming the git command that puts it
+    /// back. It carries no code: the three `repo.*` identities name **postures**, and a
+    /// checkout that moved between the door and the act is not one of them.
+    fn drift_message(&self, built: Option<&str>, now: Option<&str>) -> String {
+        match (built, now) {
+            (Some(built), Some(now)) => format!(
+                "refusing to act in {:?}: HEAD was on `{built}` when this command began and \
+                 is now on `{now}`\n\
+                 route: re-attach it with `git switch {}`, then re-run this command",
+                self.path,
+                built.strip_prefix("refs/heads/").unwrap_or(built),
+            ),
+            (Some(built), None) => format!(
+                "refusing to act in {:?}: HEAD was on `{built}` when this command began and \
+                 is now detached\n\
+                 route: re-attach it with `git switch {}`, then re-run this command",
+                self.path,
+                built.strip_prefix("refs/heads/").unwrap_or(built),
+            ),
+            (None, Some(now)) => format!(
+                "refusing to act in {:?}: this is a worktree jigc provisioned detached, and \
+                 HEAD is now on `{now}`\n\
+                 route: re-run the milestone boundary against an untouched fan-out",
+                self.path,
+            ),
+            // Unreachable: the caller compared the two and found them different.
+            (None, None) => format!("refusing to act in {:?}: HEAD moved", self.path),
+        }
+    }
+}
+
+/// The **canonical per-worktree git dir** of `repo_root` — a checkout's identity for
+/// [`SeamSubject::verify`]'s first question. `None` when the `.git` entry does not
+/// resolve or the path cannot be canonicalized, which reads as *unanswerable*, never as
+/// *different*.
+fn git_dir_identity(repo_root: &Path) -> Option<PathBuf> {
+    std::fs::canonicalize(worktree_git_dir(repo_root)?).ok()
+}
+
 /// Probe `repo_root` for the repository-posture family — the breaches, in
 /// [`PostureMember::ALL`] order, one per [`InProgress`] operation actually found.
 ///
@@ -395,14 +604,33 @@ pub fn posture(repo_root: &Path) -> Vec<PostureBreach> {
 /// The discriminator is [`crate::task::head_is_unborn`]'s, kept shape-for-shape: only the
 /// two codes that *are* answers are read as answers.
 fn head_is_detached(repo_root: &Path) -> Option<bool> {
+    head_ref(repo_root).map(|head| head.is_none())
+}
+
+/// The **symbolic ref HEAD points at** in `repo_root` — `Some(Some("refs/heads/main"))`
+/// attached (an *unborn* HEAD included: its ref simply does not resolve yet),
+/// `Some(None)` detached, and **`None` when the probe cannot answer**.
+///
+/// `git symbolic-ref -q HEAD` exits **0** printing the ref for an attached HEAD and **1**
+/// printing nothing for a detached one; a missing work tree or a broken git answers 128,
+/// and a git that cannot be spawned answers nothing at all. Only the two codes that *are*
+/// answers are read as answers — [`crate::task::head_is_unborn`]'s discriminator, kept
+/// shape-for-shape.
+///
+/// [`head_is_detached`] is the attached/detached projection of this; [`SeamSubject`]
+/// records the **value**, because a seam that only asked *is HEAD attached?* would let a
+/// commit land on a branch nobody asked for.
+fn head_ref(repo_root: &Path) -> Option<Option<String>> {
     let out = std::process::Command::new("git")
         .args(["symbolic-ref", "-q", "HEAD"])
         .current_dir(repo_root)
         .output()
         .ok()?;
     match out.status.code() {
-        Some(0) => Some(false),
-        Some(1) => Some(true),
+        Some(0) => Some(Some(
+            String::from_utf8_lossy(&out.stdout).trim().to_string(),
+        )),
+        Some(1) => Some(None),
         _ => None,
     }
 }

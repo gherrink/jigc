@@ -467,7 +467,8 @@ fn commit_migration(repo_root: &Path, touched: &[String]) -> Result<Option<(Stri
         std::ffi::OsStr::new("--"),
     ];
     commit.extend(paths.iter().map(std::ffi::OsStr::new));
-    let hook_output = crate::task::git_commit_capture(repo_root, &commit)?;
+    let hook_output =
+        crate::task::git_commit_capture(&crate::repo::SeamSubject::live(repo_root), &commit)?;
 
     let sha = git_stdout(repo_root, &["rev-parse", "--short", "HEAD"])?;
     Ok(Some((sha, hook_output)))
