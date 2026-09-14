@@ -470,8 +470,9 @@ fn run_set(cwd: &Path, key: &str, value: &str) -> Result<ConfigAck> {
             "config.unusable-root",
             format!("`{typed}` cannot be the `{key}`: {reason}"),
             "re-run with a repo-relative directory — an existing one, or one jigc should create; \
-             never a file, an absolute path, a path through a symlink, or a value padded with \
-             whitespace; `jigc config list` shows the value in force and the layer it wins from",
+             never a file, an absolute path, a path through a symlink, a value padded with \
+             whitespace, or one beginning with `:`; `jigc config list` shows the value in force \
+             and the layer it wins from",
         )));
     }
 
@@ -649,8 +650,15 @@ pub(crate) fn is_workbench_root(value: &str) -> bool {
 /// Why `value` is a root the store **cannot describe** — `None` when it can (M50 Increment 4 /
 /// T3). Asked of both root knobs, of the value as typed, before anything moves.
 ///
-/// The three shapes, each driven at HEAD before the guard existed and each leaving the store
-/// lying in its own way (the repros are in `crates/cli/tests/root_knob_rules.rs`):
+/// **Five shapes now, and the list has grown twice by the same route** — one driven cell at a
+/// time, each joining this predicate rather than minting a code of its own, because the
+/// operator's fix is the same in every case: supply a different root
+/// (`config.untrackable-root`'s five-reasons-one-code precedent). M50 shipped three; M51
+/// Increment 1 / T5 added **edge whitespace** ([`whitespace_padded_component`]) and T6 added
+/// **git pathspec magic** ([`pathspec_magic_root`]), each with its own driven repro in its own
+/// doc-comment. Each shape was driven at HEAD before its guard existed and each left the store
+/// lying in its own way (the repros are in `crates/cli/tests/root_knob_rules.rs` and
+/// `crates/cli/tests/path_arg_occurrence_axis.rs`). The three original ones:
 ///
 ///   - **absolute** — the value is resolved against the repository root by everything
 ///     downstream ([`crate::trackable`] trims the leading `/`), so `/tmp/elsewhere` moves docs
@@ -678,6 +686,10 @@ pub(crate) fn is_workbench_root(value: &str) -> bool {
 /// The walk itself is [`offending_component`], because its symlink leg is asked on its own by a
 /// door whose subject is a **source file** (M51 Increment 1 / T1) — the two legs still travel one
 /// pass over one subject; only the sentences they earn are the caller's.
+///
+/// **The two lexical legs are asked before the walk**, so a value refused twice over keeps the
+/// stronger sentence: `/tmp/x  ` still answers *an absolute path*, and `:(top)docs` answers
+/// about the magic rather than about a directory that does not exist.
 fn unusable_root_reason(repo_root: &Path, value: &str) -> Option<String> {
     if Path::new(value).is_absolute() {
         return Some(format!(
@@ -697,6 +709,15 @@ fn unusable_root_reason(repo_root: &Path, value: &str) -> Option<String> {
             "`{shown}` carries whitespace at its edge — a root has to read back as itself, and \
              `jigc config get` renders this one indistinguishably from {as_read}, so the value \
              in force and the directory every managed doc is moved under cannot be told apart"
+        ));
+    }
+
+    if let Some(shown) = pathspec_magic_root(value) {
+        return Some(format!(
+            "`{shown}` begins with `:`, which git reads as pathspec magic (`:(top)`, `:!`) \
+             and not as a directory name — every managed doc's path starts with this value, \
+             so the `git add`/`git mv` that stages one would match a set of files nobody \
+             named instead of the doc"
         ));
     }
 
@@ -757,6 +778,45 @@ fn whitespace_padded_component(value: &str) -> Option<String> {
             | Component::RootDir
             | Component::Prefix(_) => None,
         })
+}
+
+/// The **first** component of `value` when it begins with `:` — `None` otherwise (M51
+/// Increment 1 / T6).
+///
+/// The pathspec-magic leg of [`unusable_root_reason`], and the second of its legs that asks
+/// nothing of the filesystem. A root knob prefixes **every** managed doc's path, so its first
+/// component is the first component of every pathspec the movers and `finalize` hand git — and
+/// `git add -- <path>` prevents **option** parsing, never magic: a path beginning `:(top)` or
+/// `:!` is a pathspec, not a file name.
+///
+/// Driven at `be8ca6d`, before this leg: `jigc config set docs-root ':!docs'` exited **0**, a
+/// task authored an `adr`, and `jigc task finalize` reported `1 file committed` while the
+/// promoted doc — written to `:!docs/decisions/probe.md` on disk — matched the exclude
+/// pathspec and reached **no commit**; the store went on calling it managed. The `:(top)`
+/// spelling is the sharper half: the stage would match the *same-named file at the repository
+/// top*, committing a file nobody named.
+///
+/// **The first component, not any component.** Git reads magic only at the **start** of a
+/// pathspec, so a directory named `:x` deeper inside the value is an ordinary literal
+/// component and refusing it would refuse a legitimate home. That is the same narrowing the
+/// sink takes — [`crate::task`]'s `ValidatedRetirement::adjudicate` refuses a recorded path on
+/// `starts_with(':')` — asked here of the value that *prefixes* the path rather than of the
+/// path itself. One rule, two places it can enter a git argv.
+fn pathspec_magic_root(value: &str) -> Option<String> {
+    use std::path::Component;
+
+    Path::new(value)
+        .components()
+        .find_map(|component| match component {
+            Component::Normal(part) => Some(part.to_string_lossy().into_owned()),
+            // `./` names no component; a `..` hop, a root or a prefix belongs to the legs that
+            // refuse those shapes, and none of them can begin a pathspec with `:`.
+            Component::CurDir
+            | Component::ParentDir
+            | Component::RootDir
+            | Component::Prefix(_) => None,
+        })
+        .filter(|first| first.starts_with(':'))
 }
 
 /// The two on-disk shapes an **existing component** of a relative value can have that a door

@@ -6234,8 +6234,13 @@ fn persist(path: &Path, bytes: &str) -> Result<()> {
 ///
 /// # The `from_file` family's disposition in the path-argument registry (M51 Increment 1 / T4)
 ///
-/// The M51 registry carries **one stated rule, or one stated no-rule-and-why, per
+/// The M51 registry — [`crate::cli::PATH_ARG_OCCURRENCES`], shipped at T6 and ⇔-fenced
+/// against the clap tree — carries **one stated rule, or one stated no-rule-and-why, per
 /// occurrence** (`completions/artifacts/M51/settle-record.md` → D1 part 3, as amended by §2).
+/// Those three occurrences' rows carry the `NoRule` disposition and cite **this** paragraph
+/// as its reason, so the argument is made once and in one place; what the rows add is that
+/// the claim is **driven**, over the whole escape-shape axis
+/// (`crates/cli/tests/path_arg_occurrence_axis.rs`).
 /// `from_file` occurs three times and each occurrence has two conditional arms — which is
 /// exactly why the registry is keyed by `(leaf, argument id, conditional arm)` rather than by
 /// deduplicated id:

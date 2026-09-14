@@ -63,6 +63,8 @@ mod increment_workflow_compose;
 
 #[path = "../nested_finding_address.rs"]
 mod nested_finding_address;
+#[path = "../path_arg_occurrence_axis.rs"]
+mod path_arg_occurrence_axis;
 #[path = "../roadmap_batch_author.rs"]
 mod roadmap_batch_author;
 #[path = "../roundtrip_registry_fence.rs"]

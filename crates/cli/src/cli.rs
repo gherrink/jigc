@@ -1497,15 +1497,50 @@ pub enum ArgToken {
     WorkUnitId,
     /// A **mint-time slug override** (`--slug`), taken verbatim; [`SLUG_DOORS`].
     SlugOverride,
-    /// **None of the three identity families.** Prose, flags, pack ids — and *file
-    /// paths*, which are the deliberate exception worth naming: `path`, `from`, `file`,
-    /// `from_file` and `target` do become paths, but a path argument is a path the caller
-    /// *means* as one, adjudicated by the filesystem and by their own doors, not a token
-    /// jigc turns into an identity behind the caller's back. That is the fault line these
-    /// three families sit on.
+    /// **None of the three identity families** — with the *path* half split out rather
+    /// than left as a sentence.
     ///
-    /// Written per argument on purpose — nothing here is classified by omission.
-    Plain,
+    /// Until M51 this variant was payload-free and its doc-comment said, of the five
+    /// arguments that do become paths, that *"a path argument is a path the caller
+    /// **means** as one, adjudicated by the filesystem and by their own doors"*. Driven,
+    /// the second half of that claim was false at `abd81df`: `jigc migrate` joined its
+    /// `<path>` onto the repository root, read whatever came back and recorded the
+    /// spelling as the value `finalize --approve` **deletes** — an absolute path outside
+    /// the repository included. Nothing adjudicated it, at that door or at the sink.
+    ///
+    /// So the path half is now a [`PlainValue`] the author must answer, and answering
+    /// [`PlainValue::PathBearing`] reddens `cli_parse::every_path_arg_occurrence_is_registered`
+    /// until the argument's **occurrences** join [`PATH_ARG_OCCURRENCES`] with a rule —
+    /// or with a stated no-rule-and-why.
+    Plain(PlainValue),
+}
+
+/// **Does this argument's value become a path component?** — the answer every
+/// [`ArgToken::Plain`] argument owes, and the vocabulary [`PATH_ARG_OCCURRENCES`] is
+/// derived from.
+///
+/// **Two members, and the second is a verdict rather than a default.** The six
+/// path-bearing ids are `path`, `file`, `from_file`, `from`, `target` and `value`
+/// (`completions/artifacts/M51/settle-record.md` → D1 part 3, as amended by §2). Every
+/// other argument is [`PlainValue::Other`], and the two **near misses** are named here
+/// because classifying them by silence is what this split exists to stop:
+///
+///   * **`title`** does reach a path — but not as the caller typed it: a title is
+///     *slugified* by jigc ([`engine::slug`]), and the minted slug is the path component.
+///     The token the caller supplies is prose. The **verbatim** override of that mint is
+///     `--slug`, which is why it carries its own family ([`ArgToken::SlugOverride`]) and
+///     its own door registry.
+///   * **`workflow`** selects a pack resource by id and a task working area is then named
+///     after the **task id**, not after it; an id no pack declares is refused against the
+///     loaded model before anything is minted (M49 Increment 2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlainValue {
+    /// The value **becomes a path component** at at least one of the argument's
+    /// occurrences — so every occurrence owes a rule or a stated no-rule-and-why.
+    PathBearing,
+    /// The value becomes no path component anywhere: prose, a flag, a closed-vocabulary
+    /// id resolved against the loaded model.
+    Other,
 }
 
 /// **Every argument of every leaf verb, classified** — a *total* function over the clap
@@ -1548,7 +1583,18 @@ pub enum ArgToken {
 /// is the strongest thing expressible against a tree that carries no types. The
 /// [`DoctypeArg`] half is checked rather than believed —
 /// `every_doctype_door_is_registered` asserts a door's registered shape equals the shape
-/// its own argument carries — but nothing can check `Plain` from the outside.
+/// its own argument carries.
+///
+/// **The `Plain` half is no longer outside that.** It used to be: the bound read *"nothing
+/// can check `Plain` from the outside"*, and M51's driven damage sat inside exactly that
+/// blind spot — `jigc migrate` recorded an absolute outside-the-repository `<path>` as the
+/// value `--approve` deletes. `Plain` now carries [`PlainValue`], and a
+/// [`PlainValue::PathBearing`] answer is checked twice over: every **occurrence** of the
+/// argument must carry a [`PATH_ARG_OCCURRENCES`] row (`cli_parse::
+/// every_path_arg_occurrence_is_registered`), and every row's arms are **driven** over the
+/// whole escape-shape axis (`crates/cli/tests/path_arg_occurrence_axis.rs`). What stays
+/// unchecked is an argument classified [`PlainValue::Other`] that does reach a path — the
+/// same shape of bound, one family narrower.
 pub const ARG_TOKENS: &[(&str, ArgToken)] = &[
     // ── The doctype family: a bare id, or the `<type>` head of an address ──
     ("addr", ArgToken::Doctype(DoctypeArg::Address)),
@@ -1565,32 +1611,32 @@ pub const ARG_TOKENS: &[(&str, ArgToken)] = &[
     ("task", ArgToken::WorkUnitId),
     // ── The mint-override family ──
     ("slug", ArgToken::SlugOverride),
-    // ── Plain: prose, flags, pack ids, and file paths meant as paths — no identity ──
-    ("after", ArgToken::Plain),
-    ("approve", ArgToken::Plain),
-    ("before", ArgToken::Plain),
-    ("carry_staged", ArgToken::Plain),
-    ("commands", ArgToken::Plain),
-    ("doctypes", ArgToken::Plain),
-    ("dry_run", ArgToken::Plain),
-    ("explain", ArgToken::Plain),
-    ("file", ArgToken::Plain),
-    ("force", ArgToken::Plain),
-    ("from", ArgToken::Plain),
-    ("from_file", ArgToken::Plain),
-    ("intent", ArgToken::Plain),
-    ("key", ArgToken::Plain),
-    ("no_commit", ArgToken::Plain),
-    ("path", ArgToken::Plain),
-    ("preview", ArgToken::Plain),
-    ("role", ArgToken::Plain),
-    ("target", ArgToken::Plain),
-    ("title", ArgToken::Plain),
-    ("to", ArgToken::Plain),
-    ("unset", ArgToken::Plain),
-    ("value", ArgToken::Plain),
-    ("workflow", ArgToken::Plain),
-    ("workflows", ArgToken::Plain),
+    // ── Plain: no identity family — each answering whether its value becomes a path ──
+    ("after", ArgToken::Plain(PlainValue::Other)),
+    ("approve", ArgToken::Plain(PlainValue::Other)),
+    ("before", ArgToken::Plain(PlainValue::Other)),
+    ("carry_staged", ArgToken::Plain(PlainValue::Other)),
+    ("commands", ArgToken::Plain(PlainValue::Other)),
+    ("doctypes", ArgToken::Plain(PlainValue::Other)),
+    ("dry_run", ArgToken::Plain(PlainValue::Other)),
+    ("explain", ArgToken::Plain(PlainValue::Other)),
+    ("file", ArgToken::Plain(PlainValue::PathBearing)),
+    ("force", ArgToken::Plain(PlainValue::Other)),
+    ("from", ArgToken::Plain(PlainValue::PathBearing)),
+    ("from_file", ArgToken::Plain(PlainValue::PathBearing)),
+    ("intent", ArgToken::Plain(PlainValue::Other)),
+    ("key", ArgToken::Plain(PlainValue::Other)),
+    ("no_commit", ArgToken::Plain(PlainValue::Other)),
+    ("path", ArgToken::Plain(PlainValue::PathBearing)),
+    ("preview", ArgToken::Plain(PlainValue::Other)),
+    ("role", ArgToken::Plain(PlainValue::Other)),
+    ("target", ArgToken::Plain(PlainValue::PathBearing)),
+    ("title", ArgToken::Plain(PlainValue::Other)),
+    ("to", ArgToken::Plain(PlainValue::Other)),
+    ("unset", ArgToken::Plain(PlainValue::Other)),
+    ("value", ArgToken::Plain(PlainValue::PathBearing)),
+    ("workflow", ArgToken::Plain(PlainValue::Other)),
+    ("workflows", ArgToken::Plain(PlainValue::Other)),
 ];
 
 /// The [`ArgToken`] one clap argument id carries — `None` for an id the table does not
@@ -2050,6 +2096,483 @@ pub const SLUG_DOORS: &[SlugDoor] = &[
             "--slug",
             SLUG_OVERRIDE_SLOT,
         ],
+    },
+];
+
+/// The clap argument ids whose value **becomes a path component** — [`ARG_TOKENS`]'
+/// [`PlainValue::PathBearing`] projection, and the vocabulary [`PATH_ARG_OCCURRENCES`] is
+/// fenced ⇔ against. Six: `path` · `file` · `from_file` · `from` · `target` · `value`.
+pub fn path_arg_ids() -> Vec<&'static str> {
+    ARG_TOKENS
+        .iter()
+        .filter(|(_, token)| matches!(token, ArgToken::Plain(PlainValue::PathBearing)))
+        .map(|(id, _)| *id)
+        .collect()
+}
+
+/// The token a [`PathArgArm`]'s `argv` carries **in place of** the caller-supplied path
+/// token, so one arm serves every cell of the escape-shape axis instead of eight
+/// hand-written argvs per occurrence — [`WORK_UNIT_ID_SLOT`]'s rule, one family over.
+pub const PATH_ARG_SLOT: &str = "<path>";
+
+/// **What shape the caller's token takes at one occurrence** — what the axis suite has to
+/// substitute for [`PATH_ARG_SLOT`] to be asking that occurrence its own question.
+///
+/// It is part of the registry rather than of the suite because it is a statement about the
+/// *argument*, not about a test: an occurrence whose subject is a **home** answers about a
+/// directory, and handing it a file spelling would be asking it something else.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PathArgSubject {
+    /// A **file jigc reads** (`jigc migrate <path>`, `jigc config insert-step <file>`,
+    /// every `--from-file`), or — at `jigc unmanage` — a file it looks up by path.
+    SourceFile,
+    /// A **directory a home resolves to** (`jigc config set docs-root <value>`,
+    /// `jigc relocate --from <prior-home>`).
+    Home,
+    /// The **`#` tail of an address** whose head is held valid, so the door answers about
+    /// the tail — the component that would name `.jigc/config/steps/<id>.yaml` or
+    /// `.jigc/config/fills/<id>.md`. Carries the head, verbatim.
+    AddressTail(&'static str),
+    /// A **field value**, adjudicated against the field's declared type.
+    FieldValue,
+}
+
+/// **Which tokens one arm answers for** — `Caller` for an arm the caller's own spelling
+/// reaches, `Literal` for an arm the door's declared grammar reserves for one exact token.
+///
+/// The one `Literal` today is `-`, the **stdin sentinel** of `--from-file`. It is not a
+/// path and never becomes one, and it is exactly why this registry is keyed by
+/// `(leaf, argument id, conditional arm)` rather than by argument id: the same argument at
+/// the same door reads two different kinds of thing depending on the token.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArmToken {
+    /// Any token the caller supplies — minus whatever a sibling `Literal` arm reserves.
+    Caller,
+    /// This exact token, and no other.
+    Literal(&'static str),
+}
+
+/// **What one occurrence-arm does about its token** — one stated rule, or one stated
+/// no-rule-and-why. A *typed* value, so a disposition cannot be a comment somebody deletes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PathArgDisposition {
+    /// The token is **adjudicated** before it reaches a filesystem op: the predicate that
+    /// answers, and every blocking code the arm can earn.
+    Adjudicated {
+        /// The predicate asked, named so a reader can go and read it.
+        predicate: &'static str,
+        /// Every blocking finding code this arm refuses with — non-empty.
+        codes: &'static [&'static str],
+    },
+    /// The token is **not** adjudicated as a path, and this is why it needs no rule. The
+    /// reason is the row: a no-rule with no reason is the silence this registry exists to
+    /// replace.
+    NoRule {
+        /// Why the token becomes no path component — the claim the axis suite drives.
+        why: &'static str,
+    },
+}
+
+/// **One arm of one occurrence** — the condition it answers under, the tokens it answers
+/// for, a runnable argv, and its disposition.
+pub struct PathArgArm {
+    /// The condition this arm answers under, as a reader would state it
+    /// (*"`key ∈ ROOT_KNOBS`"*, *"the value is `-`"*). Unique within its occurrence: it is
+    /// the third component of the registry's key.
+    pub when: &'static str,
+    /// Which tokens reach this arm.
+    pub token: ArmToken,
+    /// What shape the token takes here.
+    pub subject: PathArgSubject,
+    /// A **runnable** argv for this arm with [`PATH_ARG_SLOT`] standing in for the caller
+    /// token — every other argument present and well-formed, so the token is the only
+    /// thing the door can fault on.
+    pub argv: &'static [&'static str],
+    /// The rule, or the stated absence of one.
+    pub disposition: PathArgDisposition,
+}
+
+/// **One occurrence of a path-bearing argument** — a leaf verb, the argument, and its arms.
+pub struct PathArgOccurrence {
+    /// The leaf verb path, as an operator types it after `jigc`.
+    pub door: &'static [&'static str],
+    /// The clap argument id — a member of [`path_arg_ids`], fenced against what `argv`
+    /// actually parses into, so a renamed argument reddens rather than reading as
+    /// documentation.
+    pub arg: &'static str,
+    /// This occurrence's arms — at least one, each with its own `when`.
+    pub arms: &'static [PathArgArm],
+}
+
+/// **Every occurrence of every path-bearing argument, with its rule** — keyed by
+/// `(leaf, argument id, conditional arm)` and ⇔-fenced against the clap tree
+/// (`cli_parse::every_path_arg_occurrence_is_registered`), driven whole by
+/// `crates/cli/tests/path_arg_occurrence_axis.rs`.
+///
+/// **Why occurrences and not ids.** One argument id means different things at different
+/// leaves, and a registry that deduplicated them would state one rule where two are owed:
+/// `path` is `jigc migrate`'s **source to be read and retired** *and* `jigc unmanage`'s
+/// **lookup key**; `file` occurs at `insert-step` and at `replace-step`; `value` is
+/// path-like only when `key ∈ ROOT_KNOBS`; and `from_file` carries the `-` stdin sentinel,
+/// which is not a path at all. Each of those is a separate row with its own answer
+/// (`completions/artifacts/M51/settle-record.md` → D1 part 3, as amended by §2, Codex 6).
+///
+/// **What a row buys.** M50's audit found `DOCTYPE_DOORS` derived from a hand-kept
+/// allowlist of argument *names*, which cannot see an argument nobody listed, and one
+/// unseen argument read a file from outside the repository at exit 0. The answer was
+/// totality: erase the complement, so a new argument reddens until someone answers it.
+/// [`ArgToken::Plain`] was total over *ids* and silent about *path-ness* — and that silence
+/// is where M51's own driven damage sat, at `jigc migrate <absolute-path>`. This registry
+/// is the second half of that totality: an argument answered [`PlainValue::PathBearing`]
+/// reddens until **every one of its occurrences** carries a rule or a stated no-rule, and
+/// the axis suite reddens until every arm is driven over every escape shape.
+pub const PATH_ARG_OCCURRENCES: &[PathArgOccurrence] = &[
+    // ── `path` ────────────────────────────────────────────────────────────────────────
+    PathArgOccurrence {
+        door: &["migrate"],
+        arg: "path",
+        arms: &[PathArgArm {
+            when: "always — the argument is the source `jigc migrate` reads and \
+                   `jigc task finalize --approve` retires",
+            token: ArmToken::Caller,
+            subject: PathArgSubject::SourceFile,
+            argv: &["migrate", PATH_ARG_SLOT, "--as", "changelog"],
+            disposition: PathArgDisposition::Adjudicated {
+                predicate: "crate::trackable::resolve_source_token (resolve-or-refuse, then \
+                            untrackable_reason · is_workbench_root · the symlink leg of \
+                            unusable_root_reason), then the index-or-HEAD trackedness leg",
+                codes: &["migrate.source-untrackable", "migrate.source-untracked"],
+            },
+        }],
+    },
+    PathArgOccurrence {
+        door: &["unmanage"],
+        arg: "path",
+        arms: &[PathArgArm {
+            when: "always",
+            token: ArmToken::Caller,
+            subject: PathArgSubject::SourceFile,
+            argv: &["unmanage", PATH_ARG_SLOT],
+            disposition: PathArgDisposition::NoRule {
+                why: "the token is a LOOKUP KEY, matched against the spellings the store \
+                      already recorded (the file-state baseline and the edge index) and \
+                      never joined onto a path jigc reads, writes or unlinks — `unmanage` \
+                      leaves the bytes on disk by definition, which is the whole verb. A \
+                      spelling no record carries selects nothing and earns the idempotent \
+                      no-op the verb documents.",
+            },
+        }],
+    },
+    // ── `from` ────────────────────────────────────────────────────────────────────────
+    PathArgOccurrence {
+        door: &["relocate"],
+        arg: "from",
+        arms: &[PathArgArm {
+            when: "always",
+            token: ArmToken::Caller,
+            subject: PathArgSubject::Home,
+            argv: &["relocate", "adr", "--from", PATH_ARG_SLOT],
+            disposition: PathArgDisposition::NoRule {
+                why: "the prior home is a PREFIX matched against the committed spellings \
+                      `git ls-files` reports (`crate::orphan::is_stranded`) — never a path \
+                      opened, written, or handed to git as a pathspec. A value that is not \
+                      one of those spellings selects no instance, so the door relocates \
+                      nothing. The DESTINATION is the schema's own home, and it is the \
+                      destination M49's trackability rule guards.",
+            },
+        }],
+    },
+    // ── `file` ────────────────────────────────────────────────────────────────────────
+    PathArgOccurrence {
+        door: &["config", "insert-step"],
+        arg: "file",
+        arms: &[PathArgArm {
+            when: "always — `-` is read as a file name here, not as stdin",
+            token: ArmToken::Caller,
+            subject: PathArgSubject::SourceFile,
+            argv: &[
+                "config",
+                "insert-step",
+                "--workflow",
+                "single-task",
+                "--after",
+                "implement",
+                PATH_ARG_SLOT,
+            ],
+            disposition: PathArgDisposition::Adjudicated {
+                predicate: "crate::trackable::source_read_reason (a SOURCE rule: no `.git` \
+                            component, not reached through jigc's transient workbench — an \
+                            out-of-repo source is admitted and copied in)",
+                codes: &["config.step-source-untrackable"],
+            },
+        }],
+    },
+    PathArgOccurrence {
+        door: &["config", "replace-step"],
+        arg: "file",
+        arms: &[PathArgArm {
+            when: "always — `-` is read as a file name here, not as stdin",
+            token: ArmToken::Caller,
+            subject: PathArgSubject::SourceFile,
+            argv: &[
+                "config",
+                "replace-step",
+                "workflow:single-task#locate",
+                PATH_ARG_SLOT,
+            ],
+            disposition: PathArgDisposition::Adjudicated {
+                predicate: "crate::trackable::source_read_reason — the same predicate as the \
+                            `insert-step` occurrence, which is why this registry is keyed by \
+                            occurrence: one home, two rows",
+                codes: &["config.step-source-untrackable"],
+            },
+        }],
+    },
+    // ── `from_file` ───────────────────────────────────────────────────────────────────
+    PathArgOccurrence {
+        door: &["config", "fill"],
+        arg: "from_file",
+        arms: &[
+            PathArgArm {
+                when: "the value is `-`",
+                token: ArmToken::Literal("-"),
+                subject: PathArgSubject::SourceFile,
+                argv: &[
+                    "config",
+                    "fill",
+                    "step:implement#extra-guidance",
+                    "--from-file",
+                    PATH_ARG_SLOT,
+                ],
+                disposition: PathArgDisposition::NoRule {
+                    why: "the declared stdin sentinel is not a path — the content arrives on \
+                          the stream and no token reaches the filesystem at all.",
+                },
+            },
+            PathArgArm {
+                when: "the value is a path",
+                token: ArmToken::Caller,
+                subject: PathArgSubject::SourceFile,
+                argv: &[
+                    "config",
+                    "fill",
+                    "step:implement#extra-guidance",
+                    "--from-file",
+                    PATH_ARG_SLOT,
+                ],
+                disposition: PathArgDisposition::NoRule {
+                    why: "stated once, in full, at `crate::doc::read_handoff`: the door's own \
+                          declared grammar hands the identical bytes through `-`, so a path \
+                          rule here would refuse a SPELLING and not an outcome — a fence the \
+                          door's `--help` defeats is a false completeness claim. The \
+                          destination is a declared `{{fill:}}` point and the content lands \
+                          in a file the next diff shows.",
+                },
+            },
+        ],
+    },
+    PathArgOccurrence {
+        door: &["doc", "set-slot"],
+        arg: "from_file",
+        arms: &[
+            PathArgArm {
+                when: "the value is `-`",
+                token: ArmToken::Literal("-"),
+                subject: PathArgSubject::SourceFile,
+                argv: &[
+                    "doc",
+                    "set-slot",
+                    "adr:probe#context",
+                    "--from-file",
+                    PATH_ARG_SLOT,
+                ],
+                disposition: PathArgDisposition::NoRule {
+                    why: "the declared stdin sentinel is not a path — the prose arrives on the \
+                          stream and no token reaches the filesystem at all.",
+                },
+            },
+            PathArgArm {
+                when: "the value is a path",
+                token: ArmToken::Caller,
+                subject: PathArgSubject::SourceFile,
+                argv: &[
+                    "doc",
+                    "set-slot",
+                    "adr:probe#context",
+                    "--from-file",
+                    PATH_ARG_SLOT,
+                ],
+                disposition: PathArgDisposition::NoRule {
+                    why: "stated once, in full, at `crate::doc::read_handoff` — the bytes are \
+                          read as SLOT PROSE into a schema-declared slot, readable back \
+                          through `jigc doc show … --task <id>`, and `-` hands the same bytes \
+                          through the same door.",
+                },
+            },
+        ],
+    },
+    PathArgOccurrence {
+        door: &["doc", "author"],
+        arg: "from_file",
+        arms: &[
+            PathArgArm {
+                when: "the value is `-`",
+                token: ArmToken::Literal("-"),
+                subject: PathArgSubject::SourceFile,
+                argv: &["doc", "author", "adr", "--from-file", PATH_ARG_SLOT],
+                disposition: PathArgDisposition::NoRule {
+                    why: "the declared stdin sentinel is not a path — the payload arrives on \
+                          the stream and no token reaches the filesystem at all.",
+                },
+            },
+            PathArgArm {
+                when: "the value is a path",
+                token: ArmToken::Caller,
+                subject: PathArgSubject::SourceFile,
+                argv: &["doc", "author", "adr", "--from-file", PATH_ARG_SLOT],
+                disposition: PathArgDisposition::NoRule {
+                    why: "stated once, in full, at `crate::doc::read_handoff` — the bytes are \
+                          read as a declarative PAYLOAD and every leaf it writes is \
+                          schema-declared, and `-` hands the same bytes through the same door.",
+                },
+            },
+        ],
+    },
+    // ── `target` ──────────────────────────────────────────────────────────────────────
+    PathArgOccurrence {
+        door: &["config", "replace-step"],
+        arg: "target",
+        arms: &[PathArgArm {
+            when: "always",
+            token: ArmToken::Caller,
+            subject: PathArgSubject::AddressTail("workflow:single-task#"),
+            argv: &[
+                "config",
+                "replace-step",
+                PATH_ARG_SLOT,
+                "replacement-step.yaml",
+            ],
+            disposition: PathArgDisposition::NoRule {
+                why: "the target names the include-list POSITION being swapped, and the native \
+                      file's id is the SOURCE FILE's basename — so this token names no path \
+                      component at any spelling. It must also resolve in the workflow's \
+                      resolved include list before any write (`config.anchor-absent`).",
+            },
+        }],
+    },
+    PathArgOccurrence {
+        door: &["config", "remove-step"],
+        arg: "target",
+        arms: &[PathArgArm {
+            when: "always",
+            token: ArmToken::Caller,
+            subject: PathArgSubject::AddressTail("workflow:single-task#"),
+            argv: &["config", "remove-step", PATH_ARG_SLOT],
+            disposition: PathArgDisposition::NoRule {
+                why: "the verb writes no native file at all — there is nothing to add — so the \
+                      token names no path component; and the position must resolve in the \
+                      workflow's resolved include list before the delta is recorded \
+                      (`config.anchor-absent`).",
+            },
+        }],
+    },
+    PathArgOccurrence {
+        door: &["config", "fill"],
+        arg: "target",
+        arms: &[PathArgArm {
+            when: "always",
+            token: ArmToken::Caller,
+            subject: PathArgSubject::AddressTail("step:implement#"),
+            argv: &["config", "fill", PATH_ARG_SLOT, "--from-file", "-"],
+            disposition: PathArgDisposition::NoRule {
+                why: "the `#<fill-id>` tail DOES name `.jigc/config/fills/<fill-id>.md` — but \
+                      only a tail that `check_fill_point_present` has resolved against the \
+                      `{{fill:<id>}}` points the RESOLVED STEP BODY declares, a closed \
+                      vocabulary the pack authors and no caller extends. A tail the body does \
+                      not declare is refused before any write (`config.fill-point-absent`), so \
+                      no caller spelling reaches the write.",
+            },
+        }],
+    },
+    PathArgOccurrence {
+        door: &["config", "fork"],
+        arg: "target",
+        arms: &[PathArgArm {
+            when: "always",
+            token: ArmToken::Caller,
+            subject: PathArgSubject::AddressTail("workflow:single-task#"),
+            argv: &["config", "fork", PATH_ARG_SLOT],
+            disposition: PathArgDisposition::NoRule {
+                why: "the `#<step-id>` tail DOES name `.jigc/config/steps/<step-id>.yaml` — but \
+                      only a tail `check_anchor_present` has resolved against the workflow's \
+                      resolved include list, a closed vocabulary no caller extends. An id the \
+                      list does not carry is refused before any write \
+                      (`config.anchor-absent`).",
+            },
+        }],
+    },
+    // ── `value` ───────────────────────────────────────────────────────────────────────
+    PathArgOccurrence {
+        door: &["config", "set"],
+        arg: "value",
+        arms: &[
+            PathArgArm {
+                when: "`key ∈ ROOT_KNOBS` — the value is resolved as a HOME",
+                token: ArmToken::Caller,
+                subject: PathArgSubject::Home,
+                argv: &["config", "set", "docs-root", PATH_ARG_SLOT],
+                disposition: PathArgDisposition::Adjudicated {
+                    predicate: "crate::trackable::untrackable_reason · \
+                                crate::config::is_workbench_root · \
+                                crate::config::unusable_root_reason (absolute · edge \
+                                whitespace · git pathspec magic · symlinked or file-shaped \
+                                component)",
+                    codes: &[
+                        "config.untrackable-root",
+                        "config.workbench-root",
+                        "config.unusable-root",
+                    ],
+                },
+            },
+            PathArgArm {
+                when: "`key ∉ ROOT_KNOBS`",
+                token: ArmToken::Caller,
+                subject: PathArgSubject::FieldValue,
+                argv: &["config", "set", "default-workflow", PATH_ARG_SLOT],
+                disposition: PathArgDisposition::NoRule {
+                    why: "a non-root knob's value is a SCALAR, adjudicated against the knob's \
+                          declared type before it lands (`config.value-rejected`) and read back \
+                          by the resolver as that scalar. Only `ROOT_KNOBS`' values are \
+                          resolved as a home, which is why the two arms of one argument carry \
+                          two different answers.",
+                },
+            },
+        ],
+    },
+    PathArgOccurrence {
+        door: &["doc", "set-field"],
+        arg: "value",
+        arms: &[PathArgArm {
+            when: "always",
+            token: ArmToken::Caller,
+            subject: PathArgSubject::FieldValue,
+            argv: &[
+                "doc",
+                "set-field",
+                "commit:probe#scope",
+                "--value",
+                PATH_ARG_SLOT,
+            ],
+            disposition: PathArgDisposition::NoRule {
+                why: "the value is adjudicated against the FIELD'S DECLARED TYPE and lands as \
+                      document content — a `string` field's value is prose on a line. The two \
+                      types whose values name something outside the document carry their own \
+                      rules, neither of them this argument's: a `ref` resolves through the \
+                      address grammar M50 fenced, and an `owned-location` is adjudicated whole \
+                      by the owner-artifact gate (absolute · `..` · home confinement · symlink \
+                      escape · presence · trackedness).",
+            },
+        }],
     },
 ];
 
@@ -2985,6 +3508,196 @@ mod cli_parse {
                 "`jigc {shown}`: the argv must deliver the override through `{}`",
                 row.arg,
             );
+        }
+    }
+
+    /// **Every occurrence of every path-bearing argument is registered, with a rule.**
+    ///
+    /// The fourth ⇔ against the real clap tree, and the one that closes
+    /// [`ArgToken::Plain`]'s old blind spot: an argument classified
+    /// [`PlainValue::PathBearing`] must carry a [`PATH_ARG_OCCURRENCES`] row **at every
+    /// leaf it occurs at**, and no row may name an occurrence the tree no longer has.
+    ///
+    /// **Occurrences, not ids** (`completions/artifacts/M51/settle-record.md` → §2): one id
+    /// means different things at different leaves — `path` is `jigc migrate`'s source to be
+    /// read and retired and `jigc unmanage`'s lookup key — so a fence over deduplicated ids
+    /// would let a new leaf reuse an existing id and inherit a rule nobody asked about it.
+    ///
+    /// Five assertions:
+    ///
+    ///   1. the ⇔ over every `(leaf, argument)` pair of the real tree;
+    ///   2. every row names a leaf the tree has, and a [`path_arg_ids`] member;
+    ///   3. each row has at least one arm, and the arms' `when` clauses are distinct — the
+    ///      `when` is the third component of the registry's key;
+    ///   4. each arm's `argv` **actually parses**, lands on the leaf the row names, and
+    ///      delivers its token through the row's declared `arg` — so a row cannot describe
+    ///      a door it does not reach, and `arg` is checked rather than believed;
+    ///   5. each disposition says something: an `Adjudicated` arm names a predicate and at
+    ///      least one blocking code, a `NoRule` arm states why. A no-rule with no reason is
+    ///      the silence this registry replaces.
+    #[test]
+    fn every_path_arg_occurrence_is_registered() {
+        // (1) The ⇔ over every (leaf, argument) pair of the real clap tree.
+        for (path, args) in clap_leaves_with_args() {
+            for id in &args {
+                let bearing = path_arg_ids().contains(&id.as_str());
+                let registered = PATH_ARG_OCCURRENCES
+                    .iter()
+                    .any(|row| row.door.iter().eq(path.iter()) && row.arg == id);
+                assert_eq!(
+                    bearing,
+                    registered,
+                    "`jigc {}` takes `{id}`, which is path-bearing ({bearing}) but its \
+                     PATH_ARG_OCCURRENCES membership is {registered} — every occurrence of a \
+                     path-bearing argument owes one stated rule or one stated \
+                     no-rule-and-why",
+                    path.join(" "),
+                );
+            }
+        }
+
+        // (2) Every row names an occurrence the tree has.
+        let leaves = clap_leaves_with_args();
+        for row in PATH_ARG_OCCURRENCES {
+            let shown = row.door.join(" ");
+            let Some((_, args)) = leaves
+                .iter()
+                .find(|(path, _)| path.iter().eq(row.door.iter()))
+            else {
+                panic!(
+                    "PATH_ARG_OCCURRENCES carries `jigc {shown}`, which the clap tree no \
+                     longer has"
+                );
+            };
+            assert!(
+                args.iter().any(|id| id == row.arg),
+                "`jigc {shown}` no longer takes `{}` — its arguments are [{}]",
+                row.arg,
+                args.join(", "),
+            );
+            assert!(
+                path_arg_ids().contains(&row.arg),
+                "`jigc {shown}` declares `{}`, which ARG_TOKENS does not classify PathBearing",
+                row.arg,
+            );
+
+            // (3) At least one arm, and the `when` clauses are the key's third component.
+            assert!(
+                !row.arms.is_empty(),
+                "`jigc {shown}`'s `{}` carries no arm — an occurrence with no arm states \
+                 nothing",
+                row.arg,
+            );
+            let mut whens: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+            for arm in row.arms {
+                assert!(
+                    !arm.when.trim().is_empty(),
+                    "`jigc {shown}`'s `{}` carries an arm with no condition",
+                    row.arg,
+                );
+                assert!(
+                    whens.insert(arm.when),
+                    "`jigc {shown}`'s `{}` carries two arms keyed `{}`",
+                    row.arg,
+                    arm.when,
+                );
+            }
+
+            // (4) + (5) Each arm reaches the door it names, through the argument it names,
+            //           and says what it does about the token.
+            for arm in row.arms {
+                let token = match arm.token {
+                    ArmToken::Caller => "fence-path",
+                    ArmToken::Literal(literal) => literal,
+                };
+                assert_eq!(
+                    arm.argv
+                        .iter()
+                        .filter(|part| **part == PATH_ARG_SLOT)
+                        .count(),
+                    1,
+                    "`jigc {shown}` [{}]: the argv must carry the path slot exactly once",
+                    arm.when,
+                );
+                let mut argv: Vec<String> = vec!["jigc".to_string()];
+                argv.extend(arm.argv.iter().map(|part| {
+                    if *part == PATH_ARG_SLOT {
+                        token.to_string()
+                    } else {
+                        (*part).to_string()
+                    }
+                }));
+                let matches = <Cli as clap::CommandFactory>::command()
+                    .try_get_matches_from(&argv)
+                    .unwrap_or_else(|err| {
+                        panic!(
+                            "`jigc {shown}` [{}]: the arm's argv must parse: {err}",
+                            arm.when
+                        )
+                    });
+                let mut leaf = &matches;
+                let mut reached: Vec<String> = Vec::new();
+                while let Some((name, sub)) = leaf.subcommand() {
+                    reached.push(name.to_string());
+                    leaf = sub;
+                }
+                assert_eq!(
+                    reached,
+                    row.door,
+                    "`jigc {shown}` [{}]: the arm's argv lands on `jigc {}`",
+                    arm.when,
+                    reached.join(" "),
+                );
+                // Read the value **raw**: the six path-bearing arguments are not one Rust
+                // type (`file` is a `PathBuf`, the rest are `String`), and a typed read
+                // panics on the mismatch rather than answering.
+                let delivered: Vec<String> = leaf
+                    .get_raw(row.arg)
+                    .map(|values| {
+                        values
+                            .map(|value| value.to_string_lossy().into_owned())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                assert_eq!(
+                    delivered,
+                    vec![token.to_string()],
+                    "`jigc {shown}` [{}]: the argv must deliver the token through `{}`",
+                    arm.when,
+                    row.arg,
+                );
+                match arm.disposition {
+                    PathArgDisposition::Adjudicated { predicate, codes } => {
+                        assert!(
+                            !predicate.trim().is_empty(),
+                            "`jigc {shown}` [{}]: an adjudicated arm names the predicate that \
+                             answers",
+                            arm.when,
+                        );
+                        assert!(
+                            !codes.is_empty(),
+                            "`jigc {shown}` [{}]: an adjudicated arm names at least one \
+                             blocking code",
+                            arm.when,
+                        );
+                        for code in codes {
+                            assert!(
+                                code.contains('.') && !code.ends_with('.'),
+                                "`jigc {shown}` [{}]: `{code}` is not a `<family>.<cause>` \
+                                 finding code",
+                                arm.when,
+                            );
+                        }
+                    }
+                    PathArgDisposition::NoRule { why } => assert!(
+                        why.trim().len() > 40,
+                        "`jigc {shown}` [{}]: a no-rule arm states WHY the token becomes no \
+                         path component — a no-rule with no reason is the silence this \
+                         registry replaces",
+                        arm.when,
+                    ),
+                }
+            }
         }
     }
 
