@@ -61,6 +61,8 @@ mod mention_resolves;
 mod message_whitespace_fence;
 #[path = "../not_in_repo_axis.rs"]
 mod not_in_repo_axis;
+#[path = "../posture_door_axis.rs"]
+mod posture_door_axis;
 #[path = "../pre_guard_repair_route.rs"]
 mod pre_guard_repair_route;
 #[path = "../reconciliation_baseline_contrast.rs"]

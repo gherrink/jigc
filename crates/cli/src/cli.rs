@@ -349,12 +349,155 @@ pub enum Command {
     Validate,
 }
 
+impl Command {
+    /// **The leaf verb this parsed command is** — the key [`BEHALF_DOORS`] is read at, and
+    /// the subject the repository-posture guard adjudicates (M51 Increment 2 / T3).
+    ///
+    /// **Read off the parsed command, never off the process argv.** The identity has to
+    /// survive every spelling clap accepts (an abbreviation, a flag before the verb, a
+    /// value that happens to look like a subcommand), and a string scan of `argv` answers
+    /// about the *bytes typed* rather than about the *door reached*. The match is
+    /// exhaustive on purpose — the M50 `milestone_id()` precedent: a verb added anywhere in
+    /// the tree **cannot compile** until someone says which leaf it is, and
+    /// [`BEHALF_DOORS`]' own ⇔ fence then makes them say what it acts on.
+    pub fn leaf(&self) -> &'static [&'static str] {
+        match self {
+            Command::Start { .. } => &["start"],
+            Command::Workflow { .. } => &["workflow"],
+            Command::Setup => &["setup"],
+            Command::Uninstall { .. } => &["uninstall"],
+            Command::Upgrade => &["upgrade"],
+            Command::Ingest => &["ingest"],
+            Command::Migrate { .. } => &["migrate"],
+            Command::MigrateCorpus { .. } => &["migrate-corpus"],
+            Command::Unmanage { .. } => &["unmanage"],
+            Command::Rename { .. } => &["rename"],
+            Command::Relocate { .. } => &["relocate"],
+            Command::Describe { .. } => &["describe"],
+            Command::Validate => &["validate"],
+            Command::Doc { verb } => match verb {
+                DocCommand::Create { .. } => &["doc", "create"],
+                DocCommand::AddItem { .. } => &["doc", "add-item"],
+                DocCommand::RemoveItem { .. } => &["doc", "remove-item"],
+                DocCommand::RetitleItem { .. } => &["doc", "retitle-item"],
+                DocCommand::Rename { .. } => &["doc", "rename"],
+                DocCommand::SetField { .. } => &["doc", "set-field"],
+                DocCommand::SetSlot { .. } => &["doc", "set-slot"],
+                DocCommand::Author { .. } => &["doc", "author"],
+                DocCommand::Show { .. } => &["doc", "show"],
+                DocCommand::Schema { .. } => &["doc", "schema"],
+                DocCommand::List { .. } => &["doc", "list"],
+            },
+            Command::Task { verb } => match verb {
+                TaskCommand::List => &["task", "list"],
+                TaskCommand::Diff { .. } => &["task", "diff"],
+                TaskCommand::Validate { .. } => &["task", "validate"],
+                TaskCommand::Discard { .. } => &["task", "discard"],
+                TaskCommand::Finalize { .. } => &["task", "finalize"],
+                TaskCommand::Bind { .. } => &["task", "bind"],
+            },
+            Command::Config { verb } => match verb {
+                ConfigCommand::Set { .. } => &["config", "set"],
+                ConfigCommand::InsertStep { .. } => &["config", "insert-step"],
+                ConfigCommand::ReplaceStep { .. } => &["config", "replace-step"],
+                ConfigCommand::RemoveStep { .. } => &["config", "remove-step"],
+                ConfigCommand::Fill { .. } => &["config", "fill"],
+                ConfigCommand::Get { .. } => &["config", "get"],
+                ConfigCommand::List => &["config", "list"],
+                ConfigCommand::Fork { .. } => &["config", "fork"],
+            },
+            Command::Milestone { verb } => match verb {
+                MilestoneCommand::Create { .. } => &["milestone", "create"],
+                MilestoneCommand::AddTask { .. } => &["milestone", "add-task"],
+                MilestoneCommand::AddFromSpec { .. } => &["milestone", "add-from-spec"],
+                MilestoneCommand::ListTasks { .. } => &["milestone", "list-tasks"],
+                MilestoneCommand::Provision { .. } => &["milestone", "provision"],
+                MilestoneCommand::Execute { .. } => &["milestone", "execute"],
+                MilestoneCommand::Join { .. } => &["milestone", "join"],
+                MilestoneCommand::Finalize { .. } => &["milestone", "finalize"],
+                MilestoneCommand::Discard { .. } => &["milestone", "discard"],
+            },
+        }
+    }
+}
+
+/// **The repository-posture guard** — one gate, in front of every door that commits or
+/// moves on the user's behalf (M51 Increment 2 / T3; `settle-record.md` → D2 · Review
+/// amendments §3).
+///
+/// Its subject is the [`BEHALF_DOORS`] row for the **parsed** leaf ([`Command::leaf`]), so
+/// the three classes need no per-door wiring and a new verb joins the guard the moment
+/// someone classifies it:
+///
+///   * **commit-on-behalf** — the full posture family, minus the members that row states
+///     as [`PostureExemption`] (`jigc setup` and *unborn*, and nothing else);
+///   * **move-on-behalf** — [`PostureMember::OperationInProgress`] only. A `git mv` lands
+///     in the index and which commit it joins stays the user's to decide, so a detached or
+///     unborn HEAD is none of the mover's business; moving a **tracked** file out from
+///     under a half-finished merge is.
+///   * **neither** — nothing. A door that neither commits nor moves a committed file owes
+///     the user no posture verdict, and answering one would be a refusal with no damage
+///     behind it.
+///
+/// **It never fires outside a git repository.** The walk-up answers `None` there and this
+/// returns `None`, so `locate::not_in_repo`'s single answer keeps arriving from the door
+/// that was asked (`tests/not_in_repo_axis.rs`) rather than being pre-empted by a posture
+/// the probe could not have read anyway.
+///
+/// **The refusal carries no override.** The route names the git command that resolves the
+/// state — a posture is a repository state the user can resolve, not bytes only they can
+/// value — so `--force` at `jigc setup` keeps exactly one meaning, and a flag that consents
+/// to something else (`--carry-staged`: *carry my staged work*) cannot carry a door past a
+/// merge it never consented to conclude.
+///
+/// It routes through [`crate::invocation_log::operational_failure`], the one seam that
+/// pairs the printed finding with the logged identity, so a posture refusal is as legible
+/// in the invocation log as it is on stderr.
+fn refuse_on_posture(command: &Command, format: Format) -> Option<Outcome> {
+    // The ⇔ fence (`tests::every_leaf_verb_says_what_it_acts_on`) makes the miss
+    // impossible; answering `None` rather than panicking keeps a table hole a missing
+    // guard instead of an exit-101 on top of the user's command.
+    let acts = &BEHALF_DOORS
+        .iter()
+        .find(|row| row.door == command.leaf())?
+        .acts;
+    if matches!(acts, ActsOnBehalf::Neither) {
+        return None;
+    }
+    let cwd = std::env::current_dir().ok()?;
+    let repo_root = crate::repo::discover_repo_root(&cwd)?;
+    let subject = crate::repo::posture_subject(&repo_root);
+    let breach = crate::repo::posture(&repo_root)
+        .into_iter()
+        .find(|breach| {
+            subject.adjudicates(breach.member())
+                && match acts {
+                    ActsOnBehalf::CommitsOnBehalf { exempt, .. } => {
+                        !exempt.iter().any(|row| row.member == breach.member())
+                    }
+                    ActsOnBehalf::MovesOnBehalf { .. } => {
+                        breach.member() == PostureMember::OperationInProgress
+                    }
+                    ActsOnBehalf::Neither => false,
+                }
+        })?;
+    Some(crate::invocation_log::operational_failure(
+        format,
+        &render::finding_error(&breach.finding()),
+    ))
+}
+
 impl Cli {
     /// Dispatch the parsed command: bare `start` (no `intent`) runs the
     /// read-only orientation end-to-end; an `<intent>` composes the cascade's
     /// default workflow, minting a task iff that workflow declares
     /// `creates-task: true` (`design/write-commands.md` → Task origination).
     pub fn dispatch(self) -> Outcome {
+        // Before any door runs: no repository posture reaches a door that commits or
+        // moves on the user's behalf without that door having adjudicated it.
+        if let Some(refusal) = refuse_on_posture(&self.command, self.format) {
+            return refusal;
+        }
         match self.command {
             // `--explain` short-circuits the compose path: it renders the
             // task-independent resolution tree and mints nothing (clap forbids it
@@ -4231,6 +4374,136 @@ mod cli_parse {
             BEHALF_DOORS.len(),
             leaves.len(),
             "the on-behalf classification is a bijection with the clap tree's leaves",
+        );
+    }
+
+    /// **One parseable argv per leaf of the clap tree** — the fixture behind
+    /// [`leaf_reads_the_parsed_command_back_to_its_own_door`].
+    ///
+    /// Only well-formedness matters: nothing here runs, so a required value is filled with
+    /// whatever parses. The table is ⇔-fenced against the real clap tree by the test
+    /// below, so a leaf added anywhere reddens here until someone supplies its argv — the
+    /// table cannot quietly stop covering the classification the posture guard reads.
+    const LEAF_ARGV: &[&[&str]] = &[
+        &["start", "an intent"],
+        &["workflow", "single-task", "--preview"],
+        &["setup"],
+        &["uninstall"],
+        &["upgrade"],
+        &["ingest"],
+        &["migrate", "CHANGELOG.md", "--as", "changelog"],
+        &["migrate-corpus"],
+        &["unmanage", "docs/x.md"],
+        &["rename", "adr:keeper", "--to", "Axis"],
+        &["relocate", "vision", "--from", "docs/vision/"],
+        &["describe"],
+        &["validate"],
+        &["doc", "create", "adr", "--title", "Axis"],
+        &["doc", "add-item", "roadmap#milestones", "--title", "Axis"],
+        &["doc", "remove-item", "roadmap#milestones.m1"],
+        &[
+            "doc",
+            "retitle-item",
+            "roadmap#milestones.m1",
+            "--title",
+            "Axis",
+        ],
+        &["doc", "rename", "adr:keeper", "--to", "Axis"],
+        &["doc", "set-field", "commit:t#type", "--value", "feat"],
+        &["doc", "set-slot", "commit:t#summary", "--from-file", "-"],
+        &["doc", "author", "adr", "--from-file", "-"],
+        &["doc", "show", "adr:keeper"],
+        &["doc", "schema", "adr"],
+        &["doc", "list"],
+        &["task", "list"],
+        &["task", "diff", "axis-unit"],
+        &["task", "validate", "axis-unit"],
+        &["task", "discard", "axis-unit"],
+        &["task", "finalize", "axis-unit"],
+        &["task", "bind", "decision", "adr:keeper", "axis-unit"],
+        &["config", "set", "docs-root", "docs"],
+        &[
+            "config",
+            "insert-step",
+            "step.yaml",
+            "--workflow",
+            "single-task",
+            "--after",
+            "implement",
+        ],
+        &[
+            "config",
+            "replace-step",
+            "single-task:implement",
+            "step.yaml",
+        ],
+        &["config", "remove-step", "single-task:implement"],
+        &[
+            "config",
+            "fill",
+            "single-task:implement",
+            "--from-file",
+            "-",
+        ],
+        &["config", "get", "docs-root"],
+        &["config", "list"],
+        &["config", "fork", "single-task"],
+        &["milestone", "create", "Axis milestone"],
+        &["milestone", "add-task", "axis-unit", "axis intent"],
+        &["milestone", "add-from-spec", "axis-unit", "spec:axis"],
+        &["milestone", "list-tasks", "axis-unit"],
+        &["milestone", "provision", "axis-unit"],
+        &["milestone", "execute", "axis-unit"],
+        &["milestone", "join", "axis-unit"],
+        &["milestone", "finalize", "axis-unit"],
+        &["milestone", "discard", "axis-unit"],
+    ];
+
+    /// **[`Command::leaf`] answers each leaf's own door, for every leaf** — the totality
+    /// the posture guard rests on.
+    ///
+    /// The exhaustive match compiler-fences a *new* variant, and nothing more: a variant
+    /// mapped to the **wrong** door still compiles, and would hand the guard another door's
+    /// class — a committing door's family applied to a read verb (a refusal with no damage
+    /// behind it), or a `Neither` verdict over a door that commits. So every leaf is parsed
+    /// through the real clap tree and its answer checked against the door its own argv
+    /// reaches, on the longest-classified-prefix mold [`BEHALF_DOORS`] already uses.
+    #[test]
+    fn leaf_reads_the_parsed_command_back_to_its_own_door() {
+        let (leaves, _) = clap_tree();
+        let mut answered: Vec<Vec<String>> = Vec::new();
+        for argv in LEAF_ARGV {
+            let shown = argv.join(" ");
+            let cli = Cli::try_parse_from(std::iter::once("jigc").chain(argv.iter().copied()))
+                .unwrap_or_else(|err| panic!("`jigc {shown}` must parse: {err}"));
+            // The door this argv names: its longest leading prefix that is a classified
+            // leaf — derived from the argv rather than written beside it, so the row
+            // cannot assert its own expectation.
+            let expected: &[&str] = BEHALF_DOORS
+                .iter()
+                .map(|row| row.door)
+                .filter(|door| argv.len() >= door.len() && argv[..door.len()] == **door)
+                .max_by_key(|door| door.len())
+                .unwrap_or_else(|| panic!("`jigc {shown}` names no classified leaf"));
+            assert_eq!(
+                cli.command.leaf(),
+                expected,
+                "`jigc {shown}` parses to a command whose leaf is not its own door",
+            );
+            answered.push(expected.iter().map(|token| (*token).to_string()).collect());
+        }
+        for leaf in &leaves {
+            assert!(
+                answered.contains(leaf),
+                "`jigc {}` is a leaf verb with no row in LEAF_ARGV — the leaf-identity \
+                 fence cannot see it",
+                leaf.join(" "),
+            );
+        }
+        assert_eq!(
+            answered.len(),
+            leaves.len(),
+            "LEAF_ARGV is a bijection with the clap tree's leaves",
         );
     }
 

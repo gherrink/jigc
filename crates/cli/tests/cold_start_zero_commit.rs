@@ -7,8 +7,18 @@
 //! The zero-commit sentinel detects an **unborn** HEAD distinctly (`git rev-parse
 //! --verify -q HEAD` exits 1, vs 128 for a genuinely broken/missing git) and pins the
 //! task to the canonical **empty-tree** SHA, so every `creates-task` workflow runs
-//! pre-first-commit and the first finalize diffs against the empty tree and commits
-//! cleanly as the repo's first commit.
+//! pre-first-commit.
+//!
+//! **The finalize half of that sentence is struck** (M51 Increment 2 / T3): it used to
+//! end *"and the first finalize diffs against the empty tree and commits cleanly as the
+//! repo's first commit"*, and the repository-posture guard makes that false —
+//! `jigc task finalize` is commit-on-behalf with no stated exemption, so an unborn HEAD
+//! refuses with `repo.head-unborn` and a route naming a first commit
+//! (`tests/posture_door_axis.rs`). Nothing in this suite moves, because none of its
+//! finalizes ever ran on an unborn HEAD: arm (ii) lands `jigc setup`'s install commit
+//! first — setup is the one row **exempt** from the unborn member — and that commit
+//! births HEAD before arm (iii) finalizes. Which is the documented on-ramp, and the
+//! reason narrowing this edge costs no path anyone walks.
 //!
 //! Four real-binary (`CARGO_BIN_EXE_jigc`) assertions over a throwaway `git init`:
 //!   (i)   on a zero-commit repo, `jigc start --workflow single-task "<intent>"` (run

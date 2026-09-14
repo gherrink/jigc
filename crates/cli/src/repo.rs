@@ -78,8 +78,9 @@ pub fn jigc_home(start: &Path) -> Option<PathBuf> {
 
 /// Walk up from `start` until a directory containing a `.git` entry is found,
 /// returning that directory (the worktree root). The same walk-up every command module
-/// owns; co-located here so [`jigc_home`] can layer over it.
-fn discover_repo_root(start: &Path) -> Option<PathBuf> {
+/// owns; co-located here so [`jigc_home`] can layer over it — and reached by
+/// [`crate::cli`]'s posture guard, which runs before any door has resolved a repo.
+pub fn discover_repo_root(start: &Path) -> Option<PathBuf> {
     start
         .ancestors()
         .find(|dir| dir.join(".git").exists())
@@ -253,6 +254,91 @@ impl PostureBreach {
         };
         Finding::block(self.member.code(), message, Route::human(route))
     }
+}
+
+/// **Whose checkout a posture verdict is about** — the subject the posture family is
+/// adjudicated against (`settle-record.md` → Review amendments §3).
+///
+/// The family's members are not universal facts about a repository: they are facts about
+/// **the user's** repository. jigc's own fan-out provisions a `--detach` worktree per
+/// milestone sub-task, and [`posture`] answers `repo.head-detached` there
+/// **byte-identically** to a user's detached HEAD — measured in `tests/repo_posture.rs`,
+/// which is why the exemption cannot be inferred from what the probe sees and is carried
+/// as a type instead.
+///
+/// **The variants are not publicly constructible.** The discriminant is a private enum and
+/// the only constructor is [`posture_subject`], so no caller inside this crate can hand a
+/// seam a forged `DedicatedWorktree` — the class M50's completion audit condemned when
+/// `fanout_worktree_paths` decided its subject with `path.is_dir()`, a claim about *shape*
+/// where the question was about *bytes*.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PostureSubject(Checkout);
+
+/// The discriminant behind [`PostureSubject`] — private, so the type is the gate.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Checkout {
+    /// The checkout the user works in: every member of the family is theirs to resolve.
+    Live,
+    /// A fan-out worktree **jigc** provisioned for one milestone sub-task. It carries no
+    /// payload: the evidence is [`posture_subject`]'s three legs, and the *type* is what a
+    /// seam holds — a value of this shape cannot be built any other way.
+    Dedicated,
+}
+
+impl PostureSubject {
+    /// Whether this subject owes an answer for `member`.
+    ///
+    /// A [`Checkout::Live`] subject adjudicates the whole family. A dedicated worktree is
+    /// exempt from [`PostureMember::HeadDetached`] **and from that member only**: jigc
+    /// detached it itself, so refusing there would refuse jigc's own provisioning — while
+    /// a merge or rebase left un-concluded *inside* that worktree is as real there as
+    /// anywhere, and an unborn HEAD cannot occur in a checkout git created at a commit.
+    pub fn adjudicates(&self, member: PostureMember) -> bool {
+        !matches!(
+            (&self.0, member),
+            (Checkout::Dedicated, PostureMember::HeadDetached)
+        )
+    }
+}
+
+/// Classify `repo_root` as a [`PostureSubject`] — the one constructor.
+///
+/// A dedicated worktree must satisfy **three** legs, none of them a path-shape guess on
+/// its own:
+///
+/// 1. `.git` is a **file** — only a real linked worktree keeps a `gitdir:` pointer there,
+///    which no `create_dir_all(".git")` fixture produces;
+/// 2. the path is the one [`engine::milestone::worktree_path`] mints, asked of the
+///    production constant rather than by restating `.jigc/worktrees` here;
+/// 3. the last component is a **registered sub-task** of a milestone in the shared
+///    workbench ([`engine::milestone::owning_milestone`]) — the registry leg, which is
+///    what makes this an answer about jigc's own provisioning rather than about a
+///    directory named like one.
+///
+/// Anything else is the user's own checkout. The fallback direction is deliberate: a
+/// misread live checkout refuses a commit the user can unblock with the routed git
+/// command, while a misread worktree would exempt a posture nobody adjudicates.
+pub fn posture_subject(repo_root: &Path) -> PostureSubject {
+    let live = PostureSubject(Checkout::Live);
+    // (1) A linked worktree — and only a linked worktree — keeps `.git` as a FILE.
+    if !repo_root.join(".git").is_file() {
+        return live;
+    }
+    let Some(sub_task) = repo_root.file_name().and_then(|name| name.to_str()) else {
+        return live;
+    };
+    // (2) The home jigc's own fan-out provisions into.
+    if !repo_root.ends_with(engine::milestone::worktree_path(sub_task)) {
+        return live;
+    }
+    // (3) The registry leg: this id is a sub-task of a milestone in the shared workbench.
+    let Some(home) = jigc_home(repo_root) else {
+        return live;
+    };
+    if engine::milestone::owning_milestone(&home.join(".jigc"), sub_task).is_none() {
+        return live;
+    }
+    PostureSubject(Checkout::Dedicated)
 }
 
 /// Probe `repo_root` for the repository-posture family — the breaches, in

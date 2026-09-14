@@ -4392,10 +4392,21 @@ pub(crate) fn git_path_has_history(repo_root: &Path, path: &str) -> Result<bool>
 }
 
 /// The canonical git empty-tree SHA — the sentinel base a **zero-commit** (unborn
-/// HEAD) repo pins to so every `creates-task` workflow runs pre-first-commit and the
-/// first finalize diffs against the empty tree (`design/project-setup.md` → Flow 2
-/// hardening — zero-commit; `implementation/roadmap.md` → M21 Increment 2). `git diff
-/// <empty-tree>` emits the add-everything diff and the first commit lands cleanly.
+/// HEAD) repo pins to so every `creates-task` workflow runs pre-first-commit
+/// (`design/project-setup.md` → Flow 2 hardening — zero-commit;
+/// `implementation/roadmap.md` → M21 Increment 2).
+///
+/// **The mint half stands; the finalize half is struck** (M51 Increment 2 / T3). This
+/// comment also claimed *"and the first finalize diffs against the empty tree"*, and
+/// since the repository-posture guard that is false: `jigc task finalize` is
+/// commit-on-behalf ([`crate::cli::BEHALF_DOORS`]) with no stated exemption, so an
+/// unborn HEAD refuses with `repo.head-unborn` before the pin is read. Driven, the
+/// falsifying datum: on a fresh `git init`, `jigc task finalize <id>` now exits non-zero
+/// naming *land the repository's first commit with `git commit`*. The mint side is
+/// untouched — `jigc start` is `Neither`, adjudicates no posture, and still pins this
+/// sentinel on a zero-commit repo — and the documented on-ramp runs `jigc setup` first,
+/// whose install commit (exempt from the unborn member, by the M30 audit rationale)
+/// births HEAD before any work is finalized.
 pub(crate) const EMPTY_TREE_SHA: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 
 /// The short form of [`EMPTY_TREE_SHA`] (for the [`crate::state::BasePin`]'s
@@ -4430,9 +4441,12 @@ pub(crate) fn head_is_unborn(repo_root: &Path) -> Result<bool> {
 /// checks the base pin against — `design/finalize.md` → 1. Preflight). Shells out to
 /// the user's `git` (`DECISIONS.md` 2026-05-31 → Git invocation).
 ///
-/// On a **zero-commit** repo (unborn HEAD) returns the [`EMPTY_TREE_SHA`] sentinel so
-/// the first finalize diffs against the empty tree and the pin guard compares
-/// sentinel-vs-sentinel (`design/project-setup.md` → Flow 2 hardening — zero-commit).
+/// On a **zero-commit** repo (unborn HEAD) returns the [`EMPTY_TREE_SHA`] sentinel, so a
+/// task minted pre-first-commit pins and compares sentinel-vs-sentinel
+/// (`design/project-setup.md` → Flow 2 hardening — zero-commit). The *"so the first
+/// finalize diffs against the empty tree"* half of this sentence is **struck** — see
+/// [`EMPTY_TREE_SHA`] for the falsifying datum: since M51 Increment 2 an unborn HEAD
+/// refuses at every commit-on-behalf door, so no finalize reaches this branch.
 pub(crate) fn git_head(repo_root: &Path) -> Result<String> {
     if head_is_unborn(repo_root)? {
         return Ok(EMPTY_TREE_SHA.to_string());
