@@ -53,6 +53,22 @@ fn dev_pack() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("pack")
 }
 
+/// Stage a foreign migration source. **M51 Increment 1 / T2**: `jigc migrate` refuses a source
+/// git holds no copy of — in neither the index nor `HEAD` — and routes at exactly this
+/// `git add`, so every fixture that hands the door a freshly written file stages it first.
+fn stage(root: &Path, path: &str) {
+    let out = Command::new("git")
+        .args(["add", "--", path])
+        .current_dir(root)
+        .output()
+        .expect("run git add");
+    assert!(
+        out.status.success(),
+        "git add -- {path} failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
 /// Initialize a real git repo with one commit (composition reads HEAD) plus the
 /// `.jigc/config/` project layer the cascade expects.
 fn init_repo(root: &Path) {
@@ -158,6 +174,7 @@ fn migrate_composes_the_shipped_workflow_with_seam_and_author_spine() {
     // No project shadow: the SHIPPED pack `migrate-changelog` workflow + its
     // `author-migration` step must compose on their own.
     fs::write(repo.path().join("CHANGELOG.md"), FOREIGN).expect("write foreign CHANGELOG.md");
+    stage(repo.path(), "CHANGELOG.md");
 
     // A clean exit 0 IS the workflow-refs gate passing — a dangling command-ref or a
     // missing step-include would block composition and exit non-zero.
@@ -266,6 +283,7 @@ fn migrate_adr_composes_the_shipped_workflow_with_seam_and_adr_author_spine() {
     // No project shadow: the SHIPPED `migrate-adr` workflow + its `author-migration-adr`
     // step must compose on their own. Cold spike — no `docs/decisions/` exists yet.
     fs::write(repo.path().join("decision.md"), FOREIGN_ADR).expect("write foreign ADR");
+    stage(repo.path(), "decision.md");
 
     let out = run_jigc(
         repo.path(),
@@ -472,6 +490,7 @@ fn migrate_with_an_unknown_as_rejects_before_minting_any_task() {
     // (c) The happy path still mints + stages: a VALID `--as changelog` composes and
     // leaves exactly one task behind (the validate-before-mint guard didn't break it).
     fs::write(repo.path().join("CHANGELOG.md"), FOREIGN).expect("write foreign CHANGELOG.md");
+    stage(repo.path(), "CHANGELOG.md");
     let out = run_jigc_embedded(
         repo.path(),
         home.path(),
@@ -516,6 +535,7 @@ fn reentered_filled_migrate_commit_survives_byte_untouched() {
     ok_stdout(setup, "jigc setup");
 
     fs::write(repo.path().join("CHANGELOG.md"), FOREIGN).expect("write foreign CHANGELOG.md");
+    stage(repo.path(), "CHANGELOG.md");
 
     // `jigc migrate` mints the `migrate-changelog-<slug>` task + auto-provisions a FILLED
     // `commit:<id>` doc.
@@ -623,6 +643,7 @@ fn selectable_false_migrate_resume_short_circuits_byte_untouched() {
     ok_stdout(setup, "jigc setup");
 
     fs::write(repo.path().join("CHANGELOG.md"), FOREIGN).expect("write foreign CHANGELOG.md");
+    stage(repo.path(), "CHANGELOG.md");
 
     // Mint the `selectable: false` migrate task + its auto-provisioned FILLED commit doc.
     let out = run_jigc(

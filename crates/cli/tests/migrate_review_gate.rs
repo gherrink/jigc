@@ -177,6 +177,8 @@ fn make_commit_conformant(repo: &Path, home: &Path, pack: &Path, task: &str) {
 fn staged_migration(repo: &Path, home: &Path, pack: &Path, foreign: &str, release_titles: &[&str]) {
     ok_stdout(run_jigc(repo, home, pack, &["setup"], None), "jigc setup");
     fs::write(repo.join("HISTORY.md"), foreign).expect("write foreign HISTORY.md");
+    // M51 Inc 1 / T2 — the migrate door takes only a source git holds a copy of.
+    git(repo, &["add", "--", "HISTORY.md"]);
     ok_stdout(
         run_jigc(
             repo,

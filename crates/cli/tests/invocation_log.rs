@@ -510,6 +510,8 @@ fn migration_review_hold_is_identifiable_in_the_log() {
         "# Changelog\n\n## [0.1.0] - 2021-03-09\n### Added\n- First public release.\n",
     )
     .expect("write foreign HISTORY.md");
+    // M51 Inc 1 / T2 — the migrate door takes only a source git holds a copy of.
+    git(repo.path(), &["add", "--", "HISTORY.md"]);
     ok(&["migrate", "HISTORY.md", "--as", "changelog"], "migrate");
     ok(
         &[

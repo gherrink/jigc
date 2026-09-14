@@ -4764,7 +4764,13 @@ fn classify_landed_manifest(
 /// pre-staged the deletion (`git rm` before finalize) has removed the index entry —
 /// while HEAD still carries the path — so only the index tells the stage whether the
 /// pathspec would match anything.
-fn path_in_index(repo_root: &Path, path: &str) -> bool {
+///
+/// **Also the `jigc migrate` door's trackedness leg** (M51 Increment 1 / T2), and shared
+/// rather than copied on purpose: [`stage_migration`] skips a retirement this predicate
+/// refuses — *"an untracked foreign was never in the index (nothing to stage)"* — which is
+/// precisely the silent-loss cell the door now refuses up front. Two spellings of one
+/// question would let the door admit a source the stage then drops.
+pub(crate) fn path_in_index(repo_root: &Path, path: &str) -> bool {
     Command::new("git")
         .args(["ls-files", "--", path])
         .current_dir(repo_root)

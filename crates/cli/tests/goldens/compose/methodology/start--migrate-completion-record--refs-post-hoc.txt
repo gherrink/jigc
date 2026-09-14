@@ -125,8 +125,13 @@ because the CLI guarantees structure, never content-faithfulness. Review that
 fidelity diff, then re-run the same finalize with `--approve` to write the
 canonical doc, RETIRE the foreign original, and commit — approval is the one
 destructive gate. Retired means removed: the foreign file is deleted from the
-worktree and the deletion staged, so the removal lands in the same commit as
-the canonical doc (a `git rm` in effect). A source already sitting at its
+worktree and the deletion staged, so for a source this repository had already
+committed the removal lands in the same commit as the canonical doc (a
+`git rm` in effect) and the original stays recoverable from history. A source
+that was only `git add`ed and never committed has no committed copy for that
+deletion to point at — it leaves no row in the commit and nothing to recover
+from — so commit the source first if you want one; a source git has never
+recorded at all is refused at `jigc migrate`. A source already sitting at its
 canonical destination is
 rewritten in place on approval — the committed file is modified, nothing is
 retired. A destination already committed when the doc was authored was copied

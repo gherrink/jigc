@@ -157,12 +157,19 @@ fn committed_staged_migration(repo: &Path, home: &Path, pack: &Path) {
 
 /// Drive the migrate + author spine over a foreign `HISTORY.md`. When `track_foreign`
 /// the foreign is committed first (the design's "foreign committed first" assumption);
-/// otherwise it is left **untracked** — the review-F3 case where `git restore` cannot
-/// recover it on a rolled-back commit.
+/// otherwise it is **staged and never committed** — the review-F3 case, where nothing in
+/// `HEAD` holds the bytes, so `git restore` cannot recover the file on a rolled-back commit.
+///
+/// **The `git add` in the `false` arm is M51 Increment 1 / T2's**, and it keeps the case
+/// rather than softening it. That leg refuses a source git has never recorded at all, so the
+/// *never-`git add`ed* spelling of this fixture no longer reaches `migrate` — but the
+/// property under test is untouched: the admitted index-only source is still absent from
+/// `HEAD`, which is the whole reason the retire has to capture its bytes before deleting
+/// them.
 fn staged_migration(repo: &Path, home: &Path, pack: &Path, track_foreign: bool) {
     fs::write(repo.join("HISTORY.md"), FOREIGN).expect("write foreign HISTORY.md");
+    git(repo, &["add", "HISTORY.md"]);
     if track_foreign {
-        git(repo, &["add", "HISTORY.md"]);
         git(repo, &["commit", "-q", "-m", "track foreign changelog"]);
     }
 
@@ -718,24 +725,32 @@ fn stage_phase_git_failure_yields_a_routed_finding_and_rolls_back() {
     );
 }
 
-/// Review F3: an **untracked** foreign original (never committed at HEAD) + a seeded
-/// commit failure must still leave the foreign file byte-intact on disk. `git restore`
-/// alone cannot recover an untracked file — there are no committed bytes — so the retire
-/// must capture the bytes pre-deletion and the rollback must rewrite them. Pre-fix the
-/// foreign was lost permanently.
+/// Review F3: a foreign original **absent from `HEAD`** + a seeded commit failure must
+/// still leave the foreign file byte-intact on disk. `git restore` from `HEAD` cannot
+/// recover it — there are no committed bytes — so the retire must capture the bytes
+/// pre-deletion and the rollback must rewrite them. Pre-fix the foreign was lost
+/// permanently.
+///
+/// The source is `git add`ed and never committed (M51 Increment 1 / T2 — the trackedness
+/// leg refuses one git has never recorded). The precondition the case turns on is
+/// *absent from every commit*, which is unchanged.
 #[test]
 fn approved_migration_commit_rejection_restores_an_untracked_foreign() {
     let repo = TempDir::new("untracked");
     let home = TempDir::new("home");
     let pack = dev_pack();
     init_repo(repo.path());
-    // The foreign HISTORY.md is staged for migration but never committed — untracked.
+    // The foreign HISTORY.md is staged for migration but never committed.
     staged_migration(repo.path(), home.path(), &pack, false);
 
-    // Sanity: the foreign is genuinely untracked at HEAD (the precondition under test).
+    // Sanity: the foreign exists in no commit (the precondition under test).
     assert!(
-        git(repo.path(), &["status", "--porcelain", "HISTORY.md"]).starts_with("??"),
-        "the foreign HISTORY.md must be untracked for this case",
+        git(
+            repo.path(),
+            &["log", "--all", "--format=%H", "--", "HISTORY.md"]
+        )
+        .is_empty(),
+        "the foreign HISTORY.md must exist in no commit for this case",
     );
     let head_before = git(repo.path(), &["rev-parse", "HEAD"]);
 
@@ -765,12 +780,12 @@ fn approved_migration_commit_rejection_restores_an_untracked_foreign() {
     let restored = repo.path().join("HISTORY.md");
     assert!(
         restored.exists(),
-        "the untracked foreign original must be restored on a rolled-back commit",
+        "the foreign original — in no commit — must be restored on a rolled-back commit",
     );
     assert_eq!(
         fs::read_to_string(&restored).expect("read restored foreign"),
         FOREIGN,
-        "the untracked foreign original must be restored byte-intact",
+        "the foreign original — in no commit — must be restored byte-intact",
     );
 
     // The promoted canonical copy is rolled back — gone from disk.
@@ -782,13 +797,19 @@ fn approved_migration_commit_rejection_restores_an_untracked_foreign() {
 
 /// Confidence-audit minor item 10 — the promotions rollback's **worktree** half has a
 /// same-path sibling: a **same-path** migration (`destination == source`, the M43
-/// carve-out) of an **untracked** foreign plans **no retirement**
+/// carve-out) of a foreign original **absent from `HEAD`** plans **no retirement**
 /// (`plan_retirements` skips `source == destination`), so the retire byte-capture that
-/// saves an untracked foreign in the two-path case never runs — and the promotion
+/// saves such a foreign in the two-path case never runs — and the promotion
 /// destination IS the foreign original. On a hook-rejected `--approve` finalize the
-/// worktree rollback saw an untracked destination and **deleted** it, destroying the
-/// user's only worktree copy of the foreign bytes. The rollback must instead restore
-/// the displaced pre-promote bytes — the same capture discipline as the retire axis.
+/// worktree rollback saw a destination with no committed copy and **deleted** it,
+/// destroying the user's only worktree copy of the foreign bytes. The rollback must
+/// instead restore the displaced pre-promote bytes — the same capture discipline as
+/// the retire axis.
+///
+/// **The source is staged and never committed** (M51 Increment 1 / T2): the trackedness
+/// leg refuses a source git has never recorded, so the never-`git add`ed spelling of this
+/// cell no longer reaches `migrate`. The cell itself is unchanged — the rollback still has
+/// no committed copy to restore from, which is the only reason the capture is load-bearing.
 #[test]
 fn same_path_untracked_foreign_survives_a_hook_rejection_rollback() {
     let repo = TempDir::new("same-path");
@@ -797,8 +818,10 @@ fn same_path_untracked_foreign_survives_a_hook_rejection_rollback() {
     init_repo(repo.path());
 
     // The foreign sits AT the canonical destination (`changelog`'s placement is root
-    // `CHANGELOG.md`) and is never committed — the same-path × untracked cell.
+    // `CHANGELOG.md`) and is staged but never committed — the same-path × absent-from-HEAD
+    // cell.
     fs::write(repo.path().join("CHANGELOG.md"), FOREIGN).expect("write foreign CHANGELOG.md");
+    git(repo.path(), &["add", "CHANGELOG.md"]);
     ok(
         run_jigc(repo.path(), home.path(), &pack, &["setup"]),
         "jigc setup",
@@ -821,10 +844,16 @@ fn same_path_untracked_foreign_survives_a_hook_rejection_rollback() {
         .expect("the migrate compose announces the minted task id");
     author_migrated_changelog(repo.path(), home.path(), &pack, &task);
 
-    // Sanity: the foreign is genuinely untracked (the cell under test).
+    // Sanity: the foreign has no committed copy (the cell under test) — it is in the
+    // index, which is what `migrate` requires, and in no commit, which is what makes the
+    // rollback's capture the only thing that can bring it back.
     assert!(
-        git(repo.path(), &["status", "--porcelain", "CHANGELOG.md"]).starts_with("??"),
-        "the foreign CHANGELOG.md must be untracked for this case",
+        git(
+            repo.path(),
+            &["log", "--all", "--format=%H", "--", "CHANGELOG.md"]
+        )
+        .is_empty(),
+        "the foreign CHANGELOG.md must exist in no commit for this case",
     );
     let head_before = git(repo.path(), &["rev-parse", "HEAD"]);
 

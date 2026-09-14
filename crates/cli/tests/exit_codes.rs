@@ -307,6 +307,9 @@ fn migration_finalize_without_approve_exits_review_hold() {
     );
 
     fs::write(repo.path().join("HISTORY.md"), FOREIGN_CHANGELOG).expect("write foreign");
+    // M51 Inc 1 / T2 — `jigc migrate` refuses a source git holds no copy of, and routes at
+    // exactly this `git add`.
+    git(repo.path(), &["add", "--", "HISTORY.md"]);
     ok_stdout(
         jigc(
             repo.path(),

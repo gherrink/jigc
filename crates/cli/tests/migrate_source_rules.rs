@@ -1,4 +1,4 @@
-//! M51 Increment 1 / T1 — **the `jigc migrate` door adjudicates its source path before
+//! M51 Increment 1 / T1 + T2 — **the `jigc migrate` door adjudicates its source path before
 //! anything mints** (`completions/artifacts/M51/settle-record.md` → D1 parts 1+3, as amended
 //! by §2 · the §10 mold; `design/auto-migration.md` → The `jigc migrate` verb).
 //!
@@ -28,6 +28,23 @@
 //! the shipped predicates: `untrackable_reason` · `is_workbench_root` ·
 //! `unusable_root_reason`'s symlink leg.
 //!
+//! **A fourth question, and it is not about location** (§2, the trackedness leg — T2). All
+//! three predicates above ask *where* the source is; none asks whether git has ever recorded
+//! it. Driven end to end at `706f5f3f`: an **untracked** in-repo `HISTORY.md` migrated,
+//! authored and `--approve`d landed the canonical doc, deleted the source from the worktree,
+//! and left `git log --all -- HISTORY.md` **empty** — the bytes in no git object, the deletion
+//! named on no surface. That falsified the recorded warrant under which the adapter deny floor
+//! keeps its blanket permit for `migrate` + `finalize --approve` (*"a guarded migrate destroys
+//! only a reviewed, in-repo, **git-recoverable** file"*). Arm (g) is that leg, and it drives
+//! the route rather than reading it: the printed `git add` is extracted from the refusal and
+//! run **verbatim**, and the identical `jigc migrate` then succeeds.
+//!
+//! Its admitting half is **two** arms, not one, because *git-recoverable* is a union: a source
+//! in the **index** (staged, never committed — which is what makes the printed route
+//! sufficient) and a source in **`HEAD`** but deliberately out of the index (the user's own
+//! pre-staged `git rm --cached`, M40 F7) are both files git holds a copy of. The leg refuses
+//! only a file git holds **no** copy of.
+//!
 //! Every arm drives the real binary in a [`support::trial_corpus`] fixture. The refusal shape
 //! is the §10 mold, checked rather than assumed: one code, **exactly one** `route:` line, exit
 //! **1** — and **no task directory**, because a door that strands a task dir has already
@@ -44,10 +61,16 @@ use std::path::{Path, PathBuf};
 
 use crate::support::trial_corpus::{State, TrialCorpus};
 
-/// The one code every location leg of this door carries (`settle-record.md` → §10). One code
-/// with the reason in the message, on `config.untrackable-root`'s five-reasons-one-code
+/// The one code every **location** leg of this door carries (`settle-record.md` → §10). One
+/// code with the reason in the message, on `config.untrackable-root`'s five-reasons-one-code
 /// precedent: the operator's fix is the same in all five cases — name a different source.
 const CODE: &str = "migrate.source-untrackable";
+
+/// The **trackedness** leg's own code (`settle-record.md` → §2, the trackedness leg; §10's
+/// table row). It is a second code rather than a fifth reason under [`CODE`] because the
+/// operator's fix is *not* the same: every location leg says *name a different source*, and
+/// this one says *keep this source and stage it* — a different act, so a different identity.
+const UNTRACKED: &str = "migrate.source-untracked";
 
 /// A foreign changelog body, comfortably above the byte floor so no arm can be refused for
 /// being trivial instead of for being where it is.
@@ -103,6 +126,17 @@ fn task_dirs(repo: &Path) -> Vec<String> {
 /// semantics), and this is an operational refusal at the door, before any document exists to
 /// have a verdict about.
 fn assert_refused(corpus: &TrialCorpus, out: &std::process::Output, what: &str) {
+    assert_refused_with(corpus, out, CODE, what);
+}
+
+/// [`assert_refused`] over an explicit `code` — the same mold, asked of whichever leg
+/// answered. The location legs share [`CODE`]; the trackedness leg carries [`UNTRACKED`].
+fn assert_refused_with(
+    corpus: &TrialCorpus,
+    out: &std::process::Output,
+    code: &str,
+    what: &str,
+) -> String {
     let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
     assert_eq!(
@@ -113,8 +147,8 @@ fn assert_refused(corpus: &TrialCorpus, out: &std::process::Output, what: &str) 
         out.status,
     );
     assert!(
-        stderr.contains(CODE),
-        "{what} must name `{CODE}`; got:\n{stderr}",
+        stderr.contains(code),
+        "{what} must name `{code}`; got:\n{stderr}",
     );
     let routes: Vec<&str> = stderr
         .lines()
@@ -130,6 +164,7 @@ fn assert_refused(corpus: &TrialCorpus, out: &std::process::Output, what: &str) 
         Vec::<String>::new(),
         "{what} must strand no task directory — the refusal is asked BEFORE the mint",
     );
+    stderr
 }
 
 // ───────────────────── (a) absolute, outside the repository ─────────────────────
@@ -299,12 +334,19 @@ fn a_source_inside_the_workbench_is_refused() {
 /// spelling a caller actually types on macOS, where `/var` is a symlink to `/private/var` —
 /// so the arm pins that the resolve step is canonicalization-safe on both sides. A door that
 /// refused every absolute token, or that recorded the host spelling, fails here.
+///
+/// **The `git add` is T2's, and it is the fixture being made admissible rather than
+/// decoration**: the trackedness leg refuses a source git has never recorded, so an arm whose
+/// subject is the *spelling* has to stage its source or it stops testing spelling at all. It
+/// stages without committing on purpose — the predicate is the **index**, so this arm is also
+/// the staged-not-committed cell of that leg.
 #[test]
 fn an_absolute_in_repo_spelling_is_accepted_and_records_the_canonical_path() {
     let corpus = TrialCorpus::build(State::Fresh);
     let home = corpus.repo().join("docs").join("changelog");
     fs::create_dir_all(&home).expect("create the old changelog home");
     fs::write(home.join("changelog.md"), FOREIGN).expect("write the foreign changelog");
+    corpus.git(&["add", "--", "docs/changelog/changelog.md"]);
 
     let absolute = home.join("changelog.md");
     corpus.jigc_ok(&[
@@ -332,5 +374,298 @@ fn an_absolute_in_repo_spelling_is_accepted_and_records_the_canonical_path() {
     assert_eq!(
         recorded, "docs/changelog/changelog.md",
         "an absolute in-repo spelling records the canonical repo-relative path",
+    );
+}
+
+// ───────────────────── (g) the trackedness leg ─────────────────────
+
+/// Extract the `git …` command the route prints, **verbatim**, from the one refusal line that
+/// carries one.
+///
+/// The route is read out of the emitted bytes rather than rebuilt here, because the emitted
+/// bytes are the contract: a route the agent cannot run is a route floor breach, and a test
+/// that hand-builds the command it then runs can pass over a refusal that printed something
+/// else entirely.
+fn printed_git_command(stderr: &str) -> String {
+    let route = stderr
+        .lines()
+        .find(|line| line.trim_start().starts_with("route:"))
+        .unwrap_or_else(|| panic!("the refusal carries a route line; got:\n{stderr}"));
+    let mut parts = route.split('`');
+    parts.next();
+    parts
+        .find(|candidate| candidate.starts_with("git "))
+        .unwrap_or_else(|| panic!("the route names a `git …` command; got: {route}"))
+        .to_owned()
+}
+
+/// **The trackedness leg.** An untracked in-repo source is refused with its own code, a locus
+/// and one route — and the route *works*: running the printed `git add` verbatim and re-running
+/// the **identical** `jigc migrate` succeeds.
+///
+/// This is what makes the leg a narrowing rather than a dead end (M50's `write.not-present`
+/// lesson): the predicate is membership of the **index**, not of `HEAD`, so the single `git add`
+/// the route names is sufficient — the operator does not have to commit a foreign file they are
+/// about to retire in order to be allowed to retire it.
+///
+/// The re-run is byte-identical to the refused invocation on purpose. A leg whose escape needs a
+/// *different* jigc command would be a second door, and the refusal does not name one.
+#[test]
+fn an_untracked_in_repo_source_is_refused_and_the_printed_git_add_makes_it_admissible() {
+    let corpus = TrialCorpus::build(State::Fresh);
+    let source = corpus.repo().join("HISTORY.md");
+    fs::write(&source, FOREIGN).expect("plant the untracked foreign source");
+
+    let out = corpus.jigc(&["migrate", "HISTORY.md", "--as", "changelog"]);
+    let stderr = assert_refused_with(
+        &corpus,
+        &out,
+        UNTRACKED,
+        "migrate <an untracked in-repo source>",
+    );
+    assert!(
+        stderr.contains("at: HISTORY.md"),
+        "the refusal names WHERE — the repo-relative source it is about (M49's located-finding \
+         rule); got:\n{stderr}",
+    );
+    assert!(
+        source.exists(),
+        "the untracked source must survive a refusal that never read past the door",
+    );
+
+    // The route, run as printed. `sh -c` rather than a split argv, because *verbatim* is the
+    // claim: the operator copies the line out of the terminal.
+    let command = printed_git_command(&stderr);
+    assert!(
+        command.starts_with("git add "),
+        "the trackedness leg routes at `git add`, the one act that resolves the state \
+         (M45's owner-artifact precedent); got: {command}",
+    );
+    let ran = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(&command)
+        .current_dir(corpus.repo())
+        .env("HOME", corpus.home())
+        .output()
+        .expect("run the printed git command");
+    assert!(
+        ran.status.success(),
+        "the printed `{command}` must run as printed; got {}:\n{}",
+        ran.status,
+        String::from_utf8_lossy(&ran.stderr),
+    );
+
+    corpus.jigc_ok(&["migrate", "HISTORY.md", "--as", "changelog"]);
+    let minted = task_dirs(&corpus.repo());
+    assert_eq!(
+        minted.len(),
+        1,
+        "the re-run after the printed route mints exactly one migration task; got {minted:?}",
+    );
+    let recorded = fs::read_to_string(
+        corpus
+            .repo()
+            .join(".jigc")
+            .join("tasks")
+            .join(&minted[0])
+            .join("source-path"),
+    )
+    .expect("read the recorded source-path");
+    assert_eq!(
+        recorded, "HISTORY.md",
+        "the admitted source records the spelling the operator staged",
+    );
+}
+
+/// …and a **committed** source is unaffected — the ordinary case the leg must not touch.
+///
+/// Stated as its own arm rather than folded into the one above, because the two prove different
+/// things: that one proves the escape is reachable, this one proves the leg has a complement at
+/// all. A predicate that refused every source would pass every assertion in arm (g) up to the
+/// re-run and still have broken migration outright.
+#[test]
+fn a_committed_source_is_unaffected_by_the_trackedness_leg() {
+    let corpus = TrialCorpus::build(State::Fresh);
+    fs::write(corpus.repo().join("HISTORY.md"), FOREIGN).expect("write the foreign source");
+    corpus.git(&["add", "--", "HISTORY.md"]);
+    corpus.git(&["commit", "-q", "-m", "vendor the foreign changelog"]);
+
+    corpus.jigc_ok(&["migrate", "HISTORY.md", "--as", "changelog"]);
+    assert_eq!(
+        task_dirs(&corpus.repo()).len(),
+        1,
+        "a committed foreign source migrates exactly as it did before the leg",
+    );
+}
+
+// ───────────── the step text, checked against both admissible cells ─────────────
+
+/// The foreign `vision` source the two cells below migrate — a non-conformant document
+/// with real prose, so the author step has something to route.
+const FOREIGN_VISION: &str = "\
+# Product Direction
+
+We build a deterministic context compiler.
+
+## Principles
+
+Structure belongs to the CLI; prose belongs to the model.
+";
+
+/// The whole-doc payload that rewrites [`FOREIGN_VISION`] into the managed `vision`.
+const VISION_PAYLOAD: &str = "\
+title: Vision
+sections:
+  - id: thesis
+    set:
+      thesis: |-
+        <<We build a deterministic context compiler.>>
+  - id: invariants
+    set:
+      invariants: |-
+        <<Structure belongs to the CLI; prose belongs to the model.>>
+  - id: open-questions
+    set:
+      open-questions: |-
+        <<Which domains earn a pack of their own.>>
+";
+
+/// Drive one foreign `vision` source at `path` all the way through `finalize --approve`,
+/// and answer with the sha of the commit it landed.
+fn migrate_and_approve(corpus: &TrialCorpus, path: &str) -> String {
+    let composed = corpus.jigc_ok(&["migrate", path, "--as", "vision"]);
+    let task = composed
+        .lines()
+        .find_map(|line| line.strip_prefix("task minted: "))
+        .unwrap_or_else(|| panic!("the migrate mints a task; got:\n{composed}"))
+        .trim()
+        .to_owned();
+    corpus.jigc_stdin_ok(
+        &[
+            "doc",
+            "author",
+            "vision",
+            "--from-file",
+            "-",
+            "--task",
+            &task,
+        ],
+        VISION_PAYLOAD,
+    );
+    corpus.finalize(&task, "vision", "migrate the direction doc", true);
+    corpus.git(&["rev-parse", "HEAD"])
+}
+
+/// **The pack step's own sentence, checked against what the two admissible cells do**
+/// (`crates/cli/pack/steps/migration-finalize.yaml` and its methodology twin; the Settle's
+/// owed G-5 re-drive, discharged here rather than restated).
+///
+/// The Settle predicted that the trackedness leg would make the old sentence — *"the
+/// deletion staged, so the removal lands in the same commit as the canonical doc (a `git rm`
+/// in effect)"* — true by refusing the one cell that falsified it, and that **no pack repair
+/// was owed**. Driven at this task, that prediction is false: the leg's predicate is the
+/// **index**, so a source that was `git add`ed and never committed is *admitted*, and on
+/// `--approve` it leaves no row in the commit and nothing in history — `git log --all --
+/// <path>` is empty, exactly as it was for the untracked cell. The old sentence was
+/// therefore repaired rather than left standing, and this arm is what keeps the repair
+/// honest: it asserts the **behaviour** of both cells and the **statement** in the same test,
+/// so prose and binary cannot drift apart again.
+///
+/// Both cells are admissible on purpose. The staged-only one is not a defect to fix here —
+/// it is the price of the predicate the Settle chose deliberately, so that the printed `git
+/// add` route is *sufficient* and nobody has to commit a foreign file in order to be allowed
+/// to retire it (M50's `write.not-present` lesson). What the wave owes such a cell is that no
+/// surface claim about it be false.
+#[test]
+fn the_migration_finalize_step_states_what_both_admissible_cells_actually_do() {
+    // (i) committed — the removal lands in the commit, the original survives in history.
+    let corpus = TrialCorpus::build(State::Fresh);
+    fs::create_dir_all(corpus.repo().join("docs")).expect("create docs/");
+    fs::write(corpus.repo().join("docs/direction.md"), FOREIGN_VISION).expect("write the source");
+    corpus.git(&["add", "--", "docs/direction.md"]);
+    corpus.git(&["commit", "-q", "-m", "add the direction doc"]);
+
+    let sha = migrate_and_approve(&corpus, "docs/direction.md");
+    let landed = corpus.git(&["show", "--name-status", "--format=", &sha]);
+    assert!(
+        landed
+            .lines()
+            .any(|line| line.starts_with('D') && line.contains("docs/direction.md")),
+        "a COMMITTED source retires as a deletion in the migration commit — the step's \
+         `git rm` sentence; got:\n{landed}",
+    );
+    assert!(
+        !corpus
+            .git(&["log", "--all", "--format=%H", "--", "docs/direction.md"])
+            .is_empty(),
+        "…and the original stays recoverable from history",
+    );
+
+    // (ii) staged, never committed — admitted, and the removal reaches no commit at all.
+    let corpus = TrialCorpus::build(State::Fresh);
+    fs::create_dir_all(corpus.repo().join("docs")).expect("create docs/");
+    fs::write(corpus.repo().join("docs/direction.md"), FOREIGN_VISION).expect("write the source");
+    corpus.git(&["add", "--", "docs/direction.md"]);
+
+    let sha = migrate_and_approve(&corpus, "docs/direction.md");
+    let landed = corpus.git(&["show", "--name-status", "--format=", &sha]);
+    assert!(
+        !landed.contains("docs/direction.md"),
+        "a STAGED-ONLY source has no committed copy for the deletion to point at, so the \
+         migration commit carries no row for it — the sentence the repair added; got:\n{landed}",
+    );
+    assert!(
+        corpus
+            .git(&["log", "--all", "--format=%H", "--", "docs/direction.md"])
+            .is_empty(),
+        "…and no history holds the original — which is why the step now says to commit the \
+         source first if you want one",
+    );
+
+    // The statement itself, read off the composed surface the agent actually sees.
+    let composed = corpus.jigc_ok(&["workflow", "--preview", "migrate-vision"]);
+    let flat = composed.split_whitespace().collect::<Vec<_>>().join(" ");
+    for fragment in [
+        "the deletion staged",
+        "had already committed the removal lands in the same commit",
+        "only `git add`ed and never committed has no committed copy",
+        "refused at `jigc migrate`",
+    ] {
+        assert!(
+            flat.contains(fragment),
+            "the migration-finalize step must state `{fragment}`; got:\n{composed}",
+        );
+    }
+}
+
+/// …and a source git holds in **`HEAD` but not in the index** is admitted too.
+///
+/// This is the cell the Settle's shorthand (*"the index, not HEAD"*) would have refused, and
+/// refusing it would have been a regression rather than a narrowing: the user who committed a
+/// foreign file and then pre-staged its own deletion (`git rm --cached`, so the worktree bytes
+/// survive for `migrate` to read) is walking a **documented** path — M40 F7 discriminates the
+/// retirement pathspec on the index precisely so that pre-staged deletion still lands
+/// (`design/finalize.md`; `crates/cli/tests/carryover_gate.rs` drives it end to end). Git holds
+/// a perfectly good copy of the bytes, which is what the warrant asks; `git ls-files` alone
+/// cannot see it.
+#[test]
+fn a_source_committed_then_unstaged_is_admitted_because_git_still_holds_a_copy() {
+    let corpus = TrialCorpus::build(State::Fresh);
+    fs::write(corpus.repo().join("HISTORY.md"), FOREIGN).expect("write the foreign source");
+    corpus.git(&["add", "--", "HISTORY.md"]);
+    corpus.git(&["commit", "-q", "-m", "vendor the foreign changelog"]);
+    corpus.git(&["rm", "-q", "--cached", "--", "HISTORY.md"]);
+    assert!(
+        corpus.git(&["ls-files", "--", "HISTORY.md"]).is_empty(),
+        "the fixture must leave the source OUT of the index — otherwise this arm is the \
+         committed one over again",
+    );
+
+    corpus.jigc_ok(&["migrate", "HISTORY.md", "--as", "changelog"]);
+    assert_eq!(
+        task_dirs(&corpus.repo()).len(),
+        1,
+        "a source `HEAD` still holds migrates — the leg refuses *no copy anywhere*, never \
+         *not in the index*",
     );
 }

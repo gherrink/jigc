@@ -136,6 +136,8 @@ fn below_floor_source_composes_and_carries_the_trivial_source_advisory() {
     setup_repo(repo.path(), home.path(), &pack);
 
     fs::write(repo.path().join("stub.md"), TRIVIAL_SOURCE).expect("write trivial source");
+    // M51 Inc 1 / T2 — the migrate door takes only a source git holds a copy of.
+    git(repo.path(), &["add", "--", "stub.md"]);
     let out = run_jigc(
         repo.path(),
         home.path(),
@@ -192,6 +194,8 @@ fn below_floor_json_contract_is_byte_identical_and_advisory_free_on_stdout() {
     setup_repo(repo.path(), home.path(), &pack);
 
     fs::write(repo.path().join("stub.md"), TRIVIAL_SOURCE).expect("write trivial source");
+    // M51 Inc 1 / T2 — the migrate door takes only a source git holds a copy of.
+    git(repo.path(), &["add", "--", "stub.md"]);
     let out = run_jigc(
         repo.path(),
         home.path(),
@@ -234,6 +238,8 @@ fn below_floor_non_adr_source_does_not_route_to_the_adr_workflow() {
     setup_repo(repo.path(), home.path(), &pack);
 
     fs::write(repo.path().join("cl.md"), TRIVIAL_SOURCE).expect("write trivial source");
+    // M51 Inc 1 / T2 — the migrate door takes only a source git holds a copy of.
+    git(repo.path(), &["add", "--", "cl.md"]);
     let out = run_jigc(
         repo.path(),
         home.path(),
@@ -275,6 +281,8 @@ fn normal_source_emits_no_advisory() {
     setup_repo(repo.path(), home.path(), &pack);
 
     fs::write(repo.path().join("adr.md"), NORMAL_SOURCE).expect("write normal source");
+    // M51 Inc 1 / T2 — the migrate door takes only a source git holds a copy of.
+    git(repo.path(), &["add", "--", "adr.md"]);
     let out = run_jigc(
         repo.path(),
         home.path(),

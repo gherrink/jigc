@@ -152,6 +152,8 @@ const DATELESS_FOREIGN: &str = "\
 /// the off-router `migrate-changelog-history` task (recording the `source-path` = migration mode).
 fn start_migration(repo: &Path, home: &Path, pack: &Path) {
     fs::write(repo.join("HISTORY.md"), DATELESS_FOREIGN).expect("write foreign HISTORY.md");
+    // M51 Inc 1 / T2 — the migrate door takes only a source git holds a copy of.
+    git(repo, &["add", "--", "HISTORY.md"]);
     ok_stdout(
         run_jigc(
             repo,

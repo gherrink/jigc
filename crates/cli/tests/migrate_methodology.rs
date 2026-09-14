@@ -969,6 +969,8 @@ fn shipped_guidance_payload_skeletons_parse_for_all_seven_doctypes() {
         ("completion-record", "M3-DONE.md", FOREIGN_COMPLETION),
     ] {
         fs::write(repo.path().join(rel), foreign).expect("write foreign file");
+        // M51 Inc 1 / T2 — the migrate door takes only a source git holds a copy of.
+        git(repo.path(), &["add", "--", rel]);
         let composed = ok_stdout(
             jigc(
                 repo.path(),

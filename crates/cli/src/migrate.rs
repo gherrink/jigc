@@ -12,6 +12,13 @@
 //! exited 0 and recorded the host path as the value `finalize --approve` deletes. The
 //! source is adjudicated before anything mints ([`adjudicate_source_path`]).
 //!
+//! **…and a file git holds a copy of** (M51 Increment 1 / T2). Location is not trackedness:
+//! an *untracked* in-repo source passed every location leg, and `--approve` then deleted it
+//! from the worktree while [`crate::task`]'s migration staging skipped a pathspec that
+//! matched nothing — so the bytes ended in no git object and the removal was named on no
+//! surface. [`adjudicate_source_tracked`] refuses a source present in neither the index nor
+//! `HEAD`, and routes at the one act that resolves it, `git add`.
+//!
 //! The verb, for the staged-only increment (Inc 1):
 //!   1. reads the foreign file's bytes;
 //!   2. mints an **off-router migration task** ([`start::mint_migration_in_repo`] —
@@ -59,9 +66,9 @@ pub(crate) const SOURCE_FILE: &str = "source";
 /// the repo + project layer, read the foreign file, mint the off-router migration
 /// task, stage the foreign bytes, compose the `migrate-<doctype>` workflow over the
 /// source seam, render the composed view through `format`, and print it. A clean run
-/// exits 0; an unknown doctype, a malformed `--slug`, a source path the door refuses, a
-/// missing foreign file, a serial collision, or a blocking compose finding surfaces on
-/// stderr (with its route) and exits non-zero.
+/// exits 0; an unknown doctype, a malformed `--slug`, a source path the door refuses as
+/// untrackable or as untracked, a missing foreign file, a serial collision, or a blocking
+/// compose finding surfaces on stderr (with its route) and exits non-zero.
 pub fn run(
     cwd: &Path,
     path: &str,
@@ -225,6 +232,65 @@ fn adjudicate_source_path(repo_root: &Path, path: &str, doctype: &str) -> Result
     })
 }
 
+/// Refuse a source **git has never recorded** — the fourth question, and the only one that is
+/// not about location (M51 Increment 1 / T2; `settle-record.md` → §2, the trackedness leg).
+///
+/// [`adjudicate_source_path`]'s three predicates all ask *where* the source is. None asks
+/// whether git knows about it, and the gap was not theoretical: driven end to end, an untracked
+/// in-repo `HISTORY.md` migrated, authored and `--approve`d committed the canonical doc, removed
+/// the source from the worktree, and left `git log --all -- HISTORY.md` **empty**. The deletion
+/// was named on no surface, because [`crate::task`]'s migration staging deliberately skips a
+/// retirement pathspec that matches nothing — a skip that is lossless for every *tracked* source
+/// and total loss for this one. That falsified the recorded warrant under which the adapter deny
+/// floor keeps its blanket permit for `migrate` + `finalize --approve` (*"a guarded migrate
+/// destroys only a reviewed, in-repo, **git-recoverable** file"*); after this leg the warrant is
+/// true rather than restated.
+///
+/// **The question is whether git holds a copy at all — the index *or* `HEAD`**
+/// ([`crate::task::path_in_index`], the same call [`crate::task`]'s migration staging makes, and
+/// [`crate::task::path_at_head`]). The index leg alone is what makes the refusal a narrowing
+/// instead of a dead end: the single `git add` the route names is *sufficient*, so nobody has to
+/// commit a foreign file in order to be allowed to retire it. The `HEAD` leg is the one the
+/// Settle's shorthand (*"the index, not HEAD"*) did not name and the shipped product needs: a
+/// source the user **committed and then pre-staged a `git rm` for** (M40 F7, `design/finalize.md`
+/// → the retirement pathspec discriminated on the index) is absent from the index by design, and
+/// `git ls-files` alone would refuse a file this repository has a perfectly good copy of. Asking
+/// only the index would have turned a documented recovery path into a refusal; asking only `HEAD`
+/// would have made the route a two-command story. The union is the predicate the warrant actually
+/// names — *git-recoverable* — so it is the one asked.
+///
+/// The route is a [`Route::human`] naming `git add` verbatim — M45's `owner-artifact.present`
+/// untracked cause is the precedent, and the reason is the route fence's: a `Route::mechanical`
+/// argv must lead with `jigc`, and no `jigc` argv resolves this state.
+///
+/// **Its own code, not a fifth reason under `migrate.source-untrackable`.** That code's five
+/// legs share one fix — *name a different source* — and this one's is the opposite: *keep this
+/// source, and stage it*. A different act is a different identity (`settle-record.md` → §10's
+/// table, which lists the two separately).
+fn adjudicate_source_tracked(repo_root: &Path, recorded: &str, doctype: &str) -> Result<()> {
+    if crate::task::path_in_index(repo_root, recorded)
+        || crate::task::path_at_head(repo_root, recorded)
+    {
+        return Ok(());
+    }
+    Err(render::finding_error(&Finding::graded(
+        Severity::Blocking,
+        "migrate.source-untracked",
+        format!(
+            "`{recorded}` is in neither this repository's index nor its HEAD — git holds no \
+             copy of it, and `jigc task finalize --approve` retires the source it migrates, \
+             so the file would be deleted from the worktree with nothing to recover it from \
+             and no deletion in the commit to say so"
+        ),
+        Some(Location::addressed(recorded, 1, 1)),
+        Some(Route::human(format!(
+            "stage it with `git add -- {recorded}`, then re-run \
+             `jigc migrate {recorded} --as {doctype}` — the index is enough, the source \
+             need not be committed first"
+        ))),
+    )))
+}
+
 /// Mint the off-router migration task, stage the foreign bytes, and compose the
 /// migration workflow over the source seam — the verb's repo-rooted spine.
 ///
@@ -294,6 +360,14 @@ fn migrate_in_repo(
             foreign_path.display()
         )
     })?;
+
+    // …and the trackedness leg, asked of the adjudicated spelling. It is asked **after** the
+    // read and not beside the three location legs: `git ls-files` answers "not in the index"
+    // for a path that does not exist at all, so asking first would answer a typo'd `<path>`
+    // with a `git add` that cannot match it, in place of the read fault that names the real
+    // problem. It is still before the mint, which is the property that matters — a refusal
+    // strands no task dir.
+    adjudicate_source_tracked(&repo_root, &recorded, doctype)?;
 
     // The byte-floor triviality advisory (S2), computed off the just-read foreign bytes —
     // presentation-only, surfaced by `run` beside (never inside) the pinned composed

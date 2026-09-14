@@ -368,6 +368,8 @@ fn migrate_records_a_canonical_source_path_for_redundant_spellings() {
             FOREIGN,
         )
         .expect("write squatter");
+        // M51 Inc 1 / T2 — the migrate door takes only a source git holds a copy of.
+        git(repo.path(), &["add", "--", "docs/changelog/changelog.md"]);
         ok(
             run_jigc(repo.path(), home.path(), &pack, &["setup"]),
             "setup",
@@ -409,6 +411,8 @@ fn migrate_records_a_canonical_source_path_for_redundant_spellings() {
             FOREIGN,
         )
         .expect("write squatter");
+        // M51 Inc 1 / T2 — the migrate door takes only a source git holds a copy of.
+        git(repo.path(), &["add", "--", "docs/changelog/changelog.md"]);
         ok(
             run_jigc(repo.path(), home.path(), &pack, &["setup"]),
             "setup",

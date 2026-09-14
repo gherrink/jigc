@@ -57,6 +57,22 @@ fn dev_pack() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("pack")
 }
 
+/// Stage a foreign migration source. **M51 Increment 1 / T2**: `jigc migrate` refuses a source
+/// git holds no copy of — in neither the index nor `HEAD` — and routes at exactly this
+/// `git add`, so every fixture that hands the door a freshly written file stages it first.
+fn stage(root: &Path, path: &str) {
+    let out = Command::new("git")
+        .args(["add", "--", path])
+        .current_dir(root)
+        .output()
+        .expect("run git add");
+    assert!(
+        out.status.success(),
+        "git add -- {path} failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
 /// Initialize a real git repo with one commit (composition reads HEAD) plus the
 /// `.jigc/config/` project layer the cascade expects.
 fn init_repo(root: &Path) {
@@ -160,6 +176,7 @@ const TASK: &str = "migrate-changelog-history-3268e06b69e1";
 /// through the source seam (`{{ source }}`, T1's pinned spelling).
 fn migrate(repo: &Path, home: &Path, pack: &Path, foreign: &str) -> String {
     fs::write(repo.join("HISTORY.md"), foreign).expect("write foreign HISTORY.md");
+    stage(repo, "HISTORY.md");
     let stdout = ok_stdout(
         run_jigc(
             repo,
