@@ -67,6 +67,8 @@ mod migrate_review_gate;
 mod migrate_rollback;
 #[path = "../migrate_seam.rs"]
 mod migrate_seam;
+#[path = "../migrate_source_rules.rs"]
+mod migrate_source_rules;
 #[path = "../migrate_spec.rs"]
 mod migrate_spec;
 #[path = "../migrate_workflow.rs"]

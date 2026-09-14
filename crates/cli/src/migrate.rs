@@ -3,8 +3,14 @@
 //! A foreign `CHANGELOG.md` at repo root classifies `Unmanaged` (no finding, no
 //! route, no hook), so neither `jigc ingest`'s `needs-reconcile` arm nor `jigc start`
 //! (which has no source-path parameter) can reach it. An explicit `migrate` verb
-//! taking `path + --as <doctype>` addresses an arbitrary foreign file directly
+//! taking `path + --as <doctype>` addresses that foreign file directly
 //! ([auto-migration.md](../../../design/auto-migration.md) → The `jigc migrate` verb).
+//!
+//! **A foreign file *inside this repository*, and the word "arbitrary" is struck** (M51
+//! Increment 1 / T1). The design doc and this header both said *an arbitrary foreign
+//! file*, and the door honoured it: driven, `jigc migrate <absolute-path-outside-the-repo>`
+//! exited 0 and recorded the host path as the value `finalize --approve` deletes. The
+//! source is adjudicated before anything mints ([`adjudicate_source_path`]).
 //!
 //! The verb, for the staged-only increment (Inc 1):
 //!   1. reads the foreign file's bytes;
@@ -31,7 +37,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use engine::finding::{Finding, Location, Route, Severity};
 use engine::packsource::{PackResourceKind, PackSource, ResourceId};
 use engine::state;
-use std::path::{Component, Path, PathBuf};
+use std::path::Path;
 
 /// The byte floor below which a foreign source is **too trivial to migrate** — a
 /// near-empty or placeholder file has little prose to preserve, and an agent reaching
@@ -53,9 +59,9 @@ pub(crate) const SOURCE_FILE: &str = "source";
 /// the repo + project layer, read the foreign file, mint the off-router migration
 /// task, stage the foreign bytes, compose the `migrate-<doctype>` workflow over the
 /// source seam, render the composed view through `format`, and print it. A clean run
-/// exits 0; an unknown doctype, a malformed `--slug`, a missing foreign file, a serial
-/// collision, or a blocking compose finding surfaces on stderr (with its route) and
-/// exits non-zero.
+/// exits 0; an unknown doctype, a malformed `--slug`, a source path the door refuses, a
+/// missing foreign file, a serial collision, or a blocking compose finding surfaces on
+/// stderr (with its route) and exits non-zero.
 pub fn run(
     cwd: &Path,
     path: &str,
@@ -186,27 +192,37 @@ fn ensure_migratable(pack: &dyn PackSource, doctype: &str) -> Result<()> {
     );
 }
 
-/// Normalize the verb's `path` arg to a clean repo-relative string for recording as the
-/// retire target (review F2). Strip a `repo_root` prefix from an absolute spelling
-/// (`/abs/repo/changelog/changelog.md` → `changelog/changelog.md`), then drop `.`
-/// components and resolve `..` lexically. Mirrors the engine retire guard's
-/// [`engine::finalize`] normalization so `source-path` is canonical on disk — the
-/// in-location-squatter guard then compares it against the clean canonical promote
-/// destination regardless of how the caller spelled the path.
-fn repo_relative_source_path(repo_root: &Path, path: &str) -> String {
-    let supplied = Path::new(path);
-    let relative = supplied.strip_prefix(repo_root).unwrap_or(supplied);
-    let mut out = PathBuf::new();
-    for component in relative.components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                out.pop();
-            }
-            other => out.push(other.as_os_str()),
-        }
-    }
-    out.to_string_lossy().into_owned()
+/// Adjudicate the verb's `<path>` argument **before anything mints**, answering with the
+/// clean repo-relative spelling recorded as the retire target — or with the door's refusal
+/// (M51 Increment 1 / T1; `design/auto-migration.md` → The `jigc migrate` verb).
+///
+/// Two jobs in one answer, and that is the point. The *normalization* half is review F2's: a
+/// `./`-prefixed or absolute spelling collapses to the canonical `changelog/changelog.md`, so
+/// the finalize retire's in-location-squatter guard compares like with like whatever the
+/// caller typed. The *adjudication* half is this increment's, and it is the half that was
+/// missing: the recorded value is the path `jigc task finalize --approve` **deletes**, and
+/// until now the door normalized any token at all into it — an absolute path outside the
+/// repository stayed absolute, and a `../` one above it was folded **lexically** into a
+/// repo-relative spelling naming a file that is not the operator's. Both landed at exit 0.
+///
+/// The rule itself lives in [`crate::trackable::resolve_source_token`], one home for the door
+/// and the sink; what is door-local is the code and the sentence. One code for every location
+/// leg, with the reason in the message — `config.untrackable-root`'s precedent, where the
+/// operator's fix is the same whichever leg answered — and a **`Human`** route, because no
+/// argv resolves this state: only naming a different source does
+/// (`settle-record.md` → §10, the destroying-door mold).
+fn adjudicate_source_path(repo_root: &Path, path: &str, doctype: &str) -> Result<String> {
+    crate::trackable::resolve_source_token(repo_root, path).map_err(|reason| {
+        render::finding_error(&Finding::block(
+            "migrate.source-untrackable",
+            format!("`{path}` cannot be migrated as a `{doctype}` source: {reason}"),
+            Route::human(
+                "name a source this repository can record and recover: a file under the \
+                 repository root, outside `.git/` and jigc's own `.jigc/` workbench, and not \
+                 reached through a symlink",
+            ),
+        ))
+    })
 }
 
 /// Mint the off-router migration task, stage the foreign bytes, and compose the
@@ -249,8 +265,20 @@ fn migrate_in_repo(
         );
     }
 
+    // Adjudicate the `<path>` argument BEFORE the read and BEFORE the mint — the same
+    // mint-after-validate discipline as `ensure_migratable` and `--slug`, for a sharper
+    // reason: the value this returns is the one `finalize --approve` deletes, so a token the
+    // door has not adjudicated must never reach the working area at all, and a refusal must
+    // strand no task dir to resume from.
+    let recorded = adjudicate_source_path(&repo_root, path, doctype)?;
+
     // Read the foreign file's bytes (the source the seam carries). Resolve the path
     // against the repo root so a repo-relative `CHANGELOG.md` reaches the root file.
+    //
+    // The **caller's own spelling** is what is joined and quoted, not the adjudicated one:
+    // the adjudication has already proved the two name the same file (a token that resolved
+    // anywhere else was refused above), and a read fault is the one refusal whose subject is
+    // the string the operator typed and can edit.
     let foreign_path = repo_root.join(path);
     // A route-carrying error, not a `with_context` over the raw I/O error: the latter
     // chains the `os error 2` tail into `{err:#}` — a dead end for the agent. Name the
@@ -266,16 +294,6 @@ fn migrate_in_repo(
             foreign_path.display()
         )
     })?;
-
-    // The repo-relative foreign path — recorded so finalize can retire the foreign
-    // original inside the commit transaction (`design/auto-migration.md` →
-    // Retire-the-foreign-original), and fed to the mint so the auto-provisioned commit
-    // doc's templated summary/body name it (Hardening #4). Normalized to a clean
-    // repo-relative form — strip a `repo_root` prefix from an absolute spelling and drop
-    // redundant `./` components — so the finalize retire's path-collision guard (the
-    // in-location squatter) compares canonically regardless of the caller's spelling
-    // (review F2).
-    let recorded = repo_relative_source_path(&repo_root, path);
 
     // The byte-floor triviality advisory (S2), computed off the just-read foreign bytes —
     // presentation-only, surfaced by `run` beside (never inside) the pinned composed
@@ -327,31 +345,59 @@ fn migrate_in_repo(
 
 #[cfg(test)]
 mod tests {
-    use super::repo_relative_source_path;
+    use super::adjudicate_source_path;
     use std::path::Path;
 
-    /// Review F2: the recorded `source-path` is normalized to a clean repo-relative form
-    /// so the finalize retire's in-location-squatter guard compares canonically. A
-    /// `./`-prefixed, an absolute (repo-root-prefixed), and a `..`-round-trip spelling of
-    /// the canonical changelog path all collapse to `changelog/changelog.md`.
+    /// Review F2, carried forward onto the adjudicating door: the recorded `source-path` is
+    /// normalized to a clean repo-relative form so the finalize retire's in-location-squatter
+    /// guard compares canonically. A `./`-prefixed, an absolute (repo-root-prefixed), and a
+    /// `..`-round-trip spelling of the canonical changelog path all collapse to
+    /// `changelog/changelog.md`.
+    ///
+    /// The root is a path that does not exist, which is deliberate: it pins that the
+    /// canonicalization the door added is a *best effort* over the real filesystem and never a
+    /// precondition — an unresolvable root falls back to the raw comparison rather than
+    /// refusing every source under it.
     #[test]
     fn records_a_clean_repo_relative_source_path() {
         let repo_root = Path::new("/abs/repo");
-        assert_eq!(
-            repo_relative_source_path(repo_root, "CHANGELOG.md"),
-            "CHANGELOG.md",
-        );
-        assert_eq!(
-            repo_relative_source_path(repo_root, "./changelog/changelog.md"),
-            "changelog/changelog.md",
-        );
-        assert_eq!(
-            repo_relative_source_path(repo_root, "/abs/repo/changelog/changelog.md"),
-            "changelog/changelog.md",
-        );
-        assert_eq!(
-            repo_relative_source_path(repo_root, "changelog/../changelog/changelog.md"),
-            "changelog/changelog.md",
-        );
+        for (typed, recorded) in [
+            ("CHANGELOG.md", "CHANGELOG.md"),
+            ("./changelog/changelog.md", "changelog/changelog.md"),
+            ("/abs/repo/changelog/changelog.md", "changelog/changelog.md"),
+            (
+                "changelog/../changelog/changelog.md",
+                "changelog/changelog.md",
+            ),
+        ] {
+            assert_eq!(
+                adjudicate_source_path(repo_root, typed, "changelog")
+                    .unwrap_or_else(|err| panic!("`{typed}` must be admitted: {err:#}")),
+                recorded,
+            );
+        }
+    }
+
+    /// The refusing half, at the unit: a token that lands outside the repository is refused
+    /// **as itself**, never folded back in. The `..` spelling is the one that mattered — it was
+    /// recorded as the repo-relative `outside.md` and handed to the retire sink.
+    ///
+    /// Only the **placement** step is pinned here, because only it is answerable against a root
+    /// that does not exist. The three predicates asked after it are all conservative toward the
+    /// caller when git cannot be reached at all (`untrackable_reason` abstains outright on an
+    /// unresolvable root), so a `.git/`-component or workbench cell asserted at this unit would
+    /// be asserting the fixture rather than the rule; those cells are driven against a real
+    /// repository in `crates/cli/tests/migrate_source_rules.rs`.
+    #[test]
+    fn a_source_outside_the_repository_is_refused_rather_than_folded_back_in() {
+        let repo_root = Path::new("/abs/repo");
+        for typed in ["../outside.md", "/elsewhere/keepme.md", "../../keepme.md"] {
+            let err = adjudicate_source_path(repo_root, typed, "changelog")
+                .expect_err("a source that lands outside the repository is refused");
+            assert!(
+                format!("{err:#}").contains("migrate.source-untrackable"),
+                "`{typed}` must be refused under the door's own code; got: {err:#}",
+            );
+        }
     }
 }

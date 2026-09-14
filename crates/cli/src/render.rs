@@ -1398,6 +1398,15 @@ pub const FINALIZE_NON_MEMBERS: &[(&str, &str)] = &[
          settle chose print-over-refuse, so the staging contract's sole production surface is \
          the pre/post-commit left-out print and no producer mints it as a `Finding`",
     ),
+    (
+        "finalize.retire-untrackable",
+        "named by `implementation/roadmap.md` as **planned** work (M51 Increment 1 / T3 — the \
+         retire sink's re-validation) and minted by no production producer yet, which is \
+         exactly what this list means. It is declared here rather than pre-added as a member, \
+         because arm 1 derives membership from the production scan and would redden on a row \
+         with no producer; when T3 mints it, arm 2 reddens on this row and forces the move — \
+         the mechanism working, not a hole",
+    ),
 ];
 
 /// The door a [`gates_at_compose`] finding really has — the compose gate `jigc start` runs before

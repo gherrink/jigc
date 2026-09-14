@@ -619,7 +619,7 @@ fn normalize_root_value(value: &str) -> String {
 /// index and the worktree name different directories for one file, permanently. It is the rule
 /// [`crate::trackable`] already applies to `.git` for git's own reason
 /// (`core.protectHFS`/`protectNTFS`), asked here of the one directory jigc owns.
-fn is_workbench_root(value: &str) -> bool {
+pub(crate) fn is_workbench_root(value: &str) -> bool {
     use std::path::Component;
 
     let mut normalized: Vec<&std::ffi::OsStr> = Vec::new();
@@ -674,9 +674,11 @@ fn is_workbench_root(value: &str) -> bool {
 /// comparing the canonical form of the whole join against it — would refuse every root in every
 /// such repo. A value with no named components (`""`, `.`) is the repo root itself and is
 /// always usable; that is the flat layout both knobs document.
+///
+/// The walk itself is [`offending_component`], because its symlink leg is asked on its own by a
+/// door whose subject is a **source file** (M51 Increment 1 / T1) — the two legs still travel one
+/// pass over one subject; only the sentences they earn are the caller's.
 fn unusable_root_reason(repo_root: &Path, value: &str) -> Option<String> {
-    use std::path::Component;
-
     if Path::new(value).is_absolute() {
         return Some(format!(
             "an absolute path — every door resolves a root against the repository root, so the \
@@ -684,6 +686,61 @@ fn unusable_root_reason(repo_root: &Path, value: &str) -> Option<String> {
             value.trim_start_matches('/'),
         ));
     }
+
+    match offending_component(repo_root, value) {
+        // Every named component walked and none of them refused — including the case of no
+        // named component at all (`""`, `.`), which is the repo root and the flat layout both
+        // knobs document.
+        None => None,
+        Some(OffendingComponent::Symlink(shown)) => Some(format!(
+            "`{shown}` is a symlink — git records the link, not a path through it, so the \
+             moved docs would stage as index entries the worktree has no path for (`RD`) \
+             and `jigc doc list` would name a home git does not"
+        )),
+        Some(OffendingComponent::FileShaped(shown)) => Some(format!(
+            "`{shown}` is a file, not a directory — every move into it fails while the knob \
+             lands anyway, and the store then resolves its docs to homes nothing is at"
+        )),
+    }
+}
+
+/// The two on-disk shapes an **existing component** of a relative value can have that a door
+/// refuses it for — the one walk [`unusable_root_reason`]'s symlink and file-shaped legs are
+/// both asked in, carrying the offending component's repo-relative spelling.
+///
+/// It is an enum rather than two predicates because the two shapes are asked of one subject in
+/// one pass (see [`unusable_root_reason`]'s own account of why), while the *sentences* they earn
+/// are the caller's: a root knob refuses both, and a door whose subject is a **source file**
+/// refuses only the symlink — a source's leaf is legitimately a non-directory, which is the
+/// whole point of it ([`symlinked_component`], M51 Increment 1 / T1).
+enum OffendingComponent {
+    Symlink(String),
+    FileShaped(String),
+}
+
+/// The first existing component of `value` (resolved against `repo_root`) that is a **symlink**,
+/// as its repo-relative spelling — `None` when no component of the value is one.
+///
+/// The symlink leg of [`unusable_root_reason`], asked on its own by a door whose subject is a
+/// **file** rather than a home, where the sibling file-shaped leg would refuse every legitimate
+/// value ([`crate::trackable::resolve_source_token`]).
+pub(crate) fn symlinked_component(repo_root: &Path, value: &str) -> Option<String> {
+    match offending_component(repo_root, value) {
+        Some(OffendingComponent::Symlink(shown)) => Some(shown),
+        Some(OffendingComponent::FileShaped(_)) | None => None,
+    }
+}
+
+/// Walk every named component of `value` against `repo_root`, answering with the first one that
+/// exists on disk in one of the two refused shapes.
+///
+/// **The walk starts at `repo_root` and never canonicalizes it** — see
+/// [`unusable_root_reason`]'s doc for why (a repository legitimately sits under a symlinked
+/// ancestor). Both on-disk shapes are asked of **this** component before moving to the next, so
+/// the subject of each is every existing component of the value rather than its leaf; symlink
+/// first, because a link *to* a file is git's problem before it is the mover's.
+fn offending_component(repo_root: &Path, value: &str) -> Option<OffendingComponent> {
+    use std::path::Component;
 
     let mut probe = repo_root.to_path_buf();
     let mut shown = String::new();
@@ -705,31 +762,17 @@ fn unusable_root_reason(repo_root: &Path, value: &str) -> Option<String> {
                 }
                 shown.push_str(&part.to_string_lossy());
             }
-            // Refused above; a root or prefix component cannot appear in a relative value.
+            // A root or prefix component cannot appear in a relative value, and an absolute one
+            // is its caller's question, asked before this walk.
             Component::RootDir | Component::Prefix(_) => return None,
         }
-        // Both on-disk shapes are asked of **this** component, so the subject of each is every
-        // existing component of the value rather than its leaf. Symlink first: a link *to* a
-        // file is git's problem before it is the mover's, and the two reasons route the
-        // operator to the same fix anyway.
         if std::fs::symlink_metadata(&probe).is_ok_and(|meta| meta.is_symlink()) {
-            return Some(format!(
-                "`{shown}` is a symlink — git records the link, not a path through it, so the \
-                 moved docs would stage as index entries the worktree has no path for (`RD`) \
-                 and `jigc doc list` would name a home git does not"
-            ));
+            return Some(OffendingComponent::Symlink(shown.clone()));
         }
         if std::fs::metadata(&probe).is_ok_and(|meta| !meta.is_dir()) {
-            return Some(format!(
-                "`{shown}` is a file, not a directory — every move into it fails while the knob \
-                 lands anyway, and the store then resolves its docs to homes nothing is at"
-            ));
+            return Some(OffendingComponent::FileShaped(shown.clone()));
         }
     }
-
-    // Every named component walked and none of them refused — including the case of no named
-    // component at all (`""`, `.`), which is the repo root and the flat layout both knobs
-    // document.
     None
 }
 

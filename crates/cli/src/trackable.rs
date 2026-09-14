@@ -158,6 +158,159 @@ pub(crate) fn untrackable_reason(repo_root: &Path, relative: &str) -> Option<Str
     None
 }
 
+/// Adjudicate a caller-supplied path token that names a **source file inside this
+/// repository**, answering with its clean repo-relative spelling — or with the reason it is
+/// not one (M51 Increment 1 / T1; `completions/artifacts/M51/settle-record.md` → D1 parts 1+3,
+/// as amended by §2).
+///
+/// **Three predicates, not two, and a resolve step before any of them.** D1 decided the door
+/// would ask [`untrackable_reason`] + [`crate::config::is_workbench_root`] and called that
+/// *"shipped predicates, no new capability"*. ***That is struck.*** The claim does not survive
+/// being driven on the cell it was decided for: this module's own parameter is typed
+/// *repo-root-relative* and [`untrackable_reason`] opens `relative.trim_matches('/')`
+/// (`design/storage.md` says so in its own words), so `/private/tmp/victim/keepme.md` is
+/// re-read as `<repo>/private/tmp/victim/keepme.md` and answers **trackable**. The
+/// resolve-or-refuse step below is therefore a **new rule**, small and stated, and what the
+/// `jigc config set` door actually refuses an absolute value with is a **third** predicate D1
+/// never named — `config::unusable_root_reason`, whose symlink leg
+/// ([`crate::config::symlinked_component`]) is the one this door reuses.
+///
+/// The four steps, in order:
+///
+///   1. **Resolve, or refuse** — the token is placed inside the repository
+///      ([`place_inside`]); one that lands outside it is refused *as itself*, never folded
+///      back in. A `..` that climbs above the root was previously folded **lexically**, so a
+///      source one directory up was recorded as a repo-relative spelling naming a file that
+///      is not the operator's.
+///   2. **[`untrackable_reason`]** of the *resolved* value — git's own `.git`-component and
+///      git-dir rules, ownership, and the index's gitlinks.
+///   3. **[`crate::config::is_workbench_root`]** — jigc's own `.jigc/` tree, which git tracks
+///      perfectly well and `jigc uninstall` removes whole.
+///   4. **[`crate::config::symlinked_component`]** — the symlink leg of the root knobs'
+///      usability rule, and only that leg: its file-shaped sibling refuses an existing
+///      non-directory, which is exactly what a *source* is. The leg is shared; its sentence is
+///      not, because the root knobs' names a consequence (`RD`-staged docs) that a source does
+///      not have.
+///
+/// The reason is a sentence, not a code: one door, one code, the reason in the message — the
+/// `config.untrackable-root` precedent, where the operator's fix is the same whichever leg
+/// answered.
+///
+/// **The refusal quotes the token as typed**, including an absolute one. Law 1
+/// (`design/surface-contract.md`) asks that every printed path be repo-real or a typed
+/// identity; a source that resolves outside the repository *has no repo-real spelling* — the
+/// `locate::not_in_repo_message` case, absolute by its subject — and the string is the
+/// operator's own argument, which is the one thing they can edit.
+pub(crate) fn resolve_source_token(repo_root: &Path, token: &str) -> Result<String, String> {
+    let relative = place_inside(repo_root, token).ok_or_else(|| {
+        format!(
+            "`{token}` resolves outside the repository — `jigc migrate` reads its source and, \
+             on `--approve`, retires it, so a source outside the tree would be deleted with no \
+             copy in any commit of this repository"
+        )
+    })?;
+    if let Some(reason) = untrackable_reason(repo_root, &relative) {
+        return Err(reason);
+    }
+    if crate::config::is_workbench_root(&relative) {
+        return Err(format!(
+            "`{relative}` is inside jigc's own workbench (`.jigc/`) — the tree `jigc uninstall` \
+             removes whole, so a source retired from there leaves bytes no index has a copy of"
+        ));
+    }
+    if let Some(shown) = crate::config::symlinked_component(repo_root, &relative) {
+        // The *fact* is the root knobs' — git records the link, never a path through it — but
+        // the sentence is this door's: theirs names moved docs staging as `RD`, which is not
+        // what happens to a source, and law 1 (`nothing lies`) is a rule about the sentence.
+        return Err(format!(
+            "`{shown}` is a symlink — git records the link, not a path through it, so \
+             retiring the source would stage the removal of a path the worktree no longer \
+             has, while the file it points at is untouched"
+        ));
+    }
+    Ok(relative)
+}
+
+/// Place `token` inside `repo_root`, answering with its clean repo-relative spelling — `None`
+/// when it lands anywhere else.
+///
+/// **Canonicalization-safe on both sides, and asymmetric on purpose.** The repository root and
+/// the token's *directory* chain are both canonicalized, because a repo legitimately sits under
+/// a symlinked ancestor (every macOS temp corpus lives under `/var` → `/private/var`) and a
+/// caller types whichever spelling their shell handed them — comparing the two raw would refuse
+/// an ordinary in-repo absolute path. The **final component is never canonicalized**: resolving
+/// it would silently rewrite a symlinked source into its target, and whether the token names a
+/// link is step 4's question, not this step's.
+///
+/// That asymmetry between the leaf and its ancestors is the rule, not an accident of the
+/// implementation. An ancestor link is only a *route* to the bytes — resolving it records the
+/// same file under a spelling git can record — while the leaf **is** the subject: recording a
+/// link there would retire the link and leave the bytes, which is why step 4 refuses it.
+fn place_inside(repo_root: &Path, token: &str) -> Option<String> {
+    let root = std::fs::canonicalize(repo_root).unwrap_or_else(|_| repo_root.to_path_buf());
+    let joined = if Path::new(token).is_absolute() {
+        PathBuf::from(token)
+    } else {
+        root.join(token)
+    };
+    let folded = fold_lexically(&joined)?;
+    let placed = match (folded.parent(), folded.file_name()) {
+        (Some(parent), Some(leaf)) => real_dir(parent).join(leaf),
+        // No file name at all (the token is the root itself) — nothing to keep literal.
+        _ => real_dir(&folded),
+    };
+    let relative = placed
+        .strip_prefix(&root)
+        .or_else(|_| placed.strip_prefix(repo_root))
+        .ok()?;
+    Some(relative.to_string_lossy().into_owned())
+}
+
+/// Fold `.` and `..` out of an absolute path **lexically** — `None` when `..` walks off the
+/// front of the filesystem. No filesystem access: this is the placement step, and the
+/// components that exist are canonicalized by [`real_dir`] afterwards.
+fn fold_lexically(path: &Path) -> Option<PathBuf> {
+    use std::path::Component;
+
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if !out.pop() {
+                    return None;
+                }
+            }
+            Component::Normal(part) => out.push(part),
+            other => out.push(other.as_os_str()),
+        }
+    }
+    Some(out)
+}
+
+/// `dir` with its **existing** prefix canonicalized and the rest re-appended — so a directory
+/// chain that does not exist yet is still placed against the real filesystem rather than
+/// compared raw.
+fn real_dir(dir: &Path) -> PathBuf {
+    if let Ok(real) = std::fs::canonicalize(dir) {
+        return real;
+    }
+    let mut tail: Vec<&std::ffi::OsStr> = Vec::new();
+    let mut probe = dir;
+    while let Some(parent) = probe.parent() {
+        tail.push(probe.file_name().unwrap_or(probe.as_os_str()));
+        if let Ok(real) = std::fs::canonicalize(parent) {
+            let mut out = real;
+            for part in tail.iter().rev() {
+                out.push(part);
+            }
+            return out;
+        }
+        probe = parent;
+    }
+    dir.to_path_buf()
+}
+
 /// Resolve `relative` against the canonicalized `root`: the real path when it exists
 /// (symlinks followed), else the lexical join with `.`/`..` folded out — so a
 /// destination that does not exist yet is still placed. `None` when `..` walks off the
