@@ -34,7 +34,17 @@
 //! commit and leaves every path it names exactly as it found it. The named paths are
 //! still **written** (the install ran), and the message lists them.
 //!
-//! Ten cells, all through the real binary (`CARGO_BIN_EXE_jigc`) over throwaway
+//! **And what it leaves behind is its own, on the next run too** (cells 13–16, the
+//! completion audit's fix). Every arm that writes the install and commits none of it —
+//! this refusal, a `git add` or `git commit` git declines, the posture re-probe — leaves
+//! `setup`'s bytes staged and on disk, and the pre-write probe read them on the next run
+//! as the adopter's work: the re-run refused over jigc's *own* install files, the emitted
+//! route could not clear it, and the only exits were `--force` (which then swept the very
+//! bytes the guard had refused) or a hand `git reset`. The uncommitted footprint is
+//! recorded where the pathspec settles and re-verified — bytes **and** index — where the
+//! question is asked, so the exemption can only ever cover bytes `setup` still wrote.
+//!
+//! Sixteen cells, all through the real binary (`CARGO_BIN_EXE_jigc`) over throwaway
 //! `git init` repos.
 
 use std::fs;
@@ -324,8 +334,14 @@ fn a_fresh_install_on_an_unborn_head_is_clean() {
 }
 
 /// (5) A **re-run over an unchanged install** is a clean no-op: exit 0 and no second
-/// commit (the question is asked before any write, so nothing `setup` itself wrote can
-/// enter the answer).
+/// commit — the re-run from a **committed** install, which is the case *"the question is
+/// asked before any write"* covers on its own.
+///
+/// It is deliberately not the whole re-run story, and saying so is the point: this cell
+/// once carried that premise as a universal (*"nothing `setup` itself wrote can enter the
+/// answer"*), which is true within one invocation and **false across** them — the re-run
+/// an adopter actually reaches after the guard fires is cell (13)'s, and it was bricked
+/// while this cell was green.
 #[test]
 fn a_rerun_over_an_unchanged_install_makes_no_second_commit() {
     let (repo, home) = born_repo("rerun");
@@ -595,5 +611,170 @@ fn a_regenerated_artifact_is_exempt_and_a_preserved_one_is_not() {
         read(repo, ".jigc/.gitignore"),
         mine,
         "and the user's line is still on disk"
+    );
+}
+
+/// (13) **The emitted route, followed verbatim, restores a runnable `jigc setup`.** The
+/// refusal names `commit or stash the work at those path(s), then re-run` — so the re-run
+/// after exactly that act must land the install commit. Until M51's fix it did not: the
+/// refusal's own `git add` of the install paths it *was* willing to commit left seven
+/// index entries that the next run's pre-write probe read as the adopter's work, so the
+/// door refused over its own install files, forever, and the only exits were `--force`
+/// (which then swept the very bytes the guard had refused) or a hand `git reset`.
+#[test]
+fn the_route_followed_verbatim_lands_the_install_commit() {
+    let (repo, home) = born_repo("recover");
+    let (repo, home) = (repo.path(), home.path());
+    write(repo, "CLAUDE.md", "user line one\n");
+    git(repo, &["add", "CLAUDE.md"]);
+    git(repo, &["commit", "-q", "-m", "add CLAUDE.md"]);
+    write(repo, "CLAUDE.md", "user line one\nUNSTAGED WIP SECRET\n");
+
+    let out = jigc(repo, home, &["setup"]);
+    assert_eq!(out.status.code(), Some(1), "the refusal: {}", said(&out));
+    assert!(said(&out).contains(DIRTY_CODE));
+    let head_after_refusal = git(repo, &["rev-parse", "HEAD"]);
+
+    // The route, verbatim: stash the work at the path it named.
+    git(repo, &["stash", "push", "-q", "--", "CLAUDE.md"]);
+
+    let out = jigc(repo, home, &["setup"]);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "the act the route names restores a runnable `jigc setup`: {}",
+        said(&out)
+    );
+    assert_ne!(
+        git(repo, &["rev-parse", "HEAD"]),
+        head_after_refusal,
+        "the install commit landed on the re-run"
+    );
+    let committed = git(repo, &["show", "--name-only", "--format=", "HEAD"]);
+    assert!(
+        committed.lines().any(|p| p == ".jigc/AGENT.md"),
+        "and it carries the install footprint: {committed}"
+    );
+    assert!(
+        git(repo, &["show", "stash@{0}:CLAUDE.md"]).contains("UNSTAGED WIP SECRET"),
+        "the adopter's stashed work is still theirs to pop"
+    );
+}
+
+/// (14) **A re-run over an unresolved refusal refuses over the same paths — never over
+/// `setup`'s own install files.** The second refusal naming `.jigc/AGENT.md` as *work
+/// `jigc setup` did not write* is a law-1 lie about bytes the previous run wrote itself,
+/// and it is what made the state permanent: the set grew with every run instead of
+/// staying the adopter's one path.
+#[test]
+fn a_rerun_over_an_unresolved_refusal_names_the_same_paths() {
+    let (repo, home) = born_repo("unresolved");
+    let (repo, home) = (repo.path(), home.path());
+    write(repo, "CLAUDE.md", "user line one\n");
+    git(repo, &["add", "CLAUDE.md"]);
+    git(repo, &["commit", "-q", "-m", "add CLAUDE.md"]);
+    write(repo, "CLAUDE.md", "user line one\nUNSTAGED WIP SECRET\n");
+
+    let first = said(&jigc(repo, home, &["setup"]));
+    assert!(first.contains("1 path(s)"), "the first refusal: {first}");
+
+    let out = jigc(repo, home, &["setup"]);
+    let second = said(&out);
+    assert_eq!(out.status.code(), Some(1), "still refused: {second}");
+    assert!(
+        second.contains("1 path(s)") && second.contains("CLAUDE.md"),
+        "the subject is the adopter's one path, as before: {second}"
+    );
+    assert!(
+        !second.contains(".jigc/AGENT.md"),
+        "and never the install files the previous run wrote and staged itself: {second}"
+    );
+}
+
+/// (15) **The exemption is keyed on the bytes, so a user edit after a refusal re-arms the
+/// guard.** `setup` preserves a `.jigc/.gitignore` that already carries its floor (cell
+/// 12b), so a line the adopter adds to the copy a refused run left behind would ride the
+/// next install commit — and does not: the recorded footprint describes the bytes `setup`
+/// left, and these are no longer those bytes.
+#[test]
+fn a_user_edit_after_a_refusal_rearms_the_guard() {
+    let (repo, home) = born_repo("rearm");
+    let (repo, home) = (repo.path(), home.path());
+    write(repo, "CLAUDE.md", "user line one\n");
+    git(repo, &["add", "CLAUDE.md"]);
+    git(repo, &["commit", "-q", "-m", "add CLAUDE.md"]);
+    write(repo, "CLAUDE.md", "user line one\nUNSTAGED WIP SECRET\n");
+    assert_eq!(jigc(repo, home, &["setup"]).status.code(), Some(1));
+
+    // The adopter's own line, added to a file the refused run wrote and staged.
+    let mine = format!(
+        "{}\n# my own ignore\n",
+        read(repo, ".jigc/.gitignore").trim_end()
+    );
+    write(repo, ".jigc/.gitignore", &mine);
+    // And the refusal's named path, resolved exactly as the route says.
+    git(repo, &["stash", "push", "-q", "--", "CLAUDE.md"]);
+
+    let out = jigc(repo, home, &["setup"]);
+    let said = said(&out);
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "bytes that are no longer `setup`'s own refuse the commit: {said}"
+    );
+    assert!(
+        said.contains(DIRTY_CODE) && said.contains(".jigc/.gitignore"),
+        "and the refusal names them: {said}"
+    );
+    assert_eq!(
+        read(repo, ".jigc/.gitignore"),
+        mine,
+        "the adopter's line is still on disk"
+    );
+}
+
+/// (16) **The sibling arm, driven: the install-commit rejection's own route.** A repo git
+/// will not commit in (`user.useConfigOnly` with no identity) leaves the install written
+/// and staged and routes *"tell git who you are … then re-run `jigc setup` to commit the
+/// staged install files"*. That re-run met the same dead end — over **eight** paths, in a
+/// repo with no adopter changes at all — because the pre-write probe read `setup`'s own
+/// staged install as work it did not write. Every arm that leaves the footprint
+/// uncommitted is one class, so the exemption is recorded where the pathspec settles, not
+/// on the refusal that happens to be reported.
+#[test]
+fn the_install_commit_rejections_route_also_lands_on_the_rerun() {
+    let (repo, home) = born_repo("identity");
+    let (repo, home) = (repo.path(), home.path());
+    git(repo, &["config", "--unset", "user.email"]);
+    git(repo, &["config", "--unset", "user.name"]);
+    git(repo, &["config", "user.useConfigOnly", "true"]);
+
+    let out = jigc(repo, home, &["setup"]);
+    let first = said(&out);
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "git refuses the commit with no identity: {first}"
+    );
+    assert!(
+        first.contains("setup.install-commit"),
+        "the rejection is the install-commit one: {first}"
+    );
+
+    // The route, verbatim.
+    git(repo, &["config", "user.email", "test@example.com"]);
+    git(repo, &["config", "user.name", "Test"]);
+
+    let out = jigc(repo, home, &["setup"]);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "the staged install commits on the re-run: {}",
+        said(&out)
+    );
+    let committed = git(repo, &["show", "--name-only", "--format=", "HEAD"]);
+    assert!(
+        committed.lines().any(|p| p == ".jigc/AGENT.md"),
+        "the install footprint is in the commit: {committed}"
     );
 }

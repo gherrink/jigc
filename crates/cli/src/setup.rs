@@ -1117,12 +1117,23 @@ fn install(
     //     `CLAUDE.md` edit was swept into `chore(jigc): install jigc workspace config` at
     //     exit 0, leaving `git status` empty so nothing prompted recovery.
     //
-    //     **Before any write is the whole mechanism.** It is what makes idempotence and
+    //     **Before any write is most of the mechanism.** It is what makes idempotence and
     //     upgrade clean *by construction* rather than by attributing each path's bytes to a
     //     writer after the fact: the pre-run comparison is the entire subject, and nothing
-    //     `setup` subsequently writes can enter it. A fresh clone is clean, a re-run is
-    //     clean, an upgrade is clean, and a host file the user edited and did not commit is
-    //     exactly the refusal.
+    //     `setup` subsequently writes **in this invocation** can enter it. A fresh clone is
+    //     clean, a re-run over a committed install is clean, an upgrade is clean, and a
+    //     host file the user edited and did not commit is exactly the refusal.
+    //
+    //     **The "nothing setup wrote" half was stated as a universal and is not one**
+    //     (struck with its falsifying datum, M51 Increment 3's completion audit): it holds
+    //     within one invocation and fails **across** them. A run that wrote its install and
+    //     committed none of it leaves those bytes staged and on disk, and the next run's
+    //     `git status` reports them like any other difference from `HEAD` — so the second
+    //     run refused over `setup`'s own install files, named them as *work `jigc setup`
+    //     did not write*, and every route the first run printed led back to it. The
+    //     subtraction that makes the across-invocations half true is recorded where the
+    //     bytes are left ([`record_install_footprint`]) and re-verified where the question
+    //     is asked ([`own_uncommitted_footprint`]).
     let subject = InstallSubject::probe(repo_root, force);
 
     let reference = profile.reference().ok_or_else(|| {
@@ -1580,15 +1591,127 @@ impl InstallSubject {
     /// Ask git, **once, before the install's first write**. `force` short-circuits the
     /// question entirely rather than asking and discarding the answer: the consent is to
     /// commit whatever is there, so there is nothing to compute.
+    ///
+    /// **Minus what an earlier run of this same door left uncommitted**
+    /// ([`own_uncommitted_footprint`]). *"Before the first write"* is exact **within one
+    /// invocation** and false **across** them: an install that wrote its footprint and
+    /// committed none of it — the dirty refusal below, a `git commit` git declined, a
+    /// staging or posture refusal — leaves those bytes staged and on disk, and the next
+    /// run's `git status` reports them as differences from `HEAD` like any other. Without
+    /// this subtraction the second run refuses over `setup`'s **own** install files,
+    /// naming them as *work `jigc setup` did not write*, and every route the first run
+    /// printed — stash, commit, set your git identity — leads back to the same refusal
+    /// with the set one path larger.
     fn probe(repo_root: &Path, force: bool) -> Self {
         if force {
             return Self::Consented;
         }
         match dirty_against_head(repo_root, &[]) {
-            Some(dirty) => Self::Dirty(dirty),
+            Some(mut dirty) => {
+                for own in own_uncommitted_footprint(repo_root) {
+                    dirty.remove(&own);
+                }
+                Self::Dirty(dirty)
+            }
             None => Self::Unknown,
         }
     }
+}
+
+/// Where a `jigc setup` run that wrote its install and committed none of it records the
+/// bytes it left behind: `<hash> <path>` per line, in the **gitignored** workbench beside
+/// the other rebuildable state (`crate::gitignore::ENTRIES` carries `state/`, so it is
+/// never a subject of the install commit, of `jigc validate`, or of `uninstall`'s
+/// untracked-workbench guard).
+///
+/// It exists because provenance is not recoverable from content: a `.jigc/AGENT.md` an
+/// earlier refused run staged and a `.jigc/AGENT.md` the adopter hand-wrote to the same
+/// bytes are the same file, and only the run that wrote one of them knows which it was.
+/// Every read is re-verified against the bytes on disk, so the record can only ever
+/// **exempt bytes it still describes** — losing it, or meeting one written by another
+/// build, costs a false refusal and never a sweep.
+const INSTALL_FOOTPRINT_PATH: &str = ".jigc/state/setup-install-footprint";
+
+/// The install paths a previous run of this door left **uncommitted**, still carrying
+/// exactly the bytes it left there — the set [`InstallSubject::probe`] subtracts.
+///
+/// **Both axes are re-verified, because the door's own predicate is two-axis.** A recorded
+/// path is exempt only when the *worktree* bytes still hash to the record **and** the index
+/// agrees with the worktree (`git diff --name-only`), so an adopter who edited — or staged
+/// something else at — one of these paths after the refusal re-arms the guard on the leg
+/// their bytes are on. Fails closed at every step: an unreadable record, an unreadable
+/// file, a git that cannot answer, all exempt nothing.
+fn own_uncommitted_footprint(repo_root: &Path) -> BTreeSet<String> {
+    let Ok(text) = std::fs::read_to_string(repo_root.join(INSTALL_FOOTPRINT_PATH)) else {
+        return BTreeSet::new();
+    };
+    // The worktree leg: of the recorded paths, the ones whose bytes the record still
+    // describes.
+    let unchanged: BTreeSet<String> = text
+        .lines()
+        .filter_map(|line| line.split_once(' '))
+        .filter(|(hash, path)| {
+            std::fs::read(repo_root.join(path))
+                .is_ok_and(|bytes| engine::file_state::hash_bytes(&bytes) == *hash)
+        })
+        .map(|(_, path)| path.to_string())
+        .collect();
+    if unchanged.is_empty() {
+        return BTreeSet::new();
+    }
+    // The index leg: drop any of those whose index entry is not the worktree's bytes — the
+    // `MM` cell, where the staged blob is the adopter's and exempting the path would let
+    // the pathspec commit replace it (cell (3) of `setup_install_pathspec_guard.rs`).
+    let mut args: Vec<&str> = vec!["diff", "--name-only", "-z", "--"];
+    args.extend(unchanged.iter().map(String::as_str));
+    let Some(out) = git_output(repo_root, args) else {
+        return BTreeSet::new();
+    };
+    if !out.status.success() {
+        return BTreeSet::new();
+    }
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    let staged_over: BTreeSet<&str> = stdout.split('\0').filter(|s| !s.is_empty()).collect();
+    unchanged
+        .into_iter()
+        .filter(|path| !staged_over.contains(path.as_str()))
+        .collect()
+}
+
+/// Record the bytes this run is about to leave at `paths` if its install commit does not
+/// land ([`INSTALL_FOOTPRINT_PATH`]). Best-effort: a workbench that cannot be written
+/// costs a false refusal on a later run, never a sweep, so no failure here is worth
+/// failing an install over.
+///
+/// A path carrying a newline is skipped rather than written — the record is line-shaped,
+/// and a member it cannot express must not become a member it mis-reads.
+fn record_install_footprint(repo_root: &Path, paths: &[String]) {
+    let mut body = String::new();
+    for path in paths.iter().filter(|path| !path.contains('\n')) {
+        if let Ok(bytes) = std::fs::read(repo_root.join(path)) {
+            body.push_str(&engine::file_state::hash_bytes(&bytes));
+            body.push(' ');
+            body.push_str(path);
+            body.push('\n');
+        }
+    }
+    let file = repo_root.join(INSTALL_FOOTPRINT_PATH);
+    if body.is_empty() {
+        clear_install_footprint(repo_root);
+        return;
+    }
+    if let Some(parent) = file.parent()
+        && std::fs::create_dir_all(parent).is_err()
+    {
+        return;
+    }
+    let _ = std::fs::write(&file, body);
+}
+
+/// Drop the record — the install footprint is in a commit now (or was already), so there
+/// is nothing left uncommitted for a later run to mistake for the adopter's work.
+fn clear_install_footprint(repo_root: &Path) {
+    let _ = std::fs::remove_file(repo_root.join(INSTALL_FOOTPRINT_PATH));
 }
 
 /// Every repo-relative path under `pathspec` (or in the whole repository, when it is
@@ -1819,16 +1942,18 @@ fn commit_install(
     // **Two legs, conjoined.** A path refuses the commit iff it was dirty relative to
     // `HEAD` **before the install wrote anything** ([`InstallSubject`]) *and* is **still**
     // dirty now, with every write done. The first leg is what makes idempotence and upgrade
-    // clean by construction: nothing `setup` itself wrote can enter it. The second leg is
-    // what makes the refusal *about the commit*: `setup` regenerates several of its own
-    // artifacts whole, so a pre-existing difference at `.jigc/AGENT.md`, `.jigc/version` or
-    // the guide artifact is overwritten by the **install** and what would be committed is
-    // `setup`'s own canonical bytes — nothing of the user's rides it, and refusing would
-    // block an upgrade over jigc's own file. Where `setup` **preserves** what it finds — the
-    // host files it merges into (`CLAUDE.md`, `.claude/settings.json`, a foreign
-    // `pre-commit`, a `packs.yaml` already listing packs, a `.gitignore` that already
-    // carries the floor) — the pre-existing bytes are still there, and those are exactly
-    // the paths this refuses over.
+    // clean by construction: nothing `setup` wrote **in this invocation** can enter it, and
+    // nothing it left behind uncommitted in an **earlier** one either
+    // ([`own_uncommitted_footprint`] — the half that was assumed and had to be built). The
+    // second leg is what makes the refusal *about the commit*: `setup` regenerates several
+    // of its own artifacts whole, so a pre-existing difference at `.jigc/AGENT.md`,
+    // `.jigc/version` or the guide artifact is overwritten by the **install** and what
+    // would be committed is `setup`'s own canonical bytes — nothing of the user's rides it,
+    // and refusing would block an upgrade over jigc's own file. Where `setup` **preserves**
+    // what it finds — the host files it merges into (`CLAUDE.md`, `.claude/settings.json`,
+    // a foreign `pre-commit`, a `packs.yaml` already listing packs, a `.gitignore` that
+    // already carries the floor) — the pre-existing bytes are still there, and those are
+    // exactly the paths this refuses over.
     //
     // Conjoining the two asks **derives** that discriminator rather than enumerating it, so
     // an install path added later cannot be classified wrong by being forgotten. The
@@ -1853,6 +1978,31 @@ fn commit_install(
                 .collect()
         }
     };
+    // **The paths this run owns**: the settled pathspec minus what it refuses over. Every
+    // one of them carries bytes the door has just established are `setup`'s own — either
+    // they matched `HEAD` before the install, or the install overwrote what was there with
+    // its canonical content — which is what makes them safe both to stage and to record.
+    let own: Vec<String> = paths
+        .iter()
+        .filter(|path| !dirty.contains(*path))
+        .cloned()
+        .collect();
+    // **Record what this run may leave behind, before it leaves it** (M51 Increment 3
+    // audit fix). Four of this function's exits write the install and commit none of it —
+    // the refusal below, a `git add` git declines, a `git commit` it declines, the posture
+    // re-probe — and all four route the adopter back to `jigc setup`. The next run's
+    // pre-write probe would otherwise read these bytes as theirs, so it is recorded here,
+    // where the pathspec and the dirty set are both settled, rather than on the one
+    // refusal that happens to be reported: the leak is the *uncommitted footprint*, not
+    // any one of the arms that leaves it.
+    //
+    // Only under [`InstallSubject::Dirty`]. `--force` consents to committing whatever is
+    // there, so the door never established these bytes as its own and must not record them
+    // as such; `Unknown` never reaches here. A missing record refuses, which is the safe
+    // direction.
+    if matches!(subject, InstallSubject::Dirty(_)) {
+        record_install_footprint(repo_root, &own);
+    }
     if !dirty.is_empty() {
         // **The door does not stage a path it has just decided not to commit.** Staging the
         // index-only cell (`MM`, worktree == `HEAD`) would replace the adopter's staged blob
@@ -1861,16 +2011,11 @@ fn commit_install(
         // commit (so the install is written and staged, and the re-run commits it) and
         // leaves every path it names exactly as it found it. The finding lists those paths,
         // so which ones are held back is on the surface rather than inferred.
-        let stageable: Vec<String> = paths
-            .iter()
-            .filter(|path| !dirty.contains(*path))
-            .cloned()
-            .collect();
-        if !stageable.is_empty() {
+        if !own.is_empty() {
             // A staging refusal here is not the message: the door already has a blocking
             // finding, and two would be the ambiguity the route floor forbids. The re-run
             // stages again from a resolved state.
-            let _ = stage_paths(repo_root, &stageable);
+            let _ = stage_paths(repo_root, &own);
         }
         return Err(InstallCommitRejection::DirtyInstallPath(dirty));
     }
@@ -1927,7 +2072,9 @@ fn commit_install(
     {
         // A re-run over an unchanged install: no commit this time, but the hook's place in
         // the install commit is the one an earlier run gave it — the pathspec still says
-        // where it stands, which is what the summary reports.
+        // where it stands, which is what the summary reports. Nothing of this door's is
+        // uncommitted, so the record goes.
+        clear_install_footprint(repo_root);
         return Ok(InstallCommitOutcome {
             commit: InstallCommit::Nothing,
             hook_committed,
@@ -1976,6 +2123,9 @@ fn commit_install(
         // git could not be spawned at all — benign skip (the writes still succeeded).
         None => return Ok(InstallCommitOutcome::uncommitted(InstallCommit::Skipped)),
     }
+    // The footprint is in a commit — nothing of this door's is left uncommitted for a
+    // later run to mistake for the adopter's work.
+    clear_install_footprint(repo_root);
 
     // Resolve the short sha of the commit just made, for the success surface.
     let commit = match git_output(repo_root, ["rev-parse", "--short", "HEAD"]) {
