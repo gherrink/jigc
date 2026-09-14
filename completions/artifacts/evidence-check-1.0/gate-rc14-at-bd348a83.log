@@ -1,0 +1,22 @@
+gate: repo   /Users/maurice/projects/gherrink-jigc
+gate: log    /var/folders/nj/dq5nt8bj72xc0ppkm69y_ckh0000gn/T/jigc-gate-BHmBpU
+gate: target shared (<repo>/target)
+gate: mode   full
+
+==> probe   ok        (0s)
+==> fmt     ok        (2s)
+==> clippy  ok        (0s)
+==> build   ok        (0s)
+==> test    ok        (840s)
+
+--- summary ---
+probe   exit=0
+fmt     exit=0
+clippy  exit=0
+build   exit=0
+test    exit=0
+tests   passed=3341 failed=0  (over 17 test binaries)
+
+GATE: PASS
+full output: /var/folders/nj/dq5nt8bj72xc0ppkm69y_ckh0000gn/T/jigc-gate-BHmBpU
+gate rc=0
