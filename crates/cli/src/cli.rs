@@ -173,8 +173,16 @@ pub enum Command {
     /// Install the Claude Code adapter — writes the `.jigc/AGENT.md` bootstrap and
     /// a reference into `CLAUDE.md`, initializes the project layer (`.jigc/config/`),
     /// allowlists `Bash(jigc:*)`, and installs the `SessionStart` and warn-only git
-    /// `pre-commit` hooks. Idempotent.
-    Setup,
+    /// `pre-commit` hooks. Idempotent. Refuses its own install commit when a path in
+    /// that footprint carries work no commit has a copy of, rather than sweeping it in.
+    Setup {
+        /// Commit the install footprint even where it carries bytes `jigc setup` did
+        /// not write — the explicit consent to sweep uncommitted work into
+        /// `chore(jigc): install jigc workspace config`. Inert when the footprint is
+        /// clean, which is every ordinary install.
+        #[arg(long)]
+        force: bool,
+    },
 
     /// Reverse this project's jigc install — removes `.jigc/`, unwires the
     /// `CLAUDE.md` reference, and drops the `Bash(jigc:*)` permit from
@@ -364,7 +372,7 @@ impl Command {
         match self {
             Command::Start { .. } => &["start"],
             Command::Workflow { .. } => &["workflow"],
-            Command::Setup => &["setup"],
+            Command::Setup { .. } => &["setup"],
             Command::Uninstall { .. } => &["uninstall"],
             Command::Upgrade => &["upgrade"],
             Command::Ingest => &["ingest"],
@@ -582,7 +590,7 @@ impl Cli {
             Command::Task { verb } => run_task(self.format, verb),
             Command::Config { verb } => run_config(self.format, verb),
             Command::Milestone { verb } => run_milestone(self.format, verb),
-            Command::Setup => run_setup(self.format),
+            Command::Setup { force } => run_setup(self.format, force),
             Command::Uninstall { force } => run_uninstall(self.format, force),
             Command::Upgrade => run_upgrade(self.format),
             Command::Ingest => run_ingest(self.format),
@@ -643,7 +651,7 @@ fn run_describe(format: Format, kinds: describe::Kinds) -> Outcome {
 /// failure prints a blocking `setup.*` finding (with its route) on stderr and
 /// exits non-zero (`design/assistant-adapter.md` → Generated, minimal,
 /// regenerated; the block-payload envelope, `DECISIONS.md` 2026-05-31).
-fn run_setup(format: Format) -> Outcome {
+fn run_setup(format: Format, force: bool) -> Outcome {
     let cwd = match std::env::current_dir() {
         Ok(cwd) => cwd,
         Err(err) => {
@@ -651,7 +659,7 @@ fn run_setup(format: Format) -> Outcome {
             return Outcome::failure();
         }
     };
-    match setup::run(&cwd) {
+    match setup::run(&cwd, force) {
         Ok(summary) => {
             println!("{}", render::setup_success(format, &summary));
             Outcome::success()
@@ -4930,7 +4938,10 @@ mod cli_parse {
     #[test]
     fn setup_parses() {
         let cli = Cli::try_parse_from(["jigc", "setup"]).expect("`jigc setup` parses");
-        assert_eq!(cli.command, Command::Setup);
+        assert_eq!(cli.command, Command::Setup { force: false });
+        let forced = Cli::try_parse_from(["jigc", "setup", "--force"])
+            .expect("`jigc setup --force` parses — the door's single consent");
+        assert_eq!(forced.command, Command::Setup { force: true });
     }
 
     #[test]

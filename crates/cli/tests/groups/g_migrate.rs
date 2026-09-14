@@ -95,6 +95,8 @@ mod retire_sink_validation;
 mod schema_change_kind_registry;
 #[path = "../setup.rs"]
 mod setup;
+#[path = "../setup_install_pathspec_guard.rs"]
+mod setup_install_pathspec_guard;
 #[path = "../setup_pack_load_advisory.rs"]
 mod setup_pack_load_advisory;
 #[path = "../snapshot_store_two_snapshots.rs"]

@@ -33,6 +33,7 @@
 use crate::adapter::{self, AdapterProfile};
 use crate::locate;
 use engine::finding::{Finding, Severity};
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 /// The committed **binary-provenance stamp** file, repo-relative (`design/storage.md` →
@@ -1040,7 +1041,12 @@ pub enum InstallCommit {
 /// `setup.*` finding carrying a route — the dispatcher renders it and exits
 /// non-zero. CLI **locates** the repo root; the injectors do the writes (the
 /// engine stays presentation-free and filesystem-free).
-pub fn run(start: &Path) -> Result<SetupSummary, Finding> {
+///
+/// `force` is the **single consent** at this door (M51 Increment 3): it is the one
+/// meaning `--force` carries here, and it consents to exactly one thing — committing
+/// install-footprint paths that carry bytes `setup` did not write ([`InstallSubject`]).
+/// It is not a posture override; Increment 2 gave posture refusals none.
+pub fn run(start: &Path, force: bool) -> Result<SetupSummary, Finding> {
     // The not-in-a-repository cause answers with the ONE shared text + route every other
     // door gives (M49 Inc 11 T2, `locate::locate_finding`); the `$HOME`-unset cause is a
     // different precondition and keeps its own carry.
@@ -1061,13 +1067,17 @@ pub fn run(start: &Path) -> Result<SetupSummary, Finding> {
         )
     })?;
 
-    install(&ctx.repo_root, &profile)
+    install(&ctx.repo_root, &profile, force)
 }
 
 /// Run both injections against `repo_root` with `profile`, mapping an IO failure
 /// to a blocking `setup.*` finding with a route. The testable core of [`run`]
 /// (no location step).
-fn install(repo_root: &Path, profile: &AdapterProfile) -> Result<SetupSummary, Finding> {
+fn install(
+    repo_root: &Path,
+    profile: &AdapterProfile,
+    force: bool,
+) -> Result<SetupSummary, Finding> {
     // 0. Gate the spawn launch template against the decidable install-time rule
     //    *before* any write, so a broken template fails install touching nothing
     //    (`design/assistant-adapter.md` → Bind the spawn mechanism: "A broken
@@ -1099,6 +1109,21 @@ fn install(repo_root: &Path, profile: &AdapterProfile) -> Result<SetupSummary, F
             reason.to_string(),
         ));
     }
+
+    // 0c. **Ask, before the first write, what bytes are already here that `setup` did not
+    //     write** (M51 Increment 3; `settle-record.md` → D3 with its §1 amendment). The
+    //     install commit is a pathspec commit, so every path in that pathspec rides it with
+    //     whatever the worktree holds — and until this guard, an adopter's uncommitted
+    //     `CLAUDE.md` edit was swept into `chore(jigc): install jigc workspace config` at
+    //     exit 0, leaving `git status` empty so nothing prompted recovery.
+    //
+    //     **Before any write is the whole mechanism.** It is what makes idempotence and
+    //     upgrade clean *by construction* rather than by attributing each path's bytes to a
+    //     writer after the fact: the pre-run comparison is the entire subject, and nothing
+    //     `setup` subsequently writes can enter it. A fresh clone is clean, a re-run is
+    //     clean, an upgrade is clean, and a host file the user edited and did not commit is
+    //     exactly the refusal.
+    let subject = InstallSubject::probe(repo_root, force);
 
     let reference = profile.reference().ok_or_else(|| {
         Finding::block(
@@ -1330,6 +1355,7 @@ fn install(repo_root: &Path, profile: &AdapterProfile) -> Result<SetupSummary, F
         seeded_gitignore,
         &hook_path,
         guide_file.as_deref(),
+        &subject,
     )
     .map_err(|rejection| rejection.finding())?;
 
@@ -1501,6 +1527,113 @@ fn committable_hook_path(repo_root: &Path, hook_file: &Path) -> Option<String> {
         .then_some(relative)
 }
 
+/// **What `jigc setup` knows, before it writes a byte, about the bytes it is about to
+/// commit over** — the [`CarryoverBoundary::Setup`](engine::finalize::CarryoverBoundary)
+/// door's input (M51 Increment 3; `settle-record.md` → D3, amended by §1).
+///
+/// **The predicate is worktree-vs-`HEAD`, per path, asked before any write** — *not*
+/// `decide_carryover`'s staged-snapshot pair, which is **withdrawn** for this door: that
+/// pair's subject is the **index** vs `HEAD`, while a pathspec commit takes the
+/// **worktree** contents, and it treats a restaged different blob as the door's own work —
+/// so it yields **zero findings** on the very cell D3 was decided on.
+///
+/// **Both axes, though, not worktree-only.** `Dirty` carries every path whose index *or*
+/// worktree bytes differ from `HEAD`, because the index-only cell (`MM` with
+/// worktree == `HEAD`) is the worse loss: staging it replaces the index entry with the
+/// worktree's bytes and the commit then records nothing for it, so the adopter's staged
+/// blob ends up named by **no commit and no index entry** — gone, at exit 0, with no
+/// artifact recording it. *"Dirty relative to `HEAD`"* is git's own vocabulary for the
+/// union, and one `git status` answers it.
+///
+/// **This is one leg of two.** Being dirty before the install does not mean the commit
+/// would carry those bytes: `setup` **regenerates** several of its own artifacts whole
+/// (`.jigc/AGENT.md`, `.jigc/version`, the guide artifact), so a pre-existing difference
+/// there is overwritten by the *install* and the commit carries `setup`'s canonical bytes.
+/// [`commit_install`] therefore asks the same question **again**, over the settled
+/// pathspec, immediately before committing, and refuses only the intersection — the paths
+/// whose pre-existing bytes are **still there** in what is about to be committed. Which is
+/// also why this leg is not a per-path ownership list: the two asks *derive* the
+/// discriminator (does `setup` preserve what it finds here?) instead of enumerating it, so
+/// a new install path cannot be classified wrong by being forgotten.
+#[derive(Debug)]
+enum InstallSubject {
+    /// Every repo-relative path whose index or worktree bytes differ from `HEAD`, as of
+    /// **before** the install's first write. Deliberately the **whole repository**, not a
+    /// pathspec query: the pathspec is settled later (the guide's ownership drop, the
+    /// `seeded_gitignore` signal, the gitignore filter, the hook's soft-member drop), and a
+    /// candidate list re-derived here to ask git a narrower question is a second
+    /// enumeration that can silently under-cover. The one enumeration that must be exact is
+    /// the pathspec the commit is actually made from, and [`commit_install`] intersects
+    /// against **that**.
+    Dirty(BTreeSet<String>),
+    /// `--force` — the single consent. The question is not asked at all, so no path can
+    /// refuse and the door behaves exactly as it did before the guard.
+    Consented,
+    /// git could not answer. The install commit is **skipped** rather than made blind — the
+    /// benign degradation this door already ships for a git it cannot use
+    /// ([`InstallCommit::Skipped`]): nothing is staged-but-orphaned, and no commit means no
+    /// sweep.
+    Unknown,
+}
+
+impl InstallSubject {
+    /// Ask git, **once, before the install's first write**. `force` short-circuits the
+    /// question entirely rather than asking and discarding the answer: the consent is to
+    /// commit whatever is there, so there is nothing to compute.
+    fn probe(repo_root: &Path, force: bool) -> Self {
+        if force {
+            return Self::Consented;
+        }
+        match dirty_against_head(repo_root, &[]) {
+            Some(dirty) => Self::Dirty(dirty),
+            None => Self::Unknown,
+        }
+    }
+}
+
+/// Every repo-relative path under `pathspec` (or in the whole repository, when it is
+/// empty) whose **index or worktree bytes differ from `HEAD`** — git's own *"dirty
+/// relative to `HEAD`"*, in one query. `None` when git could not answer.
+///
+/// `--untracked-files=no` makes the untracked exclusion **structural** rather than a
+/// parse-time filter, and it is a **stated green cell with its reason**, not a silent
+/// narrowing: an untracked file at an install path is committed as it was before, because
+/// M30 audit finding 1 gives `setup` the job of making its install footprint *tracked* —
+/// and because it is also what leaves an **unborn `HEAD`** clean by construction (every
+/// pre-existing file there reports `??`), so Increment 2's `SETUP_UNBORN_EXEMPTION` is not
+/// re-closed through the back door. Ignored files are absent for the same structural reason
+/// (no `--ignored`), which agrees with [`git_path_ignored`] dropping them from the pathspec.
+///
+/// `--no-renames` keeps the `-z` record shape to one field per entry; a rename then reports
+/// as its delete + add halves, both of which are differences from `HEAD` and both of which
+/// this door wants named.
+fn dirty_against_head(repo_root: &Path, pathspec: &[String]) -> Option<BTreeSet<String>> {
+    let mut args: Vec<&str> = vec![
+        "status",
+        "--porcelain",
+        "--untracked-files=no",
+        "--no-renames",
+        "-z",
+    ];
+    if !pathspec.is_empty() {
+        args.push("--");
+        args.extend(pathspec.iter().map(String::as_str));
+    }
+    let out = git_output(repo_root, args)?;
+    if !out.status.success() {
+        return None;
+    }
+    // `XY<space><path>` per NUL-terminated record; the three-byte prefix is ASCII, so the
+    // byte slice is always on a char boundary.
+    Some(
+        String::from_utf8_lossy(&out.stdout)
+            .split('\0')
+            .filter(|record| record.len() > 3)
+            .map(|record| record[3..].to_string())
+            .collect(),
+    )
+}
+
 /// A git step of the install commit that **ran and refused** — the loud half of
 /// [`commit_install`]'s contract, carrying git's own words and which step spoke them.
 ///
@@ -1522,6 +1655,13 @@ enum InstallCommitRejection {
     /// a git rejection, because git rejected nothing (surface-contract law 1). Like
     /// [`Self::Commit`], the install files are staged and a re-run commits them.
     Posture(Finding),
+    /// **Paths in the install's own pathspec carried bytes `jigc setup` did not write**
+    /// (M51 Increment 3; `settle-record.md` → D3 amended by §1). git refused nothing —
+    /// the door did, before asking it — so this carries the dirty set rather than git's
+    /// words, and the engine words it ([`engine::finalize::setup_dirty_install_finding`]).
+    /// The install files are written, and the ones the door is willing to commit are
+    /// staged, so resolving the named paths and re-running lands the commit.
+    DirtyInstallPath(Vec<String>),
 }
 
 impl InstallCommitRejection {
@@ -1536,6 +1676,11 @@ impl InstallCommitRejection {
             Self::Commit(git) => ("git commit", git, true),
             // The posture probe already built the finding it refuses with, route included.
             Self::Posture(finding) => return finding.clone(),
+            // The engine owns this door's words, over the whole dirty set at once — the
+            // `uninstall.dirty-worktree` mold at this same door, not one finding per path.
+            Self::DirtyInstallPath(dirty) => {
+                return engine::finalize::setup_dirty_install_finding(dirty);
+            }
         };
         let message = if staged {
             format!(
@@ -1608,12 +1753,23 @@ fn is_git_identity_rejection(git_err: &str) -> bool {
 /// cannot track is installed, reported, and left as the containing repo's file — instead
 /// of an install that cannot be completed at all.
 ///
-/// Uses `--no-verify`: the
-/// only hook present is the warn-only `pre-commit` setup just installed, and running the
-/// doc↔code backstop against this commit is pointless (it carries install artifacts, not
-/// managed docs) — and the hook must not self-trigger on the very commit that installs
-/// it. (This is setup's install commit, distinct from `finalize`'s never-`--no-verify`
-/// commit of managed work, which the user's hooks *are* policy for.)
+/// **`--no-verify` is kept, on a re-recorded basis** (M51 Increment 3;
+/// `settle-record.md` → §5). The basis it used to carry was *"the only hook present is the
+/// warn-only `pre-commit` setup just installed"*, and that is **struck with its falsifying
+/// datum**: [`install_precommit_hook`] *preserves* a pre-existing foreign hook and wraps
+/// jigc's block around it, so a user hook is present and this commit skipped it — driven,
+/// an adopter's uncommitted `AWS_SECRET=` line at an install path rode this commit at
+/// exit 0 past the very hook written to refuse it, in the same install that ships a guide
+/// saying *"jigc never passes `--no-verify` — your hooks are policy"*.
+///
+/// **The surviving half now carries the whole behaviour:** jigc's own just-installed hook
+/// must not self-trigger on the commit that installs it, and running the doc↔code backstop
+/// against install artifacts would answer about no managed doc anyway. It can carry the
+/// whole behaviour **only because the dirty-path refusal above closed the cell the struck
+/// half was covering** — after it, this commit carries only bytes `setup` itself wrote, so
+/// there is no user work for a user hook to have policy over. (Distinct from `finalize`'s
+/// never-`--no-verify` commit of managed work, where the user's hooks *are* policy — which
+/// is the scope the two shipped guides' universal takes, in Increment 9's batch.)
 fn commit_install(
     repo_root: &Path,
     line_file: &str,
@@ -1621,6 +1777,7 @@ fn commit_install(
     seeded_gitignore: bool,
     hook_file: &Path,
     guide_file: Option<&str>,
+    subject: &InstallSubject,
 ) -> Result<InstallCommitOutcome, InstallCommitRejection> {
     // Require a git work tree — but DO mint on an **unborn HEAD** (a brand-new repo with
     // no commits). Setup owns committing its own install footprint regardless of HEAD
@@ -1651,6 +1808,71 @@ fn commit_install(
     .collect();
     if paths.is_empty() {
         return Ok(InstallCommitOutcome::uncommitted(InstallCommit::Skipped));
+    }
+
+    // **The carryover boundary for this door** (M51 Increment 3;
+    // `engine::finalize::CarryoverBoundary::Setup`). The pathspec is settled now — every
+    // conditional that shapes it (the guide's ownership drop, the `seeded_gitignore`
+    // signal, the present/not-gitignored filters) has already run — so the question is
+    // asked over the one enumeration that must be exact.
+    //
+    // **Two legs, conjoined.** A path refuses the commit iff it was dirty relative to
+    // `HEAD` **before the install wrote anything** ([`InstallSubject`]) *and* is **still**
+    // dirty now, with every write done. The first leg is what makes idempotence and upgrade
+    // clean by construction: nothing `setup` itself wrote can enter it. The second leg is
+    // what makes the refusal *about the commit*: `setup` regenerates several of its own
+    // artifacts whole, so a pre-existing difference at `.jigc/AGENT.md`, `.jigc/version` or
+    // the guide artifact is overwritten by the **install** and what would be committed is
+    // `setup`'s own canonical bytes — nothing of the user's rides it, and refusing would
+    // block an upgrade over jigc's own file. Where `setup` **preserves** what it finds — the
+    // host files it merges into (`CLAUDE.md`, `.claude/settings.json`, a foreign
+    // `pre-commit`, a `packs.yaml` already listing packs, a `.gitignore` that already
+    // carries the floor) — the pre-existing bytes are still there, and those are exactly
+    // the paths this refuses over.
+    //
+    // Conjoining the two asks **derives** that discriminator rather than enumerating it, so
+    // an install path added later cannot be classified wrong by being forgotten. The
+    // declared bound: an uncommitted hand-edit of a regenerated artifact **on an upgrade**
+    // is dirty on both legs even though the user's bytes are already gone — a loud false
+    // alarm `--force` clears, never a silent sweep.
+    let dirty: Vec<String> = match subject {
+        InstallSubject::Consented => Vec::new(),
+        // git could not answer, so the commit is not made blind — the same benign skip
+        // this door already takes for a git it cannot use.
+        InstallSubject::Unknown => {
+            return Ok(InstallCommitOutcome::uncommitted(InstallCommit::Skipped));
+        }
+        InstallSubject::Dirty(before) => {
+            let Some(after) = dirty_against_head(repo_root, &paths) else {
+                return Ok(InstallCommitOutcome::uncommitted(InstallCommit::Skipped));
+            };
+            paths
+                .iter()
+                .filter(|path| before.contains(*path) && after.contains(*path))
+                .cloned()
+                .collect()
+        }
+    };
+    if !dirty.is_empty() {
+        // **The door does not stage a path it has just decided not to commit.** Staging the
+        // index-only cell (`MM`, worktree == `HEAD`) would replace the adopter's staged blob
+        // with the worktree's bytes — precisely the loss this guard exists to prevent, moved
+        // one step earlier — so the refusal stages the install paths it *is* willing to
+        // commit (so the install is written and staged, and the re-run commits it) and
+        // leaves every path it names exactly as it found it. The finding lists those paths,
+        // so which ones are held back is on the surface rather than inferred.
+        let stageable: Vec<String> = paths
+            .iter()
+            .filter(|path| !dirty.contains(*path))
+            .cloned()
+            .collect();
+        if !stageable.is_empty() {
+            // A staging refusal here is not the message: the door already has a blocking
+            // finding, and two would be the ambiguity the route floor forbids. The re-run
+            // stages again from a resolved state.
+            let _ = stage_paths(repo_root, &stageable);
+        }
+        return Err(InstallCommitRejection::DirtyInstallPath(dirty));
     }
 
     // Stage exactly those paths — never a blanket `git add -A`.
@@ -3053,7 +3275,7 @@ mod tests {
         git(dir.path(), &["init", "-q"]);
         let profile = adapter::load_profile("claude-code").expect("the shipped profile loads");
 
-        let summary = install(dir.path(), &profile).expect("install succeeds");
+        let summary = install(dir.path(), &profile, false).expect("install succeeds");
 
         assert_eq!(summary.line_file, "CLAUDE.md");
         assert_eq!(summary.allowlist_file, ".claude/settings.json");
@@ -3077,7 +3299,8 @@ mod tests {
         git(dir.path(), &["init", "-q"]);
         let profile = adapter::load_profile("claude-code").expect("the shipped profile loads");
 
-        install(dir.path(), &profile).expect("the shipped valid spawn template installs clean");
+        install(dir.path(), &profile, false)
+            .expect("the shipped valid spawn template installs clean");
     }
 
     /// Install over a profile whose spawn template violates the decidable rule
@@ -3095,8 +3318,8 @@ mod tests {
         profile.spawn.template =
             "Use your Task tool to run: `jigc workflow {{workflow}} --task X`".to_string();
 
-        let finding =
-            install(dir.path(), &profile).expect_err("a broken spawn template must fail install");
+        let finding = install(dir.path(), &profile, false)
+            .expect_err("a broken spawn template must fail install");
 
         assert_eq!(finding.severity, Severity::Blocking);
         assert_eq!(
@@ -3406,7 +3629,7 @@ mod tests {
         git(dir.path(), &["add", "user-work.txt"]);
 
         let profile = adapter::load_profile("claude-code").expect("the shipped profile loads");
-        let summary = install(dir.path(), &profile).expect("install succeeds");
+        let summary = install(dir.path(), &profile, false).expect("install succeeds");
 
         // (1) setup committed its install in its OWN commit naming the install files.
         assert!(
@@ -3448,7 +3671,7 @@ mod tests {
 
         // (3) a second setup is a clean no-op: no new commit, reported as `Nothing`.
         let head_before = git_str(dir.path(), &["rev-parse", "HEAD"]);
-        let summary2 = install(dir.path(), &profile).expect("re-install succeeds");
+        let summary2 = install(dir.path(), &profile, false).expect("re-install succeeds");
         assert!(
             matches!(summary2.install_commit, InstallCommit::Nothing),
             "a second setup over an unchanged install must report Nothing; got {:?}",
@@ -3486,6 +3709,9 @@ mod tests {
             false,
             Path::new("/nonexistent/hooks/pre-commit"),
             None,
+            // These arms exercise the GIT-step refusals; the pre-write dirty guard is a
+            // different subject with its own suite, so the fixture consents past it.
+            &InstallSubject::Consented,
         )
         .expect_err("a git step that ran and refused must not degrade to a silent skip");
 
@@ -3691,7 +3917,7 @@ mod tests {
         git_identity(dir.path());
         let profile = adapter::load_profile("claude-code").expect("the shipped profile loads");
 
-        install(dir.path(), &profile).expect("install succeeds on a fresh repo");
+        install(dir.path(), &profile, false).expect("install succeeds on a fresh repo");
 
         let gi = dir.path().join(".gitignore");
         let body = std::fs::read_to_string(&gi).expect("install must seed root .gitignore");
@@ -3721,7 +3947,7 @@ mod tests {
         std::fs::write(dir.path().join(".gitignore"), foreign).expect("seed foreign .gitignore");
 
         let profile = adapter::load_profile("claude-code").expect("the shipped profile loads");
-        install(dir.path(), &profile).expect("install succeeds on an established repo");
+        install(dir.path(), &profile, false).expect("install succeeds on an established repo");
 
         assert_eq!(
             std::fs::read_to_string(dir.path().join(".gitignore")).expect("read foreign"),
@@ -4098,6 +4324,7 @@ mod tests {
             false,
             &hook,
             None,
+            &InstallSubject::Consented,
         )
         .expect("a refusal the hook caused must not sink the install commit");
 
@@ -4135,6 +4362,7 @@ mod tests {
             false,
             &hook,
             None,
+            &InstallSubject::Consented,
         )
         .expect_err("a refusal the hook did NOT cause must stay loud");
         assert!(
@@ -4409,7 +4637,7 @@ mod tests {
         std::fs::create_dir_all(dir.path().join("CLAUDE.md")).expect("seed a directory");
         let profile = adapter::load_profile("claude-code").expect("the shipped profile loads");
 
-        let finding = install(dir.path(), &profile).expect_err("the line write must fail");
+        let finding = install(dir.path(), &profile, false).expect_err("the line write must fail");
 
         assert_eq!(finding.severity, Severity::Blocking);
         assert!(
