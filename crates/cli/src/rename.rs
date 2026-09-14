@@ -623,7 +623,12 @@ pub(crate) fn run(
                 &fs_path,
                 fs_pre.as_deref(),
             );
-            return Err(err);
+            // The rollback has run, so the door's clause ("the rename was rolled back") is
+            // true of what is now on disk — mark the failure so the surface frames it rather
+            // than dropping the frame (N20; a stale `.git/index.lock` meeting the move's
+            // `git mv` is this cell's ordinary cause). A hook rejection passes through
+            // unmarked and keeps its own verbatim frame.
+            return Err(crate::task::mark_commit_failure(err));
         }
     };
 

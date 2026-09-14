@@ -305,6 +305,15 @@ pub fn run(cwd: &Path, format: Format, options: Options) -> Outcome {
                 survived: "nothing was committed — the migrated bytes are written and staged, \
                            and the corpus is still recorded as unmigrated"
                     .to_string(),
+                // G-47's one asymmetric cell: the hook-cell clause above says the bytes are
+                // *staged*, and in the non-hook cell the stage is precisely what failed. One
+                // clause across both would tell an operator to look for an index entry that
+                // does not exist, at the moment they are recovering.
+                survived_non_hook: Some(
+                    "nothing was committed — the migrated bytes are written to disk, the stage \
+                     did not complete, and the corpus is still recorded as unmigrated"
+                        .to_string(),
+                ),
                 rerun: "jigc migrate-corpus".to_string(),
             },
         ),
@@ -445,7 +454,12 @@ fn commit_migration(repo_root: &Path, touched: &[String]) -> Result<Option<(Stri
     if !addable.is_empty() {
         let mut add: Vec<&str> = vec!["add", "--"];
         add.extend(&addable);
-        git_run(repo_root, &add)?;
+        // N20 — the stage is the one non-hook failure point inside this door's commit
+        // transaction (a stale `.git/index.lock` is its ordinary cause). Marked so the door's
+        // surface frames it with its code, clause and re-run instead of dropping the frame;
+        // the post-commit `rev-parse` below is deliberately NOT marked, because by then the
+        // commit has landed and *"nothing was committed"* would be false.
+        git_run(repo_root, &add).map_err(crate::task::mark_commit_failure)?;
     }
 
     // Nothing staged among our paths (a re-run over an already-migrated corpus) → no commit,

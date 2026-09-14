@@ -1864,6 +1864,34 @@ pub fn commit_rejected(format: Format, rejection: &str, survived: &str, rerun: &
     }
 }
 
+/// Frame a commit-transaction failure that **no hook caused** — [`commit_rejected`]'s sibling
+/// for N20's cell (M51 Increment 2 / T5; `completions/artifacts/M51/charter.md` → N20,
+/// `gap-findings.md` → G-47).
+///
+/// It says the same three things the rejection frame says — the cause verbatim, what survived,
+/// and this door's own copy-runnable re-run — and it deliberately does **not** say the fourth:
+/// `commit_rejected` closes with *"Fix the hook's complaint"*, which in this cell is both a
+/// false diagnosis (no hook spoke; git's `--ff-only` refused, or a stale index lock met the
+/// stage) and a route an operator cannot follow. So this arm names no cause at all — *"resolve
+/// the cause above"* is true whatever the cause was, and the cause itself is printed verbatim
+/// immediately above it.
+///
+/// A second caller of [`commit_rejected`] would have been the cheap fix and would have shipped
+/// that lie at ten doors at once, which is why the cell got its own arm rather than a parameter.
+///
+/// The closing `then re-run …` shape is deliberately the rejection frame's, so the one lifter
+/// (`tests/commit_rejected_axis::lift_rerun`) reads the emitted bytes of both cells.
+pub fn commit_failed(format: Format, cause: &str, survived: &str, rerun: &str) -> String {
+    let fence = code_fence(rerun);
+    let framed = format!(
+        "{cause}\n\n{survived}. Resolve the cause above, then re-run {fence}{rerun}{fence}."
+    );
+    match format {
+        Format::Json => json(&serde_json::json!({ "error": framed })),
+        Format::Agent | Format::Human => framed,
+    }
+}
+
 /// The backtick run that delimits `content` as a code span: one longer than the longest run
 /// inside it (CommonMark's rule), so the span closes where it means to even when the content
 /// carries backticks. Ordinary content is fenced with the ordinary single backtick.

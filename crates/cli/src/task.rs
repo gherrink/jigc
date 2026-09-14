@@ -558,6 +558,9 @@ fn discard_rejection_frame(id: &str, force: bool) -> RejectionFrame {
             "nothing was committed — the milestone record still names task:{id} as it did, \
              and the task's working area is intact"
         ),
+        // `commit_record_transaction` rolls the record back on both cells of the axis, and the
+        // area is removed only after the commit lands — so one clause is true of both.
+        survived_non_hook: None,
         rerun: format!(
             "jigc task discard {}{}",
             shell_token(id),
@@ -2110,6 +2113,7 @@ impl TaskArea {
                              docs are still in `.jigc/tasks/{id}/docs/`, and anything you had \
                              `git add`-ed is still in git's index"
                         ),
+                        survived_non_hook: None,
                         rerun,
                     },
                 ))
@@ -2954,7 +2958,11 @@ pub(crate) fn try_execute_finalize_plan(
             // index kept the flipped blob and the next plain `git commit` landed a lying
             // record). Inert on every arm that stages no record.
             rollback_owner_artifact_index(repo_root, &record_index);
-            return Ok(Err(err));
+            // Every rollback above has run, so the state each door's frame describes is the
+            // state that is now on disk — and the error is marked as a commit-transaction
+            // failure so the door frames it instead of dropping the frame (N20). A hook
+            // rejection, a stage failure and a routed refusal pass through unmarked.
+            return Ok(Err(mark_commit_failure(err)));
         }
     };
     // Phase 7 — post-commit (best-effort; the commit is already truth).
@@ -3741,6 +3749,76 @@ impl std::fmt::Display for CommitRejected {
 
 impl std::error::Error for CommitRejected {}
 
+/// Typed marker for a **non-hook** failure inside a door's commit transaction — the class
+/// N20 names (`completions/artifacts/M51/charter.md` → N20; `gap-findings.md` → G-47).
+///
+/// `git merge --ff-only` refusing to overwrite ordinary untracked main-checkout WIP, a stale
+/// `.git/index.lock` meeting the stage's `git add`, a promote destination that is a regular
+/// file: every one of them fails **inside** the transaction a [`RejectionFrame`] was built for,
+/// after its rollback has run — and every one of them used to reach
+/// [`surface_commit_rejection`], miss the [`CommitRejected`] downcast, and fall through to the
+/// plain operational envelope, discarding the frame's code, state clause and re-run
+/// (`error_code: null` in the invocation log, no route, no statement of what survived).
+///
+/// It is deliberately a **separate** marker from [`CommitRejected`] rather than a widening of
+/// it: the two cells need different diagnoses. `CommitRejected`'s frame tells the operator to
+/// fix the hook's complaint, which is a lie — and a route that cannot be followed — when no
+/// hook spoke ([`crate::render::commit_failed`] is this marker's own arm).
+///
+/// Its [`Display`](std::fmt::Display) is the flattened cause, so git's own bytes stay verbatim.
+#[derive(Debug)]
+pub(crate) struct CommitFailed(String);
+
+impl std::fmt::Display for CommitFailed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for CommitFailed {}
+
+/// Whether `err` is a **typed** error a door's surface already discriminates *before* it
+/// reaches [`surface_commit_rejection`] — the exhaustive passthrough rule for
+/// [`mark_commit_failure`].
+///
+/// Each of these is something better than a framed non-hook failure, and each is read back by
+/// a `downcast_ref` further up, so wrapping one would both replace a precise diagnosis with a
+/// generic one *and* make that `downcast_ref` miss:
+///
+///   * [`CommitRejected`] — a hook (or git) refused the commit; that is the *first* cell of the
+///     axis, and it keeps its own frame and its own verbatim relay;
+///   * [`StageGitFailure`] — jigc's own stage phase failed, which the per-task door routes as a
+///     first-class blocking `finalize.stage-failed` finding with its own state clause and route
+///     (M40 F7 item 2);
+///   * [`OwnerArtifactBlock`] — the post-stage owner-artifact gate blocked: a real
+///     `ValidationReport` at exit 3, not an operational failure at all;
+///   * a [`BlockedFinding`](crate::render::BlockedFinding) — a routed refusal carrying its own
+///     code and route, including the `repo.*` posture refusals the commit seam raises
+///     (M51 Increment 2 / T4).
+///
+/// **A typed marker added to the executor's error channel owes a row here**, and
+/// [`typed_errors_pass_through_the_commit_failure_marker`] is where that is asserted rather
+/// than assumed — a list this size is only safe while something reddens when it goes stale.
+fn already_typed(err: &anyhow::Error) -> bool {
+    err.is::<CommitRejected>()
+        || err.is::<StageGitFailure>()
+        || err.is::<OwnerArtifactBlock>()
+        || crate::render::blocked_finding(err).is_some()
+}
+
+/// Mark an error escaping a door's **commit transaction** as a [`CommitFailed`], so the door's
+/// surface frames it instead of dropping the frame it already built (N20).
+///
+/// Applied at each door's transaction boundary, **after** its rollback has run — which is what
+/// makes the frame's state clause true of what is on disk when it prints. An error
+/// [`already_typed`] recognizes passes through unchanged.
+pub(crate) fn mark_commit_failure(err: anyhow::Error) -> anyhow::Error {
+    if already_typed(&err) {
+        return err;
+    }
+    anyhow::Error::new(CommitFailed(format!("{err:#}")))
+}
+
 /// One committing door's half of the **survivable frame** (M47 Inc 3 T7; `DECISIONS.md` →
 /// 2026-07-26 M47 the Settle, Decision 6). The door owns all three fields because only the
 /// door knows them: `git_commit_capture` sees no verb, no id, and no argv.
@@ -3754,9 +3832,27 @@ pub(crate) struct RejectionFrame {
     /// adds it). Must be true of *this* door: some doors leave their write staged, some
     /// unwind it entirely.
     pub(crate) survived: String,
+    /// The state clause for the **non-hook** cell ([`CommitFailed`]), where `survived` is not
+    /// true of it — `None` when one clause is true of both (the usual case: every rollback the
+    /// hook cell describes runs on this path too).
+    ///
+    /// It exists because G-47's axis is `COMMITTING_DOORS × {hook rejection, non-hook failure}
+    /// × {is the clause true?}`, and the answer is not uniform: `migrate-corpus`' hook-cell
+    /// clause says the migrated bytes are *"written and staged"*, and in the non-hook cell the
+    /// **stage is what failed**. Reusing one clause across both cells there would ship a law-1
+    /// lie at the moment an operator is recovering.
+    pub(crate) survived_non_hook: Option<String>,
     /// This door's **own** copy-runnable re-run command line, including any flag the re-run
     /// genuinely needs to reach the same commit phase again.
     pub(crate) rerun: String,
+}
+
+impl RejectionFrame {
+    /// The state clause for the non-hook cell — the door's own where it stated one, else the
+    /// clause it states for a hook rejection.
+    fn non_hook_clause(&self) -> &str {
+        self.survived_non_hook.as_deref().unwrap_or(&self.survived)
+    }
 }
 
 /// Surface a failed committing door: a **commit-phase rejection** ([`CommitRejected`]) is
@@ -3781,6 +3877,18 @@ pub(crate) fn surface_commit_rejection(
         eprintln!(
             "{}",
             render::commit_rejected(format, &rejected.0, &frame.survived, &frame.rerun)
+        );
+        return Outcome::error(frame.code);
+    }
+    // N20 — the **non-hook** cell: the frame was built in full and then dropped here, so a
+    // `git merge --ff-only` refusal (or a stale index lock, or a blocked promote destination)
+    // exited 1 with `error_code: null`, no route and no word about what survived. It keeps the
+    // same three things the rejection cell states, in its own render arm — nothing in it blames
+    // a hook, because in this cell none spoke.
+    if let Some(failed) = err.downcast_ref::<CommitFailed>() {
+        eprintln!(
+            "{}",
+            render::commit_failed(format, &failed.0, frame.non_hook_clause(), &frame.rerun)
         );
         return Outcome::error(frame.code);
     }
@@ -5225,6 +5333,61 @@ fn discover_repo_root(start: &Path) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **Every typed error the executor's channel carries survives the N20 marking** — the
+    /// fence under [`already_typed`]'s list (M51 Increment 2 / T5).
+    ///
+    /// The list is a hand-written set, which this repo only tolerates while something reddens
+    /// when it goes stale: each of these is read back by a `downcast_ref` in a door's surface
+    /// *after* [`mark_commit_failure`] has run, so wrapping one makes that read miss and the
+    /// door prints a generic frame over a refusal that had its own diagnosis, code and route.
+    /// The owner-artifact gate is the driven instance — marking it once turned
+    /// `flow20`'s `owner-artifact.present` block into a bare frame at exit 1.
+    #[test]
+    fn typed_errors_pass_through_the_commit_failure_marker() {
+        let typed: Vec<(&str, anyhow::Error)> = vec![
+            (
+                "CommitRejected",
+                anyhow::Error::new(CommitRejected("hook said no".to_string())),
+            ),
+            (
+                "StageGitFailure",
+                anyhow::Error::new(StageGitFailure("git add failed".to_string())),
+            ),
+            (
+                "OwnerArtifactBlock",
+                anyhow::Error::new(OwnerArtifactBlock(vec![
+                    engine::finding::Finding::blocking(
+                        "owner-artifact.present",
+                        "the recorded artifact is absent",
+                        Location::addressed("task:probe".to_string(), 1, 1),
+                    ),
+                ])),
+            ),
+            (
+                "BlockedFinding",
+                crate::render::finding_error(&engine::finding::Finding::blocking(
+                    "repo.head-detached",
+                    "HEAD is detached",
+                    Location::addressed("task:probe".to_string(), 1, 1),
+                )),
+            ),
+        ];
+        for (name, err) in typed {
+            let marked = mark_commit_failure(err);
+            assert!(
+                !marked.is::<CommitFailed>(),
+                "`{name}` is discriminated by a door's surface after the marking, so it must \
+                 pass through unwrapped",
+            );
+        }
+        // …and a bare operational error IS marked — else the fence passes vacuously.
+        let bare = mark_commit_failure(anyhow::anyhow!("`git merge --ff-only` failed"));
+        assert!(
+            bare.is::<CommitFailed>(),
+            "an untyped commit-transaction failure must be marked, or N20's whole cell is inert",
+        );
+    }
 
     /// **Every pathspec-magic spelling is refused at the sink** — the magic leg of
     /// [`ValidatedRetirement::adjudicate`], swept over git's own magic forms rather than

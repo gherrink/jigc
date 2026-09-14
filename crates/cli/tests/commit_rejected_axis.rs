@@ -81,6 +81,43 @@
 //!   diagnosis, nothing committed — which is what makes a future change that moves the write
 //!   ahead of the guard redden here rather than ship a lying frame.
 //!
+//! ## The third sweep: the same axis × the **non-hook** failure (M51 Increment 2 / T5 — N20)
+//!
+//! `surface_commit_rejection` framed only on the [`CommitRejected`] downcast and fell through
+//! to the plain operational envelope for everything else — so a failure **inside** a door's
+//! commit transaction that no hook caused discarded a `RejectionFrame` its caller had already
+//! built in full: `error_code: null` in the invocation log, no route, and no word about what
+//! survived. The headline is the milestone boundary's closing `git merge --ff-only` refusing to
+//! overwrite ordinary untracked main-checkout WIP (charter N20), and EC-37's correction to its
+//! recorded scope is that the loss is **knob-independent** — both commit models reach the one
+//! seam that lands the commit on the live checkout, so both are driven here.
+//!
+//! [`every_committing_door_keeps_its_frame_when_no_hook_spoke`] iterates the **same**
+//! [`COMMITTING_DOORS`] table over that cell, with **no hook installed in any fixture**, and
+//! per door asserts: the run exits non-zero and HEAD is untouched, the frame carries the door's
+//! state clause and **the arm verifies that clause against the repository's actual
+//! post-refusal state**, exactly **one** route is printed and it is this door's own re-run
+//! lifted verbatim out of the emitted bytes, the invocation log carries **this door's**
+//! `error_code` (read off the record, never the printed text), and nothing blames a hook.
+//!
+//! **The state clause is not reusable on faith** (G-47): the axis is `COMMITTING_DOORS ×
+//! {hook rejection, non-hook failure} × {is the clause true?}`, and one cell answers *no* —
+//! `migrate-corpus`' hook-cell clause says the migrated bytes are *"written and staged"*, and
+//! in this cell **the stage is exactly what failed**. That door therefore states a second
+//! clause (`RejectionFrame::survived_non_hook`) and this arm asserts *that* one, against a
+//! driven `git diff --cached` showing nothing of it staged.
+//!
+//! **The causes are ordinary, not exotic**: a stale `.git/index.lock` (the residue of a killed
+//! git) meeting the stage's `git add` or the rename's `git mv`; a promote destination that is a
+//! regular file; the fan-out's `--ff-only` over colliding untracked WIP. Each fails after its
+//! door's rollback has run, which is what makes a state clause statable here at all.
+//!
+//! **Out of this increment's scope, named rather than left silent:** a [`CommitRejected`] whose
+//! cause is **git itself** rather than a hook (`core.bare`, a partial commit during a merge)
+//! still renders the first sweep's hook sentence. It carries no charter row, and its driven
+//! instance at `milestone create` is closed from the other side by this increment's
+//! operation-in-progress refusal, which never lets that run reach a commit.
+//!
 //! **Non-vacuity is proven by applied mutation, not by construction**: reverting T1's
 //! pre-commit emptiness discriminator in `crates/cli/src/rename.rs` reddens the `jigc rename`
 //! cell on four clauses at once (exit, ack, the forbidden assertion, the log identity).
@@ -1576,5 +1613,555 @@ fn no_committing_door_dresses_an_empty_commit_as_a_rejection() {
                 "[{verb}] the refusal must be logged as its own finding `{code}`; got {record}",
             );
         }
+    }
+}
+
+// ── The third sweep: the same axis × the NON-HOOK failure (M51 Increment 2 / T5 — N20) ──────
+
+/// The frame's **hook diagnosis** — the one sentence `render::commit_rejected` hard-codes. In a
+/// cell where no hook was installed at all it is a law-1 lie *and* a dead-end route ("satisfy a
+/// hook that never spoke"), so its absence is what this sweep's cells assert.
+const HOOK_DIAGNOSIS: &str = "Fix the hook's complaint";
+
+/// Plant a **stale `.git/index.lock`** — the ordinary residue of a crashed or killed git, and
+/// the one non-hook cause every door that stages before it commits meets identically: `git add`
+/// (and `git mv`) fail with git's own `Unable to create '…/.git/index.lock'`, inside the door's
+/// commit transaction and after its rollback has run.
+///
+/// It is **not** a hook: no hook is installed in any cell of this sweep, so nothing in the
+/// repository can reject anything — which is exactly what makes the frame's hook sentence a lie
+/// here and the door's *identity* the thing that must survive.
+fn plant_stale_index_lock(repo: &Path) {
+    fs::write(repo.join(".git").join("index.lock"), "").expect("plant a stale .git/index.lock");
+}
+
+/// Stage a sub-task's authored `commit:<sub>` doc — the prose the `squash: false` per-sub-task
+/// render reads, and the doc a provisioned sub-task owes before the boundary will commit it.
+fn stage_subtask_commit(repo: &Path, sub: &str, summary: &str) {
+    stage_subtask_doc(
+        repo,
+        sub,
+        &format!("commit:{sub}"),
+        &format!(
+            "---\ntype: feat\n---\n\n# {sub}\n\n## Summary\n\n{summary}\n\n## Body\n\n\n\n\
+             ## Trailers\n"
+        ),
+    );
+}
+
+/// The **headline repro**'s fixture (charter N20 / EC-37): a provisioned one-sub-task fan-out
+/// whose worktree holds staged code at `src/low.rs`, plus **ordinary untracked WIP** at that
+/// same path in the main checkout — so the boundary's closing `git merge --ff-only` refuses to
+/// overwrite it (the carry-or-refuse contract) with **no hook anywhere**. Driven at both
+/// `finalize.fan-out.squash` settings, because EC-37's correction to N20's recorded scope is
+/// that the frame loss is **knob-independent**: both arms reach the one seam
+/// (`overlay_docs_commit_and_ff`) that lands the commit on the live checkout.
+fn seed_ff_refused_fan_out(repo: &Path, home: &Path) {
+    jigc_ok(
+        repo,
+        home,
+        &["milestone", "create", "Cache rework"],
+        "`jigc milestone create`",
+    );
+    jigc_ok(
+        repo,
+        home,
+        &["milestone", "add-task", "cache-rework", "Area low"],
+        "`jigc milestone add-task`",
+    );
+    stage_subtask_doc(
+        repo,
+        "area-low",
+        "adr:low-policy",
+        &adr_body("Low policy", None),
+    );
+    stage_subtask_commit(repo, "area-low", "rework the low cache path");
+    jigc_ok(
+        repo,
+        home,
+        &["milestone", "provision", "cache-rework"],
+        "`jigc milestone provision`",
+    );
+    // The sub-agent's staged code, in its isolated worktree.
+    let worktree = repo.join(".jigc").join("worktrees").join("area-low");
+    fs::create_dir_all(worktree.join("src")).expect("mk the worktree's src/");
+    fs::write(worktree.join("src").join("low.rs"), "pub fn low() {}\n")
+        .expect("write the worktree's code");
+    git(&worktree, &["add", "src/low.rs"]);
+    // The human's untracked WIP at the same path in the MAIN checkout — the collision.
+    fs::create_dir_all(repo.join("src")).expect("mk src/");
+    fs::write(repo.join("src").join("low.rs"), "// untracked human WIP\n")
+        .expect("seed the colliding untracked WIP");
+}
+
+/// The committed milestone record's repo-relative path (docs-root-nested by the dev
+/// `docs-root` knob the `[dev ▸ methodology]` composition resolves).
+fn record_rel(milestone_id: &str) -> String {
+    format!("docs/milestone-records/{milestone_id}.md")
+}
+
+/// One door's **non-hook cell**: the fixture it was driven in, the argv that drove it, the
+/// re-run its frame must print, the state clause it must carry, and the **independent** check
+/// of that clause against the repository's actual post-refusal state.
+///
+/// The independent check is the point of G-47: a clause is reusable across the hook and
+/// non-hook cells only where it is *true* in both, and the only way to know is to look at the
+/// repo rather than at the sentence. Where the shipped clause is false for a non-hook failure
+/// (`migrate-corpus`: the stage is exactly what failed, so nothing is staged), the door owes a
+/// second clause and this arm asserts *that* one.
+struct NonHookCase {
+    repo: TempDir,
+    home: TempDir,
+    driven: Vec<String>,
+    expected_rerun: Vec<String>,
+    survived: String,
+    /// Assert the clause against the repo's real state after the refusal. Takes the repo root.
+    verify: Box<dyn Fn(&Path)>,
+}
+
+/// Build each door's **non-hook** fixture and drive the door at it. **No hook is installed in
+/// any cell** — every failure here is git's own or jigc's own, never a rejection.
+fn drive_non_hook(verb: &str) -> NonHookCase {
+    match verb {
+        // The promote destination is a regular FILE, so phase 4's `create_dir_all` fails inside
+        // the commit closure — after the plan validated, before anything is staged or committed.
+        "jigc task finalize" => {
+            let (repo, home) = base_repo("nonhook-task-finalize", None);
+            let task = seed_task(repo.path(), home.path(), "record the eviction policy");
+            jigc_ok(
+                repo.path(),
+                home.path(),
+                &["doc", "create", "adr", "--title", "Eviction policy"],
+                "`jigc doc create adr`",
+            );
+            for slot in ["context", "decision", "consequences"] {
+                let out = jigc(
+                    repo.path(),
+                    home.path(),
+                    &[
+                        "doc",
+                        "set-slot",
+                        &format!("adr:eviction-policy#{slot}"),
+                        "--from-file",
+                        "-",
+                    ],
+                    Some(format!("Prose for {slot}.\n").as_bytes()),
+                );
+                assert!(out.status.success(), "`jigc doc set-slot` must exit 0");
+            }
+            fs::create_dir_all(repo.path().join("docs")).expect("mk docs/");
+            fs::write(
+                repo.path().join("docs").join("decisions"),
+                "not a directory\n",
+            )
+            .expect("block the promote destination with a regular file");
+            let area = repo.path().join(".jigc").join("tasks").join(&task);
+            NonHookCase {
+                survived: format!("task {task} is intact"),
+                expected_rerun: owned(&["jigc", "task", "finalize", &task]),
+                driven: owned(&["task", "finalize", &task]),
+                verify: Box::new(move |_repo| {
+                    assert!(
+                        area.join("docs").join("adr:eviction-policy.md").is_file(),
+                        "the task's staged ADR must still be in its working area",
+                    );
+                }),
+                repo,
+                home,
+            }
+        }
+        // The headline repro, at both commit models: `git merge --ff-only` refuses over ordinary
+        // untracked main-checkout WIP, with no hook installed anywhere.
+        "jigc milestone finalize (squash: true)" | "jigc milestone finalize (squash: false)" => {
+            let squash = if verb.ends_with("true)") {
+                "true"
+            } else {
+                "false"
+            };
+            let (repo, home) = base_repo(&format!("nonhook-ms-finalize-{squash}"), Some(squash));
+            seed_ff_refused_fan_out(repo.path(), home.path());
+            NonHookCase {
+                survived: "milestone:cache-rework is intact".to_string(),
+                expected_rerun: owned(&["jigc", "milestone", "finalize", "cache-rework"]),
+                driven: owned(&["milestone", "finalize", "cache-rework"]),
+                verify: Box::new(|repo| {
+                    // EC-37's state half: the record is left `active`, never a `joined` record
+                    // for a milestone that never finalized.
+                    let record = fs::read_to_string(repo.join(record_rel("cache-rework")))
+                        .expect("the committed record survives the refusal");
+                    assert!(
+                        record.contains("status: active"),
+                        "the record must be left `active`; record:\n{record}",
+                    );
+                    // …and the provisioned worktree still holds its staged code.
+                    let staged = git(
+                        &repo.join(".jigc").join("worktrees").join("area-low"),
+                        &["diff", "--cached", "--name-only"],
+                    );
+                    assert!(
+                        staged.lines().any(|l| l == "src/low.rs"),
+                        "the provisioned worktree must still hold its staged code; staged:\n\
+                         {staged}",
+                    );
+                    // …and the merged doc was rolled back out of the live checkout.
+                    assert!(
+                        !repo
+                            .join("docs")
+                            .join("decisions")
+                            .join("low-policy.md")
+                            .exists(),
+                        "the merged docs must be rolled back",
+                    );
+                }),
+                repo,
+                home,
+            }
+        }
+        // `git mv` meets the stale lock, inside the atomic rename transaction.
+        "jigc rename" => {
+            let (repo, home) = base_repo("nonhook-rename", None);
+            commit_adr(repo.path(), "alpha-decision", "Alpha decision", Some(2));
+            plant_stale_index_lock(repo.path());
+            NonHookCase {
+                survived: "adr:alpha-decision".to_string(),
+                expected_rerun: owned(&[
+                    "jigc",
+                    "rename",
+                    "adr:alpha-decision",
+                    "--to",
+                    "Beta decision",
+                ]),
+                driven: owned(&["rename", "adr:alpha-decision", "--to", "Beta decision"]),
+                verify: Box::new(|repo| {
+                    let decisions = repo.join("docs").join("decisions");
+                    assert!(
+                        decisions.join("alpha-decision.md").is_file(),
+                        "the doc must still hold its original identity",
+                    );
+                    assert!(
+                        !decisions.join("beta-decision.md").exists(),
+                        "the rename must have been rolled back",
+                    );
+                }),
+                repo,
+                home,
+            }
+        }
+        // The stage is exactly what fails — so this door's hook-cell clause ("written and
+        // staged") is FALSE here, and the cell asserts the door's own non-hook clause instead.
+        "jigc migrate-corpus" => {
+            let (repo, home) = base_repo("nonhook-migrate-corpus", None);
+            commit_adr(repo.path(), "alpha-decision", "Alpha decision", None);
+            plant_stale_index_lock(repo.path());
+            NonHookCase {
+                survived: "the migrated bytes are written to disk".to_string(),
+                expected_rerun: owned(&["jigc", "migrate-corpus"]),
+                driven: owned(&["migrate-corpus"]),
+                verify: Box::new(|repo| {
+                    let path = repo
+                        .join("docs")
+                        .join("decisions")
+                        .join("alpha-decision.md");
+                    let bytes = fs::read_to_string(&path).expect("the migrated doc is on disk");
+                    assert!(
+                        bytes.contains("schema-version:"),
+                        "the migrated bytes must be written to disk; doc:\n{bytes}",
+                    );
+                    let staged = git(repo, &["diff", "--cached", "--name-only"]);
+                    assert!(
+                        !staged
+                            .lines()
+                            .any(|l| l == "docs/decisions/alpha-decision.md"),
+                        "the stage is what failed, so nothing of it may be staged; staged:\n\
+                         {staged}",
+                    );
+                }),
+                repo,
+                home,
+            }
+        }
+        "jigc milestone create" => {
+            let (repo, home) = base_repo("nonhook-ms-create", None);
+            plant_stale_index_lock(repo.path());
+            NonHookCase {
+                survived: "nothing of milestone:cache-rework survives".to_string(),
+                expected_rerun: owned(&["jigc", "milestone", "create", "Cache rework"]),
+                driven: owned(&["milestone", "create", "Cache rework"]),
+                verify: Box::new(|repo| {
+                    assert!(
+                        !repo.join(record_rel("cache-rework")).exists(),
+                        "the record write must have been rolled back",
+                    );
+                    assert!(
+                        !repo
+                            .join(".jigc")
+                            .join("milestones")
+                            .join("cache-rework")
+                            .exists(),
+                        "the minted workbench must have been unwound",
+                    );
+                }),
+                repo,
+                home,
+            }
+        }
+        "jigc milestone add-task" => {
+            let (repo, home) = base_repo("nonhook-ms-add-task", None);
+            jigc_ok(
+                repo.path(),
+                home.path(),
+                &["milestone", "create", "Cache rework"],
+                "`jigc milestone create`",
+            );
+            let before = fs::read_to_string(repo.path().join(record_rel("cache-rework")))
+                .expect("the record exists before the append");
+            plant_stale_index_lock(repo.path());
+            NonHookCase {
+                survived: "milestone:cache-rework is unchanged".to_string(),
+                expected_rerun: owned(&[
+                    "jigc",
+                    "milestone",
+                    "add-task",
+                    "cache-rework",
+                    "Area low",
+                ]),
+                driven: owned(&["milestone", "add-task", "cache-rework", "Area low"]),
+                verify: Box::new(move |repo| {
+                    let after = fs::read_to_string(repo.join(record_rel("cache-rework")))
+                        .expect("the record survives");
+                    assert_eq!(
+                        after, before,
+                        "the record append must have been rolled back"
+                    );
+                    assert!(
+                        !repo.join(".jigc").join("tasks").join("area-low").exists(),
+                        "the sub-task mint must have been unwound",
+                    );
+                }),
+                repo,
+                home,
+            }
+        }
+        "jigc milestone add-from-spec" => {
+            let (repo, home) = base_repo("nonhook-ms-add-from-spec", None);
+            let specs = repo.path().join("docs").join("specs");
+            fs::create_dir_all(&specs).expect("mk docs/specs/");
+            fs::write(specs.join("rate-limit.md"), TWO_CRITERIA_SPEC).expect("write the spec");
+            git(repo.path(), &["add", "."]);
+            git(repo.path(), &["commit", "-q", "-m", "add spec"]);
+            jigc_ok(
+                repo.path(),
+                home.path(),
+                &["milestone", "create", "Rate limit"],
+                "`jigc milestone create`",
+            );
+            let before = fs::read_to_string(repo.path().join(record_rel("rate-limit")))
+                .expect("the record exists before the seed");
+            plant_stale_index_lock(repo.path());
+            NonHookCase {
+                survived: "milestone:rate-limit's task list names exactly what its record names"
+                    .to_string(),
+                expected_rerun: owned(&[
+                    "jigc",
+                    "milestone",
+                    "add-from-spec",
+                    "rate-limit",
+                    "spec:rate-limit",
+                ]),
+                driven: owned(&[
+                    "milestone",
+                    "add-from-spec",
+                    "rate-limit",
+                    "spec:rate-limit",
+                ]),
+                verify: Box::new(move |repo| {
+                    let after = fs::read_to_string(repo.join(record_rel("rate-limit")))
+                        .expect("the record survives");
+                    assert_eq!(
+                        after, before,
+                        "the refused append must have been rolled back, so the record still \
+                         names exactly the sub-tasks it named",
+                    );
+                    assert!(
+                        !repo
+                            .join(".jigc")
+                            .join("tasks")
+                            .join("rejects-burst")
+                            .exists(),
+                        "the un-recorded mint must have been unwound",
+                    );
+                }),
+                repo,
+                home,
+            }
+        }
+        "jigc milestone discard" => {
+            let (repo, home) = base_repo("nonhook-ms-discard", None);
+            jigc_ok(
+                repo.path(),
+                home.path(),
+                &["milestone", "create", "Cache rework"],
+                "`jigc milestone create`",
+            );
+            let before = fs::read_to_string(repo.path().join(record_rel("cache-rework")))
+                .expect("the record exists before the discard");
+            plant_stale_index_lock(repo.path());
+            NonHookCase {
+                survived: "milestone:cache-rework's record is still at its pre-discard state"
+                    .to_string(),
+                expected_rerun: owned(&["jigc", "milestone", "discard", "cache-rework"]),
+                driven: owned(&["milestone", "discard", "cache-rework"]),
+                verify: Box::new(move |repo| {
+                    let after = fs::read_to_string(repo.join(record_rel("cache-rework")))
+                        .expect("the record survives");
+                    assert_eq!(after, before, "the record must be at its pre-discard state");
+                    assert!(
+                        repo.join(".jigc")
+                            .join("milestones")
+                            .join("cache-rework")
+                            .exists(),
+                        "the workbench must be untouched",
+                    );
+                }),
+                repo,
+                home,
+            }
+        }
+        "jigc task discard" => {
+            let (repo, home) = base_repo("nonhook-task-discard", None);
+            jigc_ok(
+                repo.path(),
+                home.path(),
+                &["milestone", "create", "Cache rework"],
+                "`jigc milestone create`",
+            );
+            jigc_ok(
+                repo.path(),
+                home.path(),
+                &["milestone", "add-task", "cache-rework", "Area low"],
+                "`jigc milestone add-task`",
+            );
+            plant_stale_index_lock(repo.path());
+            NonHookCase {
+                survived: "the task's working area is intact".to_string(),
+                expected_rerun: owned(&["jigc", "task", "discard", "area-low", "--force"]),
+                driven: owned(&["task", "discard", "area-low", "--force"]),
+                verify: Box::new(|repo| {
+                    assert!(
+                        repo.join(".jigc").join("tasks").join("area-low").exists(),
+                        "the task's working area must be intact",
+                    );
+                }),
+                repo,
+                home,
+            }
+        }
+        other => panic!(
+            "`{other}` is a committing door with no NON-HOOK arm in this suite — the axis is \
+             the code-side `COMMITTING_DOORS` table, so a door added there owes its arm here",
+        ),
+    }
+}
+
+/// The non-hook sweep (N20): every code-side committing door, driven through the real binary
+/// into a failure **inside its commit transaction that no hook caused** — the class
+/// `surface_commit_rejection` used to drop on the floor, falling through to the plain
+/// operational envelope and discarding a `RejectionFrame` its caller had already built in full
+/// (`error_code: null`, no route, no state clause; `completions/artifacts/M51/charter.md` → N20,
+/// `gap-findings.md` → G-47).
+///
+/// Per door: the run fails loudly and commits nothing, the log carries **that door's** identity
+/// (read off the record, never the printed text — the `Outcome::error` membership check is a
+/// compiled-out `debug_assert!` in the release build the trials run), the frame states what
+/// survived and the arm **verifies that clause against the repository itself**, exactly **one**
+/// route is printed and it is this door's own re-run, and nothing anywhere blames a hook —
+/// because no hook exists in any cell of this sweep.
+#[test]
+fn every_committing_door_keeps_its_frame_when_no_hook_spoke() {
+    assert_eq!(
+        COMMITTING_DOORS.len(),
+        10,
+        "the axis is 10 doors + `jigc setup` excluded by its recorded `--no-verify` reason",
+    );
+
+    for door in COMMITTING_DOORS {
+        let verb = door.verb;
+        let case = drive_non_hook(verb);
+        let repo = case.repo.path();
+        let home = case.home.path();
+        let driven: Vec<&str> = case.driven.iter().map(String::as_str).collect();
+
+        let head_before = git(repo, &["rev-parse", "HEAD"]);
+        let failed = jigc(repo, home, &driven, None);
+        let stdout = String::from_utf8_lossy(&failed.stdout).into_owned();
+        let stderr = String::from_utf8_lossy(&failed.stderr).into_owned();
+        let printed = format!("{stdout}{stderr}");
+
+        // (1) the run fails loudly, and nothing landed.
+        assert!(
+            !failed.status.success(),
+            "[{verb}] a non-hook commit-transaction failure must exit non-zero; \
+             stdout:\n{stdout}\nstderr:\n{stderr}",
+        );
+        assert_eq!(
+            git(repo, &["rev-parse", "HEAD"]),
+            head_before,
+            "[{verb}] nothing was committed, so HEAD must be untouched; printed:\n{printed}",
+        );
+
+        // (2) NO hook is blamed — none was installed, so the hook diagnosis is both a law-1
+        // lie and a route that cannot be followed.
+        assert!(
+            !printed.contains(HOOK_DIAGNOSIS),
+            "[{verb}] no hook spoke in this cell — the hook diagnosis must be absent; \
+             printed:\n{printed}",
+        );
+        assert!(
+            !printed.contains(REJECTION_ASSERTION),
+            "[{verb}] nobody rejected this run — the rejection assertion must be absent; \
+             printed:\n{printed}",
+        );
+
+        // (3) the state clause, and the state it claims — checked against the repo, not the
+        // sentence (G-47: a clause written for the hook cell can be false in this one).
+        assert!(
+            stderr.contains(&case.survived),
+            "[{verb}] the frame must state what survived (expected to name `{}`); \
+             stderr:\n{stderr}",
+            case.survived,
+        );
+        (case.verify)(repo);
+
+        // (4) exactly ONE route, and it is this door's own re-run — lifted verbatim out of the
+        // emitted bytes, never rebuilt in the test.
+        assert_eq!(
+            stderr.matches("then re-run ").count(),
+            1,
+            "[{verb}] the frame must print exactly one route; stderr:\n{stderr}",
+        );
+        let lifted = lift_rerun(&stderr);
+        assert_eq!(
+            shell_split(&lifted),
+            case.expected_rerun,
+            "[{verb}] the frame must name the door's OWN re-run; printed `{lifted}`",
+        );
+
+        // (5) the door's identity is in the INVOCATION LOG — the release-visible half, and the
+        // whole of N20: the frame was built, and then thrown away before it could be recorded.
+        let records = log_records(repo);
+        let record = record_for(&records, &case.driven).unwrap_or_else(|| {
+            panic!("[{verb}] the failed run must be logged; records:\n{records:#?}")
+        });
+        assert_eq!(
+            record["error_code"].as_str(),
+            Some(door.error_code),
+            "[{verb}] the log must carry THIS door's identity; got {record}",
+        );
+        assert_eq!(
+            record["finding_codes"].as_array().map(Vec::len),
+            Some(0),
+            "[{verb}] a non-hook commit failure is an operational error, not a Finding; \
+             got {record}",
+        );
     }
 }

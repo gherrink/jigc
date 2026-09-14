@@ -944,6 +944,9 @@ fn run_rename(format: Format, old_slug: &str, to: &str, slug: Option<&str>) -> O
                          still holds its original identity and every referrer still points \
                          at it"
                     ),
+                    // `rollback_rename` restores the store byte-and-record identical on
+                    // every pre-commit failure, hook or not, so one clause is true of both.
+                    survived_non_hook: None,
                     rerun: format!(
                         "jigc rename {} --to {}{}",
                         crate::task::shell_token(old_slug),

@@ -408,6 +408,9 @@ impl MilestoneCommand {
         Some(crate::task::RejectionFrame {
             code,
             survived,
+            // Each of the four clauses describes what `commit_record_transaction`'s rollback
+            // leaves behind, which is the same state on both cells of the axis.
+            survived_non_hook: None,
             rerun,
         })
     }
@@ -805,9 +808,17 @@ fn commit_record_transaction(
     message: &str,
     pre: &RecordPreImage,
 ) -> Result<String> {
-    commit_record_only(repo_root, record_path, msg_dir, message).inspect_err(|_| {
-        rollback_record_pre_image(repo_root, pre);
-    })
+    commit_record_only(repo_root, record_path, msg_dir, message)
+        .inspect_err(|_| {
+            rollback_record_pre_image(repo_root, pre);
+        })
+        // N20 — the rollback above has run, so the door's state-truth clause is true of what is
+        // now on disk. Mark the failure as a commit-transaction failure so the record-only
+        // doors' surface frames it with their code, clause and re-run instead of dropping the
+        // frame it already built (a stale `.git/index.lock` meeting the stage's `git add` is
+        // this cell's ordinary cause). A hook rejection passes through unmarked and keeps its
+        // own verbatim frame.
+        .map_err(crate::task::mark_commit_failure)
 }
 
 /// `git commit -F <message_file> -- <pathspec>` in `repo_root` — a **pathspec-restricted**
@@ -4098,6 +4109,7 @@ fn run_milestone_finalize(
                              at its pre-finalize commit, and every provisioned sub-task worktree \
                              still holds its staged code"
                         ),
+                        survived_non_hook: None,
                         rerun: milestone_finalize_rerun(milestone_id, carry_staged),
                     },
                 ))
@@ -4170,6 +4182,7 @@ fn run_milestone_finalize(
                          docs were rolled back, and every provisioned sub-task worktree still \
                          holds its staged code"
                     ),
+                    survived_non_hook: None,
                     rerun: milestone_finalize_rerun(milestone_id, carry_staged),
                 },
             )),
