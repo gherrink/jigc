@@ -9,6 +9,20 @@
 //! team-ready-state.md` → What graduates: the `.gitignore` 3→1). The record home is
 //! `docs/milestone-records/` — outside `.jigc/` — so the ignore set's *meaning* is
 //! unchanged by the split; only the duplication is removed.
+//!
+//! **The file is the user's too, so the writer amends rather than replaces** (M51
+//! Increment 4; `completions/artifacts/M51/settle-record.md` → §6). This doc-comment
+//! said *"amended once to the union"* from the day it was written and the writer
+//! **replaced** the whole file with [`ENTRIES`] — so a user's own line in
+//! `.jigc/.gitignore` was destroyed at `setup` and at `task finalize` *silently and
+//! landed* (the rewrite matches `HEAD`, so `git status` reads clean and the bytes
+//! survive in no git object), and at `milestone create`/`provision` visibly but with no
+//! transaction to restore them. [`ensure`] now carries the settled byte algorithm:
+//! preserve all existing bytes exactly; append only missing canonical entries, in
+//! [`ENTRIES`] order; insert exactly one separator newline only when required; never
+//! normalize or deduplicate existing content; reject a non-regular, symlinked or
+//! undecodable file rather than replace it. The result is a **fixed point** — which is
+//! what lets `finalize` commit the file without authoring a diff nobody wrote.
 
 use std::io;
 use std::path::Path;
@@ -21,22 +35,56 @@ use std::path::Path;
 /// relocation destination, kept uncommittable; `crate::relocate::WORKBENCH_SUBDIR`).
 /// This is the **union** of the three formerly-divergent literals — carrying `worktrees/`
 /// closes the pre-M39 drift.
-pub(crate) const ENTRIES: &str =
-    "tasks/\nindex/\nstate/\nmilestones/\nworktrees/\nlogs/\ndisplaced/\n";
+pub const ENTRIES: &str = "tasks/\nindex/\nstate/\nmilestones/\nworktrees/\nlogs/\ndisplaced/\n";
 
-/// Ensure `<jigc_root>/.gitignore` lists every [`ENTRIES`] line. Idempotent — the file
-/// is (re)written only when it is absent or does not already list **all** of the entry
-/// set (so an adapter-written `.gitignore` predating any later entry — `milestones/`,
-/// `worktrees/`, `logs/` — is amended once to the union). Errors carry the offending
-/// path so a finalize/create failure is legible.
-pub(crate) fn ensure(jigc_root: &Path) -> io::Result<()> {
+/// What [`ensure`] did to `<jigc_root>/.gitignore` — the amend's report, so a door can
+/// say what it changed there instead of writing silently, and so the finalize
+/// transaction knows the exact image jigc left behind.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Ensured {
+    /// No file was there; jigc wrote one carrying exactly [`ENTRIES`].
+    Created,
+    /// A file was there and was short of the canonical set: every existing byte was
+    /// preserved and these entries — the missing ones, in [`ENTRIES`] order — were
+    /// appended.
+    Amended { appended: Vec<&'static str> },
+    /// The file already listed every entry. Not a byte was written.
+    Unchanged,
+}
+
+/// Ensure `<jigc_root>/.gitignore` lists every [`ENTRIES`] line, **by amendment**: the
+/// existing bytes are preserved exactly and only the missing entries are appended, so a
+/// comment, a blank line, CRLF, a missing final newline, a pre-existing duplicate and a
+/// line that is none of jigc's business all survive untouched (the module doc's byte
+/// algorithm). Idempotent by construction — a second call finds nothing missing and
+/// writes nothing.
+///
+/// Refuses a `.gitignore` it cannot read back byte-for-byte — a symlink (following it
+/// would append to a file outside `.jigc/`), anything that is not a regular file, and
+/// undecodable bytes. Every error carries the offending path, so a
+/// setup/finalize/create failure is legible; an I/O fault mints no finding code.
+pub fn ensure(jigc_root: &Path) -> io::Result<Ensured> {
     let path = jigc_root.join(".gitignore");
-    let needs_write = match std::fs::read_to_string(&path) {
-        Ok(existing) => {
-            let lines: Vec<&str> = existing.lines().map(str::trim).collect();
-            !ENTRIES.lines().all(|entry| lines.contains(&entry))
+    let existing = match std::fs::symlink_metadata(&path) {
+        Ok(meta) if meta.file_type().is_symlink() => {
+            return Err(refuse(&path, "it is a symlink"));
         }
-        Err(err) if err.kind() == io::ErrorKind::NotFound => true,
+        Ok(meta) if !meta.is_file() => {
+            return Err(refuse(&path, "it is not a regular file"));
+        }
+        Ok(_) => match std::fs::read_to_string(&path) {
+            Ok(body) => Some(body),
+            Err(err) if err.kind() == io::ErrorKind::InvalidData => {
+                return Err(refuse(&path, "it is not valid UTF-8"));
+            }
+            Err(err) => {
+                return Err(io::Error::new(
+                    err.kind(),
+                    format!("could not read {path:?}: {err}"),
+                ));
+            }
+        },
+        Err(err) if err.kind() == io::ErrorKind::NotFound => None,
         Err(err) => {
             return Err(io::Error::new(
                 err.kind(),
@@ -44,15 +92,57 @@ pub(crate) fn ensure(jigc_root: &Path) -> io::Result<()> {
             ));
         }
     };
-    if needs_write {
+
+    let Some(existing) = existing else {
         std::fs::create_dir_all(jigc_root).map_err(|err| {
             io::Error::new(err.kind(), format!("could not create {jigc_root:?}: {err}"))
         })?;
-        std::fs::write(&path, ENTRIES).map_err(|err| {
-            io::Error::new(err.kind(), format!("could not write {path:?}: {err}"))
-        })?;
+        write_ignore(&path, ENTRIES)?;
+        return Ok(Ensured::Created);
+    };
+
+    // Presence is judged on the TRIMMED line, so a CRLF file and a line carrying
+    // trailing spaces are read as listing the entry — and therefore left alone —
+    // rather than gaining a duplicate on every run.
+    let listed: Vec<&str> = existing.lines().map(str::trim).collect();
+    let appended: Vec<&'static str> = ENTRIES
+        .lines()
+        .filter(|entry| !listed.contains(entry))
+        .collect();
+    if appended.is_empty() {
+        return Ok(Ensured::Unchanged);
     }
-    Ok(())
+
+    let mut next = existing;
+    // Exactly one separator newline, and only when the existing bytes do not already
+    // end in one — an empty file needs none either.
+    if !next.is_empty() && !next.ends_with('\n') {
+        next.push('\n');
+    }
+    for entry in &appended {
+        next.push_str(entry);
+        next.push('\n');
+    }
+    write_ignore(&path, &next)?;
+    Ok(Ensured::Amended { appended })
+}
+
+/// The refusal an unamendable `.gitignore` draws — the path, then why jigc will not
+/// touch it. Stated as one helper so all three legs say the same thing the same way.
+fn refuse(path: &Path, why: &str) -> io::Error {
+    io::Error::new(
+        io::ErrorKind::InvalidInput,
+        format!(
+            "could not amend {path:?}: {why} — jigc appends its entries to this file \
+             in place and will not replace it"
+        ),
+    )
+}
+
+/// Write `body` at `path`, carrying the path into the error.
+fn write_ignore(path: &Path, body: &str) -> io::Result<()> {
+    std::fs::write(path, body)
+        .map_err(|err| io::Error::new(err.kind(), format!("could not write {path:?}: {err}")))
 }
 
 #[cfg(test)]
@@ -99,22 +189,31 @@ mod tests {
         );
     }
 
+    /// The legacy amend, restated as what an amendment actually does: the pre-M39 lines
+    /// keep their bytes and their order, and the entries they lack are appended. It
+    /// asserted `body == ENTRIES` until M51 Increment 4 — which was the *replace*
+    /// writer's signature, and true only because a replaced file cannot differ.
     #[test]
     fn ensure_amends_a_legacy_worktreeless_gitignore() {
         let dir = TempDir::new();
         let jigc_root = dir.path().join(".jigc");
         std::fs::create_dir_all(&jigc_root).unwrap();
         // A pre-M39 adapter/task-written file, missing `worktrees/`.
-        std::fs::write(
-            jigc_root.join(".gitignore"),
-            "tasks/\nindex/\nstate/\nmilestones/\nlogs/\n",
-        )
-        .unwrap();
-        ensure(&jigc_root).unwrap();
+        let legacy = "tasks/\nindex/\nstate/\nmilestones/\nlogs/\n";
+        std::fs::write(jigc_root.join(".gitignore"), legacy).unwrap();
+        let report = ensure(&jigc_root).unwrap();
+        assert_eq!(
+            report,
+            Ensured::Amended {
+                appended: vec!["worktrees/", "displaced/"],
+            },
+            "the report names the two entries the legacy file lacked",
+        );
         let body = std::fs::read_to_string(jigc_root.join(".gitignore")).unwrap();
         assert_eq!(
-            body, ENTRIES,
-            "a legacy worktrees-less `.gitignore` is amended once to the union set",
+            body, "tasks/\nindex/\nstate/\nmilestones/\nlogs/\nworktrees/\ndisplaced/\n",
+            "a legacy worktrees-less `.gitignore` keeps its own bytes and gains the \
+             entries it lacks",
         );
     }
 

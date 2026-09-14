@@ -23,6 +23,8 @@ mod flow27_marquee;
 mod flow36_corpus_structural;
 #[path = "../foreign_at_both_doors.rs"]
 mod foreign_at_both_doors;
+#[path = "../gitignore_amend_union.rs"]
+mod gitignore_amend_union;
 #[path = "../golden_harness.rs"]
 mod golden_harness;
 #[path = "../managed_vs_foreign.rs"]
