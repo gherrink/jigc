@@ -19,6 +19,7 @@ use crate::orient;
 use crate::relocate;
 use crate::rename;
 use crate::render;
+use crate::repo::PostureMember;
 use crate::setup;
 use crate::start;
 use crate::task::TaskCommand;
@@ -1464,6 +1465,383 @@ pub const VERB_KINDS: &[(&[&str], VerbKind)] = &[
     (&["milestone", "discard"], VerbKind::Write),
 ];
 
+/// **What a leaf verb does on the user's behalf** — the third classification of the clap
+/// tree, beside [`VerbKind`] and [`DoctypeArg`], and the one a **repository posture** is
+/// adjudicated against ([`crate::repo::PostureMember`]).
+///
+/// The two acting classes are separate because they adjudicate **different** families, not
+/// because one is a stronger flavour of the other:
+///
+///   * [`ActsOnBehalf::CommitsOnBehalf`] — the door runs a `git commit` the user did not
+///     type, so **every** member of the posture family applies: a commit made on a detached
+///     HEAD belongs to no branch, a commit made on an unborn HEAD pins git's empty tree as a
+///     base, and a commit made under a live `MERGE_HEAD` concludes a merge the user started,
+///     under jigc's own subject.
+///   * [`ActsOnBehalf::MovesOnBehalf`] — the door `git mv`s a **committed** file through the
+///     one move primitive ([`crate::relocate::move_doc`], whose own doc-comment names its
+///     four doors) and commits nothing. Only *operation in progress* applies: the move lands
+///     in the index for the user to commit, so which commit it joins stays theirs to decide,
+///     while moving a tracked file out from under a half-finished merge is not.
+///   * [`ActsOnBehalf::Neither`] — a **stated verdict, not an absence**. `jigc migrate` mints
+///     a task and writes into the workbench; `jigc doc rename` moves **staged** bytes inside
+///     `.jigc/tasks/<id>/` ([`crate::doc`]'s `move_staged_identity`, an `fs::rename` of a file
+///     no commit has); `jigc milestone provision` adds worktrees. None of them commits or moves
+///     a committed file, so none of them owes the user a posture verdict.
+///
+/// **One door, one class.** [`crate::rename`] both `git mv`s and commits, and
+/// [`crate::migrate_corpus`] relocates (by `fs::rename`, *not* `git mv`) and commits: both are
+/// `CommitsOnBehalf`, because the commit is the act that makes the whole posture family
+/// relevant and `COMMITTING_DOORS ⊆ commit-on-behalf` is asserted here
+/// (`cli_parse::every_committing_door_acts_on_the_users_behalf`).
+pub enum ActsOnBehalf {
+    /// The door lands a commit the user did not type — the **full** posture family, minus
+    /// whatever this row states as [`PostureExemption`].
+    CommitsOnBehalf {
+        /// A **runnable** argv for this door with [`WORK_UNIT_ID_SLOT`] standing in for a
+        /// work-unit id where one is needed — every other argument present and well-formed,
+        /// so the posture is the only thing the door can fault on. The axis suite drives the
+        /// row's own argv rather than a hand-written cell list.
+        argv: &'static [&'static str],
+        /// The members this door does **not** adjudicate, each with its reason. Empty on
+        /// every row but one: a hole in a family is a decision or it is a bug, and this is
+        /// how a door states which.
+        exempt: &'static [PostureExemption],
+    },
+    /// The door `git mv`s a committed file and commits nothing — *operation in progress*
+    /// only. The variant carries **no** exemption field on purpose: a mover that was exempt
+    /// from the one member it adjudicates would adjudicate nothing, and the type refuses to
+    /// express it.
+    MovesOnBehalf {
+        /// A runnable argv, as [`ActsOnBehalf::CommitsOnBehalf`] carries.
+        argv: &'static [&'static str],
+    },
+    /// The door acts on nobody's behalf — it carries no argv and no exemption, because it
+    /// adjudicates no posture.
+    Neither,
+}
+
+/// One **stated exemption** from the repository-posture family, carried on a
+/// [`ActsOnBehalf::CommitsOnBehalf`] row.
+pub struct PostureExemption {
+    /// The member this door does not adjudicate.
+    pub member: PostureMember,
+    /// **Why** — quoted from the record that decided it, never paraphrased.
+    pub reason: &'static str,
+}
+
+/// **Why `jigc setup` is exempt from [`PostureMember::HeadUnborn`]** — the M30 audit
+/// rationale, **quoted** from [`crate::setup`]'s `commit_install` (`setup.rs:1617-1625`,
+/// the repo's basis-unchanged form) rather than paraphrased, with only the comment's line
+/// wrapping removed.
+///
+/// Driven, `git init -q . && jigc setup` lands `chore(jigc): install jigc workspace config`
+/// at exit 0 today. Applying the family uniformly would turn **the QUICKSTART on-ramp — the
+/// first command an adopter runs** — into a refusal routed at `jigc setup --force`, training
+/// the very `--force` reflex the wave's own staged-set guard prices as its honest weakness
+/// (`completions/artifacts/M51/settle-record.md` → Review amendments §3). The **detached** and
+/// **operation-in-progress** members still apply at `setup`; only *unborn* is exempt.
+pub const SETUP_UNBORN_EXEMPTION: &str = "Require a git work tree — but DO mint on an \
+     **unborn HEAD** (a brand-new repo with no commits). Setup owns committing its own \
+     install footprint regardless of HEAD state (M30 audit finding 1): on a cold-start repo \
+     the first `finalize` since M30 stages only the task's change-set \
+     ([`crate::task::stage_index_honoring`]), so if setup skipped the install here, \
+     `CLAUDE.md`/`.claude/settings.json`/`.jigc/AGENT.md` would be left untracked after the \
+     first managed commit.";
+
+/// **One leaf verb and what it does on the user's behalf** — the row [`BEHALF_DOORS`]
+/// carries.
+pub struct BehalfDoor {
+    /// The leaf verb path, as an operator types it after `jigc`.
+    pub door: &'static [&'static str],
+    /// What this door does on the user's behalf — and, for the two acting classes, the
+    /// runnable argv that reaches it.
+    pub acts: ActsOnBehalf,
+}
+
+/// **Every leaf verb, classified by what it does on the user's behalf** — a **total**
+/// classification over the clap tree, on [`VERB_KINDS`]' mold and fenced ⇔ against it
+/// (`cli_parse::every_leaf_verb_says_what_it_acts_on`), so a verb added anywhere **reddens
+/// until someone answers it**.
+///
+/// It is total rather than a curated door list because a **lower bound plus one named
+/// element is not a membership rule**: `COMMITTING_DOORS` says which doors log a
+/// commit-rejection identity — ten rows over **nine** leaves (`milestone finalize` is two
+/// commit models), saying nothing at all about the other thirty-eight — and `jigc setup`,
+/// the one committing door whose install commit passes `--no-verify` and therefore carries
+/// no rejection identity to log, is invisible to it. Three consumers read this one table
+/// instead of hand-enumerating three different sets: the posture guard (M51 Increment 2 /
+/// T3), the staged-set guard (Increment 3), and the survivable frame's cause vocabulary
+/// (N20).
+///
+/// **It carries no error identity.** A posture breach is a blocking `Finding`
+/// ([`PostureMember::code`]), not an [`Outcome`] identity, so this table feeds no
+/// `ERROR_CODE_REGISTRY` derivation and duplicates no fence
+/// (`crate::invocation_log::ERROR_CODE_REGISTRY`; `settle-record.md` → §10).
+pub const BEHALF_DOORS: &[BehalfDoor] = &[
+    // Top level.
+    //
+    // `start` and `workflow` mint a task directory under the gitignored `.jigc/` workbench
+    // and compose text; `ingest` is register-only ("never moving or rewriting a file");
+    // `migrate` mints a migration task — every commit of that work is `task finalize`'s.
+    BehalfDoor {
+        door: &["start"],
+        acts: ActsOnBehalf::Neither,
+    },
+    BehalfDoor {
+        door: &["workflow"],
+        acts: ActsOnBehalf::Neither,
+    },
+    // The install commit (`crate::setup`'s `commit_install`) — the one committing door no
+    // `COMMITTING_DOORS` row supplies, because it passes `--no-verify` by recorded design
+    // and therefore has no hook rejection to carry an identity.
+    BehalfDoor {
+        door: &["setup"],
+        acts: ActsOnBehalf::CommitsOnBehalf {
+            argv: &["setup"],
+            exempt: &[PostureExemption {
+                member: PostureMember::HeadUnborn,
+                reason: SETUP_UNBORN_EXEMPTION,
+            }],
+        },
+    },
+    // `uninstall` deletes the install footprint and commits nothing — a destroying door
+    // (`DESTROYING_DOORS`), which is a different registry and a different consent.
+    BehalfDoor {
+        door: &["uninstall"],
+        acts: ActsOnBehalf::Neither,
+    },
+    BehalfDoor {
+        door: &["upgrade"],
+        acts: ActsOnBehalf::Neither,
+    },
+    BehalfDoor {
+        door: &["ingest"],
+        acts: ActsOnBehalf::Neither,
+    },
+    BehalfDoor {
+        door: &["migrate"],
+        acts: ActsOnBehalf::Neither,
+    },
+    // The pathspec-limited self-commit (`crate::migrate_corpus`). Its relocation arm moves
+    // by `fs::rename`, **not** `git mv` — the commit boundary stages the move once, at the
+    // end — so this door is commit-on-behalf and is no member of the mover class.
+    BehalfDoor {
+        door: &["migrate-corpus"],
+        acts: ActsOnBehalf::CommitsOnBehalf {
+            argv: &["migrate-corpus"],
+            exempt: &[],
+        },
+    },
+    BehalfDoor {
+        door: &["unmanage"],
+        acts: ActsOnBehalf::Neither,
+    },
+    // The atomic identity refactor: it `git mv`s through [`crate::relocate::move_doc`] AND
+    // commits, so the commit decides the class (one door, one class).
+    BehalfDoor {
+        door: &["rename"],
+        acts: ActsOnBehalf::CommitsOnBehalf {
+            argv: &["rename", "adr:keeper", "--to", "Axis"],
+            exempt: &[],
+        },
+    },
+    // The freeze-exempt relocation: `git mv` per stranded instance, no commit — the user
+    // commits the move themselves, so only an operation in progress is theirs to conclude
+    // first.
+    BehalfDoor {
+        door: &["relocate"],
+        acts: ActsOnBehalf::MovesOnBehalf {
+            argv: &["relocate", "vision", "--from", "docs/vision/"],
+        },
+    },
+    BehalfDoor {
+        door: &["describe"],
+        acts: ActsOnBehalf::Neither,
+    },
+    BehalfDoor {
+        door: &["validate"],
+        acts: ActsOnBehalf::Neither,
+    },
+    // `jigc doc` — the managed-doc surface. Every verb writes into the task's working area
+    // under `.jigc/tasks/<id>/`, which no commit has a copy of until `task finalize`
+    // promotes it; `doc rename` moves those **staged** bytes with `fs::rename` and routes a
+    // committed identity change to `jigc rename`.
+    BehalfDoor {
+        door: &["doc", "create"],
+        acts: ActsOnBehalf::Neither,
+    },
+    BehalfDoor {
+        door: &["doc", "add-item"],
+        acts: ActsOnBehalf::Neither,
+    },
+    BehalfDoor {
+        door: &["doc", "remove-item"],
+        acts: ActsOnBehalf::Neither,
+    },
+    BehalfDoor {
+        door: &["doc", "retitle-item"],
+        acts: ActsOnBehalf::Neither,
+    },
+    BehalfDoor {
+        door: &["doc", "rename"],
+        acts: ActsOnBehalf::Neither,
+    },
+    BehalfDoor {
+        door: &["doc", "set-field"],
+        acts: ActsOnBehalf::Neither,
+    },
+    BehalfDoor {
+        door: &["doc", "set-slot"],
+        acts: ActsOnBehalf::Neither,
+    },
+    BehalfDoor {
+        door: &["doc", "author"],
+        acts: ActsOnBehalf::Neither,
+    },
+    BehalfDoor {
+        door: &["doc", "show"],
+        acts: ActsOnBehalf::Neither,
+    },
+    BehalfDoor {
+        door: &["doc", "schema"],
+        acts: ActsOnBehalf::Neither,
+    },
+    BehalfDoor {
+        door: &["doc", "list"],
+        acts: ActsOnBehalf::Neither,
+    },
+    // `jigc task` — the lifecycle. Two of the six land a commit.
+    BehalfDoor {
+        door: &["task", "list"],
+        acts: ActsOnBehalf::Neither,
+    },
+    BehalfDoor {
+        door: &["task", "diff"],
+        acts: ActsOnBehalf::Neither,
+    },
+    BehalfDoor {
+        door: &["task", "validate"],
+        acts: ActsOnBehalf::Neither,
+    },
+    // A milestone sub-task's discard lands a record-only settle commit before it removes
+    // the working area (`crate::milestone`'s `settle_discarded_sub_task`, M49 Inc 2 T3).
+    BehalfDoor {
+        door: &["task", "discard"],
+        acts: ActsOnBehalf::CommitsOnBehalf {
+            argv: &["task", "discard", WORK_UNIT_ID_SLOT],
+            exempt: &[],
+        },
+    },
+    // The commit boundary itself.
+    BehalfDoor {
+        door: &["task", "finalize"],
+        acts: ActsOnBehalf::CommitsOnBehalf {
+            argv: &["task", "finalize", WORK_UNIT_ID_SLOT],
+            exempt: &[],
+        },
+    },
+    BehalfDoor {
+        door: &["task", "bind"],
+        acts: ActsOnBehalf::Neither,
+    },
+    // `jigc config` — the cascade surface. Only `set` can move a committed file: the
+    // `docs-root` and `placement-root` knobs carry a detect+route+**move** floor through
+    // [`crate::relocate::move_doc`] (`crate::config`'s relocation arm), which is why the
+    // row's argv names a root knob — a `config set` of any other key moves nothing, and a
+    // row written that way would drive a cell that proves nothing (the `SLUG_DOORS`
+    // `start`-row precedent).
+    BehalfDoor {
+        door: &["config", "set"],
+        acts: ActsOnBehalf::MovesOnBehalf {
+            argv: &["config", "set", "docs-root", "docs"],
+        },
+    },
+    BehalfDoor {
+        door: &["config", "insert-step"],
+        acts: ActsOnBehalf::Neither,
+    },
+    BehalfDoor {
+        door: &["config", "replace-step"],
+        acts: ActsOnBehalf::Neither,
+    },
+    BehalfDoor {
+        door: &["config", "remove-step"],
+        acts: ActsOnBehalf::Neither,
+    },
+    BehalfDoor {
+        door: &["config", "fill"],
+        acts: ActsOnBehalf::Neither,
+    },
+    BehalfDoor {
+        door: &["config", "fork"],
+        acts: ActsOnBehalf::Neither,
+    },
+    BehalfDoor {
+        door: &["config", "get"],
+        acts: ActsOnBehalf::Neither,
+    },
+    BehalfDoor {
+        door: &["config", "list"],
+        acts: ActsOnBehalf::Neither,
+    },
+    // `jigc milestone` — the fan-out surface. The four record-only doors each land a
+    // pathspec-limited commit of the milestone record (`crate::milestone`'s
+    // `commit_record_only`); `finalize` lands the boundary's own commit under either
+    // commit model. `provision` adds worktrees, `execute` reseeds the cache and `join`
+    // folds into the workbench — none of the three commits or moves a committed file.
+    BehalfDoor {
+        door: &["milestone", "create"],
+        acts: ActsOnBehalf::CommitsOnBehalf {
+            argv: &["milestone", "create", "Axis milestone"],
+            exempt: &[],
+        },
+    },
+    BehalfDoor {
+        door: &["milestone", "add-task"],
+        acts: ActsOnBehalf::CommitsOnBehalf {
+            argv: &["milestone", "add-task", WORK_UNIT_ID_SLOT, "axis intent"],
+            exempt: &[],
+        },
+    },
+    BehalfDoor {
+        door: &["milestone", "add-from-spec"],
+        acts: ActsOnBehalf::CommitsOnBehalf {
+            argv: &["milestone", "add-from-spec", WORK_UNIT_ID_SLOT, "spec:axis"],
+            exempt: &[],
+        },
+    },
+    BehalfDoor {
+        door: &["milestone", "list-tasks"],
+        acts: ActsOnBehalf::Neither,
+    },
+    BehalfDoor {
+        door: &["milestone", "provision"],
+        acts: ActsOnBehalf::Neither,
+    },
+    BehalfDoor {
+        door: &["milestone", "execute"],
+        acts: ActsOnBehalf::Neither,
+    },
+    BehalfDoor {
+        door: &["milestone", "join"],
+        acts: ActsOnBehalf::Neither,
+    },
+    BehalfDoor {
+        door: &["milestone", "finalize"],
+        acts: ActsOnBehalf::CommitsOnBehalf {
+            argv: &["milestone", "finalize", WORK_UNIT_ID_SLOT],
+            exempt: &[],
+        },
+    },
+    BehalfDoor {
+        door: &["milestone", "discard"],
+        acts: ActsOnBehalf::CommitsOnBehalf {
+            argv: &["milestone", "discard", WORK_UNIT_ID_SLOT],
+            exempt: &[],
+        },
+    },
+];
+
 /// **How a doctype id reaches a leaf verb** — the second classification of the clap
 /// tree, beside [`VerbKind`].
 ///
@@ -1745,6 +2123,10 @@ pub const DOCTYPE_DOORS: &[(&[&str], DoctypeArg)] = &[
 /// The token a [`WORK_UNIT_ID_DOORS`] row's `argv` carries **in place of** the work-unit
 /// id, so one row serves every cell of the axis (`""`, a traversal, an absolute path, a
 /// well-formed-but-unknown id) instead of four hand-written argvs per door.
+///
+/// The [`BEHALF_DOORS`] rows carry it too, for the same reason and with the same meaning —
+/// a task id or a milestone id, whichever the door takes — so the two registries substitute
+/// into one vocabulary rather than two spellings of the same slot.
 pub const WORK_UNIT_ID_SLOT: &str = "<id>";
 
 /// The payload path the two `--from-file` rows of [`WORK_UNIT_ID_DOORS`] name.
@@ -3807,6 +4189,191 @@ mod cli_parse {
             VERB_KINDS.len(),
             leaves.len(),
             "the classification is a bijection with the clap tree's leaves",
+        );
+    }
+
+    /// **Every leaf verb says what it does on the user's behalf** — a bijection with the
+    /// clap tree, on [`every_leaf_verb_is_classified`]'s mold, so a verb added anywhere
+    /// **reddens until someone answers it** and a row for a verb that no longer exists
+    /// cannot linger.
+    ///
+    /// Without it, *"no repository posture reaches a door that commits or moves on the
+    /// user's behalf"* would be a claim about the doors somebody remembered — the shape
+    /// that has left a class half-swept in five waves running. [`ActsOnBehalf::Neither`]
+    /// is a stated verdict here, not an absence: a leaf with no row is a red test, never a
+    /// silent *nothing to adjudicate*.
+    #[test]
+    fn every_leaf_verb_says_what_it_acts_on() {
+        let (leaves, _) = clap_tree();
+        for leaf in &leaves {
+            let rows = BEHALF_DOORS
+                .iter()
+                .filter(|row| row.door.iter().eq(leaf.iter()))
+                .count();
+            assert_eq!(
+                rows,
+                1,
+                "`jigc {}` is a leaf verb and must carry exactly one BEHALF_DOORS row — \
+                 does it commit on the user's behalf, move a committed file on their \
+                 behalf, or neither?",
+                leaf.join(" "),
+            );
+        }
+        for row in BEHALF_DOORS {
+            let path: Vec<String> = row.door.iter().map(|token| (*token).to_string()).collect();
+            assert!(
+                leaves.contains(&path),
+                "BEHALF_DOORS carries `jigc {}`, which the clap tree no longer has",
+                path.join(" "),
+            );
+        }
+        assert_eq!(
+            BEHALF_DOORS.len(),
+            leaves.len(),
+            "the on-behalf classification is a bijection with the clap tree's leaves",
+        );
+    }
+
+    /// **Every acting row's argv is runnable and reaches the door it names** — the
+    /// [`WORK_UNIT_ID_DOORS`] mold, applied to the rows the posture axis drives.
+    ///
+    /// A row whose argv did not parse, or parsed onto a *different* leaf, would hand that
+    /// axis a cell proving something about another door — so the argv is checked against
+    /// the real clap tree rather than believed.
+    #[test]
+    fn every_acting_row_carries_a_runnable_argv() {
+        const SENTINEL: &str = "fence-id";
+        for row in BEHALF_DOORS {
+            let shown = row.door.join(" ");
+            let argv = match &row.acts {
+                ActsOnBehalf::CommitsOnBehalf { argv, .. } => *argv,
+                ActsOnBehalf::MovesOnBehalf { argv } => *argv,
+                ActsOnBehalf::Neither => continue,
+            };
+            assert!(
+                !argv.is_empty(),
+                "`jigc {shown}` acts on the user's behalf, so its row owes a runnable argv",
+            );
+            assert!(
+                argv.iter()
+                    .filter(|token| **token == WORK_UNIT_ID_SLOT)
+                    .count()
+                    <= 1,
+                "`jigc {shown}`: the argv may carry the id slot at most once",
+            );
+            let mut full: Vec<String> = vec!["jigc".to_string()];
+            full.extend(argv.iter().map(|token| {
+                if *token == WORK_UNIT_ID_SLOT {
+                    SENTINEL.to_string()
+                } else {
+                    (*token).to_string()
+                }
+            }));
+            let matches = <Cli as clap::CommandFactory>::command()
+                .try_get_matches_from(&full)
+                .unwrap_or_else(|err| panic!("`jigc {shown}`: the row's argv must parse: {err}"));
+            let mut leaf = &matches;
+            let mut reached: Vec<String> = Vec::new();
+            while let Some((name, sub)) = leaf.subcommand() {
+                reached.push(name.to_string());
+                leaf = sub;
+            }
+            assert_eq!(
+                reached,
+                row.door
+                    .iter()
+                    .map(|token| (*token).to_string())
+                    .collect::<Vec<String>>(),
+                "`jigc {shown}`: the row's argv reaches `jigc {}` instead",
+                reached.join(" "),
+            );
+        }
+    }
+
+    /// **`COMMITTING_DOORS ⊆ commit-on-behalf`** — the membership rule, asserted rather
+    /// than assumed.
+    ///
+    /// Each `CommittingDoor::verb` is mapped back to its leaf path by dropping the leading
+    /// `jigc` and any parenthesised commit-model arm (`jigc milestone finalize (squash:
+    /// true)`), then resolved against [`VERB_KINDS`] on `freeze_enforcement.rs`'s
+    /// longest-classified-prefix mold — so a door label naming no leaf reddens here too.
+    /// The ⊆ is one-directional by design: `jigc setup` commits on the user's behalf and
+    /// carries **no** rejection identity (its install commit passes `--no-verify`), so the
+    /// superset is strictly larger and
+    /// [`jigc_setup_commits_on_behalf_and_states_its_unborn_exemption`] names it.
+    #[test]
+    fn every_committing_door_acts_on_the_users_behalf() {
+        for door in crate::invocation_log::COMMITTING_DOORS {
+            let label = door.verb;
+            let tokens: Vec<&str> = label
+                .split(" (")
+                .next()
+                .expect("a split always yields a first part")
+                .split_whitespace()
+                .collect();
+            let (leading, path) = tokens.split_first().expect("a door label is not empty");
+            assert_eq!(
+                *leading, "jigc",
+                "the COMMITTING_DOORS label `{label}` must name the binary it is typed after",
+            );
+            let leaf = VERB_KINDS
+                .iter()
+                .map(|(leaf, _)| *leaf)
+                .filter(|leaf| path.len() >= leaf.len() && path[..leaf.len()] == **leaf)
+                .max_by_key(|leaf| leaf.len())
+                .unwrap_or_else(|| panic!("`{label}` reaches no VERB_KINDS leaf"));
+            let row = BEHALF_DOORS
+                .iter()
+                .find(|row| row.door.iter().eq(leaf.iter()))
+                .unwrap_or_else(|| {
+                    panic!(
+                        "`{label}` reaches `jigc {}`, which carries no BEHALF_DOORS row",
+                        leaf.join(" "),
+                    )
+                });
+            assert!(
+                matches!(row.acts, ActsOnBehalf::CommitsOnBehalf { .. }),
+                "`{label}` runs a hook-capable commit on the user's behalf, so `jigc {}` \
+                 must be classified CommitsOnBehalf — COMMITTING_DOORS ⊆ commit-on-behalf",
+                leaf.join(" "),
+            );
+        }
+    }
+
+    /// **`jigc setup` commits on the user's behalf, and states its one exemption** —
+    /// asserted **by name**, because `setup` is the one member of the class no
+    /// `COMMITTING_DOORS` row supplies (its install commit passes `--no-verify`, so there
+    /// is no hook rejection to carry an identity) and a ⊆ assertion cannot see a member
+    /// its subset never names.
+    ///
+    /// The exemption is checked as a **value**: the member it names, and a reason that
+    /// quotes the M30 audit rationale. An exemption is how a door states that a hole in a
+    /// family is a decision; a silent hole is what this increment exists to remove.
+    #[test]
+    fn jigc_setup_commits_on_behalf_and_states_its_unborn_exemption() {
+        let row = BEHALF_DOORS
+            .iter()
+            .find(|row| row.door.iter().eq(["setup"].iter()))
+            .expect("`jigc setup` must carry a BEHALF_DOORS row");
+        let ActsOnBehalf::CommitsOnBehalf { exempt, .. } = &row.acts else {
+            panic!(
+                "`jigc setup` lands `chore(jigc): install jigc workspace config` on the \
+                 user's behalf — it must be classified CommitsOnBehalf",
+            );
+        };
+        let exemptions: Vec<PostureMember> = exempt.iter().map(|row| row.member).collect();
+        assert_eq!(
+            exemptions,
+            vec![PostureMember::HeadUnborn],
+            "`jigc setup` is exempt from the unborn member and from nothing else",
+        );
+        assert_eq!(
+            exempt[0].reason, SETUP_UNBORN_EXEMPTION,
+            "the exemption's reason is the quoted M30 audit rationale",
+        );
+        assert!(
+            SETUP_UNBORN_EXEMPTION.contains("M30 audit finding 1"),
+            "the reason quotes `commit_install`'s rationale rather than paraphrasing it",
         );
     }
 
