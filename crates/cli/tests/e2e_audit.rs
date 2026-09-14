@@ -258,21 +258,42 @@ fn scenario_1_setup_is_idempotent() {
 
 /// The profile deny-floor patterns, parsed from the shipped adapter profile so the
 /// e2e assertion tracks the source of truth (the shipped `claude-code.yaml`), not a
-/// hand-copied list that could drift from what `jigc setup` actually merges.
+/// hand-copied list that could drift from what `jigc setup` actually merges. What the
+/// floor *is* — as opposed to what the profile happens to say today — is
+/// [`DENY_FLOOR`], and `scenario_1c` holds this scrape to it.
+///
+/// A **blank line or a comment indented into the block** is part of the block, not its
+/// end: the M50 entries sit below an explanatory comment, and stopping there read 20 of
+/// 22 entries, so the two human-owned destroying doors were invisible to every
+/// assertion in this suite (M51 Increment 1, EC-7).
 fn floor_patterns() -> Vec<String> {
     let yaml = include_str!("../adapters/claude-code.yaml");
     let mut out = Vec::new();
     let mut in_deny = false;
+    let mut entry_indent: Option<usize> = None;
     for line in yaml.lines() {
         if line.trim_start().starts_with("deny:") {
             in_deny = true;
             continue;
         }
-        if in_deny {
-            match line.trim_start().strip_prefix("- ") {
-                Some(entry) => out.push(entry.trim().trim_matches('"').to_string()),
-                None => break, // end of the indented deny list block
+        if !in_deny {
+            continue;
+        }
+        let trimmed = line.trim_start();
+        let indent = line.len() - trimmed.len();
+        // Blank line, or a comment indented at least as deep as the entries: inside the
+        // block. A comment OUTSIDE it (a following top-level section's) is not skipped.
+        if trimmed.is_empty()
+            || (trimmed.starts_with('#') && entry_indent.is_none_or(|e| indent >= e))
+        {
+            continue;
+        }
+        match trimmed.strip_prefix("- ") {
+            Some(entry) => {
+                entry_indent.get_or_insert(indent);
+                out.push(entry.trim().trim_matches('"').to_string());
             }
+            None => break, // end of the indented deny list block
         }
     }
     assert!(
@@ -330,6 +351,63 @@ fn scenario_1b_deny_floor_merges_never_clobbers() {
     assert_eq!(
         settings, settings2,
         "settings.json must be byte-identical after a re-run (deny merge is idempotent)"
+    );
+}
+
+/// The `deny` safety floor, written out as **literals** — the second statement of the
+/// same fact, and the one that makes a dropped entry redden. [`floor_patterns`] and
+/// `scenario_1b`'s loop both read the shipped profile, so an entry deleted from
+/// `adapters/claude-code.yaml` simply shrinks the assertion set with it: before this
+/// list, the one test whose stated job is the deny floor could not fail over a floor
+/// that had lost a pattern (M51 Increment 1, EC-7/G-43 — *extend the test asserting
+/// literals against the loaded profile, never mint a production const*, which is why
+/// this list lives in the test and not in `src/`).
+const DENY_FLOOR: [&str; 22] = [
+    "Bash(rm -rf:*)",
+    "Bash(curl:*)",
+    "Bash(wget:*)",
+    "Bash(git push --force:*)",
+    "Read(./.env)",
+    "Bash(cat ./.env:*)",
+    "Read(./.env.*)",
+    "Bash(cat ./.env.*:*)",
+    "Read(./**/*.pem)",
+    "Bash(cat ./**/*.pem:*)",
+    "Read(./**/*.key)",
+    "Bash(cat ./**/*.key:*)",
+    "Read(./**/id_rsa*)",
+    "Bash(cat ./**/id_rsa*:*)",
+    "Read(./**/id_ed25519*)",
+    "Bash(cat ./**/id_ed25519*:*)",
+    "Read(./**/credentials)",
+    "Bash(cat ./**/credentials:*)",
+    "Read(./**/.npmrc)",
+    "Bash(cat ./**/.npmrc:*)",
+    // The two M50 human-owned destroying doors. Asserted here because they sit BELOW
+    // the profile's explanatory comment, which is exactly where the pre-M51 scraper
+    // stopped reading.
+    "Bash(jigc uninstall:*)",
+    "Bash(jigc milestone discard:*)",
+];
+
+/// The floor `scenario_1b` merges is the WHOLE floor: the literals above match the
+/// profile as the binary **loads** it, and the scraper `scenario_1b` iterates sees
+/// every entry the loader does — including the two below the profile's comment.
+/// A pattern dropped from `adapters/claude-code.yaml` fails here (the literals are an
+/// independent source); a pattern added without being affirmed fails here too.
+#[test]
+fn scenario_1c_the_deny_floor_is_the_whole_floor() {
+    let profile = cli::adapter::load_profile("claude-code").expect("the shipped profile loads");
+    assert_eq!(
+        profile.allowlist.deny, DENY_FLOOR,
+        "the loaded profile's deny floor must be exactly the floor this suite asserts; \
+         a deliberate change to the floor is affirmed by editing `DENY_FLOOR`"
+    );
+    assert_eq!(
+        floor_patterns(),
+        DENY_FLOOR,
+        "`floor_patterns()` must see every entry the loader does — a comment inside the \
+         `deny:` block is part of the block, not its end"
     );
 }
 
