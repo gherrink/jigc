@@ -27,6 +27,7 @@
 
 use cli::render::finding_error;
 use cli::repo::{InProgress, PostureBreach, PostureMember, posture};
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 /// A throwaway git repository that removes itself on drop (the project's no-tempfile
@@ -394,5 +395,173 @@ fn the_git_dir_redirect_is_declared_out_of_this_probe() {
     assert_eq!(
         members(&posture(elsewhere.path())),
         vec![PostureMember::HeadDetached],
+    );
+}
+
+// ───────── the finding inventory registers exactly this increment's codes ─────────
+
+/// The design doc that owns the finding inventory — `validation.md`'s **Severity inventory**
+/// is the one home a check's severity class, its intrinsic-or-tunable classification and its
+/// keyed-or-unkeyed status are stated in, and Increment 1's sibling section directly above is
+/// this wave's own precedent for registering mints that key no check id.
+const INVENTORY_DOC: &str = "design/validation.md";
+
+/// The section heading this increment's registration table sits under, verbatim.
+///
+/// **Keyed per increment, deliberately** — the same reason Increment 1's arm states: each
+/// increment's arm asserts **equality** over its own mints, so one shared M51 section would
+/// redden every such arm the moment a sibling increment registered its codes.
+const INVENTORY_HEADING: &str =
+    "### The M51 registrations — Increment 2: the repository-posture family";
+
+/// **The three codes Increment 2 mints**, spelled here and deliberately **not** imported
+/// from [`PostureMember::code`] — the `design/structural-grammar.md` literal-equality
+/// precedent (`crates/cli/tests/malformed_work_unit_id.rs` →
+/// `the_design_doc_states_the_shipped_grammar_verbatim`), where a test that derived both
+/// sides from the same expression would pass over a renamed code and a stale doc alike.
+///
+/// The chain that makes this a fence rather than a spell-check has three links, and the arm
+/// below asserts all three:
+///
+/// 1. **doc == these literals**, scraped from the registration table's first column and
+///    compared as a **set** — a fourth row, a missing row or a re-spelled code reddens,
+///    where `contains` alone would pass a table registering a code the binary never emits;
+/// 2. **these literals == what the binary emits** — set equality against
+///    [`PostureMember::ALL`], the family's defining case-set, mapped through the shipped
+///    [`PostureMember::code`]. Equality in *both* directions, so a fourth member minted in
+///    production with no inventory row reddens here as loudly as a doc row with nothing
+///    behind it. On the wire, every row above drives these three codes through
+///    `cli::render::finding_error`, and `posture_door_axis.rs` drives them through the real
+///    binary at every door that commits or moves;
+/// 3. **none of them is an [`cli::invocation_log::ERROR_CODE_REGISTRY`] member**
+///    (`completions/artifacts/M51/settle-record.md` → §10). That registry mirrors **door
+///    identities** derived from `COMMITTING_DOORS`, and a blocking `Finding` is not an
+///    `Outcome` identity; registering one there would file a finding in a set whose own
+///    fence is the doc mirror of something else.
+const INCREMENT_CODES: [&str; 3] = [
+    "repo.head-detached",
+    "repo.head-unborn",
+    "repo.operation-in-progress",
+];
+
+/// The repository root, two levels above `crates/cli`.
+fn repo_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("the repo root sits two levels above crates/cli")
+        .to_path_buf()
+}
+
+/// The block of [`INVENTORY_DOC`] under [`INVENTORY_HEADING`], up to the next heading of the
+/// same or a higher level — the section, never the rest of the file.
+fn registration_section(doc: &str) -> &str {
+    let start = doc.find(INVENTORY_HEADING).unwrap_or_else(|| {
+        panic!(
+            "{INVENTORY_DOC} must carry the section `{INVENTORY_HEADING}` — this increment \
+             mints three blocking findings, and `validation.md`'s Severity inventory is the \
+             home the wave's Settle named for registering them (settle-record.md → §10)",
+        )
+    });
+    let body = &doc[start + INVENTORY_HEADING.len()..];
+    let end = body
+        .match_indices('\n')
+        .map(|(at, _)| at + 1)
+        .find(|at| body[*at..].starts_with("## ") || body[*at..].starts_with("### "))
+        .unwrap_or(body.len());
+    &body[..end]
+}
+
+/// Every code the registration table's **first column** names, as a set.
+fn registered_codes(section: &str) -> BTreeSet<String> {
+    section
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with('|'))
+        // Drop the header row and the `|---|` separator: neither carries a backticked code.
+        .filter_map(|line| line.trim_start_matches('|').split('|').next())
+        .flat_map(|first_cell| {
+            first_cell
+                .split('`')
+                .skip(1)
+                .step_by(2)
+                .map(str::trim)
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+/// **The inventory names exactly the codes this increment's binary emits, and none of them
+/// joins the door-identity registry** (`settle-record.md` → §10; the roadmap's *Codes it
+/// registers*).
+///
+/// Red at this task's start, and at the section-absent panic rather than the equality: T6
+/// began with `validation.md` carrying no Increment 2 registration at all, so the three codes
+/// T1 had already minted — and T3 had already wired to every committing and moving door —
+/// were named in no inventory. It is the one mechanical check on a task whose deliverable is
+/// otherwise prose: `finalize.md`'s preflight row states a **rule**, and a byte-assert over a
+/// rule's wording would pin editorial phrasing rather than a contract, which is why that
+/// locus is verified by reading against the command stated in `DECISIONS.md` instead (the
+/// bound Increment 1 / T9 recorded, applied again).
+#[test]
+fn the_finding_inventory_registers_exactly_this_increments_codes() {
+    let root = repo_root();
+    let doc = std::fs::read_to_string(root.join(INVENTORY_DOC))
+        .unwrap_or_else(|err| panic!("read {INVENTORY_DOC}: {err}"));
+    let section = registration_section(&doc);
+
+    // 1 — doc == these literals, as a SET.
+    let registered = registered_codes(section);
+    let expected: BTreeSet<String> = INCREMENT_CODES
+        .iter()
+        .map(|code| (*code).to_owned())
+        .collect();
+    assert_eq!(
+        registered, expected,
+        "{INVENTORY_DOC} → `{INVENTORY_HEADING}` must register EXACTLY the codes this \
+         increment mints — one table row per code, the code alone in the first column. A row \
+         for a code the binary never emits is a lie on the inventory that calls itself *the \
+         single source of truth* for what the engine emits; a missing row is the silence §10 \
+         exists to end.\nsection read:\n{section}",
+    );
+
+    // 2 — these literals == what the binary emits, in BOTH directions.
+    let emitted: BTreeSet<String> = PostureMember::ALL
+        .iter()
+        .map(|member| member.code().to_owned())
+        .collect();
+    assert_eq!(
+        expected, emitted,
+        "the literals this arm spells must be exactly the codes `PostureMember::ALL` maps \
+         through `PostureMember::code` — the family's defining case-set is the production \
+         registry here, so a fourth member minted with no inventory row reddens as loudly as \
+         a doc row with nothing behind it",
+    );
+
+    // 3 — and none of them joins the door-identity registry (§10).
+    for code in INCREMENT_CODES {
+        assert!(
+            !cli::invocation_log::ERROR_CODE_REGISTRY.contains(&code),
+            "`{code}` must stay OUT of `ERROR_CODE_REGISTRY`: that registry mirrors door \
+             identities derived from `COMMITTING_DOORS`, and a blocking `Finding` is not an \
+             `Outcome` identity (settle-record.md → §10)",
+        );
+    }
+    assert!(
+        section.contains("ERROR_CODE_REGISTRY"),
+        "…and the section must SAY so — the reason a blocking finding is not a door identity \
+         is the half a reader cannot derive from the table, and §10 decided it once for the \
+         whole family",
+    );
+
+    // …and that these three carry no override, which is the half §3/S3 decided and the half a
+    // reader would otherwise assume from the destroying doors' `--force`.
+    assert!(
+        section.contains("--force"),
+        "…and the section must state that a posture refusal carries NO override, naming \
+         `--force` — a posture is a repository state the user can resolve, so the route names \
+         the git command; leaving it unsaid is how `--force` at `jigc setup` would drift into \
+         carrying two meanings (settle-record.md → Review amendments §3 / S3)",
     );
 }
