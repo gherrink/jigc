@@ -663,6 +663,26 @@ fn write_second_pack(root: &Path) {
     .expect("write memo.yaml");
 }
 
+/// `git add` + `git commit` one repo-relative path — the state a hand-authored project
+/// layer is in when it is part of the repository.
+fn commit_path(root: &Path, relative: &str) {
+    for args in [
+        vec!["add", "--", relative],
+        vec!["commit", "-q", "-m", "the operator's project layer"],
+    ] {
+        let out = Command::new("git")
+            .args(&args)
+            .current_dir(root)
+            .output()
+            .expect("run git");
+        assert!(
+            out.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+}
+
 /// The `packs:` entries of a `packs.yaml`, in file order — the sequence this task must
 /// carry through `jigc setup` untouched. Line-based on purpose: the assertion is about
 /// the emitted bytes, not about a re-parse agreeing with itself.
@@ -713,6 +733,13 @@ fn setup_wires_the_marker_over_a_projects_own_pack_list() {
     let packs_yaml = config_dir.join("packs.yaml");
     let authored = format!("packs:\n  - {}\n  - {}\n", house.display(), other.display());
     fs::write(&packs_yaml, &authored).expect("write the operator's hand-authored packs.yaml");
+    // **Committed, because that is where an operator's own project layer lives** — and
+    // because since M51 Increment 3 `jigc setup` refuses its install commit over an
+    // install path carrying bytes it did not write, and `packs.yaml` is one of the host
+    // files it **merges into** rather than rewrites (`design/validation.md` →
+    // `setup.dirty-install-path`). Leaving it untracked here would make this test's
+    // subject that refusal instead of pack composition.
+    commit_path(repo.path(), ".jigc/config/packs.yaml");
     let authored_entries = packs_entries(&authored);
     assert_eq!(authored_entries.len(), 2, "the fixture declares two packs");
 

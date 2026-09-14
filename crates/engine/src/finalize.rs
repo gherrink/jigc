@@ -915,7 +915,11 @@ fn carried_staged_finding(path: &str, is_deletion: bool, boundary: CarryoverBoun
 ///
 /// **The route names the resolving act first and `--force` second.** `--force` at the first
 /// command an adopter runs is D3's declared reflex-training risk, so the exit that keeps the
-/// work leads and the single consent follows, stated as what it spends.
+/// work leads and the single consent follows, stated as what it spends. It names `-u` on the
+/// stash because a listed path may be one git holds **no** copy of (M51 Increment 3
+/// completion audit — untracked is a subject of this door): a bare `git stash push -- <path>`
+/// there exits 1 with *"did not match any file(s) known to git"*, and a route that does not
+/// run is not a route.
 pub fn setup_dirty_install_finding(dirty: &[String]) -> Finding {
     let paths: BTreeSet<&str> = dirty.iter().map(String::as_str).collect();
     let listing: Vec<String> = paths.iter().map(|path| format!("  `{path}`")).collect();
@@ -931,9 +935,10 @@ pub fn setup_dirty_install_finding(dirty: &[String]) -> Finding {
             listing.join("\n"),
         ),
         Route::human(
-            "commit or stash the work at those path(s), then re-run `jigc setup`; \
-             `jigc setup --force` is the single consent, and it commits those paths into \
-             the install commit as they stand",
+            "commit or stash the work at those path(s) — `git stash -u` where git does \
+             not track them yet — then re-run `jigc setup`; `jigc setup --force` is the \
+             single consent, and it commits those paths into the install commit as they \
+             stand",
         ),
     )
 }

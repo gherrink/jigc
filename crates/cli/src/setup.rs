@@ -1718,26 +1718,43 @@ fn clear_install_footprint(repo_root: &Path) {
 /// empty) whose **index or worktree bytes differ from `HEAD`** — git's own *"dirty
 /// relative to `HEAD`"*, in one query. `None` when git could not answer.
 ///
-/// `--untracked-files=no` makes the untracked exclusion **structural** rather than a
-/// parse-time filter, and it is a **stated green cell with its reason**, not a silent
-/// narrowing: an untracked file at an install path is committed as it was before, because
-/// M30 audit finding 1 gives `setup` the job of making its install footprint *tracked* —
-/// and because it is also what leaves an **unborn `HEAD`** clean by construction (every
-/// pre-existing file there reports `??`), so Increment 2's `SETUP_UNBORN_EXEMPTION` is not
-/// re-closed through the back door. Ignored files are absent for the same structural reason
-/// (no `--ignored`), which agrees with [`git_path_ignored`] dropping them from the pathspec.
+/// **Untracked (`??`) is a difference from `HEAD` and is named** (M51 Increment 3
+/// completion audit): git holds no copy of such a file *at all*, which is the settled
+/// predicate's own words — *any path in `setup`'s pathspec is dirty relative to `HEAD`
+/// before `setup` writes* (`settle-record.md` → Review amendments §1). The `=no` this
+/// query first shipped read M30 audit finding 1 — *`setup` owns making its install
+/// footprint **tracked*** — past its subject: that rationale is about `setup`'s **own**
+/// files, and an adopter's prose at a tracked-capable path is not one of them. Driven, an
+/// untracked `CLAUDE.md` carrying `AWS_SECRET=` rode `chore(jigc): install jigc workspace
+/// config` at exit 0 past the adopter's own preserved `pre-commit` hook, with
+/// `git status --short` then empty — D3's decisive cell on its third dirtiness class.
+/// `=all` rather than git's default collapse, because the default names an untracked
+/// *directory* (`.claude/`) where the pathspec names a file (`.claude/settings.json`), and
+/// a set that cannot spell the subject cannot refuse over it.
+///
+/// **On an unborn `HEAD` the exclusion stays, and now carries its own reason.** There is no
+/// `HEAD` for a pre-existing file to differ from, every file reports `??`, and `setup`
+/// owns minting the repo's first commit with its install footprint (M30 audit finding 1 —
+/// the rationale Increment 2's `SETUP_UNBORN_EXEMPTION` quotes). Asking here would turn the
+/// QUICKSTART on-ramp into a refusal routed at `jigc setup --force`, training the reflex D3
+/// prices as its honest weakness. Keyed on [`is_fresh_repo`], so the exemption is a stated
+/// door rule rather than a side effect of a status flag — and the same answer serves both
+/// legs of the conjunction ([`InstallSubject`]), since nothing between them can mint a
+/// commit.
+///
+/// Ignored files are absent structurally (no `--ignored`), which agrees with
+/// [`git_path_ignored`] dropping them from the pathspec.
 ///
 /// `--no-renames` keeps the `-z` record shape to one field per entry; a rename then reports
 /// as its delete + add halves, both of which are differences from `HEAD` and both of which
 /// this door wants named.
 fn dirty_against_head(repo_root: &Path, pathspec: &[String]) -> Option<BTreeSet<String>> {
-    let mut args: Vec<&str> = vec![
-        "status",
-        "--porcelain",
-        "--untracked-files=no",
-        "--no-renames",
-        "-z",
-    ];
+    let untracked = if is_fresh_repo(repo_root) {
+        "--untracked-files=no"
+    } else {
+        "--untracked-files=all"
+    };
+    let mut args: Vec<&str> = vec!["status", "--porcelain", untracked, "--no-renames", "-z"];
     if !pathspec.is_empty() {
         args.push("--");
         args.extend(pathspec.iter().map(String::as_str));
@@ -1890,7 +1907,14 @@ fn is_git_identity_rejection(git_err: &str) -> bool {
 /// against install artifacts would answer about no managed doc anyway. It can carry the
 /// whole behaviour **only because the dirty-path refusal above closed the cell the struck
 /// half was covering** — after it, this commit carries only bytes `setup` itself wrote, so
-/// there is no user work for a user hook to have policy over. (Distinct from `finalize`'s
+/// there is no user work for a user hook to have policy over. **That sentence is true over
+/// all three dirtiness classes only since the M51 completion audit**: the refusal was asked
+/// with `--untracked-files=no`, so an untracked `CLAUDE.md` carrying the adopter's secret
+/// still rode this commit past their own preserved hook at exit 0, and the datum is kept
+/// here rather than struck because it is what the query's `=all` now buys. **Its two
+/// stated exits, both consented or decided rather than silent:** `--force`, which consents
+/// to committing the paths as they stand, and an **unborn `HEAD`**, where `setup` owns
+/// minting the first commit ([`dirty_against_head`]). (Distinct from `finalize`'s
 /// never-`--no-verify` commit of managed work, where the user's hooks *are* policy — which
 /// is the scope the two shipped guides' universal takes, in Increment 9's batch.)
 fn commit_install(
@@ -2052,6 +2076,29 @@ fn commit_install(
         }
     }
 
+    // **What this run wrote and did NOT commit, recorded rather than cleared** (M51
+    // Increment 3 completion audit). `paths` is the pathspec the commit is made from —
+    // *after* the hook's soft-member drop — while `own` is every path this run established
+    // as its own, so `own \ paths` is exactly what `setup` wrote and left in no commit:
+    // today that is the `pre-commit` hook git refused to stage, installed and left as the
+    // containing repo's file (this function's declared bound). Both exits below used to
+    // clear the record **wholesale**, which told the next run those bytes were the
+    // adopter's — invisible while untracked was excluded from the question, and a refusal
+    // over `setup`'s own hook the moment it was not (driven on the sparse-checkout shape of
+    // `setup::setup_commits_the_pre_commit_hook_iff_it_is_a_working_tree_file`).
+    // [`record_install_footprint`] clears when the set is empty, so the ordinary
+    // everything-committed case is unchanged. Under [`InstallSubject::Consented`] nothing
+    // is recorded, for the reason stated at the sibling call above: `--force` consents to
+    // committing what is there, so the door never established those bytes as its own.
+    let left_uncommitted: Vec<String> = if matches!(subject, InstallSubject::Dirty(_)) {
+        own.iter()
+            .filter(|path| !paths.contains(*path))
+            .cloned()
+            .collect()
+    } else {
+        Vec::new()
+    };
+
     // Nothing staged among our paths (a re-run over an unchanged install) → clean no-op.
     // `git diff --cached --quiet -- <paths>` exits 0 (success) when there is no staged
     // diff for those paths; with no HEAD it diffs against the empty tree, so a first
@@ -2072,9 +2119,9 @@ fn commit_install(
     {
         // A re-run over an unchanged install: no commit this time, but the hook's place in
         // the install commit is the one an earlier run gave it — the pathspec still says
-        // where it stands, which is what the summary reports. Nothing of this door's is
-        // uncommitted, so the record goes.
-        clear_install_footprint(repo_root);
+        // where it stands, which is what the summary reports. Everything in the pathspec is
+        // committed, so the record keeps only what is not in it.
+        record_install_footprint(repo_root, &left_uncommitted);
         return Ok(InstallCommitOutcome {
             commit: InstallCommit::Nothing,
             hook_committed,
@@ -2123,9 +2170,9 @@ fn commit_install(
         // git could not be spawned at all — benign skip (the writes still succeeded).
         None => return Ok(InstallCommitOutcome::uncommitted(InstallCommit::Skipped)),
     }
-    // The footprint is in a commit — nothing of this door's is left uncommitted for a
-    // later run to mistake for the adopter's work.
-    clear_install_footprint(repo_root);
+    // The pathspec is in a commit — so the record keeps exactly what that commit could not
+    // carry, and nothing a later run could mistake for the adopter's work.
+    record_install_footprint(repo_root, &left_uncommitted);
 
     // Resolve the short sha of the commit just made, for the success surface.
     let commit = match git_output(repo_root, ["rev-parse", "--short", "HEAD"]) {

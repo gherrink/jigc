@@ -10,8 +10,9 @@
 //!
 //! **The predicate, stated:** for each path in `setup`'s would-be pathspec, asked
 //! **before the first write** — dirty iff its **index or worktree** bytes differ from
-//! `HEAD`. Mechanically one `git status --porcelain --untracked-files=no` whose answer
-//! is intersected with the pathspec the door actually settles on.
+//! `HEAD`, git holding no copy at all included. Mechanically one `git status --porcelain
+//! --untracked-files=all` (`=no` on an unborn `HEAD`, where the exemption below applies)
+//! whose answer is intersected with the pathspec the door actually settles on.
 //!
 //! **Both axes, not worktree-only.** A pathspec commit takes the **worktree** contents,
 //! which is why `decide_carryover`'s index-vs-HEAD snapshot pair is not this door's
@@ -19,12 +20,16 @@
 //! *committed away* at exit 0 too, and the staged blob then ended up named by no commit
 //! and no index entry. Cell (3) is that loss.
 //!
-//! **Untracked is a stated green cell, not a silent narrowing** (cell 8): an untracked
-//! `CLAUDE.md` carrying the adopter's own prose is committed, as it was before — M30
-//! audit finding 1 gives `setup` the job of making its install footprint *tracked*, and
-//! it is also what makes an unborn `HEAD` clean by construction (every pre-existing file
-//! there reports `??`), so Increment 2's `SETUP_UNBORN_EXEMPTION` is not re-closed
-//! through the back door.
+//! **Untracked is a subject on a born `HEAD`** (cells 8, 17 — the M51 completion audit):
+//! git holds no copy of an untracked file at all, so it is dirty relative to `HEAD` under
+//! the predicate as settled, and `setup` *merges into* `CLAUDE.md`, so the adopter's prose
+//! is still there when the commit is made. The `??` exclusion this suite first shipped
+//! read M30 audit finding 1 — *`setup` owns making its install footprint **tracked*** —
+//! past its subject: that is about `setup`'s own files. **On an unborn `HEAD` it stays a
+//! green cell** (cells 4, 18), where it is the M30 rationale rather than a status flag that
+//! carries it — there is no `HEAD` to be dirty against, and `setup` owns minting the first
+//! commit — so Increment 2's `SETUP_UNBORN_EXEMPTION` is not re-closed through the back
+//! door.
 //!
 //! **What the refusal does NOT stage** (the one place this suite pins a behaviour the
 //! roadmap's *"the eight install paths stay written and staged"* sentence reads past):
@@ -44,7 +49,7 @@
 //! recorded where the pathspec settles and re-verified — bytes **and** index — where the
 //! question is asked, so the exemption can only ever cover bytes `setup` still wrote.
 //!
-//! Sixteen cells, all through the real binary (`CARGO_BIN_EXE_jigc`) over throwaway
+//! Eighteen cells, all through the real binary (`CARGO_BIN_EXE_jigc`) over throwaway
 //! `git init` repos.
 
 use std::fs;
@@ -309,9 +314,10 @@ fn an_index_only_difference_refuses_and_keeps_the_staged_blob() {
     );
 }
 
-/// (4) A **fresh install on an unborn `HEAD`** is clean by construction: every
-/// pre-existing file there reports `??`, so nothing is dirty and the install commit is
-/// minted as the repo's first (Increment 2's `SETUP_UNBORN_EXEMPTION`, untouched).
+/// (4) A **fresh install on an unborn `HEAD`** is clean: there is no `HEAD` for a
+/// pre-existing file to be dirty against, and `setup` owns minting the repo's first commit
+/// with its install footprint (Increment 2's `SETUP_UNBORN_EXEMPTION`, untouched). Cell
+/// (18) is the same claim with the plant at an **install** path.
 #[test]
 fn a_fresh_install_on_an_unborn_head_is_clean() {
     let (repo, home) = unborn_repo("unborn");
@@ -428,26 +434,96 @@ fn an_unrelated_staged_file_is_untouched() {
     );
 }
 
-/// (8) An **untracked** pre-existing install-path file on a born `HEAD` installs — the
-/// stated green cell, with its reason: `setup` owns making its install footprint tracked
-/// (M30 audit finding 1), and `??` exclusion is also what makes cell (4) clean with no
-/// special case.
+/// (8) An **untracked** pre-existing install-path file on a born `HEAD` **refuses** — the
+/// third member of the dirtiness axis, closed with its two siblings below (cells 17, 18).
+/// An untracked file is dirty relative to `HEAD` — git holds no copy of it at all — and
+/// `setup` merges into `CLAUDE.md` rather than rewriting it, so the adopter's bytes are
+/// still there at commit time. The `??` exclusion this cell used to pin was a narrowing of
+/// the settled predicate (`settle-record.md` §1 — *"any path in `setup`'s pathspec is
+/// dirty relative to HEAD before `setup` writes"*) that the M30 rationale does not reach:
+/// *setup owns making its install footprint tracked* is about `setup`'s **own** files, and
+/// an adopter's prose at a tracked-capable path in a born repo is not one of them.
 #[test]
-fn an_untracked_install_path_still_installs() {
+fn an_untracked_install_path_refuses_the_install_commit() {
     let (repo, home) = born_repo("untracked");
     let (repo, home) = (repo.path(), home.path());
     write(repo, "CLAUDE.md", "the adopter's own prose\n");
+    let head_before = git(repo, &["rev-parse", "HEAD"]);
 
+    let out = jigc(repo, home, &["setup"]);
+    let first = said(&out);
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "an untracked install path carries bytes setup did not write: {first}"
+    );
+    assert!(
+        first.contains(DIRTY_CODE) && first.contains("CLAUDE.md"),
+        "the refusal names the code and the path: {first}"
+    );
+    assert_eq!(
+        git(repo, &["rev-parse", "HEAD"]),
+        head_before,
+        "HEAD did not move"
+    );
+    assert!(
+        !git(repo, &["log", "--all", "-p"]).contains("the adopter's own prose"),
+        "the adopter's prose is in no commit"
+    );
+    assert!(
+        read(repo, "CLAUDE.md").contains("the adopter's own prose"),
+        "and is still on disk — the guard binds the commit, not the install"
+    );
+    assert!(
+        !staged(repo).iter().any(|p| p == "CLAUDE.md"),
+        "the path it refuses over is left exactly as it found it"
+    );
+    assert!(
+        staged(repo).iter().any(|p| p == ".jigc/AGENT.md"),
+        "while the install paths it *is* willing to commit are staged"
+    );
+
+    // And the re-run over the unresolved refusal names the adopter's one path, never the
+    // install files this run wrote and staged itself (cell 14's claim on this axis — on a
+    // first run every install file is untracked too, so the footprint exemption is what
+    // keeps the refused set from growing).
+    let out = jigc(repo, home, &["setup"]);
+    let second = said(&out);
+    assert_eq!(out.status.code(), Some(1), "still refused: {second}");
+    assert!(
+        second.contains("1 path(s)") && second.contains("CLAUDE.md"),
+        "the subject is the adopter's one path, as before: {second}"
+    );
+    assert!(
+        !second.contains(".jigc/AGENT.md"),
+        "and never setup's own install files: {second}"
+    );
+
+    // The route, verbatim — and it must *run* on this class: a bare `git stash push --
+    // <path>` exits 1 over a path git holds no copy of, which is why the route names `-u`.
+    let stash = git_try(repo, &["stash", "push", "-u", "-q", "--", "CLAUDE.md"]);
+    assert!(
+        stash.status.success(),
+        "the act the route names runs: {}",
+        String::from_utf8_lossy(&stash.stderr)
+    );
     let out = jigc(repo, home, &["setup"]);
     assert_eq!(
         out.status.code(),
         Some(0),
-        "an untracked install path is a green cell: {}",
+        "and it restores a runnable `jigc setup`: {}",
         said(&out)
     );
     assert!(
-        git(repo, &["show", "HEAD:CLAUDE.md"]).contains("the adopter's own prose"),
-        "and it is committed — setup owns making its install footprint tracked"
+        git(repo, &["show", "--name-only", "--format=", "HEAD"])
+            .lines()
+            .any(|p| p == ".jigc/AGENT.md"),
+        "the install commit landed"
+    );
+    assert!(
+        git(repo, &["show", "stash@{0}^3:CLAUDE.md"]).contains("the adopter's own prose"),
+        "and the adopter's stashed prose is still theirs to pop (`^3` — the untracked \
+         commit a `-u` stash carries)"
     );
 }
 
@@ -615,8 +691,9 @@ fn a_regenerated_artifact_is_exempt_and_a_preserved_one_is_not() {
 }
 
 /// (13) **The emitted route, followed verbatim, restores a runnable `jigc setup`.** The
-/// refusal names `commit or stash the work at those path(s), then re-run` — so the re-run
-/// after exactly that act must land the install commit. Until M51's fix it did not: the
+/// refusal names `commit or stash the work at those path(s) … then re-run` — so the re-run
+/// after exactly that act must land the install commit. (Cell 8 drives the same route on
+/// the untracked leg, where the act is the `-u` spelling the route names.) Until M51's fix it did not: the
 /// refusal's own `git add` of the install paths it *was* willing to commit left seven
 /// index entries that the next run's pre-write probe read as the adopter's work, so the
 /// door refused over its own install files, forever, and the only exits were `--force`
@@ -776,5 +853,85 @@ fn the_install_commit_rejections_route_also_lands_on_the_rerun() {
     assert!(
         committed.lines().any(|p| p == ".jigc/AGENT.md"),
         "the install footprint is in the commit: {committed}"
+    );
+}
+
+/// (17) **The rejecting-hook cell on the untracked leg** — cell (10)'s sibling, and the
+/// M51 completion audit's verbatim repro. `setup` preserves the adopter's `pre-commit`
+/// hook and then commits with `--no-verify`, so an untracked `CLAUDE.md` carrying a secret
+/// rode `chore(jigc): install jigc workspace config` at exit 0, past the very hook written
+/// to refuse it, with `git status --short` then empty — the deliverable sentence word for
+/// word, on the one dirtiness class cell (10) did not reach. It also restores the source's
+/// stated basis for keeping `--no-verify`: after the refusal, this commit carries only
+/// bytes `setup` itself wrote.
+#[test]
+fn a_rejecting_hook_no_longer_has_an_untracked_secret_swept_past_it() {
+    let (repo, home) = born_repo("hook-untracked");
+    let (repo, home) = (repo.path(), home.path());
+    // The adopter's own policy hook, present before jigc.
+    write(
+        repo,
+        ".git/hooks/pre-commit",
+        "#!/bin/sh\nif git diff --cached | grep -q AWS_SECRET; then\n  echo 'POLICY: no secrets'\n  exit 1\nfi\nexit 0\n",
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let hook = repo.join(".git/hooks/pre-commit");
+        let mut perms = fs::metadata(&hook).expect("hook metadata").permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&hook, perms).expect("chmod hook");
+    }
+    // Never committed, never staged — git holds no copy of these bytes anywhere.
+    write(repo, "CLAUDE.md", "# my rules\nAWS_SECRET=hunter2\n");
+    let head_before = git(repo, &["rev-parse", "HEAD"]);
+
+    let out = jigc(repo, home, &["setup"]);
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "the untracked secret's path is dirty, so the install commit refuses: {}",
+        said(&out)
+    );
+    assert!(said(&out).contains(DIRTY_CODE));
+    assert_eq!(
+        git(repo, &["rev-parse", "HEAD"]),
+        head_before,
+        "HEAD did not move"
+    );
+    assert!(
+        !git(repo, &["log", "--all", "-p"]).contains("AWS_SECRET"),
+        "the adopter's secret is in no commit — the `--no-verify` install commit can no \
+         longer sweep past the hook that would have refused it, on this leg either"
+    );
+    assert!(
+        !git(repo, &["status", "--short"]).is_empty(),
+        "and the tree does not come back empty, so the state prompts recovery"
+    );
+}
+
+/// (18) **The unborn-`HEAD` exemption survives the untracked leg** — the sibling cell (8)
+/// must not close by the back door. On an unborn `HEAD` there is no `HEAD` to be dirty
+/// against and *every* pre-existing file is untracked, so refusing there would turn the
+/// QUICKSTART on-ramp into a refusal: `setup` owns minting the repo's first commit with
+/// its install footprint (M30 audit finding 1), which is Increment 2's
+/// `SETUP_UNBORN_EXEMPTION` reading, and cell (4)'s green stays green with an
+/// **install-path** plant rather than an unrelated one.
+#[test]
+fn an_untracked_install_path_on_an_unborn_head_is_the_stated_exemption() {
+    let (repo, home) = unborn_repo("unborn-untracked");
+    let (repo, home) = (repo.path(), home.path());
+    write(repo, "CLAUDE.md", "the adopter's own prose\n");
+
+    let out = jigc(repo, home, &["setup"]);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "an untracked install path on an unborn HEAD is the stated exemption: {}",
+        said(&out)
+    );
+    assert!(
+        git(repo, &["show", "HEAD:CLAUDE.md"]).contains("the adopter's own prose"),
+        "setup minted the first commit with its install footprint, as M30 decided"
     );
 }
