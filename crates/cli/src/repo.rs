@@ -13,7 +13,48 @@
 //! `.git` as a *directory*, and for both the answer is the `.git`-bearing dir itself —
 //! resolved by walk-up, never by shelling out (so a fake `.git` can never walk up to,
 //! and bind against, a real ancestor repo).
+//!
+//! # The repository-posture family (M51 Increment 2)
+//!
+//! [`posture`] answers one question — *is this repository in a state a door may commit
+//! or move in?* — over **three** members: **HEAD detached** · **HEAD unborn** · **an
+//! operation in progress** (`MERGE_HEAD` · `rebase-merge`/`rebase-apply` · `BISECT_LOG`).
+//! [`finalize.md`](../../../design/finalize.md) → 1. Preflight has promised the third
+//! verbatim since it was written (*"No in-progress merge/rebase/bisect"*) while **zero**
+//! probes existed in either crate, and the M51 baseline drove the first two as live damage
+//! at exit 0 (a branchless commit no branch contains; git's **empty tree** pinned into a
+//! committed milestone record). The probe is the family's one home so the doors that read
+//! it cannot each hand-enumerate a different three.
+//!
+//! **A probe that cannot answer reads as NO breach** — a `git` that cannot be spawned, a
+//! path that is not a work tree, any exit code outside the two a discriminator names. The
+//! shipped precedents are [`crate::task::nothing_staged`] (a git that cannot be spawned
+//! reads as `false`) and `setup`'s `commit_install` (skip only when there is no git work
+//! tree). Fail-*closed* would turn every fake-`.git` unit fixture in this crate into a
+//! refusal, which is a test-harness fact deciding a user-facing verdict.
+//!
+//! **Declared bound — the `GIT_DIR` redirect is OUT, and this is the row that says so.**
+//! A `GIT_DIR` exported by the user redirects git's answer to a *different repository*,
+//! and the M51 baseline drove a committing door writing its record into repo A while
+//! landing the commit in repo B at exit 0. This probe does not adjudicate that: its
+//! subject is the path it is handed, and it passes the ambient environment through
+//! untouched. The header above is **quoted** rather than paraphrased because it is the
+//! reason this module resolves by walk-up, and it is a statement about **jigc_home
+//! binding**, never a prohibition on a posture probe shelling out:
+//!
+//! > A main checkout and a fake `create_dir_all(".git")` fixture both keep `.git` as a
+//! > *directory*, and for both the answer is the `.git`-bearing dir itself — resolved by
+//! > walk-up, never by shelling out (so a fake `.git` can never walk up to, and bind
+//! > against, a real ancestor repo).
+//!
+//! The standing rule for a probe's own shell-out is `DECISIONS.md` 2026-05-31 → Git
+//! invocation, which [`crate::task::head_is_unborn`] and every other probe already follow.
+//! **The scope is reopenable**, recorded as such: `dirname(git-common-dir) != toplevel` is
+//! **not** a discriminator for the redirect — a legitimate linked worktree has the
+//! identical asymmetry — so closing the cell needs a repository-**identity** check the
+//! fixtures above can survive, and it reopens the moment one exists.
 
+use engine::finding::{Finding, Route};
 use std::path::{Path, PathBuf};
 
 /// Resolve **jigc_home** — the dir `.jigc/` state and the committed doc-store bind to.
@@ -62,6 +103,267 @@ fn git_common_dir_parent(repo_root: &Path) -> Option<PathBuf> {
         return None;
     }
     Path::new(&common).parent().map(PathBuf::from)
+}
+
+/// One member of the **repository-posture family** — the three states a door that commits
+/// or moves on the user's behalf must adjudicate before it acts
+/// ([finalize.md](../../../design/finalize.md) → 1. Preflight; `DECISIONS.md` 2026-09-14
+/// → M51 Increment 2).
+///
+/// The variants are a **set, not a list**: [`PostureMember::ALL`] is the family's
+/// defining case-set, so a fourth member cannot be added without every consumer's
+/// exhaustive match answering it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PostureMember {
+    /// HEAD points at a commit rather than a branch: a commit made here belongs to no
+    /// branch, and the next checkout loses it.
+    HeadDetached,
+    /// A real repository with no commits yet. Driven at the M51 baseline: the milestone
+    /// doors pin git's **empty tree** as a base that `git worktree add` cannot take.
+    HeadUnborn,
+    /// A merge, rebase or bisect the user started and has not concluded — the member
+    /// `design/finalize.md` → 1. Preflight has promised verbatim with no probe behind it.
+    OperationInProgress,
+}
+
+impl PostureMember {
+    /// The family's defining case-set, in probe order.
+    pub const ALL: [PostureMember; 3] = [
+        PostureMember::HeadDetached,
+        PostureMember::HeadUnborn,
+        PostureMember::OperationInProgress,
+    ];
+
+    /// This member's blocking finding code — the identity a log reader keys on
+    /// (`design/validation.md` → the `repo.*` rows). None of the three joins
+    /// `ERROR_CODE_REGISTRY`: that registry mirrors **door** identities derived from
+    /// `COMMITTING_DOORS`, and a blocking `Finding` is not an `Outcome` identity.
+    pub fn code(self) -> &'static str {
+        match self {
+            PostureMember::HeadDetached => "repo.head-detached",
+            PostureMember::HeadUnborn => "repo.head-unborn",
+            PostureMember::OperationInProgress => "repo.operation-in-progress",
+        }
+    }
+}
+
+/// The git operation an [`PostureMember::OperationInProgress`] breach names — carried on
+/// the breach so the route can name **the command that concludes this operation**, never a
+/// menu of three.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InProgress {
+    /// `MERGE_HEAD` is present.
+    Merge,
+    /// `rebase-merge/` (the merge backend) or `rebase-apply/` (the am backend) is present.
+    Rebase,
+    /// `BISECT_LOG` is present.
+    Bisect,
+}
+
+impl InProgress {
+    /// Every operation, in probe order.
+    pub const ALL: [InProgress; 3] = [InProgress::Merge, InProgress::Rebase, InProgress::Bisect];
+
+    /// The entries in the **worktree's own** git dir whose presence *is* this operation.
+    fn markers(self) -> &'static [&'static str] {
+        match self {
+            InProgress::Merge => &["MERGE_HEAD"],
+            InProgress::Rebase => &["rebase-merge", "rebase-apply"],
+            InProgress::Bisect => &["BISECT_LOG"],
+        }
+    }
+
+    /// How the message names it.
+    fn noun(self) -> &'static str {
+        match self {
+            InProgress::Merge => "a merge",
+            InProgress::Rebase => "a rebase",
+            InProgress::Bisect => "a bisect",
+        }
+    }
+
+    /// The git command that resolves it — the route's load-bearing bytes.
+    fn abort_command(self) -> &'static str {
+        match self {
+            InProgress::Merge => "git merge --abort",
+            InProgress::Rebase => "git rebase --abort",
+            InProgress::Bisect => "git bisect reset",
+        }
+    }
+}
+
+/// One breach of the posture family: the member, plus the concrete operation when the
+/// member is [`PostureMember::OperationInProgress`].
+///
+/// Constructed only by [`posture`], so a breach in hand is a breach that was **probed**,
+/// never one a caller asserted.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PostureBreach {
+    member: PostureMember,
+    operation: Option<InProgress>,
+}
+
+impl PostureBreach {
+    /// Which member of the family this breach is — the handle the two door classes filter
+    /// on (a mover refuses only [`PostureMember::OperationInProgress`]).
+    pub fn member(&self) -> PostureMember {
+        self.member
+    }
+
+    /// The git operation in progress, when that is the member; `None` otherwise.
+    pub fn operation(&self) -> Option<InProgress> {
+        self.operation
+    }
+
+    /// The blocking [`Finding`] this breach refuses with — §10's mold: a code, a
+    /// [`Route::human`] naming **the git command that resolves the state**, and no
+    /// override. A posture is a repository state the user can resolve, not bytes only
+    /// they can value, so the family carries no consent flag.
+    pub fn finding(&self) -> Finding {
+        let (message, route) = match (self.member, self.operation) {
+            (PostureMember::HeadDetached, _) => (
+                "HEAD is detached — a commit made here would belong to no branch, and the \
+                 next checkout would leave it unreachable"
+                    .to_string(),
+                "re-attach HEAD with `git switch <branch>`, then re-run this command".to_string(),
+            ),
+            (PostureMember::HeadUnborn, _) => (
+                "HEAD is unborn — this repository has no commits yet, so there is no base \
+                 for jigc to commit against"
+                    .to_string(),
+                "land the repository's first commit with `git commit`, then re-run this \
+                 command"
+                    .to_string(),
+            ),
+            (PostureMember::OperationInProgress, operation) => {
+                // `posture` never builds this member without an operation; the fallback
+                // keeps the renderer total rather than panicking on a shape it owns.
+                let operation = operation.unwrap_or(InProgress::Merge);
+                (
+                    format!(
+                        "{} is in progress — the repository is not in a committable state",
+                        operation.noun()
+                    ),
+                    format!(
+                        "conclude it, or abandon it with `{}`, then re-run this command",
+                        operation.abort_command()
+                    ),
+                )
+            }
+        };
+        Finding::block(self.member.code(), message, Route::human(route))
+    }
+}
+
+/// Probe `repo_root` for the repository-posture family — the breaches, in
+/// [`PostureMember::ALL`] order, one per [`InProgress`] operation actually found.
+///
+/// Empty means **committable posture or unanswerable**: see the module header for why a
+/// probe that cannot answer reads as no breach, and for the `GIT_DIR` bound this probe
+/// declares out.
+///
+/// **The probe answers about the repository it was handed, or not at all.** It resolves
+/// `repo_root`'s own git dir first ([`worktree_git_dir`]) and asks nothing when that
+/// resolution fails or lands on a directory with no `HEAD` — because git's own walk-up
+/// would then answer about a **real ancestor repository**, which is the module header's
+/// binding hazard reappearing as a *verdict* rather than as a path. That is also what
+/// keeps the crate's fake-`create_dir_all(".git")` fixtures answering nothing instead of
+/// inheriting the posture of whatever repository encloses them.
+pub fn posture(repo_root: &Path) -> Vec<PostureBreach> {
+    let mut breaches = Vec::new();
+    let Some(git_dir) = worktree_git_dir(repo_root) else {
+        return breaches;
+    };
+    if !git_dir.join("HEAD").exists() {
+        return breaches;
+    }
+    if head_is_detached(repo_root) == Some(true) {
+        breaches.push(PostureBreach {
+            member: PostureMember::HeadDetached,
+            operation: None,
+        });
+    }
+    // An unborn HEAD is a *symbolic* ref to a branch that does not exist yet, so it is
+    // never also detached — the two members are disjoint by construction, not by ordering.
+    if crate::task::head_is_unborn(repo_root).unwrap_or(false) {
+        breaches.push(PostureBreach {
+            member: PostureMember::HeadUnborn,
+            operation: None,
+        });
+    }
+    for operation in operations_in_progress(&git_dir) {
+        breaches.push(PostureBreach {
+            member: PostureMember::OperationInProgress,
+            operation: Some(operation),
+        });
+    }
+    breaches
+}
+
+/// `Some(true)` when HEAD points at a commit rather than a branch, `Some(false)` when it
+/// is attached, **`None` when the probe cannot answer**.
+///
+/// `git symbolic-ref -q HEAD` exits **0** for an attached HEAD (an *unborn* one included —
+/// its ref simply does not resolve yet) and **1** for a detached one; a missing work tree
+/// or a broken git answers 128, and a git that cannot be spawned answers nothing at all.
+/// The discriminator is [`crate::task::head_is_unborn`]'s, kept shape-for-shape: only the
+/// two codes that *are* answers are read as answers.
+fn head_is_detached(repo_root: &Path) -> Option<bool> {
+    let out = std::process::Command::new("git")
+        .args(["symbolic-ref", "-q", "HEAD"])
+        .current_dir(repo_root)
+        .output()
+        .ok()?;
+    match out.status.code() {
+        Some(0) => Some(false),
+        Some(1) => Some(true),
+        _ => None,
+    }
+}
+
+/// The operations git has left un-concluded in **this worktree**, in [`InProgress::ALL`]
+/// order, read from the worktree's own `git_dir` — empty when none is in progress.
+fn operations_in_progress(git_dir: &Path) -> Vec<InProgress> {
+    InProgress::ALL
+        .into_iter()
+        .filter(|operation| {
+            operation
+                .markers()
+                .iter()
+                .any(|marker| git_dir.join(marker).exists())
+        })
+        .collect()
+}
+
+/// The **per-worktree** git dir of `repo_root` — where `MERGE_HEAD`, `rebase-merge` /
+/// `rebase-apply` and `BISECT_LOG` live for *this* checkout, so a linked worktree answers
+/// about itself and never about its main checkout (driven: a merge started in a linked
+/// worktree leaves `MERGE_HEAD` in `.git/worktrees/<name>/`, and the main `.git` has none).
+///
+/// Resolved from the `.git` entry itself rather than by shelling out — the module header's
+/// walk-up property, kept: an empty fake `.git` directory resolves to itself, and
+/// [`posture`] then finds no `HEAD` there and asks nothing, where a shell-out would walk
+/// up and answer about a real ancestor repository.
+fn worktree_git_dir(repo_root: &Path) -> Option<PathBuf> {
+    let dot_git = repo_root.join(".git");
+    if dot_git.is_dir() {
+        return Some(dot_git);
+    }
+    // A linked worktree keeps `.git` as a FILE holding `gitdir: <path>`.
+    let pointer = std::fs::read_to_string(&dot_git).ok()?;
+    let target = pointer
+        .lines()
+        .find_map(|line| line.strip_prefix("gitdir:"))?
+        .trim();
+    if target.is_empty() {
+        return None;
+    }
+    let target = Path::new(target);
+    Some(if target.is_absolute() {
+        target.to_path_buf()
+    } else {
+        repo_root.join(target)
+    })
 }
 
 #[cfg(test)]

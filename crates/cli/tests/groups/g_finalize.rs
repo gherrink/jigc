@@ -67,6 +67,8 @@ mod pre_guard_repair_route;
 mod reconciliation_baseline_contrast;
 #[path = "../ref_edge_guidance.rs"]
 mod ref_edge_guidance;
+#[path = "../repo_posture.rs"]
+mod repo_posture;
 #[path = "../severity_tuning.rs"]
 mod severity_tuning;
 #[path = "../store_version_stamp.rs"]
