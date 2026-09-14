@@ -563,6 +563,95 @@ fn a_glob_named_source_is_refused_before_git_answers_about_other_peoples_files()
     );
 }
 
+/// **The colon half, over every trackedness state git can hold a source in** — the axis the
+/// falsified premise hid, and the reason this is an arm of its own rather than a second
+/// spelling of the glob's.
+///
+/// The magic leg shipped as a **sink**-local `starts_with(':')`, on the stated ground that at
+/// the door such a token *"is already refused, for the unrelated reason that it names no
+/// readable file"*. That is a claim about the one token the axis suite planted
+/// (`:(top)README.md`), not about the rule: `:colon.md` is a perfectly readable name, and the
+/// damage it did **differed by trackedness state**, which is why the axis is the state and
+/// not the spelling. Driven on the pre-fix binary:
+///
+/// ```text
+/// # STAGED — the door lies about the index, and its route exits 128
+/// git add -- './:colon.md'            -> `A  :colon.md`
+/// jigc migrate ':colon.md' --as changelog
+///   blocking · migrate.source-untracked — `:colon.md` is in neither this repository's
+///     index nor its HEAD …
+///     route: stage it with `git add -- :colon.md` …
+///   exit=1
+/// git ls-files --stage -- './:colon.md' -> 100644 fc707db… 0   :colon.md   # it IS in the index
+/// git add -- :colon.md                  -> fatal: pathspec ':colon.md' did not match …  rc=128
+///
+/// # COMMITTED — the door ADMITS, and the refusal arrives one whole authoring later
+/// jigc migrate ':colon.md' --as changelog   -> task minted: migrate-changelog-…   exit=0
+/// jigc doc author changelog --from-file - --task <id> ; jigc task finalize <id> --approve
+///   blocking · finalize.retire-untrackable — … begins with `:` …
+///   exit=1
+/// ```
+///
+/// — a law-1 lie (`design/surface-contract.md`, *nothing lies*) whose blocking finding names a
+/// recovery the shell refuses, and, one state over, a door that admits a source only to dead-end
+/// at the sink after the whole authoring is done. The fix is the same one the glob arm buys —
+/// the class asked once, at the door, in [`crate::trackable::resolve_source_token`] — so this
+/// arm exists to hold it over the states, and asserts the *negative* halves the premise
+/// produced: the trackedness code must **not** answer, and the route must not name a `git add`
+/// of a token `git add` cannot take.
+#[test]
+fn a_colon_named_source_is_refused_in_every_trackedness_state_git_can_hold_it_in() {
+    /// The states a source can be in at the door — untracked, in the index only, in `HEAD`.
+    /// The whole point of the arm: the pre-fix damage was a different shape in each.
+    const STATES: [&str; 3] = ["untracked", "staged", "committed"];
+
+    for state in STATES {
+        let corpus = TrialCorpus::build(State::Fresh);
+        let repo = corpus.repo();
+        fs::write(repo.join(":colon.md"), FOREIGN).expect("plant the colon-named source");
+        // `./:colon.md` is how a shell names this file to git at all — the leading `:` is
+        // exactly what git will not read as a name, which is the defect stated as a fixture.
+        if state != "untracked" {
+            corpus.git(&["add", "--", "./:colon.md"]);
+        }
+        if state == "committed" {
+            corpus.git(&["commit", "-q", "-m", "a colon-named source"]);
+        }
+
+        let what = format!("migrate <a {state} colon-named source>");
+        let out = corpus.jigc(&["migrate", ":colon.md", "--as", "changelog"]);
+        let stderr = assert_refused_with(&corpus, &out, CODE, &what);
+
+        assert!(
+            stderr.contains("begins with `:`") && stderr.contains("pathspec magic"),
+            "{what} must name the MAGIC — a token git reads as a pattern and not as a name — \
+             and not some other reason that happens to fire; got:\n{stderr}",
+        );
+        assert!(
+            !stderr.contains(UNTRACKED),
+            "{what} must not answer with the trackedness leg: git is never asked about a \
+             token it would read as a pathspec, so a verdict about the index is a verdict \
+             about a set of files nobody named; got:\n{stderr}",
+        );
+        assert!(
+            !stderr.contains("git add -- :colon.md"),
+            "{what} must not route to `git add -- :colon.md`, which exits 128 — a blocking \
+             finding whose route cannot resolve the state is the route floor's own failure; \
+             got:\n{stderr}",
+        );
+        assert!(
+            repo.join(":colon.md").exists(),
+            "{what}: the source must survive — the door refused before it recorded a \
+             deletion target",
+        );
+        assert_eq!(
+            corpus.git(&["status", "--porcelain", "--", "docs"]),
+            "",
+            "{what}: a refusal writes no document",
+        );
+    }
+}
+
 // ───────────── the step text, checked against both admissible cells ─────────────
 
 /// The foreign `vision` source the two cells below migrate — a non-conformant document

@@ -39,19 +39,29 @@
 //!
 //! **The ninth cell is the eighth's own hole, and it is why the axis has a *magic* dimension
 //! rather than a `:` one.** Git has two pathspec magics: the `:` prefix, and wildmatch (`*`,
-//! `?`, `[`, `\`), which needs no prefix at all. The colon cell's token — `:(top)README.md` —
-//! names **no readable file**, so every door that reads before it adjudicates answered
-//! `NotFound`, and the expectation table recorded that as a disposition rather than as a
-//! blind spot: the whole class was left to the sink on the stated ground that the door
-//! refuses such a token anyway. `*.md` is the spelling that ground is false for. Driven at
-//! `8bc6f4e`, on a corpus holding six tracked `.md` files, with the literal file `*.md`
-//! planted untracked: `jigc migrate '*.md' --as changelog` read it, asked
+//! `?`, `[`, `\`), which needs no prefix at all. The colon cell's token was
+//! `:(top)README.md`, which names **no readable file**, so every door that reads before it
+//! adjudicates answered `NotFound`, and the expectation table recorded that as a disposition
+//! rather than as a blind spot: the whole class was left to the sink on the stated ground
+//! that the door refuses such a token anyway. `*.md` is the spelling that ground is false
+//! for. Driven at `8bc6f4e`, on a corpus holding six tracked `.md` files, with the literal
+//! file `*.md` planted untracked: `jigc migrate '*.md' --as changelog` read it, asked
 //! `git ls-files -- '*.md'` whether git held a copy, was told **yes** about six other
 //! people's files, and minted at exit 0 — after which `--approve` unlinked the source
 //! (recoverable from no git object) and `git add -- '*.md'` swept an unrelated unstaged edit
-//! into a commit naming the changelog. The cell therefore plants a file that **exists** and
-//! whose name **matches files git holds**; a cell naming nothing can only ever prove that
-//! nothing is named.
+//! into a commit naming the changelog. Each magic cell therefore plants a file that
+//! **exists**; a cell naming nothing can only ever prove that nothing is named.
+//!
+//! **That rule then applied to the cell it was written about.** `*.md` is not the only
+//! spelling the old ground is false for — `:colon.md` is a perfectly readable name, and
+//! driven on the pre-fix binary a **staged** one made `jigc migrate` refuse with
+//! `migrate.source-untracked`, saying the path was *"in neither this repository's index nor
+//! its HEAD"* while `git ls-files --stage -- ./:colon.md` printed its blob, and route the
+//! operator to `git add -- :colon.md`, which exits **128**; committed, the same source was
+//! **admitted**, and the refusal arrived one whole authoring later at the retire sink. So the
+//! colon cell now carries [`COLON_SOURCE`] — a planted, readable, colon-named file — and the
+//! five occurrences that had answered it with a read miss answer it with their own
+//! behaviour instead.
 //!
 //! **A row with no cell is a hard panic, never a skip.** The cell expectation is an
 //! exhaustive `match` over [`Cell`] per row — the compiler is the fence on that dimension
@@ -128,6 +138,22 @@ const UNTRACKED_SOURCE: &str = "untracked-source.yaml";
 /// cell's does — the only difference between the two cells is the name.
 const GLOB_SOURCE: &str = "*.md";
 
+/// The colon cell's spelling: a file whose **name begins with git's magic prefix**, planted
+/// so the token names a file that genuinely exists. It carries [`CANARY`] too, so the doors
+/// that read a source answer about the payload exactly as the untracked cell's does — the
+/// only difference between the two cells is the name.
+///
+/// **Why it must exist**, which is this cell's own history: the cell shipped as
+/// `:(top)README.md`, a token naming no readable file, so every door that reads before it
+/// adjudicates answered `NotFound` and five occurrences were answered by a read miss rather
+/// than by their own behaviour — the same blind spot the module header names for the glob
+/// cell, left standing in the cell it was named about. A colon-named file that is readable
+/// is the spelling the blind spot hides: driven on the pre-fix binary, a **staged**
+/// `:colon.md` made `jigc migrate` report `migrate.source-untracked` — *"in neither this
+/// repository's index nor its HEAD"* — about a path `git ls-files --stage` printed, and emit
+/// `git add -- :colon.md`, which exits **128**.
+const COLON_SOURCE: &str = ":colon.md";
+
 /// The in-repo symlink the third cell reaches through — **relative**, so a copied corpus's
 /// link points at the copy's own outside directory and never back at the source fixture.
 const SYMLINK_DIR: &str = "linkdir";
@@ -147,7 +173,9 @@ enum Cell {
     WorkbenchRoot,
     /// An in-repo path git holds no copy of (neither the index nor HEAD).
     UntrackedInRepo,
-    /// A leading `:` — what git reads as pathspec magic (`:(top)`, `:!`), never as a name.
+    /// A leading `:` — what git reads as pathspec magic (`:(top)`, `:!`), never as a name,
+    /// carried by a file that **exists** ([`COLON_SOURCE`]), so the doors that read before
+    /// they adjudicate answer about this token instead of about a missing one.
     PathspecMagic,
     /// Git's OTHER magic: a wildmatch pattern (`*`) that names a file which **exists** while
     /// matching files git holds. The cell above could not reach this, and that is why it is
@@ -207,7 +235,7 @@ fn token(cell: Cell, subject: PathArgSubject, repo: &Path) -> String {
             Cell::GitComponent => ".git/config".to_owned(),
             Cell::WorkbenchRoot => ".jigc/state/file-state.json".to_owned(),
             Cell::UntrackedInRepo => UNTRACKED_SOURCE.to_owned(),
-            Cell::PathspecMagic => ":(top)README.md".to_owned(),
+            Cell::PathspecMagic => COLON_SOURCE.to_owned(),
             Cell::PathspecGlob => GLOB_SOURCE.to_owned(),
             Cell::StdinSentinel => "-".to_owned(),
         }
@@ -250,13 +278,15 @@ fn expectation(door: &str, arg: &str, arm: &PathArgArm, cell: Cell) -> Outcome {
             // location legs — and BOTH magic cells moved here, which is the shape of the
             // defect rather than a bonus. The row used to read *"pathspec magic is a SINK
             // property by decision: at the door the same token is already refused, for the
-            // unrelated reason that it names no readable file"*. That is true of
-            // `:(top)README.md` and false of `*.md`: a glob names a file that **exists**, so
-            // the door read it, asked its trackedness leg a `git ls-files` that answered
-            // about six OTHER tracked files, and minted at exit 0 a deletion target no git
-            // object holds. One spelling of a rule is not the rule, so the class is asked in
-            // the home the door and the sink share — and the colon cell stops being answered
-            // by a read miss that names the wrong problem.
+            // unrelated reason that it names no readable file"*. That ground is false for
+            // every readable spelling of the class, colon and glob alike — `*.md` and
+            // `:colon.md` both name files that **exist**, so the door read them, asked its
+            // trackedness leg a `git ls-files` that answered about a set nobody named, and
+            // (glob) minted at exit 0 a deletion target no git object holds / (colon) said
+            // a staged source was in neither the index nor HEAD and routed to a `git add`
+            // that exits 128. One spelling of a rule is not the rule, so the class is asked
+            // in the home the door and the sink share — and both magic cells name files that
+            // exist, so neither is answered by a read miss that names the wrong problem.
             PathspecMagic | PathspecGlob => PathRuleBlocks("migrate.source-untrackable"),
             StdinSentinel => NotFound,
         },
@@ -274,13 +304,17 @@ fn expectation(door: &str, arg: &str, arm: &PathArgArm, cell: Cell) -> Outcome {
         // and copied in; git's own directory and jigc's transient workbench are not.
         ("config insert-step" | "config replace-step", "file", _, _) => match cell {
             GitComponent | WorkbenchRoot => PathRuleBlocks("config.step-source-untrackable"),
-            // The glob cell joins the accepting set rather than the refusing one, and that is
-            // the class boundary stated as an outcome: these doors `std::fs::read` the token
-            // and never hand it to git, so a name that is a pattern is just a name.
-            Absolute | ParentEscape | Symlink | UntrackedInRepo | PathspecGlob => Accepted,
+            // Both magic cells join the accepting set rather than the refusing one, and that
+            // is the class boundary stated as an outcome: these doors `std::fs::read` the
+            // token and never hand it to git, so a name git would read as a pattern is just
+            // a name. The colon cell says that here only because its file exists — while it
+            // named nothing, this row's no-rule claim was asserted by a read miss.
+            Absolute | ParentEscape | Symlink | UntrackedInRepo | PathspecMagic | PathspecGlob => {
+                Accepted
+            }
             // `-` is read as a file name at these two doors, not as stdin — which is the
             // discriminator that earns them a rule while `--from-file` takes none.
-            PathspecMagic | StdinSentinel => NotFound,
+            StdinSentinel => NotFound,
         },
         // `--from-file` at the three handoff doors: the sentinel arm, then the path arm.
         ("config fill" | "doc set-slot", "from_file", ArmToken::Literal(_), _) => match cell {
@@ -291,10 +325,10 @@ fn expectation(door: &str, arg: &str, arm: &PathArgArm, cell: Cell) -> Outcome {
             }
         },
         ("config fill" | "doc set-slot", "from_file", ArmToken::Caller, _) => match cell {
-            // Any bytes are prose / fill content — the token was a source to open.
+            // Any bytes are prose / fill content — the token was a source to open, whatever
+            // git would have read the name as.
             Absolute | ParentEscape | Symlink | GitComponent | WorkbenchRoot | UntrackedInRepo
-            | PathspecGlob => Accepted,
-            PathspecMagic => NotFound,
+            | PathspecMagic | PathspecGlob => Accepted,
             StdinSentinel => unreachable!("the sentinel arm claims this cell"),
         },
         ("doc author", "from_file", ArmToken::Literal(_), _) => match cell {
@@ -305,12 +339,13 @@ fn expectation(door: &str, arg: &str, arm: &PathArgArm, cell: Cell) -> Outcome {
             }
         },
         ("doc author", "from_file", ArmToken::Caller, _) => match cell {
-            Absolute | ParentEscape | Symlink | UntrackedInRepo | PathspecGlob => Accepted,
+            Absolute | ParentEscape | Symlink | UntrackedInRepo | PathspecMagic | PathspecGlob => {
+                Accepted
+            }
             // Read, then answered about the PAYLOAD — the no-rule claim in its plainest
             // form: git's config and jigc's own state file are opened like any other
             // source and rejected for what they say, not for where they are.
             GitComponent | WorkbenchRoot => ReadAsContent,
-            PathspecMagic => NotFound,
             StdinSentinel => unreachable!("the sentinel arm claims this cell"),
         },
         // The `target` occurrences — resolved against a closed vocabulary before any write.
@@ -424,6 +459,7 @@ fn plant(corpus: &TrialCorpus) {
     }
     fs::write(repo.join(UNTRACKED_SOURCE), CANARY).expect("plant the untracked source");
     fs::write(repo.join(GLOB_SOURCE), CANARY).expect("plant the glob-named source");
+    fs::write(repo.join(COLON_SOURCE), CANARY).expect("plant the colon-named source");
     fs::write(repo.join("replacement-step.yaml"), REPLACEMENT_STEP).expect("plant the step");
 }
 

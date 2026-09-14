@@ -22,8 +22,12 @@
 //!     magic, so a recorded `:(top)…` (or a wildmatch `*.md`) reaches `stage_migration` and
 //!     stages a set of files nobody named. It was a **sink cell only** while the rule was
 //!     `starts_with(':')`, on the ground that the door refuses such a token anyway *for the
-//!     unrelated reason that it names no readable file* — true of `:(top)…`, false of a glob
-//!     naming a file that exists, which is why the class now lives in the home the door and
+//!     unrelated reason that it names no readable file* — which is false for **every readable
+//!     spelling of the class**, colon and glob alike, and was a claim about the one token the
+//!     axis suite happened to plant (`:(top)README.md`) rather than about the rule: `*.md`
+//!     names a file that exists, and so does `:colon.md`, whose staged form made the door
+//!     report `migrate.source-untracked` about a path `git ls-files --stage` printed and route
+//!     to a `git add` that exits 128. That is why the class now lives in the home the door and
 //!     the sink share (`crate::trackable::pathspec_magic_reason`) and the arm below is the
 //!     sink's own re-ask of it;
 //!   * (c) a **`.git/` component** — git records nothing there, so the deletion could only ever

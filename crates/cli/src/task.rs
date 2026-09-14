@@ -3113,12 +3113,20 @@ impl ValidatedRetirement {
     ///      **The magic leg moved INTO that home** (M51 Increment 1, the axis fix). It was a
     ///      sink-local `recorded.starts_with(':')` on the stated ground that the door refuses
     ///      the same token anyway *"for the unrelated reason that it names no readable file"*.
-    ///      That ground holds for `:(top)…` and fails for the rest of the class: a file whose
-    ///      name is literally `*.md` **is** readable, so the door read it, asked its
-    ///      trackedness leg a `git ls-files -- '*.md'` that answered about six other files,
-    ///      and minted at exit 0 — after which `--approve` unlinked bytes no git object held.
-    ///      One spelling of a rule is not the rule, so the class is asked once, in the home
-    ///      both callers share.
+    ///      That ground is false for **every readable spelling of the class**, and it is a
+    ///      claim about a *fixture* rather than about the rule: it held only of the one token
+    ///      the axis suite planted, `:(top)README.md`, which names nothing. A file whose name
+    ///      is literally `*.md` **is** readable, so the door read it, asked its trackedness
+    ///      leg a `git ls-files -- '*.md'` that answered about six other files, and minted at
+    ///      exit 0 — after which `--approve` unlinked bytes no git object held. So is a file
+    ///      named `:colon.md`: staged, the door asked the same leg and reported
+    ///      `migrate.source-untracked` — *"in neither this repository's index nor its HEAD"* —
+    ///      about a path `git ls-files --stage` printed, routing to a `git add -- :colon.md`
+    ///      that exits **128**; committed, it was admitted outright and the refusal arrived
+    ///      one authoring later, here. One spelling of a rule is not the rule, so the class
+    ///      is asked once, in the home both callers share — and the axis suite's colon cell
+    ///      now plants a readable colon-named file, so the premise cannot be restated as a
+    ///      green cell.
     fn adjudicate(repo_root: &Path, recorded: &Path, state: StateTruth) -> Result<Self, Finding> {
         let recorded = recorded.to_string_lossy();
         let path = crate::trackable::resolve_source_token(repo_root, &recorded)
