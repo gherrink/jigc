@@ -174,21 +174,36 @@ fn make_commit_conformant(repo: &Path, home: &Path, pack: &Path, task: &str) {
 /// releases are exactly `release_titles` (in order), over `foreign`, plus a conformant
 /// commit doc — the state finalize gates. Authoring fewer releases than `foreign` carries
 /// is the dropped-release case the fidelity summary surfaces.
-fn staged_migration(repo: &Path, home: &Path, pack: &Path, foreign: &str, release_titles: &[&str]) {
+fn staged_migration(
+    repo: &Path,
+    home: &Path,
+    pack: &Path,
+    foreign_name: &str,
+    foreign: &str,
+    release_titles: &[&str],
+) -> String {
     ok_stdout(run_jigc(repo, home, pack, &["setup"], None), "jigc setup");
-    fs::write(repo.join("HISTORY.md"), foreign).expect("write foreign HISTORY.md");
+    fs::write(repo.join(foreign_name), foreign).expect("write the foreign original");
     // M51 Inc 1 / T2 — the migrate door takes only a source git holds a copy of.
-    git(repo, &["add", "--", "HISTORY.md"]);
-    ok_stdout(
+    git(repo, &["add", "--", foreign_name]);
+    let composed = ok_stdout(
         run_jigc(
             repo,
             home,
             pack,
-            &["migrate", "HISTORY.md", "--as", "changelog"],
+            &["migrate", foreign_name, "--as", "changelog"],
             None,
         ),
         "jigc migrate",
     );
+    // The minted id is read off the compose rather than assumed: the migration task id
+    // carries a hash of the source path (M44), so it differs per foreign original.
+    let task = composed
+        .lines()
+        .find_map(|l| l.strip_prefix("task minted: "))
+        .expect("the compose announces the minted task id")
+        .trim()
+        .to_owned();
     ok_stdout(
         run_jigc(
             repo,
@@ -201,7 +216,7 @@ fn staged_migration(repo: &Path, home: &Path, pack: &Path, foreign: &str, releas
                 "--title",
                 "Changelog",
                 "--task",
-                TASK,
+                &task,
             ],
             None,
         ),
@@ -220,7 +235,7 @@ fn staged_migration(repo: &Path, home: &Path, pack: &Path, foreign: &str, releas
                     "--title",
                     title,
                     "--task",
-                    TASK,
+                    &task,
                 ],
                 None,
             ),
@@ -238,7 +253,7 @@ fn staged_migration(repo: &Path, home: &Path, pack: &Path, foreign: &str, releas
                     "--value",
                     "2021-03-09",
                     "--task",
-                    TASK,
+                    &task,
                 ],
                 None,
             ),
@@ -256,7 +271,7 @@ fn staged_migration(repo: &Path, home: &Path, pack: &Path, foreign: &str, releas
                     "--title",
                     "Added",
                     "--task",
-                    TASK,
+                    &task,
                 ],
                 None,
             ),
@@ -274,14 +289,15 @@ fn staged_migration(repo: &Path, home: &Path, pack: &Path, foreign: &str, releas
                     "--from-file",
                     "-",
                     "--task",
-                    TASK,
+                    &task,
                 ],
                 Some(b"First public release.\n"),
             ),
             "set-slot notes",
         );
     }
-    make_commit_conformant(repo, home, pack, TASK);
+    make_commit_conformant(repo, home, pack, &task);
+    task
 }
 
 const FOREIGN: &str = "\
@@ -298,7 +314,14 @@ fn migration_finalize_without_approve_blocks_and_commits_nothing() {
     let home = TempDir::new("home");
     let pack = dev_pack();
     init_repo(repo.path());
-    staged_migration(repo.path(), home.path(), &pack, FOREIGN, &["0.1.0"]);
+    staged_migration(
+        repo.path(),
+        home.path(),
+        &pack,
+        "HISTORY.md",
+        FOREIGN,
+        &["0.1.0"],
+    );
 
     let head_before = git(repo.path(), &["rev-parse", "HEAD"]);
     let log_before = git(repo.path(), &["rev-list", "--count", "HEAD"]);
@@ -419,7 +442,14 @@ fn review_gate_names_dropped_release_as_fuzzy_advisory_and_feeds_nothing_structu
     let home = TempDir::new("home-delta");
     let pack = dev_pack();
     init_repo(repo.path());
-    staged_migration(repo.path(), home.path(), &pack, FOREIGN_MULTI, &["1.0.0"]);
+    staged_migration(
+        repo.path(),
+        home.path(),
+        &pack,
+        "HISTORY.md",
+        FOREIGN_MULTI,
+        &["1.0.0"],
+    );
 
     let out = run_jigc(
         repo.path(),
@@ -508,7 +538,14 @@ fn review_gate_renders_none_when_nothing_dropped() {
     let home = TempDir::new("home-none");
     let pack = dev_pack();
     init_repo(repo.path());
-    staged_migration(repo.path(), home.path(), &pack, FOREIGN, &["0.1.0"]);
+    staged_migration(
+        repo.path(),
+        home.path(),
+        &pack,
+        "HISTORY.md",
+        FOREIGN,
+        &["0.1.0"],
+    );
 
     let out = run_jigc(
         repo.path(),
@@ -616,5 +653,249 @@ fn non_migration_finalize_ignores_approve() {
     assert!(
         !rendered.contains("review required") && !rendered.contains("fidelity"),
         "the review gate must be inert on a non-migration task; got:\n{rendered}"
+    );
+}
+
+/// Parse the one JSON document a `--format json` invocation wrote to stdout.
+fn json_doc(out: &std::process::Output, what: &str) -> serde_json::Value {
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    serde_json::from_str(&stdout).unwrap_or_else(|err| {
+        panic!(
+            "`{what}` must write exactly one JSON document to stdout ({err}); stdout:\n{stdout}\nstderr:\n{}",
+            String::from_utf8_lossy(&out.stderr),
+        )
+    })
+}
+
+/// The review hold's headline — the single line that carries the `--approve` re-run
+/// instruction, i.e. the sentence that promises what approving will do.
+fn headline(rendered: &str) -> &str {
+    rendered
+        .lines()
+        .find(|l| l.contains("--approve"))
+        .unwrap_or_else(|| {
+            panic!("the review hold must tell the human how to approve; got:\n{rendered}")
+        })
+}
+
+#[test]
+fn the_review_hold_names_the_file_approve_will_delete() {
+    // M51 Increment 1 / T7 (`settle-record.md` → D1 part 4) — the exit-4 hold is a
+    // HUMAN gate over a destructive act, and at HEAD it said "retire the foreign
+    // original" without naming it: the one fact a reviewer needs in order to consent to
+    // a deletion was on no surface. The hold now names the file `--approve` will delete,
+    // in its text AND as the additive `retires` key of the pinned envelope, read off the
+    // same `ValidatedRetirement` the sink unlinks from — so the gate and the sink cannot
+    // name different files.
+    let repo = TempDir::new("repo-retires");
+    let home = TempDir::new("home-retires");
+    let pack = dev_pack();
+    init_repo(repo.path());
+    let task = staged_migration(
+        repo.path(),
+        home.path(),
+        &pack,
+        "HISTORY.md",
+        FOREIGN,
+        &["0.1.0"],
+    );
+
+    let out = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["task", "finalize", &task],
+        None,
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(4),
+        "the plain finalize over a migration task holds at the review gate; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let rendered = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let line = headline(&rendered);
+    assert!(
+        line.contains("HISTORY.md"),
+        "the sentence that promises the deletion must name the file it deletes; got:\n{line}",
+    );
+
+    // The same fact on the machine surface, as a declared key carrying the adjudicated
+    // repo-relative path — a driver must not have to scrape the prose for it.
+    let json = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["task", "finalize", &task, "--format", "json"],
+        None,
+    );
+    assert_eq!(
+        json.status.code(),
+        Some(4),
+        "the `--format json` hold exits 4 too; stderr:\n{}",
+        String::from_utf8_lossy(&json.stderr),
+    );
+    let doc = json_doc(&json, "jigc task finalize --format json (review hold)");
+    assert_eq!(
+        doc.get("retires"),
+        Some(&serde_json::json!(["HISTORY.md"])),
+        "the hold's envelope carries the retire set as the additive `retires` key; got:\n{doc:#}",
+    );
+
+    // The hold is still a hold: it deletes nothing it names.
+    assert!(
+        repo.path().join("HISTORY.md").exists(),
+        "naming the file must not delete it — the hold commits and destroys nothing",
+    );
+}
+
+#[test]
+fn the_same_path_review_hold_claims_no_deletion() {
+    // The omitting context (the in-place, same-path migration: the foreign original IS
+    // the canonical destination, so `plan_retirements` skips it). The hold must carry
+    // the HONEST EMPTY form on both surfaces — an empty `retires` key and a sentence
+    // that promises no deletion — never the retire sentence with nothing behind it.
+    let repo = TempDir::new("repo-inplace");
+    let home = TempDir::new("home-inplace");
+    let pack = dev_pack();
+    init_repo(repo.path());
+    let task = staged_migration(
+        repo.path(),
+        home.path(),
+        &pack,
+        "CHANGELOG.md",
+        FOREIGN,
+        &["0.1.0"],
+    );
+
+    let out = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["task", "finalize", &task],
+        None,
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(4),
+        "the same-path migration holds at the review gate too; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let rendered = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let line = headline(&rendered);
+    assert!(
+        !line.contains("DELETE"),
+        "an in-place rewrite retires nothing — the hold must not promise a deletion; got:\n{line}",
+    );
+    assert!(
+        line.contains("deletes nothing"),
+        "the empty form must be affirmative (an absent clause is ambiguous); got:\n{line}",
+    );
+
+    let json = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["task", "finalize", &task, "--format", "json"],
+        None,
+    );
+    let doc = json_doc(&json, "jigc task finalize --format json (same-path hold)");
+    assert_eq!(
+        doc.get("retires"),
+        Some(&serde_json::json!([])),
+        "the key is present and EMPTY on the in-place arm — absent would be an unanswered \
+         question, not an honest empty; got:\n{doc:#}",
+    );
+}
+
+#[test]
+fn the_hold_refuses_a_retire_target_it_cannot_name_honestly() {
+    // The third arm of the same rule: the hold states what `--approve` WILL do, and when
+    // the recorded `source-path` has been rewritten to something the repository cannot
+    // retire, what `--approve` will do is refuse. Naming it as "the file I will delete"
+    // would be a promise the next run cannot keep, so the hold raises the sink's own
+    // identity instead — one code, one repair — with the state-truth clause of THIS door
+    // (M47's per-door rule): the hold has promoted nothing, so it must not narrate a
+    // rollback it never performed.
+    let repo = TempDir::new("repo-refuse");
+    let home = TempDir::new("home-refuse");
+    let outside = TempDir::new("outside-refuse");
+    let pack = dev_pack();
+    init_repo(repo.path());
+    let task = staged_migration(
+        repo.path(),
+        home.path(),
+        &pack,
+        "HISTORY.md",
+        FOREIGN,
+        &["0.1.0"],
+    );
+
+    // A file in another tree entirely — the thing a naive `repo_root.join(<absolute>)`
+    // resolves to, and the thing that must still be here afterwards.
+    let canary = outside.path().join("keepme.md");
+    fs::write(&canary, "keep me\n").expect("plant the canary outside the repository");
+    fs::write(
+        repo.path()
+            .join(".jigc")
+            .join("tasks")
+            .join(&task)
+            .join("source-path"),
+        canary.to_string_lossy().as_bytes(),
+    )
+    .expect("rewrite the recorded source path");
+
+    // `--carry-staged` because rewriting the recorded source path also removes this
+    // fixture's foreign original from the carryover gate's retire-exempt set, and that
+    // gate sits AHEAD of the review hold by design. Declaring the carry is what lets the
+    // run reach the door this arm is about; it changes nothing the arm asserts.
+    let head_before = git(repo.path(), &["rev-parse", "HEAD"]);
+    let out = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["task", "finalize", &task, "--carry-staged"],
+        None,
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "the hold refuses at the destroying-door mold's exit 1; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    assert!(
+        stderr.contains("finalize.retire-untrackable"),
+        "the hold raises the sink's own identity, not a new one; got:\n{stderr}",
+    );
+    assert!(
+        !stderr.contains("rolled back"),
+        "the hold promoted nothing, so its route must not narrate a rollback; got:\n{stderr}",
+    );
+    assert!(
+        !String::from_utf8_lossy(&out.stdout).contains("migration review required"),
+        "a hold that cannot state the consequence must not print the consent prompt anyway",
+    );
+
+    assert_eq!(
+        fs::read_to_string(&canary).expect("read the canary"),
+        "keep me\n",
+        "the out-of-tree canary must be byte-identical — the hold reads, it never deletes",
+    );
+    assert_eq!(
+        head_before,
+        git(repo.path(), &["rev-parse", "HEAD"]),
+        "the refusing hold leaves HEAD unmoved",
     );
 }

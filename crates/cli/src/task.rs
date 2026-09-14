@@ -1885,9 +1885,33 @@ impl TaskArea {
                 })?;
                 rewrites.push((promotion.destination.clone(), rendered));
             }
+            // The human gate names what `--approve` will delete (M51 Increment 1 / T7).
+            // The value comes off the SAME [`ValidatedRetirement`] the sink unlinks from,
+            // so the sentence a human consents to and the path `remove_file` receives
+            // cannot be different files — naming the raw recorded string here would
+            // reintroduce exactly the divergence T3's typed value exists to close.
+            //
+            // An inadmissible recorded value REFUSES here rather than being named: the
+            // hold's whole job is to state what approving does, and what approving does
+            // in that state is refuse (`finalize.retire-untrackable`, one code, one
+            // route, the same identity the sink raises). Reachable only if something
+            // rewrote `source-path` after the `jigc migrate` door adjudicated it.
+            let retires = plan
+                .retirements
+                .iter()
+                .map(|retirement| {
+                    ValidatedRetirement::adjudicate(
+                        &self.repo_root,
+                        retirement,
+                        StateTruth::ReviewHold,
+                    )
+                    .map(|validated| validated.path)
+                    .map_err(|finding| crate::render::finding_error(&finding))
+                })
+                .collect::<Result<Vec<_>>>()?;
             print!(
                 "{}",
-                render::migration_review(format, id, &foreign, &rewrites)
+                render::migration_review(format, id, &foreign, &rewrites, &retires)
             );
             if format != Format::Json {
                 println!();
@@ -3068,11 +3092,12 @@ impl ValidatedRetirement {
     ///      One home, two callers: the door and the sink cannot get different answers about
     ///      the same path, which is the property that makes "the door already checked it" a
     ///      safe thing for a reader to believe.
-    fn adjudicate(repo_root: &Path, recorded: &Path) -> Result<Self, Finding> {
+    fn adjudicate(repo_root: &Path, recorded: &Path, state: StateTruth) -> Result<Self, Finding> {
         let recorded = recorded.to_string_lossy();
         if recorded.starts_with(':') {
             return Err(retire_untrackable_finding(
                 &recorded,
+                state,
                 format!(
                     "`{recorded}` begins with `:`, which git reads as pathspec magic \
                      (`:(top)`, `:!`) and not as a file name — `git add -- <path>` \
@@ -3082,7 +3107,7 @@ impl ValidatedRetirement {
             ));
         }
         let path = crate::trackable::resolve_source_token(repo_root, &recorded)
-            .map_err(|reason| retire_untrackable_finding(&recorded, reason))?;
+            .map_err(|reason| retire_untrackable_finding(&recorded, state, reason))?;
         Ok(Self {
             path,
             repo_root: repo_root.to_path_buf(),
@@ -3098,7 +3123,33 @@ impl ValidatedRetirement {
     }
 }
 
-/// The sink's refusal (`settle-record.md` → §10's table row; `design/validation.md` → the
+/// Which door raised [`retire_untrackable_finding`] — and therefore **what is true of the
+/// repository at the moment it prints** (M47's per-door state-truth clause). One code and one
+/// repair, two states: the review hold has promoted nothing to roll back, and saying otherwise
+/// would be the door narrating a transaction it never opened.
+#[derive(Debug, Clone, Copy)]
+enum StateTruth {
+    /// [`TaskArea::finalize`]'s exit-4 review hold — a pure read that writes nothing.
+    ReviewHold,
+    /// [`retire`], inside the commit closure — the promote is already undone by the caller's
+    /// rollback when this finding travels out.
+    RolledBack,
+}
+
+impl StateTruth {
+    /// The leading clause of the route: what this run did, in this run's own terms.
+    fn clause(self) -> &'static str {
+        match self {
+            Self::ReviewHold => {
+                "nothing was committed — this run is the review hold, which writes nothing"
+            }
+            Self::RolledBack => "nothing was committed and the promote was rolled back",
+        }
+    }
+}
+
+/// The refusal raised by the sink and by the review hold that forecasts it
+/// (`settle-record.md` → §10's table row; `design/validation.md` → the
 /// finding inventory): one blocking code for every reason, the reason carried in the message
 /// on `config.untrackable-root`'s precedent, and a [`engine::finding::Route::human`] because
 /// no `jigc` argv resolves this state — the recorded value is task state the operator repairs
@@ -3117,7 +3168,11 @@ impl ValidatedRetirement {
 /// search their working area for, so law 1's printed-path rule is met the way the `jigc
 /// migrate` door meets it (`design/surface-contract.md`; the `locate::not_in_repo_message`
 /// case), by naming the subject that has no relative form rather than inventing one.
-fn retire_untrackable_finding(recorded: &str, reason: impl Into<String>) -> Finding {
+fn retire_untrackable_finding(
+    recorded: &str,
+    state: StateTruth,
+    reason: impl Into<String>,
+) -> Finding {
     Finding::graded(
         Severity::Blocking,
         "finalize.retire-untrackable",
@@ -3126,12 +3181,12 @@ fn retire_untrackable_finding(recorded: &str, reason: impl Into<String>) -> Find
             reason.into()
         ),
         Some(Location::addressed(recorded.to_string(), 1, 1)),
-        Some(engine::finding::Route::human(
-            "nothing was committed and the promote was rolled back. The retire target is \
-             recorded in the task's working area at `source-path`: restore it to the \
-             path `jigc migrate` recorded, or abandon the migration and re-run \
-             `jigc migrate` against a file inside this repository",
-        )),
+        Some(engine::finding::Route::human(format!(
+            "{}. The retire target is recorded in the task's working area at \
+             `source-path`: restore it to the path `jigc migrate` recorded, or abandon \
+             the migration and re-run `jigc migrate` against a file inside this repository",
+            state.clause(),
+        ))),
     )
 }
 
@@ -3170,8 +3225,9 @@ fn retire(
         // The sink's own adjudication (M51 Increment 1 / T3), asked HERE — one statement
         // above the unlink, in the same function as it, so nothing runs between the answer
         // and the act it authorizes.
-        let validated = ValidatedRetirement::adjudicate(repo_root, retirement)
-            .map_err(|finding| crate::render::finding_error(&finding))?;
+        let validated =
+            ValidatedRetirement::adjudicate(repo_root, retirement, StateTruth::RolledBack)
+                .map_err(|finding| crate::render::finding_error(&finding))?;
         let path = validated.target();
         match std::fs::read(&path) {
             Ok(bytes) => {
@@ -5103,8 +5159,9 @@ mod tests {
             ":/keepme.md",
             ":",
         ] {
-            let finding = ValidatedRetirement::adjudicate(root, Path::new(spelling))
-                .expect_err(&format!("`{spelling}` must be refused at the sink"));
+            let finding =
+                ValidatedRetirement::adjudicate(root, Path::new(spelling), StateTruth::RolledBack)
+                    .expect_err(&format!("`{spelling}` must be refused at the sink"));
             assert_eq!(finding.code, "finalize.retire-untrackable");
             assert!(
                 finding.message.contains("pathspec magic"),
@@ -5125,8 +5182,12 @@ mod tests {
             .parent()
             .and_then(Path::parent)
             .expect("crates/cli sits two levels under the repo root");
-        let validated = ValidatedRetirement::adjudicate(root, Path::new("docs/direction.md"))
-            .expect("an ordinary repo-relative source is admissible");
+        let validated = ValidatedRetirement::adjudicate(
+            root,
+            Path::new("docs/direction.md"),
+            StateTruth::RolledBack,
+        )
+        .expect("an ordinary repo-relative source is admissible");
         assert_eq!(validated.target(), root.join("docs/direction.md"));
     }
 

@@ -4181,11 +4181,26 @@ fn suffix_of(
 /// migration is a wholesale rewrite, so the honest framing is that the human reviews the
 /// whole of both sides. The command commits nothing (exit 4); the agent never approves
 /// (a human-only gate).
+///
+/// **`retires` names the files `--approve` will delete** (M51 Increment 1 / T7,
+/// `settle-record.md` → D1 part 4). This is a human gate over a **destructive** act, and
+/// until now it promised "retire the foreign original" without ever naming it — the one
+/// fact a reviewer needs in order to consent was on no surface, text or machine. Each
+/// entry is the adjudicated, repo-relative path the retire sink itself will unlink (the
+/// caller reads it off the same `ValidatedRetirement`), so the gate and the sink cannot
+/// name different files.
+///
+/// The set is **empty on an in-place, same-path migration** (the canonical destination IS
+/// the foreign source, so `plan_retirements` skips it) — and the empty case renders its
+/// own **affirmative** sentence rather than the retire sentence with nothing behind it,
+/// on the same reasoning as the fidelity summary's `(none)` form below: an absent clause
+/// is ambiguous, and a promise the run will not keep is a law-1 lie.
 pub fn migration_review(
     format: Format,
     task_id: &str,
     foreign: &str,
     rewrites: &[(String, String)],
+    retires: &[String],
 ) -> String {
     match format {
         Format::Json => json(&serde_json::json!({
@@ -4198,14 +4213,34 @@ pub fn migration_review(
                     serde_json::json!({ "destination": destination, "rendered": rendered })
                 })
                 .collect::<Vec<_>>(),
+            // Always present, empty on the in-place arm: a key that disappears turns
+            // "this migration deletes nothing" into "nobody asked", which a driver
+            // cannot tell from a missing feature.
+            "retires": retires,
         })),
         Format::Agent | Format::Human => {
+            let consequence = if retires.is_empty() {
+                "rewrite the foreign original in place and commit — this migration \
+                 deletes nothing (the canonical destination IS the foreign source)"
+                    .to_string()
+            } else {
+                let named = retires
+                    .iter()
+                    .map(|path| format!("`{path}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let noun = if retires.len() == 1 {
+                    "the foreign original"
+                } else {
+                    "the foreign originals"
+                };
+                format!("write the canonical doc, DELETE {noun} {named}, and commit")
+            };
             let mut out = format!(
                 "migration review required — nothing committed. Re-run \
-                 `jigc task finalize {task_id} --approve` to write the canonical doc, \
-                 retire the foreign original, and commit.\n\nThe rewrite is the agent's; \
-                 the CLI guarantees structure, never content-faithfulness — review the \
-                 fidelity diff below, then approve.\n\n",
+                 `jigc task finalize {task_id} --approve` to {consequence}.\n\nThe rewrite \
+                 is the agent's; the CLI guarantees structure, never content-faithfulness \
+                 — review the fidelity diff below, then approve.\n\n",
             );
             // The structural fidelity summary (`design/auto-migration.md` → Hardening #5):
             // a release-level delta naming the source versions the rewrite dropped, split
@@ -7497,7 +7532,7 @@ mod tests {
                 .to_string(),
         )];
 
-        let out = migration_review(Format::Agent, "task-1", foreign, &rewrites);
+        let out = migration_review(Format::Agent, "task-1", foreign, &rewrites, &[]);
         let summary = out
             .lines()
             .find(|l| l.contains("version-like token absent from the rewrite"))
@@ -7523,7 +7558,7 @@ mod tests {
             "# Notes PRD\n\n## Context\n\nNo version mentioned here.\n".to_string(),
         )];
 
-        let out = migration_review(Format::Agent, "task-1", foreign, &rewrites);
+        let out = migration_review(Format::Agent, "task-1", foreign, &rewrites, &[]);
         let summary = out
             .lines()
             .find(|l| l.contains("version-like token absent from the rewrite"))
@@ -7582,7 +7617,7 @@ mod tests {
             "# Deps PRD\n\n## Context\n\nDependencies to be decided.\n".to_string(),
         )];
 
-        let out = migration_review(Format::Agent, "task-1", foreign, &rewrites);
+        let out = migration_review(Format::Agent, "task-1", foreign, &rewrites, &[]);
 
         let pkg_line = out
             .lines()
@@ -7638,7 +7673,7 @@ mod tests {
             "# Changelog\n\n## Unreleased\n\nNothing yet.\n".to_string(),
         )];
 
-        let out = migration_review(Format::Agent, "task-1", foreign, &rewrites);
+        let out = migration_review(Format::Agent, "task-1", foreign, &rewrites, &[]);
 
         let token_line = out
             .lines()
