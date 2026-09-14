@@ -688,9 +688,41 @@ pub enum CarryoverBoundary {
     /// `jigc milestone finalize` — the aggregate commit built from the sub-task
     /// worktrees; a carried entry stays staged, never committed here.
     Milestone,
+    /// `jigc setup` — the **install commit** (M51 Increment 3; `settle-record.md` → D3,
+    /// amended by §1). The family's fourth member and the one that is not a *task* door
+    /// at all: the install commit is a pathspec commit of the files `setup` just wrote,
+    /// and a path in that pathspec carrying bytes `setup` did not write would ride it
+    /// undeclared — the same class of refusal ("a door committing paths it does not
+    /// own"), asked over a different predicate and worded for a door with no task.
+    ///
+    /// **It is not a [`decide_carryover`] door.** Its predicate is **worktree-vs-HEAD,
+    /// per path, asked before `setup` writes anything** — not the staged-snapshot pair,
+    /// whose subject is the *index* vs HEAD and which therefore yields zero findings on
+    /// this door's own cell (a pathspec commit takes the **worktree** contents, and a
+    /// restaged different blob reads as the door's own work). The door asks git itself
+    /// ([`crate::finalize`] shells out to nothing) and hands the dirty set here to be
+    /// worded: **one** finding over the whole set ([`setup_dirty_install_finding`]),
+    /// never one per path.
+    Setup,
 }
 
 impl CarryoverBoundary {
+    /// The **finding code** this door's refusal keys at — the door's identity, derived
+    /// from the boundary rather than re-spelled at each producer. The three
+    /// [`decide_carryover`] doors share `finalize.carried-staged` (one decision, one
+    /// subject — a path staged before the work unit existed); [`CarryoverBoundary::Setup`]
+    /// carries its own, because that family's task-shaped vocabulary (*"before this task
+    /// existed"*, `--carry-staged`) would lie at a door with no task
+    /// ([surface-contract.md](../../../design/surface-contract.md) → law 1).
+    fn code(self) -> &'static str {
+        match self {
+            CarryoverBoundary::Task
+            | CarryoverBoundary::TaskPreview
+            | CarryoverBoundary::Milestone => "finalize.carried-staged",
+            CarryoverBoundary::Setup => "setup.dirty-install-path",
+        }
+    }
+
     /// Whether this door speaks for the **task** boundary — the committing door and
     /// its preview alike. The owner-artifact exemption keys on the boundary, not on
     /// the door (the milestone-boundary exemption is a separate, deferred concern), so
@@ -828,6 +860,15 @@ fn carried_staged_finding(path: &str, is_deletion: bool, boundary: CarryoverBoun
                  the carry-over deliberate"
             ),
         ),
+        // The `Setup` door is not a per-path door: its refusal is ONE finding over the
+        // whole dirty set ([`setup_dirty_install_finding`]), and its predicate is the
+        // pre-write worktree-vs-HEAD query the door asks itself, never this staged-snapshot
+        // decision (`settle-record.md` → Review amendments §1). Reached only if a caller
+        // hands this boundary to the per-path decision anyway; the wording stays the door's
+        // own, over the one-path set, so no door can borrow another's words.
+        CarryoverBoundary::Setup => {
+            return setup_dirty_install_finding(&[path.to_string()]);
+        }
         CarryoverBoundary::Milestone => (
             format!(
                 "`{path}` was already {what} before this milestone existed — the aggregate \
@@ -847,6 +888,53 @@ fn carried_staged_finding(path: &str, is_deletion: bool, boundary: CarryoverBoun
         message,
         Some(file_location(path)),
         Some(Route::human(route)),
+    )
+}
+
+/// The **[`CarryoverBoundary::Setup`] door's refusal**: one blocking, routed
+/// `setup.dirty-install-path` finding over the whole set of install-footprint paths that
+/// carried bytes `jigc setup` did not write (M51 Increment 3; `settle-record.md` → D3 with
+/// its §1 amendment, and §10's mold — a blocking [`Finding`], a [`Route::human`] route,
+/// exit 1, registered in `validation.md`'s inventory and outside `ERROR_CODE_REGISTRY`,
+/// which mirrors door *outcome* identities).
+///
+/// `dirty` is the CLI's per-path **worktree-vs-HEAD** answer taken **before `setup` wrote
+/// anything** (the engine shells out to nothing — the [`decide_carryover`] mold: the door
+/// supplies the git facts, the engine words the finding). The set is the subject, so the
+/// finding carries **no [`Location`]** — no single listed path keys it — and lists its paths
+/// **sorted**, so the door's pathspec order can never reach the printed surface
+/// (order-invariant by construction).
+///
+/// **What the message may not claim** (the load-bearing honesty constraint): the guard binds
+/// the **commit**, not the install — the install files stay written and staged — so for a
+/// path `setup` regenerates whole (`.jigc/AGENT.md`, `.jigc/version`, `.jigc/.gitignore`) it
+/// does **not** put the user's bytes back on disk. The message therefore states only what is
+/// certain at this point: the install files are written and staged, no install commit was
+/// made, and `HEAD` is untouched — so every listed path's pre-run bytes are still in it. It
+/// claims nothing about the worktree.
+///
+/// **The route names the resolving act first and `--force` second.** `--force` at the first
+/// command an adopter runs is D3's declared reflex-training risk, so the exit that keeps the
+/// work leads and the single consent follows, stated as what it spends.
+pub fn setup_dirty_install_finding(dirty: &[String]) -> Finding {
+    let paths: BTreeSet<&str> = dirty.iter().map(String::as_str).collect();
+    let listing: Vec<String> = paths.iter().map(|path| format!("  `{path}`")).collect();
+    Finding::block(
+        CarryoverBoundary::Setup.code(),
+        format!(
+            "{} path(s) in the install footprint carried changes that were in no commit \
+             before this run, so committing the install would sweep work `jigc setup` did \
+             not write into `chore(jigc): install jigc workspace config`:\n{}\nthe install \
+             files are written and staged, and no install commit was made — `HEAD` is \
+             untouched, so every path listed above still has its pre-run bytes there",
+            paths.len(),
+            listing.join("\n"),
+        ),
+        Route::human(
+            "commit or stash the work at those path(s), then re-run `jigc setup`; \
+             `jigc setup --force` is the single consent, and it commits those paths into \
+             the install commit as they stand",
+        ),
     )
 }
 
@@ -3880,5 +3968,102 @@ sections:
                 finding.route
             );
         }
+    }
+
+    /// The **`Setup` boundary's own refusal identity** (M51 Increment 3 / T1;
+    /// `settle-record.md` → D3, amended by §1 and §10): `jigc setup` refuses its install
+    /// commit when a path in its own pathspec carries bytes it did not write. The door is
+    /// a [`CarryoverBoundary`] member — same family, *"a door committing paths it does not
+    /// own"* — but neither the task doors' code nor their shape fits it:
+    ///
+    /// - **Its own code**, `setup.dirty-install-path`: `finalize.carried-staged`'s
+    ///   task-shaped vocabulary (*"before this task existed"*, `--carry-staged`) would lie
+    ///   at a door with no task (law 1).
+    /// - **One finding over the whole dirty set** — the `uninstall.dirty-worktree` mold at
+    ///   this same door, not `finalize.carried-staged`'s one-per-path: `setup::run` returns
+    ///   a single [`Finding`], so the set is the subject and no one path is the key.
+    /// - **The route names the resolving act first** and `--force` second: `--force` at the
+    ///   first command an adopter runs is the reflex-training risk D3 carries as a declared
+    ///   bound, so the exit that keeps the work leads.
+    ///
+    /// **What the message may not claim** (the load-bearing honesty constraint): the guard
+    /// binds the **commit**, not the install, so for a path `setup` regenerates whole it does
+    /// not put the user's bytes back. The message therefore says what is certain — the
+    /// install files are written and staged, and no install commit was made, so `HEAD` still
+    /// holds every listed path's pre-run bytes — and claims nothing about the worktree.
+    ///
+    /// **Order-invariant by construction** (Validation hardening #7): the same dirty set in
+    /// two divergent orders words one byte-identical finding, so the door's pathspec order
+    /// can never reach the printed surface.
+    #[test]
+    fn setup_boundary_finding_words_the_doors_own_refusal() {
+        let dirty: Vec<String> = ["CLAUDE.md", ".claude/settings.json", ".jigc/AGENT.md"]
+            .iter()
+            .map(|p| (*p).to_string())
+            .collect();
+        let finding = setup_dirty_install_finding(&dirty);
+
+        assert_eq!(finding.severity, Severity::Blocking);
+        assert_eq!(finding.code, "setup.dirty-install-path");
+        assert_eq!(
+            finding.code,
+            CarryoverBoundary::Setup.code(),
+            "the code is the boundary's own identity, derived from it and not re-spelled",
+        );
+        let route = finding.route.as_ref().expect("blocking ⇒ routed");
+        assert!(
+            matches!(route.kind(), crate::finding::RouteKind::Human),
+            "which exit is right is the adopter's judgment: {:?}",
+            route.kind()
+        );
+        assert!(
+            finding.location.is_none(),
+            "the subject is the dirty set, not one path — no single location can key it",
+        );
+
+        // Law 1, the message: every path it was given, and the state it left behind.
+        for path in &dirty {
+            assert!(
+                finding.message.contains(path.as_str()),
+                "the message names every dirty path it is given; missing {path}: {:?}",
+                finding.message
+            );
+        }
+        assert!(
+            finding.message.contains("written and staged")
+                && finding.message.contains("no install commit"),
+            "the message states the install files were written and staged with no install \
+             commit made: {:?}",
+            finding.message
+        );
+
+        // The route's ORDER is the deliverable: the act that keeps the work, then the
+        // consent that spends it.
+        let repair = route
+            .as_str()
+            .find("re-run `jigc setup`")
+            .expect("the route names the resolving re-run");
+        let force = route
+            .as_str()
+            .find("jigc setup --force")
+            .expect("the route names the single consent");
+        assert!(
+            route.as_str().contains("commit or stash the work"),
+            "the route names the resolving act: {route}"
+        );
+        assert!(
+            repair < force,
+            "the resolving act is named BEFORE `--force`, which is the single consent and \
+             not the first thing offered: {route}"
+        );
+
+        // Order-invariance: the same set, reversed, words the same bytes.
+        let reversed: Vec<String> = dirty.iter().rev().cloned().collect();
+        assert_eq!(
+            setup_dirty_install_finding(&reversed),
+            finding,
+            "the dirty set is order-invariant — the door's pathspec order never reaches the \
+             printed surface",
+        );
     }
 }
