@@ -79,6 +79,8 @@ mod migrate_source_rules;
 mod migrate_spec;
 #[path = "../migrate_workflow.rs"]
 mod migrate_workflow;
+#[path = "../orphaned_instance.rs"]
+mod orphaned_instance;
 #[path = "../record_foreign_arm.rs"]
 mod record_foreign_arm;
 #[path = "../record_item_slot_kind.rs"]

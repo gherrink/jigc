@@ -844,7 +844,7 @@ pub fn validation_store(
 ///
 /// Each member carries what a fence needs to drive it end-to-end: a matcher, a **witness**
 /// finding, the closing line it renders, the words that line names the condition with, and
-/// whether the flip means the sweep's own result cannot be trusted. A fifth member cannot
+/// whether the flip means the sweep's own result cannot be trusted. A further member cannot
 /// join without supplying all five (the compiler asks), so it joins the fences that iterate
 /// this table in the same motion.
 ///
@@ -993,6 +993,22 @@ pub const STORE_EXIT_FLIPS: &[StoreExitFlip] = &[
         cause: AHEAD_STAMP_PHRASE,
         sweep_untrustworthy: true,
     },
+    // (M51 Inc 8 / T3) A committed doc jigc stamped that no resolved doctype claims — the
+    // pack that defined its type left the composition, or the file sits where no doctype
+    // homes. The sweep could not adjudicate those files at all (there is no schema to
+    // adjudicate them against), so it refuses the green rather than reporting that it found
+    // nothing in them.
+    StoreExitFlip {
+        id: "orphaned-instance",
+        matches: |f| f.code == crate::orphan::ORPHANED_INSTANCE_CODE,
+        // The witness IS the producer (M51 Inc 8 / T3): a hand-built copy of the production
+        // finding is a second place for the code, the target form and the route to drift, and
+        // this member's whole claim is that the three cannot.
+        witness: || crate::orphan::orphaned_instance_finding("docs/roadmap.md"),
+        trailer: orphaned_instance_trailer,
+        cause: ORPHANED_INSTANCE_CAUSE,
+        sweep_untrustworthy: true,
+    },
     // (M46 Inc 3 / T1) The **foreign** arm of that same discriminator: a committed file at a
     // managed doctype's home that jigc was never handed. Last in precedence — every condition
     // above it either taints the sweep's own result or is a change this commit introduced,
@@ -1069,6 +1085,12 @@ pub(crate) fn validation_store_exit_flips(report: &ValidationReport) -> bool {
 /// - `file-state.{orphaned-doc, unregistered-doc}` and `store-version.binary-mismatch` — the
 ///   CLI-minted store advisories (`crate::cli`'s orphan tiers, `crate::setup`), un-keyed and
 ///   store-scope by construction.
+/// - `schema-conformance.orphaned-instance` — their blocking sibling (M51 Inc 8 / T3),
+///   minted by `crate::cli`'s store sweep alone from `crate::orphan::orphaned_instances`. No
+///   task-scope door can reach it: a task addresses docs **through** their doctype, and this
+///   condition is that the doctype resolves to nothing. Membership is load-bearing rather
+///   than tidy — the code is `schema-conformance.*` and located at a path, so without the row
+///   the per-finding gate label would claim a `finalize` gate that does not exist.
 ///
 /// - `schema-conformance.schema-version-current` — the version-currency break
 ///   (`validate_store_families`' fifth family, managed arm). It gates **nowhere** in the system:
@@ -1085,6 +1107,7 @@ pub(crate) fn validation_store_exit_flips(report: &ValidationReport) -> bool {
 /// **this** finding?* [`gates_at_task`] asks the second question; the per-doc conformance families
 /// need the baseline discriminator on top of this list.
 const GATES_NOWHERE: &[&str] = &[
+    crate::orphan::ORPHANED_INSTANCE_CODE,
     "schema-conformance.mention-resolves",
     "schema-conformance.repeatable-populated",
     "schema-conformance.surplus-sections-absent",
@@ -1503,6 +1526,26 @@ pub(crate) const UNADOPTED_INSTANCE_CODE: &str = "schema-conformance.unadopted-i
 /// a substring of the finding's own message, so a fence asserting the trailer says this is
 /// driving the trailer and not the finding line above it.
 pub(crate) const UNADOPTED_SQUATTER_CAUSE: &str = "a never-adopted file sits at a managed home";
+
+/// The words the orphaned-instance closing line names its condition with — deliberately
+/// **not** a substring of the finding's own message, so a fence asserting the trailer says
+/// this is driving the trailer and not the finding line above it.
+pub(crate) const ORPHANED_INSTANCE_CAUSE: &str =
+    "a stamped committed doc is claimed by no resolved doctype";
+
+/// The store trailer for a committed instance whose doctype left the resolved set (M51 Inc 8
+/// / T3). Like the two version-stamp members it *is* an untrustworthy sweep — there is no
+/// schema to adjudicate those docs against, so every other verdict about them is an absence
+/// rather than a result — and the closing line says so instead of letting a green stand for
+/// *"I stopped looking at these files"*.
+pub(crate) fn orphaned_instance_trailer() -> String {
+    format!(
+        "{ORPHANED_INSTANCE_CAUSE} — no schema in the composed set says what those files \
+         are, so the sweep could not adjudicate them and {STORE_EXIT_FLIP_PHRASE}; restore \
+         what claims them (re-add the pack that defines the type, or move them home), or \
+         follow each finding's own route above, then re-validate.\n"
+    )
+}
 
 /// The store trailer for a never-adopted file at a managed home (M46 Inc 3 / T1). Note what it
 /// does **not** say: nothing about an untrustworthy sweep. This sweep worked — it found the

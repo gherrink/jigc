@@ -1212,12 +1212,17 @@ fn validate_store_in_repo(cwd: &Path) -> Result<StoreSweep> {
     // exact state has been reported since M36. Each tier's wording keys on the matched
     // doctype's **current home shape**, so neither names the knob that did not move it.
     let declared = defs.declared_schemas(pack)?;
+    // The paths the strand walk speaks for — the other half of M51 Increment 8's partition
+    // (below): a strand's doctype RESOLVES, so the orphaned-instance break must not also
+    // claim it.
+    let mut spoken_for = std::collections::BTreeSet::new();
     for strand in crate::orphan::orphaned_docs(&jigc_home, &declared, &schemas) {
         let crate::orphan::Strand {
             rel,
             doctype,
             current,
         } = strand;
+        spoken_for.insert(rel.clone());
         let finding = if record.get(&rel).is_some() {
             let (diagnosis, route) = match &current {
                 crate::orphan::Home::Location(_) => (
@@ -1280,6 +1285,21 @@ fn validate_store_in_repo(cwd: &Path) -> Result<StoreSweep> {
             )
         };
         report.findings.push(finding);
+    }
+
+    // The orphaned-instance break (M51 Increment 8 / T3; `design/validation.md` → The M51
+    // registrations — Increment 8): a committed doc jigc stamped whose declared doctype is
+    // defined by **no** resolved schema — the instances a doctype leaves behind when the pack
+    // that owns it leaves the composition. The partition against the strand advisory above is
+    // asked once, on whether the doctype resolves; `spoken_for` carries that answer for the
+    // paths the strand walk already named. Blocking, and `render::STORE_EXIT_FLIPS`' sixth
+    // member, so the sweep refuses the exit-0 green rather than reporting that it found nothing
+    // in files it has no schema to read. CLI-side, like every arm above it: the subject is the
+    // committed set, which only `git ls-files` knows.
+    for rel in crate::orphan::orphaned_instances(&jigc_home, &schemas, &spoken_for) {
+        report
+            .findings
+            .push(crate::orphan::orphaned_instance_finding(&rel));
     }
 
     // The gate-claim discriminator (M42 Inc 4): which of the committed docs this sweep just

@@ -902,6 +902,13 @@ fn a_hand_edited_repoint_strands_the_committed_doc_and_no_door_reports_it_clean(
 /// adoption, never called a tracked strand. And a **root-declared** placement home (`VISION.md`)
 /// is not re-rootable at all, so a stray `docs/VISION.md` is not this arm's business: no
 /// `placement-root` value could ever have stranded it, and saying one did would be a lie.
+///
+/// **The exit is read rather than asserted 0 (M51 Increment 8 / T3).** `docs/VISION.md` is a
+/// *stamped* file at no resolved doctype's home, which is `schema-conformance.orphaned-instance`'s
+/// subject — an exit-flipping member — so this arm now takes the sweep's stdout without
+/// demanding exit 0, and says below which condition may speak for that file and which may not.
+/// Demanding the old exit here would have made this arm a reason to silence a finding it is not
+/// about.
 #[test]
 fn the_unregistered_tier_routes_adoption_and_a_root_declared_home_is_never_a_strand() {
     let corpus = Corpus::new("unregistered");
@@ -909,7 +916,8 @@ fn the_unregistered_tier_routes_adoption_and_a_root_declared_home_is_never_a_str
     corpus.commit_file("docs/VISION.md", VISION);
     corpus.write_manifest("scalar:\n  placement-root: notes\n");
 
-    let report = corpus.ok(&["validate"]);
+    let out = corpus.jigc(&["validate"]);
+    let report = String::from_utf8(out.stdout).expect("utf-8 stdout");
     assert!(
         report.contains("file-state.unregistered-doc") && report.contains(DECLARED_HOME),
         "a never-baselined file at a re-rootable placement doctype's prior home is the \
@@ -919,10 +927,27 @@ fn the_unregistered_tier_routes_adoption_and_a_root_declared_home_is_never_a_str
         report.contains("jigc migrate docs/roadmap.md --as roadmap"),
         "the unregistered tier routes at the adoption verb; got:\n{report}",
     );
+    // The claim is about the STRAND arms, and it is asserted as that claim rather than as
+    // "the path is unmentioned" — M51 Increment 8 gave the sweep a second, correct speaker for
+    // this file (`schema-conformance.orphaned-instance`: it is stamped and sits at no resolved
+    // doctype's home), so a blanket not-contains would now be satisfied only by silencing the
+    // finding that file has coming.
+    let strand_lines: Vec<&str> = report
+        .lines()
+        .filter(|line| line.contains("file-state.") && line.contains("docs/VISION.md"))
+        .collect();
     assert!(
-        !report.contains("docs/VISION.md"),
+        strand_lines.is_empty(),
         "a root-declared placement home is not re-rootable, so nothing sitting at a \
          `VISION.md`-shaped path anywhere else is a `placement-root` strand; got:\n{report}",
+    );
+    assert!(
+        report.contains(&format!(
+            "{} — committed doc `docs/VISION.md`",
+            cli::orphan::ORPHANED_INSTANCE_CODE
+        )),
+        "and the condition that DOES speak for it says so — a stamped file at no resolved \
+         doctype's home; got:\n{report}",
     );
 }
 

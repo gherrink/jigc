@@ -1380,7 +1380,13 @@ fn read_schema_version_stamp(doc: &Document) -> Option<u32> {
 ///
 /// `pub(crate)` since M48 Inc 4 / T2: the task-scope reconciler's advisory routes on the same
 /// stamp, read the same way, so the two doors cannot disagree about what a doc is stamped.
-pub(crate) fn schema_version_from_front_matter(source: &str) -> Option<u32> {
+///
+/// **`pub` since M51 Inc 8 / T3**, for the one question that has no schema to ask it with: the
+/// CLI's orphaned-instance enumerator (`cli::orphan`) meets a committed doc whose declared
+/// doctype is defined by **no resolved schema**, so every stamp reader that takes a `&Schema`
+/// is unavailable to it by construction. Read-only reach — the engine still ships empty of
+/// content and still never shells to git for the tracked set the enumerator walks.
+pub fn schema_version_from_front_matter(source: &str) -> Option<u32> {
     let body = source.strip_prefix("---\n")?;
     let end = body.find("\n---")?;
     body[..end].lines().find_map(|line| {

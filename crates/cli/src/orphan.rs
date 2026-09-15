@@ -29,6 +29,18 @@
 //!
 //! [`docs_root_would_orphan`] backs the pre-write `jigc config set docs-root` warning — the
 //! live docs a re-point to a *different* root would strand.
+//!
+//! **The sibling condition, and why it is not a strand (M51 Increment 8 / T3).** Everything
+//! above is about a *home* that moved while the doctype stayed. [`orphaned_instances`] is the
+//! other half: a committed stamped doc **no resolved doctype claims** — the pack that defined
+//! its type left the composition, or the file sits where no doctype homes — so there is no
+//! home to compare it against and no schema to parse it with. It is
+//! `schema-conformance.orphaned-instance`: blocking, and a member of
+//! [`crate::render::STORE_EXIT_FLIPS`]. The two are partitioned by the strand walk's own
+//! verdict — a path it can name a doctype for is the strand advisory's, and what it cannot
+//! name stays the sibling's (`completions/artifacts/M51/settle-record.md` → §18). It lands
+//! here rather than in the engine for the reason the strand arms do: the subject is the
+//! **committed** set, which only `git ls-files` knows.
 
 use std::path::Path;
 
@@ -255,6 +267,106 @@ pub(crate) fn orphaned_docs(
 /// `ends_with(remainder)` would also match `docs/old-roadmap.md`.
 fn at_remainder(rel: &str, remainder: &str) -> bool {
     rel == remainder || rel.ends_with(&format!("/{remainder}"))
+}
+
+/// The check id of the **orphaned-instance** break (M51 Increment 8 / T3) — a committed doc
+/// carrying a jigc schema-version stamp that **no resolved doctype claims**. Named once so
+/// the producer below, [`crate::render::STORE_EXIT_FLIPS`]' matcher and witness, and every
+/// fence over either cannot drift apart on a string.
+pub const ORPHANED_INSTANCE_CODE: &str = "schema-conformance.orphaned-instance";
+
+/// The committed `.md`s that carry a jigc **schema-version stamp** yet are claimed by **no
+/// resolved doctype** — the instances a doctype leaves behind when it leaves the composition,
+/// and their sibling, a stamped file sitting where no doctype homes
+/// (`design/validation.md` → The M51 registrations — Increment 8;
+/// `completions/artifacts/M51/settle-record.md` → §18). Address-sorted: the walk is over the
+/// sorted [`committed_markdown`] listing and the claimed set is a `BTreeSet`, so the output
+/// is a function of the corpus and never of an enumeration order.
+///
+/// **Two legs, and each is the honest one available.** The stamp is read by
+/// [`engine::validate::schema_version_from_front_matter`] — no parse and **no schema**, which
+/// is the point: the type the stamp names is defined by nothing, so every reader that takes a
+/// `&Schema` is unavailable here by construction (`crate::migrate_corpus`'s
+/// `is_unadopted_foreign` among them). The claim is the union of
+/// [`engine::index::committed_instances`] over the resolved schemas — the same census every
+/// other committed-instance consumer reads, so "claimed" means claimed by the doors that act
+/// on it, not by a second opinion. A file jigc never stamped (`README.md`, a foreign doc, the
+/// adapter's own guide, whose front matter carries no stamp) is not this condition's subject
+/// and is never named by it.
+///
+/// `spoken_for` is the strand set [`orphaned_docs`] already reported. It is the **partition**,
+/// not an optimization: a strand is a *self-discovered prior home* — a path the walk can name
+/// a doctype for — and that doctype resolves, so the two conditions would otherwise claim one
+/// path twice with different diagnoses (`design/validation.md` → Orphan detection, whose
+/// subject this is not). What the strand walk cannot name it does not exclude: a stamped file
+/// at a path matching no home shape stays this condition's, which is why the message states
+/// the claim it computed rather than the cause it cannot know
+/// ([`orphaned_instance_finding`]).
+pub(crate) fn orphaned_instances(
+    repo_root: &Path,
+    resolved: &std::collections::BTreeMap<String, Schema>,
+    spoken_for: &std::collections::BTreeSet<String>,
+) -> Vec<String> {
+    let claimed: std::collections::BTreeSet<String> = resolved
+        .iter()
+        .flat_map(|(ty, schema)| engine::index::committed_instances(repo_root, ty, schema))
+        .map(|(_identity, path)| {
+            path.strip_prefix(repo_root)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+    committed_markdown(repo_root)
+        .into_iter()
+        .filter(|rel| !claimed.contains(rel) && !spoken_for.contains(rel))
+        .filter(|rel| carries_stamp(repo_root, rel))
+        .collect()
+}
+
+/// Whether the committed file at `rel` carries a jigc schema-version stamp. A file git tracks
+/// but the worktree no longer holds reads as **unstamped** — the sweep is a statement about
+/// bytes it could read, never an assertion built on an absent file.
+fn carries_stamp(repo_root: &Path, rel: &str) -> bool {
+    std::fs::read_to_string(repo_root.join(rel))
+        .ok()
+        .and_then(|source| engine::validate::schema_version_from_front_matter(&source))
+        .is_some()
+}
+
+/// The **blocking** store-scope finding for one orphaned instance, located at its path.
+///
+/// **The message states what was computed, not what was inferred.** The stamp carries a
+/// version and no type (`schema-version: N` — the datum §20 settled `doc list`'s `id: null`
+/// on), so *the doctype is gone* is an inference the sweep cannot make: the same predicate
+/// also holds for a stamped copy sitting where no doctype homes. Both are one condition —
+/// jigc stamped this file and now claims it nowhere — and the wording says exactly that, so
+/// neither reading is told something false.
+///
+/// **The route names both directions of repair, and says what its exit leaves behind.**
+/// Restoring what claims the file (the pack, or its home) is the first; `jigc unmanage` is
+/// the alternative — it runs cleanly here (a path under no schema location drops its
+/// file-state baseline and exits 0) but **leaves the bytes on disk**, so on its own it does
+/// not clear this finding. A route that, followed exactly, changes nothing is the defect
+/// M46's PT-1 closed at another door, so that exit names the act that finishes it
+/// (`DECISIONS.md` → 2026-09-15 M51 Increment 8 / T3).
+pub(crate) fn orphaned_instance_finding(rel: &str) -> engine::finding::Finding {
+    engine::finding::Finding::graded(
+        engine::finding::Severity::Blocking,
+        ORPHANED_INSTANCE_CODE,
+        format!(
+            "committed doc `{rel}` carries a jigc schema-version stamp but sits at no \
+             resolved doctype's home — no schema in the composed set claims it, so jigc \
+             cannot say what this file is"
+        ),
+        Some(engine::finding::Location::addressed(rel, 1, 1)),
+        Some(engine::finding::Route::human(format!(
+            "restore what claims it — re-add the pack that defines its type, or move it to \
+             that doctype's home — or take it out of jigc's world: `jigc unmanage {rel}`, \
+             then delete the file or its `schema-version:` stamp (`unmanage` drops the \
+             baseline and leaves the bytes, so the stamp alone keeps this finding alive)"
+        ))),
+    )
 }
 
 /// The route for the **unregistered** tier of the two-tier orphan advisory (M40;
@@ -514,6 +626,66 @@ mod tests {
         assert!(
             !route.contains("jigc migrate"),
             "no shipped workflow → no migrate invocation in the route; got: {route}",
+        );
+    }
+
+    /// (M51 inc-8 T3) **The orphaned-instance predicate's three legs, each driven against a
+    /// real committed tree.** A stamped doc no resolved doctype claims is the hit; the same
+    /// doctype's live instance is claimed and silent; an unstamped file (`README.md`, and the
+    /// adapter's own guide, whose front matter carries no `schema-version:` line) is not this
+    /// condition's subject at all. The last is the leg that keeps the exit flip affordable —
+    /// without it every prose file in a repo would flip `jigc validate`.
+    #[test]
+    fn orphaned_instances_names_the_stamped_unclaimed_docs_and_nothing_else() {
+        let repo = TempRepo::new();
+        repo.commit_file(
+            "decisions/live.md",
+            "---\nschema-version: 1\n---\n\n# Live\n",
+        );
+        repo.commit_file(
+            "docs/roadmap.md",
+            "---\nschema-version: 1\n---\n\n# Roadmap\n",
+        );
+        repo.commit_file("README.md", "# Readme\n");
+        repo.commit_file("guide.md", "---\nname: guide\n---\n\n# Guide\n");
+
+        let schemas = map(vec![adr_schema("decisions/")]);
+        assert_eq!(
+            orphaned_instances(repo.path(), &schemas, &Default::default()),
+            vec!["docs/roadmap.md".to_string()],
+            "the stamped doc no resolved doctype claims is the orphan; the adr's own committed \
+             instance is claimed, and the two unstamped files were never jigc's to speak for",
+        );
+    }
+
+    /// (M51 inc-8 T3) **The partition.** A path the strand walk already spoke for is not an
+    /// orphaned instance: its doctype resolves and only its home moved, so naming it here
+    /// would say the pack defining its type is gone while `jigc describe` still lists it.
+    #[test]
+    fn a_path_the_strand_walk_spoke_for_is_never_an_orphaned_instance() {
+        let repo = TempRepo::new();
+        repo.commit_file(
+            "old/decisions/cache.md",
+            "---\nschema-version: 1\n---\n\n# A\n",
+        );
+
+        let schemas = map(vec![adr_schema("docs/decisions/")]);
+        let strands: Vec<(String, String)> = pairs(orphaned_docs(repo.path(), &schemas, &schemas));
+        assert_eq!(
+            strands,
+            vec![("old/decisions/cache.md".to_string(), "adr".to_string())],
+            "the fixture must really be a strand, or the exclusion below proves nothing",
+        );
+        let spoken_for = strands.into_iter().map(|(rel, _)| rel).collect();
+        assert!(
+            orphaned_instances(repo.path(), &schemas, &spoken_for).is_empty(),
+            "a strand is reported by `file-state.orphaned-doc` and by this condition never",
+        );
+        assert_eq!(
+            orphaned_instances(repo.path(), &schemas, &Default::default()),
+            vec!["old/decisions/cache.md".to_string()],
+            "without the exclusion the same path is claimed twice — which is what makes the \
+             `spoken_for` argument the partition rather than an optimization",
         );
     }
 

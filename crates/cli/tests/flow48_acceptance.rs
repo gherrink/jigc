@@ -2394,9 +2394,14 @@ fn a_read_intent_lands_on_a_read_verb_and_every_ack_and_flip_states_its_fact() {
             "unmigrated-corpus" => FlipCell::Live(corpus_below_version),
             "ahead-corpus" => FlipCell::Live(corpus_ahead),
             "foreign-squatter" => FlipCell::Live(corpus_foreign_squatter),
+            "orphaned-instance" => FlipCell::ProvenElsewhere {
+                suite: "orphaned_instance.rs",
+                why: "it needs a corpus composed against a pack set that no longer defines a \
+                      doctype it already authored docs for, which this walk does not build",
+            },
             other => panic!(
                 "`{other}` is an exit-flipping condition with no cell in this flow — the axis \
-                 is `STORE_EXIT_FLIPS`, so a fifth condition owes a decision here",
+                 is `STORE_EXIT_FLIPS`, so a further condition owes a decision here",
             ),
         };
         let build = match cell {
