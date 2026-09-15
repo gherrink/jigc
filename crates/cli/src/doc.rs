@@ -501,9 +501,11 @@ pub enum DocCommand {
     /// content read) and `doc schema` (the schema read). Every instance of one
     /// doctype (or of every persisted doctype) carries its `<type>:<slug>`
     /// identity, its repo-relative path, and its **registration state**:
-    /// `managed` (jigc's own doc) or `unregistered` (a file at a managed home
+    /// `managed` (jigc's own doc), `unregistered` (a file at a managed home
     /// jigc never adopted — adopt it with `jigc ingest` / `jigc migrate <path>
-    /// --as <doctype>`). `--format json` is the pinned shape
+    /// --as <doctype>`), or `orphaned` (stamped by jigc and claimed by no
+    /// resolved doctype — it lists with a null identity and no item count, and
+    /// `jigc validate` blocks on it). `--format json` is the pinned shape
     /// `{"docs":[{id, path, state, item-count}]}` (no in-band version integer —
     /// `design/doc-read-surface.md` → the fourth read surface).
     ///
@@ -4189,7 +4191,14 @@ fn run_list(
     }
     let jigc_home = crate::ingest::require_project_layer(cwd)?;
     let pack = make_pack()?;
-    let schemas = committed_schemas(pack.as_ref(), &jigc_home)?;
+    // One cascade resolution, two reads of it — the **resolved** schemas every row below is
+    // adjudicated against, and the **declared** ones the strand walk keys its placement arm
+    // on. Both are what `crate::cli`'s store sweep reads, from the same `CascadeDefs`, so the
+    // listing and the sweep cannot form two opinions about one file.
+    let project_config = jigc_home.join(".jigc").join("config");
+    let cascade = crate::start::resolve_severity_cascade(pack.as_ref(), &project_config)?;
+    let defs = crate::start::CascadeDefs::new(&cascade, &project_config);
+    let schemas = defs.all_schemas(pack.as_ref())?;
     if let Some(ty) = doctype
         && !schemas.contains_key(ty)
     {
@@ -4230,14 +4239,48 @@ fn run_list(
                 .map(|doc| item_count(&doc))
                 .unwrap_or(0);
             docs.push(DocRow {
-                id,
+                id: Some(id),
                 path: path
                     .strip_prefix(&jigc_home)
                     .unwrap_or(&path)
                     .to_string_lossy()
                     .into_owned(),
                 state,
-                item_count,
+                item_count: Some(item_count),
+            });
+        }
+    }
+    // The **orphan rows** (M51 Increment 8 / T4; `design/doc-read-surface.md` → the fourth
+    // read surface, the third `state` value): the committed docs jigc stamped that no
+    // resolved doctype claims. They come from `crate::orphan::orphaned_instances` — T3's
+    // enumerator, the one the store sweep blocks on — because a file `jigc validate` refuses
+    // to go green over and `jigc doc list` has never heard of is the two-stories-about-one-
+    // file defect this verb was founded to end.
+    //
+    // **Appended, not merged into the sort**: the loop above is (type, slug)-ordered and an
+    // orphan has no type to sort under, so the orphans follow every resolved row, in the
+    // enumerator's own path order.
+    //
+    // **Only on an unfiltered listing.** `doc list <doctype>` narrows to one doctype's
+    // instances, and an orphan is an instance of none — including of the type its stamp was
+    // written under, which resolves to nothing.
+    //
+    // The strand set is the **partition**, passed for the same reason the sweep passes it: a
+    // strand's doctype resolves and only its home moved, so naming it here would tell the
+    // reader the pack defining its type is gone while `jigc describe` still lists it.
+    if doctype.is_none() {
+        let declared = defs.declared_schemas(pack.as_ref())?;
+        let spoken_for: std::collections::BTreeSet<String> =
+            crate::orphan::orphaned_docs(&jigc_home, &declared, &schemas)
+                .into_iter()
+                .map(|strand| strand.rel)
+                .collect();
+        for rel in crate::orphan::orphaned_instances(&jigc_home, &schemas, &spoken_for) {
+            docs.push(DocRow {
+                id: None,
+                path: rel,
+                state: "orphaned",
+                item_count: None,
             });
         }
     }
@@ -4321,10 +4364,10 @@ fn run_list_staged(
                 .unwrap_or(0);
         }
         docs.push(DocRow {
-            id,
+            id: Some(id),
             path,
             state: "managed",
-            item_count: count,
+            item_count: Some(count),
         });
     }
     let empty_line = match doctype {
@@ -4347,6 +4390,14 @@ fn run_list_staged(
 /// machine arm's vocabulary. **Row-gated**: it prints where rows do, never over the empty-set
 /// line (a header above nothing names nothing), and never on `--format json`, whose keys
 /// *are* the shape.
+/// What the plain arm prints in the `id` column of a row carrying **no** identity — today
+/// only an `orphaned` row (M51 Increment 8 / T4). It is deliberately **unpasteable**: a
+/// synthesized `<type>:<slug>` would be an address `jigc doc show` refuses, and the path
+/// belongs in the `path` column, where it already means what it has always meant. The
+/// affirmative-absent form is the one this codebase already prints for an absent value
+/// ([`crate::render::migration_review`]'s `(none)`), so the surface grows no second spelling.
+const NO_IDENTITY: &str = "(none)";
+
 fn render_listing(format: Format, docs: &[DocRow], empty_line: &str) {
     match format {
         Format::Json => println!("{}", render::json(&DocListing { docs })),
@@ -4357,7 +4408,12 @@ fn render_listing(format: Format, docs: &[DocRow], empty_line: &str) {
                 println!("id  path  state");
             }
             for row in docs {
-                println!("{}  {}  {}", row.id, row.path, row.state);
+                println!(
+                    "{}  {}  {}",
+                    row.id.as_deref().unwrap_or(NO_IDENTITY),
+                    row.path,
+                    row.state,
+                );
             }
         }
     }
@@ -4443,19 +4499,33 @@ struct DocListing<'a> {
 /// carry the same fact twice.
 #[derive(serde::Serialize)]
 struct DocRow {
-    /// The `<type>:<slug>` identity — the address every `doc` verb takes.
-    id: String,
+    /// The `<type>:<slug>` identity — the address every `doc` verb takes — and **`null` on an
+    /// `orphaned` row** (M51 Increment 8 / T4; `completions/artifacts/M51/settle-record.md` →
+    /// §20 fork 1). An orphan's declared doctype is defined by no resolved schema, and a jigc
+    /// stamp carries a **version and no type** (`---\nschema-version: N\n---` is the whole of
+    /// it), so nothing on disk, in the index or in the commit names what the doc was: there is
+    /// no honest identity to print. The row says so structurally rather than synthesizing a
+    /// `<type>:<slug>` `doc show` would refuse or moving the path into the identity column —
+    /// `jigc unmanage`'s `identity: Option<String>` ([`crate::unmanage::UnmanageReport`]) made
+    /// the same call for the same reason. `state` is the discriminator.
+    id: Option<String>,
     /// The instance's repo-relative path.
     path: String,
-    /// `managed` | `unregistered` — [`engine::validate::is_unadopted_foreign`]'s verdict.
+    /// `managed` | `unregistered` — [`engine::validate::is_unadopted_foreign`]'s verdict — or
+    /// `orphaned`, the third value (M51): stamped, and claimed by no resolved doctype.
     state: &'static str,
     /// The additive **`item-count`** key (M44 — `design/doc-read-surface.md` → the item-count
     /// additive key): the parsed count of the doc's top-level repeatable items ([`item_count`]).
     /// `doc list` did not parse instances before this — the count is a new parse, and it is
     /// **best-effort**: an instance that does not parse against its current schema (a foreign /
     /// `unregistered` file, or a stale-shape managed doc) counts **0**.
+    ///
+    /// **`null` on an `orphaned` row** (M51 Increment 8 / T4) — a third answer for a third
+    /// population, not a revision of the `0` above. That `0` answers an instance that *failed
+    /// to parse against its current schema*; an orphan has **no schema at all**, so `0` there
+    /// would be indistinguishable from *parsed, and empty*.
     #[serde(rename = "item-count")]
-    item_count: usize,
+    item_count: Option<usize>,
 }
 
 /// The `jigc doc schema --format json` shape — the **separately-pinned, explicitly

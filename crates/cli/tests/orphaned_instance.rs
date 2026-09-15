@@ -161,6 +161,108 @@ fn the_shipped_corpus_under_the_embedded_pair_carries_no_orphan() {
     );
 }
 
+/// **Arm 4 (M51 inc-8 T4) — the same condition on the store's own index read.** The sweep
+/// and the listing are two consumers of one enumerator, so a file `jigc validate` blocks on
+/// cannot be a file `jigc doc list` has never heard of — which is what the base did: the
+/// listing carried the one still-claimed row and dropped the other three, on the surface the
+/// adapter rule makes an agent's only sanctioned route to the corpus.
+///
+/// The row's three values are read off the emitted json: **`id: null`** (no resolved schema
+/// defines the type its stamp was written under, and a stamp carries a version and no type —
+/// so there is no honest identity to print), **`state: "orphaned"`**, and **`item-count:
+/// null`** (no schema to parse against — a third answer for a third population, not a
+/// revision of the best-effort `0` a parse *failure* yields).
+///
+/// **The two surfaces are asserted to agree as sets**, not merely to be non-empty each: the
+/// orphan paths the listing reports are exactly the paths the sweep's findings located.
+#[test]
+fn doc_list_reports_every_orphaned_instance_the_sweep_blocks_on() {
+    let corpus = TrialCorpus::build(State::CommittedSingletons);
+    let pack = FixturePack::from_dev_pack("orphaned-instance-list");
+
+    let listed = jigc_under_pack(&corpus, &pack, &["doc", "list", "--format", "json"]);
+    assert!(
+        listed.status.success(),
+        "`doc list` is a report and stays exit 0 — the exit flip is the sweep's; got:\n{}",
+        printed(&listed),
+    );
+    let json = String::from_utf8_lossy(&listed.stdout).into_owned();
+    for rel in ORPHANED {
+        let row = format!(
+            "{{\n      \"id\": null,\n      \"path\": \"{rel}\",\n      \"state\": \
+             \"orphaned\",\n      \"item-count\": null\n    }}"
+        );
+        assert!(
+            json.contains(&row),
+            "`{rel}` is stamped, committed, and claimed by no resolved doctype — the \
+             listing must carry it as an orphaned row with a null identity and no item \
+             count; got:\n{json}",
+        );
+    }
+    assert!(
+        json.contains(&format!("\"path\": \"{STILL_CLAIMED}\"")) && json.contains("\"managed\""),
+        "the control's doctype still resolves, so its row stays a managed one with its \
+         identity; got:\n{json}",
+    );
+
+    // The two consumers agree as SETS: every path the sweep located is listed, and the
+    // listing invents none. Both sides are lifted from the emitted bytes.
+    let swept = jigc_under_pack(&corpus, &pack, &["validate"]);
+    let report = printed(&swept);
+    let mut located: Vec<&str> = report
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("at: "))
+        .collect();
+    located.sort_unstable();
+    located.dedup();
+    let mut orphan_rows: Vec<&str> = json
+        .split("\"state\": \"orphaned\"")
+        .take(json.matches("\"state\": \"orphaned\"").count())
+        .filter_map(|chunk| chunk.rsplit_once("\"path\": \"").map(|(_, tail)| tail))
+        .filter_map(|tail| tail.split_once('"').map(|(path, _)| path))
+        .collect();
+    orphan_rows.sort_unstable();
+    assert_eq!(
+        orphan_rows, located,
+        "the sweep and the listing read one enumerator — a file one of them names and the \
+         other drops is the two-stories-about-one-file defect `doc list` was founded to \
+         end; listing:\n{json}\nsweep:\n{report}",
+    );
+
+    // A doctype-narrowed listing carries no orphan row: an orphan belongs to no doctype.
+    let filtered = jigc_under_pack(
+        &corpus,
+        &pack,
+        &["doc", "list", "changelog", "--format", "json"],
+    );
+    let filtered_json = String::from_utf8_lossy(&filtered.stdout);
+    assert!(
+        !filtered_json.contains("\"orphaned\""),
+        "`doc list <doctype>` narrows to one doctype's instances, and an orphan is an \
+         instance of none; got:\n{filtered_json}",
+    );
+}
+
+/// **Arm 5 (M51 inc-8 T4) — the partition holds on the listing too.** Arm 3 proves a stamped
+/// strand is the home-re-point advisory's subject and never the orphaned-instance code's;
+/// the listing consumes the same enumerator and inherits the same partition, so it must not
+/// print an `orphaned` row for a doc whose doctype `jigc describe` still lists.
+#[test]
+fn a_stamped_strand_is_never_listed_as_an_orphaned_row() {
+    let corpus = TrialCorpus::build(State::CommittedSingletons);
+    std::fs::create_dir_all(corpus.repo().join("notes")).expect("create the out-of-band dir");
+    corpus.git(&["mv", "docs/roadmap.md", "notes/roadmap.md"]);
+    corpus.git(&["commit", "-q", "-m", "move the roadmap out of band"]);
+
+    let out = corpus.jigc(&["doc", "list", "--format", "json"]);
+    let json = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !json.contains("\"orphaned\""),
+        "the `roadmap` doctype resolves — only its home moved — so the listing must not \
+         call its stranded instance an orphan; got:\n{json}",
+    );
+}
+
 /// **Arm 3 — the partition: a home that moved is not a doctype that left.** An out-of-band
 /// `git mv` strands a stamped singleton at a path its doctype does not home; that is
 /// `file-state.orphaned-doc`'s subject, and the doctype still resolves — so the orphaned-

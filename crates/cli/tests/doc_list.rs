@@ -261,6 +261,58 @@ const STORE_WITH_ITEMS_JSON: &str = r#"{
   ]
 }"#;
 
+/// A committed `.md` jigc **stamped** that **no resolved doctype claims** — the orphaned
+/// instance (M51 Increment 8 / T3, `design/validation.md` → the M51 registrations). Its front
+/// matter carries the whole of what a jigc stamp is: a `schema-version:` number, and **no
+/// type**. That is the datum the row's `id: null` rests on — there is nothing in the file, the
+/// index or the commit that names what this doc was.
+const STAMPED_ORPHAN: &str = "\
+---
+schema-version: 1
+---
+
+# An orphan
+
+Prose jigc wrote and can no longer say anything about.
+";
+
+/// The pinned listing shape when two stamped orphans sit beside the archetypal store. Three
+/// declared facts ride this document: an orphan row's `id` is **`null`** (no resolved schema
+/// defines the type its stamp was written under, and the stamp names none — a synthesized
+/// `<type>:<slug>` would be an address `doc show` refuses), its `item-count` is **`null`**
+/// (no schema to parse it against — distinct from the best-effort `0` a *parse failure*
+/// yields), and the orphan rows sort **after** every resolved row, path-ordered among
+/// themselves: `archive/old.md` sorts before `decisions/single-node-cache.md` by path, so a
+/// row set merely path-sorted end-to-end would put it second.
+const STORE_WITH_ORPHANS_JSON: &str = r#"{
+  "docs": [
+    {
+      "id": "adr:single-node-cache",
+      "path": "decisions/single-node-cache.md",
+      "state": "managed",
+      "item-count": 0
+    },
+    {
+      "id": "changelog:changelog",
+      "path": "CHANGELOG.md",
+      "state": "unregistered",
+      "item-count": 0
+    },
+    {
+      "id": null,
+      "path": "archive/old.md",
+      "state": "orphaned",
+      "item-count": null
+    },
+    {
+      "id": null,
+      "path": "notes/later.md",
+      "state": "orphaned",
+      "item-count": null
+    }
+  ]
+}"#;
+
 /// Seed the archetypal store: one committed (managed) ADR + one foreign root `CHANGELOG.md`.
 fn seed_store(repo: &Path) {
     let decisions = repo.join("decisions");
@@ -481,6 +533,96 @@ fn doc_list_json_carries_the_item_count_of_each_doc() {
         stdout_of(&json).trim_end(),
         STORE_WITH_ITEMS_JSON,
         "each row carries item-count: the adr 0, the two-requirement prd 2",
+    );
+}
+
+/// (M51 inc-8 T4) **`jigc doc list` prints the orphaned row** — the store surface stops
+/// dropping a file it is simultaneously refusing to validate over
+/// (`design/doc-read-surface.md` → the fourth read surface, the third `state` value;
+/// `completions/artifacts/M51/settle-record.md` → §20 fork 1). At the base this listing
+/// carried the two resolved rows and nothing else, while `jigc validate` blocked on both
+/// stamped files by name — which re-opens `doc list`'s founding argument, that an omitted
+/// file sends the agent straight to `cat`, on the very files jigc has just exit-flipped over.
+///
+/// Four facts, each asserted on the emitted bytes:
+///
+/// - the row's **`id` is `null`** and its **`item-count` is `null`** — the pinned document
+///   below is the declaration (and the reshape of two keys already on the wire, admissible
+///   only while the pre-1.0 window is open — `design/command-output-contract.md` →
+///   Evolution posture, the third pre-pin case);
+/// - the plain arm renders that null identity as something **unpasteable** — never a
+///   synthesized `<type>:<slug>` (an address `doc show` refuses) and never the path moved
+///   into the identity column (a meaning change on a pinned key);
+/// - orphan rows sort **after** every resolved row, path-ordered among themselves;
+/// - a **doctype-filtered** listing carries none of them: an orphan belongs to no doctype,
+///   so every filter excludes it — including the filter naming the type it was written
+///   under, which resolves to nothing.
+#[test]
+fn doc_list_prints_the_orphaned_row_with_a_null_identity_and_no_item_count() {
+    let repo = TempDir::new("orphans");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    seed_store(repo.path());
+    for rel in ["archive/old.md", "notes/later.md"] {
+        let path = repo.path().join(rel);
+        fs::create_dir_all(path.parent().expect("a parent dir")).expect("mk the orphan's dir");
+        fs::write(&path, STAMPED_ORPHAN).expect("write the stamped orphan");
+    }
+    git(repo.path(), &["add", "archive", "notes"]);
+    git(
+        repo.path(),
+        &["commit", "-q", "-m", "docs jigc can no longer claim"],
+    );
+
+    // (1) The pinned json — `id: null`, `state: "orphaned"`, `item-count: null`, and the
+    //     orphan rows last, path-ordered.
+    let json = jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "list", "--format", "json"],
+    );
+    assert_ok(&json, "`jigc doc list --format json`");
+    assert_eq!(
+        stdout_of(&json).trim_end(),
+        STORE_WITH_ORPHANS_JSON,
+        "an orphaned instance is a row with a null identity and no item count, sorted \
+         after the resolved rows",
+    );
+
+    // (2) The plain arm — the null identity renders unpasteable in the `id` column, and
+    //     the path stays in the `path` column where it means what it has always meant.
+    let plain = jigc(repo.path(), home.path(), &["doc", "list"]);
+    assert_ok(&plain, "`jigc doc list`");
+    let out = stdout_of(&plain);
+    assert_eq!(
+        out,
+        "id  path  state\n\
+         adr:single-node-cache  decisions/single-node-cache.md  managed\n\
+         changelog:changelog  CHANGELOG.md  unregistered\n\
+         (none)  archive/old.md  orphaned\n\
+         (none)  notes/later.md  orphaned\n",
+        "the plain listing prints the orphan rows with an unpasteable identity cell",
+    );
+    for row in out.lines().filter(|line| line.ends_with("orphaned")) {
+        let id = row.split("  ").next().expect("an identity cell");
+        assert!(
+            !id.contains(':') && !id.contains('/'),
+            "the identity cell of an orphan row must be neither an address `doc show` \
+             refuses nor the path (the meaning change a pinned key cannot take); got \
+             `{id}` in:\n{out}",
+        );
+    }
+
+    // (3) A doctype-filtered listing carries no orphan row — an orphan belongs to no
+    //     doctype, so it is out of every narrowed scope, including the one that would
+    //     name the type its stamp was written under.
+    let filtered = jigc(repo.path(), home.path(), &["doc", "list", "adr"]);
+    assert_ok(&filtered, "`jigc doc list adr`");
+    assert_eq!(
+        stdout_of(&filtered),
+        "id  path  state\n\
+         adr:single-node-cache  decisions/single-node-cache.md  managed\n",
+        "a doctype-narrowed listing carries no orphan rows",
     );
 }
 
