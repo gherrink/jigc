@@ -1185,6 +1185,13 @@ fn doc_ack_parity() {
 /// because transience is a **schema** fact a driver reads from `jigc doc schema`
 /// (`design/command-output-contract.md` §2, the recorded posture), i.e. re-derivable
 /// state, which the Settle's exclusion covers.
+///
+/// **Two `Discarded` witnesses, because the ack has two cells and each withholds what the
+/// other prints** (M51 Increment 9 / T8, the `setup_success_parity` mold). A **sub-task**
+/// discard settles its milestone record and lands a commit, so both surfaces name the sha;
+/// an **ordinary** discard commits nothing, so the text omits the line and the envelope
+/// carries `null`. A single-witness fence would leave whichever half it omitted unchecked —
+/// and the `null` cell is the one a synthesized value would quietly turn into a lie.
 fn task_ack_parity() {
     let acks = vec![
         TaskAck::Bound {
@@ -1205,6 +1212,12 @@ fn task_ack_parity() {
                 doc: "adr:cache-strategy".to_owned(),
                 transient: false,
             }],
+            commit: Some("3715822".to_owned()),
+        },
+        TaskAck::Discarded {
+            task: "harden-the-cache".to_owned(),
+            dropped: Vec::new(),
+            commit: None,
         },
     ];
 
@@ -1228,16 +1241,37 @@ fn task_ack_parity() {
                 carries_decomposed(&doc["target"], &["doctype", "slug"], &label, "address");
                 carries(&doc, "target", target, &label, "target");
             }
-            TaskAck::Discarded { task, dropped } => {
+            TaskAck::Discarded {
+                task,
+                dropped,
+                commit,
+            } => {
                 text_prints(&text, task, &label, "task");
                 carries(&doc, "task", task, &label, "task");
-                let DroppedStaged {
-                    doc: staged_doc,
-                    // DECLARED EXCLUSION — see this function's doc comment.
-                    transient: _transient,
-                } = &dropped[0];
-                text_prints(&text, staged_doc, &label, "dropped.doc");
-                carries(&doc, "dropped", &vec![staged_doc], &label, "dropped[].doc");
+                let staged: Vec<&String> = dropped
+                    .iter()
+                    .map(|dropped| {
+                        let DroppedStaged {
+                            doc: staged_doc,
+                            // DECLARED EXCLUSION — see this function's doc comment.
+                            transient: _transient,
+                        } = dropped;
+                        text_prints(&text, staged_doc, &label, "dropped.doc");
+                        staged_doc
+                    })
+                    .collect();
+                carries(&doc, "dropped", &staged, &label, "dropped[].doc");
+                // The sha cell and the no-commit cell, each asserted at its own strength:
+                // a landed commit is printed AND carried; an absent one is `null` on the
+                // wire and named by neither surface.
+                carries(&doc, "commit", commit, &label, "commit");
+                match commit {
+                    Some(sha) => text_prints(&text, sha, &label, "commit"),
+                    None => assert!(
+                        !text.contains("record commit"),
+                        "`{label}` landed no commit, so its text names none. Text:\n{text}",
+                    ),
+                }
             }
         }
     }

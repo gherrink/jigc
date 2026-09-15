@@ -2553,9 +2553,24 @@ pub enum TaskAck {
     /// agent-text line marks a transient doctype's instance `(transient)` — it was never
     /// going to commit as a file anyway; JSON carries the bare identities (an additive
     /// key, declared in `design/command-output-contract.md` §2).
+    /// **The record-only commit a sub-task discard lands**, short sha (M51 Increment 9 / T8).
+    /// This door is [`COMMITTING_DOORS`](crate::invocation_log::COMMITTING_DOORS)' tenth
+    /// member — a sub-task discard settles its milestone's committed record
+    /// ([`crate::milestone::settle_discarded_sub_task`]) and moves `HEAD` on the operator's
+    /// behalf — yet its success line named no sha while every sibling committing door
+    /// prints one (`setup`'s *install commit*, `milestone create`'s *record commit*,
+    /// `migrate-corpus`'s *committed <sha>*).
+    ///
+    /// `None` in both of its own cells, and the enclosing surface tells them apart: an
+    /// **ordinary** task discard is workbench-local and commits nothing, and a settled
+    /// sub-task whose post-commit read-back failed names no sha rather than a wrong one.
+    /// The text arm omits the line; the envelope carries `null`, the honest absent this
+    /// family already uses for a sha that does not exist (`setup`'s `install_commit`,
+    /// `migrate-corpus`'s own `commit`), never a key a driver has to know is missing.
     Discarded {
         task: String,
         dropped: Vec<DroppedStaged>,
+        commit: Option<String>,
     },
 }
 
@@ -2568,9 +2583,10 @@ pub struct DroppedStaged {
 }
 
 /// Render a successful task-state verb's confirmation ([`TaskAck`]) to the surface
-/// `format` selects: `agent` / `human` emit a terse one-line ack (symmetric with the
-/// bare-line doc acks), `json` the structured envelope (`op` + `task` + `findings`, plus
-/// `role` + the decomposed `target` on a bind).
+/// `format` selects: `agent` / `human` emit a terse ack (symmetric with the bare-line doc
+/// acks — one line, plus the landed `record commit:` line when a sub-task discard committed
+/// one), `json` the structured envelope (`op` + `task` + `findings`, plus `role` + the
+/// decomposed `target` on a bind, and `commit` on a discard).
 pub fn task_ack(format: Format, ack: &TaskAck) -> String {
     match format {
         Format::Json => match ack {
@@ -2580,9 +2596,14 @@ pub fn task_ack(format: Format, ack: &TaskAck) -> String {
                 "op": "task-bind", "task": task, "role": role, "target": target,
                 "findings": [],
             })),
-            TaskAck::Discarded { task, dropped } => json(&serde_json::json!({
+            TaskAck::Discarded {
+                task,
+                dropped,
+                commit,
+            } => json(&serde_json::json!({
                 "op": "task-discard", "task": task,
                 "dropped": dropped.iter().map(|d| d.doc.as_str()).collect::<Vec<_>>(),
+                "commit": commit,
                 "findings": [],
             })),
         },
@@ -2593,9 +2614,19 @@ pub fn task_ack(format: Format, ack: &TaskAck) -> String {
                 address,
                 ..
             } => format!("bound {role} = {address} (task {task})"),
-            TaskAck::Discarded { task, dropped } => {
+            TaskAck::Discarded {
+                task,
+                dropped,
+                commit,
+            } => {
+                let landed = commit.as_ref().map_or_else(String::new, |sha| {
+                    format!(
+                        "\nrecord commit: {sha}   — this sub-task's milestone record, \
+                         settled to `discarded` and committed on its own"
+                    )
+                });
                 if dropped.is_empty() {
-                    format!("discarded task {task}")
+                    format!("discarded task {task}{landed}")
                 } else {
                     let list: Vec<String> = dropped
                         .iter()
@@ -2608,7 +2639,7 @@ pub fn task_ack(format: Format, ack: &TaskAck) -> String {
                         })
                         .collect();
                     format!(
-                        "discarded task {task} — dropped staged edits to: {}",
+                        "discarded task {task} — dropped staged edits to: {}{landed}",
                         list.join(", ")
                     )
                 }
@@ -5702,7 +5733,7 @@ pub const ENVELOPE_ARMS: &[EnvelopeArm] = &[
         path: &["task", "discard"],
         arm: "TaskAck::Discarded",
         origin: ArmOrigin::Variant { of: "TaskAck" },
-        shape: ArmShape::Object(&["dropped", "findings", "op", "task"]),
+        shape: ArmShape::Object(&["commit", "dropped", "findings", "op", "task"]),
         status: ArmStatus::Pinned,
         outcome: ArmOutcome::Success,
         root: ArmRoot::AdHoc("`render::task_ack`'s per-variant `json!`"),

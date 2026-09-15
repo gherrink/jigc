@@ -498,6 +498,13 @@ pub(crate) fn sweep_for_orientation(cwd: &Path, id: &str) -> std::result::Result
 /// window is closed (M48), and the relay delivers the hook's words on both surfaces without
 /// minting new contract shape.
 ///
+/// **The settled record commit's sha rides the ack** (M51 Increment 9 / T8). This is a
+/// [`COMMITTING_DOORS`](crate::invocation_log::COMMITTING_DOORS) member whose success line
+/// named no commit, while `setup`, `milestone create` and `migrate-corpus` all name theirs —
+/// so the two cells of this one door, *settled a record* and *removed a workbench directory*,
+/// printed the identical sentence. The seam returns the sha it landed and both surfaces carry
+/// it; an ordinary task names none, because there is none.
+///
 /// **It refuses over the task's own staged docs unless `force`** (M50 → the Settle, D1;
 /// `design/team-ready-state.md` → The lifecycle). `jigc uninstall` has refused over exactly
 /// these bytes since M48 while this door removed them at exit 0 — two destroying doors
@@ -515,13 +522,16 @@ fn run_discard(cwd: &Path, id: &str, format: Format, force: bool) -> Result<()> 
     let task = TaskArea::resolve(cwd, id)?;
     refuse_over_staged_prose(&task, id, force)?;
     let dropped = dropped_staged_docs(&task);
-    let hook_output = crate::milestone::settle_discarded_sub_task(
+    let settled = crate::milestone::settle_discarded_sub_task(
         &task.jigc_home,
         &task.jigc_root,
         id,
         &task.dir,
-    )?
-    .unwrap_or_default();
+    )?;
+    // Absent settle ⇒ no commit at all (an ordinary task, or a dev-only project): the ack
+    // names no sha, which is the fact, not a withheld value.
+    let commit = settled.as_ref().and_then(|s| s.commit.clone());
+    let hook_output = settled.map(|s| s.hook_output).unwrap_or_default();
     std::fs::remove_dir_all(&task.dir)
         .with_context(|| format!("could not discard task `{id}` at {:?}", task.dir))?;
     println!(
@@ -531,6 +541,7 @@ fn run_discard(cwd: &Path, id: &str, format: Format, force: bool) -> Result<()> 
             &render::TaskAck::Discarded {
                 task: id.to_string(),
                 dropped,
+                commit,
             },
         )
     );

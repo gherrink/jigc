@@ -62,7 +62,8 @@ The acknowledgement a successful managed-write emits ([render.rs](../crates/cli/
   "target": { "doctype": "adr", "slug": "use-rust" }, "findings": [] }
 
 { "op": "task-discard", "task": "<task-id>",
-  "dropped": ["adr:use-sqlite", "commit:<task-id>"], "findings": [] }
+  "dropped": ["adr:use-sqlite", "commit:<task-id>"],
+  "commit": "3715822", "findings": [] }
 ```
 
 - The **subject of a task-state verb is a work unit, not a doc**, so it carries **`task`** — the task id — where a doc-write carries only `target`. `task-bind` *also* carries `target`: the bound doc, decomposed exactly as above (a bind targets a whole doc, so `doctype` + `slug` only) plus the `role` it was bound to — the two values the bind actually established. **`task-discard` carries no `target`** (it addresses no doc) **and no effect key** — but since 2026-07-17 it carries **`dropped`** (additive, always present, `[]` when the working area staged nothing): the staged docs the removal threw away, as sorted `<type>:<slug>` identities. The pre-fix ack silently dropped staged doc edits — the surface-comprehension review's B3, against the style guide's own ack rule ("what a discard threw away"). The agent-text line enumerates the same set and marks a transient doctype's instance `(transient)` — its staged copy was never going to commit as a file, so nothing would-be-committed was lost; JSON carries the bare identities (transience is a schema fact a driver reads from `jigc doc schema`).
@@ -72,6 +73,26 @@ The acknowledgement a successful managed-write emits ([render.rs](../crates/cli/
   > **The key also solved a non-problem.** "Removed" and "was already gone" were *never* indistinguishable: **exit 0 + the ack** says removed; **exit 1 + the error envelope** says it was already gone. Engaging the rationale rather than overruling it: the distinction it wanted **already exists, one layer up**, and no key is needed to carry it.
   >
   > **And making it reachable would have been worse than dead.** An idempotent discard exits 0 on *any* absent id — including a **milestone** id, which `milestone_finalize_base_guard.rs:266-275` asserts must **fail** (*"the dead end the old route pointed at, verbatim"*), and which is the very dead end Increment 7's unit-aware route fix is **justified by**. It would turn an honest dead end into a **lying route** — the disease this wave exists to cure. *This is the fifth un-enumerated-sibling / unchecked-rationale catch of M42, and the first one caught by the build refusing to proceed.*
+- **`task-discard` names the commit it landed (M51).** `jigc task discard` is a
+  [committing door](finalize.md): a **milestone sub-task**'s discard settles that milestone's
+  committed `milestone-record` to `discarded` and lands a record-only commit, moving `HEAD` on
+  the operator's behalf, while an **ordinary** task's discard is workbench-local and commits
+  nothing. Both exit 0 and, through rc.14, both printed the identical line — so neither surface
+  could be read to tell which had happened, on the one door in this family that commits. It now
+  carries **`commit`** (additive, always present): the landed commit's **short sha**, or `null`.
+  The agent text names it on its own `record commit:` line, the mold `jigc setup` (*install
+  commit*), `jigc milestone create` (*record commit*) and `jigc migrate-corpus` (*committed
+  `<sha>`*) already set.
+
+  `null` covers two cells and is the honest absent in both — the same posture `setup`'s
+  `install_commit` and `migrate-corpus`'s own `commit` already carry, and deliberately **not** a
+  key that disappears: a driver reads one envelope shape and tests the value, never the key's
+  presence. The cells are *no commit was landed at all* (an ordinary task, or a dev-only project
+  that resolves no `milestone-record` doctype) and *the commit landed but its post-commit
+  read-back failed* — the second degrading to naming no sha rather than to failing a discard that
+  succeeded, exactly as `milestone create`'s record commit does. The **text** omits the line in
+  both, because a `record commit: unknown` line would be the law-1 lie the line exists to close.
+
 - **`findings`** is `[]` on both: neither verb writes managed content, so the intrinsic single-doc advisory scoped above has nothing to compute over. The key is present anyway — every ack carries `op` + `findings`, so a driver deserializes one envelope shape.
 - Both verbs also gain a **one-line plain-text ack**; "success is silence" is not a posture, it is an absence of one.
 

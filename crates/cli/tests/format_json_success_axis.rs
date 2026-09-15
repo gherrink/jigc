@@ -1276,6 +1276,7 @@ fn every_production_arm_has_exactly_one_registry_row() {
             task_ack_arm(&TaskAck::Discarded {
                 task: "harden-the-cache".to_string(),
                 dropped: Vec::new(),
+                commit: None,
             }),
         ),
     ];
@@ -1574,4 +1575,104 @@ fn every_declaration_is_well_formed() {
             }
         }
     }
+}
+
+/// **The two `jigc task discard` cells, driven apart** (M51 Increment 9 / T8) — the door
+/// is `COMMITTING_DOORS`' tenth member, and until now its success line named no sha while
+/// every sibling committing door printed one (`jigc setup` → *install commit*,
+/// `jigc milestone create` → *record commit*, `jigc migrate-corpus` → *committed <sha>*).
+///
+/// A **sub-task** discard settles the milestone's committed record
+/// ([`cli::milestone::settle_discarded_sub_task`], M49 Increment 2) — a record-only commit
+/// that moves `HEAD` on the operator's behalf. An **ordinary** task discard commits
+/// nothing. Both exit 0 and both printed the identical line, so the surface could not be
+/// read to tell which happened.
+///
+/// Driven rather than rendered, because the fact is git's: the sha the ack names must be a
+/// commit `git rev-parse` resolves **and** the `HEAD` the door actually moved to. A witness
+/// test can assert the value is carried; only the binary can assert it is *true*.
+///
+/// The ordinary cell asserts the **negative** at the same strength: `commit` is `null` (the
+/// honest absent this envelope family already uses for a sha that does not exist —
+/// `setup`'s `install_commit`, `migrate-corpus`'s own `commit`), the text names no sha, and
+/// `HEAD` is byte-identical to what it was before the discard.
+#[test]
+fn task_discard_names_the_commit_it_landed() {
+    let fresh = TrialCorpus::build(State::Fresh);
+
+    // ── the sub-task cell: a record-only commit lands, and the ack names it ──
+    let sub = fresh.copy_state();
+    milestone_with_subtask(&sub);
+    let before = sub.git(&["rev-parse", "HEAD"]);
+    let text = sub.jigc_ok(&["task", "discard", "warm-the-read-cache", "--force"]);
+    let after = sub.git(&["rev-parse", "HEAD"]);
+    assert_ne!(
+        before, after,
+        "a sub-task discard commits the settled milestone record, so HEAD moves",
+    );
+    let short = sub.git(&["rev-parse", "--short", "HEAD"]);
+    assert!(
+        text.contains(&short),
+        "the sub-task discard's agent text must name the commit it landed (`{short}`) — a \
+         committing door that prints no sha leaves the operator to find it in a later `git \
+         log`.\ntext:\n{text}",
+    );
+
+    let sub_json = fresh.copy_state();
+    milestone_with_subtask(&sub_json);
+    let before = sub_json.git(&["rev-parse", "HEAD"]);
+    let document = sub_json.jigc_ok(&[
+        "task",
+        "discard",
+        "warm-the-read-cache",
+        "--force",
+        "--format",
+        "json",
+    ]);
+    let value: Value = serde_json::from_str(&document).expect("the ack parses");
+    let sha = value["commit"].as_str().unwrap_or_else(|| {
+        panic!("the sub-task discard's envelope must carry the landed sha:\n{document}")
+    });
+    // `git rev-parse <sha>^{commit}` IS the resolution: `TrialCorpus::git` asserts git
+    // exited 0, so a sha git cannot resolve to a commit fails right here.
+    let peeled = format!("{sha}^{{commit}}");
+    let resolved = sub_json.git(&["rev-parse", &peeled]);
+    assert_eq!(
+        resolved,
+        sub_json.git(&["rev-parse", "HEAD"]),
+        "`commit` must be the HEAD the door moved to, not some earlier commit",
+    );
+    assert_ne!(
+        before,
+        sub_json.git(&["rev-parse", "HEAD"]),
+        "the sub-task discard moved HEAD",
+    );
+
+    // ── the ordinary cell: nothing commits, and the ack says so ──
+    let plain = fresh.copy_state();
+    let task = live_adr_task(&plain);
+    let before = plain.git(&["rev-parse", "HEAD"]);
+    let document = plain.jigc_ok(&["task", "discard", &task, "--force", "--format", "json"]);
+    let value: Value = serde_json::from_str(&document).expect("the ack parses");
+    assert_eq!(
+        value["commit"],
+        Value::Null,
+        "an ordinary task discard commits nothing, so `commit` is the honest `null` — never \
+         a sha, and never a key a driver has to know is missing:\n{document}",
+    );
+    assert_eq!(
+        before,
+        plain.git(&["rev-parse", "HEAD"]),
+        "an ordinary task discard is workbench-local: HEAD does not move",
+    );
+
+    let plain_text = fresh.copy_state();
+    let task = live_adr_task(&plain_text);
+    let text = plain_text.jigc_ok(&["task", "discard", &task, "--force"]);
+    assert!(
+        !text.contains("record commit"),
+        "an ordinary task discard landed no commit, so its text names none. (The bare word \
+         `commit` is not the probe: a dropped `commit:<task>` doc is a doctype identity, not \
+         a sha.)\n{text}",
+    );
 }

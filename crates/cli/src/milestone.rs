@@ -1730,8 +1730,9 @@ fn guard_record_free(jigc_home: &Path, schema: &Schema, title: &str) -> Result<(
 /// **Inert in the omitting contexts**, and both are ordinary rather than exceptional: a
 /// dev-only project resolves no `milestone-record` doctype, and an ordinary task is named by no
 /// record. Both return `Ok(None)` — nothing to record, no commit, and the discard proceeds.
-/// Otherwise the landed record commit's captured non-blocking hook stream comes back for the
-/// caller to relay.
+/// Otherwise a [`SettledSubTask`] comes back: the landed record commit's captured non-blocking
+/// hook stream for the caller to relay, and **the sha that commit landed as**, which the ack
+/// names (M51 Increment 9 / T8).
 ///
 /// **An absent answer is not the same as a negative one.** `Ok(None)` is reserved for
 /// *"every record read, none names this task"*; when a record could not be read or did not
@@ -1745,7 +1746,7 @@ pub(crate) fn settle_discarded_sub_task(
     jigc_root: &Path,
     task_id: &str,
     msg_dir: &Path,
-) -> Result<Option<String>> {
+) -> Result<Option<SettledSubTask>> {
     let schemas = shipped_schemas(jigc_home)?;
     let Some(schema) = schemas.get(MILESTONE_RECORD_TYPE) else {
         return Ok(None);
@@ -1785,7 +1786,26 @@ pub(crate) fn settle_discarded_sub_task(
         &pre,
     )?;
     baseline_record(jigc_root, schema, &milestone_id, settled.as_bytes());
-    Ok(Some(hook_output))
+    Ok(Some(SettledSubTask {
+        hook_output,
+        // The landed commit's short sha, read back exactly the way `create`'s record commit
+        // reads its own: the commit is already in history, so a git hiccup here degrades to
+        // naming no sha, never to failing a settle that succeeded.
+        commit: crate::task::git_capture(jigc_home, &["rev-parse", "--short", "HEAD"])
+            .ok()
+            .filter(|sha| !sha.is_empty()),
+    }))
+}
+
+/// What a **settled** sub-task discard hands back ([`settle_discarded_sub_task`]) — the
+/// record-only commit it landed, described on both axes the caller's surface needs: the
+/// captured non-blocking hook stream it relays, and the sha the ack names.
+///
+/// `commit` is `None` only when the post-commit read-back itself failed; the *no commit at
+/// all* case is the enclosing `Option`, so the two are never conflated.
+pub(crate) struct SettledSubTask {
+    pub(crate) hook_output: String,
+    pub(crate) commit: Option<String>,
 }
 
 /// **The milestone whose COMMITTED RECORD names `task_id` as a sub-task** — the sub-task
