@@ -173,9 +173,9 @@ Two precisions the shape has to carry, because getting either wrong ships a law-
 
 **The read-surface axis, with four members.** The three read surfaces sit on one axis: `jigc describe` is a **non-contractual menu**, `jigc doc show` a **contract-pinned content read**, `jigc doc schema` a **separately-versioned schema read**. `jigc doc list` joins as the **contract-pinned index read** — it answers *which docs the store surface holds, and which of them are managed* (identity, not content, not schema, not menu), and it is the surface `doc show` has silently presupposed since M39.
 
-## The version/posture map — five regimes, named in one place
+## The version/posture map — six regimes, named in one place
 
-Five independently-governed version/posture regimes ride jigc's machine surfaces, and until M42 no document named them together — two of them were named in **no** document at all. The map is homed here, on the read side that owns three of the five; [command-output-contract.md](command-output-contract.md) links it rather than restating it.
+Six independently-governed version/posture regimes ride jigc's machine surfaces, and until M42 no document named them together — two of them were named in **no** document at all. The map is homed here, on the read side that owns three of the six; [command-output-contract.md](command-output-contract.md) links it rather than restating it.
 
 | Surface | In-band version | Posture |
 |---|---|---|

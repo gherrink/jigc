@@ -38,11 +38,18 @@
 //!      `8979f16` carried, and therefore what 1.0.0-rc.10 shipped — reported 66 + 3. The
 //!      finding survives its denominator intact; only the denominator was wrong.
 //!
-//!      A bare count also re-falsifies itself on the next step file the pack gains (HEAD
-//!      is already **67**), so the surviving statement carries its **measurement point** —
-//!      the pre-1.0.0 trial's 1.0.0-rc.10 — and lives in **one** home: the rc.11 charter
-//!      row in `implementation/decisions-pending.md`. The live docs that restated it now
+//!      A bare count also re-falsifies itself on the next step file the pack gains, so the
+//!      surviving statement carries its **measurement point** — the pre-1.0.0 trial's
+//!      1.0.0-rc.10 — and lives in **one** home: the rc.11 charter row in
+//!      `implementation/decisions-pending.md`. The live docs that restated it now
 //!      cross-reference that home instead (CLAUDE.md → *Cross-reference, never restate*).
+//!
+//!      **The fence itself became an instance of the class it was built for, and is
+//!      re-keyed (M51 Increment 7, T6).** It banned the numeral `69` outright; the pack has
+//!      since grown to exactly that many step files, so the one sentence stating the
+//!      present tree truthfully was the one sentence it forbade. It now refuses a figure
+//!      other than 66 **attached to the rc.10 measurement point**, which is the claim that
+//!      was ever false, and lets a count naming its own measurement point through.
 //!
 //!      The **dated records** — `DECISIONS.md` and the two `RC-pre-1.0/` artifacts — are
 //!      not rewritten and do not outsource their numbers: a trial record that stated
@@ -451,24 +458,95 @@ fn points_at_the_home(text: &str) -> bool {
     text.contains("decisions-pending.md") && text.contains("The rc.11 wave")
 }
 
+/// The **measurement point** the falsified figure was attached to: the pre-1.0.0 trial,
+/// run on 1.0.0-rc.10. A prose unit naming either token is stating *that* measurement,
+/// whatever number it carries.
+const RC10_MEASUREMENT: [&str; 2] = ["1.0.0-rc.10", "pre-1.0.0 trial"];
+
+/// What the tree actually carried at that measurement point.
+const RC10_STEP_COUNT: usize = 66;
+
+/// The **line** around `at`, which is the granularity at which a count and the measurement
+/// point it is attached to sit together in this repo: a markdown paragraph here is one very
+/// long line, the rc.11 charter states its count and both measurement-point tokens on one
+/// row, and `DECISIONS.md`'s build entries are one claim per bullet line.
+///
+/// **Declared bound:** a claim whose measurement point is named in a *neighbouring*
+/// sentence is outside this probe. The looser granularity was tried and is wrong here —
+/// over a run of `DECISIONS.md` bullets it read the M47 batch-author note's unrelated
+/// *13 step files* as a statement about 1.0.0-rc.10, which is the false-positive shape that
+/// makes a fence get relaxed rather than obeyed.
+fn enclosing_line(body: &str, at: usize) -> &str {
+    let start = body[..at].rfind('\n').map(|i| i + 1).unwrap_or(0);
+    let end = body[at..].find('\n').map(|i| at + i).unwrap_or(body.len());
+    &body[start..end]
+}
+
+/// The claims this suite refuses, as a **pure predicate** over a body, so the fence can be
+/// asserted over fixtures rather than only over today's tree.
+///
+/// **Keyed on the measurement point, not on the numeral (M51 Increment 7, T6).** The first
+/// form of this fence banned a bare `69` outright, on the ground that 69 was never the
+/// number — and then the pack grew, the tree reached 69 step files, and the fence built to
+/// stop a stale count from shipping became an instance of its own class: it now forbids the
+/// one sentence that would be *true*. What is false is not the numeral; it is attaching any
+/// figure but [`RC10_STEP_COUNT`] to [`RC10_MEASUREMENT`]. So that is what is refused, and a
+/// present-tense count measured on today's tree passes — as it must, since a count that
+/// names its own measurement point is exactly what this suite asks every home for.
+fn stale_pack_step_claims(body: &str) -> Vec<(usize, usize)> {
+    uncorrected_step_count_claims(body)
+        .into_iter()
+        .filter(|(at, value)| {
+            *value != RC10_STEP_COUNT
+                && RC10_MEASUREMENT
+                    .iter()
+                    .any(|token| enclosing_line(body, *at).contains(token))
+        })
+        .collect()
+}
+
+/// The re-key, asserted over the predicate rather than over today's bytes: the fence must
+/// **spare** a true present-tense count and **catch** the falsified rc.10 denominator — and
+/// the two fixtures carry the same numeral, so nothing but the measurement point can
+/// separate them.
+#[test]
+fn the_step_count_fence_keys_on_the_measurement_point_not_the_numeral() {
+    let present = "The pack ships 69 step files at HEAD (2026-09-15).";
+    assert!(
+        stale_pack_step_claims(present).is_empty(),
+        "a TRUE present-tense count carrying its own measurement point is not the \
+         falsified claim — banning the numeral bans the truth",
+    );
+    let stale = "Of 69 pack step files at 1.0.0-rc.10, exactly one names `jigc doc show`.";
+    assert_eq!(
+        stale_pack_step_claims(stale).len(),
+        1,
+        "`69` attached to the pre-1.0.0 trial's 1.0.0-rc.10 is the falsified claim",
+    );
+    let bracketed = "Of **[Corrected 2026-08-15: 69 step files]** at 1.0.0-rc.10, one names it.";
+    assert!(
+        stale_pack_step_claims(bracketed).is_empty(),
+        "a dated record keeps its own falsified basis visible inside the bracket",
+    );
+}
+
 #[test]
 fn the_stale_pack_step_count_survives_only_inside_a_dated_correction() {
     let mut bare = Vec::new();
     for home in STEP_COUNT_HOMES {
         let body = read_doc(home);
-        for (at, _) in uncorrected_step_count_claims(&body)
-            .into_iter()
-            .filter(|(_, value)| *value == 69)
-        {
+        for (at, _) in stale_pack_step_claims(&body) {
             bare.push(format!("{home}:{}", line_of(&body, at)));
         }
     }
     assert!(
         bare.is_empty(),
-        "`69` pack step files was never the number — it is `ls <dir> <dir> | wc -l` \
-         counting its own two directory headers and blank separator over a tree of 66, \
-         which is what 1.0.0-rc.10 shipped. A dated record keeps its basis inside a \
-         `[Corrected …]` bracket; a live doc is corrected. Bare at: {bare:?}",
+        "these homes attach a pack-step count other than {RC10_STEP_COUNT} to the \
+         pre-1.0.0 trial's 1.0.0-rc.10. The denominator that reached eleven sites was \
+         `ls <dir> <dir> | wc -l` counting its own two directory headers and blank \
+         separator over a tree of {RC10_STEP_COUNT}, which is what 1.0.0-rc.10 shipped. A \
+         dated record keeps its basis inside a `[Corrected …]` bracket; a live doc is \
+         corrected. Misattributed at: {bare:?}",
     );
 }
 
@@ -533,8 +611,8 @@ fn the_pack_step_count_is_stated_once_and_names_its_measurement_point() {
         rows.len(),
     );
 
-    // A bare count re-falsifies itself on the next step file the pack gains (the tree is
-    // already at 67), so the surviving statement carries the binary it was measured on.
+    // A bare count re-falsifies itself on the next step file the pack gains, so the
+    // surviving statement carries the binary it was measured on.
     let row = rows[0];
     for owed in ["1.0.0-rc.10", "pre-1.0.0 trial"] {
         assert!(

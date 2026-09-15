@@ -2,7 +2,7 @@
 //! asserted against that set (M51 Increment 7, T3; `completions/artifacts/M51/settle-record.md`
 //! → D8 and §11; the charter's EC-14).
 //!
-//! Two subjects, one shape, both on the mold `crates/cli/tests/doctype_map_versions.rs`
+//! Every subject takes one shape, the mold `crates/cli/tests/doctype_map_versions.rs`
 //! established: **read the registry, assert the prose**.
 //!
 //!   1. **The committing-door count.** [`COMMITTING_DOORS`] gained its tenth member at M49
@@ -17,6 +17,13 @@
 //!      **eleven**"* — and `invocation_log.rs`'s own registry test hardcodes `11` **and names
 //!      that file in its assert message**, while no test had ever opened it. Accurate today;
 //!      unfenced, which is the first home's defect one door earlier.
+//!   3. **The manifest-listed doctype totals** (T6). `design/corpus-migration.md` → *The
+//!      freeze* argues the whole-file-shadow decision from how many doctypes a
+//!      refusal-by-name would have cost, and counted the methodology manifest at ten after
+//!      `planning-record` joined it at M49.
+//!   4. **The write-miss axis' two sizes** (T6). `CLAUDE.md`'s M50 paragraph stated one
+//!      numeral for two different tables — the cross's coordinates and the rows that
+//!      witness them — and it was neither table's.
 //!
 //! **What is fenced and what is corrected — the residue is stated, not papered over.** A
 //! count over a set the code can move is fenced *here*. A **historical** count — a record of
@@ -36,6 +43,7 @@
 //! has no unit there — it would read every door count in the repo's history as a claim about
 //! this axis. A count stated in some third wording is outside this probe.
 
+use crate::support;
 use cli::invocation_log::{COMMITTING_DOORS, ERROR_CODE_REGISTRY};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -621,4 +629,232 @@ fn mirror_identities(body: &str) -> Vec<&str> {
                 .trim_matches('`')
         })
         .collect()
+}
+
+// ---------------------------------------------------------------------------
+// The residue (M51 Increment 7, T6) — §11's rule, applied member by member.
+// ---------------------------------------------------------------------------
+//
+// §11 partitions the counts this repo states into three, and only the first is fenceable:
+//
+//   * **A count over a set the code can move** is fenced against that set. Two more join
+//     here — the manifest-listed doctype totals and the write-miss axis' size.
+//   * **A count over a set the code cannot move** is corrected in place and left
+//     unfenced, because there is nothing to fence it against. `design/doc-read-surface.md`
+//     → *The version/posture map* headed **five regimes** over a six-row table: a
+//     version/posture *regime* is a judgment about a surface, not a registry, so the
+//     heading, its opening sentence and its *owns three of the five* clause are corrected,
+//     and `design/command-output-contract.md`'s two cross-references stop restating the
+//     figure at all — an unfenceable count is best carried in one home, not two.
+//   * **A historical count** — what a past wave drove — is **dated-bracketed, never
+//     re-pinned**: re-pinning it would make the record lie about its own measurement.
+//     Both `schema-manifest.yaml` headers stated *all 16 doctype hashes* of M47 Increment
+//     1's genesis re-pin; the dev header keeps that figure inside a dated bracket, and the
+//     methodology header — which restated the dev header's history verbatim — now
+//     cross-references it (CLAUDE.md → *Cross-reference, never restate*).
+
+/// The dev pack's frozen-set manifest.
+const DEV_MANIFEST: &str = "crates/cli/pack/config/schema-manifest.yaml";
+/// The methodology pack's, which ends its freeze exemption (M40 A1).
+const METHODOLOGY_MANIFEST: &str = "packs/methodology/config/schema-manifest.yaml";
+/// The doc that states how many doctypes the two of them list between them.
+const MANIFEST_CLAIM_HOME: &str = "design/corpus-migration.md";
+/// The phrase that opens the claim. Anchored on the *sentence*, not on a numeral, so a
+/// stale figure reddens on its value rather than by the anchor going missing.
+const MANIFEST_CLAIM_ANCHOR: &str = "would have deleted a documented capability for";
+
+/// Every doctype a manifest lists, in document order.
+///
+/// Read as lines rather than parsed: the file is a hand-edited artifact whose `- type:`
+/// column is exactly the thing being counted, and a YAML round-trip here would add a
+/// dependency to read one field.
+fn manifest_types(rel: &str) -> Vec<String> {
+    let body = read(rel);
+    let listed = body
+        .find("\ndoctypes:\n")
+        .map(|at| at + "\ndoctypes:\n".len())
+        .unwrap_or_else(|| panic!("{rel} must carry a `doctypes:` list"));
+    body[listed..]
+        .lines()
+        .take_while(|line| line.starts_with("  - ") || line.starts_with("    "))
+        .filter_map(|line| line.trim().strip_prefix("- type:"))
+        .map(|ty| ty.trim().to_string())
+        .collect()
+}
+
+/// The first `limit` numerals `line` states, in either spelling, in order.
+fn numbers_in(line: &str, limit: usize) -> Vec<usize> {
+    let (text, _) = normalize(line);
+    let mut found = Vec::new();
+    let mut at = 0usize;
+    while at < text.len() && found.len() < limit {
+        if at > 0 && text[at - 1].is_alphanumeric() {
+            at += 1;
+            continue;
+        }
+        match number_at(&text, at) {
+            Some((value, end)) => {
+                found.push(value);
+                at = end;
+            }
+            None => at += 1,
+        }
+    }
+    found
+}
+
+/// The line of `body` carrying `anchor`.
+fn line_carrying<'a>(body: &'a str, anchor: &str, rel: &str) -> &'a str {
+    body.lines()
+        .find(|line| line.contains(anchor))
+        .unwrap_or_else(|| panic!("{rel} must carry the claim anchored at `{anchor}`"))
+}
+
+/// The manifest-listed doctype counts are the manifests' own — both ratios, the total
+/// across the two packs, and the number of **distinct type names** that total spans.
+///
+/// The two halves of each ratio are the same number by construction: pack-load asserts the
+/// declared set and the shipped set are exactly equal, so *N of N are manifest-listed* is
+/// one figure stated twice, and the manifest is where it lives.
+#[test]
+fn the_manifest_listed_doctype_counts_are_the_manifests_own() {
+    let dev = manifest_types(DEV_MANIFEST);
+    let methodology = manifest_types(METHODOLOGY_MANIFEST);
+    let distinct: std::collections::BTreeSet<&String> = dev.iter().chain(&methodology).collect();
+    let expected = vec![
+        dev.len(),
+        dev.len(),
+        methodology.len(),
+        methodology.len(),
+        dev.len() + methodology.len(),
+        distinct.len(),
+    ];
+
+    let body = read(MANIFEST_CLAIM_HOME);
+    let line = line_carrying(&body, MANIFEST_CLAIM_ANCHOR, MANIFEST_CLAIM_HOME);
+    let at = line
+        .find(MANIFEST_CLAIM_ANCHOR)
+        .expect("the anchor is on the line it was found by");
+    let stated = numbers_in(&line[at..], expected.len());
+
+    assert_eq!(
+        stated,
+        expected,
+        "{MANIFEST_CLAIM_HOME} → *Hashed, not refused by name* states the size of a set \
+         the two shipped manifests carry: {} dev ({dev:?}) + {} methodology \
+         ({methodology:?}) = {} entries over {} distinct type names. The sentence must \
+         state, in order, each ratio's two halves, the total and the distinct count.",
+        dev.len(),
+        methodology.len(),
+        dev.len() + methodology.len(),
+        distinct.len(),
+    );
+}
+
+/// Where the write-miss axis' rows live …
+const AXIS_ROWS: &str = "crates/cli/tests/support/write_miss_cells.rs";
+/// … and where the cross they are witnesses of lives. It is a `const` private to another
+/// test group (`g_finalize`), so it is counted from its own source rather than `use`d —
+/// the declared bound of this half of the fence.
+const AXIS_CROSS: &str = "crates/cli/tests/write_miss_shape_axis.rs";
+/// The one doc that states either size outside the two files above.
+const AXIS_CLAIM_HOME: &str = "CLAUDE.md";
+
+/// The number of `MissShape` rows `write_miss_shape_axis.rs` declares in `MISS_SHAPES`,
+/// read from the source of the table itself.
+fn cross_coordinates() -> usize {
+    let body = read(AXIS_CROSS);
+    let at = body
+        .find("\nconst MISS_SHAPES:")
+        .unwrap_or_else(|| panic!("{AXIS_CROSS} must declare `MISS_SHAPES`"));
+    let rows = body[at..]
+        .lines()
+        .take_while(|line| *line != "];")
+        .filter(|line| line.trim_end() == "    MissShape {")
+        .count();
+    assert!(rows > 0, "{AXIS_CROSS}: `MISS_SHAPES` parsed as empty");
+    rows
+}
+
+/// Every count of the write-miss axis `text` states — a numeral governing `CELLS rows` or
+/// `MISS_SHAPES coordinates`, the two shapes the record writes them in.
+fn axis_claims(text: &[char], map: &[usize]) -> Vec<(Claim, &'static str)> {
+    let mut found = Vec::new();
+    let mut at = 0usize;
+    while at < text.len() {
+        if at > 0 && text[at - 1].is_alphanumeric() {
+            at += 1;
+            continue;
+        }
+        let Some((value, after_number)) = number_at(text, at) else {
+            at += 1;
+            continue;
+        };
+        let head = skip_joiners(text, after_number);
+        let hit = word_at(text, head, "CELLS")
+            .and_then(|after| word_at(text, skip_joiners(text, after), "rows"))
+            .map(|end| (end, "CELLS"))
+            .or_else(|| {
+                word_at(text, head, "MISS_SHAPES")
+                    .and_then(|after| word_at(text, skip_joiners(text, after), "coordinates"))
+                    .map(|end| (end, "MISS_SHAPES"))
+            });
+        let Some((end, subject)) = hit else {
+            at = after_number;
+            continue;
+        };
+        found.push((
+            Claim {
+                value,
+                phrase: text[at..end].iter().collect(),
+                at: map[at],
+            },
+            subject,
+        ));
+        at = end;
+    }
+    found
+}
+
+/// The write-miss axis has two sizes and they count different things — the **cross**'s
+/// `(verb, shape, leading-hop declaredness)` coordinates and the **rows** that witness
+/// them. `CLAUDE.md`'s M50 paragraph stated one numeral for both, and it was neither:
+/// *thirteen* is `write_miss_shape_axis.rs`'s count of the address-shape column's own new
+/// item-addressing rows, read as the size of the whole axis.
+#[test]
+fn the_write_miss_axis_sizes_are_the_axis_tables_own() {
+    let rows = support::write_miss_cells::CELLS.len();
+    let cross = cross_coordinates();
+    let body = read(AXIS_CLAIM_HOME);
+    let (text, map) = normalize(&body);
+    let claims = axis_claims(&text, &map);
+
+    let mut stale = Vec::new();
+    for (claim, subject) in &claims {
+        let expected = if *subject == "CELLS" { rows } else { cross };
+        if claim.value != expected {
+            stale.push(format!(
+                "{AXIS_CLAIM_HOME}:{} says `{}` — {subject} carries {expected} ({})",
+                line_of(&body, claim.at),
+                claim.phrase.trim(),
+                number_word(expected),
+            ));
+        }
+    }
+    assert!(
+        stale.is_empty(),
+        "the write-miss axis is two code-side tables — `{AXIS_ROWS}`'s `CELLS` ({rows} \
+         rows) and `{AXIS_CROSS}`'s `MISS_SHAPES` ({cross} coordinates) — and each numeral \
+         must name the one it counts:\n{}",
+        stale.join("\n"),
+    );
+    assert_eq!(
+        claims.len(),
+        2,
+        "{AXIS_CLAIM_HOME} must state both sizes, each naming its own table; found {:?}",
+        claims
+            .iter()
+            .map(|(c, s)| format!("{} ({s})", c.phrase.trim()))
+            .collect::<Vec<_>>(),
+    );
 }

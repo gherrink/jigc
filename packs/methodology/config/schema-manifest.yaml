@@ -75,11 +75,12 @@
 #     Manifest-Repin: <doctype | slug-rule>
 #
 # — never blanket: a blanket escape would restore "re-pin the hash" as one keystroke
-# with two meanings, merely renamed. M47 Increment 1 is the declared genesis exemption
-# and the ONLY one: the narrowing re-pinned all 16 doctype hashes at unchanged
-# schema-versions BY CONSTRUCTION — no schema's shape moved, only what the hash is
-# computed over. It predates the fence, and is now the fixture that proves it fires
-# (crates/cli/tests/manifest_freeze_fence.rs).
+# with two meanings, merely renamed. The one declared genesis exemption — M47 Increment 1,
+# which re-pinned every listed hash at unchanged schema-versions BY CONSTRUCTION, and is
+# now the fixture that proves the fence fires — is stated once, in the dev pack's header
+# (crates/cli/pack/config/schema-manifest.yaml), and is not restated here: one fact, one
+# home (CLAUDE.md → Cross-reference, never restate). This manifest is inside the fence's
+# subject exactly as that one is (crates/cli/tests/manifest_freeze_fence.rs).
 #
 # TWO DECLARED BOUNDS, recorded rather than glossed: the fence protects this repo only,
 # not adopters (it lives in this repo's CI, and this repo is the only party that edits

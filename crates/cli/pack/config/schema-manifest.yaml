@@ -47,8 +47,12 @@
 # with two meanings, merely renamed. M47 Increment 1 is the declared genesis exemption
 # and the ONLY one: the narrowing re-pinned all 16 doctype hashes at unchanged
 # schema-versions BY CONSTRUCTION — no schema's shape moved, only what the hash is
-# computed over. It predates the fence, and is now the fixture that proves it fires
-# (crates/cli/tests/manifest_freeze_fence.rs).
+# computed over. [Corrected 2026-09-15: 16 was the two shipped manifests' listed total
+# AT M47 Increment 1; they list 17 entries between them today. That increment's own
+# measurement stays — a historical count is dated, never re-pinned to today, or the
+# record stops stating what it measured (M51 Increment 7; the live total is fenced by
+# crates/cli/tests/count_fences.rs).] It predates the fence, and is now the fixture that
+# proves it fires (crates/cli/tests/manifest_freeze_fence.rs).
 #
 # TWO DECLARED BOUNDS, recorded rather than glossed: the fence protects this repo only,
 # not adopters (it lives in this repo's CI, and this repo is the only party that edits
