@@ -1740,6 +1740,56 @@ pub enum ManifestKind {
     CarriedOver,
 }
 
+impl ManifestKind {
+    /// Every kind, in declaration order — the vocabulary's **whole** value space, which is
+    /// what the JSON `kind` key can carry (`design/command-output-contract.md` → The M43
+    /// additive kind). Its completeness is fenced against the enum's own declaration by
+    /// `crates/cli/tests/foldback_truth.rs`, because the exhaustive matches below force a
+    /// seventh member to be *classified* and not to *join this array*.
+    pub const ALL: [ManifestKind; 6] = [
+        ManifestKind::Promoted,
+        ManifestKind::Modified,
+        ManifestKind::Deleted,
+        ManifestKind::Added,
+        ManifestKind::Untracked,
+        ManifestKind::CarriedOver,
+    ];
+
+    /// The kind's **wire tag** — one home for the spelling every surface prints: the agent
+    /// text ([`manifest_line`]) and the JSON `kind` value serde derives from the variant
+    /// name. The two must agree, and a divergence is invisible at runtime, so the fence
+    /// above compares this spelling against the declared variant kebab-cased.
+    pub const fn tag(self) -> &'static str {
+        match self {
+            ManifestKind::Promoted => "promoted",
+            ManifestKind::Modified => "modified",
+            ManifestKind::Deleted => "deleted",
+            ManifestKind::Added => "added",
+            ManifestKind::Untracked => "untracked",
+            ManifestKind::CarriedOver => "carried-over",
+        }
+    }
+
+    /// Whether this kind can tag a path the commit **included** — the partition the enum's
+    /// doc-comment above already states (`Untracked` only ever tags a left-out file), as
+    /// code-side data rather than a second hand list. It is what makes the vocabulary's two
+    /// true sentences both sayable: `design/finalize.md` names the **committed set**'s five,
+    /// `design/command-output-contract.md` the JSON value space's six, and a prose fence
+    /// owing all six everywhere would force `untracked` into the committed-set sentence.
+    ///
+    /// Exhaustive by construction: a seventh member does not compile without an arm here.
+    pub const fn in_commit(self) -> bool {
+        match self {
+            ManifestKind::Promoted
+            | ManifestKind::Modified
+            | ManifestKind::Deleted
+            | ManifestKind::Added
+            | ManifestKind::CarriedOver => true,
+            ManifestKind::Untracked => false,
+        }
+    }
+}
+
 /// One entry in the finalize pre-commit manifest: a repo-relative `path` and the `kind`
 /// of change that placed it in the commit set.
 #[derive(Serialize, Clone, PartialEq, Eq, Debug)]
@@ -1753,18 +1803,13 @@ pub struct ManifestEntry {
 /// One agent-text manifest line for an **included** commit member: `  promoted <path>` /
 /// `  modified <path>` / `  deleted <path>` / `  added <path>` (a deliberately-staged new
 /// file) / `  carried-over <path>` (a pre-task staged entry riding under `--carry-staged`).
-/// No trailing newline — the caller joins / closes it. `Untracked` never reaches
-/// the included path (it tags only left-out files, rendered by [`left_out_lines`]); a
-/// defensive arm renders it under the left-out wording rather than the retired "swept".
+/// No trailing newline — the caller joins / closes it. The label is
+/// [`ManifestKind::tag`], the one home for the spelling this line and the JSON `kind`
+/// value both put on the wire — never a second list here. `Untracked` never reaches the
+/// included path (it tags only left-out files, rendered by [`left_out_lines`]); reaching
+/// it anyway renders its own tag rather than the retired "swept".
 fn manifest_line(entry: &ManifestEntry) -> String {
-    match entry.kind {
-        ManifestKind::Promoted => format!("  promoted {}", entry.path),
-        ManifestKind::Modified => format!("  modified {}", entry.path),
-        ManifestKind::Deleted => format!("  deleted {}", entry.path),
-        ManifestKind::Added => format!("  added {}", entry.path),
-        ManifestKind::Untracked => format!("  untracked {}", entry.path),
-        ManifestKind::CarriedOver => format!("  carried-over {}", entry.path),
-    }
+    format!("  {} {}", entry.kind.tag(), entry.path)
 }
 
 /// The left-out section a finalize manifest appends when the working tree carries

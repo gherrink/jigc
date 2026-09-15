@@ -57,8 +57,11 @@
 //! `crates/cli/tests/commit_rejected_axis.rs` drives every committing door under a
 //! rejecting hook and re-runs the argv it printed.
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+
+use cli::render::ManifestKind;
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -658,5 +661,318 @@ fn the_shipped_guides_name_the_discard_refusal_and_its_consent() {
     assert!(
         checked >= 2,
         "both shipped guides describe the door; only {checked} unit(s) were checked",
+    );
+}
+
+// ---------------------------------------------------------------------------
+// 6. The manifest vocabulary is whole wherever it is spoken.
+// ---------------------------------------------------------------------------
+
+// **The finalize manifest's tag vocabulary is PARTITIONED, and a flat owe-set would mint
+// a fresh law-1 lie** (M51 Increment 7 / T1; `completions/artifacts/M51/settle-record.md`
+// → D8; the charter's EC-22).
+//
+// [`ManifestKind`] has six members, and `manifest_line`'s own doc-comment states the split
+// the prose has to respect: `Untracked` never reaches the **included** path — it tags only
+// files the commit left out. So the two docs of record are saying two different true
+// things, and both are correct as written: `design/finalize.md` names the **committed
+// set**'s five (`promoted` / `modified` / `deleted` / `added` / `carried-over`), and
+// `design/command-output-contract.md` names the **JSON `kind`** value space's six. A fence
+// owing all six everywhere would force `untracked` into the committed-set sentence — a new
+// falsehood, shipped by the fence built to stop falsehoods.
+//
+// Hence the mint is [`ManifestKind::ALL`] **plus** the in-commit/left-out partition as
+// code-side data ([`ManifestKind::in_commit`], an exhaustive match, so a seventh member
+// cannot compile until it is classified), and the owe-set is **chosen by which vocabulary
+// the unit is speaking** — read off the partition itself, never hand-assigned per home.
+//
+// The claim this closes: a prose home that enumerates the vocabulary enumerates *all* of
+// it, so the value a driver will meet on the wire cannot be missing from the sentence that
+// teaches the vocabulary. `MIGRATING.md`'s four-tag list has been short by `added` since
+// M30 shipped the kind, and nothing was watching.
+/// Which of the manifest's two vocabularies a prose unit is speaking.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Vocabulary {
+    /// The **committed set**: the tags a path *in the commit* can carry. Five members.
+    Committed,
+    /// The whole JSON `kind` value space — the committed set plus the left-out-only tag.
+    /// Six members.
+    Whole,
+}
+
+impl Vocabulary {
+    /// The tags a unit speaking this vocabulary owes — derived from
+    /// [`ManifestKind::in_commit`] over [`ManifestKind::ALL`], never a second hand list.
+    fn owed(self) -> Vec<&'static str> {
+        ManifestKind::ALL
+            .iter()
+            .filter(|kind| self == Vocabulary::Whole || kind.in_commit())
+            .map(|kind| kind.tag())
+            .collect()
+    }
+}
+
+/// The tags that only ever label a **left-out** path — the partition's other side, read
+/// from the same predicate rather than restated.
+fn left_out_only_tags() -> BTreeSet<&'static str> {
+    ManifestKind::ALL
+        .iter()
+        .filter(|kind| !kind.in_commit())
+        .map(|kind| kind.tag())
+        .collect()
+}
+
+/// Whether `unit` names `tag` as a whole token. `-` counts as a word character, so
+/// `carried-over` is one token and `added` does not match inside `added-optional-field`.
+fn names_tag(unit: &str, tag: &str) -> bool {
+    let boundary = |c: Option<char>| !c.is_some_and(|c| c.is_alphanumeric() || c == '-');
+    unit.match_indices(tag).any(|(at, _)| {
+        boundary(unit[..at].chars().next_back()) && boundary(unit[at + tag.len()..].chars().next())
+    })
+}
+
+/// Every manifest tag `unit` names.
+fn tags_named(unit: &str) -> BTreeSet<&'static str> {
+    ManifestKind::ALL
+        .iter()
+        .map(|kind| kind.tag())
+        .filter(|tag| names_tag(unit, tag))
+        .collect()
+}
+
+/// The vocabulary a prose unit is **enumerating**, or `None` when it is not enumerating one.
+///
+/// **A bounded detector, and the bound is stated.** A unit enumerates the vocabulary when
+/// it names the **manifest** — both vocabularies belong to that one surface — *and* three
+/// or more of its tags. Three rather than one because every tag is also an ordinary English
+/// word these docs use constantly (*"the promoted docs"*, *"a deleted tree"*, *"added at
+/// M43"*), so a one-tag trigger would fence prose that is not making the claim; every real
+/// enumeration in the tree names four or more. A unit that enumerates the vocabulary in
+/// some other wording than *manifest* is outside this probe — the residue is named, not
+/// papered over.
+///
+/// **Which vocabulary is read off the partition, not hand-assigned.** A unit naming a
+/// left-out-only kind is speaking about the left-out list as well as the commit set, so it
+/// owes the whole of [`ManifestKind::ALL`]; a unit naming only in-commit kinds is
+/// describing the commit set, and owes exactly that side of the partition.
+fn vocabulary_spoken(unit: &str) -> Option<Vocabulary> {
+    if !unit.contains("manifest") {
+        return None;
+    }
+    let named = tags_named(unit);
+    if named.len() < 3 {
+        return None;
+    }
+    let left_out = left_out_only_tags();
+    Some(if named.iter().any(|tag| left_out.contains(tag)) {
+        Vocabulary::Whole
+    } else {
+        Vocabulary::Committed
+    })
+}
+
+/// The tags a unit's **own** vocabulary owes and the unit does not name. Empty for a unit
+/// that is not enumerating one.
+fn missing_tags(unit: &str) -> Vec<&'static str> {
+    match vocabulary_spoken(unit) {
+        None => Vec::new(),
+        Some(vocabulary) => vocabulary
+            .owed()
+            .into_iter()
+            .filter(|tag| !names_tag(unit, tag))
+            .collect(),
+    }
+}
+
+/// The docs of record for the two vocabularies — `finalize.md` owns the committed set,
+/// `command-output-contract.md` the JSON `kind` value space. Enumerated rather than
+/// globbed, on `STEP_COUNT_HOMES`' reason: a sweep of every `.md` would reach the dated
+/// records, whose job is to state the world as it was.
+const VOCABULARY_HOMES: [&str; 2] = ["design/finalize.md", "design/command-output-contract.md"];
+
+/// **The shipped guides are deferred, not exempt — and the deferral names its landing.**
+///
+/// Both guides are `include_str!`'d into the installed `SKILL.md` (`shipped_guides` above),
+/// so *any* guide byte moves `jigc-body-blake3` and engages M48's refuse-to-clobber path.
+/// The decomposition therefore lands every guide byte this wave owes in **one batch, one
+/// hash move** (`implementation/roadmap.md` → Milestone 51, Increment 9 — *the law-1 surface
+/// batch and the single guide hash move*, which names EC-22, this correction, among its
+/// rows). Editing `MIGRATING.md` here would ship the second hash move that decomposition
+/// exists to prevent.
+///
+/// So the exclusion is **scoped to the whole shipped-guide set** — no guide byte moves
+/// before the batch, so a third guide joining the installed artifact joins the deferral
+/// too, which is what the set equality below makes checkable — and the stale literal the
+/// batch will correct is asserted **still present**, so Increment 9's correction reddens
+/// this suite and forces the exclusion to be lifted in the same commit. This is the
+/// claim-3 inversion idiom this suite already runs in both directions.
+const GUIDE_BATCH: &str = "Increment 9";
+
+/// The stale literals the guide batch will correct: `(guide, literal)`. Today exactly one —
+/// `MIGRATING.md`'s four-tag list, short by `added`.
+const OWED_AT_GUIDE_BATCH: [(&str, &str); 1] = [(
+    "MIGRATING.md",
+    "(`promoted` / `modified` / `deleted` / `carried-over`)",
+)];
+
+#[test]
+fn every_prose_unit_that_enumerates_the_manifest_vocabulary_names_all_of_it() {
+    let mut checked = 0usize;
+    let mut short = Vec::new();
+    for home in VOCABULARY_HOMES {
+        let body = read_doc(home);
+        for unit in prose_units(&body) {
+            let Some(vocabulary) = vocabulary_spoken(&unit) else {
+                continue;
+            };
+            checked += 1;
+            let missing = missing_tags(&unit);
+            if !missing.is_empty() {
+                short.push(format!(
+                    "{home} (speaking {vocabulary:?}) omits {missing:?} from:\n{unit}"
+                ));
+            }
+        }
+    }
+    assert!(
+        short.is_empty(),
+        "a home that enumerates the manifest vocabulary enumerates all of the vocabulary \
+         it is speaking — the committed set's five, or the JSON `kind` space's six; \
+         short at: {short:#?}",
+    );
+    assert_eq!(
+        checked,
+        VOCABULARY_HOMES.len(),
+        "each doc of record must enumerate its vocabulary exactly once — if a home stopped \
+         stating it, the contract moved and this fence stopped fencing anything",
+    );
+}
+
+/// The fence is a property of the predicate, not of today's bytes: it must **catch** a unit
+/// that names a strict subset of the vocabulary it is speaking. The fixture is the shipped
+/// defect — `MIGRATING.md`'s four-tag list — so the arm also states, executably, what the
+/// guide batch is owed for.
+#[test]
+fn a_unit_naming_a_strict_subset_of_its_vocabulary_is_caught() {
+    let short = "It prints the manifest the finalize *would* commit — each path tagged by \
+                 how it enters (`promoted` / `modified` / `deleted` / `carried-over`).";
+    assert_eq!(
+        vocabulary_spoken(short),
+        Some(Vocabulary::Committed),
+        "a unit naming no left-out-only tag is describing the commit set",
+    );
+    assert_eq!(
+        missing_tags(short),
+        vec!["added"],
+        "the committed set's fifth tag is missing and the fence must say so",
+    );
+
+    // The same sentence completed is clean — the fence owes the partition, never all six.
+    let whole = short.replace("`deleted`", "`deleted` / `added`");
+    assert_eq!(
+        missing_tags(&whole),
+        Vec::<&str>::new(),
+        "a committed-set enumeration owes the committed set, not `untracked` as well",
+    );
+
+    // And a unit that names the left-out side owes the whole value space.
+    let json = "the manifest JSON tags each path with a `kind` (`promoted` / `modified` / \
+                `deleted` / `added` / `untracked`)";
+    assert_eq!(vocabulary_spoken(json), Some(Vocabulary::Whole));
+    assert_eq!(
+        missing_tags(json),
+        vec!["carried-over"],
+        "a unit naming the JSON value space owes every value, `carried-over` included",
+    );
+
+    // Ordinary prose that merely uses the words is not an enumeration.
+    let prose = "the manifest names the promoted docs and the modified sources";
+    assert_eq!(vocabulary_spoken(prose), None);
+}
+
+#[test]
+fn the_guide_vocabulary_correction_is_owed_at_the_single_guide_batch() {
+    let deferred: BTreeSet<String> = OWED_AT_GUIDE_BATCH
+        .iter()
+        .map(|(guide, _)| (*guide).to_string())
+        .chain(
+            // A guide with nothing stale still may not move before the batch, so the
+            // deferral's subject is the guide set, never the one stale file.
+            shipped_guides()
+                .into_iter()
+                .filter(|guide| !guide.contains("MIGRATING")),
+        )
+        .collect();
+    let shipped: BTreeSet<String> = shipped_guides().into_iter().collect();
+    assert_eq!(
+        deferred, shipped,
+        "the deferral covers every shipped guide — the batch is one hash move, so a guide \
+         joining the installed artifact joins {GUIDE_BATCH}'s batch with it",
+    );
+
+    for (guide, literal) in OWED_AT_GUIDE_BATCH {
+        let body = read_doc(guide);
+        assert!(
+            body.contains(literal),
+            "{guide} is excluded from the live fence because its correction lands in \
+             {GUIDE_BATCH}'s single guide batch, keyed on the literal `{literal}`. That \
+             literal is gone — so either the correction landed (lift the exclusion and \
+             fence the guide live) or the sentence moved (re-key the row).",
+        );
+        // The exclusion is load-bearing only while the literal is genuinely short.
+        let stale: Vec<String> = prose_units(&body)
+            .into_iter()
+            .filter(|unit| unit.contains(literal))
+            .filter(|unit| !missing_tags(unit).is_empty())
+            .collect();
+        assert_eq!(
+            stale.len(),
+            1,
+            "{guide}'s owed literal must sit in exactly one unit the fence would redden; \
+             found {} — the deferral is bookkeeping, not a blanket exemption",
+            stale.len(),
+        );
+    }
+}
+
+/// `ManifestKind::ALL` is a registry only if it holds every variant the enum declares — an
+/// exhaustive `match` forces a seventh member to be *classified*, not to *join the array*,
+/// and an escaped member would silently shrink every owe-set above. Read from the source,
+/// which also fences `tag()` against serde's `rename_all = "kebab-case"`: the two spellings
+/// reach the same wire and a divergence is invisible at runtime.
+#[test]
+fn manifest_kind_all_holds_every_variant_the_enum_declares() {
+    let source = fs::read_to_string(repo_root().join("crates/cli/src/render.rs"))
+        .expect("crates/cli/src/render.rs must be readable");
+    const HEAD: &str = "pub enum ManifestKind {";
+    let at = source
+        .find(HEAD)
+        .expect("render.rs must declare `pub enum ManifestKind`");
+    let body = &source[at + HEAD.len()..];
+    let end = body.find('}').expect("the enum block must close");
+    let declared: BTreeSet<String> = body[..end]
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with("//"))
+        .map(|line| line.trim_end_matches(',').to_string())
+        .map(|variant| {
+            let mut kebab = String::new();
+            for (i, c) in variant.chars().enumerate() {
+                if c.is_ascii_uppercase() && i > 0 {
+                    kebab.push('-');
+                }
+                kebab.extend(c.to_lowercase());
+            }
+            kebab
+        })
+        .collect();
+    let registered: BTreeSet<String> = ManifestKind::ALL
+        .iter()
+        .map(|kind| kind.tag().to_string())
+        .collect();
+    assert_eq!(
+        declared, registered,
+        "`ManifestKind::ALL` must hold every declared variant, and `tag()` must spell each \
+         one exactly as serde's `rename_all = \"kebab-case\"` puts it on the wire",
     );
 }
