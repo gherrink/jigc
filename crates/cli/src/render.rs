@@ -1122,6 +1122,10 @@ const GATES_NOWHERE: &[&str] = &[
     // family, exactly like the below-version break — no task-scope path can mint it, so
     // the per-finding gate label must never claim a finalize gate for it.
     engine::validate::SCHEMA_VERSION_AHEAD_CODE,
+    // The M51 resolved-half advisory: emitted by the store sweep's fifth family alone (a
+    // doctype's manifest entry is a pack fact the task doors never adjudicate), so the
+    // per-finding gate label must claim no boundary gate for it either.
+    engine::validate::UNVERSIONED_DOCTYPE_CODE,
 ];
 
 /// Whether a **gate exists for this finding** — the criterion the report-only trailer's claim

@@ -709,11 +709,21 @@ fn schema_conformance_store(
             // can never fire here; a parse failure surfaces its `conformance.*` findings
             // directly — version-routed `migrate` when the doc is below-version (a structural
             // v1→v2 change makes a historical doc non-canonical), else un-routed (Err arm).
+            //
+            // The doctype's manifest version, read **once** for both parse arms: it decides
+            // the version-aware route, the two version breaks, and — where it is absent —
+            // the M51 advisory that says so. An absent entry is not a quiet skip: it is the
+            // state in which [`SCHEMA_VERSION_CURRENT_CODE`] can never fire, so the sweep
+            // says which check it is not running rather than reporting a clean store
+            // ([`unversioned_doctype`]). Minted here so the two arms cannot word one fact
+            // two ways; each arm folds it into its own per-doc vector, so it takes the same
+            // [`attribute_to_doc`] pass every other per-doc finding does.
+            let current = versions.get(ty).copied();
+            let unversioned = current.is_none().then(|| unversioned_doctype(ty, &rel_key));
             match parse_sections(schema, &source) {
                 Ok(doc) => {
                     let mut doc_findings = schema_conformance(schema, &source, &doc);
                     let stamp = read_schema_version_stamp(&doc);
-                    let current = versions.get(ty).copied();
                     route_schema_conformance(&mut doc_findings, stamp, current, &rel_key);
                     // Version-currency is itself a surfaced break (M34 Inc-3), and since M42 it
                     // is **its own check id**, emitted **unconditionally** on every below-version
@@ -745,6 +755,7 @@ fn schema_conformance_store(
                     {
                         doc_findings.push(version_ahead_break(s, current, &rel_key));
                     }
+                    doc_findings.extend(unversioned);
                     attribute_to_doc(&mut doc_findings, &identity, &rel_key);
                     findings.extend(doc_findings);
                 }
@@ -768,7 +779,6 @@ fn schema_conformance_store(
                     // repair of *this binary's* making exists; the break's own route names the
                     // human ones).
                     let stamp = schema_version_from_front_matter(&source);
-                    let current = versions.get(ty).copied();
                     if let Some(current) = current
                         && let Some(s) = stamp
                         && s > current
@@ -793,6 +803,7 @@ fn schema_conformance_store(
                         // consumer must key on, was not in the report at all.
                         parse_findings.push(version_currency_break(stamp, current, &rel_key));
                     }
+                    parse_findings.extend(unversioned);
                     attribute_to_doc(&mut parse_findings, &identity, &rel_key);
                     findings.extend(parse_findings);
                 }
@@ -1505,6 +1516,77 @@ fn ahead_route(stamp: u32, current: u32, rel_key: &str) -> String {
          this jigc build knows; either a newer jigc wrote it (upgrade jigc) or the stamp was \
          edited out-of-band (restore it from git history) — `jigc migrate-corpus` cannot fix \
          a future stamp"
+    )
+}
+
+/// The check id of the **unversioned-doctype** advisory — a committed instance of a doctype
+/// the composed set **defines** but whose owning pack ships **no `schema-manifest.yaml` entry**
+/// for it (M51 Inc 8 / T5; `design/validation.md` → The M51 registrations — Increment 8, and
+/// `completions/artifacts/M51/settle-record.md` → §18, which settles D10's second N26 question
+/// *an unstamped managed corpus gets a store-surface answer*).
+///
+/// **The resolved half of one partition.** The store surface asks a single question — *does
+/// the file's declared doctype resolve to a schema in the composed set?* — and each answer has
+/// exactly one owner: *no* is `cli::orphan`'s `schema-conformance.orphaned-instance`, *yes* is
+/// this code. Calling a doc of a **defined** doctype an orphan would be a law-1 lie, and
+/// leaving it unsaid is what the base did.
+pub const UNVERSIONED_DOCTYPE_CODE: &str = "schema-conformance.unversioned-doctype";
+
+/// Build the **unversioned-doctype** advisory for one committed instance of a resolved but
+/// manifest-less doctype.
+///
+/// **What it actually reports, stated so the wording can be held to it:** the *absence* the
+/// sweep meets is `versions.get(ty) == None` — the per-doctype governed union
+/// (`crates/cli/src/pack.rs` → `frozen_doctype_versions`) carries an entry only where the
+/// doctype's **own origin pack** ships a manifest listing it. Where it does not, no
+/// `schema-version` stamp is ever injected (the stamp is minted exactly there), so
+/// [`SCHEMA_VERSION_CURRENT_CODE`] — the M42 check that exists to catch an unmigrated corpus —
+/// **can never fire** against this doc, whatever its shape. The fact is about the *doctype*,
+/// which is why the message leads with the doctype rather than with the file: it holds
+/// identically for a foreign squatter sitting at that doctype's home, and a message keyed on
+/// *this doc is unstamped* would be an unfounded claim about the file's provenance (the
+/// managed-vs-foreign discriminator is stated inert over an unversioned doctype for exactly
+/// that reason — [`unadopted_cause`]'s precondition).
+///
+/// **Advisory, report-only, and deliberately NOT a `cli::render::STORE_EXIT_FLIPS` member** —
+/// the one row where it departs from its blocking sibling, on the human's confirmed reason
+/// (§18): *a manifest-less pack means "unchecked" by the manifest header's own stated design,
+/// and flipping would fail every manifest-less project pack's CI for a permitted choice*. The
+/// header states the mechanism plainly — *an absent manifest = unchecked*
+/// (`crates/cli/pack/config/schema-manifest.yaml`) — so a pack author who takes that choice
+/// is told what they are not getting, never failed for taking it.
+///
+/// **Route: `Human`, two exits, the second a real one.** Declare the doctype's version by
+/// adding a manifest entry, or state that the doctype is deliberately unfrozen. No argv
+/// performs either — a pack's manifest is a pack-author edit, not a corpus operation — so a
+/// `Mechanical` route here would name a verb that cannot do the work.
+///
+/// Un-keyed like its siblings (no `CHECK_INVENTORY` row, no severity knob): the inventory's
+/// two-tier rule is defined over keyed rows, and this check has no knob to floor.
+///
+/// Doc-less and location-less by construction — it is emitted into the per-doc finding vector
+/// and [`attribute_to_doc`] gives it the doc's display path and its `<type>:<slug>` identity
+/// address, the address form every per-doc finding of this family takes (the *orphaned*
+/// sibling keys at its path because, its doctype being undefined, it has no identity to claim).
+fn unversioned_doctype(ty: &str, rel_key: &str) -> Finding {
+    let field = crate::schema::SCHEMA_VERSION_FIELD;
+    let message = format!(
+        "doctype `{ty}` is defined by a pack that declares no `schema-manifest.yaml` entry \
+         for it, so no `{field}` is ever stamped on its instances and the version-currency \
+         check cannot tell a current doc from an unmigrated one"
+    );
+    let route = format!(
+        "declare the version — add a `{ty}` entry to its pack's `config/schema-manifest.yaml`, \
+         re-pinning the doctype's `schema-hash` — or state that `{ty}` is deliberately \
+         unfrozen: an absent manifest entry means unchecked by design, so `{rel_key}` is \
+         reported here and gated nowhere"
+    );
+    Finding::graded(
+        Severity::Advisory,
+        UNVERSIONED_DOCTYPE_CODE,
+        message,
+        None,
+        Some(crate::finding::Route::human(route)),
     )
 }
 
@@ -7626,13 +7708,31 @@ sections:
             &BTreeMap::new(),
         )
         .expect("store sweep runs over a conformant store");
-        assert!(
-            !report
-                .findings
-                .iter()
-                .any(|f| f.probe == "schema-conformance"),
+        // The family's `schema-conformance.*` output over this store is **accounted for**,
+        // not filtered: the empty `versions` map this fixture passes makes `adr` an
+        // unversioned doctype, which since M51 Inc 8 / T5 is a *stated* fact rather than
+        // silence ([`unversioned_doctype`]) — one advisory for the one committed instance.
+        // What the arm claims is that the re-parse surfaces **no break**, and dropping the
+        // advisory from the filter without asserting it would be the masking shape.
+        // (The local is deliberately not named after the family: `finding.rs`'s producer
+        // fence scans this source for check-id spellings, and a method call on a local of
+        // that name reads to it as an undisposed id — driven, it reddened that fence.)
+        let rows: Vec<&Finding> = report
+            .findings
+            .iter()
+            .filter(|f| f.probe == "schema-conformance")
+            .collect();
+        assert_eq!(
+            rows.len(),
+            1,
             "a fully conformant store surfaces no schema-conformance break: {:?}",
             report.findings,
+        );
+        assert_eq!(
+            rows[0].code, UNVERSIONED_DOCTYPE_CODE,
+            "the one row is the unversioned-doctype advisory this fixture's empty `versions` \
+             map earns, never a conformance break: {:?}",
+            rows[0],
         );
 
         // (ii) The schema shadow adds a required `owner` header field the committed ADR's
@@ -8653,7 +8753,9 @@ Effects.
     /// version for (`current = None`) has no migrate-vs-corrupt distinction, so its finding
     /// stays **un-routed** — reported, never mislabeled, never an error. This is the scope
     /// guard: version-aware routing fires only over the versioned/frozen set, and an empty
-    /// `versions` map (a non-freeze pack) leaves every finding inert.
+    /// `versions` map (a non-freeze pack) leaves every finding **un-routed**. Inert is a
+    /// claim about the *route*, not about the report: since M51 Inc 8 / T5 the sweep says
+    /// out loud that it is not version-checking such a doctype ([`unversioned_doctype`]).
     #[test]
     fn route_is_inert_when_no_manifest_version() {
         let mut f = one_break();

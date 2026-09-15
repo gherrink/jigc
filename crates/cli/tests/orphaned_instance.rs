@@ -29,6 +29,14 @@
 //! stamped strand must be named by that code and by this one **never** — otherwise the new
 //! finding tells the reader the pack defining `roadmap` is gone while `jigc describe` lists it.
 //!
+//! **Arms 6 and 7 drive the partition's other half** (M51 inc-8 T5). The condition §18 settles
+//! is asked once — *does the file's declared doctype resolve?* — so this suite owns both
+//! answers or owns neither: `schema-conformance.unversioned-doctype` is the *resolved* half,
+//! the doc whose doctype is defined and whose owning pack ships no manifest entry for it, and
+//! the same fixture pack produces it for free (it drops the dev pack's own manifest on the way
+//! to dropping the methodology pack). One corpus, one report, two causes, and the crossings
+//! asserted empty in both directions.
+//!
 //! The kind of set arm 1 iterates: a **code-side registry** — the flip is *found in*
 //! [`cli::render::STORE_EXIT_FLIPS`] and every string this suite asserts (the code, the cause
 //! the closing line names) is read back off that member, so membership **is** the assertion and
@@ -209,9 +217,20 @@ fn doc_list_reports_every_orphaned_instance_the_sweep_blocks_on() {
     // listing invents none. Both sides are lifted from the emitted bytes.
     let swept = jigc_under_pack(&corpus, &pack, &["validate"]);
     let report = printed(&swept);
-    let mut located: Vec<&str> = report
-        .lines()
-        .filter_map(|line| line.trim().strip_prefix("at: "))
+    // The located set is read off the ORPHAN findings only, not off every `at:` line: since
+    // M51 inc-8 T5 the same sweep also carries the partition's other cause — the resolved-
+    // doctype advisory, keyed at a `<type>:<slug>` identity — and this arm's claim is about
+    // the two consumers of the ORPHAN enumerator. A finding's `at:` line follows its own
+    // head line, so each is attributed to the head above it rather than harvested blind.
+    let lines: Vec<&str> = report.lines().collect();
+    let mut located: Vec<&str> = lines
+        .iter()
+        .enumerate()
+        .filter_map(|(i, line)| {
+            let path = line.trim().strip_prefix("at: ")?;
+            let head = i.checked_sub(1).map(|prev| lines[prev])?;
+            head.contains(&orphan_code()).then_some(path)
+        })
         .collect();
     located.sort_unstable();
     located.dedup();
@@ -287,5 +306,132 @@ fn a_stamped_strand_is_reported_as_a_strand_and_never_as_an_orphaned_instance() 
         !text.contains(&orphan_line_head("notes/roadmap.md")),
         "a strand's doctype RESOLVES — only its home moved — so calling it an orphaned \
          instance would be the law-1 lie the partition exists to prevent; got:\n{text}",
+    );
+}
+
+/// **Arm 6 (M51 inc-8 T5) — the partition, in one corpus and one report.** The condition
+/// §18 settles is asked **once** — *does the file's declared doctype resolve to a schema in
+/// the composed set?* — and each answer has exactly one owner. Arms 1–5 drive the *does not*
+/// half; this arm drives **both halves at once**, because a partition is only a partition if
+/// the two causes can be seen apart in a single sweep over a single corpus.
+///
+/// The fixture gives both for free and neither by accident: [`FixturePack::from_dev_pack`]
+/// takes the methodology pack out of the resolved set (three orphans) **and** drops the dev
+/// pack's own `schema-manifest.yaml` (so `changelog` — the one doctype still resolved and
+/// still committed — is a doctype the composed set *defines* and no manifest *versions*).
+/// Under that pack `engine::validate::SCHEMA_VERSION_CURRENT_CODE`, the M42 check that
+/// exists to catch an unmigrated corpus, **can never fire** over `CHANGELOG.md`: nothing
+/// stamps it, so nothing can find its stamp stale. Driven at the base the sweep said nothing
+/// at all about that file.
+///
+/// The two rows differ in **every** dimension the split turns on — code, severity, and the
+/// address form (the orphan has no identity to claim and is keyed at its path; the
+/// unversioned doc's doctype resolves, so it keys at its `<type>:<slug>` identity like every
+/// other per-doc finding of this family) — and the arm asserts the crossings are empty in
+/// both directions.
+#[test]
+fn a_resolved_doctype_with_no_manifest_entry_answers_beside_the_orphans() {
+    let corpus = TrialCorpus::build(State::CommittedSingletons);
+    let pack = FixturePack::from_dev_pack("unversioned-doctype");
+
+    let out = jigc_under_pack(&corpus, &pack, &["validate"]);
+    let text = printed(&out);
+
+    assert!(
+        text.contains(&format!(
+            "advisory · {} — `{STILL_CLAIMED}`:",
+            engine::validate::UNVERSIONED_DOCTYPE_CODE
+        )),
+        "`{STILL_CLAIMED}` is a committed instance of a doctype the composed set defines and \
+         no manifest versions — the sweep must say so, and say it as an advisory; got:\n{text}",
+    );
+    assert!(
+        text.contains("at: changelog:changelog"),
+        "the doctype RESOLVES, so this doc has a `<type>:<slug>` identity to be keyed at — \
+         the orphan's path-keying is a consequence of having none; got:\n{text}",
+    );
+    assert!(
+        text.contains("add a `changelog` entry to its pack's `config/schema-manifest.yaml`")
+            && text.contains("`changelog` is deliberately unfrozen"),
+        "the route's two exits are declare the version, or state the doctype is deliberately \
+         unfrozen — the second is a real exit, not a courtesy: an absent manifest is \
+         `unchecked` by the manifest header's own stated design; got:\n{text}",
+    );
+
+    // The crossings are empty in both directions — one condition, two causes, one owner each.
+    assert!(
+        !text.contains(&orphan_line_head(STILL_CLAIMED)),
+        "`{STILL_CLAIMED}`'s doctype resolves, so calling it an orphan would be the law-1 lie \
+         the partition exists to prevent; got:\n{text}",
+    );
+    for rel in ORPHANED {
+        assert!(
+            text.contains(&orphan_line_head(rel)),
+            "the orphan half of the partition must still fire in this corpus, or the arm \
+             proves nothing about a split; got:\n{text}",
+        );
+        assert!(
+            !text.contains(&format!(
+                "{} — `{rel}`:",
+                engine::validate::UNVERSIONED_DOCTYPE_CODE
+            )),
+            "no schema in the composed set defines `{rel}`'s doctype, so no pack can be said \
+             to ship no manifest entry for it — the unversioned cause speaks only where the \
+             doctype resolves; got:\n{text}",
+        );
+    }
+
+    // The control: the SAME corpus under the packs that authored it. Both shipped packs
+    // carry a manifest listing every doctype they define, so the condition is absent and
+    // the advisory must be too — otherwise this is a check that fires over every committed
+    // doc it meets rather than over the state it names.
+    let composed = printed(&corpus.jigc(&["validate"]));
+    assert!(
+        !composed.contains(engine::validate::UNVERSIONED_DOCTYPE_CODE),
+        "every doctype of the embedded pair is listed in its own pack's manifest, so no \
+         committed instance may be called unversioned; got:\n{composed}",
+    );
+}
+
+/// **Arm 7 (M51 inc-8 T5) — the advisory flips no exit, driven rather than asserted from the
+/// table.** §18's two severities are read off the two causes: the orphan's exit flip is
+/// *required* by its own admission argument (a green meaning *I stopped looking at these
+/// files*, on the verb [MIGRATING.md](../../../MIGRATING.md) tells adopters to CI-gate on),
+/// while flipping this one — quoting the human's confirmation — *"would fail every
+/// manifest-less project pack's CI for a permitted choice"*.
+///
+/// So the arm removes the *other* cause from the corpus and drives what is left: with the
+/// three orphaned files gone, the manifest-less `changelog` is the only condition in the
+/// repo, and `jigc validate` must report it **at exit 0**. Driven at the base this same state
+/// printed *"no findings — the committed store validates clean"* — the red both halves of
+/// this task were written against.
+#[test]
+fn the_unversioned_doctype_advisory_reports_at_exit_zero() {
+    let corpus = TrialCorpus::build(State::CommittedSingletons);
+    let pack = FixturePack::from_dev_pack("unversioned-doctype-exit");
+    for rel in ORPHANED {
+        corpus.git(&["rm", "-q", rel]);
+    }
+    corpus.git(&["commit", "-q", "-m", "drop the docs of the departed pack"]);
+
+    let out = jigc_under_pack(&corpus, &pack, &["validate"]);
+    let text = printed(&out);
+
+    assert!(
+        out.status.success(),
+        "a manifest-less pack is `unchecked` by the manifest design's own words, so the one \
+         advisory it earns must not fail a CI that gates on `jigc validate`; got:\n{text}",
+    );
+    assert!(
+        text.contains(engine::validate::UNVERSIONED_DOCTYPE_CODE),
+        "exit 0 must be a REPORTED advisory, never silence — the base's silence over this \
+         exact state is the red this arm was written against; got:\n{text}",
+    );
+    assert!(
+        !STORE_EXIT_FLIPS
+            .iter()
+            .any(|flip| flip.id == "unversioned-doctype"),
+        "the exit-0 fact and the table must agree: this cause is deliberately NOT a member \
+         of the store sweep's exit-flip axis",
     );
 }
