@@ -755,3 +755,202 @@ fn every_config_layer_pathspec_carries_a_disposition() {
         run.rendered,
     );
 }
+
+// ---------------------------------------------------------------------------
+// The inventory registers exactly what this increment mints (T4)
+// ---------------------------------------------------------------------------
+
+/// The doc whose Severity inventory is the home the wave's Settle named for registering a
+/// minted finding (`completions/artifacts/M51/settle-record.md` → §10).
+const INVENTORY_DOC: &str = "design/validation.md";
+
+/// The heading this increment registers under. **Keyed per increment on purpose**: each
+/// increment's arm asserts *equality* over the codes it mints, and one shared M51 section
+/// would redden every sibling arm the moment the next increment registered its own.
+const INVENTORY_HEADING: &str = "### The M51 registrations — Increment 4: the rollback-conflict";
+
+/// The codes **this increment** mints — one — spelled here so the three links below can be
+/// compared against each other rather than each against the reader's memory:
+///
+/// 1. the registration table's **first column** in [`INVENTORY_DOC`], as a SET;
+/// 2. **what the binary emits**, driven — the codes the `ConcurrentEdit` cell renders that
+///    the identically-failing `Untouched` cell does not, which is this family's whole
+///    contribution to that door's surface. A driven difference rather than a code-side
+///    registry read, because this family's production-side set is *the rows of
+///    `CONFIG_LAYER_SPECS` the transaction rewrites*, not a member enum of codes — so the
+///    honest question is what the door prints when a path races, and the honest baseline is
+///    the same door failing the same way with nothing racing;
+/// 3. **none of them an [`cli::invocation_log::ERROR_CODE_REGISTRY`] member** (§10): that
+///    registry mirrors **door identities** derived from `COMMITTING_DOORS`, and a blocking
+///    `Finding` is not an `Outcome` identity — registering one there would file a finding in
+///    a set whose own fence is the doc mirror of something else.
+const INCREMENT_CODES: [&str; 1] = ["finalize.rollback-conflict"];
+
+/// The repository root, two levels above `crates/cli`.
+fn repo_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("the repo root sits two levels above crates/cli")
+        .to_path_buf()
+}
+
+/// The block of [`INVENTORY_DOC`] under [`INVENTORY_HEADING`], up to the next heading of the
+/// same or a higher level — the section, never the rest of the file.
+fn registration_section(doc: &str) -> &str {
+    let start = doc.find(INVENTORY_HEADING).unwrap_or_else(|| {
+        panic!(
+            "{INVENTORY_DOC} must carry the section `{INVENTORY_HEADING}` — this increment \
+             mints a blocking finding, and `validation.md`'s Severity inventory is the home \
+             the wave's Settle named for registering one (settle-record.md → §10)",
+        )
+    });
+    let body = &doc[start + INVENTORY_HEADING.len()..];
+    let end = body
+        .match_indices('\n')
+        .map(|(at, _)| at + 1)
+        .find(|at| body[*at..].starts_with("## ") || body[*at..].starts_with("### "))
+        .unwrap_or(body.len());
+    &body[..end]
+}
+
+/// Every code the registration table's **first column** names, as a set.
+fn registered_codes(section: &str) -> std::collections::BTreeSet<String> {
+    section
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with('|'))
+        // The header row and the `|---|` separator carry no backticked code, so they drop out
+        // of the flat_map below without being named here.
+        .filter_map(|line| line.trim_start_matches('|').split('|').next())
+        .flat_map(|first_cell| {
+            first_cell
+                .split('`')
+                .skip(1)
+                .step_by(2)
+                .map(str::trim)
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+/// Every finding code a run **rendered through the house finding line** — `<severity> ·
+/// <code> — <message>`, whatever indent the door framed it in.
+fn rendered_codes(text: &str) -> std::collections::BTreeSet<String> {
+    text.lines()
+        .filter_map(|line| {
+            let (severity, rest) = line.trim_start().split_once(" · ")?;
+            // `blocking (gates at finalize)` is the store view's label and reaches no door
+            // here; the three bare tokens are what a task-scope surface prints.
+            matches!(severity, "blocking" | "warning" | "advisory").then_some(rest)
+        })
+        .filter_map(|rest| rest.split_whitespace().next())
+        .filter(|code| code.contains('.'))
+        .map(str::to_owned)
+        .collect()
+}
+
+/// **The inventory names exactly the codes this increment's binary emits, and none of them
+/// joins the door-identity registry** (`settle-record.md` → §10; the roadmap's Increment 4 →
+/// *Codes it registers*).
+///
+/// Red at this task's start at the section-absent panic rather than at the equality: T3 had
+/// already minted the code, wired it to every door that commits through the shared executor,
+/// and registered it in `cli::render::FINALIZE_FAMILY` with its contract sub-table row — and
+/// `validation.md`'s inventory, which calls itself the single source of truth for what the
+/// engine emits, named it nowhere.
+///
+/// It is the one mechanical check on a task whose other deliverable is prose: `finalize.md`'s
+/// reconciliation states *which sentence is the promise*, and a byte-assert over a promise's
+/// wording pins editorial phrasing rather than a contract — so that locus is verified by
+/// reading, the bound Increment 1 / T9 recorded and Increment 2 / T6 applied again.
+#[test]
+fn the_finding_inventory_registers_exactly_this_increments_codes() {
+    let root = repo_root();
+    let doc = std::fs::read_to_string(root.join(INVENTORY_DOC))
+        .unwrap_or_else(|err| panic!("read {INVENTORY_DOC}: {err}"));
+    let section = registration_section(&doc);
+
+    // 1 — doc == these literals, as a SET.
+    let registered = registered_codes(section);
+    let expected: std::collections::BTreeSet<String> = INCREMENT_CODES
+        .iter()
+        .map(|code| (*code).to_owned())
+        .collect();
+    assert_eq!(
+        registered, expected,
+        "{INVENTORY_DOC} → `{INVENTORY_HEADING}` must register EXACTLY the codes this \
+         increment mints — one table row per code, the code alone in the first column. A row \
+         for a code the binary never emits is a lie on the inventory that calls itself *the \
+         single source of truth* for what the engine emits; a missing row is the silence §10 \
+         exists to end.\nsection read:\n{section}",
+    );
+
+    // 2 — these literals == what the binary emits, driven in BOTH directions: the codes the
+    // raced rollback adds to a door's surface, over the baseline of the same door failing the
+    // same way with nothing racing. A code this family mints and the doc omits reddens link 1;
+    // a code it mints beyond this set reddens here.
+    let hook = |race, tag: &str| {
+        drive(
+            tag,
+            Some(COMMITTED_ENTRIES),
+            &Cell {
+                failure: Failure::Hook,
+                race,
+                note: "the inventory arm's witness",
+            },
+        )
+    };
+    let baseline = rendered_codes(&hook(Race::Untouched, "inventory-baseline").rendered);
+    let raced = rendered_codes(&hook(Race::ConcurrentEdit, "inventory-raced").rendered);
+    let minted: std::collections::BTreeSet<String> = raced.difference(&baseline).cloned().collect();
+    assert_eq!(
+        minted, expected,
+        "the literals this arm spells must be exactly the codes the raced rollback adds to \
+         the door's surface — one refused restore, one code, and nothing else new. A second \
+         code minted here with no inventory row reddens as loudly as a doc row with nothing \
+         behind it.\nbaseline: {baseline:?}\nraced: {raced:?}",
+    );
+
+    // …and the spelling is the shipped registry's, not a second copy of it: the family table
+    // is what `finalize_family_registry.rs` scans production source against, so a literal that
+    // drifts from it is a literal no fence is holding.
+    for code in INCREMENT_CODES {
+        assert!(
+            cli::render::FINALIZE_FAMILY
+                .iter()
+                .any(|member| member.code == code),
+            "`{code}` must be a `cli::render::FINALIZE_FAMILY` member — that table is the \
+             enumeration the registry suite scans production source against, and the contract's \
+             `finalize.*` sub-table mirrors it",
+        );
+    }
+
+    // 3 — and none of them joins the door-identity registry (§10).
+    for code in INCREMENT_CODES {
+        assert!(
+            !cli::invocation_log::ERROR_CODE_REGISTRY.contains(&code),
+            "`{code}` must stay OUT of `ERROR_CODE_REGISTRY`: that registry mirrors door \
+             identities derived from `COMMITTING_DOORS`, and a blocking `Finding` is not an \
+             `Outcome` identity (settle-record.md → §10)",
+        );
+    }
+    assert!(
+        section.contains("ERROR_CODE_REGISTRY"),
+        "…and the section must SAY so — the reason a blocking finding is not a door identity \
+         is the half a reader cannot derive from the table, and §10 decided it once for the \
+         whole family",
+    );
+
+    // …and that both versions survive, naming where the second one went. That is the half a
+    // reader cannot derive from a code called *conflict*: the rollback did not restore, and it
+    // did not discard either — the pre-image is parked in the gitignored workbench, and a
+    // reader who is not told the path has no way to find the bytes.
+    assert!(
+        section.contains(".jigc/displaced/"),
+        "…and the section must name `.jigc/displaced/`, where the pre-image the restore \
+         refused to write is parked — a conflict that preserves both copies is only useful to \
+         someone told where the second one is",
+    );
+}
