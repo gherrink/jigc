@@ -1957,6 +1957,9 @@ impl TaskArea {
         } else {
             StagePolicy::IndexHonoring
         };
+        // The transaction's `.jigc/.gitignore` report, filled by the executor's shared
+        // writer and printed beside the landed render below (M51 Increment 4 / T2).
+        let mut ignore_ack = None;
         match try_execute_finalize_plan(
             &self.repo_root,
             &self.jigc_root,
@@ -1966,6 +1969,7 @@ impl TaskArea {
             &schemas,
             Some(swept),
             stage,
+            &mut ignore_ack,
         )? {
             // T1 captures the aggregate hook output; the per-task relay site (T2) consumes it.
             Ok(hook_output) => {
@@ -2020,6 +2024,8 @@ impl TaskArea {
                 if format != Format::Json {
                     println!();
                 }
+                // The amend this transaction made to the user's co-owned ignore file.
+                crate::gitignore::emit_ack(format, &ignore_ack);
                 // T2 — relay any non-blocking hook output the commit produced
                 // (`design/finalize.md` → 6. Commit, success-relay).
                 relay_hook_output(format, &hook_output);
@@ -2743,9 +2749,20 @@ impl StagePolicy {
 /// folds the isolated worktrees off-line ([`combine_commit`]); the `squash: false` boundary
 /// builds its N+1 commit chain in a dedicated worktree and fast-forwards main
 /// ([`chain_commit`]).
+///
+/// `ignore_ack` is the transaction's **outbound** report of what the shared
+/// `.jigc/.gitignore` writer did (M51 Increment 4 / T2) — filled in the closure on the
+/// `displaced` / `retired` idiom, so a mid-transaction failure still hands the caller
+/// whatever the writer had already done. Three doors reach this one writer (`jigc task
+/// finalize` and both `jigc milestone finalize` arms) and each prints on its own surface,
+/// which is why the fact leaves by the parameter list rather than by the return: the
+/// landed structs those surfaces render serialize verbatim as the pinned `committed`
+/// envelope, and declaring a key there is not this task's act
+/// ([`crate::gitignore::emit_ack`]).
 // The shared executor threads many distinct, independent facts (repo/jigc/tmp/cleanup
-// roots, the plan, schemas, the post-sweep record, the stage policy); each is a real
-// input, not incidental coupling, so an allow is clearer here than a parameter struct.
+// roots, the plan, schemas, the post-sweep record, the stage policy, the ignore-amend
+// report it hands back); each is a real input, not incidental coupling, so an allow is
+// clearer here than a parameter struct.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn try_execute_finalize_plan(
     repo_root: &Path,
@@ -2756,6 +2773,7 @@ pub(crate) fn try_execute_finalize_plan(
     schemas: &BTreeMap<String, Schema>,
     post_sweep: Option<FileStateRecord>,
     stage: StagePolicy,
+    ignore_ack: &mut Option<crate::gitignore::Ensured>,
 ) -> Result<Result<String>> {
     let msg_path = msg_tmp_dir.join("finalize-message.tmp");
     std::fs::write(&msg_path, &plan.message)
@@ -2870,7 +2888,13 @@ pub(crate) fn try_execute_finalize_plan(
         // working area is never committed (`design/storage.md` → repository layout).
         // Ensure it exists so the `git add --all` stage picks up `config/` + the promoted
         // docs + the code changes.
-        crate::gitignore::ensure(jigc_root)?;
+        //
+        // What the amend did goes out through the caller's `&mut` (the `displaced` /
+        // `retired` idiom above), because this executor is shared by three doors and each
+        // one prints on its own surface — and because the landed struct those surfaces
+        // render IS the pinned `committed` envelope, which this task does not add a key to
+        // (M51 Increment 4 / T2; `crate::gitignore::IGNORE_DOORS`).
+        *ignore_ack = Some(crate::gitignore::ensure(jigc_root)?);
         // The commit seam's typed subject: this finalize commits in the USER's checkout,
         // and the subject records which ref that was when the act was decided
         // (`crate::repo::SeamSubject`). The two fan-out arms below never reach this one —
@@ -5777,6 +5801,7 @@ mod tests {
             &schemas,
             None,
             StagePolicy::MigrationFixed,
+            &mut None,
         )
         .expect("no setup I/O error");
         assert!(

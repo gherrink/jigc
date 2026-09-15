@@ -25,6 +25,8 @@ mod flow36_corpus_structural;
 mod foreign_at_both_doors;
 #[path = "../gitignore_amend_union.rs"]
 mod gitignore_amend_union;
+#[path = "../gitignore_writer_acks.rs"]
+mod gitignore_writer_acks;
 #[path = "../golden_harness.rs"]
 mod golden_harness;
 #[path = "../managed_vs_foreign.rs"]

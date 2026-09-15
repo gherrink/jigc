@@ -52,6 +52,117 @@ pub enum Ensured {
     Unchanged,
 }
 
+/// How a production caller of [`ensure`] answers for the content change it made.
+///
+/// The pair is the [`engine::state::Snapshot`] mold: a disposition, never an absence.
+/// Silence that is *decided* carries its reason here; silence that nobody decided is a
+/// law-1 defect, and the difference between them is that one of them is written down.
+pub enum Ack {
+    /// The door names the amend on its own ack surface, carrying which surface that is —
+    /// the answer a reader needs when the driven cell reddens.
+    Names(&'static str),
+    /// The door names nothing, carrying the reason it owes nothing — asserted through the
+    /// binary by the driven arm, never taken on trust.
+    Exempt(&'static str),
+}
+
+/// One production **`.jigc/.gitignore` writer** — a call site of [`ensure`], paired with
+/// the door an operator reaches it by and how that door acks the content change.
+pub struct IgnoreDoor {
+    /// The door as an operator names it — the argv shape that reaches this writer.
+    pub door: &'static str,
+    /// The production call site, `<workspace-relative path>::<enclosing fn>`. This is the
+    /// key the source-level completeness fence matches on, so a writer added anywhere in
+    /// either crate is a red test rather than a silent fifth door.
+    pub site: &'static str,
+    /// Whether this door names what it appended, or is exempt with a stated reason.
+    pub ack: Ack,
+}
+
+/// The **ignore-writer axis** — every production call that amends `.jigc/.gitignore`, and
+/// how its door says so (M51 Increment 4 / T2; EC-18's law-1 half).
+///
+/// It exists because the change was **named nowhere**. [`ensure`] writes into a file the
+/// user legitimately co-owns, and the closest any door came to saying so was `finalize`'s
+/// manifest line `modified .jigc/.gitignore` — which names the *file*, never the *change*
+/// (`completions/artifacts/M51/baseline-committing-doors.md` -> section 6). Four
+/// production callers reached it and not one of them said what it appended.
+///
+/// One list, two consumers, both in `crates/cli/tests/gitignore_writer_acks.rs`: a
+/// **source-level completeness fence** over both crates' production code — the call-site
+/// set of [`ensure`] must equal the `site` set below — and **one driven cell per member**
+/// through the real binary, where a member with no cell is a hard panic rather than a
+/// skip. A grep is not a fence (`implementation/dev-workflow.md`): the sweep that *found*
+/// these four cannot stop the fifth, so membership is checked where membership is decided.
+pub const IGNORE_DOORS: &[IgnoreDoor] = &[
+    IgnoreDoor {
+        door: "jigc setup",
+        site: "crates/cli/src/adapter.rs::init_project_layer",
+        ack: Ack::Names(
+            "a line beside the install summary ([`emit_ack`]) — the door that most often \
+             meets an older build's committed entry set, and the one that COMMITS what it \
+             amended, so the append cannot be allowed to land unsaid",
+        ),
+    },
+    IgnoreDoor {
+        door: "jigc task finalize <id>  (and `jigc milestone finalize <id>`, whose two \
+               fan-out arms reach this same writer)",
+        site: "crates/cli/src/task.rs::try_execute_finalize_plan",
+        ack: Ack::Names(
+            "a line beside the landed manifest ([`emit_ack`]), on the landed arm — a \
+             finalize that did not land speaks about the whole transaction through its \
+             rejection frame, not about one file inside it",
+        ),
+    },
+    IgnoreDoor {
+        door: "jigc milestone create \"<title>\"",
+        site: "crates/cli/src/milestone.rs::run_create",
+        ack: Ack::Names(
+            "the `minted milestone:` ack itself, under the record lines — this door's \
+             whole ack rides the envelope's `text` key, so the line reaches a driver \
+             without a second channel",
+        ),
+    },
+    IgnoreDoor {
+        door: "jigc milestone provision <milestone-id>",
+        site: "crates/cli/src/milestone.rs::run_provision",
+        ack: Ack::Names(
+            "the `provisioned N worktree(s)` ack itself (again the envelope's `text`) — \
+             the door that never commits, so what it writes into the file lives in the \
+             worktree alone and this line is the only notice of it",
+        ),
+    },
+];
+
+/// Print the amend line a door owes, with the house **stream discipline**: agent/human
+/// text to **stdout**, `--format json` to **stderr**, so the structured document on
+/// stdout still parses as exactly one JSON value
+/// (`design/command-output-contract.md` → Stream discipline). Nothing at all when the
+/// writer appended nothing, and nothing when the door never reached it.
+///
+/// **The shared home for the doors whose JSON arm is a pinned, structured envelope** —
+/// `jigc setup`, `jigc task finalize` and both `jigc milestone finalize` arms. Those
+/// three render a struct that serializes verbatim as the envelope, and declaring a key on
+/// it is a one-way act this task does not own (M51's D5; the pinned-envelope census is
+/// Increment 5's subject), so the fact rides the beside-channel the repo already uses for
+/// presentation-only output ([`crate::render::advisory_line`]'s producers). The two doors
+/// whose JSON arm carries their whole ack as prose — `jigc milestone create` and
+/// `provision`, whose summary IS the envelope's `text` — put the line in that prose
+/// instead, where a driver reads it without a second channel.
+pub fn emit_ack(format: crate::cli::Format, ensured: &Option<Ensured>) {
+    let Some(line) = ensured
+        .as_ref()
+        .and_then(crate::render::gitignore_amend_line)
+    else {
+        return;
+    };
+    if format == crate::cli::Format::Json {
+        eprintln!("{line}");
+    } else {
+        println!("{line}");
+    }
+}
+
 /// Ensure `<jigc_root>/.gitignore` lists every [`ENTRIES`] line, **by amendment**: the
 /// existing bytes are preserved exactly and only the missing entries are appended, so a
 /// comment, a blank line, CRLF, a missing final newline, a pre-existing duplicate and a

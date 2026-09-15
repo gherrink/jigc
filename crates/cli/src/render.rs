@@ -10,6 +10,7 @@
 //! resilience and `design/workflow-dialect.md` → Routing footer.
 
 use crate::cli::Format;
+use crate::gitignore::Ensured;
 use crate::ingest::IngestReport;
 use crate::milestone::MilestoneCreated;
 use crate::setup::{InstallCommit, SetupSummary, UninstallSummary};
@@ -2984,6 +2985,39 @@ pub fn advisory_line(finding: &Finding) -> String {
     finding_line(finding, false)
 }
 
+/// The line a door prints when [`crate::gitignore::ensure`] **amended**
+/// `.jigc/.gitignore` — which canonical entries it appended, and that everything already
+/// in the file was kept (M51 Increment 4 / T2; `design/surface-contract.md` → law 1).
+///
+/// **One renderer, four doors** (`crate::gitignore::IGNORE_DOORS`), because the fact is
+/// one fact: `jigc setup`, `jigc task finalize` (the site the two `jigc milestone
+/// finalize` arms reach as well), `jigc milestone create` and `jigc milestone provision`
+/// all write into a file the user legitimately co-owns, and a second copy of this
+/// sentence is a second place for it to drift. Each door frames it in its own mold — at
+/// most an indent — and the line itself is identical everywhere.
+///
+/// **`None` is the silent case, and it is two shapes, not one.**
+/// [`Ensured::Unchanged`] appended nothing, so there is nothing to say.
+/// [`Ensured::Created`] appended nothing *to anything*: the file did not exist, so jigc
+/// wrote its own file with its own entries and touched no line of the user's — which is
+/// the ordinary fresh `jigc setup`, and a door narrating it on every install would be
+/// noise standing where a real change belongs.
+pub fn gitignore_amend_line(ensured: &Ensured) -> Option<String> {
+    let Ensured::Amended { appended } = ensured else {
+        return None;
+    };
+    // An `Amended` carrying nothing is unreachable by construction (`ensure` returns
+    // `Unchanged` for it) — but the renderer must not compose "appended " either way.
+    if appended.is_empty() {
+        return None;
+    }
+    Some(format!(
+        ".jigc/.gitignore → appended {}   (jigc's transient-runtime entries; every line \
+         already in the file was kept)",
+        appended.join(", "),
+    ))
+}
+
 /// Render a successful `jigc setup` install to the surface `format` selects:
 /// `agent` / `human` emit a one-line-per-target summary of what was installed,
 /// followed by the routing footer; `json` emits a generic object naming the two
@@ -3705,6 +3739,12 @@ pub fn milestone_created(created: &MilestoneCreated) -> String {
                 "record commit: {sha}   — the record on its own; anything else you had staged stayed staged\n"
             ));
         }
+    }
+    // The ignore amend, when there was one (M51 Increment 4 / T2) — above the `next:`
+    // route, which is the last line by convention.
+    if let Some(line) = gitignore_amend_line(&created.ignore) {
+        out.push_str(&line);
+        out.push('\n');
     }
     let next = engine::finding::Route::mechanical(
         ["jigc", "milestone", "add-task", &created.id, "\"<intent>\""],

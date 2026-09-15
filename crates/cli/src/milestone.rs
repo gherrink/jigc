@@ -472,7 +472,10 @@ fn run_create(cwd: &Path, title: &str) -> Result<(String, String)> {
     let repo_root = discover_repo_root(cwd).ok_or_else(|| crate::locate::not_in_repo(cwd))?;
     let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
     let jigc_root = jigc_home.join(".jigc");
-    crate::gitignore::ensure(&jigc_root)?;
+    // What the `.jigc/.gitignore` amend did, carried to the ack: `create` writes into a
+    // file the user legitimately co-owns, so an appended entry is named rather than left
+    // for `git diff` to discover (M51 Increment 4 / T2; `crate::gitignore::IGNORE_DOORS`).
+    let ignore = crate::gitignore::ensure(&jigc_root)?;
 
     // The record-home split (`design/team-ready-state.md` → The `milestone-record` doctype;
     // The commit model): under a `[dev ▸ methodology]` project the composed cascade resolves
@@ -539,6 +542,7 @@ fn run_create(cwd: &Path, title: &str) -> Result<(String, String)> {
             id: minted.id.clone(),
             base_short: minted.base.short.clone(),
             record,
+            ignore,
         }),
         hook_output,
     ))
@@ -554,6 +558,11 @@ fn run_create(cwd: &Path, title: &str) -> Result<(String, String)> {
 pub struct MilestoneCreated {
     /// The minted milestone's work-unit id.
     pub id: String,
+    /// What this call's `.jigc/.gitignore` amend did — named on the ack when it appended
+    /// anything, silent otherwise (M51 Increment 4 / T2;
+    /// [`crate::render::gitignore_amend_line`], disposition in
+    /// [`crate::gitignore::IGNORE_DOORS`]).
+    pub ignore: crate::gitignore::Ensured,
     /// The short sha of the shared base every sub-task pins.
     pub base_short: String,
     /// The committed record this call landed — `None` dev-only.
@@ -2074,7 +2083,11 @@ fn run_provision(cwd: &Path, milestone_id: &str, force: bool) -> Result<String> 
     let jigc_root = jigc_home.join(".jigc");
     // `.jigc/worktrees/` must be ignored or the linked worktrees pollute the main
     // checkout's `git status` / `git add --all`.
-    crate::gitignore::ensure(&jigc_root)?;
+    //
+    // This door **never commits**, so an entry appended here lives in the worktree alone —
+    // which makes naming it the only channel there is (M51 Increment 4 / T2;
+    // `crate::gitignore::IGNORE_DOORS`).
+    let ignore = crate::gitignore::ensure(&jigc_root)?;
 
     // Fresh-clone resume (M39 T5): re-derive the demoted cache from the committed record before
     // the `dir.is_dir()` guard + base-pin/task-list reads, so `provision` on a fresh clone
@@ -2104,12 +2117,19 @@ fn run_provision(cwd: &Path, milestone_id: &str, force: bool) -> Result<String> 
     let ids = live_sub_task_ids(&jigc_home, &schemas, milestone_id, list.enumerate())?;
 
     let paths = provision_worktrees(&repo_root, &jigc_home, milestone_id, &base.sha, &ids, force)?;
-    Ok(format!(
+    let mut out = format!(
         "provisioned {} worktree(s) for milestone:{milestone_id} at base {} ({})",
         paths.len(),
         base.short,
         ids.join(", ")
-    ))
+    );
+    // The ignore amend, when there was one — appended BELOW the provision line it is
+    // incidental to, and absent entirely when nothing was appended.
+    if let Some(line) = render::gitignore_amend_line(&ignore) {
+        out.push('\n');
+        out.push_str(&line);
+    }
+    Ok(out)
 }
 
 /// Add one **detached** worktree per sub-task at `base_sha` under
@@ -4024,6 +4044,10 @@ fn run_milestone_finalize(
         // artifact, not cleanly partitionable per sub-task). No reconcile sweep → `None`.
         let chain = subtask_patches_and_messages(&jigc_home, milestone_id, &worktrees, &schemas)?;
         let chain_subtask_ids = chain.ids;
+        // The boundary's `.jigc/.gitignore` report, printed beside the landed manifest
+        // below (M51 Increment 4 / T2) — this arm reaches the same shared writer the
+        // per-task door does.
+        let mut ignore_ack = None;
         match crate::task::try_execute_finalize_plan(
             &repo_root,
             &jigc_root,
@@ -4036,6 +4060,7 @@ fn run_milestone_finalize(
                 subtasks: chain.patches,
                 record: record_pathspec,
             },
+            &mut ignore_ack,
         )? {
             Ok(hook_output) => {
                 // The boundary landed — the flipped record rode the aggregate commit; disarm
@@ -4059,6 +4084,8 @@ fn run_milestone_finalize(
                 if format != Format::Json {
                     println!();
                 }
+                // The amend this boundary made to the user's co-owned ignore file.
+                crate::gitignore::emit_ack(format, &ignore_ack);
                 // Relay the whole chain's folded non-blocking hook output — every fan-out
                 // commit (the N per-sub-task code commits + the aggregate) runs the user's
                 // hooks and `chain_commit` folds their captured streams into this one string,
@@ -4124,6 +4151,8 @@ fn run_milestone_finalize(
         // whole-tree sweep (the code lives in the isolated worktrees, not this checkout). A
         // docs-only (never-provisioned) milestone yields an empty list and degrades to a
         // docs-only commit, byte-identical to what M7 shipped.
+        // The boundary's `.jigc/.gitignore` report (M51 Increment 4 / T2), as above.
+        let mut ignore_ack = None;
         match crate::task::try_execute_finalize_plan(
             &repo_root,
             &jigc_root,
@@ -4133,6 +4162,7 @@ fn run_milestone_finalize(
             &schemas,
             None,
             crate::task::StagePolicy::Combine(worktrees, record_pathspec),
+            &mut ignore_ack,
         )? {
             // The boundary landed. Clean up the per-sub-task working areas too (the
             // executor only removed the milestone area). A failed/rolled-back finalize
@@ -4157,6 +4187,8 @@ fn run_milestone_finalize(
                 if format != Format::Json {
                     println!();
                 }
+                // The amend this boundary made to the user's co-owned ignore file.
+                crate::gitignore::emit_ack(format, &ignore_ack);
                 // T3 — relay the landed combine commit's non-blocking hook output (the
                 // dedicated-worktree commit runs the user's hooks — M31 Inc 5).
                 crate::task::relay_hook_output(format, &hook_output);

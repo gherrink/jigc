@@ -1036,17 +1036,30 @@ pub enum InstallCommit {
 /// Run `jigc setup` from `start`: locate the repo root, load the Claude Code
 /// profile, and run both injections idempotently.
 ///
-/// `Ok(summary)` on a clean install (including a re-run, which is a byte-identical
-/// no-op by the injectors' idempotency). `Err(finding)` is a single blocking
-/// `setup.*` finding carrying a route — the dispatcher renders it and exits
+/// `Ok((summary, ignore))` on a clean install (including a re-run, which is a
+/// byte-identical no-op by the injectors' idempotency). `Err(finding)` is a single
+/// blocking `setup.*` finding carrying a route — the dispatcher renders it and exits
 /// non-zero. CLI **locates** the repo root; the injectors do the writes (the
 /// engine stays presentation-free and filesystem-free).
+///
+/// **`ignore` rides beside the summary rather than inside it** (M51 Increment 4 / T2).
+/// It is what the `.jigc/.gitignore` amend did ([`crate::gitignore::Ensured`]) — a fact
+/// this door owes the user, because `setup` commits what it amends — and the dispatcher
+/// prints it through [`crate::gitignore::emit_ack`], beside the summary. Inside
+/// [`SetupSummary`] it would be an eighth field of the struct M48's standing text/JSON
+/// parity fence destructures exhaustively, and closing that gap means declaring a key on
+/// a pinned envelope — the one-way act M51's D5 governs and Increment 5 owns. The
+/// beside-channel is the shipped answer for exactly this shape
+/// (`design/command-output-contract.md` → Stream discipline).
 ///
 /// `force` is the **single consent** at this door (M51 Increment 3): it is the one
 /// meaning `--force` carries here, and it consents to exactly one thing — committing
 /// install-footprint paths that carry bytes `setup` did not write ([`InstallSubject`]).
 /// It is not a posture override; Increment 2 gave posture refusals none.
-pub fn run(start: &Path, force: bool) -> Result<SetupSummary, Finding> {
+pub fn run(
+    start: &Path,
+    force: bool,
+) -> Result<(SetupSummary, crate::gitignore::Ensured), Finding> {
     // The not-in-a-repository cause answers with the ONE shared text + route every other
     // door gives (M49 Inc 11 T2, `locate::locate_finding`); the `$HOME`-unset cause is a
     // different precondition and keeps its own carry.
@@ -1077,7 +1090,7 @@ fn install(
     repo_root: &Path,
     profile: &AdapterProfile,
     force: bool,
-) -> Result<SetupSummary, Finding> {
+) -> Result<(SetupSummary, crate::gitignore::Ensured), Finding> {
     // 0. Gate the spawn launch template against the decidable install-time rule
     //    *before* any write, so a broken template fails install touching nothing
     //    (`design/assistant-adapter.md` → Bind the spawn mechanism: "A broken
@@ -1167,7 +1180,11 @@ fn install(
     })?;
 
     // 2. Initialize the project cascade layer, so the project resolves as set up.
-    adapter::init_project_layer(repo_root).map_err(|err| {
+    // What the `.jigc/.gitignore` amend did, carried to the summary: `setup` writes into
+    // a file the user legitimately co-owns and then COMMITS it, so an entry appended to an
+    // older build's committed set has to be named rather than landed in silence (M51
+    // Increment 4 / T2; `crate::gitignore::IGNORE_DOORS`).
+    let ignore = adapter::init_project_layer(repo_root).map_err(|err| {
         Finding::block(
             "setup.init-project-layer",
             format!("cannot initialize the project layer under `.jigc/`: {err}"),
@@ -1384,15 +1401,18 @@ fn install(
         findings.push(pack_load_finding(&err));
     }
 
-    Ok(SetupSummary {
-        line_file,
-        allowlist_file,
-        hook_file,
-        hook_committed,
-        guide_file,
-        findings: findings.into(),
-        install_commit,
-    })
+    Ok((
+        SetupSummary {
+            line_file,
+            allowlist_file,
+            hook_file,
+            hook_committed,
+            guide_file,
+            findings: findings.into(),
+            install_commit,
+        },
+        ignore,
+    ))
 }
 
 /// The finding code the install's forecast raises. **Un-keyed** — not a `CHECK_INVENTORY`
@@ -3472,7 +3492,7 @@ mod tests {
         git(dir.path(), &["init", "-q"]);
         let profile = adapter::load_profile("claude-code").expect("the shipped profile loads");
 
-        let summary = install(dir.path(), &profile, false).expect("install succeeds");
+        let (summary, _) = install(dir.path(), &profile, false).expect("install succeeds");
 
         assert_eq!(summary.line_file, "CLAUDE.md");
         assert_eq!(summary.allowlist_file, ".claude/settings.json");
@@ -3826,7 +3846,7 @@ mod tests {
         git(dir.path(), &["add", "user-work.txt"]);
 
         let profile = adapter::load_profile("claude-code").expect("the shipped profile loads");
-        let summary = install(dir.path(), &profile, false).expect("install succeeds");
+        let (summary, _) = install(dir.path(), &profile, false).expect("install succeeds");
 
         // (1) setup committed its install in its OWN commit naming the install files.
         assert!(
@@ -3868,7 +3888,7 @@ mod tests {
 
         // (3) a second setup is a clean no-op: no new commit, reported as `Nothing`.
         let head_before = git_str(dir.path(), &["rev-parse", "HEAD"]);
-        let summary2 = install(dir.path(), &profile, false).expect("re-install succeeds");
+        let (summary2, _) = install(dir.path(), &profile, false).expect("re-install succeeds");
         assert!(
             matches!(summary2.install_commit, InstallCommit::Nothing),
             "a second setup over an unchanged install must report Nothing; got {:?}",

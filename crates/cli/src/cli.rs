@@ -660,8 +660,13 @@ fn run_setup(format: Format, force: bool) -> Outcome {
         }
     };
     match setup::run(&cwd, force) {
-        Ok(summary) => {
+        Ok((summary, ignore)) => {
             println!("{}", render::setup_success(format, &summary));
+            // What the install's `.jigc/.gitignore` amend did (M51 Increment 4 / T2) —
+            // beside the summary, because `setup` writes into a file the user
+            // legitimately co-owns AND commits it, so an entry appended to an older
+            // build's committed set must be said rather than landed in silence.
+            crate::gitignore::emit_ack(format, &Some(ignore));
             Outcome::success()
         }
         Err(finding) => {

@@ -1100,13 +1100,19 @@ fn write_settings(target: &Path, settings: &serde_json::Value) -> std::io::Resul
 /// `setup` commits is already final and a later `finalize` never has to amend it.
 /// Idempotent: the `.gitignore` is amended only if it lacks an entry, and the empty
 /// `.gitkeep` is rewritten byte-identically.
-pub fn init_project_layer(repo_root: &Path) -> std::io::Result<()> {
+///
+/// **Returns what the amend did** ([`crate::gitignore::Ensured`]), because this is one of
+/// the four doors that owes an ack for it (`crate::gitignore::IGNORE_DOORS`): `setup`
+/// *commits* what it writes here, so an entry appended to an older build's committed file
+/// lands in the install commit, and the install summary has to say so (M51 Increment 4 /
+/// T2). The `.gitkeep` needs no such report — it is jigc's own empty marker at a path
+/// nothing else owns.
+pub fn init_project_layer(repo_root: &Path) -> std::io::Result<crate::gitignore::Ensured> {
     let config_dir = repo_root.join(".jigc").join("config");
     std::fs::create_dir_all(&config_dir)?;
     std::fs::write(config_dir.join(".gitkeep"), b"")?;
 
-    crate::gitignore::ensure(&repo_root.join(".jigc"))?;
-    Ok(())
+    crate::gitignore::ensure(&repo_root.join(".jigc"))
 }
 
 /// Whether `content` already carries the exact bare `@.jigc/AGENT.md` import
