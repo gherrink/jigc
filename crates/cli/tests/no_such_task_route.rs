@@ -14,6 +14,14 @@
 //! extracts the backticked route from those emitted bytes and **runs it verbatim**
 //! (the route is the contract; a reconstructed command could mask a broken emission).
 //!
+//! **Since M51 Increment 6 / T1 the refusal is a typed `Finding`, not an `anyhow!`
+//! string** (`engine::finalize::no_such_task_finding`), so the emitted bytes are the
+//! house findings render — `blocking · finalize.no-task — …`, the `at:` locus, the
+//! `route:` line, and the universal routing footer — rather than a bare sentence. The
+//! convergence claim is unchanged and is asserted the same way: one set of bytes, at all
+//! three doors. The route now rides the finding's own `route:` line, which is where this
+//! suite reads it from; the footer's own `jigc` spans are not routes and are not read.
+//!
 //! Out of scope (a different state, its start-route correct): the **no-active-task**
 //! reject (`no active task — start one with `jigc start``) when no `--task` is given
 //! and no task exists.
@@ -88,8 +96,16 @@ fn jigc(repo: &Path, home: &Path, args: &[&str]) -> std::process::Output {
         .expect("run the jigc binary")
 }
 
-/// The one converged no-such-task message every wrong-id surface emits.
-const CONVERGED: &str = "no task `nonexistent` — list live tasks with `jigc task list`\n";
+/// The one converged no-such-task refusal every wrong-id surface emits, byte for byte.
+const CONVERGED: &str = "blocking · finalize.no-task — no task `nonexistent`\n  \
+                         at: task:nonexistent\n  route: `jigc task list` lists the live \
+                         tasks\n— jigc · run `jigc start` for orientation; all writes \
+                         through `jigc`.\n";
+
+/// The line the finding's route rides — the span this suite extracts and runs. The
+/// routing footer below it also carries backticked `jigc` spans, and those are **not**
+/// routes: reading the route off its own labelled line is what keeps the two apart.
+const ROUTE_LABEL: &str = "\n  route: `";
 
 /// Assert `out` is the converged wrong-id reject, then extract the backticked route
 /// from the **emitted** stderr and run it verbatim in `repo` — the emitted bytes are
@@ -113,10 +129,11 @@ fn assert_converged_and_route_runs(out: &std::process::Output, repo: &Path, home
         "the factually-false `jigc start` listing claim must be gone; got:\n{stderr}",
     );
 
-    // Extract the route from the emitted bytes: the backticked span after "with ".
+    // Extract the route from the emitted bytes: the first backticked span of the
+    // finding's own `route:` line.
     let (_, tail) = stderr
-        .split_once("with `")
-        .unwrap_or_else(|| panic!("no backticked route after `with ` in:\n{stderr}"));
+        .split_once(ROUTE_LABEL)
+        .unwrap_or_else(|| panic!("no backticked route on a `route:` line in:\n{stderr}"));
     let (route, _) = tail
         .split_once('`')
         .unwrap_or_else(|| panic!("unterminated backticked route in:\n{stderr}"));

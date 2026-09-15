@@ -33,6 +33,12 @@
 //! bound on `render::finding_error` and
 //! `design/command-output-contract.md` → *the complement*. This suite is about the log
 //! record, which is the half the contract already promised and did not deliver.
+//!
+//! That bound is the carrier's **default**, not its only arm: since M51 Increment 6 / T1 a
+//! refusal raised through `render::envelope_finding_error` projects the findings envelope
+//! through this same funnel, and `work_unit_unknown_envelope.rs` is where that half is
+//! driven. Every row below is a flattened one, which is why the claim above still holds of
+//! them — and both arms record the code, which is this suite's actual subject.
 
 use std::path::{Path, PathBuf};
 

@@ -77,5 +77,7 @@ mod validate_command;
 mod validate_envelope;
 #[path = "../validate_previews_the_gate.rs"]
 mod validate_previews_the_gate;
+#[path = "../work_unit_unknown_envelope.rs"]
+mod work_unit_unknown_envelope;
 #[path = "../worktree_jigc_home.rs"]
 mod worktree_jigc_home;

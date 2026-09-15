@@ -474,8 +474,11 @@ fn the_task_state_verbs_ack_their_mutation() {
         "the discard must have removed the working area",
     );
 
-    // Discarding an absent id is **not** idempotent: it exits 1 with the error
-    // envelope (`TaskArea::resolve` bails before any removal could run).
+    // Discarding an absent id is **not** idempotent: it exits 1 with the **findings**
+    // envelope (`TaskArea::resolve` refuses before any removal could run). Since M51
+    // Increment 6 / T1 that refusal is the contract-keyed `finalize.no-task` finding —
+    // the key a driver reads is `(finalize.no-task, task:<id>)` — rather than the
+    // flattened `{"error": …}` (`work_unit_unknown_envelope.rs` sweeps the whole door set).
     let gone = run(
         repo.path(),
         home.path(),
@@ -484,14 +487,19 @@ fn the_task_state_verbs_ack_their_mutation() {
     assert_eq!(
         gone.status.code(),
         Some(1),
-        "discarding an absent task must exit 1 (operational error); stdout:\n{}",
+        "discarding an absent task must exit 1; stdout:\n{}",
         stdout_of(&gone),
     );
     let err: serde_json::Value = serde_json::from_str(stderr_of(&gone).trim())
-        .expect("the absent-task error envelope parses as JSON");
-    assert!(
-        err["error"].as_str().is_some_and(|e| e.contains("no task")),
-        "the absent-task rejection must be the error envelope; got:\n{err}",
+        .expect("the absent-task findings envelope parses as JSON");
+    assert_eq!(
+        err["findings"][0]["key"],
+        serde_json::json!({
+            "code": "finalize.no-task",
+            "target": format!("task:{task_id}"),
+        }),
+        "the absent-task rejection is the findings envelope, keyed at the work unit; \
+         got:\n{err}",
     );
 
     // The plain-format discard also acks (one line, naming the task).

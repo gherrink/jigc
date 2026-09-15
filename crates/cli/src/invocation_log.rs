@@ -305,12 +305,35 @@ impl Outcome {
 /// record: [`Outcome::with_findings`] instead of [`Outcome::failure`] — same exit code
 /// ([`crate::task::EXIT_ERROR`] either way), a name instead of an anonymous exit 1.
 ///
-/// **Declared bound, unchanged by this:** flattening puts the block in the *message*, so under
-/// `--format json` these doors still carry it inside the `{"error": …}` envelope rather than as
-/// the structured finding projection (`design/command-output-contract.md` → *the complement*).
-/// This funnel repairs the log half, which the contract already promised; it does not move the
-/// envelope half, which the contract deliberately declares.
+/// **The envelope arm** (M51 Increment 6 / T1). Flattening puts the block in the *message*,
+/// which costs a driver the envelope **key** — a price `design/command-output-contract.md` →
+/// *the complement* declares and accepts for the families whose codes the contract lists under
+/// no target form. It is **not** available to a code the contract lists under one: that listing
+/// is a promise that `(code, target)` resolves, and a code inside a message is not a key. A
+/// refusal raised through [`crate::render::envelope_finding_error`] therefore renders as the
+/// `Reject::Findings` arm of [`ENVELOPE_ARMS`](crate::render::ENVELOPE_ARMS) — `findings` +
+/// `schema_version` on **stderr**, stdout empty, exit [`crate::task::EXIT_ERROR`] — through the
+/// same [`crate::render::validation`] render every other findings envelope takes, so the two
+/// cannot drift. The flattened arm below is untouched, and stays the default.
+///
+/// Both arms record the same thing: the finding's `code` in `finding_codes`. Which arm a
+/// refusal takes is declared at the door that raises it (the carrier's `envelope` flag), never
+/// guessed here from the code.
 pub fn operational_failure(format: crate::cli::Format, err: &anyhow::Error) -> Outcome {
+    if let Some(finding) = crate::render::envelope_projecting_finding(err) {
+        // A no-delta cascade: this is a refusal, not an inventory sweep, so the M6 severity
+        // post-pass is a no-op over it. A cascade that cannot be resolved at all is not worth
+        // a second failure surface — the flattened arm below still carries the code, the locus
+        // and the route in its message — so the fall-through is the degradation, not a panic.
+        if let Ok(resolved) = crate::cascade_util::no_delta_resolved() {
+            let report = engine::result::ValidationReport::new(vec![finding.clone()], &resolved);
+            eprint!("{}", crate::render::validation(format, &report));
+            if format != crate::cli::Format::Json {
+                eprintln!();
+            }
+            return Outcome::with_findings(crate::task::EXIT_ERROR, &report.findings);
+        }
+    }
     eprintln!("{}", crate::render::operational_error(format, err));
     match crate::render::blocked_finding(err) {
         Some(finding) => {

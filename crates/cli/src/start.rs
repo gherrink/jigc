@@ -2127,13 +2127,20 @@ pub fn reenter_in_repo(start: &Path, workflow_id: &str, id: &str) -> Result<Comp
     let jigc_root = jigc_home.join(".jigc");
     let task_dir = jigc_root.join("tasks").join(id);
     if !task_dir.is_dir() {
-        bail!(
-            "no task `{id}` — list a milestone's sub-tasks with {}",
-            engine::finding::Route::mechanical(
-                ["jigc", "milestone", "list-tasks", "<milestone-id>"],
-                ""
+        // The same cause and the same key as every other unknown-work-unit door
+        // ([`crate::task::no_such_task`]; M51 Increment 6 / T1) — `finalize.no-task` at
+        // `task:<id>`, answered as the findings envelope — with **this** door's roster as
+        // its route: a `jigc workflow <W> --task <id>` re-entry is a milestone sub-agent's,
+        // and its sibling ids are listed by the milestone, not by `jigc task list`.
+        return Err(crate::render::envelope_finding_error(
+            &engine::finalize::no_such_task_finding(
+                id,
+                engine::finding::Route::mechanical(
+                    ["jigc", "milestone", "list-tasks", "<milestone-id>"],
+                    " lists a milestone's sub-tasks",
+                ),
             ),
-        );
+        ));
     }
 
     // The task is pinned to its (milestone-shared) base; never operate it off it.

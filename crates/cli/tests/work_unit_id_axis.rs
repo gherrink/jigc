@@ -58,6 +58,7 @@ use cli::cli::{
     VERB_KINDS, VerbKind, WORK_UNIT_ID_DOOR_PAYLOAD, WORK_UNIT_ID_DOORS, WORK_UNIT_ID_SLOT,
     work_unit_id_arg_ids,
 };
+use cli::render::ROUTING_FOOTER;
 use engine::slug::is_slug;
 use engine::state::MINT_DOORS;
 
@@ -195,8 +196,17 @@ fn family_of(arg: &str) -> Family {
 
 /// The backticked spans of a surface that name a `jigc` command — the routes a reader
 /// would paste.
+///
+/// **The universal routing footer is not a route and is dropped first** (M51 Increment 6 /
+/// T1). `cli::render::ROUTING_FOOTER` ends every composed reading surface with *"run
+/// `jigc start` for orientation; all writes through `jigc`"* — two backticked `jigc`
+/// spans that are an orientation reminder, not this refusal's recovery. They arrived here
+/// when the unknown-id refusal became a `Finding` rendered through the house findings
+/// funnel, and counting them would read one route as three. The footer is dropped by its
+/// own production constant, never by a copy of its text.
 fn jigc_commands(text: &str) -> Vec<String> {
-    text.split('`')
+    text.replace(ROUTING_FOOTER, "")
+        .split('`')
         .skip(1)
         .step_by(2)
         .filter(|span| *span == "jigc" || span.starts_with("jigc "))

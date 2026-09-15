@@ -414,8 +414,10 @@ fn hook_rejected_finalize_is_identifiable_absent_task_is_not() {
     let absent_rec =
         record_with_arg(&records, "no-such-task").expect("the absent-task finalize is logged");
 
-    // The two failures are indistinguishable on every OTHER field — same exit code, same
-    // (empty) finding codes. So `error_code` is the discriminator, or nothing is.
+    // The two failures share an exit code, so `error_code` is the discriminator for the
+    // half that has no `Finding` at all. The hook rejection is that half **by design**:
+    // git's stderr stays verbatim and unwrapped, so it mints no finding and could only
+    // ever name itself through `error_code`.
     assert_eq!(
         rejected_rec["exit_code"], absent_rec["exit_code"],
         "the two finalize failures share an exit code (that is why the log needs the error \
@@ -427,10 +429,14 @@ fn hook_rejected_finalize_is_identifiable_absent_task_is_not() {
         "a hook rejection is an operational error, not a Finding — no finding codes (git's \
          stderr stays verbatim and unwrapped); got {rejected_rec}",
     );
+    // The absent-task half **does** name itself, and since M51 Increment 6 / T1 it names
+    // itself twice over: the refusal is the typed `finalize.no-task` finding, so the code
+    // the surface prints is the code the log records (the M50 completion-audit rule), and
+    // `error_code` stays null because it is a `Finding`, not an error identity.
     assert_eq!(
-        absent_rec["finding_codes"].as_array().map(Vec::len),
-        Some(0),
-        "an absent task logs no finding codes either; got {absent_rec}",
+        absent_rec["finding_codes"],
+        serde_json::json!(["finalize.no-task"]),
+        "an absent task records the refusal it printed; got {absent_rec}",
     );
 
     assert_eq!(
@@ -445,8 +451,8 @@ fn hook_rejected_finalize_is_identifiable_absent_task_is_not() {
     );
     assert!(
         absent_rec["error_code"].is_null(),
-        "an unstructured operational error carries no error identity (null, not a borrowed \
-         one); got {absent_rec}",
+        "a refusal that travels as a `Finding` carries no error identity (null, not a \
+         borrowed one — the identity rides `finding_codes`); got {absent_rec}",
     );
 }
 
@@ -456,7 +462,7 @@ fn hook_rejected_finalize_is_identifiable_absent_task_is_not() {
 /// `error_code: null` at exit 4 — a coded stop with no *why*, the log-opacity sibling of
 /// the hook-rejected case above. The record must be distinguishable from BOTH the
 /// hook-rejected finalize (`finalize.commit-rejected`, exit 1) and the absent-id failure
-/// (no identity, exit 1): different identity than the former, an identity at all vs the
+/// (no `error_code`, exit 1): different identity than the former, an identity at all vs the
 /// latter.
 #[test]
 fn migration_review_hold_is_identifiable_in_the_log() {

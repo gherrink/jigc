@@ -4656,16 +4656,59 @@ fn scan_version_tokens(text: &str) -> Vec<String> {
 /// **Declared bound:** flattening puts the block in the *message*, so under
 /// `--format json` these doors carry it inside the `{"error": …}` envelope rather than as
 /// the structured finding projection — the posture the three earlier copies already ship.
+/// It is the right posture for a code the contract lists under **no** target form, and the
+/// wrong one for a code it lists under one: that listing promises a driver `(code, target)`
+/// resolves, and a code inside a message is not a key. Those refusals take
+/// [`envelope_finding_error`] instead (M51 Increment 6 / T1).
 pub fn finding_error(finding: &Finding) -> anyhow::Error {
-    anyhow::Error::new(BlockedFinding(finding.clone()))
+    anyhow::Error::new(BlockedFinding {
+        finding: finding.clone(),
+        envelope: false,
+    })
+}
+
+/// The sibling of [`finding_error`] for a refusal the contract declares as a finding that
+/// **projects a key** — same carrier, same printed identity, but the `--format json` arm
+/// is the **findings envelope** (`findings` + `schema_version`) rather than the flattened
+/// single-key `{"error": …}` (M51 Increment 6 / T1).
+///
+/// **Why the two forms coexist, and how a door chooses.** Flattening is the surface's
+/// default and stays so: it costs a driver the envelope *key* and nothing else, which is a
+/// price `design/command-output-contract.md` → *the complement* declares and accepts. What
+/// it may **not** do is contradict the contract — and a code the contract lists under a
+/// declared **target form** is one it promises a driver can key on, so that code's doors
+/// owe the envelope. `finalize.no-task` is listed under the work-unit form, which is why
+/// the unknown-work-unit doors take this constructor. Which arm each `(verb, arm)` pair
+/// ships is a declared row of [`ENVELOPE_ARMS`], not a per-door judgment.
+///
+/// The printed (agent / human) surface is the house findings render either way; the two
+/// differ only in the machine arm, and the routing footer the envelope render carries.
+pub fn envelope_finding_error(finding: &Finding) -> anyhow::Error {
+    anyhow::Error::new(BlockedFinding {
+        finding: finding.clone(),
+        envelope: true,
+    })
 }
 
 /// The [`Finding`] a [`finding_error`] was built from, when `err` is one — the read half
 /// of the carrier, so a dispatch handler can name the refusal in the invocation log
 /// (`Outcome::with_findings`) instead of logging one more anonymous exit 1.
+///
+/// Answers for **both** constructors: the log record is owed the identity whichever arm
+/// the machine surface takes.
 pub fn blocked_finding(err: &anyhow::Error) -> Option<&Finding> {
     err.downcast_ref::<BlockedFinding>()
-        .map(|blocked| &blocked.0)
+        .map(|blocked| &blocked.finding)
+}
+
+/// The [`Finding`] an [`envelope_finding_error`] was built from — `None` for a flattened
+/// one, so the one funnel that renders these
+/// ([`crate::invocation_log::operational_failure`]) can ask which arm this refusal
+/// declared instead of guessing from its code.
+pub fn envelope_projecting_finding(err: &anyhow::Error) -> Option<&Finding> {
+    err.downcast_ref::<BlockedFinding>()
+        .filter(|blocked| blocked.envelope)
+        .map(|blocked| &blocked.finding)
 }
 
 /// A blocking [`Finding`] travelling as an `anyhow::Error` — the carrier
@@ -4682,7 +4725,16 @@ pub fn blocked_finding(err: &anyhow::Error) -> Option<&Finding> {
 /// — message`, the locus, the route ([`finding_line`]) — so `{err:#}` emits the bytes the
 /// four doors already shipped and nothing on the printed side moves.
 #[derive(Debug)]
-pub struct BlockedFinding(pub Finding);
+pub struct BlockedFinding {
+    /// The refusal itself — printed, logged, and (on the envelope arm) serialized.
+    pub finding: Finding,
+    /// Whether the `--format json` arm is the **findings envelope** rather than the
+    /// flattened `{"error": …}` — set by [`envelope_finding_error`], and read at the one
+    /// funnel by [`envelope_projecting_finding`]. It rides the carrier rather than being
+    /// re-derived from the code at the funnel, so the door that raises the refusal is the
+    /// one that declares its machine shape.
+    pub envelope: bool,
+}
 
 impl std::fmt::Display for BlockedFinding {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -4691,7 +4743,7 @@ impl std::fmt::Display for BlockedFinding {
         // makes this a carrier and not a second renderer: the flattened refusal cannot
         // drift from every other rendered finding, and `located_finding_text`'s sweep
         // keeps one row for one site instead of two rows for one shape.
-        f.write_str(finding_line(&self.0, false).trim_end_matches('\n'))
+        f.write_str(finding_line(&self.finding, false).trim_end_matches('\n'))
     }
 }
 

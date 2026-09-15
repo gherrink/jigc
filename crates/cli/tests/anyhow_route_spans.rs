@@ -847,6 +847,15 @@ fn workflow_reentry_mismatch_names_both_workflow_spans() {
 
 /// A `jigc workflow` re-entry naming no live sub-task routes to `milestone
 /// list-tasks` — the `<milestone-id>` placeholder joins the declared dummy table.
+///
+/// **Since M51 Increment 6 / T1 the refusal is a typed `Finding`** — the same
+/// `finalize.no-task` identity every unknown-work-unit door now carries
+/// (`work_unit_unknown_envelope.rs`) — so the emitted bytes are the house findings render
+/// and the span this arm is about rides the `route:` line. The claim is unchanged: the
+/// route names `jigc milestone list-tasks` with the **declared** `<milestone-id>`
+/// placeholder (not the undeclared, ambiguous `<id>`), and it was built through the
+/// checked `Route::mechanical` constructor, so a span that stopped parsing would exit 101
+/// rather than the asserted 1.
 #[test]
 fn workflow_reentry_unknown_task_names_list_tasks() {
     let repo = TempDir::new("reentry-wrong");
@@ -860,7 +869,8 @@ fn workflow_reentry_unknown_task_names_list_tasks() {
     );
     assert_error_bytes(
         &out,
-        "no task `nope` — list a milestone's sub-tasks with \
-         `jigc milestone list-tasks <milestone-id>`\n",
+        "blocking · finalize.no-task — no task `nope`\n  at: task:nope\n  route: \
+         `jigc milestone list-tasks <milestone-id>` lists a milestone's sub-tasks\n\
+         — jigc · run `jigc start` for orientation; all writes through `jigc`.\n",
     );
 }

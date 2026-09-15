@@ -1250,6 +1250,39 @@ fn task_missing_finding(unit: Unit, task_dir: &Path) -> Finding {
     )
 }
 
+/// The **unknown work-unit id** refusal every door that resolves a task by id shares —
+/// `jigc task <verb> <id>`, `jigc doc <verb> … --task <id>`, `jigc start --task <id>` and
+/// `jigc workflow <W> --task <id>` (M51 Increment 6 / T1).
+///
+/// Same **cause** as [`task_missing_finding`] — a task working area that is not there — so
+/// same `code` and same [work-unit key](Unit::location) `task:<id>`, which is the form
+/// [command-output-contract.md](../../../design/command-output-contract.md) declares for
+/// `finalize.no-task`. It is a separate constructor rather than a reuse because the
+/// **message** and the **route** differ and may not be borrowed: the phase-1 sibling speaks
+/// about a *path* it was about to finalize, and routes to `jigc start`; these doors were
+/// handed an *id* and their recovery is the roster their own family reads.
+///
+/// **Why the route is a parameter.** Two families of door reach this — a top-level task's
+/// roster is `jigc task list`, a milestone sub-task's is `jigc milestone list-tasks` — and
+/// the engine is clap-blind by layering, so which roster answers is the CLI's fact, not
+/// the engine's. The code, the severity and the target are what transfer; inventing one
+/// route here would make one of the two doors lie.
+///
+/// **Why it lives in the engine.** `finalize.no-task`'s producer is declared
+/// `engine::finalize` in `cli::render::FINALIZE_FAMILY`, and that registry is *derived*
+/// from a scan of production constructors — a CLI-side mint of the same code would add a
+/// second `(code, module)` pair and redden
+/// `finalize_family_registry::the_registry_equals_the_production_producer_set`.
+pub fn no_such_task_finding(id: &str, route: Route) -> Finding {
+    Finding::graded(
+        Severity::Blocking,
+        "finalize.no-task",
+        format!("no task `{id}`"),
+        Some(Unit::Task(id).location()),
+        Some(route),
+    )
+}
+
 /// The work unit a `finalize.*` block speaks about — one `code`, two units whose cause and
 /// whose exits are different (M42 T3; `design/write-commands.md` → The
 /// `finalize.base-mismatch` route is unit-aware), and whose **stable key target** is the

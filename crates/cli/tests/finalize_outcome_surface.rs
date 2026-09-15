@@ -448,6 +448,14 @@ fn validation_blocked_exits_3() {
 /// chain>"}`, exit stays **1** (an operational error is not a validation outcome);
 /// under the agent default the output stays today's `{err:#}` plain text,
 /// byte-unchanged.
+///
+/// **The witness moved at M51 Increment 6 / T1** — from a wrong *task id* to a
+/// **malformed** one. The wrong-id refusal is now a contract-keyed finding that projects
+/// the findings envelope (`work_unit_unknown_envelope.rs`), so it no longer witnesses this
+/// funnel at all; the malformed-id refusal still flattens, at the same door, with the same
+/// exit. The agent arm is asserted against the chain lifted from the envelope rather than
+/// a re-typed literal — the `config` twin's idiom below — so the two surfaces cannot pass
+/// and fail independently on a reworded refusal.
 #[test]
 fn operational_error_honors_json() {
     let repo = TempDir::new("operr");
@@ -458,7 +466,7 @@ fn operational_error_honors_json() {
     let out = jigc(
         repo.path(),
         home.path(),
-        &["task", "validate", "nonexistent", "--format", "json"],
+        &["task", "validate", "", "--format", "json"],
     );
     assert_eq!(
         out.status.code(),
@@ -490,16 +498,13 @@ fn operational_error_honors_json() {
         .as_str()
         .unwrap_or_else(|| panic!("`error` carries the anyhow chain as a string; got:\n{stderr}"));
     assert!(
-        chain.contains("no task `nonexistent`") && chain.contains("jigc task list"),
-        "the chain carries the task-list route (M43: wrong-id routes converge); got:\n{chain}",
+        chain.contains("work-unit.malformed-id"),
+        "the chain carries the refusal keyed by its stable code — flattened into the \
+         message, which is exactly what this envelope costs a driver; got:\n{chain}",
     );
 
     // ── agent (default): today's plain text, byte-unchanged ──────────────────────
-    let out = jigc(
-        repo.path(),
-        home.path(),
-        &["task", "validate", "nonexistent"],
-    );
+    let out = jigc(repo.path(), home.path(), &["task", "validate", ""]);
     assert_eq!(
         out.status.code(),
         Some(1),
@@ -508,8 +513,9 @@ fn operational_error_honors_json() {
     );
     assert_eq!(
         String::from_utf8(out.stderr).expect("utf-8 stderr"),
-        "no task `nonexistent` — list live tasks with `jigc task list`\n",
-        "the agent-format operational error stays the plain `{{err:#}}` bytes",
+        format!("{chain}\n"),
+        "the agent-format operational error stays the plain `{{err:#}}` bytes — the same \
+         chain the JSON envelope wraps",
     );
 }
 
@@ -934,11 +940,10 @@ fn outcome_space_is_discriminable() {
     );
 
     // ── outcome: operational error → 1; json gets the error envelope ─────────────
-    let op_agent = jigc(
-        repo.path(),
-        home.path(),
-        &["task", "validate", "nonexistent"],
-    );
+    // The witness is the **malformed** id, not the unknown one: since M51 Increment 6 / T1
+    // an unknown work-unit id projects the findings envelope (`work_unit_unknown_envelope.rs`),
+    // so it is no longer an operational error at all. The malformed one still flattens.
+    let op_agent = jigc(repo.path(), home.path(), &["task", "validate", ""]);
     assert_eq!(
         code_of(&op_agent, "operational error (agent)"),
         1,
@@ -947,14 +952,14 @@ fn outcome_space_is_discriminable() {
     );
     let stderr = String::from_utf8_lossy(&op_agent.stderr);
     assert!(
-        stderr.contains("no task `nonexistent`"),
+        stderr.contains("work-unit.malformed-id"),
         "the agent operational error carries the plain chain; got:\n{stderr}",
     );
 
     let op_json = jigc(
         repo.path(),
         home.path(),
-        &["task", "validate", "nonexistent", "--format", "json"],
+        &["task", "validate", "", "--format", "json"],
     );
     assert_eq!(code_of(&op_json, "operational error (json)"), 1);
     let stderr = String::from_utf8(op_json.stderr.clone()).expect("utf-8 stderr");

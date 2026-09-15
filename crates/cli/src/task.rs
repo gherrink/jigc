@@ -973,9 +973,20 @@ pub(crate) fn doc_code_invoker(request: &ProbeRequest) -> std::io::Result<ProbeR
 ///
 /// The **no-active-task** state (no `--task` given, no task exists) is a different
 /// state with a correct start-route and does not converge here.
+///
+/// **It is a typed [`Finding`], not an `anyhow!` string** (M51 Increment 6 / T1). The
+/// contract lists `finalize.no-task` under the **work-unit** target form — i.e. as a
+/// finding a driver may key on — and until this it projected no key at any of these doors:
+/// `--format json` answered the flattened `{"error": …}`, whose code lives inside a
+/// message. The identity is minted once, in the engine
+/// ([`engine::finalize::no_such_task_finding`] — the producer `cli::render::FINALIZE_FAMILY`
+/// declares for this code), and travels on the envelope-projecting carrier, so every door
+/// that raises it answers the findings envelope through the one funnel.
 pub(crate) fn no_such_task(id: &str) -> anyhow::Error {
-    let route = engine::finding::Route::mechanical(["jigc", "task", "list"], "");
-    anyhow::anyhow!("no task `{id}` — list live tasks with {route}")
+    crate::render::envelope_finding_error(&engine::finalize::no_such_task_finding(
+        id,
+        engine::finding::Route::mechanical(["jigc", "task", "list"], " lists the live tasks"),
+    ))
 }
 
 /// The **grammar** every work-unit id obeys — the one sentence the three `--slug` doors
