@@ -66,22 +66,62 @@ Under §3.5 that is *3/3 VERB or VERB-ADJACENT — compliance at N=3 across two 
 reliability.* All three are VERB proper, not adjacent. FILESYSTEM on the plant doc: **zero, in
 all three.**
 
-**The mechanism is the one pre-registered, and the ordinals are how we know.** §3.1 was written
-before any session on the strength of handover correction C3 — that **neither** M50 surface names
-a read verb, so the wave's only available route was indirect: orient → see the task and what it
-stages → **resume** → meet M48's read-back fence in the re-composed step. Walk arm 22 confirmed
-the premise against the binary (`the active-task view names NO read verb`; `the also-open block
-carries RESUME ONLY`). The traces are that sequence:
+**The pre-registered mechanism is confirmed in 2 of the 3 scored arms, and it was never the only
+route on offer.** §3.1 was written before any session on the strength of handover correction C3 —
+that **neither** M50 surface names a read verb, so the route *the wave's own surfaces* offered was
+indirect: orient → see the task and what it stages → **resume** → meet M48's read-back fence in
+the re-composed step. Walk arm 22 confirmed that premise against the binary (`the active-task view
+names NO read verb`; `the also-open block carries RESUME ONLY`). Two of the three traces are that
+sequence. **B3's is not** — it read the plant at record 3 and did not resume until record 6:
 
 ```
-B3-h2   1 start  →  2 start --task <id>  →  3 doc show adr:<plant> --task <id>
-B2      1 start  →  2 start --task <id>  →  3 doc show adr:<plant> --task <id>
-B3      1 start  →  2 doc show commit:… →  3 doc show adr:<plant> --task <id>
+B3-h2   1 start  →  2 start --task <id>  →  3 doc show adr:<plant> --task <id>              ← pre-registered
+B2      1 start  →  2 start --task <id>  →  3 doc show adr:<plant> --task <id>              ← pre-registered
+B3      1 start  →  2 doc show commit:… →  3 doc show adr:<plant> --task <id>  … 6 start --task <id>
 ```
+
+**Record 1 is the harness's `SessionStart` hook in every arm, not a worker's move** — so these are
+record ordinals, and the orient hop in the two pre-registered traces was *delivered*, not elected.
+And the direct route was on the screen the whole time: the first thing every worker did was launch
+the `jigc` skill, whose shipped body names `jigc doc show adr:<slug> --task <id>` verbatim. That
+body shipped at M48 and was equally present in RC-m50, so it **cannot** be what moved the cell from
+1/3 to 3/3 — but it does mean B3 needed no indirect route to find the verb, and **what carried B3
+to it is not established by this trial.**
+
+**[Corrected 2026-09-15 (M51 Increment 10, T3):** this passage read *"The mechanism is the one
+pre-registered, and the ordinals are how we know … the wave's only available route was indirect …
+The traces are that sequence."* Three data falsify it, each driven at HEAD or read from the
+trial's own archived channels:
+
+1. **`evidence/B3/invocations.jsonl`** — record 3 is `doc show
+   adr:reject-the-newest-sample-when --task record-the-ingest-queue-overflow --format json`
+   (`21:21:15Z`) and the **resume** is record **6**, `start --task record-the-ingest-queue-overflow
+   --format json` (`21:21:25Z`). B3 read the plant *before* it resumed, so its trace is not the
+   pre-registered sequence. B2 (record 2 `start --task`, record 3 `doc show adr:<plant>`) and B3-h2
+   (the same shape) are. **2 of 3, not 3 of 3.**
+2. **`grep -n SessionStart crates/cli/adapters/claude-code.yaml`** → `7:  - hook: { event:
+   SessionStart, run: "jigc start" }`. Record 1 is that hook: in all four archived arms the `start`
+   record precedes the worker's **own** first tool call (B3 `21:21:10Z` vs `21:21:12.784Z`;
+   B3-strict `05:26:33Z` vs `05:26:37.649Z`; B2 `12:51:19Z` vs `12:52:15.132Z`; B3-h2 `21:19:13Z`
+   vs `21:19:17.992Z`), and that first tool call is `Skill{jigc}` in every one.
+3. **`git show 21ffc0d4:QUICKSTART.md`** — line **128** is `jigc doc show adr:<slug> --task <id>
+   # the staged doc itself` and line **183** carries the same verb in prose. At that same sha
+   `crates/cli/src/setup.rs:69` `include_str!`s `QUICKSTART.md` and `guide_body()` splices it into
+   the installed `.claude/skills/jigc/SKILL.md`; neither line contains a `](`, so
+   `unlink_in_repo_links` passes both through byte-identically. The read verb was therefore named
+   verbatim in the artifact that was tool call 1 in every arm.
+
+*Bound on leg 3:* the transcripts record the skill **launch** (`Launching skill: jigc`), not the
+body served into the context, so what is established is that the worker invoked the artifact and
+what that artifact said at the trial's own sha — not a byte-level read receipt. **The headline
+number is untouched: 3/3 stands, and the honest bounds below stand with it.** What this correction
+removes is the claim that one mechanism explains all three, and the claim that the indirect route
+was the only one available.**]**
 
 RC-m50's interactive arm reached for `find … | xargs cat` **thirty seconds in, before any jigc
-read**. This trial's interactive arm read through the verb at invocation 3. **The push half
-moved the cell**, and it moved it in the transport that had been the worst.
+read**. This trial's interactive arm read through the verb at record 3, having resumed at record 2.
+**The push half moved the interactive cell** — B2's trace is the pre-registered sequence, its
+orient hop delivered by the hook — and it moved it in the transport that had been the worst.
 
 ### The honest bounds on that number
 
