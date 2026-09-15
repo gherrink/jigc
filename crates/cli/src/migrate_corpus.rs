@@ -2256,6 +2256,12 @@ mod tests {
     //! required slot — no such change exists in the frozen-v1 dev pack, so it is exercised
     //! over synthetic doctypes through [`migrate_committed_corpus`], the same core the verb
     //! runs).
+    //!
+    //! Plus **the envelope's own key-set fence** (M51 Increment 7 / T2), which lives here rather
+    //! than in a `tests/` suite because closing the key set needs *every* field of
+    //! [`CorpusMigrationReport`] — and three of the eleven are `#[serde(skip)]` and not `pub`, so
+    //! a suite outside the crate can read what the envelope carries but not state what is
+    //! deliberately missing from it.
 
     use super::*;
     use engine::field_block::{Field, Value};
@@ -2263,6 +2269,7 @@ mod tests {
     use engine::schema::{inject_schema_version_stamp, load_schema};
     use engine::validate::schema_conformance;
     use engine::write::{Instance, ItemContent, SectionContent, render};
+    use std::collections::BTreeSet;
     use std::fs;
     use std::path::PathBuf;
 
@@ -2292,6 +2299,242 @@ mod tests {
         }
     }
 
+    // ── The envelope's own key set (M51 Increment 7 / T2) ────────────────────────────────
+
+    /// **What one field of [`CorpusMigrationReport`] is on the wire** — the
+    /// `crates/cli/tests/text_json_parity_axis.rs` `Disposition` mold, narrowed from a verb to a
+    /// struct's fields. A **field name is not a wire key**: serde may rename one, and three of
+    /// the eleven fields are `#[serde(skip)]`, so each field states which it is and — where it is
+    /// neither — why (each field's own doc-comment carries the long form).
+    #[derive(Debug)]
+    enum FieldDisposition {
+        /// The field reaches the pinned envelope under this key, carrying this value
+        /// (`design/command-output-contract.md` → the `jigc migrate-corpus` row, which declares
+        /// every one of them).
+        Wire {
+            key: &'static str,
+            value: serde_json::Value,
+        },
+        /// `#[serde(skip)]` — the field serves a renderer or the commit boundary and never
+        /// reaches a driver, with the recorded reason.
+        NotWire(&'static str),
+    }
+
+    /// A wire field's disposition — **built from the field itself**, so the row cannot speak for
+    /// a neighbour it was copy-pasted from and the emitted value is compared, not just the key.
+    fn wire<T: serde::Serialize>(key: &'static str, field: T) -> FieldDisposition {
+        FieldDisposition::Wire {
+            key,
+            value: serde_json::to_value(field).expect("a report field serializes"),
+        }
+    }
+
+    /// A skipped field's disposition. The value is taken and dropped: what is proved here is
+    /// that the row **owns** that field, which is what makes the destructure below exhaustive in
+    /// both directions.
+    fn not_wire<T>(reason: &'static str, _field: T) -> FieldDisposition {
+        FieldDisposition::NotWire(reason)
+    }
+
+    /// **Every field of [`CorpusMigrationReport`], classified — one stated disposition per
+    /// field.**
+    ///
+    /// The fence is the **exhaustive destructure**: a field added to the struct does not compile
+    /// until it is bound here, and a row deleted from the table leaves its binding unused —
+    /// *denied*, not warned — so neither half can drift from the other (the compiler's own
+    /// `field: _` suggestion silences it, which is exactly the deliberate *"this field has no
+    /// disposition"* someone would then have to write down). The key-set equality in
+    /// [`the_report_key_set_is_closed_by_its_stated_field_dispositions`] then closes the loop
+    /// against the bytes serde actually emits, which is the half a destructure alone cannot see.
+    ///
+    /// It lives in-crate rather than in a `tests/` suite because the closure needs **every**
+    /// field, and three of them are `#[serde(skip)]` and not `pub` — a `tests/` suite can read
+    /// the envelope but cannot state what is missing from it.
+    #[deny(unused_variables)]
+    fn report_field_dispositions(
+        report: CorpusMigrationReport,
+    ) -> Vec<(&'static str, FieldDisposition)> {
+        let CorpusMigrationReport {
+            migrated,
+            already_current,
+            blocked,
+            unadopted,
+            unfilled,
+            commit,
+            hook_output,
+            touched,
+            unlanded,
+            dry_run,
+            no_commit,
+        } = report;
+        vec![
+            ("migrated", wire("migrated", migrated)),
+            ("already_current", wire("already_current", already_current)),
+            // `blocked`'s emptiness — and **only** `blocked`'s — is the verb's exit rule
+            // ([`run`]); the other two `Findings` fields are reported, never gating.
+            ("blocked", wire("blocked", blocked)),
+            ("unadopted", wire("unadopted", unadopted)),
+            ("unfilled", wire("unfilled", unfilled)),
+            ("commit", wire("commit", commit)),
+            ("hook_output", wire("hook_output", hook_output)),
+            (
+                "touched",
+                not_wire(
+                    "the self-commit's pathspec — internal to the commit boundary, and not a \
+                     fact a driver reads back",
+                    touched,
+                ),
+            ),
+            (
+                "unlanded",
+                not_wire(
+                    "text-only: the envelope already discriminates the recovery \
+                     (`dry_run: false` + `commit: <sha>` + `migrated: []`), so the set is \
+                     re-derivable rather than withheld",
+                    unlanded,
+                ),
+            ),
+            ("dry_run", wire("dry_run", dry_run)),
+            (
+                "no_commit",
+                not_wire(
+                    "text-only: the JSON already distinguishes it by `dry_run: false` + \
+                     `commit: null`",
+                    no_commit,
+                ),
+            ),
+        ]
+    }
+
+    /// A report with **every** field populated and distinct — nothing here passes by accident of
+    /// an empty collection or a `None`.
+    fn populated_report() -> CorpusMigrationReport {
+        let finding = |code: &str, path: &str| {
+            blocked_finding(
+                code,
+                path,
+                format!("{code} at {path}"),
+                "a human route".to_string(),
+            )
+        };
+        CorpusMigrationReport {
+            migrated: vec!["docs/migrated.md".to_string()],
+            already_current: vec!["docs/current.md".to_string()],
+            blocked: Findings::from(vec![finding("migrate-corpus.blocked", "docs/blocked.md")]),
+            unadopted: Findings::from(vec![finding(
+                "schema-conformance.unadopted-instance",
+                "docs/unadopted.md",
+            )]),
+            unfilled: Findings::from(vec![finding(
+                "migrate-corpus.unfilled-set-field",
+                "docs/unfilled.md",
+            )]),
+            commit: Some("0ff1ce5".to_string()),
+            hook_output: "a hook spoke".to_string(),
+            touched: vec!["docs/touched.md".to_string()],
+            unlanded: vec!["docs/unlanded.md".to_string()],
+            dry_run: true,
+            no_commit: true,
+        }
+    }
+
+    /// The wire keys, in the order [`report_field_dispositions`] states them.
+    fn declared_wire_keys() -> Vec<(&'static str, serde_json::Value)> {
+        report_field_dispositions(populated_report())
+            .into_iter()
+            .filter_map(|(_, disposition)| match disposition {
+                FieldDisposition::Wire { key, value } => Some((key, value)),
+                FieldDisposition::NotWire(_) => None,
+            })
+            .collect()
+    }
+
+    /// **The emitted key set equals the stated dispositions' wire keys — nothing more, nothing
+    /// less** (M51 Increment 7 / T2).
+    ///
+    /// The prose homes for this envelope were hand-written lists, and a hand-written list of keys
+    /// is exactly the mechanism D8 records failing: the roadmap that chartered this task said
+    /// *three* triage keys where the binary emits five. The destructure closes the field side and
+    /// this closes the wire side, so a `#[serde(rename)]`, a new key, or a newly-skipped field
+    /// reddens here instead of being discovered in a driver.
+    #[test]
+    fn the_report_key_set_is_closed_by_its_stated_field_dispositions() {
+        let dispositions = report_field_dispositions(populated_report());
+        // The **emitted bytes**, through the renderer the verb prints from ([`run`]) — not a
+        // re-serialization of the same value in test code, which is the shape that can pass
+        // while what a driver actually receives is something else.
+        let emitted: serde_json::Value =
+            serde_json::from_str(&render::corpus_migration(Format::Json, &populated_report()))
+                .expect("`--format json` emits JSON");
+        let emitted = emitted
+            .as_object()
+            .expect("the report is emitted as a JSON object");
+
+        for (field, disposition) in &dispositions {
+            if let FieldDisposition::NotWire(reason) = disposition {
+                assert!(
+                    !emitted.contains_key(*field),
+                    "`{field}` is declared off the wire ({reason}) but the envelope carries it",
+                );
+            }
+        }
+
+        let declared = declared_wire_keys();
+        assert_eq!(
+            emitted.keys().map(String::as_str).collect::<BTreeSet<_>>(),
+            declared
+                .iter()
+                .map(|(key, _)| *key)
+                .collect::<BTreeSet<_>>(),
+            "the emitted key set and the report's stated field dispositions disagree — \
+             whichever moved, both this table and `design/command-output-contract.md`'s \
+             `jigc migrate-corpus` row must say so",
+        );
+        for (key, value) in &declared {
+            assert_eq!(
+                emitted.get(*key),
+                Some(value),
+                "`{key}` is declared for one field and carries another field's value",
+            );
+        }
+    }
+
+    /// **The contract's `jigc migrate-corpus` row declares exactly those keys** — the doc leg of
+    /// the same fence, on the `doctype_map_versions` mold (read the code-side set, assert the
+    /// doc's rows). A key that reaches the wire without a declaration is a key a driver has no
+    /// path to, which is the whole content of that doc's closing rule.
+    #[test]
+    fn the_contract_row_declares_exactly_the_reports_wire_keys() {
+        let doc =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../design/command-output-contract.md");
+        let text = fs::read_to_string(&doc).expect("the command-output contract is readable");
+        let row = text
+            .lines()
+            .find(|line| line.starts_with("**`jigc migrate-corpus`"))
+            .expect("the contract carries a `jigc migrate-corpus` row");
+
+        // The row spells each declared key — and only a declared key — as a `**`token`**`. The
+        // row's own head is `**`jigc migrate-corpus` — the corpus-upgrade report.**`, whose code
+        // span closes before the bold does, so it is not one of these tokens; every other verb
+        // named in the row is prose-backticked, not bolded.
+        let declared: BTreeSet<&str> = row
+            .split("**`")
+            .skip(1)
+            .filter_map(|rest| rest.split_once("`**").map(|(token, _)| token))
+            .collect();
+        assert!(
+            !declared.is_empty(),
+            "the `jigc migrate-corpus` row declares no key at all — its shape moved",
+        );
+        assert_eq!(
+            declared,
+            declared_wire_keys()
+                .iter()
+                .map(|(key, _)| *key)
+                .collect::<BTreeSet<_>>(),
+            "the contract row and the report's wire keys disagree",
+        );
+    }
     /// **The authored remap table is keyed by the locus path, not the bare section id.**
     /// (M50 Increment 7 / T5.)
     ///
