@@ -112,6 +112,11 @@ fn seed_checkpoint_pack(pack: &Path, checkpoint_kind: bool) {
     fs::create_dir_all(&workflows).expect("mk workflows/");
     fs::create_dir_all(&steps).expect("mk steps/");
     write_empty_catalog(pack);
+    // The fixture pack ships steps, so since M51 Increment 8 T2 it sits inside the
+    // stated-at fence's structural tier and owes the four ambush-class statements:
+    // its `creates-task: true` workflow mints a task finalized through
+    // `jigc task finalize`, where all four contracts bind.
+    crate::support::seed_ambush_class_declarer(pack);
 
     fs::write(
         workflows.join("checkpoint-flow.yaml"),
@@ -390,6 +395,7 @@ fn checkpoint_shadowing_prose_is_blocked_through_the_binary() {
     fs::create_dir_all(&workflows).expect("mk workflows/");
     fs::create_dir_all(&steps).expect("mk steps/");
     write_empty_catalog(pack.path());
+    crate::support::seed_ambush_class_declarer(pack.path());
     fs::write(
         workflows.join("shadow-flow.yaml"),
         "---\n\

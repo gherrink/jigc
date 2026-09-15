@@ -2049,6 +2049,10 @@ fn store_placement_doctype_composes_its_committed_singleton() {
     fs::create_dir_all(&steps).expect("mk listed steps/");
     fs::create_dir_all(&workflows).expect("mk listed workflows/");
     fs::write(config.join("commands.yaml"), "commands: []\n").expect("seed empty catalog");
+    // A listed pack that ships steps is inside the stated-at fence's structural tier
+    // since M51 Increment 8 T2, and the tier checks each constituent in ISOLATION —
+    // the dev pack's declarers in the same composition do not answer for it.
+    crate::support::seed_ambush_class_declarer(listed.path());
     fs::write(
         steps.join("read-changelog.yaml"),
         "The committed changelog:\n\n{{ store.changelog }}\n",

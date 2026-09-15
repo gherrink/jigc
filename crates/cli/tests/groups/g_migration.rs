@@ -2,6 +2,9 @@
 // Each suite below keeps its own file; this root only makes them one cargo target,
 // so a source change relinks ~10 test binaries instead of 252.
 
+#[path = "../support/mod.rs"]
+mod support;
+
 #[path = "../arch_doc_acceptance.rs"]
 mod arch_doc_acceptance;
 #[path = "../arch_doc_components_materialize.rs"]

@@ -292,6 +292,10 @@ fn seed_owner_artifact_pack(corpus: &Corpus) {
     .expect("seed the note step");
     fs::write(pack.join("config").join("commands.yaml"), "commands: []\n")
         .expect("seed the empty catalog");
+    // A listed pack that ships steps owes the four ambush-class statements since M51
+    // Increment 8 T2 — the stated-at fence's structural tier keys on step-shipping
+    // constituents and checks each in isolation.
+    crate::support::seed_ambush_class_declarer(&pack);
     fs::write(
         corpus.repo().join(".jigc/config/packs.yaml"),
         format!("packs:\n  - {}\n", pack.display()),

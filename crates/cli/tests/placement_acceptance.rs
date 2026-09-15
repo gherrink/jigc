@@ -172,6 +172,10 @@ fn seed_fixture_pack(repo: &Path, pack: &Path) {
     .expect("seed read-pages step");
 
     fs::write(config.join("commands.yaml"), "commands: []\n").expect("seed empty catalog");
+    // A fixture pack that ships steps owes the four ambush-class statements since M51
+    // Increment 8 T2: the stated-at fence's structural tier keys on the constituents
+    // that SHIP STEPS and checks each in isolation.
+    crate::support::seed_ambush_class_declarer(pack);
     fs::write(
         repo.join(".jigc").join("config").join("packs.yaml"),
         format!("packs:\n  - {}\n", pack.display()),

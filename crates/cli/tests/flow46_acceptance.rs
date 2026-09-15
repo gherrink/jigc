@@ -1087,6 +1087,10 @@ fn seed_completion_pack(pack: &Path) {
     )
     .expect("seed audit step");
     fs::write(pack.join("config/commands.yaml"), "commands: []\n").expect("seed empty catalog");
+    // A fixture pack that ships steps owes the four ambush-class statements since M51
+    // Increment 8 T2: the stated-at fence's structural tier keys on the constituents
+    // that SHIP STEPS and checks each in isolation.
+    crate::support::seed_ambush_class_declarer(pack);
 }
 
 // ═════════════════════════════════════════════════════════════════════════════

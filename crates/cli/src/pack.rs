@@ -902,6 +902,43 @@ pub fn ambush_class_codes() -> std::collections::BTreeSet<&'static str> {
         .collect()
 }
 
+/// **The step-shipping constituents** — [`assert_stated_at`]'s subject since M51
+/// Increment 8 T2, derived rather than named: the union of
+/// [`origin_packs`](PackSource::origin_packs) over every id in
+/// [`list(Steps)`](PackSource::list), which is *every constituent that owns at
+/// least one step*, in first-seen precedence order. A pack shipping no step
+/// appears in no `origin_packs` answer and is therefore outside the fence, with
+/// nothing to say so — the property is the derivation, not a flag.
+///
+/// The union is taken over **every** step id rather than a probe id, because a
+/// constituent that ships only the ids another constituent does not would be
+/// invisible to a single-id probe.
+///
+/// **De-duplicated by the constituent's own address, not its provenance segment.**
+/// The segment is `(pack-id, version)`, and two genuinely distinct constituents can
+/// carry the same one — a `packs.yaml` listing a copy of the dev pack composes
+/// beside the embedded dev pack, same id, same version — so a segment key would
+/// silently check one and skip the other, which is the precise failure mode
+/// (`origin_packs`' own doc comment) the M40 per-origin unification was written to
+/// end. The data address of a `&dyn` borrowed from the composite's own
+/// `Vec<Box<dyn PackSource>>` is stable for the composite's lifetime and exact;
+/// the vtable half is discarded by the cast, so this is never a vtable comparison.
+fn step_shipping_constituents(pack: &dyn PackSource) -> Vec<&dyn PackSource> {
+    let mut owners: Vec<&dyn PackSource> = Vec::new();
+    for id in pack.list(PackResourceKind::Steps) {
+        for owner in pack.origin_packs(PackResourceKind::Steps, &id) {
+            let key = std::ptr::from_ref(owner).cast::<()>();
+            if !owners
+                .iter()
+                .any(|seen| std::ptr::from_ref(*seen).cast::<()>() == key)
+            {
+                owners.push(owner);
+            }
+        }
+    }
+    owners
+}
+
 /// **The stated-at fence (law 3, structural tier)** — `design/surface-contract.md`
 /// → The stated-at fence: every member of the owe-set [`ambush_class_codes`]
 /// computes must have at least one declarer among the pack's steps'
@@ -909,21 +946,44 @@ pub fn ambush_class_codes() -> std::collections::BTreeSet<&'static str> {
 /// instead of first appearing in its block message (an ambush even when the block
 /// is correct).
 ///
-/// Scope mirrors [`assert_workflow_front_matter`]: **manifest-shipping
-/// constituents, each checked in isolation** — every shipped pack loaded *alone*
-/// (the methodology-alone dogfood path) must carry every declarer itself; a
-/// manifest-less seeded / project-local pack stays on skip-on-absent. Both sides
-/// are structural (the members are constraint identifiers — mostly M42-keyed
-/// finding codes derived from [`AMBUSH_CONTRACTS`], one a declared print-surface
-/// contract identifier from [`DECLARED_CONTRACT_IDENTIFIERS`]; the declaration is
-/// YAML) — no prose-matching. Honest bound: this proves the
+/// **The subject is the constituents that ship steps** (M51 Increment 8 T2 —
+/// `settle-record.md` → D10, N26's first question), **each checked in isolation**:
+/// every step-shipping pack loaded *alone* (the methodology-alone dogfood path)
+/// must carry every declarer itself. It was *manifest-shipping* constituents, and
+/// that subject was wrong in both directions. A pack that ships a manifest and
+/// **no steps** — the schema-only project pack PB-1 documents — blocked
+/// **vacuously**, every ambush-class code undeclared because the pack owned
+/// nowhere to declare one, so it could not buy the freeze stamp without shipping
+/// workflow steps it has no reason to own (N26, driven). And a pack that ships
+/// **steps and no manifest** went unchecked, though its steps compose the very
+/// `jigc task finalize` solicit the contracts gate — the freeze manifest is the
+/// opt-in for the *freeze*, never for whether a composed step ambushes its reader.
+/// The rule the subject now states: **zero steps ⇒ outside the fence, any step ⇒
+/// inside it** ([`step_shipping_constituents`]).
+///
+/// **The four sibling fences keep the manifest subject, and the divergence is
+/// deliberate** — a silent split inside one fence family would be the defect.
+/// [`assert_workflow_front_matter`], [`assert_singleton_copy_in_stated`],
+/// [`assert_staged_read_back_stated`] and [`assert_named_facts_stated`] each read
+/// a *schema* or a *catalog* the manifest-shipping pack declares — the copy-in
+/// tier resolves the solicited singleton's own schema, the named-fact tier reads
+/// the token map against it — so their owe-sets are only computable for a pack
+/// that opted into declaring its doctypes. This tier's owe-set is computed from
+/// **jigc's own** production doors ([`ambush_class_codes`]) and needs nothing from
+/// the pack but a step to state the contract in, which is exactly why it can take
+/// the wider subject and they cannot (`design/surface-contract.md` → The stated-at
+/// fence, the structural tier).
+///
+/// Both sides are structural (the members are constraint identifiers — mostly
+/// M42-keyed finding codes derived from [`AMBUSH_CONTRACTS`], one a declared
+/// print-surface contract identifier from [`DECLARED_CONTRACT_IDENTIFIERS`]; the
+/// declaration is YAML) — no prose-matching. Honest bound: this proves the
 /// *obligation* is carried, never that the prose is good (the review checklist's
 /// job).
 fn assert_stated_at(pack: &dyn PackSource) -> anyhow::Result<()> {
     use anyhow::Context;
 
-    let manifest_id = ResourceId::from(SCHEMA_MANIFEST_ID);
-    for owner in pack.origin_packs(PackResourceKind::Config, &manifest_id) {
+    for owner in step_shipping_constituents(pack) {
         let mut declared = std::collections::BTreeSet::new();
         for id in owner.list(PackResourceKind::Steps) {
             let bytes = owner

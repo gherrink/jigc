@@ -901,6 +901,10 @@ fn seed_location_singleton_pack(corpus: &TrialCorpus) {
     )
     .expect("seed the keep step");
     fs::write(pack.join("config/commands.yaml"), "commands: []\n").expect("seed empty catalog");
+    // A listed pack that ships steps owes the four ambush-class statements since M51
+    // Increment 8 T2 — the stated-at fence checks each step-shipping constituent in
+    // isolation, so the dev pack's declarers do not answer for this one.
+    crate::support::seed_ambush_class_declarer(&pack);
 
     fs::write(
         corpus.repo().join(".jigc/config/packs.yaml"),

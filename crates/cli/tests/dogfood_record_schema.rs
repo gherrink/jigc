@@ -182,6 +182,10 @@ fn seed_host_pack(pack: &Path) {
         fs::create_dir_all(d).expect("mk host pack subdir");
     }
     fs::write(config.join("commands.yaml"), "commands: []\n").expect("seed empty catalog");
+    // Since M51 Increment 8 T2 the stated-at fence keys on the constituents that
+    // SHIP STEPS, so this host pack owes the four ambush-class statements — the
+    // tasks its workflows mint are finalized through `jigc task finalize`.
+    crate::support::seed_ambush_class_declarer(pack);
     fs::write(
         workflows.join("host-dogfood.yaml"),
         "---\n\

@@ -3,10 +3,20 @@
 //! M43 Settle #6): every member of the **ambush-class owe-set**
 //! (`finalize.promote-clobber` · the staging pair `finalize.left-out` +
 //! `finalize.nothing-staged` · `finalize.carried-staged`) must have at least
-//! one declarer among a manifest-shipping pack's steps'
+//! one declarer among a **step-shipping** pack's steps'
 //! `states-constraints:` front-matter — the soliciting step carries the
 //! contract's statement, so the constraint is stated where it binds instead
 //! of first appearing in its block message (an ambush).
+//!
+//! **Since M51 Increment 8 T2 the subject is the packs that ship steps, not the
+//! packs that ship a manifest** (`settle-record.md` → D10, N26's first question):
+//! a manifest with no steps beneath it blocked **vacuously** — the schema-only
+//! project pack could not buy the freeze stamp without shipping workflow steps it
+//! has no reason to own — while a step-shipping pack that froze nothing went
+//! unchecked though its steps mint the task an operator finalizes.
+//! `a_step_less_pack_is_unchecked` and `a_manifest_less_step_shipping_pack_is_checked`
+//! drive the two halves; the three tiers below keep the **manifest** subject,
+//! because each reads a schema or a catalog only a declaring pack has.
 //!
 //! **Since M51 Increment 8 that owe-set is a derivation, not a const**
 //! (`cli::pack::ambush_class_codes` —
@@ -25,9 +35,8 @@
 //! unmutated copies, the embedded base, and the composed
 //! `[dev ▸ methodology]` pair all load clean (each shipped pack loaded
 //! **alone** carries every declarer — the methodology-alone dogfood path); a
-//! **manifest-less** pack is unchecked (the `assert_schema_freeze` opt-in
-//! precedent). Honest bound: the fence proves presence-of-obligation, never
-//! prose quality.
+//! pack that ships **no steps** is unchecked. Honest bound: the fence proves
+//! presence-of-obligation, never prose quality.
 //!
 //! The M44 Inc 6 **per-soliciting-step tier** (D5 — the path-local-guidance
 //! owe-set) rides the same molds: a step whose body references
@@ -240,7 +249,7 @@ fn a_stripped_staging_declarer_is_blocked_at_pack_load() {
 /// Per-constituent isolation: a *listed* methodology-pack copy whose
 /// `migration-finalize` step withdrew the `finalize.promote-clobber` declarer
 /// blocks at pack-load too — even though the dev pack's own declarer is intact
-/// in the same composition, each manifest-shipping pack must carry every
+/// in the same composition, each step-shipping pack must carry every
 /// declarer itself (the methodology-alone dogfood path).
 #[test]
 fn a_stripped_clobber_declarer_blocks_through_the_listed_pack_path() {
@@ -314,13 +323,107 @@ fn the_shipped_compositions_all_load_clean() {
     );
 }
 
-/// The omitting context: a **manifest-less** pack is outside the pack-load
-/// fences (the freeze-gate opt-in precedent) — the *same* stripped declarer
-/// that the manifest-bearing copy blocks on loads clean once
-/// `config/schema-manifest.yaml` is dropped. Never an error: a seeded /
-/// project-local pack that ships no manifest stays on skip-on-absent.
+/// The **slug-rule block** the shipped dev manifest declares, lifted verbatim —
+/// a fixture manifest that froze its own numerals would redden at the next
+/// `slug-rule-version` bump for a reason that has nothing to do with this fence
+/// (`engine::manifest::check` → `SlugRuleUndeclared` / the two drift arms).
+fn shipped_slug_rule_block() -> String {
+    let manifest = fs::read_to_string(
+        embedded_pack_tree()
+            .join("config")
+            .join("schema-manifest.yaml"),
+    )
+    .expect("read the shipped dev manifest");
+    let mut out = String::new();
+    let mut inside = false;
+    for line in manifest.lines() {
+        if line.starts_with("slug-rule:") {
+            inside = true;
+            out.push_str(line);
+            out.push('\n');
+            continue;
+        }
+        if inside {
+            if line.starts_with(char::is_whitespace) {
+                out.push_str(line);
+                out.push('\n');
+                continue;
+            }
+            break;
+        }
+    }
+    assert!(
+        out.contains("version:") && out.contains("hash:"),
+        "the shipped dev manifest must carry a `slug-rule:` block to lift; got:\n{out}"
+    );
+    out
+}
+
+/// Seed a **step-less** pack: a `config/schema-manifest.yaml` declaring the
+/// freeze it opts into (an empty doctype set — it ships no schemas either) and
+/// nothing else. The schema-only project pack `decisions-pending.md`'s N26 was
+/// recorded about, reduced to the shape that matters here: it **opts into the
+/// freeze** and owns **no step** to state a `jigc task finalize` contract in.
+fn seed_step_less_pack(pack: &Path) {
+    let config = pack.join("config");
+    fs::create_dir_all(&config).expect("mk the step-less pack's config/");
+    fs::write(config.join("defaults.yaml"), "pack-id: step-less\n")
+        .expect("seed the pack's own id");
+    fs::write(
+        config.join("schema-manifest.yaml"),
+        format!("{}doctypes: []\n", shipped_slug_rule_block()),
+    )
+    .expect("seed the step-less pack's freeze manifest");
+}
+
+/// **The re-keyed omitting context (M51 Increment 8 T2): a pack that ships no
+/// steps is unchecked.** The subject of the structural tier is the constituents
+/// that **ship steps**, not the ones that ship a manifest — so a listed pack
+/// that opts into the freeze and owns no step at all sits outside this fence and
+/// the composition loads clean.
+///
+/// It is the arm `a_manifest_less_pack_is_unchecked` used to be, re-keyed because
+/// the subject move **falsifies** it in both directions: the manifest is no longer
+/// what puts a pack inside the fence (see
+/// [`a_manifest_less_step_shipping_pack_is_checked`]), and a manifest with no steps
+/// beneath it used to block **vacuously** — every ambush-class code undeclared
+/// because the pack had nowhere to declare one. That was N26's recorded defect: *a
+/// schema-only project pack cannot buy the stamp without shipping workflow steps it
+/// has no reason to own* (`implementation/decisions-pending.md` → N26, settled at
+/// `settle-record.md` → D10).
 #[test]
-fn a_manifest_less_pack_is_unchecked() {
+fn a_step_less_pack_is_unchecked() {
+    let repo = TempDir::new("sl-repo");
+    let home = TempDir::new("sl-home");
+    let pack = TempDir::new("stepless");
+    init_repo(repo.path());
+    seed_step_less_pack(pack.path());
+    fs::write(
+        repo.path().join(".jigc").join("config").join("packs.yaml"),
+        format!("packs:\n  - {}\n", pack.path().display()),
+    )
+    .expect("write packs.yaml naming the step-less pack");
+
+    let out = run_embedded(repo.path(), home.path(), START);
+    assert!(
+        out.status.success(),
+        "a pack that ships no steps must be outside the stated-at fence; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+}
+
+/// **The composing context the subject move opens (M51 Increment 8 T2): a
+/// manifest-less pack that ships steps is checked.** The freeze manifest is the
+/// opt-in for the freeze gate and for the three fence tiers that read a schema;
+/// it is **not** what makes a pack owe an ambush-class statement. A pack whose
+/// steps compose a `jigc task finalize` solicit ambushes its reader whether or not
+/// it froze a doctype — so the same dev-pack copy that
+/// [`a_step_less_pack_is_unchecked`]'s sibling used to let through, manifest
+/// dropped and the `finalize` declarer withdrawn, now blocks at pack-load naming
+/// the undeclared code.
+#[test]
+fn a_manifest_less_step_shipping_pack_is_checked() {
     let repo = TempDir::new("nm-repo");
     let home = TempDir::new("nm-home");
     let pack = pack_copy("nomanifest", &embedded_pack_tree());
@@ -330,9 +433,39 @@ fn a_manifest_less_pack_is_unchecked() {
         .expect("drop the freeze manifest");
 
     let out = run_with_pack(repo.path(), home.path(), pack.path(), START);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "a manifest-less pack that ships steps must still owe its ambush-class \
+         declarers; stdout:\n{}\nstderr:\n{stderr}",
+        String::from_utf8_lossy(&out.stdout),
+    );
+    assert!(
+        stderr.contains("finalize.carried-staged"),
+        "stderr must name the undeclared `finalize.carried-staged` code; got:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("states-constraints"),
+        "stderr must name the missing `states-constraints:` declaration; got:\n{stderr}",
+    );
+}
+
+/// The unmutated control for the pair above: the **same** manifest-less dev-pack
+/// copy, declarers intact, loads clean — so what the fence caught is the withdrawn
+/// declaration and not the dropped manifest.
+#[test]
+fn a_manifest_less_step_shipping_pack_with_its_declarers_loads_clean() {
+    let repo = TempDir::new("nmc-repo");
+    let home = TempDir::new("nmc-home");
+    let pack = pack_copy("nomanifest-clean", &embedded_pack_tree());
+    init_repo(repo.path());
+    fs::remove_file(pack.path().join("config").join("schema-manifest.yaml"))
+        .expect("drop the freeze manifest");
+
+    let out = run_with_pack(repo.path(), home.path(), pack.path(), START);
     assert!(
         out.status.success(),
-        "a manifest-less pack must be outside the stated-at fence; stderr:\n{}",
+        "a manifest-less dev-pack copy with its declarers intact must load clean; stderr:\n{}",
         String::from_utf8_lossy(&out.stderr),
     );
 }

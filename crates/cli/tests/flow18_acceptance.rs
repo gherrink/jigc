@@ -457,8 +457,9 @@ fn part6_the_three_halts_are_machine_recognizable_directive_lines() {
 /// observe is the prepended directive line.
 const FIXTURE_GATE_BODY: &str = "Pause here and surface the fork to the human.";
 
-/// Seed a minimal filesystem fixture pack carrying an empty command catalog. The
-/// caller adds the workflow + step(s) the specific assertion needs.
+/// Seed a minimal filesystem fixture pack carrying an empty command catalog and the
+/// ambush-class declarer a step-shipping pack owes. The caller adds the workflow +
+/// step(s) the specific assertion needs.
 fn seed_fixture_pack(pack: &Path) {
     let workflows = pack.join("workflows");
     let steps = pack.join("steps");
@@ -471,6 +472,11 @@ fn seed_fixture_pack(pack: &Path) {
     // satisfies the read without declaring any (`multi-pack.md` → Pack-local
     // body-reference resolution → Command-refs).
     fs::write(config.join("commands.yaml"), "commands: []\n").expect("seed empty catalog");
+    // Since M51 Increment 8 T2 the stated-at fence's structural tier keys on the
+    // constituents that SHIP STEPS, so this pack owes the four ambush-class
+    // statements: the tasks its workflows mint are finalized through
+    // `jigc task finalize`, where all four contracts bind.
+    crate::support::seed_ambush_class_declarer(pack);
 }
 
 /// Compose a fixture `creates-task: true` workflow whose single gate step is seeded

@@ -175,6 +175,10 @@ fn seed_host_pack(pack: &Path) {
     // (the catalog-leak discipline). It references no `{{cli.X}}`, so an empty
     // catalog satisfies the read.
     fs::write(config.join("commands.yaml"), "commands: []\n").expect("seed empty catalog");
+    // A fixture pack that ships steps owes the four ambush-class statements since M51
+    // Increment 8 T2: the stated-at fence's structural tier keys on the constituents
+    // that SHIP STEPS and checks each in isolation.
+    crate::support::seed_ambush_class_declarer(pack);
     fs::write(
         workflows.join("record.yaml"),
         "---\n\

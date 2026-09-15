@@ -260,6 +260,10 @@ fn seed_fixture_pack(pack: &Path) {
         fs::create_dir_all(d).expect("mk fixture pack subdir");
     }
     fs::write(config.join("commands.yaml"), "commands: []\n").expect("seed empty catalog");
+    // A fixture pack that ships steps owes the four ambush-class statements since M51
+    // Increment 8 T2: the stated-at fence's structural tier keys on the constituents
+    // that SHIP STEPS and checks each in isolation.
+    crate::support::seed_ambush_class_declarer(pack);
     fs::write(
         workflows.join("host-research.yaml"),
         "---\n\

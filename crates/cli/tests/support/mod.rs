@@ -22,6 +22,49 @@ pub mod shape_space;
 pub mod trial_corpus;
 pub mod write_miss_cells;
 
+/// Seed the **ambush-class declarer** a hand-built fixture pack owes since M51
+/// Increment 8 T2, as one step named `finalize-contracts`.
+///
+/// The stated-at fence's structural tier keys on the constituents that **ship
+/// steps**, not the ones that ship a manifest (`design/surface-contract.md` → The
+/// stated-at fence; `cli::pack::step_shipping_constituents`), so a seeded pack with
+/// one step of its own owes the four statements too — its `creates-task: true`
+/// workflow mints a task that is finalized through `jigc task finalize`, where all
+/// four contracts bind, whatever the pack's own steps happen to name.
+///
+/// **The body states the contracts; it is not a bare receipt.** The named-fact tier
+/// (`cli::pack::CONSTRAINT_REQUIRED_TOKENS`) checks only manifest-shipping packs, so
+/// nothing would catch a fixture that declared the codes over silence — which is
+/// exactly the shape that tier exists to kill, and seeding it into every fixture pack
+/// would teach it by example. The prose below is the shipped `finalize` /
+/// `migration-finalize` statement, condensed and unchanged in substance.
+///
+/// Call it from a fixture pack's own seeder, beside the steps under test.
+pub fn seed_ambush_class_declarer(pack: &std::path::Path) {
+    let steps = pack.join("steps");
+    std::fs::create_dir_all(&steps).expect("mk the fixture pack's steps/");
+    std::fs::write(
+        steps.join("finalize-contracts.yaml"),
+        "---\n\
+         states-constraints: [finalize.left-out, finalize.nothing-staged, \
+         finalize.carried-staged, finalize.promote-clobber]\n\
+         ---\n\
+         Finalize commits only the staged set plus the docs it manages; unstaged\n\
+         edits and untracked files are left out, and with nothing staged over a\n\
+         dirty tree it refuses. Anything still staged from BEFORE this task was\n\
+         minted makes finalize refuse too (one blocking finding per carried path):\n\
+         unstage it, or pass `--carry-staged` to declare the carryover deliberate.\n\
+         \n\
+         Promoting a created doc blocks (finalize.promote-clobber) when a file\n\
+         appeared at its destination after the doc was created: resolve that\n\
+         collision, or retitle the doc so it slugs differently, then finalize again.\n\
+         A migration finalize holds for review first — a plain finalize renders the\n\
+         fidelity diff and commits nothing; re-run it with `--approve` to write the\n\
+         canonical doc and retire the foreign original.\n",
+    )
+    .expect("seed the fixture pack's ambush-class declarer");
+}
+
 /// The `--title` a `jigc doc create <doctype>` must carry against the **shipped** packs.
 ///
 /// A `placement` / `display-title` singleton's `# H1` is the schema's own, so since M48 a

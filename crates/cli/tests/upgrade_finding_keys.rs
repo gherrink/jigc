@@ -79,6 +79,10 @@ fn seed_pack(dir: &TempDir, steps: &[(&str, &str)]) -> PathBuf {
     .expect("seed knobs.yaml");
     fs::write(config_dir.join("defaults.yaml"), "pack-id: test-pack\n")
         .expect("seed defaults.yaml");
+    // A pack that ships steps owes the four ambush-class statements since M51
+    // Increment 8 T2 — the stated-at fence's structural tier keys on the
+    // constituents that SHIP STEPS, not the ones that ship a manifest.
+    crate::support::seed_ambush_class_declarer(&pack_root);
     pack_root
 }
 
