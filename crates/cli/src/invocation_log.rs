@@ -399,8 +399,14 @@ pub fn enabled_logs_dir() -> Option<PathBuf> {
 
 /// The one JSONL record shape (`design/measurement.md` → record shape). `duration_ms` and
 /// the ISO-8601 UTC `timestamp` are the CLI-side clock's; `finding_codes` is empty on a run
-/// that surfaced none. An independently-versioned surface — no format is shared with the
-/// dogfood hook's JSONL schema.
+/// that surfaced none. The surface is **declared unversioned and additive-only** (M51): it
+/// carries no format version integer, a key may join this struct but none may be renamed or
+/// dropped, and `binary_version` is the per-record discriminator —
+/// on an append log fed by successive binaries it maps each record to the format that wrote
+/// it, which a file-level integer could not. The key set is fenced against the emitted bytes
+/// by `tests::the_emitted_key_set_is_closed_by_the_destructured_fields`, never described. No
+/// format is shared with the dogfood hook's JSONL schema; the two are governed independently
+/// of each other.
 #[derive(serde::Serialize)]
 struct Record<'a> {
     timestamp: &'a str,
@@ -491,6 +497,7 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeSet;
 
     /// The anti-collision half of the error-code namespace (`design/surface-contract.md` →
     /// The error-code namespace): no [`ERROR_CODE_REGISTRY`] member collides with the
@@ -547,5 +554,242 @@ mod tests {
             declared.len(),
             "each door names ITSELF — a shared code would put a lying verb in the log",
         );
+    }
+
+    /// **Every field of [`Record`], paired with the wire key it is emitted under and the value
+    /// it carries** — one row per field, each built from the field itself, so a row cannot
+    /// speak for the neighbour it was copy-pasted from.
+    ///
+    /// The fence is the **exhaustive destructure**: a field added to `Record` does not compile
+    /// until it is bound here, and a row deleted leaves its binding unused — *denied*, not
+    /// warned (the compiler's own `field: _` suggestion silences it, which is exactly the
+    /// deliberate *"this field is not emitted"* someone would then have to write down).
+    /// [`the_emitted_key_set_is_closed_by_the_destructured_fields`] closes the loop against the
+    /// bytes [`append_record`] actually writes, which is the half a destructure alone cannot
+    /// see: a `#[serde(rename)]`, a `#[serde(skip)]`, or a key emitted from anywhere but this
+    /// struct all redden there.
+    ///
+    /// It lives in-crate because `Record` is private — the JSONL line is the surface, the type
+    /// is not (M51 Increment 7 / T5; settle **D9**).
+    fn record_key_dispositions(record: Record<'_>) -> Vec<(&'static str, serde_json::Value)> {
+        fn key<T: serde::Serialize>(
+            key: &'static str,
+            field: T,
+        ) -> (&'static str, serde_json::Value) {
+            (
+                key,
+                serde_json::to_value(field).expect("a record field serializes"),
+            )
+        }
+        let Record {
+            timestamp,
+            argv,
+            exit_code,
+            duration_ms,
+            finding_codes,
+            output_bytes,
+            binary_version,
+            error_code,
+        } = record;
+        vec![
+            key("timestamp", timestamp),
+            key("argv", argv),
+            key("exit_code", exit_code),
+            key("duration_ms", duration_ms),
+            // Present on **every** record, `[]` on a run that raised none — not a
+            // failure-only key, which is what `design/measurement.md` said until M51.
+            key("finding_codes", finding_codes),
+            key("output_bytes", output_bytes),
+            // The per-record discriminator the unversioned-and-additive-only declaration
+            // rests on: a log fed by successive binaries maps each record to the format that
+            // wrote it, which one file-level version integer could not do.
+            key("binary_version", binary_version),
+            key("error_code", error_code),
+        ]
+    }
+
+    /// The record as [`append_record`] builds it, so the declared table and the driven bytes
+    /// are the same value twice rather than two hand-kept spellings.
+    fn record_for<'a>(
+        timestamp: &'a str,
+        argv: &'a [String],
+        exit_code: u8,
+        duration_ms: u128,
+        finding_codes: &'a [String],
+        output_bytes: u128,
+        error_code: Option<&'static str>,
+    ) -> Record<'a> {
+        Record {
+            timestamp,
+            argv,
+            exit_code,
+            duration_ms,
+            finding_codes,
+            output_bytes,
+            binary_version: env!("CARGO_PKG_VERSION"),
+            error_code,
+        }
+    }
+
+    /// **The emitted key set equals the destructured fields — on a success record and on a
+    /// failure record alike** (M51 Increment 7 / T5).
+    ///
+    /// The suite that drives this surface asserted presence and type on four keys and key-set
+    /// equality nowhere, so a renamed, dropped or added key reached a log analysis rather than
+    /// a test. The assertion runs over the **written JSONL line**, not a re-serialization in
+    /// test code: the line is what an analysis reads back.
+    ///
+    /// Two records, because *present always* is the claim: the success record carries
+    /// `finding_codes: []` and `error_code: null` and still emits all eight keys.
+    #[test]
+    fn the_emitted_key_set_is_closed_by_the_destructured_fields() {
+        let dir = std::env::temp_dir().join(format!(
+            "jigc-record-keys-{}-{:?}",
+            std::process::id(),
+            engine::tempname::unique_nanos(),
+        ));
+        let argv = vec!["jigc".to_string(), "describe".to_string()];
+        let none: Vec<String> = Vec::new();
+        let raised = vec!["schema-conformance.schema-version-current".to_string()];
+
+        append_record(&dir, "2026-09-15T09:00:00Z", &argv, 0, 7, &none, 42, None)
+            .expect("the success record is appended");
+        append_record(
+            &dir,
+            "2026-09-15T09:00:01Z",
+            &argv,
+            1,
+            9,
+            &raised,
+            0,
+            Some(ERROR_COMMIT_REJECTED),
+        )
+        .expect("the failure record is appended");
+        let body = std::fs::read_to_string(dir.join("invocations.jsonl"))
+            .expect("the appended log is readable");
+        let _ = std::fs::remove_dir_all(&dir);
+
+        let lines: Vec<&str> = body.lines().filter(|l| !l.trim().is_empty()).collect();
+        assert_eq!(lines.len(), 2, "one line per appended record; got {body}");
+
+        let declared = [
+            record_key_dispositions(record_for(
+                "2026-09-15T09:00:00Z",
+                &argv,
+                0,
+                7,
+                &none,
+                42,
+                None,
+            )),
+            record_key_dispositions(record_for(
+                "2026-09-15T09:00:01Z",
+                &argv,
+                1,
+                9,
+                &raised,
+                0,
+                Some(ERROR_COMMIT_REJECTED),
+            )),
+        ];
+
+        for (line, declared) in lines.iter().zip(declared.iter()) {
+            let emitted: serde_json::Value =
+                serde_json::from_str(line).expect("each log line is valid JSON");
+            let emitted = emitted
+                .as_object()
+                .expect("each record is emitted as a JSON object");
+            assert_eq!(
+                emitted.keys().map(String::as_str).collect::<BTreeSet<_>>(),
+                declared
+                    .iter()
+                    .map(|(key, _)| *key)
+                    .collect::<BTreeSet<_>>(),
+                "the emitted key set and `Record`'s destructured fields disagree — the log is \
+                 declared additive-only, so a key may join this set but none may be renamed \
+                 or dropped (`design/measurement.md` → The in-repo invocation log)",
+            );
+            for (key, value) in declared {
+                assert_eq!(
+                    emitted.get(*key),
+                    Some(value),
+                    "`{key}` is emitted carrying another field's value",
+                );
+            }
+        }
+    }
+
+    /// The prose homes that **enumerate** the record's key set, each with the marker opening
+    /// its brace list — paths relative to this crate's manifest directory.
+    const KEY_LIST_HOMES: &[(&str, &str)] = &[
+        ("../../design/measurement.md", "Record shape: `{"),
+        ("src/invocation_log.rs", "one record `{"),
+    ];
+
+    /// The comma-separated tokens of the brace list `marker` opens, with any `//!` doc-comment
+    /// continuation stripped so a list wrapped across source lines reads as one.
+    fn brace_list_keys(text: &str, marker: &str) -> Vec<String> {
+        let rest = text
+            .split_once(marker)
+            .unwrap_or_else(|| panic!("the home no longer carries the marker `{marker}`"))
+            .1;
+        let list = rest
+            .split_once('}')
+            .expect("the brace list closes on the same page")
+            .0;
+        list.split(',')
+            .map(|token| token.replace("//!", " ").trim().to_string())
+            .filter(|token| !token.is_empty())
+            .collect()
+    }
+
+    /// **Every prose home that enumerates the record shape states exactly the emitted keys**
+    /// (M51 Increment 7 / T5) — the `doctype_map_versions` mold: read the code-side set, assert
+    /// the doc's rows.
+    ///
+    /// `design/measurement.md` was wrong in two fields for five milestones — it named
+    /// `duration` for `duration_ms` and qualified `finding_codes` as *"(on failure)"* when the
+    /// key is present on every record — which is the prose-not-fence mechanism this wave is
+    /// closing. A qualifier inside the list reddens here too: the token no longer equals a
+    /// field name, so a fact about a key belongs beside the list, not inside it.
+    #[test]
+    fn every_prose_home_states_exactly_the_emitted_keys() {
+        let fields: BTreeSet<String> =
+            record_key_dispositions(record_for("2026-09-15T09:00:00Z", &[], 0, 0, &[], 0, None))
+                .iter()
+                .map(|(key, _)| (*key).to_string())
+                .collect();
+
+        for (home, marker) in KEY_LIST_HOMES {
+            let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(home);
+            let text = std::fs::read_to_string(&path)
+                .unwrap_or_else(|err| panic!("{home} is readable: {err}"));
+            let stated: BTreeSet<String> = brace_list_keys(&text, marker).into_iter().collect();
+            assert_eq!(
+                stated, fields,
+                "{home} enumerates a record shape the binary does not emit",
+            );
+        }
+    }
+
+    /// **The declaration itself stands, in one sentence** (M51 Increment 7 / T5; settle
+    /// **D9** · §14): the log is *unversioned and additive-only*, with `binary_version` named
+    /// as the per-record discriminator that carries what a file-level version integer would
+    /// have. Before M51 that sentence called the surface *independently versioned* while no
+    /// version field existed anywhere — a reader could only resolve it by driving the binary.
+    #[test]
+    fn the_design_doc_declares_the_log_unversioned_and_additive_only() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../design/measurement.md");
+        let text = std::fs::read_to_string(&path).expect("design/measurement.md is readable");
+        let sentence = text
+            .lines()
+            .find(|line| line.contains("unversioned"))
+            .expect("the doc declares the invocation log unversioned");
+        for token in ["additive-only", "binary_version"] {
+            assert!(
+                sentence.contains(token),
+                "the declaration sentence must name `{token}` — the declaration rests on it",
+            );
+        }
     }
 }

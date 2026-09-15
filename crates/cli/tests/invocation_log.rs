@@ -2,12 +2,14 @@
 //! in-repo invocation log; `roadmap.md` → M36 Increment 1, bullet 3).
 //!
 //! A `bool` cascade knob `invocation-log` (default **OFF**) turns on an append-only JSONL
-//! log at `.jigc/logs/invocations.jsonl` — one record `{timestamp, argv, exit_code,
-//! duration_ms, finding_codes}` per `jigc` invocation, written by a `main()` wrapper that
-//! straddles `Cli::try_parse()` (so a clap-rejected usage error is logged too) and resolves
-//! the knob from the project cascade independent of argv. Knob OFF writes nothing; a run
-//! outside a jigc repo writes nothing; `.jigc/logs/` is git-ignored while `.jigc/version`
-//! (the T2 provenance stamp) stays committed.
+//! log at `.jigc/logs/invocations.jsonl` — one record per `jigc` invocation, carrying the
+//! key set `cli::invocation_log`'s `Record` declares and this list no longer re-spells (it
+//! said five keys of eight until M51; the shape is fenced against the emitted bytes by that
+//! module's own exhaustive-destructure unit test). The record is written by a `main()`
+//! wrapper that straddles `Cli::try_parse()` (so a clap-rejected usage error is logged too)
+//! and resolves the knob from the project cascade independent of argv. Knob OFF writes
+//! nothing; a run outside a jigc repo writes nothing; `.jigc/logs/` is git-ignored while
+//! `.jigc/version` (the T2 provenance stamp) stays committed.
 //!
 //! This drives the built `jigc` binary end-to-end with **no** `JIGC_PACK_DIR` (the real
 //! embedded pack) in a self-cleaning `TempDir`.
