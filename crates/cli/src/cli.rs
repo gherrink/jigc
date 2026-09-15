@@ -42,6 +42,49 @@ pub const ARGUMENT_CONVENTION: &str = "The argument convention: a doc verb takes
      id-source as the `--title` flag, a work-unit verb takes its id-source as a \
      positional (`design/write-commands.md` → The argument convention).";
 
+/// The `migrate-corpus` long help — **generated from the kind set it classifies**, not
+/// a second home for it (M51 Increment 9, EC-11).
+///
+/// The help named *"the deterministic v0→v1 transform"*: one transform, at one version
+/// step. The verb has classified a closed set of kinds since M50
+/// ([`engine::schema_diff::SchemaChangeKind::ALL`], eighteen members), and a refusal
+/// prints one of those wire names verbatim (`crate::migrate_corpus` → the `Unsupported`
+/// fold), so the kind an agent meets on the refusal surface was a kind the door's own
+/// help had never admitted existed.
+///
+/// Rendering [`SchemaChangeKind::ALL`](engine::schema_diff::SchemaChangeKind::ALL)
+/// through the same `as_str` home the refusal prints from is what keeps that from
+/// recurring: a nineteenth kind reaches this help by existing. The prose around the
+/// list states the three *dispositions* as a rule rather than enumerating which members
+/// take which — a hand-listed subset would be exactly the second home this replaces.
+fn migrate_corpus_long_about() -> String {
+    let kinds = engine::schema_diff::SchemaChangeKind::ALL
+        .iter()
+        .map(|kind| kind.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "Migrate the committed managed corpus onto the current schema.\n\n\
+         `jigc migrate-corpus` re-parses every committed doc of a frozen persisted \
+         doctype, folds the deterministic diff between the schema version that doc is \
+         stamped at and the current one into its bytes byte-stable, and writes each doc \
+         back only on a clean conformance gate (the stamp flips last). Detect-with `jigc \
+         validate`; this migrates. Disjoint from `jigc migrate` (foreign adoption) and \
+         `jigc upgrade` (config). The verb lands its own migration in a pathspec-limited \
+         commit; `--no-commit` leaves the writes unstaged, `--dry-run` writes nothing at \
+         all.\n\n\
+         The classification is closed and a refusal names the member it stopped at, so \
+         here is the whole set — every change classifies as exactly one of these kinds: \
+         {kinds}. A kind the transform driver folds byte-stable is applied. One that \
+         needs authored prose mints its slot empty and is routed to the agent to author, \
+         then re-run. One the driver refuses by design — applying it would destroy \
+         committed bytes — blocks naming that kind and the locus it refused at, never a \
+         silent no-op; `unclassified` is the backstop for a shape that moved with no kind \
+         to apply, and refuses rather than restamping a doc at a version it does not \
+         conform to."
+    )
+}
+
 /// The `jigc` CLI — a context compiler for coding agents.
 #[derive(Debug, Parser, PartialEq, Eq)]
 #[command(name = "jigc", version, about)]
@@ -250,15 +293,8 @@ pub enum Command {
         slug: Option<String>,
     },
 
-    /// Migrate the committed managed corpus onto the current schema — `jigc
-    /// migrate-corpus` re-parses every committed doc of a frozen persisted doctype,
-    /// applies the deterministic v0→v1 transform (the schema-version stamp + any
-    /// structural splice) byte-stable, and writes each doc back only on a clean
-    /// conformance gate (the stamp flips last). A prose-needing change is routed to
-    /// the agent to author, then re-run. Detect-with `jigc validate`; this migrates.
-    /// Disjoint from `jigc migrate` (foreign adoption) and `jigc upgrade` (config).
-    /// The verb **lands its own migration** in a pathspec-limited commit; `--no-commit`
-    /// leaves the writes unstaged, `--dry-run` writes nothing at all.
+    /// Migrate the committed managed corpus onto the current schema.
+    #[command(long_about = migrate_corpus_long_about())]
     MigrateCorpus {
         /// Migrate and write, but stage and commit **nothing** — leave the migration in the
         /// working tree, to review it or fold it into a larger commit yourself.

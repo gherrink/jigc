@@ -195,6 +195,23 @@ pub fn bootstrap_taxonomy_line() -> String {
         .join(" · ")
 }
 
+/// The `task finalize` long help — the gate split stated **generated**, from the one
+/// table that already states it (M51 Increment 9, EC-11).
+///
+/// [`crate::gate_coverage::whats_left_coverage`] renders the coverage sentence onto the
+/// composed `what's-left:` line, and seven further surfaces are fenced per token against
+/// the same table. The commit boundary's own help said nothing about it, so the door an
+/// agent runs *after* a clean preview never named the gates that preview had not reached.
+/// A sentence typed here would have been a ninth home; this renders the generated one.
+fn finalize_long_about() -> String {
+    format!(
+        "The commit boundary — validate, render, stage, `git commit`, post-commit.\n\n\
+         `jigc task validate <id>` {}. Those later-phase gates are decided here, at the \
+         real finalize — so a clean preview is not a promise the commit lands.",
+        crate::gate_coverage::whats_left_coverage(),
+    )
+}
+
 /// The `jigc task <verb>` subcommand tree. Each verb names a task by its `<id>`.
 #[derive(Debug, clap::Subcommand, PartialEq, Eq)]
 pub enum TaskCommand {
@@ -229,6 +246,7 @@ pub enum TaskCommand {
         force: bool,
     },
     /// The commit boundary — validate, render, stage, `git commit`, post-commit.
+    #[command(long_about = finalize_long_about())]
     Finalize {
         /// The task id (the working-area slug under `.jigc/tasks/`).
         id: String,

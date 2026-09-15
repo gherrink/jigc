@@ -460,3 +460,77 @@ fn milestone_finalize_about_names_the_code_fold_beside_the_doc_bodies() {
          output describes two boundaries again; got:\n{help}"
     );
 }
+
+/// M51 Increment 9, T9 (EC-11, part 1) — **the help text is the code-side set, not a
+/// second home for it.**
+///
+/// `jigc migrate-corpus --help` named *"the deterministic v0→v1 transform"* — one
+/// transform, at one version step — while `engine::schema_diff::SchemaChangeKind::ALL`
+/// has carried **eighteen** kinds since M50, and a refusal prints one of those wire
+/// names verbatim (`migrate_corpus.rs` → the `Unsupported` fold: *"the migration
+/// classifies a `{kind}` change"*). So an agent met a kind name on the refusal surface
+/// that the door's own help had never admitted existed.
+///
+/// The repair is **generation**, not a fence over a literal: the long help renders
+/// `SchemaChangeKind::ALL` through the same `as_str` home the refusal prints from, so a
+/// nineteenth kind reaches the help by existing. This arm is what makes that binding —
+/// it compares the emitted list to `ALL` as an **ordered set equality**, so a kind
+/// missing from the help and a kind in the help that the set does not carry are both
+/// red.
+///
+/// The lead is anchored here as a literal on purpose: it is the *region* marker the
+/// extraction slices at (the `gate_coverage_fence` idiom), not a restatement of the
+/// fact under test.
+const KINDS_LEAD: &str = "every change classifies as exactly one of these kinds: ";
+
+#[test]
+fn migrate_corpus_help_lists_every_schema_change_kind_and_no_other() {
+    use engine::schema_diff::SchemaChangeKind;
+
+    let help = help_stdout(&["migrate-corpus", "--help"]);
+    let tail = help
+        .split_once(KINDS_LEAD)
+        .unwrap_or_else(|| {
+            panic!(
+                "`migrate-corpus --help` must enumerate the kinds it classifies, led by \
+                 \"{KINDS_LEAD}\"; got:\n{help}"
+            )
+        })
+        .1;
+    let list = tail
+        .split_once('.')
+        .unwrap_or_else(|| panic!("the kind list must terminate in a `.`; got:\n{help}"))
+        .0;
+
+    let printed: Vec<&str> = list.split(", ").map(str::trim).collect();
+    let expected: Vec<&str> = SchemaChangeKind::ALL.iter().map(|k| k.as_str()).collect();
+    assert_eq!(
+        printed, expected,
+        "`migrate-corpus --help`'s kind list must BE `SchemaChangeKind::ALL` rendered \
+         through `as_str` — every member, no member the set does not carry, in the set's \
+         own order (a hand-typed list is a second home for the fact); got:\n{help}"
+    );
+}
+
+/// M51 Increment 9, T9 (EC-11, part 1) — `jigc task finalize --help` states the gate
+/// split **generated**, from the one table that already states it.
+///
+/// `cli::gate_coverage::whats_left_coverage()` renders the coverage sentence on the
+/// composed `what's-left:` line, and seven further surfaces are fenced per token
+/// against the same table (`crates/cli/tests/gate_coverage_fence.rs`). The commit
+/// boundary's own long help said nothing about it — so the door an agent runs when the
+/// preview came back clean never stated which gates the preview had not reached. A
+/// hand-typed sentence here would have been a ninth home; this renders the generated
+/// one verbatim, which is why this arm asserts containment of the **function's output**
+/// rather than of any phrase.
+#[test]
+fn task_finalize_help_states_the_generated_gate_coverage() {
+    let help = help_stdout(&["task", "finalize", "--help"]);
+    let coverage = cli::gate_coverage::whats_left_coverage();
+    assert!(
+        help.contains(&coverage),
+        "`task finalize --help` must carry the generated coverage sentence verbatim \
+         (`{coverage}`) — the split between what `jigc task validate` previews and what \
+         only this door decides; got:\n{help}"
+    );
+}
