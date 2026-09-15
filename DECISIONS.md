@@ -2,6 +2,77 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-09-16 — M51 Increment 10 / T7: the blank-line citation class is disposed as a class, and what it is fenced against is nothing
+
+**This is a disposition, not a repair.** [charter.md](completions/artifacts/M51/charter.md) → EC-14's surviving member — *"three `DECISIONS.md` citations point at blank lines"* — was struck and widened at planning ([gate-halt-discharges.md](completions/artifacts/M51/gate-halt-discharges.md) §6a, driven 2026-09-11: **62 of 261** line-anchored citations landing on a blank line, **23.8 %**; [settle-record.md](completions/artifacts/M51/settle-record.md) §11 carries the rule that a historical count is dated-bracketed rather than re-pinned). What lands here is the class itself: its size re-measured at this build's own HEAD, its cost demonstrated *inside this wave*, the caveat that keeps the number from being over-read, and the honest conclusion — **no citation is re-anchored and no checker is built.**
+
+**The sweep, re-run at HEAD `4a7b490b`, before this entry was appended.** Method, unchanged from §6a: enumerate every `<file>.md:<line>` citation in `DECISIONS.md`, resolve each against `./`, `design/`, `implementation/` and `completions/artifacts/`, normalise to distinct `(resolved file, line)` targets, and report whether the cited line is blank, past EOF, or unresolvable. The instrument is carried **inline rather than described**, because the single reason the two measurements below cannot be reconciled is that §6a's `cite-sweep2.sh` is in no commit:
+
+```python
+import pathlib, re, sys
+root = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else ".")
+body = (root / "DECISIONS.md").read_text()
+prefixes = ["", "design/", "implementation/", "completions/artifacts/"]
+strings = sorted(set(re.findall(r"([A-Za-z0-9._/-]+\.md):(\d+)", body)))
+targets, unresolved = {}, []
+for rel, num in strings:
+    hit = next((p for p in (root / (pre + rel) for pre in prefixes) if p.is_file()), None)
+    if hit is None:
+        unresolved.append(f"{rel}:{num}")
+    else:
+        targets[(str(hit.resolve()), int(num))] = f"{rel}:{num}"
+ok = blank = past = 0
+for (path, n), cite in sorted(targets.items(), key=lambda kv: kv[1]):
+    lines = pathlib.Path(path).read_text().splitlines()
+    if n < 1 or n > len(lines):
+        past += 1
+    elif lines[n - 1].strip() == "":
+        blank += 1
+    else:
+        ok += 1
+print(f"{len(strings)} distinct citation strings  ->  {len(targets)} distinct (file, line) targets")
+print(f"    {ok:>3} OK")
+print(f"    {blank:>3} BLANK")
+print(f"    {past:>3} PAST-EOF")
+print(f"    {len(unresolved):>3} UNRESOLVED")
+```
+
+```
+309 distinct citation strings  ->  285 distinct (file, line) targets
+    220 OK
+     65 BLANK
+      0 PAST-EOF
+      8 UNRESOLVED
+```
+
+**Beside the planning measurement — and the instrument difference stated rather than smoothed.** Run against the wave's base (`1922c7f5`, the tree §6a measured), this script reproduces the discharge's totals **exactly** — `274 distinct citation strings -> 261 distinct (file, line) targets`, `0 PAST-EOF`, `0 UNRESOLVED` — and reproduces its **whole twelve-member posture-home set** (below), while splitting the middle **`202 OK / 59 BLANK`** where §6a recorded **`199 / 62`**. Three targets, one blankness predicate apart, and **the two instruments cannot be diffed**: the original script exists in no commit, so a reader has the numbers and not the thing that produced them. §6a's **62 of 261 · 23.8 %** therefore stands as *what §6a measured on 2026-09-11*, and is not restated as current truth; at this HEAD, on this instrument, the figure is **65 of 285 — 22.8 %**, plus a second shape §6a never saw: **8 UNRESOLVED**, every one of them a bare basename (`trial-record.md:126`, `coverage.md:7`, `findings-verification.md:129`, …) written by **this increment's own planning entry**, unplaceable by any resolver because **ten** archived trials each ship a `trial-record.md` (`ls completions/artifacts/*/trial-record.md | wc -l` → 10). A citation that cannot even be located is the same class one step further along. **And the same comparison applies one level in**: the decomposition entry below records *"295 distinct `(file, line)` targets, 66 blank"* at its own HEAD `4a00f2d8`; against that tree this script gives `295 distinct citation strings -> 281 distinct (file, line) targets`, `217 OK / 64 BLANK / 0 PAST-EOF / 0 UNRESOLVED` — the **295 reproduces exactly, as the count of citation *strings***, which is the quantity §6a's own output format distinguishes from targets in the very same line. That is recorded as the comparison it is, not adjudicated: with §6a's script in no commit, nothing here can separate a label slip from a second instrument, and *that* is the finding.
+
+**Into the two posture homes the count is twelve, not three** — measured at the base, so it is comparable with the claim it corrects: `design/doc-read-surface.md` **`:85` `:87` `:107` → 3**, `design/command-output-contract.md` **`:46` `:59` `:321` `:325` `:337` `:339` `:343` `:367` `:376` → 9**. EC-14's *"three"* understates its own class by a factor of four in the two homes it names, and by twenty repo-wide.
+
+**The cost is not argued here, it is dated: the set churned inside this one wave, in one file, with no citation edited.** Between the base and this HEAD, **ten** commits across Increments **1–9** edited `design/command-output-contract.md` and grew it from 468 to 567 lines (`git log 1922c7f5..HEAD -- design/command-output-contract.md`; the decomposition entry's *"Increments 5–8"* is the range read off the symptom, not off the log — the first mover is `dddc11a5`, Increment 1 / T3, and the last is `f3565996`, Increment 9 / T8). Re-resolving every `command-output-contract.md` pointer that lands blank in **either** tree — twelve of them, which is the union and not the base set:
+
+| pointers into `command-output-contract.md` | at the wave's base | at this HEAD |
+|---|---|---|
+| `:46` `:59` | blank | blank |
+| `:154` `:202` `:268` | resolved | **blank** |
+| `:321` `:325` `:337` `:339` `:343` `:367` `:376` | blank | **resolve — to different content** |
+
+**Ten of those twelve changed state under their citers, and nothing anywhere noticed**: seven of the nine base-blank pointers now resolve — to content that is not what any entry citing them meant — and three that resolved cleanly at the base are blank. The file's blank count reads 9 at the base and 5 here, and **not one citation was edited to produce that**; into `doc-read-surface.md` the three are unmoved, so the posture-home total is 12 → 8 by churn alone. The two §6a named, re-checked at HEAD rather than quoted from the discharge:
+
+```
+$ sed -n '87p' design/doc-read-surface.md
+$ sed -n '367p' design/command-output-contract.md
+| `narrowed-cardinality` | a `card` narrowing (content-affecting, no adjudicating kind) | restore the bound, or build the arm |
+```
+
+`doc-read-surface.md:87` is **still blank**. `command-output-contract.md:367` — the other citation the brief named — now resolves to a **`narrowed-cardinality` table row**, which is not what any entry citing it meant. **The pointer drifted from *blank* to *silently wrong* inside a single wave**, which is the sharpest available statement of what this class costs: a blank pointer is visibly broken, and a drifted one is not.
+
+**The caveat, so the number is not over-read.** A blank-line citation is a **stale or off-by-N pointer, not proof of absent content**. Most of the 65 sit one line off the paragraph they mean — `design/doc-read-surface.md`'s `:85` and `:87` bracket `:86`, which carries the M47 leaf-slice statement both were reaching for. The measurement establishes drift, never absence, and a reader who treats the count as a content audit will over-read it in exactly the direction this wave's own claim forbids.
+
+**The conclusion, stated as the finding it is: these citations are fenced against nothing.** No suite parses them, no gate resolves them, and the wave that grew `command-output-contract.md` by ninety-nine lines moved ten of the cited lines above out from under their citers without a single test going red. That is the disposition — the class is **recorded, not repaired**.
+
+**Bounds, carried in writing.** **No citation is re-anchored and no checker is built.** [pinning.md](implementation/pinning.md) §3 refuses a `pinned-by:` symbol parser **by name** — *the machine-checkable half (a symbol exists) is not the load-bearing half (what the test asserts)*, and *a grep is not a fence* — and the identical ground refuses a citation parser: resolving a line number proves a line is non-blank, never that it says what the citer meant, and `:367` is the live proof of the gap between those two. Re-anchoring 65 pointers by hand would buy one clean afternoon and go stale at the next edit, as `:321`–`:376` just demonstrated within one wave. **This entry is itself subject to the class it describes:** its own line-anchored citations join the census the moment it lands, and nothing re-runs the sweep — which is the conclusion applied to the record that states it, not an irony worth resolving.
+
 ## 2026-09-15 — M51 Increment 10 planning: decomposition
 
 Cut [Increment 10](implementation/roadmap.md) (*every stale claim in the wave's own evidence base is struck with the datum that falsifies it, never silently rewritten — and nothing here is a behaviour change wearing a record's costume*) into **7 ordered single-concern tasks**, grounded at HEAD `4a00f2d8` (tree clean; Increments 1–9 landed in full). Every basis marked *driven* was exercised here — against the archived trial evidence, the live `~/out/RC14-*` out-dirs under their `PROVENANCE.txt` gate, and git — never against a rebuilt binary, because **this increment moves no code**. Cross-ref [roadmap.md](implementation/roadmap.md) → Milestone 51 Increment 10; [charter.md](completions/artifacts/M51/charter.md) → **Tier 4** (EC-31 … EC-43) and Tier 3's EC-30; [gap-docs.md](completions/artifacts/M51/gap-docs.md) → *The record-correction tier* (the strike table) and *Corrections to the inputs I was handed*; [gate-halt-discharges.md](completions/artifacts/M51/gate-halt-discharges.md) → **§2** (EC-30 refuted) and **§6a** (the citation census); [settle-record.md](completions/artifacts/M51/settle-record.md) → §11 (a historical count is dated-bracketed, not re-pinned) · the Tier-4 line-cite obligation (G-66); [pinning.md](implementation/pinning.md) §3 (no citation parser, by name) · §5; [dev-workflow.md](implementation/dev-workflow.md) → Gate.
