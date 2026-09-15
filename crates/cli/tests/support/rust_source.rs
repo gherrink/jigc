@@ -27,6 +27,26 @@ use std::path::Path;
 /// an instance of it, and a brace inside a string literal must not be counted when
 /// matching a module body.
 pub fn code_only(body: &str) -> String {
+    blank(body, false)
+}
+
+/// The file with every **comment** blanked and string literals **kept**, byte offsets
+/// and line breaks preserved — the reading a fence needs when the thing it looks for
+/// *is* a literal (M51 Increment 8: the ambush registry's site leg asks whether a
+/// production function really mints a finding **code**, which exists in source only as
+/// a `"…"`).
+///
+/// It delegates to [`code_only`]'s own scanner rather than approximating one, because a
+/// second reader would be a second set of bugs on exactly the cases this module's
+/// header enumerates: a doc-comment mentioning the code is still not a mint, and a
+/// `#[cfg(test)]` region located over [`code_only`] lines up byte-for-byte with this.
+pub fn code_and_strings(body: &str) -> String {
+    blank(body, true)
+}
+
+/// The shared scanner: blank comments always, string literals only when `keep_strings`
+/// is false.
+fn blank(body: &str, keep_strings: bool) -> String {
     #[derive(Clone, Copy, PartialEq)]
     enum Mode {
         Code,
@@ -61,6 +81,9 @@ pub fn code_only(body: &str) -> String {
                     continue;
                 } else if b == b'"' {
                     mode = Mode::Str;
+                    if keep_strings {
+                        out[i] = b;
+                    }
                 } else if b == b'r' && matches!(src.get(i + 1), Some(b'"') | Some(b'#')) {
                     // `r"…"` or `r#"…"#` — count the hashes so the closer matches.
                     let mut hashes = 0;
@@ -69,6 +92,9 @@ pub fn code_only(body: &str) -> String {
                     }
                     if src.get(i + 1 + hashes) == Some(&b'"') {
                         mode = Mode::Raw(hashes);
+                        if keep_strings {
+                            out[i..i + 2 + hashes].copy_from_slice(&src[i..i + 2 + hashes]);
+                        }
                         i += 2 + hashes;
                         continue;
                     }
@@ -96,8 +122,15 @@ pub fn code_only(body: &str) -> String {
             }
             Mode::Str => {
                 if b == b'\\' {
+                    if keep_strings {
+                        out[i..(i + 2).min(src.len())]
+                            .copy_from_slice(&src[i..(i + 2).min(src.len())]);
+                    }
                     i += 2;
                     continue;
+                }
+                if keep_strings {
+                    out[i] = b;
                 }
                 if b == b'"' {
                     mode = Mode::Code;
@@ -106,8 +139,14 @@ pub fn code_only(body: &str) -> String {
             Mode::Raw(hashes) => {
                 if b == b'"' && src[i + 1..].starts_with(&vec![b'#'; hashes][..]) {
                     mode = Mode::Code;
+                    if keep_strings {
+                        out[i..i + 1 + hashes].copy_from_slice(&src[i..i + 1 + hashes]);
+                    }
                     i += 1 + hashes;
                     continue;
+                }
+                if keep_strings {
+                    out[i] = b;
                 }
             }
         }

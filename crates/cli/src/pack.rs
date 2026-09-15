@@ -760,43 +760,163 @@ fn assert_workflow_front_matter(pack: &dyn PackSource) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The **ambush-class constraint-identifier set** (M43 law 3 —
-/// `design/surface-contract.md` → The stated-at fence, structural tier): the
-/// identifiers whose binding contracts are irreducibly prose, so the statement
-/// cannot be seam-generated from a code-owned constant — a soliciting step must
-/// carry it and declare so (`states-constraints:` front-matter). Code-side
-/// beside its assert, **not** pack config: the obligation is jigc's, not the
-/// pack author's. Membership (verified against the real producers): three are
-/// **minted finding codes** — `finalize.promote-clobber` (the
-/// `--approve`/clobber/retire contract, engine `finalize.rs`) ·
-/// `finalize.nothing-staged` (the CLI index-empty block, `task.rs`) · the M43
-/// `finalize.carried-staged` carryover gate (engine `finalize.rs`) — and one is
-/// **not**: `finalize.left-out` names the staging contract whose only
-/// production surface is the M42 pre/post-commit left-out **print**
-/// (`task.rs::emit_left_out_advisory` / `render::left_out_advisory`) —
-/// print-over-refuse by the M42 settle, so no producer mints it as a `Finding`;
-/// the string serves here purely as the contract's declared identifier.
-const AMBUSH_CLASS_CODES: [&str; 4] = [
-    "finalize.promote-clobber",
-    "finalize.left-out",
-    "finalize.nothing-staged",
-    "finalize.carried-staged",
+/// What an [`AmbushContract`] row owes the stated-at fence — the **exclusion rule**
+/// of the owe-set's derivation (`completions/artifacts/M51/settle-record.md` → Review
+/// amendments §4), written on [`engine::state::Snapshot`]'s mold: a row held out of
+/// the set states **why it is held out**, so an absence is a decision on the record
+/// rather than an oversight nobody can see.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AmbushDisposition {
+    /// The code joins the owe-set: at least one step of **every** manifest-shipping
+    /// pack must declare it ([`assert_stated_at`]).
+    Owed,
+    /// The code satisfies the source-set rule and is nonetheless **held out**,
+    /// carrying the reason the fence's own route has no home to name for it.
+    Exempt(&'static str),
+}
+
+/// One **blocking contract minted by a commit-on-behalf door** — the row the
+/// ambush-class owe-set is derived from.
+///
+/// `door` + `site` are what make the source-set rule checkable rather than asserted:
+/// the door is looked up in [`crate::cli::BEHALF_DOORS`] and must classify
+/// [`crate::cli::ActsOnBehalf::CommitsOnBehalf`], and the site must be a production
+/// function of the named file, which must itself carry the code
+/// (`crates/cli/tests/stated_at_fence.rs`, the two registry legs).
+pub struct AmbushContract {
+    /// The finding code a production producer mints.
+    pub code: &'static str,
+    /// The leaf verb an operator reaches that producer by, as
+    /// [`crate::cli::BehalfDoor::door`] spells it.
+    pub door: &'static [&'static str],
+    /// The production producer, `<workspace-relative path>::<enclosing fn>` — the
+    /// [`engine::state::MintDoor::site`] key shape, matched the same way.
+    pub site: &'static str,
+    /// Whether this contract joins the owe-set, or is exempt with a stated reason.
+    pub disposition: AmbushDisposition,
+}
+
+/// **The ambush-class source set** (M51 Increment 8 — `settle-record.md` → D10 with
+/// its §4 amendment): blocking codes minted by a door in the **commit-on-behalf**
+/// class of [`crate::cli::BEHALF_DOORS`], each carrying the disposition that decides
+/// whether it joins the stated-at fence's owe-set.
+///
+/// It replaces a hand-list, for the reason D10 was decided on: **nothing reddened
+/// when a new ambush-class contract stayed off one**. A hand-list has no place to put
+/// a *decision* — Increment 3's `setup.dirty-install-path` is exactly the shape a
+/// hand-list cannot express, since it satisfies the rule above and yet **cannot** be
+/// owed (see its row), so on a hand-list it is indistinguishable from a code somebody
+/// forgot.
+///
+/// **The source set is the rule each row must satisfy, not a producer scan** — and
+/// that is a bound, stated rather than discovered later. `jigc task finalize` is a
+/// `CommitsOnBehalf` door that also mints `finalize.base-mismatch` and
+/// `finalize.milestone-sub-task`, neither of them an ambush contract: an ambush
+/// contract is a rule about what the door will refuse to do with *the user's own
+/// work*, and no mechanical predicate separates that from a state fault the door
+/// reports. So the two legs a test *can* run are run — the door classifies
+/// commit-on-behalf, and the code is minted at the named production site — and the
+/// judgment leg stays a judgment, made once per row, in the open.
+///
+/// Its non-mint partner is [`DECLARED_CONTRACT_IDENTIFIERS`]; the owe-set the fence
+/// reads is [`ambush_class_codes`].
+pub const AMBUSH_CONTRACTS: &[AmbushContract] = &[
+    AmbushContract {
+        code: "finalize.promote-clobber",
+        door: &["task", "finalize"],
+        site: "crates/engine/src/finalize.rs::clobber_finding",
+        disposition: AmbushDisposition::Owed,
+    },
+    AmbushContract {
+        code: "finalize.nothing-staged",
+        door: &["task", "finalize"],
+        site: "crates/cli/src/task.rs::nothing_staged_finding",
+        disposition: AmbushDisposition::Owed,
+    },
+    AmbushContract {
+        code: "finalize.carried-staged",
+        door: &["task", "finalize"],
+        site: "crates/engine/src/finalize.rs::carried_staged_finding",
+        disposition: AmbushDisposition::Owed,
+    },
+    // The first exempt row (M51 Increment 3), and the cell a hand-list could not
+    // express: it satisfies the source-set rule exactly — a blocking code minted by
+    // `jigc setup`, which `BEHALF_DOORS` classifies `CommitsOnBehalf` — and a
+    // derivation that picked it up would redden pack-load at **every** door, exit 1,
+    // with no legal declarer anywhere in either shipped pack.
+    AmbushContract {
+        code: "setup.dirty-install-path",
+        door: &["setup"],
+        site: "crates/engine/src/finalize.rs::setup_dirty_install_finding",
+        disposition: AmbushDisposition::Exempt(
+            "no pack step of either pack solicits `jigc setup`, so `assert_stated_at` has \
+             no legal declarer among each manifest-shipping pack's own steps; declaring it \
+             on `step:finalize` would be a law-1 lie and would additionally have to buy \
+             tokens under `CONSTRAINT_REQUIRED_TOKENS`",
+        ),
+    },
 ];
 
+/// **The declared-identifier half of the owe-set** — contract identifiers the fence
+/// owes a declarer for that **no producer mints**, each with the reason it is a
+/// non-mint.
+///
+/// A separate const rather than a hand-stated row inside [`AMBUSH_CONTRACTS`]
+/// (`settle-record.md` → §20, fork 2): a non-mint row inside the derived set is the
+/// hand-list §4 was written to kill, re-admitted behind a derivation-shaped wrapper,
+/// and the next print-over-refuse contract would join by hand on its precedent. Kept
+/// apart, the two operands say different things — *derived from production* and
+/// *declared because production has none* — and each is fenced by the partner that
+/// fits it: a member here must be a [`crate::render::FINALIZE_NON_MEMBERS`] row (the
+/// table that already names this set as its reason) and must buy tokens under
+/// [`CONSTRAINT_REQUIRED_TOKENS`], asserted in both directions by the unit tests
+/// below.
+pub const DECLARED_CONTRACT_IDENTIFIERS: &[(&str, &str)] = &[(
+    "finalize.left-out",
+    "the staging contract's only production surface is the M42 pre/post-commit \
+     left-out **print** (`task.rs::emit_left_out_advisory` / \
+     `render::left_out_advisory`) — print-over-refuse by the M42 settle, so no \
+     producer mints it as a `Finding` and the string serves purely as the contract's \
+     declared identifier",
+)];
+
+/// **The ambush-class owe-set** (M43 law 3 — `design/surface-contract.md` → The
+/// stated-at fence, structural tier), computed rather than listed:
+/// `derive(commit-on-behalf blocking codes) − Exempt(reason) ∪
+/// DECLARED_CONTRACT_IDENTIFIERS`.
+///
+/// These are the identifiers whose binding contracts are irreducibly prose, so the
+/// statement cannot be seam-generated from a code-owned constant — a soliciting step
+/// must carry it and declare so (`states-constraints:` front-matter). Code-side
+/// beside its assert, **not** pack config: the obligation is jigc's, not the pack
+/// author's.
+///
+/// A `BTreeSet`, so the order a fence reports its misses in is the codes' own and
+/// never the tables' — two operands whose row order nothing else fixes.
+pub fn ambush_class_codes() -> std::collections::BTreeSet<&'static str> {
+    AMBUSH_CONTRACTS
+        .iter()
+        .filter(|row| matches!(row.disposition, AmbushDisposition::Owed))
+        .map(|row| row.code)
+        .chain(DECLARED_CONTRACT_IDENTIFIERS.iter().map(|(code, _)| *code))
+        .collect()
+}
+
 /// **The stated-at fence (law 3, structural tier)** — `design/surface-contract.md`
-/// → The stated-at fence: every member of [`AMBUSH_CLASS_CODES`] must have at
-/// least one declarer among the pack's steps' `states-constraints:` front-matter,
-/// so each contract is stated where it binds instead of first appearing in its
-/// block message (an ambush even when the block is correct).
+/// → The stated-at fence: every member of the owe-set [`ambush_class_codes`]
+/// computes must have at least one declarer among the pack's steps'
+/// `states-constraints:` front-matter, so each contract is stated where it binds
+/// instead of first appearing in its block message (an ambush even when the block
+/// is correct).
 ///
 /// Scope mirrors [`assert_workflow_front_matter`]: **manifest-shipping
 /// constituents, each checked in isolation** — every shipped pack loaded *alone*
 /// (the methodology-alone dogfood path) must carry every declarer itself; a
 /// manifest-less seeded / project-local pack stays on skip-on-absent. Both sides
-/// are structural (the members are the fixed identifiers of
-/// [`AMBUSH_CLASS_CODES`] — mostly M42-keyed finding codes, one a declared
-/// print-surface contract identifier; the declaration is YAML) — no
-/// prose-matching. Honest bound: this proves the
+/// are structural (the members are constraint identifiers — mostly M42-keyed
+/// finding codes derived from [`AMBUSH_CONTRACTS`], one a declared print-surface
+/// contract identifier from [`DECLARED_CONTRACT_IDENTIFIERS`]; the declaration is
+/// YAML) — no prose-matching. Honest bound: this proves the
 /// *obligation* is carried, never that the prose is good (the review checklist's
 /// job).
 fn assert_stated_at(pack: &dyn PackSource) -> anyhow::Result<()> {
@@ -813,7 +933,7 @@ fn assert_stated_at(pack: &dyn PackSource) -> anyhow::Result<()> {
                 .map_err(|finding| def_load_failure("step-front-matter", id.as_str(), finding))?;
             declared.extend(def.states_constraints);
         }
-        let undeclared: Vec<&str> = AMBUSH_CLASS_CODES
+        let undeclared: Vec<&str> = ambush_class_codes()
             .into_iter()
             .filter(|code| !declared.contains(*code))
             .collect();
@@ -2583,20 +2703,164 @@ mod tests {
         make_pack().expect("the embedded pack loads");
     }
 
+    /// (M51 Inc 8 T1) The derivation computes **exactly** the four identifiers
+    /// pack-load requires today — the green check the whole task turns on: the
+    /// owe-set moved from a hand-list to
+    /// `derive(commit-on-behalf blocking codes) - Exempt(reason) union
+    /// DECLARED_CONTRACT_IDENTIFIERS` **without** moving its membership, so both
+    /// shipped packs still load and every declarer they carry is still bought.
+    ///
+    /// The exempt row is asserted by name in both directions — present in
+    /// [`AMBUSH_CONTRACTS`], absent from the owe-set — because that is the cell a
+    /// hand-list could not express: on a hand-list `setup.dirty-install-path` is
+    /// indistinguishable from a code somebody forgot, and flipping it to
+    /// [`AmbushDisposition::Owed`] reddens pack-load at every door with no legal
+    /// declarer anywhere in either pack.
+    #[test]
+    fn the_owe_set_is_the_derivation_minus_exempt_plus_declared() {
+        let owed = ambush_class_codes();
+        assert_eq!(
+            owed.iter().copied().collect::<Vec<_>>(),
+            vec![
+                "finalize.carried-staged",
+                "finalize.left-out",
+                "finalize.nothing-staged",
+                "finalize.promote-clobber",
+            ],
+        );
+
+        let listed: std::collections::BTreeSet<&str> =
+            AMBUSH_CONTRACTS.iter().map(|row| row.code).collect();
+        assert!(
+            listed.contains("setup.dirty-install-path"),
+            "the source set must carry Increment 3's code — holding it out by omission \
+             is the hand-list this derivation replaced",
+        );
+        assert!(
+            !owed.contains("setup.dirty-install-path"),
+            "the exempt row must not reach the owe-set: no step of either pack solicits \
+             `jigc setup`, so every door would block with no declarer to name",
+        );
+
+        assert_eq!(
+            listed.len(),
+            AMBUSH_CONTRACTS.len(),
+            "each row names its own code; a duplicate would let one disposition stand \
+             for two different decisions",
+        );
+        for row in AMBUSH_CONTRACTS {
+            if let AmbushDisposition::Exempt(reason) = row.disposition {
+                assert!(
+                    !reason.trim().is_empty(),
+                    "`{}` is held out of the owe-set with no stated reason",
+                    row.code,
+                );
+            }
+        }
+    }
+
+    /// (M51 Inc 8 T1) The **source-set rule's first leg**, run rather than asserted:
+    /// every [`AMBUSH_CONTRACTS`] row names a door the clap tree really has, and
+    /// [`crate::cli::BEHALF_DOORS`] really classifies
+    /// [`crate::cli::ActsOnBehalf::CommitsOnBehalf`]. A row whose door moved to
+    /// `Neither` — or that never was one — is a row the derivation's own phrase does
+    /// not cover, and it reddens here instead of riding into the owe-set.
+    ///
+    /// The second leg (the code is minted at the row's named production site) needs a
+    /// source scan and lives with the rest of them in
+    /// `crates/cli/tests/stated_at_fence.rs`.
+    #[test]
+    fn every_ambush_row_names_a_commit_on_behalf_door() {
+        for row in AMBUSH_CONTRACTS {
+            let door = crate::cli::BEHALF_DOORS
+                .iter()
+                .find(|d| d.door == row.door)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "`{}` names the door `jigc {}`, which BEHALF_DOORS does not carry",
+                        row.code,
+                        row.door.join(" "),
+                    )
+                });
+            assert!(
+                matches!(door.acts, crate::cli::ActsOnBehalf::CommitsOnBehalf { .. }),
+                "`{}`'s door `jigc {}` is not in the commit-on-behalf class the source \
+                 set is derived from",
+                row.code,
+                row.door.join(" "),
+            );
+        }
+    }
+
+    /// (M51 Inc 8 T1) The **union operand's** own fence, in the two directions
+    /// `settle-record.md` → §20 fork 2 names: a declared identifier must be a
+    /// [`crate::render::FINALIZE_NON_MEMBERS`] row — the table that already carries
+    /// this set as its `finalize.left-out` reason, and the one place a code is
+    /// recorded as minted by nobody — and it must buy tokens under
+    /// [`CONSTRAINT_REQUIRED_TOKENS`], so a declared-but-unminted identifier still
+    /// owes the contract's named facts.
+    ///
+    /// The two operands may not overlap: a code cannot be both minted at a production
+    /// site and recorded as minted by no producer.
+    #[test]
+    fn declared_contract_identifiers_are_non_minted_and_buy_their_tokens() {
+        let non_members: std::collections::BTreeSet<&str> = crate::render::FINALIZE_NON_MEMBERS
+            .iter()
+            .map(|(code, _)| *code)
+            .collect();
+        let mapped: std::collections::BTreeSet<&str> = CONSTRAINT_REQUIRED_TOKENS
+            .iter()
+            .map(|(code, _)| *code)
+            .collect();
+        let minted: std::collections::BTreeSet<&str> =
+            AMBUSH_CONTRACTS.iter().map(|row| row.code).collect();
+
+        assert!(
+            !DECLARED_CONTRACT_IDENTIFIERS.is_empty(),
+            "the union operand is empty — `finalize.left-out` would leave the owe-set \
+             silently, and the packs' declarers would stop being bought",
+        );
+        for (code, reason) in DECLARED_CONTRACT_IDENTIFIERS {
+            assert!(
+                non_members.contains(code),
+                "`{code}` is declared as minted by no producer, but \
+                 `render::FINALIZE_NON_MEMBERS` does not say so",
+            );
+            assert!(
+                mapped.contains(code),
+                "`{code}` joins the owe-set without buying the contract's named facts",
+            );
+            assert!(
+                !minted.contains(code),
+                "`{code}` is in both operands — it cannot be minted at a production \
+                 site and recorded as minted by nobody",
+            );
+            assert!(
+                !reason.trim().is_empty(),
+                "`{code}` is declared with no stated non-mint reason",
+            );
+        }
+    }
+
     /// (M47 Inc 9 T1) The named-fact map covers **exactly** the codes jigc fences
-    /// — [`AMBUSH_CLASS_CODES`] plus [`SINGLETON_COPY_IN_CODE`] and (M48 Inc 3)
-    /// [`STAGED_READ_BACK_CODE`] — iterated from the
+    /// — the [`ambush_class_codes`] owe-set plus [`SINGLETON_COPY_IN_CODE`] and
+    /// (M48 Inc 3) [`STAGED_READ_BACK_CODE`] — iterated from the
     /// consts, both directions. A fenced code with no token requirement would be
     /// back to buying presence alone; a token requirement on a code jigc does not
     /// fence would put jigc's prose demands on a pack author's own vocabulary
     /// (the declared bound in `design/surface-contract.md` → The stated-at fence).
+    ///
+    /// (M51 Inc 8 T1) Since the owe-set became a derivation this is also the
+    /// [`DECLARED_CONTRACT_IDENTIFIERS`] union's reverse fence: drop its one row
+    /// and `finalize.left-out` leaves the fenced set while the map still buys its
+    /// three tokens, so this assertion — not a later grep — is what reddens.
     #[test]
     fn constraint_token_map_bijects_with_the_fenced_codes() {
         let mapped: std::collections::BTreeSet<&str> = CONSTRAINT_REQUIRED_TOKENS
             .iter()
             .map(|(code, _)| *code)
             .collect();
-        let fenced: std::collections::BTreeSet<&str> = AMBUSH_CLASS_CODES
+        let fenced: std::collections::BTreeSet<&str> = ambush_class_codes()
             .into_iter()
             .chain([SINGLETON_COPY_IN_CODE, STAGED_READ_BACK_CODE])
             .collect();

@@ -1727,10 +1727,12 @@ pub struct BehalfDoor {
 /// commit-rejection identity — ten rows over **nine** leaves (`milestone finalize` is two
 /// commit models), saying nothing at all about the other thirty-eight — and `jigc setup`,
 /// the one committing door whose install commit passes `--no-verify` and therefore carries
-/// no rejection identity to log, is invisible to it. Three consumers read this one table
-/// instead of hand-enumerating three different sets: the posture guard (M51 Increment 2 /
-/// T3), the staged-set guard (Increment 3), and the survivable frame's cause vocabulary
-/// (N20).
+/// no rejection identity to log, is invisible to it. Four consumers read this one table
+/// instead of hand-enumerating four different sets: the posture guard (M51 Increment 2 /
+/// T3), the staged-set guard (Increment 3), the survivable frame's cause vocabulary
+/// (N20), and — since Increment 8 / T1 — the **ambush-class source set**
+/// ([`crate::pack::AMBUSH_CONTRACTS`]), whose derivation is *blocking codes minted by a
+/// door in the commit-on-behalf class* and whose every row is looked up here.
 ///
 /// **It carries no error identity.** A posture breach is a blocking `Finding`
 /// ([`PostureMember::code`]), not an [`Outcome`] identity, so this table feeds no

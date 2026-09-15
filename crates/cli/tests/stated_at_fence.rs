@@ -1,12 +1,24 @@
 //! Real-binary acceptance for the M43 **stated-at fence** (law 3, structural
 //! tier — `design/surface-contract.md` → The stated-at fence; DECISIONS.md →
-//! M43 Settle #6): every member of the code-side **ambush-class const**
+//! M43 Settle #6): every member of the **ambush-class owe-set**
 //! (`finalize.promote-clobber` · the staging pair `finalize.left-out` +
 //! `finalize.nothing-staged` · `finalize.carried-staged`) must have at least
 //! one declarer among a manifest-shipping pack's steps'
 //! `states-constraints:` front-matter — the soliciting step carries the
 //! contract's statement, so the constraint is stated where it binds instead
 //! of first appearing in its block message (an ambush).
+//!
+//! **Since M51 Increment 8 that owe-set is a derivation, not a const**
+//! (`cli::pack::ambush_class_codes` —
+//! `derive(commit-on-behalf blocking codes) - Exempt(reason) union
+//! DECLARED_CONTRACT_IDENTIFIERS`), because nothing reddened when a new
+//! ambush-class contract stayed off a hand-list. Two legs of that derivation
+//! run at the bottom of this file: the **site leg** (every row's code really is
+//! minted at the production function it names) and the **exempt row's green
+//! cell** — Increment 3's `setup.dirty-install-path`, which satisfies the
+//! source-set rule, is declared by *no* step of either pack, and leaves
+//! pack-load green anyway. Its third leg (the row's door classifies
+//! `CommitsOnBehalf`) is a table lookup and runs beside the registry.
 //!
 //! A shipped-tree `JIGC_PACK_DIR` / listed-pack copy with one declarer
 //! stripped exits **non-zero at pack-load naming the undeclared code**; the
@@ -1058,6 +1070,131 @@ fn a_ref_less_copy_in_declarer_in_a_manifest_less_pack_is_unchecked() {
     assert!(
         out.status.success(),
         "a manifest-less pack must be outside the obligation direction; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+}
+
+// ───────────────── the derived owe-set (M51 Increment 8 / T1) ─────────────────
+
+/// The workspace root — two levels up from `crates/cli`.
+fn workspace_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .canonicalize()
+        .expect("canonicalize the workspace root")
+}
+
+/// **The source-set rule's second leg** ([`cli::pack::AMBUSH_CONTRACTS`]): every row's
+/// code is really minted where the row says it is. The first leg — the row's door
+/// classifies `CommitsOnBehalf` — is a table lookup and runs beside the registry
+/// (`cli::pack`'s `every_ambush_row_names_a_commit_on_behalf_door`); this one needs
+/// production source, so it runs here on [`crate::mint_doors`]' scan molds.
+///
+/// Two asserts per row, both over comment-blanked source — a doc-comment naming the
+/// code is not a mint — and both located against the same `#[cfg(test)]` regions, so a
+/// unit-test fixture is not a producer either:
+///
+///   * the named `<rel-path>::<fn>` is a **production** function of that file, read off
+///     `code_only` (string literals blanked, so a `{` inside one cannot throw the
+///     module brace matching off), so a producer that was renamed or moved reddens
+///     instead of leaving a row pointing at nothing;
+///   * that file's production code carries the code **literal**, read off
+///     `code_and_strings` — a finding code exists in source only as a `"…"`, so the
+///     reading that blanks literals is blind to exactly the thing this leg asks about.
+///
+/// **Why the second assert is file-scoped and not fn-scoped** — stated, because it is a
+/// real bound: `setup_dirty_install_finding` reaches its code through
+/// `CarryoverBoundary::Setup.code()`, the boundary-keyed selector two hundred lines
+/// above it in the same file, so a fn-scoped match would demand the producer re-spell a
+/// code the engine deliberately derives once.
+#[test]
+fn every_ambush_row_is_minted_at_its_named_production_site() {
+    use crate::support::rust_source::{
+        cfg_test_regions, code_and_strings, code_only, is_test_domain,
+    };
+
+    let root = workspace_root();
+    for row in cli::pack::AMBUSH_CONTRACTS {
+        let (rel, func) = row
+            .site
+            .split_once("::")
+            .unwrap_or_else(|| panic!("`{}`'s site is not `<path>::<fn>`", row.code));
+        let path = root.join(rel);
+        let body = fs::read_to_string(&path)
+            .unwrap_or_else(|err| panic!("`{}` names `{rel}`, unreadable: {err}", row.code));
+        let code = code_only(&body);
+        let regions = cfg_test_regions(&code);
+
+        let needle = format!("fn {func}(");
+        let defined = code
+            .match_indices(&needle)
+            .any(|(at, _)| !is_test_domain(&path, &regions, at));
+        assert!(
+            defined,
+            "`{}` names the producer `{}`, which is not a production fn of `{rel}`",
+            row.code, row.site,
+        );
+
+        let literal = format!("\"{}\"", row.code);
+        let with_strings = code_and_strings(&body);
+        let minted = with_strings
+            .match_indices(&literal)
+            .any(|(at, _)| !is_test_domain(&path, &regions, at));
+        assert!(
+            minted,
+            "`{rel}` carries no production mint of `{}` — the row names a site that \
+             does not produce it",
+            row.code,
+        );
+    }
+}
+
+/// **The exempt row's green cell** — the one a hand-list could not express, driven
+/// rather than reasoned: `setup.dirty-install-path` satisfies the source-set rule (a
+/// blocking code minted by `jigc setup`, which `BEHALF_DOORS` classifies
+/// `CommitsOnBehalf`), **no** step of either shipped pack declares it, and pack-load is
+/// nonetheless **green at every door** — because the registry holds it out with a
+/// stated reason instead of owing it.
+///
+/// Both halves are asserted, because either alone proves nothing: the absence from the
+/// packs is what makes the cell real, and the green load is what the exclusion rule
+/// buys. Flipping the row to `Owed` turns this into the mutant's blocking cell — the
+/// composing door exits non-zero naming a code no step of either pack can legally
+/// declare.
+#[test]
+fn the_exempt_contract_is_declared_by_no_step_and_the_packs_still_load() {
+    let exempt = "setup.dirty-install-path";
+    assert!(
+        !cli::pack::ambush_class_codes().contains(exempt),
+        "`{exempt}` must stay out of the owe-set — no step can declare it",
+    );
+
+    for tree in [embedded_pack_tree(), methodology_pack_tree()] {
+        for entry in fs::read_dir(tree.join("steps")).expect("read the pack's steps") {
+            let path = entry.expect("a step entry").path();
+            let body = fs::read_to_string(&path).expect("read a shipped step");
+            assert!(
+                !body.contains(exempt),
+                "`{}` declares `{exempt}`; the exempt row's cell is that NO step does",
+                path.display(),
+            );
+        }
+    }
+
+    // The composed [dev ▸ methodology] pair — the production composition — loads clean.
+    let repo = TempDir::new("exempt-repo");
+    let home = TempDir::new("exempt-home");
+    init_repo(repo.path());
+    fs::write(
+        repo.path().join(".jigc").join("config").join("packs.yaml"),
+        "compose-embedded-methodology: true\n",
+    )
+    .expect("write the compose marker");
+    let out = run_embedded(repo.path(), home.path(), START);
+    assert!(
+        out.status.success(),
+        "an exempt ambush-class code must leave pack-load green; stderr:\n{}",
         String::from_utf8_lossy(&out.stderr),
     );
 }
