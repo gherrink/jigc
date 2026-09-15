@@ -3627,7 +3627,7 @@ fn run_create(
     reject_malformed_slug(slug_override)?;
     let task = ActiveTask::resolve(cwd, task_id)?;
     let schemas = task.schemas()?;
-    let gate = task.workflow_gate()?;
+    let (_, gate) = task.workflow_gate()?;
     // Admission (unknown doctype / the create-gate) first, then the title pre-check —
     // both **before** `create_gated` persists, so a rejected create stages nothing and
     // has nothing to roll back.
@@ -3702,7 +3702,7 @@ fn run_author(
     // `from_file` occurrence 3 of 3 — disposition at [`read_handoff`], stated once.
     let payload = read_handoff(from_file)?;
     let schemas = task.schemas()?;
-    let gate = task.workflow_gate()?;
+    let (_, gate) = task.workflow_gate()?;
     // Parse runs before any persist: a structurally-malformed payload — or a `set`
     // value whose `<<…>>` form contradicts the schema-declared leaf-kind (the
     // silent-misroute guard) — is rejected whole here, nothing staged
@@ -5824,7 +5824,7 @@ impl ActiveTask {
         // Both reads are fallible and both own their own doors. A failure here must not
         // convert an absent-instance refusal into a different failure — that would answer
         // a question nobody asked — so an unreadable gate keeps the shipped hint.
-        let Ok(def) = self.workflow_gate() else {
+        let Ok((workflow, def)) = self.workflow_gate() else {
             return ProvisionRoute::Create;
         };
         let Ok(schemas) = self.schemas() else {
@@ -5834,9 +5834,12 @@ impl ActiveTask {
             return ProvisionRoute::Create;
         }
         if crate::start::provisions_at_compose(&def, type_name) {
-            return ProvisionRoute::AtCompose {
+            return ProvisionRoute::AtFirstEntry {
                 type_name: type_name.to_owned(),
                 task: self.id.clone(),
+                // The recorded workflow — the `<W>` the re-entry door's own equality guard
+                // admits, read from the same file that guard compares against.
+                workflow,
             };
         }
         ProvisionRoute::GateForbids {
@@ -5867,7 +5870,7 @@ impl ActiveTask {
     /// keeps last-write-wins (`state::create_gated`). A doctype not carried by an
     /// object-form gate entry (a bare-form or absent entry) binds nothing — inert.
     fn bind_role_on_copy_in(&self, address: &Address) -> Result<()> {
-        let gate = self.workflow_gate()?;
+        let (_, gate) = self.workflow_gate()?;
         let Some(entry) = gate
             .allows_create
             .iter()
@@ -5954,7 +5957,7 @@ impl ActiveTask {
     /// was minted on (recorded at `.jigc/tasks/<id>/workflow`), never a hardcoded
     /// default: a `plan` task's gate must read `plan`'s `allows-create`, not
     /// `single-task`'s. Mirrors `start::resume_in_repo`'s bound-workflow read.
-    fn workflow_gate(&self) -> Result<WorkflowDef> {
+    fn workflow_gate(&self) -> Result<(String, WorkflowDef)> {
         let workflow_id = state::read_workflow_id(&self.dir)
             .context("could not read the task's recorded workflow")?
             .with_context(|| {
@@ -5975,7 +5978,8 @@ impl ActiveTask {
             PackResourceKind::Workflows,
             workflow_id.as_str(),
         )?;
-        load_workflow_def(&bytes).map_err(finding_to_err)
+        let def = load_workflow_def(&bytes).map_err(finding_to_err)?;
+        Ok((workflow_id, def))
     }
 }
 
@@ -6229,10 +6233,22 @@ fn barrier_block(task_id: &str, address: &Address) -> Finding {
 enum ProvisionRoute {
     /// The task's gate admits the addressed doctype: the shipped create hint, unchanged.
     Create,
-    /// The addressed doctype is the one the task's **compose** provisions (its commit
-    /// doc), which bypasses the gate rather than being granted by it — so no
-    /// `jigc doc create` exists for it in any task.
-    AtCompose { type_name: String, task: String },
+    /// The addressed doctype is the one the task's own **entry into its working area**
+    /// provisions (its commit doc), which bypasses the gate rather than being granted by
+    /// it — so no `jigc doc create` exists for it in any task.
+    ///
+    /// **Not "at compose"** (M51 Inc 9 / T1, law 1). A top-level task's area is
+    /// provisioned by the mint that composes, but a **milestone sub-task**'s is
+    /// provisioned on first **re-entry** (`crate::start`'s `provision_on_first_entry`),
+    /// and `jigc start --task <sub>` composes over an unprovisioned area at exit 0 — so
+    /// the shipped sentence was falsified by the very door the reader had just run, and
+    /// its one route (`jigc doc list --task <sub>`) answered with an empty index. The
+    /// recorded `workflow` is carried so the refusal can name the door that provisions.
+    AtFirstEntry {
+        type_name: String,
+        task: String,
+        workflow: String,
+    },
     /// The gate forbids the addressed doctype and compose provisions none: nothing in
     /// this task can provision it at all.
     GateForbids {
@@ -6271,16 +6287,26 @@ fn read_staged_routed(path: &Path, addr: &str, route: ProvisionRoute) -> Result<
                  not the task id — address writes at that title-derived id"
             )
         }
-        // Compose already provisioned this doctype's one instance, at the task-derived id
-        // — so the honest next act is to read what the task holds, not to create a second
+        // Entering the task's working area provisions this doctype's one instance, at the
+        // task-derived id — so the honest next acts are to enter it through the door that
+        // does the provisioning, and to read what the task holds, never to create a second
         // one through a door that is closed to every workflow.
-        ProvisionRoute::AtCompose { type_name, task } => {
+        ProvisionRoute::AtFirstEntry {
+            type_name,
+            task,
+            workflow,
+        } => {
+            let enter = engine::finding::Route::mechanical(
+                ["jigc", "workflow", &workflow, "--task", &task],
+                "",
+            );
             let list =
                 engine::finding::Route::mechanical(["jigc", "doc", "list", "--task", &task], "");
             anyhow!(
                 "no staged instance for `{addr}` — task `{task}`'s workflow provisions its \
-                 `{type_name}` doc at compose and grants no in-task create for it; list what \
-                 task `{task}` stages with {list}"
+                 `{type_name}` doc when the task's working area is first entered, and grants \
+                 no in-task create for it; enter it with {enter}, then list what task \
+                 `{task}` stages with {list}"
             )
         }
         // Nothing in this task provisions the doctype, so every in-task route is a dead

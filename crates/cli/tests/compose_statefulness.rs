@@ -388,3 +388,164 @@ fn the_methodology_finalize_step_names_task_validate() {
          <id>` too; got:\n{text}",
     );
 }
+
+/// Run a `jigc` subcommand with `cwd = at`, `$HOME = home`, and **no**
+/// `JIGC_PACK_DIR` — the marker-composed `[dev ▸ methodology]` set a normal
+/// `jigc setup` installs. The milestone arm below needs both shipped packs at once:
+/// `jigc milestone create` writes the methodology pack's `milestone-record`, while
+/// the sub-task's minting workflow (`sub-task`) is the dev pack's, so the state is
+/// reachable in neither pack alone.
+fn run_jigc_composed(at: &Path, home: &Path, args: &[&str]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(args)
+        .current_dir(at)
+        .env("HOME", home)
+        .env_remove("JIGC_PACK_DIR")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("run the jigc binary")
+}
+
+/// The leading backticked command of a rendered affordance line
+/// (`` <label>: `<cmd>`   — <gloss> ``) — the **emitted** span, lifted verbatim.
+fn backticked(line: &str) -> &str {
+    line.split('`')
+        .nth(1)
+        .unwrap_or_else(|| panic!("an affordance line carries a backticked command; got: {line}"))
+}
+
+/// M51 Increment 9, T1 — a **milestone sub-task**'s `resume:` line names the door
+/// that provisions its working area, not one that composes over an area that is not
+/// there (`design/surface-contract.md` → law 1; `design/worked-examples.md` → the
+/// fan-out, which already states that `jigc workflow <W> --task <sub>` *"provisions
+/// its write-ready area on first entry"*).
+///
+/// **Driven before the fix**, on exactly this sequence: `jigc start --task <sub>` from
+/// the provisioned worktree exits **0** while `.jigc/tasks/<sub>/docs/` does not
+/// exist — so the composed body's own `jigc doc set-field commit:<sub>#type …` line
+/// answers *"no staged instance … task `<sub>`'s workflow provisions its `commit` doc
+/// at compose"*, a sentence the door that just composed had falsified, and its route
+/// `jigc doc list --task <sub>` prints an empty index. The `resume:` line pointed the
+/// reader back through that same non-provisioning door.
+///
+/// The arm drives the **emitted artifact**: it lifts the backticked span out of the
+/// composed `resume:` line and runs *that*, from the worktree the line names, then
+/// asserts the sub-task's `commit` doc is staged and writable.
+#[test]
+fn a_sub_tasks_resume_names_the_door_that_provisions_its_area() {
+    let repo = TempDir::new("sub-task-resume");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    ok_stdout(
+        run_jigc_composed(repo.path(), home.path(), &["setup"]),
+        "jigc setup",
+    );
+
+    ok_stdout(
+        run_jigc_composed(
+            repo.path(),
+            home.path(),
+            &["milestone", "create", "rework the cache"],
+        ),
+        "jigc milestone create",
+    );
+    ok_stdout(
+        run_jigc_composed(
+            repo.path(),
+            home.path(),
+            &["milestone", "add-task", "rework-the-cache", "tune eviction"],
+        ),
+        "jigc milestone add-task",
+    );
+    ok_stdout(
+        run_jigc_composed(
+            repo.path(),
+            home.path(),
+            &["milestone", "provision", "rework-the-cache"],
+        ),
+        "jigc milestone provision",
+    );
+
+    let worktree = repo
+        .path()
+        .join(".jigc")
+        .join("worktrees")
+        .join("tune-eviction");
+    assert!(
+        worktree.is_dir(),
+        "`milestone provision` must cut the sub-task's worktree at {worktree:?}",
+    );
+    let docs = repo
+        .path()
+        .join(".jigc")
+        .join("tasks")
+        .join("tune-eviction")
+        .join("docs");
+    assert!(
+        !docs.exists(),
+        "the state under test is the *unprovisioned* area; got a docs dir at {docs:?}",
+    );
+
+    // The compose the sub-agent actually meets: from its own worktree, at exit 0.
+    let composed = ok_stdout(
+        run_jigc_composed(
+            &worktree,
+            home.path(),
+            &["--format", "agent", "start", "--task", "tune-eviction"],
+        ),
+        "jigc start --task tune-eviction (from the worktree)",
+    );
+    let resume = composed
+        .lines()
+        .find(|l| l.starts_with("resume:"))
+        .unwrap_or_else(|| panic!("a sub-task compose carries a resume line; got:\n{composed}"));
+
+    // Law 1: the named door is the one that provisions, and the line says where it
+    // runs — the worktree, which the `Spawn:` line names and this one did not.
+    assert_eq!(
+        backticked(resume),
+        "jigc workflow sub-task --task tune-eviction",
+        "a sub-task's resume names the re-entry door that provisions its area; got:\n{resume}",
+    );
+    assert!(
+        resume.contains(".jigc/worktrees/tune-eviction"),
+        "the resume line names the worktree the sub-task's work happens in; got:\n{resume}",
+    );
+
+    // Follow the **emitted** span, verbatim, from the worktree the line names.
+    let argv: Vec<&str> = backticked(resume).split_whitespace().collect();
+    assert_eq!(
+        argv.first(),
+        Some(&"jigc"),
+        "the span runs the binary itself"
+    );
+    ok_stdout(
+        run_jigc_composed(&worktree, home.path(), &argv[1..]),
+        "the emitted resume span",
+    );
+
+    // ...and it left the sub-task's `commit` doc staged, so the composed body's own
+    // write lines now land instead of answering `no staged instance`.
+    let commit_doc = docs.join("commit:tune-eviction.md");
+    assert!(
+        commit_doc.is_file(),
+        "following the resume span provisions the sub-task's commit doc at {commit_doc:?}",
+    );
+    ok_stdout(
+        run_jigc_composed(
+            &worktree,
+            home.path(),
+            &[
+                "doc",
+                "set-field",
+                "commit:tune-eviction#type",
+                "--value",
+                "feat",
+                "--task",
+                "tune-eviction",
+            ],
+        ),
+        "jigc doc set-field commit:tune-eviction#type",
+    );
+}

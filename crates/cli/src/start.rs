@@ -629,12 +629,13 @@ pub struct Composition {
     /// a header there would announce a mint that never happened. `false` on every
     /// re-compose and on the `creates-task: false` (router) arm, which mints nothing at all.
     pub minted: bool,
-    /// The id of the milestone that owns [`view.task`](ComposedWorkflow::task), when this
-    /// compose is a **milestone sub-task**'s — the unit-kind fact the `task scope:` footer
-    /// scopes its parallel-work claim on (M47 Inc 8 / N7). `None` for a top-level task and
-    /// for an id-less compose, which is what every *minting* door produces: a task joins a
-    /// milestone only through `jigc milestone add-task`, never at the mint that composes.
-    pub sub_task_of: Option<String>,
+    /// The **milestone sub-task** facts, when [`view.task`](ComposedWorkflow::task) is one
+    /// — the unit-kind discriminator the `task scope:` footer scopes its parallel-work
+    /// claim on (M47 Inc 8 / N7) and the `resume:` line keys its door on (M51 Inc 9 / T1).
+    /// `None` for a top-level task and for an id-less compose, which is what every
+    /// *minting* door produces: a task joins a milestone only through `jigc milestone
+    /// add-task`, never at the mint that composes.
+    pub sub_task_of: Option<SubTaskOf>,
     /// The tasks that were **already open** when a work-starting `jigc start` form ran —
     /// every live task under the project's `.jigc/` home except the one *this* invocation
     /// minted (M50 Increment 5 / T3, the trial's F-5). The `also open:` presentation block
@@ -669,6 +670,32 @@ pub struct OpenTask {
     /// task minted before that file existed, or whose area will not answer — the row is
     /// still named, because a task you cannot see is worse than a workflow you cannot read.
     pub workflow: Option<String>,
+}
+
+/// The facts a **milestone sub-task**'s re-compose carries that a top-level task's does
+/// not ([`Composition::sub_task_of`]) — both read at the one shared re-compose spine
+/// ([`compose_task_workflow`]), so the two doors a sub-task can reach (resume and
+/// sub-agent re-entry) can never disagree about them.
+///
+/// They are carried **together** because the two surfaces keyed on this discriminator
+/// need one each: the `task scope:` line names the milestone whose finalize is the
+/// sub-task's only commit boundary, and the `resume:` line names the re-entry door
+/// `jigc workflow <W> --task <id>`, which is the door that provisions the sub-task's
+/// write-ready area ([`provision_on_first_entry`]). A single `Option<String>` milestone
+/// id would have left the second line reaching for a workflow id the renderer does not
+/// have, and the shipped line named `jigc start --task <id>` instead — a door that
+/// re-composes and provisions nothing, which is what M51 Increment 9 / T1 repairs
+/// (`design/surface-contract.md` → law 1).
+#[derive(Debug)]
+pub struct SubTaskOf {
+    /// The id of the milestone that owns the task — the unit whose `jigc milestone
+    /// finalize <m>` is the sub-task's only commit boundary.
+    pub milestone: String,
+    /// The workflow the re-compose composed, which for both doors **is** the sub-task's
+    /// recorded minting workflow: resume reads it out of the working area, and re-entry
+    /// is equality-guarded against it ([`reenter_in_repo`]'s W-equality guard). So it is
+    /// the `<W>` the re-entry door accepts, never a second guess at it.
+    pub workflow: String,
 }
 
 /// The composing workflow's create-gate doctypes, in declaration order — the source of the
@@ -2388,7 +2415,15 @@ fn compose_task_workflow(
         // it: a sub-task's commit boundary is the milestone's, so the top-level
         // "resuming or finalizing here blocks and names the overlapping paths" would be a
         // law-1 lie there (M47 Inc 8 / N7; `design/surface-contract.md` → law 1).
-        sub_task_of: engine::milestone::owning_milestone(&jigc_root, id),
+        sub_task_of: engine::milestone::owning_milestone(&jigc_root, id).map(|milestone| {
+            SubTaskOf {
+                milestone,
+                // The composed workflow id — the recorded one on both doors (see
+                // [`SubTaskOf::workflow`]), so the `resume:` line's re-entry span is the
+                // one the re-entry guard admits.
+                workflow: workflow_id.to_string(),
+            }
+        }),
         // A re-compose door (resume / sub-agent re-entry) already names its task: the
         // reader is *in* the work, not looking for it.
         also_open: Vec::new(),

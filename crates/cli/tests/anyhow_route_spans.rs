@@ -426,8 +426,9 @@ fn absent_instance_refusal_never_routes_to_a_forbidden_create() {
             address: "commit:ghost#type",
             write: &["doc", "set-field", "commit:ghost#type", "--value", "feat"],
             expected: "no staged instance for `commit:ghost#type` — task `st`'s workflow provisions its \
-             `commit` doc at compose and grants no in-task create for it; list what task `st` \
-             stages with `jigc doc list --task st`\n",
+             `commit` doc when the task's working area is first entered, and grants no in-task \
+             create for it; enter it with `jigc workflow single-task --task st`, then list what \
+             task `st` stages with `jigc doc list --task st`\n",
         },
         Cell {
             tag: "forbids × commit",
@@ -436,8 +437,9 @@ fn absent_instance_refusal_never_routes_to_a_forbidden_create() {
             address: "commit:ghost#type",
             write: &["doc", "set-field", "commit:ghost#type", "--value", "feat"],
             expected: "no staged instance for `commit:ghost#type` — task `qf`'s workflow provisions its \
-             `commit` doc at compose and grants no in-task create for it; list what task `qf` \
-             stages with `jigc doc list --task qf`\n",
+             `commit` doc when the task's working area is first entered, and grants no in-task \
+             create for it; enter it with `jigc workflow quick-fix --task qf`, then list what \
+             task `qf` stages with `jigc doc list --task qf`\n",
         },
     ];
 
@@ -494,8 +496,16 @@ fn absent_instance_refusal_never_routes_to_a_forbidden_create() {
 }
 
 /// The two claims the gate-aware refusal makes about *this* state are true here:
-/// composing really does provision the commit doc the `commit` cell names, and the
-/// catalog the forbidding cell points at really does list a workflow that grants `adr`.
+/// entering the task's working area really does provision the commit doc the `commit`
+/// cell names — here at the mint that composed, which is this task's first entry — and
+/// the catalog the forbidding cell points at really does list a workflow that grants
+/// `adr`.
+///
+/// The claim is stated as **first entry**, not *"at compose"*, since M51 Increment 9 /
+/// T1: a milestone sub-task's area is provisioned by its first re-entry, and
+/// `jigc start --task <sub>` composes over an unprovisioned one at exit 0 — so the old
+/// wording was true of this state and false of that one, which is the law-1 lie the
+/// re-key removes.
 #[test]
 fn the_gate_aware_refusal_routes_land_where_they_claim() {
     let repo = TempDir::new("gate-aware-truth");

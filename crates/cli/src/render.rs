@@ -421,7 +421,13 @@ fn minted_header(view: &Composition) -> String {
 /// text (M43 Inc 7 / B3+B4, `design/surface-contract.md` → law 2 — resume and
 /// what's-left are named by the surfaces producing the state):
 ///
-/// - `resume:` — `jigc start --task <id>`, the designated recovery after context loss;
+/// - `resume:` — the designated recovery after context loss, **keyed on unit kind**
+///   (M51 Inc 9 / T1, law 1): a top-level task names `jigc start --task <id>`, whose
+///   area was provisioned at its mint; a **milestone sub-task** names the re-entry
+///   door `jigc workflow <W> --task <id>` and the worktree it runs in, because that
+///   is the door that provisions a sub-task's write-ready area
+///   ([`crate::start`]'s `provision_on_first_entry`) and `jigc start --task <sub>`
+///   composes over it without provisioning anything;
 /// - `what's-left:` — `jigc task validate <id>`, the preview of **part** of the
 ///   finalize gate: the [`crate::gate_coverage::Tier::Previewed`] members. It says so —
 ///   the staged set, promotion and the commit itself are decided only at
@@ -459,26 +465,58 @@ fn task_state_lines(view: &Composition) -> String {
     let Some(id) = view.view.task.as_deref() else {
         return String::new();
     };
-    let divergence = match view.sub_task_of.as_deref() {
-        // A milestone sub-task: `jigc task finalize <sub>` refuses outright, and the only
+    let (resume, divergence) = match view.sub_task_of.as_ref() {
+        // A milestone sub-task, on both counts.
+        //
+        // The **door**: `jigc start --task <sub>` re-composes a sub-task's workflow and
+        // provisions nothing, while the sub-task's write-ready `docs/` area is provisioned
+        // by the re-entry door on first entry (`crate::start`'s
+        // `provision_on_first_entry`; `design/worked-examples.md` → the fan-out, which
+        // already states that `jigc workflow <W> --task <sub>` *"provisions its write-ready
+        // area on first entry"*). Driven before M51 Inc 9 / T1: from the provisioned
+        // worktree the shipped line's own door exits 0 over an area with no `docs/` in it,
+        // and the composed body's next write then answered `no staged instance`. So the
+        // line names the door that provisions — and **where** it runs, which the `Spawn:`
+        // line has always named and this one did not (`design/surface-contract.md` → law 1).
+        //
+        // The **divergence**: `jigc task finalize <sub>` refuses outright, and the only
         // commit boundary it has blocks on *any* moved history (the sub-agent worktrees
         // were cut from the milestone's pin), so both of its read doors stay blanket-strict
         // too. The top-level clause below would state the opposite of all three.
-        Some(milestone) => format!(
-            "this task is a sub-task of milestone `{milestone}`, whose `jigc milestone \
-             finalize {milestone}` is its only commit boundary — every door here stays \
-             pinned to the milestone's base"
+        Some(sub) => {
+            let milestone = &sub.milestone;
+            let workflow = &sub.workflow;
+            let worktree = engine::milestone::worktree_path(id);
+            (
+                format!(
+                    "resume: `jigc workflow {workflow} --task {id}`   — re-composes this \
+                     workflow and provisions this sub-task's write-ready docs area on first \
+                     entry; run it from this sub-task's own worktree at `{}`, where its work \
+                     happens",
+                    worktree.display(),
+                ),
+                format!(
+                    "this task is a sub-task of milestone `{milestone}`, whose `jigc milestone \
+                     finalize {milestone}` is its only commit boundary — every door here stays \
+                     pinned to the milestone's base"
+                ),
+            )
+        }
+        None => (
+            format!(
+                "resume: `jigc start --task {id}`   — re-composes this workflow if context is lost"
+            ),
+            "once a sibling task commits a path this one also touches, resuming or \
+             finalizing here blocks and names the overlapping paths"
+                .to_string(),
         ),
-        None => "once a sibling task commits a path this one also touches, resuming or \
-                 finalizing here blocks and names the overlapping paths"
-            .to_string(),
     };
     // The coverage clause is **generated** from the gate-coverage table, never spelled
     // here: this line and seven other surfaces state the same split, and a member that
     // joins the previewed set must reach all eight or none (`crate::gate_coverage`).
     let coverage = crate::gate_coverage::whats_left_coverage();
     format!(
-        "resume: `jigc start --task {id}`   — re-composes this workflow if context is lost\n\
+        "{resume}\n\
          what's-left: `jigc task validate {id}`   — {coverage}\n\
          task scope: `jigc doc` writes default to the single active task; `--task {id}` is the explicit override and wins when several are active — several open tasks are legal, each addressed by its own `--task`, so you can run them in parallel while their work stays disjoint; {divergence}\n"
     )
@@ -6532,7 +6570,10 @@ mod tests {
             },
             gates: Vec::new(),
             minted: false,
-            sub_task_of: Some("rework".to_string()),
+            sub_task_of: Some(crate::start::SubTaskOf {
+                milestone: "rework".to_string(),
+                workflow: "sub-task".to_string(),
+            }),
             also_open: Vec::new(),
         };
         let sub_agent = composed(Format::Agent, &sub);
@@ -6555,6 +6596,36 @@ mod tests {
         assert!(
             sub_scope.contains("several open tasks are legal"),
             "the parallelize affordance still holds for a sub-task; got:\n{sub_scope}",
+        );
+
+        // The **second** surface on the same discriminator (M51 Inc 9 / T1, law 1): the
+        // `resume:` line names the door that provisions a sub-task's write-ready area —
+        // the re-entry door under the task's own recorded workflow — and the worktree it
+        // runs in, never `jigc start --task <sub>`, which composes and provisions nothing.
+        // The end-to-end proof through the real binary is `compose_statefulness.rs`; this
+        // is the seam fence, and it holds the top-level arm unchanged beside it.
+        let sub_resume = sub_agent
+            .lines()
+            .find(|l| l.starts_with("resume:"))
+            .unwrap_or_else(|| panic!("a resume line renders; got:\n{sub_agent}"));
+        assert_eq!(
+            sub_resume,
+            "resume: `jigc workflow sub-task --task add-rate-limiter`   — re-composes this \
+             workflow and provisions this sub-task's write-ready docs area on first entry; \
+             run it from this sub-task's own worktree at `.jigc/worktrees/add-rate-limiter`, \
+             where its work happens",
+            "a sub-task's resume names the provisioning door and where it runs",
+        );
+        let top_resume = re
+            .lines()
+            .find(|l| l.starts_with("resume:"))
+            .unwrap_or_else(|| panic!("a resume line renders; got:\n{re}"));
+        assert_eq!(
+            top_resume,
+            "resume: `jigc start --task add-rate-limiter`   — re-composes this workflow if \
+             context is lost",
+            "a top-level task's area was provisioned at its mint — its resume line is \
+             unchanged",
         );
 
         // The id-less router renders no bytes — the omitting context stays inert.
