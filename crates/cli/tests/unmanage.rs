@@ -287,10 +287,22 @@ fn docs_root_repoint_carries_the_unmanaged_file_and_the_surfaces_say_so() {
         out.status.success(),
         "`jigc config set docs-root` must exit 0"
     );
+    // EC-16 (M51 Increment 9 / T5): the header names the set the code actually walks —
+    // `orphan::docs_root_would_orphan`'s stranded set, every committed doc under a
+    // doctype's resolved `location:` directory — and states the placement exclusion
+    // positively, because a placement doctype's file can sit under the prior resolved
+    // root and is never carried.
     assert!(
-        stderr.contains("managed or not"),
-        "the relocation header must name the sweep class (every committed doc under the \
-         prior root, managed or not); got:\n{stderr}",
+        stderr.contains("under a doctype's prior resolved `location:` directory, managed or not"),
+        "the relocation header must name the set the sweep walks; got:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("a placement doctype's file is not carried"),
+        "the relocation header must state the placement exclusion positively; got:\n{stderr}",
+    );
+    assert!(
+        !stderr.contains("every committed doc under the prior resolved root"),
+        "the falsified universal must be gone from the header; got:\n{stderr}",
     );
     assert!(
         stderr.contains("staged `git mv`") && stderr.contains("next commit"),

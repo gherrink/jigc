@@ -62,9 +62,13 @@ pub enum ConfigCommand {
     /// layer's `manifest.yaml` `scalar:` block. Adjudicated at write time against
     /// the pack's declared knob (`check_value`): an undeclared key or a wrong-type
     /// value is rejected non-zero with a routed finding. Setting a location knob
-    /// (`docs-root`) also relocates the committed docs the re-point would strand
-    /// at the prior resolved root — every committed doc under it, managed or not —
-    /// as staged `git mv` moves, printed per file (they land with your next commit).
+    /// (`docs-root`) also relocates the committed docs the re-point would strand —
+    /// every committed doc under a doctype's prior resolved `location:` directory,
+    /// managed or not. A **placement** doctype's file is not among them: it homes at
+    /// its declared `placement.file`, which resolves through `placement-root`, so a
+    /// `docs-root` re-point never moves it even when it sits under the old root
+    /// (`design/storage.md` → Placement). The moves are staged `git mv`s, printed per
+    /// file (they land with your next commit).
     Set {
         /// The knob key to set — one of the pack's declared `config/knobs.yaml` keys.
         key: String,
@@ -964,15 +968,24 @@ fn route_docs_root_repoint_orphans(
     }
     let new_root = normalize_docs_root(new_value);
     let jigc_root = repo_root.join(".jigc");
-    // The solicit/act honesty pair (round-2 D2+D3): name the sweep's basis — every
-    // committed doc under the prior resolved root, managed or not (committed truth,
-    // deliberately index-blind so a fresh clone still relocates) — and the git state
-    // the moves land in (each is a staged `git mv`, committed by the operator's next
-    // commit, never here).
+    // The solicit/act honesty pair (round-2 D2+D3): name the sweep's basis and the git
+    // state the moves land in (each is a staged `git mv`, committed by the operator's
+    // next commit, never here).
+    //
+    // The basis is `orphan::docs_root_would_orphan`'s subject, stated as the code walks
+    // it (M51 Increment 9 / T5, EC-16): every committed doc under a doctype's prior
+    // resolved `location:` directory, managed or not — committed truth, deliberately
+    // index-blind so a fresh clone still relocates. It is NOT "every committed doc under
+    // the prior resolved root": a `placement` doctype has `location: None` and homes at
+    // its declared `placement.file`, resolved through `placement-root`, so `docs/roadmap.md`
+    // sits under the old root and is never carried. The exclusion is stated positively,
+    // so the reader gets the rule rather than an unexplained gap.
     eprintln!(
         "relocating {} committed doc(s) stranded by the `docs-root` re-point to `{new_value}` \
-         (every committed doc under the prior resolved root, managed or not; each move is a \
-         staged `git mv` — commit it with your next commit):",
+         (every committed doc under a doctype's prior resolved `location:` directory, managed \
+         or not — a placement doctype's file is not carried: it homes at its declared \
+         `placement.file`, which resolves through `placement-root`; each move is a staged \
+         `git mv` — commit it with your next commit):",
         stranded.len()
     );
     for old_rel in &stranded {
@@ -1083,6 +1096,10 @@ fn route_placement_root_repoint_strands(
     // (every committed doc at a placement doctype's prior home, managed or not — committed
     // truth, deliberately index-blind so a fresh clone still relocates) and the git state the
     // moves land in (each is a staged `git mv`, committed by the operator's next commit).
+    //
+    // The two sweeps partition the store by home kind and neither is the universal: this one
+    // carries the placement homes, the `docs-root` sibling the `location:` directories. A doc
+    // under the old `docs-root` that is a placement instance belongs to this sweep only.
     eprintln!(
         "relocating the committed doc(s) stranded by the `placement-root` re-point to \
          `{new_value}` (every committed doc at a placement doctype's prior home, managed or \

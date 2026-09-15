@@ -462,6 +462,118 @@ fn a_repoint_away_from_the_repo_root_still_finds_the_doc() {
     );
 }
 
+/// A conformant `adr` — a **`location:`** doctype, so its instance homes under the
+/// resolved `docs-root` and the strand sweep carries it. The counterpart to `ROADMAP`
+/// below it, which is a placement doctype and therefore is not.
+const CONFORMANT_ADR: &str = "\
+---
+status: accepted
+date: 2026-05-23
+---
+
+# Rate limiting
+
+## Context
+The gateway must shed load under burst traffic.
+
+## Options
+Alternatives were weighed and rejected.
+
+## Decision
+A token bucket per client keeps the gateway fair under burst.
+
+## Consequences
+A misbehaving client is throttled, not the whole gateway.
+";
+
+/// **EC-16 — the relocation ack's subject is the set the code walks** (M51 Increment 9 / T5).
+///
+/// Five surfaces described the `docs-root` sweep as *"every committed doc under the prior
+/// resolved root, managed or not"*. This corpus is that universal's falsifier: `docs/roadmap.md`
+/// is a committed doc under the prior resolved root `docs/` and is **never** carried, because a
+/// placement doctype homes at its declared `placement.file`, which resolves through
+/// `placement-root` — not `docs-root`. The set the sweep walks is
+/// `orphan::docs_root_would_orphan`'s: every committed doc under a doctype's resolved
+/// `location:` directory, managed or not.
+///
+/// **The named subject is read out of the emitted ack**, never rebuilt in test code: the
+/// `- <from> → <to>` lines the binary printed are compared against the moves `git status
+/// --porcelain` reports as `R`. A surface that names a superset (or a subset) of what it moved
+/// fails here regardless of how the header is worded.
+#[test]
+fn the_docs_root_ack_names_exactly_the_moves_it_staged_and_never_the_placement_home() {
+    let corpus = Corpus::new("ec16");
+    corpus.commit_file("docs/decisions/rate-limit.md", CONFORMANT_ADR);
+    corpus.commit_file("docs/roadmap.md", ROADMAP);
+    corpus.ok(&["ingest"]);
+
+    let out = corpus.jigc(&["config", "set", "docs-root", "docs2"]);
+    assert!(
+        out.status.success(),
+        "`jigc config set docs-root` must exit 0; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+
+    // The subject the ack NAMES: its own per-file lines, parsed from the emitted bytes.
+    let named: Vec<(String, String)> = stderr
+        .lines()
+        .filter_map(|line| {
+            let (from, to) = line.trim().strip_prefix("- ")?.split_once(" → ")?;
+            Some((from.to_string(), to.to_string()))
+        })
+        .collect();
+
+    // The subject it MOVED: git's own staged renames.
+    let staged: Vec<(String, String)> = corpus
+        .status_lines()
+        .iter()
+        .filter(|line| line.starts_with('R'))
+        .filter_map(|line| {
+            let (from, to) = line[3..].split_once(" -> ")?;
+            Some((from.to_string(), to.to_string()))
+        })
+        .collect();
+
+    assert!(
+        !staged.is_empty(),
+        "non-vacuity: the re-point must actually stage a move, or the comparison below \
+         holds trivially; status:\n{}",
+        corpus.status_lines().join("\n"),
+    );
+    assert_eq!(
+        named, staged,
+        "the ack's named subject must equal the moves it staged; stderr:\n{stderr}",
+    );
+
+    // The falsifier itself: a committed doc under the prior resolved root that the sweep
+    // does not carry, so no surface may describe the subject as that universal.
+    assert!(
+        corpus.exists("docs/roadmap.md") && !corpus.exists("docs2/roadmap.md"),
+        "the placement doctype's home resolves through `placement-root`, so a `docs-root` \
+         re-point leaves it exactly where it was; status:\n{}",
+        corpus.status_lines().join("\n"),
+    );
+    assert!(
+        !stderr.contains("roadmap"),
+        "and the ack never names it; stderr:\n{stderr}",
+    );
+
+    assert!(
+        stderr.contains("under a doctype's prior resolved `location:` directory, managed or not"),
+        "the header states the set the sweep walks; stderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("a placement doctype's file is not carried"),
+        "and states the exclusion positively, so a reader gets the rule; stderr:\n{stderr}",
+    );
+    assert!(
+        !stderr.contains("every committed doc under the prior resolved root"),
+        "the falsified universal is gone; stderr:\n{stderr}",
+    );
+}
+
 /// **A foreign file squatting the destination is displaced, never clobbered.** The move
 /// primitive's collision resolution (`design/reconciliation.md` → Relocation collisions)
 /// parks an untracked/unmanaged squatter in the gitignored `.jigc/displaced/` workbench so

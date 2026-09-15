@@ -3639,13 +3639,21 @@ pub fn unmanage(format: Format, report: &crate::unmanage::UnmanageReport) -> Str
             let mut out = if report.dropped {
                 match &report.identity {
                     // The still-at-the-managed-home honesty clause (round-2 D2): the
-                    // relocation sweeps (a `docs-root` re-point, `jigc relocate`) walk
-                    // committed truth under the home — deliberately index-blind, so a
-                    // fresh clone still relocates — which means an unmanaged file left
-                    // at the home is still carried by home-wide ops. Say so at the one
-                    // moment the operator makes that state.
+                    // relocation sweeps (a `docs-root` re-point, a `placement-root`
+                    // re-point, `jigc relocate`) walk committed truth under the home —
+                    // deliberately index-blind, so a fresh clone still relocates — which
+                    // means an unmanaged file left at the home is still carried by
+                    // home-wide ops. Say so at the one moment the operator makes that
+                    // state.
+                    //
+                    // The clause names the op **per home kind** rather than asserting the
+                    // `docs-root` universal (M51 Increment 9 / T5, EC-16): `identity_of`
+                    // resolves a placement doctype's literal `placement.file` too, and that
+                    // home moves with `placement-root`, never with `docs-root`. One sentence
+                    // covering both is honest for every doc this branch renders, and needs
+                    // no schema lookup to stay that way.
                     Some(id) => format!(
-                        "unmanaged {} ({}) — dropped its file-state baseline + forward edges; the file is left on disk. It still sits at the managed home, so home-wide ops (e.g. a `docs-root` re-point, which relocates every committed doc under the old home — managed or not) still carry it; move it out of the managed location to fully detach it\n",
+                        "unmanaged {} ({}) — dropped its file-state baseline + forward edges; the file is left on disk. It still sits at the managed home, so the op that relocates that home — a `docs-root` re-point for a `location:` doctype, a `placement-root` re-point for a placement one — still carries it, managed or not; move it out of the managed location to fully detach it\n",
                         report.path, id,
                     ),
                     None => format!(
