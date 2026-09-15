@@ -21,7 +21,7 @@
 //! wrapped in `<<…>>` is slot prose (the delimiters stripped), any other scalar is an
 //! inline field value (the pinned `<<slot>>`/scalar convention).
 
-use anyhow::{Context, Result, bail};
+use engine::finding::{Finding, Severity};
 use engine::schema::{Field, Leaf as SchemaLeaf, Schema, Section, SectionBody, Slot};
 use engine::slug::slugify;
 use serde::Deserialize;
@@ -124,6 +124,92 @@ fn classify(raw: &str) -> LeafValue {
     }
 }
 
+/// **Every way [`parse_author_payload`] can refuse** — the class's defining case-set, and
+/// the set `crates/cli/tests/author_payload_floor.rs` iterates.
+///
+/// **Why it exists** (M51 Increment 6, T3; the rc.14 trial's F-11). The payload parse used
+/// to refuse with a bare `anyhow` sentence: no severity, no code, no `at:`, no route, and
+/// `{"error": …}` on `--format json` — while the *same door* answers a declared-address miss
+/// with `blocking · write.unknown-field` + `at:` + a route. M50 Increment 9 closed the
+/// write-miss floor at the four target resolvers, and this parse sits **upstream of every
+/// one of them**, so a driver keying on the stable `(code, target)` pair got nothing at the
+/// door it reaches first. Naming the refusals as a set is what makes the repair checkable
+/// over the class rather than over the reported repro.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PayloadReject {
+    /// The payload is not the declared YAML grammar at all — unparseable input, an unknown
+    /// key (the `deny_unknown_fields` typo guard), or an item missing its `title:`
+    /// id-source. Every serde-layer refusal is this one exit.
+    Ungrammatical,
+    /// A **non-singleton** payload carries no top-level `title:` — the create id-source. A
+    /// singleton's slug is fixed to its type id, so a title-less singleton payload is not a
+    /// refusal at all (it defaults).
+    MissingTitle,
+    /// A value for a schema-declared **slot** leaf is not `<<…>>`-wrapped — the
+    /// silent-misroute guard's first direction.
+    BareSlotValue,
+    /// A value for a schema-declared **field** leaf *is* `<<…>>`-wrapped — the guard's
+    /// second direction.
+    WrappedFieldValue,
+}
+
+impl PayloadReject {
+    /// Every refusal exit, in declaration order.
+    pub const ALL: &'static [PayloadReject] = &[
+        PayloadReject::Ungrammatical,
+        PayloadReject::MissingTitle,
+        PayloadReject::BareSlotValue,
+        PayloadReject::WrappedFieldValue,
+    ];
+
+    /// The shipped **write-family** code this refusal earns, under one stated
+    /// discriminator: `write.wrong-shape` for a payload **the grammar does not admit**, and
+    /// `write.malformed-value` for a **value** whose `<<…>>` form contradicts its declared
+    /// leaf kind. No code is minted here — both are the engine's own
+    /// (`design/validation.md` → the `write.*` route split), which is what keeps this door
+    /// speaking the same taxonomy as the five addressed write verbs its payload lowers onto.
+    pub fn code(self) -> &'static str {
+        match self {
+            PayloadReject::Ungrammatical | PayloadReject::MissingTitle => "write.wrong-shape",
+            PayloadReject::BareSlotValue | PayloadReject::WrappedFieldValue => {
+                "write.malformed-value"
+            }
+        }
+    }
+
+    /// The variant's own identifier, as the source spells it — the handle the completeness
+    /// arm scans this module's production source for, so a refusal exit added outside
+    /// [`reject`] cannot land silently.
+    pub fn variant(self) -> &'static str {
+        match self {
+            PayloadReject::Ungrammatical => "Ungrammatical",
+            PayloadReject::MissingTitle => "MissingTitle",
+            PayloadReject::BareSlotValue => "BareSlotValue",
+            PayloadReject::WrappedFieldValue => "WrappedFieldValue",
+        }
+    }
+}
+
+/// The **one** finding-minting seam of the payload parse: a blocking [`Finding`] carrying
+/// the refusal's declared code and its sentence.
+///
+/// It deliberately carries **neither a location nor a route**, and both absences are filled
+/// one layer up at [`crate::doc`]'s shared write-path block seam, which is the only place
+/// that holds what they need: the **doctype id** — this door's declared `key.target` form,
+/// since nothing is staged when a payload is refused, so no instance exists to address
+/// (`design/command-output-contract.md` → the `create.*` doctype-scoped target form) — and
+/// the verb the recovery re-runs. The route that seam supplies is the declared one for a
+/// **payload** defect: the write persisted nothing, so re-running the same verb with a
+/// corrected payload is the recovery (`engine::write`'s per-code route map states exactly
+/// that for this family).
+///
+/// The error *type* is what closes the escape: `Result<_, Finding>` is a type a bare
+/// `anyhow` cannot inhabit, so a future refusal exit cannot slip back out of the envelope
+/// by construction rather than by a later grep (M50 Increment 9's shape).
+fn reject(kind: PayloadReject, message: String) -> Finding {
+    Finding::graded(Severity::Blocking, kind.code(), message, None, None)
+}
+
 /// The leaf-kind the **schema** declares for a `set` key — the source of truth the
 /// syntactic `<<…>>` marker is cross-checked against.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -140,17 +226,22 @@ enum DeclaredKind {
 /// and located** so a bare value for a slot leaf (silently misrouted into a trailing
 /// `<!-- fields -->` block today) and a `<<…>>`-wrapped value for a field leaf are
 /// both hard parse-time rejects naming the offending address.
-fn check_kind(declared: DeclaredKind, raw: &str, addr: &str) -> Result<()> {
+fn check_kind(declared: DeclaredKind, raw: &str, addr: &str) -> Result<(), Finding> {
     match (declared, is_slot_wrapped(raw)) {
-        (DeclaredKind::Slot, false) => {
-            bail!(
-                "doc author payload: value for slot `{addr}` must be wrapped in <<…>> \
+        (DeclaredKind::Slot, false) => Err(reject(
+            PayloadReject::BareSlotValue,
+            format!(
+                "write rejected: the value for slot `{addr}` must be wrapped in <<…>> \
                  (the literal `<<`/`>>` markers are required syntax, not a placeholder to delete) — got: {raw}"
-            )
-        }
-        (DeclaredKind::Field, true) => {
-            bail!("doc author payload: value for field `{addr}` must not be wrapped in <<…>>")
-        }
+            ),
+        )),
+        (DeclaredKind::Field, true) => Err(reject(
+            PayloadReject::WrappedFieldValue,
+            format!(
+                "write rejected: the value for field `{addr}` must not be wrapped in <<…>> \
+                 — `<<…>>` marks slot prose, and `{addr}` is a declared inline field"
+            ),
+        )),
         _ => Ok(()),
     }
 }
@@ -257,9 +348,13 @@ impl<'a> SchemaCtx<'a> {
 /// value for a slot leaf can no longer be silently misrouted into a `<!-- fields -->`
 /// block. Where the payload addresses a section/leaf the schema does not declare, the
 /// cross-check stands down and the engine's downstream reject handles it.
-pub fn parse_author_payload(schema: Option<&Schema>, payload: &str) -> Result<AuthorPlan> {
-    let parsed: AuthorPayload =
-        serde_yaml_ng::from_str(payload).context("malformed `doc author` payload")?;
+pub fn parse_author_payload(schema: Option<&Schema>, payload: &str) -> Result<AuthorPlan, Finding> {
+    let parsed: AuthorPayload = serde_yaml_ng::from_str(payload).map_err(|err| {
+        reject(
+            PayloadReject::Ungrammatical,
+            format!("write rejected: the `doc author` payload is not the declared grammar — {err}"),
+        )
+    })?;
     // A singleton's slug is fixed to the type id — `create_gated` ignores the id-source
     // — so a title-less singleton payload defaults its plan title to the title the
     // schema fixes ([`Schema::fixed_title`], the same value the `{{schema:}}` skeleton
@@ -271,10 +366,15 @@ pub fn parse_author_payload(schema: Option<&Schema>, payload: &str) -> Result<Au
         Some(title) => title,
         None => match schema.and_then(|schema| schema.fixed_title()) {
             Some(fixed) => fixed,
-            _ => bail!(
-                "doc author payload: missing required `title:` — the create id-source \
-                 (the top-level `title:` line naming the instance)"
-            ),
+            _ => {
+                return Err(reject(
+                    PayloadReject::MissingTitle,
+                    "write rejected: the `doc author` payload declares no `title:` — the \
+                     create id-source (the top-level `title:` line naming the instance); only \
+                     a singleton doctype, whose slug is fixed to its type id, may omit it"
+                        .to_string(),
+                ));
+            }
         },
     };
     let mut leaves = Vec::new();
@@ -298,7 +398,7 @@ fn flatten_section(
     section: &PayloadSection,
     parent: &[String],
     leaves: &mut Vec<Leaf>,
-) -> Result<()> {
+) -> Result<(), Finding> {
     // Doc-level (simple-section) leaves: a scalar field is addressed `…/<section>/<key>`;
     // the section's slot is the section itself (`…/<section>`, no key hop) — and that
     // key-less form is reached **only** by the section's own id, the documented key.
@@ -555,7 +655,7 @@ sections:
 ";
         let err = parse_author_payload(Some(&schema), bare_slot)
             .expect_err("a bare value for the `notes` slot is rejected, never misrouted");
-        let msg = err.to_string();
+        let msg = &err.message;
         assert!(
             msg.contains("slot") && msg.contains("notes") && msg.contains("<<"),
             "the slot reject names the leaf-kind, the address, and the expected form: {msg}",
@@ -579,7 +679,7 @@ sections:
 ";
         let err = parse_author_payload(Some(&schema), wrapped_field)
             .expect_err("a `<<…>>`-wrapped value for the `link` field is rejected");
-        let msg = err.to_string();
+        let msg = &err.message;
         assert!(
             msg.contains("field") && msg.contains("link") && msg.contains("<<"),
             "the field reject names the leaf-kind, the address, and the form: {msg}",
@@ -633,7 +733,7 @@ sections:
         // that names `title:` and is NOT the raw serde `missing field` error.
         let err = parse_author_payload(Some(&commit_schema()), "sections: []\n")
             .expect_err("a title-less non-singleton payload is rejected");
-        let msg = err.to_string();
+        let msg = &err.message;
         assert!(
             msg.contains("title:"),
             "the enriched reject names the `title:` create id-source: {msg}",

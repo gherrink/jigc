@@ -3707,7 +3707,17 @@ fn run_author(
     // (`design/write-commands.md` → Batch authoring). The doctype schema is passed for
     // that cross-check; an unknown doctype (absent here) skips it and is rejected by
     // the create-gate below.
-    let plan = crate::author::parse_author_payload(schemas.get(doctype), &payload)?;
+    //
+    // Every one of those refusals ([`crate::author::PayloadReject`]) lands on the same
+    // block seam the create-gate and the title pre-check below already take, so the door's
+    // **first** reject answers exactly like its later ones: a blocking finding with the
+    // shipped write-family code, the `at:` this contract declares for a doctype-scoped
+    // reject (the bare doctype id — nothing is staged, so no instance exists to address),
+    // the payload-defect route, and — by the funnel rule the pinned-envelope registry
+    // declares — the `Reject::Findings` envelope rather than a flattened `{"error": …}`
+    // (M51 Increment 6, T3; the rc.14 trial's F-11).
+    let plan = crate::author::parse_author_payload(schemas.get(doctype), &payload)
+        .map_err(|f| block(&f, "author", doctype))?;
     // Materialize the doctype's doc-level `default:` / `set: on-create` header fields
     // (the same clock-side CLI work `run_create` does) so the created instance carries
     // them before the leaves chain over it. The migration discriminator (reused below

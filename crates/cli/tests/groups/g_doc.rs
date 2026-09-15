@@ -12,6 +12,8 @@ mod address_parse_error_axis;
 mod address_slug_head_axis;
 #[path = "../author_batch_scaling.rs"]
 mod author_batch_scaling;
+#[path = "../author_payload_floor.rs"]
+mod author_payload_floor;
 #[path = "../clap_error_kind_axis.rs"]
 mod clap_error_kind_axis;
 #[path = "../copy_in_ack.rs"]
