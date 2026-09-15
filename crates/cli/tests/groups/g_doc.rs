@@ -73,6 +73,8 @@ mod roundtrip_registry_fence;
 mod schema_load_strictness;
 #[path = "../schema_resolution_unified.rs"]
 mod schema_resolution_unified;
+#[path = "../staged_read_miss_arm.rs"]
+mod staged_read_miss_arm;
 #[path = "../uninstall.rs"]
 mod uninstall;
 #[path = "../unknown_doctype_axis.rs"]

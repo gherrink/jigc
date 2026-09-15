@@ -114,7 +114,7 @@ pub fn read_slice(
     let address_str = address.to_string();
     let type_name = address.r#type.as_str();
     let slug = address.slug.as_str();
-    let schema = resolve_read_schema(schemas, address, &address_str)?;
+    let schema = resolve_read_schema(schemas, address, &address_str, None)?;
 
     // Identity is the path: `<repo_root>/<location>/<slug>.md`. A transient
     // (location-less) type has no committed path and is not committed-store-readable
@@ -181,14 +181,20 @@ pub fn read_slice(
 /// - an **absent staged instance** blocks `store.not-staged`, routed on the **real
 ///   state** under `repo_root`: a committed sibling exists → read it task-less
 ///   (`jigc doc show <addr>`); nothing exists anywhere → nothing to read yet.
+///
+/// `task_id` is the open task's id, carried for the **surfaces**, never for source
+/// selection (`task_dir` already resolves that): a block this arm raises names the copy
+/// it looked in and keeps `--task <id>` in its route, so a route followed exactly serves
+/// the copy the caller asked for (M51 Inc 5 / T6, N15).
 pub fn read_slice_staged(
     repo_root: &Path,
     task_dir: &Path,
     schemas: &BTreeMap<String, Schema>,
     address: &Address,
+    task_id: &str,
 ) -> Result<String, Finding> {
     let address_str = address.to_string();
-    let schema = resolve_read_schema(schemas, address, &address_str)?;
+    let schema = resolve_read_schema(schemas, address, &address_str, Some(task_id))?;
     let path =
         crate::state::instance_path(task_dir, address.r#type.as_str(), address.slug.as_str());
     read_parse_slice(
@@ -203,12 +209,20 @@ pub fn read_slice_staged(
 }
 
 /// Resolve `address`'s doctype to its schema — shared by both read arms: the
-/// unknown-type block and the singleton-slug guard live here, so the staged arm
-/// inherits them unchanged.
+/// unknown-type block and the singleton-slug guard live here, so neither arm can
+/// answer differently about which doctype an address names.
+///
+/// `staged_in` carries the **open task's id** on the staged arm and `None` on the
+/// task-less one. It is here because the guard fires *before* either arm selects a
+/// source, so the block it raises must still say **which copy it was asked about**
+/// (M51 Inc 5 / T6, N15): a doctype id names nothing in either copy, so the
+/// unknown-type block is copy-blind and stays shared verbatim, while the
+/// singleton-slug block resolves against one copy and therefore splits.
 fn resolve_read_schema<'a>(
     schemas: &'a BTreeMap<String, Schema>,
     address: &Address,
     address_str: &str,
+    staged_in: Option<&str>,
 ) -> Result<&'a Schema, Finding> {
     let type_name = address.r#type.as_str();
     let slug = address.slug.as_str();
@@ -231,19 +245,35 @@ fn resolve_read_schema<'a>(
     // an invalid reference (M39 read-surface hardening — a read verb must route a bad ref
     // like every other). This guard is read-scoped: the write/promote/reconcile callers
     // use `canonical_path` directly and are unaffected.
+    //
+    // **The block splits on the copy the caller asked for** (M51, N15): the staged arm
+    // never consulted the committed store, so a block saying *committed* is a lie, and a
+    // route dropping `--task` serves the other copy than the one that was asked for. The
+    // sibling `not_staged_block` has named its copy since M43; this arm now does too.
     if schema.placement.is_some() && slug != schema.ty {
-        return Err(block(
-            "store.not-found",
-            format!(
-                "`{address_str}` names no committed doc: `{type_name}` is a singleton, so its only address is `{type_name}:{}`",
-                schema.ty
+        let canonical = format!("{type_name}:{}", schema.ty);
+        let tail = " — a singleton doctype has one instance at a fixed slug";
+        return Err(match staged_in {
+            Some(task_id) => block(
+                "store.not-found",
+                format!(
+                    "`{address_str}` names no doc staged in task `{task_id}`: `{type_name}` is a singleton, so its only address is `{canonical}`"
+                ),
+                address_str,
+                Route::mechanical(
+                    ["jigc", "doc", "show", canonical.as_str(), "--task", task_id],
+                    tail,
+                ),
             ),
-            address_str,
-            format!(
-                "read `{type_name}:{}` — a singleton doctype has one instance at a fixed slug",
-                schema.ty
+            None => block(
+                "store.not-found",
+                format!(
+                    "`{address_str}` names no committed doc: `{type_name}` is a singleton, so its only address is `{canonical}`"
+                ),
+                address_str,
+                format!("read `{canonical}`{tail}"),
             ),
-        ));
+        });
     }
     Ok(schema)
 }
@@ -1738,8 +1768,14 @@ Centralize limiting at the gateway.
         std::fs::write(&staged, COMMITTED_ADR).expect("stage the adr");
 
         let address = Address::parse("adr:single-node-cache").expect("valid address");
-        let whole = read_slice_staged(repo.path(), task.path(), &schemas(), &address)
-            .expect("the staged whole-doc read serves");
+        let whole = read_slice_staged(
+            repo.path(),
+            task.path(),
+            &schemas(),
+            &address,
+            "add-gateway-rate-limiting",
+        )
+        .expect("the staged whole-doc read serves");
         assert_eq!(
             whole, COMMITTED_ADR,
             "the staged read is byte-for-byte the staged copy"
@@ -1782,8 +1818,14 @@ Centralize limiting at the gateway.
             let address = Address::parse(addr).expect("valid address");
             let committed = read_slice(repo.path(), &schemas, &address)
                 .unwrap_or_else(|err| panic!("committed `{addr}` resolves; got {err:?}"));
-            let staged = read_slice_staged(repo.path(), task.path(), &schemas, &address)
-                .unwrap_or_else(|err| panic!("staged `{addr}` resolves; got {err:?}"));
+            let staged = read_slice_staged(
+                repo.path(),
+                task.path(),
+                &schemas,
+                &address,
+                "add-gateway-rate-limiting",
+            )
+            .unwrap_or_else(|err| panic!("staged `{addr}` resolves; got {err:?}"));
             assert_eq!(
                 staged, committed,
                 "`{addr}` slices byte-identically through both arms"
@@ -1794,8 +1836,14 @@ Centralize limiting at the gateway.
         let leaf = Address::parse("spec:gateway-rate-limiting#criteria/rejects-burst/statement")
             .expect("valid address");
         assert_eq!(
-            read_slice_staged(repo.path(), task.path(), &schemas, &leaf)
-                .expect("staged leaf resolves"),
+            read_slice_staged(
+                repo.path(),
+                task.path(),
+                &schemas,
+                &leaf,
+                "add-gateway-rate-limiting"
+            )
+            .expect("staged leaf resolves"),
             "The gateway rejects the 101st request in a rolling 60s window.",
         );
     }
@@ -1817,8 +1865,14 @@ Centralize limiting at the gateway.
 
         let whole = Address::parse("commit:add-gateway-rate-limiting").expect("valid address");
         assert_eq!(
-            read_slice_staged(repo.path(), task.path(), &schemas, &whole)
-                .expect("a staged transient commit doc serves"),
+            read_slice_staged(
+                repo.path(),
+                task.path(),
+                &schemas,
+                &whole,
+                "add-gateway-rate-limiting"
+            )
+            .expect("a staged transient commit doc serves"),
             STAGED_COMMIT,
             "the staged transient read is byte-for-byte the staged copy"
         );
@@ -1826,8 +1880,14 @@ Centralize limiting at the gateway.
         let summary =
             Address::parse("commit:add-gateway-rate-limiting#summary").expect("valid address");
         assert_eq!(
-            read_slice_staged(repo.path(), task.path(), &schemas, &summary)
-                .expect("a staged transient slice serves"),
+            read_slice_staged(
+                repo.path(),
+                task.path(),
+                &schemas,
+                &summary,
+                "add-gateway-rate-limiting"
+            )
+            .expect("a staged transient slice serves"),
             "Add a per-client rate limit at the gateway.",
         );
 
@@ -1849,8 +1909,14 @@ Centralize limiting at the gateway.
 
         // A committed sibling exists → read it task-less.
         let addr = Address::parse("adr:single-node-cache").expect("valid address");
-        let err = read_slice_staged(repo.path(), task.path(), &schemas, &addr)
-            .expect_err("an absent staged instance blocks");
+        let err = read_slice_staged(
+            repo.path(),
+            task.path(),
+            &schemas,
+            &addr,
+            "add-gateway-rate-limiting",
+        )
+        .expect_err("an absent staged instance blocks");
         assert_eq!(err.severity, Severity::Blocking);
         assert_eq!(err.code, "store.not-staged");
         assert!(err.location.is_some(), "the block is located");
@@ -1866,8 +1932,14 @@ Centralize limiting at the gateway.
 
         // Nothing exists anywhere → nothing to read yet.
         let ghost = Address::parse("adr:ghost").expect("valid address");
-        let err = read_slice_staged(repo.path(), task.path(), &schemas, &ghost)
-            .expect_err("an absent staged instance with no committed sibling blocks");
+        let err = read_slice_staged(
+            repo.path(),
+            task.path(),
+            &schemas,
+            &ghost,
+            "add-gateway-rate-limiting",
+        )
+        .expect_err("an absent staged instance with no committed sibling blocks");
         assert_eq!(err.code, "store.not-staged");
         assert!(
             err.message.contains("nothing to read yet"),
@@ -1887,17 +1959,64 @@ Centralize limiting at the gateway.
     /// placement doctype answers only its canonical `<type>:<type>` address, staged
     /// or committed — any other slug blocks rather than serving the singleton's
     /// content for an invalid reference.
+    ///
+    /// (M51 inc-5 T6, N15) And it answers **about the copy the caller asked for**.
+    /// The guard is shared by both read arms and fires before either selects a
+    /// source, so until M51 the staged arm inherited a block phrased for the
+    /// committed store: the same bytes, the word *committed*, and a route that
+    /// dropped `--task` — followed exactly, it served the other copy. Both call
+    /// paths are driven here, because the claim is about their **difference**.
     #[test]
     fn staged_read_keeps_the_singleton_slug_guard() {
         let repo = TempRoot::new("staged-singleton-repo");
         let task = TempRoot::new("staged-singleton-task");
         let addr = Address::parse("changelog:wrong-slug").expect("valid address");
-        let err = read_slice_staged(repo.path(), task.path(), &schemas(), &addr)
+
+        let staged = read_slice_staged(repo.path(), task.path(), &schemas(), &addr, "fix-the-feed")
             .expect_err("a non-canonical singleton slug blocks on the staged arm too");
-        assert_eq!(err.code, "store.not-found");
+        let committed = read_slice(repo.path(), &schemas(), &addr)
+            .expect_err("a non-canonical singleton slug blocks on the committed arm");
+
+        for err in [&staged, &committed] {
+            assert_eq!(err.code, "store.not-found");
+            assert!(
+                err.message.contains("singleton"),
+                "the block names the singleton rule: {err:?}"
+            );
+        }
+
+        // The staged arm: the copy it looked in, the task it looked in it for, and a
+        // route that keeps `--task`.
         assert!(
-            err.message.contains("singleton"),
-            "the block names the singleton rule: {err:?}"
+            staged.message.contains("staged in task `fix-the-feed`"),
+            "the staged arm names the copy it looked in: {staged:?}"
+        );
+        assert!(
+            !staged.message.contains("committed"),
+            "the staged arm never consulted the committed store: {staged:?}"
+        );
+        let staged_route = staged
+            .route
+            .clone()
+            .expect("the staged block carries a route");
+        assert!(
+            staged_route.contains("jigc doc show changelog:changelog --task fix-the-feed"),
+            "the staged route stays task-scoped: {staged_route}"
+        );
+
+        // The committed arm's message and route do not move — this fix's scope is the
+        // staged arm, and these bytes are a 1.0-pinned surface.
+        assert_eq!(
+            committed.message,
+            "`changelog:wrong-slug` names no committed doc: `changelog` is a singleton, \
+             so its only address is `changelog:changelog`"
+        );
+        assert_eq!(
+            committed.route.as_deref(),
+            Some(
+                "read `changelog:changelog` — a singleton doctype has one instance at a \
+                 fixed slug"
+            ),
         );
     }
 

@@ -4025,10 +4025,14 @@ fn run_show_staged(
             Some((&task.dir, &task.id)),
         )
         .map(|value| render::json(&value))?,
-        Format::Agent | Format::Human => {
-            engine::store::read_slice_staged(&task.jigc_home, &task.dir, &schemas, &address)
-                .map_err(DocFailure::block)?
-        }
+        Format::Agent | Format::Human => engine::store::read_slice_staged(
+            &task.jigc_home,
+            &task.dir,
+            &schemas,
+            &address,
+            &task.id,
+        )
+        .map_err(DocFailure::block)?,
     };
     println!("{out}");
     Ok(())
@@ -4987,7 +4991,9 @@ fn show_json(
     staged: Option<(&Path, &str)>,
 ) -> Result<serde_json::Value, DocFailure> {
     let read = |a: &Address| match staged {
-        Some((task_dir, _)) => engine::store::read_slice_staged(jigc_home, task_dir, schemas, a),
+        Some((task_dir, task_id)) => {
+            engine::store::read_slice_staged(jigc_home, task_dir, schemas, a, task_id)
+        }
         None => engine::store::read_slice(jigc_home, schemas, a),
     };
     let whole = Address {
