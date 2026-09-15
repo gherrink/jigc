@@ -308,9 +308,26 @@ fn classify_row(
 ) -> TriageRow {
     match classify(rel_path, source, schemas) {
         Verdict::Adoptable { ty } => {
-            let annotations = schemas
-                .iter()
-                .find(|s| s.ty == ty)
+            let home = schemas.iter().find(|s| s.ty == ty);
+            // **The identity gate, asked before the verdict is kept** (M51 Inc 9 / T4).
+            // Conformant bytes at a managed home are only half of adoptable: the file must
+            // also bear an identity a `<type>:<slug>` address reaches, or adopting it
+            // records a baseline + edge-index entry no door can name. The subject is
+            // exactly `home_identity`'s `None`, so the refusal and the identity every other
+            // consumer mints come from one function rather than two agreeing predicates.
+            if let Some(home) = home
+                && home_identity(rel_path, home).is_none()
+            {
+                return TriageRow {
+                    file: rel_path.to_string(),
+                    best_match: Some(home.ty.clone()),
+                    verdict: "needs-reconcile",
+                    finding: Some(unaddressable_identity_finding(rel_path, home)),
+                    adopted: false,
+                    annotations: Vec::new(),
+                };
+            }
+            let annotations = home
                 .map(|schema| adopt_annotations(schema, source, exempt))
                 .unwrap_or_default();
             TriageRow {
@@ -515,10 +532,20 @@ fn near_miss_route(
 /// exactly as the store sweep's finding over the committed doc does.
 ///
 /// - a **placement** doctype's literal `placement.file` → the `<type>:<type>` singleton;
-/// - a **direct child** `.md` of the doctype's `location:` dir → `<type>:<file-stem>`;
-/// - anything else (a *nested* `.md` under the location dir, which the store enumerator's
-///   flat `read_dir` never reaches, so no committed instance would ever bear this identity)
-///   → `None`: a genuinely unidentifiable candidate, which keeps the path-form target.
+/// - a **direct child** `.md` of the doctype's `location:` dir **whose stem is a
+///   well-formed slug** → `<type>:<file-stem>`;
+/// - anything else → `None`: a candidate at a managed home that no `<type>:<slug>` address
+///   reaches, which keeps the path-form target — and, when it is otherwise *conformant*,
+///   is refused adoption outright ([`unaddressable_identity_finding`]).
+///
+/// **The `<slug>` this mints is the only component the filesystem supplies, so it is the
+/// only one checked** (M51 Inc 9 / T4). A placement doctype's identity is `<type>:<type>`,
+/// both halves read off the schema; a location doctype's is `<type>:<file-stem>`, whose
+/// second half is whatever a human typed into a filename. The [`engine::slug::is_slug`] leg
+/// is therefore on that branch alone — the same leg
+/// [`engine::validate::is_unadopted_foreign`]'s identity arm applies to a *committed*
+/// instance (M50 Inc 2), asked here at the *adoption* door so the two surfaces stop telling
+/// two stories about one file.
 fn home_identity(rel_path: &str, schema: &Schema) -> Option<String> {
     let ty = &schema.ty;
     if let Some(placement) = &schema.placement {
@@ -527,7 +554,102 @@ fn home_identity(rel_path: &str, schema: &Schema) -> Option<String> {
     let dir = schema.location.as_deref()?.trim_end_matches('/');
     let rest = rel_path.strip_prefix(&format!("{dir}/"))?;
     let slug = rest.strip_suffix(".md")?;
-    (!slug.is_empty() && !slug.contains('/')).then(|| format!("{ty}:{slug}"))
+    // `is_slug` subsumes the old non-empty + no-`/` pair (a `/` is outside `[a-z0-9-]`),
+    // so the *nested* candidate the doc comment already excluded still resolves to `None`
+    // — by the same predicate that now also excludes `My Decision`.
+    engine::slug::is_slug(slug).then(|| format!("{ty}:{slug}"))
+}
+
+/// The adoption refusal for a candidate that is **conformant at a managed home but bears no
+/// managed identity** — `ingest.unaddressable-identity` (M51 Inc 9 / T4;
+/// `design/validation.md` → The M51 registrations — Increment 9).
+///
+/// Its subject is exactly the set [`home_identity`] answers `None` over, which is one class
+/// with two shapes and one consequence: **no `<type>:<slug>` address reaches the file**, so
+/// adopting it records a file-state baseline and an edge-index entry under an identity no
+/// door can name. Driven at the base, both shapes adopted at exit 0:
+///
+/// - **the name is not a doc id** (`docs/decisions/My Decision.md`) — `jigc doc list` then
+///   called it `unregistered`, `jigc doc show` refused it `store.malformed-slug`, and `jigc
+///   validate` exited 1 with `schema-conformance.unadopted-instance` **routed back at `jigc
+///   ingest`** — a loop, the door the sweep names having just claimed the file was adopted;
+/// - **the path is nested below the flat home** (`docs/decisions/sub/nested-one.md`) — worse,
+///   because [`engine::index::committed_instances`] enumerates a location home with a flat
+///   `read_dir`, so after the silent adoption *no* surface mentioned the file again.
+///
+/// **The route is a [`Route::human`] naming `git mv`**, on M45's `owner-artifact.present`
+/// precedent (a `git add` route rendered the same way): `jigc doc rename` is not the repair —
+/// it repoints a doc jigc **manages**, and this file by definition is not one. The `git mv`
+/// operands render through [`crate::task::shell_token`], so the printed line survives a shell
+/// as itself over a name holding a space or a metachar — which is the very class of name that
+/// lands here. The destination is named, never performed (jigc does not auto-move), and git
+/// refuses an occupied destination loudly rather than clobbering it.
+fn unaddressable_identity_finding(rel_path: &str, schema: &Schema) -> Finding {
+    let ty = &schema.ty;
+    let dir = schema
+        .location
+        .as_deref()
+        .map(|location| location.trim_end_matches('/'))
+        .unwrap_or_default();
+    // The stem the file already carries, and the addressable name it would carry at the
+    // home — `slugify` is the mint rule, so the destination is the name jigc itself would
+    // have written. An empty mint (a stem that normalizes to nothing) names no destination
+    // rather than an empty one.
+    let stem = rel_path
+        .rsplit('/')
+        .next()
+        .and_then(|name| name.strip_suffix(".md"))
+        .unwrap_or_default();
+    let minted = engine::slug::slugify(stem);
+    let destination = (!dir.is_empty() && !minted.is_empty()).then(|| format!("{dir}/{minted}.md"));
+    let nested = !dir.is_empty()
+        && rel_path
+            .strip_prefix(&format!("{dir}/"))
+            .is_some_and(|rest| rest.contains('/'));
+
+    let cause = if nested {
+        format!(
+            "it sits below `{dir}/` rather than directly in it, and jigc homes \
+             every `{ty}` as a direct child of that directory, so no \
+             `<type>:<slug>` address reaches it"
+        )
+    } else {
+        "its name is not a doc id, so no `<type>:<slug>` address reaches it — jigc \
+         names every doc it writes `<slug>.md`"
+            .to_string()
+    };
+    let act = if nested {
+        format!("move it onto the `{ty}` home")
+    } else {
+        "rename it to a doc id".to_string()
+    };
+    let repair = match &destination {
+        Some(destination) => format!(
+            "{act} — `git mv {} {}` — then re-run `jigc ingest`",
+            crate::task::shell_token(rel_path),
+            crate::task::shell_token(destination),
+        ),
+        // No destination can be minted (the name normalizes to nothing), so the route
+        // names the grammar the new name must satisfy instead of an empty path.
+        None => format!(
+            "{act}: give it a `<slug>.md` name directly under the `{ty}` home — a \
+             lowercase `[a-z0-9-]` stem with no leading, trailing or doubled `-` \
+             — then re-run `jigc ingest`"
+        ),
+    };
+    Finding::graded(
+        Severity::Blocking,
+        "ingest.unaddressable-identity",
+        format!("conformant `{ty}` at `{rel_path}` is not adopted: {cause}"),
+        // The path form, and necessarily so: the whole fault is that this file has no
+        // `<type>:<slug>` identity to key at (`design/command-output-contract.md` → the
+        // target-normal forms, the declared `ingest.*` / `file-state.*` exception).
+        Some(Location::addressed(rel_path, 1, 1)),
+        Some(Route::human(format!(
+            "{repair}; `jigc doc rename` is not the repair — it repoints a doc jigc \
+             already manages, and this file has never been adopted"
+        ))),
+    )
 }
 
 /// Re-derive the routed finding for a **wrong-location** doc: conformant against a

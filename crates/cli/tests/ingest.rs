@@ -789,3 +789,304 @@ fn ingest_json_carries_a_verdict_summary_block() {
         "the unmanaged `docs/notes.md` contributes a `docs/` per-directory entry:\n{json}",
     );
 }
+
+/// A fully conformant, **at-version** ADR carrying no outbound ref — the plant for the two
+/// unaddressable-identity arms below.
+///
+/// Two deliberate departures from [`CONFORMANT_ADR`], each earning its place in the arms'
+/// closing assertion (`jigc validate` exits 0 over the repaired store): no `supersedes`, so
+/// the fixture drags no dangling ref of its own into that verdict, and the at-version
+/// `schema-version: 2` stamp, without which the shipped `schema-conformance.
+/// schema-version-current` blocker would own the exit regardless of identity.
+///
+/// The stamp also makes the arm **sharper**, not weaker: a hand-typed stamp is not evidence
+/// of jigc's hand — the path is, and the path says no — which is exactly why M50's committed
+/// -store discriminator asks its identity leg *before* the byte legs. A stamped, conformant,
+/// at-version file that jigc still refuses to adopt leaves the identity as the sole reason.
+const CONFORMANT_ADR_NO_REF: &str = "\
+---
+status: accepted
+date: 2026-05-23
+schema-version: 2
+---
+
+# My decision
+
+## Context
+The gateway must shed load under burst traffic.
+
+## Options
+Alternatives were weighed and rejected.
+
+## Decision
+A token bucket per client keeps the gateway fair under burst.
+
+## Consequences
+A misbehaving client is throttled, not the whole gateway.
+";
+
+/// `ingest.unaddressable-identity`, shape 1 — **the name is not a doc id** (M51 Inc 9 / T4;
+/// `design/validation.md` → The M51 registrations — Increment 9).
+///
+/// Driven at the base: a conformant `adr` committed as `docs/decisions/My Decision.md` was
+/// reported *"adoptable … (adopted — indexed + baselined)"* at exit 0 and recorded into the
+/// index + file-state baseline — while `jigc doc list` called it `unregistered`, `jigc doc
+/// show 'adr:My Decision'` refused it `store.malformed-slug`, and `jigc validate` exited 1
+/// with `schema-conformance.unadopted-instance` **routed back at `jigc ingest`**. Three
+/// surfaces, two stories, and the route looped: the door the store sweep sends you to
+/// claimed the file was already adopted, so following it exactly changed nothing.
+///
+/// The arm drives the whole loop it closes: refuse → repair with the `git mv` the route
+/// names → re-run → adopted → `jigc validate` exits 0.
+#[test]
+fn ingest_refuses_a_conformant_doc_whose_name_is_not_a_doc_id() {
+    let repo = TempDir::new("unaddressable-name");
+    let home = TempDir::new("unaddressable-name-home");
+    init_repo(repo.path());
+
+    let out = jigc(repo.path(), home.path(), &["setup"]);
+    assert!(
+        out.status.success(),
+        "`jigc setup` must succeed; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    // The plant: conformant `adr` bytes at the `adr` home, under a name no
+    // `<type>:<slug>` address reaches. Committed, because that is the state the store
+    // sweep adjudicates and the state `git mv` can repair.
+    write(
+        repo.path(),
+        "docs/decisions/My Decision.md",
+        CONFORMANT_ADR_NO_REF,
+    );
+    git(repo.path(), &["add", "."]);
+    git(
+        repo.path(),
+        &["commit", "-q", "-m", "plant the foreign adr"],
+    );
+
+    // ── the refusal ──────────────────────────────────────────────────────────────
+    let out = jigc(repo.path(), home.path(), &["ingest"]);
+    assert!(
+        out.status.success(),
+        "`jigc ingest` keeps its triage posture — the refusal binds adoption, not the \
+         door's exit; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let report = String::from_utf8(out.stdout).expect("utf-8");
+    assert!(
+        report.contains("ingest.unaddressable-identity"),
+        "the row must carry the identity refusal by code:\n{report}"
+    );
+    assert!(
+        report.contains("git mv 'docs/decisions/My Decision.md' docs/decisions/my-decision.md"),
+        "the route must name the shell-safe `git mv` that repairs the identity:\n{report}"
+    );
+    assert!(
+        !report.contains("adopted — indexed + baselined"),
+        "nothing may be adopted on this run:\n{report}"
+    );
+
+    // The emitted JSON row says the same thing to a driver.
+    let out = jigc(repo.path(), home.path(), &["ingest", "--format", "json"]);
+    let json: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("`--format json` emits parseable JSON");
+    let row = json["rows"]
+        .as_array()
+        .expect("a rows array")
+        .iter()
+        .find(|r| r["file"] == "docs/decisions/My Decision.md")
+        .expect("the planted candidate has a row")
+        .clone();
+    assert_eq!(row["verdict"], "needs-reconcile", "row:\n{row}");
+    assert_eq!(row["adopted"], false, "row:\n{row}");
+    assert_eq!(row["best_match"], "adr", "row:\n{row}");
+    assert_eq!(
+        row["finding"]["code"], "ingest.unaddressable-identity",
+        "row:\n{row}"
+    );
+
+    // `jigc doc list` must not call it adopted — the surface that disagreed before.
+    let out = jigc(repo.path(), home.path(), &["doc", "list"]);
+    let listing = String::from_utf8(out.stdout).expect("utf-8");
+    let row = listing
+        .lines()
+        .find(|l| l.contains("docs/decisions/My Decision.md"))
+        .unwrap_or_else(|| panic!("the planted file must appear in `jigc doc list`:\n{listing}"));
+    assert!(
+        !row.contains("managed"),
+        "`jigc doc list` must not call the un-adopted file managed:\n{row}"
+    );
+
+    // ── the repair the route named, run verbatim ─────────────────────────────────
+    git(
+        repo.path(),
+        &[
+            "mv",
+            "docs/decisions/My Decision.md",
+            "docs/decisions/my-decision.md",
+        ],
+    );
+    git(repo.path(), &["commit", "-q", "-m", "rename to a doc id"]);
+
+    let out = jigc(repo.path(), home.path(), &["ingest"]);
+    assert!(
+        out.status.success(),
+        "`jigc ingest` must succeed after the repair; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let report = String::from_utf8(out.stdout).expect("utf-8");
+    assert!(
+        !report.contains("ingest.unaddressable-identity"),
+        "the repaired doc must not still be refused:\n{report}"
+    );
+    assert!(
+        report.contains("adoptable docs/decisions/my-decision.md → adr")
+            && report.contains("adopted — indexed + baselined"),
+        "the repaired doc must adopt:\n{report}"
+    );
+
+    // ── the loop is closed: the store sweep is green ─────────────────────────────
+    let out = jigc(repo.path(), home.path(), &["validate"]);
+    assert!(
+        out.status.success(),
+        "`jigc validate` must exit 0 once the doc is addressable and adopted; \
+         stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+}
+
+/// `ingest.unaddressable-identity`, shape 2 — **the path is nested below the flat home**
+/// (M51 Inc 9 / T4).
+///
+/// The second cell of the one axis the fix keys on: an `adoptable` candidate for which
+/// `ingest::home_identity` can mint no `<type>:<slug>`. Driven at the base it was the
+/// *worse* of the two — `jigc ingest` reported `docs/decisions/sub/nested-one.md` as
+/// *"adopted — indexed + baselined"* at exit 0, and then **no surface ever mentioned it
+/// again**: `engine::index::committed_instances` enumerates a location home with a flat
+/// `read_dir`, so `jigc doc list` did not list it and `jigc validate` said nothing about
+/// it. A silent baseline under an identity nothing can address.
+#[test]
+fn ingest_refuses_a_conformant_doc_nested_below_its_flat_home() {
+    let repo = TempDir::new("unaddressable-nested");
+    let home = TempDir::new("unaddressable-nested-home");
+    init_repo(repo.path());
+
+    let out = jigc(repo.path(), home.path(), &["setup"]);
+    assert!(
+        out.status.success(),
+        "`jigc setup` must succeed; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    write(
+        repo.path(),
+        "docs/decisions/sub/nested-one.md",
+        CONFORMANT_ADR_NO_REF,
+    );
+    git(repo.path(), &["add", "."]);
+    git(repo.path(), &["commit", "-q", "-m", "plant the nested adr"]);
+
+    let out = jigc(repo.path(), home.path(), &["ingest"]);
+    assert!(
+        out.status.success(),
+        "`jigc ingest` keeps its triage posture; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let report = String::from_utf8(out.stdout).expect("utf-8");
+    assert!(
+        report.contains("ingest.unaddressable-identity"),
+        "the nested candidate must carry the identity refusal by code:\n{report}"
+    );
+    assert!(
+        report.contains("git mv docs/decisions/sub/nested-one.md docs/decisions/nested-one.md"),
+        "the route must name the `git mv` onto the flat home:\n{report}"
+    );
+    assert!(
+        !report.contains("adopted — indexed + baselined"),
+        "nothing may be adopted on this run:\n{report}"
+    );
+
+    // The repair the route named, run verbatim.
+    git(
+        repo.path(),
+        &[
+            "mv",
+            "docs/decisions/sub/nested-one.md",
+            "docs/decisions/nested-one.md",
+        ],
+    );
+    git(repo.path(), &["commit", "-q", "-m", "move onto the home"]);
+
+    let out = jigc(repo.path(), home.path(), &["ingest"]);
+    let report = String::from_utf8(out.stdout).expect("utf-8");
+    assert!(
+        report.contains("adoptable docs/decisions/nested-one.md → adr")
+            && report.contains("adopted — indexed + baselined"),
+        "the relocated doc must adopt:\n{report}"
+    );
+
+    let out = jigc(repo.path(), home.path(), &["validate"]);
+    assert!(
+        out.status.success(),
+        "`jigc validate` must exit 0 once the doc sits at its home and is adopted; \
+         stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+}
+
+/// `ingest.unaddressable-identity`, the route's **no-mintable-destination** branch (M51 Inc
+/// 9 / T4) — the third cell of the same axis, and the one the two arms above cannot reach.
+///
+/// The route names the `git mv` destination jigc itself would have written, minted with
+/// `engine::slug::slugify`. A stem that normalizes to **nothing** (`___`) has no such
+/// destination, and naming an empty one would be the law-1 defect this increment exists to
+/// remove — so that branch names the grammar the new name must satisfy instead. Nothing
+/// else in the suite drives it, because every other plausible stem mints.
+#[test]
+fn ingest_names_the_slug_grammar_when_no_destination_can_be_minted() {
+    let repo = TempDir::new("unaddressable-unmintable");
+    let home = TempDir::new("unaddressable-unmintable-home");
+    init_repo(repo.path());
+
+    let out = jigc(repo.path(), home.path(), &["setup"]);
+    assert!(
+        out.status.success(),
+        "`jigc setup` must succeed; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    write(repo.path(), "docs/decisions/___.md", CONFORMANT_ADR_NO_REF);
+    git(repo.path(), &["add", "."]);
+    git(
+        repo.path(),
+        &["commit", "-q", "-m", "plant an unmintable name"],
+    );
+
+    let out = jigc(repo.path(), home.path(), &["ingest"]);
+    assert!(
+        out.status.success(),
+        "`jigc ingest` keeps its triage posture; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let report = String::from_utf8(out.stdout).expect("utf-8");
+    assert!(
+        report.contains("ingest.unaddressable-identity"),
+        "the unmintable name must still be refused:\n{report}"
+    );
+    assert!(
+        !report.contains("git mv"),
+        "no `git mv` may be named when no destination can be minted:\n{report}"
+    );
+    assert!(
+        report.contains("a lowercase `[a-z0-9-]` stem with no leading, trailing or doubled `-`"),
+        "the route must name the grammar the new name has to satisfy:\n{report}"
+    );
+    assert!(
+        !report.contains("adopted — indexed + baselined"),
+        "nothing may be adopted on this run:\n{report}"
+    );
+}

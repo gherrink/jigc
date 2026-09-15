@@ -3610,8 +3610,15 @@ const VERDICT_LEGEND: &[(&str, &str)] = &[
         "conformant at its managed location; adopted register-only (indexed + baselined, the file stays in place).",
     ),
     (
+        // The gloss names the **three** things that can conflict, because three producers
+        // raise this verdict and only two of them are about the file's content: a near-miss
+        // (`ingest.needs-reconcile` / the home schema's own parse break), a conformant doc
+        // outside its home (`ingest.wrong-location`), and — since M51 Inc 9 / T4 — a
+        // conformant doc at its home under a name no `<type>:<slug>` address reaches
+        // (`ingest.unaddressable-identity`). The bare "conflicts" read as a content conflict
+        // and sent the reader looking for a break in bytes that are clean.
         "needs-reconcile",
-        "parses as the named type but conflicts; fix it per the row's route, then re-run `jigc ingest`.",
+        "parses as the named type but conflicts — in its content, its location, or its name; fix it per the row's route, then re-run `jigc ingest`.",
     ),
     (
         "unmanaged",
@@ -7469,7 +7476,7 @@ mod tests {
 
         What the verdicts above mean, and what to do next:
           adoptable — conformant at its managed location; adopted register-only (indexed + baselined, the file stays in place).
-          needs-reconcile — parses as the named type but conflicts; fix it per the row's route, then re-run `jigc ingest`.
+          needs-reconcile — parses as the named type but conflicts — in its content, its location, or its name; fix it per the row's route, then re-run `jigc ingest`.
           unmanaged — matches no managed schema; staying a plain file is a legitimate end-state — no action needed. To bring one under management: `jigc migrate <path> --as <doctype>`.
         — jigc · run `jigc start` for orientation; all writes through `jigc`.
         ");
