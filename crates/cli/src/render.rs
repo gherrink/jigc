@@ -2569,6 +2569,24 @@ fn ack_value_display(value: &serde_json::Value) -> String {
     }
 }
 
+/// One committed doc a `jigc config set` **relocated** — the staged `git mv` a root-knob
+/// re-point landed, `from` its prior home `to` its new one (M51 Increment 5 / T4;
+/// `completions/artifacts/M51/envelope-key-census.md` § 4.4 → EC-4).
+///
+/// **Why it is an object and not the positional pair [`crate::relocate::RelocationReport`]
+/// uses.** That report's pairs ride an envelope whose *text* arm renders `from -> to` in
+/// three labelled lists, so a driver reading `moved[0]` has a rendering to read the order
+/// off. These moves are never rendered on the ack's text arm at all — they narrate on
+/// **stderr** as they happen — so the wire is the only place the two halves can be named,
+/// and they are named.
+#[derive(Debug, Serialize)]
+pub struct Relocated {
+    /// The doc's prior repo-relative home — the path `git mv` moved away from.
+    pub from: String,
+    /// Its new repo-relative home under the re-pointed root.
+    pub to: String,
+}
+
 /// A successful `jigc config <verb>` cascade-authoring write's confirmation — the
 /// positive ack the six `config` verbs were missing (they mapped `Ok(())` to silence in
 /// every format, inconsistent with every doc-write ack; the M43 surface census, Law 1
@@ -2578,12 +2596,29 @@ fn ack_value_display(value: &serde_json::Value) -> String {
 ///
 /// No routing footer — a cascade-authoring write is not a composed reading surface (the
 /// [`DocAck`] / [`TaskAck`] mold, whose bare-line acks likewise carry none). A `set`
-/// that relocates committed docs prints its relocation lines separately, on stderr
-/// (`config::route_docs_root_repoint_orphans`); this ack does not restate them.
+/// that relocates committed docs prints its relocation *lines* on stderr, as each move
+/// lands (`config::route_docs_root_repoint_orphans`); the **text** arm does not restate
+/// them, and the JSON arm carries the same moves as data on [`ConfigAck::Set`]'s
+/// `relocated` — a driver reads only stdout, so a fact that exists solely on stderr is
+/// a fact the contract surface withholds (M51 Increment 5 / T4, EC-4).
 #[derive(Debug)]
 pub enum ConfigAck {
-    /// `config set <key> <value>` recorded a `scalar-set`.
-    Set { key: String, value: String },
+    /// `config set <key> <value>` recorded a `scalar-set`, having **relocated** the
+    /// committed docs the write stranded (empty on every non-root knob, and on a root
+    /// knob whose re-point stranded nothing).
+    ///
+    /// **It carries the moves that LANDED, never the ones that were attempted.** A
+    /// per-doc failure is surfaced on stderr with its own route (`could not relocate …
+    /// — move it by hand`) and is deliberately absent here: an ack that counted a
+    /// failure as a relocation would name a `to` no file is at, which is the law-1 lie
+    /// EC-4 exists to close. A foreign squatter **displaced** into the gitignored
+    /// workbench is likewise absent — it is a different subject (a file parked out of
+    /// the way, not a managed doc rehomed), and stderr narrates it as one.
+    Set {
+        key: String,
+        value: String,
+        relocated: Vec<Relocated>,
+    },
     /// `config insert-step` spliced a native `step` into `workflow`, `side`
     /// (`"after"`/`"before"`) the `anchor` step id.
     InsertStep {
@@ -2638,6 +2673,12 @@ impl ConfigAck {
             witness: || ConfigAck::Set {
                 key: "docs-root".to_owned(),
                 value: "docs".to_owned(),
+                // A **populated** relocation, so the parity fence proves the key carries
+                // this field's own value rather than proving that two empty lists match.
+                relocated: vec![Relocated {
+                    from: "documents/decisions/cache-strategy.md".to_owned(),
+                    to: "docs/decisions/cache-strategy.md".to_owned(),
+                }],
             },
         },
         ConfigAckArm {
@@ -2712,8 +2753,13 @@ pub fn config_ack(format: Format, ack: &ConfigAck) -> String {
     match format {
         Format::Json => {
             let mut envelope = match ack {
-                ConfigAck::Set { key, value } => serde_json::json!({
+                ConfigAck::Set {
+                    key,
+                    value,
+                    relocated,
+                } => serde_json::json!({
                     "op": "config-set", "key": key, "value": value,
+                    "relocated": relocated,
                 }),
                 ConfigAck::InsertStep {
                     workflow,
@@ -2750,7 +2796,16 @@ pub fn config_ack(format: Format, ack: &ConfigAck) -> String {
         }
         Format::Agent | Format::Human => {
             let effect = match ack {
-                ConfigAck::Set { key, value } => format!("config: set `{key}` = `{value}`"),
+                // `relocated` is deliberately not restated here: each move is narrated on
+                // **stderr** by the floor that performed it, at the moment it landed and
+                // with its own failure routing, and this ack's own doc says it does not
+                // repeat those lines. The wire needs the fact because a driver reads only
+                // stdout; the text arm already had it.
+                ConfigAck::Set {
+                    key,
+                    value,
+                    relocated: _,
+                } => format!("config: set `{key}` = `{value}`"),
                 ConfigAck::InsertStep {
                     workflow,
                     step,

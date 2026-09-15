@@ -1330,11 +1330,26 @@ fn config_ack_parity() {
         let doc = envelope(&config_ack(Format::Json, &ack), &label);
 
         match &ack {
-            ConfigAck::Set { key, value } => {
+            ConfigAck::Set {
+                key,
+                value,
+                relocated,
+            } => {
                 text_prints(&text, key, &label, "key");
                 carries(&doc, "key", key, &label, "key");
                 text_prints(&text, value, &label, "value");
                 carries(&doc, "value", value, &label, "value");
+                // **No `text_prints` half, by declaration** (M51 Inc 5 / T4, EC-4). The
+                // relocations a root-knob re-point lands are narrated on **stderr** by
+                // the floor that performed them, as each one lands; this ack's text arm
+                // does not restate them, and the fence's own rule is that a fact the
+                // envelope carries but the text never prints is not a gap. The wire half
+                // is still asserted, because the key must carry THIS field's value rather
+                // than a same-named different fact — the witness is deliberately
+                // populated so that assertion is not two empty lists agreeing. The
+                // behaviour over a real corpus is fenced by
+                // `config_set_relocation_ack.rs`.
+                carries(&doc, "relocated", relocated, &label, "relocated");
             }
             ConfigAck::InsertStep {
                 workflow,

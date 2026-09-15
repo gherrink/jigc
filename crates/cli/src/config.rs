@@ -25,7 +25,7 @@
 use crate::invocation_log::Outcome;
 use crate::orphan::{self, Home};
 use crate::pack::make_pack;
-use crate::render::{ConfigAck, KnobReading, RejectedSet};
+use crate::render::{ConfigAck, KnobReading, RejectedSet, Relocated};
 use anyhow::{Context, Result, bail};
 use engine::cascade::{
     Anchor, LayerKind, SlotFillTarget, StructuralDelta, StructuralTarget, TrackedForkDelta,
@@ -484,8 +484,14 @@ fn run_set(cwd: &Path, key: &str, value: &str) -> Result<ConfigAck> {
     // comparing the old resolved root against the new value (`design/storage.md` → docs-root;
     // `design/reconciliation.md` → the route home). It runs BEFORE the knob lands so the
     // resolution reads the old cascade. Best-effort: it never fails the write (the set lands).
+    //
+    // The floors **return** what they moved (M51 Increment 5 / T4, EC-4): the moves
+    // narrate on stderr as they land, and until the ack carried them a `--format json`
+    // driver — which reads stdout alone — got bytes identical to a re-point that moved
+    // nothing.
+    let mut relocated: Vec<Relocated> = Vec::new();
     if key == "docs-root" {
-        route_docs_root_repoint_orphans(pack.as_ref(), &project_config, value);
+        relocated = route_docs_root_repoint_orphans(pack.as_ref(), &project_config, value);
     }
 
     // `placement-root` re-point: the placement sibling of the loop above, same place and
@@ -495,7 +501,7 @@ fn run_set(cwd: &Path, key: &str, value: &str) -> Result<ConfigAck> {
     // committed instance stays put, and the store goes QUIET about it (the record still
     // baselines the old path and the file still matches). This is the floor that closes it.
     if key == "placement-root" {
-        route_placement_root_repoint_strands(pack.as_ref(), &project_config, value);
+        relocated = route_placement_root_repoint_strands(pack.as_ref(), &project_config, value);
     }
 
     // Step 3 — record the `scalar-set` into the project manifest (last-write-wins).
@@ -503,6 +509,7 @@ fn run_set(cwd: &Path, key: &str, value: &str) -> Result<ConfigAck> {
     Ok(ConfigAck::Set {
         key: key.to_owned(),
         value: value.to_owned(),
+        relocated,
     })
 }
 
@@ -923,18 +930,28 @@ fn offending_component(repo_root: &Path, value: &str) -> Option<OffendingCompone
 ///
 /// Best-effort: a resolution/store-access hiccup returns silently, and a per-doc move failure is
 /// surfaced (routing the operator to move it by hand) but never fails the write — the set lands.
-fn route_docs_root_repoint_orphans(pack: &dyn PackSource, project_config: &Path, new_value: &str) {
+///
+/// **Returns the moves that landed**, for [`ConfigAck::Set`]'s `relocated` key (M51 Increment 5 /
+/// T4). Every silent-return path above yields the empty list, and a per-doc failure is excluded
+/// by construction — it is pushed only on the `Ok` arm, so the ack can never name a `to` no file
+/// is at (the key's own declared bound).
+fn route_docs_root_repoint_orphans(
+    pack: &dyn PackSource,
+    project_config: &Path,
+    new_value: &str,
+) -> Vec<Relocated> {
+    let mut relocated: Vec<Relocated> = Vec::new();
     let Ok(resolved) = crate::start::resolve_severity_cascade(pack, project_config) else {
-        return;
+        return relocated;
     };
     let old_docs_root = crate::start::docs_root_prefix(&resolved).to_string();
     let defs = crate::start::CascadeDefs::new(&resolved, project_config);
     let Ok(old_schemas) = defs.all_schemas(pack) else {
-        return;
+        return relocated;
     };
     // `<repo>/.jigc/config` → the repo root the committed docs (and `git ls-files`) live at.
     let Some(repo_root) = project_config.parent().and_then(Path::parent) else {
-        return;
+        return relocated;
     };
     let stranded = crate::orphan::docs_root_would_orphan(
         repo_root,
@@ -943,7 +960,7 @@ fn route_docs_root_repoint_orphans(pack: &dyn PackSource, project_config: &Path,
         new_value,
     );
     if stranded.is_empty() {
-        return;
+        return relocated;
     }
     let new_root = normalize_docs_root(new_value);
     let jigc_root = repo_root.join(".jigc");
@@ -973,12 +990,19 @@ fn route_docs_root_repoint_orphans(pack: &dyn PackSource, project_config: &Path,
             let _ = std::fs::create_dir_all(repo_root.join(parent));
         }
         match crate::relocate::move_doc(repo_root, &jigc_root, old_rel, &new_rel, &new_hash) {
-            Ok(()) => eprintln!("  - {old_rel} → {new_rel}"),
+            Ok(()) => {
+                eprintln!("  - {old_rel} → {new_rel}");
+                relocated.push(Relocated {
+                    from: old_rel.clone(),
+                    to: new_rel,
+                });
+            }
             Err(err) => {
                 eprintln!("  - {old_rel}: could not relocate ({err:#}) — move it by hand")
             }
         }
     }
+    relocated
 }
 
 /// On a `placement-root` re-point to `new_value`, **detect + route + move** the committed
@@ -1008,26 +1032,32 @@ fn route_docs_root_repoint_orphans(pack: &dyn PackSource, project_config: &Path,
 ///
 /// Best-effort: a resolution/store-access hiccup returns silently, and a per-doc failure is
 /// surfaced (routing the operator to move it by hand) but never fails the write.
+///
+/// **Returns the moves that landed**, on the same rule as its `docs-root` sibling (M51
+/// Increment 5 / T4): every silent return yields the empty list, a `blocked` per-doc failure is
+/// excluded, and so is a **displaced** foreign squatter — that is a file parked out of the way,
+/// not a managed doc rehomed, and [`ConfigAck::Set`]'s key names relocations.
 fn route_placement_root_repoint_strands(
     pack: &dyn PackSource,
     project_config: &Path,
     new_value: &str,
-) {
+) -> Vec<Relocated> {
+    let mut relocated: Vec<Relocated> = Vec::new();
     let Ok(resolved) = crate::start::resolve_severity_cascade(pack, project_config) else {
-        return;
+        return relocated;
     };
     let old_root = crate::start::placement_root(&resolved);
     let new_root = crate::start::normalize_placement_root(new_value);
     if old_root == new_root {
-        return; // the same home for every doctype — nothing can be stranded.
+        return relocated; // the same home for every doctype — nothing can be stranded.
     }
     let defs = crate::start::CascadeDefs::new(&resolved, project_config);
     let Ok(declared) = defs.declared_schemas(pack) else {
-        return;
+        return relocated;
     };
     // `<repo>/.jigc/config` → the repo root the committed docs (and `git ls-files`) live at.
     let Some(repo_root) = project_config.parent().and_then(Path::parent) else {
-        return;
+        return relocated;
     };
     // Each placement doctype whose home actually moves, as a (prior, current) home pair —
     // both sides re-rooted from the one declaration.
@@ -1047,7 +1077,7 @@ fn route_placement_root_repoint_strands(
             .any(|rel| orphan::is_stranded(rel, prior, current))
     });
     if !strands {
-        return;
+        return relocated;
     }
     // The solicit/act honesty pair the `docs-root` sibling prints: name the sweep's basis
     // (every committed doc at a placement doctype's prior home, managed or not — committed
@@ -1063,6 +1093,10 @@ fn route_placement_root_repoint_strands(
         let report = crate::relocate::relocate_stranded(repo_root, &jigc_root, prior, current);
         for (from, to) in &report.moved {
             eprintln!("  - {from} → {to}");
+            relocated.push(Relocated {
+                from: from.clone(),
+                to: to.clone(),
+            });
         }
         for (from, to) in &report.displaced {
             eprintln!("  - {from} → {to} (a foreign file at the new home, parked out of the way)");
@@ -1071,6 +1105,7 @@ fn route_placement_root_repoint_strands(
             eprintln!("  - {path}: could not relocate ({reason}) — move it by hand");
         }
     }
+    relocated
 }
 
 /// Normalize a raw `docs-root` value to [`crate::start::apply_docs_root`]'s rule: strip
@@ -2139,12 +2174,19 @@ mod tests {
         let ack = ConfigAck::Set {
             key: "docs-root".to_owned(),
             value: "docs2".to_owned(),
+            relocated: vec![crate::render::Relocated {
+                from: "docs/decisions/x.md".to_owned(),
+                to: "docs2/decisions/x.md".to_owned(),
+            }],
         };
         let out = crate::render::config_ack(crate::cli::Format::Json, &ack);
         let parsed: serde_json::Value = serde_json::from_str(&out).expect("json ack parses");
         assert_eq!(parsed["op"], "config-set");
         assert_eq!(parsed["key"], "docs-root");
         assert_eq!(parsed["value"], "docs2");
+        // The relocation the re-point landed, as `{from, to}` (M51 Inc 5 / T4, EC-4).
+        assert_eq!(parsed["relocated"][0]["from"], "docs/decisions/x.md");
+        assert_eq!(parsed["relocated"][0]["to"], "docs2/decisions/x.md");
     }
 
     /// T1 done-criterion: append an insert-step then a replace-step into a temp

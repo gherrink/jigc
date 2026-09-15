@@ -2,6 +2,9 @@
 // Each suite below keeps its own file; this root only makes them one cargo target,
 // so a source change relinks ~10 test binaries instead of 252.
 
+#[path = "../support/mod.rs"]
+mod support;
+
 #[path = "../changelog_cold_create.rs"]
 mod changelog_cold_create;
 #[path = "../changelog_gate_advisory.rs"]
@@ -30,6 +33,8 @@ mod config_insert_step;
 mod config_read;
 #[path = "../config_replace_remove_step.rs"]
 mod config_replace_remove_step;
+#[path = "../config_set_relocation_ack.rs"]
+mod config_set_relocation_ack;
 #[path = "../doctype_authoring_fences.rs"]
 mod doctype_authoring_fences;
 #[path = "../flow13_acceptance.rs"]
