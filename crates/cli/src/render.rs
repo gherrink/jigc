@@ -4038,9 +4038,12 @@ pub fn milestone(format: Format, summary: &str, hook_output: Option<&str>) -> St
 /// contributing sub-task, and — for a collision-suffixed instance — the `← suffixed -N on
 /// collision` decision plus `; self-ref rewritten` when its own reference was
 /// rewritten in lockstep), then — C3 (round-2 surface fixes) — a `no docs staged
-/// from:` line naming every sub-task in `sub_tasks` (the milestone's full id-sorted
-/// list) that contributed NO merged doc, so the ack states its effect fully instead
-/// of silently crediting a no-work sub-task; followed by the routing footer. The line
+/// from:` line naming every sub-task that staged **no doc at all**, so the ack states
+/// its effect fully instead of silently crediting a no-work sub-task; followed by the
+/// routing footer. `staged_by_sub_task` is the milestone's full live sub-task set (the
+/// map's key order *is* the id-sorted order the line prints in), each id paired with
+/// whether its own area staged anything — read from that area's `provenance.json`, the
+/// join's own input ([`crate::milestone`]'s join dispatch). The line
 /// says "no docs" deliberately — the join merges docs only, and a sub-task may still
 /// carry staged worktree code the finalize folds. `json` emits the **generic**
 /// projection of the [`JoinOutcome`] plus the result-contract `schema_version`, with no
@@ -4069,7 +4072,7 @@ pub fn milestone_join(
     format: Format,
     milestone_id: &str,
     outcome: &JoinOutcome,
-    sub_tasks: &[String],
+    staged_by_sub_task: &std::collections::BTreeMap<String, bool>,
 ) -> String {
     match format {
         Format::Json => {
@@ -4102,7 +4105,7 @@ pub fn milestone_join(
             object.insert(
                 "no_docs_from".to_owned(),
                 serde_json::Value::Array(
-                    doc_less_sub_tasks(outcome, sub_tasks)
+                    doc_less_sub_tasks(staged_by_sub_task)
                         .into_iter()
                         .map(|id| serde_json::Value::String(id.to_owned()))
                         .collect(),
@@ -4151,7 +4154,7 @@ pub fn milestone_join(
             }
             // The doc-less sub-tasks, in the caller's (id-sorted) order — named, never
             // silently credited by omission. Derived once, for both surfaces.
-            let absent = doc_less_sub_tasks(outcome, sub_tasks);
+            let absent = doc_less_sub_tasks(staged_by_sub_task);
             if !absent.is_empty() {
                 out.push_str("  no docs staged from: ");
                 out.push_str(&absent.join(", "));
@@ -4163,20 +4166,26 @@ pub fn milestone_join(
     }
 }
 
-/// The milestone's sub-tasks that contributed **no** merged doc, in the caller's
-/// (id-sorted) order — the set [`milestone_join`]'s `no docs staged from:` line names and
-/// its envelope's `no_docs_from` key carries. One derivation for both surfaces, so the
-/// text and the wire cannot disagree about who staged nothing.
-fn doc_less_sub_tasks<'a>(outcome: &JoinOutcome, sub_tasks: &'a [String]) -> Vec<&'a str> {
-    let contributed: std::collections::BTreeSet<&str> = outcome
-        .overlay
-        .values()
-        .map(|doc| doc.source_task.as_str())
-        .collect();
-    sub_tasks
+/// The milestone's sub-tasks that staged **no doc**, in id-sorted order — the set
+/// [`milestone_join`]'s `no docs staged from:` line names and its envelope's
+/// `no_docs_from` key carries. One derivation for both surfaces, so the text and the wire
+/// cannot disagree about who staged nothing.
+///
+/// **The subject is what each sub-task staged, not what survived the merge** (M51
+/// Increment 9 / T6; charter Tier 2 **EC-15**). This used to read the merge outcome's
+/// `overlay` and treat every id absent from it as having staged nothing — but a
+/// `join.same-doc-clash` keeps the whole contending address group **out** of the overlay,
+/// so a sub-task whose only staged doc lost to the block was reported, on both surfaces,
+/// as having staged nothing: the two surfaces agreed with each other and both disagreed
+/// with the disk (`design/surface-contract.md` → law 1). The caller now supplies the
+/// per-sub-task staged bit from each area's own `provenance.json`, so the fact stated is a
+/// fact about the disk under every verdict. `overlay` is untouched by this: under a block
+/// it stays the merge the join *would* have produced.
+fn doc_less_sub_tasks(staged_by_sub_task: &std::collections::BTreeMap<String, bool>) -> Vec<&str> {
+    staged_by_sub_task
         .iter()
-        .map(String::as_str)
-        .filter(|id| !contributed.contains(id))
+        .filter(|(_, staged)| !**staged)
+        .map(|(id, _)| id.as_str())
         .collect()
 }
 
@@ -7239,12 +7248,19 @@ mod tests {
             findings: Vec::new().into(),
         };
 
-        // The milestone's full id-sorted sub-task list — `area-idle` staged nothing, so
-        // the ack must name it as doc-less (C3) rather than silently crediting it.
-        let sub_tasks: Vec<String> = ["area-idle", "area-low", "area-zed", "evict-stale-keys"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
+        // The milestone's full live sub-task set, each id paired with whether its own area
+        // staged anything — `area-idle` staged nothing, so the ack must name it as doc-less
+        // (C3) rather than silently crediting it. The bit is the caller's disk read, never a
+        // re-derivation from the overlay (M51 Increment 9 / T6).
+        let sub_tasks: BTreeMap<String, bool> = [
+            ("area-idle", false),
+            ("area-low", true),
+            ("area-zed", true),
+            ("evict-stale-keys", true),
+        ]
+        .iter()
+        .map(|(id, staged)| (id.to_string(), *staged))
+        .collect();
 
         let agent = milestone_join(Format::Agent, "cache-rework", &outcome, &sub_tasks);
         insta::assert_snapshot!(agent, @r"

@@ -3704,7 +3704,7 @@ fn run_execute(
 /// join. The verb **commits nothing** (Increment 4 wires the suffix-resolved overlay
 /// into finalize); a clash leaves the working tree untouched.
 fn dispatch_join(cwd: &Path, format: Format, milestone_id: &str) -> Outcome {
-    let (outcome, sub_tasks) = match run_join(cwd, milestone_id) {
+    let (outcome, staged_by_sub_task) = match run_join(cwd, milestone_id) {
         Ok(outcome) => outcome,
         Err(err) => {
             return crate::invocation_log::operational_failure(format, &err);
@@ -3735,12 +3735,14 @@ fn dispatch_join(cwd: &Path, format: Format, milestone_id: &str) -> Outcome {
 
     // The merged-overlay summary always prints (the agent reads the suffix/rewrite
     // decisions even when the join is clean). The milestone's full id-sorted sub-task
-    // list rides along so the ack can name the doc-less sub-tasks (C3). Its headline
+    // set rides along — each id paired with whether its own area staged anything — so the
+    // ack can name the doc-less sub-tasks (C3) from what each sub-task actually staged
+    // rather than from what survived the merge (M51 Increment 9 / T6). Its headline
     // states which verdict this run had — [`render::milestone_join`] opens `join
     // blocked:` over a blocking outcome, never `joined milestone:`.
     println!(
         "{}",
-        render::milestone_join(format, milestone_id, &outcome, &sub_tasks)
+        render::milestone_join(format, milestone_id, &outcome, &staged_by_sub_task)
     );
 
     if blocking.is_empty() {
@@ -3764,9 +3766,13 @@ fn dispatch_join(cwd: &Path, format: Format, milestone_id: &str) -> Outcome {
 /// ref walk resolves against. The engine performs no git I/O; the CLI feeds it the
 /// resolved inputs (`design/storage.md` → The by-task-id join). An unknown milestone
 /// (no area) surfaces as the engine's routed `milestone.unknown` block. Returns the
-/// join outcome paired with the milestone's full **id-sorted** sub-task list — the
-/// set the C3 ack names the doc-less members of.
-fn run_join(cwd: &Path, milestone_id: &str) -> Result<(JoinOutcome, Vec<String>)> {
+/// join outcome paired with the milestone's full **id-sorted** live sub-task set, each id
+/// paired with **whether its own area staged any doc** — the input the C3 ack names the
+/// doc-less members from ([`staged_by_sub_task`]).
+fn run_join(
+    cwd: &Path,
+    milestone_id: &str,
+) -> Result<(JoinOutcome, std::collections::BTreeMap<String, bool>)> {
     // The engine `join` itself performs no git I/O (the base is the milestone's *stored*
     // pin), but the CLI around it does: the stale-base guard shells to git, and the
     // cross-worktree collision read (below) reads each provisioned worktree's staged set.
@@ -3823,7 +3829,32 @@ fn run_join(cwd: &Path, milestone_id: &str) -> Result<(JoinOutcome, Vec<String>)
     if let Some(finding) = crate::combine::detect_code_collision(&worktrees)? {
         outcome.findings.push(finding);
     }
-    Ok((outcome, list.enumerate()))
+    Ok((outcome, staged_by_sub_task(&jigc_root, &list.enumerate())?))
+}
+
+/// Each live sub-task id paired with **whether its own area staged any doc** — the
+/// doc-less line's subject, read per sub-area from the same `provenance.json` the engine
+/// join itself folds from ([`engine::state::ProvenanceRecord::load`], whose absent-file
+/// case *is* the nothing-staged-yet case). `BTreeMap`-keyed, so the ack's listing is
+/// id-sorted by construction and no enumeration order can reach the output.
+///
+/// **Why the disk and not the merge outcome** (M51 Increment 9 / T6; charter Tier 2
+/// **EC-15**): a `join.same-doc-clash` keeps the contending address group out of the
+/// merged overlay, so deriving *"who staged nothing"* from that overlay named every
+/// contender — each of which had staged the clashing doc — as having staged nothing.
+fn staged_by_sub_task(
+    jigc_root: &Path,
+    sub_ids: &[String],
+) -> Result<std::collections::BTreeMap<String, bool>> {
+    let mut staged = std::collections::BTreeMap::new();
+    for sub_id in sub_ids {
+        let sub_dir = jigc_root.join("tasks").join(sub_id);
+        let record = engine::state::ProvenanceRecord::load(&sub_dir).with_context(|| {
+            format!("could not read the provenance manifest of sub-task `{sub_id}`")
+        })?;
+        staged.insert(sub_id.clone(), !record.docs.is_empty());
+    }
+    Ok(staged)
 }
 
 /// Dispatch `jigc milestone finalize <milestone-id>`: run the materialized join +

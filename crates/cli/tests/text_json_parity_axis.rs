@@ -1394,16 +1394,19 @@ fn config_ack_parity() {
 
 /// `jigc milestone join` — the merged-overlay ack. Its text renders from **three**
 /// inputs, not one: the milestone id it echoes, the merge outcome, and the milestone's
-/// full sub-task list, from which it derives the `no docs staged from:` line naming every
-/// sub-task that contributed nothing.
+/// live sub-task set paired with each area's staged bit, from which it derives the `no
+/// docs staged from:` line naming every sub-task that staged nothing.
 fn milestone_join_parity() {
     let outcome = JoinOutcome::default();
     let milestone_id = "cache-rework";
-    let sub_tasks = vec!["warm-the-read-cache".to_owned()];
+    let doc_less = "warm-the-read-cache".to_owned();
+    let staged_by_sub_task: std::collections::BTreeMap<String, bool> =
+        [(doc_less.clone(), false)].into_iter().collect();
+    let sub_tasks = vec![doc_less];
 
-    let text = milestone_join(Format::Agent, milestone_id, &outcome, &sub_tasks);
+    let text = milestone_join(Format::Agent, milestone_id, &outcome, &staged_by_sub_task);
     let doc = envelope(
-        &milestone_join(Format::Json, milestone_id, &outcome, &sub_tasks),
+        &milestone_join(Format::Json, milestone_id, &outcome, &staged_by_sub_task),
         "jigc milestone join",
     );
     let JoinOutcome { overlay, findings } = &outcome;
@@ -1424,8 +1427,8 @@ fn milestone_join_parity() {
         "jigc milestone join",
         "findings",
     );
-    // The doc-less sub-tasks the text names — derived from `sub_tasks` minus the overlay's
-    // contributors, so the fact the text states is the one the envelope must carry.
+    // The doc-less sub-tasks the text names — derived from each sub-area's own staged
+    // bit, so the fact the text states is the one the envelope must carry.
     text_prints(
         &text,
         &sub_tasks[0],

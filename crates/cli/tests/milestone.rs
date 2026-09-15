@@ -626,7 +626,10 @@ fn milestone_join_same_doc_clash_blocks_and_commits_nothing() {
             .success(),
         "create must exit 0",
     );
-    for intent in ["Area zed", "Area low"] {
+    // `area-idle` is minted alongside the two contenders and stages NOTHING — the
+    // control that separates *"staged nothing"* from *"staged the doc that lost to the
+    // block"* (M51 Increment 9 / T6; charter Tier 2 **EC-15**).
+    for intent in ["Area zed", "Area low", "Area idle"] {
         assert!(
             run_milestone(
                 repo.path(),
@@ -672,6 +675,26 @@ fn milestone_join_same_doc_clash_blocks_and_commits_nothing() {
     assert!(
         stderr.contains("area-low") && stderr.contains("area-zed"),
         "the clash block must name both contending sub-tasks; got:\n{stderr}",
+    );
+
+    // The doc-less line is a fact about the **disk**, not about what survived the block:
+    // each contender staged the clashing doc, so neither may be reported as having staged
+    // nothing, while `area-idle` — which staged nothing — must still be named (EC-15).
+    let stdout = String::from_utf8(joined.stdout).expect("utf-8 stdout");
+    let no_docs_line = stdout
+        .lines()
+        .find(|l| l.contains("no docs staged from:"))
+        .unwrap_or_else(|| {
+            panic!("the blocked join ack carries the doc-less line; got:\n{stdout}")
+        });
+    assert!(
+        no_docs_line.contains("area-idle"),
+        "the sub-task that staged nothing must be named; got:\n{no_docs_line}",
+    );
+    assert!(
+        !no_docs_line.contains("area-low") && !no_docs_line.contains("area-zed"),
+        "a contender that staged the clashing doc must NOT be listed as doc-less; \
+         got:\n{no_docs_line}",
     );
 
     // Nothing was committed and the working tree is unchanged — a clash routes, it

@@ -737,3 +737,84 @@ fn flow9_blocked_join_states_the_block_and_versions_its_envelope() {
          that stops at the footer stopped before the verdict; got:\n{merged}",
     );
 }
+
+/// **Supporting — a blocked join's doc-less line names only the sub-task that genuinely
+/// staged nothing** (M51 Increment 9 / T6; charter Tier 2 **EC-15**;
+/// `design/surface-contract.md` → law 1). `render::doc_less_sub_tasks` used to derive
+/// *"who staged nothing"* from the merge outcome's `overlay`, and a `join.same-doc-clash`
+/// keeps the contending address group **out** of that overlay — so both contenders, which
+/// had each staged the clashing doc, were reported on the `no docs staged from:` line and
+/// in the envelope's `no_docs_from` key as having staged nothing. The derivation now reads
+/// each sub-area's own `provenance.json`, the join's own input, so the line states a fact
+/// about the disk rather than about what survived the block.
+///
+/// The fixture forces the distinction: two sub-tasks contend on **one** address (the
+/// shipped clash fixture), and a **third** sub-task stages nothing at all. Only the third
+/// may be named — on **both** surfaces, which are one derivation, so they cannot disagree.
+/// `overlay` is asserted unchanged (`{}` under the block): the fix corrects `no_docs_from`
+/// without silently moving the sibling key beside it.
+#[test]
+fn flow9_blocked_join_names_only_the_genuinely_idle_sub_task() {
+    let home = TempDir::new("home");
+    let repo = TempDir::new("idle-sibling");
+    init_repo(repo.path());
+    stage_same_doc_clash(repo.path(), home.path());
+    // The third sub-task: minted under the same milestone, staging nothing.
+    expect_ok(
+        &run_milestone(
+            repo.path(),
+            home.path(),
+            &["add-task", "cache-hardening", "Audit telemetry"],
+        ),
+        "add-task",
+    );
+
+    let joined = run_milestone(repo.path(), home.path(), &["join", "cache-hardening"]);
+    assert!(
+        !joined.status.success(),
+        "a same-doc clash join must exit non-zero; got {:?}",
+        joined.status,
+    );
+    let stdout = String::from_utf8(joined.stdout).expect("utf-8 stdout");
+    let line = stdout
+        .lines()
+        .find(|l| l.contains("no docs staged from:"))
+        .unwrap_or_else(|| panic!("the join ack must carry the doc-less line; got:\n{stdout}"));
+    assert!(
+        line.contains("audit-telemetry"),
+        "the genuinely idle sub-task must still be named; got:\n{line}",
+    );
+    assert!(
+        !line.contains("tune-eviction-thresholds") && !line.contains("document-eviction-policy"),
+        "a contender that staged the clashing doc must NOT be named as having staged \
+         nothing; got:\n{line}",
+    );
+
+    // The same fact on the wire — one derivation, two surfaces.
+    let json = run_milestone(
+        repo.path(),
+        home.path(),
+        &["join", "cache-hardening", "--format", "json"],
+    );
+    let envelope: serde_json::Value =
+        serde_json::from_slice(&json.stdout).expect("the join renders a JSON outcome on stdout");
+    assert_eq!(
+        envelope["no_docs_from"],
+        serde_json::json!(["audit-telemetry"]),
+        "the envelope's doc-less set must name the idle sub-task alone; got:\n{envelope:#}",
+    );
+    assert_eq!(
+        envelope["overlay"],
+        serde_json::json!({}),
+        "the block keeps the contending group out of the overlay — that key does not move \
+         with this fix; got:\n{envelope:#}",
+    );
+    assert!(
+        envelope["findings"]
+            .as_array()
+            .expect("a findings array")
+            .iter()
+            .any(|f| f["code"] == "join.same-doc-clash"),
+        "the arm must be driven over a real clash; got:\n{envelope:#}",
+    );
+}
