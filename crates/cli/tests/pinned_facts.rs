@@ -131,7 +131,7 @@
 //! | A2 | REFUTED | [`finalize_left_out_stream`] **(new here)** — the agent-text `left-out` block P2 read as "three lines before the JSON" is stderr's; its stdout sibling stands at `finalize_manifest::json_manifest_on_dry_run_and_landed_run`, and the chatty-hook purity arm at [`finalize_json`] |
 //! | A3 | CONFIRMED | Inc 10 T1 — the `BOOTSTRAP_OUTPUT_CONTRACT` body assertion in `crates/cli/src/adapter.rs` (which pinned the lie verbatim until the fix) + the six `agent-md` compose goldens |
 //! | A4 | PARTIAL | **UNPINNED (residue only), reason stated:** the row finds no false statement — the gating semantics *are* stated (`task.rs` → `Validate`: *"exit non-zero iff any blocks"*, behaviourally pinned at `exit_codes::blocked_task_validate_exits_task_gate_blocked`), and the store/task label asymmetry is drained by Inc 8's severity-keyed trailer (`validate_envelope.rs`) + Inc 4 T4's scoped promise surfaces. The remaining wish — an *output* line restating the exit rule — was not chartered into tier 2's ~16 items |
-//! | A5 | CONFIRMED | Inc 3's red tests — `commit_rejected_axis.rs` (one error code per committing door, the whole nine-door axis) + the `migrate-corpus` re-run recovery that replaced *"already current"* |
+//! | A5 | CONFIRMED | Inc 3's red tests — `commit_rejected_axis.rs` (one error code per committing door, the whole axis **[Corrected 2026-09-15 (M51 Increment 7, T3):** *the whole nine-door axis* — as M47 drove it; **ten** doors since M49 Increment 2 T3.**]**) + the `migrate-corpus` re-run recovery that replaced *"already current"* |
 //!
 //! ### Part B — the write surface
 //!

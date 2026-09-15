@@ -15,6 +15,8 @@ mod commit_rejected_axis;
 mod commit_solicit_axis;
 #[path = "../commit_trailer_roundtrip.rs"]
 mod commit_trailer_roundtrip;
+#[path = "../count_fences.rs"]
+mod count_fences;
 #[path = "../e2e_audit.rs"]
 mod e2e_audit;
 #[path = "../envelope_constants.rs"]

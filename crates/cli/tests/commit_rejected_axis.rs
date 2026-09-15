@@ -4,14 +4,16 @@
 //!
 //! M42 gave **one** door — `jigc task finalize` — the frame a rejected commit always
 //! deserved: git's bytes verbatim, a sentence saying what survived, and the door's own
-//! re-run. The other **eight** committing doors printed a bare `{err:#}` with no
+//! re-run. The other committing doors **[Corrected 2026-09-15 (M51 Increment 7, T3):** *the
+//! other **eight** committing doors* — the axis carried nine at M42; it carries **ten** since
+//! M49 Increment 2 T3, and the M42-state figure is kept rather than re-pinned.**]** printed a bare `{err:#}` with no
 //! recoverability statement, no route, and no error identity in the invocation log —
 //! and the two `milestone finalize` arms logged the *task* door's
 //! `finalize.commit-rejected`, a lying code on the surface M42 built to stop the log
 //! lying (law 1).
 //!
-//! This suite is the **rejecting sibling** of `tests/hook_output_axis.rs` (the same nine
-//! doors, the same one exclusion — `jigc setup`'s install commit passes `--no-verify` by
+//! This suite is the **rejecting sibling** of `tests/hook_output_axis.rs` (the same door
+//! set, the same one exclusion — `jigc setup`'s install commit passes `--no-verify` by
 //! recorded design, so no hook runs and there is nothing to reject). It does **not**
 //! enumerate the doors itself: it iterates
 //! [`cli::invocation_log::COMMITTING_DOORS`](cli::invocation_log::COMMITTING_DOORS), the

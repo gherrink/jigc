@@ -18,7 +18,7 @@
 //!       [`cli::invocation_log::COMMITTING_DOORS`] table (10 doors since M49 Inc 2 T3
 //!       joined `jigc task discard` to it): each door exits
 //!       non-zero, leaves `HEAD` where it found it, logs **its own** error code (all
-//!       nine pairwise distinct), and the re-run it printed — **lifted verbatim out of
+//!       ten pairwise distinct), and the re-run it printed — **lifted verbatim out of
 //!       its own frame** — lands at exit 0 once the hook is gone (Inc 2 + 3).
 //!
 //!   (2) **`jigc task validate` previews the gate rows `finalize` enforces, and scopes
@@ -548,7 +548,10 @@ fn door_case(base: &TrialCorpus, verb: &str) -> DoorCase {
 /// The frame's remaining *shape* clauses (git's own rejection line unwrapped, the
 /// state-truth sentence, the shell-safe quoting over author-owned prose) are
 /// `commit_rejected_axis.rs`'s.
-/// Red on rc.9: eight of the nine doors printed a bare error with no recoverability
+/// Red on rc.9: every committing door but `jigc task finalize` **[Corrected 2026-09-15
+/// (M51 Increment 7, T3):** *eight of the nine doors* — the axis as rc.9 shipped it; it is
+/// **ten** since M49 Increment 2 T3, and the red-state figure is kept rather than
+/// re-pinned.**]** printed a bare error with no recoverability
 /// statement and no route, and the two `milestone finalize` arms logged the *task*
 /// door's `finalize.commit-rejected` — a lying code on the surface built to stop the
 /// log lying.
