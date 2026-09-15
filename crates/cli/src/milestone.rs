@@ -488,15 +488,26 @@ fn workflow_flag(workflow: &str) -> String {
 /// `provision` / `execute` / `finalize` — each rejecting an absent
 /// `.jigc/milestones/<id>/` workbench; M43 T7, `design/surface-contract.md`
 /// → The route fence, closing paragraph). The quoted-title span rides the checked
-/// [`engine::finding::Route::mechanical`] constructor, so the CLI-seam parse fence
-/// asserts it parses against the real CLI. `discard` keeps its own variant (check the
-/// id, don't mint — a discard should never route to *creating* the milestone).
+/// [`engine::finding::Route::mechanical`] constructor inside
+/// [`engine::milestone::create_milestone_route`], so the CLI-seam parse fence asserts it
+/// parses against the real CLI. `discard` keeps its own route (check the id, don't mint —
+/// a discard should never route to *creating* the milestone).
+///
+/// **It is the engine's own [`engine::milestone::unknown_milestone_finding`], not a
+/// composed string** (M51 Increment 6 / T2). `design/command-output-contract.md` declares
+/// a **work-unit** target form — `task:<id>` / `milestone:<id>` — and this condition's
+/// finding has carried `milestone:<id>` at the three engine-raising doors since its first
+/// commit, which
+/// is a promise that `(code, target)` resolves. At these four doors it resolved at none:
+/// the refusal was an `anyhow!` string, so `--format json` answered the flattened
+/// `{"error": …}` with no code at all, and one condition shipped **two** wire shapes. The
+/// identity is now minted once, by the crate that owns the condition, and travels on the
+/// envelope-projecting carrier ([`crate::render::envelope_finding_error`]).
 fn no_such_milestone(milestone_id: &str) -> anyhow::Error {
-    let create =
-        engine::finding::Route::mechanical(["jigc", "milestone", "create", "\"<title>\""], "");
-    anyhow::anyhow!(
-        "milestone `{milestone_id}` does not exist\n  route: create it first with {create}"
-    )
+    crate::render::envelope_finding_error(&engine::milestone::unknown_milestone_finding(
+        milestone_id,
+        engine::milestone::create_milestone_route(),
+    ))
 }
 
 /// `jigc milestone create "<title>"` — read HEAD, then mint the milestone area
@@ -3116,9 +3127,17 @@ fn run_discard(cwd: &Path, milestone_id: &str, force: bool) -> Result<(String, S
             ["jigc", "milestone", "list-tasks", "<milestone-id>"],
             "",
         );
-        bail!(
-            "milestone `{milestone_id}` does not exist\n  route: check the milestone id ({list_tasks} names a live milestone's sub-tasks); nothing was discarded"
-        );
+        // The family's shared identity ([`no_such_milestone`]) with **this** door's route:
+        // a teardown that answered a wrong id with *"create it first"* would point the
+        // operator at the one act they did not ask for (M51 Increment 6 / T2).
+        return Err(crate::render::envelope_finding_error(
+            &engine::milestone::unknown_milestone_finding(
+                milestone_id,
+                engine::finding::Route::human(format!(
+                    "check the milestone id ({list_tasks} names a live milestone's sub-tasks); nothing was discarded"
+                )),
+            ),
+        ));
     }
     let list = read_task_list(&dir)
         .with_context(|| format!("could not read the task list for milestone `{milestone_id}`"))?;
@@ -5538,6 +5557,18 @@ fn discover_repo_root(start: &Path) -> Option<PathBuf> {
 /// than only its rendering also lets the dispatch log the identity it prints
 /// ([`crate::render::blocked_finding`]).
 fn finding_to_err(finding: Finding) -> anyhow::Error {
+    // **The unknown-milestone arm** (M51 Increment 6 / T2). The engine returns a bare
+    // `Finding` — it is clap-blind and knows nothing of envelopes — so the arm each
+    // condition's machine surface takes is declared here, at the one seam where this
+    // surface's engine findings become errors. Exactly one condition is declared: the
+    // absent milestone, whose code the contract lists under the **work-unit** target form
+    // and whose sibling doors ([`no_such_milestone`]) answer the envelope. It is asked of
+    // the producing crate's own constant, never of a copied literal, so a renamed code
+    // cannot leave this seam quietly matching nothing. Every other finding keeps the
+    // flattened default and its declared bound.
+    if finding.code == engine::milestone::UNKNOWN_MILESTONE_CODE {
+        return crate::render::envelope_finding_error(&finding);
+    }
     crate::render::finding_error(&finding)
 }
 

@@ -23,7 +23,7 @@
 //! (jigc-root, title, base) → on-disk effect, golden-testable. No sub-task is
 //! minted here — `add_task` (the next task) is the incremental populator.
 
-use crate::finding::{Finding, Findings, Location, Severity};
+use crate::finding::{Finding, Findings, Location, Route, Severity};
 use crate::state::BasePin;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -342,7 +342,10 @@ pub fn add_task(
 
     // Unknown milestone → reject before anything is minted.
     if !dir.is_dir() {
-        return Err(unknown_milestone_finding(milestone_id));
+        return Err(unknown_milestone_finding(
+            milestone_id,
+            create_milestone_route(),
+        ));
     }
 
     // The single shared base every sub-task inherits — read back from the
@@ -432,7 +435,7 @@ pub fn add_from_spec(
 
     // Unknown milestone → reject before any spec read or mint.
     if !dir.is_dir() {
-        return Err(unknown_milestone_finding(milestone_id).into());
+        return Err(unknown_milestone_finding(milestone_id, create_milestone_route()).into());
     }
 
     // Read the committed spec and enumerate its `criteria` items (parse-items path).
@@ -717,20 +720,55 @@ fn mint_sub_id(intent: &str) -> String {
     }
 }
 
-/// The unknown-milestone block: a blocking finding naming the missing milestone,
-/// routing the agent to create it first (`write-commands.md` → add-task mints
-/// *under* an existing milestone).
-fn unknown_milestone_finding(milestone_id: &str) -> Finding {
+/// The code every **unknown milestone id** refusal carries — one condition, one code, at
+/// all eight doors that take a milestone id (M51 Increment 6 / T2).
+///
+/// It is public because the CLI seam that turns this family's [`Finding`]s into errors
+/// must recognise *this* condition to give it the machine arm
+/// `design/command-output-contract.md` declares for it — the **work-unit** target form
+/// `milestone:<id>`, which is a promise that `(code, target)` resolves. That seam asks the
+/// producing crate's own constant rather than matching a copied literal.
+pub const UNKNOWN_MILESTONE_CODE: &str = "milestone.unknown";
+
+/// The route an absent milestone gets at every door **except `discard`** — mint it first.
+///
+/// Public for the same reason the code is: the four operating doors the CLI owns
+/// (`list-tasks` / `provision` / `execute` / `finalize`) raise the same condition as the
+/// three doors here and must not re-spell its recovery. `discard` supplies its own —
+/// answering a teardown with a mint would route the operator at the one act they did not
+/// ask for.
+///
+/// The command span rides the checked [`Route::mechanical`] constructor (the M43 route
+/// fence), so the argv is adjudicated against the real CLI at construction; the flat text
+/// is a [`Route::human`] direction because the recovery is prose *around* the command, and
+/// a mechanical route composes its text as the command *first*.
+pub fn create_milestone_route() -> Route {
+    Route::human(format!(
+        "create it first with {}",
+        Route::mechanical(["jigc", "milestone", "create", "\"<title>\""], ""),
+    ))
+}
+
+/// The unknown-milestone block: a blocking finding naming the missing milestone, at the
+/// **work-unit** target form `milestone:<id>`, carrying the route of the door that raised
+/// it (`write-commands.md` → add-task mints *under* an existing milestone).
+///
+/// **The route is a parameter** (M51 Increment 6 / T2), for the reason
+/// [`crate::finalize::no_such_task_finding`] takes one a family over: the identity — code,
+/// severity, target — is the *condition*'s and transfers to every door, while the recovery
+/// is the *door*'s. Seven doors mint ([`create_milestone_route`]); `jigc milestone discard`
+/// checks the roster and says nothing was discarded.
+pub fn unknown_milestone_finding(milestone_id: &str, route: Route) -> Finding {
     Finding::graded(
         Severity::Blocking,
-        "milestone.unknown",
+        UNKNOWN_MILESTONE_CODE,
         format!("milestone `{milestone_id}` does not exist"),
         Some(Location::addressed(
             format!("milestone:{milestone_id}"),
             1,
             1,
         )),
-        Some("create it first with `jigc milestone create \"<title>\"`".into()),
+        Some(route),
     )
 }
 
@@ -1738,7 +1776,10 @@ pub fn join(
 
     // Unknown milestone → reject before any sub-area is read.
     if !dir.is_dir() {
-        return Err(unknown_milestone_finding(milestone_id));
+        return Err(unknown_milestone_finding(
+            milestone_id,
+            create_milestone_route(),
+        ));
     }
 
     let list =

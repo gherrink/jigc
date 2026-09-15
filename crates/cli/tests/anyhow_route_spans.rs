@@ -578,16 +578,27 @@ fn unreadable_foreign_source_routes_back_to_migrate() {
 
 // ── the unknown-milestone rejects (`milestone.rs`) ──────────────────────────────────
 
-/// An unknown milestone id routes to minting it — the four formerly-duplicated sites
-/// converge on one shared constructor, its quoted-title span riding the fence.
+/// An unknown milestone id routes to minting it — the formerly-duplicated sites converge
+/// on one shared constructor, its quoted-title span riding the fence.
+///
+/// **Since M51 Increment 6 / T2 that constructor is the engine's own**
+/// `engine::milestone::unknown_milestone_finding` — the identity the three add/seed/join
+/// doors already carried — so the refusal is a typed `Finding` and the emitted bytes are
+/// the house findings render (`work_unit_unknown_envelope.rs` drives all eight doors
+/// against the key it projects). The claim this arm makes is unchanged: the route names
+/// `jigc milestone create` with the quoted `"<title>"` span, built through the checked
+/// `Route::mechanical` constructor, so a span that stopped parsing would exit 101 rather
+/// than the asserted 1.
 #[test]
 fn unknown_milestone_routes_to_create() {
     let repo = TempDir::new("no-milestone");
     let home = TempDir::new("home");
     init_repo(repo.path());
 
-    const EXPECTED: &str = "milestone `nope` does not exist\n  route: create it first \
-                            with `jigc milestone create \"<title>\"`\n";
+    const EXPECTED: &str = "blocking · milestone.unknown — milestone `nope` does not \
+                            exist\n  at: milestone:nope\n  route: create it first with \
+                            `jigc milestone create \"<title>\"`\n— jigc · run \
+                            `jigc start` for orientation; all writes through `jigc`.\n";
     for args in [
         ["milestone", "list-tasks", "nope"],
         ["milestone", "execute", "nope"],
@@ -599,6 +610,11 @@ fn unknown_milestone_routes_to_create() {
 
 /// The discard wrong-id variant carries the **declared** `<milestone-id>` placeholder
 /// (was the undeclared, ambiguous `<id>` — the dummy table is the declared set).
+///
+/// It joined the family's shared identity at M51 Increment 6 / T2 and kept its **own
+/// route**: a teardown that answered a wrong id with *"create it first"* would point the
+/// operator at the one act they did not ask for. That split is driven as its own arm in
+/// `work_unit_unknown_envelope.rs`; this arm keeps the placeholder claim.
 #[test]
 fn milestone_discard_wrong_id_names_list_tasks_with_the_declared_placeholder() {
     let repo = TempDir::new("discard-wrong");
@@ -608,9 +624,11 @@ fn milestone_discard_wrong_id_names_list_tasks_with_the_declared_placeholder() {
     let out = jigc(repo.path(), home.path(), &["milestone", "discard", "nope"]);
     assert_error_bytes(
         &out,
-        "milestone `nope` does not exist\n  route: check the milestone id \
+        "blocking · milestone.unknown — milestone `nope` does not exist\n  at: \
+         milestone:nope\n  route: check the milestone id \
          (`jigc milestone list-tasks <milestone-id>` names a live milestone's sub-tasks); \
-         nothing was discarded\n",
+         nothing was discarded\n— jigc · run `jigc start` for orientation; all writes \
+         through `jigc`.\n",
     );
 }
 
