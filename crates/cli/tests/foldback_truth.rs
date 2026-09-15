@@ -1054,3 +1054,311 @@ fn manifest_kind_all_holds_every_variant_the_enum_declares() {
          one exactly as serde's `rename_all = \"kebab-case\"` puts it on the wire",
     );
 }
+
+// ---------------------------------------------------------------------------
+// 7. The fold-back names the version `Cargo.toml` carries.
+// ---------------------------------------------------------------------------
+
+// **The version-stamp confirmation has been prose for six waves, and prose caught the owed
+// bump unshipped in five of them** (M51 Increment 7 / T7;
+// [settle-record.md](../../../completions/artifacts/M51/settle-record.md) → **D11** and its
+// amendment **§15**; [charter.md](../../../completions/artifacts/M51/charter.md) → EC-10).
+// The failure has one shape every time: the fold-back paragraph states a version as *built
+// and installed* while `Cargo.toml` still carries the one before it, and the two homes are
+// only ever compared by a human who remembers to look.
+//
+// **This is a narrowing of a recorded refusal, with that refusal's rationale engaged — not
+// an override.** The claim-3 arm above declines the version assertion **by name**: *"it
+// carries **no numeral**: the roadmap's M50 section names no target version and the 1.0.0
+// call is the human's, so asserting a version string would be this fence choosing it."* That
+// rationale holds for choosing a **numeral**, and is **silent on comparing two homes**. So
+// the fence below chooses nothing: it reads the version out of `Cargo.toml` and asserts that
+// the fold-back's own claim names *that* version, whatever it is. The refusal's live half
+// survives intact — **whether** the bump has happened is still not asserted here, which is
+// why the claim is a conditional (see the bound below).
+//
+// **Two bounds, written here rather than left in the record.**
+//
+//   * **Razor leg 2 would refuse this fence on its face.** The wave's razor asks that a
+//     change be *right for any adopter — if the only beneficiary is our layout, our naming
+//     or our process, it is refused*, and a fence over **this repo's** fold-back paragraph
+//     benefits this repo's process only; it is the exact ground on which the charter
+//     excludes the harness-surface wave. **The admission rests on the human's boundary
+//     decision** — the wave takes every ledger row, EC-10 included — **not on the razor**,
+//     and **no future wave may cite D11 as a razor precedent** (§15).
+//   * **The pack-step home is refused with its ground.** The obvious alternative — have
+//     `completion.yaml` tell the agent to check the version — was refused: that step ships
+//     into **every adopter's repo**, and the version it would name is jigc's own, a law-1 lie
+//     for every reader who is not this repo (`re-verify.yaml` already models the right
+//     register). A new pack step would also move the pack-step count and make the count
+//     fence's cell above disappear by accident.
+//
+// **What "the version the fold-back names" means, stated as a grammar.** CLAUDE.md's
+// project-state paragraph names **every** version this project has ever shipped, so *any
+// version token* is the wrong subject. The subject is the paragraph's **built-and-installed
+// claim**: a version token immediately followed by the words the fold-back has used at every
+// wave — `built and installed` / `built + installed`, optionally through an `is`, across the
+// markup that decorates it. A trial sentence naming the binary it ran on
+// (*"`1.0.0-rc.13` built from `979baca`"*) is not that claim and is not bound, which is the
+// distinction the historical paragraph actually turns on.
+//
+// **Declared bound:** the claim is a **conditional**, and it binds the **newest** wave's span
+// only. A fold-back that names no version at all passes — the presence of the bump is the
+// milestone-completion workflow's obligation and is precisely what the recorded refusal
+// declined to choose — and a historical span keeps the version *it* shipped, since that
+// claim was true when it was written. A claim phrased with the token **after** the words
+// (*"we built and installed `x`"*) is outside the grammar; the non-vacuity leg below is what
+// catches a wholesale drift of the shipped phrasing.
+
+/// The workspace version — the second home, read from `[workspace.package]` rather than from
+/// any crate's inherited `version.workspace = true`.
+fn workspace_version() -> String {
+    let manifest = fs::read_to_string(repo_root().join("Cargo.toml"))
+        .expect("the workspace Cargo.toml must be readable");
+    let at = manifest
+        .find("[workspace.package]")
+        .expect("Cargo.toml must declare `[workspace.package]`");
+    let section = &manifest[at..];
+    let end = section[1..]
+        .find("\n[")
+        .map(|i| i + 1)
+        .unwrap_or(section.len());
+    for line in section[..end].lines() {
+        if let Some(rest) = line.trim().strip_prefix("version") {
+            let rest = rest.trim_start();
+            if let Some(rest) = rest.strip_prefix('=') {
+                return rest.trim().trim_matches('"').to_string();
+            }
+        }
+    }
+    panic!("`[workspace.package]` must carry a `version = \"…\"` key");
+}
+
+/// Byte spans of every semver-shaped token in `text` — `<major>.<minor>.<patch>` with an
+/// optional `-<pre-release>`. Deliberately loose about what surrounds it: the discrimination
+/// is done by [`states_built_and_installed`], on what the token is *claimed to be*.
+fn version_tokens(text: &str) -> Vec<(usize, usize)> {
+    let bytes = text.as_bytes();
+    let mut tokens = Vec::new();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if !bytes[i].is_ascii_digit() {
+            i += 1;
+            continue;
+        }
+        // Not the tail of a longer number, nor the patch half of a token already read.
+        if text[..i]
+            .chars()
+            .next_back()
+            .is_some_and(|c| c.is_ascii_digit() || c == '.')
+        {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        let mut dots = 0usize;
+        let mut end = i;
+        while end < bytes.len() {
+            let b = bytes[end];
+            if b.is_ascii_digit() {
+                end += 1;
+            } else if b == b'.'
+                && dots < 2
+                && end + 1 < bytes.len()
+                && bytes[end + 1].is_ascii_digit()
+            {
+                dots += 1;
+                end += 1;
+            } else {
+                break;
+            }
+        }
+        if dots < 2 {
+            i = end.max(start + 1);
+            continue;
+        }
+        // The optional pre-release: `-rc.15`, `-gate`, …
+        if end < bytes.len() && bytes[end] == b'-' {
+            let mut pre = end + 1;
+            while pre < bytes.len() && (bytes[pre].is_ascii_alphanumeric() || bytes[pre] == b'.') {
+                pre += 1;
+            }
+            // A trailing `.` belongs to the sentence, not to the version.
+            while pre > end + 1 && bytes[pre - 1] == b'.' {
+                pre -= 1;
+            }
+            if pre > end + 1 {
+                end = pre;
+            }
+        }
+        tokens.push((start, end));
+        i = end;
+    }
+    tokens
+}
+
+/// Whether the text immediately following a version token states the fold-back's
+/// built-and-installed claim about it — the grammar stated in this section's opening comment.
+fn states_built_and_installed(tail: &str) -> bool {
+    /// The markup a claim is decorated with — backticks, emphasis, and the whitespace
+    /// between. Never punctuation: an em dash or a comma between the token and the words
+    /// would make it a different sentence.
+    fn undecorated(text: &str) -> &str {
+        text.trim_start_matches(|c: char| c == '`' || c == '*' || c.is_whitespace())
+    }
+
+    let rest = undecorated(tail);
+    // `**1.0.0-rc.10 is built and installed**` and `**`1.0.0-rc.14` built and installed**`
+    // are the two shipped spellings of one claim.
+    let rest = undecorated(rest.strip_prefix("is").unwrap_or(rest));
+    let Some(rest) = rest.strip_prefix("built") else {
+        return false;
+    };
+    let rest = undecorated(rest);
+    // `built and installed` / `built + installed` — but never `built from <sha>`, which is a
+    // trial's provenance and binds nothing.
+    let Some(rest) = rest.strip_prefix("and").or_else(|| rest.strip_prefix('+')) else {
+        return false;
+    };
+    undecorated(rest).starts_with("installed")
+}
+
+/// Every version `text` names as **built and installed**, as `(offset, version)`.
+fn built_and_installed_versions(text: &str) -> Vec<(usize, String)> {
+    version_tokens(text)
+        .into_iter()
+        .filter(|(_, end)| states_built_and_installed(&text[*end..]))
+        .map(|(start, end)| (start, text[start..end].to_string()))
+        .collect()
+}
+
+/// The newest wave's marker in CLAUDE.md's project-state paragraph — the claim a fold-back
+/// is still able to move. Derived rather than pinned, so the fence follows the paragraph the
+/// way the paragraph grows: each wave appends its own claim at the end.
+fn newest_milestone_marker(body: &str) -> String {
+    let mut newest: Option<String> = None;
+    for (at, _) in body.match_indices("**M") {
+        let rest = &body[at + "**M".len()..];
+        let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+        if digits.is_empty() {
+            continue;
+        }
+        if rest[digits.len()..].starts_with(" —") {
+            newest = Some(format!("**M{digits} —"));
+        }
+    }
+    newest.expect("CLAUDE.md's project state must carry at least one `**M<nn> —` marker")
+}
+
+/// The newest wave's claim: its span within the project-state paragraph, which is one line.
+fn newest_milestone_claim(body: &str) -> &str {
+    let marker = newest_milestone_marker(body);
+    milestone_span(body, &marker)
+        .split('\n')
+        .next()
+        .expect("splitting a str always yields at least one part")
+}
+
+/// **The comparison, as a pure function of `(body, version)`** — so the fence is asserted over
+/// fixtures as well as over today's bytes. Every version the newest wave's claim states as
+/// built and installed, that is not the version `Cargo.toml` carries.
+fn foldback_version_mismatches(body: &str, version: &str) -> Vec<String> {
+    let claim = newest_milestone_claim(body);
+    built_and_installed_versions(claim)
+        .into_iter()
+        .filter(|(_, named)| named != version)
+        .map(|(at, named)| format!("names `{named}` at offset {at} of the newest wave's claim"))
+        .collect()
+}
+
+#[test]
+fn the_foldback_names_the_version_cargo_toml_carries() {
+    let body = read_doc("CLAUDE.md");
+    let version = workspace_version();
+
+    let mismatches = foldback_version_mismatches(&body, &version);
+    assert!(
+        mismatches.is_empty(),
+        "CLAUDE.md's newest wave claims a version built and installed that `Cargo.toml` does \
+         not carry (`{version}`): {mismatches:?}. Either the bump is owed — the failure five \
+         consecutive waves needed a human to notice — or the fold-back is naming the wrong \
+         binary.",
+    );
+
+    // Non-vacuity, scoped to the paragraph rather than to the newest span: a wave that has
+    // not yet bumped names no version at all, which is allowed, but the *shipped phrasing*
+    // must stay recognisable — a wholesale reword would leave this fence asserting nothing.
+    let marker = newest_milestone_marker(&body);
+    let paragraph = body
+        .lines()
+        .find(|line| line.contains(&marker))
+        .expect("the project-state paragraph must be one line of CLAUDE.md");
+    assert!(
+        !built_and_installed_versions(paragraph).is_empty(),
+        "no built-and-installed claim is recognisable anywhere in the project-state \
+         paragraph — the phrasing this fence reads moved, and the fence stopped fencing",
+    );
+}
+
+/// The red step this fence was written from: the comparison is a function of `(body, version)`
+/// and must **reject** a fold-back naming a version other than the one it is handed. Asserted
+/// over fixtures, never over today's bytes — the claim is GREEN at HEAD, so today's tree
+/// cannot demonstrate the fence bites.
+#[test]
+fn the_version_comparison_rejects_a_foldback_naming_another_version() {
+    // Two waves, exactly as the paragraph carries them: a settled one, and the newest.
+    let body = "\
+**M50 — the last wave — is complete** (… **`1.0.0-rc.14` built and installed after the fixes, \
+not before**, with the goldens regenerated). **M51 — the count wave — is complete** (… \
+**`1.0.0-rc.15` built and installed after the fixes, not before**). The trial ran on \
+`1.0.0-rc.14` built from `21ffc0d4`.
+
+## Build / lint / test
+";
+
+    // The fence bites when the two homes disagree …
+    assert_eq!(
+        foldback_version_mismatches(body, "1.0.0-rc.14").len(),
+        1,
+        "a fold-back naming `1.0.0-rc.15` as built and installed while `Cargo.toml` carries \
+         `1.0.0-rc.14` is exactly the failure five consecutive waves shipped",
+    );
+    // … and passes when they agree, so it is the comparison biting and not the numeral.
+    assert!(
+        foldback_version_mismatches(body, "1.0.0-rc.15").is_empty(),
+        "the fence compares two homes; it chooses no numeral",
+    );
+
+    // The settled wave keeps the version it shipped — only the newest claim is bound, which
+    // is what keeps `1.0.0-rc.14` true where M50 wrote it while the tree carries rc.15.
+    let newest = newest_milestone_claim(body);
+    assert!(
+        newest.contains("the count wave") && !newest.contains("the last wave"),
+        "the subject is the newest wave's claim alone; it reads:\n{newest}",
+    );
+
+    // A trial sentence naming the binary it ran on is not a built-and-installed claim, which
+    // is what keeps the paragraph's dozen historical version tokens out of the subject.
+    let trial = "The pre-v1 trial ran on `1.0.0-rc.13` built from `979baca` — not the \
+                 host-installed rc.13, which predates it.";
+    assert!(
+        built_and_installed_versions(trial).is_empty(),
+        "`built from <sha>` is a trial's provenance, not the fold-back's claim",
+    );
+
+    // Both shipped spellings of the claim are read, through the markup that decorates them.
+    for spelling in [
+        "**`1.0.0-rc.15` built and installed after the fixes**",
+        "**1.0.0-rc.15 built + installed** (the version-stamp confirmation)",
+        "and `1.0.0-rc.15` is built and installed — after the audit's fixes, not before**",
+    ] {
+        assert_eq!(
+            built_and_installed_versions(spelling)
+                .into_iter()
+                .map(|(_, v)| v)
+                .collect::<Vec<_>>(),
+            vec!["1.0.0-rc.15".to_string()],
+            "the shipped claim spelling must be read: {spelling}",
+        );
+    }
+}
