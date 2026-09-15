@@ -120,3 +120,21 @@ fn the_posture_section_states_the_constant_rule_and_names_both_declared_constant
         "the second declared constant, named at the rule",
     );
 }
+
+/// M51 Increment 6 — the third pre-pin case. Addition is authorized by both posture
+/// homes and removal by the rule above; a door that already emits a shape and emits a
+/// **different** one was authorized by neither, and Increment 6 took exactly that act at
+/// twenty-five verbs. The rule and its bound are asserted here rather than left to the
+/// per-increment record, because a policy stated only in `DECISIONS.md` is one this
+/// contract's readers have no path to.
+#[test]
+fn the_posture_section_states_the_pre_pin_reshape_rule_and_its_bound() {
+    stated_once(
+        "a reshape of a door's declared arm is admissible only while the window is open",
+        "the pre-pin reshape rule",
+    );
+    stated_once(
+        "after the pin the identical repair is a `2.0` act",
+        "the bound the reshape rule carries — stated, not left as an implication",
+    );
+}
