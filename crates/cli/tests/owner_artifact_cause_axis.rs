@@ -589,16 +589,26 @@ fn finalize_help() -> String {
 ///
 /// So this drives the **counterexample axis first** — all seven causes through the real
 /// binary, forecast vs commit, the divergence recorded per row — and only then asserts the
-/// emitted help bytes: the flat promise is gone, the carryover axis it *does* forecast is
+/// emitted help bytes: the flat promise is gone, the carryover axis it *does* refuse on is
 /// named with its exit, and the gates it does not run are named as the real finalize's to
 /// decide. (The help enumerates rather than generalizes — *"it forecasts what it can decide
 /// read-only"* would be the same lie again, since these six causes **are** read-only
-/// decidable; this door just does not run them.) Pinning the sentence without the axis is a
-/// claim
-/// about prose; pinning the axis without the sentence would leave the prose free to
-/// re-widen.
+/// decidable; this door just does not gate on them.) Pinning the sentence without the axis
+/// is a claim about prose; pinning the axis without the sentence would leave the prose free
+/// to re-widen.
+///
+/// **Amended at M51 Inc 5 (T5 / EC-20).** The forecast's envelope gained `findings`, and
+/// that set is `task validate`'s — so the six previewable causes are now **reported** by
+/// the forecast even though it still refuses on none of them. The falsification the arm
+/// exists for is untouched and is what the rows below still drive: **exit 0 forecast, exit
+/// 3 commit**, over each identical state. What moved is the silence: the row now asserts
+/// the gate code is carried exactly where the cause previews (`Cause::previews`), so the
+/// forecast can neither go quiet again nor start speaking for the one cause — untracked —
+/// that only the post-stage door can see. The help's `jigc task validate` clause went with
+/// it: it named a preview the forecast now carries itself, which is the law-1 lie one
+/// rider over.
 #[test]
-fn the_dry_run_forecast_covers_no_gate_borne_cause_and_its_help_says_so() {
+fn the_dry_run_forecast_reports_the_gate_borne_causes_without_refusing_and_its_help_says_so() {
     for cause in CAUSES {
         let repo = TempDir::new(&format!("dry-{}", cause.tag));
         let home = TempDir::new(&format!("dry-{}-home", cause.tag));
@@ -640,9 +650,13 @@ fn the_dry_run_forecast_covers_no_gate_borne_cause_and_its_help_says_so() {
                 cause.tag,
                 String::from_utf8_lossy(&forecast.stderr),
             );
-            assert!(
-                !forecast_stdout.contains(GATE_CODE),
-                "[{}] the forecast carries no `{GATE_CODE}` finding; got:\n{forecast_stdout}",
+            assert_eq!(
+                forecast_stdout.contains(GATE_CODE),
+                cause.previews,
+                "[{}] the forecast reports `{GATE_CODE}` exactly where the cause previews \
+                 (M51 Inc 5 / T5 — the forecast's findings are `task validate`'s, and the \
+                 untracked cause is the one the preview cannot reach); \
+                 got:\n{forecast_stdout}",
                 cause.tag,
             );
             assert!(
@@ -708,6 +722,13 @@ fn the_dry_run_forecast_covers_no_gate_borne_cause_and_its_help_says_so() {
              finalize decides; got:\n{help}"
         );
     }
+    // …and it no longer sends the reader to `task validate` for a preview it now carries
+    // itself (M51 Inc 5 / T5 — the clause the rider falsified).
+    assert!(
+        !help.contains("previews the owner-artifact causes this does not"),
+        "`task finalize --help` must not send the reader elsewhere for findings its own \
+         envelope now carries; got:\n{help}"
+    );
     assert!(
         help.contains("decided only by the real finalize"),
         "`task finalize --help` must say where the un-forecast gates are decided; got:\n{help}"

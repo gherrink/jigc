@@ -1612,9 +1612,13 @@ fn finalize_dry_run_subject_close() {
         kind: ManifestKind::Untracked,
     }];
 
-    let text = finalize_manifest(Format::Agent, subject, &included, &left_out);
+    // The forecast's `findings` (M51 Inc 5 / T5) is a JSON-only key by declared bound, so
+    // it is not a parity subject: the fence runs text → envelope, and the agent surface
+    // prints no finding here.
+    let findings = engine::finding::Findings::default();
+    let text = finalize_manifest(Format::Agent, subject, &included, &left_out, &findings);
     let doc = envelope(
-        &finalize_manifest(Format::Json, subject, &included, &left_out),
+        &finalize_manifest(Format::Json, subject, &included, &left_out, &findings),
         "jigc task finalize --dry-run",
     );
     text_prints(&text, subject, "jigc task finalize --dry-run", "subject");

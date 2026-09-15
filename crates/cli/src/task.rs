@@ -241,14 +241,15 @@ pub enum TaskCommand {
         /// file-set the commit would carry, untracked sweeps flagged) and stop — commit
         /// nothing, no destructive side effect (B1 dirty-tree sweep). The subject is the
         /// one jigc will hand git, not what git ends up with: a `commit-msg` hook may
-        /// still rewrite it. A dry-run never requires `--approve`. It forecasts three
+        /// still rewrite it. A dry-run never requires `--approve`. It *refuses* on three
         /// gates: this task's validation findings, the empty-commit guard, and the
         /// carryover gate — where an undeclared carry-over is reported (exit 3) instead of
-        /// the manifest (add `--carry-staged` to forecast the carry). Every other gate —
-        /// the `owner-artifact` causes, staging, promotion, the commit hook — is decided
-        /// only by the real finalize, so a printed manifest is not a promise the commit
-        /// lands; `jigc task validate <id>` previews the owner-artifact causes this does
-        /// not.
+        /// the manifest (add `--carry-staged` to forecast the carry). Its `findings` are
+        /// the set `jigc task validate <id>` reports, the staging-independent
+        /// `owner-artifact` causes included — reported here, decided at the real finalize.
+        /// Every other gate — staging, promotion, the untracked `owner-artifact` cause,
+        /// the commit hook — is decided only by the real finalize, so a printed manifest
+        /// is not a promise the commit lands.
         #[arg(long)]
         dry_run: bool,
         /// Declare the carry-over of pre-task staged changes deliberate: land index
@@ -1108,6 +1109,17 @@ enum GatePreview {
     /// Preview them at the read door. `carry_staged` mirrors finalize's consent flag:
     /// a declared carry-over is a finding at neither door.
     On { carry_staged: bool },
+    /// The `--dry-run` **forecast** (M51 Inc 5 / T5, EC-20): the previewable gates the
+    /// committing preflight has not already run for itself. It is [`Self::On`] minus the
+    /// changelog advisory — and only that — because `finalize` computes that one at its
+    /// own position and merged it into the report the forecast is extending, so running
+    /// it here would emit the member twice.
+    ///
+    /// Sharing the seam rather than re-listing the members is the point: a fifth member
+    /// joining [`TaskArea::preview_gates`] reaches the forecast the day it lands, which is
+    /// the drift that put `--dry-run` a whole advisory tier behind `task validate` in the
+    /// first place.
+    Forecast { carry_staged: bool },
 }
 
 /// A named task's working area. `repo_root` is the **worktree** (code, the git index,
@@ -1421,8 +1433,12 @@ impl TaskArea {
         preview: GatePreview,
         schemas: &BTreeMap<String, Schema>,
     ) -> Result<engine::result::ValidationReport> {
-        let GatePreview::On { carry_staged } = preview else {
-            return Ok(report);
+        // `changelog` discriminates the two previewing doors: the read door owes the
+        // advisory, the `--dry-run` forecast has it already (see [`GatePreview::Forecast`]).
+        let (carry_staged, changelog) = match preview {
+            GatePreview::Off => return Ok(report),
+            GatePreview::On { carry_staged } => (carry_staged, true),
+            GatePreview::Forecast { carry_staged } => (carry_staged, false),
         };
         let mut previewed = Vec::new();
         if !carry_staged {
@@ -1462,12 +1478,15 @@ impl TaskArea {
         // commit, so excluding it made `task validate` silent about a finding the very
         // next invocation would print (and, promoted with one cascade line, refuse on).
         // The committing door keeps computing it itself, at its own position — never
-        // merged twice ([`GatePreview::Off`]).
-        previewed.extend(self.changelog_gate_advisory(
-            &self.id,
-            schemas,
-            AdvisoryDoor::TaskPreview,
-        )?);
+        // merged twice ([`GatePreview::Off`], and [`GatePreview::Forecast`] for the
+        // `--dry-run` door that extends that door's own report).
+        if changelog {
+            previewed.extend(self.changelog_gate_advisory(
+                &self.id,
+                schemas,
+                AdvisoryDoor::TaskPreview,
+            )?);
+        }
         if previewed.is_empty() {
             return Ok(report);
         }
@@ -1851,16 +1870,49 @@ impl TaskArea {
             // Reached only under a declared `--carry-staged` or an empty carried set, so
             // the label can no longer claim a consent this run never carried.
             relabel_carried(&mut included, &carried_paths);
+            // M51 Inc 5 / T5 (EC-20) — the forecast carries the findings the door it
+            // forecasts reports. Driven, `task validate` and the LANDED `task finalize`
+            // emitted an identical set while `--dry-run` emitted no `findings` key at all,
+            // dropping every advisory: the report was computed three statements above this
+            // branch and discarded. QUICKSTART presents the two as one preview surface, so
+            // the forecast was silent about exactly what the preview exists to show.
+            //
+            // The extension is [`GatePreview::Forecast`], not a hand-picked gate: the
+            // preflight above ran with the preview OFF (it must, or finalize's block
+            // positions move), so the owner-artifact causes that need no staging are the
+            // one previewable member this report is still missing — and asking the shared
+            // seam for them is what keeps a future fifth member from going missing here
+            // too. Carryover contributes nothing by construction: this line is reached
+            // only with the carried set empty or `--carry-staged` declared, which is the
+            // same condition under which the read door omits it.
+            //
+            // `scope_repair_routes` runs after the merge, mirroring [`Self::validate`]'s
+            // order, so a previewed route reads identically at both doors (it is
+            // idempotent — an argv already carrying `--task` is left alone).
+            let forecast = self.scope_repair_routes(self.preview_gates(
+                report,
+                GatePreview::Forecast { carry_staged },
+                &schemas,
+            )?)?;
             print!(
                 "{}",
                 // The subject is the plan's OWN render (phase 3, already computed above),
                 // never a dry-run-side re-spelling — M50 Inc 12 / F-7.
-                render::finalize_manifest(format, plan.subject(), &included, &left_out)
+                render::finalize_manifest(
+                    format,
+                    plan.subject(),
+                    &included,
+                    &left_out,
+                    &forecast.findings,
+                )
             );
             if format != Format::Json {
                 println!();
             }
-            return Ok(Outcome::success());
+            // The forecast's findings reach the invocation log too, exactly as the read
+            // door's and the landed door's do — a door that prints a finding and records
+            // none leaves the log unable to answer what the run saw.
+            return Ok(Outcome::with_findings(0, &forecast.findings));
         }
 
         // M43 — the carryover gate: refuse to let index entries staged BEFORE this task

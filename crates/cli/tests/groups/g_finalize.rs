@@ -13,6 +13,8 @@ mod commit_seam_posture;
 mod docs_root;
 #[path = "../doctype_map_versions.rs"]
 mod doctype_map_versions;
+#[path = "../dry_run_findings_equal_set.rs"]
+mod dry_run_findings_equal_set;
 #[path = "../file_state_concurrency.rs"]
 mod file_state_concurrency;
 #[path = "../file_state_history_gate.rs"]

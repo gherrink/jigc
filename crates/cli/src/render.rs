@@ -1929,11 +1929,26 @@ fn code_fence(content: &str) -> String {
 /// discarding it. It is the same string [`Landed::subject`] carries after the commit
 /// lands. **Declared bound:** this is jigc's forecast — the subject it will hand git —
 /// never what git ends up with; a `commit-msg` hook may still rewrite the message.
+///
+/// **The `findings` (M51 Inc 5 / T5, EC-20).** The envelope carries the findings the door
+/// it forecasts reports — the equal-set rider: `jigc task validate`, this forecast and the
+/// committing door's emission (landed *or* blocked) are **one** code set, fenced
+/// behaviourally over every [`crate::gate_coverage::Tier::Previewed`] member in
+/// `crates/cli/tests/dry_run_findings_equal_set.rs`. Until M51 the forecast emitted no
+/// findings channel at all: the report existed three statements above the caller's branch
+/// and was discarded, so the flag QUICKSTART presents *beside* `task validate` as one
+/// preview surface was silent about every advisory that surface reports.
+///
+/// **It is a JSON-only key, deliberately.** The standing text/JSON parity fence runs text
+/// → envelope (*a value the text prints but the envelope withholds is a gap*), so an
+/// additive envelope key is inside it; the agent/human forecast keeps the shape it has,
+/// and `jigc task validate` remains the text surface for the findings themselves.
 pub fn finalize_manifest(
     format: Format,
     subject: &str,
     included: &[ManifestEntry],
     left_out: &[ManifestEntry],
+    findings: &Findings,
 ) -> String {
     match format {
         Format::Json => json(&serde_json::json!({
@@ -1941,6 +1956,7 @@ pub fn finalize_manifest(
             "subject": subject,
             "manifest": included,
             "left_out": left_out,
+            "findings": findings,
         })),
         Format::Agent | Format::Human => {
             let mut lines = vec![
@@ -7516,10 +7532,20 @@ mod tests {
         );
     }
 
+    /// One forecast finding — the value the `findings` key carries (M51 Inc 5 / T5).
+    /// Built by its production constructor, so it carries the declared `key.target` the
+    /// membership seam asserts on serialization rather than a hand-shaped stand-in.
+    fn forecast_finding() -> Findings {
+        Findings::from(vec![engine::file_state::staged_copy_finding(
+            "docs/decisions/x.md",
+        )])
+    }
+
     /// The dry-run manifest renders a titled block — the `would commit — <subject>`
     /// forecast line (M50 Inc 12 / F-7), then each entry by kind, an untracked sweep
     /// flagged distinctly — with no trailing newline; JSON carries `dry_run: true`, the
-    /// same `subject`, and a `manifest[]` of `{path,kind}` (kebab-case kinds).
+    /// same `subject`, a `manifest[]` of `{path,kind}` (kebab-case kinds), and the
+    /// `findings` the forecast door reports (M51 Inc 5 / T5).
     #[test]
     fn render_finalize_manifest_flags_untracked_and_json_carries_dry_run() {
         let included = vec![ManifestEntry {
@@ -7532,8 +7558,9 @@ mod tests {
         }];
 
         let subject = "feat(cache): forecast the subject";
+        let findings = forecast_finding();
 
-        let agent = finalize_manifest(Format::Agent, subject, &included, &left_out);
+        let agent = finalize_manifest(Format::Agent, subject, &included, &left_out, &findings);
         insta::assert_snapshot!(agent, @r"
         finalize --dry-run — pre-commit manifest (nothing committed)
         would commit — feat(cache): forecast the subject
@@ -7545,16 +7572,49 @@ mod tests {
             "no trailing newline — the caller closes it"
         );
         assert_eq!(
-            finalize_manifest(Format::Human, subject, &included, &left_out),
+            finalize_manifest(Format::Human, subject, &included, &left_out, &findings),
             agent
         );
+        // The declared bound of the M51 rider: `findings` is a JSON-only key, so the text
+        // surface is byte-identical with and without one.
+        assert_eq!(
+            finalize_manifest(
+                Format::Agent,
+                subject,
+                &included,
+                &left_out,
+                &Findings::default()
+            ),
+            agent,
+            "`findings` is a JSON-only key — the agent forecast keeps the shape it has",
+        );
 
-        let json_out = finalize_manifest(Format::Json, subject, &included, &left_out);
+        let json_out = finalize_manifest(Format::Json, subject, &included, &left_out, &findings);
         let value: serde_json::Value = serde_json::from_str(&json_out).expect("valid JSON");
         assert_eq!(value["dry_run"], serde_json::Value::Bool(true));
         assert_eq!(
             value["subject"], subject,
             "the text's forecast subject reaches the envelope (the parity rule)"
+        );
+        let reported = value["findings"].as_array().expect("findings array");
+        assert_eq!(
+            reported.len(),
+            1,
+            "the forecast carries the findings the door it forecasts reports (EC-20)"
+        );
+        assert_eq!(reported[0]["code"], "file-state.staged-copy");
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&finalize_manifest(
+                Format::Json,
+                subject,
+                &included,
+                &left_out,
+                &Findings::default()
+            ))
+            .expect("valid JSON")["findings"],
+            serde_json::json!([]),
+            "nothing to report is an EMPTY array, never an absent key — a driver reads the \
+             two differently",
         );
         let manifest = value["manifest"].as_array().expect("manifest array");
         assert_eq!(manifest[0]["path"], "docs/decisions/x.md");
@@ -7574,7 +7634,13 @@ mod tests {
             kind: ManifestKind::Added,
         }];
 
-        let agent = finalize_manifest(Format::Agent, "feat: add it", &included, &[]);
+        let agent = finalize_manifest(
+            Format::Agent,
+            "feat: add it",
+            &included,
+            &[],
+            &Findings::default(),
+        );
         assert!(
             agent.contains("  added src/feature.rs"),
             "a staged new file renders `added`; agent:\n{agent}",
@@ -7584,7 +7650,13 @@ mod tests {
             "the retired `swept` wording must not appear on the included path; agent:\n{agent}",
         );
 
-        let json_out = finalize_manifest(Format::Json, "feat: add it", &included, &[]);
+        let json_out = finalize_manifest(
+            Format::Json,
+            "feat: add it",
+            &included,
+            &[],
+            &Findings::default(),
+        );
         let value: serde_json::Value = serde_json::from_str(&json_out).expect("valid JSON");
         assert_eq!(value["manifest"][0]["kind"], "added");
     }
@@ -7601,12 +7673,24 @@ mod tests {
             kind: ManifestKind::CarriedOver,
         }];
 
-        let agent = finalize_manifest(Format::Agent, "feat: carry it", &carried, &[]);
+        let agent = finalize_manifest(
+            Format::Agent,
+            "feat: carry it",
+            &carried,
+            &[],
+            &Findings::default(),
+        );
         assert!(
             agent.contains("  carried-over foreign-a.txt"),
             "a carried entry renders `carried-over`; agent:\n{agent}",
         );
-        let json_out = finalize_manifest(Format::Json, "feat: carry it", &carried, &[]);
+        let json_out = finalize_manifest(
+            Format::Json,
+            "feat: carry it",
+            &carried,
+            &[],
+            &Findings::default(),
+        );
         let value: serde_json::Value = serde_json::from_str(&json_out).expect("valid JSON");
         assert_eq!(value["manifest"][0]["kind"], "carried-over");
 

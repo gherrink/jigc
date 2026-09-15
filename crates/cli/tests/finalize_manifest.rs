@@ -860,6 +860,14 @@ fn dry_run_carry_staged_forecasts_the_carry_and_diverges_from_the_refusal() {
 /// carrying state. T3's claim is unaffected and still fenced by arm (vii): the refusing
 /// and consenting forecasts stay non-identical, and the `carried-over` label still appears
 /// only under a declared carry. The pin is re-captured against the post-F-7 binary.
+///
+/// **Re-pinned again at M51 Inc 5 (T5 / EC-20), on the same grounds.** The JSON envelope
+/// gained `findings` — the equal-set rider, an additive key inside the pre-pin window —
+/// and this corpus's `single-task` grants a changelog gate it never uses, so the forecast
+/// now reports the advisory the door it forecasts reports. The **agent-text** pin above is
+/// byte-unchanged, which is the rider's declared JSON-only bound holding: an additive
+/// envelope key is inside the text → envelope parity fence, and the text forecast keeps
+/// the shape it has. T3's claim is again untouched.
 #[test]
 fn a_non_carrying_dry_run_manifest_is_byte_unchanged() {
     let repo = TempDir::new("t3-unchanged");
@@ -898,11 +906,43 @@ fn a_non_carrying_dry_run_manifest_is_byte_unchanged() {
     );
     assert_eq!(
         String::from_utf8_lossy(&json.stdout),
-        "{\n  \"dry_run\": true,\n  \"left_out\": [\n    {\n      \"kind\": \"untracked\",\n      \
-         \"path\": \"scratch.txt\"\n    }\n  ],\n  \"manifest\": [\n    {\n      \"kind\": \
-         \"added\",\n      \"path\": \"feature.rs\"\n    }\n  ],\n  \"subject\": \
-         \"feat(cache): surface the manifest\"\n}",
-        "the JSON forecast is byte-stable for a non-carrying task (F-7's `subject` included)",
+        r#"{
+  "dry_run": true,
+  "findings": [
+    {
+      "check": "gate-granted-unused",
+      "code": "changelog-recording.gate-granted-unused",
+      "key": {
+        "code": "changelog-recording.gate-granted-unused",
+        "target": "task:dry-run-the-carry"
+      },
+      "location": {
+        "address": "task:dry-run-the-carry",
+        "col": 1,
+        "line": 1
+      },
+      "message": "workflow `single-task` grants the `changelog` create-gate and this task recorded no changelog entry",
+      "probe": "changelog-recording",
+      "route": "if the change is user-facing, record it — `jigc start --workflow record-change \"<what changed>\"`; if it is not user-facing, no action is needed",
+      "severity": "advisory"
+    }
+  ],
+  "left_out": [
+    {
+      "kind": "untracked",
+      "path": "scratch.txt"
+    }
+  ],
+  "manifest": [
+    {
+      "kind": "added",
+      "path": "feature.rs"
+    }
+  ],
+  "subject": "feat(cache): surface the manifest"
+}"#,
+        "the JSON forecast is byte-stable for a non-carrying task (F-7's `subject` and \
+         T5's `findings` included)",
     );
 
     // And it is still a pure reader.
