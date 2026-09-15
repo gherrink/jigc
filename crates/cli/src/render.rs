@@ -4818,6 +4818,977 @@ pub fn describe(format: Format, description: &Description) -> String {
     }
 }
 
+// ───────────────────── the pinned-envelope registry (M51 Inc 5 / T7) ─────────────────────
+
+/// Where a registry row's **arm** came from — the provenance half of D5's claim that the
+/// enumeration is *derived where an enum can derive it*.
+///
+/// `clap` enumerates **syntax**, never runtime result variants, which is why the recipe
+/// table's one-per-verb bijection had to be reshaped to `(path, arm)` in the first place
+/// (`completions/artifacts/M51/settle-record.md` → §7). A verb's arms therefore come from
+/// one of exactly three places, and the row says which — with the last two making a
+/// *checkable* claim about how many rows the verb's path owns.
+pub enum ArmOrigin {
+    /// A **variant of a production result enum**, named here. The enum's own arm-name
+    /// table ([`DOC_ACK_ARMS`] and its three siblings, or [`ConfigAck::ALL`]) is the only
+    /// producer of the string, and a new variant cannot compile until it joins that table
+    /// — at which point the registry fence reddens until the variant has a row.
+    Variant {
+        /// The production enum, spelled as the path a reader can open.
+        of: &'static str,
+    },
+    /// **The verb answers with exactly one key set**, so nothing discriminates and nothing
+    /// needs to: its several run-modes (`--dry-run` vs committed, hit vs miss, empty vs
+    /// populated) move *values*, never keys — which is the shape a registry row should make
+    /// visible. A `Sole` row is the only row its path has, and the fence checks that.
+    Sole,
+    /// **No enum can generate it**: the verb has several arms and a *dispatch branch*
+    /// chooses among them. Carries the stated reason, which is what the Settle owes for each
+    /// hand-enumerated row. A `Dispatch` row shares its path with at least one sibling, and
+    /// the fence checks that too.
+    Dispatch(&'static str),
+}
+
+/// The JSON **shape** an arm's document takes at its root. Four, not one, because three
+/// arms carry no top-level key list at all — a shape space a `keys: &[&str]` column alone
+/// would have had to lie about.
+pub enum ArmShape {
+    /// A JSON **object**, whose top-level key set is exactly these names, sorted.
+    Object(&'static [&'static str]),
+    /// A top-level **array** whose every element is an object with exactly these keys,
+    /// sorted. `jigc task list` is the surface's one array, declared rather than reshaped
+    /// (`completions/artifacts/M51/envelope-key-census.md` §4.1) — which is why the two
+    /// facts an object would carry, `schema_version` and `op`, are absent here by
+    /// construction rather than by omission.
+    ArrayOf(&'static [&'static str]),
+    /// A bare JSON **scalar** — no keys at all (`jigc doc show <addr>#<slot-section>`
+    /// answers with the slot's prose as a JSON string).
+    Scalar,
+    /// A JSON object whose keys are **the document's own data**, so no key set can be
+    /// declared: `jigc doc show <addr>#<field-group>` answers with the doc's field map,
+    /// whose members follow the addressed doctype and which of its optional fields are
+    /// populated. The shape is pinned; the key set is the document's.
+    DataKeyed,
+}
+
+/// Whether a driver may build on the arm's key set. The two doors are **asymmetric**,
+/// which is the whole reason D5 mints this before the 1.0 pin: `Unpinned(reason)` is
+/// reversible — a later wave may pin it — while a blessed key is not, so an accident
+/// shipped as `Pinned` costs a 2.0 to remove.
+pub enum ArmStatus {
+    /// A driver may build on the key set; it evolves only by a versioned extension
+    /// (`design/command-output-contract.md` → Evolution posture).
+    Pinned,
+    /// Declared **as** unpinned, with the reason — so an absent promise is a decision on
+    /// the record rather than an oversight.
+    Unpinned {
+        /// Why this arm's key set is not a promise.
+        reason: &'static str,
+        /// The keys that **are** pinned on it anyway — an unpinned *envelope* may still
+        /// carry a key another contract pins (`describe` keeps the result contract's
+        /// `schema_version`; the five milestone write acks keep `hook_output`). A subset of
+        /// the declared key set.
+        still_pinned: &'static [&'static str],
+    },
+}
+
+/// Which stream carries the arm's document, and at what exit — the shape the driver's
+/// discrimination predicate reads (`design/command-output-contract.md` → Stream
+/// discipline: *parse stdout; if stdout is empty, parse stderr*).
+pub enum ArmOutcome {
+    /// Exit 0, the document on **stdout**, no JSON on stderr.
+    Success,
+    /// A non-zero **adjudication**: the gate ran and reported, so the document still rides
+    /// stdout, at the named exit (`task finalize` blocked at 3, the migration review hold
+    /// at 4). Not a reject — nothing failed to run.
+    Adjudicated(i32),
+    /// A **reject**: stdout empty, the document on stderr, exit non-zero. The exit varies
+    /// by door (1 for an operational error, 1 or 3 for a blocking finding), so the row
+    /// names the stream and not a code.
+    Reject,
+}
+
+/// Whether the envelope is rooted in a value **the result contract versions** — the
+/// partition `schema_version` rides, fenced against this registry rather than asserted in
+/// prose (D5: *typed result values carry it, ad-hoc `json!` envelopes do not*, and the
+/// *"add it to ~40 envelopes"* reading is refused on the record as gold-plating).
+pub enum ArmRoot {
+    /// The root is an `engine` result value serialized whole — possibly extended in place
+    /// with keys the text also prints — and `engine::result::SCHEMA_VERSION` is the integer
+    /// that versions it. It reaches the wire either as the root type's own field or, at
+    /// [`milestone_join`], as the one explicit insert made at the same seam.
+    ResultContract(&'static str),
+    /// A `json!` literal or a CLI-local `Serialize` the result contract does **not**
+    /// version. It carries no `schema_version`, and adding one would be a claim the
+    /// contract does not back.
+    AdHoc(&'static str),
+}
+
+/// One `(path, arm)` row of the pinned-envelope registry: a leaf verb's argv path, the arm
+/// of that verb whose `--format json` document this row declares, and the declaration.
+///
+/// See [`ENVELOPE_ARMS`] for what the table is and what fences it.
+pub struct EnvelopeArm {
+    /// The leaf verb's argv path as the clap tree spells it — **empty** for the two
+    /// cross-cutting reject arms, which no single leaf owns.
+    pub path: &'static [&'static str],
+    /// The arm, unique within `path`. For a [`ArmOrigin::Variant`] row it is the production
+    /// enum variant's own name.
+    pub arm: &'static str,
+    /// Where the arm came from — derived from an enum, or dispatch-chosen with a reason.
+    pub origin: ArmOrigin,
+    /// The document's root shape, and its declared key set where it has one.
+    pub shape: ArmShape,
+    /// Whether a driver may build on that key set.
+    pub status: ArmStatus,
+    /// Which stream carries it, and at what exit.
+    pub outcome: ArmOutcome,
+    /// Whether the result contract versions the root — the `schema_version` partition.
+    pub root: ArmRoot,
+}
+
+/// The arm names of every [`DocAck`] variant, in declaration order — the **only**
+/// producer of a `DocAck` row's `arm` string in [`ENVELOPE_ARMS`].
+///
+/// This array plus [`doc_ack_arm`]'s exhaustive match is the compile-time half of proof 2:
+/// a tenth variant cannot compile until the match names it, and the name it must be given
+/// comes from here — a tenth match arm reading `DOC_ACK_ARMS[9]` is a **hard compile
+/// error** (`unconditional_panic`) until the array grows, at which point the registry
+/// fence reddens until the variant has a row. That chain is what makes the nine `doc` rows
+/// *derived* rather than a hand list that happens to be right today.
+pub const DOC_ACK_ARMS: [&str; 9] = [
+    "DocAck::Field",
+    "DocAck::UnsetField",
+    "DocAck::Slot",
+    "DocAck::RemovedItem",
+    "DocAck::Renamed",
+    "DocAck::RetitledItem",
+    "DocAck::Created",
+    "DocAck::AddedItem",
+    "DocAck::Authored",
+];
+
+/// The [`ENVELOPE_ARMS`] arm name of one [`DocAck`] — see [`DOC_ACK_ARMS`] for why the
+/// names are read out of an array rather than written as literals here.
+pub fn doc_ack_arm(ack: &DocAck) -> &'static str {
+    match ack {
+        DocAck::Field { .. } => DOC_ACK_ARMS[0],
+        DocAck::UnsetField { .. } => DOC_ACK_ARMS[1],
+        DocAck::Slot { .. } => DOC_ACK_ARMS[2],
+        DocAck::RemovedItem { .. } => DOC_ACK_ARMS[3],
+        DocAck::Renamed { .. } => DOC_ACK_ARMS[4],
+        DocAck::RetitledItem { .. } => DOC_ACK_ARMS[5],
+        DocAck::Created { .. } => DOC_ACK_ARMS[6],
+        DocAck::AddedItem { .. } => DOC_ACK_ARMS[7],
+        DocAck::Authored { .. } => DOC_ACK_ARMS[8],
+    }
+}
+
+/// The arm names of every [`TaskAck`] variant, in declaration order. [`DOC_ACK_ARMS`]'
+/// chain, applied to the task-state acks.
+pub const TASK_ACK_ARMS: [&str; 2] = ["TaskAck::Bound", "TaskAck::Discarded"];
+
+/// The [`ENVELOPE_ARMS`] arm name of one [`TaskAck`].
+pub fn task_ack_arm(ack: &TaskAck) -> &'static str {
+    match ack {
+        TaskAck::Bound { .. } => TASK_ACK_ARMS[0],
+        TaskAck::Discarded { .. } => TASK_ACK_ARMS[1],
+    }
+}
+
+/// The arm names of every [`ConfigAck`] variant, in declaration order. [`DOC_ACK_ARMS`]'
+/// chain, applied to the cascade-authoring acks — which already ship a witness table,
+/// [`ConfigAck::ALL`], so the `config` rows are fenced from **both** sides: the witnesses
+/// map through [`config_ack_arm`] to these names, and each name's row must answer to that
+/// witness's own `verb`.
+pub const CONFIG_ACK_ARMS: [&str; 6] = [
+    "ConfigAck::Set",
+    "ConfigAck::InsertStep",
+    "ConfigAck::ReplaceStep",
+    "ConfigAck::RemoveStep",
+    "ConfigAck::Fill",
+    "ConfigAck::Fork",
+];
+
+/// The [`ENVELOPE_ARMS`] arm name of one [`ConfigAck`].
+pub fn config_ack_arm(ack: &ConfigAck) -> &'static str {
+    match ack {
+        ConfigAck::Set { .. } => CONFIG_ACK_ARMS[0],
+        ConfigAck::InsertStep { .. } => CONFIG_ACK_ARMS[1],
+        ConfigAck::ReplaceStep { .. } => CONFIG_ACK_ARMS[2],
+        ConfigAck::RemoveStep { .. } => CONFIG_ACK_ARMS[3],
+        ConfigAck::Fill { .. } => CONFIG_ACK_ARMS[4],
+        ConfigAck::Fork { .. } => CONFIG_ACK_ARMS[5],
+    }
+}
+
+/// The arm names of every [`OrientationView`] variant, in declaration order — the three
+/// orientation states `jigc start` answers with when it orients rather than composes.
+/// [`DOC_ACK_ARMS`]' chain, applied to the engine's own result sum.
+pub const ORIENTATION_ARMS: [&str; 3] = [
+    "OrientationView::UnsetProject",
+    "OrientationView::Clean",
+    "OrientationView::ActiveTask",
+];
+
+/// The [`ENVELOPE_ARMS`] arm name of one [`OrientationView`].
+pub fn orientation_arm(view: &OrientationView) -> &'static str {
+    match view {
+        OrientationView::UnsetProject { .. } => ORIENTATION_ARMS[0],
+        OrientationView::Clean { .. } => ORIENTATION_ARMS[1],
+        OrientationView::ActiveTask { .. } => ORIENTATION_ARMS[2],
+    }
+}
+
+/// **The pinned-envelope registry**: every leaf verb × every arm that produces a distinct
+/// `--format json` top-level key set, each row `Pinned` or `Unpinned(<reason>)`
+/// (`completions/artifacts/M51/settle-record.md` → D5, amended by §7; the table is
+/// [envelope-key-census.md](../../../completions/artifacts/M51/envelope-key-census.md),
+/// adopted as decided).
+///
+/// **Why it exists.** `design/command-output-contract.md` states the rule *"an undeclared
+/// key on a pinned envelope is a defect, not an addition, whichever wave mints it"* — and
+/// before this table the rule quantified over a set that existed nowhere, so on 1.0.0 day
+/// it was unanswerable in both directions. The contract doc now **names this list** rather
+/// than quantifying over an imagined one, which is why the registry is production-side: a
+/// locked 1.0 doc may not point at a test fixture, and the binary can read what it declares.
+///
+/// **What fences it** (`crates/cli/tests/format_json_success_axis.rs`, the one suite that
+/// already drives every leaf to a real success through the real binary — a suite that
+/// renders a witness cannot see an arm the *dispatch* chooses):
+///
+///   1. every clap leaf verb has **≥ 1** row;
+///   2. every production arm has **exactly one** row — `(path, arm)` is unique, and each
+///      result enum's rows equal that enum's own arm-name table;
+///   3. every row is **driven** through the real binary;
+///   4. the **driven** top-level key set equals the **declared** one — and, the partition
+///      D5 asks for, `schema_version` rides a row **iff** its [`ArmRoot`] is
+///      [`ArmRoot::ResultContract`].
+///
+/// **Declared bound — arm completeness is bounded by driving.** An arm exists here iff a
+/// driven invocation produced a distinct key set. A run-mode that produces the *same* key
+/// set is one row with its modes named in the origin's reason (the mode is then a *value*
+/// — `dry_run`, `existed`, `already_absent` — which is the shape a registry row should make
+/// visible); a key set reachable only under a state the census did not build would not
+/// appear. Proof 1's `⇔` against the clap tree is what keeps that bound survivable: a verb
+/// can be missing an *arm*, never a *row*.
+///
+/// `schema-version` and `contract-version` (hyphenated) are **not** the partition's key:
+/// they are the addressed document's own stamp and `doc schema`'s separately-versioned
+/// projection, and the fence keys on the exact name `schema_version`.
+pub const ENVELOPE_ARMS: &[EnvelopeArm] = &[
+    EnvelopeArm {
+        path: &["start"],
+        arm: "OrientationView::UnsetProject",
+        origin: ArmOrigin::Variant {
+            of: "OrientationView",
+        },
+        shape: ArmShape::Object(&["schema_version", "state"]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::ResultContract("engine::result::OrientationView"),
+    },
+    EnvelopeArm {
+        path: &["start"],
+        arm: "OrientationView::Clean",
+        origin: ArmOrigin::Variant {
+            of: "OrientationView",
+        },
+        shape: ArmShape::Object(&[
+            "header",
+            "next_steps",
+            "schema_version",
+            "state",
+            "workflows",
+        ]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::ResultContract("engine::result::OrientationView"),
+    },
+    EnvelopeArm {
+        path: &["start"],
+        arm: "OrientationView::ActiveTask",
+        origin: ArmOrigin::Variant {
+            of: "OrientationView",
+        },
+        shape: ArmShape::Object(&[
+            "header",
+            "next_steps",
+            "schema_version",
+            "state",
+            "tasks",
+            "workflows",
+        ]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::ResultContract("engine::result::OrientationView"),
+    },
+    EnvelopeArm {
+        path: &["start"],
+        arm: "Composed",
+        origin: ArmOrigin::Dispatch(
+            "`start.rs` chooses compose-or-orient on the argv — an intent, `--workflow` or \
+             `--task` composes, a bare `start` orients — and no result type spans the two",
+        ),
+        shape: ArmShape::Object(&["task", "text"]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("cli::start::Composition, via `render::composed`"),
+    },
+    EnvelopeArm {
+        path: &["workflow"],
+        arm: "Composed",
+        origin: ArmOrigin::Sole,
+        shape: ArmShape::Object(&["task", "text"]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("cli::start::Composition, via `render::composed`"),
+    },
+    EnvelopeArm {
+        path: &["setup"],
+        arm: "Installed",
+        origin: ArmOrigin::Sole,
+        shape: ArmShape::Object(&[
+            "allowlist_file",
+            "findings",
+            "guide_file",
+            "hook_committed",
+            "hook_file",
+            "install_commit",
+            "line_file",
+        ]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("cli::setup::SetupSummary"),
+    },
+    EnvelopeArm {
+        path: &["uninstall"],
+        arm: "TornDown",
+        origin: ArmOrigin::Sole,
+        shape: ArmShape::Object(&["allowlist_file", "findings", "line_file", "removed"]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("cli::setup::UninstallSummary"),
+    },
+    EnvelopeArm {
+        path: &["upgrade"],
+        arm: "Swept",
+        origin: ArmOrigin::Sole,
+        shape: ArmShape::Object(&["checked", "findings", "guide", "schema_version"]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::ResultContract("engine::result::ValidationReport"),
+    },
+    EnvelopeArm {
+        path: &["ingest"],
+        arm: "Triaged",
+        origin: ArmOrigin::Sole,
+        shape: ArmShape::Object(&["rows", "summary"]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("cli::ingest::IngestReport"),
+    },
+    EnvelopeArm {
+        path: &["migrate"],
+        arm: "Composed",
+        origin: ArmOrigin::Sole,
+        shape: ArmShape::Object(&["task", "text"]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("cli::start::Composition, via `render::composed`"),
+    },
+    EnvelopeArm {
+        path: &["migrate-corpus"],
+        arm: "Report",
+        origin: ArmOrigin::Sole,
+        shape: ArmShape::Object(&[
+            "already_current",
+            "blocked",
+            "commit",
+            "dry_run",
+            "hook_output",
+            "migrated",
+            "unadopted",
+            "unfilled",
+        ]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("`render::corpus_migration`'s `json!`"),
+    },
+    EnvelopeArm {
+        path: &["unmanage"],
+        arm: "Report",
+        origin: ArmOrigin::Sole,
+        shape: ArmShape::Object(&["dropped", "identity", "path"]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("`render::unmanage`'s `json!`"),
+    },
+    EnvelopeArm {
+        path: &["rename"],
+        arm: "Report",
+        origin: ArmOrigin::Sole,
+        shape: ArmShape::Object(&[
+            "commit",
+            "from",
+            "hook_output",
+            "new_path",
+            "old_path",
+            "prose_mentions",
+            "referrers",
+            "title",
+            "to",
+        ]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("`render::rename`'s `json!`"),
+    },
+    EnvelopeArm {
+        path: &["relocate"],
+        arm: "Report",
+        origin: ArmOrigin::Sole,
+        shape: ArmShape::Object(&["blocked", "displaced", "moved"]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("`render::freeze_exempt_relocation`'s `json!`"),
+    },
+    EnvelopeArm {
+        path: &["describe"],
+        arm: "Menu",
+        origin: ArmOrigin::Sole,
+        shape: ArmShape::Object(&["commands", "definitions", "schema_version"]),
+        status: ArmStatus::Unpinned {
+            reason: "a composed-prose menu — `design/introspection.md` declares the json arm \
+                     *unpinned rather than unparseable*: nothing versions it and any pack \
+                     edit may move it, which is what non-contractual means here",
+            still_pinned: &["schema_version"],
+        },
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::ResultContract("engine::introspect::Description"),
+    },
+    EnvelopeArm {
+        path: &["validate"],
+        arm: "StoreSweep",
+        origin: ArmOrigin::Sole,
+        shape: ArmShape::Object(&[
+            "blocking_probes",
+            "findings",
+            "report_only",
+            "schema_version",
+            "scope",
+        ]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::ResultContract("engine::result::ValidationReport"),
+    },
+    EnvelopeArm {
+        path: &["doc", "create"],
+        arm: "DocAck::Created",
+        origin: ArmOrigin::Variant { of: "DocAck" },
+        shape: ArmShape::Object(&["copied_in", "existed", "findings", "op", "target"]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("`render::doc_ack`'s per-variant `json!`"),
+    },
+    EnvelopeArm {
+        path: &["doc", "add-item"],
+        arm: "DocAck::AddedItem",
+        origin: ArmOrigin::Variant { of: "DocAck" },
+        shape: ArmShape::Object(&["copied_in", "findings", "op", "target"]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("`render::doc_ack`'s per-variant `json!`"),
+    },
+    EnvelopeArm {
+        path: &["doc", "remove-item"],
+        arm: "DocAck::RemovedItem",
+        origin: ArmOrigin::Variant { of: "DocAck" },
+        shape: ArmShape::Object(&["copied_in", "findings", "op", "removed", "target"]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("`render::doc_ack`'s per-variant `json!`"),
+    },
+    EnvelopeArm {
+        path: &["doc", "retitle-item"],
+        arm: "DocAck::RetitledItem",
+        origin: ArmOrigin::Variant { of: "DocAck" },
+        shape: ArmShape::Object(&["copied_in", "findings", "op", "target", "title"]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("`render::doc_ack`'s per-variant `json!`"),
+    },
+    EnvelopeArm {
+        path: &["doc", "rename"],
+        arm: "DocAck::Renamed",
+        origin: ArmOrigin::Variant { of: "DocAck" },
+        shape: ArmShape::Object(&[
+            "committed_identity",
+            "copied_in",
+            "findings",
+            "from",
+            "op",
+            "reslugged",
+            "target",
+            "title",
+        ]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("`render::doc_ack`'s per-variant `json!`"),
+    },
+    EnvelopeArm {
+        path: &["doc", "set-field"],
+        arm: "DocAck::Field",
+        origin: ArmOrigin::Variant { of: "DocAck" },
+        shape: ArmShape::Object(&["copied_in", "findings", "op", "target", "value"]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("`render::doc_ack`'s per-variant `json!`"),
+    },
+    EnvelopeArm {
+        path: &["doc", "set-field"],
+        arm: "DocAck::UnsetField",
+        origin: ArmOrigin::Variant { of: "DocAck" },
+        shape: ArmShape::Object(&[
+            "already_absent",
+            "copied_in",
+            "findings",
+            "op",
+            "target",
+            "unset",
+        ]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("`render::doc_ack`'s per-variant `json!`"),
+    },
+    EnvelopeArm {
+        path: &["doc", "set-slot"],
+        arm: "DocAck::Slot",
+        origin: ArmOrigin::Variant { of: "DocAck" },
+        shape: ArmShape::Object(&["chars", "copied_in", "findings", "op", "target"]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("`render::doc_ack`'s per-variant `json!`"),
+    },
+    EnvelopeArm {
+        path: &["doc", "author"],
+        arm: "DocAck::Authored",
+        origin: ArmOrigin::Variant { of: "DocAck" },
+        shape: ArmShape::Object(&["copied_in", "findings", "op", "target"]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("`render::doc_ack`'s per-variant `json!`"),
+    },
+    EnvelopeArm {
+        path: &["doc", "show"],
+        arm: "WholeDoc::Committed",
+        origin: ArmOrigin::Dispatch(
+            "the address's DEPTH picks the projection — whole doc, field group, slot — and two \
+             of the four are not objects at all, so no result enum could model the set",
+        ),
+        shape: ArmShape::Object(&[
+            "fields",
+            "item-count",
+            "schema-version",
+            "sections",
+            "slug",
+            "type",
+        ]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("`cli::doc`'s `doc show` projection"),
+    },
+    EnvelopeArm {
+        path: &["doc", "show"],
+        arm: "WholeDoc::Staged",
+        origin: ArmOrigin::Dispatch(
+            "the address's DEPTH picks the projection — whole doc, field group, slot — and two \
+             of the four are not objects at all, so no result enum could model the set",
+        ),
+        shape: ArmShape::Object(&[
+            "fields",
+            "item-count",
+            "schema-version",
+            "sections",
+            "slug",
+            "staged",
+            "type",
+        ]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("`cli::doc`'s `doc show` projection"),
+    },
+    EnvelopeArm {
+        path: &["doc", "show"],
+        arm: "FieldsGroupSlice",
+        origin: ArmOrigin::Dispatch(
+            "the address's DEPTH picks the projection — whole doc, field group, slot — and two \
+             of the four are not objects at all, so no result enum could model the set",
+        ),
+        shape: ArmShape::DataKeyed,
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("`cli::doc`'s `doc show` projection"),
+    },
+    EnvelopeArm {
+        path: &["doc", "show"],
+        arm: "SlotSlice",
+        origin: ArmOrigin::Dispatch(
+            "the address's DEPTH picks the projection — whole doc, field group, slot — and two \
+             of the four are not objects at all, so no result enum could model the set",
+        ),
+        shape: ArmShape::Scalar,
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("`cli::doc`'s `doc show` projection"),
+    },
+    EnvelopeArm {
+        path: &["doc", "schema"],
+        arm: "Projection",
+        origin: ArmOrigin::Sole,
+        shape: ArmShape::Object(&[
+            "contract-version",
+            "fields",
+            "schema-version",
+            "sections",
+            "type",
+        ]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("`cli::doc::SchemaContract`"),
+    },
+    EnvelopeArm {
+        path: &["doc", "list"],
+        arm: "Index",
+        origin: ArmOrigin::Sole,
+        shape: ArmShape::Object(&["docs"]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("`cli::doc`'s `doc list` index projection"),
+    },
+    EnvelopeArm {
+        path: &["task", "list"],
+        arm: "Rows",
+        origin: ArmOrigin::Sole,
+        shape: ArmShape::ArrayOf(&["id", "intent", "workflow"]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("`[cli::task::TaskListRow]` — a bare array, not an object"),
+    },
+    EnvelopeArm {
+        path: &["task", "diff"],
+        arm: "Ack",
+        origin: ArmOrigin::Sole,
+        shape: ArmShape::Object(&["base", "code_diff", "findings", "op", "staged_docs", "task"]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("`render::task_diff`'s `json!`"),
+    },
+    EnvelopeArm {
+        path: &["task", "validate"],
+        arm: "Report",
+        origin: ArmOrigin::Sole,
+        shape: ArmShape::Object(&["findings", "schema_version"]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::ResultContract("engine::result::ValidationReport"),
+    },
+    EnvelopeArm {
+        path: &["task", "discard"],
+        arm: "TaskAck::Discarded",
+        origin: ArmOrigin::Variant { of: "TaskAck" },
+        shape: ArmShape::Object(&["dropped", "findings", "op", "task"]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("`render::task_ack`'s per-variant `json!`"),
+    },
+    EnvelopeArm {
+        path: &["task", "bind"],
+        arm: "TaskAck::Bound",
+        origin: ArmOrigin::Variant { of: "TaskAck" },
+        shape: ArmShape::Object(&["findings", "op", "role", "target", "task"]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("`render::task_ack`'s per-variant `json!`"),
+    },
+    EnvelopeArm {
+        path: &["task", "finalize"],
+        arm: "Landed",
+        origin: ArmOrigin::Dispatch(
+            "four separate `render::` calls chosen by `task.rs`'s finalize dispatch — no \
+             `FinalizeOutcome` enum exists, and the three non-landed arms carry three \
+             different exits",
+        ),
+        shape: ArmShape::Object(&["committed", "findings", "schema_version"]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::ResultContract("engine::result::ValidationReport"),
+    },
+    EnvelopeArm {
+        path: &["task", "finalize"],
+        arm: "Forecast",
+        origin: ArmOrigin::Dispatch(
+            "four separate `render::` calls chosen by `task.rs`'s finalize dispatch — no \
+             `FinalizeOutcome` enum exists, and the three non-landed arms carry three \
+             different exits",
+        ),
+        shape: ArmShape::Object(&["dry_run", "findings", "left_out", "manifest", "subject"]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("`render::finalize_manifest`'s `json!`"),
+    },
+    EnvelopeArm {
+        path: &["task", "finalize"],
+        arm: "Blocked",
+        origin: ArmOrigin::Dispatch(
+            "four separate `render::` calls chosen by `task.rs`'s finalize dispatch — no \
+             `FinalizeOutcome` enum exists, and the three non-landed arms carry three \
+             different exits",
+        ),
+        shape: ArmShape::Object(&["findings", "schema_version"]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Adjudicated(3),
+        root: ArmRoot::ResultContract("engine::result::ValidationReport"),
+    },
+    EnvelopeArm {
+        path: &["task", "finalize"],
+        arm: "MigrationReviewHold",
+        origin: ArmOrigin::Dispatch(
+            "four separate `render::` calls chosen by `task.rs`'s finalize dispatch — no \
+             `FinalizeOutcome` enum exists, and the three non-landed arms carry three \
+             different exits",
+        ),
+        shape: ArmShape::Object(&["retires", "rewrites", "source", "task"]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Adjudicated(4),
+        root: ArmRoot::AdHoc("`render::migration_review`'s `json!`"),
+    },
+    EnvelopeArm {
+        path: &["config", "set"],
+        arm: "ConfigAck::Set",
+        origin: ArmOrigin::Variant { of: "ConfigAck" },
+        shape: ArmShape::Object(&["committed", "key", "op", "relocated", "value"]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("`render::config_ack`'s per-variant `json!`"),
+    },
+    EnvelopeArm {
+        path: &["config", "insert-step"],
+        arm: "ConfigAck::InsertStep",
+        origin: ArmOrigin::Variant { of: "ConfigAck" },
+        shape: ArmShape::Object(&["anchor", "committed", "op", "side", "step", "workflow"]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("`render::config_ack`'s per-variant `json!`"),
+    },
+    EnvelopeArm {
+        path: &["config", "replace-step"],
+        arm: "ConfigAck::ReplaceStep",
+        origin: ArmOrigin::Variant { of: "ConfigAck" },
+        shape: ArmShape::Object(&["committed", "op", "step", "target"]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("`render::config_ack`'s per-variant `json!`"),
+    },
+    EnvelopeArm {
+        path: &["config", "remove-step"],
+        arm: "ConfigAck::RemoveStep",
+        origin: ArmOrigin::Variant { of: "ConfigAck" },
+        shape: ArmShape::Object(&["committed", "op", "target"]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("`render::config_ack`'s per-variant `json!`"),
+    },
+    EnvelopeArm {
+        path: &["config", "fill"],
+        arm: "ConfigAck::Fill",
+        origin: ArmOrigin::Variant { of: "ConfigAck" },
+        shape: ArmShape::Object(&["committed", "op", "target"]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("`render::config_ack`'s per-variant `json!`"),
+    },
+    EnvelopeArm {
+        path: &["config", "fork"],
+        arm: "ConfigAck::Fork",
+        origin: ArmOrigin::Variant { of: "ConfigAck" },
+        shape: ArmShape::Object(&["base", "committed", "op", "path", "target"]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("`render::config_ack`'s per-variant `json!`"),
+    },
+    EnvelopeArm {
+        path: &["config", "get"],
+        arm: "Reading",
+        origin: ArmOrigin::Sole,
+        shape: ArmShape::Object(&["key", "layer", "op", "rejected", "value"]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("`render::config_get`'s `KnobReading` projection"),
+    },
+    EnvelopeArm {
+        path: &["config", "list"],
+        arm: "Readings",
+        origin: ArmOrigin::Sole,
+        shape: ArmShape::Object(&["knobs", "op"]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("`render::config_list`'s `KnobReading` projection"),
+    },
+    EnvelopeArm {
+        path: &["milestone", "create"],
+        arm: "RecordOnlyAck",
+        origin: ArmOrigin::Sole,
+        shape: ArmShape::Object(&["hook_output", "text"]),
+        status: ArmStatus::Unpinned {
+            reason: "`text` is composed prose — the record-only ack the judgment tier censused \
+                     as such — so a driver reads the record, never this string",
+            still_pinned: &["hook_output"],
+        },
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("`render::milestone`'s `json!`"),
+    },
+    EnvelopeArm {
+        path: &["milestone", "add-task"],
+        arm: "RecordOnlyAck",
+        origin: ArmOrigin::Sole,
+        shape: ArmShape::Object(&["hook_output", "text"]),
+        status: ArmStatus::Unpinned {
+            reason: "`text` is composed prose — the record-only ack the judgment tier censused \
+                     as such — so a driver reads the record, never this string",
+            still_pinned: &["hook_output"],
+        },
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("`render::milestone`'s `json!`"),
+    },
+    EnvelopeArm {
+        path: &["milestone", "add-from-spec"],
+        arm: "RecordOnlyAck",
+        origin: ArmOrigin::Sole,
+        shape: ArmShape::Object(&["hook_output", "text"]),
+        status: ArmStatus::Unpinned {
+            reason: "`text` is composed prose — the record-only ack the judgment tier censused \
+                     as such — so a driver reads the record, never this string",
+            still_pinned: &["hook_output"],
+        },
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("`render::milestone`'s `json!`"),
+    },
+    EnvelopeArm {
+        path: &["milestone", "provision"],
+        arm: "RecordOnlyAck",
+        origin: ArmOrigin::Sole,
+        shape: ArmShape::Object(&["hook_output", "text"]),
+        status: ArmStatus::Unpinned {
+            reason: "`text` is composed prose — the record-only ack the judgment tier censused \
+                     as such — so a driver reads the record, never this string",
+            still_pinned: &["hook_output"],
+        },
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("`render::milestone`'s `json!`"),
+    },
+    EnvelopeArm {
+        path: &["milestone", "discard"],
+        arm: "RecordOnlyAck",
+        origin: ArmOrigin::Sole,
+        shape: ArmShape::Object(&["hook_output", "text"]),
+        status: ArmStatus::Unpinned {
+            reason: "`text` is composed prose — the record-only ack the judgment tier censused \
+                     as such — so a driver reads the record, never this string",
+            still_pinned: &["hook_output"],
+        },
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("`render::milestone`'s `json!`"),
+    },
+    EnvelopeArm {
+        path: &["milestone", "list-tasks"],
+        arm: "Listing",
+        origin: ArmOrigin::Sole,
+        shape: ArmShape::Object(&["text"]),
+        status: ArmStatus::Unpinned {
+            reason: "the same composed prose as its five write siblings, minus `hook_output`: a \
+                     `VerbKind::Read` verb commits nothing, so no hook can ever speak into it \
+                     (M51 Increment 5 / T3)",
+            still_pinned: &[],
+        },
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("`render::milestone`'s `json!`"),
+    },
+    EnvelopeArm {
+        path: &["milestone", "execute"],
+        arm: "Composed",
+        origin: ArmOrigin::Sole,
+        shape: ArmShape::Object(&["task", "text"]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("cli::start::Composition, via `render::composed`"),
+    },
+    EnvelopeArm {
+        path: &["milestone", "join"],
+        arm: "Report",
+        origin: ArmOrigin::Sole,
+        shape: ArmShape::Object(&[
+            "findings",
+            "milestone",
+            "no_docs_from",
+            "overlay",
+            "schema_version",
+        ]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::ResultContract("engine::milestone::JoinOutcome"),
+    },
+    EnvelopeArm {
+        path: &["milestone", "finalize"],
+        arm: "Landed",
+        origin: ArmOrigin::Dispatch(
+            "`milestone.rs`'s finalize dispatch picks the landed ack or the block; the two \
+             share no type, and only one of them carries `findings`",
+        ),
+        shape: ArmShape::Object(&["committed"]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("`render::milestone_finalized`'s `json!`"),
+    },
+    EnvelopeArm {
+        path: &["milestone", "finalize"],
+        arm: "Blocked",
+        origin: ArmOrigin::Dispatch(
+            "`milestone.rs`'s finalize dispatch picks the landed ack or the block; the two \
+             share no type, and only one of them carries `findings`",
+        ),
+        shape: ArmShape::Object(&["findings", "schema_version"]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Adjudicated(3),
+        root: ArmRoot::ResultContract("engine::result::ValidationReport"),
+    },
+    EnvelopeArm {
+        path: &[],
+        arm: "Reject::Error",
+        origin: ArmOrigin::Dispatch(
+            "cross-cutting: which reject funnel a door enters is decided by the failure it \
+             caught, not by the verb — an `anyhow` chain takes the first, a blocking \
+             `Finding` the second",
+        ),
+        shape: ArmShape::Object(&["error"]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Reject,
+        root: ArmRoot::AdHoc("`render::operational_error`'s single-key `json!`"),
+    },
+    EnvelopeArm {
+        path: &[],
+        arm: "Reject::Findings",
+        origin: ArmOrigin::Dispatch(
+            "cross-cutting: which reject funnel a door enters is decided by the failure it \
+             caught, not by the verb — an `anyhow` chain takes the first, a blocking \
+             `Finding` the second",
+        ),
+        shape: ArmShape::Object(&["findings", "schema_version"]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Reject,
+        root: ArmRoot::ResultContract("engine::result::ValidationReport"),
+    },
+];
+
 #[cfg(test)]
 mod tests {
     use super::*;
