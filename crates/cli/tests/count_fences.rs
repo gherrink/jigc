@@ -74,72 +74,50 @@ enum Scope {
     WithRegistryUnits,
 }
 
-/// What this suite owes a home.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Disposition {
-    /// Every claim must state the registry's count or sit in a dated correction.
-    Fenced,
-    /// Deferred to a named increment, keyed on the stale literal that increment corrects.
-    OwedAt {
-        increment: &'static str,
-        literal: &'static str,
-    },
-}
-
 struct Home {
     path: &'static str,
     scope: Scope,
-    disposition: Disposition,
 }
 
 /// **Every home that states the committing-door count**, enumerated rather than globbed on
 /// `foldback_truth.rs`' reason: a sweep of every `.md` would reach the dated records, whose
 /// job is to state the world as it was.
 ///
-/// `MIGRATING.md` is **deferred, not exempt**. It is `include_str!`'d into the installed
-/// `SKILL.md`, so any guide byte moves `jigc-body-blake3` and engages M48's refuse-to-clobber
-/// path; the decomposition lands every guide byte this wave owes in one batch at Increment 9
-/// (`implementation/roadmap.md` → Milestone 51, Increment 9), and this row's second leg
-/// asserts the stale literal is **still stale**, so that correction reddens this suite and
-/// forces the row to be re-dispositioned in the same commit.
+/// `MIGRATING.md` was **deferred, not exempt**, for the length of one increment: it is
+/// `include_str!`'d into the installed `SKILL.md`, so any guide byte moves
+/// `jigc-body-blake3` and engages M48's refuse-to-clobber path, and the decomposition
+/// landed every guide byte this wave owed in **one** batch at Increment 9 T12
+/// (`implementation/roadmap.md` → Milestone 51, Increment 9). That batch landed —
+/// `MIGRATING.md` now states **ten** — so the deferral and its bookkeeping arm are
+/// **discharged** and the guide is fenced live here, like every other home.
 const HOMES: &[Home] = &[
     Home {
         path: "CLAUDE.md",
         scope: Scope::ExplicitOnly,
-        disposition: Disposition::Fenced,
     },
     Home {
         path: "implementation/decisions-pending.md",
         scope: Scope::ExplicitOnly,
-        disposition: Disposition::Fenced,
     },
     Home {
         path: "design/worked-examples.md",
         scope: Scope::WithRegistryUnits,
-        disposition: Disposition::Fenced,
     },
     Home {
         path: "crates/cli/tests/flow47_acceptance.rs",
         scope: Scope::WithRegistryUnits,
-        disposition: Disposition::Fenced,
     },
     Home {
         path: "crates/cli/tests/commit_rejected_axis.rs",
         scope: Scope::WithRegistryUnits,
-        disposition: Disposition::Fenced,
     },
     Home {
         path: "crates/cli/tests/pinned_facts.rs",
         scope: Scope::ExplicitOnly,
-        disposition: Disposition::Fenced,
     },
     Home {
         path: "MIGRATING.md",
         scope: Scope::ExplicitOnly,
-        disposition: Disposition::OwedAt {
-            increment: "Increment 9",
-            literal: "All nine committing doors carry the frame",
-        },
     },
 ];
 
@@ -427,9 +405,6 @@ fn every_door_count_home_states_the_registry_count() {
     let expected = COMMITTING_DOORS.len();
     let mut stale = Vec::new();
     for home in HOMES {
-        if home.disposition != Disposition::Fenced {
-            continue;
-        }
         let body = read(home.path);
         let (all, uncorrected) = claims_of(home);
         assert!(
@@ -524,42 +499,6 @@ fn a_stale_count_is_caught_a_dated_one_is_spared_and_a_singular_is_ignored() {
         dated_correction_spans("the whole **[Corrected at review: nine-door axis]** frame")
             .is_empty(),
         "an undated correction is not one — the date is the whole point",
-    );
-}
-
-/// The guide's correction is deferred to the single guide batch, and the deferral is
-/// bookkeeping rather than an exemption: the stale literal must still be there, and still be
-/// stale, so Increment 9's edit reddens this suite.
-#[test]
-fn the_guide_door_count_is_owed_at_the_single_guide_batch() {
-    let mut checked = 0usize;
-    for home in HOMES {
-        let Disposition::OwedAt { increment, literal } = home.disposition else {
-            continue;
-        };
-        checked += 1;
-        let body = read(home.path);
-        assert!(
-            body.contains(literal),
-            "{} is excluded from the live fence because its correction lands in {increment}'s \
-             single guide batch, keyed on the literal `{literal}`. That literal is gone — so \
-             either the correction landed (lift the exclusion and fence the guide live) or the \
-             sentence moved (re-key the row).",
-            home.path,
-        );
-        let (_, uncorrected) = claims_of(home);
-        assert!(
-            uncorrected
-                .iter()
-                .any(|c| c.value != COMMITTING_DOORS.len()),
-            "{}'s owed literal must still state a count the registry does not carry — the \
-             deferral is bookkeeping, not a blanket exemption; found {uncorrected:?}",
-            home.path,
-        );
-    }
-    assert_eq!(
-        checked, 1,
-        "exactly one home is deferred to the guide batch"
     );
 }
 

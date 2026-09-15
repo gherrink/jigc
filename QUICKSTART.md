@@ -12,13 +12,18 @@ project documents. This walks the MVP loop on a real machine —
 
 ## Install
 
-`jigc` ships as a single binary. Install it from the workspace and put it on
-your `PATH`:
+`jigc` ships as a single binary, and there is **one** install command. This is
+the only place this guide states it, so an upgrade is the same line again:
 
 ```sh
-cargo install --path crates/cli      # or: cargo build --release -p cli
-cp target/release/jigc /usr/local/bin/   # if you built rather than installed
+cargo install --path crates/cli
 ```
+
+That builds the release binary and puts `jigc` in cargo's own install root —
+`~/.cargo/bin` unless you have moved `CARGO_HOME` — which is already on your
+`PATH` if cargo is. Placing a built binary somewhere else by hand works, but then
+that copy is yours to keep current, and every instruction below to re-run `jigc
+setup` after an upgrade means replacing it first.
 
 Just `jigc` — nothing else to copy. The doc↔code probe (`doc-code`) is
 embedded in the binary and extracted beside it by `jigc setup` (below), so a
@@ -87,6 +92,18 @@ path, so in someone else's clone it stays silent until they run `jigc setup`
 themselves. These edits are idempotent — re-running `jigc setup` leaves the files
 byte-identical (no new commit), so it is safe to run after every upgrade to re-apply
 the adapter.
+
+**It refuses that commit rather than sweeping your work into it.** Before writing
+anything, `setup` compares every path in its own install footprint against `HEAD`.
+If any of them already carries changes that are in no commit — staged, unstaged or
+untracked — it stops with one blocking `setup.dirty-install-path` naming each such
+path and makes **no** install commit: the install files are written and staged,
+`HEAD` is untouched, and your bytes are still exactly where you left them. Commit or
+stash them (`git stash -u` where git does not track them yet) and re-run, or pass
+`jigc setup --force`, the single consent, which commits those paths into the install
+commit as they stand. This is the same rule as the carryover gate at `jigc task
+finalize` below — a door committing paths it does not own says so instead of
+sweeping them in — at its other door.
 
 ## 2. `jigc start "<intent>"` — route, then mint
 
@@ -157,30 +174,57 @@ If validation blocks (a dangling forward reference, a missing required slot, a
 malformed value), finalize makes no commit and surfaces the findings with a
 route for the next action. Fix and re-run.
 
-Your own `pre-commit` / `commit-msg` hooks still run — jigc never passes
-`--no-verify`, they are your policy — so a hook that rejects the commit stops
-the finalize. Nothing is committed, the task survives — its staged docs still in
-`.jigc/tasks/<id>/docs/`, anything you had `git add`-ed still in git's index —
+Your own `pre-commit` / `commit-msg` hooks still run: no jigc commit of *your*
+work passes `--no-verify`, so they are your policy, and a hook that rejects the
+commit stops the finalize. Nothing is committed, the task survives — its staged
+docs still in `.jigc/tasks/<id>/docs/`, anything you had `git add`-ed still in git's index —
 and the message carries the hook's own output verbatim plus the line to re-run
 once its complaint is fixed. Every jigc verb that commits on
 your behalf answers a rejection that way, each stating what *its* rejection
 left behind — the per-door detail is in [MIGRATING.md](MIGRATING.md) →
 Reconciling and backing out.
 
+The `--no-verify` sentence above is about the commits that carry *your* work, and
+it has exactly one exception, which carries none of it: `jigc setup`'s own install
+commit passes `--no-verify`, so that the warn-only `pre-commit` hook `setup` has
+just written cannot fire on the commit installing it. That commit carries only the
+bytes `setup` itself wrote — it refuses outright rather than committing anything
+else (§1 above) — so there is no work of yours inside it for a hook of yours to
+have policy over.
+
 A landed finalize prints a **manifest** — the file-set the commit carried (the
 git index: what you staged plus the docs jigc promotes), with a distinct
 **left-out** list naming any unstaged or untracked work the commit excluded (so
-a stray `scratch.txt` stands out as left behind, never swept in). To see that
-set *before* committing, run `jigc task finalize <id> --dry-run`: it prints the
-manifest and stops, changing nothing. A change staged *before* the task existed
-refuses to ride the commit (`finalize.carried-staged`) unless you declare it
-with `--carry-staged`.
+a stray `scratch.txt` stands out as left behind, never swept in; each path is
+tagged by how it enters, and [MIGRATING.md](MIGRATING.md) → Reconciling and
+backing out names the whole tag vocabulary once).
+
+To see that set *before* committing, run `jigc task finalize <id> --dry-run`. On a
+task that would otherwise commit cleanly it prints the manifest and stops,
+committing nothing. It forecasts no green it would refuse: over a state finalize
+blocks — an unfilled required slot, a carried-over staged path — the dry run emits
+those blocking findings instead of a manifest and takes the refusing exit, so a
+manifest coming back from `--dry-run` is itself the news that nothing this side of
+the commit blocks.
+
+A change staged *before* the task existed refuses to ride the commit — one blocking
+`finalize.carried-staged` per carried path — unless you declare it with
+`--carry-staged`. That is the narrower of two members of one rule: **a door
+committing paths it does not own says so instead of sweeping them in**, and `jigc
+setup`'s install commit is the other (§1 above). It is not a universal over every
+jigc commit — `jigc rename`, `jigc migrate-corpus` and the milestone record-only
+doors commit without asking this question at all.
 
 Changed your mind? **`jigc task discard <id>`** abandons the task — it removes
-only the working area under `.jigc/tasks/`; no commit is made and the committed
-store is untouched. It **refuses first if that area stages docs no commit has a
-copy of** — one blocking `task-discard.staged-prose` naming each of them, so you
-can read them back (`jigc doc show <address> --task <id>`) or land them
+only the working area under `.jigc/tasks/`; for an ordinary task no commit is made
+and the committed store is untouched. (One task shape is different, and it is the
+only one: a **milestone sub-task** is named by a committed milestone record, so
+discarding it settles that one record item to `discarded` and commits the record on
+its own — before the area is removed, so a refused commit leaves both intact — and
+the ack names the sha it landed on a `record commit:` line. Nothing of yours is
+committed either way; only the record moves.) It **refuses first if that area
+stages docs no commit has a copy of** — one blocking `task-discard.staged-prose`
+naming each of them, so you can read them back (`jigc doc show <address> --task <id>`) or land them
 (`jigc task finalize <id>`) before deciding. **`--force` is the single consent**
 that discards them along with the area. Minting a task stages its commit doc, so
 expect that refusal on any task you have actually started. The full

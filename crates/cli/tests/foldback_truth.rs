@@ -863,35 +863,25 @@ fn missing_tags(unit: &str) -> Vec<&'static str> {
 }
 
 /// The docs of record for the two vocabularies — `finalize.md` owns the committed set,
-/// `command-output-contract.md` the JSON `kind` value space. Enumerated rather than
-/// globbed, on `STEP_COUNT_HOMES`' reason: a sweep of every `.md` would reach the dated
-/// records, whose job is to state the world as it was.
-const VOCABULARY_HOMES: [&str; 2] = ["design/finalize.md", "design/command-output-contract.md"];
-
-/// **The shipped guides are deferred, not exempt — and the deferral names its landing.**
+/// `command-output-contract.md` the JSON `kind` value space, and `MIGRATING.md` teaches it
+/// to the adopter. Enumerated rather than globbed, on `STEP_COUNT_HOMES`' reason: a sweep of
+/// every `.md` would reach the dated records, whose job is to state the world as it was.
 ///
-/// Both guides are `include_str!`'d into the installed `SKILL.md` (`shipped_guides` above),
-/// so *any* guide byte moves `jigc-body-blake3` and engages M48's refuse-to-clobber path.
-/// The decomposition therefore lands every guide byte this wave owes in **one batch, one
-/// hash move** (`implementation/roadmap.md` → Milestone 51, Increment 9 — *the law-1 surface
-/// batch and the single guide hash move*, which names EC-22, this correction, among its
-/// rows). Editing `MIGRATING.md` here would ship the second hash move that decomposition
-/// exists to prevent.
-///
-/// So the exclusion is **scoped to the whole shipped-guide set** — no guide byte moves
-/// before the batch, so a third guide joining the installed artifact joins the deferral
-/// too, which is what the set equality below makes checkable — and the stale literal the
-/// batch will correct is asserted **still present**, so Increment 9's correction reddens
-/// this suite and forces the exclusion to be lifted in the same commit. This is the
-/// claim-3 inversion idiom this suite already runs in both directions.
-const GUIDE_BATCH: &str = "Increment 9";
-
-/// The stale literals the guide batch will correct: `(guide, literal)`. Today exactly one —
-/// `MIGRATING.md`'s four-tag list, short by `added`.
-const OWED_AT_GUIDE_BATCH: [(&str, &str); 1] = [(
+/// **`MIGRATING.md` joined at M51 Increment 9 T12, and the deferral it replaces is why the
+/// row is worth a sentence.** Both shipped guides are `include_str!`'d into the installed
+/// `SKILL.md` (`shipped_guides` above), so *any* guide byte moves `jigc-body-blake3` and
+/// engages M48's refuse-to-clobber path; the decomposition therefore landed every guide byte
+/// this wave owed in **one batch, one hash move** (`implementation/roadmap.md` → Milestone
+/// 51, Increment 9). Until that batch this home was excluded and its stale four-tag literal
+/// asserted *still stale*, so the correction would redden this suite and force the exclusion
+/// to be lifted in the same commit. It landed, and this is that lift. `QUICKSTART.md` is not
+/// a member because it enumerates no tag — it names the manifest and points here, which is
+/// the *one fact, one home* rule the batch also applies to its install stanza.
+const VOCABULARY_HOMES: [&str; 3] = [
+    "design/finalize.md",
+    "design/command-output-contract.md",
     "MIGRATING.md",
-    "(`promoted` / `modified` / `deleted` / `carried-over`)",
-)];
+];
 
 #[test]
 fn every_prose_unit_that_enumerates_the_manifest_vocabulary_names_all_of_it() {
@@ -927,9 +917,9 @@ fn every_prose_unit_that_enumerates_the_manifest_vocabulary_names_all_of_it() {
 }
 
 /// The fence is a property of the predicate, not of today's bytes: it must **catch** a unit
-/// that names a strict subset of the vocabulary it is speaking. The fixture is the shipped
-/// defect — `MIGRATING.md`'s four-tag list — so the arm also states, executably, what the
-/// guide batch is owed for.
+/// that names a strict subset of the vocabulary it is speaking. The fixture is the defect as
+/// it shipped — `MIGRATING.md`'s four-tag list, corrected at M51 Increment 9 T12 — kept
+/// verbatim so the arm states, executably, what the live fence above is now watching for.
 #[test]
 fn a_unit_naming_a_strict_subset_of_its_vocabulary_is_caught() {
     let short = "It prints the manifest the finalize *would* commit — each path tagged by \
@@ -966,51 +956,6 @@ fn a_unit_naming_a_strict_subset_of_its_vocabulary_is_caught() {
     // Ordinary prose that merely uses the words is not an enumeration.
     let prose = "the manifest names the promoted docs and the modified sources";
     assert_eq!(vocabulary_spoken(prose), None);
-}
-
-#[test]
-fn the_guide_vocabulary_correction_is_owed_at_the_single_guide_batch() {
-    let deferred: BTreeSet<String> = OWED_AT_GUIDE_BATCH
-        .iter()
-        .map(|(guide, _)| (*guide).to_string())
-        .chain(
-            // A guide with nothing stale still may not move before the batch, so the
-            // deferral's subject is the guide set, never the one stale file.
-            shipped_guides()
-                .into_iter()
-                .filter(|guide| !guide.contains("MIGRATING")),
-        )
-        .collect();
-    let shipped: BTreeSet<String> = shipped_guides().into_iter().collect();
-    assert_eq!(
-        deferred, shipped,
-        "the deferral covers every shipped guide — the batch is one hash move, so a guide \
-         joining the installed artifact joins {GUIDE_BATCH}'s batch with it",
-    );
-
-    for (guide, literal) in OWED_AT_GUIDE_BATCH {
-        let body = read_doc(guide);
-        assert!(
-            body.contains(literal),
-            "{guide} is excluded from the live fence because its correction lands in \
-             {GUIDE_BATCH}'s single guide batch, keyed on the literal `{literal}`. That \
-             literal is gone — so either the correction landed (lift the exclusion and \
-             fence the guide live) or the sentence moved (re-key the row).",
-        );
-        // The exclusion is load-bearing only while the literal is genuinely short.
-        let stale: Vec<String> = prose_units(&body)
-            .into_iter()
-            .filter(|unit| unit.contains(literal))
-            .filter(|unit| !missing_tags(unit).is_empty())
-            .collect();
-        assert_eq!(
-            stale.len(),
-            1,
-            "{guide}'s owed literal must sit in exactly one unit the fence would redden; \
-             found {} — the deferral is bookkeeping, not a blanket exemption",
-            stale.len(),
-        );
-    }
 }
 
 /// `ManifestKind::ALL` is a registry only if it holds every variant the enum declares — an
