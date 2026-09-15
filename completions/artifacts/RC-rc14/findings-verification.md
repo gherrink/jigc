@@ -126,7 +126,7 @@ planted status *because* the discrepancy must be read-back-only; this repro is t
 independently. The finding is not that the plant worked — it is B2's sharper observation that a
 clean `validate` **reads as** correct.
 
-`pinned-by:` `crates/cli/tests/…` — **UNPINNED: verified by reading, no suite asserts this.**
+`pinned-by:` **UNPINNED: verified by reading, no suite asserts this.**
 The nearest standing fence is plant E's bar 9 (`e-abandoned-task.sh:155`), which asserts the
 *absence* of a finding here and is trial apparatus, not a repo suite. Pinning the presence of a
 constraint would be pinning the fix.
@@ -455,17 +455,40 @@ manual commit   e288714  .jigc/config/manifest.yaml · docs/decisions/shed-the-o
 
 doc blob in 445729a : 6628b9439a695090b243ca6c9e53bfcaf8094802
 doc blob in e288714 : 6628b9439a695090b243ca6c9e53bfcaf8094802   → IDENTICAL
+
+$ git -C ~/out/RC14-B1 status --porcelain                                         [exit 0]
+A  scripts/retention-sweep.sh
+M  src/router.ts
 ```
 
 **The document's bytes never left jigc's write path.** Every slot and field was authored through
 `doc author` / `set-slot` / `set-field`, and the re-slug through `doc rename`. What raw git did
 was re-shape the *commit* around unchanged bytes.
 
+**The residue the first sizing missed — the two carryover paths were left *staged*, not lost.**
+The line *“2 files — the two carryover paths removed”* is true of the commit and was read as true
+of the tree; it is not. The manual commit dropped `scripts/retention-sweep.sh` and `src/router.ts`
+from the commit and left them **in the index**, where the `git status --porcelain` above still
+finds them — on a branch whose `HEAD` message claims the work is recorded. **Nothing was lost**,
+and the correction is to the sizing, not to the verdict.
+
+**What no surface says, driven.** The archived out-dir was read with `git` alone — no jigc verb was
+run inside it, because M49 permits a read verb to materialize a self-healing derived cache and this
+is evidence — so the surface half was reproduced on a `dev/jigc-rig committed-singletons` corpus
+carrying the same shape (`A  scripts/retention-sweep.sh` · `M  src/router.ts`, both unmanaged code):
+`jigc validate`, `jigc doc list`, `jigc task list` and `jigc start`'s orientation each exit 0 and
+name **neither** path. What does name them is a **write** door — the next mint's carryover gate
+raises one `finalize.carried-staged` per staged path, previewed by `jigc task validate`. So the
+state is reachable only by starting work, never by asking: **F-6/N27 from the other side**, where
+`task diff`'s cold start answers *what is here* with almost nothing.
+
 **jigc's bookkeeping did not go stale, and the reason is a design choice worth naming:** the
 file-state baseline is keyed on the doc's **content hash**
-(`docs/decisions/shed-the-oldest-sample.md → 6eba78aa…`), not on a commit sha. So the rewritten
-history left the baseline correct, and `jigc validate` reading clean afterwards was **right**,
-not lucky. Had the baseline recorded `445729a`, it would now point at a commit unreachable from
+(`docs/decisions/shed-the-oldest-sample.md → 6eba78aa…`), not on a commit sha. That is
+**structural, not inferred** — the record *is* a `path → hex-hash` map
+(`crates/engine/src/file_state.rs:63-64`), so there is no commit identity in it to go stale. The
+rewritten history left the baseline correct, and `jigc validate` reading clean afterwards was
+**right**, not lucky. Had the baseline recorded `445729a`, it would now point at a commit unreachable from
 `HEAD`.
 
 **Scope: one arm, one commit.** B2, B3, B3-h2, B4-h and B3-strict have **zero** resets in their
