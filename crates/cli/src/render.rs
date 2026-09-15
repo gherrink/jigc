@@ -1361,6 +1361,14 @@ pub const FINALIZE_FAMILY: &[FinalizeCode] = &[
                        spelling at all",
     },
     FinalizeCode {
+        code: "finalize.rollback-conflict",
+        producer: "cli::task",
+        subject: FinalizeSubject::FilePath,
+        subject_note: "the config-layer file the transaction rewrote and could not put back — \
+                       its bytes changed while the finalize was running, so one finding per \
+                       raced path, never one `(code, null)` for the rollback",
+    },
+    FinalizeCode {
         code: "finalize.source-path-io",
         producer: "engine::finalize",
         subject: FinalizeSubject::WorkUnit,

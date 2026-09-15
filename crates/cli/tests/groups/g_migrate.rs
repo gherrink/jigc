@@ -9,6 +9,8 @@ mod support;
 mod adapter_artifact;
 #[path = "../anchor_root_truth.rs"]
 mod anchor_root_truth;
+#[path = "../config_layer_preimage.rs"]
+mod config_layer_preimage;
 #[path = "../dev_gate_report.rs"]
 mod dev_gate_report;
 #[path = "../dev_rig_parity.rs"]

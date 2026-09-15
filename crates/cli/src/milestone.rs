@@ -4048,6 +4048,10 @@ fn run_milestone_finalize(
         // below (M51 Increment 4 / T2) — this arm reaches the same shared writer the
         // per-task door does.
         let mut ignore_ack = None;
+        // Any path the shared transaction's worktree rollback could not put back (M51
+        // Increment 4 / T3) — this boundary reaches the same two rewrites the per-task door
+        // does, through the same executor.
+        let mut rollback_conflicts: Vec<Finding> = Vec::new();
         match crate::task::try_execute_finalize_plan(
             &repo_root,
             &jigc_root,
@@ -4061,6 +4065,7 @@ fn run_milestone_finalize(
                 record: record_pathspec,
             },
             &mut ignore_ack,
+            &mut rollback_conflicts,
         )? {
             Ok(hook_output) => {
                 // The boundary landed — the flipped record rode the aggregate commit; disarm
@@ -4126,19 +4131,22 @@ fn run_milestone_finalize(
                 // A rejected chain names ITSELF in the invocation log — the `squash: false`
                 // arm's own identity, not the task door's (M47 Inc 3 T7) — and states what
                 // the abort above leaves behind, while git's stderr stays verbatim.
-                Ok(crate::task::surface_commit_rejection(
-                    format,
-                    &err,
-                    &crate::task::RejectionFrame {
-                        code: crate::invocation_log::ERROR_MILESTONE_CHAIN_REJECTED,
-                        survived: format!(
-                            "milestone:{milestone_id} is intact — nothing was committed, HEAD is \
-                             at its pre-finalize commit, and every provisioned sub-task worktree \
-                             still holds its staged code"
-                        ),
-                        survived_non_hook: None,
-                        rerun: milestone_finalize_rerun(milestone_id, carry_staged),
-                    },
+                Ok(crate::task::carry_rollback_conflicts(
+                    crate::task::surface_commit_rejection(
+                        format,
+                        &err,
+                        &crate::task::RejectionFrame {
+                            code: crate::invocation_log::ERROR_MILESTONE_CHAIN_REJECTED,
+                            survived: format!(
+                                "milestone:{milestone_id} is intact — nothing was committed, \
+                                 HEAD is at its pre-finalize commit, and every provisioned \
+                                 sub-task worktree still holds its staged code"
+                            ),
+                            survived_non_hook: None,
+                            rerun: milestone_finalize_rerun(milestone_id, carry_staged),
+                        },
+                    ),
+                    &rollback_conflicts,
                 ))
             }
         }
@@ -4153,6 +4161,10 @@ fn run_milestone_finalize(
         // docs-only commit, byte-identical to what M7 shipped.
         // The boundary's `.jigc/.gitignore` report (M51 Increment 4 / T2), as above.
         let mut ignore_ack = None;
+        // Any path the shared transaction's worktree rollback could not put back (M51
+        // Increment 4 / T3) — this boundary reaches the same two rewrites the per-task door
+        // does, through the same executor.
+        let mut rollback_conflicts: Vec<Finding> = Vec::new();
         match crate::task::try_execute_finalize_plan(
             &repo_root,
             &jigc_root,
@@ -4163,6 +4175,7 @@ fn run_milestone_finalize(
             None,
             crate::task::StagePolicy::Combine(worktrees, record_pathspec),
             &mut ignore_ack,
+            &mut rollback_conflicts,
         )? {
             // The boundary landed. Clean up the per-sub-task working areas too (the
             // executor only removed the milestone area). A failed/rolled-back finalize
@@ -4204,19 +4217,22 @@ fn run_milestone_finalize(
             // inlined here so the landed arm can print the manifest. The executor already
             // rolled back its promoted-doc copies and the record flip's guard restores the
             // record, so the milestone is left exactly as the boundary found it.
-            Err(err) => Ok(crate::task::surface_commit_rejection(
-                format,
-                &err,
-                &crate::task::RejectionFrame {
-                    code: crate::invocation_log::ERROR_MILESTONE_FINALIZE_REJECTED,
-                    survived: format!(
-                        "milestone:{milestone_id} is intact — nothing was committed, the merged \
-                         docs were rolled back, and every provisioned sub-task worktree still \
-                         holds its staged code"
-                    ),
-                    survived_non_hook: None,
-                    rerun: milestone_finalize_rerun(milestone_id, carry_staged),
-                },
+            Err(err) => Ok(crate::task::carry_rollback_conflicts(
+                crate::task::surface_commit_rejection(
+                    format,
+                    &err,
+                    &crate::task::RejectionFrame {
+                        code: crate::invocation_log::ERROR_MILESTONE_FINALIZE_REJECTED,
+                        survived: format!(
+                            "milestone:{milestone_id} is intact — nothing was committed, the \
+                             merged docs were rolled back, and every provisioned sub-task \
+                             worktree still holds its staged code"
+                        ),
+                        survived_non_hook: None,
+                        rerun: milestone_finalize_rerun(milestone_id, carry_staged),
+                    },
+                ),
+                &rollback_conflicts,
             )),
         }
     }

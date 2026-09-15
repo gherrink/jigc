@@ -265,25 +265,31 @@ fn a_hook_rejected_finalize_restores_the_staged_config_layer() {
         "the index must be byte-identical to its pre-finalize state after a rejected finalize",
     );
 
-    // The DECLARED worktree residue (confidence-audit minor item 3): the fourth axis is
-    // **index-only by design** (`rollback_config_layer_index`'s doc: restore "without
-    // touching the worktree", the same index-only discipline the owner-artifact axis
-    // holds) — so the on-disk `.jigc/version` keeps the refreshed bytes and the
-    // `ensure`d `.jigc/.gitignore` stays on disk. Both are jigc-owned maintenance files
-    // the next store-writing op rewrites identically, so cleaning them would buy nothing
-    // and touch the worktree the discipline forbids. Pinned so a future "fix" that
-    // starts scrubbing the worktree meets this declaration, not silence.
+    // **The declaration is reversed at M51 Increment 4, and these two assertions are its
+    // reversal** (`design/finalize.md` → Rollback discipline; `settle-record.md` → §6 / D4).
+    // The confidence audit's minor item 3 declared the worktree residue acceptable on the
+    // ground that both files are jigc-owned maintenance the next store-writing op rewrites
+    // identically — which is false of `.jigc/.gitignore`, a file the **user co-owns**: the
+    // replace-era writer destroyed an uncommitted private line there at exit 0 with the bytes
+    // in no git object, and even after the amend the transaction left an unasked-for
+    // modification standing while its own frame said *"nothing was committed"*. So the family
+    // gained a worktree axis and the two files are restored — compare-and-swap, so a
+    // concurrent edit is preserved rather than overwritten.
+    //
+    // The stamp is restored to its pre-finalize bytes…
     let worktree_stamp =
         fs::read_to_string(repo.path().join(".jigc").join("version")).expect("read the stamp");
-    assert_ne!(
+    assert_eq!(
         worktree_stamp, stale_stamp,
-        "the worktree `.jigc/version` keeps the refreshed bytes — the rollback is \
-         index-only, by declaration",
+        "the worktree `.jigc/version` must be restored to its pre-finalize bytes — a refused \
+         transaction leaves no rewrite of its own standing",
     );
+    // …and the `.gitignore` the amend CREATED is deleted, because its pre-image is *absent*
+    // and an absence restores under the identical rule.
     assert!(
-        repo.path().join(".jigc").join(".gitignore").exists(),
-        "the ensured `.jigc/.gitignore` stays in the worktree — the rollback is \
-         index-only, by declaration",
+        !repo.path().join(".jigc").join(".gitignore").exists(),
+        "`.jigc/.gitignore` did not exist pre-finalize, so the rollback must delete the one \
+         this transaction created",
     );
 }
 
