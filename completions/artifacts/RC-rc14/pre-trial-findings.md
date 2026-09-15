@@ -178,11 +178,28 @@ Recorded rather than fixed — adding a `FILESYSTEM-effective` counter mid-trial
 registered measurement while the trial that depends on it is running, which is the one thing
 [the driver's own README](../../trial-driver/README.md) says a reader must never do.
 
-**The product observation underneath it is worth more than the reader one, and it is not
-adjudicated here:** under the adopter's *real* permission condition, the worker's first move on
+**The product observation underneath it is narrower than this file first stated, and it is not
+adjudicated here:** under the adopter's *real* permission condition the worker did reach for the
+filesystem over its own task area — **at tool call 7, after** reading the plant through `jigc doc
+show adr:reject-the-newest-sample-when --task record-the-ingest-queue-overflow` at **invocation
+3, tool call 3** — and the harness **denied** the reach. That *later* reach is what N27 is priced
+against. B3-strict is unscored, so none of it enters the headline.
+
+**[Corrected 2026-09-15 (M51 Increment 10, T2):** this paragraph read *"the worker's first move on
 an unfamiliar staged task was the filesystem, not a read verb. That is the same reach RC-m50
-recorded twice, and it is exactly what N27 is priced against. B3-strict is unscored, so this
-does not enter the headline — but it is evidence the headline's adjudication must weigh.
+recorded twice … it is evidence the headline's adjudication must weigh."* Falsified from this
+arm's own archived channels: `evidence/B3-strict/invocations.jsonl` records 1–3 are `start`
+`05:26:33Z`, `doc show commit:… --task … --format json` `05:26:40Z`, and — as **invocation 3**
+(`invocations.jsonl` rec 3) — **`doc show adr:reject-the-newest-sample-when --task
+record-the-ingest-queue-overflow` at `05:26:41Z`**, **9 s** after `PROVENANCE.txt`'s
+`session-start 05:26:32Z` and before any write; `transcript.jsonl` puts
+the `find … | xargs -I{} sh -c 'echo ==={}===; cat {}'` at **tool call 7**, `05:26:53.490Z`, with
+`is_error: true` (*"This Bash command contains multiple operations. The following part requires
+approval: xargs …"*) — **denied**. B3-strict is a **fourth** VERB-first arm, so the observation
+**strengthens** the headline it was offered as a caution against. **PT-7's own claim is
+untouched** — FILESYSTEM counts attempts, not reads, and the denial above is the demonstration;
+only the *first move* sentence was wrong. The trial record's §3 bound 4 carries the same strike,
+and its scored table carries the `fs (DOC/wkbn)` split whose loss hid this.**]**
 
 ---
 

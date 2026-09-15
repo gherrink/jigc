@@ -8,19 +8,37 @@ on the 1.0.0 call.
 
 ## What ran
 
-| arm | corpus | transport | recs | wrote | VERB | eff. | adj | fs | outcome |
+| arm | corpus | transport | recs | wrote | VERB | eff. | adj | fs (DOC/wkbn) | outcome |
 |---|---|---|---|---|---|---|---|---|---|
-| **B2** | thornbury | **interactive** | 53 | 24 | 4 | 4 | 4 | 0 | `read back through the fence's verb` |
-| **B3** | marlowe | headless | 120 | 62 | 6 | 6 | 6 | 1\* | `read back through the fence's verb` |
-| **B3-h2** | oakhurst | headless | 70 | 27 | 5 | 5 | 5 | 0 | `read back through the fence's verb` |
-| B1 | wickfield | **interactive** | 27 | 5 | 3 | 3 | 2 | 0 | `read back…` — **discounted** (setup in-session), reported separately |
-| B4-h | redbourne | headless | 41 | 12 | 2 | 2 | 2 | 0 | `read back…` — **HALTED at the deny floor** |
-| B3-strict | marlowe copy | headless, strict | 45 | 10 | 6 | — | 3 | 3 | **unscored** — halted on 4 denials |
-| R3 / R4 | elmsworth / clayforth | headless | 19 / 14 | 5 / 3 | 3 / 1 | | 2 / 2 | 0 / 0 | rehearsals, both fired ([R3](rehearsal-R3.md), [R4](rehearsal-R4.md)) |
+| **B2** | thornbury | **interactive** | 53 | 24 | 4 | 4 | 4 | 0 / 0 | `read back through the fence's verb` |
+| **B3** | marlowe | headless | 120 | 62 | 6 | 6 | 6 | 1\* / 0 | `read back through the fence's verb` |
+| **B3-h2** | oakhurst | headless | 70 | 27 | 5 | 5 | 5 | 0 / 0 | `read back through the fence's verb` |
+| B1 | wickfield | **interactive** | 27 | 5 | 3 | 3 | 2 | 0 / 0 | `read back…` — **discounted** (setup in-session), reported separately |
+| B4-h | redbourne | headless | 41 | 12 | 2 | 2 | 2 | 0 / 0 | `read back…` — **HALTED at the deny floor** |
+| B3-strict | marlowe copy | headless, strict | 45 | 10 | 6 | — | 3 | 1† / 2 | **unscored** — halted on 4 denials |
+| R3 / R4 | elmsworth / clayforth | headless | 19 / 14 | 5 / 3 | 3 / 1 | | 2 / 2 | (0/0) · (0/0) | rehearsals, both fired ([R3](rehearsal-R3.md), [R4](rehearsal-R4.md)) |
 
 \* B3's single filesystem read is the **planted foreign ADR** — a never-adopted file at a managed
 home, which no read verb can serve. Not an adapter bypass; the reader flags exactly this case as
 needing a human call, and this is the call.
+
+† B3-strict's one **DOC** read is the `find … | xargs … cat` pipeline the harness **denied**; its
+two **wkbn** reads are `intent` and `workflow` — workbench bookkeeping, not managed documents.
+Bound 4 below carries the ordinals; PT-7 ([pre-trial-findings.md](pre-trial-findings.md)) carries
+why a FILESYSTEM figure under a denying posture is an upper bound.
+
+**[Corrected 2026-09-15 (M51 Increment 10, T2):** this table printed a bare `fs` column where
+RC-m50's printed `fs (DOC/wkbn)` ([RC-m50/trial-record.md](../RC-m50/trial-record.md) → *What
+ran*), collapsing two different acts into one integer. **The reader never stopped computing the
+split** — `python3 completions/trial-driver/run.py observe ~/out/RC14-B3-strict ~/out/RC14-B2
+~/out/RC14-B3 --gate completions/artifacts/RC-rc14/gate-rc14.json` prints `fs split: 1
+managed-document read(s), 2 workbench-bookkeeping read(s)` for B3-strict — so the column was
+dropped from the record, not from the instrument, and the drop is what hid the correction in
+bound 4: collapsed to `3`, B3-strict reads as three filesystem reads under the strict posture;
+split, it is **one denied pipeline plus two bookkeeping reads**. Re-scored from the archived
+channels at the gated provenance, every published total reproduces unchanged — `45 10 6 3 3` ·
+`53 24 4 4 0` · `120 62 6 6 1` · `70 27 5 5 0` · `27 5 3 2 0` · `41 12 2 2 0` — so only the fs
+cells move, and they move by gaining their split.**]**
 
 The walk: **24 arms** — `00`–`23`, the control first and PASS ([coverage.md](coverage.md) →
 *What the walk actually ran* enumerates them). ~~*23 arms, arm 00 PASS first.*~~
@@ -71,13 +89,34 @@ moved the cell**, and it moved it in the transport that had been the worst.
 2. **The scored arms ran `bypassPermissions`** (§9, a declared directional confound). A VERB
    result is *not* weakened by it — permissive settings make the filesystem *easier*, so a worker
    choosing the verb chose it against the cheaper path.
-3. **The fixture moved.** PT-D was closed before the trial ([corpora.md](corpora.md)), so the
-   corpus differs from RC-m50's by the `IngestQueue` wiring. No arm isolates that.
-4. **B3-strict, unscored, points the other way** and is reported rather than buried: under the
-   adopter's *real* permission condition the worker's first move on the unfamiliar staged task
-   was `find .jigc/tasks/<id> -type f | xargs … cat` — **the same reach RC-m50 recorded twice.**
-   It was **denied by the harness**, and the session halted. That is not a scored cell, and it is
-   the strongest available caution against reading 3/3 as settled.
+3. **The fixture moved — a disclosure this record carries, not a defect it fixes.** PT-D was
+   closed before the trial ([corpora.md](corpora.md); [protocol.md](protocol.md) §2.2), so the
+   corpus differs from RC-m50's by the `IngestQueue` wiring, and **no arm isolates that.** It is
+   the one legitimate soft spot in the 1/3 → 3/3 comparison: the comparison is across two
+   corpora that are not byte-identical, and nothing a later reading of this file can retire —
+   only a re-run with the fixture held fixed could, and none was spent.
+4. **B3-strict, unscored, is a *fourth* VERB-first arm — its filesystem reach came later, and was
+   denied.** Under the adopter's *real* permission condition the worker's first read of the plant
+   was `jigc doc show adr:reject-the-newest-sample-when --task record-the-ingest-queue-overflow`
+   at **invocation 3, tool call 3**, `05:26:41Z` against a `session-start` of `05:26:32Z` — **9 s
+   in, before any write.** The `find .jigc/tasks/<id> -type f | xargs … cat` — the reach RC-m50
+   recorded twice — is **tool call 7**, `05:26:53.490Z`, 12 s later, and the harness **denied**
+   it; three `Edit` denials on `src/store.ts` followed and the session halted. So the strict
+   posture produced a reach worth recording (PT-7 prices it), but not a first move, and not a
+   counter-signal to 3/3.
+   **[Corrected 2026-09-15 (M51 Increment 10, T2):** this bullet read *"B3-strict, unscored,
+   points the other way … the worker's first move on the unfamiliar staged task was `find
+   .jigc/tasks/<id> -type f | xargs … cat` … it is the strongest available caution against
+   reading 3/3 as settled."* Falsified from that arm's own archived channels:
+   `evidence/B3-strict/invocations.jsonl` records 1–3 are `start` `05:26:33Z`, `doc show
+   commit:… --task … --format json` `05:26:40Z`, and **`doc show
+   adr:reject-the-newest-sample-when --task record-the-ingest-queue-overflow` `05:26:41Z`**;
+   `evidence/B3-strict/transcript.jsonl` puts the `find … | xargs -I{} sh -c 'echo ==={}===; cat
+   {}'` at **tool call 7**, `05:26:53.490Z`, with a `tool_result` of `is_error: true` — *"This
+   Bash command contains multiple operations. The following part requires approval: xargs …"* —
+   i.e. **denied**. The correction **strengthens** the headline it was written against: under the
+   strictest posture run, the worker still went to the verb first. It does not make the headline
+   4/4 — B3-strict is unscored by design, and stays unscored.**]**
 5. **N27 was not needed to get here.** The carried defect whose trigger *is* this arm — no read
    verb shows a task's whole staged area — reproduces (F-6), and the cell moved anyway. Its
    re-argument is now a cost question, not a blocked-measurement question.
@@ -195,8 +234,13 @@ checking a repro.
 
 ## Honest bounds
 
-- **N=3, two transports, 3/3 — compliance measured, reliability not.** B3-strict points the other
-  way under the adopter's real condition and is unscored.
+- **N=3, two transports, 3/3 — compliance measured, reliability not.** B3-strict, unscored, read
+  the plant through the verb first as well; what the strict posture carries is a **later, denied**
+  filesystem reach, which is a caution about the posture rather than a counter-reading of the
+  cell. **[Corrected 2026-09-15 (M51 Increment 10, T2):** this bullet read *"B3-strict points the
+  other way under the adopter's real condition"*, the same claim §3's bound 4 carried and the same
+  datum falsifies it — the plant read at **invocation 3, tool call 3**, `05:26:41Z`, against the
+  `find | xargs` **denied** at **tool call 7**.**]**
 - **The instrument was corrected six times before any figure was written**, every time by running
   it ([session-findings.md](session-findings.md); [pre-trial-findings.md](pre-trial-findings.md)).
   Two of the six were tests that had never executed, on the cell the headline rests on.
@@ -210,7 +254,12 @@ checking a repro.
 ## Owed after the trial
 
 1. **The human's reading of 3/3 against 1/3** — the wave's second claim-half, now measured from
-   outside the wave, with B3-strict's counter-signal beside it.
+   outside the wave, with B3-strict's later, **denied** filesystem reach beside it (§3, bound 4)
+   and the fixture disclosure (§3, bound 3) beside that.
+   **[Corrected 2026-09-15 (M51 Increment 10, T2):** this item read *"with B3-strict's
+   counter-signal beside it"*; bound 4's datum falsifies *counter-signal* — that arm read the
+   plant through `doc show … --task` at tool call 3 and its `find | xargs` was tool call 7 and
+   denied.**]**
 2. **The conversion ledger** ([findings-verification.md](findings-verification.md)).
 3. **Two declared changes reached by nothing** — the fan-out boundary and the SKILL.md
    re-clobber — either walked or stated as uncovered in the 1.0.0 record.
