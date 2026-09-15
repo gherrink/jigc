@@ -22,8 +22,14 @@ on the 1.0.0 call.
 home, which no read verb can serve. Not an adapter bypass; the reader flags exactly this case as
 needing a human call, and this is the call.
 
-The walk: **23 arms**, arm 00 PASS first. `run.py observe --archive` reproduced the 1.0.0-gate
-table exactly, before and after every apparatus change.
+The walk: **24 arms** — `00`–`23`, the control first and PASS ([coverage.md](coverage.md) →
+*What the walk actually ran* enumerates them). ~~*23 arms, arm 00 PASS first.*~~
+— **struck, with the datum**: `ls completions/trial-driver/arms/walk/*.sh | wc -l` → **24**. The
+sentence admits two readings and the datum refuses both — 23 either excludes the control it names
+in its own next clause, or drops arm 23, which existed when this was written (`8228a42a`, the
+parent of the commit carrying this record). The count is stated as the enumerable one.
+`run.py observe --archive` reproduced the 1.0.0-gate table exactly, before and after every
+apparatus change.
 
 ## §3 — the headline
 
