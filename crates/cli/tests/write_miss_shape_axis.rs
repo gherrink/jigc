@@ -224,6 +224,21 @@
 //! top-level `error` key**, which is the one assertion that reddens when a resolver
 //! regresses to a bare `anyhow` whatever code the row expects.
 //!
+//! **M51 adds the echo column, which is not a column at all but a property of every
+//! cell.** Every column above asks what a reject *names*; this one asks whether the
+//! reader can find the named thing in their own argv. Two shapes could not be:
+//! a Rust `Debug` slice (`item ["1-3-0", "changes", "no-such-group"]` at `retitle-item`,
+//! `add-item` and `set-field --unset`, beside the sibling door's already-correct
+//! `item "1-3-0/changes/no-such-group"`) and a **truncated address path**
+//! (`no section "releases/1-3-0/bogus"` for a typed `#releases/1-3-0/bogus/xyz`, driven
+//! on the traversal form `#milestones/../../../etc` → `no section "milestones/../.."`,
+//! `completions/artifacts/M51/baseline-tokens.md` row 16). Twelve of the sixty-three
+//! cells emitted one or the other. The property is stated at [`synthesized_tokens`] and
+//! asserted wherever a cell's argv carries an address, so it is inherited by a row added
+//! later rather than re-decided per door; the engine-side fix is one `hop_path` renderer
+//! plus an `under` locus on both undeclared-section variants, which keeps M49's *which
+//! hop* pinpoint while quoting only hops the caller typed.
+//!
 //! ## Where the axis lives
 //!
 //! [`CELLS`] itself moved to `crates/cli/tests/support/write_miss_cells.rs` at M50
@@ -608,6 +623,19 @@ fn every_write_miss_names_its_own_miss_and_routes_the_recovery() {
                     cell.what,
                 );
             }
+
+            // **The echo column** (M51 — EC-25): the assertion above fences the address
+            // the finding is *keyed* at; this one fences the address its **sentence**
+            // echoes back. See [`synthesized_tokens`] for the rule and the two shapes
+            // that broke it.
+            let fragment = addressed.split_once('#').map(|(_, f)| f).unwrap_or("");
+            let message = report["findings"][0]["message"].as_str().unwrap_or("");
+            for synthesized in synthesized_tokens(message, fragment) {
+                broken.push(format!(
+                    "  {}: the reject echoes {synthesized}\n      message:  {message}\n      typed:    {fragment}",
+                    cell.what,
+                ));
+            }
         }
 
         // A **collision** must name the colliding minted id in its own message: an
@@ -757,6 +785,73 @@ fn every_write_miss_names_its_own_miss_and_routes_the_recovery() {
         CELLS.len(),
         broken.join("\n"),
     );
+}
+
+/// Every `"…"`-quoted run of a message, in order — the tokens a reject presents to the
+/// reader *as identifiers*. Backticked runs are deliberately out of scope: a backticked
+/// span in these messages is a command or an address form (`` `#<section>/<item>` ``),
+/// not a claim about what the caller typed.
+fn quoted_runs(message: &str) -> Vec<&str> {
+    let mut runs = Vec::new();
+    let mut rest = message;
+    while let Some(open) = rest.find('"') {
+        let after = &rest[open + 1..];
+        match after.find('"') {
+            Some(close) => {
+                runs.push(&after[..close]);
+                rest = &after[close + 1..];
+            }
+            None => break,
+        }
+    }
+    runs
+}
+
+/// **The echo rule (M51 Increment 9, T7 — EC-25): the token a reject echoes is a token
+/// the caller typed.**
+///
+/// A write reject's sentence is read beside the argv that produced it, so every
+/// identifier in it is read as a quotation. Two shapes were not quotations but
+/// reconstructions, and both taught the reader an address that is in no argv:
+///
+///   * a Rust **`Debug` slice** — `item ["1-3-0", "changes", "no-such-group"]` at
+///     `retitle-item`, `add-item` and `set-field --unset`, while the sibling door one
+///     rank away already emitted the typed `item "1-3-0/changes/no-such-group"`. Neither
+///     `[`, `]` nor `", "` is in the address grammar, so the form is not an address at
+///     all; the same miss simply came back in two notations.
+///   * a **truncated address path** — `no section "releases/1-3-0/bogus"` for a typed
+///     `#releases/1-3-0/bogus/xyz`: the walk's stopping point, rendered in the exact
+///     shape of an address, so the reader must diff two strings to find the failing hop.
+///     Driven on the traversal form at `baseline-tokens.md` row 16
+///     (`#milestones/../../../etc` → `no section "milestones/../.."`), where the dropped
+///     components are the ones that made the address worth refusing.
+///
+/// The rule is stated against the **typed fragment**, which is what the reader has in
+/// hand: a quoted run carrying a `/` may not be a *proper hop-prefix* of it. A quoted
+/// **single hop** is exempt and must stay exempt — it is one of the caller's own hop ids,
+/// and naming which hop failed is precisely what M49's nested-section reject was reaching
+/// for when it assembled the path instead (`engine::write::nested_section_undeclared`).
+/// So the fix keeps that pinpoint and drops the reconstruction: the hop is named as a
+/// hop, and the section it was addressed under is named beside it.
+///
+/// Returns one description per violation, so the axis reports every cell at once.
+fn synthesized_tokens(message: &str, fragment: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    if message.contains("[\"") {
+        found.push(
+            "a Rust `Debug` slice, a notation the address grammar does not have \
+             (it joins hops with `/`)"
+                .to_owned(),
+        );
+    }
+    for quoted in quoted_runs(message) {
+        if quoted.contains('/') && fragment.starts_with(&format!("{quoted}/")) {
+            found.push(format!(
+                "{quoted:?} — the typed address truncated at the hop the walk stopped on"
+            ));
+        }
+    }
+    found
 }
 
 /// **How much of a fragment an address carries** — the manufactured half of the fence's

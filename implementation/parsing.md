@@ -61,12 +61,12 @@ This keys the boundary on the schema — *context taken as a fence input, never 
 
 **One implementation, four keyed sites.** The whole rule is `parse::opens_item_nested_region`, `pub(crate)` so that *both* seams ask it — two implementations of one question is how the class opened, a heading the parser read as slot structure being a region boundary to the writer. It answers the sub-label half with `parse::is_item_slot_sub_label` (*is this deeper heading one of this template's declared slot sub-labels?*) and owns the depth half itself, so a later edit cannot restore "deeper" at one seam and not the other. The write side wraps it in `write::item_own_leaf_region`, the read side in `parse::first_nested_heading`; a chain the schema cannot walk yields no declared sub-labels, so the depth alone answers — still bounded to `item_level + 1`, the conservative narrower region rather than a wider one.
 
-- `write.rs:1356` (`unset_item_field`) — the splice-remove of a field bullet.
-- `write.rs:1529` (`set_item_field`) — the surgical value splice on a present bullet.
-- `write.rs:3835` (`insert_item_field`) — the append, and the cold-fill re-render when the item has no field group yet.
+- `write.rs:1390` (`unset_item_field`) — the splice-remove of a field bullet.
+- `write.rs:1563` (`set_item_field`) — the surgical value splice on a present bullet.
+- `write.rs:3897` (`insert_item_field`) — the append, and the cold-fill re-render when the item has no field group yet.
 - `parse.rs:1226` (`parse_items`) — the read seam: where the parent's leaves stop and its nested region `[leaf_end, item_end)` begins.
 
-A fifth caller **consumes** the region rather than deciding it — `write.rs:7232` (`item_field_write_target`), the confinement target of the item-field validate-after gate (below) — over the same schema-keyed region, so the guard and the writer cannot disagree about which group is the item's own.
+A fifth caller **consumes** the region rather than deciding it — `write.rs:7301` (`item_field_write_target`), the confinement target of the item-field validate-after gate (below) — over the same schema-keyed region, so the guard and the writer cannot disagree about which group is the item's own.
 
 ## Slot heading-depth ceiling
 

@@ -910,8 +910,21 @@ pub enum SpliceError {
     /// why this cannot share the conformance sentence (it would render an empty
     /// diagnosis). The [`GenerateError::UnknownSection`] sibling on the generation path.
     UndeclaredSection {
-        /// The section id the caller named.
+        /// The section id the caller named — **one hop of the address, as typed**, never
+        /// a path this walk assembled (M51 — EC-25).
         section: String,
+        /// For a **nested** repeatable, the top-level section the address entered
+        /// through; `None` when `section` is that top-level hop itself.
+        ///
+        /// It exists so the nested reject can name *which* hop is undeclared without
+        /// echoing back a truncated address. Naming the bare id alone was rejected at
+        /// M49 for a good reason — "no section `bogus`" reads as a claim about a
+        /// top-level `bogus` the schema has none of either — and the answer then was to
+        /// render the address path down to the failing hop, which made the sentence a
+        /// *proper prefix of what the caller typed*: an address in no argv, that the
+        /// reader must diff against their own to place. The locus carries M49's
+        /// disambiguation and quotes only hops the caller typed.
+        under: Option<String>,
     },
     /// The addressed **slot leaf is not declared** where the write addressed it — on the
     /// item block the address bottoms out in, or (the CLI's section arm) on a simple
@@ -927,11 +940,25 @@ pub enum SpliceError {
     UnknownLeaf {
         /// The undeclared slot leaf id.
         leaf: String,
-        /// Where the write addressed it (`item [...] in section "..."`, or `section "..."`
-        /// for the section arm) — free-form, so the section arm can name the leaf-less
-        /// address form in the same breath.
+        /// Where the write addressed it (`item "1-3-0/changes" in section "releases"`, or
+        /// `section "..."` for the section arm) — free-form, so the section arm can name
+        /// the leaf-less address form in the same breath. The item chain is rendered by
+        /// [`hop_path`], in the caller's own address syntax.
         at: String,
     },
+}
+
+/// Render an address hop chain **in the caller's own address syntax** — `/`-joined, the
+/// separator [`crate::address`] parses — for every reject sentence that echoes one back.
+///
+/// The doors hold these chains as `&[&str]`, and a `{chain:?}` render reaches the reader
+/// as `["1-3-0", "changes", "no-such-group"]`: a Rust notation that is in no argv and is
+/// not the address grammar at all, while the sibling door one rank away already echoed
+/// the typed `"1-3-0/changes/no-such-group"`. One helper, so the same miss cannot come
+/// back in two notations again (M51 — EC-25; the echo column of
+/// `crates/cli/tests/write_miss_shape_axis.rs`).
+fn hop_path(ids: &[&str]) -> String {
+    ids.join("/")
 }
 
 impl std::fmt::Display for SpliceError {
@@ -949,9 +976,13 @@ impl std::fmt::Display for SpliceError {
                 ),
                 None => write!(f, "the source does not conform to the schema"),
             },
-            SpliceError::UndeclaredSection { section } => {
-                write!(f, "no section {section:?} declared in the schema")
-            }
+            SpliceError::UndeclaredSection { section, under } => match under {
+                Some(top) => write!(
+                    f,
+                    "no nested section {section:?} declared under section {top:?} in the schema"
+                ),
+                None => write!(f, "no section {section:?} declared in the schema"),
+            },
             SpliceError::UnknownLeaf { leaf, at } => {
                 write!(f, "no slot {leaf:?} declared on {at}")
             }
@@ -1015,6 +1046,7 @@ pub fn set_slot(
         .find(|s| s.id == section_id)
         .ok_or_else(|| SpliceError::UndeclaredSection {
             section: section_id.to_string(),
+            under: None,
         })?;
     let content = SectionContent {
         id: section.id.clone(),
@@ -1236,6 +1268,7 @@ pub fn remove_item(
         .find(|s| s.id == section_id)
         .ok_or_else(|| SpliceError::UndeclaredSection {
             section: section_id.to_string(),
+            under: None,
         })?;
     if !matches!(schema_section.body, SectionBody::Repeatable { .. }) {
         return Err(SpliceError::NotPresent {
@@ -1303,6 +1336,7 @@ pub fn unset_field(
         .find(|s| s.id == section_id)
         .ok_or_else(|| SpliceError::UndeclaredSection {
             section: section_id.to_string(),
+            under: None,
         })?;
     if schema_section.header {
         // Front-matter: remove the whole `key: value` physical line.
@@ -1350,7 +1384,7 @@ pub fn unset_item_field(
     let blocks = parse::scan_blocks(source);
     let region = locate_item_path(schema, source, section_id, item_ids).ok_or_else(|| {
         SpliceError::NotPresent {
-            what: format!("item {item_ids:?} in section {section_id:?}"),
+            what: format!("item {:?} in section {section_id:?}", hop_path(item_ids)),
         }
     })?;
     let leaf_region = item_own_leaf_region(schema, source, &blocks, section_id, item_ids, region);
@@ -1828,7 +1862,7 @@ fn set_nested_item_slot(
         .map_err(|findings| SpliceError::NotConformant { findings })?;
     let item = nested_parsed_item(schema, &doc, section_id, item_ids).ok_or_else(|| {
         SpliceError::NotPresent {
-            what: format!("item {item_ids:?} in section {section_id:?}"),
+            what: format!("item {:?} in section {section_id:?}", hop_path(item_ids)),
         }
     })?;
     // The declaredness guard the top-level dual carries, at every nesting depth: the
@@ -1844,12 +1878,12 @@ fn set_nested_item_slot(
 
     let physical = physical_item_chain(schema, section_id, item_ids).ok_or_else(|| {
         SpliceError::NotPresent {
-            what: format!("item {item_ids:?} in section {section_id:?}"),
+            what: format!("item {:?} in section {section_id:?}", hop_path(item_ids)),
         }
     })?;
     let region = locate_item_path(schema, source, section_id, &physical).ok_or_else(|| {
         SpliceError::NotPresent {
-            what: format!("item {item_ids:?} block"),
+            what: format!("item {:?} block", hop_path(item_ids)),
         }
     })?;
     let mut content = item_content_from_parsed(item, source);
@@ -1938,8 +1972,8 @@ pub(crate) fn set_nested_item_field_or_insert(
             what: format!("{e}, for section {section_id:?}"),
         }),
         // An undeclared section is a shape miss, not a broken buffer.
-        Err(SpliceError::UndeclaredSection { section }) => {
-            Err(GenerateError::UnknownSection { id: section })
+        Err(SpliceError::UndeclaredSection { section, under }) => {
+            Err(GenerateError::UnknownSection { id: section, under })
         }
         // The undeclared-leaf reject is the slot writers' ([`undeclared_slot_reject`]);
         // [`set_item_field`] addresses field bullets and constructs none. The mapping is the
@@ -2003,7 +2037,8 @@ pub fn add_nested_item(
         physical_item_chain(schema, section_id, parent_item_ids).ok_or_else(|| {
             GenerateError::WrongShape {
                 what: format!(
-                    "parent item {parent_item_ids:?} in section {section_id:?} not addressable"
+                    "parent item {:?} in section {section_id:?} not addressable",
+                    hop_path(parent_item_ids)
                 ),
             }
         })?;
@@ -2011,7 +2046,8 @@ pub fn add_nested_item(
         nested_parsed_item(schema, &doc, section_id, parent_item_ids).ok_or_else(|| {
             GenerateError::NotPresent {
                 what: format!(
-                    "parent item {parent_item_ids:?} in section {section_id:?} not present"
+                    "parent item {:?} in section {section_id:?} not present",
+                    hop_path(parent_item_ids)
                 ),
             }
         })?;
@@ -2022,7 +2058,8 @@ pub fn add_nested_item(
     let nested = nested_repeatable(schema, section_id, parent_item_ids, nested_section_id)
         .ok_or_else(|| GenerateError::WrongShape {
             what: format!(
-                "nested repeatable {nested_section_id:?} not declared under {parent_item_ids:?}"
+                "nested repeatable {nested_section_id:?} not declared under {:?}",
+                hop_path(parent_item_ids)
             ),
         })?;
 
@@ -2031,7 +2068,7 @@ pub fn add_nested_item(
     let id = mint_item_id(title, slug_override)?;
     if parent.items.iter().any(|i| i.id == id) {
         return Err(GenerateError::AlreadyPresent {
-            what: format!("nested item {id:?} under {parent_item_ids:?}"),
+            what: format!("nested item {id:?} under {:?}", hop_path(parent_item_ids)),
         });
     }
 
@@ -2063,7 +2100,10 @@ pub fn add_nested_item(
     let region =
         locate_item_path(schema, source, section_id, &parent_physical).ok_or_else(|| {
             GenerateError::WrongShape {
-                what: format!("parent item {parent_item_ids:?} block not locatable"),
+                what: format!(
+                    "parent item {:?} block not locatable",
+                    hop_path(parent_item_ids)
+                ),
             }
         })?;
     let mut content = item_content_from_parsed(parent, source);
@@ -2107,17 +2147,17 @@ pub fn remove_nested_item(
         .map_err(|findings| SpliceError::NotConformant { findings })?;
     if nested_parsed_item(schema, &doc, section_id, item_ids).is_none() {
         return Err(SpliceError::NotPresent {
-            what: format!("item {item_ids:?} in section {section_id:?}"),
+            what: format!("item {:?} in section {section_id:?}", hop_path(item_ids)),
         });
     }
     let physical = physical_item_chain(schema, section_id, item_ids).ok_or_else(|| {
         SpliceError::NotPresent {
-            what: format!("item {item_ids:?} in section {section_id:?}"),
+            what: format!("item {:?} in section {section_id:?}", hop_path(item_ids)),
         }
     })?;
     let region = locate_item_path(schema, source, section_id, &physical).ok_or_else(|| {
         SpliceError::NotPresent {
-            what: format!("item {item_ids:?} block"),
+            what: format!("item {:?} block", hop_path(item_ids)),
         }
     })?;
     // LAST-block edge: a region ending at EOF carries no trailing separator, so consume
@@ -2194,12 +2234,18 @@ pub fn retitle_item(
     // absent item is an item-id miss.
     let physical = physical_item_chain(schema, section_id, item_ids).ok_or_else(|| {
         GenerateError::WrongShape {
-            what: format!("item {item_ids:?} in section {section_id:?} not addressable"),
+            what: format!(
+                "item {:?} in section {section_id:?} not addressable",
+                hop_path(item_ids)
+            ),
         }
     })?;
     if nested_parsed_item(schema, &doc, section_id, item_ids).is_none() {
         return Err(GenerateError::NotPresent {
-            what: format!("item {item_ids:?} in section {section_id:?} not present"),
+            what: format!(
+                "item {:?} in section {section_id:?} not present",
+                hop_path(item_ids)
+            ),
         });
     }
     // The id-from re-validation (see doc comment): resolved against the repeatable block
@@ -2221,7 +2267,7 @@ pub fn retitle_item(
     }
     let region = locate_item_path(schema, source, section_id, &physical).ok_or_else(|| {
         GenerateError::WrongShape {
-            what: format!("item {item_ids:?} block not locatable"),
+            what: format!("item {:?} block not locatable", hop_path(item_ids)),
         }
     })?;
 
@@ -2237,7 +2283,10 @@ pub fn retitle_item(
         .unwrap_or(source.len());
     let anchor =
         anchor_of(&source[region.start..line_end]).ok_or_else(|| GenerateError::WrongShape {
-            what: format!("item {item_ids:?} heading carries no {{#id}} anchor"),
+            what: format!(
+                "item {:?} heading carries no {{#id}} anchor",
+                hop_path(item_ids)
+            ),
         })?;
     let hashes = "#".repeat(item_heading_level(physical.len()));
     let heading = format!("{hashes} {title}  {{#{anchor}}}");
@@ -2859,8 +2908,12 @@ pub enum GenerateError {
     /// The named section is not declared by the schema, so there is no schema-ordered
     /// position to insert at.
     UnknownSection {
-        /// The unknown section id.
+        /// The unknown section id — **one hop of the address, as typed**.
         id: String,
+        /// The top-level section a **nested** miss was addressed under; `None` at the
+        /// top level. The [`SpliceError::UndeclaredSection`] sibling's field, and it
+        /// carries that field's whole rationale.
+        under: Option<String>,
     },
     /// The section's shape does not match the requested generation (e.g. `add_item`
     /// into a simple section, or `generate_section` for the header).
@@ -2889,8 +2942,9 @@ pub enum GenerateError {
     UnknownField {
         /// The undeclared field key.
         key: String,
-        /// Where the write addressed it (`item [...] in section "..."`) — the `--unset`
-        /// sibling's own phrasing, so both doors emit the identical sentence.
+        /// Where the write addressed it (`item "1-3-0/changes" in section "releases"`) —
+        /// the `--unset` sibling's own phrasing, so both doors emit the identical
+        /// sentence, with the item chain rendered by [`hop_path`].
         at: String,
     },
     /// The `add_item` title has no slug-able content, so it would mint an **empty**
@@ -2931,6 +2985,7 @@ pub fn generate_section(
         .find(|s| s.id == section_id)
         .ok_or_else(|| GenerateError::UnknownSection {
             id: section_id.to_string(),
+            under: None,
         })?;
     if section.header {
         return Err(GenerateError::WrongShape {
@@ -2979,6 +3034,7 @@ pub fn add_item(
         .find(|s| s.id == section_id)
         .ok_or_else(|| GenerateError::UnknownSection {
             id: section_id.to_string(),
+            under: None,
         })?;
     if !matches!(section.body, SectionBody::Repeatable { .. }) {
         return Err(GenerateError::WrongShape {
@@ -3142,6 +3198,7 @@ pub fn promote_slot_to_repeatable(
         .find(|s| s.id == section_id)
         .ok_or_else(|| GenerateError::UnknownSection {
             id: section_id.to_string(),
+            under: None,
         })?;
     let SectionBody::Repeatable { repeatable } = &new_section.body else {
         return Err(GenerateError::WrongShape {
@@ -3167,6 +3224,7 @@ pub fn promote_slot_to_repeatable(
         .find(|s| s.id == section_id)
         .ok_or_else(|| GenerateError::UnknownSection {
             id: section_id.to_string(),
+            under: None,
         })?;
     if !matches!(old_section.body, SectionBody::Simple { .. }) {
         return Err(GenerateError::WrongShape {
@@ -3461,6 +3519,7 @@ fn item_block<'a>(
         .find(|s| s.id == section_id)
         .ok_or_else(|| GenerateError::UnknownSection {
             id: section_id.to_string(),
+            under: None,
         })?;
     let mut block = match &section.body {
         SectionBody::Repeatable { repeatable } => repeatable,
@@ -3596,6 +3655,7 @@ pub fn insert_front_matter_field(
         .find(|s| s.id == section_id)
         .ok_or_else(|| GenerateError::UnknownSection {
             id: section_id.to_string(),
+            under: None,
         })?;
     if !section.header {
         return Err(GenerateError::WrongShape {
@@ -3733,6 +3793,7 @@ pub fn insert_field(
         .find(|s| s.id == section_id)
         .ok_or_else(|| GenerateError::UnknownSection {
             id: section_id.to_string(),
+            under: None,
         })?;
 
     let present = present_body_sections(schema, source);
@@ -3802,6 +3863,7 @@ pub(crate) fn insert_item_field(
         .find(|s| s.id == section_id)
         .ok_or_else(|| GenerateError::UnknownSection {
             id: section_id.to_string(),
+            under: None,
         })?;
     if !matches!(section.body, SectionBody::Repeatable { .. }) {
         return Err(GenerateError::WrongShape {
@@ -3965,8 +4027,8 @@ pub(crate) fn set_item_field_or_insert(
         }),
         // An undeclared section is a shape miss, not a broken buffer — it lands on the
         // generation path's own code for exactly that.
-        Err(SpliceError::UndeclaredSection { section }) => {
-            Err(GenerateError::UnknownSection { id: section })
+        Err(SpliceError::UndeclaredSection { section, under }) => {
+            Err(GenerateError::UnknownSection { id: section, under })
         }
         // The undeclared-leaf reject is the slot writers' ([`undeclared_slot_reject`]);
         // [`set_item_field`] addresses field bullets and constructs none. The mapping is
@@ -6913,14 +6975,18 @@ pub fn unset_item_field_validated(
     }
     if item_chain_absent(schema, source, section_id, item_ids) {
         return Err(generate_error_finding(&GenerateError::NotPresent {
-            what: format!("item {item_ids:?} in section {section_id:?} not present"),
+            what: format!(
+                "item {:?} in section {section_id:?} not present",
+                hop_path(item_ids)
+            ),
         }));
     }
     let field = item_field_schema(schema, section_id, item_ids, field_key).ok_or_else(|| {
         blocking_write(
             "write.unknown-field",
             format!(
-                "no field {field_key:?} declared on item {item_ids:?} in section {section_id:?}"
+                "no field {field_key:?} declared on item {:?} in section {section_id:?}",
+                hop_path(item_ids)
             ),
             Location::at(1, 1),
         )
@@ -7113,7 +7179,10 @@ fn set_gated_item_slot(
     let target = locate_item_region(schema, source, section_id, chain).ok_or_else(|| {
         blocking_write(
             "write.not-present",
-            format!("item {chain:?} in section {section_id:?} is not present"),
+            format!(
+                "item {:?} in section {section_id:?} is not present",
+                hop_path(chain)
+            ),
             Location::at(1, 1),
         )
     })?;
@@ -7587,9 +7656,15 @@ pub fn generate_error_finding(err: &GenerateError) -> Finding {
             "write.already-present",
             format!("write rejected: {what} is already present"),
         ),
-        GenerateError::UnknownSection { id } => (
+        GenerateError::UnknownSection { id, under } => (
             "write.unknown-section",
-            format!("write rejected: no section {id:?} declared in the schema"),
+            match under {
+                Some(top) => format!(
+                    "write rejected: no nested section {id:?} declared under section {top:?} \
+                     in the schema"
+                ),
+                None => format!("write rejected: no section {id:?} declared in the schema"),
+            },
         ),
         GenerateError::WrongShape { what } => {
             ("write.wrong-shape", format!("write rejected: {what}"))
@@ -7675,6 +7750,7 @@ fn section_undeclared(schema: &Schema, section_id: &str) -> bool {
 pub fn undeclared_section_splice(schema: &Schema, section_id: &str) -> Option<SpliceError> {
     section_undeclared(schema, section_id).then(|| SpliceError::UndeclaredSection {
         section: section_id.to_string(),
+        under: None,
     })
 }
 
@@ -7684,6 +7760,7 @@ pub fn undeclared_section_splice(schema: &Schema, section_id: &str) -> Option<Sp
 fn undeclared_section_generate(schema: &Schema, section_id: &str) -> Option<GenerateError> {
     section_undeclared(schema, section_id).then(|| GenerateError::UnknownSection {
         id: section_id.to_string(),
+        under: None,
     })
 }
 
@@ -7692,10 +7769,17 @@ fn undeclared_section_generate(schema: &Schema, section_id: &str) -> Option<Gene
 /// nested section the schema never declared is wrong whatever the corpus holds, so no
 /// lower rank can answer it honestly.
 ///
-/// Returns the write-address path of the first undeclared segment
-/// (`"releases/1-3-0/bogus"`), which is what the rendered reject names — the id alone
-/// would say "no section `bogus`" about a schema that has no top-level `bogus` either,
-/// and the agent's mistake is the hop, not the name.
+/// Returns **the first undeclared segment's own id** (`"bogus"`), which the reject names
+/// together with the top-level section the address entered through
+/// ([`SpliceError::UndeclaredSection::under`]). Until M51 it returned the assembled
+/// address path down to that segment (`"releases/1-3-0/bogus"`) — M49's answer to the
+/// objection that the id alone would say "no section `bogus`" about a schema that has no
+/// top-level `bogus` either, since the agent's mistake is the hop and not the name. The
+/// objection stands and the locus answers it; the path did not, because it was a *proper
+/// prefix of the address the caller typed*, rendered in the exact shape of an address —
+/// so the reader was handed a string that is in no argv and had to diff it against their
+/// own to find the failing hop (M51 — EC-25; driven at the traversal form
+/// `#milestones/../../../etc` → `no section "milestones/../.."`).
 ///
 /// Answering it lower down is what let **one** miss emit four different codes across the
 /// six item-addressing verbs (M49 — the nested arm of the undeclared-section column;
@@ -7726,7 +7810,7 @@ fn nested_section_undeclared(
     };
     let mut current = repeatable;
     let mut expect_item = true;
-    for (depth, segment) in item_ids.iter().enumerate() {
+    for segment in item_ids {
         if expect_item {
             expect_item = false;
             continue;
@@ -7743,9 +7827,7 @@ fn nested_section_undeclared(
             // Declared, but not a nested repeatable: a shape question, not a declaredness
             // one — left to the door, as the non-repeatable **section** is.
             Some(_) => return None,
-            None => {
-                return Some(format!("{section_id}/{}", item_ids[..=depth].join("/")));
-            }
+            None => return Some((*segment).to_string()),
         }
     }
     None
@@ -7758,8 +7840,12 @@ fn undeclared_nested_section_splice(
     section_id: &str,
     item_ids: &[&str],
 ) -> Option<SpliceError> {
-    nested_section_undeclared(schema, section_id, item_ids)
-        .map(|section| SpliceError::UndeclaredSection { section })
+    nested_section_undeclared(schema, section_id, item_ids).map(|section| {
+        SpliceError::UndeclaredSection {
+            section,
+            under: Some(section_id.to_string()),
+        }
+    })
 }
 
 /// [`nested_section_undeclared`] as the **generation** path's reject — the nested sibling
@@ -7769,8 +7855,12 @@ fn undeclared_nested_section_generate(
     section_id: &str,
     item_ids: &[&str],
 ) -> Option<GenerateError> {
-    nested_section_undeclared(schema, section_id, item_ids)
-        .map(|id| GenerateError::UnknownSection { id })
+    nested_section_undeclared(schema, section_id, item_ids).map(|id| {
+        GenerateError::UnknownSection {
+            id,
+            under: Some(section_id.to_string()),
+        }
+    })
 }
 
 /// The **undeclared-address guard** the two insert-capable item-field writers consult
@@ -7805,7 +7895,7 @@ fn undeclared_field_reject(
     nested_parsed_item(schema, &doc, section_id, item_ids)?;
     Some(GenerateError::UnknownField {
         key: field_key.to_string(),
-        at: format!("item {item_ids:?} in section {section_id:?}"),
+        at: format!("item {:?} in section {section_id:?}", hop_path(item_ids)),
     })
 }
 
@@ -7837,7 +7927,7 @@ fn undeclared_slot_reject(
         .any(|leaf| matches!(leaf, crate::schema::Leaf::Slot { id, .. } if id == leaf_id));
     (!declared).then(|| SpliceError::UnknownLeaf {
         leaf: leaf_id.to_string(),
-        at: format!("item {item_ids:?} in section {section_id:?}"),
+        at: format!("item {:?} in section {section_id:?}", hop_path(item_ids)),
     })
 }
 
@@ -14659,6 +14749,7 @@ Smuggled prose.
     fn an_undeclared_section_reports_the_section_not_a_malformed_buffer() {
         let finding = splice_error_finding(&SpliceError::UndeclaredSection {
             section: "nonsuch".to_string(),
+            under: None,
         });
         assert_eq!(finding.severity, Severity::Blocking);
         assert_eq!(finding.code, "write.unknown-section");
@@ -14726,7 +14817,7 @@ mod not_present_route_followability {
     fn the_not_present_fallback_route_names_the_real_showable_address() {
         let mut finding = blocking_write(
             "write.not-present",
-            "write rejected: item [\"9-9-9\"] in section \"releases\" not present",
+            "write rejected: item \"9-9-9\" in section \"releases\" not present",
             Location::at(1, 1),
         );
         crate::finding::readdress_to_uri(
