@@ -17,6 +17,8 @@ mod commit_solicit_axis;
 mod commit_trailer_roundtrip;
 #[path = "../e2e_audit.rs"]
 mod e2e_audit;
+#[path = "../evolution_posture_policy.rs"]
+mod evolution_posture_policy;
 #[path = "../exit_codes.rs"]
 mod exit_codes;
 #[path = "../exit_flip_count_record.rs"]
