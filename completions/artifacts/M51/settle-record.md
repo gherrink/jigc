@@ -453,6 +453,8 @@ additive* — rather than assumed.
 
 ### D10 — `AMBUSH_CLASS_CODES` becomes **derived**; N26's two questions answered
 
+*[Amended 2026-09-15 at the build: see [Review amendments](#review-amendments-2026-09-11) §20 — the `orphaned` row's `id` is **`null`** (the stamp names no type), and the derived owe-set **unions a declared-identifier const** so `finalize.left-out` survives without a hand-stated row.]*
+
 *[Amended 2026-09-11: see [Review amendments](#review-amendments-2026-09-11) §4 · §9 · **§18**, which settles N26's second question as its own code, `schema-conformance.unversioned-doctype`]*
 
 **The fork.** *Cheap:* hand-add this wave's new blocking contracts to the const. *Robust:* derive the
@@ -503,6 +505,8 @@ fence cell disappear by accident.
 ---
 
 ### D12 — N23: the **deregistration** detect+route arm
+
+*[Amended 2026-09-15 at the build: see [Review amendments](#review-amendments-2026-09-11) §20 — the `orphaned` row's `id` is **`null`** (the stamp names no type), and the derived owe-set **unions a declared-identifier const** so `finalize.left-out` survives without a hand-stated row.]*
 
 *[Amended 2026-09-11: see [Review amendments](#review-amendments-2026-09-11) §9 · §10 · **§18**, which names the code `schema-conformance.orphaned-instance` and partitions it against D10's]*
 
@@ -1325,6 +1329,53 @@ output that matters):
 **What this does not discharge.** The eight matrices' rows are **not driven** and deliberately cannot
 be: they run on `1.0.0-rc.15`, a binary that does not exist until after the audit's fixes land. HALT
 cell 1 therefore closes **at the design level only**, and the gate-record says so in those words.
+
+---
+
+#### §20 — D10 × D12, at the build (2026-09-15): the `orphaned` row's `id` is **`null`**, and the derived owe-set unions a **declared-identifier** const
+
+*(Decided by the human on 2026-09-15 at the Increment 8 plan halt — the build-planner halted rather
+than resolving it — against an independent `robust-advocate` case. The planner's arm was the cheap
+one on both forks and lost on both. No decision above is rewritten; this bracket is reached from D10,
+D12, §9 and §18.)*
+
+**Fork 1 — the row's identity. §9/§18's *"`id` is read from the stamp"* is driven false:** a committed
+managed doc's whole front matter is `---\nschema-version: N\n---` (`dev/jigc-rig committed-singletons`:
+`CHANGELOG.md` → `schema-version: 2`, `VISION.md` → `schema-version: 1`);
+`engine::validate::schema_version_from_front_matter` (`validate.rs:1383`) returns `Option<u32>`;
+`instance_slug` (`index.rs:823`) needs the `&Schema` in both branches; and no HEAD source holds a
+type for an orphan (`file-state.json` is path→hash, finalize commits carry no doctype trailer). There
+is nothing honest to report. **Decided: `id: null`.** An orphan has no address, so the row says so
+structurally, `state: "orphaned"` being the discriminator; `item-count: null` stands. This is a
+**reshape** of `DocRow.id` (string → string|null, on the wire since M42), admissible only while the
+pre-1.0 window is open under the posture Increment 5 landed
+([command-output-contract.md](../../../design/command-output-contract.md) → the third pre-pin case,
+the act Increment 6 took at twenty-five doors) — and taken now precisely because after the pin
+`id`'s **meaning** is what freezes: under the path arm it would read *address-or-path* for the life
+of 1.x with no repair short of 2.0. Precedent: `jigc unmanage` pins `identity: Option<String>`
+(`unmanage.rs:35`), null when no schema owns the path, and substitutes the path only into a finding's
+`from` (`:67`), never the wire key — the same file adjudicated both choices. **Refused, with their
+tells:** the repo-relative path (a meaning change on a pinned key, borrowing a finding-*target*
+licence for an identity key; a driver keying on `row.id` builds an address from a path and is refused
+only at `doc show`) · a synthesized `<x>:<stem>` (an address `doc show` refuses — and wrong in
+derivation, since `instance_slug` yields the *type* as slug for a placement doctype, so `VISION.md`
+is `vision:vision`, not `?:VISION`) · dropping the row (reversible, but it re-opens `doc list`'s
+founding *"an omitted file sends the agent to `cat`"* argument on the very file `validate` now
+exit-flips on). **`design/doc-read-surface.md:160` is corrected in Increment 8 with its falsifying
+datum**, not reworded, and the `DocRow.id` doc-comment states the null case.
+
+**Fork 2 — `finalize.left-out` under the derivation.** §4's source set (*blocking codes minted by a
+commit-on-behalf door, minus `Exempt(reason)` rows*) cannot produce `finalize.left-out`: a current
+`AMBUSH_CLASS_CODES` member (`pack.rs:779`) that **no producer mints** (`render::FINALIZE_NON_MEMBERS`,
+M42's print-over-refuse), declared by both packs' finalize steps and buying three tokens under
+`CONSTRAINT_REQUIRED_TOKENS` (`pack.rs:1242`) — so a literal derivation silently retires a shipped
+fence member. **Decided: the derivation stays pure, and the owe-set is
+`derive(commit-on-behalf blocking codes) − Exempt(reason) ∪ DECLARED_CONTRACT_IDENTIFIERS`**, the
+second operand a one-row const beside the derivation, each row carrying its non-mint reason,
+⇔-bijected against `FINALIZE_NON_MEMBERS` (which already names the row) and
+`CONSTRAINT_REQUIRED_TOKENS`. **Refused:** a hand-stated non-mint row *inside* the derived set —
+that is the hand-list §4 was written to kill, re-admitted behind a derivation-shaped wrapper, and the
+next print-over-refuse contract would join by hand on its precedent.
 
 ---
 
