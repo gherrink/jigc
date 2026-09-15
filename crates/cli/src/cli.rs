@@ -85,6 +85,36 @@ fn migrate_corpus_long_about() -> String {
     )
 }
 
+/// The `validate` long help — **generated from the family set the sweep runs**, not a
+/// second home for it (M51 Increment 9, EC-11).
+///
+/// The help named one family and called it the verb: *"Re-check every committed doc's
+/// code anchors against the codebase"*. That is the doc↔code family — one of the seven
+/// [`engine::validate::STORE_FAMILIES`] the sweep drives — so the door under-stated its
+/// own report by six families, and an agent reading it before running the sweep learned
+/// nothing about the checks that decide most of what it will see (a dangling cross-doc
+/// `ref`, an unmigrated stamp, a workflow whose step file moved).
+///
+/// Rendering the registry is what keeps that from recurring: an eighth family reaches
+/// this help by joining the set. The sweep's exit rule is deliberately not restated here
+/// — it is a function of which codes fire, and that set has its own home
+/// ([`crate::render::STORE_EXIT_FLIPS`]).
+fn validate_long_about() -> String {
+    let families = engine::validate::STORE_FAMILIES
+        .iter()
+        .map(|family| format!("{} — {}", family.name, family.checks))
+        .collect::<Vec<_>>()
+        .join("; ");
+    format!(
+        "Re-check the committed store and report drift — the store-wide, read-only \
+         sweep.\n\n\
+         `jigc validate` is **task-less**: it re-reads the committed store and reports \
+         what it finds, where `jigc task validate <id>` previews one task's gate. \
+         Detect-and-report — it repairs nothing.\n\n\
+         It sweeps every content family, in sweep order: {families}."
+    )
+}
+
 /// The `jigc` CLI — a context compiler for coding agents.
 #[derive(Debug, Parser, PartialEq, Eq)]
 #[command(name = "jigc", version, about)]
@@ -387,9 +417,8 @@ pub enum Command {
         commands: bool,
     },
 
-    /// Re-check every committed doc's code anchors against the codebase and report
-    /// drift — `jigc validate` is the store-wide, read-only sweep (distinct from
-    /// `jigc task validate <id>`, which gates one task). Detect-and-report.
+    /// Re-check the committed store and report drift — the store-wide, read-only sweep.
+    #[command(long_about = validate_long_about())]
     Validate,
 }
 

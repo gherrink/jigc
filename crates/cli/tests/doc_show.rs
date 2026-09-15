@@ -1048,3 +1048,116 @@ fn the_stamp_key_is_whole_doc_only_and_fields_stays_stringy() {
         "a slot slice is the bare prose string; got:\n{thesis}"
     );
 }
+
+/// M51 Increment 9, T10 (EC-11, part 2) — **the pinned whole-doc key set is what the
+/// binary emits**, committed and staged.
+///
+/// The key set existed only inside the whole-output goldens above (`VISION_JSON` /
+/// `PRD_JSON`) — an equality that pins the shape but that nothing else can read — so
+/// `jigc doc show --help` restated it in prose and the restatement went stale: it
+/// named the four keys pinned at M39 while the serve has carried **six** since M49
+/// (`item-count` M44, the top-level `schema-version` M49). The set is now
+/// [`cli::doc::WHOLE_DOC_KEYS`], the help renders it, and this arm is the half that
+/// keeps the const honest against reality: it compares the const to the key set the
+/// **real binary prints**, so a seventh key added to the serve reddens here before the
+/// help can under-state it.
+///
+/// Both serves are driven, because the staged one carries the one additive key
+/// ([`cli::doc::STAGED_KEY`]) and the committed one must carry it **never** — that is
+/// the committed/staged discriminator itself (`design/doc-read-surface.md` → The
+/// staged marker key).
+#[test]
+fn the_driven_whole_doc_key_set_is_the_pinned_const() {
+    let repo = TempDir::new("whole-doc-keys");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    commit_vision(repo.path(), home.path());
+
+    let keys_of = |out: &std::process::Output| -> Vec<String> {
+        let value: serde_json::Value =
+            serde_json::from_str(&stdout_of(out)).expect("the `--format json` serve is json");
+        value
+            .as_object()
+            .expect("a whole-doc serve is a json object")
+            .keys()
+            .cloned()
+            .collect()
+    };
+
+    // (1) The committed serve carries exactly the pinned set.
+    let committed = jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "show", "vision:vision", "--format", "json"],
+        None,
+    );
+    assert_ok(&committed, "`jigc doc show vision:vision --format json`");
+    let mut expected: Vec<String> = cli::doc::WHOLE_DOC_KEYS
+        .iter()
+        .map(|key| (*key).to_string())
+        .collect();
+    expected.sort();
+    assert_eq!(
+        keys_of(&committed),
+        expected,
+        "the committed whole-doc serve's top-level keys must BE \
+         `cli::doc::WHOLE_DOC_KEYS` — the const `jigc doc show --help` renders",
+    );
+
+    // (2) The staged serve adds the one marker key and nothing else.
+    assert_ok(
+        &jigc(
+            repo.path(),
+            home.path(),
+            &["start", "--workflow", "form-vision", "revise the vision"],
+            None,
+        ),
+        "`jigc start --workflow form-vision` (the revision task)",
+    );
+    let task = only_task(repo.path());
+    assert_ok(
+        &jigc(
+            repo.path(),
+            home.path(),
+            &[
+                "doc",
+                "set-slot",
+                "vision:vision#thesis",
+                "--from-file",
+                "-",
+                "--task",
+                &task,
+            ],
+            Some(b"A context compiler, restated.\n"),
+        ),
+        "`jigc doc set-slot vision:vision#thesis` (stage the doc into the task)",
+    );
+    let staged = jigc(
+        repo.path(),
+        home.path(),
+        &[
+            "doc",
+            "show",
+            "vision:vision",
+            "--format",
+            "json",
+            "--task",
+            &task,
+        ],
+        None,
+    );
+    assert_ok(
+        &staged,
+        "`jigc doc show vision:vision --format json --task`",
+    );
+    let mut staged_expected = expected.clone();
+    staged_expected.push(cli::doc::STAGED_KEY.to_string());
+    staged_expected.sort();
+    assert_eq!(
+        keys_of(&staged),
+        staged_expected,
+        "the staged whole-doc serve's top-level keys must be the pinned set plus the \
+         one `{}` marker — the committed/staged discriminator",
+        cli::doc::STAGED_KEY,
+    );
+}

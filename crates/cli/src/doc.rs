@@ -449,32 +449,7 @@ pub enum DocCommand {
         task: Option<String>,
     },
     /// Read a managed doc, or an addressed `#section`/item/leaf slice of it.
-    ///
-    /// Served through the canonical parse/render path. **Committed by default**:
-    /// task-less, it reads the **committed** store — the view a fresh session or a
-    /// teammate on a clone sees.
-    /// A doc still staged in an open task is not committed yet; read it with
-    /// `--task <id>`, which serves that task's **staged** working copy through the
-    /// identical parse/slice path (the read-back of an in-flight write) — including a
-    /// **transient** doc's staged copy (`commit:<task-id>`, which never commits to a
-    /// repo file). Plain text is the canonical render; `--format json` is the pinned
-    /// stable shape (`design/doc-read-surface.md`): a whole-doc object
-    /// `{ type, slug, fields, sections }` — a staged serve adds the one `staged` key
-    /// carrying the task id — where a slot section serializes to its prose string and
-    /// a repeatable section to its item array; a `#section` slice returns that
-    /// section's value (item array / slot prose), an `#section/<id>` slice the item
-    /// object, an `#section/<id>/<leaf>` slice the leaf.
-    ///
-    /// The `{#id}` anchor on a rendered item heading IS that item's `<id>` — the
-    /// address component every `#section/<id>` slice and every item write verb
-    /// takes. It is minted from the title, not always equal to it (a release titled
-    /// `1.0.0` has the id `1-0-0`), and it stays frozen across a retitle, so read the
-    /// id off the anchor rather than slugging the title yourself; `--format json`
-    /// carries the same value as each item object's `id` key.
-    ///
-    /// Stdout carries the addressed content and nothing else — no routing footer,
-    /// no banner — so a read redirects or pipes straight into a file. Diagnostics,
-    /// blocks, and the staged-elsewhere note ride stderr.
+    #[command(long_about = show_long_about())]
     Show {
         /// The doc address — `<type>:<slug>`, or a `#section`/item/leaf slice of it.
         addr: String,
@@ -5102,7 +5077,7 @@ fn show_json(
                     .as_object_mut()
                     .expect("the whole-doc json is an object")
                     .insert(
-                        "staged".to_string(),
+                        STAGED_KEY.to_string(),
                         serde_json::Value::String(task_id.to_string()),
                     );
             }
@@ -5115,7 +5090,86 @@ fn show_json(
     }
 }
 
-/// The whole-doc json wrapper `{ type, slug, fields, sections }`. `fields` flattens
+/// The `doc show` long help — **the pinned whole-doc key set rendered**, not a second
+/// home for it (M51 Increment 9, EC-11).
+///
+/// The help restated the set in prose and the restatement went stale: it named the four
+/// keys pinned at M39 (`{ type, slug, fields, sections }`) while the serve has carried
+/// six since M49. Rendering [`WHOLE_DOC_KEYS`] is what keeps that from recurring — a
+/// seventh key reaches this help by joining the const, and the const is itself driven
+/// against the binary's emitted bytes (`crates/cli/tests/doc_show.rs`).
+///
+/// Everything else here is the shipped doc-comment text, moved below the fold: the
+/// `jigc doc --help` table prints only the one-line lead above, so the contract detail
+/// is stated once, here (`design/surface-contract.md` → the style guide).
+fn show_long_about() -> String {
+    let keys = WHOLE_DOC_KEYS
+        .iter()
+        .map(|key| format!("`{key}`"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "Read a managed doc, or an addressed `#section`/item/leaf slice of it.\n\n\
+         Served through the canonical parse/render path. **Committed by default**: \
+         task-less, it reads the **committed** store — the view a fresh session or a \
+         teammate on a clone sees. A doc still staged in an open task is not committed \
+         yet; read it with `--task <id>`, which serves that task's **staged** working \
+         copy through the identical parse/slice path (the read-back of an in-flight \
+         write) — including a **transient** doc's staged copy (`commit:<task-id>`, \
+         which never commits to a repo file).\n\n\
+         Plain text is the canonical render; `--format json` is the pinned stable shape \
+         (`design/doc-read-surface.md`): a whole-doc object keyed by {keys} — a staged \
+         serve adds the one `{STAGED_KEY}` key carrying the task id — where a slot \
+         section \
+         serializes to its prose string and a repeatable section to its item array; a \
+         `#section` slice returns that section's value (item array / slot prose), an \
+         `#section/<id>` slice the item object, an `#section/<id>/<leaf>` slice the \
+         leaf.\n\n\
+         The `{{#id}}` anchor on a rendered item heading IS that item's `<id>` — the \
+         address component every `#section/<id>` slice and every item write verb takes. \
+         It is minted from the title, not always equal to it (a release titled `1.0.0` \
+         has the id `1-0-0`), and it stays frozen across a retitle, so read the id off \
+         the anchor rather than slugging the title yourself; `--format json` carries the \
+         same value as each item object's `id` key.\n\n\
+         Stdout carries the addressed content and nothing else — no routing footer, no \
+         banner — so a read redirects or pipes straight into a file. Diagnostics, \
+         blocks, and the staged-elsewhere note ride stderr."
+    )
+}
+
+/// The whole-doc `--format json` object's **top-level key set** — the one home of the
+/// pinned shape (M51 Increment 9, EC-11; `design/doc-read-surface.md` → The pinned
+/// `--format json` contract).
+///
+/// `jigc doc show --help` renders this list rather than restating it. It restated it
+/// until M51, as *"a whole-doc object `{ type, slug, fields, sections }`"* — the
+/// four keys the contract pinned at M39 — while the serve has carried **six** since
+/// M49 (`item-count` M44, the top-level `schema-version` M49), so the door's own help
+/// under-stated the shape a driver reads back by two keys.
+///
+/// Its binding to the emitted bytes is driven, not asserted here:
+/// `crates/cli/tests/doc_show.rs` compares this set to the key set the real binary
+/// prints on a committed **and** on a staged serve, and
+/// `crates/cli/tests/help_truth.rs` compares it to the help bytes.
+pub const WHOLE_DOC_KEYS: &[&str] = &[
+    "type",
+    "slug",
+    "item-count",
+    "schema-version",
+    "fields",
+    "sections",
+];
+
+/// The one additive top-level key a **staged** whole-doc serve adds beside
+/// [`WHOLE_DOC_KEYS`] — the committed/staged discriminator
+/// (`design/doc-read-surface.md` → The staged marker key). A committed serve carries
+/// it never, and a `#fragment` slice has no object to hang it on.
+pub const STAGED_KEY: &str = "staged";
+
+/// The whole-doc json wrapper, keyed by [`WHOLE_DOC_KEYS`] (the set `jigc doc show
+/// --help` renders and `crates/cli/tests/doc_show.rs` drives against these bytes — it
+/// is not restated here, which is what let the help's copy go two keys stale).
+/// `fields` flattens
 /// every simple section's fields (the header's front-matter + any body trailing group)
 /// keyed by leaf id; `sections` carries one entry per slot section (its prose string)
 /// and per repeatable section (its item array) — a header/fields-only section

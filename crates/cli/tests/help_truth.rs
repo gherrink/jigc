@@ -534,3 +534,120 @@ fn task_finalize_help_states_the_generated_gate_coverage() {
          only this door decides; got:\n{help}"
     );
 }
+
+/// M51 Increment 9, T10 (EC-11, part 2) — **`jigc validate --help` is the sweep's
+/// family set, rendered.**
+///
+/// The help named one family and called it the verb: *"Re-check every committed doc's
+/// code anchors against the codebase"* — the doc↔code family, which is one of the
+/// **seven** [`engine::validate::STORE_FAMILIES`] the store sweep runs. An agent
+/// reading the door before running it learned nothing about the six that decide most
+/// of what it will actually report (a dangling cross-doc `ref`, an unmigrated stamp,
+/// a workflow whose step file moved).
+///
+/// The set had no code-side home at all — it lived in per-call comments in
+/// `engine/validate.rs` and in prose in `design/validation.md`, and those two had
+/// already drifted on the numbering — so the repair **mints** the set and generates
+/// the help from it. This arm is what makes that binding: it slices the emitted help
+/// at the list's own lead and compares the printed names to `STORE_FAMILIES` as an
+/// **ordered set equality**, so a family missing from the help and a family in the
+/// help the registry does not carry are both red.
+///
+/// The lead is a literal here on purpose: it is the *region* marker the extraction
+/// slices at (the `KINDS_LEAD` idiom one arm up), not a restatement of the fact under
+/// test.
+const FAMILIES_LEAD: &str = "in sweep order: ";
+
+#[test]
+fn validate_help_names_every_store_family_and_no_other() {
+    let help = help_stdout(&["validate", "--help"]);
+    let tail = help
+        .split_once(FAMILIES_LEAD)
+        .unwrap_or_else(|| {
+            panic!(
+                "`validate --help` must enumerate the families it sweeps, led by \
+                 \"{FAMILIES_LEAD}\"; got:\n{help}"
+            )
+        })
+        .1;
+    let list = tail
+        .split_once('.')
+        .unwrap_or_else(|| panic!("the family list must terminate in a `.`; got:\n{help}"))
+        .0;
+
+    let printed: Vec<&str> = list
+        .split("; ")
+        .map(|entry| {
+            entry
+                .split_once(" — ")
+                .unwrap_or_else(|| {
+                    panic!("each family entry names itself, then ` — `, then what it re-checks; got: {entry}")
+                })
+                .0
+                .trim()
+        })
+        .collect();
+    let expected: Vec<&str> = engine::validate::STORE_FAMILIES
+        .iter()
+        .map(|family| family.name)
+        .collect();
+    assert_eq!(
+        printed, expected,
+        "`validate --help`'s family list must BE `engine::validate::STORE_FAMILIES` \
+         rendered — every family, no family the registry does not carry, in sweep \
+         order (a hand-typed list is a second home for the taxonomy); got:\n{help}"
+    );
+}
+
+/// M51 Increment 9, T10 (EC-11, part 2) — **`jigc doc show --help` names the whole-doc
+/// json keys the serve actually emits.**
+///
+/// The long help said *"a whole-doc object `{ type, slug, fields, sections }`"* — the
+/// four keys pinned at M39 — while the serve has carried **six** since M49
+/// (`item-count` M44, the top-level `schema-version` M49). A driver reading the
+/// contract off the door it reads through met a shape two keys narrower than the bytes.
+///
+/// The keys are now [`cli::doc::WHOLE_DOC_KEYS`], rendered; this arm compares the
+/// emitted help's list to that const as an **ordered set equality**, and
+/// `crates/cli/tests/doc_show.rs` binds the const to the real binary's emitted key set
+/// on a committed and on a staged serve — so the help cannot drift from the bytes
+/// without one of the two arms reddening.
+const WHOLE_DOC_KEYS_LEAD: &str = "a whole-doc object keyed by ";
+
+#[test]
+fn doc_show_help_names_exactly_the_pinned_whole_doc_keys() {
+    let help = help_stdout(&["doc", "show", "--help"]);
+    let tail = help
+        .split_once(WHOLE_DOC_KEYS_LEAD)
+        .unwrap_or_else(|| {
+            panic!(
+                "`doc show --help` must name the whole-doc key set, led by \
+                 \"{WHOLE_DOC_KEYS_LEAD}\"; got:\n{help}"
+            )
+        })
+        .1;
+    let list = tail
+        .split_once(" —")
+        .unwrap_or_else(|| panic!("the key list must terminate at a ` — `; got:\n{help}"))
+        .0;
+
+    let printed: Vec<String> = list
+        .split(", ")
+        .map(|key| key.trim().trim_matches('`').to_string())
+        .collect();
+    let expected: Vec<String> = cli::doc::WHOLE_DOC_KEYS
+        .iter()
+        .map(|key| (*key).to_string())
+        .collect();
+    assert_eq!(
+        printed, expected,
+        "`doc show --help`'s whole-doc key list must BE `cli::doc::WHOLE_DOC_KEYS` \
+         rendered — every key the serve emits, no key it does not; got:\n{help}"
+    );
+    let staged = cli::doc::STAGED_KEY;
+    assert!(
+        help.contains(&format!("the one `{staged}` key")),
+        "`doc show --help` must still name the one staged-only additive key \
+         (`{staged}`) beside the pinned set; got:\n{help}"
+    );
+}

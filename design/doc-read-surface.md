@@ -56,7 +56,7 @@ The two are complementary: legibility-in-committed-shape is the plain path's job
 
 Pinned once here; every doctype's json read conforms. The **milestone record is the conformance witness** — the first doctype whose *primary* consumer is a machine read (fresh-clone continuation), so its shape is the pin's proof.
 
-**Whole-doc** → an object keyed by the four pinned top-level keys `{ type, slug, fields, sections }` (joined pre-1.0 by the additive `item-count` and `schema-version`, below):
+**Whole-doc** → an object keyed by the pinned top-level key set — the four pinned at M39 (`type`, `slug`, `fields`, `sections`) joined pre-1.0 by the additive `item-count` and `schema-version`, below. **The set's code-side home is `cli::doc::WHOLE_DOC_KEYS`** (M51): `jigc doc show --help` renders that const rather than restating the keys — it restated them until M51, and the restatement had gone two keys stale — and `crates/cli/tests/doc_show.rs` binds the const to the key set the binary actually prints, committed and staged, so this contract, the help and the bytes cannot drift apart in silence.
 
 ```json
 { "type": <doctype>, "slug": <slug>, "item-count": <n>, "schema-version": <v>|null, "fields": { … }, "sections": { … } }

@@ -432,13 +432,100 @@ pub struct StoreWorkflow {
     pub catalog: crate::compose::CommandCatalog,
 }
 
-/// The store-scope **three-family** sweep — the [`validate_store`] superset the top-level
-/// `jigc validate` drives, folding all three read-only store targets into one
-/// [`ValidationReport`] (`validation.md` → Completing the envelope: host three families
+/// One family of the store-scope sweep `jigc validate` drives — the taxonomy's
+/// **one home**, and the set [`crate::validate::STORE_FAMILIES`] is read at.
+pub struct StoreFamily {
+    /// The family's name, as `design/validation.md`'s taxonomy names it. Deliberately
+    /// **not** a number: the arrival-order numbering is exactly what drifted (the code
+    /// called inverse-cardinality *"Family 5"* while the design doc called
+    /// schema-conformance *"the fifth family"*), so the registry carries sweep order
+    /// and no ordinal at all.
+    pub name: &'static str,
+    /// What this family re-checks, in one clause — rendered verbatim into
+    /// `jigc validate --help`, so it carries neither `;` nor `.` (the list's own
+    /// separators).
+    pub checks: &'static str,
+}
+
+/// The **store-sweep family axis** — every content family `jigc validate` reports, in
+/// sweep order (M51 Increment 9, EC-11).
+///
+/// The seven are [`validate_store_families`]' own walks, with one carve-out stated
+/// rather than left to the reader: the **orphan-strand** arm of the file↔CLI-state
+/// member is produced CLI-side (it shells to `git ls-files`, which the domain-empty
+/// engine never does), so it is named inside that member's clause instead of earning a
+/// member of its own. The verb's other CLI-side advisory — store provenance,
+/// `store-version.binary-mismatch` — is **not** a content family and is not a member
+/// (`design/validation.md` → Store-scope re-validation).
+///
+/// It exists because the set had **no code-side home**: it lived in per-call comments
+/// in this file and in prose in `design/validation.md`, and `jigc validate --help` —
+/// the surface an agent actually reads before running the sweep — named exactly one
+/// of them (*"Re-check every committed doc's code anchors"*, the doc↔code family).
+/// So the door under-stated its own sweep by six families, and the two homes had
+/// already drifted apart on the numbering (above).
+///
+/// The help is **generated** from this table rather than restating it — an unfenced
+/// second home for one fact is the defect, not the fix — and
+/// `crates/cli/tests/help_truth.rs` compares the emitted help bytes to this set as an
+/// ordered equality, so a family missing from the help and a family in the help this
+/// set does not carry are both red.
+pub const STORE_FAMILIES: &[StoreFamily] = &[
+    StoreFamily {
+        name: "doc↔code",
+        checks: "every committed doc's `code-anchor` leaves re-resolved against the \
+                 working tree (the one subprocess probe)",
+    },
+    StoreFamily {
+        name: "workflow↔refs",
+        checks: "every cascade-resolved workflow definition's task-independent \
+                 referential integrity, against its own origin pack",
+    },
+    StoreFamily {
+        name: "file↔CLI-state",
+        checks: "every committed managed doc's bytes against its recorded baseline, \
+                 detect-without-absorb, plus the move a bare `git mv` left \
+                 recorded-but-missing and the committed doc stranded outside its \
+                 doctype's resolved home",
+    },
+    StoreFamily {
+        name: "forward-ref integrity",
+        checks: "every committed cross-doc `ref` edge's target resolving in the \
+                 committed store",
+    },
+    StoreFamily {
+        name: "schema-completeness",
+        checks: "each committed doc below an `inverse-card` minimum its doctype \
+                 declares (advisory)",
+    },
+    StoreFamily {
+        name: "mention integrity",
+        checks: "every `#<type>:<slug>` managed mention in committed slot prose \
+                 resolving (advisory)",
+    },
+    StoreFamily {
+        name: "schema-conformance",
+        checks: "every committed instance re-parsed against the current resolved \
+                 schema: presence, value and version currency, plus the two adoption \
+                 advisories",
+    },
+];
+
+/// The store-scope **family sweep** — the [`validate_store`] superset the top-level
+/// `jigc validate` drives, folding every read-only store target into one
+/// [`ValidationReport`] (`validation.md` → Completing the envelope: host the families
 /// under the uniform exit rule). **Task-less and read-only** throughout: no working area,
 /// no `FileStateRecord` write, no edge-index mutation.
 ///
-/// The three families, in a stable sweep order:
+/// **Which families run is [`STORE_FAMILIES`], not a count here.** This comment read *"the
+/// store-scope **three-family** sweep"* and then listed three, from M20 until M51, while
+/// the body below has grown to **seven** — and `jigc validate --help`, generated from that
+/// registry since M51, is the surface the drift was actually read off (M51 Increment 9,
+/// EC-11).
+///
+/// The first three are detailed here because they are the ones whose
+/// determinism-boundary inputs the CLI has to feed in (the seam this signature exists
+/// for); the rest are engine-internal walks, commented at their call site:
 ///
 /// - **doc↔code** — every committed doc's `code-anchor` leaves resolved against the working tree via the CLI-supplied subprocess `invoke_doc_code` seam (the [`validate_store`] body, lifted to [`store_doc_code`]). The only family that can raise a `pack-probe-integrity.*` meta-finding (it is the one subprocess probe).
 /// - **workflow↔refs** — each cascade-resolved workflow definition (the CLI enumerates + reads them, address-sorted, feeding each as a [`StoreWorkflow`] bundling its id, raw bytes, and **origin-pack** command catalog) run through the **task-independent** store-scope checks ([`crate::compose::workflow_refs_store`]): `include-resolves`, `include-cycle-absent`, `body-include-only`, the three marker-shadow checks, `fan-out-join-paired`, the **catalog-membership-only** command-ref path, and the **doctype-membership-only** schema-ref path (`schema-ref-resolves`, M43 — resolved against the **composed cascade's** doctype set derived from `schemas`, deliberately NOT per-origin: a methodology step legitimately solicits a dev doctype, `surface-contract.md` → The schema projection). The task-data checks stay at `jigc start`. `workflow_source` is the CLI's layer-aware [`StepSource`](crate::compose::StepSource), **scoped per-workflow** to that definition's origin pack via [`StepSource::scope_to_workflow`](crate::compose::StepSource::scope_to_workflow) so a loser-pack workflow's includes + command-refs resolve against ITS OWN pack, never the precedence-winner's catalog (`multi-pack.md` → Pack-local body-reference resolution: `command-ref-resolves` and the include checks fire **per-definition against that definition's own pack**). For a single pack each origin *is* the one pack, so the resolution is byte-identical to a flat catalog (the no-composition floor).
