@@ -206,10 +206,48 @@ has now happened twice.
 | **F-6** N27, **F-7** N15 | carried, declared | already routed, re-priced below |
 | **F-1** the `--dry-run` manifest · **F-12** in substance | **REFUTED** | — |
 
-**Thirteen findings. Nothing lands in the blocking row.** No data loss, no corruption, no regression, no false green
-over managed state, no violated `--format json` contract. Every SHIPS-RECORDED row is marked
-**reversible after 1.0.0** under §1's rider: none moves a pinned contract, and adding a code or a
-sentence to a text refusal is additive.
+**Thirteen findings. Nothing lands in the blocking row.** **No data loss or corruption was observed
+in the reached trial paths** — and in those same paths, no regression, no false green over managed
+state, no violated `--format json` contract. Every SHIPS-RECORDED row is marked **reversible after
+1.0.0**, at a price that is per **mechanism** rather than per row: a sentence or a code added to a
+**text** refusal is free; an **additive key** on an envelope that already declares its keys is
+additive by the contract's own rule; an **envelope-shape** change — half of F-11, swapping the
+flattened `{"error": …}` string for the findings envelope — is a wire change on a de-facto-pinned
+shape and therefore cheap only *before* the pin; and the two that get **more** expensive after
+1.0.0, not less, are a **`schema-version` bump plus a shipped corpus migration** (**F-8**, the
+frozen `adr` 2→3) and a **change to the schema-definition format, itself frozen v1** (**F-3**, plus
+`doc schema` `contract-version` 6→7) — because a bump taken today migrates **zero** adopter corpora
+and the same bump taken after 1.0.0 runs over every one.
+
+**[Corrected 2026-09-15 (M51 Increment 10, T4):** two claims above are struck, each with its datum.
+
+1. ~~*No data loss, no corruption, no regression, no false green over managed state, no violated
+   `--format json` contract.*~~ — **struck as categorical**: stated flat, it is a claim about the
+   product made from a trial that did not reach every surface, and this same §1 says so two
+   paragraphs down (*"reached by nothing"*). [coverage.md](coverage.md) leaves **five cells**
+   unreached — rows **4**, **10b**, **11a**, **11b** and the **`1799a2d`** milestone boundary. **The
+   correction is to the wording, not to the result:** those five were subsequently driven end to
+   end, on this same `1.0.0-rc.14`, and **all five matched contract**
+   ([untrialled-surfaces-driven.md](../evidence-check-1.0/untrialled-surfaces-driven.md) → *Verdict
+   table*); the two **new** surface defects that drive turned up ride the M51 ledger as **EC-15**
+   and **EC-16**, and neither is a loss or a corruption cell (its third numbered item is a scope
+   correction to an already-carried entry — N20, EC-37 — not a new defect). So the sentence now
+   standing claims what this trial reached, and what closes the remaining gap is that later drive
+   — a different instrument, named as one, rather than a wider claim from this one.
+2. ~~*under §1's rider: none moves a pinned contract, and adding a code or a sentence to a text
+   refusal is additive*~~ — **the true half is kept and the implied gloss struck.** *None moves a
+   pinned contract* holds for all thirteen rows; *… and is therefore cheap* does not follow from it,
+   and is false for **F-8**, **F-3** and **half of F-11** — each of which leaves every pinned
+   contract where it is and is still the expensive kind of change. Reversibility prices by the
+   **mechanism** a fix must use — **text · additive key · envelope shape · `schema-version` bump +
+   migration · schema-format change** — never by whether a pinned contract moves, which is why the
+   corrected sentence above lists mechanisms. **This row is the pricing instrument the wave's
+   boundary reads:** it is why **F-3 and F-8 are excluded from M51 rather than tiered down inside
+   it** ([decisions-pending.md](../../../implementation/decisions-pending.md) → *M51 — the
+   evidence-check wave*, the excluded paragraph). Their exclusion's **ground** is the *necessity*
+   leg — no adopter needs either — and explicitly **not** *"additive after the pin"*, which
+   [settle-record.md](../M51/settle-record.md) → D13 records as **inverted** for a shape change to
+   an existing frozen doctype.**]**
 
 **Two things this trial cannot say**, and it says so rather than implying otherwise: the fan-out
 boundary (`1799a2d`) and the SKILL.md re-clobber path were **reached by nothing**. B4-h was the
