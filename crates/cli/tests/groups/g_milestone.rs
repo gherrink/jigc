@@ -21,6 +21,8 @@ mod milestone_abort_survives;
 mod milestone_boundary_gate;
 #[path = "../milestone_discard.rs"]
 mod milestone_discard;
+#[path = "../milestone_envelope_arm.rs"]
+mod milestone_envelope_arm;
 #[path = "../milestone_fanout_concurrency.rs"]
 mod milestone_fanout_concurrency;
 #[path = "../milestone_finalize_base_guard.rs"]

@@ -244,6 +244,19 @@ impl MilestoneCommand {
         // (M47 Inc 3 T7). `None` for the read-only verbs: they commit nothing, so no hook
         // can reject them.
         let frame = self.rejection_frame();
+        // Which `--format json` arm this verb's success takes, read off `VERB_KINDS` —
+        // the classification that already governs the whole clap tree — rather than
+        // hand-cased on the variant (M51 Inc 5 / T3). A `Read` leaf runs no commit, so no
+        // hook can ever speak into its envelope and `hook_output` is OMITTED; every other
+        // leaf keeps the present-always key. Captured here, before the match consumes
+        // `self`. An unclassified path cannot occur — `VERB_KINDS` is fenced total against
+        // the clap tree (`cli_parse::every_leaf_verb_is_classified`) and `verb_path` is
+        // matched exhaustively — and would take the committing arm, which is the status
+        // quo rather than a new silence.
+        let carries_hook_output = !matches!(
+            crate::cli::verb_kind(self.verb_path()),
+            Some(crate::cli::VerbKind::Read)
+        );
         // Each committing verb returns `(summary, hook_output)` — the record-only
         // commit's captured non-blocking hook stream (the hook_output producer axis;
         // `design/command-output-contract.md` → Stream discipline). The read-only verbs
@@ -277,7 +290,14 @@ impl MilestoneCommand {
         };
         match result {
             Ok((summary, hook_output)) => {
-                println!("{}", render::milestone(format, &summary, &hook_output));
+                println!(
+                    "{}",
+                    render::milestone(
+                        format,
+                        &summary,
+                        carries_hook_output.then_some(hook_output.as_str()),
+                    )
+                );
                 // One capture, two channels: the same string rides the envelope above and
                 // the delimited relay (stderr under `--format json`, stdout on agent-text).
                 crate::task::relay_hook_output(format, &hook_output);
@@ -291,6 +311,32 @@ impl MilestoneCommand {
                 // A read-only verb — it runs no commit, so no `CommitRejected` can reach here.
                 None => crate::invocation_log::operational_failure(format, &err),
             },
+        }
+    }
+
+    /// This verb's **leaf path** as [`crate::cli::VERB_KINDS`] spells it — the key the
+    /// dispatch site looks its envelope arm up under (M51 Inc 5 / T3).
+    ///
+    /// It returns the path rather than a [`crate::cli::VerbKind`] on purpose: the kind is
+    /// decided once, for the whole clap tree, in the table that a fence already holds
+    /// total against it. A second hand-written classification here could disagree with the
+    /// first, and the surface would then answer two ways about the same verb.
+    ///
+    /// Matched exhaustively on purpose, on [`MilestoneCommand::milestone_id`]'s mold: a
+    /// verb added without a path here does not compile. Every row is driven through the
+    /// real binary by `tests/milestone_envelope_arm.rs`, whose door table bijects the
+    /// `milestone` leaves of `VERB_KINDS`.
+    fn verb_path(&self) -> &'static [&'static str] {
+        match self {
+            MilestoneCommand::Create { .. } => &["milestone", "create"],
+            MilestoneCommand::AddTask { .. } => &["milestone", "add-task"],
+            MilestoneCommand::AddFromSpec { .. } => &["milestone", "add-from-spec"],
+            MilestoneCommand::ListTasks { .. } => &["milestone", "list-tasks"],
+            MilestoneCommand::Provision { .. } => &["milestone", "provision"],
+            MilestoneCommand::Execute { .. } => &["milestone", "execute"],
+            MilestoneCommand::Join { .. } => &["milestone", "join"],
+            MilestoneCommand::Finalize { .. } => &["milestone", "finalize"],
+            MilestoneCommand::Discard { .. } => &["milestone", "discard"],
         }
     }
 

@@ -343,9 +343,12 @@ const REGISTRY: &[(&[&str], Tier)] = &[
     (&["config", "fill"], Tier::Fenced("config_ack")),
     (&["config", "fork"], Tier::Fenced("config_ack")),
     // ── milestone ───────────────────────────────────────────────────────────────
-    // The seven verbs rendered by `render::milestone` hand it a **prose summary string**
-    // (`milestone_created`'s multi-line ack among them); the envelope is pinned
-    // `{text, hook_output}` and the growth rides inside `text` by declaration.
+    // The six verbs rendered by `render::milestone` hand it a **prose summary string**
+    // (`milestone_created`'s multi-line ack among them), and the growth rides inside
+    // `text` by declaration. The envelope has TWO arms since M51 Increment 5 / T3, chosen
+    // from `VERB_KINDS` at the dispatch site: the five write doors are pinned
+    // `{text, hook_output}`, and `list-tasks` — the surface's one `VerbKind::Read` leaf —
+    // is pinned `{text}` alone.
     (
         &["milestone", "create"],
         Tier::Judgment(
@@ -371,7 +374,19 @@ const REGISTRY: &[(&[&str], Tier)] = &[
         &["milestone", "list-tasks"],
         Tier::Judgment(
             "a prose summary carried whole inside `text`",
-            MILESTONE_PROSE_SUMMARY,
+            Disposition::DeclaredOut(
+                "`render::milestone` puts the ENTIRE agent summary on the wire as `text`, \
+                 as at its write siblings, and the agent surface differs from it only by \
+                 the routing footer. It carries its own row because the REST of the shared \
+                 sentence stopped being true of it at M51 Increment 5 / T3: `list-tasks` is \
+                 the milestone surface's one `VerbKind::Read` leaf, so its envelope is \
+                 `{text}` ALONE — `hook_output` is omitted rather than shipped empty, the \
+                 key being scoped to the landed-commit envelopes and the record-only op \
+                 acks, and a verb that runs no commit has no hook to speak into it. Nothing \
+                 is computed, printed, and withheld \
+                 (`milestone_envelope_arm::\
+                 every_render_milestone_door_emits_the_arm_its_verb_kind_selects`)",
+            ),
         ),
     ),
     (
@@ -437,6 +452,10 @@ const REGISTRY: &[(&[&str], Tier)] = &[
 /// clause rather than the first: it *does* render through `render::milestone`, but it also
 /// computes the staged-prose loss narration, so the sentence below was false of it — and
 /// the repair is the `execute` one, stream discipline rather than a new envelope key.
+/// `milestone list-tasks` left it at M51 Increment 5 / T3 for the *parenthesis*: it renders
+/// through `render::milestone` and withholds nothing, but it is the surface's one
+/// `VerbKind::Read` leaf and therefore takes the arm with no `hook_output` at all, so
+/// "beside `hook_output`" is false of it while every other word holds.
 const MILESTONE_PROSE_SUMMARY: Disposition = Disposition::DeclaredOut(
     "`render::milestone` puts the ENTIRE agent summary on the wire as `text` (beside \
      `hook_output`); the agent surface differs from it only by the routing footer, which is \

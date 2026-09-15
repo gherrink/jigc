@@ -3778,19 +3778,34 @@ pub fn milestone_created(created: &MilestoneCreated) -> String {
 /// Render a successful `jigc milestone <verb>` action to the surface `format`
 /// selects: `agent` / `human` emit the action summary (one line for most verbs;
 /// `create`'s is the multi-line [`milestone_created`] ack) followed by the routing
-/// footer; `json` emits a generic
-/// object carrying the summary text plus the `hook_output` key — the record-only
-/// commit's captured non-blocking hook stream, **present-always** (the empty string
-/// when the verb committed nothing or no hook spoke; the hook_output producer axis,
-/// `design/command-output-contract.md` → Stream discipline), with no footer
-/// (tooling-consumed). The stderr/stdout relay of the same string is the dispatch
-/// site's job ([`crate::task::relay_hook_output`]), so the agent-text arm here stays
-/// the bare summary. The determinism boundary is unaffected — the engine mints; the
-/// CLI only formats the summary it returns (`design/write-commands.md` → Minting a
-/// milestone).
-pub fn milestone(format: Format, summary: &str, hook_output: &str) -> String {
+/// footer; `json` emits a generic object carrying the summary text, with no footer
+/// (tooling-consumed).
+///
+/// **Two arms, and `hook_output` is what separates them** (M51 Increment 5 / T3;
+/// `completions/artifacts/M51/envelope-key-census.md` §4.3). `Some(stream)` adds the
+/// `hook_output` key — the record-only commit's captured non-blocking hook stream,
+/// **present-always** on that arm (the empty string when no hook spoke; the hook_output
+/// producer axis, `design/command-output-contract.md` → Stream discipline). `None`
+/// **omits the key**, which is the arm a verb that runs no commit takes: the key's
+/// declaration is scoped to the landed-commit envelopes and the milestone record-only op
+/// acks, and a read verb is neither — no hook can ever speak into it, so `""` would be a
+/// standing claim that one could have. Which arm a verb takes is **not** decided here and
+/// **not** decided by its identity: the dispatch site looks the verb's own leaf path up in
+/// [`crate::cli::VERB_KINDS`], so the classification that already governs the whole clap
+/// tree governs this envelope too ([`crate::milestone::MilestoneCommand::dispatch`]).
+///
+/// The stderr/stdout relay of the same string is the dispatch site's job
+/// ([`crate::task::relay_hook_output`]), so the agent-text arm here stays the bare
+/// summary. The determinism boundary is unaffected — the engine mints; the CLI only
+/// formats the summary it returns (`design/write-commands.md` → Minting a milestone).
+pub fn milestone(format: Format, summary: &str, hook_output: Option<&str>) -> String {
     match format {
-        Format::Json => json(&serde_json::json!({ "text": summary, "hook_output": hook_output })),
+        Format::Json => match hook_output {
+            Some(hook_output) => {
+                json(&serde_json::json!({ "text": summary, "hook_output": hook_output }))
+            }
+            None => json(&serde_json::json!({ "text": summary })),
+        },
         Format::Agent | Format::Human => {
             let mut out = String::from(summary);
             out.push('\n');
