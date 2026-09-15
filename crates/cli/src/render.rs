@@ -3031,6 +3031,14 @@ pub fn gitignore_amend_line(ensured: &Ensured) -> Option<String> {
 /// followed by the routing footer; `json` emits a generic object naming the two
 /// host targets, with no footer (tooling-consumed). The agent-text summary tells
 /// the agent the install is done and where it landed.
+///
+/// **The envelope carries no `installed` flag** (M51 Increment 5 / T2). It held a
+/// literal `true` this function could not vary, duplicating a fact the layer above
+/// already carries: exit 0 **is** this envelope, and a failed install is exit 1 with
+/// `{error}`. Removed under the pre-pin removal rule — the key was declared nowhere, and
+/// shipping the 1.0 pin over it would bless it by omission for the life of `1.x`
+/// (`design/command-output-contract.md` → Evolution posture (declared); the
+/// retired-`discarded` precedent, verbatim).
 pub fn setup_success(format: Format, summary: &SetupSummary) -> String {
     match format {
         Format::Json => {
@@ -3039,7 +3047,6 @@ pub fn setup_success(format: Format, summary: &SetupSummary) -> String {
                 InstallCommit::Nothing | InstallCommit::Skipped => serde_json::Value::Null,
             };
             json(&serde_json::json!({
-                "installed": true,
                 "line_file": summary.line_file,
                 "allowlist_file": summary.allowlist_file,
                 // The hooks dir git **resolved** (D4), the same value the agent text
@@ -3168,11 +3175,15 @@ pub fn setup_block(format: Format, finding: &Finding) -> String {
 /// Both surfaces also carry what the teardown **declined** to remove: a user-modified guide
 /// artifact is left standing, so it is neither a removal bullet nor a silence — it rides
 /// `findings` as an advisory with its route (M48 Increment 10 / T3).
+///
+/// **The envelope carries no `uninstalled` flag** — `setup`'s case exactly (M51 Increment
+/// 5 / T2): a literal `true` duplicating exit 0, removed under the pre-pin removal rule.
+/// What a teardown script actually reads is `removed`, which is a real per-artifact
+/// ledger rather than a constant.
 pub fn uninstall_success(format: Format, summary: &UninstallSummary) -> String {
     let removed = &summary.removed;
     match format {
         Format::Json => json(&serde_json::json!({
-            "uninstalled": true,
             "line_file": summary.line_file,
             "allowlist_file": summary.allowlist_file,
             // The real removal set — one flag per repo-local artifact, honest about
@@ -4271,6 +4282,12 @@ fn suffix_of(
 /// own **affirmative** sentence rather than the retire sentence with nothing behind it,
 /// on the same reasoning as the fidelity summary's `(none)` form below: an absent clause
 /// is ambiguous, and a promise the run will not keep is a law-1 lie.
+///
+/// **The envelope carries no `review` key** (M51 Increment 5 / T2). It could only ever
+/// hold the string `"pending"`, and the hold's exit code — 4, declared in the exit-code
+/// taxonomy as *the* review-hold code — already says the same thing at the layer a driver
+/// reads first. Removed under the pre-pin removal rule, the key having been declared
+/// nowhere (`design/command-output-contract.md` → Evolution posture (declared)).
 pub fn migration_review(
     format: Format,
     task_id: &str,
@@ -4280,7 +4297,6 @@ pub fn migration_review(
 ) -> String {
     match format {
         Format::Json => json(&serde_json::json!({
-            "review": "pending",
             "task": task_id,
             "source": foreign,
             "rewrites": rewrites
@@ -6535,7 +6551,10 @@ mod tests {
         assert!(!json_out.contains(ROUTING_FOOTER));
         assert!(!json_out.contains("wired into this project"));
         assert!(!json_out.contains("orients your assistant"));
-        assert!(json_out.contains("\"installed\": true"));
+        // …and NOT `installed`, whose literal `true` duplicated exit 0 (M51 Inc 5 / T2).
+        // Asserted here as well as at the door so the renderer's own witness cannot
+        // re-bless the key a behavioural sweep would then have to catch.
+        assert!(!json_out.contains("\"installed\""));
         assert!(json_out.contains("\"line_file\": \"CLAUDE.md\""));
         assert!(json_out.contains("\"allowlist_file\": \".claude/settings.json\""));
         assert!(json_out.contains("\"hook_file\": \"my-hooks/pre-commit\""));
