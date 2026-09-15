@@ -617,3 +617,245 @@ fn a_teardown_that_removed_nothing_narrates_nothing() {
          assertion above from being satisfied by silence; stderr:\n{stderr}",
     );
 }
+
+/// The repository's own committed docs the planted symlink points at — the three
+/// `.jigc/worktrees/<sub>` was listed as holding, and as holding *unrecoverably*, while every
+/// one of them sat tracked and committed one directory away. The middle one is a **directory**
+/// on purpose: it is the child whose name the door printed with no file of that name anywhere.
+const LINKED_DOCS: [(&str, &str); 3] = [
+    ("decisions-log.md", "the log\n"),
+    ("milestone-records/m1.md", "one record\n"),
+    ("roadmap.md", "the roadmap\n"),
+];
+
+/// The child names a door listing *through* the link prints — `docs/`'s immediate entries,
+/// which is what [`Fixture::plant_symlink_to_committed_docs`] arranges and what the driven
+/// narration named.
+const LINKED_CHILDREN: [&str; 3] = ["decisions-log.md", "milestone-records", "roadmap.md"];
+
+impl Fixture {
+    /// Plant the EC-17 cell: a **symlink at a sub-task's worktree path**, pointing at the
+    /// repository's own committed `docs/`. Returns each linked doc's path beside the hash of
+    /// its committed bytes, so *"the target survived"* is asserted on content and not on
+    /// existence.
+    fn plant_symlink_to_committed_docs(&self) -> Vec<(PathBuf, String)> {
+        let docs = self.repo.join("docs");
+        fs::create_dir_all(docs.join("milestone-records")).expect("mk docs/");
+        let mut pinned = Vec::new();
+        for (name, body) in LINKED_DOCS {
+            let at = docs.join(name);
+            fs::write(&at, body).expect("write a repo doc");
+            pinned.push((at, engine::file_state::hash_bytes(body.as_bytes())));
+        }
+        git_ok(&self.repo, &["add", "docs"]);
+        git_ok(
+            &self.repo,
+            &["commit", "-q", "-m", "the repository's own docs"],
+        );
+
+        let worktrees = self.repo.join(".jigc").join("worktrees");
+        fs::create_dir_all(&worktrees).expect("mk .jigc/worktrees/");
+        std::os::unix::fs::symlink(&docs, worktrees.join(SUB_DIR)).expect("plant the symlink");
+        pinned
+    }
+
+    /// Whether **the planted symlink itself** is still at the worktree path, witnessed by the
+    /// target it holds.
+    ///
+    /// Not `exists()`, and not even *"something is there"*: a `--force` provision clears the
+    /// path and then `git worktree add`s a fresh checkout at it, so the path is occupied again
+    /// a moment later and says nothing about whether the leftover survived. A symlink's bytes
+    /// **are** the path it points at, so that is what is read back.
+    fn link_present(&self) -> bool {
+        let at = self.repo.join(".jigc").join("worktrees").join(SUB_DIR);
+        fs::read_link(&at).ok() == Some(self.repo.join("docs"))
+    }
+}
+
+/// How a door **named the shape** it found at `printed`, read off the door's own output —
+/// one vocabulary covering both places a door speaks about a leftover: the refusal's
+/// `cli::milestone::hold_line` and the narration's `cli::milestone::narrate_removal` subject.
+///
+/// Reading it off the output is the point: the cell's claim is *the doors agree with each
+/// other*, not *each door printed the sentence this test had in mind*.
+fn shape_named(said: &str, printed: &str) -> Vec<&'static str> {
+    let mut named: Vec<&'static str> = Vec::new();
+    for line in said.lines() {
+        let mut note = |what: &'static str| {
+            if !named.contains(&what) {
+                named.push(what);
+            }
+        };
+        if let Some((_, tail)) = line.split_once(&format!("{printed}: ")) {
+            note(if tail.starts_with("the file itself") {
+                "leaf"
+            } else if tail.starts_with("unknown — ") {
+                "unreadable"
+            } else {
+                "directory"
+            });
+        }
+        if let Some(subject) = line
+            .strip_prefix("warning: removing the ")
+            .and_then(|tail| tail.split_once(&format!(" {printed} ")))
+            .map(|(subject, _)| subject)
+        {
+            note(match subject {
+                "leftover file" => "leaf",
+                "leftover directory" => "directory",
+                _ => "worktree",
+            });
+        }
+    }
+    named
+}
+
+/// Everything a door **claimed the leftover contains** — the two places a door enumerates
+/// what it found: the refusal's hold-line listing (the tail after `<path>: `) and the indented
+/// item lines of a `warning: removing …` block naming that path.
+///
+/// At HEAD these carried three of the repository's own committed docs.
+fn claimed_contents(said: &str, printed: &str) -> Vec<String> {
+    let mut claimed = Vec::new();
+    let mut inside_narration = false;
+    for line in said.lines() {
+        if let Some((_, tail)) = line.split_once(&format!("{printed}: ")) {
+            claimed.push(tail.to_owned());
+        }
+        if line.starts_with("warning: removing the ") {
+            inside_narration = line.contains(printed);
+            continue;
+        }
+        if inside_narration {
+            match line.strip_prefix("    ") {
+                Some(item) => claimed.push(item.to_owned()),
+                None => inside_narration = false,
+            }
+        }
+    }
+    claimed
+}
+
+/// **EC-17 — one leftover shape, one subject, at every destroying door: the symlink cell**
+/// (M51 Increment 9 / T2).
+///
+/// Driven at `bec05f02` over ONE planted state — a symlink at a sub-task's worktree path
+/// pointing at the repository's own committed `docs/` — the doors disagreed about what was
+/// there, and the half that disagreed is the half an operator reads while consenting to a
+/// permanent deletion:
+///
+/// - the **refusal** (`cli::milestone::probe_leftover`, `symlink_metadata`) called it
+///   `the file itself — it is a file, not a worktree`;
+/// - **`--force`** (`cli::milestone::doomed_at`, `path.is_dir()` — which follows the link)
+///   called the same path *"the leftover directory"*, enumerated **through** it —
+///   `decisions-log.md`, `milestone-records`, `roadmap.md` — declared them *"the only copy of
+///   these bytes — they are not recoverable"*, removed the **link alone**, and left all three
+///   tracked, committed and exactly where they were. Identically at
+///   `jigc milestone provision --force` and at `jigc uninstall --force`.
+///
+/// The cell drives **all four** [`DESTROYING_DOORS`] from one state, because *"the doors
+/// agree"* is not a claim any one door can carry. The consent axis is the table's own
+/// refuse-vs-narrate discriminator ([`DestroyingDoor::code`]): only a refusing door has a
+/// `--force` to spend.
+///
+/// **The fourth member speaks about nothing here, and that is asserted rather than assumed.**
+/// `jigc milestone finalize` reaches a worktree-shaped path only through
+/// `cli::milestone::remove_worktrees`, which filters to the worktrees *git has registered* —
+/// and a symlink is registered nowhere, so this shape cannot arrive at that door. That is what
+/// the flow-52 walk's missing arm rests on, so it is driven here instead of stated.
+#[test]
+fn a_symlink_leftover_is_one_shape_at_every_destroying_door_and_the_target_survives() {
+    let mut agreed: Vec<&'static str> = Vec::new();
+    let mut spoke = 0usize;
+
+    for door in DESTROYING_DOORS {
+        let consents: &[bool] = if door.code.is_some() {
+            &CONSENT
+        } else {
+            &[false]
+        };
+        for &force in consents {
+            // A fresh fixture per cell: the door under test is the only thing that touched
+            // this state, so nothing else can be credited with the survival below.
+            let fx = Fixture::mint();
+            let linked = fx.plant_symlink_to_committed_docs();
+            let printed = fx.printed(SUB_DIR);
+            let cell = format!("{} × symlink-to-directory × force={force}", door.verb);
+            let argv = argv_at(door, force);
+            let args: Vec<&str> = argv.iter().map(String::as_str).collect();
+            let out = fx.run(&args);
+            let said = format!(
+                "{}{}",
+                String::from_utf8_lossy(&out.stdout),
+                String::from_utf8_lossy(&out.stderr),
+            );
+
+            // (a) The link's target is untouched, on content — the door removes a link, never
+            // what it points at.
+            for (at, hash) in &linked {
+                let now = fs::read(at).map(|bytes| engine::file_state::hash_bytes(&bytes));
+                assert_eq!(
+                    now.ok().as_ref(),
+                    Some(hash),
+                    "[{cell}] `{}` is tracked, committed, and not the leftover — it must come \
+                     through byte-identical\nsaid:\n{said}",
+                    at.display(),
+                );
+            }
+
+            // (b) Nothing a door claims the leftover holds may be a path that survived it.
+            // This is the law-1 lie itself: three committed docs listed as unrecoverable.
+            for claimed in claimed_contents(&said, &printed) {
+                for child in LINKED_CHILDREN {
+                    assert!(
+                        !claimed.contains(child),
+                        "[{cell}] `{child}` is on the far side of the link and survives the \
+                         door, so no door may list it among what it holds or took; claimed \
+                         `{claimed}`\nsaid:\n{said}",
+                    );
+                }
+            }
+
+            // (c) Narrated ⇔ taken, on the leftover itself: the link is the bytes here.
+            assert_eq!(
+                narrated(&said, &printed),
+                !fx.link_present(),
+                "[{cell}] a narrated removal must have happened, and a removal that happened \
+                 must have been narrated\nsaid:\n{said}",
+            );
+
+            let named = shape_named(&said, &printed);
+            if door.code.is_none() {
+                // (d) The fourth member's cell cannot exist — its teardown's subject is the
+                // registered set, and nothing registers a symlink.
+                assert!(
+                    named.is_empty() && fx.link_present(),
+                    "[{cell}] the non-refusing door reaches only registered worktrees, so it \
+                     must neither name this path's shape nor remove it; named {named:?}\n\
+                     said:\n{said}",
+                );
+                continue;
+            }
+            // (e) Every door that speaks names the same shape — collected across the cells,
+            // because agreement is a property of the set and of no single door.
+            spoke += usize::from(!named.is_empty());
+            for what in named {
+                if !agreed.contains(&what) {
+                    agreed.push(what);
+                }
+            }
+        }
+    }
+
+    assert!(
+        spoke >= 2,
+        "at least two doors must have spoken about the planted path, or agreement between \
+         them is vacuous; {spoke} did",
+    );
+    assert_eq!(
+        agreed,
+        vec!["leaf"],
+        "every door that named the planted symlink's shape must have named the same one — a \
+         leaf whose own bytes the removal takes, never a directory to enumerate through",
+    );
+}

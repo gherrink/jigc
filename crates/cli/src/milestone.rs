@@ -2355,13 +2355,15 @@ fn provision_worktrees(
 /// (RC-m50 N8, reproduced 3/3). A door either performs the removal it narrated or refuses
 /// before narrating it; there is no third honest outcome.
 ///
-/// The shape is read with `symlink_metadata`, like [`probe_leftover`]'s: a symlink is a leaf
-/// whose own bytes come out, never a door out of the tree.
+/// The shape is [`leftover_at`]'s — the one every destroying door reads, so the removal takes
+/// exactly the thing the refusal refused over and the narration named.
 fn remove_leftover(path: &Path) -> std::io::Result<()> {
-    if std::fs::symlink_metadata(path)?.is_dir() {
-        std::fs::remove_dir_all(path)
-    } else {
-        std::fs::remove_file(path)
+    match leftover_at(path) {
+        LeftoverAt::Directory => std::fs::remove_dir_all(path),
+        // `Absent` included: the shape read swallows a stat failure, and `remove_file`
+        // surfaces the real errno (`NotFound`, `EACCES`) rather than this function inventing
+        // one.
+        LeftoverAt::Absent | LeftoverAt::Leaf => std::fs::remove_file(path),
     }
 }
 
@@ -2647,7 +2649,9 @@ pub enum LeftoverShape {
     /// A directory the probe read: `entries` is what the removal would take out of it.
     Directory,
     /// Not a directory — the path itself is the bytes, so there is nothing inside it to list
-    /// and no worktree verb that clears it.
+    /// and no worktree verb that clears it. **A symlink is one of these whatever it points
+    /// at** ([`leftover_at`]): the bytes a removal takes there are the link's own, and the
+    /// tree on the far side belongs to somebody else.
     File,
     /// A directory the probe could not read, carrying the failure verbatim. The
     /// **fail-closed** cell: the door still refuses, because *"found nothing"* and *"there is
@@ -2711,6 +2715,58 @@ pub(crate) fn because(hold: &LeftoverHold) -> &'static str {
     }
 }
 
+/// What sits at a worktree-shaped path, read **before** anything is listed out of it — the
+/// one shape derivation every destroying door reads, whichever surface it is about to speak
+/// through: the refusal ([`probe_leftover`]), the narration ([`doomed_at`]) and the removal
+/// ([`remove_leftover`]).
+///
+/// **It is read with `symlink_metadata`, and that is the whole of it** (M51 EC-17). Until this
+/// existed the three readers each asked their own question: the refusal asked
+/// `symlink_metadata`, the narration asked `path.is_dir()` and `path.exists()` — both of which
+/// *follow* a symlink — and one planted state made them contradict each other in the one place
+/// it costs most. Driven at `bec05f02` over a symlink at a sub-task's worktree path pointing
+/// at the repository's own committed `docs/`: `jigc milestone provision` refused naming *"the
+/// file itself — it is a file, not a worktree"*, and `jigc milestone provision --force` then
+/// called the same path *"the leftover directory"*, enumerated **through** the link, named
+/// `decisions-log.md`, `milestone-records` and `roadmap.md` as *"the only copy of these bytes
+/// — they are not recoverable"*, removed the **link alone**, and left all three tracked and
+/// committed exactly where they were. Identically at `jigc uninstall --force`. No bytes were
+/// lost; what was spent is the credibility of the one warning standing between an operator and
+/// a real `--force` deletion (`completions/artifacts/evidence-check-1.0/data-loss-hunt.md`
+/// §2).
+///
+/// **[`DESTROYING_DOORS`]' fourth member cannot reach this shape at all**, and the acceptance
+/// rests on that rather than on a walk: [`FINALIZE_DOOR`]'s teardown is [`remove_worktrees`],
+/// whose subject is the worktrees *git has registered here* — and no registration names a
+/// leaf, because `git worktree add` is the only thing that mints one. So the cell is driven at
+/// all four doors and the fourth is asserted to say nothing
+/// (`crates/cli/tests/leftover_probe_fail_closed.rs`).
+///
+/// An unreadable parent reads as [`LeftoverAt::Absent`], which is what both readers already
+/// did with it (`.ok()?` and `exists()`): the question *"is there a directory here to look
+/// inside"* has no third answer, and the door that then tries the removal surfaces the real
+/// errno.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum LeftoverAt {
+    /// Nothing is there — or nothing that can be stat'd.
+    Absent,
+    /// A directory the door may look inside, and `remove_dir_all` may clear.
+    Directory,
+    /// A leaf whose own bytes the removal takes: a plain file, a socket, **or a symlink of
+    /// any kind** — a link is never a door out of the tree, and a **dangling** one reads as
+    /// absent through `exists()` while still sitting in the way of `git worktree add`.
+    Leaf,
+}
+
+/// Read [`LeftoverAt`] at `path`.
+fn leftover_at(path: &Path) -> LeftoverAt {
+    match std::fs::symlink_metadata(path) {
+        Err(_) => LeftoverAt::Absent,
+        Ok(meta) if meta.is_dir() => LeftoverAt::Directory,
+        Ok(_) => LeftoverAt::Leaf,
+    }
+}
+
 /// The **fail-closed leftover guard**: `None` when `path` is provably safe to delete (absent,
 /// empty, or a clean worktree of its own), `Some(hold)` when it holds bytes the door must not
 /// take — **including** the case where the probe could not read the path at all, which is a
@@ -2731,19 +2787,20 @@ pub(crate) fn because(hold: &LeftoverHold) -> &'static str {
 /// `pub(crate)` for its sibling doors: [`DESTROYING_DOORS`] all remove worktree-shaped paths
 /// under `.jigc/worktrees/`, and they ask one probe rather than growing three that drift.
 pub(crate) fn probe_leftover(repo_root: &Path, path: &Path) -> Option<LeftoverHold> {
-    // `symlink_metadata`, not `exists()`: a symlink is a leaf whose own bytes the removal
-    // takes, and a **dangling** one reads as absent through `exists()` while still sitting in
-    // the way of `git worktree add`.
-    let meta = std::fs::symlink_metadata(path).ok()?;
-    if !meta.is_dir() {
-        // A non-directory leftover *is* the bytes: no linkage to classify (git cannot run
-        // inside it) and no children to list, so it is named by its own name — [`doomed_at`]'s
-        // answer since M49, which the refusal now shares instead of contradicting.
-        return Some(LeftoverHold {
-            verdict: LeftoverVerdict::Unverifiable,
-            shape: LeftoverShape::File,
-            entries: Vec::new(),
-        });
+    match leftover_at(path) {
+        LeftoverAt::Absent => return None,
+        // A leaf leftover *is* the bytes: no linkage to classify (git cannot run inside it)
+        // and no children to list, so it is named by its own name — [`doomed_at`]'s answer
+        // since M49, which both surfaces now reach through one derivation instead of two that
+        // contradicted each other at a symlink.
+        LeftoverAt::Leaf => {
+            return Some(LeftoverHold {
+                verdict: LeftoverVerdict::Unverifiable,
+                shape: LeftoverShape::File,
+                entries: Vec::new(),
+            });
+        }
+        LeftoverAt::Directory => {}
     }
     let verdict = classify_leftover(path);
     let read = match verdict {
@@ -5216,17 +5273,21 @@ struct DoomedLine {
 /// whose whole content is staged.
 fn doomed_at(repo_root: &Path, path: &Path) -> Result<Doomed> {
     const WORKTREE: &str = "fan-out worktree";
-    if !path.exists() {
+    // The shape is [`leftover_at`]'s, the refusal's own — never `exists()`/`is_dir()`, which
+    // follow a symlink and had this surface enumerating through one (M51 EC-17).
+    let at = leftover_at(path);
+    if at == LeftoverAt::Absent {
         return Ok(Doomed {
             subject: WORKTREE,
             lines: Vec::new(),
         });
     }
-    // A **non-directory** leftover has no children to enumerate — it *is* the bytes — and
-    // `child_names` below would fail on it, which the narration swallows (best-effort), so
-    // the removal would take a file it never named. It is named here instead, in the terms
-    // the probe can back: git vouches for nothing at a path it cannot even enter.
-    if !path.is_dir() {
+    // A **leaf** leftover has no children to enumerate — it *is* the bytes — and `child_names`
+    // below would fail on it (or, at a symlink, succeed about somebody else's bytes), which
+    // the narration swallows (best-effort), so the removal would take a leaf it never named.
+    // It is named here instead, in the terms the probe can back: git vouches for nothing at a
+    // path it cannot even enter.
+    if at == LeftoverAt::Leaf {
         return Ok(Doomed {
             subject: "leftover file",
             // The bare file name, and — for the pathological path with none (a trailing
