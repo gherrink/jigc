@@ -3606,6 +3606,14 @@ fn reject_malformed_slug(slug_override: Option<&str>) -> Result<(), DocFailure> 
             "`--slug {slug:?}` is not a valid slug — use lowercase letters, digits, and single hyphens (no leading, trailing, or doubled `-`)"
         )));
     }
+    // The second question, asked from the same shared home so all three doors get it at
+    // once: a well-formed slug still has to fit one filesystem path component (M51 Inc 9 /
+    // T3, EC-28). Driven, `jigc doc create adr --slug <300>` reached `provision_doc` and
+    // blocked with `task.working-area-io` — *"File name too long"* — routed at a disk
+    // problem that did not exist.
+    if let Some(slug) = slug_override {
+        crate::task::reject_slug_over_name_ceiling(slug).map_err(DocFailure::Orchestration)?;
+    }
     Ok(())
 }
 

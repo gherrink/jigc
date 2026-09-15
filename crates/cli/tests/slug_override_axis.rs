@@ -30,12 +30,37 @@
 //! **A row is driven or the suite fails** — the driven set is compared back to the
 //! registry and the count asserted, so a row cannot join and quietly run nothing.
 //!
-//! ## The three cells
+//! ## The cells
 //!
-//! The **empty string** (the cell that produced the law-1 lie), a `../..` **traversal**,
-//! and an **absolute path that really exists** (the fixture's own repository root). Each
-//! must block non-zero, name the token the caller typed, and **state the grammar** — the
-//! one shipped sentence, so six doors give one answer rather than six.
+//! Three ask *is this a slug at all*: the **empty string** (the cell that produced the
+//! law-1 lie), a `../..` **traversal**, and an **absolute path that really exists** (the
+//! fixture's own repository root). Each must block non-zero, name the token the caller
+//! typed, and **state the grammar** — the one shipped sentence, so six doors give one
+//! answer rather than six.
+//!
+//! The fourth asks the question the grammar cannot: a **300-byte slug** (M51 Increment 9 /
+//! T3, EC-28). It *is* a slug — the grammar has nothing to say about it — and a slug is
+//! what jigc turns into a filesystem path component, so three doors hit the OS name
+//! ceiling and told the caller a story about a disk. Driven at `d7ebbeb9`, per door in its
+//! own fresh fixture:
+//!
+//!   * `jigc start --workflow single-task "x" --slug <300>` → `blocking ·
+//!     task.working-area-io … File name too long (os error 63)`, routed *"resolve the
+//!     underlying I/O condition (a disk or permissions problem on the `.jigc/` task
+//!     working area)"* — **there is no disk or permissions problem**;
+//!   * `jigc doc create adr --title Axis --slug <300>` → the same code, the same false
+//!     route, keyed at `task:adr:<300>` (an address, not a task id);
+//!   * `jigc doc rename adr:keeper --to Axis --slug <300>` → the OS error bare, with no
+//!     code and no route at all (`completions/artifacts/M51/baseline-tokens.md` → row 12);
+//!   * `jigc migrate foreign-changelog.md --as changelog --slug <300>` → **exit 0**, a
+//!     task minted, the override inert because the target is a singleton — the cell the
+//!     baseline recorded as *masked*, and the reason the ceiling is asked at **every** row
+//!     and not at the three that fail loudly.
+//!
+//! So the ceiling cell asserts three things at every row: the code
+//! [`NAME_CEILING`], a route naming the ceiling, and that **no** door answers
+//! [`FALSE_IO_CODE`] — plus, on every cell of every row, that the working area is
+//! **unchanged**, which is what catches a door that refuses by minting first.
 //!
 //! ## Why the tree arm exists
 //!
@@ -57,6 +82,22 @@ use cli::cli::{SLUG_DOOR_SOURCE, SLUG_DOORS, SLUG_OVERRIDE_SLOT, slug_arg_ids};
 /// produced them proves only that the constant equals itself.
 const GRAMMAR: &str =
     "use lowercase letters, digits, and single hyphens (no leading, trailing, or doubled `-`)";
+
+/// The code the **ceiling** cell answers with at every row (M51 Increment 9 / T3, EC-28).
+const NAME_CEILING: &str = "write.slug-name-ceiling";
+
+/// The code no row may answer any longer: the mint I/O fault whose route blames *"a disk or
+/// permissions problem"*, which is a law-1 lie about a value the door could have adjudicated
+/// itself. Asserted absent on **every** cell of **every** row, not only the three that
+/// produced it, because the whole point of a door predicate is that the I/O never happens.
+const FALSE_IO_CODE: &str = "task.working-area-io";
+
+/// The ceiling itself, in bytes — `cli::cli::SLUG_NAME_CEILING`, spelled out rather than
+/// imported for [`GRAMMAR`]'s reason: a test comparing emitted bytes against the constant
+/// that produced them proves only that the constant equals itself. A change to the
+/// derivation is a change to what every `--slug` door accepts, so it must be read here, not
+/// absorbed.
+const CEILING_BYTES: usize = 165;
 
 /// The committed `adr` the `rename` / `doc rename` / `add-item` rows address.
 const KEEPER: &str = "docs/decisions/keeper.md";
@@ -192,6 +233,58 @@ impl Fixture {
     }
 }
 
+/// **What a cell asks**, and therefore what the door owes back. The two questions are
+/// genuinely different — one is *is this a slug*, the other *is this slug short enough to
+/// be a filename* — so a single `contains(GRAMMAR)` over both would let the ceiling cell
+/// pass on a grammar refusal that is false about the value.
+enum Cell {
+    /// A token the slug grammar rejects. The door owes the one shipped grammar sentence.
+    NotASlug(String),
+    /// A well-formed slug longer than the ceiling. The door owes [`NAME_CEILING`] and a
+    /// route naming the ceiling.
+    OverCeiling(String),
+}
+
+impl Cell {
+    fn token(&self) -> &str {
+        match self {
+            Cell::NotASlug(t) | Cell::OverCeiling(t) => t.as_str(),
+        }
+    }
+
+    /// The cell's spelling in a failure message — the 300-byte token is elided, because a
+    /// 300-character assertion header hides the message it is meant to introduce.
+    fn shown(&self) -> String {
+        match self {
+            Cell::NotASlug(t) => format!("{t:?}"),
+            Cell::OverCeiling(t) => format!("<{} bytes>", t.len()),
+        }
+    }
+}
+
+/// Every path under the task working area, relative to it — the state a refusal must leave
+/// untouched. Empty when `.jigc/tasks` does not exist.
+fn working_area(fixture: &Fixture) -> BTreeSet<PathBuf> {
+    let root = fixture.path().join(".jigc").join("tasks");
+    let mut seen = BTreeSet::new();
+    let mut stack = vec![root.clone()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path.clone());
+            }
+            if let Ok(rel) = path.strip_prefix(&root) {
+                seen.insert(rel.to_path_buf());
+            }
+        }
+    }
+    seen
+}
+
 /// Both streams of one invocation — the surface a reader meets.
 fn surface(out: &std::process::Output) -> String {
     format!(
@@ -207,23 +300,36 @@ fn surface(out: &std::process::Output) -> String {
 fn every_slug_door_refuses_a_malformed_override() {
     let fixture = Fixture::new("axis");
     let absolute = fixture.path().to_string_lossy().into_owned();
-    let cells: Vec<String> = vec![String::new(), "../..".to_string(), absolute];
+    let cells: Vec<Cell> = vec![
+        Cell::NotASlug(String::new()),
+        Cell::NotASlug("../..".to_string()),
+        Cell::NotASlug(absolute),
+        // A well-formed slug, 300 bytes long — the cell the grammar has nothing to say
+        // about. 300 rather than `CEILING_BYTES + 1` on purpose: it is the token the
+        // baseline drove, and it clears the OS ceiling by enough that a door which let it
+        // through would fail on the filesystem, which is the failure this cell forbids.
+        Cell::OverCeiling("a".repeat(300)),
+    ];
 
     let mut driven: BTreeSet<Vec<&str>> = BTreeSet::new();
     for row in SLUG_DOORS {
-        for token in &cells {
+        for cell in &cells {
+            let token = cell.token();
             let argv: Vec<&str> = row
                 .argv
                 .iter()
                 .map(|arg| {
                     if *arg == SLUG_OVERRIDE_SLOT {
-                        token.as_str()
+                        token
                     } else {
                         *arg
                     }
                 })
                 .collect();
-            let shown = format!("jigc {} [{token}]", row.door.join(" "));
+            let shown = format!("jigc {} [{}]", row.door.join(" "), cell.shown());
+            // The working area before the call — a refusal that mints first is a refusal
+            // that leaves a task dir to resume from, which the `migrate` row did at exit 0.
+            let before = working_area(&fixture);
             let out = fixture.run(&argv);
             let text = surface(&out);
             assert_ne!(
@@ -233,22 +339,49 @@ fn every_slug_door_refuses_a_malformed_override() {
             );
             assert!(
                 !out.status.success(),
-                "{shown}: an override that is not a slug names a path nobody can address \
-                 — the door must block non-zero\n{text}",
+                "{shown}: an override jigc cannot mint an identity from must block \
+                 non-zero\n{text}",
+            );
+            // Asked before the echo assertion below: when a door still answers the I/O
+            // story, that is the finding to read, not the spelling of the token in it.
+            assert!(
+                !text.contains(FALSE_IO_CODE),
+                "{shown}: `{FALSE_IO_CODE}` blames a disk or permissions problem for a \
+                 value the door could adjudicate itself — no row may answer it\n{text}",
             );
             assert!(
                 text.contains(&format!("{token:?}")),
                 "{shown}: must name the token the caller typed\n{text}",
             );
-            assert!(
-                text.contains(GRAMMAR),
-                "{shown}: must state the one shipped grammar sentence\n{text}",
-            );
+            match cell {
+                Cell::NotASlug(_) => assert!(
+                    text.contains(GRAMMAR),
+                    "{shown}: must state the one shipped grammar sentence\n{text}",
+                ),
+                Cell::OverCeiling(_) => {
+                    assert!(
+                        text.contains(NAME_CEILING),
+                        "{shown}: an over-long slug is a slug — it must answer \
+                         `{NAME_CEILING}`, never the grammar and never an I/O story\n{text}",
+                    );
+                    assert!(
+                        text.contains(&CEILING_BYTES.to_string()),
+                        "{shown}: the route must name the ceiling ({CEILING_BYTES} bytes), \
+                         so the caller knows what to re-run with\n{text}",
+                    );
+                }
+            }
             // The tree, not only the text: at `b32def1` the sixth door's traversal cell
             // committed the doc out of the store while printing a success line.
             assert!(
                 fixture.path().join(KEEPER).is_file(),
                 "{shown}: the committed doc must stay at its own slug\n{text}",
+            );
+            assert_eq!(
+                working_area(&fixture),
+                before,
+                "{shown}: a refused override must leave the working area untouched — no \
+                 task dir minted, nothing staged\n{text}",
             );
         }
         driven.insert(row.door.to_vec());
@@ -310,5 +443,61 @@ fn a_traversal_override_commits_nothing_out_of_the_docs_root() {
     assert!(
         listing.contains("adr:keeper"),
         "the doc must stay addressable by the surfaces that name it\n{listing}",
+    );
+}
+
+/// **The ceiling is a boundary, not a blanket.** A slug of exactly [`CEILING_BYTES`] bytes
+/// must still mint — and the write it drives must actually land on disk, which is the half
+/// a refusal-only axis cannot prove: the number is derived from what jigc wraps around a
+/// minted id, so a derivation that reserved too little would pass every refusal assertion
+/// above and fail here with the very `os error 63` the predicate exists to prevent.
+///
+/// Driven at one door (`jigc doc create adr`) rather than six: the claim is about the
+/// *number*, and the number is one constant every door reads.
+#[test]
+fn a_slug_at_the_ceiling_still_mints_and_one_byte_over_does_not() {
+    let fixture = Fixture::new("boundary");
+    let at_ceiling = "a".repeat(CEILING_BYTES);
+    let over = "a".repeat(CEILING_BYTES + 1);
+
+    let ok = fixture.run(&[
+        "doc",
+        "create",
+        "adr",
+        "--title",
+        "Axis",
+        "--slug",
+        &at_ceiling,
+    ]);
+    let ok_text = surface(&ok);
+    assert!(
+        ok.status.success(),
+        "a {CEILING_BYTES}-byte slug is at the ceiling, not over it — the door must mint \
+         it\n{ok_text}",
+    );
+    assert!(
+        fixture
+            .path()
+            .join(".jigc/tasks/axis-intent/docs")
+            .join(format!("adr:{at_ceiling}.md"))
+            .is_file(),
+        "the staged instance must exist on disk — the ceiling reserves room for everything \
+         jigc wraps around the slug, including the atomic write's temp sibling\n{ok_text}",
+    );
+
+    // A fresh fixture for the over cell: the create above bound this task's `decision`
+    // role, and a second create in the same task refuses on *that* (`write.identity-change`)
+    // before any slug is looked at — an arm that shared one fixture would assert the
+    // ceiling against a refusal the ceiling had nothing to do with.
+    let second = Fixture::new("boundary-over");
+    let refused = second.run(&["doc", "create", "adr", "--title", "Axis", "--slug", &over]);
+    let refused_text = surface(&refused);
+    assert!(
+        !refused.status.success(),
+        "one byte over the ceiling must block\n{refused_text}",
+    );
+    assert!(
+        refused_text.contains(NAME_CEILING),
+        "one byte over the ceiling must answer `{NAME_CEILING}`\n{refused_text}",
     );
 }

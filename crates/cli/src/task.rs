@@ -1103,6 +1103,68 @@ pub(crate) fn reject_malformed_slug_head(addr: &str, slug: &str) -> Result<()> {
     )))
 }
 
+/// The blocking finding code a `--slug` override longer than the OS name ceiling carries
+/// (M51 Increment 9 / T3, EC-28) — **one** code for the whole `--slug` family, on
+/// [`MALFORMED_SLUG_HEAD`]'s reading: it is one fault, and which of the six doors the
+/// caller typed does not change what they have to do about it.
+///
+/// Deliberately **not** `write.malformed-slug`, M50's *"this token is not a slug"*: the
+/// override here **is** a slug — the grammar has nothing to say about it — it is simply too
+/// long to be a filename. Answering with the grammar code would send the caller to re-read a
+/// rule their value already obeys.
+pub(crate) const SLUG_NAME_CEILING_CODE: &str = "write.slug-name-ceiling";
+
+/// Refuse a `--slug` override longer than [`crate::cli::SLUG_NAME_CEILING`] — the predicate
+/// every [`crate::cli::SLUG_DOORS`] row runs, beside the grammar reject it cannot answer
+/// for.
+///
+/// **The state it refuses.** A `--slug` value drives a minted identity **verbatim**, and
+/// jigc turns that identity into a single filesystem path component — so a value the OS
+/// cannot name is a value no door can mint from. Driven at `d7ebbeb9` with a 300-byte slug,
+/// three of the six doors discovered that at the `write`/`create_dir_all`, after the door
+/// had accepted the value:
+///
+///   * `jigc start … --slug <300>` and `jigc doc create adr --slug <300>` blocked with
+///     `task.working-area-io` — *"File name too long (os error 63)"* — routed at *"resolve
+///     the underlying I/O condition (a disk or permissions problem on the `.jigc/` task
+///     working area)"*. **There is no disk or permissions problem**, and no act that route
+///     names moves the caller forward: a law-1 lie
+///     (`design/surface-contract.md` → law 1, nothing lies).
+///   * `jigc doc rename adr:keeper --to Y --slug <300>` printed the OS error bare — no code,
+///     no route, no `at:` (`completions/artifacts/M51/baseline-tokens.md` → row 12).
+///
+/// **Why it runs at every row and not at those three.** `jigc migrate … --slug <300>` exited
+/// **0** in the same probe, the override inert because its target is a singleton, and
+/// `jigc doc add-item --slug <300>` landed a 300-byte `{#…}` anchor, an item id being no
+/// filename. Guarding the three that fail loudly would key the fix on today's *symptom*
+/// rather than on the rule, and an override that is inert at one door today is an identity
+/// at that door tomorrow. One flag, one ceiling, six doors.
+///
+/// **It refuses rather than truncating.** A truncated identity is a different doc — the same
+/// reason [`reject_malformed_slug_head`] never re-slugifies, one family over.
+pub(crate) fn reject_slug_over_name_ceiling(slug: &str) -> Result<()> {
+    let ceiling = crate::cli::SLUG_NAME_CEILING;
+    if slug.len() <= ceiling {
+        return Ok(());
+    }
+    Err(crate::render::finding_error(&Finding::graded(
+        Severity::Blocking,
+        SLUG_NAME_CEILING_CODE,
+        format!(
+            "`--slug {slug:?}` is {} bytes — over the {ceiling}-byte ceiling a minted id \
+             carries",
+            slug.len(),
+        ),
+        None,
+        Some(engine::finding::Route::human(format!(
+            "re-run with a `--slug` of at most {ceiling} bytes — jigc refuses rather than \
+             truncating, because a truncated id names a different doc. The ceiling is the \
+             filesystem's per-component limit less what jigc wraps around an id when it \
+             becomes a filename"
+        ))),
+    )))
+}
+
 /// Which finalize-time gates a [`TaskArea::validate`] sweep additionally **previews**
 /// (M47 Inc 4, `DECISIONS.md` → 2026-07-26 M47 Settle, Decision 1).
 ///

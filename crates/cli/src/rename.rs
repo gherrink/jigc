@@ -378,6 +378,16 @@ pub(crate) fn run(
             ),
         ));
     }
+    // …and the name-ceiling half, from the shared home the other five doors read (M51 Inc 9
+    // / T3, EC-28). Driven at `d7ebbeb9` the `doc rename` sibling answered a 300-byte
+    // override with the bare OS error — no code, no route, no `at:`; this door's own
+    // destination build would reach `git mv` with a name the filesystem cannot take. It is
+    // not a [`RefusalKind`] member for [`crate::task::reject_malformed_slug_head`]'s reason
+    // one task over: the code belongs to the `--slug` **family**, not to this door, and
+    // minting a member here would fork the family across one of its six doors.
+    if let Some(slug) = slug_override {
+        crate::task::reject_slug_over_name_ceiling(slug)?;
+    }
     let new_slug = match slug_override {
         Some(s) => s.to_string(),
         None => slugify(title),

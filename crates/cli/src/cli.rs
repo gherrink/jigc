@@ -2662,6 +2662,72 @@ pub const SLUG_DOORS: &[SlugDoor] = &[
     },
 ];
 
+/// The **per-component** byte ceiling a filename may not exceed. `NAME_MAX` is 255 on every
+/// filesystem jigc supports (APFS, HFS+, ext4, btrfs, XFS, NTFS), and it bounds a single
+/// path *component*, never the whole path — which is why the subject here is the slug and
+/// not the directory it lands in.
+const NAME_MAX_BYTES: usize = 255;
+
+/// Decimal digits in `n` — the width its `Display` renders, used to reserve room for the
+/// two numbers [`TEMP_SIBLING_RESERVE`] cannot know in advance.
+const fn decimal_width(mut n: u128) -> usize {
+    let mut width = 1;
+    while n >= 10 {
+        n /= 10;
+        width += 1;
+    }
+    width
+}
+
+/// What a staged doc's **atomic write** appends to the filename before the `rename`:
+/// `engine::state`'s temp sibling is `<filename>.<pid>.<nanos>.tmp`, in the target's own
+/// directory. The two numbers are reserved at their **types'** widths — `std::process::id`
+/// is a `u32`, and `engine::tempname::unique_nanos` is a `u64` reading widened to `u128` —
+/// so a fatter pid or a clock further from the epoch cannot quietly eat the reserve.
+///
+/// This is the **longest** suffix any [`SLUG_DOORS`] row appends, and it is the one that
+/// matters: the committed path's bare `.md` is shorter, and a task directory appends
+/// nothing at all.
+const TEMP_SIBLING_RESERVE: usize = ".".len()
+    + decimal_width(u32::MAX as u128)
+    + ".".len()
+    + decimal_width(u64::MAX as u128)
+    + ".tmp".len();
+
+/// What every doc home appends: a managed instance is `<slug>.md` committed and
+/// `<type>:<slug>.md` staged (`engine::store::canonical_path` / `engine::state`'s
+/// `instance_filename`).
+const DOC_EXTENSION_RESERVE: usize = ".md".len();
+
+/// What a **staged** instance prepends: `<type>:`. Reserved at
+/// [`engine::slug::MAX_CHARS`] — jigc's own stated filesystem-safety backstop for a minted
+/// identifier — plus the `:` joiner, rather than at the length of any one doctype id, so
+/// the reserve does not move when a pack ships a new doctype.
+///
+/// **Declared bound:** a doctype id is authored, not minted, so nothing *enforces*
+/// `MAX_CHARS` on it. Measured at HEAD, the longest id either shipped pack defines is
+/// `completion-record` — **17** bytes, a third of the reserve — so the budget holds for the
+/// whole shipped population, and a project pack declaring a doctype id longer than
+/// [`engine::slug::MAX_CHARS`] is the one shape that could still reach the OS ceiling.
+const DOCTYPE_PREFIX_RESERVE: usize = engine::slug::MAX_CHARS + ":".len();
+
+/// **The ceiling a `--slug` override may not exceed**, in bytes — one constant, read by the
+/// predicate every [`SLUG_DOORS`] row runs (`crate::task::reject_slug_over_name_ceiling`).
+///
+/// Derived, never restated: it is [`NAME_MAX_BYTES`] less everything jigc wraps around a
+/// minted id on its way to becoming one path component — the staged instance's `<type>:`
+/// prefix, its `.md` extension, and the atomic write's temp suffix. Three literals at three
+/// doors would re-enact the failure M45 named: a statement that is a *copy* of the constant
+/// it describes drifts from it silently.
+///
+/// The value is **165**. The mint-time cap on a *derived* slug is
+/// [`engine::slug::MAX_CHARS`] (50), which `--slug` deliberately bypasses (a migration task
+/// id carries a `blake3` disambiguator past it), so this ceiling binds only the override —
+/// and it refuses rather than truncating, because a truncated identity names a different
+/// doc.
+pub const SLUG_NAME_CEILING: usize =
+    NAME_MAX_BYTES - DOCTYPE_PREFIX_RESERVE - DOC_EXTENSION_RESERVE - TEMP_SIBLING_RESERVE;
+
 /// The clap argument ids whose value **becomes a path component** — [`ARG_TOKENS`]'
 /// [`PlainValue::PathBearing`] projection, and the vocabulary [`PATH_ARG_OCCURRENCES`] is
 /// fenced ⇔ against. Six: `path` · `file` · `from_file` · `from` · `target` · `value`.

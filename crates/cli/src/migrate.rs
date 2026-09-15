@@ -331,6 +331,14 @@ fn migrate_in_repo(
             "`--slug {slug:?}` is not a valid slug — use lowercase letters, digits, and single hyphens (no leading, trailing, or doubled `-`)"
         );
     }
+    // …and the name-ceiling half (M51 Inc 9 / T3, EC-28). Driven at `d7ebbeb9` this door
+    // took a 300-byte override at **exit 0** and minted a task, the value inert because the
+    // `changelog` target is a singleton — so the ceiling is asked here for the same reason
+    // the grammar is: the override is recorded and drives the created doc's id verbatim for
+    // every non-singleton doctype, and a refusal before the mint strands no task dir.
+    if let Some(slug) = slug_override {
+        crate::task::reject_slug_over_name_ceiling(slug)?;
+    }
 
     // Adjudicate the `<path>` argument BEFORE the read and BEFORE the mint — the same
     // mint-after-validate discipline as `ensure_migratable` and `--slug`, for a sharper

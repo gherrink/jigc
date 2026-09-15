@@ -103,6 +103,13 @@ pub fn mint_in_repo(
             "`--slug {slug:?}` is not a valid slug — use lowercase letters, digits, and single hyphens (no leading, trailing, or doubled `-`)"
         );
     }
+    // …and the question the grammar cannot answer: a well-formed slug still has to fit one
+    // filesystem path component, which the task directory below IS (M51 Inc 9 / T3, EC-28).
+    // Asked here rather than discovered at `create_dir_all`, where it surfaced as
+    // `task.working-area-io` routed at "a disk or permissions problem" — a law-1 lie.
+    if let Some(slug) = slug_override {
+        crate::task::reject_slug_over_name_ceiling(slug)?;
+    }
     // The base pin is the *worktree* HEAD (code/HEAD resolve against the worktree); the
     // `.jigc/` working area binds to **jigc_home**, the main checkout, so every worktree
     // of one project shares a single `.jigc/` (M31 Inc 2 / WF3). Outside a worktree the
