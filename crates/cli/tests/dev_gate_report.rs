@@ -368,3 +368,119 @@ fn dev_gate_produces_the_two_literals_the_build_harness_reads() {
         pass_producers[0],
     );
 }
+
+// ---------------------------------------------------------------------------
+// The deps-directory advisory: what the run is about to build *into*.
+// ---------------------------------------------------------------------------
+//
+// `target/debug/deps` accumulates and is never garbage-collected. On 2026-09-14,
+// mid-M51, it held **1,825,219** entries (26 GB), 1,823,960 of them `*.rcgu.o`
+// split-debuginfo sidecars with a median age of 15 days: every gate run re-links the
+// `cli` test binaries under a fresh hash and adds thousands more, and nothing removes
+// the old ones. The cost is not disk — it is that macOS `syspolicyd` (Gatekeeper)
+// rescans the tree, and a full `dev/gate` measured **~20 min** against **~9.5 min**
+// on the same tree with the stale sidecars deleted mid-run (clippy 148→13 s, build
+// 200→9 s, test 958→~540 s).
+//
+// `[profile.dev] split-debuginfo = "packed"` stops the litter being produced, but
+// only for objects linked after that change; a tree that already carries it, or a
+// profile someone flips back, is invisible. So the gate *counts* the directory it is
+// about to build into and says so — one line always, a WARNING above a threshold —
+// and the three arms below pin the two things that could make that advisory harmful:
+// it must never become a gate step (a slow `find` or an absent directory would then
+// fail a green gate), and it must survive a directory that does not exist at all,
+// which is the state immediately after `cargo clean` and in every fresh clone.
+//
+// Driven, not asserted structurally, and cheap for the same reason the 127 arm above
+// is: `PATH=/usr/bin:/bin` removes `cargo`, so every step exits 127 in ~0s and nothing
+// is built, while the header — which the advisory is part of — is printed in full.
+
+/// Run `dev/gate --quick` with `CARGO_TARGET_DIR` pointed at `target_dir` and cargo
+/// absent from `PATH`, returning its stdout.
+fn quick_gate_over(target_dir: &Path, warn_at: Option<&str>) -> String {
+    let mut cmd = Command::new(gate());
+    cmd.arg("--quick")
+        .current_dir(repo_root())
+        .env("PATH", "/usr/bin:/bin")
+        .env("CARGO_TARGET_DIR", target_dir);
+    if let Some(n) = warn_at {
+        cmd.env("JIGC_GATE_DEPS_WARN", n);
+    }
+    let out = cmd.output().expect("spawn dev/gate --quick");
+    String::from_utf8_lossy(&out.stdout).to_string()
+}
+
+/// A `<root>/debug/deps` holding `n` files, and the root to hand `CARGO_TARGET_DIR`.
+fn target_dir_with_deps(label: &str, n: usize) -> PathBuf {
+    let root = support::trial_corpus::unique_root(label);
+    let deps = root.join("debug/deps");
+    std::fs::create_dir_all(&deps).expect("create the fixture deps dir");
+    for i in 0..n {
+        std::fs::write(deps.join(format!("litter-{i}.rcgu.o")), b"").expect("write a fixture file");
+    }
+    root
+}
+
+#[test]
+fn the_gate_counts_the_deps_directory_it_is_about_to_build_into() {
+    let root = target_dir_with_deps("gate-deps-count", 3);
+    let text = quick_gate_over(&root, None);
+    assert!(
+        text.lines().any(|l| l == "gate: deps   3 entries"),
+        "every run must say how much litter it is building on top of — the growth is \
+         silent otherwise, which is exactly how the directory reached 1.8 M entries.\n\
+         {text}",
+    );
+    assert!(
+        !text.contains("WARNING"),
+        "three entries is not a warning; the threshold exists so the line is noise-free \
+         on a clean tree.\n{text}",
+    );
+    // The count is only readable against the directory it counted. `CARGO_TARGET_DIR`
+    // in the environment redirects every cargo step, and the header said
+    // `shared (<repo>/target)` regardless — a line that names the wrong tree beside a
+    // number measured from the right one is worse than no line.
+    assert!(
+        text.lines()
+            .any(|l| l == format!("gate: target {}", root.display())),
+        "the header must name the target dir the run will actually use, including one \
+         inherited from `CARGO_TARGET_DIR`.\n{text}",
+    );
+}
+
+#[test]
+fn a_deps_directory_over_the_threshold_warns_and_names_the_cleanup() {
+    let root = target_dir_with_deps("gate-deps-warn", 3);
+    let text = quick_gate_over(&root, Some("2"));
+    assert!(
+        text.contains("WARNING"),
+        "above the threshold the count must be a warning, not a statistic.\n{text}",
+    );
+    assert!(
+        text.contains("dev/clean-litter"),
+        "a warning that does not name the command that fixes it is a complaint — \
+         `dev/clean-litter` is the tool, and the route floor this repo applies to its \
+         own product applies to its tooling.\n{text}",
+    );
+    // The advisory is an advisory: it is never a step, so it can never redden a gate
+    // whose five commands all passed. With cargo absent all three quick steps exit 127,
+    // and the verdict must name exactly those three.
+    assert!(
+        text.lines()
+            .any(|l| l == "GATE: FAIL (step: fmt clippy build)"),
+        "the deps advisory must not join the step list or the verdict — it measures the \
+         tree, it does not judge the code.\n{text}",
+    );
+}
+
+#[test]
+fn an_absent_deps_directory_counts_zero_rather_than_erroring() {
+    // The state immediately after `cargo clean`, and in every fresh clone.
+    let root = support::trial_corpus::unique_root("gate-deps-absent");
+    std::fs::create_dir_all(&root).expect("create the fixture target dir");
+    let text = quick_gate_over(&root, None);
+    assert!(
+        text.lines().any(|l| l == "gate: deps   0 entries"),
+        "a target dir with no `debug/deps` is the post-clean state, not an error.\n{text}",
+    );
+}

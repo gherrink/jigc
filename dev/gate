@@ -27,6 +27,11 @@
 #                                #   (crates/cli/tests/dev_gate_report.rs), in
 #                                #   milliseconds instead of a five-minute gate run.
 #
+# Every run prints `gate: deps <N> entries` for the `<target>/debug/deps` it is about to
+# build into, and WARNS above JIGC_GATE_DEPS_WARN (default 100000) naming
+# `dev/clean-litter`. That directory is never garbage-collected by cargo and has taken a
+# full gate from ~9.5 min to ~20 min; the advisory is never a step and never fails a run.
+#
 # A step that exits 127 DID NOT RUN -- the command was not found -- and is reported as
 # that rather than as a failure, because the two are indistinguishable otherwise and
 # only one of them is a verdict about this repo.
@@ -147,7 +152,14 @@ fi
 
 log=$(mktemp "$tmp_root/jigc-gate-XXXXXX") || exit 2
 
-target_desc="shared (<repo>/target)"
+# An inherited CARGO_TARGET_DIR redirects every cargo step below, so the header must
+# name it. It said "shared (<repo>/target)" regardless, which put a wrong tree beside a
+# right number once the deps advisory started counting the tree that is actually used.
+if [ -n "${CARGO_TARGET_DIR:-}" ]; then
+    target_desc=$CARGO_TARGET_DIR
+else
+    target_desc="shared (<repo>/target)"
+fi
 if [ "$private_target" -eq 1 ]; then
     if [ -n "${JIGC_GATE_TARGET:-}" ]; then
         CARGO_TARGET_DIR=$JIGC_GATE_TARGET
@@ -169,6 +181,37 @@ if [ "$quick" -eq 1 ]; then
     printf 'gate: mode   quick (fmt, clippy, build -- NOT the full gate, do not commit on it)\n'
 else
     printf 'gate: mode   full\n'
+fi
+
+# --- the deps advisory ------------------------------------------------------
+# `<target>/debug/deps` accumulates and cargo never garbage-collects it. On
+# 2026-09-14 it held 1,825,219 entries (26 GB), 1,823,960 of them `*.rcgu.o`
+# split-debuginfo sidecars, median age 15 days: every gate run re-links the cli test
+# binaries under a fresh hash and adds thousands more. Disk is not the cost -- macOS
+# syspolicyd (Gatekeeper) rescans the tree, and a full gate measured ~20 min against
+# ~9.5 min on the same tree with the stale sidecars deleted mid-run.
+#
+# `[profile.dev] split-debuginfo = "packed"` stops new litter at the source, so this
+# line is the watch on what that cannot see: a tree that already carries it, a profile
+# someone flips back, and the slow ordinary growth of the directory itself.
+#
+# It is an advisory and never a step: the count is printed, never judged, so nothing
+# here can redden a gate whose five commands passed. `find` without -delete/-exec/-mtime
+# is one readdir -- ~3s over 530 k entries, and imperceptible under 100 k.
+#
+# The threshold is overridable so the warning branch is reachable by a fixture the
+# size of three files (crates/cli/tests/dev_gate_report.rs), and so a machine with a
+# different tolerance can say so without editing the tool.
+deps_warn=${JIGC_GATE_DEPS_WARN:-100000}
+deps_dir=${CARGO_TARGET_DIR:-$repo_root/target}/debug/deps
+deps_count=$(find "$deps_dir" -maxdepth 1 -mindepth 1 2>/dev/null | wc -l)
+deps_count=$((deps_count))
+printf 'gate: deps   %s entries\n' "$deps_count"
+if [ "$deps_count" -gt "$deps_warn" ]; then
+    printf 'gate: WARNING  %s stale build artifacts in %s\n' "$deps_count" "$deps_dir"
+    printf 'gate:          cargo never removes them and Gatekeeper rescans the tree on\n'
+    printf 'gate:          every link, which is minutes per gate run. Clean them with:\n'
+    printf 'gate:              dev/clean-litter\n'
 fi
 printf '\n'
 
