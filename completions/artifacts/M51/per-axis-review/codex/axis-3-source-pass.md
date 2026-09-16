@@ -1,0 +1,29 @@
+<!-- M51 per-axis review — axis 3 · Codex source pass, verbatim · read against `jigc 1.0.0-rc.15` (commit 35195f56), 2026-09-16 -->
+
+## Claims
+
+1. `jigc task discard` guards only staged `*.md` files, so an arbitrary untracked file elsewhere in the task area is silently destroyed without `--force`.
+
+   - Evidence: the guard enumerates only `.jigc/tasks/<id>/docs/*.md` ([crates/cli/src/task.rs:602](/Users/maurice/projects/gherrink-jigc/crates/cli/src/task.rs:602), [crates/cli/src/task.rs:671](/Users/maurice/projects/gherrink-jigc/crates/cli/src/task.rs:671)); an empty result permits removal ([crates/cli/src/task.rs:757](/Users/maurice/projects/gherrink-jigc/crates/cli/src/task.rs:757)); `run_discard` then recursively removes the entire task directory ([crates/cli/src/task.rs:539](/Users/maurice/projects/gherrink-jigc/crates/cli/src/task.rs:539), [crates/cli/src/task.rs:553](/Users/maurice/projects/gherrink-jigc/crates/cli/src/task.rs:553)). Its acknowledgement reports only dropped staged docs ([crates/cli/src/task.rs:555](/Users/maurice/projects/gherrink-jigc/crates/cli/src/task.rs:555)).
+   - Proposed reproduction: `jigc start <workflow> ...` to mint task `<id>`; make its required staged doc finalizable or remove the staged `*.md`, then place `.jigc/tasks/<id>/notes.txt`; run `jigc task discard <id>` without `--force`. Expected wrong behaviour: exit 0, `notes.txt` is deleted, and neither a refusal nor loss narration mentions it.
+   - Confidence: high.
+
+2. `jigc milestone discard` has the same bypass for untracked files in its sub-task working areas: `--force` is documented as consent for dirty worktrees and staged prose, but the teardown deletes the whole sub-task area after checking neither other files nor directories.
+
+   - Evidence: the non-force block checks held worktree paths and staged prose only ([crates/cli/src/milestone.rs:3223](/Users/maurice/projects/gherrink-jigc/crates/cli/src/milestone.rs:3223), [crates/cli/src/milestone.rs:3240](/Users/maurice/projects/gherrink-jigc/crates/cli/src/milestone.rs:3240)); staged-prose capture is explicitly `docs/*.md` ([crates/cli/src/task.rs:663](/Users/maurice/projects/gherrink-jigc/crates/cli/src/task.rs:663)). Teardown recursively removes every listed sub-task area ([crates/cli/src/milestone.rs:3291](/Users/maurice/projects/gherrink-jigc/crates/cli/src/milestone.rs:3291), [crates/cli/src/milestone.rs:4532](/Users/maurice/projects/gherrink-jigc/crates/cli/src/milestone.rs:4532)); its only sub-task-area loss narration is staged prose ([crates/cli/src/milestone.rs:3273](/Users/maurice/projects/gherrink-jigc/crates/cli/src/milestone.rs:3273), [crates/cli/src/milestone.rs:3286](/Users/maurice/projects/gherrink-jigc/crates/cli/src/milestone.rs:3286)).
+   - Proposed reproduction: `jigc milestone create "Loss probe"`; `jigc milestone add-task loss-probe "child"`; place `.jigc/tasks/<sub-id>/notes.txt`; run `jigc milestone discard loss-probe` without `--force`. Expected wrong behaviour: exit 0, `notes.txt` disappears, and output claims the workbench was removed without naming the lost file.
+   - Confidence: high.
+
+3. `jigc milestone finalize` also bypasses the destroying-door seam for arbitrary files in sub-task areas: after landing the commit it deletes those areas unconditionally, although the shared loss classifier and narration cover only fan-out worktrees.
+
+   - Evidence: `FINALIZE_DOOR` is defined as a destroying door specifically for worktree teardown ([crates/cli/src/milestone.rs:2515](/Users/maurice/projects/gherrink-jigc/crates/cli/src/milestone.rs:2515), [crates/cli/src/milestone.rs:2541](/Users/maurice/projects/gherrink-jigc/crates/cli/src/milestone.rs:2541)); both finalize paths call `cleanup_subtask_areas` ([crates/cli/src/milestone.rs:4277](/Users/maurice/projects/gherrink-jigc/crates/cli/src/milestone.rs:4277), [crates/cli/src/milestone.rs:4382](/Users/maurice/projects/gherrink-jigc/crates/cli/src/milestone.rs:4382)); that function performs an unclassified `remove_dir_all` ([crates/cli/src/milestone.rs:4532](/Users/maurice/projects/gherrink-jigc/crates/cli/src/milestone.rs:4532)). The documented loss narration immediately following it applies to worktrees, not task areas ([crates/cli/src/milestone.rs:4546](/Users/maurice/projects/gherrink-jigc/crates/cli/src/milestone.rs:4546), [crates/cli/src/milestone.rs:4564](/Users/maurice/projects/gherrink-jigc/crates/cli/src/milestone.rs:4564)).
+   - Proposed reproduction: create a milestone/sub-task, complete the sub-task normally, add `.jigc/tasks/<sub-id>/notes.txt`, then run `jigc milestone finalize <id>`. Expected wrong behaviour: the boundary lands and exits 0, then deletes `notes.txt` without refusal or loss narration.
+   - Confidence: high.
+
+## Consistent findings
+
+I read `CLAUDE.md`, the milestone/task implementations, uninstall in `setup.rs` (there is no current `src/uninstall.rs`), all consumers of `DESTROYING_DOORS`, `DestroyingDoor`, `probe_leftover`, `LeftoverShape`, and every `remove_file`/`remove_dir[_all]` match in both crates.
+
+The declared four-row registry is internally consistent: provision, milestone discard, milestone finalize, and uninstall are present. `probe_leftover` uses `symlink_metadata`, distinguishes directory/file/unreadable, and fails closed. Provision guards before removing leftovers; uninstall guards dirty worktrees, staged prose, and other untracked workbench files, then outcome-filters narration. Registered worktree teardown is guarded on discard and occurs only after commit on finalize.
+
+Other production removal sites were transaction cleanup, rollback, generated-artifact removal, cache invalidation, migration retirement, or temporary-message cleanup, with ownership/transaction checks or best-effort post-success semantics. The material uncovered gap is the recursive deletion of task-area contents outside `docs/*.md`; test-only temporary-directory destructors were not reachable CLI doors.
