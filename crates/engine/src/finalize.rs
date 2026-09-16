@@ -534,11 +534,12 @@ fn clobber_finding(destination: &str, migration_source: Option<&str>) -> Finding
                  source is the different file `{source}`: if the occupant is another \
                  managed doc, land this migration under a different id — re-author with a \
                  title that slugs differently, or `jigc task discard <id> --force` and re-mint \
-                 with `jigc migrate {source} --as <doctype> --slug <different-slug>`; if \
+                 with `jigc migrate {source_token} --as <doctype> --slug <different-slug>`; if \
                  the occupant is itself foreign, adopt it through its own `jigc migrate` \
                  task first; then re-run `jigc task finalize <id>` to review the fidelity \
                  diff and `jigc task finalize <id> --approve` to land it (`--approve` also \
-                 retires the recorded source)"
+                 retires the recorded source)",
+                source_token = crate::finding::shell_token(source),
             ),
         ),
         None => (
@@ -551,8 +552,9 @@ fn clobber_finding(destination: &str, migration_source: Option<&str>) -> Finding
                  retitle this task's doc so it slugs differently, or re-create it with an \
                  explicit `--slug` (`jigc doc create <doctype> --title <title> --slug \
                  <slug> --task <id>`); if it is a hand-authored/foreign file, bring it \
-                 under management with `jigc migrate {destination} --as <doctype>` in its \
-                 own task; then re-run `jigc task finalize`"
+                 under management with `jigc migrate {destination_token} --as <doctype>` in \
+                 its own task; then re-run `jigc task finalize`",
+                destination_token = crate::finding::shell_token(destination),
             ),
         ),
     };
@@ -841,9 +843,10 @@ fn carried_staged_finding(path: &str, is_deletion: bool, boundary: CarryoverBoun
                  pre-task staged {kind} silently ride this task's commit"
             ),
             format!(
-                "unstage it (`git restore --staged -- {path}`) if it is not this task's work, \
-                 or re-run the finalize with `--carry-staged` to declare the carry-over \
-                 deliberate"
+                "unstage it (`git restore --staged -- {token}`) if it is not this task's \
+                 work, or re-run the finalize with `--carry-staged` to declare the \
+                 carry-over deliberate",
+                token = crate::finding::shell_token(path),
             ),
         ),
         // The preview door (M47 Inc 4): nothing has been refused, so the message says
@@ -855,9 +858,10 @@ fn carried_staged_finding(path: &str, is_deletion: bool, boundary: CarryoverBoun
                  will refuse to let a pre-task staged {kind} silently ride this task's commit"
             ),
             format!(
-                "unstage it (`git restore --staged -- {path}`) if it is not this task's work, \
-                 or pass `--carry-staged` — accepted here and at the finalize — to declare \
-                 the carry-over deliberate"
+                "unstage it (`git restore --staged -- {token}`) if it is not this task's \
+                 work, or pass `--carry-staged` — accepted here and at the finalize — to \
+                 declare the carry-over deliberate",
+                token = crate::finding::shell_token(path),
             ),
         ),
         // The `Setup` door is not a per-path door: its refusal is ONE finding over the
@@ -876,9 +880,10 @@ fn carried_staged_finding(path: &str, is_deletion: bool, boundary: CarryoverBoun
                  {kind} stays staged, undeclared, across this boundary"
             ),
             format!(
-                "unstage it (`git restore --staged -- {path}`) if it is stale, or re-run \
+                "unstage it (`git restore --staged -- {token}`) if it is stale, or re-run \
                  the finalize with `--carry-staged` to declare it deliberate (it stays \
-                 staged either way)"
+                 staged either way)",
+                token = crate::finding::shell_token(path),
             ),
         ),
     };

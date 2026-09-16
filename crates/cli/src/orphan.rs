@@ -362,9 +362,10 @@ pub(crate) fn orphaned_instance_finding(rel: &str) -> engine::finding::Finding {
         Some(engine::finding::Location::addressed(rel, 1, 1)),
         Some(engine::finding::Route::human(format!(
             "restore what claims it — re-add the pack that defines its type, or move it to \
-             that doctype's home — or take it out of jigc's world: `jigc unmanage {rel}`, \
+             that doctype's home — or take it out of jigc's world: `jigc unmanage {token}`, \
              then delete the file or its `schema-version:` stamp (`unmanage` drops the \
-             baseline and leaves the bytes, so the stamp alone keeps this finding alive)"
+             baseline and leaves the bytes, so the stamp alone keeps this finding alive)",
+            token = crate::task::shell_token(rel)
         ))),
     )
 }

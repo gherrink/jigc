@@ -512,7 +512,13 @@ fn near_miss_route(
         ))
     } else if migratable.contains(ty) {
         Route::mechanical(
-            ["jigc", "migrate", rel_path, "--as", ty],
+            [
+                "jigc",
+                "migrate",
+                &crate::task::shell_token(rel_path),
+                "--as",
+                ty,
+            ],
             format!(
                 " — it opens the `migrate-{ty}` workflow, which rewrites the file to \
                  conformant shape and adopts it at finalize"
@@ -831,6 +837,43 @@ Sessions must survive a restart.
         assert!(
             route.starts_with("`jigc migrate decisions/auth-choice.md --as adr`"),
             "it leads with the same adoption argv the store sweep's sibling emits: {route}",
+        );
+    }
+
+    /// **The route is a command, so its operand is quoted** (M51 completion audit). The
+    /// argv above is the emitted bytes — `Route::mechanical` composes its text as
+    /// `argv.join(" ")` — and the path in it comes off the filesystem, not out of a
+    /// grammar. Driven at `befdbf93` a non-conformant `docs/decisions/my notes.md` panicked
+    /// the whole `jigc ingest` run at exit 101 on the fence's own token check; in release it
+    /// would have printed `jigc migrate docs/decisions/my notes.md --as adr`, which parses
+    /// as a migrate of `docs/decisions/my`.
+    ///
+    /// Its sibling one function over ([`unaddressable_identity_finding`]'s `git mv`) had
+    /// rendered both operands through `shell_token` since M51 Increment 9 — the same wave —
+    /// so this is the un-swept half of one rule, not a new one.
+    #[test]
+    fn ingest_near_miss_route_quotes_a_path_a_shell_would_re_lex() {
+        crate::route_fence::install();
+        let migratable = ["adr".to_string()].into_iter().collect();
+
+        let finding = near_miss_finding(
+            "decisions/my notes.md",
+            NEAR_MISS_ADR,
+            &adr_schema(),
+            &migratable,
+            false,
+        );
+
+        let route = finding
+            .route
+            .expect("a needs-reconcile row carries a route");
+        assert!(
+            route.starts_with("`jigc migrate 'decisions/my notes.md' --as adr`"),
+            "the operand is the bytes a shell re-lexes as the path: {route}",
+        );
+        assert!(
+            engine::finding::command_spans_are_shell_safe(&route),
+            "and the whole span is runnable: {route}",
         );
     }
 

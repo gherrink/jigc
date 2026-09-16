@@ -521,14 +521,14 @@ impl SeamSubject {
                  is now on `{now}`\n\
                  route: re-attach it with `git switch {}`, then re-run this command",
                 self.path,
-                built.strip_prefix("refs/heads/").unwrap_or(built),
+                crate::task::shell_token(built.strip_prefix("refs/heads/").unwrap_or(built)),
             ),
             (Some(built), None) => format!(
                 "refusing to act in {:?}: HEAD was on `{built}` when this command began and \
                  is now detached\n\
                  route: re-attach it with `git switch {}`, then re-run this command",
                 self.path,
-                built.strip_prefix("refs/heads/").unwrap_or(built),
+                crate::task::shell_token(built.strip_prefix("refs/heads/").unwrap_or(built)),
             ),
             (None, Some(now)) => format!(
                 "refusing to act in {:?}: this is a worktree jigc provisioned detached, and \

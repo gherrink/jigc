@@ -1136,9 +1136,10 @@ fn unadopted_instance(ty: &str, rel_key: &str, migratable: bool, cause: Unadopte
 pub fn adoption_route(ty: &str, rel_key: &str, migratable: bool) -> String {
     if migratable {
         format!(
-            "adopt — run `jigc ingest` to route it, or `jigc migrate {rel_key} --as {ty}` to \
+            "adopt — run `jigc ingest` to route it, or `jigc migrate {token} --as {ty}` to \
              rewrite it into the managed `{ty}` shape; it is a foreign file, not an unmigrated \
-             managed doc"
+             managed doc",
+            token = crate::finding::shell_token(rel_key),
         )
     } else {
         "adopt — run `jigc ingest` to route it; it is a foreign file, not an unmigrated \
@@ -2337,7 +2338,7 @@ fn owner_artifact_present(
                         Some(Route::human(format!(
                             "the artifact is present but not staged — stage it with \
                              `git add {}` so it is durably committed with this task",
-                            path.trim()
+                            crate::finding::shell_token(path.trim())
                         ))),
                     )
                 } else {

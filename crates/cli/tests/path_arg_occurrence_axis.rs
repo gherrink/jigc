@@ -29,13 +29,23 @@
 //! is path-like only when `key ∈ ROOT_KNOBS`; and `from_file` carries the `-` stdin
 //! sentinel, which is not a path at all. Each of those is its own row with its own answer.
 //!
-//! ## The nine cells
+//! ## The ten cells
 //!
 //! `{absolute, ../ escape, symlink escape, .git/ component, workbench root, untracked
-//! in-repo, leading-colon pathspec magic, a wildmatch glob, the - stdin sentinel}` — the
-//! escape shapes the wave was chartered on, plus the sentinel that is **not** an escape and
-//! is driven for exactly that reason: it is the arm split the registry's key exists to
-//! express.
+//! in-repo, leading-colon pathspec magic, a wildmatch glob, a shell-unsafe name, the -
+//! stdin sentinel}` — the escape shapes the wave was chartered on, plus the sentinel that is
+//! **not** an escape and is driven for exactly that reason (it is the arm split the
+//! registry's key exists to express), plus a tenth cell that is not an escape either.
+//!
+//! **The tenth cell asks the other half of every door's obligation: not what it decided, but
+//! whether the sentence it decided it in can be run.** Every cell above is shell-safe by
+//! accident of spelling, so no cell could witness what a door *prints*. Driven at
+//! `befdbf93`, `jigc migrate 'my notes.md' --as adr` refused correctly with
+//! `migrate.source-untracked` and routed to `` stage it with `git add -- my notes.md` `` —
+//! which exits **128** (pathspec `my`), before a re-run that exits 2. So the cell plants a
+//! name a shell re-lexes into two words, and the route-runnability assertion beside it
+//! ([`assert_command_spans_run`]) is applied after **every** cell, because the glob and
+//! colon cells carry shell metachars of their own.
 //!
 //! **The ninth cell is the eighth's own hole, and it is why the axis has a *magic* dimension
 //! rather than a `:` one.** Git has two pathspec magics: the `:` prefix, and wildmatch (`*`,
@@ -154,6 +164,21 @@ const GLOB_SOURCE: &str = "*.md";
 /// `git add -- :colon.md`, which exits **128**.
 const COLON_SOURCE: &str = ":colon.md";
 
+/// The **shell-unsafe** cell's spelling: an in-repo, untracked file whose name a shell does
+/// not re-lex as itself — a space (which splits it into two words) and a single quote (which
+/// breaks naive quoting). It carries [`CANARY`] too, so the doors that read a source answer
+/// about the payload exactly as the untracked cell's does; the only difference between the
+/// two cells is the name.
+///
+/// **Why the axis needed it** (M51 completion audit): every other cell's token is shell-safe
+/// by accident of spelling, so no cell could ever witness what a door *prints*. Driven at
+/// `befdbf93`, `jigc migrate 'my notes.md' --as adr` refused with a route reading `` stage it
+/// with `git add -- my notes.md` ``; followed verbatim that exits **128** (pathspec `my`) and
+/// the re-run it names exits **2**. The finding code was right, the sentence was right, and
+/// the bytes were unrunnable — which is exactly the state a nine-cell axis with no
+/// shell-unsafe member cannot see.
+const UNSAFE_SOURCE: &str = "it's an odd name.md";
+
 /// The in-repo symlink the third cell reaches through — **relative**, so a copied corpus's
 /// link points at the copy's own outside directory and never back at the source fixture.
 const SYMLINK_DIR: &str = "linkdir";
@@ -181,12 +206,17 @@ enum Cell {
     /// matching files git holds. The cell above could not reach this, and that is why it is
     /// its own cell rather than a second spelling of one (see the module header).
     PathspecGlob,
+    /// A name a shell does not re-lex as itself (a space and a `'`), carried by a file that
+    /// **exists** ([`UNSAFE_SOURCE`]). Not a path escape at all: the door's *verdict* is the
+    /// untracked-in-repo one. What this cell asks is the other half of every door's
+    /// obligation — whether the command line it prints can be run.
+    ShellUnsafeName,
     /// `-`, the declared stdin sentinel. Not an escape: the arm split itself.
     StdinSentinel,
 }
 
 impl Cell {
-    const ALL: [Cell; 9] = [
+    const ALL: [Cell; 10] = [
         Cell::Absolute,
         Cell::ParentEscape,
         Cell::Symlink,
@@ -195,6 +225,7 @@ impl Cell {
         Cell::UntrackedInRepo,
         Cell::PathspecMagic,
         Cell::PathspecGlob,
+        Cell::ShellUnsafeName,
         Cell::StdinSentinel,
     ];
 }
@@ -237,6 +268,7 @@ fn token(cell: Cell, subject: PathArgSubject, repo: &Path) -> String {
             Cell::UntrackedInRepo => UNTRACKED_SOURCE.to_owned(),
             Cell::PathspecMagic => COLON_SOURCE.to_owned(),
             Cell::PathspecGlob => GLOB_SOURCE.to_owned(),
+            Cell::ShellUnsafeName => UNSAFE_SOURCE.to_owned(),
             Cell::StdinSentinel => "-".to_owned(),
         }
     };
@@ -251,6 +283,7 @@ fn token(cell: Cell, subject: PathArgSubject, repo: &Path) -> String {
             Cell::UntrackedInRepo => "untracked-home".to_owned(),
             Cell::PathspecMagic => ":(top)docs".to_owned(),
             Cell::PathspecGlob => "do*s".to_owned(),
+            Cell::ShellUnsafeName => "an odd docs home".to_owned(),
             Cell::StdinSentinel => "-".to_owned(),
         },
         // The head is held valid so the door answers about the TAIL — the component that
@@ -288,17 +321,20 @@ fn expectation(door: &str, arg: &str, arm: &PathArgArm, cell: Cell) -> Outcome {
             // in the home the door and the sink share — and both magic cells name files that
             // exist, so neither is answered by a read miss that names the wrong problem.
             PathspecMagic | PathspecGlob => PathRuleBlocks("migrate.source-untrackable"),
+            // Not a location escape — the verdict is the untracked one. The cell's question
+            // is the route, and it is asked by the composite assertion below.
+            ShellUnsafeName => PathRuleBlocks("migrate.source-untracked"),
             StdinSentinel => NotFound,
         },
         // `jigc unmanage <path>` — a lookup key over the recorded store, never a path op.
         ("unmanage", "path", _, _) => match cell {
             Absolute | ParentEscape | Symlink | GitComponent | WorkbenchRoot | UntrackedInRepo
-            | PathspecMagic | PathspecGlob | StdinSentinel => Accepted,
+            | PathspecMagic | PathspecGlob | ShellUnsafeName | StdinSentinel => Accepted,
         },
         // `jigc relocate --from <prior-home>` — a prefix over committed spellings.
         ("relocate", "from", _, _) => match cell {
             Absolute | ParentEscape | Symlink | GitComponent | WorkbenchRoot | UntrackedInRepo
-            | PathspecMagic | PathspecGlob | StdinSentinel => Accepted,
+            | PathspecMagic | PathspecGlob | ShellUnsafeName | StdinSentinel => Accepted,
         },
         // The two `<file>` occurrences — a SOURCE rule: an out-of-repo source is admitted
         // and copied in; git's own directory and jigc's transient workbench are not.
@@ -309,9 +345,8 @@ fn expectation(door: &str, arg: &str, arm: &PathArgArm, cell: Cell) -> Outcome {
             // token and never hand it to git, so a name git would read as a pattern is just
             // a name. The colon cell says that here only because its file exists — while it
             // named nothing, this row's no-rule claim was asserted by a read miss.
-            Absolute | ParentEscape | Symlink | UntrackedInRepo | PathspecMagic | PathspecGlob => {
-                Accepted
-            }
+            Absolute | ParentEscape | Symlink | UntrackedInRepo | PathspecMagic | PathspecGlob
+            | ShellUnsafeName => Accepted,
             // `-` is read as a file name at these two doors, not as stdin — which is the
             // discriminator that earns them a rule while `--from-file` takes none.
             StdinSentinel => NotFound,
@@ -320,7 +355,7 @@ fn expectation(door: &str, arg: &str, arm: &PathArgArm, cell: Cell) -> Outcome {
         ("config fill" | "doc set-slot", "from_file", ArmToken::Literal(_), _) => match cell {
             StdinSentinel => Accepted,
             Absolute | ParentEscape | Symlink | GitComponent | WorkbenchRoot | UntrackedInRepo
-            | PathspecMagic | PathspecGlob => {
+            | PathspecMagic | PathspecGlob | ShellUnsafeName => {
                 unreachable!("the sentinel arm answers for `-` and no other token")
             }
         },
@@ -328,20 +363,19 @@ fn expectation(door: &str, arg: &str, arm: &PathArgArm, cell: Cell) -> Outcome {
             // Any bytes are prose / fill content — the token was a source to open, whatever
             // git would have read the name as.
             Absolute | ParentEscape | Symlink | GitComponent | WorkbenchRoot | UntrackedInRepo
-            | PathspecMagic | PathspecGlob => Accepted,
+            | PathspecMagic | PathspecGlob | ShellUnsafeName => Accepted,
             StdinSentinel => unreachable!("the sentinel arm claims this cell"),
         },
         ("doc author", "from_file", ArmToken::Literal(_), _) => match cell {
             StdinSentinel => Accepted,
             Absolute | ParentEscape | Symlink | GitComponent | WorkbenchRoot | UntrackedInRepo
-            | PathspecMagic | PathspecGlob => {
+            | PathspecMagic | PathspecGlob | ShellUnsafeName => {
                 unreachable!("the sentinel arm answers for `-` and no other token")
             }
         },
         ("doc author", "from_file", ArmToken::Caller, _) => match cell {
-            Absolute | ParentEscape | Symlink | UntrackedInRepo | PathspecMagic | PathspecGlob => {
-                Accepted
-            }
+            Absolute | ParentEscape | Symlink | UntrackedInRepo | PathspecMagic | PathspecGlob
+            | ShellUnsafeName => Accepted,
             // Read, then answered about the PAYLOAD — the no-rule claim in its plainest
             // form: git's config and jigc's own state file are opened like any other
             // source and rejected for what they say, not for where they are.
@@ -352,14 +386,13 @@ fn expectation(door: &str, arg: &str, arm: &PathArgArm, cell: Cell) -> Outcome {
         ("config replace-step" | "config remove-step" | "config fork", "target", _, _) => {
             match cell {
                 Absolute | ParentEscape | Symlink | GitComponent | WorkbenchRoot
-                | UntrackedInRepo | PathspecMagic | PathspecGlob | StdinSentinel => {
-                    AnswersElsewhere("config.anchor-absent")
-                }
+                | UntrackedInRepo | PathspecMagic | PathspecGlob | ShellUnsafeName
+                | StdinSentinel => AnswersElsewhere("config.anchor-absent"),
             }
         }
         ("config fill", "target", _, _) => match cell {
             Absolute | ParentEscape | Symlink | GitComponent | WorkbenchRoot | UntrackedInRepo
-            | PathspecMagic | PathspecGlob | StdinSentinel => {
+            | PathspecMagic | PathspecGlob | ShellUnsafeName | StdinSentinel => {
                 AnswersElsewhere("config.fill-point-absent")
             }
         },
@@ -374,19 +407,21 @@ fn expectation(door: &str, arg: &str, arm: &PathArgArm, cell: Cell) -> Outcome {
             // wildmatch needs no leading `:` to make one a pattern.
             Absolute | PathspecMagic | PathspecGlob => PathRuleBlocks("config.unusable-root"),
             // A new relative directory is the ordinary case; `-` reads back as itself and
-            // is an ordinary (if odd) directory name, so refusing it would refuse a home.
-            UntrackedInRepo | StdinSentinel => Accepted,
+            // is an ordinary (if odd) directory name, so refusing it would refuse a home —
+            // and so does a name holding a space, which is legal on every filesystem jigc
+            // runs on. What it owes is a home NAMED runnably wherever a surface prints it.
+            UntrackedInRepo | ShellUnsafeName | StdinSentinel => Accepted,
         },
         ("config set", "value", _, PathArgSubject::FieldValue) => match cell {
             Absolute | ParentEscape | Symlink | GitComponent | WorkbenchRoot | UntrackedInRepo
-            | PathspecMagic | PathspecGlob | StdinSentinel => {
+            | PathspecMagic | PathspecGlob | ShellUnsafeName | StdinSentinel => {
                 AnswersElsewhere("config.value-rejected")
             }
         },
         // `jigc doc set-field --value` — the value is document content.
         ("doc set-field", "value", _, _) => match cell {
             Absolute | ParentEscape | Symlink | GitComponent | WorkbenchRoot | UntrackedInRepo
-            | PathspecMagic | PathspecGlob | StdinSentinel => Accepted,
+            | PathspecMagic | PathspecGlob | ShellUnsafeName | StdinSentinel => Accepted,
         },
         _ => panic!(
             "`jigc {door}`'s `{arg}` [{}] joined PATH_ARG_OCCURRENCES with no cell \
@@ -460,6 +495,7 @@ fn plant(corpus: &TrialCorpus) {
     fs::write(repo.join(UNTRACKED_SOURCE), CANARY).expect("plant the untracked source");
     fs::write(repo.join(GLOB_SOURCE), CANARY).expect("plant the glob-named source");
     fs::write(repo.join(COLON_SOURCE), CANARY).expect("plant the colon-named source");
+    fs::write(repo.join(UNSAFE_SOURCE), CANARY).expect("plant the shell-unsafe-named source");
     fs::write(repo.join("replacement-step.yaml"), REPLACEMENT_STEP).expect("plant the step");
 }
 
@@ -631,6 +667,16 @@ fn every_path_arg_occurrence_answers_the_whole_escape_axis() {
                     ),
                 }
 
+                // **The second composite cost, after every cell: what the door PRINTED can
+                // be run.** The cell above says what the door decided; this says the
+                // sentence it decided it in is not a dead end. It is asserted over every
+                // cell rather than over the shell-unsafe one alone, because the escape
+                // shapes already on this axis carry shell metachars of their own (`*.md`
+                // globs, `:colon.md`), and a door that names one of them raw prints an
+                // exit that runs against somebody else's files.
+                assert_command_spans_run(&shown, &token, &stderr);
+                assert_command_spans_run(&shown, &token, &stdout);
+
                 // The composite cost, after every cell: the canary outside the repository
                 // is untouched, and a refusal moved nothing at all.
                 assert_eq!(canary(&corpus), planted, "{shown}: the canary was written");
@@ -667,6 +713,40 @@ fn every_path_arg_occurrence_answers_the_whole_escape_axis() {
             .sum::<usize>(),
         "the driven count is the registry's own",
     );
+}
+
+/// **Every backticked `git …` / `jigc …` span a door printed is copy-runnable** — the
+/// route-followability half of each cell, asserted from the emitted bytes rather than from
+/// a reconstruction.
+///
+/// Two claims, because one alone is blind. The token check
+/// ([`engine::finding::command_spans_are_shell_safe`]) catches a span carrying a metachar a
+/// shell would act on. It **cannot** catch the commonest spelling: an unquoted path with a
+/// space is not one bad token, it is two perfectly inert ones, and `` `git add -- my
+/// notes.md` `` passes every token check while exiting 128. The missing information is the
+/// word boundary — and this suite has it, because it typed the token. So the second claim is
+/// that a span naming the caller's own token names it as [`engine::finding::shell_token`]
+/// would have written it.
+fn assert_command_spans_run(shown: &str, token: &str, emitted: &str) {
+    assert!(
+        engine::finding::command_spans_are_shell_safe(emitted),
+        "{shown}: printed a command span a shell does not re-lex as itself\n{emitted}",
+    );
+    let quoted = engine::finding::shell_token(token);
+    if quoted == token {
+        return; // the token needs no quoting; there is nothing to get wrong.
+    }
+    for span in emitted.split('`').skip(1).step_by(2) {
+        let head = span.split_whitespace().next().unwrap_or_default();
+        if (head != "git" && head != "jigc") || !span.contains(token) {
+            continue;
+        }
+        assert!(
+            span.contains(quoted.as_str()),
+            "{shown}: the command span `{span}` names the caller's token unquoted — run \
+             verbatim it is a different command (`{quoted}` is the spelling that is not)",
+        );
+    }
 }
 
 /// No refusal that a `NoRule` row predicts may carry a path-rule code — the assertion that

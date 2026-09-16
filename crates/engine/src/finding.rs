@@ -452,12 +452,19 @@ pub fn is_derivable_route_placeholder(token: &str) -> bool {
 /// the route's own argv, because the **verb decides what address it can accept**: see
 /// [`showable_address`].
 fn derive_route_placeholder(token: &str, target: &str, argv: &[String]) -> Option<String> {
-    match token {
+    // A derived value that is not already [`shell_safe`] is quoted (M51 completion audit):
+    // a `key.target` is a URI in the ordinary case, but the **path form** is a declared
+    // target shape (`file-state.*`, `ingest.*`, `schema-conformance.unadopted-instance`),
+    // and a substitution is written straight into an argv whose join IS the emitted bytes. A
+    // repo-relative path holding a space or a quote would otherwise re-lex as two arguments
+    // — the substitution turning a placeholder route into a broken concrete one.
+    let derived = match token {
         "<address>" if is_show_route(argv) => Some(showable_address(target)),
         "<address>" => Some(target.to_owned()),
         "<doctype>" => target.split_once(':').map(|(head, _)| head.to_owned()),
         _ => None,
-    }
+    };
+    derived.map(|value| shell_operand(&value))
 }
 
 /// Whether `argv` is a `jigc doc show …` read route (argv\[0\] is the leading `jigc` the
@@ -745,6 +752,7 @@ impl Route {
         }
         let tail = tail.into();
         let text = format!("`{}`{}", argv.join(" "), tail);
+        fence_command_spans(&text);
         Self {
             text,
             kind: RouteKind::Mechanical { argv, tail },
@@ -753,16 +761,20 @@ impl Route {
 
     /// A human-judgment direction — the flat text verbatim.
     pub fn human(text: impl Into<String>) -> Self {
+        let text = text.into();
+        fence_command_spans(&text);
         Self {
-            text: text.into(),
+            text,
             kind: RouteKind::Human,
         }
     }
 
     /// A "no action needed" notice — the flat text verbatim.
     pub fn informational(text: impl Into<String>) -> Self {
+        let text = text.into();
+        fence_command_spans(&text);
         Self {
-            text: text.into(),
+            text,
             kind: RouteKind::Informational,
         }
     }
@@ -776,6 +788,284 @@ impl Route {
     pub fn kind(&self) -> &RouteKind {
         &self.kind
     }
+}
+
+/// Render one emitted command-line token into bytes a shell re-lexes as **exactly itself**:
+/// **bare** when every byte is shell-inert (`[A-Za-z0-9._/@=:+-]`, the alphabet ids, slugs,
+/// addresses and flags live in), **POSIX single-quoted** otherwise — `'` written `'\''`, the
+/// one quoting form under which a shell performs no expansion at all.
+///
+/// **This is the one home of the quoting rule** (M51 completion audit). It lived in
+/// `cli::task` while the engine mints routes of its own — `file_state`'s conflict block,
+/// `validate`'s owner-artifact `git add`, `finalize`'s `git restore --staged` — so every
+/// engine-side producer interpolated its path raw and the rule was enforced in exactly the
+/// half of the codebase that did not need it. Quoting is a **lexical property of the emitted
+/// bytes** and needs no CLI knowledge (unlike the *parse* half of the route fence, which
+/// genuinely needs clap and stays injected from the CLI seam), so it belongs beside the
+/// constructor that composes a route's text. `cli::task::shell_token` re-exports this.
+///
+/// The tokens this embeds are **author-owned prose and filesystem paths** — a milestone
+/// title, a sub-task intent, a foreign file an operator named — i.e. input these doors are
+/// designed to receive, not exotica. Double-quoting (the pre-M47-fix form) leaves `$` and
+/// command substitution live and emits a whitespace-free token bare, so `Cache $HOME rework`
+/// re-run as printed **exits 0 having created a different artifact** than the frame says it
+/// recovers. The fence is a real shell: see `cli::task`'s
+/// `shell_token_round_trips_through_a_real_shell_over_the_metachar_axis`.
+pub fn shell_token(arg: &str) -> String {
+    let inert = |c: char| {
+        c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '/' | '@' | '=' | ':' | '+' | '-')
+    };
+    if !arg.is_empty() && arg.chars().all(inert) {
+        arg.to_owned()
+    } else {
+        format!("'{}'", arg.replace('\'', r"'\''"))
+    }
+}
+
+/// Render one emitted command-line **operand that may already be inert** — a `<type>:<slug>`
+/// address, a repo-relative path — leaving it exactly as written when a shell re-lexes it as
+/// itself, and quoting it otherwise.
+///
+/// It exists because [`shell_token`] and [`shell_safe`] disagree on one byte, deliberately:
+/// `#` is an address fragment separator that a shell treats literally mid-word, so
+/// `shell_safe` admits `adr:pick-a-db#context` bare — but `#` at the *start* of a word opens
+/// a comment, and `shell_token`'s subject is author prose, where a title of exactly `#42`
+/// would then vanish. Neither predicate is wrong; they answer about different subjects.
+///
+/// So: **author prose goes through [`shell_token`]** (quote first, ask later), and **an
+/// address or path an inert grammar already governs goes through this** — which keeps every
+/// shipped route byte-identical while still quoting the one that needs it. Using
+/// `shell_token` here instead would re-spell `adr:x#context` as `'adr:x#context'` on every
+/// surface that prints an address, for a safety none of them lacked.
+pub fn shell_operand(value: &str) -> String {
+    if shell_safe(value) {
+        value.to_owned()
+    } else {
+        shell_token(value)
+    }
+}
+
+/// Whether one emitted command-line token survives a real shell as **exactly itself** — the
+/// predicate [`shell_token`] satisfies, and the quoting half of the M43 route fence.
+///
+/// Two accepted shapes and nothing else: **bare** (every byte in the shell-inert charset
+/// `[A-Za-z0-9._:#/=@+-]`, the set `compose`'s `Run:`-line renderer already declares — ids,
+/// slugs, addresses incl. a `#fragment`, flags, `-` for stdin), or **POSIX single-quoted**
+/// with an embedded `'` written `'\''`.
+pub fn shell_safe(token: &str) -> bool {
+    let inert = |c: char| c.is_ascii_alphanumeric() || "._:#/=@+-".contains(c);
+    if !token.is_empty() && token.chars().all(inert) {
+        return true;
+    }
+    let Some(inner) = token
+        .strip_prefix('\'')
+        .and_then(|rest| rest.strip_suffix('\''))
+    else {
+        return false;
+    };
+    // Inside the quotes, a `'` may appear only as the close-escape-reopen splice.
+    !inner.split(r"'\''").any(|span| span.contains('\''))
+}
+
+/// The **span fence**: the first token of a backticked `git …` / `jigc …` span in `text`
+/// that a shell would not re-lex as itself, if any.
+///
+/// The M43 route fence checked a **mechanical** route's argv, token by token. It could not
+/// see the other half of the same surface: a [`Route::human`] naming a command *in prose*
+/// (`` stage it with `git add -- {path}` ``), and the prose **tail** a mechanical route
+/// carries. Both are bytes an agent pastes into a shell, and both were interpolating raw
+/// paths — driven at the M51 completion audit, a foreign `my notes.md` produced
+/// `` `git add -- my notes.md` `` (exit 128, pathspec `my`) and `` `jigc migrate my notes.md
+/// --as adr` `` (exit 2), a route that dead-ends when followed verbatim.
+///
+/// So the check moves from the argv to the **composed text**, which is where membership in
+/// "bytes the reader runs" is actually decided: every route of every kind passes through
+/// one of three constructors, and each hands its finished text here.
+///
+/// A span is a command iff its first token is `git` or `jigc` — a backticked `` `--force` ``
+/// or `` `docs/decisions/x.md` `` names a flag or a file, not a command line. Within a
+/// command span a `<placeholder>` the reader fills is legal in either the bare (`<task-id>`)
+/// or quoted-span (`"<New Title>"`) form, exactly as the mechanical fence's
+/// dummy-substitution seam accepts them; everything else must be [`shell_safe`].
+fn unsafe_command_token(text: &str) -> Option<String> {
+    for span in backticked_spans(text) {
+        let mut tokens = command_tokens(span);
+        let Some(head) = tokens.next() else { continue };
+        if head != "git" && head != "jigc" {
+            continue;
+        }
+        for token in tokens {
+            // Everything the reader supplies — a `<…>` group, an elision — is removed
+            // before the token is judged, so what is checked is the bytes actually emitted:
+            // a token that is *nothing but* placeholder (`<task-id>`) or elision (`…`)
+            // reduces to empty, and a placeholder glued to literal bytes
+            // (`<doc-address>#context/date`) reduces to the literal half. This is the shape
+            // the route prose itself calls "a form to fill, not a runnable command".
+            let stripped = strip_unemitted(&token);
+            if stripped.is_empty() || shell_safe(&stripped) || inert_double_quoted(&token) {
+                continue;
+            }
+            return Some(token);
+        }
+    }
+    None
+}
+
+/// `token` with everything that is **not emitted bytes** removed — every `<…>` placeholder
+/// group the reader fills, and every elision (`…` / `...`) standing for arguments the prose
+/// declined to spell. What is left is what a shell would actually receive, which is what the
+/// fence is about.
+///
+/// The elision leg is the same judgment as the placeholder leg, in the other notation: a
+/// route reading `` re-record the delta (e.g. `jigc config replace-step …`) `` is naming a
+/// verb, not handing over a command line — it is an *example*, and a fence that reads `…` as
+/// an argument reports a defect in a sentence that has none.
+///
+/// An unclosed `<` removes nothing: a malformed placeholder is judged as written rather than
+/// silently swallowing the rest of the token.
+fn strip_unemitted(token: &str) -> String {
+    let mut out = String::with_capacity(token.len());
+    let mut rest = token;
+    while let Some(open) = rest.find('<') {
+        let Some(close) = rest[open..].find('>') else {
+            break;
+        };
+        out.push_str(&rest[..open]);
+        rest = &rest[open + close + 1..];
+    }
+    out.push_str(rest);
+    out.replace('\u{2026}', "").replace("...", "")
+}
+
+/// Whether `token` is a **double-quoted literal a shell re-lexes as its own inner bytes** —
+/// the one acceptance the span fence grants that [`shell_safe`] does not.
+///
+/// The two predicates differ because their subjects do. [`shell_safe`] governs an **argv
+/// token jigc generated**, where the M48 rule is absolute: prose goes in single quotes,
+/// because `format!("{title:?}")` — the shape that produced `--to "Cache $HOME rework"` —
+/// double-quotes by default and leaves `$` and `$( … )` live. A **prose command span** is
+/// hand-written, and a hand-written double-quoted example is both idiomatic and correct:
+/// `git config user.email "you@example.com"` runs as itself, and refusing it would push the
+/// author to reword a line that was never broken.
+///
+/// So the rule is the shell's own: inside double quotes exactly `$`, `` ` ``, `\` and `"` are
+/// still active. A token carrying none of them re-lexes to its inner bytes and nothing else;
+/// one carrying any of them is the defect this fence exists for, quoting style regardless.
+fn inert_double_quoted(token: &str) -> bool {
+    token
+        .strip_prefix('"')
+        .and_then(|rest| rest.strip_suffix('"'))
+        .is_some_and(|inner| !inner.contains(['$', '`', '\\', '"']))
+}
+
+/// The backticked spans of `text` — the odd-indexed pieces of a split on `` ` ``. An
+/// unpaired trailing backtick opens no span, which is the conservative reading.
+fn backticked_spans(text: &str) -> Vec<&str> {
+    let mut pieces = text.split('`');
+    let _ = pieces.next();
+    let mut spans: Vec<&str> = Vec::new();
+    while let Some(span) = pieces.next() {
+        spans.push(span);
+        if pieces.next().is_none() {
+            spans.pop();
+            break;
+        }
+    }
+    spans
+}
+
+/// Split one backticked span into shell words, keeping a `'…'`, `"…"` or `<…>` group whole
+/// — so a quoted token carrying a space (`'my notes.md'`, `"<New Title>"`) is one word,
+/// which is the whole point of the quoting the fence is checking for, and so is an
+/// **unquoted multi-word placeholder** (`--to <a title>`), which is a shape the reader
+/// replaces rather than bytes anyone pastes. Splitting the latter on whitespace reports
+/// `<a` as an unsafe token and refuses a line that was never broken.
+fn command_tokens(span: &str) -> impl Iterator<Item = String> + '_ {
+    let mut words: Vec<String> = Vec::new();
+    let mut current = String::new();
+    let mut quote: Option<char> = None;
+    let mut started = false;
+    // A backslash outside quotes escapes the next byte into the word. Without it the
+    // tokenizer splits `'\''` — the close-escape-reopen splice [`shell_token`] ITSELF emits
+    // for an embedded `'` — into three words and refuses its own correct output.
+    let mut escaped = false;
+    for ch in span.chars() {
+        if escaped {
+            current.push(ch);
+            escaped = false;
+            started = true;
+            continue;
+        }
+        match quote {
+            Some(q) => {
+                current.push(ch);
+                if ch == q {
+                    quote = None;
+                }
+            }
+            None if ch == '\\' => {
+                current.push(ch);
+                escaped = true;
+                started = true;
+            }
+            None if ch == '\'' || ch == '"' => {
+                quote = Some(ch);
+                current.push(ch);
+                started = true;
+            }
+            // An angle-bracket span is a placeholder unit in this prose grammar, whether or
+            // not it holds a space; it closes at `>`.
+            None if ch == '<' && !started => {
+                quote = Some('>');
+                current.push(ch);
+                started = true;
+            }
+            None if ch.is_whitespace() => {
+                if started {
+                    words.push(std::mem::take(&mut current));
+                    started = false;
+                }
+            }
+            None => {
+                current.push(ch);
+                started = true;
+            }
+        }
+    }
+    if started {
+        words.push(current);
+    }
+    words.into_iter()
+}
+
+/// Fire the span fence at construction (debug posture, the seam-assert class — it rides the
+/// suite, never a release-build panic, exactly like its parse sibling).
+///
+/// It is installed on **all three** constructors and not only on `mechanical`, because the
+/// bytes a reader pastes do not care which kind minted them: the M51 audit's two driven
+/// dead ends were a `human` route and a `mechanical` route's raw argv token, and a
+/// mechanical route's prose **tail** can name a second command line the argv check never
+/// sees.
+fn fence_command_spans(text: &str) {
+    #[cfg(debug_assertions)]
+    if let Some(token) = unsafe_command_token(text) {
+        panic!(
+            "a route's backticked command span must be copy-runnable: token `{token}` is \
+             not shell-safe as emitted — a path or an author-owned prose token embedded in \
+             an emitted command line must be rendered through \
+             `engine::finding::shell_token` (route text: {text:?}; \
+             design/surface-contract.md \u{2192} The route fence)"
+        );
+    }
+    #[cfg(not(debug_assertions))]
+    let _ = text;
+}
+
+/// The span fence, asked as a **question** rather than as an assertion — `true` iff every
+/// backticked `git …` / `jigc …` span in `text` is copy-runnable. Producers that *derive* a
+/// route's text and cannot know in advance ask here, in every posture.
+pub fn command_spans_are_shell_safe(text: &str) -> bool {
+    unsafe_command_token(text).is_none()
 }
 
 impl std::ops::Deref for Route {
@@ -1101,6 +1391,7 @@ impl Finding {
     ) -> Self {
         let code = code.into();
         let (probe, check) = split_code(&code);
+        fence_addressed_token_is_quoted(location.as_ref(), route.as_ref());
         Self {
             severity,
             probe,
@@ -1113,9 +1404,187 @@ impl Finding {
     }
 }
 
+/// The **subject half** of the emitted-command fence (debug posture, M51 completion audit):
+/// when this finding's own located address is a token a shell would not re-lex as itself, a
+/// backticked `git …` / `jigc …` span in its route that names that token must name it
+/// **quoted**.
+///
+/// [`unsafe_command_token`] alone cannot catch the commonest spelling of this defect,
+/// because it checks *tokens* and an unquoted path with a space is not one bad token — it is
+/// two perfectly inert ones. `` `git add -- my notes.md` `` passes every token check and
+/// exits 128 when run (pathspec `my`). The missing information is the **word boundary**, and
+/// the finding carries it: `Location::address` is the very token the route is talking about
+/// ([`unadopted_instance`]'s path form, `file-state.*`'s, `ingest.*`'s). So the check is
+/// derived from the finding's own subject rather than guessed from the text.
+///
+/// Inert wherever the address is already shell-safe, which is every ordinary corpus — it
+/// fires only on the class it exists to catch.
+///
+/// **Declared bound:** it sits at construction, so a producer that assigns `finding.route`
+/// *after* `graded` (the CLI's route-enrichment sites) is outside it. Those are still
+/// covered by the span fence at the `Route` constructor, which is the half that does not
+/// need the subject — what they forgo is only the word-boundary claim.
+fn fence_addressed_token_is_quoted(location: Option<&Location>, route: Option<&Route>) {
+    #[cfg(debug_assertions)]
+    {
+        let (Some(address), Some(route)) = (
+            location.and_then(|l| l.address.as_deref()),
+            route.map(Route::as_str),
+        ) else {
+            return;
+        };
+        if shell_safe(address) {
+            return;
+        }
+        let quoted = shell_token(address);
+        for span in backticked_spans(route) {
+            let mut tokens = command_tokens(span);
+            let Some(head) = tokens.next() else { continue };
+            if (head != "git" && head != "jigc") || !span.contains(address) {
+                continue;
+            }
+            assert!(
+                span.contains(quoted.as_str()),
+                "a route's command span names this finding's own subject `{address}`, which \
+                 a shell does not re-lex as itself — it must be rendered through \
+                 `engine::finding::shell_token` (as `{quoted}`); span: `{span}` \
+                 (design/surface-contract.md \u{2192} The route fence)"
+            );
+        }
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = (location, route);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **The emitted-command quoting rule, over the shapes that break it** (M51 completion
+    /// audit): every token [`shell_token`] renders survives a shell as exactly itself, and
+    /// every token it leaves bare needed no quoting. The alphabet left bare is the one
+    /// `compose`'s `Run:` renderer already declares, so an id, a slug, an address with a
+    /// `#fragment` and a flag stay readable.
+    #[test]
+    fn shell_token_renders_every_unsafe_shape_into_a_token_a_shell_re_lexes_as_itself() {
+        for raw in [
+            "my notes.md",
+            "it's an odd name.md",
+            "*.md",
+            ":colon.md",
+            "Cache $HOME rework",
+            "Cache $(touch PWNED) rework",
+            "a\nnewline.md",
+            "",
+        ] {
+            let token = shell_token(raw);
+            assert!(
+                shell_safe(&token),
+                "`shell_token({raw:?})` must be shell-safe; got `{token}`"
+            );
+        }
+        for bare in ["docs/decisions/x.md", "--to", "-", "adr", "task-id-1"] {
+            assert_eq!(shell_token(bare), bare, "`{bare}` needs no quoting");
+        }
+        // The two predicates agree everywhere except `#`, which [`shell_safe`] reads bare
+        // (an address fragment) and [`shell_token`] quotes. Quoting more than necessary is
+        // never unsafe, so the asymmetry is left as it shipped and stated here instead of
+        // silently widened — the one caller that would have re-spelled every address,
+        // [`derive_route_placeholder`], asks `shell_safe` first.
+        assert!(shell_safe("adr:pick-a-db#context"));
+        assert_eq!(
+            shell_token("adr:pick-a-db#context"),
+            "'adr:pick-a-db#context'"
+        );
+    }
+
+    /// **The span fence sees a command wherever it is written, not only in an argv.** A
+    /// backticked `git …` / `jigc …` span carrying a metachar a shell would act on is the
+    /// defect; a bare `` `--force` `` or a backticked file name is not a command span at all;
+    /// and a `<placeholder>` the reader fills is legal bare or as a quoted span.
+    #[test]
+    fn the_span_fence_reads_backticked_command_spans_and_nothing_else() {
+        for unsafe_text in [
+            "stage it with `git add -- it's an odd name.md`",
+            "run `jigc migrate *.md --as changelog`",
+            "re-run `jigc doc rename adr:x --to \"Cache $HOME rework\"`",
+        ] {
+            assert!(
+                !command_spans_are_shell_safe(unsafe_text),
+                "the fence must refuse: {unsafe_text}"
+            );
+        }
+        for ok in [
+            "stage it with `git add -- 'it'\\''s an odd name.md'`",
+            "run `jigc migrate <path> --as <doctype>`",
+            "adopt it: `jigc rename adr:x --to \"<New Title>\"`",
+            "pass `--carry-staged`, or restore `docs/decisions/x.md`",
+            "an unpaired ` backtick opens no span and git add -- x is not one",
+            // A hand-written double-quoted example, which is what a *prose* span is for:
+            // nothing inside it is still active to a shell, so it runs as itself. The argv
+            // rule is stricter for a reason that does not apply here — see
+            // [`inert_double_quoted`].
+            "tell git who you are — `git config user.email \"you@example.com\"`",
+            // A multi-word placeholder, written unquoted because it is a SHAPE the reader
+            // replaces — `<a title>` is one unit, not the two tokens `<a` and `title>`.
+            "name the id yourself: `jigc rename adr:x --to <a title> --slug <new-slug>`",
+            // A placeholder GLUED to literal bytes — a form to fill, which is what the
+            // unfilled-leaf advisory's own prose calls it. Only the literal half is emitted,
+            // so only the literal half is judged.
+            "set one with `jigc doc set-field <doc-address>#context/date --value <value>`",
+            // An elision names a verb rather than handing over a command line.
+            "re-record the delta (e.g. `jigc config replace-step …`) to pin a basis",
+        ] {
+            assert!(
+                command_spans_are_shell_safe(ok),
+                "the fence must admit: {ok}"
+            );
+        }
+    }
+
+    /// **The subject half, driven** — the spelling the token check structurally cannot see.
+    /// An unquoted path holding a space is two inert tokens, so `` `git add -- my notes.md` ``
+    /// passes [`command_spans_are_shell_safe`] and exits 128 when run; the finding's own
+    /// located address is the word boundary that says so, and [`Finding::graded`] asserts it.
+    #[test]
+    #[should_panic(expected = "which a shell does not re-lex as itself")]
+    fn a_route_naming_its_own_unsafe_subject_unquoted_fires_the_subject_fence() {
+        let path = "my notes.md";
+        assert!(
+            command_spans_are_shell_safe(&format!("`git add -- {path}`")),
+            "the token check is blind here — that blindness is what this fence covers"
+        );
+        let _ = Finding::graded(
+            Severity::Blocking,
+            "migrate.source-untracked",
+            "untracked",
+            Some(Location::addressed(path, 1, 1)),
+            Some(Route::human(format!("stage it with `git add -- {path}`"))),
+        );
+    }
+
+    /// The same subject, quoted at the producer: the finding constructs, and the route is
+    /// the bytes that actually run.
+    #[test]
+    fn the_same_route_constructs_once_its_subject_is_rendered_through_shell_token() {
+        let path = "my notes.md";
+        let finding = Finding::graded(
+            Severity::Blocking,
+            "migrate.source-untracked",
+            "untracked",
+            Some(Location::addressed(path, 1, 1)),
+            Some(Route::human(format!(
+                "stage it with `git add -- {}`",
+                shell_token(path)
+            ))),
+        );
+        assert_eq!(
+            finding.route.expect("routed").as_str(),
+            "stage it with `git add -- 'my notes.md'`"
+        );
+    }
 
     /// The route half of the `path→URI` flip (B1, 2026-07-17 surface review): once
     /// [`readdress_to_uri`] has the doc's identity in hand, a mechanical route minted

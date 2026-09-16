@@ -158,8 +158,9 @@ pub fn read_slice(
                 format!(
                     "create the referenced doc, or fix the reference to an existing one; a doc \
                      staged in an open task is not committed yet — read it with \
-                     `jigc doc show {address_str} --task <task-id>` (find the task id with \
-                     `jigc task list`)"
+                     `jigc doc show {token} --task <task-id>` (find the task id with \
+                     `jigc task list`)",
+                    token = crate::finding::shell_operand(&address_str),
                 ),
             )
         },

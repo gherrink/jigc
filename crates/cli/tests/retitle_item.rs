@@ -618,9 +618,7 @@ fn changelog_change_group_retitle_refuses_with_the_remove_add_route() {
         "the route names `doc remove-item` on the item; stderr:\n{stderr}",
     );
     assert!(
-        stderr.contains(
-            "jigc doc add-item changelog:changelog#unreleased-changes --title \"Changed\""
-        ),
+        stderr.contains("jigc doc add-item changelog:changelog#unreleased-changes --title Changed"),
         "the route names `doc add-item` under the target category; stderr:\n{stderr}",
     );
 
@@ -643,7 +641,7 @@ fn changelog_change_group_retitle_refuses_with_the_remove_add_route() {
     );
     assert!(
         stderr_nested.contains(
-            "jigc doc add-item changelog:changelog#releases/1-0-0/changes --title \"Security\""
+            "jigc doc add-item changelog:changelog#releases/1-0-0/changes --title Security"
         ),
         "the nested route names `doc add-item` under the target category; stderr:\n{stderr_nested}",
     );
@@ -736,9 +734,11 @@ fn set_field_on_a_string_id_from_field_rejects_with_the_retitle_route() {
     );
     assert!(
         stderr.contains(&format!(
-            "jigc doc retitle-item {item} --title \"Session vault\""
+            "jigc doc retitle-item {item} --title 'Session vault'"
         )),
-        "the route names `doc retitle-item` at the item address; stderr:\n{stderr}",
+        "the route names `doc retitle-item` at the item address, with the title rendered \
+         through `shell_token` — POSIX single quotes, not the `Debug` double-quoted form a \
+         shell still expands inside (M51 completion audit); stderr:\n{stderr}",
     );
 
     // No or-inserted `title` bullet: the staged buffer is byte-unchanged.
@@ -871,9 +871,10 @@ fn set_field_on_an_enum_id_from_field_rejects_with_the_remove_add_route() {
     );
     assert!(
         stderr.contains(
-            "jigc doc add-item changelog:changelog#releases/1-0-0/changes --title \"security\""
+            "jigc doc add-item changelog:changelog#releases/1-0-0/changes --title security"
         ),
-        "the route names `doc add-item` under the target category; stderr:\n{stderr}",
+        "the route names `doc add-item` under the target category, with the title rendered \
+         through `shell_token` (M51 completion audit); stderr:\n{stderr}",
     );
 
     // (b) the top-level item arm — the same guard through the `#section/<item>/<field>`
@@ -900,9 +901,8 @@ fn set_field_on_an_enum_id_from_field_rejects_with_the_remove_add_route() {
         "the top-level route names `doc remove-item` on the item; stderr:\n{stderr_top}",
     );
     assert!(
-        stderr_top.contains(
-            "jigc doc add-item changelog:changelog#unreleased-changes --title \"changed\""
-        ),
+        stderr_top
+            .contains("jigc doc add-item changelog:changelog#unreleased-changes --title changed"),
         "the top-level route names `doc add-item` under the target category; stderr:\n{stderr_top}",
     );
 

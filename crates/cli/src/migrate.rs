@@ -285,9 +285,10 @@ fn adjudicate_source_tracked(repo_root: &Path, recorded: &str, doctype: &str) ->
         ),
         Some(Location::addressed(recorded, 1, 1)),
         Some(Route::human(format!(
-            "stage it with `git add -- {recorded}`, then re-run \
-             `jigc migrate {recorded} --as {doctype}` — the index is enough, the source \
-             need not be committed first"
+            "stage it with `git add -- {token}`, then re-run \
+             `jigc migrate {token} --as {doctype}` — the index is enough, the source \
+             need not be committed first",
+            token = crate::task::shell_token(recorded),
         ))),
     )))
 }

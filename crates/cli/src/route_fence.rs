@@ -126,39 +126,20 @@ fn validate_mechanical_argv(argv: &[String]) -> Result<(), String> {
 }
 
 /// Whether one emitted argv token survives a real shell as **exactly itself** — the
-/// quoting half of the route fence (M48 inc-2 triage).
+/// quoting half of the route fence (M48 inc-2 triage), now a thin alias over the engine's
+/// [`engine::finding::shell_safe`].
 ///
 /// The parse fence above proves a route's argv is a real command; it cannot prove the
 /// *text* an agent pastes splits back into that argv, because the text is
-/// `argv.join(" ")` and a shell re-lexes it. A token holding author-owned prose is where
-/// the two diverge: rendered with Rust's `Debug` (the double-quoted form), `Cache $HOME
-/// rework` re-runs as a **different** title and `Cache $(touch PWNED) rework` runs a
-/// second command — both at exit 0, which is a silently wrong outcome on the success
-/// path rather than a visible break.
+/// `argv.join(" ")` and a shell re-lexes it. A token holding author-owned prose or a
+/// filesystem path is where the two diverge.
 ///
-/// Two accepted shapes, and nothing else:
-///
-///   * **bare** — every byte in the shell-inert charset `[A-Za-z0-9._:#/=@+-]`, the set
-///     `engine::compose`'s `Run:`-line renderer already declares (ids, slugs, addresses
-///     incl. a `#fragment`, flags, `-` for stdin). Nothing in it expands or splits;
-///   * **POSIX single-quoted** — the one form under which a shell expands nothing, with
-///     an embedded `'` written `'\''` (what `crate::task::shell_token` emits).
-///
-/// The fence is debug-posture like its parse sibling: it rides the suite, never a
-/// release-build panic.
+/// **It delegates because the engine mints routes too** (M51 completion audit): the
+/// predicate is lexical and needs no clap, so it lives beside the constructor that composes
+/// a route's text, where it also fences the `Route::human` and prose-tail spans this
+/// CLI-side argv check structurally cannot see.
 fn shell_safe(token: &str) -> bool {
-    let inert = |c: char| c.is_ascii_alphanumeric() || "._:#/=@+-".contains(c);
-    if !token.is_empty() && token.chars().all(inert) {
-        return true;
-    }
-    let Some(inner) = token
-        .strip_prefix('\'')
-        .and_then(|rest| rest.strip_suffix('\''))
-    else {
-        return false;
-    };
-    // Inside the quotes, a `'` may appear only as the close-escape-reopen splice.
-    !inner.split(r"'\''").any(|span| span.contains('\''))
+    engine::finding::shell_safe(token)
 }
 
 #[cfg(test)]

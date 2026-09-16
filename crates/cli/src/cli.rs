@@ -1309,7 +1309,8 @@ fn validate_store_in_repo(cwd: &Path) -> Result<StoreSweep> {
                     format!(
                         "move it to `{file}` and re-run `jigc ingest`, re-point \
                          `placement-root` to cover where it sits, or drop it with \
-                         `jigc unmanage {rel}`"
+                         `jigc unmanage {token}`",
+                        token = crate::task::shell_token(&rel)
                     ),
                 ),
             };

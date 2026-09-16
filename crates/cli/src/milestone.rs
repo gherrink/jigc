@@ -955,10 +955,11 @@ fn record_conflict_block(key: &str) -> engine::file_state::ConflictBlock {
         "the milestone record is machine-maintained and was edited out of band since jigc \
          last wrote it",
         engine::finding::Route::human(format!(
-            "restore `{key}` to what jigc last wrote (`git checkout -- {key}` for an \
+            "restore `{key}` to what jigc last wrote (`git checkout -- {token}` for an \
              uncommitted edit, else revert the commit that changed it) and re-run this \
              command — an external edit to a machine-maintained record is never merged and \
              never clobbered",
+            token = crate::task::shell_token(key),
         )),
     )
 }
@@ -4605,7 +4606,9 @@ fn remove_worktrees(repo_root: &Path, jigc_home: &Path, list: &engine::milestone
             // A2 — pinned non-blocking warning, naming the leaked path + the prune remedy.
             eprintln!(
                 "warning: could not remove the fan-out worktree {path_str}: {err:#}\n  \
-                 remedy: run `git worktree prune`, then `git worktree remove --force {path_str}`"
+                 remedy: run `git worktree prune`, then \
+                 `git worktree remove --force {token}`",
+                token = crate::task::shell_token(path_str)
             );
         }
     }

@@ -353,7 +353,7 @@ impl ConflictBlock {
                  path is the source the task is migrating, so replacing it is the point"
                     .to_string(),
                 crate::finding::Route::mechanical(
-                    ["jigc", "unmanage", source],
+                    ["jigc", "unmanage", &crate::finding::shell_token(source)],
                     format!(
                         " to drop the stale baseline on that path, then run this finalize \
                          again — the guard is dropped for that path only and the bytes stay \
@@ -1190,7 +1190,9 @@ fn rename_strong_finding(path: &str, from: &str, suspect: &str) -> Finding {
         ),
         Some(Location::addressed(path, 1, 1)),
         Some(format!(
-            "adopt it as a CLI-owned rename (re-points every referrer atomically): `jigc rename {from} --to \"<New Title>\"`; or revert the move: `git mv {suspect} {path}`"
+            "adopt it as a CLI-owned rename (re-points every referrer atomically): `jigc rename {from} --to \"<New Title>\"`; or revert the move: `git mv {suspect_token} {path_token}`",
+            suspect_token = crate::finding::shell_token(suspect),
+            path_token = crate::finding::shell_token(path)
         ).into()),
     )
 }
@@ -1205,7 +1207,8 @@ fn rename_weak_finding(path: &str, from: &str) -> Finding {
         format!("tracked managed doc {from} ({path}) is missing"),
         Some(Location::addressed(path, 1, 1)),
         Some(format!(
-            "restore {path}, or confirm the deletion by dropping it from the index: `jigc unmanage {path}`"
+            "restore {path}, or confirm the deletion by dropping it from the index: `jigc unmanage {token}`",
+            token = crate::finding::shell_token(path)
         ).into()),
     )
 }
@@ -1227,7 +1230,8 @@ fn rename_dangling_baseline_finding(path: &str, from: &str) -> Finding {
         ),
         Some(Location::addressed(path, 1, 1)),
         Some(format!(
-            "prune the stale baseline: `jigc unmanage {path}`; or restore {path} if it should still exist"
+            "prune the stale baseline: `jigc unmanage {token}`; or restore {path} if it should still exist",
+            token = crate::finding::shell_token(path)
         ).into()),
     )
 }
@@ -1832,6 +1836,35 @@ Referrers must point at the new decision.
             .expect("the source-less caller routes")
             .as_str(),
             "and it is byte-identical to the route a source-less caller would have supplied"
+        );
+    }
+
+    /// **The source arm's argv is emitted bytes, so the source is quoted** (M51 completion
+    /// audit). `ConflictBlock::task` is built **eagerly for every migration task**, on the
+    /// finalize path, before anything knows whether a conflict will be raised at all —
+    /// driven at `befdbf93` a migration of `my notes.md` panicked `jigc task finalize
+    /// --approve` at exit 101 on the route fence's token check, the crash arriving after the
+    /// authoring and at the one door that commits. In release the fence is compiled out and
+    /// the same argv would have printed `jigc unmanage my notes.md`, dropping the baseline
+    /// of a path that is not the one named.
+    ///
+    /// The quoting is at the **producer**, not at the fence: the fence is debug-posture and
+    /// a release binary never consults it, so a fence firing is a report that the producer
+    /// is wrong — never the fix.
+    #[test]
+    fn the_migration_source_exit_quotes_a_source_a_shell_would_re_lex() {
+        let source = "my notes.md";
+        let conflict = ConflictBlock::task("migrate-adr-my-notes", Some(source));
+        let finding = conflict_block_finding(source, &conflict);
+        let route = finding.route.as_ref().expect("the source arm routes");
+
+        assert!(
+            route.as_str().starts_with("`jigc unmanage 'my notes.md'`"),
+            "the operand is the bytes a shell re-lexes as the path: {route:?}"
+        );
+        assert!(
+            crate::finding::command_spans_are_shell_safe(route.as_str()),
+            "and every command span in it is runnable: {route:?}"
         );
     }
 

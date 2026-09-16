@@ -1174,13 +1174,15 @@ fn id_from_field_guard(
         );
         format!(
             "run {remove} then `jigc doc add-item {dest} \
-             --title \"{value}\"` under the target category, moving the prose in the \
-             same motion"
+             --title {title}` under the target category, moving the prose in the \
+             same motion",
+            title = crate::task::shell_token(value),
         )
     } else {
         format!(
-            "run `jigc doc retitle-item {doc}#{item_path} --title \"{value}\"` — the \
-             heading retitles with its `{{#id}}` anchor frozen"
+            "run `jigc doc retitle-item {doc}#{item_path} --title {title}` — the \
+             heading retitles with its `{{#id}}` anchor frozen",
+            title = crate::task::shell_token(value),
         )
     };
     Some(Finding::graded(
@@ -2557,14 +2559,19 @@ fn retitle_id_from_refusal(
         Some(
             {
                 // The `remove-item` span goes through the checked constructor (F4 — the
-                // route-fence seam-sweep); the quoted `add-item … --title "<title>"` span
-                // stays inline. Text is unchanged.
+                // route-fence seam-sweep); the `add-item … --title` span stays inline,
+                // because its two-command shape does not fit the constructor. Its title is
+                // the caller's own prose, so it renders through `shell_token` exactly as
+                // the set-field guard's identical span does (M51 completion audit): two
+                // doors, one act, one route text — the double-quoted form here would leave
+                // `$` and `$( … )` live in a title an author wrote.
                 let remove =
                     engine::finding::Route::mechanical(["jigc", "doc", "remove-item", addr], "");
                 format!(
                     "run {remove} then `jigc doc add-item {dest} \
-             --title \"{title}\"` under the target category, moving the prose in the \
-             same motion"
+             --title {token}` under the target category, moving the prose in the \
+             same motion",
+                    token = crate::task::shell_token(title),
                 )
             }
             .into(),

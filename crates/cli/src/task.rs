@@ -4689,29 +4689,16 @@ pub(crate) fn surface_commit_rejection(
     crate::invocation_log::operational_failure(format, err)
 }
 
-/// Render one argv token into a copy-runnable command line: **bare** when every byte is
-/// shell-inert (`[A-Za-z0-9._/@=:+-]`, the alphabet ids, slugs, addresses and flags live in),
-/// **POSIX single-quoted** otherwise — `'` written `'\''`, which is the one quoting form under
-/// which a shell performs no expansion at all.
+/// The one home of the emitted-command quoting rule is [`engine::finding::shell_token`];
+/// this crate reaches it by its historical name.
 ///
-/// The tokens this embeds are **author-owned prose** — a milestone title, a sub-task intent, a
-/// rename target — i.e. LLM-written by the determinism boundary, so `$`, a backtick, `;`, `&`
-/// and a glob are input this door is designed to receive, not exotica. Double-quoting (the
-/// pre-M47-fix form) leaves `$` and command substitution live and emits a whitespace-free
-/// token bare, so `Cache $HOME rework` re-ran as printed **exits 0 having created a different
-/// artifact** than the one the frame says it recovers, and `Cache;touch-PWNED` runs a second
-/// command — a silent wrong outcome on the success path. The fence is a real shell: see
-/// `shell_token_round_trips_through_a_real_shell_over_the_metachar_axis`.
-pub(crate) fn shell_token(arg: &str) -> String {
-    let inert = |c: char| {
-        c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '/' | '@' | '=' | ':' | '+' | '-')
-    };
-    if !arg.is_empty() && arg.chars().all(inert) {
-        arg.to_owned()
-    } else {
-        format!("'{}'", arg.replace('\'', r"'\''"))
-    }
-}
+/// It moved to the engine at the M51 completion audit: the engine mints routes of its own
+/// (`file_state`'s conflict block, `validate`'s owner-artifact `git add`, `finalize`'s
+/// `git restore --staged`), so a CLI-only home meant every engine-side producer
+/// interpolated its path raw — a `Route::human` naming `` `git add -- my notes.md` ``
+/// exits 128 when followed, and a `Route::mechanical` carrying the same token panicked the
+/// debug binary at the fence instead of being quoted at the producer.
+pub(crate) use engine::finding::shell_token;
 
 /// Emit the **pre-commit** `left-out` advisory (M42, `design/finalize.md` → "The `left-out`
 /// advisory prints BEFORE the commit too") — nothing at all when the commit leaves nothing
