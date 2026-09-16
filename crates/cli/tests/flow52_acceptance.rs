@@ -1079,16 +1079,26 @@ fn plant_user_bytes(repo: &Path, path: &str) {
 /// first write? — which is why the guard could never have been a per-path ownership list
 /// that a ninth install path gets forgotten out of.
 ///
-/// **The one rule this arm drives, over the whole derived set:** *bytes that survive the
-/// install would ride the install commit, so the door refuses; bytes the install regenerates
-/// are jigc's own, and the door proceeds.* [`OWNED_ARTIFACT`] is the derivation's one stated
-/// exception, with its reason.
+/// **The rule this arm drives, over the whole derived set:** *a path carrying bytes that
+/// were in no commit before the run refuses, and the refusal leaves those bytes on disk.*
+/// [`OWNED_ARTIFACT`] is the derivation's one stated exception, with its reason.
 ///
-/// **What this adds over `setup_install_pathspec_guard.rs`.** That suite drives eighteen
-/// hand-built cells and owns the route, the re-run, the footprint record and the unborn
-/// exemption. This arm derives the subject from the binary instead of listing it, and
-/// asserts that the *same* rule decides **every** derived path — so the day a ninth path
-/// joins the install commit, this arm asks it the question rather than passing over it.
+/// **The rule this arm used to drive is struck with its falsifying datum** (the M51
+/// completion audit): it was *"bytes that survive the install would ride the commit, so the
+/// door refuses; bytes the install regenerates are jigc's own, and the door proceeds"* — and
+/// the `else` branch asserted **exit 0 over destroyed bytes**. Driven at `b5ccd818`, planting
+/// prose in `.jigc/AGENT.md` and re-running `setup` left the adopter's lines in no git object
+/// at exit 0 with `git status --short` empty, and this arm graded that green. *"What would be
+/// committed is jigc's canonical bytes"* was true and beside the point: the loss happened
+/// before the commit was considered. The door now asks **before the first write**, so the
+/// same plant refuses with the bytes intact at every path but the stated exception.
+///
+/// **What this adds over `setup_install_pathspec_guard.rs`.** That suite drives twenty-two
+/// hand-built cells and owns the route, the re-run, the footprint record, the unborn
+/// exemption and the per-path disposition fence. This arm derives the subject from the
+/// binary instead of listing it, and asserts that the *same* rule decides **every** derived
+/// path — so the day a ninth path joins the install commit, this arm asks it the question
+/// rather than passing over it.
 ///
 /// **Red at the wave's base** (`DECISIONS.md` → M51 Increment 3, driven at `61f05c01`): on a
 /// repo whose `CLAUDE.md` carried an edit that was **never staged at all**, `jigc setup`
@@ -1116,9 +1126,6 @@ fn every_derived_install_path_is_decided_by_the_same_rule() {
 
         let out = jigc(repo, home, &["setup"]);
         let text = surface(&out);
-        let survived = fs::read_to_string(repo.join(path))
-            .unwrap_or_default()
-            .contains(USER_MARKER);
 
         if path == OWNED_ARTIFACT.0 {
             assert!(
@@ -1130,36 +1137,29 @@ fn every_derived_install_path_is_decided_by_the_same_rule() {
             continue;
         }
 
-        if survived {
-            assert!(
-                !out.status.success(),
-                "`{path}` still carries the user's bytes after the install, so those bytes \
-                 would ride the install commit — the door must refuse\n{text}",
-            );
-            assert!(
-                text.contains(DIRTY_INSTALL) && text.contains(path.as_str()),
-                "`{path}`: the refusal carries the door's own code and names the path it \
-                 refuses over\n{text}",
-            );
-            assert!(
-                fs::read_to_string(repo.join(path))
-                    .unwrap_or_default()
-                    .contains(USER_MARKER),
-                "`{path}`: and the user's bytes are still on disk",
-            );
-            assert!(
-                !git(repo, &["show", &format!("HEAD:{path}")]).contains(USER_MARKER),
-                "`{path}`: the user's bytes rode no commit",
-            );
-        } else {
-            assert!(
-                out.status.success(),
-                "`{path}` is regenerated whole by the install, so what would be committed is \
-                 this build's canonical bytes and nothing of the user's — refusing here \
-                 would block the documented `jigc setup` re-stamp recovery over a file jigc \
-                 wrote itself\n{text}",
-            );
-        }
+        assert!(
+            !out.status.success(),
+            "`{path}` carried bytes that were in no commit before the run, so the install \
+             commit would sweep them — the door must refuse\n{text}",
+        );
+        assert!(
+            text.contains(DIRTY_INSTALL) && text.contains(path.as_str()),
+            "`{path}`: the refusal carries the door's own code and names the path it \
+             refuses over\n{text}",
+        );
+        assert!(
+            fs::read_to_string(repo.join(path))
+                .unwrap_or_default()
+                .contains(USER_MARKER),
+            "`{path}`: and the user's bytes are still on disk — the question is asked \
+             BEFORE the first write, which is the only way the refusal's own sentence \
+             (`every path listed above still has its pre-run bytes there`) can be true at \
+             a path the install rewrites whole",
+        );
+        assert!(
+            !git(repo, &["show", &format!("HEAD:{path}")]).contains(USER_MARKER),
+            "`{path}`: the user's bytes rode no commit",
+        );
     }
 }
 
@@ -1205,17 +1205,13 @@ fn the_install_commit_refuses_over_bytes_it_did_not_write_and_stays_inert_otherw
         "no install commit was made",
     );
     assert!(
-        repo.join(".jigc").join("AGENT.md").is_file(),
-        "the guard binds the COMMIT, not the install — the install files are written",
+        !repo.join(".jigc").join("AGENT.md").exists(),
+        "the question is asked BEFORE the first write, so the refusal installed nothing",
     );
     let staged = git(repo, &["diff", "--cached", "--name-only"]);
     assert!(
-        staged.lines().any(|line| line == ".jigc/AGENT.md"),
-        "the install files the door will commit stay staged for the re-run; got:\n{staged}",
-    );
-    assert!(
-        !staged.lines().any(|line| line == "CLAUDE.md"),
-        "and the door does not stage a path it has just decided not to commit; got:\n{staged}",
+        staged.lines().all(|line| line == "feature.txt"),
+        "and staged nothing of its own — only what the user had already staged; got:\n{staged}",
     );
     assert!(
         fs::read_to_string(repo.join("CLAUDE.md"))

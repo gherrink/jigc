@@ -871,7 +871,7 @@ fn carried_staged_finding(path: &str, is_deletion: bool, boundary: CarryoverBoun
         // hands this boundary to the per-path decision anyway; the wording stays the door's
         // own, over the one-path set, so no door can borrow another's words.
         CarryoverBoundary::Setup => {
-            return setup_dirty_install_finding(&[path.to_string()]);
+            return setup_dirty_install_finding(&[path.to_string()], true);
         }
         CarryoverBoundary::Milestone => (
             format!(
@@ -925,25 +925,34 @@ fn carried_staged_finding(path: &str, is_deletion: bool, boundary: CarryoverBoun
 /// completion audit — untracked is a subject of this door): a bare `git stash push -- <path>`
 /// there exits 1 with *"did not match any file(s) known to git"*, and a route that does not
 /// run is not a route.
-pub fn setup_dirty_install_finding(dirty: &[String]) -> Finding {
+pub fn setup_dirty_install_finding(dirty: &[String], install_written: bool) -> Finding {
     let paths: BTreeSet<&str> = dirty.iter().map(String::as_str).collect();
     let listing: Vec<String> = paths.iter().map(|path| format!("  `{path}`")).collect();
+    // What the door actually did, per shape — the same refusal is reachable before the
+    // install's first write (the gate) and after it (the pre-commit backstop), and a
+    // sentence true of one is false of the other.
+    let state = if install_written {
+        "the install files are written and staged, and no install commit was made"
+    } else {
+        "nothing was installed and no install commit was made"
+    };
     Finding::block(
         CarryoverBoundary::Setup.code(),
         format!(
             "{} path(s) in the install footprint carried changes that were in no commit \
              before this run, so committing the install would sweep work `jigc setup` did \
-             not write into `chore(jigc): install jigc workspace config`:\n{}\nthe install \
-             files are written and staged, and no install commit was made — `HEAD` is \
-             untouched, so every path listed above still has its pre-run bytes there",
+             not write into `chore(jigc): install jigc workspace config`:\n{}\n{state} — \
+             `HEAD` is untouched, so every path listed above still has its pre-run bytes \
+             there",
             paths.len(),
             listing.join("\n"),
         ),
         Route::human(
             "commit or stash the work at those path(s) — `git stash -u` where git does \
              not track them yet — then re-run `jigc setup`; `jigc setup --force` is the \
-             single consent, and it commits those paths into the install commit as they \
-             stand",
+             single consent, and it lets the install run and commit those paths as it \
+             leaves them — which at a path jigc regenerates whole is jigc's own content, \
+             not yours",
         ),
     )
 }
@@ -4029,11 +4038,11 @@ sections:
     ///   first command an adopter runs is the reflex-training risk D3 carries as a declared
     ///   bound, so the exit that keeps the work leads.
     ///
-    /// **What the message may not claim** (the load-bearing honesty constraint): the guard
-    /// binds the **commit**, not the install, so for a path `setup` regenerates whole it does
-    /// not put the user's bytes back. The message therefore says what is certain — the
-    /// install files are written and staged, and no install commit was made, so `HEAD` still
-    /// holds every listed path's pre-run bytes — and claims nothing about the worktree.
+    /// **What the message may not claim** (the load-bearing honesty constraint): it states
+    /// only what the door actually did, which is why `install_written` picks the clause
+    /// rather than a single sentence covering both arms. The M51 completion audit is the
+    /// reason there are two: the *"written and staged"* wording was universal while the
+    /// door's ordinary refusal moved **before** the first write, where it is false.
     ///
     /// **Order-invariant by construction** (Validation hardening #7): the same dirty set in
     /// two divergent orders words one byte-identical finding, so the door's pathspec order
@@ -4044,7 +4053,7 @@ sections:
             .iter()
             .map(|p| (*p).to_string())
             .collect();
-        let finding = setup_dirty_install_finding(&dirty);
+        let finding = setup_dirty_install_finding(&dirty, true);
 
         assert_eq!(finding.severity, Severity::Blocking);
         assert_eq!(finding.code, "setup.dirty-install-path");
@@ -4075,9 +4084,23 @@ sections:
         assert!(
             finding.message.contains("written and staged")
                 && finding.message.contains("no install commit"),
-            "the message states the install files were written and staged with no install \
-             commit made: {:?}",
+            "the backstop arm states the install files were written and staged with no \
+             install commit made: {:?}",
             finding.message
+        );
+        // …and the pre-write arm — the door's ordinary refusal since the M51 completion
+        // audit — says the opposite, because it installed nothing. One predicate, two
+        // truthful state clauses; a single universal wording made one of them a law-1 lie.
+        let pre_write = setup_dirty_install_finding(&dirty, false);
+        assert!(
+            pre_write.message.contains("nothing was installed")
+                && !pre_write.message.contains("written and staged"),
+            "the pre-write arm claims no install it did not perform: {:?}",
+            pre_write.message
+        );
+        assert_eq!(
+            pre_write.route, finding.route,
+            "the route is the same either way — what differs is the state clause",
         );
 
         // The route's ORDER is the deliverable: the act that keeps the work, then the
@@ -4103,7 +4126,7 @@ sections:
         // Order-invariance: the same set, reversed, words the same bytes.
         let reversed: Vec<String> = dirty.iter().rev().cloned().collect();
         assert_eq!(
-            setup_dirty_install_finding(&reversed),
+            setup_dirty_install_finding(&reversed, true),
             finding,
             "the dirty set is order-invariant — the door's pathspec order never reaches the \
              printed surface",

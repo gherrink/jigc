@@ -3486,11 +3486,12 @@ $ jigc setup            # over a CLAUDE.md edit that was never staged at all
 > blocking · setup.dirty-install-path — 1 path(s) in the install footprint carried changes
 >   that were in no commit before this run … :
 >     `CLAUDE.md`
-> the install files are written and staged, and no install commit was made — `HEAD` is
-> untouched, so every path listed above still has its pre-run bytes there
+> nothing was installed and no install commit was made — `HEAD` is untouched, so every
+> path listed above still has its pre-run bytes there
 >   route: commit or stash the work at those path(s) … then re-run `jigc setup`;
 >   `jigc setup --force` is the single consent
-#   the install files stay WRITTEN and STAGED · the user's bytes stay on disk ·
+#   NOTHING is written or staged (the ask is pre-write) · the user's bytes stay on
+#   disk, at a regenerated `.jigc/AGENT.md` as much as at a merged `CLAUDE.md` ·
 #   an unrelated staged feature.txt is untouched · re-run and upgrade are clean
 
 # ── Arm 4 · the config-layer pre-image, restored compare-and-swap. ──

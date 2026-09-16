@@ -1161,6 +1161,68 @@ fn install(
     })?;
     let line_file = reference.file.clone();
     let bootstrap_file = reference.to.clone();
+    let allowlist_file = profile.allowlist.file.clone();
+
+    // 0d. **The guide artifact's ownership, decided before any write** (M48 Increment 10 /
+    //     T2 — hoisted here by the M51 completion audit). It was always a read-only probe
+    //     asked before its own write; it is asked *here* because the gate below needs the
+    //     answer: a user-modified copy is not this run's to write, so it is neither a
+    //     candidate for the install commit nor a subject of the refusal — it is left
+    //     byte-identical and reported (never blocking: stopping an install over an edited
+    //     guide file would be hostile).
+    let mut findings: Vec<Finding> = Vec::new();
+    let declared_guide = profile.guide();
+    let guide_file = match declared_guide {
+        Some(guide) if guide_ownership(repo_root, guide) == GuideOwnership::UserModified => {
+            findings.push(guide_modified_finding(&guide.file));
+            None
+        }
+        Some(guide) => Some(guide.file.clone()),
+        None => None,
+    };
+
+    // 0e. **The gate, before the first write** (M51 Increment 3, corrected by its completion
+    //     audit). The predicate is [`InstallSubject`]'s pre-write worktree-vs-`HEAD` answer
+    //     alone; the conjunction that also required the path to be *still* dirty afterwards
+    //     is struck, because a path `setup` rewrites whole is clean afterwards **because the
+    //     adopter's bytes are gone** — driven at `b5ccd818`, `.jigc/AGENT.md` prose destroyed
+    //     at exit 0 with `git status` empty and the bytes in no git object.
+    //
+    //     Acting on it *here* rather than at the commit is what makes the refusal's own
+    //     sentence true: nothing has been written, so every path it names still has its
+    //     pre-run bytes. The re-run after the named act installs from a resolved state.
+    match &subject {
+        InstallSubject::Dirty(before) => {
+            let candidates = install_candidate_paths(
+                repo_root,
+                &line_file,
+                &allowlist_file,
+                guide_file.as_deref(),
+            );
+            let refusals =
+                dirty_install_refusals(repo_root, &candidates, before, guide_file.as_deref());
+            if !refusals.is_empty() {
+                return Err(engine::finalize::setup_dirty_install_finding(
+                    &refusals, false,
+                ));
+            }
+        }
+        // The consent is given, so nothing refuses — but what it was spent on is said.
+        InstallSubject::Consented(before) => {
+            let candidates = install_candidate_paths(
+                repo_root,
+                &line_file,
+                &allowlist_file,
+                guide_file.as_deref(),
+            );
+            let forced =
+                dirty_install_refusals(repo_root, &candidates, before, guide_file.as_deref());
+            if !forced.is_empty() {
+                findings.push(forced_install_path_finding(&forced));
+            }
+        }
+        InstallSubject::Unknown => {}
+    }
 
     // 1. Reference floor: write the managed bootstrap file, then point the
     //    always-loaded file at it with a bare import line.
@@ -1239,7 +1301,6 @@ fn install(
     })?;
 
     // 3. Allowlist `jigc` so the agent runs it without friction.
-    let allowlist_file = profile.allowlist.file.clone();
     adapter::inject_allowlist(repo_root, profile).map_err(|err| {
         Finding::block(
             "setup.inject-allowlist",
@@ -1289,30 +1350,24 @@ fn install(
     //     be hostile). It is also dropped from `guide_file`, so neither the summary's
     //     installed list nor the install commit's pathspec claims a file this run did not
     //     write — the user's edit stays their business, unstaged.
-    let mut findings: Vec<Finding> = Vec::new();
-    let guide_file = match profile.guide() {
-        Some(guide) if guide_ownership(repo_root, guide) == GuideOwnership::UserModified => {
-            findings.push(guide_modified_finding(&guide.file));
-            None
-        }
-        Some(guide) => {
-            write_guide_artifact(repo_root, guide).map_err(|err| {
-                Finding::block(
-                    "setup.write-guide",
-                    format!(
-                        "cannot write the adapter guide artifact `{}`: {err}",
-                        guide.file
-                    ),
-                    format!(
-                        "ensure `{}` is writable, then re-run `jigc setup`",
-                        guide.file
-                    ),
-                )
-            })?;
-            Some(guide.file.clone())
-        }
-        None => None,
-    };
+    //
+    //     The **ownership decision** is made above (step 0d), before any write, because the
+    //     pre-write gate needs it; this is the write it gates.
+    if let Some(guide) = declared_guide.filter(|_| guide_file.is_some()) {
+        write_guide_artifact(repo_root, guide).map_err(|err| {
+            Finding::block(
+                "setup.write-guide",
+                format!(
+                    "cannot write the adapter guide artifact `{}`: {err}",
+                    guide.file
+                ),
+                format!(
+                    "ensure `{}` is writable, then re-run `jigc setup`",
+                    guide.file
+                ),
+            )
+        })?;
+    }
 
     // 5. Install the assistant-neutral warn-only `pre-commit` hook (the auto-firing
     //    doc<->code backstop) into the repo's real hooks dir, pinned to the installing
@@ -1523,6 +1578,176 @@ fn install_tracked_paths(
     paths
 }
 
+/// How one install path behaves under the dirty-install guard — the disposition every
+/// member of [`install_tracked_paths`] carries, stated rather than derived from what the
+/// install happens to do to the file afterwards (the derivation that shipped the M51
+/// completion audit's MEDIUM).
+///
+/// **The default is [`Self::Refuses`]**, and that direction is the point: an install path
+/// nobody dispositioned is a loud false alarm `--force` clears, never a silent sweep of
+/// bytes a human wrote. An exemption has to be *earned*, per path, by an oracle that can
+/// read the file and say **these bytes are jigc's own**.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InstallPathDisposition {
+    /// Dirty before the run ⇒ the door refuses. Every path whose writer *merges into* what
+    /// it finds (`CLAUDE.md`, the settings file, both `.gitignore`s, a foreign `pre-commit`)
+    /// **and** every path it rewrites whole with no ownership oracle (`.jigc/AGENT.md`,
+    /// `.jigc/config/packs.yaml`, `.jigc/config/.gitkeep`) — the second group being the
+    /// class the conjunction could not see.
+    Refuses,
+    /// Exempt **iff the bytes there are jigc's own**, asked of the file before any write.
+    /// Two members, each with an oracle the writing side owns: the guide artifact
+    /// ([`guide_ownership`]'s recorded body digest — M48's refuse-to-clobber already
+    /// dropped a user-modified copy from the pathspec entirely, so a path that reaches
+    /// here as the guide is jigc's by construction) and the machine-owned provenance stamp
+    /// ([`version_stamp_is_jigcs`] — a one-line `jigc-version:` file nobody authors prose
+    /// into, whose re-stamp *is* the documented `store-version.binary-mismatch` recovery).
+    ExemptWhenJigcOwned,
+}
+
+/// The disposition of one install path. `guide_file` is the guide artifact this run
+/// decided to write ([`install`]'s pre-write ownership call — `None` when the profile
+/// declares none *or* when a user-modified copy was found and left alone), which is what
+/// makes the guide arm's exemption safe to state without re-reading the file.
+fn install_path_disposition(path: &str, guide_file: Option<&str>) -> InstallPathDisposition {
+    if path == VERSION_STAMP_PATH || guide_file == Some(path) {
+        InstallPathDisposition::ExemptWhenJigcOwned
+    } else {
+        InstallPathDisposition::Refuses
+    }
+}
+
+/// **The install commit's whole path class, each member with its disposition** — derived
+/// from [`install_tracked_paths`] itself (the enumeration the commit is actually made
+/// from) with every conditional **on**, so a twelfth install path joins this answer the
+/// moment it joins the pathspec and cannot be dispositioned by being forgotten. Public
+/// because the fence that reads it is an integration test driving the real binary
+/// (`crates/cli/tests/setup_install_pathspec_guard.rs`).
+pub fn install_path_dispositions(
+    line_file: &str,
+    allowlist_file: &str,
+    guide: Option<&str>,
+    hook: Option<&str>,
+) -> Vec<(String, InstallPathDisposition)> {
+    install_tracked_paths(line_file, allowlist_file, true, hook, guide)
+        .into_iter()
+        .map(|path| {
+            let disposition = install_path_disposition(&path, guide);
+            (path, disposition)
+        })
+        .collect()
+}
+
+/// Whether `<repo_root>/.jigc/version` currently holds **jigc's own** provenance stamp:
+/// exactly one non-blank line, and that line a non-empty `jigc-version:` record — the
+/// shape [`version_stamp_body`] writes and nothing else. Fails **closed** (unreadable,
+/// non-UTF-8, extra lines ⇒ `false`), so anything that could be a human's prose refuses.
+fn version_stamp_is_jigcs(repo_root: &Path) -> bool {
+    let Ok(text) = std::fs::read_to_string(repo_root.join(VERSION_STAMP_PATH)) else {
+        return false;
+    };
+    let mut lines = text.lines().filter(|line| !line.trim().is_empty());
+    let Some(first) = lines.next() else {
+        return false;
+    };
+    lines.next().is_none()
+        && first
+            .trim()
+            .strip_prefix(VERSION_STAMP_KEY)
+            .is_some_and(|version| !version.trim().is_empty())
+}
+
+/// Whether the bytes currently at `path` are jigc's own — the **one** thing that exempts a
+/// dirty install path from the refusal ([`InstallPathDisposition`]).
+fn jigc_owned_at(repo_root: &Path, path: &str, guide_file: Option<&str>) -> bool {
+    match install_path_disposition(path, guide_file) {
+        InstallPathDisposition::Refuses => false,
+        InstallPathDisposition::ExemptWhenJigcOwned => {
+            path != VERSION_STAMP_PATH || version_stamp_is_jigcs(repo_root)
+        }
+    }
+}
+
+/// The install paths that **refuse**: in `paths`, dirty before this run began (`before`),
+/// and not carrying jigc's own bytes. The one predicate both asks share — [`install`]'s
+/// pre-write gate over the candidate set, and [`commit_install`]'s backstop over the
+/// settled pathspec.
+fn dirty_install_refusals(
+    repo_root: &Path,
+    paths: &[String],
+    before: &BTreeSet<String>,
+    guide_file: Option<&str>,
+) -> Vec<String> {
+    paths
+        .iter()
+        .filter(|path| before.contains(*path))
+        .filter(|path| !jigc_owned_at(repo_root, path, guide_file))
+        .cloned()
+        .collect()
+}
+
+/// The install paths the **pre-write** gate can name, filtered exactly as
+/// [`commit_install`] filters its settled pathspec (present on disk, not gitignored).
+///
+/// Two conditionals are answered by the same predicates the writers gate on, so the
+/// prediction cannot drift from them: the root `.gitignore` rides only the fresh-repo seed
+/// path ([`is_fresh_repo`], [`seed_secrets_gitignore`]'s own gate), and the guide rides only
+/// when this run decided to write it. The **hook** is deliberately absent: its home is
+/// resolved by the install itself, and [`install_precommit_hook`] preserves a foreign hook
+/// **verbatim**, so its bytes are never the ones a pre-write refusal would be saving —
+/// [`commit_install`]'s backstop asks about it with the resolved path in hand.
+fn install_candidate_paths(
+    repo_root: &Path,
+    line_file: &str,
+    allowlist_file: &str,
+    guide_file: Option<&str>,
+) -> Vec<String> {
+    install_tracked_paths(
+        line_file,
+        allowlist_file,
+        is_fresh_repo(repo_root),
+        None,
+        guide_file,
+    )
+    .into_iter()
+    .filter(|path| repo_root.join(path).exists())
+    .filter(|path| !git_path_ignored(repo_root, path))
+    .collect()
+}
+
+/// The **advisory** `--force` owes the adopter: the install paths whose uncommitted bytes
+/// the single consent was spent on (M51 completion audit).
+///
+/// `--force` means *"commit these paths as they stand"* — and at a path jigc regenerates
+/// whole, *"as they stand"* is jigc's canonical content, because the install overwrote the
+/// adopter's bytes on the way to the commit. Saying which paths those were is what keeps
+/// the consent from reading like an ordinary install (surface-contract law 1). Advisory and
+/// **un-keyed** (no `CHECK_INVENTORY` row), so the severity post-pass leaves it advisory —
+/// the consent was given, so this reports, it does not gate.
+fn forced_install_path_finding(paths: &[String]) -> Finding {
+    let listing: Vec<String> = paths.iter().map(|path| format!("  `{path}`")).collect();
+    Finding::graded(
+        Severity::Advisory,
+        "setup.forced-install-path",
+        format!(
+            "`--force` consented over {} install path(s) that carried changes in no commit \
+             before this run — the install has run over them, so what it merges into rides \
+             the install commit as it stands and what it regenerates whole is now jigc's own \
+             content, not what you wrote:\n{}",
+            paths.len(),
+            listing.join("\n"),
+        ),
+        None,
+        Some(
+            "check each path — `git show HEAD -- <path>` where the install commit carries \
+             it; where jigc regenerated the path, git never held a copy of what was there, \
+             so recovery is your own backup or nothing"
+                .to_string()
+                .into(),
+        ),
+    )
+}
+
 /// The installed `pre-commit` hook's repo-root-relative path when it is a **committable
 /// working-tree file**, else `None` — the discriminator the install commit's pathspec is
 /// derived from (M48 Increment 5 / F4).
@@ -1576,16 +1801,34 @@ fn committable_hook_path(repo_root: &Path, hook_file: &Path) -> Option<String> {
 /// artifact recording it. *"Dirty relative to `HEAD`"* is git's own vocabulary for the
 /// union, and one `git status` answers it.
 ///
-/// **This is one leg of two.** Being dirty before the install does not mean the commit
-/// would carry those bytes: `setup` **regenerates** several of its own artifacts whole
-/// (`.jigc/AGENT.md`, `.jigc/version`, the guide artifact), so a pre-existing difference
-/// there is overwritten by the *install* and the commit carries `setup`'s canonical bytes.
-/// [`commit_install`] therefore asks the same question **again**, over the settled
-/// pathspec, immediately before committing, and refuses only the intersection — the paths
-/// whose pre-existing bytes are **still there** in what is about to be committed. Which is
-/// also why this leg is not a per-path ownership list: the two asks *derive* the
-/// discriminator (does `setup` preserve what it finds here?) instead of enumerating it, so
-/// a new install path cannot be classified wrong by being forgotten.
+/// **This set is the whole subject.** It used to be one leg of a conjunction — dirty
+/// before the install **and** still dirty after it — on the reasoning that `setup`
+/// regenerates several of its own artifacts whole, so a pre-existing difference there is
+/// overwritten by the install and the commit carries `setup`'s canonical bytes anyway.
+/// **That conjunction is struck with its falsifying datum** (the M51 completion audit):
+/// [`crate::adapter::write_bootstrap_file`] is an unconditional `fs::write`, so an
+/// adopter's uncommitted `.jigc/AGENT.md` prose made the file match `HEAD` again by the
+/// time the second leg was asked — the set came back **empty**, `setup` exited 0, `git
+/// status` was empty, and `git log --all -S` found the bytes in no object. *"The commit
+/// carries jigc's bytes"* was true and beside the point: the adopter's bytes were gone
+/// before the commit was even considered, which is the loss this door exists to prevent.
+///
+/// **So the question is asked once, before any write, and the answer is acted on there**
+/// — the shape D3 settled (*"the predicate is worktree-vs-`HEAD`, asked per path, BEFORE
+/// `setup` writes anything … nothing `setup` subsequently writes can enter it"*).
+/// [`install`]'s pre-write gate refuses over the install's **candidate** paths
+/// ([`install_candidate_paths`]) before the first byte is written, so a refusal leaves the
+/// adopter's bytes exactly where they were; [`commit_install`] asks the same predicate
+/// again over the **settled** pathspec as the backstop for the one member the pre-write
+/// enumeration cannot name (the hook, whose home the install itself resolves, and whose
+/// writer preserves a foreign hook verbatim — so its bytes are never the ones at risk).
+///
+/// **And the default inverted.** An install path is a refusal unless it is carrying
+/// **jigc's own bytes**, decided from the file by an oracle the writing side owns
+/// ([`InstallPathDisposition`]): the guide's recorded digest, the version stamp's shape.
+/// The old derivation classified a forgotten path as *exempt* — which is exactly how two
+/// of eleven paths silently swept authored bytes; this one classifies it as a *refusal*,
+/// so the cost of forgetting is a loud false alarm `--force` clears, never a loss.
 #[derive(Debug)]
 enum InstallSubject {
     /// Every repo-relative path whose index or worktree bytes differ from `HEAD`, as of
@@ -1593,13 +1836,16 @@ enum InstallSubject {
     /// pathspec query: the pathspec is settled later (the guide's ownership drop, the
     /// `seeded_gitignore` signal, the gitignore filter, the hook's soft-member drop), and a
     /// candidate list re-derived here to ask git a narrower question is a second
-    /// enumeration that can silently under-cover. The one enumeration that must be exact is
-    /// the pathspec the commit is actually made from, and [`commit_install`] intersects
-    /// against **that**.
+    /// enumeration that can silently under-cover. The two consumers intersect it against
+    /// their own enumeration instead — [`install_candidate_paths`] before any write, and
+    /// [`commit_install`]'s settled pathspec before the commit.
     Dirty(BTreeSet<String>),
-    /// `--force` — the single consent. The question is not asked at all, so no path can
-    /// refuse and the door behaves exactly as it did before the guard.
-    Consented,
+    /// `--force` — the single consent. The same set, carried rather than discarded: no path
+    /// can refuse, and the door behaves exactly as it did before the guard, but the install
+    /// **says** which install paths the consent was spent on
+    /// ([`forced_install_path_finding`]). Empty when git could not answer, so a consent over
+    /// an unreadable repo degrades to silence rather than to a claim.
+    Consented(BTreeSet<String>),
     /// git could not answer. The install commit is **skipped** rather than made blind — the
     /// benign degradation this door already ships for a git it cannot use
     /// ([`InstallCommit::Skipped`]): nothing is staged-but-orphaned, and no commit means no
@@ -1623,17 +1869,23 @@ impl InstallSubject {
     /// printed — stash, commit, set your git identity — leads back to the same refusal
     /// with the set one path larger.
     fn probe(repo_root: &Path, force: bool) -> Self {
-        if force {
-            return Self::Consented;
+        let Some(mut dirty) = dirty_against_head(repo_root, &[]) else {
+            // `--force` still installs when git cannot answer — the consent short-circuits
+            // the verdict, and the empty set is what keeps the ack from claiming a subject
+            // it never measured.
+            return if force {
+                Self::Consented(BTreeSet::new())
+            } else {
+                Self::Unknown
+            };
+        };
+        for own in own_uncommitted_footprint(repo_root) {
+            dirty.remove(&own);
         }
-        match dirty_against_head(repo_root, &[]) {
-            Some(mut dirty) => {
-                for own in own_uncommitted_footprint(repo_root) {
-                    dirty.remove(&own);
-                }
-                Self::Dirty(dirty)
-            }
-            None => Self::Unknown,
+        if force {
+            Self::Consented(dirty)
+        } else {
+            Self::Dirty(dirty)
         }
     }
 }
@@ -1839,7 +2091,7 @@ impl InstallCommitRejection {
             // The engine owns this door's words, over the whole dirty set at once — the
             // `uninstall.dirty-worktree` mold at this same door, not one finding per path.
             Self::DirtyInstallPath(dirty) => {
-                return engine::finalize::setup_dirty_install_finding(dirty);
+                return engine::finalize::setup_dirty_install_finding(dirty, true);
             }
         };
         let message = if staged {
@@ -1983,43 +2235,36 @@ fn commit_install(
     // signal, the present/not-gitignored filters) has already run — so the question is
     // asked over the one enumeration that must be exact.
     //
-    // **Two legs, conjoined.** A path refuses the commit iff it was dirty relative to
-    // `HEAD` **before the install wrote anything** ([`InstallSubject`]) *and* is **still**
-    // dirty now, with every write done. The first leg is what makes idempotence and upgrade
-    // clean by construction: nothing `setup` wrote **in this invocation** can enter it, and
-    // nothing it left behind uncommitted in an **earlier** one either
-    // ([`own_uncommitted_footprint`] — the half that was assumed and had to be built). The
-    // second leg is what makes the refusal *about the commit*: `setup` regenerates several
-    // of its own artifacts whole, so a pre-existing difference at `.jigc/AGENT.md`,
-    // `.jigc/version` or the guide artifact is overwritten by the **install** and what
-    // would be committed is `setup`'s own canonical bytes — nothing of the user's rides it,
-    // and refusing would block an upgrade over jigc's own file. Where `setup` **preserves**
-    // what it finds — the host files it merges into (`CLAUDE.md`, `.claude/settings.json`,
-    // a foreign `pre-commit`, a `packs.yaml` already listing packs, a `.gitignore` that
-    // already carries the floor) — the pre-existing bytes are still there, and those are
-    // exactly the paths this refuses over.
+    // **One leg, and it is the pre-write one.** A path refuses the commit iff it was dirty
+    // relative to `HEAD` **before the install wrote anything** ([`InstallSubject`]) and is
+    // not carrying jigc's own bytes ([`InstallPathDisposition`]). That single ask is what
+    // makes idempotence and upgrade clean by construction: nothing `setup` wrote **in this
+    // invocation** can enter it, and nothing it left behind uncommitted in an **earlier**
+    // one either ([`own_uncommitted_footprint`] — the half that was assumed and had to be
+    // built). An upgrade over jigc's own file is clean for the same reason: the worktree
+    // matches `HEAD` until the install rewrites it.
     //
-    // Conjoining the two asks **derives** that discriminator rather than enumerating it, so
-    // an install path added later cannot be classified wrong by being forgotten. The
-    // declared bound: an uncommitted hand-edit of a regenerated artifact **on an upgrade**
-    // is dirty on both legs even though the user's bytes are already gone — a loud false
-    // alarm `--force` clears, never a silent sweep.
+    // **The second leg — *and still dirty now* — is struck with its falsifying datum**
+    // ([`InstallSubject`]'s doc): a path `setup` rewrites whole reads clean afterwards
+    // precisely **because** the adopter's bytes are gone, so the conjunction was blind to
+    // exactly the class it was reasoning about.
+    //
+    // **This ask is the backstop, not the gate.** [`install`] asks the same predicate over
+    // the candidate paths before the first write, so an ordinary refusal never gets here and
+    // never has to write anything first. What reaches this ask is the member the pre-write
+    // enumeration cannot name — the hook, whose home the install itself resolves — plus any
+    // path whose candidacy the pre-write filters answered differently (a staged deletion the
+    // install then recreates). The install *is* written and staged by the time this refuses,
+    // which is what its finding says.
     let dirty: Vec<String> = match subject {
-        InstallSubject::Consented => Vec::new(),
+        InstallSubject::Consented(_) => Vec::new(),
         // git could not answer, so the commit is not made blind — the same benign skip
         // this door already takes for a git it cannot use.
         InstallSubject::Unknown => {
             return Ok(InstallCommitOutcome::uncommitted(InstallCommit::Skipped));
         }
         InstallSubject::Dirty(before) => {
-            let Some(after) = dirty_against_head(repo_root, &paths) else {
-                return Ok(InstallCommitOutcome::uncommitted(InstallCommit::Skipped));
-            };
-            paths
-                .iter()
-                .filter(|path| before.contains(*path) && after.contains(*path))
-                .cloned()
-                .collect()
+            dirty_install_refusals(repo_root, &paths, before, guide_file)
         }
     };
     // **The paths this run owns**: the settled pathspec minus what it refuses over. Every
@@ -3928,7 +4173,7 @@ mod tests {
             None,
             // These arms exercise the GIT-step refusals; the pre-write dirty guard is a
             // different subject with its own suite, so the fixture consents past it.
-            &InstallSubject::Consented,
+            &InstallSubject::Consented(BTreeSet::new()),
         )
         .expect_err("a git step that ran and refused must not degrade to a silent skip");
 
@@ -4541,7 +4786,7 @@ mod tests {
             false,
             &hook,
             None,
-            &InstallSubject::Consented,
+            &InstallSubject::Consented(BTreeSet::new()),
         )
         .expect("a refusal the hook caused must not sink the install commit");
 
@@ -4579,7 +4824,7 @@ mod tests {
             false,
             &hook,
             None,
-            &InstallSubject::Consented,
+            &InstallSubject::Consented(BTreeSet::new()),
         )
         .expect_err("a refusal the hook did NOT cause must stay loud");
         assert!(

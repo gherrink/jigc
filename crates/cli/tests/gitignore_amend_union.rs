@@ -349,6 +349,16 @@ fn plant(repo: &Path) -> String {
     planted
 }
 
+/// [`plant`], then **commit it** — the shape a team that keeps its own `.jigc/.gitignore`
+/// lines actually has, and the only one that reaches `setup`'s amend since Increment 3's
+/// guard refuses over an install path whose bytes are in no commit.
+fn plant_committed(corpus: &TrialCorpus) -> String {
+    let planted = plant(&corpus.repo());
+    corpus.git(&["add", ".jigc/.gitignore"]);
+    corpus.git(&["commit", "-q", "-m", "keep our own .jigc ignores"]);
+    planted
+}
+
 /// What every caller must leave behind: the planted bytes plus the one missing entry.
 fn amended(planted: &str) -> String {
     format!("{planted}{}\n", last_entry())
@@ -373,15 +383,44 @@ fn assert_amended(repo: &Path, planted: &str, caller: &str, run: &str) {
 /// amend being a precondition rather than a rider: `setup` *commits* what it writes, so
 /// before this fix the user's lines were replaced **and landed** — `git status` clean,
 /// the bytes in no git object (§6's declared bound, driven).
+///
+/// **The plant is committed here, and that is a narrowing the M51 completion audit
+/// forced.** Increment 3's `setup.dirty-install-path` now refuses *before any write* over
+/// an install path carrying bytes in no commit, so an **uncommitted** plant no longer
+/// reaches the amend at all — it is refused, with the user's lines intact, which is the
+/// stronger answer. What the amend is still owed over is the shape a team actually has:
+/// the private lines **committed**, and a later jigc adding an entry to `ENTRIES`.
 #[test]
 fn setup_amends_and_is_idempotent() {
     let corpus = TrialCorpus::build(State::Fresh);
     let repo = corpus.repo();
-    let planted = plant(&repo);
+    let planted = plant_committed(&corpus);
     for run in ["first", "second"] {
         corpus.jigc(&["setup"]);
         assert_amended(&repo, &planted, "setup", run);
     }
+}
+
+/// **The sibling cell the narrowing above creates**: an *uncommitted* private line at an
+/// install path is not amended-over at all — `setup` refuses before writing a byte, and the
+/// user's exact planted bytes are still there (Increment 3's guard, M51 completion audit).
+#[test]
+fn setup_refuses_rather_than_amending_an_uncommitted_plant() {
+    let corpus = TrialCorpus::build(State::Fresh);
+    let repo = corpus.repo();
+    let planted = plant(&repo);
+    let out = corpus.jigc(&["setup"]);
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "an install path carrying bytes in no commit refuses: {}",
+        String::from_utf8_lossy(&out.stdout),
+    );
+    assert_eq!(
+        read_ignore(&repo),
+        planted,
+        "and the refusal leaves the user's planted bytes exactly as they were",
+    );
 }
 
 /// **`jigc task finalize` (`task.rs`, inside the commit transaction).** The churn cell:
@@ -442,8 +481,12 @@ fn milestone_provision_amends_and_is_idempotent() {
 fn the_four_callers_leave_identical_bytes() {
     let mut bodies: Vec<(&str, String)> = Vec::new();
 
+    // The `setup` arm's plant is **committed**: since the M51 completion audit an
+    // uncommitted install path refuses before the amend can run (see
+    // `setup_refuses_rather_than_amending_an_uncommitted_plant`), and the bytes the four
+    // callers must agree on are the amend's, not the guard's.
     let setup = TrialCorpus::build(State::Fresh);
-    let planted = plant(&setup.repo());
+    let planted = plant_committed(&setup);
     setup.jigc(&["setup"]);
     bodies.push(("setup", read_ignore(&setup.repo())));
 

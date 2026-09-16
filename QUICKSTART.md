@@ -97,11 +97,14 @@ the adapter.
 anything, `setup` compares every path in its own install footprint against `HEAD`.
 If any of them already carries changes that are in no commit — staged, unstaged or
 untracked — it stops with one blocking `setup.dirty-install-path` naming each such
-path and makes **no** install commit: the install files are written and staged,
-`HEAD` is untouched, and your bytes are still exactly where you left them. Commit or
-stash them (`git stash -u` where git does not track them yet) and re-run, or pass
-`jigc setup --force`, the single consent, which commits those paths into the install
-commit as they stand. This is the same rule as the carryover gate at `jigc task
+path and installs **nothing**: `HEAD` is untouched, and your bytes are still exactly
+where you left them — including at the files jigc regenerates whole (`.jigc/AGENT.md`,
+`.jigc/config/packs.yaml`), which is why the question is asked before the first write
+rather than before the commit. Commit or stash them (`git stash -u` where git does not
+track them yet) and re-run, or pass `jigc setup --force`, the single consent — which
+lets the install run and commit those paths as it leaves them, and *says* which paths
+it was spent on, since at a regenerated path what it leaves is jigc's content and not
+yours. This is the same rule as the carryover gate at `jigc task
 finalize` below — a door committing paths it does not own says so instead of
 sweeping them in — at its other door.
 
