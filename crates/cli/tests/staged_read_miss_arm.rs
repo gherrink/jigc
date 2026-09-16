@@ -1,6 +1,13 @@
 //! M51 Increment 5 / T6 — **the `--task` read miss names the copy it looked in and
 //! keeps `--task <id>` in its route** (N15).
 //!
+//! Cited as the `pinned-by:` for the rc.14 trial's
+//! [findings-verification](../../../completions/artifacts/RC-rc14/findings-verification.md)
+//! row **F-7**, whose recorded reason (*"carried defect, as F-6"*) stopped being true the
+//! moment this fix landed — N15 was carried at the trial and fixed in this wave, which is
+//! why the conversion ledger's close re-read every row and not only the three the Settle
+//! named (M51 Increment 11 / T3).
+//!
 //! ## The defect, driven
 //!
 //! `jigc doc show <miss-address> --task <id>` and the task-less read were **byte-identical**

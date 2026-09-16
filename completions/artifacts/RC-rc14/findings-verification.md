@@ -5,9 +5,74 @@ arrives with a repro block and a `pinned-by: <suite>::<test>` verified **by read
 cited test asserts**, or a stated `UNPINNED: <why>`. No mechanical checker fences this;
 [pinning.md](../../../implementation/pinning.md) §3 refuses one by name.
 
-**Status of the ledger: OPEN.** The `pinned-by:` column below is filled where a standing test
-was read and confirmed to assert the fact; the rest carry `UNPINNED:` with a reason. **The
-human's gate on the 1.0.0 call is that this ledger closes**, and it has not.
+**Status of the ledger: CLOSED** (2026-09-16, M51 Increment 11 / T3). Every verdict row carries
+either a `pinned-by:` citation — written from the cited test's **own assertions**, never from its
+name — or an `UNPINNED:` with a stated reason. **The human's gate on the 1.0.0 call is that this
+ledger closes**, and it does. *Closed* is the criterion D14 named it for: **has a citation or a
+reason**, not *has a test* ([settle-record.md](../M51/settle-record.md) → D14).
+
+**What moved at the close, and what did not.** Four rows converted `UNPINNED:` → `pinned-by:`,
+each by its **own fix's red test** shipped in this wave: **F-5** (Increment 6), **F-11**
+(Increment 6 / T3), **F-9** (Increment 11 / T2) — the three D14 named — and **F-7**, which D14
+did *not* name and which the row-by-row re-read found: N15 was carried at the trial and was
+*fixed* by Increment 5 / T6, so its recorded reason (*"carried defect, as F-6"*) had stopped
+being true. Eight rows keep a stated `UNPINNED:`, every one of them because **the pin would
+encode a gap, a loss or an absence as expected output** — the rule [pinning.md](../../../implementation/pinning.md)
+§5 states from the other end (*would pinning it now pin the bug?*). **F-3** keeps its reason on a
+**live trigger**, not for want of a reading. **F-1's reason was corrected rather than kept**: it
+named `machine_output.rs` as the pin for a surface that suite does not touch — §3's 2026-08-18
+hazard reaching an `UNPINNED` reason, which is why the re-read covered reasons and not only
+citations.
+
+**The count, reported honestly** — occurrences *and* distinct rows, because a token count is not
+a row count (M50's ledger was chartered at *"21 rows"* and measured **18 occurrences over 11
+rows**). Measured over the **verdict rows** — this header's own prose and the check's source text
+carry the token too and are not dispositions — the rows hold **10 occurrences of `UNPINNED`, of
+which 8 are dispositions, one per distinct row**; the other two are prose *inside* a row (F-1's
+correction note, F-3's trigger clause). Thirteen verdict rows: **5 cited · 8 `UNPINNED` with a
+reason · 0 undisposed.**
+
+*(The first draft of this paragraph said "12 occurrences" and was true of the file before the
+paragraph itself was written into it. It is recorded here rather than silently corrected, because
+it is M50's miscount in miniature and one iteration old: a token count over a file is not a count
+of anything the ledger claims. The figure above is measured over the rows, where the claim lives:*
+`awk '/^## F-/ { r = 1 } r && /UNPINNED/ { t++; if ($0 ~ /^\`pinned-by:\`/) d++ } END { print t, d }'`*.)*
+
+**The closure check, stated and re-runnable** — it fences the *form*, never the reading ([pinning.md](../../../implementation/pinning.md)
+§3 refuses a `pinned-by:` symbol parser by name, and no command can check what a test asserts):
+
+```
+awk '/^\*\*Status of the ledger: CLOSED\.?\*\*/ { closed = 1 }
+     /^## F-/ { cur = $2; rows[++n] = cur; next }
+     /^## /   { cur = "" }
+     /^`pinned-by:`/ {
+       if (cur == "") { printf "STRAY pinned-by outside a verdict row, line %d\n", NR; bad = 1; next }
+       seen[cur]++
+       if ($0 ~ /UNPINNED/) {
+         if ($0 !~ /UNPINNED:[[:space:]]*[^[:space:]]/) { printf "%s: UNPINNED with no stated reason\n", cur; bad = 1 }
+         else unpinned[cur] = 1
+       } else cited[cur] = 1
+     }
+     END {
+       for (i = 1; i <= n; i++) {
+         r = rows[i]
+         if (seen[r] == 0) { printf "%s: carries NEITHER a citation nor an UNPINNED reason\n", r; bad = 1 }
+         else if (seen[r] > 1) { printf "%s: %d pinned-by lines; a row carries exactly one\n", r, seen[r]; bad = 1 }
+         if (cited[r]) c++; if (unpinned[r]) u++
+       }
+       if (!closed) { print "the ledger does not declare itself CLOSED"; bad = 1 }
+       printf "rows=%d cited=%d unpinned=%d undisposed=%d\n", n, c+0, u+0, n-(c+0)-(u+0)
+       exit bad + 0
+     }' completions/artifacts/RC-rc14/findings-verification.md
+→ rows=13 cited=5 unpinned=8 undisposed=0        [exit 0]
+```
+
+The subject is a line **opening** with the disposition token, so a multi-line citation is matched
+at its first line and every row's disposition opens one. The check exits non-zero on an
+undisposed row, on two dispositions under one row, on an `UNPINNED` with nothing after the colon,
+and on this file declaring itself closed nowhere. It cannot tell a citation that asserts the
+claim from one that reads apt and asserts something else — that half was done by opening each
+cited test, and there is no command for it.
 
 Every repro ran on `jigc-gate:rc14` (sha `21ffc0d4`), in a throwaway container, never a live
 corpus.
@@ -41,9 +106,16 @@ invocation 18.** One arm used the capability the other reported missing.
 the worker was on named it* — for the seventh consecutive trial.
 
 `pinned-by:` **UNPINNED: the fact is that a capability exists and was not found. A test can pin
-the manifest's content (and `machine_output.rs` does pin the `--dry-run` envelope, including
-M50's `subject` key); no test can pin that a worker did not go looking. The pinnable half is
-already fenced; the unpinnable half is the finding.**
+the manifest's content — `finalize_manifest.rs` pins the `--dry-run` envelope and
+`finalize_dry_run_subject::the_dry_run_forecasts_the_subject_the_commit_lands` the `subject` key
+M50 added, joined by M51 Increment 5's `dry_run_findings_equal_set.rs` over the findings the
+forecast now carries. No test can pin that a worker did not go looking. The pinnable half is
+fenced; the unpinnable half is the finding.**
+
+*(Corrected at the close: this row named `machine_output.rs` as the envelope's pin. It is not —
+that suite pins stream discipline, and the `subject` key is nowhere in it. The §3 addendum's
+hazard — a citation that reads apt and asserts something else — reached an `UNPINNED` reason,
+which is why the re-read covers reasons and not only citations.)*
 
 ---
 
@@ -129,7 +201,11 @@ clean `validate` **reads as** correct.
 `pinned-by:` **UNPINNED: verified by reading, no suite asserts this.**
 The nearest standing fence is plant E's bar 9 (`e-abandoned-task.sh:155`), which asserts the
 *absence* of a finding here and is trial apparatus, not a repo suite. Pinning the presence of a
-constraint would be pinning the fix.
+constraint would be pinning the fix. **The row stays UNPINNED *on a live trigger*, not for want
+of a reading** ([decisions-pending.md](../../../implementation/decisions-pending.md) → *The
+rc.14 trial's findings*; [settle-record.md](../M51/settle-record.md) → D14, which keeps it there,
+and D13, which excludes it on the **necessity** leg — a cross-field constraint is a schema-*format*
+change plus a `doc schema` `contract-version` 6→7).
 
 ---
 
@@ -197,9 +273,20 @@ text refusal moves no pinned contract — so it **SHIPS RECORDED**.
 to 53/53 and left its *unknown* sibling untouched. That is the complete-fix lens turned on M50's
 own work, for the fifth consecutive wave.
 
-`pinned-by:` **UNPINNED: `flow51_acceptance.rs`'s `WORK_UNIT_ID_DOORS` arm fences the malformed
-cell (`work-unit.malformed-id` at all 25 doors, ⇔ against the clap tree) — read and confirmed.
-No arm asserts anything about the unknown-id cell, which is why the axis was invisible.**
+`pinned-by:`
+`work_unit_unknown_envelope::every_work_unit_id_door_answers_the_findings_envelope_for_an_unknown_id`
+— **converted by M51 Increment 6** (`556b1986` + `4653aeff`), the fix's own red test, and
+**verified by reading what it asserts**: it drives *every* row of `WORK_UNIT_ID_DOORS` with a
+well-formed id no work unit carries and requires, per door, empty stdout at exit 1 and a stderr
+document whose top-level keys are exactly what `ENVELOPE_ARMS`' `Reject::Findings` row declares
+— **not** the flattened `{"error": …}`, whose code lives inside a message and projects no key —
+carrying exactly one finding, whose `key` is that family's work-unit pair
+(`finalize.no-task`/`task:<id>`, `milestone.unknown`/`milestone:<id>`) and whose route is
+exactly one backticked command. Its closing assertion is a **set** equality against the
+registry's own rows, so a door driven twice while another is never reached fails rather than
+passes. The row's earlier reason — *"no arm asserts anything about the unknown-id cell"* — is
+the sentence this suite falsifies; `flow51_acceptance.rs`'s `WORK_UNIT_ID_DOORS` arm still
+fences the *malformed* cell beside it, and neither stands in for the other.
 
 ---
 
@@ -230,7 +317,18 @@ Walk arm 22. Of three bars, **one passed**: the task-scoped miss is **no longer 
 to the task-less one. The failing bar is the substantive half — it still claims the address names
 no **committed** doc, to a reader holding a staged copy.
 
-`pinned-by:` **UNPINNED: carried defect, as F-6.**
+`pinned-by:`
+`staged_read_miss_arm::the_task_read_miss_names_the_staged_copy_and_keeps_the_task_in_its_route`
+— **converted by M51 Increment 5 / T6** (`63eec044`). **This row's disposition moved at the
+re-read**: N15 was carried at the trial and was *fixed* in this wave, so *"carried defect, as
+F-6"* stopped being true of it, and the close's obligation is to re-read every row rather than
+only the three the Settle named. **Verified by reading what the test asserts**: the two reads
+are `assert_ne!`-different — the defect *was* their equality — the `--task` block keeps
+`store.not-found`, names the task and the copy it looked in, **never says `committed`**, and
+carries `--task <id>` in its route; that route **run verbatim** returns the *staged* thesis,
+which the fixture makes visible by staging prose that differs from the committed copy; and the
+task-less block is asserted as a literal, because its bytes are a 1.0-pinned surface the fix
+does not touch.
 
 ---
 
@@ -290,9 +388,19 @@ titles and knows the task stages a commit doc.
 
 **Class: surface.** Reversible after 1.0.0 — an advisory is additive. **SHIPS RECORDED.**
 
-`pinned-by:` **UNPINNED: `flow37_rename.rs` fences the rename's own acks and referrer repointing
-(read and confirmed); nothing asserts anything about the staged commit doc's relationship to a
-renamed identity, which is why the gap exists.**
+`pinned-by:`
+`doc_rename_in_task::the_stale_commit_summary_is_noticed_where_it_happens_and_re_raised_until_repaired`
+— **converted by M51 Increment 11 / T2** (`448670b7`, standing on `c79aab21`'s durable
+pre-rename title; [settle-record.md](../M51/settle-record.md) → §21). **Verified by reading what
+it asserts**: the `doc rename … --task --format json` ack carries the advisory in the `findings`
+array with **no envelope key moved**, keyed `(commit-recording.stale-title,
+commit:<task>#summary)`, located at that address, its message naming the title the summary still
+carries; `doc show` returns the authored prose unchanged, so the finding *reports* and never
+rewrites; **both** re-raising doors — `jigc task validate <id>` and `task finalize --dry-run` —
+carry the code, the located `at:` and the same route; the **emitted route, run verbatim**,
+silences all three and a second rename then acks `findings: []`; and a task that renamed nothing
+is **inert** at every door, never an error. `flow37_rename.rs` still fences the rename's own acks
+and referrer repointing, and is not the pin for this row.
 
 ---
 
@@ -364,9 +472,18 @@ address miss with a keyed, routed finding and a payload miss with a serde string
 route at `jigc doc schema <type>` (which would have answered the worker directly) and the house
 renderer. **SHIPS RECORDED.**
 
-`pinned-by:` **UNPINNED: `machine_output.rs` and the write-miss cells fence the *resolver* errors
-(read and confirmed — `write_miss_shape_axis::CELLS` iterates address shape × declaredness); the
-payload parse boundary is upstream of every one of them, which is exactly why it was missed.**
+`pinned-by:` `author_payload_floor::every_payload_refusal_answers_with_a_severity_a_code_an_at_and_a_route`
++ `author_payload_floor::every_payload_refusal_emits_the_findings_envelope_with_a_resolving_key`
+— **converted by M51 Increment 6 / T3** (`67b50f2b`), and **verified by reading what they
+assert**: the text arm drives every cell to exit 1 and requires `blocking · <code> — `, an
+`at: adr` and a `route:` on stderr; the machine arm requires the declared `Reject::Findings` key
+set (`{findings, schema_version}`) holding exactly one finding whose `key` is
+`{code, target: "adr"}`, whose severity is `blocking` and which carries a route — never the
+flattened `{"error": …}` a driver cannot key on. The set is the class's defining case-set,
+`PayloadReject::ALL`, closed in **both** directions by
+`every_refusal_exit_of_the_payload_parse_is_driven`, so a fifth refusal exit cannot land without
+a driven cell. `machine_output.rs` and `write_miss_shape_axis::CELLS` still fence the *resolver*
+errors downstream, and neither was ever the pin for this boundary.
 
 ---
 

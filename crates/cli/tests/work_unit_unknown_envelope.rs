@@ -1,6 +1,13 @@
 //! M51 Increment 6 / T1+T2 — **a well-formed work-unit id that names nothing answers the
 //! findings envelope, at every door that takes one.**
 //!
+//! Cited as the `pinned-by:` for the rc.14 trial's
+//! [findings-verification](../../../completions/artifacts/RC-rc14/findings-verification.md)
+//! row **F-5** (*the unknown-id column: 22 doors refuse correctly, with a route, and no
+//! code*), whose earlier `UNPINNED` reason — *"no arm asserts anything about the
+//! unknown-id cell"* — is the sentence the sweep below falsifies (M51 Increment 11 / T3,
+//! the conversion ledger).
+//!
 //! ## The class this closes
 //!
 //! `design/command-output-contract.md` declares a **work-unit** target form —
