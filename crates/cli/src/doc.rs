@@ -2929,7 +2929,26 @@ fn run_doc_rename(
     }
 
     let target = whole_doc_ack_target(&new_uri)?;
-    let findings = write_ack_findings(&schema, &retitled, &target.doctype, &target.slug);
+    let mut findings = write_ack_findings(&schema, &retitled, &target.doctype, &target.slug);
+    // **Noticed where it happens** (M51 Inc 11 / T2 — the rc.14 trial's F-9). The same
+    // predicate the task-scope sweep re-raises, asked once here so a driver reading this
+    // ack learns of the stale commit subject at the invocation that made it stale. It
+    // rides the `findings` array **already on the wire** — no envelope key moves — which
+    // is why the fix is a `Finding` and not the prose notice this ack has no field for.
+    //
+    // Asked AFTER the rename record is appended, so the title this call just moved away
+    // from is in the candidate set; a stale summary named by an earlier rename in the same
+    // task is reported here too, the finding being one per task and not one per rename.
+    //
+    // Declared bound, planned rather than discovered: `render::doc_ack`'s TEXT arm renders
+    // no findings at all, so this production reaches a driver only. The text reach is the
+    // sweep's four surfaces; widening it is a sweep of all nine `DocAck` variants.
+    if let Ok(commit_schema) = task.schema(crate::task::COMMIT_TYPE)
+        && let Some(stale) =
+            crate::task::stale_commit_summary_finding(&task.dir, &task.id, &commit_schema)?
+    {
+        findings.push(stale);
+    }
     println!(
         "{}",
         render::doc_ack(

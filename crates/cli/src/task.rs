@@ -893,7 +893,7 @@ fn run_bind(cwd: &Path, role: &str, addr: &str, id: &str, format: Format) -> Res
 /// The commit doctype name — the task's workflow-provisioned doc whose sink is the
 /// git message (`design/finalize.md` → Commit-doc rendering). The commit instance is
 /// provisioned under `commit:<task-id>`, so the commit slug is the task id.
-const COMMIT_TYPE: &str = "commit";
+pub(crate) const COMMIT_TYPE: &str = "commit";
 
 /// The changelog doctype name — the create-gate the
 /// [`CHANGELOG_GATE_CODE`] check keys on (`design/validation.md` → The changelog-gate
@@ -920,6 +920,181 @@ enum AdvisoryDoor {
     /// promoted, this invocation lands the commit and deletes the working area, so the
     /// route names only the landed-state form.
     Finalize,
+}
+
+/// The **stale-commit-summary** advisory's finding code (M51 Increment 11 / T2;
+/// `design/validation.md` → The M51 registrations — Increment 11; the rc.14 trial's
+/// F-9). One spelling, read by both producers.
+///
+/// The namespace is the **subject's** topic family, per the shipped producing-door
+/// rule: an advisory the task-scope sweep re-raises takes the family of the thing it
+/// speaks about, exactly as [`CHANGELOG_GATE_CODE`] does. `write.*` is refused — that
+/// family is the write-time address-reject taxonomy with its own declared route split
+/// — and `rename.*` is refused too: that is the task-less top-level `jigc rename`
+/// door's family, and the trial's F-4 records those two verbs already being confused.
+const STALE_TITLE_CODE: &str = "commit-recording.stale-title";
+
+/// **The staged commit summary still names a title this task renamed a doc away from**
+/// — one shared predicate, two producers (M51 Increment 11 / T2; the rc.14 trial's
+/// F-9, `completions/artifacts/M51/settle-record.md` → §21).
+///
+/// `jigc doc rename --task` moves a staged doc's `# H1`; the task's staged `commit`
+/// doc may already carry the old one in its `summary` slot, which
+/// [`engine::write::render_commit_message`] projects as the **commit subject** — which
+/// is why [`engine::write::COMMIT_SECTION_SUMMARY`] is `pub` and read from there rather
+/// than re-spelled here: two literals for one id is the *statement == constant* drift
+/// this wave exists to close. Nothing
+/// noticed: the trial's only adapter bypass was a worker that renamed at invocation 18,
+/// finalized at 23, and rewrote jigc's commit with raw git because the product never
+/// connected the two. The answer is a `Finding` re-raised **from durable state**
+/// ([`state::RenameRecord`], written at the rename) rather than a notice printed once —
+/// *an instrument fires reliably iff its trigger is a state and its consequence is
+/// re-raised by the product* (`RC-1.0-gate/cue-card-postmortem.md`).
+///
+/// **Advisory, and un-keyed** — neither tier of the two-tier inventory rule, so the M6
+/// severity post-pass leaves it alone (`design/validation.md` → Severity assignment). A
+/// stale subject is a real cost and never a reason to refuse a commit: the prose is the
+/// author's, and this reports it.
+///
+/// **One finding per task, never one per rename.** The subject is one stale summary and
+/// the repair is one write, so the target is the summary's own address
+/// (`commit:<task-id>#summary`) and the message names every recorded title still present,
+/// sorted — a per-rename finding would key several findings at one address and hand the
+/// agent the same repair three times.
+///
+/// **A recorded title another staged doc still carries is not stale.** Every correct
+/// summary naming `Rate limiting` also names `Rate`, so a superstring rename (and the
+/// rename-back cell, `A → B → A`) would otherwise mint a finding whose own route,
+/// followed exactly, changes nothing — M46's PT-1 defect. The live-title clause is what
+/// keeps the check silenceable by the thing it prints.
+///
+/// `None` — never an error — for every absence: a task that renamed nothing, no staged
+/// commit doc, a commit doc that does not parse (its conformance findings speak for it,
+/// and a second diagnosis over the same bytes would report one fault twice), or a
+/// `commit` schema with no `summary` slot.
+pub(crate) fn stale_commit_summary_finding(
+    task_dir: &Path,
+    task_id: &str,
+    commit_schema: &Schema,
+) -> Result<Option<Finding>> {
+    let recorded = state::RenameRecord::load(task_dir)
+        .with_context(|| format!("could not read the rename record of task `{task_id}`"))?
+        .pre_rename_titles;
+    if recorded.is_empty() {
+        return Ok(None);
+    }
+
+    let commit_path = state::instance_path(task_dir, COMMIT_TYPE, task_id);
+    let source = match std::fs::read_to_string(&commit_path) {
+        Ok(source) => source,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => {
+            return Err(err)
+                .with_context(|| format!("reading the staged commit doc at {commit_path:?}"));
+        }
+    };
+    let Ok(document) = engine::parse::parse_sections(commit_schema, &source) else {
+        return Ok(None);
+    };
+    let Some(span) = document
+        .sections
+        .iter()
+        .find(|section| section.id == engine::write::COMMIT_SECTION_SUMMARY)
+        .and_then(|section| section.slot.as_ref())
+    else {
+        return Ok(None);
+    };
+    let summary = span.slice(&source);
+
+    let live = live_staged_titles(task_dir, task_id)?;
+    let mut stale: Vec<&str> = recorded
+        .iter()
+        .map(String::as_str)
+        .filter(|title| {
+            summary.contains(*title) && !live.iter().any(|current| current.contains(*title))
+        })
+        .collect();
+    stale.sort_unstable();
+    stale.dedup();
+    if stale.is_empty() {
+        return Ok(None);
+    }
+
+    let address = format!(
+        "{COMMIT_TYPE}:{task_id}#{}",
+        engine::write::COMMIT_SECTION_SUMMARY
+    );
+    let named = stale
+        .iter()
+        .map(|title| format!("`{title}`"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let moved = if stale.len() == 1 {
+        "a title this task renamed a doc away from"
+    } else {
+        "titles this task renamed docs away from"
+    };
+    Ok(Some(Finding::graded(
+        Severity::Advisory,
+        STALE_TITLE_CODE,
+        format!(
+            "the staged commit summary still names {named} — {moved}, so the commit \
+             subject would land naming a title no staged doc carries",
+        ),
+        Some(Location::addressed(address.clone(), span.start_line, 1)),
+        Some(engine::finding::Route::mechanical(
+            [
+                "jigc",
+                "doc",
+                "set-slot",
+                &address,
+                "--task",
+                task_id,
+                "--from-file",
+                "-",
+            ],
+            " to re-write the summary against the titles the docs now carry",
+        )),
+    )))
+}
+
+/// The `# H1` every **other** staged doc in the task area currently carries — the
+/// live-title set [`stale_commit_summary_finding`] measures a recorded title against.
+///
+/// The commit doc itself is excluded: it is the finding's *subject*, not an explainer,
+/// and its `# H1` is the machine-derived task id rather than an authored title.
+/// A staged file with no `# H1` contributes nothing.
+fn live_staged_titles(task_dir: &Path, task_id: &str) -> Result<Vec<String>> {
+    // The staged-docs directory is read off the instance path rather than re-spelled: the
+    // commit instance lives in it, so its parent IS the home, and there is no second
+    // literal to drift from `engine::state`'s own.
+    let commit_file = state::instance_path(task_dir, COMMIT_TYPE, task_id);
+    let Some(docs) = commit_file.parent().map(Path::to_path_buf) else {
+        return Ok(Vec::new());
+    };
+    let entries = match std::fs::read_dir(&docs) {
+        Ok(entries) => entries,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(err) => {
+            return Err(err).with_context(|| format!("reading the staged docs at {docs:?}"));
+        }
+    };
+    let mut titles = Vec::new();
+    for entry in entries {
+        let path = entry
+            .with_context(|| format!("reading the staged docs at {docs:?}"))?
+            .path();
+        if path == commit_file || path.extension().and_then(|ext| ext.to_str()) != Some("md") {
+            continue;
+        }
+        let Ok(source) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        if let Some(title) = crate::rename::read_h1(&source) {
+            titles.push(title.to_string());
+        }
+    }
+    Ok(titles)
 }
 
 /// `jigc task finalize <id>` — execute the commit boundary (`design/finalize.md` →
@@ -1454,6 +1629,24 @@ impl TaskArea {
         )
         .with_context(|| format!("validating task at {:?}", self.dir))?;
         let report = self.preview_gates(report, preview, &schemas)?;
+        // The stale-commit-summary advisory (M51 Inc 11 / T2 — the rc.14 trial's F-9).
+        // Sited HERE, outside [`Self::preview_gates`] and ahead of the route scoping, for
+        // two reasons that are decisions rather than placement: it is a **content**
+        // finding, not a gate — `task validate` already promises this task's content
+        // findings, so joining the previewed set would propagate a `GATE_COVERAGE` row to
+        // all eight enumerating surfaces for something no boundary gate decides — and
+        // being unconditional (no [`GatePreview`] arm) it reaches `task validate`, the
+        // `--dry-run` forecast, the committing preflight and `start`'s orientation from
+        // this one computation, which is what makes the advisory *re-raised* rather than
+        // printed once.
+        let report = match self.stale_commit_summary(&schemas)? {
+            None => report,
+            Some(finding) => {
+                let mut findings = report.findings.into_vec();
+                findings.push(finding);
+                engine::result::ValidationReport::new(findings, &self.severity_cascade()?)
+            }
+        };
         let report = self.scope_repair_routes(report)?;
         Ok((report, record))
     }
@@ -1486,6 +1679,17 @@ impl TaskArea {
             findings,
             &self.severity_cascade()?,
         ))
+    }
+
+    /// This task's [`stale_commit_summary_finding`], resolved against the composed
+    /// `commit` schema. `None` when the pack-set ships no `commit` doctype — the same
+    /// *absent means inert* reading [`Self::changelog_gate_advisory`] takes for a
+    /// pack-set with no `changelog`.
+    fn stale_commit_summary(&self, schemas: &BTreeMap<String, Schema>) -> Result<Option<Finding>> {
+        let Some(schema) = schemas.get(COMMIT_TYPE) else {
+            return Ok(None);
+        };
+        stale_commit_summary_finding(&self.dir, &self.id, schema)
     }
 
     /// Merge the **previewable finalize-time gates** into a `task validate` report

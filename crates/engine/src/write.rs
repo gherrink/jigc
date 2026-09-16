@@ -2703,7 +2703,7 @@ pub fn value_text(value: &Value) -> String {
 /// the one engine↔pack coupling is explicit, not scattered string literals.
 const COMMIT_FIELD_TYPE: &str = "type";
 const COMMIT_FIELD_SCOPE: &str = "scope";
-const COMMIT_SECTION_SUMMARY: &str = "summary";
+pub const COMMIT_SECTION_SUMMARY: &str = "summary";
 const COMMIT_SECTION_BODY: &str = "body";
 const COMMIT_SECTION_TRAILERS: &str = "trailers";
 

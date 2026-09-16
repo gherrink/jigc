@@ -1916,3 +1916,340 @@ fn the_pre_rename_titles_become_durable_task_state() {
         "…and reads back empty, never as an error"
     );
 }
+
+// ────────── arm J — the stale commit summary is noticed, and re-raised ──────────
+
+/// The advisory's code — one spelling, read by every assertion below
+/// (`design/validation.md` → The M51 registrations — Increment 11).
+const STALE_TITLE_CODE: &str = "commit-recording.stale-title";
+
+/// A task whose only outstanding finding can be the stale-title advisory: the spec's two
+/// required slots and the commit doc's `type` field are filled, so `task finalize
+/// --dry-run` reaches its **forecast** branch rather than its blocked one (a blocked
+/// finalize renders the planner's blocking set, which an advisory is by construction not
+/// in). Returns the task id; the doc is minted as `Rate limiting` and the commit summary
+/// names it.
+fn task_with_a_summary_naming(corpus: &TrialCorpus, intent: &str, title: &str) -> String {
+    let task = corpus.start_workflow("plan", intent);
+    corpus.jigc_ok(&["doc", "create", "spec", "--title", title, "--task", &task]);
+    let slug = title.to_lowercase().replace(' ', "-");
+    for section in ["goal", "context"] {
+        corpus.jigc_stdin_ok(
+            &[
+                "doc",
+                "set-slot",
+                &format!("spec:{slug}#{section}"),
+                "--from-file",
+                "-",
+                "--task",
+                &task,
+            ],
+            "bound the request rate",
+        );
+    }
+    corpus.jigc_ok(&[
+        "doc",
+        "set-field",
+        &format!("commit:{task}#header/type"),
+        "--value",
+        "feat",
+        "--task",
+        &task,
+    ]);
+    corpus.jigc_stdin_ok(
+        &[
+            "doc",
+            "set-slot",
+            &format!("commit:{task}#summary"),
+            "--from-file",
+            "-",
+            "--task",
+            &task,
+        ],
+        &format!("the {title} spec lands"),
+    );
+    task
+}
+
+/// The two **re-raising** doors, each read as the bytes that door actually emits.
+///
+/// `jigc task validate` is a text surface and is read as text. `jigc task finalize
+/// --dry-run` carries its findings on the **JSON envelope only** — a decision this same
+/// wave landed (M51 Inc 5 / T5: the forecast's text shape is unchanged and `task
+/// validate` stays the text surface for the findings themselves) — so it is read as
+/// JSON. Asserting the dry-run's text arm instead would pin a surface the design
+/// deliberately left alone.
+fn stale_title_doors(corpus: &TrialCorpus, task: &str) -> Vec<(&'static str, String)> {
+    let dry_run = corpus.jigc(&["--format", "json", "task", "finalize", task, "--dry-run"]);
+    vec![
+        (
+            "jigc task validate",
+            String::from_utf8_lossy(&corpus.jigc(&["task", "validate", task]).stdout).into_owned(),
+        ),
+        (
+            "jigc task finalize --dry-run --format json",
+            String::from_utf8_lossy(&dry_run.stdout).into_owned(),
+        ),
+    ]
+}
+
+/// **A rename leaves the staged commit summary naming the old title, and the product
+/// says so — once where it happens, and again at every door until it is repaired**
+/// (M51 Increment 11 / T2; `RC-rc14/findings-verification.md` → F-9,
+/// `settle-record.md` → §21).
+///
+/// Driven at `c79aab21`, every surface was silent: `doc rename --task` acked `findings:
+/// []`, and `task validate` / `task finalize --dry-run` printed the stale subject and
+/// the new path on adjacent, unconnected lines. That is the shape the rc.14 trial
+/// measured as its **only adapter bypass** — B1 renamed at invocation 18 and finalized
+/// at 23 with nothing re-raising it, then rewrote jigc's commit with raw git — so the
+/// fix is not a notice printed once but a `Finding` **re-raised from durable state**
+/// until the summary is repaired (`cue-card-postmortem.md`: *an instrument fires
+/// reliably iff its trigger is a state and its consequence is re-raised by the
+/// product*).
+///
+/// The arm drives the real binary and asserts the **emitted bytes**: the rename ack's
+/// `--format json` `findings[]` entry with its key, located address and route, and **no
+/// other envelope key moved**; the read surface still returning the stale prose (this
+/// reports, it never rewrites); both re-raising doors carrying it; the **emitted route
+/// run verbatim** silencing all three; and a task that renamed nothing producing nothing
+/// anywhere — the omitting context, where the check must be *inert*, never an error.
+#[test]
+fn the_stale_commit_summary_is_noticed_where_it_happens_and_re_raised_until_repaired() {
+    let corpus = TrialCorpus::build(State::Fresh);
+    let task = task_with_a_summary_naming(&corpus, "pin down the throttle", "Rate limiting");
+    let summary_addr = format!("commit:{task}#summary");
+
+    // Before the rename nothing has moved, so nothing is stale.
+    for (door, out) in stale_title_doors(&corpus, &task) {
+        assert!(
+            !out.contains(STALE_TITLE_CODE),
+            "{door} is quiet while no title has moved; got:\n{out}"
+        );
+    }
+
+    // ── the producer: the rename's own ack ──
+    let ack: Value = serde_json::from_str(&corpus.jigc_ok(&[
+        "doc",
+        "rename",
+        "spec:rate-limiting",
+        "--to",
+        "Throttling",
+        "--task",
+        &task,
+        "--format",
+        "json",
+    ]))
+    .expect("the rename ack is one JSON document");
+
+    let keys: Vec<&str> = ack
+        .as_object()
+        .expect("the ack is an object")
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(
+        keys,
+        vec![
+            "committed_identity",
+            "copied_in",
+            "findings",
+            "from",
+            "op",
+            "reslugged",
+            "target",
+            "title",
+        ],
+        "the finding rides the `findings` array already on the wire — no envelope key \
+         moves for it:\n{ack:#}"
+    );
+    assert_eq!(
+        ack["target"],
+        serde_json::json!({"doctype": "spec", "slug": "throttling"}),
+        "the ack's own target is still the renamed doc:\n{ack:#}"
+    );
+    assert_eq!(ack["title"], "Throttling");
+
+    let findings = ack["findings"].as_array().expect("`findings` is an array");
+    assert_eq!(
+        findings.len(),
+        1,
+        "one stale summary is one finding, not one per rename:\n{ack:#}"
+    );
+    let finding = &findings[0];
+    assert_eq!(finding["code"], STALE_TITLE_CODE);
+    assert_eq!(
+        finding["severity"], "advisory",
+        "a stale subject is a cost, never a reason to refuse the commit:\n{finding:#}"
+    );
+    assert_eq!(
+        finding["key"],
+        serde_json::json!({"code": STALE_TITLE_CODE, "target": summary_addr}),
+        "the stable `(code, target)` key is the summary the repair writes"
+    );
+    assert_eq!(
+        finding["location"]["address"], summary_addr,
+        "the location is the same address, so every text surface renders an `at:`"
+    );
+    assert!(
+        finding["message"]
+            .as_str()
+            .expect("the message is a string")
+            .contains("Rate limiting"),
+        "the message names the title that is still in the summary:\n{finding:#}"
+    );
+    let route = finding["route"]
+        .as_str()
+        .expect("the finding carries a route")
+        .to_string();
+    let cmd = backticked(&route, "stale commit summary").to_string();
+
+    // ── the read surface reports; it never rewrites ──
+    assert_eq!(
+        corpus.jigc_ok(&["doc", "show", &summary_addr, "--task", &task]),
+        "the Rate limiting spec lands\n",
+        "the summary's prose is the author's — the finding reports it, nothing rewrites it"
+    );
+
+    // ── re-raised at both doors, located and routed ──
+    for (door, out) in stale_title_doors(&corpus, &task) {
+        assert!(
+            out.contains(STALE_TITLE_CODE),
+            "{door} re-raises the advisory; got:\n{out}"
+        );
+        assert!(
+            out.contains(&summary_addr),
+            "{door} carries the located address; got:\n{out}"
+        );
+        assert!(
+            out.contains(&cmd),
+            "{door} carries the same route the ack did (`{cmd}`); got:\n{out}"
+        );
+    }
+    let validate =
+        String::from_utf8_lossy(&corpus.jigc(&["task", "validate", &task]).stdout).into_owned();
+    assert!(
+        validate.contains(&format!("advisory · {STALE_TITLE_CODE} — "))
+            && validate.contains(&format!("at: {summary_addr}")),
+        "the text surface renders the severity, the code and the `at:`; got:\n{validate}"
+    );
+
+    // ── following the emitted route verbatim repairs it ──
+    let argv = shell_split(&corpus, &cmd);
+    let args: Vec<&str> = argv[1..].iter().map(String::as_str).collect();
+    corpus.jigc_stdin_ok(&args, "the Throttling spec lands");
+    assert_eq!(
+        corpus.jigc_ok(&["doc", "show", &summary_addr, "--task", &task]),
+        "the Throttling spec lands\n"
+    );
+    for (door, out) in stale_title_doors(&corpus, &task) {
+        assert!(
+            !out.contains(STALE_TITLE_CODE),
+            "{door} goes quiet once the summary no longer names the old title; got:\n{out}"
+        );
+    }
+    let repaired: Value = serde_json::from_str(&corpus.jigc_ok(&[
+        "doc",
+        "rename",
+        "spec:throttling",
+        "--to",
+        "Throttling limits",
+        "--task",
+        &task,
+        "--format",
+        "json",
+    ]))
+    .expect("the second rename ack is one JSON document");
+    assert_eq!(
+        repaired["findings"],
+        serde_json::json!([]),
+        "a rename whose old title the summary does not name acks nothing:\n{repaired:#}"
+    );
+
+    // ── the omitting context: a task that renamed nothing ──
+    let quiet = task_with_a_summary_naming(&corpus, "leave every title alone", "Rate limiting");
+    for (door, out) in stale_title_doors(&corpus, &quiet) {
+        assert!(
+            !out.contains(STALE_TITLE_CODE),
+            "{door} is inert for a task that renamed nothing — never an error; got:\n{out}"
+        );
+    }
+}
+
+/// **A recorded title a staged doc still carries is not a stale one** (M51 Increment 11
+/// / T2 — the repairability leg).
+///
+/// The predicate's whole job is to be silenceable by the route it prints. A recorded
+/// title that is a **substring of the title a staged doc now carries** cannot be: every
+/// correct summary naming `Rate limiting` also names `Rate`, so firing on it would print
+/// a route that, followed exactly, changes nothing — M46's PT-1 defect, minted fresh.
+/// The same reading covers the rename-back cell (`A → B → A`), where the recorded `A` is
+/// the title the doc carries again.
+///
+/// So a recorded title is stale only when **no other staged doc's current `# H1`
+/// contains it**, and this arm is what makes that clause load-bearing rather than
+/// merely stated.
+#[test]
+fn a_recorded_title_a_staged_doc_still_carries_is_not_stale() {
+    let corpus = TrialCorpus::build(State::Fresh);
+
+    // (i) the superstring cell — the new title contains the old one.
+    let grow = task_with_a_summary_naming(&corpus, "grow the title", "Rate");
+    corpus.jigc_stdin_ok(
+        &[
+            "doc",
+            "set-slot",
+            &format!("commit:{grow}#summary"),
+            "--from-file",
+            "-",
+            "--task",
+            &grow,
+        ],
+        "the Rate limiting spec lands",
+    );
+    corpus.jigc_ok(&[
+        "doc",
+        "rename",
+        "spec:rate",
+        "--to",
+        "Rate limiting",
+        "--task",
+        &grow,
+    ]);
+    for (door, out) in stale_title_doors(&corpus, &grow) {
+        assert!(
+            !out.contains(STALE_TITLE_CODE),
+            "{door}: `Rate` is inside the title the doc now carries, so a summary naming \
+             `Rate limiting` is correct and the finding would be unsilenceable — it is \
+             not stale; got:\n{out}"
+        );
+    }
+
+    // (ii) the rename-back cell — the doc carries the recorded title again.
+    let back = task_with_a_summary_naming(&corpus, "change the title back", "Throttling");
+    corpus.jigc_ok(&[
+        "doc",
+        "rename",
+        "spec:throttling",
+        "--to",
+        "Rate limiting",
+        "--task",
+        &back,
+    ]);
+    corpus.jigc_ok(&[
+        "doc",
+        "rename",
+        "spec:rate-limiting",
+        "--to",
+        "Throttling",
+        "--task",
+        &back,
+    ]);
+    for (door, out) in stale_title_doors(&corpus, &back) {
+        assert!(
+            !out.contains(STALE_TITLE_CODE),
+            "{door}: the doc carries `Throttling` again, and `Rate limiting` is nowhere \
+             in the summary — nothing is stale; got:\n{out}"
+        );
+    }
+}
