@@ -19,7 +19,9 @@ This is a *decision/discussion* backlog, not a *task* backlog — tasks are stil
 
 *(The **M39** pre-1.0 RC-findings wave graduated + **shipped 2026-07-07** — planned, decomposed, built, audited, and complete ([DECISIONS.md](../DECISIONS.md) → 2026-07-07 M39 completion; [completions/artifacts/M39/VERDICT.md](../completions/artifacts/M39/VERDICT.md)); doc-read-surface, the team-ready `milestone-record` doctype, the freeze-exempt relocation floor, the output-size fd-tee, and the slug/form-vision riders all shipped. `state-aware-compose` stays stretch → 1.1. Removed from pending.)*
 
-### M51 — the evidence-check wave (the unadjudicated-axis wave) — CHARTERED 2026-09-10 · **SETTLED 2026-09-11**
+### M51 — the evidence-check wave (the unadjudicated-axis wave) — CHARTERED 2026-09-10 · **SETTLED 2026-09-11** · **BUILT 2026-09-16**
+
+*(**Built 2026-09-16** — eleven increments, each with its own [DECISIONS.md](../DECISIONS.md) entry; [roadmap](roadmap.md) → Milestone 51; acceptance [worked-examples](../design/worked-examples.md) → flow 52. **Built, not audited**: the completion audit, its persisted verdict and the version build + install are the milestone-completion workflow's next acts, so this row records the build and claims nothing beyond it — and it takes a dated *BUILT* marker rather than the sibling rows' `SHIPPED as <version>` form for exactly that reason, since the numeral is the bump's to name and D15's `1.0.0-rc.15` is the per-axis review's acceptance binary, not the 1.0.0 call.)*
 
 *(Chartered on [the 1.0.0 evidence check](../completions/artifacts/evidence-check-1.0/VERDICT.md) — run 2026-09-10 on `1.0.0-rc.14` built from HEAD `bd348a83`, five Opus reviewers plus one unseeded Codex source review, the gate green at that HEAD (**3341 passed / 0 failed**). Scope, claim, razor, forks and exclusions: [completions/artifacts/M51/charter.md](../completions/artifacts/M51/charter.md). **Preparation only — the decomposition is the planning session's, against a baseline that drives the binary rather than the charter; 22 of the 43 ledger rows are `reproduced-live? yes` and the rest are leads.**)*
 
