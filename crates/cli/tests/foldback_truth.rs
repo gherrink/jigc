@@ -263,8 +263,29 @@ fn milestone_span<'a>(body: &'a str, marker: &str) -> &'a str {
 /// artifact's directory rather than the ban being narrowed to `M51/VERDICT`, because a
 /// narrowed ban is satisfied by a citation of the wave's verdict under any other spelling,
 /// and the cost is one link losing its filename.
+///
+/// **Inverted 2026-09-16, at the audit that landed — the sixth time, and on time.** M51's
+/// completion audit ran (code review: 1 HIGH · 1 MEDIUM · 3 LOW; e2e: 19 of 22 scenarios
+/// green with two confirmed defects and one LOW), all five findings were confirmed live
+/// and fixed axis-complete, and the verdict is persisted at
+/// `completions/artifacts/M51/VERDICT.md`. So the pre-audit bound is now itself the law-1
+/// lie — a paragraph still reading *built, not audited* would understate a verdict that
+/// exists — and the assertions flip: `built + audited` required, `built, not audited`
+/// forbidden, and the `VERDICT` citation required **and checked against the filesystem**,
+/// on M50's precedent that an unchecked citation is how the fence got to be late once.
+/// What does **not** flip is the clean-audit ban: five findings landed, so *audited clean*
+/// and its two siblings stay forbidden — that is the M48 half of this rule, and it is the
+/// half that makes the post-audit direction a claim about what the audit *found* rather
+/// than a licence to say the wave was flawless. The 1.0.0 ban stays too: the call is the
+/// human's and this wave takes it no more than the last one did.
+///
+/// **What the numeral does here, now that there is one.** The paragraph names
+/// `1.0.0-rc.15` as built and installed, which is the bump this close performs — so
+/// [`the_foldback_names_the_version_cargo_toml_carries`] stops being vacuous over this
+/// span and starts comparing two homes that both carry a numeral. This arm still asserts
+/// nothing about the version: the two fences divide exactly as their doc-comments say.
 #[test]
-fn claude_md_names_m51_and_claims_only_the_build() {
+fn claude_md_names_m51_and_claims_exactly_what_the_audit_reached() {
     let body = read_doc("CLAUDE.md");
     // The project-state paragraph is a single line; the sections that follow it (build /
     // lint / test, quickstart, code architecture) are not milestone claims, and M51 is the
@@ -287,32 +308,49 @@ fn claude_md_names_m51_and_claims_only_the_build() {
         );
     }
 
-    // The bound is stated, not merely implied by an absence: a reader must be able to see
-    // that the audit is owed, and a paragraph that simply omits the word cannot say so.
+    // INVERTED 2026-09-16, which is this fence doing its job rather than failing at it.
+    // The audit ran, so the pre-audit bound is now itself the law-1 lie: a paragraph
+    // still saying *built, not audited* would understate a verdict that exists.
     assert!(
-        span.contains("built, not audited"),
-        "M51 is built and not yet audited, and the claim must say so in those words:\n{span}",
+        span.contains("built + audited"),
+        "M51's audit has run, and the claim must say so in those words:\n{span}",
     );
     for forbidden in [
-        // The post-audit direction, false today: no audit has run over M51's build.
-        "built + audited",
-        // Every one of these claims a verdict nobody reached.
+        // The stale bound, now the overstatement's mirror: it claims LESS than happened.
+        "built, not audited",
+        // Five findings landed (1 HIGH · 1 MEDIUM · 3 LOW from the code review, plus two
+        // confirmed e2e defects folded into the same fixes). A wave that found five things
+        // may not call its audit clean — the M48 half of this rule, which the inversion
+        // deliberately does not flip.
         "audited clean",
         "audit is CLEAN",
         "audit ran clean",
-        // The verdict artifact does not exist yet; a link to one would be a law-1 lie.
-        "VERDICT",
-        // The 1.0.0 call is the human's, and this wave claims nothing about it
-        // (`implementation/roadmap.md` → Milestone 51 Increment 11, *Declared bounds*).
+        // The 1.0.0 call is the human's and was deliberately not taken at this wave
+        // (`completions/artifacts/M51/VERDICT.md` → What is next). It is the
+        // overstatement available *today*, exactly as a premature audit claim was the one
+        // available before.
         "1.0.0 is called",
         "1.0.0 shipped",
     ] {
         assert!(
             !span.contains(forbidden),
-            "the M51 claim may not claim an audit that has not run, but contains \
-             `{forbidden}`:\n{span}",
+            "the M51 claim may not say `{forbidden}`:\n{span}",
         );
     }
+
+    // The citation is checked against the filesystem, not merely required as a string.
+    // A link to a verdict that does not exist is the same law-1 lie the pre-audit
+    // direction forbade, wearing the opposite costume.
+    assert!(
+        span.contains("VERDICT"),
+        "the audited M51 claim must cite its persisted verdict:\n{span}",
+    );
+    let verdict = repo_root().join("completions/artifacts/M51/VERDICT.md");
+    assert!(
+        verdict.is_file(),
+        "the M51 claim cites a verdict artifact that does not exist at {}",
+        verdict.display(),
+    );
 }
 
 // ---------------------------------------------------------------------------
