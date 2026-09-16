@@ -1792,3 +1792,127 @@ fn a_rename_preserves_every_header_field_and_slot_body_of_the_staged_doc() {
         "the old address no longer resolves in the task area"
     );
 }
+
+// ──────────────── arm I — the pre-rename identity is durable state ────────────────
+
+/// **The pre-rename title survives the invocation that moved it** (M51 Increment 11 /
+/// T1; `RC-rc14/findings-verification.md` → F-9, `settle-record.md` → §21).
+///
+/// `jigc doc rename --task` rewrites a staged doc's `# H1` and, until now, wrote **no
+/// task state at all** — the old title existed only in the renaming process's memory
+/// and in the ack it printed once. F-9 is what that costs: the task's staged `commit`
+/// doc can already carry the old title in its summary, and the producer that has to
+/// notice (the task-scope sweep at `jigc task validate <id>` / `task finalize
+/// --dry-run`) runs in a **later invocation** — and, for the pre-commit hook's nested
+/// `jigc validate`, in a **different process**. So the pre-rename identity has to be
+/// *durable task state* before anything can re-raise it.
+///
+/// The arm drives the real binary and reads the task-area record back through its own
+/// loader, over the axis the rename verb actually has:
+///
+///   * a **re-slug** (`Rate limiting` → `Throttling`) records the title it moved away
+///     from;
+///   * a **retitle-only** (`Throttling` → `THROTTLING`, same slug) records it too —
+///     the stale summary names the *title*, so keying the record on `reslugged` would
+///     ship the fix for half its own axis;
+///   * a `--to` equal to the title the doc already carries moved nothing and records
+///     nothing — recording it would make the doc's **current** title a stale
+///     candidate;
+///   * and a task that never renamed has **no key at all**, not an empty one.
+///
+/// The order is asserted, because the record is a history: the oldest title is the one
+/// a summary written at `doc create` time would name.
+#[test]
+fn the_pre_rename_titles_become_durable_task_state() {
+    let corpus = TrialCorpus::build(State::Fresh);
+    let task = corpus.start_workflow("plan", "pin down the throttle");
+    corpus.jigc_ok(&[
+        "doc",
+        "create",
+        "spec",
+        "--title",
+        "Rate limiting",
+        "--task",
+        &task,
+    ]);
+
+    let task_dir = corpus.repo().join(".jigc/tasks").join(&task);
+    let record_path = engine::state::RenameRecord::path_in(&task_dir);
+    assert!(
+        !record_path.exists(),
+        "a task that has created but not renamed carries no rename record: {}",
+        record_path.display()
+    );
+
+    // 1. the re-slug.
+    corpus.jigc_ok(&[
+        "doc",
+        "rename",
+        "spec:rate-limiting",
+        "--to",
+        "Throttling",
+        "--task",
+        &task,
+    ]);
+    // 2. the retitle-only — `THROTTLING` slugs to the identity the doc already holds.
+    corpus.jigc_ok(&[
+        "doc",
+        "rename",
+        "spec:throttling",
+        "--to",
+        "THROTTLING",
+        "--task",
+        &task,
+    ]);
+
+    let record = engine::state::RenameRecord::load(&task_dir).expect("the rename record loads");
+    assert_eq!(
+        record.pre_rename_titles,
+        vec!["Rate limiting".to_string(), "Throttling".to_string()],
+        "both pre-rename titles survive, oldest first — the re-slug's and the \
+         retitle-only's"
+    );
+
+    // The on-disk byte form, read as bytes rather than through the loader: the key is
+    // what a later process reads back.
+    let raw = fs::read_to_string(&record_path).expect("read the rename record");
+    let parsed: Value = serde_json::from_str(&raw).expect("the rename record is one JSON doc");
+    assert_eq!(
+        parsed["pre-rename-titles"],
+        serde_json::json!(["Rate limiting", "Throttling"]),
+        "the persisted key carries the ordered history:\n{raw}"
+    );
+
+    // 3. the no-op retitle — the title the doc already carries is not a stale one.
+    corpus.jigc_ok(&[
+        "doc",
+        "rename",
+        "spec:throttling",
+        "--to",
+        "THROTTLING",
+        "--task",
+        &task,
+    ]);
+    assert_eq!(
+        engine::state::RenameRecord::load(&task_dir)
+            .expect("the rename record loads")
+            .pre_rename_titles,
+        record.pre_rename_titles,
+        "a `--to` equal to the doc's own title moved no `# H1`, so it records nothing"
+    );
+
+    // 4. a task that never renamed: no key at all, and the absent read is empty.
+    let quiet = corpus.start_workflow("plan", "leave every title exactly as it is");
+    let quiet_dir = corpus.repo().join(".jigc/tasks").join(&quiet);
+    assert!(
+        !engine::state::RenameRecord::path_in(&quiet_dir).exists(),
+        "a task that never renamed writes no rename record"
+    );
+    assert!(
+        engine::state::RenameRecord::load(&quiet_dir)
+            .expect("an absent rename record loads as empty")
+            .pre_rename_titles
+            .is_empty(),
+        "…and reads back empty, never as an error"
+    );
+}

@@ -36,6 +36,11 @@ const BASE_PIN_FILE: &str = "base.json";
 /// in `.jigc/tasks/<id>/roles.json`, read back on resume).
 const ROLES_FILE: &str = "roles.json";
 
+/// The rename-log filename inside a task's working area — the durable record of the
+/// **pre-rename titles** this task has moved a staged doc away from
+/// ([`RenameRecord`]).
+const RENAMES_FILE: &str = "renames.json";
+
 /// The intent filename inside a task's working area — the original human intent
 /// the task was minted from, persisted verbatim so `jigc start --task <id>`
 /// resume re-composes with the same `{{task.intent}}` (the id is a *lossy* slug
@@ -1037,6 +1042,85 @@ impl RolesRecord {
             Err(err) => Err(err),
         }
     }
+}
+
+/// The task's **pre-rename title log** — every `# H1` this task has renamed a staged
+/// doc *away from*, oldest first (`jigc doc rename <addr> --to … --task <id>`).
+/// Persisted at `.jigc/tasks/<id>/renames.json`, beside [`RolesRecord`]'s `roles.json`.
+///
+/// **Why it has to be durable.** A rename moves a doc's title; the task's staged
+/// `commit` doc may already carry the old one in its summary. The producer that notices
+/// that runs in a **later invocation** — the task-scope sweep at `jigc task validate
+/// <id>` and `task finalize --dry-run` — and, for jigc's own `pre-commit` hook's nested
+/// `jigc validate`, in a **different process**. So the pre-rename title cannot live in
+/// the renaming process's memory, and the ack that prints it once is a cue card of the
+/// shape the trials measured failing (`completions/artifacts/RC-1.0-gate/cue-card-postmortem.md`).
+///
+/// **The log is history, so it is a `Vec`, not a key-sorted map** — the sibling records
+/// ([`RolesRecord`], [`ProvenanceRecord`]) are `BTreeMap`s because a *key* has one
+/// current value; here the order is the content. A title renamed away from twice is
+/// recorded twice. Only the **titles** are recorded, never the pre-rename address: an
+/// in-task re-slug's own fence is that nothing under the task area still names the old
+/// identity (`crates/cli/tests/doc_rename_in_task.rs` → the derived-set fence).
+///
+/// **Concurrent-writer disposition** (`design/storage.md` → Concurrent writers): this
+/// is **task-area** state, isolated by task id exactly as `roles.json` and the staged
+/// `.md` bodies are, so it is **not** a fourth row of that section's shared-writer table
+/// (`file-state.json` / `edges.json` / `tasks.json`) — a fan-out's sub-agents each own
+/// their own `tasks/<sub>/` area and no two of them write this file. It therefore needs
+/// neither the base-relative merge nor the save-scoped lock: it is written through the
+/// shared temp-sibling + `rename` primitive ([`persist`]) purely so a reader in another
+/// process never observes a partial file, and nothing more. The record is disposable
+/// with the task, so it carries no schema version of its own.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct RenameRecord {
+    /// Every `# H1` this task has renamed a staged doc away from, in the order the
+    /// renames happened.
+    pub pre_rename_titles: Vec<String>,
+}
+
+impl RenameRecord {
+    /// The record's on-disk location inside a task's working area.
+    pub fn path_in(task_dir: &Path) -> PathBuf {
+        task_dir.join(RENAMES_FILE)
+    }
+
+    /// Serialize to the on-disk byte form: pretty JSON, one trailing newline (the
+    /// `roles.json` / `base.json` convention).
+    fn to_bytes(&self) -> String {
+        let mut s = serde_json::to_string_pretty(self).expect("RenameRecord serializes");
+        s.push('\n');
+        s
+    }
+
+    /// Load the record from `<task_dir>/renames.json`. A missing file is the
+    /// *nothing-renamed-yet* case — the overwhelmingly common one — and yields an empty
+    /// record, never an error (the absent-is-empty contract [`RolesRecord::load`] and
+    /// [`ProvenanceRecord::load`] both keep).
+    pub fn load(task_dir: &Path) -> std::io::Result<Self> {
+        match std::fs::read(Self::path_in(task_dir)) {
+            Ok(bytes) => Ok(serde_json::from_slice(&bytes)?),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(Self::default()),
+            Err(err) => Err(err),
+        }
+    }
+}
+
+/// Append `pre_rename_title` to the task's rename log and persist it atomically — the
+/// stage-time write `jigc doc rename` performs **after** the retitled body lands, so a
+/// refused rename logs nothing.
+///
+/// The caller owns the *whether*: a rename that moved no `# H1` records nothing (see
+/// `cli::doc::run_doc_rename`, the one producer). This primitive owns only the append,
+/// mirroring [`record_doc_provenance`].
+pub fn record_pre_rename_title(task_dir: &Path, pre_rename_title: &str) -> std::io::Result<()> {
+    let mut record = RenameRecord::load(task_dir)?;
+    record.pre_rename_titles.push(pre_rename_title.to_string());
+    write_atomic(
+        &RenameRecord::path_in(task_dir),
+        record.to_bytes().as_bytes(),
+    )
 }
 
 /// A freshly created doc instance: its minted `address` (`<type>:<slug>`) and the

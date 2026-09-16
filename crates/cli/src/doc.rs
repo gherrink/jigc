@@ -2902,12 +2902,30 @@ fn run_doc_rename(
         None
     };
 
+    let previous_title = crate::rename::read_h1(&source);
     let retitled = crate::rename::rewrite_h1(&source, to)
         .ok_or_else(|| anyhow!("the staged doc `{uri}` carries no `# H1` to retitle"))?;
     persist(&path, &retitled)?;
 
     if let Some(new_path) = new_path {
         move_staged_identity(&task, &address, &path, &new_path, &new_slug, &new_uri)?;
+    }
+
+    // **The pre-rename identity becomes durable task state.** The task's staged `commit`
+    // doc may already carry the title this call just moved away from, and whatever
+    // notices that runs in a *later* invocation — and, for the `pre-commit` hook's nested
+    // `jigc validate`, in a different process — so the old title has to outlive this one
+    // (`engine::state::RenameRecord`, which carries the concurrent-writer disposition).
+    //
+    // Recorded on **every** rename that actually moves the `# H1`, the retitle-only cell
+    // included: a stale summary names the *title*, not the slug, so keying this on
+    // `reslugged` would record half the axis. A `--to` equal to the title the doc already
+    // carries moved nothing and records nothing — logging it would make the doc's own
+    // *current* title a stale candidate. Written after the body landed, so a refused
+    // rename logs nothing.
+    if let Some(previous_title) = previous_title.filter(|previous| *previous != to) {
+        state::record_pre_rename_title(&task.dir, previous_title)
+            .context("could not record the pre-rename title")?;
     }
 
     let target = whole_doc_ack_target(&new_uri)?;
