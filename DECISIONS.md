@@ -2,6 +2,64 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-09-16 — M51 Increment 11 / T4: the disposition ledger — every rc.14 row names where it landed or carries a live trigger
+
+The sibling of T3. The conversion ledger asks *does every trial finding have a citation or a
+reason*; the **disposition** ledger asks *does every trial finding name where it landed or carry a
+trigger that is still live* — [CLAUDE.md](CLAUDE.md) → *Decisions log*: a deferral left only in prose
+has no trigger and will be forgotten. [decisions-pending.md](implementation/decisions-pending.md) →
+*The rc.14 trial's findings* now answers that for all nine ids it carries, and states in the file the
+re-runnable command that checks the **form** of the answer. Cross-ref
+[settle-record.md](completions/artifacts/M51/settle-record.md) → **D14** · **D13**.
+
+**Four of nine rows were not keyable at all.** Driven before anything was edited, the section named
+only **F-2 · F-9 · F-10 · F-11 · F-13** in its prose: **F-3, F-4, F-5 and F-8** carried no finding id
+anywhere in their bullet, so no command could show them and no reader could key them. The three
+absorption brackets named a Settle decision (`D7`, *the Settle's scope batch*) and **no increment** —
+two of them naming *M50* Increment 9 in passing, which is exactly the shape a careless check reads as
+a pass. Every row now opens with a dated bracket carrying its id, per the convention Increment 10
+used: **dated brackets only, no prose of a dated record rewritten.**
+
+**The three absorbed rows name their increment and their task**, not just the wave: **F-5** → Inc 6 /
+T1+T2 (`finalize.no-task` for the task family, the shipped `milestone.unknown` for the milestone
+family, every `WORK_UNIT_ID_DOORS` row on the declared envelope) · **F-11** → Inc 6 / T3 (all four
+`PayloadReject::ALL` sites) · **F-9** → Inc 11 / T1+T2 (`RenameRecord` + `commit-recording.stale-title`).
+Each cites the test that pins it, so the landing is re-checkable rather than asserted.
+
+**A trigger this wave fired is recorded as fired — and the re-read found one that fired *and
+did not discriminate*.** F-3's second clause reads *"or a wave opening `schema-conformance`"*, and M51
+Increment 8 opened exactly that (`schema-conformance.orphaned-instance`,
+`schema-conformance.unversioned-doctype`) while the Settle still excluded F-3 at **D13** on the
+**necessity** leg. So the clause fires on any new code in that family and says nothing about F-3's
+cost, which sits in the schema **format**: it is **struck with its falsifying datum**, and the row
+stands on its first clause, which is the necessity-bearing one. F-5's trigger and F-11's half are
+recorded **FIRED**; F-4, F-8 and F-13 are recorded **NOT fired** with what was re-read — F-4 with its
+near-miss named, because this wave opened `doc rename`'s *ack* and `jigc rename`'s `--slug` refusal but
+neither verb's *help* and none of the orientation view's routes.
+
+**The residue of an absorbed chain needs its own live trigger, or absorbing one link silently
+un-triggers the others.** The F-2 → F-9 → F-10 bullet carried **one** `*Trigger:*` for three findings,
+and F-9's landing fired its first clause. The clause is split rather than rewritten: the **second**
+clause (*a second trial arm observed leaving the adapter to repair a commit*) did **not** fire and is
+now F-10's and F-2's live trigger, and F-2 takes a second clause of its own — the next wave that opens
+the carryover gate's step prose or `preview_gates`' membership, the seam Increment 5 made the single
+source of the `--dry-run` forecast (EC-20).
+
+**The rc.14 row this wave fixed outside the section is discharged where it lives.** **F-7** is carried
+as **N15**, whose entry still read *"Not fixed at Increment 13"* with a trigger whose first clause
+Increment 5 / T6 had already fired — a stale reason this wave created. Dated-bracketed as discharged,
+citing the fix and T3's `pinned-by:` conversion.
+
+**The check is stated in the file and fences the form only.** It prints one line per finding id with
+its disposition and exits non-zero on a row carrying neither — **red at this task's start** (exit 1;
+five `!! absorption bracket names no increment`, four rows unkeyable as `(no id)`), green after (nine
+ids, `absorbed+trigger` or `trigger`). It cannot say whether a trigger is *live*, which is why the
+re-read is written out per row and verified by reading — [pinning.md](implementation/pinning.md) §3's
+rule applied to triggers rather than to citations.
+
+`count_fences::`, `record_stale_reasons::` and `ledger_record_truth::` green (all three read this
+file's prose), and `dev/gate` full and unscoped: **3520 passed / 0 failed**.
+
 ## 2026-09-16 — M51 Increment 11 / T3: the conversion ledger closes, and the row-by-row re-read finds a fourth row
 
 **Decided:** [RC-rc14/findings-verification.md](completions/artifacts/RC-rc14/findings-verification.md) is **CLOSED** — 13 verdict rows, **5 cited · 8 `UNPINNED` with a stated reason · 0 undisposed**. The human's own gate on the 1.0.0 call is met, under the criterion D14 named it for: *has a citation or a reason*, **not** *has a test* ([settle-record.md](completions/artifacts/M51/settle-record.md) → D14).
