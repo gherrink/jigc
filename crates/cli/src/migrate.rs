@@ -351,10 +351,14 @@ fn migrate_in_repo(
     // Read the foreign file's bytes (the source the seam carries). Resolve the path
     // against the repo root so a repo-relative `CHANGELOG.md` reaches the root file.
     //
-    // The **caller's own spelling** is what is joined and quoted, not the adjudicated one:
-    // the adjudication has already proved the two name the same file (a token that resolved
+    // The **caller's own spelling** is what is joined, not the adjudicated one: the
+    // adjudication has already proved the two name the same file (a token that resolved
     // anywhere else was refused above), and a read fault is the one refusal whose subject is
-    // the string the operator typed and can edit.
+    // the string the operator typed and can edit — so that same spelling, and not the
+    // resolved `foreign_path`, is what the refusal below quotes. Until the M51 completion
+    // audit (LOW 3) this comment stood over a message rendering `foreign_path.display()`: an
+    // operator who typed `adir` was answered with `/private/var/…/repo/adir`, a host path on
+    // a surface law 1 binds, and one they could not paste back into the route it prints.
     let foreign_path = repo_root.join(path);
     // A route-carrying error, not a `with_context` over the raw I/O error: the latter
     // chains the `os error 2` tail into `{err:#}` — a dead end for the agent. Name the
@@ -366,8 +370,7 @@ fn migrate_in_repo(
         let route =
             engine::finding::Route::mechanical(["jigc", "migrate", "<path>", "--as", doctype], "");
         anyhow!(
-            "could not read the foreign `{doctype}` source at {}\n  route: check the path, then re-run {route} with a readable file",
-            foreign_path.display()
+            "could not read the foreign `{doctype}` source at `{path}`\n  route: check the path, then re-run {route} with a readable file"
         )
     })?;
 

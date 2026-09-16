@@ -367,6 +367,10 @@ enum Plant {
     /// A committed-store file at the `adr` home that does not parse — the read path's
     /// `store.unparseable` block.
     BrokenAdr,
+    /// A **directory** at a repo-relative name the operator can type — the shape that
+    /// makes `jigc migrate <path>`'s read fault fire over a token that exists, so the
+    /// cell cannot be mistaken for a typo answering on some other axis.
+    ForeignDir,
 }
 
 /// A door outside `DESTROYING_DOORS`, its argv, and the plant it is asked over.
@@ -408,6 +412,17 @@ const READ_DOORS: &[ReadDoor] = &[
         argv: &["doc", "show", "adr:broken", "--format", "json"],
         plant: Plant::BrokenAdr,
     },
+    // Earned by the M51 completion audit (LOW 3): `migrate`'s read fault composed
+    // `repo_root.join(path).display()`, so the operator who typed `adir` was answered with
+    // `/private/var/…/repo/adir` — and the source comment two lines above it claimed the
+    // opposite ("a read fault is the one refusal whose subject is the string the operator
+    // typed"). The door is neither destroying nor a read contract, which is exactly why no
+    // earlier arm reached it.
+    ReadDoor {
+        label: "migrate <dir> --as adr (the read fault on the operator's own token)",
+        argv: &["migrate", "adir", "--as", "adr"],
+        plant: Plant::ForeignDir,
+    },
 ];
 
 /// `<root>/repo` + `<root>/home`: a set-up jigc project with `plant` in place.
@@ -442,6 +457,9 @@ fn read_fixture(root: &Path, tag: &str, plant: Plant) -> (PathBuf, PathBuf) {
             let decisions = repo.join("docs").join("decisions");
             fs::create_dir_all(&decisions).expect("mk decisions dir");
             fs::write(decisions.join("broken.md"), "not an adr at all\n").expect("write broken");
+        }
+        Plant::ForeignDir => {
+            fs::create_dir_all(repo.join("adir")).expect("mk foreign dir");
         }
     }
     (repo, home)
@@ -711,6 +729,13 @@ const GUARDED_SRC: &[&str] = &[
     "crates/engine/src/store.rs",
     // `add-from-spec`'s spec read — the same two `store.*` blocks in the same shape.
     "crates/engine/src/milestone.rs",
+    // The foreign-source migrate door. Swept by the M51 completion audit (LOW 3): its one
+    // production `.display()` rendered `repo_root.join(path)` in the read fault, against a
+    // source comment claiming the subject was the operator's own token. Every other path
+    // text this module composes already carries the caller's spelling or the adjudicated
+    // repo-relative `recorded`, so the module joins the guarded list rather than staying a
+    // counted remainder of zero.
+    "crates/cli/src/migrate.rs",
 ];
 
 /// The producer set this fix did **not** close, named with its size so the remainder is a
@@ -766,11 +791,6 @@ const UNSWEPT_PRODUCERS: &[(&str, usize, &str)] = &[
         1,
         "`not_in_repo_message` is absolute BY ITS SUBJECT — it reports where jigc looked and \
          found no repository, so there is no repo to be relative to",
-    ),
-    (
-        "crates/cli/src/migrate.rs",
-        1,
-        "an `anyhow` read fault on the operator's own supplied path, quoted back as given",
     ),
     (
         "crates/cli/src/doc.rs",
