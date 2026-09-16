@@ -2,6 +2,55 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-09-16 — M51 Increment 11 / T5: flow 52 — nine arms, each naming the kind of set it iterates
+
+The wave's composite done-picture through the real binary
+([worked-examples.md](design/worked-examples.md) → flow 52; `crates/cli/tests/flow52_acceptance.rs`,
+nine arms across twelve `#[test]`s), built to the arm set
+[acceptance-design.md](completions/artifacts/M51/acceptance-design.md) → Part 1 adopts at
+[settle-record.md](completions/artifacts/M51/settle-record.md) §19. Four arms read a **code-side
+registry** (`PATH_ARG_OCCURRENCES` · `ENVELOPE_ARMS`, production-side · `WORK_UNIT_ID_DOORS`,
+filtered to one cell · `STORE_EXIT_FLIPS`, where membership **is** the assertion); one crosses a
+**total classification** with a **defining case-set** (`BEHALF_DOORS` × `PostureMember::ALL`); one
+matches a case-set **exhaustively** (`ManifestKind::ALL`, through a compiler-checked `match` to the
+fixture act that produces each kind); two are **derivations stated as such** (`setup`'s install
+pathspec, read back from the binary; the ambush owe-set); and one is **manufactured and says so**
+(`{stage, hook} × {untouched, raced}` — the failure points are decided and the second axis is a
+race). Increments 9, 10 and 11 are deliberately unrepresented, with D6, D11, D9's log fence and
+EC-7 named beside them (the M46 Inc 9 / M48 Inc 11 / M49 Inc 12 precedent); EC-28 rides arm 1 and
+N15 rides arm 5; F-9 is pinned by its own increment's suite, which is what the conversion ledger
+cites.
+
+**Three elaborations the acceptance design did not settle, each decided at the build and stated in
+the suite rather than left to be inferred.**
+
+- **Arm 1's composite subject is the identity set, not the listing's bytes.** The design's phrasing
+  was *"the store still addresses its docs"*, and the byte-level reading is **false against the
+  shipped binary**: `jigc config set docs-root <a new relative directory>` is a registry cell the
+  root-knob rules *admit*, and it moves every managed home — driven, the listing's `path` values all
+  change. A composite that reddened there would be asserting that a shipped knob may not be used. So
+  the assertion is over `(id, state)` pairs, which is the property an unadjudicated token actually
+  costs: a doc whose identity no `doc list`, `doc show` or finding can name again.
+- **Arm 2's composite repository is the merge state, and that is not an arbitrary pick.** An
+  operation in progress is the **one** member both acting classes adjudicate, so every acting row
+  refuses and the sweep mutates nothing *by construction* — which is what makes *"the merge is still
+  exactly where the user left it after every acting door has been handed it"* a claim a sequence can
+  carry. On a detached or unborn `HEAD` the movers legitimately proceed, so those halves are driven
+  per-row in their own repositories instead.
+- **Arm 3's derivation carries exactly one stated exception.** Driven over the eight install paths,
+  the rule *bytes that survive the install would ride the install commit, so the door refuses* decides
+  seven of them. `.claude/skills/jigc/SKILL.md` is the eighth and is **not** decided by it: jigc owns
+  that artifact and refuses to clobber a user-edited copy (M48 Increment 10), so an edit there
+  survives the install without ever being a candidate for the commit. It is named in the suite with
+  its reason and its citation rather than special-cased, on the `Exempt(reason)` mold the wave uses
+  one registry over.
+
+Honest bound, carried: flow 52 is a **composite** acceptance and deliberately re-runs no axis. Every
+arm states what it adds over the axis suite beside it, and the per-cell tables — the nine escape
+shapes, the eighteen setup cells, the four pre-image cells, the sixty envelope arms, the four
+malformed-token cells — stay where they shipped. An arm that re-ran one would prove the axis twice
+and the wave once.
+
 ## 2026-09-16 — M51 Increment 11 / T4: the disposition ledger — every rc.14 row names where it landed or carries a live trigger
 
 The sibling of T3. The conversion ledger asks *does every trial finding have a citation or a
