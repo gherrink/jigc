@@ -2352,10 +2352,19 @@ fn the_owe_set_is_derived_and_a_withdrawn_declarer_reddens_every_door() {
 // Arm 9 — the orphan arm over `STORE_EXIT_FLIPS` (MEMBERSHIP IS THE ASSERTION)
 // ═════════════════════════════════════════════════════════════════════════════
 
-/// The three committed, stamped singletons the methodology pack authored — the population
-/// that orphans the moment that pack leaves the composition. Written down because which
-/// doctypes a *fixture* pack drops is a property of the fixture, not of any registry.
-const ORPHANED: &[&str] = &["VISION.md", "docs/decisions-log.md", "docs/roadmap.md"];
+/// The committed, stamped singletons the methodology pack authored **inside jigc's declared
+/// territory** — the population that orphans the moment that pack leaves the composition.
+/// Written down because which doctypes a *fixture* pack drops is a property of the fixture,
+/// not of any registry.
+const ORPHANED: &[&str] = &["docs/decisions-log.md", "docs/roadmap.md"];
+
+/// **The stated residual** (M51 completion audit; `cli::orphan::Territory` → residual 2). The
+/// same fixture pack orphans `VISION.md` too, at a **repo-root** placement home — a home that
+/// declares no directory, and so no territory. The sweep's subject is jigc's declared homes
+/// rather than the repository (the stamp being an unnamespaced `schema-version:` key that
+/// cannot tell jigc's bytes from a team document's), which leaves that one cell at its
+/// pre-M51 exit-0 status quo. Asserted below, not dropped.
+const ROOT_HOMED_RESIDUAL: &str = "VISION.md";
 
 /// The control: a committed stamped singleton whose doctype the dev pack still defines. A
 /// green arm without it would be satisfied by a check that flags every stamped file it meets.
@@ -2437,6 +2446,13 @@ fn a_doctype_that_leaves_the_resolved_set_flips_the_exit_and_is_listed_as_orphan
         )),
         "`{STILL_CLAIMED}`'s doctype is still defined, so the sweep stays silent about \
          it\n{report}",
+    );
+    assert!(
+        !report.contains(&format!(
+            "blocking · {code} — committed doc `{ROOT_HOMED_RESIDUAL}`"
+        )),
+        "the root-homed residual is outside every declared home, so the sweep may not speak \
+         for it — the bound stated with the fix, asserted rather than assumed\n{report}",
     );
     assert!(
         report.contains(flip.cause),

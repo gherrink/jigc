@@ -40,7 +40,8 @@
 //! verdict — a path it can name a doctype for is the strand advisory's, and what it cannot
 //! name stays the sibling's (`completions/artifacts/M51/settle-record.md` → §18). It lands
 //! here rather than in the engine for the reason the strand arms do: the subject is the
-//! **committed** set, which only `git ls-files` knows.
+//! **committed** set, which only `git ls-files` knows — narrowed by [`Territory`] to the
+//! committed set **inside jigc's declared homes**, for the reason that type states.
 
 use std::path::Path;
 
@@ -269,13 +270,110 @@ fn at_remainder(rel: &str, remainder: &str) -> bool {
     rel == remainder || rel.ends_with(&format!("/{remainder}"))
 }
 
+/// **The directory trees jigc has been told are its own** — the subject bound of the
+/// orphaned-instance sweep ([`orphaned_instances`]), and the answer to a question the stamp
+/// itself cannot answer.
+///
+/// **Why a location rule and not a bytes rule (M51 completion audit, HIGH).** The stamp jigc
+/// writes is the bare key `schema-version: N` in a document's YAML front matter — no
+/// namespace, no producer, nothing that distinguishes jigc's stamp from the same key written
+/// by anyone else for any other purpose. The sweep's first shipped subject was *every*
+/// committed `.md` in the repository, so a plain team document carrying that key — at the repo
+/// root, in `notes/`, anywhere — was named a jigc instance and flipped `jigc validate` to
+/// exit 1 over bytes jigc never wrote. Since the stamp cannot discriminate, the **home** does:
+/// jigc speaks only for stamped files sitting inside the trees an adopter's own configuration
+/// has handed it.
+///
+/// **The three sources, each resolved the way the rest of the code resolves it** — never a raw
+/// `schema.location`, and the placement branch handled (`CLAUDE.md` → the cross-cutting
+/// gotcha):
+///
+/// - the resolved **`docs-root`** tree (`crate::start::docs_root_prefix`);
+/// - the resolved **`placement-root`**, when it is not the repo root
+///   (`crate::start::placement_root`);
+/// - each resolved doctype's **home directory** — a `location:` doctype's resolved dir, and a
+///   `placement:` doctype's resolved *parent* directory ([`home_of`]).
+///
+/// **Two residuals, stated rather than hidden** (`design/validation.md` → The M51
+/// registrations — Increment 8):
+///
+/// 1. A **foreign** stamped `.md` *inside* the docs home still fires. That is accepted: the
+///    docs tree is the directory the adopter handed jigc, and the finding's route already
+///    names `jigc unmanage <path>` for a file that is not meant to be managed.
+/// 2. An orphan at a **root-level placement home** — a departed doctype homed like `VISION.md`
+///    — goes **unflagged**, because a repo-root home contributes no directory that is not the
+///    whole repository. That one cell keeps its pre-M51 exit-0 status quo; widening back to it
+///    needs a stamp that says *jigc* (`implementation/decisions-pending.md` → the namespaced
+///    stamp key), not a wider directory rule.
+///
+/// The same reasoning applies to a **repo-root `docs-root`** (`""` / `.`): it contributes no
+/// tree of its own, since *the whole repository* is precisely the subject this type exists to
+/// stop the sweep from claiming. A doctype's own home directories still contribute, so the
+/// homes a flat layout actually uses stay covered.
+pub(crate) struct Territory {
+    /// Repo-relative directories, normalized (no trailing slash, never empty). A committed
+    /// path is inside the territory iff it sits under one of them.
+    dirs: std::collections::BTreeSet<String>,
+}
+
+impl Territory {
+    /// Derive the territory from the **resolved** cascade knobs and the **resolved** schema
+    /// map. `docs_root` is [`crate::start::docs_root_prefix`]'s normalized value (`""` being
+    /// the repo root) and `placement_root` is [`crate::start::placement_root`]'s (`None`
+    /// unset, `Some("")` the repo root) — passed as values rather than resolved here so the
+    /// knob vocabulary keeps its single home in `start.rs`.
+    pub(crate) fn resolve(
+        docs_root: &str,
+        placement_root: Option<&str>,
+        resolved: &std::collections::BTreeMap<String, Schema>,
+    ) -> Self {
+        let mut dirs = std::collections::BTreeSet::new();
+        let mut add = |dir: &str| {
+            let dir = dir.trim_matches('/');
+            if !dir.is_empty() && dir != "." {
+                dirs.insert(dir.to_string());
+            }
+        };
+        add(docs_root);
+        if let Some(root) = placement_root {
+            add(root);
+        }
+        for schema in resolved.values() {
+            match home_of(schema) {
+                // A located doctype's resolved home dir — which a project shadow may place
+                // outside `docs-root` entirely, so it is read rather than assumed.
+                Some(Home::Location(dir)) => add(&dir),
+                // A placement doctype's home is one file; its *directory* is the territory.
+                // A home at the repo root has none — residual 2 above.
+                Some(Home::Placement(file)) => {
+                    if let Some(parent) = parent_dir(&file) {
+                        add(parent);
+                    }
+                }
+                None => {} // a transient doctype homes nowhere.
+            }
+        }
+        Territory { dirs }
+    }
+
+    /// Whether a committed repo-relative path sits inside one of the territory's trees. The
+    /// separator is part of the match, so `docs-archive/x.md` is not inside `docs`.
+    pub(crate) fn contains(&self, rel: &str) -> bool {
+        self.dirs
+            .iter()
+            .any(|dir| rel.starts_with(&format!("{dir}/")))
+    }
+}
+
 /// The check id of the **orphaned-instance** break (M51 Increment 8 / T3) — a committed doc
-/// carrying a jigc schema-version stamp that **no resolved doctype claims**. Named once so
+/// **inside jigc's declared homes** ([`Territory`]) carrying a `schema-version:` stamp that
+/// **no resolved doctype claims**. Named once so
 /// the producer below, [`crate::render::STORE_EXIT_FLIPS`]' matcher and witness, and every
 /// fence over either cannot drift apart on a string.
 pub const ORPHANED_INSTANCE_CODE: &str = "schema-conformance.orphaned-instance";
 
-/// The committed `.md`s that carry a jigc **schema-version stamp** yet are claimed by **no
+/// The committed `.md`s **inside jigc's declared homes** ([`Territory`]) that carry a
+/// **`schema-version:` stamp** yet are claimed by **no
 /// resolved doctype** — the instances a doctype leaves behind when it leaves the composition,
 /// and their sibling, a stamped file sitting where no doctype homes
 /// (`design/validation.md` → The M51 registrations — Increment 8;
@@ -283,16 +381,25 @@ pub const ORPHANED_INSTANCE_CODE: &str = "schema-conformance.orphaned-instance";
 /// sorted [`committed_markdown`] listing and the claimed set is a `BTreeSet`, so the output
 /// is a function of the corpus and never of an enumeration order.
 ///
-/// **Two legs, and each is the honest one available.** The stamp is read by
+/// **Three legs, and each is the honest one available.** The stamp is read by
 /// [`engine::validate::schema_version_from_front_matter`] — no parse and **no schema**, which
 /// is the point: the type the stamp names is defined by nothing, so every reader that takes a
 /// `&Schema` is unavailable here by construction (`crate::migrate_corpus`'s
 /// `is_unadopted_foreign` among them). The claim is the union of
 /// [`engine::index::committed_instances`] over the resolved schemas — the same census every
 /// other committed-instance consumer reads, so "claimed" means claimed by the doors that act
-/// on it, not by a second opinion. A file jigc never stamped (`README.md`, a foreign doc, the
-/// adapter's own guide, whose front matter carries no stamp) is not this condition's subject
-/// and is never named by it.
+/// on it, not by a second opinion. And the **subject** is the committed set inside
+/// [`Territory`], not the repository: a stamped file outside jigc's declared homes is not this
+/// condition's subject and is never named by it.
+///
+/// **That third leg replaced a false one (M51 completion audit, HIGH).** This comment used to
+/// read *"a file jigc never stamped … is not this condition's subject and is never named by
+/// it"* — true of the *stamp* leg and false as a statement about the sweep, because the stamp
+/// is the unnamespaced key `schema-version:` and nothing makes it jigc's. A committed team
+/// document carrying that key anywhere in the repository was named, blocking, and flipped
+/// `jigc validate` to exit 1. The roadmap's *"needs `JIGC_PACK_DIR` or a PB-1 project pack"*
+/// reachability bound was falsified by the same datum. [`Territory`] carries the narrowed
+/// subject and both residuals it leaves.
 ///
 /// `spoken_for` is the strand set [`orphaned_docs`] already reported. It is the **partition**,
 /// not an optimization: a strand is a *self-discovered prior home* — a path the walk can name
@@ -305,6 +412,7 @@ pub const ORPHANED_INSTANCE_CODE: &str = "schema-conformance.orphaned-instance";
 pub(crate) fn orphaned_instances(
     repo_root: &Path,
     resolved: &std::collections::BTreeMap<String, Schema>,
+    territory: &Territory,
     spoken_for: &std::collections::BTreeSet<String>,
 ) -> Vec<String> {
     let claimed: std::collections::BTreeSet<String> = resolved
@@ -319,12 +427,15 @@ pub(crate) fn orphaned_instances(
         .collect();
     committed_markdown(repo_root)
         .into_iter()
+        .filter(|rel| territory.contains(rel))
         .filter(|rel| !claimed.contains(rel) && !spoken_for.contains(rel))
         .filter(|rel| carries_stamp(repo_root, rel))
         .collect()
 }
 
-/// Whether the committed file at `rel` carries a jigc schema-version stamp. A file git tracks
+/// Whether the committed file at `rel` carries a `schema-version:` stamp — *a* stamp, not
+/// provably *jigc's*: the key is unnamespaced, which is why [`Territory`] bounds the subject.
+/// A file git tracks
 /// but the worktree no longer holds reads as **unstamped** — the sweep is a statement about
 /// bytes it could read, never an assertion built on an absent file.
 fn carries_stamp(repo_root: &Path, rel: &str) -> bool {
@@ -336,35 +447,41 @@ fn carries_stamp(repo_root: &Path, rel: &str) -> bool {
 
 /// The **blocking** store-scope finding for one orphaned instance, located at its path.
 ///
-/// **The message states what was computed, not what was inferred.** The stamp carries a
-/// version and no type (`schema-version: N` — the datum §20 settled `doc list`'s `id: null`
-/// on), so *the doctype is gone* is an inference the sweep cannot make: the same predicate
-/// also holds for a stamped copy sitting where no doctype homes. Both are one condition —
-/// jigc stamped this file and now claims it nowhere — and the wording says exactly that, so
-/// neither reading is told something false.
+/// **The message states what was computed, not what was inferred.** Two things were computed
+/// and the wording carries exactly those: the file sits **inside a home jigc was handed**
+/// ([`Territory`]), and it carries a **`schema-version:` stamp** that **no resolved doctype
+/// claims**. What was *not* computed is whose stamp it is — the key is unnamespaced, so
+/// `a jigc schema-version stamp` (the wording this message shipped with until the M51
+/// completion audit) was a law-1 overclaim about bytes jigc may never have written. It is
+/// likewise not computed *why* nothing claims it: the pack that defined the type may have left
+/// the composition, or the file may be a hand-placed copy or a bad merge sitting where no
+/// doctype homes. Both are the one condition this code names, and the message says that much
+/// and no more.
 ///
 /// **The route names both directions of repair, and says what its exit leaves behind.**
-/// Restoring what claims the file (the pack, or its home) is the first; `jigc unmanage` is
-/// the alternative — it runs cleanly here (a path under no schema location drops its
-/// file-state baseline and exits 0) but **leaves the bytes on disk**, so on its own it does
-/// not clear this finding. A route that, followed exactly, changes nothing is the defect
-/// M46's PT-1 closed at another door, so that exit names the act that finishes it
-/// (`DECISIONS.md` → 2026-09-15 M51 Increment 8 / T3).
+/// Restoring what claims the file is the first — re-adding the pack that defines its type, or
+/// moving the file to a resolved doctype's home, which is the exit that fits the population
+/// actually reaching this finding (it is already inside jigc's homes; what it is not at is any
+/// doctype's). `jigc unmanage` is the alternative — it runs cleanly here (a path at no
+/// doctype's home drops its file-state baseline and exits 0) but **leaves the bytes on disk**,
+/// so on its own it does not clear this finding. A route that, followed exactly, changes
+/// nothing is the defect M46's PT-1 closed at another door, so that exit names the act that
+/// finishes it (`DECISIONS.md` → 2026-09-15 M51 Increment 8 / T3).
 pub(crate) fn orphaned_instance_finding(rel: &str) -> engine::finding::Finding {
     engine::finding::Finding::graded(
         engine::finding::Severity::Blocking,
         ORPHANED_INSTANCE_CODE,
         format!(
-            "committed doc `{rel}` carries a jigc schema-version stamp but sits at no \
-             resolved doctype's home — no schema in the composed set claims it, so jigc \
-             cannot say what this file is"
+            "committed doc `{rel}` sits at a jigc-managed home and carries a \
+             `schema-version:` stamp, but no resolved doctype claims it — no schema in the \
+             composed set says what this file is"
         ),
         Some(engine::finding::Location::addressed(rel, 1, 1)),
         Some(engine::finding::Route::human(format!(
-            "restore what claims it — re-add the pack that defines its type, or move it to \
-             that doctype's home — or take it out of jigc's world: `jigc unmanage {token}`, \
-             then delete the file or its `schema-version:` stamp (`unmanage` drops the \
-             baseline and leaves the bytes, so the stamp alone keeps this finding alive)",
+            "restore what claims it — re-add the pack that defines its type, or move it to a \
+             resolved doctype's home — or take it out of jigc's world: `jigc unmanage \
+             {token}`, then delete the file or its `schema-version:` stamp (`unmanage` drops \
+             the baseline and leaves the bytes, so the stamp alone keeps this finding alive)",
             token = crate::task::shell_token(rel)
         ))),
     )
@@ -630,8 +747,9 @@ mod tests {
         );
     }
 
-    /// (M51 inc-8 T3) **The orphaned-instance predicate's three legs, each driven against a
-    /// real committed tree.** A stamped doc no resolved doctype claims is the hit; the same
+    /// (M51 inc-8 T3; the subject leg added at the M51 completion audit) **The
+    /// orphaned-instance predicate's legs, each driven against a real committed tree.** A
+    /// stamped doc inside jigc's territory that no resolved doctype claims is the hit; the same
     /// doctype's live instance is claimed and silent; an unstamped file (`README.md`, and the
     /// adapter's own guide, whose front matter carries no `schema-version:` line) is not this
     /// condition's subject at all. The last is the leg that keeps the exit flip affordable —
@@ -651,11 +769,111 @@ mod tests {
         repo.commit_file("guide.md", "---\nname: guide\n---\n\n# Guide\n");
 
         let schemas = map(vec![adr_schema("decisions/")]);
+        let territory = Territory::resolve("docs", None, &schemas);
         assert_eq!(
-            orphaned_instances(repo.path(), &schemas, &Default::default()),
+            orphaned_instances(repo.path(), &schemas, &territory, &Default::default()),
             vec!["docs/roadmap.md".to_string()],
             "the stamped doc no resolved doctype claims is the orphan; the adr's own committed \
              instance is claimed, and the two unstamped files were never jigc's to speak for",
+        );
+    }
+
+    /// (M51 completion audit, HIGH) **The subject is jigc's declared territory, not the
+    /// repository — driven over both shapes the audit reproduced.** A team document carrying a
+    /// `schema-version:` key at the repo root and another in an arbitrary nested directory are
+    /// both outside every home this configuration hands jigc, so neither is named; the same
+    /// bytes inside the docs-root tree are. The stamp is an unnamespaced key, so the *home* is
+    /// the only honest discriminator available (see [`Territory`]).
+    #[test]
+    fn a_stamped_doc_outside_the_territory_is_never_an_orphaned_instance() {
+        let repo = TempRepo::new();
+        let stamped = "---\ntitle: API notes\nschema-version: 3\n---\n\n# API notes\n";
+        repo.commit_file("api-notes.md", stamped);
+        repo.commit_file("notes/deep/api.md", stamped);
+        repo.commit_file("docs/gone.md", stamped);
+
+        let schemas = map(vec![adr_schema("decisions/")]);
+        let territory = Territory::resolve("docs", None, &schemas);
+        assert_eq!(
+            orphaned_instances(repo.path(), &schemas, &territory, &Default::default()),
+            vec!["docs/gone.md".to_string()],
+            "a plain team document outside every jigc home is not this condition's subject; \
+             the stamped file inside the docs home still is (the stated residual)",
+        );
+    }
+
+    /// (M51 completion audit, HIGH) **The self-migration datum.** This repository's own
+    /// committed test fixtures include stamped managed-doc bodies
+    /// (`crates/cli/tests/fixtures/author-batch-scaling/spec-800-items.md`). Once jigc is
+    /// pointed at its own corpus, a sweep whose subject is *every committed `.md`* blocks
+    /// `jigc validate` on those fixtures forever. They sit under no docs-root, no
+    /// `placement-root` and no doctype home, so the territory rule is what keeps them silent.
+    #[test]
+    fn this_repos_own_committed_test_fixtures_are_never_orphaned_instances() {
+        let repo = TempRepo::new();
+        repo.commit_file(
+            "crates/cli/tests/fixtures/author-batch-scaling/spec-800-items.md",
+            "---\nschema-version: 1\n---\n\n# A spec fixture\n",
+        );
+
+        let schemas = map(vec![adr_schema("decisions/")]);
+        let territory = Territory::resolve("docs", None, &schemas);
+        assert!(
+            orphaned_instances(repo.path(), &schemas, &territory, &Default::default()).is_empty(),
+            "a committed test fixture carrying a stamped body is not a managed instance, and a \
+             sweep that claims it makes jigc unable to validate its own repository",
+        );
+    }
+
+    /// (M51 completion audit, HIGH) **The territory's three sources, and the two homes that
+    /// contribute nothing.** The docs-root tree, a non-root `placement-root` and every resolved
+    /// doctype home directory are in — including a located doctype a project shadow homed
+    /// outside `docs-root`. A **root-level** placement home (`VISION.md`) and a **repo-root**
+    /// `docs-root` contribute no directory, because the only tree either names is the whole
+    /// repository, which is the subject this type exists to refuse.
+    #[test]
+    fn the_territory_is_the_two_knobs_plus_every_resolved_doctype_home() {
+        let schemas = map(vec![
+            adr_schema("docs/decisions/"),
+            adr_schema("elsewhere/specs/"), // a shadow homing a doctype off docs-root
+            placement_schema("vision", "VISION.md"),
+            placement_schema("roadmap", "papers/roadmap.md"),
+        ]);
+        let territory = Territory::resolve("docs", Some("papers"), &schemas);
+        for inside in [
+            "docs/gone.md",
+            "docs/decisions/x.md",
+            "elsewhere/specs/x.md",
+            "papers/stray.md",
+        ] {
+            assert!(
+                territory.contains(inside),
+                "`{inside}` is inside a declared home"
+            );
+        }
+        for outside in [
+            "VISION.md",
+            "api-notes.md",
+            "notes/deep/api.md",
+            "docs-archive/x.md",
+        ] {
+            assert!(
+                !territory.contains(outside),
+                "`{outside}` sits under no home this configuration declares",
+            );
+        }
+
+        // A repo-root `docs-root` and an unset `placement-root` leave only the doctype homes —
+        // never the whole repository.
+        let flat = map(vec![
+            adr_schema("decisions/"),
+            placement_schema("vision", "VISION.md"),
+        ]);
+        let flat_territory = Territory::resolve("", None, &flat);
+        assert!(flat_territory.contains("decisions/x.md"));
+        assert!(
+            !flat_territory.contains("api-notes.md") && !flat_territory.contains("notes/x.md"),
+            "a flat layout does not make the whole repository jigc's to speak for",
         );
     }
 
@@ -665,26 +883,29 @@ mod tests {
     #[test]
     fn a_path_the_strand_walk_spoke_for_is_never_an_orphaned_instance() {
         let repo = TempRepo::new();
+        // The strand sits INSIDE the docs-root tree, so the territory bound cannot be what
+        // excludes it — otherwise this arm would prove the subject narrowing, not the partition.
         repo.commit_file(
-            "old/decisions/cache.md",
+            "docs/old/decisions/cache.md",
             "---\nschema-version: 1\n---\n\n# A\n",
         );
 
         let schemas = map(vec![adr_schema("docs/decisions/")]);
+        let territory = Territory::resolve("docs", None, &schemas);
         let strands: Vec<(String, String)> = pairs(orphaned_docs(repo.path(), &schemas, &schemas));
         assert_eq!(
             strands,
-            vec![("old/decisions/cache.md".to_string(), "adr".to_string())],
+            vec![("docs/old/decisions/cache.md".to_string(), "adr".to_string())],
             "the fixture must really be a strand, or the exclusion below proves nothing",
         );
         let spoken_for = strands.into_iter().map(|(rel, _)| rel).collect();
         assert!(
-            orphaned_instances(repo.path(), &schemas, &spoken_for).is_empty(),
+            orphaned_instances(repo.path(), &schemas, &territory, &spoken_for).is_empty(),
             "a strand is reported by `file-state.orphaned-doc` and by this condition never",
         );
         assert_eq!(
-            orphaned_instances(repo.path(), &schemas, &Default::default()),
-            vec!["old/decisions/cache.md".to_string()],
+            orphaned_instances(repo.path(), &schemas, &territory, &Default::default()),
+            vec!["docs/old/decisions/cache.md".to_string()],
             "without the exclusion the same path is claimed twice — which is what makes the \
              `spoken_for` argument the partition rather than an optimization",
         );

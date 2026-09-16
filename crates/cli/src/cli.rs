@@ -1362,7 +1362,18 @@ fn validate_store_in_repo(cwd: &Path) -> Result<StoreSweep> {
     // member, so the sweep refuses the exit-0 green rather than reporting that it found nothing
     // in files it has no schema to read. CLI-side, like every arm above it: the subject is the
     // committed set, which only `git ls-files` knows.
-    for rel in crate::orphan::orphaned_instances(&jigc_home, &schemas, &spoken_for) {
+    //
+    // **The subject is jigc's declared territory, not the repository** (M51 completion audit):
+    // the stamp is the unnamespaced key `schema-version:`, so it cannot tell jigc's own stamp
+    // from a team document using that key for its own purposes — the *home* is what discriminates.
+    // `Territory` derives that from the two resolved knobs and the resolved doctype homes, and
+    // carries the two residuals it leaves.
+    let territory = crate::orphan::Territory::resolve(
+        crate::start::docs_root_prefix(&resolved),
+        crate::start::placement_root(&resolved),
+        &schemas,
+    );
+    for rel in crate::orphan::orphaned_instances(&jigc_home, &schemas, &territory, &spoken_for) {
         report
             .findings
             .push(crate::orphan::orphaned_instance_finding(&rel));

@@ -2,8 +2,9 @@
 //! files it wrote clean.**
 //!
 //! The condition ([settle-record](../../../completions/artifacts/M51/settle-record.md) → §18,
-//! D12): a committed `.md` carrying a jigc **schema-version stamp** that **no resolved
-//! doctype claims**. Driven at the wave's baseline, the store surface was silent about it in
+//! D12; its subject narrowed at the M51 completion audit — arm 8): a committed `.md` **inside
+//! jigc's declared homes** (`cli::orphan::Territory`) carrying a **`schema-version:` stamp**
+//! that **no resolved doctype claims**. Driven at the wave's baseline, the store surface was silent about it in
 //! both directions — `jigc validate` printed *"no findings — the committed store validates
 //! clean"* at **exit 0** while `git ls-files` still carried every one of those files, and
 //! `jigc doc list` dropped their rows entirely. A green there means *I stopped looking at
@@ -49,10 +50,20 @@ use std::process::{Command, Output};
 use cli::render::{STORE_EXIT_FLIPS, StoreExitFlip};
 use support::trial_corpus::{FixturePack, State, TrialCorpus};
 
-/// The three committed, stamped singletons the methodology pack authored — the population
-/// that orphans the moment that pack leaves the composition. Written down because which
-/// doctypes a *fixture* pack drops is a property of the fixture, not of any registry.
-const ORPHANED: &[&str] = &["VISION.md", "docs/decisions-log.md", "docs/roadmap.md"];
+/// The committed, stamped singletons the methodology pack authored **inside jigc's declared
+/// territory** — the population that orphans the moment that pack leaves the composition.
+/// Written down because which doctypes a *fixture* pack drops is a property of the fixture,
+/// not of any registry.
+const ORPHANED: &[&str] = &["docs/decisions-log.md", "docs/roadmap.md"];
+
+/// **The stated residual** (M51 completion audit; `cli::orphan::Territory` → residual 2). The
+/// same fixture pack also orphans `VISION.md`, whose departed doctype homed it at the **repo
+/// root**. A root-level placement home contributes no directory that is not the whole
+/// repository, so narrowing the sweep's subject to jigc's declared homes necessarily leaves
+/// that one cell unflagged — its pre-M51 exit-0 status quo. It is asserted here rather than
+/// dropped, so the residual is visible in the suite that owns the condition and cannot quietly
+/// widen or quietly grow.
+const ROOT_HOMED_RESIDUAL: &str = "VISION.md";
 
 /// The control: a committed stamped singleton whose doctype the dev pack still defines, so
 /// the same sweep must stay silent about it. Without it a green arm 1 would be satisfied by a
@@ -138,6 +149,11 @@ fn a_doctype_that_leaves_the_resolved_set_orphans_its_committed_instances() {
          check; got:\n{text}",
     );
     assert!(
+        !text.contains(&orphan_line_head(ROOT_HOMED_RESIDUAL)),
+        "`{ROOT_HOMED_RESIDUAL}`'s departed doctype homed it at the repo root, which declares \
+         no directory — the stated residual, asserted so it stays visible; got:\n{text}",
+    );
+    assert!(
         text.contains(flip.cause),
         "the closing line must name WHICH condition fired ({:?}) — the promise the preload \
          sends the agent there for; got:\n{text}",
@@ -211,6 +227,13 @@ fn doc_list_reports_every_orphaned_instance_the_sweep_blocks_on() {
         json.contains(&format!("\"path\": \"{STILL_CLAIMED}\"")) && json.contains("\"managed\""),
         "the control's doctype still resolves, so its row stays a managed one with its \
          identity; got:\n{json}",
+    );
+    assert!(
+        !json.contains(&format!(
+            "\"path\": \"{ROOT_HOMED_RESIDUAL}\",\n      \"state\": \"orphaned\""
+        )),
+        "the listing inherits the sweep's subject bound, so the root-homed residual is absent \
+         from both surfaces rather than from one; got:\n{json}",
     );
 
     // The two consumers agree as SETS: every path the sweep located is listed, and the
@@ -434,4 +457,53 @@ fn the_unversioned_doctype_advisory_reports_at_exit_zero() {
         "the exit-0 fact and the table must agree: this cause is deliberately NOT a member \
          of the store sweep's exit-flip axis",
     );
+}
+
+/// A stamped `.md` **outside** jigc's declared territory — a plain team document that happens
+/// to carry a `schema-version:` key in its front matter. Written down here rather than derived
+/// because the whole point is that no jigc home, knob or registry mentions these paths: one at
+/// the repo root, one in an arbitrary nested directory jigc was never pointed at.
+const OUTSIDE_TERRITORY: &[&str] = &["api-notes.md", "notes/deep/api.md"];
+
+/// **Arm 8 (M51 completion audit) — the subject is jigc's declared territory, not the
+/// repository.** The base predicate took its subject from `committed_markdown` — *every*
+/// committed `.md` — and kept whatever carried a `schema-version:` key, so a team document
+/// using that key for its own purposes anywhere in the repo flipped `jigc validate` to exit 1
+/// with a message claiming the bytes were *"a jigc schema-version stamp"*. The stamp is a bare
+/// integer with no namespace, so jigc cannot tell its own stamp from anyone else's — which
+/// makes the *location* the only honest discriminator available today: a stamped file inside
+/// the docs-root tree, under a non-root `placement-root`, or under a resolved doctype's home
+/// directory is jigc's to speak for; a stamped file anywhere else is not.
+#[test]
+fn a_stamped_doc_outside_jigcs_territory_is_never_claimed() {
+    let corpus = TrialCorpus::build(State::CommittedSingletons);
+    for rel in OUTSIDE_TERRITORY {
+        let abs = corpus.repo().join(rel);
+        std::fs::create_dir_all(abs.parent().expect("every fixture path has a parent"))
+            .expect("create the team document's directory");
+        std::fs::write(
+            &abs,
+            "---\ntitle: API notes\nschema-version: 3\n---\n\n# API notes\n",
+        )
+        .expect("write the team document");
+        corpus.git(&["add", "--", rel]);
+    }
+    corpus.git(&["commit", "-q", "-m", "team notes"]);
+
+    let out = corpus.jigc(&["validate"]);
+    let text = printed(&out);
+    assert!(
+        out.status.success(),
+        "a plain team document that carries a `schema-version:` key is not jigc's subject — \
+         claiming it flips the verb MIGRATING.md tells adopters to CI-gate on, over bytes jigc \
+         never wrote; got:\n{text}",
+    );
+    for rel in OUTSIDE_TERRITORY {
+        assert!(
+            !text.contains(&orphan_line_head(rel)),
+            "`{rel}` sits under no docs-root, no `placement-root` and no doctype home — jigc \
+             has not been told it owns that path, so it may not say what the file is; \
+             got:\n{text}",
+        );
+    }
 }

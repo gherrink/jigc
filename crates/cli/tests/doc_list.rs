@@ -300,13 +300,13 @@ const STORE_WITH_ORPHANS_JSON: &str = r#"{
     },
     {
       "id": null,
-      "path": "archive/old.md",
+      "path": "decisions/archive/old.md",
       "state": "orphaned",
       "item-count": null
     },
     {
       "id": null,
-      "path": "notes/later.md",
+      "path": "decisions/notes/later.md",
       "state": "orphaned",
       "item-count": null
     }
@@ -563,12 +563,17 @@ fn doc_list_prints_the_orphaned_row_with_a_null_identity_and_no_item_count() {
     let home = TempDir::new("home");
     init_repo(repo.path());
     seed_store(repo.path());
-    for rel in ["archive/old.md", "notes/later.md"] {
+    // Both orphans sit INSIDE jigc's declared territory — under the `adr` doctype's own home
+    // tree, one level below it — and not at any doctype's home (the census reads the home dir
+    // non-recursively). Since the M51 completion audit that is what makes them this sweep's
+    // subject at all: the `schema-version:` key is unnamespaced, so a stamped file outside
+    // jigc's homes is a team document jigc may not speak for (`cli::orphan::Territory`).
+    for rel in ["decisions/archive/old.md", "decisions/notes/later.md"] {
         let path = repo.path().join(rel);
         fs::create_dir_all(path.parent().expect("a parent dir")).expect("mk the orphan's dir");
         fs::write(&path, STAMPED_ORPHAN).expect("write the stamped orphan");
     }
-    git(repo.path(), &["add", "archive", "notes"]);
+    git(repo.path(), &["add", "decisions"]);
     git(
         repo.path(),
         &["commit", "-q", "-m", "docs jigc can no longer claim"],
@@ -599,8 +604,8 @@ fn doc_list_prints_the_orphaned_row_with_a_null_identity_and_no_item_count() {
         "id  path  state\n\
          adr:single-node-cache  decisions/single-node-cache.md  managed\n\
          changelog:changelog  CHANGELOG.md  unregistered\n\
-         (none)  archive/old.md  orphaned\n\
-         (none)  notes/later.md  orphaned\n",
+         (none)  decisions/archive/old.md  orphaned\n\
+         (none)  decisions/notes/later.md  orphaned\n",
         "the plain listing prints the orphan rows with an unpasteable identity cell",
     );
     for row in out.lines().filter(|line| line.ends_with("orphaned")) {

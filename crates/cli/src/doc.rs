@@ -4302,7 +4302,16 @@ fn run_list(
                 .into_iter()
                 .map(|strand| strand.rel)
                 .collect();
-        for rel in crate::orphan::orphaned_instances(&jigc_home, &schemas, &spoken_for) {
+        // The subject bound is the sweep's, resolved from the same cascade for the same
+        // reason the strand set is passed: the two consumers read one enumerator, so a file
+        // one narrows away and the other keeps would be two stories about one file.
+        let territory = crate::orphan::Territory::resolve(
+            crate::start::docs_root_prefix(&cascade),
+            crate::start::placement_root(&cascade),
+            &schemas,
+        );
+        for rel in crate::orphan::orphaned_instances(&jigc_home, &schemas, &territory, &spoken_for)
+        {
             docs.push(DocRow {
                 id: None,
                 path: rel,
