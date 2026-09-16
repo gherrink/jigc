@@ -564,6 +564,8 @@ one**, a change to the **schema-definition format**, itself frozen v1.
 
 ### D14 — the ledger question (fork 8): **closed under the stated criterion**
 
+*[Amended 2026-09-16 at the build: see [Review amendments](#review-amendments-2026-09-11) §21 — F-9 was dropped in the gate-record→roadmap transcription and ships as an **advisory finding with a code**, riding the close; the conversion sentence stands.]*
+
 **The fork.** Read the conversion ledger **closed** under the stated criterion — every row carries
 `pinned-by:` or a stated `UNPINNED:`, the test both prior closures used — or **substantively open**,
 because F-3, F-5, F-9 and F-11 are CONFIRMED defects with no standing test. **The gate is the human's
@@ -1376,6 +1378,52 @@ second operand a one-row const beside the derivation, each row carrying its non-
 `CONSTRAINT_REQUIRED_TOKENS`. **Refused:** a hand-stated non-mint row *inside* the derived set —
 that is the hand-list §4 was written to kill, re-admitted behind a derivation-shaped wrapper, and the
 next print-over-refuse contract would join by hand on its precedent.
+
+---
+
+#### §21 — D14, at the build (2026-09-16): F-9 was dropped in transcription and ships as an **advisory finding with a code**, riding the close
+
+*(Decided by the human on 2026-09-16 at the Increment 11 plan halt, against an independent
+`robust-advocate` case that drove the binary first. D14 is not rewritten — it said F-9 converts by
+its own fix's red test, and that stands; this bracket records where the fix went missing and what
+shape it takes.)*
+
+**The drop.** F-9 is in scope on four records — [charter](charter.md) Tier 2,
+[decisions-pending](../../../implementation/decisions-pending.md) Tier 2, the
+[planning gate-record](planning-gate-record.md) row 14, and D14 — and absent from
+[roadmap](../../../implementation/roadmap.md) Increment 9's Grouped scope, so Increment 9's twelve
+tasks omit it and the close's planner, whose scope owes the conversion, halted rather than either
+absorb an unsettled fix or reduce the human's own gate. Driven at `be160142`: `doc rename --task`
+re-slugs the adr, `doc show commit:<T> --task <T>` still carries the old title in `## Summary`, and
+`task finalize --dry-run` prints the stale subject and the new path on adjacent, unconnected lines.
+
+**The shape. Decided: an advisory `Finding` with its own code**, produced at `doc rename --task` and
+re-raised by the task-scope sweep at `jigc task validate <id>` and `task finalize --dry-run`, keyed
+`(code, target)`, routed at `jigc doc set-slot commit:<task>#summary …`. The advocate's drive settled
+the two facts the fork turned on: `doc rename --format json` emits **no prose field** (`op`, `from`,
+`target`, `title`, `reslugged`, `copied_in`, `committed_identity`, `findings: []`), so a notice line
+would reach no driver, while the finding lands in an array already on the wire with zero envelope
+change; and the feared costs do not exist — an advisory never enters the derived ambush owe-set
+(`pack.rs` derives it from **blocking** codes at commit-on-behalf doors), and an un-keyed inventory
+row is §10's mold, used twice already this wave; the precedent in the exact shape is
+`changelog-recording.gate-granted-unused`, an advisory that previews at `task validate`. **Refused:**
+the code-less notice line — a cue card printed once at rename time, the shape
+[cue-card-postmortem.md](../RC-1.0-gate/cue-card-postmortem.md) measured failing (*an instrument
+fires reliably iff its trigger is a state and its consequence is re-raised by the product*; B1
+renamed at invocation 18 and finalized at 23 with nothing re-raising it, which is the trial's only
+adapter bypass) — and the scope reduction, which would revise D14 and the conversion ledger, the
+human's own gate. **The honest cost:** `doc rename` writes no task state today, so the pre-rename
+title needs one durable task-state key with a concurrent-writer disposition
+([storage.md](../../../design/storage.md) → Concurrent writers), plus the two producers, one
+inventory row and the route. Siting it as a **content** finding rather than in `preview_gates`
+avoids a `GATE_COVERAGE` row propagating to the enumerating surfaces — decided by the plan, stated
+here so it is chosen and not discovered.
+
+**Where it lands.** As the first tasks of Increment 11, under a dated amendment bracket in the
+roadmap — not a renumbered close, which a dozen records cite by number. The close therefore
+**registers one code**; its *Codes it registers* line is corrected with the datum. **Process
+finding, carried:** a scope row can be lost between the gate-record and the roadmap, and nothing
+fences the two.
 
 ---
 
