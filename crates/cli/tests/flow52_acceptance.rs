@@ -68,7 +68,7 @@
 //!   (5) **The `EnvelopeArm` registry** — [`ENVELOPE_ARMS`], a **code-side registry** that
 //!       is *production-side*: it is what the renderer answers from, not a census of what
 //!       the binary happened to emit. *Adds over `format_json_success_axis.rs`:* that suite
-//!       drives all sixty arms and owns the four proofs; this arm drives the **seven wire
+//!       drives every declared arm and owns the four proofs; this arm drives the **seven wire
 //!       changes the wave made** — the four deletes, `ConfigAck::Set`'s `relocated`, the
 //!       forecast's `findings`, and N15's `--task` reject — and asserts each driven
 //!       document's top-level key set **equals the registry's declared one**, so a key the
@@ -1548,9 +1548,16 @@ fn declared_keys(path: &[&str], arm: &str) -> BTreeSet<String> {
                 path.join(" "),
             )
         });
+    // Exhaustive on purpose: a seventh `ArmShape` cannot compile until this arm says
+    // whether the shape carries a declarable key set, which is the whole question this
+    // function answers. A `_` here would let a new root shape join the registry silently.
     match row.shape {
         ArmShape::Object(keys) => keys.iter().map(|key| (*key).to_string()).collect(),
-        _ => panic!(
+        ArmShape::ArrayOf(_)
+        | ArmShape::ArrayOfDataKeyed
+        | ArmShape::ArrayOfScalars
+        | ArmShape::Scalar
+        | ArmShape::DataKeyed => panic!(
             "`jigc {}`'s `{arm}` declares a non-object root — this arm asserts key sets and \
              cannot speak for a scalar or an array root",
             path.join(" "),
@@ -1599,10 +1606,12 @@ fn assert_wire(out: &Output, path: &[&str], arm: &str) -> Value {
 /// declares them.
 ///
 /// **The kind of set: a code-side registry, and a *production-side* one.**
-/// [`ENVELOPE_ARMS`] is what `cli::render` answers from — sixty arms over all forty-seven
-/// leaves, part-derived from the result enums' own compile-fenced arm-name tables, the rest
-/// hand-enumerated with stated reasons — so it is not a census of what the binary happened
-/// to emit. Its four proofs (every leaf has ≥1 row; every production arm has exactly one
+/// [`ENVELOPE_ARMS`] is what `cli::render` answers from — one arm per distinct `--format
+/// json` key set over all forty-seven leaves, part-derived from the result enums' own
+/// compile-fenced arm-name tables, the rest hand-enumerated with stated reasons — so it is
+/// not a census of what the binary happened to emit. (The row count is deliberately not
+/// restated here: it is not fenced, and M52 Increment 1 / T4 moved it when `jigc doc show`'s
+/// projection space was driven. The **leaf** count is fenced, by proof 1's `>= 47` floor.) Its four proofs (every leaf has ≥1 row; every production arm has exactly one
 /// row; every row is driven; the driven key set equals the declared one) live with
 /// `format_json_success_axis.rs`, the one suite that already drives every leaf to a real
 /// success.

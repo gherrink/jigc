@@ -58,8 +58,8 @@ use clap::CommandFactory;
 use cli::cli::Cli;
 use cli::render::{
     AckTarget, ArmOrigin, ArmOutcome, ArmRoot, ArmShape, ArmStatus, CONFIG_ACK_ARMS, ConfigAck,
-    DOC_ACK_ARMS, DocAck, ENVELOPE_ARMS, EnvelopeArm, ORIENTATION_ARMS, TASK_ACK_ARMS, TaskAck,
-    config_ack_arm, doc_ack_arm, orientation_arm, task_ack_arm,
+    DOC_ACK_ARMS, DocAck, ENVELOPE_ARMS, EnvelopeArm, ORIENTATION_ARMS, STORE_EXIT_FLIPS,
+    TASK_ACK_ARMS, TaskAck, config_ack_arm, doc_ack_arm, orientation_arm, task_ack_arm,
 };
 use cli::task::EXIT_SUCCESS;
 use engine::finding::Findings;
@@ -293,6 +293,18 @@ fn author_commit_doc(corpus: &TrialCorpus, task: &str, scope: &str, summary: &st
         &format!("commit:{task}#body"),
         "Driven by the format-json success-axis sweep.",
     );
+}
+
+/// The address of the committed spec's **first** criterion, read back off the binary's
+/// own item array (`id`) rather than re-slugged from the title — the item id is minted
+/// once and frozen, so reconstructing it test-side would be a second slug rule.
+fn first_criterion_address(corpus: &TrialCorpus) -> String {
+    let out = json(corpus, &["doc", "show", "spec:rate-limiting#criteria"]);
+    let items: Value = serde_json::from_slice(&out.stdout).expect("the item array parses");
+    let id = items[0]["id"]
+        .as_str()
+        .expect("each item object carries its minted `id`");
+    format!("spec:rate-limiting#criteria/{id}")
 }
 
 /// A live `single-task` task with `adr:cache-strategy` staged — the working area the
@@ -758,6 +770,69 @@ fn recipes() -> Vec<Recipe> {
             drive: |c| json(c, &["doc", "show", "adr:cache-strategy#decision"]),
         },
         Recipe {
+            path: &["doc", "show"],
+            arm: "ItemArraySlice",
+            base: Base::CommittedSpec,
+            // A repeatable section addressed without an item hop. An `adr` ships no
+            // repeatable section at all, which is why the item projections run on the
+            // committed `spec` the bind/add-from-spec recipes already build.
+            drive: |c| json(c, &["doc", "show", "spec:rate-limiting#criteria"]),
+        },
+        Recipe {
+            path: &["doc", "show"],
+            arm: "ItemSlice",
+            base: Base::CommittedSpec,
+            // The item hop is read back off the binary's own item array rather than
+            // re-slugged here from the title the base authored — the id is minted and
+            // frozen, so a test-side reconstruction would be a second slug rule.
+            drive: |c| json(c, &["doc", "show", &first_criterion_address(c)]),
+        },
+        Recipe {
+            path: &["doc", "show"],
+            arm: "ListFieldSlice",
+            base: Base::Fresh,
+            // `adr.supersedes` is the dev pack's `0..*` ref: TWO targets make the stored
+            // value a list, which is what projects as an array. The targets dangle on
+            // purpose — a dangling ref is adjudicated at finalize, not at this door, and
+            // the projection turns on the value's cardinality, never on its resolution.
+            drive: |c| {
+                let task = live_adr_task(c);
+                c.jigc_ok(&[
+                    "doc",
+                    "set-field",
+                    "adr:cache-strategy#supersedes",
+                    "--value",
+                    "[adr:older-call, adr:second-call]",
+                    "--task",
+                    &task,
+                ]);
+                json(
+                    c,
+                    &[
+                        "doc",
+                        "show",
+                        "adr:cache-strategy#status/supersedes",
+                        "--task",
+                        &task,
+                    ],
+                )
+            },
+        },
+        Recipe {
+            path: &["doc", "show"],
+            arm: "CompoundFieldSlice",
+            base: Base::Fresh,
+            // `milestone-record.base` is the one compound leaf in the pinned read
+            // surface, and `milestone create` commits the record that carries it.
+            drive: |c| {
+                c.jigc_ok(&["milestone", "create", "Cache rework"]);
+                json(
+                    c,
+                    &["doc", "show", "milestone-record:cache-rework#meta/base"],
+                )
+            },
+        },
+        Recipe {
             path: &["doc", "schema"],
             arm: "Projection",
             base: Base::Fresh,
@@ -1154,12 +1229,15 @@ fn key(path: &[&str], arm: &str) -> (String, String) {
     (path.join(" "), arm.to_string())
 }
 
-/// Every declared `Object` / `ArrayOf` key set, or `None` for the two shapes that declare
-/// none.
+/// Every declared `Object` / `ArrayOf` key set, or `None` for the four shapes that declare
+/// none — the document's own data, or a bare scalar, decides those.
 fn declared_keys(shape: &ArmShape) -> Option<&'static [&'static str]> {
     match shape {
         ArmShape::Object(keys) | ArmShape::ArrayOf(keys) => Some(keys),
-        ArmShape::Scalar | ArmShape::DataKeyed => None,
+        ArmShape::Scalar
+        | ArmShape::DataKeyed
+        | ArmShape::ArrayOfDataKeyed
+        | ArmShape::ArrayOfScalars => None,
     }
 }
 
@@ -1496,6 +1574,43 @@ fn the_driven_key_set_equals_the_declared_key_set() {
                      unproven; got:\n{document}",
                 );
             }
+            ArmShape::ArrayOfDataKeyed => {
+                let array = value.as_array().unwrap_or_else(|| {
+                    panic!("`{label}` declares an array of data-keyed objects; got:\n{document}")
+                });
+                assert!(
+                    !array.is_empty(),
+                    "`{label}`'s recipe must drive a POPULATED array — an empty one proves \
+                     nothing about its elements.\ngot:\n{document}",
+                );
+                for element in array {
+                    let object = element.as_object().unwrap_or_else(|| {
+                        panic!("`{label}`'s elements are objects; got:\n{document}")
+                    });
+                    assert!(
+                        !object.is_empty(),
+                        "`{label}`'s elements must be POPULATED maps, or the shape is \
+                         unproven; got:\n{document}",
+                    );
+                }
+            }
+            ArmShape::ArrayOfScalars => {
+                let array = value.as_array().unwrap_or_else(|| {
+                    panic!("`{label}` declares an array of scalars; got:\n{document}")
+                });
+                assert!(
+                    !array.is_empty(),
+                    "`{label}`'s recipe must drive a POPULATED array — an empty one asserts \
+                     the element shape vacuously.\ngot:\n{document}",
+                );
+                for element in array {
+                    assert!(
+                        !element.is_object() && !element.is_array(),
+                        "`{label}`'s elements are bare scalars — no keys at all; \
+                         got:\n{document}",
+                    );
+                }
+            }
         }
     }
 }
@@ -1537,6 +1652,291 @@ fn schema_version_rides_exactly_the_result_contract_rooted_arms() {
                 "`{label}` has a non-object root, which cannot carry a top-level contract \
                  key at all — so it must be declared off the result contract",
             ),
+        }
+    }
+}
+
+// ─────────────────── the registry's prose against the driven registry ───────────────────
+
+/// One **shape claim** `crates/cli/src/render.rs` states in its own prose, and the
+/// predicate over the registry that decides whether the claim is still true.
+///
+/// The rule is one-directional and that is what makes it usable for both halves: *if the
+/// phrase is in the source, its predicate must hold*. A claim the registry has outgrown is
+/// satisfied by **deleting the sentence** — which is why the retired phrasings stay in the
+/// table rather than leaving it, so a later editor cannot reintroduce one; and a claim that
+/// is true today is **live-fenced** by the same entry, so the next wave that moves the
+/// registry reddens here instead of leaving a stale sentence behind.
+struct ShapeClaim {
+    /// The sentence as the source spells it, written flat: the scan strips `///` / `//!`
+    /// and joins lines with a single space, so a rewrap or a `\` string continuation
+    /// cannot hide the claim.
+    phrase: &'static str,
+    /// Whether the module states this sentence today.
+    standing: Standing,
+    /// What the phrase asserts, for the failure message.
+    asserts: &'static str,
+    /// Whether the registry still bears it out.
+    holds: fn() -> bool,
+}
+
+/// Whether a [`ShapeClaim`]'s sentence is one the module states today.
+enum Standing {
+    /// Stated today: the scan must **find** it, and its predicate must hold. Without this
+    /// direction a wording drift would make the entry silently inert — a fence that is
+    /// satisfied by nothing is the shape this whole test exists to catch.
+    Stated,
+    /// Stated once and rewritten. Kept in the table so it cannot come back while the
+    /// registry falsifies it; nothing is asserted about its presence beyond that.
+    Retired,
+}
+
+/// Every [`ArmShape`] member, as one comparable kind name — an **exhaustive** match, so a
+/// seventh shape cannot compile until someone says what it is and the coverage leg below
+/// starts demanding a row for it.
+fn shape_kind(shape: &ArmShape) -> &'static str {
+    match shape {
+        ArmShape::Object(_) => "Object",
+        ArmShape::ArrayOf(_) => "ArrayOf",
+        ArmShape::Scalar => "Scalar",
+        ArmShape::DataKeyed => "DataKeyed",
+        ArmShape::ArrayOfDataKeyed => "ArrayOfDataKeyed",
+        ArmShape::ArrayOfScalars => "ArrayOfScalars",
+    }
+}
+
+/// The shape vocabulary itself — one witness per member, which is what gives the coverage
+/// leg and the member **count** something to read. Constructed rather than listed as names,
+/// so it cannot drift from the enum.
+const SHAPE_VOCABULARY: &[ArmShape] = &[
+    ArmShape::Object(&[]),
+    ArmShape::ArrayOf(&[]),
+    ArmShape::Scalar,
+    ArmShape::DataKeyed,
+    ArmShape::ArrayOfDataKeyed,
+    ArmShape::ArrayOfScalars,
+];
+
+/// How many rows carry an **array**-rooted shape.
+fn array_rooted_rows() -> usize {
+    ENVELOPE_ARMS
+        .iter()
+        .filter(|row| {
+            matches!(
+                row.shape,
+                ArmShape::ArrayOf(_) | ArmShape::ArrayOfDataKeyed | ArmShape::ArrayOfScalars
+            )
+        })
+        .count()
+}
+
+/// The `jigc doc show` rows, and how many of them are **not** object-rooted.
+fn doc_show_rows() -> (usize, usize) {
+    let rows: Vec<&EnvelopeArm> = ENVELOPE_ARMS
+        .iter()
+        .filter(|row| row.path == ["doc", "show"])
+        .collect();
+    let non_object = rows
+        .iter()
+        .filter(|row| !matches!(row.shape, ArmShape::Object(_)))
+        .count();
+    (rows.len(), non_object)
+}
+
+/// Whether a **store-scope condition** can drive a row the registry declares
+/// [`ArmOutcome::Success`] to a non-zero exit — the falsifier of an unqualified
+/// *"`Success` means exit 0"*. `jigc validate`'s `StoreSweep` is the row it bites:
+/// [`cli::render::STORE_EXIT_FLIPS`] is exactly the membership that flips that door.
+fn a_success_row_flips_its_exit_on_a_store_condition() -> bool {
+    !STORE_EXIT_FLIPS.is_empty()
+        && ENVELOPE_ARMS
+            .iter()
+            .any(|row| row.path == ["validate"] && matches!(row.outcome, ArmOutcome::Success))
+}
+
+/// **The shape claims the registry's own prose makes**, each with the predicate that
+/// decides it. The **first two entries are the sentences M52 Increment 1 / T4 rewrote**,
+/// both falsified by driving `jigc doc show` over a stock corpus
+/// (`completions/artifacts/M52/baseline-contracts.md` §2.3: 17 addressable cells
+/// collapsing to 7 distinct root shapes, against the four rows the registry then carried).
+///
+/// **Declared bound.** This fences the claims it enumerates, not every sentence someone
+/// could write — `implementation/pinning.md` §3 refuses a prose parser by name, and a
+/// predicate has to be *computable from the registry* to be worth writing. What it buys is
+/// that a claim once found false cannot return, and that the replacement is not itself a
+/// free-floating assertion.
+const SHAPE_CLAIMS: &[ShapeClaim] = &[
+    // ── the two rewritten sentences, as retired phrasings ──
+    ShapeClaim {
+        phrase: "`jigc task list` is the surface's one array",
+        standing: Standing::Retired,
+        asserts: "the whole surface answers with exactly ONE array-rooted document",
+        holds: || array_rooted_rows() == 1,
+    },
+    ShapeClaim {
+        phrase: "whole doc, field group, slot — and two of the four are not objects at all",
+        standing: Standing::Retired,
+        asserts: "`jigc doc show` owns FOUR arms, TWO of them non-object-rooted",
+        holds: || doc_show_rows() == (4, 2),
+    },
+    // ── the two further retired phrasings the same drive falsified ──
+    ShapeClaim {
+        phrase: "Four, not one, because three arms carry no top-level key list at all",
+        standing: Standing::Retired,
+        asserts: "`ArmShape` has FOUR members, THREE of them carrying no key list",
+        holds: || {
+            SHAPE_VOCABULARY.len() == 4
+                && SHAPE_VOCABULARY
+                    .iter()
+                    .filter(|shape| declared_keys(shape).is_none())
+                    .count()
+                    == 3
+        },
+    },
+    ShapeClaim {
+        phrase: "Exit 0, the document on **stdout**, no JSON on stderr.",
+        standing: Standing::Retired,
+        asserts: "a `Success` arm exits 0 in EVERY state, not merely in the one it is driven in",
+        holds: || !a_success_row_flips_its_exit_on_a_store_condition(),
+    },
+    // ── the replacements, live-fenced by the same rule ──
+    ShapeClaim {
+        phrase: "`jigc task list` is the one array whose element keys are declarable",
+        standing: Standing::Stated,
+        asserts: "exactly one row declares an array with a row-key set",
+        holds: || {
+            ENVELOPE_ARMS
+                .iter()
+                .filter(|row| matches!(row.shape, ArmShape::ArrayOf(_)))
+                .count()
+                == 1
+        },
+    },
+    ShapeClaim {
+        phrase: "`jigc doc show` is the only verb that answers with an array of data-keyed objects",
+        standing: Standing::Stated,
+        asserts: "every `ArrayOfDataKeyed` row sits under `doc show`",
+        holds: || {
+            ENVELOPE_ARMS
+                .iter()
+                .filter(|row| matches!(row.shape, ArmShape::ArrayOfDataKeyed))
+                .all(|row| row.path == ["doc", "show"])
+        },
+    },
+    ShapeClaim {
+        phrase: "Six members, because four of them carry no declarable top-level key list at all",
+        standing: Standing::Stated,
+        asserts: "`ArmShape` has SIX members, FOUR of them carrying no key list",
+        holds: || {
+            SHAPE_VOCABULARY.len() == 6
+                && SHAPE_VOCABULARY
+                    .iter()
+                    .filter(|shape| declared_keys(shape).is_none())
+                    .count()
+                    == 4
+        },
+    },
+    ShapeClaim {
+        phrase: "Two projections of `jigc doc show` are this shape",
+        standing: Standing::Stated,
+        asserts: "exactly two rows declare `DataKeyed`, both under `doc show`",
+        holds: || {
+            let rows: Vec<&EnvelopeArm> = ENVELOPE_ARMS
+                .iter()
+                .filter(|row| matches!(row.shape, ArmShape::DataKeyed))
+                .collect();
+            rows.len() == 2 && rows.iter().all(|row| row.path == ["doc", "show"])
+        },
+    },
+    ShapeClaim {
+        phrase: "a store-scope condition drives `jigc validate`'s own `StoreSweep` arm to exit 1",
+        standing: Standing::Stated,
+        asserts: "some `STORE_EXIT_FLIPS` member flips a row the registry declares `Success`",
+        holds: a_success_row_flips_its_exit_on_a_store_condition,
+    },
+];
+
+/// `crates/cli/src/render.rs` folded to one line per statement: `///` / `//!` markers
+/// stripped, a `\` string continuation's break closed, and every line joined by a single
+/// space — so a claim wrapped across three lines reads as the sentence it is.
+fn folded_render_source() -> String {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("src")
+        .join("render.rs");
+    let raw = fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("read {} — the registry's own source: {e}", path.display()));
+    let mut folded = String::new();
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        let body = trimmed
+            .strip_prefix("///")
+            .or_else(|| trimmed.strip_prefix("//!"))
+            .unwrap_or(trimmed)
+            .trim();
+        folded.push_str(body.strip_suffix('\\').unwrap_or(body).trim_end());
+        folded.push(' ');
+    }
+    folded
+}
+
+/// **No shape claim the registry states survives the driven registry falsifying it** — and
+/// every shape the registry declares is one some row actually answers with.
+///
+/// **Why this exists.** The registry's shapes were declared once and then the surface was
+/// driven: `jigc doc show` answers with **seven** distinct root shapes over a stock corpus
+/// against the **four** rows the registry carried, and two of the sentences explaining the
+/// shape space were false in the direction that matters — `ArmShape::ArrayOf`'s *"`jigc
+/// task list` is the surface's one array"* (falsified by an array of item objects **and**
+/// an array of strings) and the four `doc show` rows' shared dispatch reason *"whole doc,
+/// field group, slot — and two of the four are not objects at all"* (falsified by the
+/// projection space being larger than the enumeration). A registry whose prose is wrong
+/// about its own shapes is the surface-tier defect this wave exists to close, one layer in.
+///
+/// **Leg 1 — coverage.** A shape the registry *declares* and no row *claims* is a shape the
+/// binary does not answer with: the vocabulary is not a wish list.
+///
+/// **Leg 2 — the claims.** [`SHAPE_CLAIMS`], under its stated bound.
+#[test]
+fn no_shape_claim_in_the_registry_survives_the_registry_falsifying_it() {
+    let claimed: BTreeSet<&str> = ENVELOPE_ARMS
+        .iter()
+        .map(|row| shape_kind(&row.shape))
+        .collect();
+    let unclaimed: Vec<&str> = SHAPE_VOCABULARY
+        .iter()
+        .map(shape_kind)
+        .filter(|kind| !claimed.contains(kind))
+        .collect();
+    assert!(
+        unclaimed.is_empty(),
+        "every `ArmShape` member must be the declared shape of at least one row — a shape \
+         nothing answers with is a claim about the surface with no witness: {unclaimed:?}",
+    );
+
+    let source = folded_render_source();
+    for claim in SHAPE_CLAIMS {
+        let present = source.contains(claim.phrase);
+        if present {
+            assert!(
+                (claim.holds)(),
+                "`crates/cli/src/render.rs` still states:\n  \"{}\"\n\
+                 which asserts: {}\n\
+                 — and the registry falsifies it. Rewrite the sentence (and leave the old \
+                 wording in `SHAPE_CLAIMS` marked `Retired`, so it cannot come back).",
+                claim.phrase,
+                claim.asserts,
+            );
+        }
+        if matches!(claim.standing, Standing::Stated) {
+            assert!(
+                present,
+                "`SHAPE_CLAIMS` marks this sentence as one the module states today:\n  \
+                 \"{}\"\n\
+                 and the scan cannot find it in `crates/cli/src/render.rs`. Either the \
+                 wording drifted — in which case the entry is now fencing nothing — or the \
+                 sentence was deleted and its entry should be marked `Retired`.",
+                claim.phrase,
+            );
         }
     }
 }

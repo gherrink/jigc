@@ -5129,26 +5129,53 @@ pub enum ArmOrigin {
     Dispatch(&'static str),
 }
 
-/// The JSON **shape** an arm's document takes at its root. Four, not one, because three
-/// arms carry no top-level key list at all — a shape space a `keys: &[&str]` column alone
-/// would have had to lie about.
+/// The JSON **shape** an arm's document takes at its root. Six members, because four of
+/// them carry no declarable top-level key list at all — the addressed document's own data,
+/// or a bare scalar, decides the keys — a shape space a `keys: &[&str]` column alone would
+/// have had to lie about.
+///
+/// **Driven, not reasoned** (`completions/artifacts/M52/baseline-contracts.md` §2.3):
+/// `jigc doc show` answers with **seven** distinct root shapes over a stock corpus, against
+/// the four rows the registry carried before M52 Increment 1 — which is what falsified both
+/// sentences this enum used to state about its own shape space, and why
+/// `crates/cli/tests/format_json_success_axis.rs` now fences those claims against the
+/// registry instead of leaving them to a reader.
 pub enum ArmShape {
     /// A JSON **object**, whose top-level key set is exactly these names, sorted.
     Object(&'static [&'static str]),
     /// A top-level **array** whose every element is an object with exactly these keys,
-    /// sorted. `jigc task list` is the surface's one array, declared rather than reshaped
+    /// sorted. `jigc task list` is the one array whose element keys are declarable,
+    /// declared rather than reshaped
     /// (`completions/artifacts/M51/envelope-key-census.md` §4.1) — which is why the two
     /// facts an object would carry, `schema_version` and `op`, are absent here by
-    /// construction rather than by omission.
+    /// construction rather than by omission. The surface's **other** arrays are not this
+    /// shape: `jigc doc show` answers with [`ArmShape::ArrayOfDataKeyed`] and
+    /// [`ArmShape::ArrayOfScalars`], whose elements no row can enumerate.
     ArrayOf(&'static [&'static str]),
-    /// A bare JSON **scalar** — no keys at all (`jigc doc show <addr>#<slot-section>`
-    /// answers with the slot's prose as a JSON string).
+    /// A bare JSON **scalar** — no keys at all. It is not only a slot section's prose:
+    /// `jigc doc show` answers this way for every scalar leaf the address can reach — a
+    /// slot section, a scalar field leaf, an item's own slot, and the `id-from` leaf that
+    /// carries the item's heading.
     Scalar,
     /// A JSON object whose keys are **the document's own data**, so no key set can be
-    /// declared: `jigc doc show <addr>#<field-group>` answers with the doc's field map,
-    /// whose members follow the addressed doctype and which of its optional fields are
-    /// populated. The shape is pinned; the key set is the document's.
+    /// declared. The shape is pinned; the key set is the document's. Two projections of
+    /// `jigc doc show` are this shape: a fields-only section's field map, whose members
+    /// follow the addressed doctype and which of its optional fields are populated, and a
+    /// repeatable **item**'s own object, whose members follow its block.
     DataKeyed,
+    /// A top-level **array** whose every element is a [`ArmShape::DataKeyed`] object — the
+    /// shape pinned, the element keys the document's. `jigc doc show` is the only verb that
+    /// answers with an array of data-keyed objects: a repeatable section addressed without
+    /// an item hop (`#<section>`), and a declared nested block reached through the
+    /// write-grammar chain, both serve that section's item array, whose members follow the
+    /// addressed doctype's block rather than any set a row could name.
+    ArrayOfDataKeyed,
+    /// A top-level **array of bare scalars** — no keys at any level. A **list**-cardinality
+    /// field leaf projects its elements as JSON strings (`#<section>/<leaf>` on a
+    /// `card: "0..*"` field — `adr.supersedes` and `vision.grounded-in` are the shipped
+    /// ones), which is the shape `design/doc-read-surface.md` already declares for a list
+    /// field and the registry did not.
+    ArrayOfScalars,
 }
 
 /// Whether a driver may build on the arm's key set. The two doors are **asymmetric**,
@@ -5176,7 +5203,19 @@ pub enum ArmStatus {
 /// discrimination predicate reads (`design/command-output-contract.md` → Stream
 /// discipline: *parse stdout; if stdout is empty, parse stderr*).
 pub enum ArmOutcome {
-    /// Exit 0, the document on **stdout**, no JSON on stderr.
+    /// The document rides **stdout** and stderr carries no JSON document, at exit **0** in
+    /// the state the arm is driven in.
+    ///
+    /// **Not a claim that the verb can never exit non-zero.** Three rows' verbs flip their
+    /// exit on a *corpus condition* rather than on an arm change, and in every such cell the
+    /// declared key set is still exact on stdout with stderr at 0 bytes
+    /// (`completions/artifacts/M52/baseline-contracts.md` §2.4): a store-scope condition
+    /// drives `jigc validate`'s own `StoreSweep` arm to exit 1 — [`STORE_EXIT_FLIPS`] is
+    /// that membership — `jigc migrate-corpus --dry-run`'s `Report` exits 1 over an
+    /// ahead-of-current stamp, and `jigc task validate`'s `Report` exits 3 on a blocking
+    /// preview. The **exit-code taxonomy is unaffected and deliberately not reworded**
+    /// (`design/command-output-contract.md` → the exit taxonomy): what the stream discipline
+    /// discriminates on is the *stream*, and that holds in all three.
     Success,
     /// A non-zero **adjudication**: the gate ran and reported, so the document still rides
     /// stdout, at the named exit (`task finalize` blocked at 3, the migration review hold
@@ -5320,6 +5359,15 @@ pub fn orientation_arm(view: &OrientationView) -> &'static str {
     }
 }
 
+/// The shared dispatch reason of the eight `jigc doc show` rows — one fact, one home.
+///
+/// The **address** picks the projection, never a result variant, and the root it answers
+/// with follows: an object, an array, or a bare scalar. Each row's own `arm` and `shape`
+/// name which projection it is, so this string states only what they share.
+const DOC_SHOW_DISPATCH: &str = "the ADDRESS picks the projection — whole doc, fields-only section, slot section, \
+     repeatable section, item, field leaf — and the root it answers with is an object, an \
+     array or a bare scalar depending on which, so no result enum could model the set";
+
 /// **The pinned-envelope registry**: every leaf verb × every arm that produces a distinct
 /// `--format json` top-level key set, each row `Pinned` or `Unpinned(<reason>)`
 /// (`completions/artifacts/M51/settle-record.md` → D5, amended by §7; the table is
@@ -5344,6 +5392,12 @@ pub fn orientation_arm(view: &OrientationView) -> &'static str {
 ///   4. the **driven** top-level key set equals the **declared** one — and, the partition
 ///      D5 asks for, `schema_version` rides a row **iff** its [`ArmRoot`] is
 ///      [`ArmRoot::ResultContract`].
+///
+/// Beside the four proofs, one guard on the table's own **prose**: every shape claim this
+/// module states about the registry is checked against the registry, so a sentence the
+/// surface has outgrown reddens rather than being left for a reader to catch. It is what
+/// M52 Increment 1 / T4 added, having found two such sentences false — the shape space was
+/// declared once and never re-driven.
 ///
 /// **Declared bound — arm completeness is bounded by driving.** An arm exists here iff a
 /// driven invocation produced a distinct key set. A run-mode that produces the *same* key
@@ -5661,10 +5715,7 @@ pub const ENVELOPE_ARMS: &[EnvelopeArm] = &[
     EnvelopeArm {
         path: &["doc", "show"],
         arm: "WholeDoc::Committed",
-        origin: ArmOrigin::Dispatch(
-            "the address's DEPTH picks the projection — whole doc, field group, slot — and two \
-             of the four are not objects at all, so no result enum could model the set",
-        ),
+        origin: ArmOrigin::Dispatch(DOC_SHOW_DISPATCH),
         shape: ArmShape::Object(&[
             "fields",
             "item-count",
@@ -5680,10 +5731,7 @@ pub const ENVELOPE_ARMS: &[EnvelopeArm] = &[
     EnvelopeArm {
         path: &["doc", "show"],
         arm: "WholeDoc::Staged",
-        origin: ArmOrigin::Dispatch(
-            "the address's DEPTH picks the projection — whole doc, field group, slot — and two \
-             of the four are not objects at all, so no result enum could model the set",
-        ),
+        origin: ArmOrigin::Dispatch(DOC_SHOW_DISPATCH),
         shape: ArmShape::Object(&[
             "fields",
             "item-count",
@@ -5700,10 +5748,7 @@ pub const ENVELOPE_ARMS: &[EnvelopeArm] = &[
     EnvelopeArm {
         path: &["doc", "show"],
         arm: "FieldsGroupSlice",
-        origin: ArmOrigin::Dispatch(
-            "the address's DEPTH picks the projection — whole doc, field group, slot — and two \
-             of the four are not objects at all, so no result enum could model the set",
-        ),
+        origin: ArmOrigin::Dispatch(DOC_SHOW_DISPATCH),
         shape: ArmShape::DataKeyed,
         status: ArmStatus::Pinned,
         outcome: ArmOutcome::Success,
@@ -5712,11 +5757,44 @@ pub const ENVELOPE_ARMS: &[EnvelopeArm] = &[
     EnvelopeArm {
         path: &["doc", "show"],
         arm: "SlotSlice",
-        origin: ArmOrigin::Dispatch(
-            "the address's DEPTH picks the projection — whole doc, field group, slot — and two \
-             of the four are not objects at all, so no result enum could model the set",
-        ),
+        origin: ArmOrigin::Dispatch(DOC_SHOW_DISPATCH),
         shape: ArmShape::Scalar,
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("`cli::doc`'s `doc show` projection"),
+    },
+    EnvelopeArm {
+        path: &["doc", "show"],
+        arm: "ItemArraySlice",
+        origin: ArmOrigin::Dispatch(DOC_SHOW_DISPATCH),
+        shape: ArmShape::ArrayOfDataKeyed,
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("`cli::doc`'s `doc show` projection"),
+    },
+    EnvelopeArm {
+        path: &["doc", "show"],
+        arm: "ItemSlice",
+        origin: ArmOrigin::Dispatch(DOC_SHOW_DISPATCH),
+        shape: ArmShape::DataKeyed,
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("`cli::doc`'s `doc show` projection"),
+    },
+    EnvelopeArm {
+        path: &["doc", "show"],
+        arm: "ListFieldSlice",
+        origin: ArmOrigin::Dispatch(DOC_SHOW_DISPATCH),
+        shape: ArmShape::ArrayOfScalars,
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("`cli::doc`'s `doc show` projection"),
+    },
+    EnvelopeArm {
+        path: &["doc", "show"],
+        arm: "CompoundFieldSlice",
+        origin: ArmOrigin::Dispatch(DOC_SHOW_DISPATCH),
+        shape: ArmShape::Object(&["sha", "short"]),
         status: ArmStatus::Pinned,
         outcome: ArmOutcome::Success,
         root: ArmRoot::AdHoc("`cli::doc`'s `doc show` projection"),
