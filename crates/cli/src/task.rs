@@ -622,6 +622,12 @@ fn discard_rejection_frame(id: &str, force: bool) -> RejectionFrame {
 /// `docs/<type>:<slug>.md` set with the suffix stripped, which *is* the address
 /// `jigc doc show <addr> --task <id>` takes.
 ///
+/// **The name rule is [`engine::state::staged_doc_id`]'s**, shared with the writer
+/// registry's `docs/` cell ([`engine::state::foreign_area_paths`]) so that the probe
+/// which says *"this is staged prose"* and the probe which says *"jigc wrote this"*
+/// cannot disagree about which names are identities (M52 Increment 4 / T2). The **shape**
+/// question stays here and is deliberately the other one — see below.
+///
 /// **The `*.md` set, never directory-non-emptiness**: `docs/` also holds
 /// `provenance.json`, so an emptiness probe over the directory answers "there is prose
 /// here" for every task that ever existed.
@@ -655,10 +661,7 @@ pub(crate) fn staged_doc_ids(docs_dir: &Path) -> std::io::Result<Vec<String>> {
     for entry in std::fs::read_dir(docs_dir)? {
         let entry = entry?;
         let name = entry.file_name();
-        let Some(id) = name
-            .to_string_lossy()
-            .strip_suffix(".md")
-            .map(str::to_owned)
+        let Some(id) = engine::state::staged_doc_id(&name.to_string_lossy()).map(str::to_owned)
         else {
             continue;
         };
@@ -2067,7 +2070,7 @@ impl TaskArea {
         // of the empty-commit signal — keeps the migration `has_diff` on the proven
         // whole-tree probe (its blocks, e.g. the missing-replacement F1 retire-safety
         // gate, must precede the empty-commit guard inside `plan_finalize`).
-        let source_seam = self.dir.join(crate::migrate::SOURCE_FILE);
+        let source_seam = self.dir.join(engine::state::SOURCE_FILE);
         let is_migration = source_seam.exists();
 
         // The diff-presence signal the planner's empty-commit guard needs. On the per-task

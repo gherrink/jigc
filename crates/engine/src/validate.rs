@@ -63,12 +63,12 @@ const DOC_CODE_PROBE: &str = "doc-code";
 /// (`validation.md` → The wire contract: the engine materializes a read-only snapshot in
 /// the probe's read scope and the request names its path). It rides in the gitignored
 /// working area, never committed.
-const SNAPSHOT_FILE: &str = "probe-snapshot.json";
+pub(crate) const SNAPSHOT_FILE: &str = "probe-snapshot.json";
 
 /// The snapshot the **base** (HEAD) sweep of the newly-dangled comparison materializes —
 /// distinct from [`SNAPSHOT_FILE`] so the index and base probes never clobber each other's
 /// snapshot. Same gitignored working area; never committed.
-const BASE_SNAPSHOT_FILE: &str = "base-probe-snapshot.json";
+pub(crate) const BASE_SNAPSHOT_FILE: &str = "base-probe-snapshot.json";
 
 /// The seam the engine drives a subprocess pack probe over — a `Fn(&ProbeRequest) ->
 /// io::Result<ProbeRun>` the **CLI** supplies (the engine stays shell-free;

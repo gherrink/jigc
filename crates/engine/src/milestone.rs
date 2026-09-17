@@ -106,6 +106,15 @@ const BASE_PIN_FILE: &str = "base.json";
 /// The exclusion is from the **merge**, never from temp + `rename`.
 pub const TASKS_FILE: &str = "tasks.json";
 
+/// The message-temp filename inside a milestone's working area — the record commit's
+/// message, written to the gitignored area (never a tracked path) and handed to
+/// `git commit -F`.
+///
+/// It is declared here rather than beside the CLI door that writes it because it is a
+/// member of [`crate::state::MILESTONE_AREA_FILES`], and a registry whose members are
+/// declared in two crates is a registry one crate can be wrong about (M52 Increment 4 / T2).
+pub const RECORD_COMMIT_MSG_FILE: &str = "record-commit-msg.txt";
+
 /// The `milestone-record` doctype's **header (front-matter) section id** — the
 /// `meta` block, the `completion-record` sibling convention
 /// (`packs/methodology/schemas/milestone-record.yaml`;
@@ -1822,7 +1831,7 @@ pub struct MaterializeOutcome {
 /// relative to the milestone area: `<jigc_root>/milestones/<id>/merged/`. Its `docs/`
 /// holds the suffix-resolved bodies in the same `<type>:<slug>.md` staging form a single
 /// task's working area uses, so `finalize`'s promote sweep reads it unchanged.
-const MERGED_AREA: &str = "merged";
+pub(crate) const MERGED_AREA: &str = "merged";
 
 /// **Materialize the join's suffix-rewritten doc bodies into the parent staging area**
 /// (`design/storage.md` → The by-task-id join (M7): "the parent working overlay, already

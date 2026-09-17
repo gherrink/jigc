@@ -2438,7 +2438,7 @@ fn compose_task_workflow(
 }
 
 /// Read a task's persisted source-seam artifact (`<task_dir>/source`, staged by
-/// `jigc migrate` at mint — [`crate::migrate::SOURCE_FILE`]) if present, so a resumed
+/// `jigc migrate` at mint — [`engine::state::SOURCE_FILE`]) if present, so a resumed
 /// or re-entered migration task re-feeds [`ComposeContext::source`] with the same
 /// foreign bytes the minting compose fed (`auto-migration.md` → The source seam).
 /// `None` when the file is absent — every non-migration task — keeping those
@@ -2446,7 +2446,7 @@ fn compose_task_workflow(
 /// silent `None`: composing the migration workflow with an empty seam is exactly the
 /// defect this read exists to close.
 fn read_staged_source(task_dir: &Path, id: &str) -> Result<Option<String>> {
-    let path = task_dir.join(crate::migrate::SOURCE_FILE);
+    let path = task_dir.join(engine::state::SOURCE_FILE);
     if !path.exists() {
         return Ok(None);
     }

@@ -85,6 +85,8 @@ mod staged_prose_consent_axis;
 mod staged_snapshot;
 #[path = "../subtask_discard_record.rs"]
 mod subtask_discard_record;
+#[path = "../task_area_writer_registry.rs"]
+mod task_area_writer_registry;
 #[path = "../uninstall_workbench_subject.rs"]
 mod uninstall_workbench_subject;
 #[path = "../uninstall_worktree_guard.rs"]

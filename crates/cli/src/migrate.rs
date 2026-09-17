@@ -57,11 +57,6 @@ use std::path::Path;
 /// mechanical byte count (Framing-A), never a content judgment.
 pub(crate) const TRIVIAL_SOURCE_FLOOR: usize = 48;
 
-/// The working-area filename the staged foreign source bytes live at — the read-only
-/// source artifact the source seam surfaces. Plain bytes, read back verbatim (the same
-/// diff-friendly style as the `intent`/`workflow` task files).
-pub(crate) const SOURCE_FILE: &str = "source";
-
 /// Run `jigc migrate <path> --as <doctype>` (optional `--slug`) against `cwd`: locate
 /// the repo + project layer, read the foreign file, mint the off-router migration
 /// task, stage the foreign bytes, compose the `migrate-<doctype>` workflow over the
@@ -393,7 +388,7 @@ fn migrate_in_repo(
     // bytes into the working area.
     let workflow_id = migration_workflow(doctype);
     let minted = start::mint_migration_in_repo(&repo_root, doctype, &workflow_id, &recorded)?;
-    let source_path = minted.dir.join(SOURCE_FILE);
+    let source_path = minted.dir.join(state::SOURCE_FILE);
     state::persist(&source_path, foreign.as_bytes())
         .with_context(|| format!("could not stage the foreign source for `{}`", minted.id))?;
 

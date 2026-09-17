@@ -741,7 +741,7 @@ fn commit_record_only(
     // Stage ONLY the record (a `git add -- <path>` never sweeps the ambient dirty tree).
     crate::task::git_run(repo_root, &["add", "--", &spec])?;
 
-    let msg_path = msg_dir.join("record-commit-msg.txt");
+    let msg_path = msg_dir.join(engine::milestone::RECORD_COMMIT_MSG_FILE);
     std::fs::write(&msg_path, message)
         .with_context(|| format!("could not write the record commit message {msg_path:?}"))?;
     git_commit_pathspec(repo_root, &msg_path, &spec)

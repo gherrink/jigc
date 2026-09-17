@@ -76,6 +76,16 @@ pub const SOURCE_PATH_FILE: &str = "source-path";
 /// under the same name the author read-back uses ([`read_slug_override`]).
 pub const SLUG_OVERRIDE_FILE: &str = "slug-override";
 
+/// The working-area file a migration task's **foreign source bytes** are staged at
+/// (`jigc migrate <path>`) — the read-only source artifact the compose-time source seam
+/// surfaces. Plain bytes, read back verbatim (the same diff-friendly style as `intent` and
+/// `workflow`).
+///
+/// It is declared here rather than beside the CLI verb that writes it because it is a
+/// member of [`TASK_AREA_FILES`], and a registry whose members are declared in two crates
+/// is a registry one crate can be wrong about (M52 Increment 4 / T2).
+pub const SOURCE_FILE: &str = "source";
+
 /// The working-area sub-directory holding a task's staged doc instances
 /// (`DECISIONS.md` 2026-05-31 → Task working-area on-disk layout: a staged instance
 /// lives at `.jigc/tasks/<id>/docs/<type>:<slug>.md`).
@@ -86,6 +96,176 @@ pub(crate) const DOCS_DIR: &str = "docs";
 /// (`DECISIONS.md` 2026-05-31 → Task working-area on-disk layout).
 fn instance_filename(type_name: &str, slug: &str) -> String {
     format!("{type_name}:{slug}.md")
+}
+
+/// **Everything jigc itself writes into a task's working area**, in one home both crates
+/// read — the registry whose *complement* is the subject of every door that destroys one
+/// (`design/team-ready-state.md` → The working area's two populations).
+///
+/// Before M52 Increment 4 nobody owned this set: thirteen filename constants sat scattered
+/// across three modules, eleven of them private, and the doors that remove a working area
+/// took the whole directory. A guard cut from a hand-listed subset is worse than no guard —
+/// the list drove short of `renames.json` (written at the ordinary `jigc doc rename --task`
+/// door) and of the two doc↔code probe snapshots, so it would have called three of jigc's
+/// own files foreign and refused every task that had renamed a doc.
+///
+/// **The members are the declarations themselves, never copies of their values**, so the
+/// registry cannot drift from the writer; and `crates/cli/tests/task_area_writer_registry.rs`
+/// counts the production `<…dir>.join(<name>)` sites in **both** crates against it, so a
+/// fourteenth writer reddens rather than silently joining the complement.
+///
+/// **The `docs/` member is a tree, not a file** — its own rule is [`TASK_DOCS_FILES`].
+pub const TASK_AREA_FILES: &[&str] = &[
+    BASE_PIN_FILE,
+    DOCS_DIR,
+    INTENT_FILE,
+    RENAMES_FILE,
+    ROLES_FILE,
+    SLUG_OVERRIDE_FILE,
+    SOURCE_FILE,
+    SOURCE_PATH_FILE,
+    STAGED_SNAPSHOT_FILE,
+    WORKFLOW_FILE,
+    crate::validate::BASE_SNAPSHOT_FILE,
+    crate::validate::SNAPSHOT_FILE,
+];
+
+/// **Jigc's own set inside a task area's `docs/`**: the provenance manifest, plus the
+/// staged doc bodies — every entry whose name [`staged_doc_id`] reads as an identity
+/// *and* whose shape is a regular file. Nothing else under `docs/` is jigc's.
+///
+/// The bodies cannot be listed here because their names are the task's own staged
+/// addresses, so the rule is carried by [`foreign_area_paths`] rather than by a constant;
+/// this names the one entry that is fixed.
+///
+/// **Why the `.md` set and not `provenance.json`'s key set**, which is the more precise
+/// answer to *"did jigc stage this?"*: a stager that failed to record provenance would
+/// make every doc it staged foreign, and the doors this feeds *destroy* or *move* the
+/// complement — so the exact discriminator's failure mode is losing authored prose, and
+/// the loose one's is keeping a file too many. The loose one is the only one that may be
+/// wrong (`settle-record.md` → §18's riders: the one reachable foreign `docs/*.md` cell is
+/// a **directory** wearing that name, which is exactly what the shape question catches).
+pub const TASK_DOCS_FILES: &[&str] = &[PROVENANCE_FILE];
+
+/// **Everything jigc itself writes into a milestone's working area** — [`TASK_AREA_FILES`]'
+/// sibling row, over `.jigc/milestones/<id>/` (`settle-record.md` → D3.1, §6).
+///
+/// `merged/` is the join's staging tree, materialized by [`crate::milestone`] and left in
+/// place afterwards, so it is a member rather than the complement's first false fire — it
+/// is jigc's wholesale, and nothing inside it is walked.
+pub const MILESTONE_AREA_FILES: &[&str] = &[
+    BASE_PIN_FILE,
+    STAGED_SNAPSHOT_FILE,
+    crate::milestone::MERGED_AREA,
+    crate::milestone::RECORD_COMMIT_MSG_FILE,
+    crate::milestone::TASKS_FILE,
+];
+
+/// Which working area a path is — the two rows of the writer registry.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WorkArea {
+    /// `.jigc/tasks/<task-id>/` — [`TASK_AREA_FILES`] plus the `docs/` tree rule.
+    Task,
+    /// `.jigc/milestones/<milestone-id>/` — [`MILESTONE_AREA_FILES`].
+    Milestone,
+}
+
+impl WorkArea {
+    /// The registry row for this area — the names jigc writes at its root.
+    pub fn jigc_written(self) -> &'static [&'static str] {
+        match self {
+            WorkArea::Task => TASK_AREA_FILES,
+            WorkArea::Milestone => MILESTONE_AREA_FILES,
+        }
+    }
+
+    /// Whether `name` is the row's **directory** member — the one entry whose shape is a
+    /// tree rather than a file, so a plain file wearing that name is not jigc's.
+    fn tree_member(self, name: &str) -> bool {
+        match self {
+            WorkArea::Task => name == DOCS_DIR,
+            WorkArea::Milestone => name == crate::milestone::MERGED_AREA,
+        }
+    }
+}
+
+/// The staged-doc identity a working-area `docs/` entry **name** stands for — the inverse
+/// of [`instance_filename`], and the one home that rule has.
+///
+/// It answers about the *name* only. The **shape** question is the caller's, and the two
+/// callers ask it differently on purpose: [`foreign_area_paths`] asks whether jigc wrote
+/// the entry, so it does not follow a symlink; `cli::task::staged_doc_ids` asks what
+/// `jigc doc show <id> --task` can open, so it does.
+pub fn staged_doc_id(file_name: &str) -> Option<&str> {
+    file_name.strip_suffix(".md")
+}
+
+/// **The bytes jigc did not write into `area`** — every entry of the working area that is
+/// not a member of its registry row, relative to the area, sorted.
+///
+/// This is the subject every door that destroys a working area takes
+/// (`design/team-ready-state.md` → The working area's two populations). The doors differ in
+/// what they *do* with it — refuse without a consent, narrate under one, or move it aside —
+/// and each records its own disposition; what none of them may do is take it silently,
+/// which is what all five did before M52 Increment 4.
+///
+/// **A foreign directory is returned whole and never walked**: the entry is the unit a door
+/// names, refuses over or moves, and moving the top of a subtree preserves it. Inside the
+/// `docs/` member, whose own rule is [`TASK_DOCS_FILES`], the walk descends exactly one
+/// level.
+///
+/// **Shape is part of membership.** A member's name on the wrong kind of entry — a
+/// *directory* called `base.json`, a plain file called `docs/`, a symlink wearing either —
+/// is not something jigc wrote, and the shape is read **without following symlinks**
+/// ([`std::fs::DirEntry::file_type`]) because jigc writes regular files and real
+/// directories and never a link. This is L-3's lesson at the door's own question: a
+/// directory named `<type>:<slug>.md` was a staged identity at four surfaces until M52
+/// Increment 4 / T1.
+///
+/// **Fail-closed, like every other probe a destroying door reads** (`staged_task_prose`'s
+/// discipline): an **absent** area is `Ok(vec![])` — and absence is `NotFound` and nothing
+/// else — while a present area that cannot be read, or an entry whose shape cannot be
+/// stat'd, is an `Err`. Enumerating nothing and finding nothing are the same empty vector
+/// to a caller about to delete, and only one of them is safe.
+pub fn foreign_area_paths(area: &Path, kind: WorkArea) -> std::io::Result<Vec<PathBuf>> {
+    match std::fs::symlink_metadata(area) {
+        Ok(_) => {}
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(err) => return Err(err),
+    }
+
+    let mut foreign: Vec<PathBuf> = Vec::new();
+    for entry in std::fs::read_dir(area)? {
+        let entry = entry?;
+        let raw = entry.file_name();
+        let name = raw.to_string_lossy();
+        let shape = entry.file_type()?;
+        let mine = kind.jigc_written().contains(&name.as_ref())
+            && if kind.tree_member(&name) {
+                shape.is_dir()
+            } else {
+                shape.is_file()
+            };
+        if !mine {
+            foreign.push(PathBuf::from(name.as_ref()));
+            continue;
+        }
+        if kind == WorkArea::Task && name == DOCS_DIR {
+            for staged in std::fs::read_dir(entry.path())? {
+                let staged = staged?;
+                let raw = staged.file_name();
+                let name = raw.to_string_lossy();
+                let shape = staged.file_type()?;
+                let mine = shape.is_file()
+                    && (TASK_DOCS_FILES.contains(&name.as_ref()) || staged_doc_id(&name).is_some());
+                if !mine {
+                    foreign.push(Path::new(DOCS_DIR).join(name.as_ref()));
+                }
+            }
+        }
+    }
+    foreign.sort();
+    Ok(foreign)
 }
 
 /// The on-disk path a staged `<type>:<slug>` instance lives at within `task_dir`:
