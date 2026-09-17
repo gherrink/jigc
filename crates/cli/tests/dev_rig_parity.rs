@@ -42,8 +42,10 @@
 //! is a second front door, onto `crates/cli/tests/support/git_state.rs` rather than onto
 //! `trial_corpus.rs`, so it is fenced on all three counts: the rig's member set and
 //! [`GitState::ALL`] are the **same set**; every member is classified as an
-//! operation-in-progress or a posture ([`OPERATION_MEMBERS`]); the adversarial arm runs
-//! over `--git-state` too, because that member is interpolated into generated shell for
+//! operation-in-progress or a posture — since M52 Increment 3 by **asking
+//! [`GitState::in_progress`]**, the map the fixture already declares, in place of the
+//! interim hand-written list this file once carried; the adversarial arm runs over
+//! `--git-state` too, because that member is interpolated into generated shell for
 //! exactly the reason `--schema` is; and **one cell is driven end to end**, because a
 //! print-only scan proves the emitted bytes are safe and says nothing about whether they
 //! build the state they name.
@@ -51,6 +53,8 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+use cli::repo::InProgress;
 
 use crate::support;
 use support::git_state::GitState;
@@ -164,82 +168,6 @@ fn the_rig_builds_exactly_the_states_the_fixture_builder_declares() {
     }
 }
 
-/// The git states the rig builds that are an **operation in progress** — one a user
-/// has begun and not concluded — one row per member, with the reason it is one.
-///
-/// **This list is interim, and Increment 3 is what retires it.** The posture family
-/// mints `InProgress::ALL` there; this const is then **replaced by a derivation from
-/// it**, so the fence below stops naming members and starts asking the enum, the way
-/// `STORE_EXIT_FLIPS` and `WORK_UNIT_ID_DOORS` are asked today. It is written here
-/// rather than left to Increment 3 because the builder ships now, and a builder whose
-/// members carry no classification is a table with no claim attached to it.
-///
-/// **The two members deliberately absent are the claim.** `detached` and `unborn` are
-/// *postures*, not operations — `PostureMember::HeadDetached` / `HeadUnborn` in the
-/// shipped code — so there is nothing to conclude and no git command to route at. The
-/// fence asserts that complement **exactly**, so a thirteenth [`GitState`] member
-/// cannot join the enum without someone deciding which side of the line it is on.
-const OPERATION_MEMBERS: &[(&str, &str)] = &[
-    (
-        "merge",
-        "a conflicting `git merge`: the merge is begun, `MERGE_HEAD` names the other \
-         side, and `git merge --continue` or `--abort` concludes it",
-    ),
-    (
-        "squash-merge",
-        "a `git merge --squash` leaves a staged tree and a `SQUASH_MSG` nobody has \
-         committed yet — the member with a message to destroy and NO `MERGE_HEAD` to \
-         notice it by",
-    ),
-    (
-        "rebase-merge",
-        "a conflicting `git rebase` on the merge backend: `rebase-merge/` holds the \
-         remaining todo and HEAD is detached mid-replay",
-    ),
-    (
-        "rebase-apply",
-        "a conflicting `git rebase --apply`: the apply backend's `rebase-apply/` \
-         carries `onto`, and the replay is suspended exactly as the merge backend's is",
-    ),
-    (
-        "am",
-        "a failing `git am`: `rebase-apply/applying` marks a patch series half-applied, \
-         and git itself discriminates it from a rebase by that very file",
-    ),
-    (
-        "cherry-pick",
-        "a conflicting `git cherry-pick`: `CHERRY_PICK_HEAD` names the commit being \
-         replayed, concluded by `--continue`, `--skip` or `--abort`",
-    ),
-    (
-        "sequencer",
-        "a conflicting MULTI-commit pick: the same markers plus `sequencer/todo`, so \
-         the remaining picks are queued on disk and concluding is not one command's work",
-    ),
-    (
-        "dangling-sequencer",
-        "the same multi-commit pick with its FIRST pick concluded by hand: the commit \
-         consumes `CHERRY_PICK_HEAD` and `MERGE_MSG` and leaves `sequencer/` holding \
-         the pick git never ran — the one state whose whole evidence is the queue",
-    ),
-    (
-        "revert",
-        "a conflicting `git revert`: `REVERT_HEAD` names the commit being undone, and \
-         the revert is concluded or aborted like a pick",
-    ),
-    (
-        "unmerged-index",
-        "a conflicted `git stash pop`: unmerged index entries and NO marker at all — \
-         the member no marker-set widening can reach, and the control that keeps \
-         *detect the operation* honest about its ceiling",
-    ),
-    (
-        "bisect",
-        "`git bisect start`: the bisect is running until `git bisect reset`, and every \
-         commit made inside it lands on a revision git chose rather than the user",
-    ),
-];
-
 /// The git states `dev/jigc-rig` accepts, read from the rig itself.
 ///
 /// `--list-git-states` is asked rather than the script parsed, for the same reason
@@ -286,40 +214,56 @@ fn the_rig_builds_exactly_the_git_states_the_fixture_builder_declares() {
         "the comparison is only a fence while the declared set is non-empty",
     );
 
-    // The interim classification: every operation member is a real member, no member
-    // is classified twice, and the complement is EXACTLY the two postures.
-    let operations: BTreeSet<&str> = OPERATION_MEMBERS.iter().map(|(name, _)| *name).collect();
-    assert_eq!(
-        operations.len(),
-        OPERATION_MEMBERS.len(),
-        "OPERATION_MEMBERS must not classify one member twice",
-    );
-    let unknown: Vec<&&str> = operations
+    // The classification, as a DERIVATION rather than a list. Until M52 Increment 3 this
+    // was a hand-written `OPERATION_MEMBERS` table, declared interim in its own
+    // doc-comment: the posture family had no `InProgress` enum to ask, so the builder's
+    // members carried a claim typed beside them. The enum ships now, and
+    // `GitState::in_progress` is the map — so the three properties are asked of it.
+    //
+    // **Totality** is the compiler's: `in_progress` is an exhaustive match over
+    // `GitState`, so a thirteenth member cannot compile until someone decides which side
+    // of the line it is on — which is exactly what the retired list was fencing by hand.
+    let operations: BTreeSet<&str> = GitState::ALL
         .iter()
-        .filter(|name| !declared.contains(**name))
+        .filter(|state| state.in_progress().is_some())
+        .map(|state| state.name())
         .collect();
-    assert!(
-        unknown.is_empty(),
-        "OPERATION_MEMBERS names git states `GitState::ALL` does not declare: \
-         {unknown:?} — the list classifies the builder's members, so a name the \
-         builder cannot build classifies nothing",
-    );
+
+    // **The complement is exactly the two postures.** `detached` and `unborn` are
+    // `PostureMember::HeadDetached` / `HeadUnborn` — there is nothing to conclude and no
+    // git command to route at — so a member that mapped to `None` and is not one of them
+    // is a state the posture family would answer nothing at all about.
     let postures: BTreeSet<&str> = declared.difference(&operations).copied().collect();
     assert_eq!(
         postures,
         BTreeSet::from(["detached", "unborn"]),
         "every `GitState` member is an un-concluded OPERATION or a POSTURE, and the \
-         posture side is exactly `detached` + `unborn` (`PostureMember::HeadDetached` / \
-         `HeadUnborn`). A new member on either side must be classified in \
-         OPERATION_MEMBERS or named here — being reachable by the builder and absent \
-         from both is how a state ships that no door was ever asked about.",
+         posture side is exactly `detached` + `unborn`. A new member is classified by \
+         giving it a `GitState::in_progress` cell (or deliberately no cell, and then \
+         it must be named here) — being reachable by the builder and classified by \
+         neither is how a state ships that no door was ever asked about.",
     );
-    for (name, reason) in OPERATION_MEMBERS {
-        assert!(
-            reason.len() > 40,
-            "operation member `{name}` must carry a real reason, not a placeholder",
-        );
-    }
+
+    // **Surjective onto `InProgress::ALL`.** An operation the probe can answer and no rig
+    // member can produce is an operation no shell probe — and no door axis — can reach,
+    // so its noun and its route are driven by nothing. (`tests/repo_posture.rs` asserts
+    // the same completeness from the probe's side; here it is what makes the rig's
+    // `--git-state` front door a complete one.)
+    let reached: BTreeSet<String> = GitState::ALL
+        .iter()
+        .filter_map(|state| state.in_progress())
+        .map(|operation| format!("{operation:?}"))
+        .collect();
+    let unreached: Vec<String> = InProgress::ALL
+        .iter()
+        .map(|operation| format!("{operation:?}"))
+        .filter(|name| !reached.contains(name))
+        .collect();
+    assert!(
+        unreached.is_empty(),
+        "every member of `InProgress::ALL` must be produced by at least one rig git \
+         state: {unreached:?}",
+    );
 }
 
 /// Every file under `dev/`, recursively.
