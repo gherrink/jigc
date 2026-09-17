@@ -19,9 +19,10 @@
 //! entries, routed at the already-shipped escape hatch.
 //!
 //! **And what the guards let through, the teardown names** (M46 Inc 2 T3). `uninstall` is a
-//! member of `cli::milestone::DESTROYING_DOORS`, and every member owes the loss narration
-//! law 1 requires: it removes `.jigc/` with `remove_dir_all`, so whatever the two guards do
-//! not refuse on is destroyed exactly as hard as what they do. That is observable precisely
+//! member of `cli::milestone::DESTROYING_DOORS`, and every member owes an answer for what it
+//! removes — for a `Disposition::Refuse` member like this one, the loss narration law 1
+//! requires: it removes `.jigc/` with `remove_dir_all`, so whatever the two guards do not
+//! refuse on is destroyed exactly as hard as what they do. That is observable precisely
 //! where no refusal fires — a worktree holding nothing but **gitignored** bytes, which the
 //! refusal probe deliberately does not look at — so the narration is not gated on `--force`
 //! and the last cell below drives the ordinary clean teardown.

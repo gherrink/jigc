@@ -58,13 +58,18 @@
 
 use cli::milestone::DISCARD_DOOR;
 
-/// [`DISCARD_DOOR`]'s blocking refusal code. Since M46 Inc 2 the door table's `code` is the
-/// axis's **refuse-vs-narrate discriminator** (`jigc milestone finalize` joined it and
-/// carries no refusal), so a refusing door's code is read through its `Some`.
+/// [`DISCARD_DOOR`]'s blocking refusal code **over a fan-out worktree** — this suite's
+/// subject. Since M52 Increment 4 the door table's `codes` is a set, because the abandon
+/// stands over three destroyable subjects (a worktree · a sub-task's staged prose · the
+/// foreign bytes in either area), so the member is selected by the subject it answers for
+/// rather than by its position in the set.
 fn discard_code() -> &'static str {
     DISCARD_DOOR
-        .code
-        .expect("`jigc milestone discard` is a refusing door")
+        .codes
+        .iter()
+        .copied()
+        .find(|code| code.ends_with(".dirty-worktree"))
+        .expect("`jigc milestone discard` refuses over a dirty fan-out worktree")
 }
 use std::fs;
 use std::path::{Path, PathBuf};

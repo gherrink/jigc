@@ -34,13 +34,15 @@
 //!
 //!   (2) **No destroying door destroys bytes it does not name, and none takes a path it
 //!       never looked at** — the axis is the code-side [`cli::milestone::DESTROYING_DOORS`]
-//!       table read through its own refuse-vs-narrate discriminator
-//!       ([`cli::milestone::DestroyingDoor::code`]): every door either **refuses** what it
-//!       cannot prove is disposable *or* **names every byte it destroys**, and silence is
-//!       the one arm no door may take. Driven over the **`--ignored` axis** — a path no
-//!       commit could ever carry, which every door deletes exactly as hard as tracked
-//!       bytes. Plus the **path-subject** cell: the milestone boundary reads the worktree
-//!       **on disk**, not the registered set (Inc 2).
+//!       table read through its own **disposition**
+//!       ([`cli::milestone::DestroyingDoor::disposition`], an `Option<code>` until M52
+//!       Increment 4 generalized the subject from a worktree-shaped path to a destroyed
+//!       one): every door either **refuses** what it cannot prove is disposable, *or*
+//!       **names every byte it destroys**, *or* **keeps the bytes and says where they
+//!       went**, and silence is the one arm no door may take. Driven over the **`--ignored`
+//!       axis** — a path no commit could ever carry, which every door reaches exactly as
+//!       hard as tracked bytes. Plus the **path-subject** cell: the milestone boundary
+//!       reads the worktree **on disk**, not the registered set (Inc 2).
 //!
 //!   (3) **A never-adopted foreign file is not the corpus migration's subject, and both
 //!       doors say so in the same words** — the subject set is a **derivation**, stated as
@@ -88,7 +90,7 @@
 //! `engine::file_state`'s unit axis and `file_state_concurrency.rs`'s, the hand-off's
 //! non-vacuity `file_state_merge_hand_off.rs`'s and the contrast's applied mutant
 //! `reconciliation_baseline_contrast.rs`'s; the per-verdict leftover fixtures and the
-//! `DESTROYING_DOORS × LEFTOVER_VERDICTS` refusal matrix are `provision_leftover_guard.rs`'s,
+//! `WORKTREE_DOORS × LEFTOVER_VERDICTS` refusal matrix are `provision_leftover_guard.rs`'s,
 //! `uninstall_worktree_guard.rs`'s and `flow48_acceptance.rs`'s, the four manifest cells
 //! `milestone_path_subject.rs`'s; the foreign axis's two fixture worlds are
 //! `migrate_corpus_foreign.rs`'s; the halt-cause variant map is
@@ -127,12 +129,12 @@
 use crate::support;
 
 use cli::gate_coverage::{self, GateCoverage, Tier};
-use cli::milestone::{DESTROYING_DOORS, DestroyingDoor, PROVISION_DOOR, UNINSTALL_DOOR};
+use cli::milestone::{DESTROYING_DOORS, DestroyingDoor, Disposition, UNINSTALL_DOOR};
 use cli::render::STORE_EXIT_FLIPS;
 use engine::file_state::FileStateRecord;
 use engine::transform::{HaltReason, TransformError};
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
@@ -917,35 +919,99 @@ fn stage_in_worktree(repo: &Path, sub: &str, rel: &str, body: &str) {
     git_ok(&worktree, &["add", rel]);
 }
 
-/// Put **both** plants in `area-zed`'s worktree and return the path holding them.
-fn plant_both(repo: &Path) -> PathBuf {
-    let doomed = repo.join(".jigc").join("worktrees").join("area-zed");
-    for rel in [PLANTED_UNTRACKED, PLANTED_IGNORED] {
-        let path = doomed.join(rel);
-        fs::create_dir_all(path.parent().expect("the plant has a parent")).expect("mk the parent");
-        fs::write(&path, "sub-agent WIP\n").expect("write the plant");
-    }
+/// Where a door's plants go — the path that door is about to remove, which is **not** the
+/// same shape for every member since M52 Increment 4 generalized the table's subject from a
+/// worktree to a destroyed path.
+#[derive(Clone, Copy)]
+enum PlantAt {
+    /// `area-zed`'s fan-out **worktree** — the subject of the three doors that stand over
+    /// `.jigc/worktrees/`.
+    Worktree,
+    /// `area-zed`'s **working area** under `.jigc/tasks/` — the subject the milestone
+    /// boundary displaces (`settle-record.md` §18), which no worktree contains.
+    SubTaskArea,
+}
+
+/// Put **both** plants at `area-zed`'s `at` and return the path holding them.
+fn plant_both(repo: &Path, at: PlantAt) -> PathBuf {
+    let doomed = match at {
+        PlantAt::Worktree => repo.join(".jigc").join("worktrees").join("area-zed"),
+        PlantAt::SubTaskArea => repo.join(".jigc").join("tasks").join("area-zed"),
+    };
+    plant_into(&doomed);
     doomed
 }
 
-/// One prepared cell: a repo whose `area-zed` fan-out worktree holds both plants, standing
-/// in the shape in which `door` actually destroys them.
+/// Write both plants into `dir` — one path git merely does not track, one it ignores.
+fn plant_into(dir: &Path) {
+    for rel in [PLANTED_UNTRACKED, PLANTED_IGNORED] {
+        let path = dir.join(rel);
+        fs::create_dir_all(path.parent().expect("the plant has a parent")).expect("mk the parent");
+        fs::write(&path, PLANTED_BYTES).expect("write the plant");
+    }
+}
+
+/// What both plants hold — read back byte-for-byte wherever a door was supposed to keep
+/// them.
+const PLANTED_BYTES: &str = "sub-agent WIP\n";
+
+/// One prepared cell: a repo standing in the shape in which `door` actually destroys, with
+/// both plants at the path it is about to take.
 struct DoorCell {
     repo: PathBuf,
     home: PathBuf,
-    /// The `area-zed` worktree path — the plants under it must be gone once the door ran,
-    /// or the cell proved a narration over a destruction that never happened.
+    /// The path the door removes, holding both plants — they must be gone from here once it
+    /// ran, or the cell proved an answer over a destruction that never happened.
     doomed: PathBuf,
+    /// Where a [`Disposition::Displace`] member must have parked them, relative path
+    /// preserved (`.jigc/displaced/<unit-id>/`). `None` for a door that destroys.
+    kept: Option<PathBuf>,
+    /// The argv that drives this door to its removal — **without** any consent, which the
+    /// refusing arm appends from the door's own [`DestroyingDoor::consent`].
+    argv: Vec<String>,
     _keep: Vec<TempDir>,
+    _corpus: Option<TrialCorpus>,
 }
 
-/// Build the fixture `door` needs to reach its removal.
+/// Build the fixture `door` needs to reach its removal, and the argv that drives it there.
+///
+/// **The fixture is keyed on the door, not on the disposition**, because what a door
+/// destroys and how it answers for it are two different facts: the three worktree doors and
+/// the milestone boundary all stand in the fan-out world, but the boundary's *displaceable*
+/// subject is a sub-task's working area, and the two `jigc task` doors stand over a single
+/// task's area with no milestone in sight at all.
+fn door_cell(door: &DestroyingDoor) -> DoorCell {
+    match door.verb {
+        "jigc milestone provision" => fanout_cell(
+            PlantAt::Worktree,
+            &["milestone", "provision", "cache-rework"],
+        ),
+        "jigc milestone discard" => {
+            fanout_cell(PlantAt::Worktree, &["milestone", "discard", "cache-rework"])
+        }
+        "jigc uninstall" => fanout_cell(PlantAt::Worktree, &["uninstall"]),
+        "jigc milestone finalize" => fanout_cell(
+            PlantAt::SubTaskArea,
+            &["milestone", "finalize", "cache-rework"],
+        ),
+        "jigc task discard" => task_area_cell(false),
+        "jigc task finalize" => task_area_cell(true),
+        other => panic!(
+            "`{other}` is a member of the code-side `DESTROYING_DOORS` table with no cell in \
+             this arm — a door added there owes its cell here, and a missing one is a hard \
+             panic, never a silent gap",
+        ),
+    }
+}
+
+/// The fan-out world: a provisioned `milestone:cache-rework` with two sub-tasks, both plants
+/// at `area-zed`'s `at`.
 ///
 /// Three doors take the plain provisioned repo. `provision` cannot: it **reuses** a
 /// registered worktree untouched, so the only shape in which it destroys anything is the
 /// one that produced the defect — a `cp -R` of the repo, whose worktrees are registered at
 /// the *source's* path and nowhere under the copy's own `.jigc/worktrees/`.
-fn door_cell(door: &DestroyingDoor) -> DoorCell {
+fn fanout_cell(at: PlantAt, argv: &[&str]) -> DoorCell {
     let home = TempDir::new("door-home");
     let home_path = home.path().to_path_buf();
     let source = TempDir::new("door-src");
@@ -962,164 +1028,277 @@ fn door_cell(door: &DestroyingDoor) -> DoorCell {
     );
     stage_in_worktree(source.path(), "area-low", "src/low.rs", "pub fn low() {}\n");
 
-    if door.verb == PROVISION_DOOR.verb {
+    let mut keep = vec![source, home];
+    let repo = if argv.starts_with(&["milestone", "provision"]) {
         let copies = TempDir::new("door-copy");
         let repo = copies.path().join("copy");
-        copy_repo(source.path(), &repo);
+        copy_repo(keep[0].path(), &repo);
         // Exactly one leftover, or the refusal is not attributable to the planted path.
         fs::remove_dir_all(repo.join(".jigc").join("worktrees").join("area-low"))
             .expect("drop the copy's other worktree");
-        let doomed = plant_both(&repo);
-        return DoorCell {
-            repo,
-            home: home_path,
-            doomed,
-            _keep: vec![copies, source, home],
-        };
-    }
-    let repo = source.path().to_path_buf();
-    let doomed = plant_both(&repo);
+        keep.insert(0, copies);
+        repo
+    } else {
+        keep[0].path().to_path_buf()
+    };
+    let doomed = plant_both(&repo, at);
+
     DoorCell {
+        // A plant in a **working area** is the one subject a displacing door can move
+        // aside; a worktree plant has no such destination — that teardown narrates what it
+        // takes, the measured `--ignored` bound of M46.
+        kept: matches!(at, PlantAt::SubTaskArea)
+            .then(|| repo.join(".jigc").join("displaced").join("area-zed")),
         repo,
         home: home_path,
         doomed,
-        _keep: vec![source, home],
+        argv: argv.iter().map(|arg| (*arg).to_string()).collect(),
+        _keep: keep,
+        _corpus: None,
     }
 }
 
-/// The argv that drives one destroying door to its removal — **without** the consent flag,
-/// which the cell appends for the doors that have one.
-fn door_argv(door: &DestroyingDoor) -> Vec<String> {
-    let argv: &[&str] = match door.verb {
-        "jigc milestone provision" => &["milestone", "provision", "cache-rework"],
-        "jigc milestone discard" => &["milestone", "discard", "cache-rework"],
-        "jigc uninstall" => &["uninstall"],
-        "jigc milestone finalize" => &["milestone", "finalize", "cache-rework"],
-        other => panic!(
-            "`{other}` is a member of the code-side `DESTROYING_DOORS` table with no cell in \
-             this arm — a door added there owes its cell here, and a missing one is a hard \
-             panic, never a silent gap",
-        ),
+/// The single-task world: one live task whose working area holds both plants, driven at
+/// `jigc task discard` or — when `finalize` — at a `jigc task finalize` that really lands.
+///
+/// The commit gets a real diff on purpose: a commit-only task with nothing staged blocks at
+/// `finalize.empty-commit`, and a cell that never reaches the removal proves nothing about
+/// what the removal does.
+fn task_area_cell(finalize: bool) -> DoorCell {
+    let corpus = TrialCorpus::build(State::Fresh);
+    let task = corpus.start_workflow("quick-fix", "Cap the retry budget");
+    let repo = corpus.repo();
+    let doomed = repo.join(".jigc").join("tasks").join(&task);
+    plant_into(&doomed);
+
+    let argv: Vec<String> = if finalize {
+        fs::write(repo.join("README.md"), "hello\nretry cap = 3\n").expect("edit the tracked file");
+        corpus.git(&["add", "README.md"]);
+        for (field, value) in [("type", "fix"), ("scope", "cli")] {
+            corpus.jigc_ok(&[
+                "doc",
+                "set-field",
+                &format!("commit:{task}#{field}"),
+                "--value",
+                value,
+                "--task",
+                &task,
+            ]);
+        }
+        corpus.set_slot(&format!("commit:{task}#summary"), &task, "cap the retries");
+        corpus.set_slot(
+            &format!("commit:{task}#body"),
+            &task,
+            "Driven by the destroying-door axis.",
+        );
+        vec!["task".into(), "finalize".into(), task.clone()]
+    } else {
+        vec!["task".into(), "discard".into(), task.clone()]
     };
-    argv.iter().map(|arg| (*arg).to_string()).collect()
+
+    DoorCell {
+        repo: repo.clone(),
+        home: corpus.home(),
+        doomed,
+        kept: finalize.then(|| repo.join(".jigc").join("displaced").join(&task)),
+        argv,
+        _keep: Vec::new(),
+        _corpus: Some(corpus),
+    }
 }
 
 /// **Arm 2, cell 1** — the door rule, re-derived at the scope it holds and iterated over
-/// the whole code-side table.
+/// the whole code-side table, **per disposition**.
 ///
 /// M46 Increment 2 made [`DESTROYING_DOORS`]' subject **destruction** rather than refusal,
-/// so `jigc milestone finalize` — which destroys on the ordinary success path and can
-/// never refuse — is a member, and [`DestroyingDoor::code`] became the axis's
-/// refuse-vs-narrate discriminator. The rule the table now satisfies:
+/// so `jigc milestone finalize` — which destroys on the ordinary success path — became a
+/// member. M52 Increment 4 generalized the subject again, from a *worktree-shaped path* to
+/// a **destroyed path**, which admitted the two doors that take a task's whole working
+/// area (`jigc task discard`, `jigc task finalize`), and replaced the refuse-vs-narrate
+/// `Option<code>` with [`Disposition`], because a door has **three** honest answers, not
+/// two. The rule the table satisfies:
 ///
 /// > every such door **answers for what it removes** — it refuses what it cannot prove is
-/// > disposable, **or** it names every byte it destroys — and **silence is the one arm no
-/// > door may take**.
+/// > disposable, **or** it names every byte it destroys, **or** it keeps the bytes and says
+/// > where it put them — and **silence is the one arm no door may take**.
 ///
-/// Per member, through the real binary, over a worktree holding one **gitignored** file and
-/// one plain untracked file:
+/// Per member, through the real binary, over its own destroyed path holding one
+/// **gitignored** file and one plain untracked file, with the assertions derived from that
+/// member's [`Disposition`] rather than from a hand-written cell list:
 ///
-///   * a `Some(code)` door refuses first, with **its own** blocking identity, naming the
-///     untracked plant, routing at the consent flag, and leaving both plants byte-intact;
-///   * driven to its removal (with `--force` where the door has one), **every** member
-///     names **both** plants — including the gitignored one no commit could ever carry —
-///     and then really destroys them.
+///   * [`Disposition::Refuse`] — it refuses **first**, with one of *its own* blocking
+///     identities, naming the untracked plant, routing at **its own** consent, and leaving
+///     both plants byte-intact; driven again with that consent it names **both** plants —
+///     the gitignored one no commit could ever carry included — and really destroys them.
+///   * [`Disposition::Narrate`] — driven once, it names both plants and destroys them. No
+///     member holds this disposition today (`settle-record.md` §18 moved the last one);
+///     the arm is written because the rule is stated over three answers, and a door that
+///     takes bytes it cannot refuse over must land here rather than in silence.
+///   * [`Disposition::Displace`] — driven once, it names **where the bytes went**, and they
+///     are there: byte-intact under `.jigc/displaced/<unit-id>/` with the relative path
+///     preserved, and gone from the area it removed. **No consent cell is enumerated for a
+///     displacing door** — `jigc task finalize --force` is a capability the Settle refuses,
+///     and a member carries a consent only if it has one.
 ///
-/// **The declared bound rides here rather than being implied:** the ignored axis is a
-/// *narration* axis only. The refusal probe deliberately stays `--porcelain` without
-/// `--ignored` (a provisioned worktree that did its job holds `target/`-shaped build
-/// output, so refusing on it would fire on the ordinary fan-out **success** path and train
-/// `--force` into reflex), so the loss of an ignored path is made **visible, not
-/// prevented**.
+/// **The declared bound rides here rather than being implied:** at the worktree doors the
+/// ignored axis is a *narration* axis only. The refusal probe deliberately stays
+/// `--porcelain` without `--ignored` (a provisioned worktree that did its job holds
+/// `target/`-shaped build output, so refusing on it would fire on the ordinary fan-out
+/// **success** path and train `--force` into reflex), so the loss of an ignored path there
+/// is made **visible, not prevented**.
 #[test]
 fn every_destroying_door_answers_for_what_it_removes() {
     assert_eq!(
         DESTROYING_DOORS.len(),
-        4,
+        6,
         "the axis is the code-side destroying-door table, read whole",
     );
     let refusing = DESTROYING_DOORS
         .iter()
-        .filter(|door| door.code.is_some())
+        .filter(|door| door.consent().is_some())
         .count();
     assert!(
         refusing > 0 && refusing < DESTROYING_DOORS.len(),
         "the table's subject is destruction, not refusal: it must carry both a refusing \
-         member and a narrate-only one, or this arm proves only half the rule",
+         member and a member that answers some other way, or this arm proves only half the \
+         rule",
+    );
+    let codes: BTreeSet<&str> = DESTROYING_DOORS
+        .iter()
+        .flat_map(|door| door.codes)
+        .copied()
+        .collect();
+    assert_eq!(
+        codes.len(),
+        DESTROYING_DOORS
+            .iter()
+            .map(|door| door.codes.len())
+            .sum::<usize>(),
+        "no blocking identity is shared between two doors — a shared code makes a refusal \
+         unattributable to the door that raised it",
     );
 
     for door in DESTROYING_DOORS {
         let verb = door.verb;
         let cell = door_cell(door);
-        let base = door_argv(door);
+        let base = cell.argv.clone();
 
-        // (1) The refusing arm — what it cannot prove is disposable, it does not take.
-        if let Some(code) = door.code {
-            let argv: Vec<&str> = base.iter().map(String::as_str).collect();
-            let refused = run_jigc(&cell.repo, &cell.home, &argv);
-            let text = printed(&refused);
-            assert!(
-                !refused.status.success(),
-                "[{verb}] a door with a refusal identity must REFUSE work it cannot prove is \
-                 junk; got:\n{text}",
-            );
-            assert!(
-                text.contains(code),
-                "[{verb}] the refusal must carry THIS door's code `{code}` — a shared \
-                 identity makes a refusal unattributable; got:\n{text}",
-            );
-            assert!(
-                text.contains(PLANTED_UNTRACKED) && text.contains("--force"),
-                "[{verb}] the refusal must name what would be destroyed and route at the \
-                 consent flag; got:\n{text}",
-            );
-            for rel in [PLANTED_UNTRACKED, PLANTED_IGNORED] {
+        match door.disposition {
+            // (1) Refuse — what it cannot prove is disposable, it does not take, and the
+            //     consent it names is the only way past.
+            Disposition::Refuse { consent } => {
+                let argv: Vec<&str> = base.iter().map(String::as_str).collect();
+                let refused = run_jigc(&cell.repo, &cell.home, &argv);
+                let text = printed(&refused);
                 assert!(
-                    cell.doomed.join(rel).exists(),
-                    "[{verb}] a refusal takes nothing — `{rel}` must survive byte-intact",
+                    !refused.status.success(),
+                    "[{verb}] a refusing door must REFUSE work it cannot prove is junk; \
+                     got:\n{text}",
                 );
+                assert!(
+                    door.codes.iter().any(|code| text.contains(code)),
+                    "[{verb}] the refusal must carry one of THIS door's codes {:?} — every \
+                     code in the table is door-scoped, so a refusal carrying none of them \
+                     is unattributable; got:\n{text}",
+                    door.codes,
+                );
+                assert!(
+                    text.contains(PLANTED_UNTRACKED) && text.contains(consent),
+                    "[{verb}] the refusal must name what would be destroyed and route at \
+                     `{consent}`, its own consent; got:\n{text}",
+                );
+                for rel in [PLANTED_UNTRACKED, PLANTED_IGNORED] {
+                    assert_eq!(
+                        fs::read_to_string(cell.doomed.join(rel)).unwrap_or_default(),
+                        PLANTED_BYTES,
+                        "[{verb}] a refusal takes nothing — `{rel}` must survive byte-intact",
+                    );
+                }
+
+                let mut driven = base;
+                driven.push(consent.to_string());
+                let text = drive_to_removal(&cell, verb, &driven);
+                if verb == UNINSTALL_DOOR.verb {
+                    assert!(
+                        text.contains("commit:area-zed"),
+                        "[{verb}] the teardown must ALSO name the authored task prose it \
+                         destroys — a door that names half of what it takes is the law-1 \
+                         half-truth; got:\n{text}",
+                    );
+                }
+                assert_destroyed(&cell, verb);
+            }
+
+            // (2) Narrate — what it does take, it names.
+            Disposition::Narrate => {
+                drive_to_removal(&cell, verb, &base);
+                assert_destroyed(&cell, verb);
+            }
+
+            // (3) Displace — what it will not take, it keeps, and says where it put it.
+            Disposition::Displace => {
+                let kept = cell
+                    .kept
+                    .as_ref()
+                    .expect("a displacing door's cell names where the bytes must land");
+                let text = drive_to_removal(&cell, verb, &base);
+                let unit = kept
+                    .file_name()
+                    .expect("the displacement home is named for the work unit")
+                    .to_string_lossy()
+                    .into_owned();
+                for rel in [PLANTED_UNTRACKED, PLANTED_IGNORED] {
+                    assert!(
+                        text.contains(&format!(".jigc/displaced/{unit}/{rel}")),
+                        "[{verb}] a displacing door must name WHERE the bytes went, \
+                         repo-relative; `{rel}` is missing from:\n{text}",
+                    );
+                    assert_eq!(
+                        fs::read_to_string(kept.join(rel)).unwrap_or_default(),
+                        PLANTED_BYTES,
+                        "[{verb}] …and they must BE there, byte-intact with the relative \
+                         path preserved — a named move nobody made is the law-1 half-truth \
+                         in the other direction",
+                    );
+                }
+                assert_destroyed(&cell, verb);
             }
         }
+    }
+}
 
-        // (2) The narrating arm — what it does take, it names. Every member owes this.
-        let mut driven = base;
-        if door.code.is_some() {
-            driven.push("--force".to_string());
-        }
-        let argv: Vec<&str> = driven.iter().map(String::as_str).collect();
-        let out = run_jigc(&cell.repo, &cell.home, &argv);
-        let text = printed(&out);
-        assert!(
-            out.status.success(),
-            "[{verb}] the door must reach its removal at exit 0; got:\n{text}",
-        );
-        assert!(
-            text.contains(PLANTED_UNTRACKED),
-            "[{verb}] the door must name the untracked path it destroys; got:\n{text}",
-        );
-        assert!(
-            text.contains(PLANTED_IGNORED),
-            "[{verb}] the door must name the **gitignored** path it destroys — no commit \
-             could ever carry it, and the removal takes it just as hard; got:\n{text}",
-        );
-        if verb == UNINSTALL_DOOR.verb {
-            assert!(
-                text.contains("commit:area-zed"),
-                "[{verb}] the teardown must ALSO name the authored task prose it destroys — \
-                 a door that names half of what it takes is the law-1 half-truth; \
-                 got:\n{text}",
-            );
-        }
+/// Drive `argv` at the door and assert it reached its removal at exit 0, naming **both**
+/// plants — the shared half of every disposition's answer: the gitignored plant no commit
+/// could carry is named exactly as hard as the untracked one. Returns what was printed.
+fn drive_to_removal(cell: &DoorCell, verb: &str, argv: &[String]) -> String {
+    let args: Vec<&str> = argv.iter().map(String::as_str).collect();
+    let out = run_jigc(&cell.repo, &cell.home, &args);
+    let text = printed(&out);
+    assert!(
+        out.status.success(),
+        "[{verb}] the door must reach its removal at exit 0; got:\n{text}",
+    );
+    assert!(
+        text.contains(PLANTED_UNTRACKED),
+        "[{verb}] the door must name the untracked path it removes; got:\n{text}",
+    );
+    assert!(
+        text.contains(PLANTED_IGNORED),
+        "[{verb}] the door must name the **gitignored** path it removes — no commit could \
+         ever carry it, and the removal reaches it just as hard; got:\n{text}",
+    );
+    text
+}
 
-        // (3) Non-vacuity: the bytes really are gone, so the narration was about a real
-        //     destruction (visible, not prevented — the declared bound).
-        for rel in [PLANTED_UNTRACKED, PLANTED_IGNORED] {
-            assert!(
-                !cell.doomed.join(rel).exists(),
-                "[{verb}] the door must really have destroyed `{rel}`, or this cell proves a \
-                 narration over nothing",
-            );
-        }
+/// Non-vacuity, shared by all three arms: the plants really are gone from the path the door
+/// removed, so every claim above was about a real removal rather than about nothing.
+fn assert_destroyed(cell: &DoorCell, verb: &str) {
+    for rel in [PLANTED_UNTRACKED, PLANTED_IGNORED] {
+        assert!(
+            !cell.doomed.join(rel).exists(),
+            "[{verb}] the door must really have removed `{rel}` from the path it took, or \
+             this cell proves an answer over nothing",
+        );
     }
 }
 

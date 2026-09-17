@@ -18,8 +18,9 @@
 //! `Spawn:` line, so one screen named one path two ways.
 //!
 //! **The class is derived, not taken from the report.** Its domain is *what the four doors
-//! print*: every production site reachable from `cli::milestone::DESTROYING_DOORS` and from
-//! `jigc milestone provision` that renders a filesystem path into a finding (message, locus or
+//! print*: every production site reachable from `cli::milestone::WORKTREE_DOORS` (the
+//! worktree-shaped subset of `DESTROYING_DOORS`, which M52 widened past this suite's four)
+//! and from `jigc milestone provision` that renders a filesystem path into a finding (message, locus or
 //! route) or into a door's narration. Walking it earned three sites the report did not name —
 //! `child_names`' `with_context`, whose bytes ride **verbatim inside** two findings' messages;
 //! `remove_milestone_area`'s self-heal note; and `partial_worktree_advisories`, a fifth door's

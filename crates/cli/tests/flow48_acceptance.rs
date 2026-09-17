@@ -17,13 +17,16 @@
 //! need their own fixture world and arm 1 carries three:
 //!
 //!   (1) **No destroying door takes work it cannot prove is junk, and none removes bytes it
-//!       did not name** — the axis is the code-side [`cli::milestone::DESTROYING_DOORS`] ×
+//!       did not name** — the axis is the code-side [`cli::milestone::WORKTREE_DOORS`] ×
 //!       [`cli::milestone::LEFTOVER_VERDICTS`] matrix, plus `uninstall`'s authored-prose
 //!       cell: every cell refuses with **that door's** blocking code, leaves the planted
 //!       bytes byte-intact, and names `--force` — which is then driven and is the only way
-//!       past (Inc 1). The refusal matrix iterates the **refusing subset** (3 × 3); the
-//!       narration cell iterates all four doors, since M46 Inc 2 made the table's subject
-//!       *destruction* and admitted `jigc milestone finalize`, which destroys on the
+//!       past (Inc 1). Its domain is the **worktree-shaped** subset of
+//!       `cli::milestone::DESTROYING_DOORS`, because a leftover at a worktree path is what
+//!       this arm plants — the two working-area doors M52 admitted answer over an area no
+//!       `LeftoverVerdict` can classify. The refusal matrix iterates the **refusing subset**
+//!       (3 × 3); the narration cell iterates all four, since M46 Inc 2 made the table's
+//!       subject *destruction* and admitted `jigc milestone finalize`, which destroys on the
 //!       ordinary success path and never refuses.
 //!
 //!   (2) **An authoring step cannot ship without naming the read-back, and the read it
@@ -113,8 +116,8 @@ use cli::cli::{
     CURATED_SIBLING_TIPS, Cli, PARENT_READ_ANSWERS, READ_INTENT_GUESSES, VerbKind, verb_kind,
 };
 use cli::milestone::{
-    DESTROYING_DOORS, DestroyingDoor, LEFTOVER_VERDICTS, LeftoverVerdict, PROVISION_DOOR,
-    UNINSTALL_DOOR,
+    DestroyingDoor, LEFTOVER_VERDICTS, LeftoverVerdict, PROVISION_DOOR, UNINSTALL_DOOR,
+    WORKTREE_DOORS,
 };
 use cli::pack::{CompositePack, EmbeddedPack};
 use cli::render::{ConfigAck, STORE_EXIT_FLIPS};
@@ -417,10 +420,10 @@ fn plant_cells(verdict: LeftoverVerdict, count: usize) -> Vec<LeftoverCell> {
 /// `discard` removes the worktrees this repo **registered** and leaves every other path on
 /// disk).
 ///
-/// Its domain is the members whose [`DestroyingDoor::code`] is `Some` — the refusal matrix
-/// below iterates exactly those. [`cli::milestone::FINALIZE_DOOR`] has no refusal to drive
-/// and no `--force` to give; it is reached by the **narration** cell, which iterates all
-/// four.
+/// Its domain is the [`cli::milestone::WORKTREE_DOORS`] members that refuse
+/// ([`DestroyingDoor::consent`] is `Some`) — the refusal matrix below iterates exactly
+/// those. [`cli::milestone::FINALIZE_DOOR`] has no refusal to drive and no `--force` to
+/// give; it is reached by the **narration** cell, which iterates all four.
 fn door_drive(door: &DestroyingDoor) -> (Vec<String>, fn(&LeftoverCell)) {
     match door.verb {
         "jigc milestone provision" => {
@@ -492,25 +495,29 @@ fn door_drive(door: &DestroyingDoor) -> (Vec<String>, fn(&LeftoverCell)) {
 #[test]
 fn no_destroying_door_takes_work_it_cannot_prove_is_junk() {
     assert_eq!(
-        DESTROYING_DOORS.len(),
+        WORKTREE_DOORS.len(),
         4,
-        "the axis is the code-side destroying-door table",
+        "the axis is the code-side worktree-shaped subset of the destroying-door table",
     );
-    let refusing: Vec<&DestroyingDoor> = DESTROYING_DOORS
+    let refusing: Vec<&DestroyingDoor> = WORKTREE_DOORS
         .iter()
         .copied()
-        .filter(|door| door.code.is_some())
+        .filter(|door| door.consent().is_some())
         .collect();
-    let codes: BTreeSet<&str> = refusing.iter().filter_map(|door| door.code).collect();
+    let codes: BTreeSet<&str> = refusing
+        .iter()
+        .flat_map(|door| door.codes)
+        .copied()
+        .collect();
     assert_eq!(
         codes.len(),
-        refusing.len(),
-        "one blocking code per refusing door — a shared identity makes a refusal \
+        refusing.iter().map(|door| door.codes.len()).sum::<usize>(),
+        "no blocking code is shared between doors — a shared identity makes a refusal \
          unattributable",
     );
     assert!(
-        refusing.len() < DESTROYING_DOORS.len(),
-        "the table's subject is destruction, not refusal — a door that only narrates is a \
+        refusing.len() < WORKTREE_DOORS.len(),
+        "the subset's subject is destruction, not refusal — a door that cannot refuse is a \
          member, and the narration cell is what reaches it",
     );
 
@@ -518,9 +525,6 @@ fn no_destroying_door_takes_work_it_cannot_prove_is_junk() {
         let mut cells = plant_cells(verdict, refusing.len());
         for (door, cell) in refusing.iter().zip(cells.iter_mut()) {
             let verb = door.verb;
-            let code = door
-                .code
-                .expect("the refusal matrix iterates refusing doors only");
             let (driven, forced_postcondition) = door_drive(door);
             let argv: Vec<&str> = driven.iter().map(String::as_str).collect();
 
@@ -532,9 +536,11 @@ fn no_destroying_door_takes_work_it_cannot_prove_is_junk() {
                  junk; got:\n{text}",
             );
             assert!(
-                text.contains(code),
-                "[{verb} · {verdict:?}] the refusal must carry THIS door's code `{code}`; \
-                 got:\n{text}",
+                door.codes.iter().any(|code| text.contains(code)),
+                "[{verb} · {verdict:?}] the refusal must carry one of THIS door's codes \
+                 {:?} — every code in the table is door-scoped, so a refusal carrying none \
+                 of them is unattributable; got:\n{text}",
+                door.codes,
             );
             assert!(
                 text.contains("precious.txt"),
@@ -720,8 +726,8 @@ fn narration_argv(door: &DestroyingDoor) -> Vec<String> {
 ///
 /// The same code-side axis as the refusal matrix, iterated **whole**: since M46 Inc 2 the
 /// table's subject is *destruction*, so `jigc milestone finalize` — the door that destroys on
-/// the ordinary success path and can never refuse — is a member, and every member owes a
-/// narration. Two of the four said nothing at all before this cell: `provision --force`
+/// the ordinary success path and can never refuse a worktree — is a member, and every member
+/// owes a narration. Two of the four said nothing at all before this cell: `provision --force`
 /// cleared the leftover silently, and `uninstall --force` removed `.jigc/` printing only
 /// `- removed .jigc/`.
 ///
@@ -740,13 +746,13 @@ fn narration_argv(door: &DestroyingDoor) -> Vec<String> {
 /// success path) — so the loss of an ignored path is made **visible, not prevented**.
 #[test]
 fn every_destroying_door_names_the_bytes_it_is_about_to_destroy() {
-    for door in DESTROYING_DOORS {
+    for door in WORKTREE_DOORS {
         let verb = door.verb;
         let cell = narration_cell(door);
         let base = narration_argv(door);
 
         // (1) The guard is unchanged: a refusing door still refuses the untracked plant.
-        if let Some(code) = door.code {
+        if door.consent().is_some() {
             let argv: Vec<&str> = base.iter().map(String::as_str).collect();
             let refused = run_jigc(&cell.repo, &cell.home, &argv);
             let text = printed(&refused);
@@ -755,16 +761,18 @@ fn every_destroying_door_names_the_bytes_it_is_about_to_destroy() {
                 "[{verb}] the untracked plant must still REFUSE the door; got:\n{text}",
             );
             assert!(
-                text.contains(code) && text.contains(PLANTED_UNTRACKED),
-                "[{verb}] the refusal must carry `{code}` and name `{PLANTED_UNTRACKED}`; \
+                door.codes.iter().any(|code| text.contains(code))
+                    && text.contains(PLANTED_UNTRACKED),
+                "[{verb}] the refusal must carry one of {:?} and name `{PLANTED_UNTRACKED}`; \
                  got:\n{text}",
+                door.codes,
             );
         }
 
         // (2) Driven to the removal, the door names what it is about to take.
         let mut driven = base;
-        if door.code.is_some() {
-            driven.push("--force".to_string());
+        if let Some(consent) = door.consent() {
+            driven.push(consent.to_string());
         }
         let argv: Vec<&str> = driven.iter().map(String::as_str).collect();
         let out = run_jigc(&cell.repo, &cell.home, &argv);

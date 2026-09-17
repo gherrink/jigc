@@ -798,7 +798,7 @@ pub(crate) fn unverified_prose_finding(err: std::io::Error) -> Finding {
 /// exactly like the staged-prose sibling it pairs with. It is still **logged**: the refusal
 /// travels as a `render::BlockedFinding`, so the identity the surface prints is the identity
 /// the invocation log records.
-const DISCARD_FOREIGN_BYTES: &str = "task-discard.foreign-bytes";
+pub(crate) const DISCARD_FOREIGN_BYTES: &str = "task-discard.foreign-bytes";
 
 /// The `jigc task discard` door's guard over the working area's **other** population: every
 /// byte jigc did not write there (`engine::state::foreign_area_paths`), refused unless the
@@ -899,7 +899,7 @@ fn discard_unverified_foreign_finding(id: &str, err: std::io::Error) -> Finding 
 /// It is a **door refusal**, not a probe result and not a commit-phase rejection, so it joins
 /// neither `engine::result::CHECK_INVENTORY` nor
 /// [`crate::invocation_log::ERROR_CODE_REGISTRY`] — exactly like the sibling it pairs with.
-const DISCARD_STAGED_PROSE: &str = "task-discard.staged-prose";
+pub(crate) const DISCARD_STAGED_PROSE: &str = "task-discard.staged-prose";
 
 /// The `jigc task discard` door's WIP guard: refuse while the working area holds staged docs
 /// no commit has a copy of, unless the operator consented with `--force`

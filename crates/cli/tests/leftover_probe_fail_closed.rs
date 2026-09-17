@@ -38,10 +38,10 @@
 //! about the outcome, and keying it there is complete over every cause by construction.
 //!
 //! **The axis is (refusing door) × (leftover shape) × (consent), each side read code-side or
-//! enumerated here.** `cli::milestone::DESTROYING_DOORS` enumerates the four verbs that
-//! remove a worktree-shaped path and `DestroyingDoor::code` is the table's own
-//! refuse-vs-narrate discriminator, so a fifth refusing door cannot be added without landing
-//! here. [`Shape`] carries the four plantable shapes — `Both` is the cell that was red,
+//! enumerated here.** `cli::milestone::WORKTREE_DOORS` enumerates the four verbs that
+//! remove a worktree-shaped path — the subset of `DESTROYING_DOORS` this suite's fixture can
+//! reach at all — and `DestroyingDoor::consent` is the table's own refuse-vs-narrate
+//! discriminator, so a fifth refusing worktree door cannot be added without landing here. [`Shape`] carries the four plantable shapes — `Both` is the cell that was red,
 //! because masking is only visible where there is a sibling to mask, and `Unremovable` the one
 //! the audit added. The consent axis is the one N8 lived in and no cell of this suite drove
 //! before.
@@ -68,7 +68,7 @@
 //! Drives the REAL binary; the emitted refusal and the surviving bytes are the contract, not
 //! a reconstructed equivalent.
 
-use cli::milestone::{DESTROYING_DOORS, DestroyingDoor};
+use cli::milestone::{DestroyingDoor, WORKTREE_DOORS};
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -313,6 +313,28 @@ fn narrated(stderr: &str, printed: &str) -> bool {
         .any(|line| line.starts_with("warning: removing the ") && line.contains(printed))
 }
 
+/// The code `door` refuses with over a **worktree-shaped** leftover — this suite's one
+/// subject.
+///
+/// Since M52 Increment 4 `DestroyingDoor::codes` is a **set**, because a door stands over
+/// more than one destroyable subject (`jigc milestone discard` answers for a fan-out
+/// worktree, a sub-task's staged prose and the foreign bytes in either area). The member is
+/// therefore selected by the **subject it answers for** — the leftover guard's own code, or
+/// the dirty-worktree one — never by its position in the set.
+fn worktree_code(door: &DestroyingDoor) -> &'static str {
+    door.codes
+        .iter()
+        .copied()
+        .find(|code| code.ends_with(".leftover-holds-work") || code.ends_with(".dirty-worktree"))
+        .unwrap_or_else(|| {
+            panic!(
+                "`{}` removes a worktree-shaped path, so it owes a refusal code over that \
+                 subject; got {:?}",
+                door.verb, door.codes,
+            )
+        })
+}
+
 /// The argv that stands at `door`, **derived from the door's own `verb`** rather than
 /// hand-listed: strip the binary name, give a `milestone` verb the milestone id it takes,
 /// and append the consent when the cell carries it.
@@ -380,9 +402,9 @@ fn consent_commands(stderr: &str) -> Vec<Vec<String>> {
 
 #[test]
 fn every_refusing_door_answers_every_leftover_shape_and_never_narrates_a_removal_it_did_not_make() {
-    let refusing: Vec<&DestroyingDoor> = DESTROYING_DOORS
+    let refusing: Vec<&DestroyingDoor> = WORKTREE_DOORS
         .into_iter()
-        .filter(|door| door.code.is_some())
+        .filter(|door| door.consent().is_some())
         .collect();
     assert!(
         !refusing.is_empty(),
@@ -390,7 +412,7 @@ fn every_refusing_door_answers_every_leftover_shape_and_never_narrates_a_removal
     );
 
     for door in refusing {
-        let code = door.code.expect("filtered to the refusing members");
+        let code = worktree_code(door);
         for shape in Shape::ALL {
             for force in CONSENT {
                 // A fresh fixture per cell: the door under test must be the only thing that
@@ -759,9 +781,9 @@ fn claimed_contents(said: &str, printed: &str) -> Vec<String> {
 ///   tracked, committed and exactly where they were. Identically at
 ///   `jigc milestone provision --force` and at `jigc uninstall --force`.
 ///
-/// The cell drives **all four** [`DESTROYING_DOORS`] from one state, because *"the doors
+/// The cell drives **all four** [`WORKTREE_DOORS`] from one state, because *"the doors
 /// agree"* is not a claim any one door can carry. The consent axis is the table's own
-/// refuse-vs-narrate discriminator ([`DestroyingDoor::code`]): only a refusing door has a
+/// refuse-vs-narrate discriminator ([`DestroyingDoor::consent`]): only a refusing door has a
 /// `--force` to spend.
 ///
 /// **The fourth member speaks about nothing here, and that is asserted rather than assumed.**
@@ -774,8 +796,8 @@ fn a_symlink_leftover_is_one_shape_at_every_destroying_door_and_the_target_survi
     let mut agreed: Vec<&'static str> = Vec::new();
     let mut spoke = 0usize;
 
-    for door in DESTROYING_DOORS {
-        let consents: &[bool] = if door.code.is_some() {
+    for door in WORKTREE_DOORS {
+        let consents: &[bool] = if door.consent().is_some() {
             &CONSENT
         } else {
             &[false]
@@ -831,7 +853,7 @@ fn a_symlink_leftover_is_one_shape_at_every_destroying_door_and_the_target_survi
             );
 
             let named = shape_named(&said, &printed);
-            if door.code.is_none() {
+            if door.consent().is_none() {
                 // (d) The fourth member's cell cannot exist — its teardown's subject is the
                 // registered set, and nothing registers a symlink.
                 assert!(
@@ -901,13 +923,13 @@ fn a_symlink_leftover_is_one_shape_at_every_destroying_door_and_the_target_survi
 /// assertion below still asserts truthfully.
 #[test]
 fn an_unreadable_worktrees_root_is_a_hold_at_every_refusing_door() {
-    let refusing: Vec<&DestroyingDoor> = DESTROYING_DOORS
+    let refusing: Vec<&DestroyingDoor> = WORKTREE_DOORS
         .into_iter()
-        .filter(|door| door.code.is_some())
+        .filter(|door| door.consent().is_some())
         .collect();
 
     for door in refusing {
-        let code = door.code.expect("filtered to the refusing members");
+        let code = worktree_code(door);
         // Both shapes under the root: whatever the door manages to see, it must not have
         // taken either.
         let fx = Fixture::plant(Shape::Both);

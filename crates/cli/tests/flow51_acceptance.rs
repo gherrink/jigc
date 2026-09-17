@@ -92,7 +92,8 @@
 //!
 //!   (7) **The adapter's safety floor** — a **deliberately manufactured** two-member set,
 //!       written as one, exactly as flow 49's arm 6 was. There is a registry next door
-//!       ([`cli::milestone::DESTROYING_DOORS`], four members) and it is **the wrong set**:
+//!       ([`cli::milestone::DESTROYING_DOORS`], six members since M52 Increment 4) and it is
+//!       **the wrong set**:
 //!       `milestone finalize` destroys on the ordinary success path and `milestone provision`
 //!       was refused from the carve-out on measured grounds — prompting there would park an
 //!       unattended fix round on a prompt nobody is watching (the Settle → D9/B6). The two
@@ -1333,15 +1334,19 @@ fn neither_root_knob_lies_and_the_teardown_answers_per_kind_of_byte() {
 ///
 /// # This is a MANUFACTURED set, not a registry read
 ///
-/// There is a registry next door — `cli::milestone::DESTROYING_DOORS`, four members — and
-/// it is **the wrong set**, which is why this arm departs from the pattern on purpose, as
-/// flow 49's arm 6 did. Two of that registry's members must not be denied: `milestone
-/// finalize` destroys worktrees on the ordinary **success** path, and `milestone provision`
-/// was refused from the carve-out on measured grounds — M48's fail-closed classifier
-/// already guards it, and denying it would park an unattended fix round on a prompt nobody
-/// is watching (`completions/artifacts/M50/settle-record.md` → D9, re-settled after the
-/// design review's B6). So membership here is a **decision about who owns the act**, not a
-/// property any table computes: each of these spends bytes that exist in no object
+/// There is a registry next door — `cli::milestone::DESTROYING_DOORS`, six members since
+/// M52 Increment 4 — and it is **the wrong set**, which is why this arm departs from the
+/// pattern on purpose, as flow 49's arm 6 did. Two of that registry's members must not be
+/// denied for reasons the record states: `milestone finalize` destroys worktrees on the
+/// ordinary **success** path, and `milestone provision` was refused from the carve-out on
+/// measured grounds — M48's fail-closed classifier already guards it, and denying it would
+/// park an unattended fix round on a prompt nobody is watching
+/// (`completions/artifacts/M50/settle-record.md` → D9, re-settled after the design review's
+/// B6). The other two — `jigc task discard` and `jigc task finalize` — joined that registry
+/// when M52 generalized its subject from a worktree to a **destroyed path**, after this
+/// floor was decided, and they are out of it by the same rule the two above are out of it
+/// by: membership here is a **decision about who owns the act**, not a property any table
+/// computes: each of these spends bytes that exist in no object
 /// database, and the `--force` past their refusal is the human's consent, not the agent's.
 /// A registry loop written here would deny four doors and break the wave's own fan-out.
 const DENIED_DOORS: [&str; 2] = ["Bash(jigc uninstall:*)", "Bash(jigc milestone discard:*)"];

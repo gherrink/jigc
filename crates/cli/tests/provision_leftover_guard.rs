@@ -45,13 +45,18 @@
 
 use cli::milestone::{LEFTOVER_VERDICTS, LeftoverVerdict, PROVISION_DOOR};
 
-/// [`PROVISION_DOOR`]'s blocking refusal code. Since M46 Inc 2 the door table's `code` is
-/// the axis's **refuse-vs-narrate discriminator** (`jigc milestone finalize` joined it and
-/// carries no refusal), so a refusing door's code is read through its `Some`.
+/// [`PROVISION_DOOR`]'s blocking refusal code. Since M52 Increment 4 the door table's
+/// `codes` is a **set** — a door stands over more than one destroyable subject — and this
+/// door's is a singleton: the leftover at a sub-task's worktree path is the only thing it
+/// destroys, so reading the one member is reading its whole refusal.
 fn provision_code() -> &'static str {
-    PROVISION_DOOR
-        .code
-        .expect("`jigc milestone provision` is a refusing door")
+    match PROVISION_DOOR.codes {
+        [only] => only,
+        codes => panic!(
+            "`jigc milestone provision` refuses over one subject, so its code set is a \
+             singleton; got {codes:?} — a second subject owes this suite a cell",
+        ),
+    }
 }
 use std::fs;
 use std::path::{Path, PathBuf};

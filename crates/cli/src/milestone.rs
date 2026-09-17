@@ -2543,39 +2543,83 @@ pub const LEFTOVER_VERDICTS: [LeftoverVerdict; 3] = [
     LeftoverVerdict::NoOwnLinkage,
 ];
 
-/// A **destroying door**: a verb that removes a worktree-shaped path under
-/// `.jigc/worktrees/` from disk.
+/// What a destroying door does with a byte it finds at a path it is about to remove and
+/// cannot prove is jigc's own — the axis's **disposition**, and the thing an acceptance
+/// re-derives the rule per (M52 Increment 4, `settle-record.md` §7).
 ///
-/// Every door **narrates** the bytes it took ([`PendingLoss`], read before the removal and
-/// printed after it, so neither half of the claim can be false) — a door
-/// that destroys what it never named is the law-1 half-truth (`design/surface-contract.md`).
-/// A door reached *before* those bytes could have landed anywhere also **refuses** first,
-/// and [`DestroyingDoor::code`] carries that refusal's identity; it is the axis's
-/// refuse-vs-narrate discriminator, so a narrate-only door cannot be given a refusal code it
-/// does not emit.
+/// It replaces M46's `Option<code>` refuse-vs-narrate discriminator, which could express
+/// only two of the three answers a door can honestly give. The rule every member satisfies
+/// is one sentence per variant, and **silence is the arm no door may take**.
+pub enum Disposition {
+    /// **Refuse** first, naming every path, and take it only once the operator gives
+    /// `consent` at this same door — M48's single-consent rule, so a reader never has to
+    /// learn a second flag to get past a second guard.
+    Refuse {
+        /// The flag that consents, rendered in the refusal's own route.
+        consent: &'static str,
+    },
+    /// **Take it, and name every path taken.** The arm for a door whose removal cannot be
+    /// refused without firing on the ordinary success path — M46's measured warrant, where
+    /// the loss is made *visible, not prevented*.
+    ///
+    /// **No member holds this disposition today.** [`FINALIZE_DOOR`] did until the
+    /// Increment 4 plan drove what its sink actually takes (`settle-record.md` §18): the
+    /// commit it stands behind carries nothing out of a sub-task's working area, so the
+    /// landed-boundary warrant for narrating is unavailable there and the row became
+    /// [`Disposition::Displace`]. The variant stays because the rule is stated over three
+    /// arms and the acceptance derives its assertions **per disposition** — a door that
+    /// takes bytes it cannot refuse over lands in a stated arm rather than a silent one.
+    Narrate,
+    /// **Keep it**: move it aside with its relative path preserved, and name where it went
+    /// ([`crate::task::displace_foreign_area`], `.jigc/displaced/<unit-id>/<relative>`).
+    /// The arm for a door with no consent to offer, because a consent there would be a new
+    /// capability rather than a guard.
+    Displace,
+}
+
+/// A **destroying door**: a verb that removes a path from disk that it did not write.
+///
+/// **The subject is the destroyed path, not a worktree.** Until M52 Increment 4 it was
+/// *a worktree-shaped path under `.jigc/worktrees/`*, which is why the two doors that
+/// destroy a **working area** — `jigc task discard` and `jigc task finalize` — stood
+/// outside the very table minted to enumerate destroying doors, and why the working area's
+/// foreign bytes died at exit 0 with nothing said. [`WORKTREE_DOORS`] is the worktree-shaped
+/// subset, for the arms whose fixture is a leftover at a worktree path.
+///
+/// Every door **answers for what it removes** ([`PendingLoss`], read before the removal and
+/// printed after it, so neither half of the claim can be false) — a door that destroys what
+/// it never named is the law-1 half-truth (`design/surface-contract.md`) — and
+/// [`DestroyingDoor::disposition`] says *how* it answers.
 pub struct DestroyingDoor {
     /// The verb line the refusal names — the door the reader is standing at.
     pub verb: &'static str,
-    /// `Some(code)` — the **door-scoped** blocking finding code its refusal carries, so a
-    /// reader can tell which door refused without parsing prose.
+    /// How this door answers for a byte at the path it removes: refuse · narrate · displace.
+    pub disposition: Disposition,
+    /// Every **door-scoped blocking finding code** this door refuses with over a path it
+    /// would destroy, so a reader can tell which door refused — and over which of its
+    /// subjects — without parsing prose.
     ///
-    /// **It is this table's subject, not an inventory of the door's refusals.** The axis is
-    /// *worktree-shaped paths under `.jigc/worktrees/`*, so this is the code the door refuses
-    /// with **over such a path**; a door may refuse over other subjects under other codes,
-    /// and both `jigc uninstall` and `jigc milestone discard` do — each pairs its
-    /// `*.dirty-worktree` with a staged-prose refusal over `.jigc/tasks/<id>/docs/`, a
-    /// subject no worktree contains ([`DISCARD_STAGED_PROSE_CODE`],
-    /// `crate::setup::staged_prose_finding`). Reading this field as "the door's one refusal"
-    /// is what left the abandon destroying staged prose at exit 0 until the M50 completion
-    /// audit.
+    /// **It is a set, not a single identity.** A door stands over more than one destroyable
+    /// subject: `jigc milestone discard` answers for a fan-out worktree, a sub-task's staged
+    /// prose and the foreign bytes in either area, each under its own code. Reading M46's
+    /// single `code` as *"the door's one refusal"* is what left the abandon destroying
+    /// staged prose at exit 0 until the M50 completion audit.
     ///
-    /// `None` — the door does not refuse ([`FINALIZE_DOOR`]): the boundary it stands at has
-    /// already committed the staged set, so what the removal takes is by definition what no
-    /// commit was ever going to carry, and a refusal there would fire on the ordinary
-    /// fan-out **success** path and train `--force` into reflex (M46 Inc 2, *"Refusal stays
-    /// refused, on measured evidence"*). **Declared cost:** at that door the loss is made
-    /// visible, not prevented.
-    pub code: Option<&'static str>,
+    /// Empty ⇔ the door refuses over nothing it destroys — a [`Disposition::Displace`]
+    /// member, whose answer is the move rather than a refusal.
+    pub codes: &'static [&'static str],
+}
+
+impl DestroyingDoor {
+    /// The flag that consents to this door's removal, or `None` when the door offers none
+    /// — the one question every arm asks of the axis before driving a member, answered
+    /// here rather than re-matched at each caller.
+    pub fn consent(&self) -> Option<&'static str> {
+        match self.disposition {
+            Disposition::Refuse { consent } => Some(consent),
+            Disposition::Narrate | Disposition::Displace => None,
+        }
+    }
 }
 
 /// [`PROVISION_DOOR`]'s blocking identity, named separately so its refusal producer
@@ -2617,43 +2661,127 @@ fn provision_route(milestone_id: &str, force: bool, tail: &str) -> engine::findi
     engine::finding::Route::mechanical(argv, tail)
 }
 
+/// The one consent every refusing door takes — M48's rule that a reader learns one flag,
+/// not one per guard, rendered into each refusal's own route.
+const CONSENT_FLAG: &str = "--force";
+
 /// `jigc milestone provision`'s door — it deletes a leftover at each sub-task's worktree
 /// path before `git worktree add`.
 pub const PROVISION_DOOR: DestroyingDoor = DestroyingDoor {
     verb: "jigc milestone provision",
-    code: Some(PROVISION_CODE),
+    disposition: Disposition::Refuse {
+        consent: CONSENT_FLAG,
+    },
+    codes: &[PROVISION_CODE],
 };
 
-/// `jigc milestone discard`'s door — the abandon teardown removes the fan-out worktrees.
+/// `jigc milestone discard`'s door — the abandon teardown removes the fan-out worktrees,
+/// every sub-task's working area and the milestone area itself, so it answers over all
+/// three of the subjects those hold.
 pub const DISCARD_DOOR: DestroyingDoor = DestroyingDoor {
     verb: "jigc milestone discard",
-    code: Some(DISCARD_CODE),
+    disposition: Disposition::Refuse {
+        consent: CONSENT_FLAG,
+    },
+    codes: &[
+        DISCARD_CODE,
+        DISCARD_STAGED_PROSE_CODE,
+        DISCARD_FOREIGN_BYTES_CODE,
+    ],
 };
 
-/// `jigc uninstall`'s door — `remove_dir_all(<repo>/.jigc)` takes the worktrees with it.
+/// `jigc uninstall`'s door — `remove_dir_all(<repo>/.jigc)` takes the worktrees, every
+/// working area and the whole gitignored workbench with it, which is why it stands over
+/// more destroyable subjects than any other member ([`crate::setup`]'s four refusals, all
+/// over that one removal).
 pub const UNINSTALL_DOOR: DestroyingDoor = DestroyingDoor {
     verb: "jigc uninstall",
-    code: Some("uninstall.dirty-worktree"),
+    disposition: Disposition::Refuse {
+        consent: CONSENT_FLAG,
+    },
+    codes: &[
+        "uninstall.dirty-worktree",
+        "uninstall.staged-prose",
+        "uninstall.foreign-bytes",
+        "uninstall.untracked-workbench-file",
+    ],
+};
+
+/// `jigc task discard`'s door — the abandon removes one task's whole working area
+/// ([`crate::task`]'s two refusals over it).
+///
+/// It was outside the table while the subject was worktree-shaped, and is the door the
+/// registry's own rule was hardest on: `jigc uninstall` refused over a task's staged prose
+/// from M47 while this one took byte-identical bytes, the asymmetry the human adjudicated
+/// at M50.
+pub const TASK_DISCARD_DOOR: DestroyingDoor = DestroyingDoor {
+    verb: "jigc task discard",
+    disposition: Disposition::Refuse {
+        consent: CONSENT_FLAG,
+    },
+    codes: &[
+        crate::task::DISCARD_STAGED_PROSE,
+        crate::task::DISCARD_FOREIGN_BYTES,
+    ],
+};
+
+/// `jigc task finalize`'s door — phase 7 removes the task's working area once the commit
+/// is in ([`crate::task::displace_foreign_area`] runs first).
+///
+/// **The first [`Disposition::Displace`] member.** The landed-boundary warrant for
+/// *narrating* the loss (*the staged set is already in git*) is structurally unavailable
+/// here: the commit takes the promoted docs and the index and nothing at all out of the
+/// working area. A consent flag would be a new capability rather than a guard, so the
+/// answer is the move — `.jigc/displaced/<task-id>/<relative>`, named on stderr and on the
+/// landed envelope's `displaced` key.
+pub const TASK_FINALIZE_DOOR: DestroyingDoor = DestroyingDoor {
+    verb: "jigc task finalize",
+    disposition: Disposition::Displace,
+    codes: &[],
 };
 
 /// `jigc milestone finalize`'s door — the **landed** boundary tears the fan-out worktrees
-/// down once the commit is in ([`remove_worktrees`]).
+/// down once the commit is in ([`remove_worktrees`]) and removes every sub-task's working
+/// area ([`cleanup_subtask_areas`]).
 ///
-/// The fourth member, and the one that never refuses. It was outside the table while the
-/// table's subject was *refusal*, which left the door that destroys bytes on the ordinary
-/// success path unrepresented on the very axis minted to enumerate destroying doors — so the
-/// table's subject is now *destruction*, and the refusal is a property of a member
-/// ([`DestroyingDoor::code`]).
+/// It was outside the table while the table's subject was *refusal*, which left the door
+/// that destroys bytes on the ordinary success path unrepresented on the very axis minted
+/// to enumerate destroying doors — so the subject became *destruction*. It then stood as
+/// the one narrate-only member until the Increment 4 plan drove its area sink
+/// (`settle-record.md` §18): the boundary's commit carries nothing out of a sub-task's
+/// working area either, so the same warrant fails at the same seam one door over, and the
+/// row is [`Disposition::Displace`] — the worktrees it still takes are narrated, the
+/// measured `--ignored` bound of M46 unchanged.
 pub const FINALIZE_DOOR: DestroyingDoor = DestroyingDoor {
     verb: "jigc milestone finalize",
-    code: None,
+    disposition: Disposition::Displace,
+    codes: &[],
 };
 
-/// The destroying-door axis — the four verbs that remove a worktree-shaped path, minted
-/// code-side beside the verdicts they ask about so the acceptance iterates the door × verdict
-/// matrix rather than a hand-written cell list. The refusal cells iterate the members whose
-/// [`DestroyingDoor::code`] is `Some`; the narration cells iterate all four.
-pub const DESTROYING_DOORS: [&DestroyingDoor; 4] = [
+/// The destroying-door axis — the **six** verbs that remove a path they did not write,
+/// minted code-side beside the classifiers they ask so an acceptance iterates the door ×
+/// disposition matrix rather than a hand-written cell list. A cell is derived **per
+/// [`Disposition`]**: a refusing member is driven twice (without its consent and with it),
+/// a displacing member once, and the `jigc task finalize --force` cell the Settle refuses
+/// is never enumerated because no member carries a consent it does not have.
+pub const DESTROYING_DOORS: [&DestroyingDoor; 6] = [
+    &PROVISION_DOOR,
+    &DISCARD_DOOR,
+    &UNINSTALL_DOOR,
+    &TASK_DISCARD_DOOR,
+    &TASK_FINALIZE_DOOR,
+    &FINALIZE_DOOR,
+];
+
+/// The **worktree-shaped** subset of [`DESTROYING_DOORS`] — the four doors that remove a
+/// path under `.jigc/worktrees/`, and therefore the only ones a [`LeftoverVerdict`] can be
+/// asked about at all (`git rev-parse` inside a task's working area answers for the
+/// enclosing repo, and no worktree verb clears one).
+///
+/// It is the domain of the arms whose fixture plants a leftover at a sub-task's worktree
+/// path; the two working-area doors are reached through their own areas. Named here rather
+/// than hand-listed in each suite, so a fifth worktree door lands in one place.
+pub const WORKTREE_DOORS: [&DestroyingDoor; 4] = [
     &PROVISION_DOOR,
     &DISCARD_DOOR,
     &UNINSTALL_DOOR,
