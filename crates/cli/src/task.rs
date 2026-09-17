@@ -5249,7 +5249,11 @@ fn free_displacement_path(wanted: PathBuf) -> PathBuf {
 /// landed document still owns stdout undiluted on every format
 /// (`design/command-output-contract.md` → Stream discipline). Silent when nothing moved: the
 /// omitting context prints no bytes at all.
-fn narrate_displacement(moved: &[render::Displaced]) {
+///
+/// Both displacing doors call it over **one working area's** moves: the milestone boundary
+/// narrates per sub-task area rather than once for the boundary (M52 Increment 4 / T4), so
+/// the sentence's *"the working area"* stays the true singular it is here.
+pub(crate) fn narrate_displacement(moved: &[render::Displaced]) {
     if moved.is_empty() {
         return;
     }

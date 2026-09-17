@@ -3336,7 +3336,10 @@ fn run_discard(cwd: &Path, milestone_id: &str, force: bool) -> Result<(String, S
         &format!("discarding milestone:{milestone_id}"),
         Some(&list.enumerate()),
     );
-    cleanup_subtask_areas(&jigc_root, &list);
+    // The complement goes with the area here: this door's disposition over bytes jigc did
+    // not write is a refusal with `--force` as the single consent, and it lives at the door
+    // (M52 Increment 4 / T5), never in the sink — `SubtaskComplement`.
+    cleanup_subtask_areas(&jigc_root, &list, SubtaskComplement::Take);
     prose.narrate_taken(&jigc_home);
     remove_worktrees(&repo_root, &jigc_home, &list);
     remove_milestone_area(&repo_root, &dir);
@@ -4297,6 +4300,22 @@ fn run_milestone_finalize(
                 // The boundary landed — the flipped record rode the aggregate commit; disarm
                 // its restore guard so the committed `joined` bytes are not reverted.
                 disarm_record_flip(&mut record_flip);
+                // Clean up the per-sub-task working areas (the executor only removed the
+                // milestone area), **keeping** whatever jigc did not write in them — moved
+                // aside and collected here so the manifest below can carry the pairs
+                // (M52 Increment 4 / T4; `settle-record.md` → §18). Runs before the summary
+                // for exactly that reason; the commit is already truth, so a summary that
+                // then fails to render leaves no byte behind it. On a failed/rolled-back
+                // finalize (below) this is never reached and the areas survive for retry.
+                let mut displaced = Vec::new();
+                cleanup_subtask_areas(
+                    &jigc_root,
+                    &list,
+                    SubtaskComplement::Displace {
+                        repo_root: &repo_root,
+                        moved: &mut displaced,
+                    },
+                );
                 // C2 — the landing manifest, on the mold of the per-task landed summary:
                 // `finalized <sha> — <subject>` + the whole boundary's landed-file set
                 // (`git diff <pre-boundary-HEAD>..HEAD`, so the N+1 chain reads as one
@@ -4310,6 +4329,7 @@ fn run_milestone_finalize(
                     // The chain minted one commit per code-carrying sub-task, in this
                     // order — so each one's own sha is attributable (M50 Inc 11 / N12).
                     &chain_subtask_ids,
+                    displaced,
                 )?;
                 print!("{}", render::milestone_finalized(format, &landed));
                 if format != Format::Json {
@@ -4323,10 +4343,6 @@ fn run_milestone_finalize(
                 // the same string the envelope above carries (one capture, two channels;
                 // `design/finalize.md` → 6. Commit; the hook_output producer axis).
                 crate::task::relay_hook_output(format, &hook_output);
-                // The boundary landed — clean up the per-sub-task working areas too (the
-                // executor only removed the milestone area). On a failure (below) the areas
-                // survive for retry.
-                cleanup_subtask_areas(&jigc_root, &list);
                 // Tear down the fan-out worktrees the provision verb laid down (the heavier
                 // A2 teardown — a non-blocking warning on a leaked worktree, never a block).
                 remove_worktrees(&repo_root, &jigc_home, &list);
@@ -4413,6 +4429,18 @@ fn run_milestone_finalize(
                 // The flipped record rode the single combine commit — disarm its restore
                 // guard so the committed `joined` bytes are not reverted.
                 disarm_record_flip(&mut record_flip);
+                // The per-sub-task areas, cleaned as on the chain arm and with the same
+                // disposition over their complement: keep it (M52 Increment 4 / T4). Before
+                // the summary, which carries the pairs it collects.
+                let mut displaced = Vec::new();
+                cleanup_subtask_areas(
+                    &jigc_root,
+                    &list,
+                    SubtaskComplement::Displace {
+                        repo_root: &repo_root,
+                        moved: &mut displaced,
+                    },
+                );
                 // C2 — the landing manifest (the per-task landed-summary mold): the
                 // highest-stakes commit boundary must not succeed with empty stdout.
                 let landed = milestone_landed_summary(
@@ -4424,6 +4452,7 @@ fn run_milestone_finalize(
                     // `squash: true` folds every sub-task into the one aggregate, so no
                     // sub-task owns a commit of its own to name.
                     &[],
+                    displaced,
                 )?;
                 print!("{}", render::milestone_finalized(format, &landed));
                 if format != Format::Json {
@@ -4434,7 +4463,6 @@ fn run_milestone_finalize(
                 // T3 — relay the landed combine commit's non-blocking hook output (the
                 // dedicated-worktree commit runs the user's hooks — M31 Inc 5).
                 crate::task::relay_hook_output(format, &hook_output);
-                cleanup_subtask_areas(&jigc_root, &list);
                 // Tear down the fan-out worktrees on the landed default-path commit too
                 // (the heavier A2 teardown — a non-blocking warning on a leaked worktree).
                 remove_worktrees(&repo_root, &jigc_home, &list);
@@ -4583,18 +4611,66 @@ fn flip_record_for_finalize(
 /// where nothing landed and the area is the only copy of the sub-agent's authored prose — so
 /// that caller, and only that caller, names those bytes first
 /// ([`crate::setup::pending_staged_prose`]).
-fn cleanup_subtask_areas(jigc_root: &Path, list: &engine::milestone::TaskList) {
+///
+/// **What happens to each area's *complement* is the caller's**, which is why it arrives as
+/// [`SubtaskComplement`] rather than being decided here (M52 Increment 4 / T4;
+/// `settle-record.md` → §18): the two landed arms **keep** those bytes, and the abandon path
+/// takes them under its own door's consent and narration. A disposition read off the
+/// function instead of the call would silently re-decide `jigc milestone discard`.
+fn cleanup_subtask_areas(
+    jigc_root: &Path,
+    list: &engine::milestone::TaskList,
+    mut complement: SubtaskComplement<'_>,
+) {
     let tasks_root = jigc_root.join("tasks");
     for sub_id in list.enumerate() {
         let area = tasks_root.join(&sub_id);
-        if area.exists()
-            && let Err(err) = std::fs::remove_dir_all(&area)
-        {
+        if !area.exists() {
+            continue;
+        }
+        if let SubtaskComplement::Displace { repo_root, moved } = &mut complement {
+            // Per **area**, so the narration's subject is one working area — the sentence
+            // [`crate::task::narrate_displacement`] writes — and the boundary's envelope
+            // gets the union. That union is **sorted by `from` by construction**, which is
+            // what the key declares: `TaskList::enumerate` is id-sorted, each area's own
+            // moves arrive sorted, and every `from` begins `.jigc/tasks/<sub-id>/`.
+            let just_moved = crate::task::displace_foreign_area(
+                repo_root,
+                jigc_root,
+                &area,
+                engine::state::WorkArea::Task,
+                &sub_id,
+            );
+            crate::task::narrate_displacement(&just_moved);
+            moved.extend(just_moved);
+        }
+        if let Err(err) = std::fs::remove_dir_all(&area) {
             eprintln!(
                 "note: post-commit sub-task working-area removal for `{sub_id}` failed (self-heals): {err:#}"
             );
         }
     }
+}
+
+/// What a [`cleanup_subtask_areas`] call does with each sub-task area's **complement** —
+/// the bytes jigc did not write there (`engine::state::foreign_area_paths`). The removal
+/// itself is the same at every call; only this differs, and it differs by *door*
+/// (`settle-record.md` → §18).
+enum SubtaskComplement<'a> {
+    /// **Keep them** — move each entry to `.jigc/displaced/<sub-task-id>/<relative>` before
+    /// the removal, narrate it, and collect the pairs for the landed envelope's
+    /// `committed.displaced`. The two landed `jigc milestone finalize` arms, for the reason
+    /// `jigc task finalize` has one door over: the boundary commit carries the promoted
+    /// docs, the merged record and the sub-agents' staged code and takes **nothing** out of
+    /// a working area, so the landed-boundary warrant that lets a sibling door merely
+    /// narrate a loss is unavailable, and this door has no consent flag to offer instead.
+    Displace {
+        repo_root: &'a Path,
+        moved: &'a mut Vec<render::Displaced>,
+    },
+    /// **Take them with the area.** [`run_discard`]'s abandon path, whose guard and
+    /// narration live at that door (the staged-prose refusal + `--force`), never here.
+    Take,
 }
 
 /// Tear down the milestone's fan-out worktrees once the milestone actually settles — a
@@ -5563,6 +5639,7 @@ fn milestone_landed_summary(
     sub_tasks: Vec<render::SubTaskContribution>,
     hook_output: &str,
     chain_subtask_ids: &[String],
+    displaced: Vec<render::Displaced>,
 ) -> Result<render::MilestoneLanded> {
     let hash = crate::task::git_capture(repo_root, &["rev-parse", "--short", "HEAD"])?;
     let subject = crate::task::git_capture(repo_root, &["log", "-1", "--pretty=format:%s"])?;
@@ -5618,6 +5695,10 @@ fn milestone_landed_summary(
         // the call site (one capture, two channels; `design/command-output-contract.md` →
         // Stream discipline). The join path folds into this same envelope.
         hook_output: hook_output.to_owned(),
+        // M52 Inc 4 T4 — what the sub-task-area teardown moved aside rather than destroyed,
+        // as the same repo-relative pairs the caller already named on stderr. Empty on the
+        // ordinary boundary, and present either way.
+        displaced,
     })
 }
 

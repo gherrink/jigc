@@ -17,6 +17,8 @@ mod malformed_work_unit_id;
 mod milestone;
 #[path = "../milestone_abort_survives.rs"]
 mod milestone_abort_survives;
+#[path = "../milestone_boundary_displacement.rs"]
+mod milestone_boundary_displacement;
 #[path = "../milestone_boundary_gate.rs"]
 mod milestone_boundary_gate;
 #[path = "../milestone_discard.rs"]

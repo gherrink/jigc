@@ -67,10 +67,10 @@ use cli::ingest::IngestReport;
 use cli::relocate::RelocationReport;
 use cli::rename::RenameReport;
 use cli::render::{
-    AckTarget, ConfigAck, DiscardState, DiscardedWork, DocAck, DroppedStaged, KnobReading,
-    LandedCommit, ManifestEntry, ManifestKind, MilestoneLanded, RejectedSet, StagedDoc,
-    SubTaskContribution, TaskAck, TaskDiffView, config_ack, config_get, config_list, describe,
-    doc_ack, finalize_manifest, freeze_exempt_relocation, ingest, milestone_finalized,
+    AckTarget, ConfigAck, DiscardState, DiscardedWork, Displaced, DocAck, DroppedStaged,
+    KnobReading, LandedCommit, ManifestEntry, ManifestKind, MilestoneLanded, RejectedSet,
+    StagedDoc, SubTaskContribution, TaskAck, TaskDiffView, config_ack, config_get, config_list,
+    describe, doc_ack, finalize_manifest, freeze_exempt_relocation, ingest, milestone_finalized,
     milestone_join, rename, setup_success, task_ack, task_diff, task_list, uninstall_success,
     unmanage, validation_upgrade,
 };
@@ -1520,6 +1520,12 @@ fn milestone_finalized_parity() {
             hash: Some("9f0e1d2".to_owned()),
         }],
         hook_output: String::new(),
+        // M52 Inc 4 / T4 — what the landed boundary's sub-task-area teardown moved aside
+        // rather than destroyed. Non-empty here so the key has to carry something.
+        displaced: vec![Displaced {
+            from: ".jigc/tasks/warm-the-read-cache/NOTES.md".to_owned(),
+            to: ".jigc/displaced/warm-the-read-cache/NOTES.md".to_owned(),
+        }],
     };
     let MilestoneLanded {
         hash,
@@ -1529,6 +1535,7 @@ fn milestone_finalized_parity() {
         commits,
         sub_tasks,
         hook_output,
+        displaced,
     } = &landed;
 
     let text = milestone_finalized(Format::Agent, &landed);
@@ -1556,6 +1563,13 @@ fn milestone_finalized_parity() {
     carries(committed, "commits", commits, label, "commits");
     carries(committed, "sub_tasks", sub_tasks, label, "sub_tasks");
     carries(committed, "hook_output", hook_output, label, "hook_output");
+    // The second member whose text channel is **stderr**, on the `hook_output` precedent
+    // one line above: the loss-shaped narration of what the sub-task-area teardown moved
+    // rather than destroyed is printed under both formats beside the document, never
+    // inside the success section — so it is carried on the envelope and withheld nowhere
+    // (M52 Inc 4 / T4; `milestone_boundary_displacement.rs` drives both channels on the
+    // real binary).
+    carries(committed, "displaced", displaced, label, "displaced");
 }
 
 // ────────────────────────── the judgment-tier census (T5) ──────────────────────────

@@ -4464,6 +4464,19 @@ pub struct MilestoneLanded {
     /// commits + the aggregate) folded in commit order (the hook_output producer axis —
     /// the envelope must not carry the aggregate's stream alone).
     pub hook_output: String,
+    /// Every byte jigc did **not** write into a **sub-task's** working area, **moved aside**
+    /// rather than destroyed when the landed boundary tore those areas down (M52 Increment 4
+    /// / T4; `settle-record.md` → §18). Same shape and same contract as
+    /// [`Landed::displaced`] — `{from, to}` repo-relative pairs, sorted by `from`, **present
+    /// always** (`[]` on the ordinary boundary) — and the same reason: the boundary commit
+    /// carries the promoted docs, the merged record and the sub-agents' staged code and
+    /// takes nothing at all out of a working area, so the *landed-boundary* warrant that
+    /// lets this door's siblings merely narrate a loss does not hold here either.
+    ///
+    /// The union over **every** sub-task the boundary settled, so one key answers for the
+    /// whole boundary; the stderr narration is per area, which is where the sub-task each
+    /// move came from is already legible in the `from` path.
+    pub displaced: Vec<Displaced>,
 }
 
 /// Render a **landed** `jigc milestone finalize` to the surface `format` selects
@@ -7593,6 +7606,9 @@ mod tests {
                 },
             ],
             hook_output: "hook: fmt clean".to_string(),
+            // The ordinary boundary: every sub-task area held only jigc's own files, so the
+            // key is present and empty and the text says nothing (M52 Inc 4 / T4).
+            displaced: Vec::new(),
         };
 
         let agent = milestone_finalized(Format::Agent, &landed);
