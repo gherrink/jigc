@@ -37,12 +37,23 @@
 //! emits for legitimate input carries a recursive removal or a path escaping its root.
 //! The static allowance stands *because* of this arm — a `printf` of the shape is only a
 //! defect once the printed text is executed, and the printed text is now scanned.
+//!
+//! **The git-state axis joins the same fence** (M52 Increment 2). `--git-state <member>`
+//! is a second front door, onto `crates/cli/tests/support/git_state.rs` rather than onto
+//! `trial_corpus.rs`, so it is fenced on all three counts: the rig's member set and
+//! [`GitState::ALL`] are the **same set**; every member is classified as an
+//! operation-in-progress or a posture ([`OPERATION_MEMBERS`]); the adversarial arm runs
+//! over `--git-state` too, because that member is interpolated into generated shell for
+//! exactly the reason `--schema` is; and **one cell is driven end to end**, because a
+//! print-only scan proves the emitted bytes are safe and says nothing about whether they
+//! build the state they name.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::support;
+use support::git_state::GitState;
 use support::trial_corpus::State;
 
 /// The states `dev/jigc-rig` builds that [`State::ALL`] deliberately does **not**
@@ -149,6 +160,158 @@ fn the_rig_builds_exactly_the_states_the_fixture_builder_declares() {
         assert!(
             reason.len() > 40,
             "rig-only state `{name}` must carry a real reason, not a placeholder",
+        );
+    }
+}
+
+/// The git states the rig builds that are an **operation in progress** — one a user
+/// has begun and not concluded — one row per member, with the reason it is one.
+///
+/// **This list is interim, and Increment 3 is what retires it.** The posture family
+/// mints `InProgress::ALL` there; this const is then **replaced by a derivation from
+/// it**, so the fence below stops naming members and starts asking the enum, the way
+/// `STORE_EXIT_FLIPS` and `WORK_UNIT_ID_DOORS` are asked today. It is written here
+/// rather than left to Increment 3 because the builder ships now, and a builder whose
+/// members carry no classification is a table with no claim attached to it.
+///
+/// **The two members deliberately absent are the claim.** `detached` and `unborn` are
+/// *postures*, not operations — `PostureMember::HeadDetached` / `HeadUnborn` in the
+/// shipped code — so there is nothing to conclude and no git command to route at. The
+/// fence asserts that complement **exactly**, so a thirteenth [`GitState`] member
+/// cannot join the enum without someone deciding which side of the line it is on.
+const OPERATION_MEMBERS: &[(&str, &str)] = &[
+    (
+        "merge",
+        "a conflicting `git merge`: the merge is begun, `MERGE_HEAD` names the other \
+         side, and `git merge --continue` or `--abort` concludes it",
+    ),
+    (
+        "squash-merge",
+        "a `git merge --squash` leaves a staged tree and a `SQUASH_MSG` nobody has \
+         committed yet — the member with a message to destroy and NO `MERGE_HEAD` to \
+         notice it by",
+    ),
+    (
+        "rebase-merge",
+        "a conflicting `git rebase` on the merge backend: `rebase-merge/` holds the \
+         remaining todo and HEAD is detached mid-replay",
+    ),
+    (
+        "rebase-apply",
+        "a conflicting `git rebase --apply`: the apply backend's `rebase-apply/` \
+         carries `onto`, and the replay is suspended exactly as the merge backend's is",
+    ),
+    (
+        "am",
+        "a failing `git am`: `rebase-apply/applying` marks a patch series half-applied, \
+         and git itself discriminates it from a rebase by that very file",
+    ),
+    (
+        "cherry-pick",
+        "a conflicting `git cherry-pick`: `CHERRY_PICK_HEAD` names the commit being \
+         replayed, concluded by `--continue`, `--skip` or `--abort`",
+    ),
+    (
+        "sequencer",
+        "a conflicting MULTI-commit pick: the same markers plus `sequencer/todo`, so \
+         the remaining picks are queued on disk and concluding is not one command's work",
+    ),
+    (
+        "revert",
+        "a conflicting `git revert`: `REVERT_HEAD` names the commit being undone, and \
+         the revert is concluded or aborted like a pick",
+    ),
+    (
+        "unmerged-index",
+        "a conflicted `git stash pop`: unmerged index entries and NO marker at all — \
+         the member no marker-set widening can reach, and the control that keeps \
+         *detect the operation* honest about its ceiling",
+    ),
+    (
+        "bisect",
+        "`git bisect start`: the bisect is running until `git bisect reset`, and every \
+         commit made inside it lands on a revision git chose rather than the user",
+    ),
+];
+
+/// The git states `dev/jigc-rig` accepts, read from the rig itself.
+///
+/// `--list-git-states` is asked rather than the script parsed, for the same reason
+/// [`rig_states`] asks `--list-states`: the rig checks that every listed member has a
+/// construction **and** a driven expectation row before printing one, so a member
+/// declared without either exits non-zero here instead of listing as buildable.
+fn rig_git_states() -> BTreeSet<String> {
+    let rig = dev_dir().join("jigc-rig");
+    let out = Command::new(&rig)
+        .arg("--list-git-states")
+        .current_dir(repo_root())
+        .output()
+        .expect("spawn dev/jigc-rig --list-git-states");
+    assert!(
+        out.status.success(),
+        "dev/jigc-rig --list-git-states failed ({}):\n--- stdout ---\n{}\n--- stderr ---\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    String::from_utf8(out.stdout)
+        .expect("utf-8 --list-git-states stdout")
+        .lines()
+        .map(|line| line.trim().to_string())
+        .filter(|line| !line.is_empty())
+        .collect()
+}
+
+#[test]
+fn the_rig_builds_exactly_the_git_states_the_fixture_builder_declares() {
+    let declared: BTreeSet<&str> = GitState::ALL.iter().map(|state| state.name()).collect();
+    let accepted = rig_git_states();
+    let accepted: BTreeSet<&str> = accepted.iter().map(String::as_str).collect();
+
+    assert_eq!(
+        accepted, declared,
+        "`dev/jigc-rig --git-state` and `GitState::ALL` must name the same set of git \
+         states — one builder for the Rust suites, one for a shell probe, one set. A \
+         member the rig cannot build is a state no shell probe can reach; a member the \
+         rig builds and the enum does not declare is a state no suite asserts.",
+    );
+    assert!(
+        !declared.is_empty(),
+        "the comparison is only a fence while the declared set is non-empty",
+    );
+
+    // The interim classification: every operation member is a real member, no member
+    // is classified twice, and the complement is EXACTLY the two postures.
+    let operations: BTreeSet<&str> = OPERATION_MEMBERS.iter().map(|(name, _)| *name).collect();
+    assert_eq!(
+        operations.len(),
+        OPERATION_MEMBERS.len(),
+        "OPERATION_MEMBERS must not classify one member twice",
+    );
+    let unknown: Vec<&&str> = operations
+        .iter()
+        .filter(|name| !declared.contains(**name))
+        .collect();
+    assert!(
+        unknown.is_empty(),
+        "OPERATION_MEMBERS names git states `GitState::ALL` does not declare: \
+         {unknown:?} — the list classifies the builder's members, so a name the \
+         builder cannot build classifies nothing",
+    );
+    let postures: BTreeSet<&str> = declared.difference(&operations).copied().collect();
+    assert_eq!(
+        postures,
+        BTreeSet::from(["detached", "unborn"]),
+        "every `GitState` member is an un-concluded OPERATION or a POSTURE, and the \
+         posture side is exactly `detached` + `unborn` (`PostureMember::HeadDetached` / \
+         `HeadUnborn`). A new member on either side must be classified in \
+         OPERATION_MEMBERS or named here — being reachable by the builder and absent \
+         from both is how a state ships that no door was ever asked about.",
+    );
+    for (name, reason) in OPERATION_MEMBERS {
+        assert!(
+            reason.len() > 40,
+            "operation member `{name}` must carry a real reason, not a placeholder",
         );
     }
 }
@@ -415,6 +578,32 @@ fn no_emitted_construction_carries_a_recursive_removal_or_escapes_its_root() {
     for state in rig_states() {
         invocations.push(vec![state.clone(), "--print-only".to_string()]);
     }
+    // Every git state, in both forms: overlaid on a corpus state, and standalone —
+    // the standalone form is a DIFFERENT emitted construction (its own repo furniture,
+    // no `jigc setup`), so scanning only the overlay would leave half the generator
+    // unscanned. `--git-state unborn` over a corpus refuses, and the loop below already
+    // asserts that a refusal emits nothing.
+    for member in GitState::ALL {
+        invocations.push(vec![
+            "fresh".into(),
+            "--git-state".into(),
+            member.name().into(),
+            "--print-only".into(),
+        ]);
+        invocations.push(vec![
+            "--git-state".into(),
+            member.name().into(),
+            "--print-only".into(),
+        ]);
+    }
+    for (value, _) in ADVERSARIAL_GIT_STATES {
+        invocations.push(vec![
+            "fresh".into(),
+            "--git-state".into(),
+            (*value).into(),
+            "--print-only".into(),
+        ]);
+    }
     invocations.push(vec![
         "fresh".into(),
         "--pack-from-dev".into(),
@@ -494,4 +683,166 @@ fn no_emitted_construction_carries_a_recursive_removal_or_escapes_its_root() {
         emitted_any,
         "the scan is only a fence while at least one invocation emits a script",
     );
+}
+
+/// Adversarial `--git-state` values, each with the mechanism it exploits.
+///
+/// The member reaches the generated script the same way `--schema` does — it selects a
+/// construction and is spelled into the script text — so it is validated against the
+/// closed member set **before any script text exists**, and this arm is what says so.
+/// Unlike the pack targets there is no grammar to satisfy: anything but one of the
+/// twelve names is refused, which makes `mergE` and `merge; rm -rf /` the same refusal
+/// and is exactly the property being asserted.
+const ADVERSARIAL_GIT_STATES: &[(&str, &str)] = &[
+    ("mergE", "the member set is closed AND case-sensitive"),
+    (
+        "merge; rm -rf /",
+        "a `;` ends the command and starts another",
+    ),
+    (
+        "merge\"; rm -rf $RIG; echo \"",
+        "a double quote closes the emitted word and starts a new command",
+    ),
+    (
+        "$(touch \"$RIG/INJECTED-COMMAND-RAN\")",
+        "a command substitution runs when the emitted construction runs",
+    ),
+    ("merge`id`", "backticks substitute a command"),
+    (
+        "../../../OUTSIDE-THE-ROOT",
+        "`..` escapes the root with no metacharacter at all",
+    ),
+    (
+        "merge rebase-merge",
+        "whitespace splits one value into two words",
+    ),
+    ("merge\nrm -rf /", "a newline is a command separator"),
+    ("", "an empty member names no construction"),
+    (
+        "-merge",
+        "a leading dash reads as an option wherever the value is re-parsed",
+    ),
+];
+
+#[test]
+fn the_rig_refuses_a_git_state_that_is_not_a_member() {
+    for (value, mechanism) in ADVERSARIAL_GIT_STATES {
+        let out = run_rig(&["fresh", "--git-state", value, "--print-only"]);
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            !out.status.success(),
+            "`dev/jigc-rig fresh --git-state {value:?} …` must be REFUSED ({mechanism}), \
+             but it exited {:?} and emitted:\n{stdout}",
+            out.status.code(),
+        );
+        assert!(
+            stdout.is_empty(),
+            "a refused `--git-state {value:?}` must emit no script at all — a caller \
+             that ignores the status must have nothing to eval.\nstdout:\n{stdout}",
+        );
+        assert!(
+            stderr.contains("git state") && stderr.contains("merge"),
+            "a refused `--git-state {value:?}` must say WHY and name the closed set, so \
+             the caller can fix it.\nstderr:\n{stderr}",
+        );
+    }
+}
+
+/// `unborn` over a corpus state is refused **with its reason and the form that works** —
+/// never silently built as something else.
+///
+/// A corpus state has been through `jigc setup`, which *births* HEAD on an unborn
+/// repository, so the state is not reachable from there at all. The refusal carries the
+/// same fact `GitState::overlay_refusal` carries on the Rust side; what this asserts is
+/// that the shell front door does not quietly hand back a corpus with a commit in it.
+#[test]
+fn the_rig_refuses_unborn_over_a_corpus_state_and_names_the_form_that_works() {
+    let out = run_rig(&["fresh", "--git-state", "unborn", "--print-only"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "`--git-state unborn` over a corpus state must be refused, not built:\n{stdout}",
+    );
+    assert!(stdout.is_empty(), "a refusal emits no script:\n{stdout}");
+    assert!(
+        stderr.contains("setup") && stderr.contains("--git-state unborn"),
+        "the refusal must carry the driven reason (`jigc setup` commits, birthing HEAD) \
+         AND name the standalone form that does build it.\nstderr:\n{stderr}",
+    );
+
+    // …and the form the refusal names really is one the rig accepts.
+    let standalone = run_rig(&["--git-state", "unborn", "--print-only"]);
+    assert!(
+        standalone.status.success(),
+        "the standalone form the refusal names must itself work — a route that does not \
+         run is the law-1 lie this repo fences everywhere else.\nstderr:\n{}",
+        String::from_utf8_lossy(&standalone.stderr),
+    );
+}
+
+/// One cell driven END TO END, through the two-step eval the rig's own help documents.
+///
+/// The arms above scan emitted bytes; none of them runs a construction, so on their own
+/// they prove the generator is safe and say nothing about whether `--git-state merge`
+/// leaves a merge. This builds one — `merge` over `fresh`, so the construction commits
+/// through jigc's own installed `pre-commit` hook — and reads `MERGE_HEAD` off the disk.
+///
+/// **It is a sample, not a proof over twelve.** The twelve are driven in
+/// `git_state_fixtures.rs` against the Rust builder; construction parity between the two
+/// homes stays the declared bound this file already carries for corpus states (the fence
+/// compares sets, not construction).
+#[test]
+fn the_rig_really_builds_a_git_state_over_a_corpus() {
+    let scratch = support::trial_corpus::unique_root("rig-git-state");
+    std::fs::create_dir_all(&scratch).expect("create the driven cell's scratch root");
+
+    // Verbatim the two-step eval the rig documents: `|| exit` first, so a construction
+    // that failed is never evaluated as a success.
+    let script = format!(
+        "rig=$('{rig}' fresh --git-state merge --binary '{binary}') || exit 1\n\
+         eval \"$rig\"\n\
+         printf '%s\\n' \"$REPO\"\n",
+        rig = dev_dir().join("jigc-rig").display(),
+        binary = env!("CARGO_BIN_EXE_jigc"),
+    );
+    let out = Command::new("bash")
+        .arg("-c")
+        .arg(&script)
+        .current_dir(repo_root())
+        .env("SCRATCH", &scratch)
+        .output()
+        .expect("spawn the two-step eval");
+    assert!(
+        out.status.success(),
+        "`dev/jigc-rig fresh --git-state merge` must build:\n--- stdout ---\n{}\n\
+         --- stderr ---\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    let repo = PathBuf::from(String::from_utf8_lossy(&out.stdout).trim().to_string());
+    assert!(
+        repo.is_dir(),
+        "the eval must export a $REPO that exists; got {}",
+        repo.display(),
+    );
+    assert!(
+        repo.join(".jigc").join("config").is_dir(),
+        "the git state is an OVERLAY on the corpus state — `fresh` has been through \
+         `jigc setup`, so its workbench must still be there under the merge",
+    );
+    assert!(
+        repo.join(".git").join("MERGE_HEAD").is_file(),
+        "`--git-state merge` must leave the marker git writes for an un-concluded \
+         merge: {}/.git/MERGE_HEAD",
+        repo.display(),
+    );
+
+    // The rig has no teardown by design (every root is a `mktemp -d`); the *gate* must
+    // not litter, so the cell reaps the root it asked for. This is Rust, not generated
+    // shell — the shape the scan above refuses is a shell command, and no `dev/` script
+    // gained one.
+    let _ = std::fs::remove_dir_all(&scratch);
 }

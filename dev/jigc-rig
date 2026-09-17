@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 #
-# dev/jigc-rig — build a named jigc corpus state in a throwaway repo, from bash.
+# dev/jigc-rig — build a named jigc corpus state, and/or a named un-concluded git
+# state, in a throwaway repo, from bash.
 #
 # The states are the ones `crates/cli/tests/support/trial_corpus.rs` already builds
-# for the Rust suites. That builder is the source of truth and this is a front door
-# onto the same construction — same state names, same verbs, same order — because
+# for the Rust suites (and, for `--git-state`, the ones
+# `crates/cli/tests/support/git_state.rs` builds). Those builders are the source of
+# truth and this is a front door onto the same construction — same state names, same verbs, same order — because
 # reaching it from a shell otherwise means writing a `#[test]`, registering it in one
 # of twelve group roots (`autotests = false`) and running a group target, for a
 # thirty-second throwaway probe. A scan of 139 subagent transcripts found 48 agents
@@ -33,12 +35,15 @@
 # delegated agent with no transcript — and 71 agents wrote that shape anyway (390
 # calls, against 40 uses of the prescribed `mktemp -d`). So this tool has no --clean
 # and no --reset: a reset flag is a destructive-command generator with a friendly
-# name. `crates/cli/tests/dev_rig_parity.rs` fences both halves — the state set, and
-# the absence of a recursive removal on a variable path anywhere under dev/.
+# name. `crates/cli/tests/dev_rig_parity.rs` fences all three halves — the corpus-state
+# set, the git-state set, and the absence of a recursive removal on a variable path
+# anywhere under dev/ or in anything dev/ emits.
 #
 # Usage:
 #   dev/jigc-rig <state> [options]
-#   dev/jigc-rig --list-states
+#   dev/jigc-rig <state> --git-state <member> [options]
+#   dev/jigc-rig --git-state <member> [options]   (standalone: no corpus, no `jigc setup`)
+#   dev/jigc-rig --list-states | --list-git-states
 #
 # States (`State::ALL`'s set, plus the one rig-only state named below):
 #   bare                  a git repo with one commit and NO `jigc setup` — the only
@@ -57,6 +62,36 @@
 #   vendored              a gitignored vendor tree beside tracked source, plus a spec
 #                         and an arch-doc whose code anchors resolve
 #
+# Git states (`GitState::ALL`'s set — crates/cli/tests/support/git_state.rs is the
+# source of truth here too). Every one is reached by running the command a user runs —
+# nothing writes a marker directly — and the construction then reads ITSELF back and
+# asserts the markers, HEAD shape and `git ls-files -u` count. Those facts are the
+# on-disk contract of git 2.54.0 (Apple Git-157), the git they were proven on; a red
+# on another git is the report M52's deferral (a) names its trigger on.
+#   merge           a conflicting `git merge`           MERGE_HEAD + MERGE_MSG
+#   squash-merge    a CLEAN `git merge --squash`        SQUASH_MSG, and no MERGE_HEAD
+#   rebase-merge    a conflicting `git rebase`          rebase-merge/, HEAD detached
+#   rebase-apply    a conflicting `git rebase --apply`  rebase-apply/onto, HEAD detached
+#   am              a failing `git am`                  rebase-apply/applying, attached
+#   cherry-pick     a conflicting one-commit pick       CHERRY_PICK_HEAD + MERGE_MSG
+#   sequencer       a conflicting MULTI-commit pick     the same, plus sequencer/todo
+#   revert          a conflicting `git revert`          REVERT_HEAD + MERGE_MSG
+#   unmerged-index  a conflicted `git stash pop`        NO marker at all, 3 unmerged
+#   bisect          `git bisect start`                  BISECT_LOG + BISECT_START
+#   detached        `git switch --detach`               no operation, HEAD detached
+#   unborn          `git init` with no commit           STANDALONE ONLY (below)
+#
+# A git state is an OVERLAY and is entered LAST — after the corpus state and after
+# --start — so it refuses a dirty worktree: `git rebase` will not begin over one and
+# `git stash push` would swallow the caller's edits. `unborn` has no overlay form at
+# all, because every corpus state runs `jigc setup`, which BIRTHS HEAD on an unborn
+# repository (driven: 0 -> 1 commits, exit 0); it is refused there and built by the
+# STANDALONE form — `dev/jigc-rig --git-state <member>` with no corpus state — a
+# from-scratch repo carrying a hand-made `.jigc/config/` project-layer marker and no
+# setup, which is the only shape `unborn` can take. The standalone form accepts the
+# pack flags (they shape JIGC_PACK_DIR, not the corpus) and refuses --start, which
+# needs a set-up corpus.
+#
 # Options:
 #   --binary <path>       jigc to drive (default <repo>/target/debug/jigc)
 #   --pack-from-dev       throwaway copy of the dev pack; its freeze manifest is
@@ -70,6 +105,11 @@
 #   --repin               KEEP the freeze manifest and re-pin every drifted schema-hash
 #                         after the edits, then assert the pack loads clean
 #                         (implies a pack copy)
+#   --git-state <member>  drive the repo into the named git state, last of all
+#                         (`--list-git-states` prints the twelve). The member selects a
+#                         construction AND is spelled into the generated script, so it
+#                         is checked against the closed set before any script text
+#                         exists — the same fence `--schema`/`--workflow` carry.
 #   --start <wf> <intent> mint a task after the state is built; sets RIG_TASK
 #   --print-only          print the construction script instead of running it
 #   --keep                print the root and state to stderr so nothing reaps it
@@ -127,6 +167,54 @@ RIG_STATES=(
 
 state_fn() { printf 'gen_state_%s' "${1//-/_}"; }
 
+# --- the git-state set ------------------------------------------------------
+# The second builder's set, mirroring `GitState::ALL` in
+# crates/cli/tests/support/git_state.rs. `--list-git-states` prints it after checking
+# that every member has BOTH a construction (`gen_git_state_<name>`) and a driven
+# expectation row, so a member declared with neither cannot list as buildable; the
+# argument check reads the same list, and `dev_rig_parity.rs` asserts it and
+# `GitState::ALL` are the same set.
+GIT_STATES=(
+    merge
+    squash-merge
+    rebase-merge
+    rebase-apply
+    am
+    cherry-pick
+    sequencer
+    revert
+    unmerged-index
+    bisect
+    detached
+    unborn
+)
+
+git_state_fn() { printf 'gen_git_state_%s' "${1//-/_}"; }
+
+# `<markers>|<head>|<unmerged>` — the driven expectation for each member, mirroring
+# `EXPECTATIONS` in crates/cli/tests/support/git_state.rs row for row. The marker list
+# is a PRESENCE list; the assertion in the generated script takes its complement over
+# the marker universe and asserts absence, which is where each discriminating sibling
+# (`rebase-apply/onto` against `applying`, `SQUASH_MSG` against `MERGE_HEAD`,
+# `sequencer/` against its absence on the one-commit pick) is actually checked.
+git_state_expect() {
+    case "$1" in
+        merge)          printf 'MERGE_HEAD MERGE_MSG|attached|3' ;;
+        squash-merge)   printf 'SQUASH_MSG|attached|0' ;;
+        rebase-merge)   printf 'rebase-merge MERGE_MSG|detached|3' ;;
+        rebase-apply)   printf 'rebase-apply rebase-apply/onto|detached|3' ;;
+        am)             printf 'rebase-apply rebase-apply/applying|attached|0' ;;
+        cherry-pick)    printf 'CHERRY_PICK_HEAD MERGE_MSG|attached|3' ;;
+        sequencer)      printf 'CHERRY_PICK_HEAD MERGE_MSG sequencer sequencer/todo|attached|3' ;;
+        revert)         printf 'REVERT_HEAD MERGE_MSG|attached|3' ;;
+        unmerged-index) printf '|attached|3' ;;
+        bisect)         printf 'BISECT_LOG BISECT_START|attached|0' ;;
+        detached)       printf '|detached|0' ;;
+        unborn)         printf '|unborn|0' ;;
+        *) return 1 ;;
+    esac
+}
+
 # A pack resource id (`--schema <type>`, `--workflow <id>`) names a FILE inside the
 # throwaway pack, so it is interpolated into a path in the generated script. Quoting
 # alone is not enough there: `../../../x` needs no metacharacter to write outside the
@@ -149,10 +237,10 @@ sq() {
 gen_header() {
     cat <<EOF
 #!/usr/bin/env bash
-# Generated by dev/jigc-rig — corpus state: $state
+# Generated by dev/jigc-rig — $rig_label
 #
 # Construction chatter goes to stderr; the block at the end goes to stdout, which is
-# what \`rig=\$(dev/jigc-rig $state) || exit; eval "\$rig"\` evaluates — two steps, so a
+# what \`rig=\$(dev/jigc-rig $rig_argv) || exit; eval "\$rig"\` evaluates — two steps, so a
 # failed construction is not evaluated as a success. There is no teardown: the root
 # is minted by \`mktemp -d\`, so nothing here removes anything.
 set -eEu
@@ -229,7 +317,7 @@ EOF
 gen_env() {
     printf '\n# --- the root: minted, never reused, so there is nothing to tear down ---\n'
     printf 'JIGC=%s\n' "$(sq "$binary")"
-    printf 'RIG=$(mktemp -d %s)\n' "$(sq "$tmp_root/jigc-rig-$state-XXXXXX")"
+    printf 'RIG=$(mktemp -d %s)\n' "$(sq "$tmp_root/jigc-rig-$rig_slug-XXXXXX")"
     cat <<'EOF'
 REPO=$RIG/repo
 RIG_HOME=$RIG/home
@@ -526,6 +614,275 @@ finalize "$arch" arch-doc 'document the padding layer'
 EOF
 }
 
+# --- the git states ---------------------------------------------------------
+# Each mirrors the same-named arm of `drive()` in
+# crates/cli/tests/support/git_state.rs: same git commands, same order, same fixture
+# paths and commit subjects. That file is the source of truth; if the two ever diverge,
+# THIS is what is wrong. Nothing here writes a marker — a fixture that wrote the marker
+# itself would prove a door against a state git would never produce.
+
+gen_git_state_helpers() {
+    [ -n "$git_state" ] || return 0
+    local expect markers head unmerged
+    expect=$(git_state_expect "$git_state") || die "no expectation row for git state \`$git_state\`"
+    markers=${expect%%|*}
+    head=${expect#*|}; head=${head%%|*}
+    unmerged=${expect##*|}
+    printf '\n# --- the git state under construction, and what it must look like ---------------\n'
+    printf 'GIT_STATE=%s\n' "$(sq "$git_state")"
+    printf 'GS_WANT_MARKERS=%s\n' "$(sq "$markers")"
+    printf 'GS_WANT_HEAD=%s\n' "$(sq "$head")"
+    printf 'GS_WANT_UNMERGED=%s\n' "$(sq "$unmerged")"
+    cat <<'EOF'
+# The universe, not a checklist: gs_assert asserts every member this state does not
+# expect is ABSENT, so each discriminating sibling is checked by the complement rather
+# than by a hand-written "must not" list that can fall behind a new member.
+GS_MARKER_UNIVERSE='MERGE_HEAD MERGE_MSG SQUASH_MSG CHERRY_PICK_HEAD REVERT_HEAD BISECT_LOG BISECT_START sequencer sequencer/todo rebase-merge rebase-apply rebase-apply/onto rebase-apply/applying'
+GS_BRANCH=
+
+gs_fail() { printf 'jigc-rig: git state `%s`: %s\n' "$GIT_STATE" "$*" >&2; exit 1; }
+
+# The worktree's OWN git dir, absolute — a linked worktree's is
+# `.git/worktrees/<name>/`, which is exactly why this asks git rather than joining .git.
+gs_git_dir() {
+    local d
+    d=$(git rev-parse --git-dir)
+    case $d in /*) printf '%s' "$d" ;; *) printf '%s/%s' "$PWD" "$d" ;; esac
+}
+
+# The arm for the command whose CONFLICT is the fixture. A merge that succeeded would
+# leave a clean tree, and the assertion would then look for markers git never wrote —
+# so success here is the failure, named at the point it happens. `trap - ERR` because
+# the ERR trap is inherited by the substitution and this status is handled out here.
+gs_must_conflict() {
+    local out status
+    out=$(trap - ERR; git "$@" 2>&1) && status=0 || status=$?
+    if [ "$status" -eq 0 ]; then
+        gs_fail "\`git $*\` SUCCEEDED — the construction must leave the operation un-concluded:
+$out"
+    fi
+}
+
+gs_commit() { git add -- "$1"; git commit -q -m "$2"; }
+
+# Commit the file every conflicting construction fights over, and remember the branch.
+gs_seed() {
+    GS_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+    printf 'alpha\n' > posture-shared.txt
+    gs_commit posture-shared.txt 'posture fixture: seed'
+}
+
+# A conflicting commit on posture-theirs and a different one on GS_BRANCH, so any of
+# merge / rebase / pick / am over the pair conflicts.
+gs_diverge() {
+    git checkout -q -b posture-theirs
+    printf 'theirs\n' > posture-shared.txt
+    gs_commit posture-shared.txt 'posture fixture: theirs'
+    git checkout -q "$GS_BRANCH"
+    printf 'ours\n' > posture-shared.txt
+    gs_commit posture-shared.txt 'posture fixture: ours'
+}
+
+# The half that makes a built fixture a MEASUREMENT rather than an intention: four
+# facts, all read back from git or from the git dir git wrote.
+gs_assert() {
+    local git_dir marker sym has observed count line
+    git_dir=$(gs_git_dir)
+    for marker in $GS_WANT_MARKERS; do
+        [ -e "$git_dir/$marker" ] || gs_fail "must carry \`$marker\` in $git_dir — git 2.54.0 writes it for this state (M52 deferral (a): another git that does not is the report that deferral waits for)"
+    done
+    for marker in $GS_MARKER_UNIVERSE; do
+        case " $GS_WANT_MARKERS " in *" $marker "*) continue ;; esac
+        if [ -e "$git_dir/$marker" ]; then
+            gs_fail "must NOT carry \`$marker\`: it is the discriminating sibling of this state's marker set, and a fixture carrying both proves nothing about a door that keys on either"
+        fi
+    done
+    if git symbolic-ref -q HEAD >/dev/null 2>&1; then sym=1; else sym=0; fi
+    if git rev-parse --verify --quiet HEAD >/dev/null 2>&1; then has=1; else has=0; fi
+    if [ "$sym" = 1 ] && [ "$has" = 1 ]; then observed=attached
+    elif [ "$sym" = 0 ] && [ "$has" = 1 ]; then observed=detached
+    elif [ "$sym" = 1 ]; then observed=unborn
+    else gs_fail 'left HEAD both unresolvable and unborn — git wrote a shape this rig has no name for'
+    fi
+    [ "$observed" = "$GS_WANT_HEAD" ] || gs_fail "must leave HEAD $GS_WANT_HEAD (observed: $observed)"
+    count=0
+    while IFS= read -r line; do
+        if [ -n "$line" ]; then count=$((count + 1)); fi
+    done <<< "$(git ls-files -u)"
+    [ "$count" = "$GS_WANT_UNMERGED" ] || gs_fail "must leave $GS_WANT_UNMERGED unmerged index entries (observed: $count)"
+    printf 'jigc-rig: git state `%s` built and asserted (markers: %s)\n' \
+        "$GIT_STATE" "${GS_WANT_MARKERS:-none}" >&2
+}
+EOF
+}
+
+gen_git_state_merge() {
+    cat <<'EOF'
+gs_seed
+gs_diverge
+gs_must_conflict merge posture-theirs
+EOF
+}
+
+gen_git_state_squash_merge() {
+    cat <<'EOF'
+gs_seed
+git checkout -q -b posture-clean
+printf 'other\n' > posture-other.txt
+gs_commit posture-other.txt 'posture fixture: the squashed branch'
+git checkout -q "$GS_BRANCH"
+# Clean by construction — `--squash` never updates HEAD, so the message it parks in
+# SQUASH_MSG is the byte at risk, and there is no MERGE_HEAD to notice it by.
+git merge --squash posture-clean
+EOF
+}
+
+gen_git_state_rebase_merge() {
+    cat <<'EOF'
+gs_seed
+gs_diverge
+gs_must_conflict rebase posture-theirs
+EOF
+}
+
+gen_git_state_rebase_apply() {
+    cat <<'EOF'
+gs_seed
+gs_diverge
+gs_must_conflict rebase --apply posture-theirs
+EOF
+}
+
+gen_git_state_am() {
+    cat <<'EOF'
+gs_seed
+gs_diverge
+# The patch is written INSIDE the git dir, not the worktree: a fixture that left patch
+# files in the tree would change what every door under test sees as untracked.
+gs_patch=$(git format-patch -1 posture-theirs -o "$(gs_git_dir)/posture-patches")
+gs_patch=${gs_patch##*$'\n'}
+[ -n "$gs_patch" ] || gs_fail '`git format-patch` printed no file'
+gs_must_conflict am "$gs_patch"
+EOF
+}
+
+gen_git_state_cherry_pick() {
+    cat <<'EOF'
+gs_seed
+gs_diverge
+gs_must_conflict cherry-pick posture-theirs
+EOF
+}
+
+gen_git_state_sequencer() {
+    cat <<'EOF'
+gs_seed
+git checkout -q -b posture-theirs
+printf 'theirs\n' > posture-shared.txt
+gs_commit posture-shared.txt 'posture fixture: theirs one'
+printf 'second\n' > posture-second.txt
+gs_commit posture-second.txt 'posture fixture: theirs two'
+git checkout -q "$GS_BRANCH"
+printf 'ours\n' > posture-shared.txt
+gs_commit posture-shared.txt 'posture fixture: ours'
+# Two picks, the FIRST of which conflicts — so the second stays queued in
+# `sequencer/todo` rather than being replayed, which is the whole point of the member.
+gs_must_conflict cherry-pick 'posture-theirs~1' posture-theirs
+EOF
+}
+
+gen_git_state_revert() {
+    cat <<'EOF'
+gs_seed
+printf 'beta\n' > posture-shared.txt
+gs_commit posture-shared.txt 'posture fixture: the revert target'
+gs_target=$(git rev-parse HEAD)
+printf 'gamma\n' > posture-shared.txt
+gs_commit posture-shared.txt 'posture fixture: past the revert target'
+gs_must_conflict revert --no-edit "$gs_target"
+EOF
+}
+
+gen_git_state_unmerged_index() {
+    cat <<'EOF'
+gs_seed
+printf 'local\n' > posture-shared.txt
+git stash push -q -m 'posture fixture: a local edit'
+printf 'committed\n' > posture-shared.txt
+gs_commit posture-shared.txt 'posture fixture: moved under the stash'
+gs_must_conflict stash pop
+EOF
+}
+
+gen_git_state_bisect() {
+    cat <<'EOF'
+gs_seed
+git bisect start
+EOF
+}
+
+gen_git_state_detached() {
+    cat <<'EOF'
+gs_seed
+git switch -q --detach HEAD
+EOF
+}
+
+gen_git_state_unborn() {
+    cat <<'EOF'
+# git state `unborn`: there is no construction — it IS the absence of one. The
+# standalone repo above committed nothing, so HEAD points at a branch that does not
+# exist. It has no overlay form: `jigc setup` births HEAD, and deleting that commit
+# afterwards would not make HEAD unborn again.
+EOF
+}
+
+# The standalone form's repo furniture, mirroring `GitStateRepo::build`: a real repo
+# with a per-repo identity and a HAND-MADE `.jigc/config/` project-layer marker,
+# because that directory's existence is the whole of what `cli::locate` reads as the
+# project cascade layer — and obtaining it by running `jigc setup` would COMMIT, which
+# is exactly what `unborn` cannot survive. A door that needs a real workbench takes the
+# overlay form (`<state> --git-state <member>`).
+gen_standalone_repo() {
+    cat <<'EOF'
+
+# --- a from-scratch repo, deliberately NOT set up (the standalone git-state form) ---
+cd "$REPO"
+git init -q
+git config user.email 'posture@example.com'
+git config user.name 'Posture Fixture'
+mkdir -p .jigc/config
+EOF
+    if [ "$git_state" != unborn ]; then
+        cat <<'EOF'
+printf 'git-state fixture\n' > README.md
+gs_commit README.md initial
+EOF
+    fi
+}
+
+gen_git_state() {
+    [ -n "$git_state" ] || return 0
+    printf '\n# --- the git state: entered LAST, after the corpus state and any --start ---------\n'
+    if [ -n "$state" ]; then
+        cat <<'EOF'
+# A git state is an OVERLAY, and it refuses a dirty worktree rather than asking to be
+# entered last: `git rebase` will not begin over one and `git stash push` would swallow
+# the caller's edits. Increment 3 makes every acting door refuse under these postures,
+# so a construction that ran a jigc door afterwards would be building against a door
+# that has stopped answering.
+cd "$REPO"
+gs_dirty=$(git status --porcelain)
+if [ -n "$gs_dirty" ]; then
+    gs_fail "refusing to overlay on a DIRTY worktree; outstanding:
+$gs_dirty"
+fi
+EOF
+    fi
+    "$(git_state_fn "$git_state")"
+    printf 'gs_assert\n'
+}
+
 gen_start() {
     [ -n "$start_workflow" ] || return 0
     printf '\n# --- --start: mint a task over the built state ---\n'
@@ -569,6 +926,7 @@ print_only=0
 keep=0
 start_workflow=""
 start_intent=""
+git_state=""
 schema_types=()
 schema_files=()
 workflow_ids=()
@@ -580,6 +938,15 @@ while [ $# -gt 0 ]; do
             for s in "${RIG_STATES[@]}"; do
                 fn=$(state_fn "$s")
                 declare -F "$fn" >/dev/null 2>&1 || die "state \`$s\` is listed but has no \`$fn\` builder"
+                printf '%s\n' "$s"
+            done
+            exit 0
+            ;;
+        --list-git-states)
+            for s in "${GIT_STATES[@]}"; do
+                fn=$(git_state_fn "$s")
+                declare -F "$fn" >/dev/null 2>&1 || die "git state \`$s\` is listed but has no \`$fn\` construction"
+                git_state_expect "$s" >/dev/null || die "git state \`$s\` is listed but carries no driven expectation row"
                 printf '%s\n' "$s"
             done
             exit 0
@@ -598,6 +965,15 @@ while [ $# -gt 0 ]; do
             [ $# -ge 3 ] || die "--workflow needs <id> <file>"
             is_slug "$2" || die "--workflow id must be a slug matching [a-z0-9][a-z0-9-]* (got \`$2\`) — it names a file inside the throwaway pack"
             pack_copy=1; workflow_ids+=("$2"); workflow_files+=("$3"); shift 3 ;;
+        --git-state)
+            # Checked against the CLOSED SET here, before any script text exists: the
+            # member selects a construction and is spelled into the generated script,
+            # which is the same seam `--schema`/`--workflow` are slug-checked for.
+            [ $# -ge 2 ] || die "--git-state needs <member>; one of: ${GIT_STATES[*]} (or --list-git-states)"
+            known_git_state=0
+            for s in "${GIT_STATES[@]}"; do [ "$s" = "$2" ] && known_git_state=1; done
+            [ "$known_git_state" -eq 1 ] || die "unknown git state \`$2\`; one of: ${GIT_STATES[*]}"
+            git_state=$2; shift 2 ;;
         --start)
             [ $# -ge 3 ] || die "--start needs <workflow> <intent>"
             start_workflow=$2; start_intent=$3; shift 3 ;;
@@ -611,11 +987,42 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-[ -n "$state" ] || die "which state? one of: ${RIG_STATES[*]} (or --list-states)"
+if [ -z "$state" ] && [ -z "$git_state" ]; then
+    die "which state? one of: ${RIG_STATES[*]} (or --list-states) — or a standalone git state: --git-state <member> (--list-git-states)"
+fi
 
-known=0
-for s in "${RIG_STATES[@]}"; do [ "$s" = "$state" ] && known=1; done
-[ "$known" -eq 1 ] || die "unknown state \`$state\`; one of: ${RIG_STATES[*]}"
+if [ -n "$state" ]; then
+    known=0
+    for s in "${RIG_STATES[@]}"; do [ "$s" = "$state" ] && known=1; done
+    [ "$known" -eq 1 ] || die "unknown state \`$state\`; one of: ${RIG_STATES[*]}"
+    # `unborn` is REFUSED over a corpus state rather than silently built as something
+    # else — the same refusal `GitState::overlay_refusal` carries on the Rust side.
+    if [ "$git_state" = unborn ]; then
+        die "git state \`unborn\` cannot be overlaid on corpus state \`$state\`: every corpus state runs \`jigc setup\`, which BIRTHS HEAD on an unborn repository (driven: 0 -> 1 commits, exit 0), and deleting that commit afterwards would not make HEAD unborn again. Build it standalone: \`dev/jigc-rig --git-state unborn\`"
+    fi
+elif [ -n "$start_workflow" ]; then
+    # The standalone form has no corpus and no `jigc setup`, so there is nothing for a
+    # task to be minted against. Refused rather than attempted: a failed `jigc start`
+    # deep inside the construction reads as a jigc defect, not as a rig misuse.
+    die "--start needs a set-up corpus, and the standalone \`--git-state $git_state\` form deliberately runs no \`jigc setup\` — name a corpus state (one of: ${RIG_STATES[*]}) to combine the two"
+fi
+
+# --- how this invocation names itself ---------------------------------------
+# One label, one root slug and one paste-runnable argv hint, so the generated header,
+# the mktemp template and --keep cannot describe the invocation three different ways.
+if [ -n "$state" ] && [ -n "$git_state" ]; then
+    rig_label="corpus state: $state, git state: $git_state"
+elif [ -n "$state" ]; then
+    rig_label="corpus state: $state"
+else
+    rig_label="git state: $git_state (standalone — no corpus, no \`jigc setup\`)"
+fi
+rig_slug=${state:-standalone}
+rig_argv=$state
+if [ -n "$git_state" ]; then
+    rig_slug=$rig_slug-$git_state
+    if [ -n "$rig_argv" ]; then rig_argv="$rig_argv --git-state $git_state"; else rig_argv="--git-state $git_state"; fi
+fi
 
 # --- the binary -------------------------------------------------------------
 [ -n "$binary" ] || binary=$repo_root/target/debug/jigc
@@ -651,13 +1058,19 @@ abspath() {
 emit_script() {
     gen_header
     gen_preamble
+    gen_git_state_helpers
     printf '\n{\n'
     gen_env
     gen_pack
-    gen_git
-    gen_repin
-    "$(state_fn "$state")"
-    gen_start
+    if [ -n "$state" ]; then
+        gen_git
+        gen_repin
+        "$(state_fn "$state")"
+        gen_start
+    else
+        gen_standalone_repo
+    fi
+    gen_git_state
     printf '\n} 1>&2\n'
     gen_exports
 }
@@ -673,7 +1086,7 @@ script_file=$(mktemp "$tmp_root/jigc-rig-script-XXXXXX") || die "cannot mint a s
 printf '%s\n' "$script_text" > "$script_file"
 
 if [ "$keep" -eq 1 ]; then
-    printf 'jigc-rig: state %s — the root below is never reaped (there is no teardown)\n' "$state" >&2
+    printf 'jigc-rig: %s — the root below is never reaped (there is no teardown)\n' "$rig_label" >&2
     printf 'jigc-rig: construction script: %s\n' "$script_file" >&2
 fi
 
