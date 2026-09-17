@@ -2632,9 +2632,9 @@ impl RemovedArtifacts {
 /// break `jigc validate` for sibling repos (design-review B2). Machine-global removal
 /// is `cargo uninstall jigc` + manual probe removal, never this per-project verb.
 ///
-/// **It refuses over the three things inside `.jigc/` that live nowhere else**, before it
+/// **It refuses over the four things inside `.jigc/` that live nowhere else**, before it
 /// removes anything (`DECISIONS.md` 2026-08-13 → the Settle, F3; 2026-09-05 → M50 Inc 4 /
-/// T4):
+/// T4; 2026-09-17 → M52 Inc 4 / T5):
 ///
 /// - a **worktree-shaped path under `.jigc/worktrees/` holding content** blocks with
 ///   `uninstall.dirty-worktree` ([`dirty_fanout_worktrees`]). Since M47 Inc 3 a live
@@ -2646,6 +2646,13 @@ impl RemovedArtifacts {
 ///   `uninstall.staged-prose` ([`crate::task::staged_task_prose`]) — bytes that are in no
 ///   object DB at all (the reproduced pre-1.0.0 loss authored them; the mint's own skeleton
 ///   is refused on the same footing, since neither is provably disposable);
+/// - **a file jigc did not write inside a working area, or anything parked under
+///   `.jigc/displaced/`** — the writer registry's complement
+///   (`engine::state::foreign_area_paths`) plus the parking home no other guard owns —
+///   blocks with `uninstall.foreign-bytes`. `.jigc/` is gitignored whole, so those bytes
+///   are in no index either, which is the same ground the two above refuse on, said over
+///   the two subtrees the `ENTRIES` complement excludes. Clearing the parking home is the
+///   operator's own `rm`: jigc mints no verb for it (`settle-record.md` → §8);
 /// - **any other file under `.jigc/` that no index has a copy of** — the `ENTRIES`
 ///   complement ([`workbench_paths`]) — blocks with
 ///   `uninstall.untracked-workbench-file`. The same ground as the two above, stated over
@@ -2657,7 +2664,7 @@ impl RemovedArtifacts {
 ///   without staging is listed in the index carrying the *old* content, so it refuses
 ///   here alongside the never-tracked ones ([`classify_workbench_paths`]).
 ///
-/// `force` is the operator's consent to delete. It skips the three guards, and — the one
+/// `force` is the operator's consent to delete. It skips the four guards, and — the one
 /// other thing this teardown refuses on its own — takes the adapter's owned guide artifact
 /// even when the user has edited it.
 ///
@@ -2697,18 +2704,30 @@ pub fn run_uninstall(start: &Path, force: bool) -> Result<UninstallSummary, Find
 /// all while `.jigc/` holds the sole copy of anything: a worktree-shaped path with content
 /// ([`dirty_fanout_worktrees`]), an open task's staged docs
 /// ([`crate::task::staged_task_prose`]), or any other workbench file no index has a copy of
-/// ([`untracked_workbench_files`]) — all three probed in step 0.
+/// ([`untracked_workbench_files`]), or a byte jigc did not write inside a working area or
+/// under `.jigc/displaced/` ([`workbench_foreign_subject`]) — all four probed in step 0.
 fn uninstall(
     repo_root: &Path,
     profile: &AdapterProfile,
     force: bool,
 ) -> Result<UninstallSummary, Finding> {
     // 0. The WIP guards, BEFORE anything is removed — everything below is `remove_dir_all`
-    //    on a tree that holds the sole copy of two kinds of work.
+    //    on a tree that holds the sole copy of four kinds of work.
     if !force {
         let dirty = dirty_fanout_worktrees(repo_root)?;
         if !dirty.is_empty() {
             return Err(dirty_worktree_finding(repo_root, &dirty));
+        }
+        // The foreign population of every working area under `.jigc/`, and of the parking
+        // home nothing else owns ([`workbench_foreign_subject`], M52 Increment 4 / T5).
+        // Ahead of the staged-prose guard for the reason `crate::task`'s sibling states: an
+        // open task stages `commit:<id>.md`, so asked second this guard would be inert on
+        // the dominant cell.
+        let foreign = crate::task::foreign_areas(repo_root, &workbench_foreign_subject(repo_root)?)
+            .map_err(unverified_foreign_finding)?;
+        let foreign = crate::task::foreign_lines(&foreign);
+        if !foreign.is_empty() {
+            return Err(foreign_bytes_finding(&foreign));
         }
         let staged = crate::task::staged_task_prose(
             repo_root,
@@ -2718,8 +2737,8 @@ fn uninstall(
         if !staged.is_empty() {
             return Err(staged_prose_finding(&staged));
         }
-        // The third subject: everything else under `.jigc/` that no index has a copy of
-        // — the two guards above stated over the rest of the tree
+        // The fourth subject: everything else under `.jigc/` that no index has a copy of
+        // — the three guards above stated over the rest of the tree
         // ([`workbench_paths`]). It runs LAST so a corpus holding both a sole-copy
         // worktree and an uncommitted config delta is still answered by the door that
         // owns the sole copy.
@@ -3034,15 +3053,15 @@ fn fanout_worktree_paths(repo_root: &Path) -> std::io::Result<Vec<PathBuf>> {
 /// subject and prints the wrong route, so they are excluded by construction and answered
 /// by the doors that own them.
 ///
-/// **`displaced/` is the one excluded prefix no door owns** — stated here rather than left
-/// to be rediscovered (M50 Increment 4 validation, N8). It is in `ENTRIES`, so the relocation
-/// workbench sits outside this subject exactly as `tasks/` and `worktrees/` do; unlike them,
-/// nothing else refuses or narrates over it, so a file parked there by
-/// [`crate::relocate::relocate_stranded`] is taken by the teardown at exit 0 and named by
-/// nothing. The re-point that could park a **managed committed** doc there is closed at its
-/// own door ([`crate::config`]'s root-value fold, M50 Inc 4 validation), leaving reachable
-/// only a *foreign* file whose displacement was printed when it happened — narrow enough to
-/// declare rather than guard, and declared so the next reader need not derive the gap again.
+/// **`displaced/` is excluded here and owned one guard over** (M52 Increment 4 / T5). It is in
+/// `ENTRIES`, so the relocation workbench sits outside *this* subject exactly as `tasks/` and
+/// `worktrees/` do — and until M52 that made it the one excluded prefix **no** door owned, so
+/// a file parked there by [`crate::relocate::relocate_stranded`] was taken by the teardown at
+/// exit 0 and named by nothing (M50 Increment 4 validation, N8, which declared the gap rather
+/// than closing it). The declaration stopped holding the moment the **displacing** doors
+/// started parking kept bytes there: `uninstall.foreign-bytes` now refuses over every entry
+/// under it and narrates what `--force` took ([`workbench_foreign_subject`]). The parking home
+/// is the one subject with no jigc exit — clearing it is the operator's own `rm`.
 ///
 /// **Every child that is not a directory**, symlinks included (M49's lesson at
 /// [`fanout_worktree_paths`]): `remove_dir_all(.jigc/)` takes them all, so the shape of a
@@ -3218,6 +3237,102 @@ fn untracked_workbench_files(repo_root: &Path) -> Result<Vec<String>, Finding> {
         .map_err(unverified_workbench_finding)
 }
 
+/// **Every area under `.jigc/` whose complement this teardown would take, plus the parking
+/// home** — the subject of `uninstall`'s foreign-byte guard and of its narration, derived
+/// once so the two cannot disagree (M52 Increment 4 / T5).
+///
+/// **On disk, never a registered list.** `remove_dir_all(<repo>/.jigc)` takes every area that
+/// is *there*; a copied or moved repo's areas are registered at the source's path, so a
+/// registered-set subject would be inert precisely where the live work is — the M48 lesson
+/// this door already learned at `fanout_worktree_paths`.
+///
+/// **`displaced/` is the row no door owned** (`settle-record.md` → §8). It sits inside
+/// `crate::gitignore::ENTRIES`, so it is outside [`workbench_paths`]' subject exactly as
+/// `tasks/` and `worktrees/` are — but unlike them nothing else refused or narrated over it,
+/// and [`workbench_paths`]' own doc-comment said so as a declared gap. It is closed here.
+///
+/// The fan-out worktrees stay out: they are `crate::milestone::probe_leftover`'s subject,
+/// answered through git, and two classifiers over one path is two doors answering one
+/// question differently.
+fn workbench_foreign_subject(
+    repo_root: &Path,
+) -> Result<Vec<(PathBuf, crate::task::AreaKind)>, Finding> {
+    workbench_foreign_areas(repo_root).map_err(unverified_foreign_finding)
+}
+
+/// [`workbench_foreign_subject`]'s IO half — separated so the fail-closed finding is minted
+/// in exactly one place.
+fn workbench_foreign_areas(
+    repo_root: &Path,
+) -> std::io::Result<Vec<(PathBuf, crate::task::AreaKind)>> {
+    let jigc_dir = repo_root.join(".jigc");
+    let mut areas: Vec<(PathBuf, crate::task::AreaKind)> = Vec::new();
+    for (sub, kind) in [
+        ("tasks", crate::task::AreaKind::Task),
+        ("milestones", crate::task::AreaKind::Milestone),
+    ] {
+        let root = jigc_dir.join(sub);
+        // A *prefix is a directory*: a plain file (or symlink) at `.jigc/tasks` holds no
+        // areas — it is [`workbench_paths`]' own subject, which is where L-2 put it.
+        match std::fs::symlink_metadata(&root) {
+            Ok(shape) if shape.is_dir() => {}
+            Ok(_) => continue,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(err) => return Err(err),
+        }
+        let mut children: Vec<PathBuf> = Vec::new();
+        for entry in std::fs::read_dir(&root)? {
+            children.push(entry?.path());
+        }
+        // Sorted, so neither the refusal nor the narration varies with readdir order.
+        children.sort();
+        areas.extend(children.into_iter().map(|path| (path, kind)));
+    }
+    areas.push((
+        jigc_dir.join(crate::relocate::WORKBENCH_SUBDIR),
+        crate::task::AreaKind::Displaced,
+    ));
+    Ok(areas)
+}
+
+/// The install door's foreign-byte refusal: a blocking, route-bearing finding naming every
+/// path under `.jigc/` that jigc did not write.
+///
+/// **The route names the human's own `rm`, and no verb.** For a working area's complement the
+/// operator can also move the bytes out; for `.jigc/displaced/` there is nothing else — jigc
+/// mints **no** verb that clears the parking home (`settle-record.md` → §8), and saying so is
+/// what keeps the route from pointing at an act that does not exist.
+fn foreign_bytes_finding(foreign: &[String]) -> Finding {
+    Finding::block(
+        "uninstall.foreign-bytes",
+        format!(
+            "`.jigc/` holds {} path(s) jigc did not write — the tree is gitignored, so \
+             removing it would destroy bytes nothing else has a copy of:\n{}",
+            foreign.len(),
+            crate::task::foreign_listing(foreign),
+        ),
+        "move what you need out of the paths above, or delete the ones you do not (`rm -r` \
+         takes them — jigc has no verb that clears `.jigc/displaced/`), then re-run \
+         `jigc uninstall`; or, once you have confirmed they hold nothing you need, \
+         `jigc uninstall --force` deletes them with the install",
+    )
+}
+
+/// The fail-closed half of the foreign-byte guard, under the same code: the complement could
+/// not be enumerated, so the teardown refuses rather than remove `.jigc/` with those bytes'
+/// existence unknown.
+fn unverified_foreign_finding(err: std::io::Error) -> Finding {
+    Finding::block(
+        "uninstall.foreign-bytes",
+        format!(
+            "cannot check `.jigc/` for files jigc did not write, so removing it could \
+             destroy bytes nothing else has a copy of: {err}"
+        ),
+        "make sure the `.jigc/` tree is readable, then re-run `jigc uninstall` — or, once \
+         you have confirmed it holds nothing you need, `jigc uninstall --force`",
+    )
+}
+
 /// The third subject's refusal: a blocking, route-bearing finding naming every workbench
 /// path no index has a copy of.
 ///
@@ -3264,7 +3379,7 @@ fn unverified_workbench_finding(err: anyhow::Error) -> Finding {
 /// (`design/surface-contract.md` → law 1: a door that exits 0 must not also have silently
 /// destroyed work). Until M46 Inc 2 this teardown reported only `- removed .jigc/`.
 ///
-/// Its three subjects are exactly the ones the guards in [`uninstall`] refuse on, and for the
+/// Its four subjects are exactly the ones the guards in [`uninstall`] refuse on, and for the
 /// same reason: the tree holds the sole copy of them. So the narration is **not** conditional
 /// on `force` — `force` is what skips the *guards* — and a teardown those guards cleared
 /// still takes any gitignored byte their probe deliberately does not look at (the *visible,
@@ -3284,6 +3399,13 @@ fn pending_teardown(repo_root: &Path) -> PendingTeardown {
             .iter()
             .map(|path| crate::milestone::pending_loss(repo_root, path))
             .collect(),
+        // The foreign population of every working area and of `.jigc/displaced/` — the
+        // subject the guard above refuses on, named here when `--force` consented past it
+        // (M52 Increment 4 / T5). Best-effort like its siblings.
+        foreign: crate::task::pending_foreign(
+            repo_root,
+            &workbench_foreign_subject(repo_root).unwrap_or_default(),
+        ),
         // The second subject, which no worktree probe can see: `.jigc/tasks/<id>/docs/*.md` is
         // in no object DB at all. A door that names only half of what it takes is a law-1
         // half-truth, so the set [`crate::task::staged_task_prose`] refuses on is the set
@@ -3305,6 +3427,8 @@ fn pending_teardown(repo_root: &Path) -> PendingTeardown {
 struct PendingTeardown {
     /// The fan-out worktree paths, each carrying its own pre-read listing.
     worktrees: Vec<crate::milestone::PendingLoss>,
+    /// The working areas' and the parking home's foreign population.
+    foreign: crate::task::PendingForeign,
     /// The open tasks' staged docs.
     prose: PendingProse,
     /// The rest of the workbench, split `(untracked, tracked)` by
@@ -3313,11 +3437,12 @@ struct PendingTeardown {
 }
 
 impl PendingTeardown {
-    /// Name what the teardown actually took, in the order the three subjects were read.
+    /// Name what the teardown actually took, in the order the four subjects were read.
     fn narrate_taken(&self, repo_root: &Path) {
         for worktree in &self.worktrees {
             worktree.narrate_taken(repo_root);
         }
+        self.foreign.narrate_taken(repo_root);
         self.prose.narrate_taken(repo_root);
         narrate_workbench_files(repo_root, &self.workbench);
     }

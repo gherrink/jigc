@@ -238,10 +238,12 @@ pub enum TaskCommand {
         /// The task id (the working-area slug under `.jigc/tasks/`).
         id: String,
         /// Remove the working area even when it holds staged docs no commit has a copy
-        /// of — the explicit consent to destroy them. `jigc start` stages the task's
-        /// `commit:<id>` doc at mint, so an ordinary discard needs this from the moment
-        /// the task exists. Inert when the area stages nothing (a `milestone add-task`
-        /// sub-task before its first re-entry).
+        /// of, or files jigc did not write there at all — the explicit consent to
+        /// destroy them, and the single consent for both guards. `jigc start` stages the
+        /// task's `commit:<id>` doc at mint, so an ordinary discard needs this from the
+        /// moment the task exists. Inert when the area stages nothing and holds nothing
+        /// foreign (a `milestone add-task` sub-task before its first re-entry); it never
+        /// buys silence — what it takes is named as it goes.
         #[arg(long)]
         force: bool,
     },
@@ -548,7 +550,12 @@ pub(crate) fn sweep_for_orientation(cwd: &Path, id: &str) -> std::result::Result
 /// at the destroying one. Both now ask the **one** probe
 /// ([`staged_task_prose`], scoped to this task's area), so they cannot disagree.
 ///
-/// **Placement is load-bearing** and the order is `resolve` → guard → settle → remove:
+/// **It also refuses over bytes jigc did not write there** ([`refuse_over_foreign_bytes`],
+/// M52 Increment 4 / T5) — the working area's other population — and that guard is asked
+/// **first**, because the mint stages the commit doc and a guard asked after the staged-prose
+/// one could never fire at this door. `--force` is the single consent for both.
+///
+/// **Placement is load-bearing** and the order is `resolve` → guards → settle → remove:
 /// [`TaskArea::resolve`] carries Increment 1's malformed-id refusal and stays outermost, and
 /// the guard must sit **before** [`crate::milestone::settle_discarded_sub_task`], which
 /// *commits* the milestone record — a refusal after it would leave a committed record
@@ -556,6 +563,7 @@ pub(crate) fn sweep_for_orientation(cwd: &Path, id: &str) -> std::result::Result
 /// closed, re-opened by the fix for it.
 fn run_discard(cwd: &Path, id: &str, format: Format, force: bool) -> Result<()> {
     let task = TaskArea::resolve(cwd, id)?;
+    refuse_over_foreign_bytes(&task, id, force)?;
     refuse_over_staged_prose(&task, id, force)?;
     let dropped = dropped_staged_docs(&task);
     let settled = crate::milestone::settle_discarded_sub_task(
@@ -568,8 +576,14 @@ fn run_discard(cwd: &Path, id: &str, format: Format, force: bool) -> Result<()> 
     // names no sha, which is the fact, not a withheld value.
     let commit = settled.as_ref().and_then(|s| s.commit.clone());
     let hook_output = settled.map(|s| s.hook_output).unwrap_or_default();
-    std::fs::remove_dir_all(&task.dir)
-        .with_context(|| format!("could not discard task `{id}` at {:?}", task.dir))?;
+    // Read what the removal would take of the OTHER population before it runs, and name what
+    // it actually took afterwards ([`PendingForeign`], law 1). Un-forced this is empty by
+    // construction — the guard above returned — so the capture costs the ordinary discard one
+    // `read_dir` of an area it is about to delete anyway.
+    let pending = pending_foreign(&task.jigc_home, &[(task.dir.clone(), AreaKind::Task)]);
+    let removed = std::fs::remove_dir_all(&task.dir);
+    pending.narrate_taken(&task.jigc_home);
+    removed.with_context(|| format!("could not discard task `{id}` at {:?}", task.dir))?;
     println!(
         "{}",
         render::task_ack(
@@ -772,6 +786,105 @@ pub(crate) fn unverified_prose_finding(err: std::io::Error) -> Finding {
         "make sure `.jigc/tasks/` is readable, then re-run `jigc uninstall` — or, once you \
          have confirmed the open tasks hold nothing you need, `jigc uninstall --force` \
          deletes them with the install",
+    )
+}
+
+/// The **task** door's foreign-byte code — its own, never a sibling door's, on the
+/// [`DISCARD_STAGED_PROSE`] mold and for the same reason: the two other doors that refuse
+/// over this subject destroy different things and their routes lead different ways.
+///
+/// A door refusal, not a probe result and not a commit-phase rejection, so it joins neither
+/// `engine::result::CHECK_INVENTORY` nor [`crate::invocation_log::ERROR_CODE_REGISTRY`] —
+/// exactly like the staged-prose sibling it pairs with. It is still **logged**: the refusal
+/// travels as a `render::BlockedFinding`, so the identity the surface prints is the identity
+/// the invocation log records.
+const DISCARD_FOREIGN_BYTES: &str = "task-discard.foreign-bytes";
+
+/// The `jigc task discard` door's guard over the working area's **other** population: every
+/// byte jigc did not write there (`engine::state::foreign_area_paths`), refused unless the
+/// operator consented with `--force` (M52 Increment 4 / T5).
+///
+/// **Why it is asked BEFORE [`refuse_over_staged_prose`].** Every `jigc start` stages
+/// `commit:<id>.md`, so the staged-prose subject is non-empty on essentially every task this
+/// door is pointed at; asked second, this guard would be structurally unable to fire at its
+/// own door — a guard that never runs. Asked first it costs the staged-prose refusal nothing
+/// on any state whose complement is empty, and T2 drove the complement empty over a full
+/// lifecycle (`crates/cli/tests/task_area_writer_registry.rs`), which is the ordinary path.
+///
+/// **The subject is exactly what the removal takes** — this task's area, the same path
+/// `run_discard` hands `remove_dir_all` — so the door cannot refuse over bytes it would not
+/// destroy, nor destroy bytes it did not check (G-15).
+fn refuse_over_foreign_bytes(task: &TaskArea, id: &str, force: bool) -> Result<()> {
+    if force {
+        return Ok(());
+    }
+    let found =
+        foreign_areas(&task.jigc_home, &[(task.dir.clone(), AreaKind::Task)]).map_err(|err| {
+            crate::render::finding_error(&discard_unverified_foreign_finding(id, err))
+        })?;
+    let lines = foreign_lines(&found);
+    if lines.is_empty() {
+        return Ok(());
+    }
+    Err(crate::render::finding_error(
+        &discard_foreign_bytes_finding(id, &lines),
+    ))
+}
+
+/// Render a foreign-byte listing as the indented block every refusal in this family prints —
+/// one home, so the three doors' refusals cannot drift into three spellings of one listing.
+pub(crate) fn foreign_listing(lines: &[String]) -> String {
+    lines
+        .iter()
+        .map(|line| format!("  {line}"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// The task door's foreign-byte refusal: a blocking, route-bearing finding naming the task
+/// and every path in its working area that jigc did not write.
+///
+/// **It claims "jigc did not write these", not "you authored them"** — the same claim
+/// discipline the staged-prose sibling carries. What the walk measured is membership of
+/// jigc's own writer registry; who put the bytes there, and whether they matter, is not
+/// something any probe here can tell, so the refusal states the one fact that makes them
+/// worth stopping for: `.jigc/` is gitignored whole, so nothing else has a copy.
+///
+/// **A foreign directory is named, not walked.** It is the unit the removal takes and the
+/// unit the displacing doors move, so naming the entry keeps every surface in this family
+/// talking about the same thing.
+fn discard_foreign_bytes_finding(id: &str, lines: &[String]) -> Finding {
+    Finding::block(
+        DISCARD_FOREIGN_BYTES,
+        format!(
+            "task `{id}`'s working area holds {} path(s) jigc did not write — `.jigc/` is \
+             gitignored, so discarding the task would destroy bytes nothing else has a copy \
+             of:\n{}",
+            lines.len(),
+            foreign_listing(lines),
+        ),
+        format!(
+            "move what you need out of `.jigc/tasks/{id}/`, or delete what you do not, then \
+             re-run `jigc task discard {id}` — or, once you have confirmed they hold nothing \
+             you need, `jigc task discard {id} --force` removes the working area with them"
+        ),
+    )
+}
+
+/// The fail-closed half of [`refuse_over_foreign_bytes`], keyed to this door: the complement
+/// could not be enumerated, so the area is not removed with those bytes' existence unknown.
+fn discard_unverified_foreign_finding(id: &str, err: std::io::Error) -> Finding {
+    Finding::block(
+        DISCARD_FOREIGN_BYTES,
+        format!(
+            "cannot check task `{id}`'s working area for files jigc did not write, so \
+             discarding it could destroy bytes nothing else has a copy of: {err}"
+        ),
+        format!(
+            "make sure `.jigc/tasks/{id}/` is readable, then re-run `jigc task discard {id}` \
+             — or, once you have confirmed the task holds nothing you need, `jigc task \
+             discard {id} --force` removes the working area unchecked"
+        ),
     )
 }
 
@@ -5140,6 +5253,170 @@ fn rollback_promotions(
             && let Some((_, bytes)) = retired.iter().find(|(p, _)| p == retirement)
         {
             let _ = std::fs::write(&abs, bytes);
+        }
+    }
+}
+
+/// **Which registry row a destroying door's subject is read through**, and the noun the
+/// narration uses for that kind of area — never guessed from the path, because the two
+/// callers that would guess are the two doors that must not disagree.
+///
+/// [`Displaced`](AreaKind::Displaced) has **no registry row**: `.jigc/displaced/` is where
+/// jigc parks bytes it moved aside rather than destroy ([`displace_foreign_area`];
+/// `crate::relocate::relocate_stranded`), so its whole tree is the subject. The row
+/// deliberately **does not discriminate** a pre-image jigc parked from a foreign byte a
+/// human dropped there — both carry the identical claim, that nothing else has a copy
+/// (`completions/artifacts/M52/settle-record.md` → §8).
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AreaKind {
+    /// `.jigc/tasks/<task-id>/` — `engine::state::TASK_AREA_FILES` plus the `docs/` rule.
+    Task,
+    /// `.jigc/milestones/<milestone-id>/` — `engine::state::MILESTONE_AREA_FILES`.
+    Milestone,
+    /// `.jigc/displaced/` — every leaf under it.
+    Displaced,
+}
+
+impl AreaKind {
+    /// How a narration names this kind of area.
+    fn subject(self) -> &'static str {
+        match self {
+            AreaKind::Task | AreaKind::Milestone => "working area",
+            AreaKind::Displaced => "relocation workbench",
+        }
+    }
+}
+
+/// One area a destroying door is about to take, paired with the bytes in it **jigc did not
+/// write** — the subject the three consenting doors refuse over and narrate (M52 Increment 4
+/// / T5; `design/team-ready-state.md` → The working area's two populations).
+///
+/// The refusal's listing and the narration's listing are the same lines from the same walk,
+/// so a door cannot refuse over one set and take another — the *"a sink can be narrower than
+/// the guard that cleared it"* shape G-15 names.
+pub(crate) struct ForeignArea {
+    /// The area itself — what the narration says it is removing.
+    dir: PathBuf,
+    /// The noun for this kind of area ([`AreaKind::subject`]).
+    subject: &'static str,
+    /// The complement's entries: the absolute path (re-read after the removal, so the
+    /// narration is keyed on the outcome) and the repo-relative line every surface prints.
+    entries: Vec<(PathBuf, String)>,
+}
+
+/// **The complement of every area in `areas`**, fail-closed — the one derivation the guards,
+/// the refusals and the narrations at `jigc task discard`, `jigc milestone discard` and
+/// `jigc uninstall` all read.
+///
+/// **Shape decides membership of the subject, not just of the set.** An area that is absent,
+/// a plain file, or a **symlink** is not a working area: the sinks' `remove_dir_all` destroys
+/// nothing at such a path (a plain file at `.jigc/tasks` is `crate::setup`'s
+/// `workbench_paths` subject instead, and a symlinked area would have this walk enumerating
+/// *somebody else's* directory and refusing over bytes the door will never touch). A door
+/// must neither claim nor refuse over what it will not take.
+///
+/// **Fail-closed**, like every probe a destroying door reads: a present area that cannot be
+/// read is an `Err`, never an empty complement — "enumerated nothing" and "there is nothing"
+/// are the same empty vector to a caller about to delete, and only one of them is safe.
+///
+/// Areas whose complement is empty are dropped, so the ordinary corpus carries no rows at all.
+pub(crate) fn foreign_areas(
+    repo_root: &Path,
+    areas: &[(PathBuf, AreaKind)],
+) -> std::io::Result<Vec<ForeignArea>> {
+    let mut found = Vec::new();
+    for (dir, kind) in areas {
+        match std::fs::symlink_metadata(dir) {
+            Ok(shape) if shape.is_dir() => {}
+            Ok(_) => continue,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(err) => return Err(err),
+        }
+        let relative = match kind {
+            AreaKind::Task => state::foreign_area_paths(dir, state::WorkArea::Task)?,
+            AreaKind::Milestone => state::foreign_area_paths(dir, state::WorkArea::Milestone)?,
+            AreaKind::Displaced => displaced_leaves(dir)?,
+        };
+        if relative.is_empty() {
+            continue;
+        }
+        found.push(ForeignArea {
+            dir: dir.clone(),
+            subject: kind.subject(),
+            entries: relative
+                .into_iter()
+                .map(|rel| {
+                    let abs = dir.join(&rel);
+                    let line = render::repo_relative(repo_root, &abs);
+                    (abs, line)
+                })
+                .collect(),
+        });
+    }
+    Ok(found)
+}
+
+/// Every leaf under `.jigc/displaced/`, relative to it and sorted — the [`AreaKind::Displaced`]
+/// row's walk.
+///
+/// Leaves rather than top-level entries, because the parking home is keyed by the *unit* whose
+/// bytes were moved (`displaced/<task-id>/<relative>`), so a top-level listing would name task
+/// ids where the operator needs file paths. Shape is read with `symlink_metadata`, so a symlink
+/// is a leaf rather than a door out of the tree — the `crate::setup::workbench_paths` rule.
+fn displaced_leaves(root: &Path) -> std::io::Result<Vec<PathBuf>> {
+    let mut stack = vec![root.to_path_buf()];
+    let mut leaves = Vec::new();
+    while let Some(path) = stack.pop() {
+        if path != root && !std::fs::symlink_metadata(&path)?.is_dir() {
+            leaves.push(path.strip_prefix(root).unwrap_or(&path).to_path_buf());
+            continue;
+        }
+        for entry in std::fs::read_dir(&path)? {
+            stack.push(entry?.path());
+        }
+    }
+    leaves.sort();
+    Ok(leaves)
+}
+
+/// The repo-relative lines of every area's complement, in area order — the listing a refusal
+/// prints and the set it is refusing over.
+pub(crate) fn foreign_lines(areas: &[ForeignArea]) -> Vec<String> {
+    areas
+        .iter()
+        .flat_map(|area| area.entries.iter().map(|(_, line)| line.clone()))
+        .collect()
+}
+
+/// What a destroying door's removal would take that jigc did not write, read **before** the
+/// removal so the narration afterwards can name what it actually took — the foreign-byte
+/// counterpart of `crate::milestone::PendingLoss`, and bound by the same rule: the narration
+/// is keyed on the **outcome**, never on the intent, so a removal that failed claims nothing.
+///
+/// Best-effort, like every narration: an area that cannot be read yields no warning rather
+/// than failing a removal the guards (or `--force`) already cleared.
+pub(crate) struct PendingForeign(Vec<ForeignArea>);
+
+/// Read [`PendingForeign`] over `areas`. Call it immediately before the removal.
+pub(crate) fn pending_foreign(repo_root: &Path, areas: &[(PathBuf, AreaKind)]) -> PendingForeign {
+    PendingForeign(foreign_areas(repo_root, areas).unwrap_or_default())
+}
+
+impl PendingForeign {
+    /// Name what the removal actually took, per area and per path. Call it immediately after
+    /// the removal, on **both** its outcomes.
+    pub(crate) fn narrate_taken(&self, repo_root: &Path) {
+        for area in &self.0 {
+            // `symlink_metadata`, not `exists()`: a dangling symlink the removal left behind
+            // reads as absent through `exists()`, and the door would report bytes still in
+            // the way as taken.
+            let taken: Vec<String> = area
+                .entries
+                .iter()
+                .filter(|(abs, _)| std::fs::symlink_metadata(abs).is_err())
+                .map(|(_, line)| line.clone())
+                .collect();
+            crate::milestone::narrate_removal(repo_root, &area.dir, area.subject, &taken);
         }
     }
 }

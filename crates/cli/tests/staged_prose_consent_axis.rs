@@ -802,36 +802,536 @@ fn a_directory_named_like_a_staged_doc_is_an_identity_at_no_surface() {
          `managed`; got:\n{listed_text}",
     );
 
-    // The refusal.
+    // The refusal. Since T5 the subject boundary this arm names is *performed* by the
+    // binary: a non-file entry under `docs/` is a byte jigc did not write, so the door that
+    // answers it is the foreign-byte guard, naming the **path**, and not the staged-prose
+    // probe naming an **identity** `jigc doc show` cannot open.
     let refused = jigc(repo, home, &["task", "discard", TOP_TASK]);
     let refused_text = both_streams(&refused);
+    let as_path = format!(".jigc/tasks/{TOP_TASK}/docs/fake:thing.md");
     assert!(
         !refused.status.success(),
-        "the real staged doc still draws the consent guard; got:\n{refused_text}",
+        "the door still refuses over it; got:\n{refused_text}",
     );
     assert!(
-        refused_text.contains(&real),
-        "the control: the refusal still names the real staged doc; got:\n{refused_text}",
+        refused_text.contains("blocking · task-discard.foreign-bytes")
+            && refused_text.contains(&as_path),
+        "…under the code whose subject it really is, naming it as a path; got:\n{refused_text}",
     );
     assert!(
-        !refused_text.contains("fake:thing"),
-        "the refusal must not name an identity `jigc doc show` cannot open — its own route \
-         dead-ends there; got:\n{refused_text}",
+        !refused_text.replace(&as_path, "").contains("fake:thing"),
+        "and NOWHERE as a staged identity — the claim `jigc doc show` cannot honour and \
+         whose route dead-ends at `store.unknown-type`; got:\n{refused_text}",
     );
 
-    // The ack.
+    // The ack. The consent takes it, and the two streams keep the two claims apart: the
+    // stdout ack says what staged docs it dropped; the stderr narration says what foreign
+    // bytes it took.
     let dropped = jigc(repo, home, &["task", "discard", TOP_TASK, "--force"]);
-    let dropped_text = both_streams(&dropped);
+    let ack = String::from_utf8_lossy(&dropped.stdout).into_owned();
+    let narration = String::from_utf8_lossy(&dropped.stderr).into_owned();
     assert!(
         dropped.status.success(),
-        "the consent performs the discard; got:\n{dropped_text}",
+        "the consent performs the discard; got:\n{ack}{narration}",
     );
     assert!(
-        dropped_text.contains(&real),
-        "the control: the ack still names the staged doc it dropped; got:\n{dropped_text}",
+        ack.contains(&real),
+        "the control: the ack still names the staged doc it dropped; got:\n{ack}",
     );
     assert!(
-        !dropped_text.contains("fake:thing"),
-        "the ack must not claim it dropped staged edits to a directory; got:\n{dropped_text}",
+        !ack.contains("fake:thing"),
+        "the ack must not claim it dropped staged edits to a directory; got:\n{ack}",
     );
+    assert!(
+        narration.contains(&as_path),
+        "…and the bytes are not withheld either: the door names what it took, as a path; \
+         got:\n{narration}",
+    );
+}
+
+// ---------------------------------------------------------------------------------------
+// M52 Increment 4 / T5 — **the foreign-byte consent axis**: the same three doors, over the
+// OTHER population of a working area (`settle-record.md` → D3.2 as amended by §6/§8/§14;
+// `design/team-ready-state.md` → The working area's two populations).
+//
+// A working area holds two populations: the files jigc wrote (`engine::state`'s registry,
+// T2) and everything else — bytes an agent or a human put there, in **no commit, no index
+// and no git object at all**, since the whole tree is gitignored. Driven at `2e20ffd9`, all
+// three doors took that second population whole, at exit 0, named by nothing: `jigc task
+// discard` removed a `NOTES.md`, an `analysis/perf.txt` and a `docs/notes.txt`; `jigc
+// milestone discard` did the same across every sub-task area *and* its own milestone area;
+// and `jigc uninstall` took all of it plus everything parked under `.jigc/displaced/`.
+//
+// The arms below are the consent axis of the **staged-prose** arms above, one subject over —
+// `{refuse without --force, narrate with it}` × the three doors — plus the `displaced/` row
+// (§8) and the zero-false-fire control T2's registry earns.
+// ---------------------------------------------------------------------------------------
+
+/// The operator's own bytes: in no commit, no index, and no git object — `.jigc/` is
+/// gitignored whole, so the working area is their only copy.
+const MINE: &str = "the operator's own bytes — nothing else has a copy\n";
+
+/// Plant the done-criterion's three foreign cells in `area`: a file at the area root, one a
+/// directory deep, and one beside the staged prose under `docs/`.
+///
+/// Returns the paths **as the complement names them**: a foreign *directory* is one entry,
+/// moved and removed whole, so `analysis/perf.txt` is named by its `analysis` parent (the
+/// unit T3's displacement primitive already established). The bytes are asserted separately.
+fn plant_foreign(area: &Path) -> Vec<String> {
+    fs::create_dir_all(area.join("docs")).expect("the docs dir");
+    fs::write(area.join("NOTES.md"), MINE).expect("plant the root file");
+    fs::create_dir_all(area.join("analysis")).expect("plant the nested dir");
+    fs::write(area.join("analysis").join("perf.txt"), MINE).expect("plant the nested file");
+    fs::write(area.join("docs").join("notes.txt"), MINE).expect("plant the docs file");
+    vec![
+        "NOTES.md".to_string(),
+        "analysis".to_string(),
+        "docs/notes.txt".to_string(),
+    ]
+}
+
+/// The three planted files, by absolute path — what "every byte intact" is asserted over.
+fn planted_bytes(area: &Path) -> Vec<PathBuf> {
+    vec![
+        area.join("NOTES.md"),
+        area.join("analysis").join("perf.txt"),
+        area.join("docs").join("notes.txt"),
+    ]
+}
+
+/// Assert every planted byte is still exactly where it was, with its content.
+fn assert_intact(area: &Path, what: &str) {
+    for path in planted_bytes(area) {
+        assert_eq!(
+            fs::read_to_string(&path)
+                .unwrap_or_else(|err| panic!("{path:?} survives {what}: {err}")),
+            MINE,
+            "{what} must not touch a byte jigc did not write",
+        );
+    }
+}
+
+/// **T5 arm (j)** — the task door refuses over the bytes it did not write, names every one,
+/// and takes nothing.
+///
+/// Driven at `2e20ffd9`: exit **0**, all three destroyed, named by nothing.
+///
+/// **The foreign subject is asked BEFORE the staged-prose one** (this fixture stages
+/// `commit:<id>.md`, as every `jigc start` does). Asked second it would be inert on the
+/// dominant cell — a guard that structurally cannot fire at its own door — while asked first
+/// it costs the staged-prose refusal nothing on any state whose complement is empty, which
+/// T2 drove to be the ordinary path.
+#[test]
+fn the_task_door_refuses_over_bytes_jigc_did_not_write_and_names_every_one() {
+    let (repo, home) = workbench("foreign-task");
+    let (repo, home) = (repo.path(), home.path());
+    let area = repo.join(".jigc").join("tasks").join(TOP_TASK);
+    let planted = plant_foreign(&area);
+
+    let refused = jigc(repo, home, &["task", "discard", TOP_TASK]);
+    let text = both_streams(&refused);
+    assert!(
+        !refused.status.success(),
+        "`jigc task discard` must refuse over bytes jigc did not write; got:\n{text}",
+    );
+    assert!(
+        text.contains("blocking · task-discard.foreign-bytes"),
+        "the task door refuses under its OWN foreign-byte code; got:\n{text}",
+    );
+    for entry in &planted {
+        assert!(
+            text.contains(&format!(".jigc/tasks/{TOP_TASK}/{entry}")),
+            "the refusal names every foreign entry it would take — `{entry}` is missing \
+             from:\n{text}",
+        );
+    }
+    let routes = route_lines(&text);
+    assert_eq!(
+        routes.len(),
+        1,
+        "the refusal carries exactly one route; got:\n{text}",
+    );
+    assert!(
+        routes[0].contains(&format!("jigc task discard {TOP_TASK} --force")),
+        "and the route names this door's own consent, carrying the real id; got:\n{}",
+        routes[0],
+    );
+    assert_intact(&area, "a refusal");
+    assert!(area.is_dir(), "and the working area itself survives");
+}
+
+/// **T5 arm (k)** — `--force` is consent, never silence: the door takes the foreign bytes and
+/// names each one it took, keyed on the outcome.
+#[test]
+fn the_task_doors_force_narrates_every_foreign_path_it_took() {
+    let (repo, home) = workbench("foreign-task-force");
+    let (repo, home) = (repo.path(), home.path());
+    let area = repo.join(".jigc").join("tasks").join(TOP_TASK);
+    let planted = plant_foreign(&area);
+
+    let forced = jigc(repo, home, &["task", "discard", TOP_TASK, "--force"]);
+    let stderr = String::from_utf8_lossy(&forced.stderr).into_owned();
+    assert!(
+        forced.status.success(),
+        "the printed consent runs as printed; stdout:\n{}\nstderr:\n{stderr}",
+        String::from_utf8_lossy(&forced.stdout),
+    );
+    for entry in &planted {
+        assert!(
+            stderr.contains(&format!(".jigc/tasks/{TOP_TASK}/{entry}")),
+            "`--force` narrates every foreign path it took — `{entry}` is missing \
+             from:\n{stderr}",
+        );
+    }
+    assert!(
+        stderr.contains("not recoverable"),
+        "and says what that costs; got:\n{stderr}",
+    );
+    assert!(!area.exists(), "the consented discard really took the area");
+}
+
+/// **T5 arm (l)** — the abandon door, over **both** of its area kinds: a sub-task's working
+/// area and the milestone area itself. One refusal names both; `--force` narrates both.
+#[test]
+fn the_milestone_door_refuses_over_foreign_bytes_in_both_area_kinds() {
+    let (repo, home) = workbench("foreign-milestone");
+    let (repo, home) = (repo.path(), home.path());
+    let sub_area = repo.join(".jigc").join("tasks").join(SUB_TASK);
+    fs::create_dir_all(&sub_area).expect("the sub-task area exists from add-task");
+    let planted = plant_foreign(&sub_area);
+    let milestone_area = repo.join(".jigc").join("milestones").join(MILESTONE_ID);
+    fs::write(milestone_area.join("scratch.txt"), MINE).expect("plant in the milestone area");
+
+    let refused = jigc(repo, home, &["milestone", "discard", MILESTONE_ID]);
+    let text = both_streams(&refused);
+    assert!(
+        !refused.status.success(),
+        "`jigc milestone discard` must refuse over bytes jigc did not write; got:\n{text}",
+    );
+    assert!(
+        text.contains("blocking · milestone.foreign-bytes"),
+        "the abandon door refuses under its OWN foreign-byte code; got:\n{text}",
+    );
+    for entry in &planted {
+        assert!(
+            text.contains(&format!(".jigc/tasks/{SUB_TASK}/{entry}")),
+            "the refusal names the sub-task area's foreign entries — `{entry}` is missing \
+             from:\n{text}",
+        );
+    }
+    assert!(
+        text.contains(&format!(".jigc/milestones/{MILESTONE_ID}/scratch.txt")),
+        "…and the milestone area's own, which is a SECOND registry row and was reachable \
+         through no guard at all; got:\n{text}",
+    );
+    assert!(
+        !text.contains(TOP_TASK),
+        "and names nothing outside the milestone — this door removes no unrelated task's \
+         area, so claiming one would be a destruction it does not perform; got:\n{text}",
+    );
+    let routes = route_lines(&text);
+    assert_eq!(routes.len(), 1, "exactly one route; got:\n{text}");
+    assert!(
+        routes[0].contains(&format!("jigc milestone discard {MILESTONE_ID} --force")),
+        "carrying this door's own consent; got:\n{}",
+        routes[0],
+    );
+    assert_intact(&sub_area, "a refusal");
+    assert!(
+        milestone_area.join("scratch.txt").exists(),
+        "and the milestone area's foreign byte too",
+    );
+
+    // The consent performs this door's act, and narrates both area kinds as it takes them.
+    let forced = jigc(
+        repo,
+        home,
+        &["milestone", "discard", MILESTONE_ID, "--force"],
+    );
+    let stderr = String::from_utf8_lossy(&forced.stderr).into_owned();
+    assert!(
+        forced.status.success(),
+        "the printed consent runs as printed; stdout:\n{}\nstderr:\n{stderr}",
+        String::from_utf8_lossy(&forced.stdout),
+    );
+    for named in [
+        format!(".jigc/tasks/{SUB_TASK}/NOTES.md"),
+        format!(".jigc/milestones/{MILESTONE_ID}/scratch.txt"),
+    ] {
+        assert!(
+            stderr.contains(&named),
+            "`--force` narrates what it took in both area kinds — `{named}` is missing \
+             from:\n{stderr}",
+        );
+    }
+    assert!(!sub_area.exists(), "the consented abandon took the areas");
+}
+
+/// **T5 arm (m)** — the install door, over the same bytes. `uninstall` removes `.jigc/`
+/// whole, so its subject is every task area and every milestone area **on disk** — never a
+/// registered list, which a copied repo does not have.
+#[test]
+fn the_install_door_refuses_over_foreign_bytes_under_the_workbench() {
+    let (repo, home) = workbench("foreign-uninstall");
+    let (repo, home) = (repo.path(), home.path());
+    let area = repo.join(".jigc").join("tasks").join(TOP_TASK);
+    let planted = plant_foreign(&area);
+
+    let refused = jigc(repo, home, &["uninstall"]);
+    let text = both_streams(&refused);
+    assert!(
+        !refused.status.success(),
+        "`jigc uninstall` must refuse over bytes jigc did not write; got:\n{text}",
+    );
+    assert!(
+        text.contains("blocking · uninstall.foreign-bytes"),
+        "the install door refuses under its OWN foreign-byte code; got:\n{text}",
+    );
+    for entry in &planted {
+        assert!(
+            text.contains(&format!(".jigc/tasks/{TOP_TASK}/{entry}")),
+            "naming every foreign entry the teardown would take — `{entry}` is missing \
+             from:\n{text}",
+        );
+    }
+    let routes = route_lines(&text);
+    assert_eq!(routes.len(), 1, "exactly one route; got:\n{text}");
+    assert!(
+        routes[0].contains("jigc uninstall --force"),
+        "carrying this door's own consent; got:\n{}",
+        routes[0],
+    );
+    assert_intact(&area, "a refusal");
+    assert!(repo.join(".jigc").is_dir(), "and the install survives");
+
+    let forced = jigc(repo, home, &["uninstall", "--force"]);
+    let stderr = String::from_utf8_lossy(&forced.stderr).into_owned();
+    assert!(
+        forced.status.success(),
+        "the printed consent runs as printed; stderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains(&format!(".jigc/tasks/{TOP_TASK}/NOTES.md")),
+        "`--force` narrates what it took; got:\n{stderr}",
+    );
+    assert!(!repo.join(".jigc").exists(), "and takes the install");
+}
+
+/// **T5 arm (n)** — the `displaced/` row (§8). `.jigc/displaced/` is the parking home for
+/// bytes jigc moved **aside rather than destroy** (`relocate::relocate_stranded`, and since
+/// T3 every displacing door) — and until now `jigc uninstall` took the lot at exit 0, named
+/// by nothing, because the row sits inside `gitignore::ENTRIES` and so outside
+/// `uninstall.untracked-workbench-file`'s subject, while no other door owns it at all
+/// (`setup.rs`' `workbench_paths` said so in as many words, as a declared gap).
+///
+/// The row **does not discriminate** a pre-image jigc parked from a foreign byte — both are
+/// the same claim, that nothing else has a copy — which is the decided answer to review A3,
+/// and why clearing it is the human's own `rm` and not a new verb.
+#[test]
+fn a_non_empty_displaced_workbench_refuses_the_uninstall_and_narrates_under_force() {
+    let (repo, home) = workbench("displaced-row");
+    let (repo, home) = (repo.path(), home.path());
+    // Planted, not driven: the bytes are the same bytes either producer parks there, and
+    // the row's whole point is that it does not ask which one did.
+    let parked = repo
+        .join(".jigc")
+        .join("displaced")
+        .join("tidy-the-readme")
+        .join("NOTES.md");
+    fs::create_dir_all(parked.parent().expect("parent")).expect("the parking home");
+    fs::write(&parked, MINE).expect("park a file");
+
+    let refused = jigc(repo, home, &["uninstall"]);
+    let text = both_streams(&refused);
+    assert!(
+        !refused.status.success(),
+        "a non-empty `.jigc/displaced/` must refuse the teardown; got:\n{text}",
+    );
+    assert!(
+        text.contains("blocking · uninstall.foreign-bytes")
+            && text.contains(".jigc/displaced/tidy-the-readme/NOTES.md"),
+        "naming every entry under it; got:\n{text}",
+    );
+    let routes = route_lines(&text);
+    assert_eq!(routes.len(), 1, "exactly one route; got:\n{text}");
+    assert!(
+        routes[0].contains("rm ") && routes[0].contains("jigc uninstall --force"),
+        "the route names the human's own `rm` — jigc mints no verb that clears this row — \
+         and the consent; got:\n{}",
+        routes[0],
+    );
+    assert_eq!(
+        fs::read_to_string(&parked).expect("the parked file survives the refusal"),
+        MINE,
+    );
+
+    let forced = jigc(repo, home, &["uninstall", "--force"]);
+    let stderr = String::from_utf8_lossy(&forced.stderr).into_owned();
+    assert!(
+        forced.status.success(),
+        "the printed consent runs as printed; stderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains(".jigc/displaced/tidy-the-readme/NOTES.md"),
+        "and `--force` narrates the parked bytes it took; got:\n{stderr}",
+    );
+    assert!(!parked.exists(), "which it really did");
+}
+
+/// **T5 arm (o)** — T2's zero-false-fire control, re-driven at **all three doors**.
+///
+/// A complement guard cut one member short does not fail safe: it refuses over jigc's own
+/// file and the operator cannot get past it except with `--force`, which is the consent
+/// reflex M46 refused to train. T2 proved the complement empty over a full lifecycle; this
+/// proves the three doors that *read* it stay silent over the same state.
+#[test]
+fn no_door_fires_the_foreign_guard_over_jigcs_own_files() {
+    let (repo, home) = workbench("zero-false-fire");
+    let (repo, home) = (repo.path(), home.path());
+    // Reach the members a shorter registry would have missed — `roles.json` (the ADR create)
+    // and `renames.json` (the ordinary in-task retitle) — plus the probe snapshots.
+    let task = "record-a-decision-about-caching";
+    ok(
+        repo,
+        home,
+        &[
+            "start",
+            "--workflow",
+            "record-decision",
+            "record a decision about caching",
+        ],
+        "jigc start",
+    );
+    ok(
+        repo,
+        home,
+        &[
+            "doc",
+            "create",
+            "adr",
+            "--title",
+            "Cache the thing",
+            "--task",
+            task,
+        ],
+        "jigc doc create",
+    );
+    ok(
+        repo,
+        home,
+        &[
+            "doc",
+            "rename",
+            "adr:cache-the-thing",
+            "--to",
+            "Cache the other thing",
+            "--task",
+            task,
+        ],
+        "jigc doc rename",
+    );
+    jigc(repo, home, &["task", "validate", task]);
+    let area = repo.join(".jigc").join("tasks").join(task);
+    let on_disk: Vec<String> = fs::read_dir(&area)
+        .expect("read the area")
+        .map(|e| e.expect("entry").file_name().to_string_lossy().into_owned())
+        .collect();
+    assert!(
+        on_disk.contains(&"roles.json".to_string())
+            && on_disk.contains(&"renames.json".to_string()),
+        "the control must actually reach `roles.json` and `renames.json`, else it proves \
+         nothing; the area holds: {on_disk:?}",
+    );
+
+    for (what, argv) in [
+        ("task discard", vec!["task", "discard", task]),
+        (
+            "milestone discard",
+            vec!["milestone", "discard", MILESTONE_ID],
+        ),
+        ("uninstall", vec!["uninstall"]),
+    ] {
+        let out = jigc(repo, home, &argv);
+        let text = both_streams(&out);
+        assert!(
+            !text.contains("foreign-bytes"),
+            "`jigc {what}` must not call one of jigc's own files foreign — the area holds \
+             {on_disk:?}; got:\n{text}",
+        );
+    }
+}
+
+/// **T5 arm (p)** — the three codes **log the identity they print**.
+///
+/// A door refusal joins neither `engine::result::CHECK_INVENTORY` nor the error-code
+/// registry (it is not a probe result and not a commit-phase rejection), so the only place
+/// it becomes legible to a driver or a trial's log analysis is the invocation record — and
+/// the carrier that makes that work (`render::BlockedFinding`) is something a door has to
+/// actually use. Driven here rather than assumed, for all three doors at once, alongside the
+/// route-floor unit each refusal already carries.
+#[test]
+fn each_foreign_byte_refusal_logs_the_code_it_printed() {
+    let (repo, home) = workbench("foreign-log");
+    let (repo, home) = (repo.path(), home.path());
+    ok(
+        repo,
+        home,
+        &["config", "set", "invocation-log", "true"],
+        "config set invocation-log true",
+    );
+    let sub_area = repo.join(".jigc").join("tasks").join(SUB_TASK);
+    fs::create_dir_all(&sub_area).expect("the sub-task area");
+    plant_foreign(&sub_area);
+    plant_foreign(&repo.join(".jigc").join("tasks").join(TOP_TASK));
+
+    let log = repo.join(".jigc").join("logs").join("invocations.jsonl");
+    for (code, argv) in [
+        (
+            "task-discard.foreign-bytes",
+            vec!["task", "discard", SUB_TASK],
+        ),
+        (
+            "milestone.foreign-bytes",
+            vec!["milestone", "discard", MILESTONE_ID],
+        ),
+        ("uninstall.foreign-bytes", vec!["uninstall"]),
+    ] {
+        let before = fs::read_to_string(&log).unwrap_or_default().lines().count();
+        let out = jigc(repo, home, &argv);
+        let text = both_streams(&out);
+        assert!(
+            !out.status.success() && text.contains(code),
+            "`jigc {}` must refuse under `{code}`; got:\n{text}",
+            argv.join(" "),
+        );
+        assert_eq!(
+            route_lines(&text).len(),
+            1,
+            "…carrying exactly one route (the route floor's unit); got:\n{text}",
+        );
+        let records: Vec<serde_json::Value> = fs::read_to_string(&log)
+            .expect("the invocation log")
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| serde_json::from_str(line).expect("each record is JSON"))
+            .collect();
+        assert_eq!(
+            records.len(),
+            before + 1,
+            "`jigc {}` appends exactly one record",
+            argv.join(" "),
+        );
+        let codes: Vec<&str> = records.last().expect("one record")["finding_codes"]
+            .as_array()
+            .expect("finding_codes is an array")
+            .iter()
+            .map(|value| value.as_str().expect("a code is a string"))
+            .collect();
+        assert!(
+            codes.contains(&code),
+            "a refusal that names itself on the surface must name itself in the log — \
+             `jigc {}` printed `{code}` and logged {codes:?}",
+            argv.join(" "),
+        );
+    }
 }

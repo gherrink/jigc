@@ -115,6 +115,17 @@ fn instance_filename(type_name: &str, slug: &str) -> String {
 /// fourteenth writer reddens rather than silently joining the complement.
 ///
 /// **The `docs/` member is a tree, not a file** — its own rule is [`TASK_DOCS_FILES`].
+///
+/// **`record-commit-msg.txt` is on BOTH rows** (M52 Increment 4 / T5). It reads as a
+/// milestone-area name and it is one — and `jigc task discard <sub-task-id>` also writes it
+/// into the **task** area, because a sub-task discard runs its own record-only commit and
+/// hands that door's `msg_dir` the task dir. On the ordinary path it is gone a moment later
+/// with the area; on a **hook-rejected** discard the area survives *with the file in it*, and
+/// that is a state jigc's own survivable frame promises is re-runnable. Missing from this row
+/// it made the re-run refuse over jigc's own file — G-13's exact failure mode, found by
+/// driving (`flow47_acceptance::every_committing_door_leaves_the_repo_recoverable`) rather
+/// than by the source fence, which counts names against the **union** of the two rows and so
+/// cannot see a member on the wrong one.
 pub const TASK_AREA_FILES: &[&str] = &[
     BASE_PIN_FILE,
     DOCS_DIR,
@@ -126,6 +137,7 @@ pub const TASK_AREA_FILES: &[&str] = &[
     SOURCE_PATH_FILE,
     STAGED_SNAPSHOT_FILE,
     WORKFLOW_FILE,
+    crate::milestone::RECORD_COMMIT_MSG_FILE,
     crate::validate::BASE_SNAPSHOT_FILE,
     crate::validate::SNAPSHOT_FILE,
 ];

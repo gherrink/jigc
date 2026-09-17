@@ -102,11 +102,13 @@ const DOCS_TREE_JOINS: &[(&str, usize, &str)] = &[
 /// the impossible in the other direction: these are the names the registry excludes.
 const COMPLEMENT_JOINS: &[(&str, usize, &str)] = &[(
     "crates/cli/src/task.rs",
-    1,
+    2,
     "`displace_foreign_area`'s `<area>.join(<complement entry>)` — the source of the move \
-     that keeps a foreign byte out of the teardown; its name comes from \
-     `engine::state::foreign_area_paths`, so it is a registry member's complement by \
-     construction",
+     that keeps a foreign byte out of the teardown — and `foreign_areas`' own \
+     `<area>.join(<complement entry>)`, which absolutizes the same entries so the three \
+     consenting doors can name them and re-read them after the removal (M52 Increment 4 / \
+     T5); both names come from `engine::state::foreign_area_paths`, so they are registry \
+     members' complement by construction",
 )];
 
 /// Every production `<…dir>.join(<name>)` site whose receiver is **not** a working area,
@@ -173,9 +175,12 @@ const NON_AREA_JOINS: &[(&str, usize, &str)] = &[
     ),
     (
         "crates/cli/src/setup.rs",
-        4,
+        6,
         "two `pre-commit` hook paths off the hooks dir, the `doc-code` probe binary off \
-         the bin dir, and `packs.yaml` off the config dir",
+         the bin dir, `packs.yaml` off the config dir, and — since M52 Increment 4 / T5 — \
+         the two receivers `workbench_foreign_areas` builds its subject FROM: \
+         `.jigc/<tasks|milestones>` and `.jigc/displaced`, which are the directories that \
+         *hold* working areas (and the parking home) rather than working areas themselves",
     ),
     ("crates/cli/src/start.rs", 1, "`.git` — the repo-root probe"),
     (

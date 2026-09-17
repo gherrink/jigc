@@ -182,18 +182,23 @@ pub enum MilestoneCommand {
     /// at the source's path), whose contents no git here vouches for, committed or
     /// not. Refuses with `milestone.staged-prose` when a sub-task's working area under
     /// `.jigc/tasks/` stages a doc no commit has a copy of — a subject no worktree
-    /// contains, so the worktree probe reads clean over it. Get that content out and
-    /// re-run, or pass `--force`, the single consent for both guards.
+    /// contains, so the worktree probe reads clean over it. Refuses with
+    /// `milestone.foreign-bytes` when any of those areas, or `.jigc/milestones/<id>/`
+    /// itself, holds a file jigc did not write: the whole tree is gitignored, so nothing
+    /// else has a copy of it either. Get that content out and re-run, or pass `--force`,
+    /// the single consent for all three guards.
     Discard {
         /// The milestone id (the slug under `.jigc/milestones/`).
         milestone_id: String,
         /// Settle the record and tear the workbench down even when a sub-task worktree
-        /// path holds content, or a sub-task's working area stages a doc no commit has
-        /// a copy of — the explicit consent for both guards, and what it costs differs
-        /// by path: a worktree this repository has registered is removed with everything
-        /// uncommitted in it, a path registered nowhere is left orphaned on disk for you
-        /// to deal with, and a staged doc is gone for good. Inert when both guards are
-        /// already clean; it never buys silence — the loss is narrated either way.
+        /// path holds content, a sub-task's working area stages a doc no commit has a
+        /// copy of, or the workbench holds files jigc did not write — the explicit
+        /// consent for all three guards, and what it costs differs by path: a worktree
+        /// this repository has registered is removed with everything uncommitted in it,
+        /// a path registered nowhere is left orphaned on disk for you to deal with, and
+        /// a staged doc or a foreign file under `.jigc/` is gone for good. Inert when
+        /// the three guards are already clean; it never buys silence — the loss is
+        /// narrated either way.
         #[arg(long)]
         force: bool,
     },
@@ -3285,10 +3290,15 @@ fn run_discard(cwd: &Path, milestone_id: &str, force: bool) -> Result<(String, S
                 &held,
             )));
         }
-        // (2b) The staged-prose guard — the abandon's OTHER uncommitted subject
-        // (M50 completion audit, finding 4). Second, so the worktree refusal keeps its
-        // precedence where both hold, and inside the same `!force` block, because
-        // `--force` is the single consent for both arms of this door.
+        // (2b) The foreign-byte guard — the abandon's THIRD uncommitted subject, over both
+        // of this door's area kinds (M52 Increment 4 / T5). Ahead of the staged-prose guard
+        // for the reason `crate::task::refuse_over_foreign_bytes` states: a re-entered
+        // sub-task stages `commit:<sub-id>.md`, so asked second this guard would be inert on
+        // that cell. Behind the worktree guard, which keeps the precedence it was given.
+        refuse_over_foreign_bytes(&jigc_home, &jigc_root, milestone_id, &dir, &list)?;
+        // (2c) The staged-prose guard — the abandon's OTHER uncommitted subject
+        // (M50 completion audit, finding 4). Inside the same `!force` block, because
+        // `--force` is the single consent for every arm of this door.
         refuse_over_subtask_staged_prose(&jigc_home, milestone_id, &list)?;
     }
 
@@ -3336,6 +3346,13 @@ fn run_discard(cwd: &Path, milestone_id: &str, force: bool) -> Result<(String, S
         &format!("discarding milestone:{milestone_id}"),
         Some(&list.enumerate()),
     );
+    // The foreign population of the same areas, read before the removals and named after
+    // them ([`crate::task::PendingForeign`], the outcome-keyed rule). Un-forced it is empty
+    // by construction — guard (2b) returned — so this costs the ordinary abandon nothing.
+    let foreign = crate::task::pending_foreign(
+        &jigc_home,
+        &discard_foreign_subject(&jigc_root, &dir, &list),
+    );
     // The complement goes with the area here: this door's disposition over bytes jigc did
     // not write is a refusal with `--force` as the single consent, and it lives at the door
     // (M52 Increment 4 / T5), never in the sink — `SubtaskComplement`.
@@ -3343,6 +3360,7 @@ fn run_discard(cwd: &Path, milestone_id: &str, force: bool) -> Result<(String, S
     prose.narrate_taken(&jigc_home);
     remove_worktrees(&repo_root, &jigc_home, &list);
     remove_milestone_area(&repo_root, &dir);
+    foreign.narrate_taken(&jigc_home);
 
     Ok((
         format!(
@@ -3351,6 +3369,107 @@ fn run_discard(cwd: &Path, milestone_id: &str, force: bool) -> Result<(String, S
         ),
         hook_output,
     ))
+}
+
+/// [`DISCARD_DOOR`]'s **third** blocking identity — the foreign-byte arm (M52 Increment 4 /
+/// T5). Its own code, for the reason the staged-prose split already states: a shared identity
+/// would put the wrong door's re-run in front of the operator
+/// (`design/surface-contract.md` → law 1).
+///
+/// Like its two siblings it is a door refusal, so it joins neither
+/// `engine::result::CHECK_INVENTORY` nor [`crate::invocation_log::ERROR_CODE_REGISTRY`], and
+/// like them it is logged through the `render::BlockedFinding` carrier.
+const DISCARD_FOREIGN_BYTES_CODE: &str = "milestone.foreign-bytes";
+
+/// **Exactly what this door's teardown removes**, in the order it removes it: each sub-task's
+/// working area ([`cleanup_subtask_areas`]' own set, the milestone's id-sorted task list) and
+/// then the milestone area itself ([`remove_milestone_area`]).
+///
+/// One derivation for the guard, the refusal and the narration, so the door cannot refuse over
+/// a path its sink never reaches (G-15's *"a sink can be narrower than the guard that cleared
+/// it"*). The fan-out worktrees are **not** here: they are `probe_leftover`'s subject, answered
+/// through git under M48's `--ignored` adjudication (`settle-record.md` → §6), and a second
+/// classifier over them would be two doors answering one question.
+fn discard_foreign_subject(
+    jigc_root: &Path,
+    dir: &Path,
+    list: &engine::milestone::TaskList,
+) -> Vec<(PathBuf, crate::task::AreaKind)> {
+    let tasks_root = jigc_root.join("tasks");
+    let mut areas: Vec<(PathBuf, crate::task::AreaKind)> = list
+        .enumerate()
+        .into_iter()
+        .map(|sub_id| (tasks_root.join(sub_id), crate::task::AreaKind::Task))
+        .collect();
+    areas.push((dir.to_path_buf(), crate::task::AreaKind::Milestone));
+    areas
+}
+
+/// The `jigc milestone discard` door's guard over every byte jigc did not write in the
+/// workbench it is about to tear down — the third of the three consenting doors.
+///
+/// **Both area kinds.** The milestone area is a second registry row
+/// (`engine::state::MILESTONE_AREA_FILES`) and was reachable through no guard at all: driven
+/// at `2e20ffd9` a file beside `tasks.json` died with the abandon at exit 0, named by nothing.
+fn refuse_over_foreign_bytes(
+    jigc_home: &Path,
+    jigc_root: &Path,
+    milestone_id: &str,
+    dir: &Path,
+    list: &engine::milestone::TaskList,
+) -> Result<()> {
+    let subject = discard_foreign_subject(jigc_root, dir, list);
+    let found = crate::task::foreign_areas(jigc_home, &subject)
+        .map_err(|err| finding_to_err(unverified_foreign_finding(milestone_id, err)))?;
+    let lines = crate::task::foreign_lines(&found);
+    if lines.is_empty() {
+        return Ok(());
+    }
+    Err(finding_to_err(foreign_bytes_finding(milestone_id, &lines)))
+}
+
+/// The abandon door's foreign-byte refusal: a blocking, route-bearing finding naming the
+/// milestone and every path across its workbench that jigc did not write.
+///
+/// The route is this door's own — one consent, carrying the real milestone id — and it states
+/// the fact that makes the paths worth stopping for rather than a claim about their content:
+/// `.jigc/` is gitignored whole, so the workbench is their only copy.
+fn foreign_bytes_finding(milestone_id: &str, lines: &[String]) -> Finding {
+    Finding::block(
+        DISCARD_FOREIGN_BYTES_CODE,
+        format!(
+            "milestone:{milestone_id}: its workbench holds {} path(s) jigc did not write — \
+             `.jigc/` is gitignored, so abandoning the milestone would destroy bytes nothing \
+             else has a copy of:\n{}",
+            lines.len(),
+            crate::task::foreign_listing(lines),
+        ),
+        format!(
+            "move what you need out of the paths above, or delete what you do not, then \
+             re-run `jigc milestone discard {milestone_id}` — or, once you have confirmed \
+             they hold nothing you need, `jigc milestone discard {milestone_id} --force` \
+             settles the record and tears the workbench down with them"
+        ),
+    )
+}
+
+/// The fail-closed half of [`refuse_over_foreign_bytes`], keyed to this door: the complement
+/// could not be enumerated, so the workbench is not torn down with those bytes' existence
+/// unknown.
+fn unverified_foreign_finding(milestone_id: &str, err: std::io::Error) -> Finding {
+    Finding::block(
+        DISCARD_FOREIGN_BYTES_CODE,
+        format!(
+            "cannot check milestone:{milestone_id}'s workbench for files jigc did not write, \
+             so abandoning it could destroy bytes nothing else has a copy of: {err}"
+        ),
+        format!(
+            "make sure `.jigc/tasks/` and `.jigc/milestones/{milestone_id}/` are readable, \
+             then re-run `jigc milestone discard {milestone_id}` — or, once you have \
+             confirmed the milestone holds nothing you need, `jigc milestone discard \
+             {milestone_id} --force` tears the workbench down unchecked"
+        ),
+    )
 }
 
 /// [`DISCARD_DOOR`]'s **second** blocking identity — the staged-prose arm, distinct from
@@ -5591,11 +5710,14 @@ impl PendingLoss {
 /// from M47 Inc 3 while `jigc milestone provision --force` cleared a leftover in silence and
 /// `jigc uninstall --force` removed `.jigc/` reporting only `- removed .jigc/` — and three
 /// call sites of one rule drift, so a fourth door would have arrived with a fourth phrasing.
-/// Its callers reach it through [`PendingLoss::narrate_taken`], never directly, because
-/// *which* lines a door may print is the outcome question that pair answers.
+/// Its callers reach it through [`PendingLoss::narrate_taken`] — or, at the **foreign-byte**
+/// subject, through `crate::task::PendingForeign::narrate_taken` — never directly, because
+/// *which* lines a door may print is the outcome question those pairs answer. The `subject`
+/// noun travels with the caller for the same reason the pairs do: what a path *is* is the
+/// classifier's answer, not this renderer's guess.
 ///
 /// An empty `taken` prints nothing: the removal took none of what it was aimed at.
-fn narrate_removal(repo_root: &Path, path: &Path, subject: &str, taken: &[String]) {
+pub(crate) fn narrate_removal(repo_root: &Path, path: &Path, subject: &str, taken: &[String]) {
     if taken.is_empty() {
         return;
     }

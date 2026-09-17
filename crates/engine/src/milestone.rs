@@ -113,6 +113,10 @@ pub const TASKS_FILE: &str = "tasks.json";
 /// It is declared here rather than beside the CLI door that writes it because it is a
 /// member of [`crate::state::MILESTONE_AREA_FILES`], and a registry whose members are
 /// declared in two crates is a registry one crate can be wrong about (M52 Increment 4 / T2).
+///
+/// It is a member of [`crate::state::TASK_AREA_FILES`] **too**: `jigc task discard` over a
+/// milestone sub-task writes it into that sub-task's *task* area, and a hook-rejected discard
+/// leaves it there (M52 Increment 4 / T5).
 pub const RECORD_COMMIT_MSG_FILE: &str = "record-commit-msg.txt";
 
 /// The `milestone-record` doctype's **header (front-matter) section id** — the
