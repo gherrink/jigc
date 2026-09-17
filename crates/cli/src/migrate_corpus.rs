@@ -302,6 +302,13 @@ pub fn run(cwd: &Path, format: Format, options: Options) -> Outcome {
             &err,
             &crate::task::RejectionFrame {
                 code: crate::invocation_log::ERROR_MIGRATE_CORPUS_REJECTED,
+                // The door's own verb: this run's subject is the **whole corpus**, which jigc
+                // has no address for, and at most one refusal exists per invocation — so the
+                // key is unique per instance with the verb as its target, on the
+                // `create.*` / `pack-probe-integrity` precedent (a bare declared identifier,
+                // never a doc URI). Declared at
+                // `design/command-output-contract.md` → the `*.commit-rejected` row.
+                target: "migrate-corpus".to_string(),
                 survived: "nothing was committed — the migrated bytes are written and staged, \
                            and the corpus is still recorded as unmigrated"
                     .to_string(),
@@ -316,6 +323,9 @@ pub fn run(cwd: &Path, format: Format, options: Options) -> Outcome {
                 ),
                 rerun: "jigc migrate-corpus".to_string(),
             },
+            // `commit_migration` runs no shared-executor worktree rollback, so this door
+            // carries no conflicts to fold.
+            &[],
         ),
     }
 }

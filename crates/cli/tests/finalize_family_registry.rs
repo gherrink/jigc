@@ -16,8 +16,7 @@
 //! > constructor mints it as a `Finding` whose code lies in the `finalize.` namespace.**
 //!
 //! That predicate is what the two published numbers disagreed about, silently. Under it,
-//! `finalize.commit-rejected` is not a member (an `anyhow` error identity in the invocation log,
-//! which projects no `(code, target)` key), `finalize.fan-out` is not one (a cascade knob key),
+//! `finalize.fan-out` is not a member (a cascade knob key),
 //! `finalize.left-out` is not one (a declared contract identifier the M42 settle deliberately
 //! left unminted) — and two things no count had right in either direction:
 //!
@@ -53,7 +52,13 @@
 //! comments and top-level `#[cfg(test)]` items (every one in this tree is at column 0), and it
 //! reads `code` **string literals** — a member built from a non-literal code would be invisible
 //! to it, and a non-vacuity floor over the constructors examined is what keeps a silent lexer
-//! regression from reading as an all-clear. (b) The count fence covers the phrases the family is
+//! regression from reading as an all-clear. **M52 Increment 1 / T1 met that bound rather than
+//! ignoring it**: `finalize.commit-rejected` moved out of `FINALIZE_NON_MEMBERS` when a reject
+//! that carries a finding took the findings arm, and its producer is one seam
+//! (`cli::render::commit_rejection_finding`) minting whichever code its caller's
+//! `COMMITTING_DOORS` row names — invisible to a literal scan. Arm 1 therefore completes the
+//! derived set from **that registry**, not from an exception list: a door added there whose
+//! identity is in this namespace grows the expected set and reddens the table. (b) The count fence covers the phrases the family is
 //! **named** by; a retired numeral quoted inside a sentence that says it was wrong (the design
 //! doc's note under the sub-table is exactly that) is deliberately not fenced — the record of the
 //! error is the reason the rule is credible. (c) `DECISIONS.md` and `completions/` are outside
@@ -237,7 +242,25 @@ fn scan_producers() -> (BTreeSet<(String, String)>, usize) {
 /// **Arm 1 — the enumeration is derived, not declared.**
 #[test]
 fn the_registry_equals_the_production_producer_set() {
-    let (scanned, examined) = scan_producers();
+    let (mut scanned, examined) = scan_producers();
+
+    // **The second producer *shape*, and why it is derived here rather than scanned (M52
+    // Increment 1 / T1).** Every member above is minted by a constructor carrying its code as
+    // a **string literal**, which is what the lexer reads. The committing doors' rejections
+    // are not: one seam (`cli::render::commit_rejection_finding`) mints them and the code
+    // arrives as a parameter, from the door's own
+    // [`COMMITTING_DOORS`](cli::invocation_log::COMMITTING_DOORS) row. That is exactly the
+    // declared bound (b) in this module's header — a member built from a non-literal code is
+    // invisible to the scan — so the set is completed from the **registry that decides
+    // membership** instead of from a hand-written exception: every `COMMITTING_DOORS` member
+    // whose identity lies in this namespace is minted as a `Finding` by that one seam, so an
+    // eleventh door added there grows this set and reddens the registry, which is the property
+    // the scan buys for the literal shape.
+    for door in cli::invocation_log::COMMITTING_DOORS {
+        if door.error_code.starts_with(NAMESPACE) {
+            scanned.insert((door.error_code.to_string(), "cli::render".to_string()));
+        }
+    }
 
     // A silent lexer regression would empty `scanned` and read as agreement with an empty
     // registry; the floor makes that impossible to mistake for a clean pass.

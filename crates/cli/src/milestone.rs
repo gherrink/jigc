@@ -272,7 +272,7 @@ impl MilestoneCommand {
                 milestone_id,
                 spec_addr,
                 workflow,
-            } => run_add_from_spec(cwd, &milestone_id, &spec_addr, &workflow),
+            } => run_add_from_spec(cwd, format, &milestone_id, &spec_addr, &workflow),
             MilestoneCommand::ListTasks { milestone_id } => {
                 run_list_tasks(cwd, &milestone_id).map(|summary| (summary, String::new()))
             }
@@ -307,7 +307,7 @@ impl MilestoneCommand {
                 // A record-only door: a hook rejection is framed with what survived + this
                 // door's own re-run, and names itself in the log. Every other failure keeps
                 // the plain operational-error envelope.
-                Some(frame) => crate::task::surface_commit_rejection(format, &err, frame),
+                Some(frame) => crate::task::surface_commit_rejection(format, &err, frame, &[]),
                 // A read-only verb — it runs no commit, so no `CommitRejected` can reach here.
                 None => crate::invocation_log::operational_failure(format, &err),
             },
@@ -378,9 +378,10 @@ impl MilestoneCommand {
     /// verbatim rather than merely recognizable.
     fn rejection_frame(&self) -> Option<crate::task::RejectionFrame> {
         use crate::task::shell_token;
-        let (code, survived, rerun) = match self {
+        let (code, target, survived, rerun) = match self {
             MilestoneCommand::Create { title } => (
                 crate::invocation_log::ERROR_MILESTONE_CREATE_REJECTED,
+                format!("milestone:{}", engine::milestone::mint_id(title)),
                 format!(
                     "nothing was committed — the record write and the milestone workbench were \
                      both rolled back, so nothing of milestone:{} survives",
@@ -394,6 +395,7 @@ impl MilestoneCommand {
                 workflow,
             } => (
                 crate::invocation_log::ERROR_MILESTONE_ADD_TASK_REJECTED,
+                format!("milestone:{milestone_id}"),
                 format!(
                     "nothing was committed — the record append and the sub-task mint were both \
                      rolled back, so milestone:{milestone_id} is unchanged"
@@ -411,6 +413,7 @@ impl MilestoneCommand {
                 workflow,
             } => (
                 crate::invocation_log::ERROR_MILESTONE_ADD_FROM_SPEC_REJECTED,
+                format!("milestone:{milestone_id}"),
                 // NOT "the milestone is unchanged": seeding is resumable (M47 Inc 2 T3), so a
                 // rejection at the k-th criterion leaves the k−1 already-landed record commits
                 // as history — only the refused append and the mints it never recorded are
@@ -435,6 +438,7 @@ impl MilestoneCommand {
                 force,
             } => (
                 crate::invocation_log::ERROR_MILESTONE_DISCARD_REJECTED,
+                format!("milestone:{milestone_id}"),
                 format!(
                     "nothing was committed — milestone:{milestone_id}'s record is still at its \
                      pre-discard state and its workbench is untouched"
@@ -453,6 +457,9 @@ impl MilestoneCommand {
         };
         Some(crate::task::RejectionFrame {
             code,
+            // The work-unit ref — the form the contract's `*.commit-rejected` row declares for
+            // a door whose subject is a work unit (M52 Increment 1 / T1).
+            target,
             survived,
             // Each of the four clauses describes what `commit_record_transaction`'s rollback
             // leaves behind, which is the same state on both cells of the axis.
@@ -1390,6 +1397,7 @@ fn append_and_commit_record(
 /// (`design/write-commands.md` → Minting a milestone).
 fn run_add_from_spec(
     cwd: &Path,
+    format: crate::cli::Format,
     milestone_id: &str,
     spec_addr: &str,
     workflow: &str,
@@ -1508,6 +1516,7 @@ fn run_add_from_spec(
                     // names exactly what the record names" — every mint from here on goes.
                     unwind_unrecorded_seeds(&jigc_root, milestone_id, &seeded.added[landed..]);
                     print_resume_route(
+                        format,
                         milestone_id,
                         spec_addr,
                         workflow,
@@ -1592,6 +1601,7 @@ fn unwind_unrecorded_seeds(
 /// The hook-rejection channel itself stays **verbatim** (`design/finalize.md` → the M40
 /// refinement 3); this is a note *beside* it, never a rewrite of it.
 fn print_resume_route(
+    format: crate::cli::Format,
     milestone_id: &str,
     spec_addr: &str,
     workflow: &str,
@@ -1613,6 +1623,20 @@ fn print_resume_route(
         argv,
         " — already-seeded criteria are skipped, not re-minted.",
     );
+    // **The stream rule** (M52 Increment 1 / T1; `design/command-output-contract.md` → Stream
+    // discipline): these two notes print *beside* the refusal, and on a reject the refusal's
+    // document owns stderr — so under `--format json` they are withheld rather than emitted
+    // ahead of it, which is what stopped that stream parsing at all.
+    //
+    // **Withheld, not lost, and the carrier is named.** The rule they specialize is already in
+    // the frame's own clause the document carries (*"any sub-task this run already recorded
+    // stayed committed, and the re-run seeds only the remainder"*), and the exact counts are a
+    // fact about the **committed record**, which is the source of truth for what landed and is
+    // read back with `jigc milestone list-tasks <id>` — not a number only this print knew. The
+    // re-run the second note names is the same argv the frame's route carries.
+    if format == crate::cli::Format::Json {
+        return;
+    }
     eprintln!(
         "note: {landed} of {total} newly seeded sub-task(s) landed in the record; the {} \
          un-recorded mint(s) were unwound, so the task list names exactly what the record does.",
@@ -4305,21 +4329,20 @@ fn run_milestone_finalize(
                 // A rejected chain names ITSELF in the invocation log — the `squash: false`
                 // arm's own identity, not the task door's (M47 Inc 3 T7) — and states what
                 // the abort above leaves behind, while git's stderr stays verbatim.
-                Ok(crate::task::carry_rollback_conflicts(
-                    crate::task::surface_commit_rejection(
-                        format,
-                        &err,
-                        &crate::task::RejectionFrame {
-                            code: crate::invocation_log::ERROR_MILESTONE_CHAIN_REJECTED,
-                            survived: format!(
-                                "milestone:{milestone_id} is intact — nothing was committed, \
-                                 HEAD is at its pre-finalize commit, and every provisioned \
-                                 sub-task worktree still holds its staged code"
-                            ),
-                            survived_non_hook: None,
-                            rerun: milestone_finalize_rerun(milestone_id, carry_staged),
-                        },
-                    ),
+                Ok(crate::task::surface_commit_rejection(
+                    format,
+                    &err,
+                    &crate::task::RejectionFrame {
+                        code: crate::invocation_log::ERROR_MILESTONE_CHAIN_REJECTED,
+                        target: format!("milestone:{milestone_id}"),
+                        survived: format!(
+                            "milestone:{milestone_id} is intact — nothing was committed, \
+                             HEAD is at its pre-finalize commit, and every provisioned \
+                             sub-task worktree still holds its staged code"
+                        ),
+                        survived_non_hook: None,
+                        rerun: milestone_finalize_rerun(milestone_id, carry_staged),
+                    },
                     &rollback_conflicts,
                 ))
             }
@@ -4391,21 +4414,20 @@ fn run_milestone_finalize(
             // inlined here so the landed arm can print the manifest. The executor already
             // rolled back its promoted-doc copies and the record flip's guard restores the
             // record, so the milestone is left exactly as the boundary found it.
-            Err(err) => Ok(crate::task::carry_rollback_conflicts(
-                crate::task::surface_commit_rejection(
-                    format,
-                    &err,
-                    &crate::task::RejectionFrame {
-                        code: crate::invocation_log::ERROR_MILESTONE_FINALIZE_REJECTED,
-                        survived: format!(
-                            "milestone:{milestone_id} is intact — nothing was committed, the \
-                             merged docs were rolled back, and every provisioned sub-task \
-                             worktree still holds its staged code"
-                        ),
-                        survived_non_hook: None,
-                        rerun: milestone_finalize_rerun(milestone_id, carry_staged),
-                    },
-                ),
+            Err(err) => Ok(crate::task::surface_commit_rejection(
+                format,
+                &err,
+                &crate::task::RejectionFrame {
+                    code: crate::invocation_log::ERROR_MILESTONE_FINALIZE_REJECTED,
+                    target: format!("milestone:{milestone_id}"),
+                    survived: format!(
+                        "milestone:{milestone_id} is intact — nothing was committed, the \
+                         merged docs were rolled back, and every provisioned sub-task \
+                         worktree still holds its staged code"
+                    ),
+                    survived_non_hook: None,
+                    rerun: milestone_finalize_rerun(milestone_id, carry_staged),
+                },
                 &rollback_conflicts,
             )),
         }

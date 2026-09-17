@@ -16,7 +16,7 @@ use crate::milestone::MilestoneCreated;
 use crate::setup::{InstallCommit, SetupSummary, UninstallSummary};
 use crate::start::Composition;
 use crate::task::TaskListRow;
-use engine::finding::{Finding, Findings, Route, Severity};
+use engine::finding::{Finding, Findings, Location, Route, Severity};
 use engine::introspect::{DefinitionKind, Description};
 use engine::milestone::JoinOutcome;
 use engine::result::{
@@ -1325,6 +1325,13 @@ impl FinalizeSubject {
 /// `crates/cli/tests/finalize_family_registry.rs` holds it to the predicate above by scanning
 /// production source — so a new producer that does not join this table reddens, wherever it lives.
 ///
+/// **The predicate, not the prose, decides — and it moved a member at M52.**
+/// `finalize.commit-rejected` was enumerated in [`FINALIZE_NON_MEMBERS`] on the reason *"an
+/// `anyhow` path, never a `Finding`"*; M52 Increment 1 / T1 routes a reject that carries a
+/// finding onto the findings envelope, so a production constructor now mints it as one and it
+/// is a member here. Nothing about the log changed: the same string is still the door's
+/// route-exempt error identity in [`crate::invocation_log::ERROR_CODE_REGISTRY`].
+///
 /// The M49 sweep the predicate found, which no count included: **`finalize.milestone-sub-task`**
 /// lives in `engine::milestone`, in no doc row and inside no numeral — the third crate-or-file the
 /// file-scoped census did not think to look in. And the contract's sub-table carried a row for
@@ -1359,6 +1366,13 @@ pub const FINALIZE_FAMILY: &[FinalizeCode] = &[
         subject: FinalizeSubject::FilePath,
         subject_note: "the pre-task staged file (add, modify or deletion) the whole-index \
                        commit would silently absorb — one finding per carried path",
+    },
+    FinalizeCode {
+        code: "finalize.commit-rejected",
+        producer: "cli::render",
+        subject: FinalizeSubject::WorkUnit,
+        subject_note: "the work unit whose commit a hook — or git itself — refused; one \
+                       refusal per run, so the work-unit ref alone keys it",
     },
     FinalizeCode {
         code: "finalize.empty-commit",
@@ -1449,19 +1463,16 @@ pub const FINALIZE_FAMILY: &[FinalizeCode] = &[
 
 /// The identifiers in the `finalize.` namespace that are **not** family members, each with the
 /// reason it is not one. Without this list the predicate reads as a namespace — and a namespace
-/// is exactly what let a knob key, an error identity and a declared-but-unminted contract
-/// identifier be counted as codes (the M49 Increment 8 lesson: *an exemption is an enumeration,
-/// not a namespace prefix*).
+/// is exactly what let a knob key and a declared-but-unminted contract identifier be counted as
+/// codes (the M49 Increment 8 lesson: *an exemption is an enumeration, not a namespace prefix*).
 ///
 /// A member of this list that ever gains a production `Finding` producer must move into
-/// [`FINALIZE_FAMILY`]; the registry suite asserts that in both directions.
+/// [`FINALIZE_FAMILY`]; the registry suite asserts that in both directions — **and it has
+/// happened**: `finalize.commit-rejected` sat here for three waves as *"an invocation-log error
+/// identity … an `anyhow` path, never a `Finding`"*, which M52 Increment 1 / T1 made false by
+/// emitting a reject that carries a finding on the findings envelope. It moved rather than
+/// having its reason reworded, which is the direction this pair of tables exists to make cheap.
 pub const FINALIZE_NON_MEMBERS: &[(&str, &str)] = &[
-    (
-        "finalize.commit-rejected",
-        "an invocation-log **error identity** (`crate::invocation_log::ERROR_COMMIT_REJECTED`) \
-         for the survivable hook-rejection frame — an `anyhow` path, never a `Finding`, so it \
-         projects no `(code, target)` key",
-    ),
     (
         "finalize.fan-out",
         "a cascade **knob-key namespace** (`finalize.fan-out.squash`), not a finding code at all",
@@ -1992,15 +2003,22 @@ pub fn carried_over_advisory(carried: &[ManifestEntry]) -> String {
 /// backtick would let a title like ``Cache `rework` now`` truncate the very span a reader
 /// lifts. The fence grows past the longest backtick run inside the command line, so the
 /// delimiter is unambiguous for every prose the door can receive.
-pub fn commit_rejected(format: Format, rejection: &str, survived: &str, rerun: &str) -> String {
+pub fn commit_rejected(rejection: &str, survived: &str, rerun: &str) -> String {
+    format!("{rejection}\n\n{}", commit_rejection_route(survived, rerun))
+}
+
+/// The **recovery half** of the rejection frame, on its own — everything the frame says after
+/// git's verbatim bytes: what survived, and this door's own copy-runnable re-run.
+///
+/// It is split out because the two surfaces need the same sentence in two shapes (M52
+/// Increment 1 / T1). The agent-text arm concatenates it after the cause, exactly as it always
+/// did — [`commit_rejected`] above is that concatenation and nothing else, so those bytes
+/// cannot drift. The `--format json` arm puts the cause in a [`Finding`]'s `message` and this
+/// sentence in its `route`, which is the decomposition the driver contract asks for: a route is
+/// data a driver can act on, not prose it has to cut out of an error string.
+pub fn commit_rejection_route(survived: &str, rerun: &str) -> String {
     let fence = code_fence(rerun);
-    let framed = format!(
-        "{rejection}\n\n{survived}. Fix the hook's complaint, then re-run {fence}{rerun}{fence}."
-    );
-    match format {
-        Format::Json => json(&serde_json::json!({ "error": framed })),
-        Format::Agent | Format::Human => framed,
-    }
+    format!("{survived}. Fix the hook's complaint, then re-run {fence}{rerun}{fence}.")
 }
 
 /// Frame a commit-transaction failure that **no hook caused** — [`commit_rejected`]'s sibling
@@ -2020,15 +2038,45 @@ pub fn commit_rejected(format: Format, rejection: &str, survived: &str, rerun: &
 ///
 /// The closing `then re-run …` shape is deliberately the rejection frame's, so the one lifter
 /// (`tests/commit_rejected_axis::lift_rerun`) reads the emitted bytes of both cells.
-pub fn commit_failed(format: Format, cause: &str, survived: &str, rerun: &str) -> String {
+pub fn commit_failed(cause: &str, survived: &str, rerun: &str) -> String {
+    format!("{cause}\n\n{}", commit_failure_route(survived, rerun))
+}
+
+/// [`commit_rejection_route`]'s sibling for the non-hook cell — same split, same reason, and
+/// the one word that differs is the one this cell may not borrow: nothing here blames a hook,
+/// because in this cell none spoke.
+pub fn commit_failure_route(survived: &str, rerun: &str) -> String {
     let fence = code_fence(rerun);
-    let framed = format!(
-        "{cause}\n\n{survived}. Resolve the cause above, then re-run {fence}{rerun}{fence}."
-    );
-    match format {
-        Format::Json => json(&serde_json::json!({ "error": framed })),
-        Format::Agent | Format::Human => framed,
-    }
+    format!("{survived}. Resolve the cause above, then re-run {fence}{rerun}{fence}.")
+}
+
+/// The **machine arm** of the two frames above: a committing door's refusal as the [`Finding`]
+/// the `--format json` reject document carries (M52 Increment 1 / T1; `settle-record.md` → D6
+/// as amended by §3).
+///
+/// **Why the identity is a finding now, and why that is not a second name for one event.**
+/// `code` is the door's own [`COMMITTING_DOORS`](crate::invocation_log::COMMITTING_DOORS)
+/// error identity — the string the invocation log has recorded since M47 — and it stays that
+/// on the log side unchanged. What changes is only that the **machine surface** stops carrying
+/// it inside a message: a driver that hits a rejected commit under `--format json` used to get
+/// `{"error": "<the whole frame>"}`, so the code it needed to branch on and the path to its own
+/// raced bytes were prose. The contract's reject row has said since M45 that stderr carries
+/// *exactly one document*; this is the shape that makes it true when the reject has something
+/// to say (`design/command-output-contract.md` → Stream discipline; The two reject arms).
+///
+/// The recorded M42 reservation — *"deliberately NOT a `Finding` — a Finding would force a
+/// mandatory route and wrap the hook's stderr, which the design pins as verbatim and
+/// unwrapped"* — is answered rather than overridden: `message` is the hook's bytes **verbatim**
+/// (JSON escaping is the envelope's, not a wrap), and the mandatory route is the frame's own
+/// recovery sentence, which the door already printed. The agent-text arm is untouched.
+pub fn commit_rejection_finding(code: &str, target: &str, cause: &str, route: String) -> Finding {
+    Finding::graded(
+        Severity::Blocking,
+        code,
+        cause.to_string(),
+        Some(Location::addressed(target.to_string(), 1, 1)),
+        Some(Route::human(route)),
+    )
 }
 
 /// The backtick run that delimits `content` as a code span: one longer than the longest run
@@ -6003,8 +6051,13 @@ pub const ENVELOPE_ARMS: &[EnvelopeArm] = &[
         arm: "Reject::Error",
         origin: ArmOrigin::Dispatch(
             "cross-cutting: which reject funnel a door enters is decided by the failure it \
-             caught, not by the verb — an `anyhow` chain takes the first, a blocking \
-             `Finding` the second",
+             caught, not by the verb — a bare `anyhow` chain takes the first, a refusal \
+             carrying a `Finding` the second. M52 Increment 1 / T1 moved the ten \
+             `COMMITTING_DOORS` rejections across that line: a hook-refused commit used to \
+             flatten its whole frame into this arm's `error` string, and now emits its \
+             door's own `*.commit-rejected` identity — plus any rollback conflict — on the \
+             findings arm below (the pre-pin reshape rule, `command-output-contract.md` -> \
+             Evolution posture). This arm keeps every bare-`anyhow` reject and is unchanged",
         ),
         shape: ArmShape::Object(&["error"]),
         status: ArmStatus::Pinned,
@@ -6016,8 +6069,11 @@ pub const ENVELOPE_ARMS: &[EnvelopeArm] = &[
         arm: "Reject::Findings",
         origin: ArmOrigin::Dispatch(
             "cross-cutting: which reject funnel a door enters is decided by the failure it \
-             caught, not by the verb — an `anyhow` chain takes the first, a blocking \
-             `Finding` the second",
+             caught, not by the verb — a bare `anyhow` chain takes the first, a refusal \
+             carrying a `Finding` the second. The doors that moved here: M51 Increment 6's \
+             25 unknown-work-unit cells, and M52 Increment 1 / T1's ten `COMMITTING_DOORS` \
+             rejections, whose document also carries every `finalize.rollback-conflict` the \
+             transaction raised — the one stream rule, so a reject's stream parses whole",
         ),
         shape: ArmShape::Object(&["findings", "schema_version"]),
         status: ArmStatus::Pinned,

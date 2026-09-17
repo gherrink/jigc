@@ -316,10 +316,14 @@ const CONFORMANCE_PARSE_DIAGNOSTICS: &[&str] = &[
 /// [`CONFORMANCE_PARSE_DIAGNOSTICS`], whose doc-comment states the shared reason and what
 /// each member's message leaves the reader.
 ///
-/// The **hook-rejection error identity** (`finalize.commit-rejected`) is the floor's other
-/// re-affirmed exemption, but it is an anyhow error path, not a [`Finding`] — git's
-/// verbatim stderr *is* the correction signal ([finalize.md](../../../design/finalize.md))
-/// — so it never reaches this seam and needs no entry here.
+/// **The hook-rejection identities are *not* an exemption, and since M52 they are not an
+/// absence either.** They were both, on one rationale — an anyhow error path, never a
+/// [`Finding`], so nothing here had to name them. M52 Increment 1 / T1 routes a reject that
+/// carries a finding onto the findings envelope, so the ten `*.commit-rejected` identities
+/// each reach this seam as a blocking [`Finding`] — and each carries a route, the frame's own
+/// recovery sentence (what survived + this door's re-run), which is what the floor asks for.
+/// git's stderr stays verbatim: it is the finding's `message`, not a wrap
+/// ([finalize.md](../../../design/finalize.md)).
 pub fn is_route_exempt(code: &str) -> bool {
     CONFORMANCE_PARSE_DIAGNOSTICS.contains(&code)
 }

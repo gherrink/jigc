@@ -1017,6 +1017,10 @@ fn run_rename(format: Format, old_slug: &str, to: &str, slug: Option<&str>) -> O
                 &err,
                 &crate::task::RejectionFrame {
                     code: crate::invocation_log::ERROR_RENAME_REJECTED,
+                    // The doc address the caller named — this door acts on **one** doc, and
+                    // its identity is what an operator reads the refusal back by. Declared at
+                    // `design/command-output-contract.md` → the `*.commit-rejected` row.
+                    target: old_slug.to_string(),
                     survived: format!(
                         "nothing was committed — the rename was rolled back, so `{old_slug}` \
                          still holds its original identity and every referrer still points \
@@ -1035,6 +1039,9 @@ fn run_rename(format: Format, old_slug: &str, to: &str, slug: Option<&str>) -> O
                         },
                     ),
                 },
+                // A pre-transaction refusal and a rejected commit both roll the rename back
+                // in full; no shared-executor rollback runs here, so there is nothing to fold.
+                &[],
             )
         }
     }

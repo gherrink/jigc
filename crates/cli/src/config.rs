@@ -22,6 +22,7 @@
 //! whole-cascade consequences (cycles, orphaning) surface later at resolution
 //! through `workflow-refs`.
 
+use crate::cli::Format;
 use crate::invocation_log::Outcome;
 use crate::orphan::{self, Home};
 use crate::pack::make_pack;
@@ -189,9 +190,8 @@ impl ConfigCommand {
             }
             // Every config write states its effect (Law 1 "acks state the effect"; the M43
             // surface census) — the positive ack the six verbs mapped to silence before.
-            ConfigCommand::Set { key, value } => {
-                run_set(cwd, &key, &value).map(|ack| crate::render::config_ack(format, &ack))
-            }
+            ConfigCommand::Set { key, value } => run_set(cwd, format, &key, &value)
+                .map(|ack| crate::render::config_ack(format, &ack)),
             ConfigCommand::InsertStep {
                 workflow,
                 after,
@@ -318,7 +318,7 @@ fn undeclared_key_finding(key: &str) -> Finding {
 /// 3. write `scalar.<key> = <value>` into `.jigc/config/manifest.yaml`
 ///    (last-write-wins; any existing `scalar:` entries and `deltas:` block are
 ///    preserved).
-fn run_set(cwd: &Path, key: &str, value: &str) -> Result<ConfigAck> {
+fn run_set(cwd: &Path, format: Format, key: &str, value: &str) -> Result<ConfigAck> {
     let project_config = require_project_layer(cwd)?;
 
     // `docs-root` treats an empty value as "no prefix" (the flat repo-root layout),
@@ -495,7 +495,7 @@ fn run_set(cwd: &Path, key: &str, value: &str) -> Result<ConfigAck> {
     // nothing.
     let mut relocated: Vec<Relocated> = Vec::new();
     if key == "docs-root" {
-        relocated = route_docs_root_repoint_orphans(pack.as_ref(), &project_config, value);
+        relocated = route_docs_root_repoint_orphans(pack.as_ref(), format, &project_config, value);
     }
 
     // `placement-root` re-point: the placement sibling of the loop above, same place and
@@ -505,7 +505,8 @@ fn run_set(cwd: &Path, key: &str, value: &str) -> Result<ConfigAck> {
     // committed instance stays put, and the store goes QUIET about it (the record still
     // baselines the old path and the file still matches). This is the floor that closes it.
     if key == "placement-root" {
-        relocated = route_placement_root_repoint_strands(pack.as_ref(), &project_config, value);
+        relocated =
+            route_placement_root_repoint_strands(pack.as_ref(), format, &project_config, value);
     }
 
     // Step 3 — record the `scalar-set` into the project manifest (last-write-wins).
@@ -919,6 +920,28 @@ fn offending_component(repo_root: &Path, value: &str) -> Option<OffendingCompone
     None
 }
 
+/// Narrate a relocation line on the **side channel** — and withhold it under `--format json`,
+/// where the one document is the whole of what the door says
+/// (`design/command-output-contract.md` → Stream discipline; M52 Increment 1 / T1).
+///
+/// **Why withholding is the fold and not a loss.** Prose beside a machine document is bytes a
+/// driver cannot read: it either breaks the parse or is skipped, and until M51 minted
+/// [`ConfigAck::Set`]'s `relocated` key a `--format json` re-point that moved the committed
+/// corpus serialized byte-identically to one that moved nothing. That key is this narration's
+/// carrier, so on the JSON arm the moves are *in* the document rather than beside it.
+///
+/// **Declared residual, stated rather than discovered.** Two of this narration's lines have no
+/// such carrier — the move that *failed* (`could not relocate …`) and the foreign file parked
+/// out of a destination — so under `--format json` they are withheld and named nowhere. They
+/// are not findings today (minting a `config.*` code is M52 Increment 5's rollback work, and
+/// this task registers no code), and they were unreadable to a driver before this change too:
+/// what moves is that stderr now parses, not what a driver could act on.
+fn narrate(format: Format, line: String) {
+    if format != Format::Json {
+        eprintln!("{line}");
+    }
+}
+
 /// On a `docs-root` re-point to `new_value`, **detect + route + move** the committed docs the
 /// change would strand under the prior resolved root — the surface-and-move resolution that
 /// replaces the M36 warn-then-strand (`design/storage.md` → docs-root; `design/reconciliation.md`
@@ -941,6 +964,7 @@ fn offending_component(repo_root: &Path, value: &str) -> Option<OffendingCompone
 /// is at (the key's own declared bound).
 fn route_docs_root_repoint_orphans(
     pack: &dyn PackSource,
+    format: Format,
     project_config: &Path,
     new_value: &str,
 ) -> Vec<Relocated> {
@@ -980,13 +1004,16 @@ fn route_docs_root_repoint_orphans(
     // its declared `placement.file`, resolved through `placement-root`, so `docs/roadmap.md`
     // sits under the old root and is never carried. The exclusion is stated positively,
     // so the reader gets the rule rather than an unexplained gap.
-    eprintln!(
-        "relocating {} committed doc(s) stranded by the `docs-root` re-point to `{new_value}` \
-         (every committed doc under a doctype's prior resolved `location:` directory, managed \
-         or not — a placement doctype's file is not carried: it homes at its declared \
-         `placement.file`, which resolves through `placement-root`; each move is a staged \
-         `git mv` — commit it with your next commit):",
-        stranded.len()
+    narrate(
+        format,
+        format!(
+            "relocating {} committed doc(s) stranded by the `docs-root` re-point to \
+             `{new_value}` (every committed doc under a doctype's prior resolved `location:` \
+             directory, managed or not — a placement doctype's file is not carried: it homes \
+             at its declared `placement.file`, which resolves through `placement-root`; each \
+             move is a staged `git mv` — commit it with your next commit):",
+            stranded.len(),
+        ),
     );
     for old_rel in &stranded {
         let Some(new_rel) = reroot(old_rel, &old_docs_root, &new_root) else {
@@ -1004,15 +1031,16 @@ fn route_docs_root_repoint_orphans(
         }
         match crate::relocate::move_doc(repo_root, &jigc_root, old_rel, &new_rel, &new_hash) {
             Ok(()) => {
-                eprintln!("  - {old_rel} → {new_rel}");
+                narrate(format, format!("  - {old_rel} → {new_rel}"));
                 relocated.push(Relocated {
                     from: old_rel.clone(),
                     to: new_rel,
                 });
             }
-            Err(err) => {
-                eprintln!("  - {old_rel}: could not relocate ({err:#}) — move it by hand")
-            }
+            Err(err) => narrate(
+                format,
+                format!("  - {old_rel}: could not relocate ({err:#}) — move it by hand"),
+            ),
         }
     }
     relocated
@@ -1052,6 +1080,7 @@ fn route_docs_root_repoint_orphans(
 /// not a managed doc rehomed, and [`ConfigAck::Set`]'s key names relocations.
 fn route_placement_root_repoint_strands(
     pack: &dyn PackSource,
+    format: Format,
     project_config: &Path,
     new_value: &str,
 ) -> Vec<Relocated> {
@@ -1100,26 +1129,37 @@ fn route_placement_root_repoint_strands(
     // The two sweeps partition the store by home kind and neither is the universal: this one
     // carries the placement homes, the `docs-root` sibling the `location:` directories. A doc
     // under the old `docs-root` that is a placement instance belongs to this sweep only.
-    eprintln!(
-        "relocating the committed doc(s) stranded by the `placement-root` re-point to \
-         `{new_value}` (every committed doc at a placement doctype's prior home, managed or \
-         not; each move is a staged `git mv` — commit it with your next commit):"
+    narrate(
+        format,
+        format!(
+            "relocating the committed doc(s) stranded by the `placement-root` re-point to \
+             `{new_value}` (every committed doc at a placement doctype's prior home, managed \
+             or not; each move is a staged `git mv` — commit it with your next commit):"
+        ),
     );
     let jigc_root = repo_root.join(".jigc");
     for (prior, current) in &pairs {
         let report = crate::relocate::relocate_stranded(repo_root, &jigc_root, prior, current);
         for (from, to) in &report.moved {
-            eprintln!("  - {from} → {to}");
+            narrate(format, format!("  - {from} → {to}"));
             relocated.push(Relocated {
                 from: from.clone(),
                 to: to.clone(),
             });
         }
         for (from, to) in &report.displaced {
-            eprintln!("  - {from} → {to} (a foreign file at the new home, parked out of the way)");
+            narrate(
+                format,
+                format!(
+                    "  - {from} → {to} (a foreign file at the new home, parked out of the way)"
+                ),
+            );
         }
         for (path, reason) in &report.blocked {
-            eprintln!("  - {path}: could not relocate ({reason}) — move it by hand");
+            narrate(
+                format,
+                format!("  - {path}: could not relocate ({reason}) — move it by hand"),
+            );
         }
     }
     relocated
@@ -2091,7 +2131,8 @@ mod tests {
         // set — the scalar-set effect.
         {
             let (repo, _cfg) = repo_with_layer("ack-set");
-            let ack = run_set(repo.path(), "default-workflow", "quick-fix").expect("set records");
+            let ack = run_set(repo.path(), Format::Agent, "default-workflow", "quick-fix")
+                .expect("set records");
             assert_effect(
                 &agent_ack(&ack),
                 "config: set `default-workflow` = `quick-fix`",
@@ -2172,7 +2213,8 @@ mod tests {
     #[test]
     fn undeclared_key_route_names_the_read_verb_that_enumerates_the_surface() {
         let (repo, _cfg) = repo_with_layer("undeclared");
-        let err = run_set(repo.path(), "not-a-knob", "x").expect_err("an undeclared key rejects");
+        let err = run_set(repo.path(), Format::Agent, "not-a-knob", "x")
+            .expect_err("an undeclared key rejects");
         let msg = format!("{err:#}");
         assert!(
             msg.contains("config.undeclared-key"),

@@ -320,7 +320,7 @@ impl TaskCommand {
                         // `surface_commit_rejection` falls through to
                         // ([`crate::invocation_log::operational_failure`]); the printed bytes
                         // are unchanged.
-                        surface_commit_rejection(format, &err, &frame)
+                        surface_commit_rejection(format, &err, &frame, &[])
                     }
                 };
             }
@@ -584,6 +584,7 @@ fn run_discard(cwd: &Path, id: &str, format: Format, force: bool) -> Result<()> 
 fn discard_rejection_frame(id: &str, force: bool) -> RejectionFrame {
     RejectionFrame {
         code: crate::invocation_log::ERROR_TASK_DISCARD_REJECTED,
+        target: work_unit_ref(id),
         survived: format!(
             "nothing was committed — the milestone record still names task:{id} as it did, \
              and the task's working area is intact"
@@ -2294,8 +2295,13 @@ impl TaskArea {
         // `MigrationFixed` migration correctly forecasts none — it sweeps no WIP). It
         // SURFACES only: the commit still lands, the block stays reserved for the
         // empty-index case (`nothing_staged_finding`).
+        //
+        // Under `--format json` both pre-commit prints are **held** rather than emitted here:
+        // which stream carries this run's document is not known until the commit has been
+        // attempted, and on a reject the document is stderr's ([`emit_or_defer`]).
+        let mut deferred_advisories = String::new();
         let (_, pending_left_out) = self.predict_manifest(&plan, is_migration)?;
-        emit_left_out_advisory(format, &pending_left_out);
+        emit_left_out_advisory(format, &mut deferred_advisories, &pending_left_out);
 
         // M43 — the carried-over half of the pre-commit print: a `--carry-staged` run
         // names what it is about to carry, BEFORE it commits, with the same
@@ -2303,7 +2309,7 @@ impl TaskArea {
         // directly (not the forecast): a migration's narrowed forecast never lists a
         // carried entry, but its whole-index commit still lands it. Empty on every
         // undeclared run — a non-empty carried set refused above.
-        emit_carried_advisory(format, &carried_paths);
+        emit_carried_advisory(format, &mut deferred_advisories, &carried_paths);
 
         // Phases 4–7: the shared transactional core — promote + stage + commit +
         // rollback + post-commit. The working area is the cleanup dir removed on a
@@ -2392,6 +2398,10 @@ impl TaskArea {
                 // T2 — relay any non-blocking hook output the commit produced
                 // (`design/finalize.md` → 6. Commit, success-relay).
                 relay_hook_output(format, &hook_output);
+                // The landed arm's document owns stdout, so the held pre-commit prints go
+                // where they always went — stderr, naming the same sets the document carries
+                // as `committed.left_out` and the manifest's `carried-over` labels.
+                eprint!("{deferred_advisories}");
                 // A landed commit still surfaces its preflight advisories in the log record
                 // (`design/measurement.md` → item 2: absorb evidence, never swallowed).
                 Ok(Outcome::with_findings(0, &report.findings))
@@ -2407,8 +2417,11 @@ impl TaskArea {
                 // are previewable, so a driver that ran `task validate` has already seen
                 // them; the untracked cause is the only one it could not have).
                 if let Some(block) = err.downcast_ref::<OwnerArtifactBlock>() {
+                    let findings =
+                        fold_rollback_conflicts(format, block.0.clone(), &rollback_conflicts);
                     return Ok(carry_rollback_conflicts(
-                        self.blocked(block.0.clone(), format)?,
+                        format,
+                        self.blocked(findings, format)?,
                         &rollback_conflicts,
                     ));
                 }
@@ -2439,8 +2452,14 @@ impl TaskArea {
                 // recorded hook decision honored (`design/finalize.md` → 6. Commit,
                 // M40 item 3): the hook output IS the correction signal.
                 if let Some(stage) = err.downcast_ref::<StageGitFailure>() {
+                    let findings = fold_rollback_conflicts(
+                        format,
+                        vec![stage_failed_finding(id, &stage.0)],
+                        &rollback_conflicts,
+                    );
                     return Ok(carry_rollback_conflicts(
-                        self.blocked(vec![stage_failed_finding(id, &stage.0)], format)?,
+                        format,
+                        self.blocked(findings, format)?,
                         &rollback_conflicts,
                     ));
                 }
@@ -2454,9 +2473,16 @@ impl TaskArea {
                 // invocation log"): without it this record is byte-identical to a
                 // `finalize <absent-id>` (exit 1, `finding_codes: []`), so the one failed-
                 // finalize class the RC adoption trial hit is the one the log cannot name.
-                // Log-only, deliberately NOT a `Finding` — a Finding would force a mandatory
-                // route (the M41 advisory-route floor) and wrap the hook's stderr, which the
-                // design pins as verbatim and unwrapped.
+                // **[Revised at M52 Increment 1 / T1.]** This read *"Log-only, deliberately
+                // NOT a `Finding` — a Finding would force a mandatory route (the M41
+                // advisory-route floor) and wrap the hook's stderr, which the design pins as
+                // verbatim and unwrapped."* Both halves were answerable rather than binding: a
+                // route is what the frame's own closing sentence already *is*, and the hook's
+                // bytes are the finding's `message` — escaped by the envelope, never wrapped.
+                // What the reservation bought was a machine surface on which a driver could
+                // not read the code it had to branch on, nor the path to its own raced bytes
+                // (`advocates/F6.md` spike 1). The identity is still the log's; on
+                // `--format json` it is now also the reject document's.
                 // M47 Inc 3 T7 — the framing moved into the shared `surface_commit_rejection`
                 // so every committing door says the same three things; this door's bytes
                 // are unchanged, and the re-run echoes the flags a repeat run genuinely needs
@@ -2484,21 +2510,20 @@ impl TaskArea {
                 if carry_staged {
                     rerun.push_str(" --carry-staged");
                 }
-                Ok(carry_rollback_conflicts(
-                    surface_commit_rejection(
-                        format,
-                        &err,
-                        &RejectionFrame {
-                            code: invocation_log::ERROR_COMMIT_REJECTED,
-                            survived: format!(
-                                "task {id} is intact — nothing was committed, your task's \
-                                 staged docs are still in `.jigc/tasks/{id}/docs/`, and \
-                                 anything you had `git add`-ed is still in git's index"
-                            ),
-                            survived_non_hook: None,
-                            rerun,
-                        },
-                    ),
+                Ok(surface_commit_rejection(
+                    format,
+                    &err,
+                    &RejectionFrame {
+                        code: invocation_log::ERROR_COMMIT_REJECTED,
+                        target: work_unit_ref(id),
+                        survived: format!(
+                            "task {id} is intact — nothing was committed, your task's \
+                             staged docs are still in `.jigc/tasks/{id}/docs/`, and \
+                             anything you had `git add`-ed is still in git's index"
+                        ),
+                        survived_non_hook: None,
+                        rerun,
+                    },
                     &rollback_conflicts,
                 ))
             }
@@ -4325,14 +4350,44 @@ fn rollback_conflict_finding(
 /// It **adds to** the door's surface and replaces nothing. A hook rejection keeps its verbatim
 /// stderr and its frame; a stage failure keeps its own routed `finalize.stage-failed`. Only
 /// the log record grows — by the codes of the paths the rollback could not put back.
-pub(crate) fn carry_rollback_conflicts(mut outcome: Outcome, conflicts: &[Finding]) -> Outcome {
-    for finding in conflicts {
-        eprint!("{}", crate::render::finding_line(finding, false));
+pub(crate) fn carry_rollback_conflicts(
+    format: Format,
+    mut outcome: Outcome,
+    conflicts: &[Finding],
+) -> Outcome {
+    // **The stream rule** (M52 Increment 1 / T1): under `--format json` the stream carrying
+    // the door's document carries nothing else, so the conflicts are *in* the document —
+    // [`fold_rollback_conflicts`] put them there before it was rendered — and printing them
+    // here as well would be both a duplicate and, on the reject arm, the trailing bytes that
+    // stop the stream parsing at all. The agent/human arm is unchanged.
+    if format != Format::Json {
+        for finding in conflicts {
+            eprint!("{}", crate::render::finding_line(finding, false));
+        }
     }
     outcome
         .finding_codes
         .extend(conflicts.iter().map(|finding| finding.code.clone()));
     outcome
+}
+
+/// The document half of the rule [`carry_rollback_conflicts`] states: under `--format json`
+/// the rollback conflicts join the findings the door is about to render, so the one document
+/// carries them; under agent/human they are left to print beside the result, which is where
+/// that surface has always shown them and where its bytes are pinned.
+///
+/// Both halves are called at every site that has conflicts in hand — this one before the
+/// render, that one after — so a door cannot fold without recording, or record without
+/// folding.
+pub(crate) fn fold_rollback_conflicts(
+    format: Format,
+    mut findings: Vec<Finding>,
+    conflicts: &[Finding],
+) -> Vec<Finding> {
+    if format == Format::Json {
+        findings.extend(conflicts.iter().cloned());
+    }
+    findings
 }
 
 /// One config-layer index entry's pre-finalize state — the fourth rollback axis's capture
@@ -4622,6 +4677,16 @@ pub(crate) struct RejectionFrame {
     /// invocation log names *which* door refused instead of every door borrowing the task
     /// door's `finalize.commit-rejected`.
     pub(crate) code: &'static str,
+    /// What the refusal is **about**, in one of the contract's declared target forms — the
+    /// work unit (`task:<id>` / `milestone:<id>`) where the door acts on one, the doc identity
+    /// where it acts on one doc, and the door's own verb where its subject is the whole corpus
+    /// (`design/command-output-contract.md` → the `*.commit-rejected` row).
+    ///
+    /// It exists because the machine arm keys on it (M52 Increment 1 / T1): the same refusal
+    /// that names itself in the invocation log now projects `(code, target)` on the reject
+    /// document, and a code with no target is not a key. The door owns it for the reason it
+    /// owns the other three — `git_commit_capture` sees no verb, no id and no argv.
+    pub(crate) target: String,
     /// What survived the rejection, as one clause with **no trailing period** (the renderer
     /// adds it). Must be true of *this* door: some doors leave their write staged, some
     /// unwind it entirely.
@@ -4666,27 +4731,62 @@ pub(crate) fn surface_commit_rejection(
     format: Format,
     err: &anyhow::Error,
     frame: &RejectionFrame,
+    conflicts: &[Finding],
 ) -> Outcome {
-    if let Some(rejected) = err.downcast_ref::<CommitRejected>() {
-        eprintln!(
-            "{}",
-            render::commit_rejected(format, &rejected.0, &frame.survived, &frame.rerun)
-        );
-        return Outcome::error(frame.code);
-    }
     // N20 — the **non-hook** cell: the frame was built in full and then dropped here, so a
     // `git merge --ff-only` refusal (or a stale index lock, or a blocked promote destination)
     // exited 1 with `error_code: null`, no route and no word about what survived. It keeps the
     // same three things the rejection cell states, in its own render arm — nothing in it blames
     // a hook, because in this cell none spoke.
-    if let Some(failed) = err.downcast_ref::<CommitFailed>() {
-        eprintln!(
-            "{}",
-            render::commit_failed(format, &failed.0, frame.non_hook_clause(), &frame.rerun)
+    let framed = match err.downcast_ref::<CommitRejected>() {
+        Some(rejected) => Some((
+            rejected.0.as_str(),
+            render::commit_rejected(&rejected.0, &frame.survived, &frame.rerun),
+            render::commit_rejection_route(&frame.survived, &frame.rerun),
+        )),
+        None => err.downcast_ref::<CommitFailed>().map(|failed| {
+            (
+                failed.0.as_str(),
+                render::commit_failed(&failed.0, frame.non_hook_clause(), &frame.rerun),
+                render::commit_failure_route(frame.non_hook_clause(), &frame.rerun),
+            )
+        }),
+    };
+    let Some((cause, text, route)) = framed else {
+        // Neither typed cell: the shared operational funnel, with the conflicts beside it
+        // exactly as the two gate arms place them.
+        return carry_rollback_conflicts(
+            format,
+            crate::invocation_log::operational_failure(format, err),
+            conflicts,
         );
-        return Outcome::error(frame.code);
+    };
+
+    // **The reject document owns stderr** (`design/command-output-contract.md` → Stream
+    // discipline, the reject row): under `--format json` the refusal and every rollback
+    // conflict are one findings envelope, because a driver reading the stream this door
+    // writes to must find exactly one document there. The agent-text arm is byte-unchanged —
+    // the frame, then each conflict beside it.
+    if format == Format::Json {
+        let mut findings = vec![render::commit_rejection_finding(
+            frame.code,
+            &frame.target,
+            cause,
+            route,
+        )];
+        findings.extend(conflicts.iter().cloned());
+        // A no-delta cascade: this is a refusal, not an inventory sweep, so the severity
+        // post-pass is a no-op over it. A cascade that cannot be resolved at all degrades to
+        // the framed text below rather than failing twice — the same fall-through
+        // `invocation_log::operational_failure` takes on its own envelope arm.
+        if let Ok(resolved) = crate::cascade_util::no_delta_resolved() {
+            let report = engine::result::ValidationReport::new(findings, &resolved);
+            eprint!("{}", render::validation(format, &report));
+            return carry_rollback_conflicts(format, Outcome::error(frame.code), conflicts);
+        }
     }
-    crate::invocation_log::operational_failure(format, err)
+    eprintln!("{text}");
+    carry_rollback_conflicts(format, Outcome::error(frame.code), conflicts)
 }
 
 /// The one home of the emitted-command quoting rule is [`engine::finding::shell_token`];
@@ -4706,23 +4806,19 @@ pub(crate) use engine::finding::shell_token;
 /// **stdout** (where the agent reads the finalize surface), but under `--format json` the
 /// structured envelope owns stdout and must not be corrupted, so the advisory goes to
 /// **stderr**.
-fn emit_left_out_advisory(format: Format, left_out: &[render::ManifestEntry]) {
-    let advisory = render::left_out_advisory(left_out);
-    if advisory.is_empty() {
-        return;
-    }
-    if format == Format::Json {
-        eprint!("{advisory}");
-    } else {
-        print!("{advisory}");
-    }
+fn emit_left_out_advisory(
+    format: Format,
+    deferred: &mut String,
+    left_out: &[render::ManifestEntry],
+) {
+    emit_or_defer(format, deferred, render::left_out_advisory(left_out));
 }
 
 /// Emit the **pre-commit** carried-over print (M43, `design/surface-contract.md` → The
 /// carryover gate) — nothing at all when nothing is carried. Stream discipline as
 /// [`emit_left_out_advisory`]: agent/human text to **stdout**, `--format json` to
 /// **stderr** (the structured envelope owns stdout).
-fn emit_carried_advisory(format: Format, carried_paths: &BTreeSet<String>) {
+fn emit_carried_advisory(format: Format, deferred: &mut String, carried_paths: &BTreeSet<String>) {
     let carried: Vec<render::ManifestEntry> = carried_paths
         .iter()
         .map(|path| render::ManifestEntry {
@@ -4730,12 +4826,30 @@ fn emit_carried_advisory(format: Format, carried_paths: &BTreeSet<String>) {
             kind: render::ManifestKind::CarriedOver,
         })
         .collect();
-    let advisory = render::carried_over_advisory(&carried);
+    emit_or_defer(format, deferred, render::carried_over_advisory(&carried));
+}
+
+/// **The stream rule for a pre-commit print** (M52 Increment 1 / T1;
+/// `design/command-output-contract.md` → Stream discipline).
+///
+/// Both advisories above are emitted **before** the commit, when nobody yet knows which arm
+/// this finalize will take — and that is exactly what made them a defect on the machine
+/// surface. Under `--format json` a landed finalize's document owns stdout and these print
+/// beside it on stderr (unchanged, and the set they name also rides `committed.left_out` and
+/// the manifest's `carried-over` labels); a **rejected** one's document owns stderr, and prose
+/// printed there ahead of it is why `json.loads(stderr)` failed at char 0.
+///
+/// So under json the text is **held** and flushed only on the arm whose document is not
+/// stderr's. On the reject arm it is withheld, and that is a fold rather than a loss: both
+/// advisories forecast what a commit *would* leave behind, and on that arm no commit was made
+/// — the frame's own clause says so. The agent/human arm is untouched: it prints to stdout,
+/// in place, exactly as before.
+fn emit_or_defer(format: Format, deferred: &mut String, advisory: String) {
     if advisory.is_empty() {
         return;
     }
     if format == Format::Json {
-        eprint!("{advisory}");
+        deferred.push_str(&advisory);
     } else {
         print!("{advisory}");
     }
@@ -4778,7 +4892,14 @@ fn nothing_staged_finding(task_id: &str) -> Finding {
 /// table, the work-unit row). Without it both CLI members projected the degenerate key
 /// `(code, null)`: every staged-nothing block in every repo was one key.
 fn work_unit_location(task_id: &str) -> Location {
-    Location::addressed(format!("task:{task_id}"), 1, 1)
+    Location::addressed(work_unit_ref(task_id), 1, 1)
+}
+
+/// The **work-unit ref** itself — `task:<id>`, the contract's declared target form — so the
+/// two consumers that need it as a string (the located family above, and the committing
+/// door's [`RejectionFrame::target`]) spell it once (M52 Increment 1 / T1).
+pub(crate) fn work_unit_ref(task_id: &str) -> String {
+    format!("task:{task_id}")
 }
 
 /// The M40 F7 routed stage-failure block (`design/finalize.md` → M40 refinement item

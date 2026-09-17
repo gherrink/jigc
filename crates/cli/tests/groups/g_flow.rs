@@ -67,6 +67,8 @@ mod format_json_success_axis;
 mod help_truth;
 #[path = "../machine_output.rs"]
 mod machine_output;
+#[path = "../reject_document_axis.rs"]
+mod reject_document_axis;
 #[path = "../release_smoke.rs"]
 mod release_smoke;
 #[path = "../routing_loop.rs"]
