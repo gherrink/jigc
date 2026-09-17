@@ -37,9 +37,26 @@
 //!   6. [`the_text_arm_of_a_rejection_still_frames_it`] — the negative cell: agent-text is
 //!      untouched by all of the above (the goldens and `commit_rejected_axis` are the
 //!      assertion; this is the cheap cross-check that the two arms were split, not swapped).
+//!   7. [`setup_and_uninstall_reject_on_the_declared_findings_arm`] — M52 Increment 1 / T2:
+//!      the **third root shape**. `setup` and `uninstall` are the only doors in the binary
+//!      whose `--format json` reject was neither of the two declared arms — they serialized a
+//!      **bare `Finding`** at the root (`render::setup_block`'s `Format::Json` line, its two
+//!      call sites `cli.rs`'s `run_setup` / `run_uninstall`), an undeclared shape no
+//!      `ENVELOPE_ARMS` row described. Both cells are driven here, and both doors' agent-text
+//!      frame — the routing footer included — is cross-checked in the same arm.
+//!
+//! **The bare-`Finding` root is asserted dead by driving, not by grepping.** [`findings_of`]
+//! — which every arm above calls on the document it just parsed — refuses a root that is a
+//! serialized `Finding`, so the claim *no leaf verb emits one* is made over each reject this
+//! suite actually provokes rather than over a source pattern. The class is closed at its
+//! producer: the shape had exactly one (`setup_block`'s json line, now deleted) and exactly
+//! two call sites, and arm 7 drives both. A grep would have proved the source; this proves
+//! the bytes.
 //!
 //! **Non-vacuity.** Arm 1's `key.target` clause fails at HEAD for all ten doors (there is no
-//! findings arm at all), and arm 3 fails at char 0, which is the shape the trial reported.
+//! findings arm at all), arm 3 fails at char 0, which is the shape the trial reported, and
+//! arm 7 fails at `schema_version` for both doors — driven on `1.0.0-rc.15` and again at this
+//! increment's own base, each emitting `{"severity": …, "probe": "setup", …}` at the root.
 
 use std::fs;
 use std::path::Path;
@@ -48,7 +65,7 @@ use cli::invocation_log::COMMITTING_DOORS;
 use serde_json::Value;
 
 use crate::support::committing_doors::{
-    DoorCase, HOOK_MARKER, base_repo, drive, git, jigc, jigc_ok, seed_task,
+    DoorCase, HOOK_MARKER, TempDir, base_repo, drive, git, jigc, jigc_ok, seed_task,
 };
 
 /// Parse the **whole** stream as one JSON document — never `raw_decode`, because "the
@@ -59,8 +76,22 @@ fn one_document(stream: &str, what: &str) -> Value {
     })
 }
 
-/// The findings array of a reject document, with the envelope's own shape asserted.
+/// The findings array of a reject document, with the envelope's own shape asserted — and
+/// with the **third root shape** refused (M52 Increment 1 / T2).
+///
+/// A serialized [`engine::finding::Finding`] at the root is not one of the two declared reject
+/// arms: it carries the finding's own `severity` / `probe` / `check` / `code` keys where the
+/// envelope carries `findings`, so a driver that parses either declared arm reads nothing it
+/// can use. `setup` and `uninstall` were its only producers; checking it here rather than in
+/// their arm alone is what makes *no leaf verb emits one* a claim over every reject this suite
+/// drives.
 fn findings_of(doc: &Value, what: &str) -> Vec<Value> {
+    assert!(
+        doc.get("code").is_none() && doc.get("severity").is_none(),
+        "{what}: a reject document is never a bare `Finding` serialized at the root — that \
+         shape is neither declared reject arm and no `ENVELOPE_ARMS` row describes it; \
+         got:\n{doc:#}",
+    );
     assert!(
         doc.get("schema_version").is_some(),
         "{what}: the reject document is the findings envelope — it carries `schema_version`; \
@@ -72,8 +103,15 @@ fn findings_of(doc: &Value, what: &str) -> Vec<Value> {
         .clone()
 }
 
-/// The one finding carrying `code`, with the stable-key clause asserted on it.
-fn keyed(findings: &[Value], code: &str, what: &str) -> Value {
+/// The one finding carrying `code`, with the **identity** half of the stable key asserted on
+/// it: `key.code` is non-null and is this code.
+///
+/// The *target* half is [`keyed`]'s, because it does not hold for every keyed finding — a
+/// **declared singleton** keys at `target: null` by the pin (`design/command-output-contract.md`
+/// → The declared singleton exception), which is what every `setup.*` / `uninstall.*` code is:
+/// both doors are fail-fast `Result<_, Finding>`, so two instances of one code cannot coexist
+/// in one output and there is nothing for a target to discriminate.
+fn keyed_identity(findings: &[Value], code: &str, what: &str) -> Value {
     let hit = findings
         .iter()
         .find(|f| f["code"].as_str() == Some(code))
@@ -86,6 +124,13 @@ fn keyed(findings: &[Value], code: &str, what: &str) -> Value {
         Some(code),
         "{what}: `{code}` projects its own `key.code`; got:\n{hit:#}",
     );
+    hit
+}
+
+/// [`keyed_identity`] plus the **discriminating** half: a code the contract lists under a
+/// target form owes a non-null `key.target`.
+fn keyed(findings: &[Value], code: &str, what: &str) -> Value {
+    let hit = keyed_identity(findings, code, what);
     assert!(
         hit["key"]["target"].as_str().is_some(),
         "{what}: `{code}` must project a non-null `key.target` — a code inside a message is \
@@ -387,4 +432,144 @@ fn the_text_arm_of_a_rejection_still_frames_it() {
         !stderr.trim_start().starts_with('{'),
         "the text arm is prose, never the document; stderr:\n{stderr}",
     );
+}
+
+/// A directory with **no `.git` anywhere above it**, and a `$HOME` of its own — the state
+/// `jigc setup` refuses with `setup.repo-root`. The system temp dir is not inside a
+/// repository (the same ground `not_in_repo_axis` stands on).
+fn outside_any_repository() -> (TempDir, TempDir) {
+    (
+        TempDir::new("reject-doc-no-repo"),
+        TempDir::new("reject-doc-no-repo-home"),
+    )
+}
+
+/// **Arm 7 — the third root shape.** `setup` and `uninstall` were the binary's only doors
+/// whose `--format json` reject was neither declared arm: they serialized a bare `Finding`
+/// at the root (M52 Increment 1 / T2; `settle-record.md` → D6.2 as amended by §3).
+///
+/// Both cells are the doors' own guards, not manufactured faults: `setup` outside a git
+/// repository, and `uninstall` over a `.jigc/` holding a file no index has a copy of — the
+/// M50 destroying-door guard, whose whole point is that the user's bytes are named before
+/// anything is removed. That naming is what the bare root cost a driver: the route carrying
+/// `git add <path>` was reachable only by a consumer that knew this one undeclared shape.
+///
+/// Per cell: exit non-zero · stdout **0 bytes** · stderr parses **whole** into the
+/// `{findings, schema_version}` envelope · the door's own code with a non-null `key.code`
+/// (`key.target` is null by the declared-singleton pin, which is why this arm keys on the
+/// identity half) · no `error` key, because one reject takes one arm.
+///
+/// And the **named regression risk**, cross-checked in the same arm: the agent-text frame is
+/// the house finding line **plus the routing footer**. The footer is the half a naive move
+/// onto the shared operational funnel would have dropped, so it is asserted on the emitted
+/// bytes here as well as at the render seam.
+#[test]
+fn setup_and_uninstall_reject_on_the_declared_findings_arm() {
+    // --- `jigc setup` outside a git repository ---------------------------------------
+    let (nowhere, nowhere_home) = outside_any_repository();
+    let out = jigc(
+        nowhere.path(),
+        nowhere_home.path(),
+        &["--format", "json", "setup"],
+        None,
+    );
+    assert!(
+        !out.status.success(),
+        "`jigc setup` outside a repository refuses; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert!(
+        out.stdout.is_empty(),
+        "[setup] a reject leaves stdout empty — the document owns stderr; stdout:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    let doc = one_document(&stderr, "[setup] the reject stream");
+    let findings = findings_of(&doc, "setup");
+    keyed_identity(&findings, "setup.repo-root", "setup");
+    assert!(
+        doc.get("error").is_none(),
+        "[setup] a reject carrying a finding takes the findings arm alone; got:\n{doc:#}",
+    );
+
+    // --- `jigc uninstall` over an untracked workbench file ----------------------------
+    let (repo, home) = base_repo("reject-doc-uninstall", None);
+    fs::write(
+        repo.path().join(".jigc").join("stray.txt"),
+        "unsaved work\n",
+    )
+    .expect("write the untracked workbench file");
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &["--format", "json", "uninstall"],
+        None,
+    );
+    assert!(
+        !out.status.success(),
+        "`jigc uninstall` over unsaved workbench bytes refuses; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert!(
+        out.stdout.is_empty(),
+        "[uninstall] a reject leaves stdout empty; stdout:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    let doc = one_document(&stderr, "[uninstall] the reject stream");
+    let findings = findings_of(&doc, "uninstall");
+    let hit = keyed_identity(&findings, "uninstall.untracked-workbench-file", "uninstall");
+    assert!(
+        hit["message"]
+            .as_str()
+            .is_some_and(|m| m.contains(".jigc/stray.txt")),
+        "[uninstall] the guard names the bytes it would destroy; got:\n{hit:#}",
+    );
+    assert!(
+        hit["route"]
+            .as_str()
+            .is_some_and(|r| r.contains("git add <path>")),
+        "[uninstall] the recovery move is data on the route, not prose in an error string; \
+         got:\n{hit:#}",
+    );
+    assert!(
+        doc.get("error").is_none(),
+        "[uninstall] a reject carrying a finding takes the findings arm alone; got:\n{doc:#}",
+    );
+
+    // --- the text arm of both doors, frame and footer intact --------------------------
+    for (label, repo, home, args, code) in [
+        (
+            "setup",
+            nowhere.path(),
+            nowhere_home.path(),
+            ["setup"],
+            "setup.repo-root",
+        ),
+        (
+            "uninstall",
+            repo.path(),
+            home.path(),
+            ["uninstall"],
+            "uninstall.untracked-workbench-file",
+        ),
+    ] {
+        let out = jigc(repo, home, &args, None);
+        let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+        assert!(
+            stderr.starts_with(&format!("blocking · {code} ")),
+            "[{label}] the text arm opens with the house finding line; stderr:\n{stderr}",
+        );
+        assert!(
+            stderr.ends_with(&format!("{}\n", cli::render::ROUTING_FOOTER)),
+            "[{label}] the text arm ends with its routing footer and exactly one newline — \
+             the half a move onto the shared funnel would silently drop; stderr:\n{stderr}",
+        );
+        assert!(
+            !stderr.trim_start().starts_with('{'),
+            "[{label}] the text arm is prose, never the document; stderr:\n{stderr}",
+        );
+    }
 }

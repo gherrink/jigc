@@ -208,19 +208,29 @@ fn a_located_finding_names_its_own_address_and_line_in_agent_text() {
 /// singleton** minted through `Finding::block`, so `location: null` by construction. Its
 /// agent text is the message line plus its route line, and nothing else: the locus line
 /// appears where there is a locus and nowhere else.
+///
+/// **Where the expected strings come from moved at M52 Increment 1 / T2, and the claim did
+/// not.** This arm reads the finding's `code` / `message` / `route` off the machine arm so
+/// the text it expects is the door's own and not a copy typed here. Until T2 that arm was a
+/// **bare `Finding` serialized at the root** — an undeclared third reject shape — so the
+/// three fields sat at the top level; `setup` now rejects on the declared `{findings,
+/// schema_version}` envelope, so they sit one hop down. The assertions below are untouched,
+/// which is the point: the text arm is byte-unchanged by that move, and this arm is one of
+/// the things that says so.
 #[test]
 fn a_location_less_finding_renders_exactly_as_before() {
     let outside = TempDir::new("outside");
     let home = TempDir::new("home");
 
-    // A blocking `setup` prints its finding envelope on **stderr** (`cli.rs` → the setup
+    // A blocking `setup` prints its reject document on **stderr** (`cli.rs` → the setup
     // dispatch), the stream discipline every reject surface follows.
     let json_out = jigc(outside.path(), home.path(), &["setup", "--format", "json"]);
-    let finding: serde_json::Value =
-        serde_json::from_slice(&json_out.stderr).expect("a finding envelope");
+    let document: serde_json::Value =
+        serde_json::from_slice(&json_out.stderr).expect("a reject document");
+    let finding = document["findings"][0].clone();
     assert!(
         finding["location"].is_null(),
-        "the arm needs a finding with NO location; got:\n{finding:#?}",
+        "the arm needs a finding with NO location; got:\n{document:#?}",
     );
 
     let text = jigc(outside.path(), home.path(), &["setup"]);

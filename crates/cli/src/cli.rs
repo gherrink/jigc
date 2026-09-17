@@ -734,10 +734,16 @@ fn run_setup(format: Format, force: bool) -> Outcome {
             crate::gitignore::emit_ack(format, &Some(ignore));
             Outcome::success()
         }
-        Err(finding) => {
-            eprintln!("{}", render::setup_block(format, &finding));
-            Outcome::failure()
-        }
+        // The refusal takes the **declared** reject arm (M52 Increment 1 / T2): raised as an
+        // envelope-projecting carrier and rendered at the one reject funnel, so
+        // `--format json` gets the `{findings, schema_version}` document that keeps the
+        // `(code, target)` key — and the invocation log gets the identity this door prints.
+        // The agent/human bytes are the funnel's one-finding render, which is the house
+        // finding line plus the routing footer: what this door has always emitted.
+        Err(finding) => crate::invocation_log::operational_failure(
+            format,
+            &render::envelope_finding_error(&finding),
+        ),
     }
 }
 
@@ -762,10 +768,14 @@ fn run_uninstall(format: Format, force: bool) -> Outcome {
             println!("{}", render::uninstall_success(format, &summary));
             Outcome::success()
         }
-        Err(finding) => {
-            eprintln!("{}", render::setup_block(format, &finding));
-            Outcome::failure()
-        }
+        // `run_setup`'s arm exactly — the same producer, the same declared reject arm, and
+        // for this door the stakes the guard exists for: `uninstall.untracked-workbench-file`
+        // names the unsaved bytes a teardown would destroy, and its route carries the move
+        // that saves them. Under the bare-`Finding` root a driver reached neither.
+        Err(finding) => crate::invocation_log::operational_failure(
+            format,
+            &render::envelope_finding_error(&finding),
+        ),
     }
 }
 

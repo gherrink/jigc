@@ -3422,26 +3422,21 @@ pub fn setup_success(format: Format, summary: &SetupSummary) -> String {
     }
 }
 
-/// Render a `jigc setup` failure to the surface `format` selects: `agent` /
-/// `human` emit the blocking finding line (`severity · code — message` + the
-/// indented `route:` line) followed by the routing footer; `json` emits the
-/// **generic** finding projection (the stable block-payload envelope) with no
-/// footer. A hard block is a blocking finding carrying a route (`DECISIONS.md`
-/// 2026-05-31), so this is the same envelope `validate` blocks surface through.
-pub fn setup_block(format: Format, finding: &Finding) -> String {
-    // No seam call: a bare `Finding` carries the presence half on its own `Serialize`
-    // (`command-output-contract.md` → The membership test). Every `setup.*` / `uninstall.*`
-    // code is a **declared singleton** (one finding per invocation), so the projection passes
-    // them at `target: null` by the pin; anything else riding this surface owes a target.
-    match format {
-        Format::Json => json(finding),
-        Format::Agent | Format::Human => {
-            let mut out = finding_line(finding, false);
-            out.push_str(ROUTING_FOOTER);
-            out
-        }
-    }
-}
+// `setup_block` lived here until M52 Increment 1 / T2, and it was the binary's **third**
+// reject root shape: its `Format::Json` arm serialized the bare `Finding` itself, so
+// `jigc --format json setup` outside a git repository and `jigc --format json uninstall` over
+// unsaved workbench bytes answered with `{"severity": …, "probe": …, "code": …}` at the root —
+// neither the `{error}` arm nor the `{findings, schema_version}` one, and described by no
+// `ENVELOPE_ARMS` row (`settle-record.md` → D6.2 as amended by §3).
+//
+// Both doors now raise their refusal through [`envelope_finding_error`] and render it at the
+// shared reject funnel ([`crate::invocation_log::operational_failure`]) — the pair M51
+// Increment 6 built for its 25 unknown-work-unit cells. That is a deletion rather than a
+// rewrite because the funnel already emits **exactly** what this function did on both arms:
+// its text side renders a one-finding [`ValidationReport`] through [`validation`], whose
+// single-finding body is [`finding_line`] plus [`ROUTING_FOOTER`] — this function's agent/human
+// arm, byte for byte, the footer included. The doors also gain what they never had: the
+// invocation log now records the identity they print, instead of one more anonymous exit 1.
 
 /// Render a successful `jigc uninstall` teardown to the surface `format` selects
 /// (`design/project-setup.md` → Flow 2 hardening → Teardown / cleanup (G5)): `agent` /
@@ -6071,9 +6066,14 @@ pub const ENVELOPE_ARMS: &[EnvelopeArm] = &[
             "cross-cutting: which reject funnel a door enters is decided by the failure it \
              caught, not by the verb — a bare `anyhow` chain takes the first, a refusal \
              carrying a `Finding` the second. The doors that moved here: M51 Increment 6's \
-             25 unknown-work-unit cells, and M52 Increment 1 / T1's ten `COMMITTING_DOORS` \
+             25 unknown-work-unit cells; M52 Increment 1 / T1's ten `COMMITTING_DOORS` \
              rejections, whose document also carries every `finalize.rollback-conflict` the \
-             transaction raised — the one stream rule, so a reject's stream parses whole",
+             transaction raised — the one stream rule, so a reject's stream parses whole; \
+             and M52 Increment 1 / T2's `setup` / `uninstall`, which until then answered on \
+             a THIRD root shape no row here described (the bare `Finding` serialized whole, \
+             through the deleted `render::setup_block`). With them this arm and the one \
+             above are the whole reject surface, which is what makes the two of them a \
+             declaration a driver can discriminate on rather than a pair of common cases",
         ),
         shape: ArmShape::Object(&["findings", "schema_version"]),
         status: ArmStatus::Pinned,
@@ -6133,24 +6133,53 @@ mod tests {
         );
     }
 
-    /// The membership test **through the bare-`Finding` surface** (`setup_block`). Every
-    /// `setup.*` code is a **declared singleton** (fail-fast `Result<_, Finding>`: at most
-    /// one per invocation), so it passes the check with `target: null` — by the pin, not by
-    /// omission (`command-output-contract.md` → The declared singleton exception).
+    /// The `setup` / `uninstall` reject seam (M52 Increment 1 / T2), both arms at once — the
+    /// **named regression risk** of deleting `setup_block` and routing those two doors onto
+    /// the shared reject funnel, fenced where the bytes are composed.
+    ///
+    /// The risk was one-directional and precise: the funnel's text side renders a
+    /// [`ValidationReport`] through [`validation`], and if that render were anything other
+    /// than [`finding_line`] plus [`ROUTING_FOOTER`] the doors would have lost their footer
+    /// silently. So the first half asserts the **exact frame** against a literal composed
+    /// here, not against the renderer's own output — a comparison of a function with itself
+    /// proves nothing.
+    ///
+    /// The second half keeps what the deleted function's own test pinned: the membership
+    /// check on the `--format json` arm. Every `setup.*` / `uninstall.*` code is a **declared
+    /// singleton** (both doors are fail-fast `Result<_, Finding>`: at most one per
+    /// invocation), so it keys at `target: null` by the pin rather than by omission
+    /// (`command-output-contract.md` → The declared singleton exception) — and it now does so
+    /// **inside** the `{findings, schema_version}` envelope, where at HEAD it was the root.
     #[test]
-    fn the_setup_block_seam_passes_the_declared_singleton() {
+    fn the_setup_reject_renders_the_same_frame_on_the_declared_arm() {
         let singleton = Finding::block(
             "setup.repo-root",
             "`jigc setup` must run inside a git repository",
             "run `git init` first",
         );
+        let resolved = crate::cascade_util::no_delta_resolved().expect("the no-delta cascade");
+        let report = ValidationReport::new(vec![singleton], &resolved);
 
-        let json = setup_block(Format::Json, &singleton);
-
-        let value: serde_json::Value = serde_json::from_str(&json).expect("parses");
-        assert_eq!(value["key"]["code"], "setup.repo-root");
         assert_eq!(
-            value["key"]["target"],
+            validation(Format::Agent, &report),
+            format!(
+                "blocking · setup.repo-root — `jigc setup` must run inside a git \
+                 repository\n  route: run `git init` first\n{ROUTING_FOOTER}"
+            ),
+            "the doors' agent-text frame is the house finding line plus the routing footer \
+             — the bytes the deleted `setup_block` emitted, unmoved",
+        );
+
+        let value: serde_json::Value =
+            serde_json::from_str(&validation(Format::Json, &report)).expect("parses");
+        assert!(
+            value.get("code").is_none(),
+            "the reject root is the envelope, never the finding itself",
+        );
+        assert_eq!(value["schema_version"], engine::result::SCHEMA_VERSION);
+        assert_eq!(value["findings"][0]["key"]["code"], "setup.repo-root");
+        assert_eq!(
+            value["findings"][0]["key"]["target"],
             serde_json::Value::Null,
             "a declared singleton keys at null and passes the seam",
         );
