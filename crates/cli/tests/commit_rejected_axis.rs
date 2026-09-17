@@ -114,11 +114,28 @@
 //! regular file; the fan-out's `--ff-only` over colliding untracked WIP. Each fails after its
 //! door's rollback has run, which is what makes a state clause statable here at all.
 //!
-//! **Out of this increment's scope, named rather than left silent:** a [`CommitRejected`] whose
-//! cause is **git itself** rather than a hook (`core.bare`, a partial commit during a merge)
-//! still renders the first sweep's hook sentence. It carries no charter row, and its driven
-//! instance at `milestone create` is closed from the other side by this increment's
-//! operation-in-progress refusal, which never lets that run reach a commit.
+//! **Named as out of scope at M51 and closed here:** *"a `CommitRejected` whose cause is git
+//! itself rather than a hook still renders the first sweep's hook sentence"*. Two of the four
+//! causes the M52 baseline drove into it (a partial commit during a pick; an unmerged index)
+//! are now refused at the door by M52 Increment 3's posture family — but the third,
+//! `commit.gpgsign` over a key git cannot use, is reachable from an ordinary `~/.gitconfig` and
+//! reaches the seam at every door. The fourth sweep below is its cell.
+//!
+//! ## The fourth sweep: the same axis × **git's own** refusal (M52 Increment 3 / T5)
+//!
+//! [`no_committing_door_calls_gits_own_refusal_a_hooks_complaint`] iterates the same
+//! [`COMMITTING_DOORS`] table with **no hook installed anywhere** and a signing configuration
+//! git cannot satisfy, and asserts per door that git's own bytes are relayed verbatim, that
+//! nothing blames a hook or claims a rejection, that the state clause is the **hook cell's**
+//! (this failure is *at* the commit, so everything before it succeeded — the third sweep's
+//! `survived_non_hook`, written for a failure *before* it, would be false here), and that the
+//! printed re-run recovers once the signing configuration is lifted.
+//!
+//! Two properties of the seam that no reachable repository state can produce get their own
+//! arms: [`a_hook_exiting_gits_own_code_is_still_framed_as_a_hook_rejection`] pins the
+//! discriminator's premise against the host's real git, and
+//! [`the_seam_reads_gits_exit_code_and_keeps_its_two_streams_apart`] drives the exit-code axis
+//! and the stdout/stderr separator through a planted `git`.
 //!
 //! **Non-vacuity is proven by applied mutation, not by construction**: reverting T1's
 //! pre-commit emptiness discriminator in `crates/cli/src/rename.rs` reddens the `jigc rename`
@@ -1543,6 +1560,340 @@ fn every_committing_door_keeps_its_frame_when_no_hook_spoke() {
             Some(0),
             "[{verb}] a non-hook commit failure is an operational error, not a Finding; \
              got {record}",
+        );
+    }
+}
+
+// ── The fourth sweep: the same axis × git's OWN refusal at the seam (M52 Increment 3 / T5) ──
+
+/// The bogus signing configuration that makes **git itself** refuse the commit — the class's
+/// ordinary, operator-reachable instance (`completions/artifacts/M52/baseline-posture.md` §2.9
+/// cause 4, L8), driven there on a live host.
+///
+/// All three keys are planted on purpose. `commit.gpgsign` + `user.signingkey` are the operator
+/// configuration the baseline drove; `gpg.program` is the test's own determinism, and it is what
+/// makes this cell independent of whether a gpg is installed on the host and of what a host
+/// keyring happens to hold — without it the *cause bytes* differ per machine (one host answered
+/// `No secret key`, another `No Keybox daemon running`) while the *exit code* does not. git's
+/// answer is the same either way: `fatal: failed to write commit object`, exit **128**.
+fn plant_signing_refusal(repo: &Path) {
+    git(repo, &["config", "commit.gpgsign", "true"]);
+    git(repo, &["config", "user.signingkey", "DEADBEEFNOTAKEY"]);
+    git(
+        repo,
+        &["config", "gpg.program", "/nonexistent/jigc-no-gpg-here"],
+    );
+}
+
+/// The operator's repair between the refused run and the recovery re-run — the signing half of
+/// [`remove_hook`]'s role in the first sweep.
+fn lift_signing_refusal(repo: &Path) {
+    git(repo, &["config", "--unset", "commit.gpgsign"]);
+    git(repo, &["config", "--unset", "user.signingkey"]);
+    git(repo, &["config", "--unset", "gpg.program"]);
+}
+
+/// git's own bytes for the planted refusal — the verbatim relay this cell must still carry.
+const GIT_OWN_REFUSAL_PROSE: &str = "fatal: failed to write commit object";
+
+/// The **fourth cell of the same axis**: the commit reaches the seam, everything before it
+/// succeeded, and **git itself** refuses it — no hook spoke (the warn-only hook `jigc setup`
+/// installs is removed in every cell here, exactly as the first sweep's recovery step removes
+/// the rejecting one).
+///
+/// Until M52 Increment 3 / T5 the seam typed **every** non-zero `git commit` as a
+/// [`CommitRejected`], so this cell closed with *"Fix the hook's complaint"* — a law-1 lie and
+/// a route an operator cannot follow, at ten doors at once
+/// (`completions/artifacts/M52/baseline-posture.md` §2.9; `settle-record.md` → D2.3). Two of
+/// the four causes the baseline drove there are now refused at the door by this increment's own
+/// posture family (a partial commit during a pick; an unmerged index), which leaves this one as
+/// the reachable instance — and it is reachable from an ordinary `~/.gitconfig`.
+///
+/// **The state clause this cell asserts is the *hook* cell's** (`DoorCase::survived`), not the
+/// third sweep's `survived_non_hook`, and the distinction is the whole reason the cell is a
+/// third render arm rather than a second caller of the second one: the third sweep's failures
+/// happen **before** the commit (a blocked promote destination, a stale index lock, a refused
+/// `--ff-only`), so a door whose stage is what failed says so; this one happens **at** the
+/// commit, with everything before it done, which is precisely the state the hook cell describes.
+/// Asserting the wrong one here would have shipped `migrate-corpus` the sentence *"the stage did
+/// not complete"* over a stage that completed.
+#[test]
+fn no_committing_door_calls_gits_own_refusal_a_hooks_complaint() {
+    assert_eq!(
+        COMMITTING_DOORS.len(),
+        10,
+        "the axis is 10 doors + `jigc setup` excluded by its recorded `--no-verify` reason",
+    );
+
+    for door in COMMITTING_DOORS {
+        let verb = door.verb;
+        let case = drive(verb);
+        let repo = case.repo.path();
+        let home = case.home.path();
+        let driven: Vec<&str> = case.driven.iter().map(String::as_str).collect();
+
+        // No hook anywhere in this cell — the first sweep's rejecting one is removed, and so is
+        // the warn-only backstop `jigc setup` wrote, so nothing in the repository can reject
+        // anything and every word about a hook is a lie by construction.
+        remove_hook(repo);
+        plant_signing_refusal(repo);
+
+        let head_before = git(repo, &["rev-parse", "HEAD"]);
+        let refused = jigc(repo, home, &driven, None);
+        let stdout = String::from_utf8_lossy(&refused.stdout).into_owned();
+        let stderr = String::from_utf8_lossy(&refused.stderr).into_owned();
+        let printed = format!("{stdout}{stderr}");
+
+        // (1) the run fails loudly, and nothing landed.
+        assert!(
+            !refused.status.success(),
+            "[{verb}] git's own refusal must exit non-zero; stdout:\n{stdout}\nstderr:\n{stderr}",
+        );
+        assert_eq!(
+            git(repo, &["rev-parse", "HEAD"]),
+            head_before,
+            "[{verb}] nothing was committed, so HEAD must be untouched; printed:\n{printed}",
+        );
+
+        // (2) git's own bytes survive verbatim — the relay is what tells the operator that the
+        // cause is a signing configuration and not a policy hook.
+        assert!(
+            stderr.contains(GIT_OWN_REFUSAL_PROSE),
+            "[{verb}] git's own bytes must survive verbatim; stderr:\n{stderr}",
+        );
+
+        // (3) NO hook is blamed, and nobody is said to have rejected the run.
+        assert!(
+            !printed.contains(HOOK_DIAGNOSIS),
+            "[{verb}] no hook spoke — git itself refused the commit; printed:\n{printed}",
+        );
+        assert!(
+            !printed.contains(REJECTION_ASSERTION),
+            "[{verb}] nobody rejected this run — git refused it; printed:\n{printed}",
+        );
+
+        // (4) the state clause is the door's own, and it is the HOOK cell's clause: everything
+        // before the commit succeeded here, exactly as it does under a rejecting hook.
+        assert!(
+            stderr.contains(&case.survived),
+            "[{verb}] the frame must state what survived (expected to name `{}`); \
+             stderr:\n{stderr}",
+            case.survived,
+        );
+
+        // (5) exactly ONE route, and it is this door's own re-run — lifted verbatim.
+        assert_eq!(
+            stderr.matches("then re-run ").count(),
+            1,
+            "[{verb}] the frame must print exactly one route; stderr:\n{stderr}",
+        );
+        let lifted = lift_rerun(&stderr);
+        let lifted_argv = shell_split(&lifted);
+        assert_eq!(
+            lifted_argv, case.expected_rerun,
+            "[{verb}] the frame must name the door's OWN re-run; printed `{lifted}`",
+        );
+
+        // (6) the log carries THIS door's identity — read off the record, so the release
+        // build's compiled-out `debug_assert!` cannot hide a wrong or missing one.
+        let records = log_records(repo);
+        let record = record_for(&records, &case.driven).unwrap_or_else(|| {
+            panic!("[{verb}] the refused run must be logged; records:\n{records:#?}")
+        });
+        assert_eq!(
+            record["error_code"].as_str(),
+            Some(door.error_code),
+            "[{verb}] the log must carry THIS door's identity; got {record}",
+        );
+
+        // (7) the claim is TRUE: resolve the cause the frame pointed at, run the printed line
+        // verbatim, and it lands — which is what makes the state clause in (4) a fact about the
+        // repository rather than a sentence about it.
+        lift_signing_refusal(repo);
+        assert_eq!(
+            lifted_argv.first().map(String::as_str),
+            Some("jigc"),
+            "[{verb}] the printed line must be a runnable `jigc …` command; printed `{lifted}`",
+        );
+        let rerun_argv: Vec<&str> = lifted_argv[1..].iter().map(String::as_str).collect();
+        let recovered = jigc(repo, home, &rerun_argv, None);
+        assert!(
+            recovered.status.success(),
+            "[{verb}] the printed re-run must recover; stdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&recovered.stdout),
+            String::from_utf8_lossy(&recovered.stderr),
+        );
+    }
+}
+
+/// The discriminator's **load-bearing premise**, pinned against the real git on this host: git
+/// normalizes *every* hook failure to exit **1**, whatever the hook itself exits.
+///
+/// The seam reads the exit code to tell a hook's refusal from git's own, so a git that stopped
+/// normalizing would flip a genuine hook rejection into the non-hook frame — the same law-1 lie
+/// in the other direction. This arm drives the worst case: a `pre-commit` hook exiting **128**,
+/// git's own fatal code. Driven alongside it while building this arm, and normalized identically:
+/// a hook exiting 42, a `commit-msg` hook exiting 7, a hook with an unexecutable shebang, and a
+/// hook killed by SIGKILL.
+#[test]
+fn a_hook_exiting_gits_own_code_is_still_framed_as_a_hook_rejection() {
+    let case = drive("jigc milestone create");
+    let repo = case.repo.path();
+    let home = case.home.path();
+
+    let hook = repo.join(".git").join("hooks").join("pre-commit");
+    fs::write(
+        &hook,
+        format!("#!/bin/sh\necho '{HOOK_MARKER}' 1>&2\nexit 128\n"),
+    )
+    .expect("write the 128-exiting pre-commit hook");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).expect("chmod hook");
+    }
+
+    let driven: Vec<&str> = case.driven.iter().map(String::as_str).collect();
+    let rejected = jigc(repo, home, &driven, None);
+    let stderr = String::from_utf8_lossy(&rejected.stderr).into_owned();
+
+    assert!(
+        !rejected.status.success(),
+        "a rejected commit must exit non-zero; stderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains(HOOK_MARKER),
+        "the hook's own bytes must survive verbatim; stderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains(REJECTION_ASSERTION),
+        "a hook exiting git's own code is still a hook rejection; stderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains(HOOK_DIAGNOSIS),
+        "a hook exiting git's own code must still be routed at the hook; stderr:\n{stderr}",
+    );
+}
+
+/// A `git` on `PATH` that answers **`git commit`** with `stdout`, `stderr` and `code` of the
+/// caller's choosing and execs the real git for everything else — the instrument for the two
+/// facts about the seam that no reachable repository state can produce on this git.
+///
+/// It exists because the cell it drives is a *relay* property: git writes to **both** streams
+/// only in states the door now refuses before the seam is reached (an unmerged index writes
+/// `U\t<path>` to stdout and its `error:` to stderr — the baseline's L6, refused at the door by
+/// this increment's own `InProgress::UnmergedIndex` member), so the glue defect survives every
+/// state a fixture can still reach. Planting the two streams is the only way left to drive the
+/// emitted bytes, and the exit code is planted in the same motion so the discriminator is read
+/// off jigc's output at codes the host's git will not hand it either.
+fn install_git_shim(home: &Path, stdout: &str, stderr: &str, code: i32) -> PathBuf {
+    let real = Command::new("sh")
+        .args(["-c", "command -v git"])
+        .output()
+        .expect("locate the real git");
+    let real = String::from_utf8_lossy(&real.stdout).trim().to_string();
+    assert!(!real.is_empty(), "the real git must be on PATH");
+
+    let dir = home.join("git-shim-bin");
+    fs::create_dir_all(&dir).expect("mk the git shim dir");
+    let shim = dir.join("git");
+    fs::write(
+        &shim,
+        format!(
+            "#!/bin/sh\nif [ \"$1\" = commit ]; then\n  printf '%s\\n' '{stdout}'\n  \
+             printf '%s\\n' '{stderr}' 1>&2\n  exit {code}\nfi\nexec {real:?} \"$@\"\n"
+        ),
+    )
+    .expect("write the git shim");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&shim, fs::Permissions::from_mode(0o755)).expect("chmod the git shim");
+    }
+    dir
+}
+
+/// Run `jigc` with `shim` first on `PATH`, so the binary's own `Command::new("git")` resolves to
+/// it. Everything else matches [`jigc`]; it is spelled here rather than in the shared fixture
+/// module because only this cell poisons `PATH`.
+fn jigc_with_git_shim(
+    repo: &Path,
+    home: &Path,
+    shim: &Path,
+    args: &[&str],
+) -> std::process::Output {
+    let path = std::env::var("PATH").unwrap_or_default();
+    Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(args)
+        .current_dir(repo)
+        .env("HOME", home)
+        .env_remove("JIGC_PACK_DIR")
+        .env("PATH", format!("{}:{path}", shim.display()))
+        .output()
+        .expect("run the jigc binary under the git shim")
+}
+
+const SEAM_STDOUT_TOKEN: &str = "SEAM-STDOUT-TOKEN";
+const SEAM_STDERR_TOKEN: &str = "SEAM-STDERR-TOKEN";
+
+/// The seam's two remaining properties, over the axis no repository state can reach:
+/// **the exit code decides which frame is told**, and **git's two streams stay apart**.
+///
+/// 1. *The code axis.* A hook failure is exit 1 and nothing else (pinned against the real git by
+///    [`a_hook_exiting_gits_own_code_is_still_framed_as_a_hook_rejection`]), so *only* exit 1 may
+///    reach the hook frame. 128 is git's own fatal (the signing refusal the fourth sweep drives);
+///    129 is git's usage error — an argv jigc itself built, which no hook can be blamed for
+///    either. Keying the hook cell on `== 1` rather than the non-hook cell on `== 128` is what
+///    makes the third code answer correctly instead of inheriting the lie one code over.
+/// 2. *The stream axis.* The relay was `format!("{}{}", stdout.trim(), stderr.trim())`, so git's
+///    last stdout token was glued to its first stderr token (`U\tsq.txterror: Committing is not
+///    possible…`, driven at the baseline). Both tokens are asserted **separated by the newline
+///    the relay now writes**, not merely present.
+#[test]
+fn the_seam_reads_gits_exit_code_and_keeps_its_two_streams_apart() {
+    for (code, hook_frame) in [(1, true), (128, false), (129, false)] {
+        let case = drive("jigc milestone create");
+        let repo = case.repo.path();
+        let home = case.home.path();
+        remove_hook(repo);
+        let shim = install_git_shim(home, SEAM_STDOUT_TOKEN, SEAM_STDERR_TOKEN, code);
+        let driven: Vec<&str> = case.driven.iter().map(String::as_str).collect();
+
+        let out = jigc_with_git_shim(repo, home, &shim, &driven);
+        let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+        let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+        let printed = format!("{stdout}{stderr}");
+
+        assert!(
+            !out.status.success(),
+            "[exit {code}] a failed `git commit` must exit non-zero; printed:\n{printed}",
+        );
+
+        // (1) the two streams are relayed, and they are relayed APART.
+        assert!(
+            printed.contains(&format!("{SEAM_STDOUT_TOKEN}\n{SEAM_STDERR_TOKEN}")),
+            "[exit {code}] git's two streams must be relayed separated, never glued; \
+             printed:\n{printed}",
+        );
+
+        // (2) the frame told is the one the exit code earns.
+        assert_eq!(
+            printed.contains(HOOK_DIAGNOSIS),
+            hook_frame,
+            "[exit {code}] the hook diagnosis must be told iff a hook could have caused it; \
+             printed:\n{printed}",
+        );
+        assert_eq!(
+            printed.contains(REJECTION_ASSERTION),
+            hook_frame,
+            "[exit {code}] the rejection assertion must be told iff a hook could have caused \
+             it; printed:\n{printed}",
+        );
+        // …and either way the door still routes the operator at its own re-run.
+        assert_eq!(
+            shell_split(&lift_rerun(&stderr)),
+            case.expected_rerun,
+            "[exit {code}] the frame must name the door's OWN re-run; printed:\n{printed}",
         );
     }
 }

@@ -1974,7 +1974,7 @@ pub fn carried_over_advisory(carried: &[ManifestEntry]) -> String {
     out
 }
 
-/// Frame a commit-phase **hook/git rejection** with the recoverability it always had but
+/// Frame a commit-phase **hook rejection** with the recoverability it always had but
 /// never stated (M42, `design/finalize.md` → 6. Commit): git's `rejection` bytes stay
 /// **verbatim and unwrapped** (the hook output *is* the correction signal — the M40
 /// refinement's routed wrap covers jigc's *own* staging acts, never the user's hook
@@ -2035,6 +2035,12 @@ pub fn commit_rejection_route(survived: &str, rerun: &str) -> String {
 ///
 /// A second caller of [`commit_rejected`] would have been the cheap fix and would have shipped
 /// that lie at ten doors at once, which is why the cell got its own arm rather than a parameter.
+///
+/// **Its second caller is git's own refusal of the commit** (M52 Increment 3 / T5): git refusing
+/// to sign, or to make a partial commit during a pick, is no more a hook's complaint than a
+/// stale index lock is. That caller passes the *hook* cell's state clause — everything before
+/// the commit succeeded there — which is why the clause is this function's parameter and not
+/// its business.
 ///
 /// The closing `then re-run …` shape is deliberately the rejection frame's, so the one lifter
 /// (`tests/commit_rejected_axis::lift_rerun`) reads the emitted bytes of both cells.

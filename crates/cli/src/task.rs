@@ -4587,12 +4587,22 @@ fn mark_stage_failure(err: anyhow::Error) -> anyhow::Error {
 /// `pub(crate)` since M47 Inc 3 T7: the frame swept off the one task door onto the whole
 /// nine-door committing axis, so `milestone` / `rename` / `migrate_corpus` discriminate on it
 /// too (through [`surface_commit_rejection`], the one place that downcasts).
+///
+/// **It carries who refused** (M52 Increment 3 / T5): `by_hook` is false when git itself
+/// refused the commit, which is the same *state* — everything before the commit succeeded,
+/// nothing landed — but not the same *diagnosis*. See [`git_commit_capture`] for the exit-code
+/// discriminator that sets it and for the driven basis of that discriminator.
 #[derive(Debug)]
-pub(crate) struct CommitRejected(String);
+pub(crate) struct CommitRejected {
+    /// git's own bytes, verbatim, under the seam's one-line frame.
+    cause: String,
+    /// Whether a hook could have caused this — see [`git_commit_capture`].
+    by_hook: bool,
+}
 
 impl std::fmt::Display for CommitRejected {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
+        f.write_str(&self.cause)
     }
 }
 
@@ -4610,9 +4620,15 @@ impl std::error::Error for CommitRejected {}
 /// (`error_code: null` in the invocation log, no route, no statement of what survived).
 ///
 /// It is deliberately a **separate** marker from [`CommitRejected`] rather than a widening of
-/// it: the two cells need different diagnoses. `CommitRejected`'s frame tells the operator to
-/// fix the hook's complaint, which is a lie — and a route that cannot be followed — when no
-/// hook spoke ([`crate::render::commit_failed`] is this marker's own arm).
+/// it, and since M52 Increment 3 / T5 — when `CommitRejected` learned to carry *who* refused —
+/// what separates them is no longer the diagnosis but the **state**. Both take
+/// [`crate::render::commit_failed`]'s hook-free wording; they differ in *where* the failure
+/// happened, and therefore in which clause is true of the repository:
+///
+///   * a `CommitRejected` (hook or git) fails **at** the commit, with everything before it
+///     done — [`RejectionFrame::survived`];
+///   * a `CommitFailed` fails **before** it, so the door's own stage may be exactly what did
+///     not complete — [`RejectionFrame::survived_non_hook`].
 ///
 /// Its [`Display`](std::fmt::Display) is the flattened cause, so git's own bytes stay verbatim.
 #[derive(Debug)]
@@ -4719,6 +4735,10 @@ impl RejectionFrame {
 /// into the invocation log; every other (unstructured `anyhow`) failure keeps the plain
 /// operational-error envelope and carries no identity.
 ///
+/// **Three render arms, not two** (M52 Increment 3 / T5): a hook's rejection, git's own
+/// refusal of the same commit, and a failure *before* the commit ([`CommitFailed`]). Only the
+/// first may name a hook; the first two share the state clause, because they share the state.
+///
 /// The one place that downcasts [`CommitRejected`], shared by every member of
 /// [`COMMITTING_DOORS`](invocation_log::COMMITTING_DOORS) — the per-task `finalize` arm, both
 /// milestone-finalize commit-model arms, `rename`, `migrate-corpus`, and the record-only doors
@@ -4739,10 +4759,25 @@ pub(crate) fn surface_commit_rejection(
     // same three things the rejection cell states, in its own render arm — nothing in it blames
     // a hook, because in this cell none spoke.
     let framed = match err.downcast_ref::<CommitRejected>() {
-        Some(rejected) => Some((
-            rejected.0.as_str(),
-            render::commit_rejected(&rejected.0, &frame.survived, &frame.rerun),
+        // A hook refused it: the hook's complaint IS the correction signal, so the frame
+        // routes the operator at it.
+        Some(rejected) if rejected.by_hook => Some((
+            rejected.cause.as_str(),
+            render::commit_rejected(&rejected.cause, &frame.survived, &frame.rerun),
             render::commit_rejection_route(&frame.survived, &frame.rerun),
+        )),
+        // **git itself** refused it (M52 Increment 3 / T5) — the third cell of the axis. It
+        // takes the non-hook *diagnosis* and the **hook cell's state clause**, and that pairing
+        // is the whole reason it is an arm rather than a second caller of the one below:
+        // `survived_non_hook` was written for a failure **before** the commit (a stale index
+        // lock met the stage, a blocked promote destination, a refused `--ff-only`), so
+        // `migrate-corpus` says there *"the stage did not complete"*. Here everything up to the
+        // commit succeeded, exactly as under a rejecting hook, so that sentence would be false
+        // at the moment an operator is recovering.
+        Some(rejected) => Some((
+            rejected.cause.as_str(),
+            render::commit_failed(&rejected.cause, &frame.survived, &frame.rerun),
+            render::commit_failure_route(&frame.survived, &frame.rerun),
         )),
         None => err.downcast_ref::<CommitFailed>().map(|failed| {
             (
@@ -5498,11 +5533,60 @@ pub fn git_commit(subject: &SeamSubject, message_file: &Path) -> Result<String> 
     )
 }
 
+/// The **only** exit code a hook failure can reach the seam with — git normalizes every one of
+/// them to `1`, so a code that is not this one was git's own refusal and no hook can be blamed
+/// for it (M52 Increment 3 / T5; `completions/artifacts/M52/baseline-posture.md` §2.9, L8;
+/// `settle-record.md` → D2.3).
+///
+/// **Driven on git 2.54.0 (Apple Git-157)**, in both directions and over every hook failure
+/// mode reachable: a `pre-commit` hook exiting 1, 42 or **128** (git's own fatal code), a
+/// `commit-msg` hook exiting 7, a hook whose shebang cannot be executed
+/// (`fatal: cannot exec '.git/hooks/pre-commit'`), and a hook killed by `SIGKILL`
+/// (`error: … died of signal 9`) — every one arrives as exit **1**. git's own refusals arrive
+/// as **128** (`gpg failed to sign the data`, a partial commit during a pick, an unmerged
+/// index) or **129** (a usage error, which would be jigc's own argv).
+///
+/// **The hook cell is keyed on `== 1`, not the git cell on `== 128`**, and the difference is a
+/// third code: keyed the other way, a 129 would inherit the hook diagnosis — the same lie one
+/// code over. The normalization this rests on is pinned against the host's real git by
+/// `commit_rejected_axis::a_hook_exiting_gits_own_code_is_still_framed_as_a_hook_rejection`,
+/// because a git that stopped normalizing would flip a genuine hook rejection into the
+/// non-hook frame.
+///
+/// **Declared bound:** exit 1 is *also* git's refusal to record an empty commit, which is why
+/// that cell is discriminated by each door **before** the seam (M48 Increment 8, `nothing_staged`)
+/// rather than here — an exit code cannot separate those two, and the door can.
+const GIT_HOOK_EXIT: i32 = 1;
+
+/// git's two streams, relayed **apart**: each trimmed, joined by a newline, and an empty one
+/// dropped rather than left as a blank line.
+///
+/// It was `format!("{}{}", stdout.trim(), stderr.trim())`, which glued git's last stdout token
+/// to its first stderr token whenever git wrote to both — driven at the baseline as
+/// `U\tsq.txterror: Committing is not possible because you have unmerged files.`
+/// (`completions/artifacts/M52/baseline-posture.md` §2.9, L6). The relay is supposed to be
+/// verbatim (law 1), and two tokens welded into one word are not git's bytes.
+fn relay_git_streams(stdout: &str, stderr: &str) -> String {
+    [stdout.trim(), stderr.trim()]
+        .into_iter()
+        .filter(|stream| !stream.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// The ONE **hook-capable commit seam**: `git commit <args…>` in the checkout `subject`
 /// names. **Never**
 /// passes `--no-verify`: the user's `pre-commit` / `commit-msg` hooks are policy and the
 /// CLI respects them — a hook rejection surfaces git's stdout+stderr verbatim in the
 /// typed [`CommitRejected`] (the correction signal), and no commit lands.
+///
+/// **A non-zero exit is not proof a hook spoke** (M52 Increment 3 / T5): git's own refusals
+/// arrive here identically, and until this increment every one of them was relayed under
+/// *"`git commit` was rejected"* and closed with *"Fix the hook's complaint"* — a law-1 lie
+/// and an unfollowable route at ten doors, driven with an ordinary `commit.gpgsign`
+/// (`completions/artifacts/M52/baseline-posture.md` §2.9). [`GIT_HOOK_EXIT`] is the
+/// discriminator and carries its driven basis; [`relay_git_streams`] keeps git's two streams
+/// apart while doing it.
 ///
 /// On a **successful** commit returns the captured hook output so the caller can surface
 /// a non-blocking hook's warning — e.g. the M19 doc↔code backstop, which warns but exits
@@ -5546,15 +5630,24 @@ pub(crate) fn git_commit_capture(
     let stderr = String::from_utf8_lossy(&out.stderr);
     if !out.status.success() {
         let stdout = String::from_utf8_lossy(&out.stdout);
+        let relayed = relay_git_streams(&stdout, &stderr);
         // M42 — the rejection is a TYPED error (`CommitRejected`) carrying git's bytes
         // verbatim, so the per-task surface (which knows the task id) can frame it with
         // the recoverability route. Its `Display` is this same message, so the callers
         // that only print `{err:#}` are byte-unchanged.
-        return Err(anyhow::Error::new(CommitRejected(format!(
-            "`git commit` was rejected (no commit was made):\n{}{}",
-            stdout.trim(),
-            stderr.trim()
-        ))));
+        //
+        // **Who refused decides the headline and the route** (M52 Increment 3 / T5) — the
+        // discriminator is [`GIT_HOOK_EXIT`], see there.
+        let by_hook = out.status.code() == Some(GIT_HOOK_EXIT);
+        let headline = if by_hook {
+            "`git commit` was rejected (no commit was made):"
+        } else {
+            "`git commit` failed (no commit was made):"
+        };
+        return Err(anyhow::Error::new(CommitRejected {
+            cause: format!("{headline}\n{relayed}"),
+            by_hook,
+        }));
     }
     Ok(stderr.trim_end().to_owned())
 }
@@ -6250,7 +6343,10 @@ mod tests {
         let typed: Vec<(&str, anyhow::Error)> = vec![
             (
                 "CommitRejected",
-                anyhow::Error::new(CommitRejected("hook said no".to_string())),
+                anyhow::Error::new(CommitRejected {
+                    cause: "hook said no".to_string(),
+                    by_hook: true,
+                }),
             ),
             (
                 "StageGitFailure",
