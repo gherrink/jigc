@@ -84,9 +84,14 @@ impl State {
             State::Detached => &[PostureMember::HeadDetached],
             State::Unborn => &[PostureMember::HeadUnborn],
             State::Merge => &[PostureMember::OperationInProgress],
+            // The OPERATION first, then the HEAD it detached (M52 Increment 3): both
+            // members are real, and a consumer taking the first adjudicated breach must
+            // be handed the cause. Before the flip, every commit door answered this cell
+            // `repo.head-detached` and routed at a `git switch` git refuses at exit 128,
+            // while the rebase that caused the detachment went unnamed.
             State::Rebase => &[
-                PostureMember::HeadDetached,
                 PostureMember::OperationInProgress,
+                PostureMember::HeadDetached,
             ],
             State::Bisect => &[PostureMember::OperationInProgress],
         }

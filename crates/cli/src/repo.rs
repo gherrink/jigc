@@ -14,11 +14,24 @@
 //! resolved by walk-up, never by shelling out (so a fake `.git` can never walk up to,
 //! and bind against, a real ancestor repo).
 //!
+//! **The scope of that "never by shelling out": path resolution, and nothing else.** It
+//! binds [`jigc_home`] and [`worktree_git_dir`] — the two functions that answer *which
+//! directory is this?* — because a shell-out there is what lets a fake `.git` bind
+//! against a real ancestor repository. It has never bound the probes that then ask
+//! questions *about* a resolved repository, and three ship: [`head_ref`]
+//! (`git symbolic-ref -q HEAD`), [`crate::task::head_is_unborn`], and
+//! [`index_has_unmerged_paths`] (`git ls-files -u`, M52 Increment 3 — the one member of
+//! the operation family that no file on disk records). The standing rule for those is
+//! `DECISIONS.md` 2026-05-31 → Git invocation. The two rules meet at [`posture`], which
+//! resolves the git dir by walk-up **first** and asks nothing at all when that
+//! resolution finds no `HEAD` — so a fake `.git` still reaches no shell-out.
+//!
 //! # The repository-posture family (M51 Increment 2)
 //!
 //! [`posture`] answers one question — *is this repository in a state a door may commit
 //! or move in?* — over **three** members: **HEAD detached** · **HEAD unborn** · **an
-//! operation in progress** (`MERGE_HEAD` · `rebase-merge`/`rebase-apply` · `BISECT_LOG`).
+//! operation in progress** — the third being **any operation git can leave
+//! un-concluded**, [`InProgress::ALL`] (M52 Increment 3), not a list of markers.
 //! [`finalize.md`](../../../design/finalize.md) → 1. Preflight has promised the third
 //! verbatim since it was written (*"No in-progress merge/rebase/bisect"*) while **zero**
 //! probes existed in either crate, and the M51 baseline drove the first two as live damage
@@ -38,17 +51,10 @@
 //! and the M51 baseline drove a committing door writing its record into repo A while
 //! landing the commit in repo B at exit 0. This probe does not adjudicate that: its
 //! subject is the path it is handed, and it passes the ambient environment through
-//! untouched. The header above is **quoted** rather than paraphrased because it is the
-//! reason this module resolves by walk-up, and it is a statement about **jigc_home
-//! binding**, never a prohibition on a posture probe shelling out:
+//! untouched. (The walk-up rule this module opens with is what keeps *that* honest —
+//! see its scope above: it binds where a repository is resolved, never what a probe may
+//! then ask about the one it resolved.)
 //!
-//! > A main checkout and a fake `create_dir_all(".git")` fixture both keep `.git` as a
-//! > *directory*, and for both the answer is the `.git`-bearing dir itself — resolved by
-//! > walk-up, never by shelling out (so a fake `.git` can never walk up to, and bind
-//! > against, a real ancestor repo).
-//!
-//! The standing rule for a probe's own shell-out is `DECISIONS.md` 2026-05-31 → Git
-//! invocation, which [`crate::task::head_is_unborn`] and every other probe already follow.
 //! **The scope is reopenable**, recorded as such: `dirname(git-common-dir) != toplevel` is
 //! **not** a discriminator for the redirect — a legitimate linked worktree has the
 //! identical asymmetry — so closing the cell needs a repository-**identity** check the
@@ -150,47 +156,213 @@ impl PostureMember {
 
 /// The git operation an [`PostureMember::OperationInProgress`] breach names — carried on
 /// the breach so the route can name **the command that concludes this operation**, never a
-/// menu of three.
+/// menu of nine.
+///
+/// **The member set is the operations git can leave un-concluded, not the markers it
+/// writes** (M52 Increment 3; `settle-record.md` → D2.1). The M51 shape carried three
+/// markers over three operations, and the M52 baseline drove what that costs: a clean
+/// `git merge --squash` writes **`SQUASH_MSG` and nothing else**, a conflicted `git stash
+/// pop` writes **no marker at all**, and `rebase-apply/` is written by **two** operations
+/// — so no widening of a marker list could have reached the first two, and a list that
+/// reached the third named `git am` *a rebase* and routed it at `git rebase --abort`,
+/// which git refuses at exit 128
+/// ([baseline-posture.md](../../../completions/artifacts/M52/baseline-posture.md) §1.1,
+/// §2.2, §2.6). Each variant therefore owns its own [`detect`](InProgress::detect), its
+/// own noun and its own concluding and abandoning commands.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InProgress {
-    /// `MERGE_HEAD` is present.
+    /// A `git merge` the user has not concluded — `MERGE_HEAD`.
     Merge,
-    /// `rebase-merge/` (the merge backend) or `rebase-apply/` (the am backend) is present.
+    /// A `git merge --squash` whose result is staged and uncommitted — `SQUASH_MSG`
+    /// with **no** `MERGE_HEAD`, the only evidence git leaves. Driven at the M52
+    /// baseline: the whole squashed payload landed inside jigc's own commit at exit 0
+    /// and the merge's authored message was destroyed with `SQUASH_MSG` (§2.6 / L3).
+    SquashMerge,
+    /// A `git rebase` stopped mid-replay — `rebase-merge/` (the merge backend) or
+    /// `rebase-apply/` **without** `applying` (the apply backend).
     Rebase,
-    /// `BISECT_LOG` is present.
+    /// A `git am` stopped on a patch that does not apply — `rebase-apply/applying`.
+    ///
+    /// git's **own** discriminator: `rebase-apply/applying` is written by `am` and
+    /// `rebase-apply/onto` by `rebase --apply`, which is how `git rebase --abort` can
+    /// answer *"It looks like 'git am' is in progress"*. Both were driven in both
+    /// directions (§1.1), and it is why this cell cannot be fixed by renaming a noun.
+    Am,
+    /// A `git cherry-pick` stopped on a conflict — `CHERRY_PICK_HEAD`.
+    CherryPick,
+    /// A `git revert` stopped on a conflict — `REVERT_HEAD`.
+    ///
+    /// git's own partial-commit guard reads `MERGE_HEAD` and `CHERRY_PICK_HEAD` and
+    /// **not** `REVERT_HEAD`, so this is the cell where *every* commit door concluded
+    /// the user's revert at exit 0 and left `git revert --continue` answering *"no
+    /// cherry-pick or revert in progress"* (§2.5 / L2).
+    Revert,
+    /// A queue of commits `sequencer/` still holds with no pick or revert live —
+    /// the residue of a multi-commit pick or revert whose current commit was
+    /// concluded some other way.
+    ///
+    /// It is probed **after** [`InProgress::CherryPick`] and [`InProgress::Revert`] on
+    /// purpose: while either marker is present the pick or the revert *is* the
+    /// operation, and `git cherry-pick --abort` clears a multi-commit revert's queue
+    /// too (driven) — so the opposite order would route a user mid-`revert` at a
+    /// cherry-pick. Driven at the baseline as the state jigc's own exit-0 finalize
+    /// produced, whose advertised recovery then destroyed that commit (§2.7 / L5).
+    Sequencer,
+    /// A `git bisect` the user has not reset — `BISECT_LOG`.
     Bisect,
+    /// **Unmerged paths in the index with no operation marker at all** — a conflicted
+    /// `git stash pop`, or a conflicted `git merge --squash`.
+    ///
+    /// The family's last question, and the only one that is not a filesystem read:
+    /// `git ls-files -u`. It is asked **last** because every conflicting operation
+    /// above also leaves unmerged entries, and each of those is better named by its own
+    /// operation; this member is what is left when none of them answered — the cell the
+    /// baseline drove reaching the commit seam and being dressed as a hook's complaint
+    /// (§2.6 / L6).
+    UnmergedIndex,
 }
 
 impl InProgress {
-    /// Every operation, in probe order.
-    pub const ALL: [InProgress; 3] = [InProgress::Merge, InProgress::Rebase, InProgress::Bisect];
+    /// Every operation, **in probe order** — the order [`posture`] asks them in and the
+    /// order a consumer taking the first answer inherits.
+    ///
+    /// Three of the orderings are load-bearing and each is driven:
+    /// [`InProgress::Am`] and [`InProgress::Rebase`] are disjoint by predicate rather
+    /// than by position; [`InProgress::CherryPick`] and [`InProgress::Revert`] come
+    /// **before** [`InProgress::Sequencer`]; and [`InProgress::UnmergedIndex`] is
+    /// **last**, so the shell-out it needs is reached only where no marker answered.
+    pub const ALL: [InProgress; 9] = [
+        InProgress::Merge,
+        InProgress::SquashMerge,
+        InProgress::Rebase,
+        InProgress::Am,
+        InProgress::CherryPick,
+        InProgress::Revert,
+        InProgress::Sequencer,
+        InProgress::Bisect,
+        InProgress::UnmergedIndex,
+    ];
 
-    /// The entries in the **worktree's own** git dir whose presence *is* this operation.
-    fn markers(self) -> &'static [&'static str] {
+    /// **Is this operation in progress in `repo_root`?** — the per-variant predicate
+    /// that replaced a shared marker list.
+    ///
+    /// Eight members read the **worktree's own** git dir, so a linked worktree answers
+    /// about itself. The ninth asks git, because the state it names leaves nothing on
+    /// disk to read.
+    fn detect(self, git_dir: &Path, repo_root: &Path) -> bool {
+        let present = |entry: &str| git_dir.join(entry).exists();
         match self {
-            InProgress::Merge => &["MERGE_HEAD"],
-            InProgress::Rebase => &["rebase-merge", "rebase-apply"],
-            InProgress::Bisect => &["BISECT_LOG"],
+            InProgress::Merge => present("MERGE_HEAD"),
+            // A `--squash` merge never updates HEAD, so `MERGE_HEAD` is absent and
+            // `SQUASH_MSG` is the whole of git's record. The conjunct keeps an ordinary
+            // conflicting merge — which leaves both — answered as a merge.
+            InProgress::SquashMerge => present("SQUASH_MSG") && !present("MERGE_HEAD"),
+            // `rebase-apply/` without `applying` is a rebase on the apply backend; with
+            // it, the operation is an `am`. The negated conjunct rather than a positive
+            // `onto` read keeps the two total over `rebase-apply/`.
+            InProgress::Rebase => {
+                present("rebase-merge")
+                    || (present("rebase-apply") && !present("rebase-apply/applying"))
+            }
+            InProgress::Am => present("rebase-apply/applying"),
+            InProgress::CherryPick => present("CHERRY_PICK_HEAD"),
+            InProgress::Revert => present("REVERT_HEAD"),
+            InProgress::Sequencer => present("sequencer"),
+            InProgress::Bisect => present("BISECT_LOG"),
+            InProgress::UnmergedIndex => index_has_unmerged_paths(repo_root),
         }
     }
 
-    /// How the message names it.
-    fn noun(self) -> &'static str {
+    /// How the message names it — **this** operation, so a user in the middle of one of
+    /// nine things learns which one.
+    pub fn noun(self) -> &'static str {
         match self {
             InProgress::Merge => "a merge",
+            InProgress::SquashMerge => "a squash merge",
             InProgress::Rebase => "a rebase",
+            InProgress::Am => "a `git am`",
+            InProgress::CherryPick => "a cherry-pick",
+            InProgress::Revert => "a revert",
+            InProgress::Sequencer => "a cherry-pick or revert",
             InProgress::Bisect => "a bisect",
+            InProgress::UnmergedIndex => "a conflict",
         }
     }
 
-    /// The git command that resolves it — the route's load-bearing bytes.
-    fn abort_command(self) -> &'static str {
+    /// What the message says is true of it — the half [`noun`](InProgress::noun) cannot
+    /// carry, because two members are not *"in progress"* in git's own vocabulary: a
+    /// squash merge is staged, and an unmerged index is what a conflict left behind.
+    fn predicate(self) -> &'static str {
         match self {
-            InProgress::Merge => "git merge --abort",
-            InProgress::Rebase => "git rebase --abort",
-            InProgress::Bisect => "git bisect reset",
+            InProgress::SquashMerge => "is staged and not committed",
+            InProgress::Sequencer => "left a queue of commits in `sequencer/`",
+            InProgress::UnmergedIndex => "left unmerged paths in the index",
+            _ => "is in progress",
         }
     }
+
+    /// The git command that **concludes** it, where git has one — named with the
+    /// qualifier that makes it true, since a conflicted operation concludes only after
+    /// the user has resolved it.
+    ///
+    /// `None` for the four members with no such command: a squash merge is concluded by
+    /// the user's own `git commit`, a dangling `sequencer/` has no current commit to
+    /// continue, a bisect ends rather than concludes, and an unmerged index is resolved
+    /// rather than continued.
+    fn conclude_command(self) -> Option<&'static str> {
+        match self {
+            InProgress::Merge => Some("git merge --continue"),
+            InProgress::Rebase => Some("git rebase --continue"),
+            InProgress::Am => Some("git am --continue"),
+            InProgress::CherryPick => Some("git cherry-pick --continue"),
+            InProgress::Revert => Some("git revert --continue"),
+            InProgress::SquashMerge
+            | InProgress::Sequencer
+            | InProgress::Bisect
+            | InProgress::UnmergedIndex => None,
+        }
+    }
+
+    /// The git command that **abandons** it — the route's load-bearing bytes, and the
+    /// one command that is runnable from the state as jigc found it.
+    ///
+    /// Every cell was driven on git 2.54.0: each exits **0** in the state its own
+    /// `detect` answers and leaves no operation behind
+    /// (`crates/cli/tests/repo_posture.rs` runs them out of the emitted route).
+    pub fn abandon(self) -> &'static str {
+        match self {
+            InProgress::Merge => "git merge --abort",
+            // `git merge --abort` answers *"There is no merge to abort (MERGE_HEAD
+            // missing)"* here — the squash never updated HEAD. `git reset --merge`
+            // drops the staged squash and `SQUASH_MSG` with it.
+            InProgress::SquashMerge => "git reset --merge",
+            InProgress::Rebase => "git rebase --abort",
+            InProgress::Am => "git am --abort",
+            InProgress::CherryPick => "git cherry-pick --abort",
+            InProgress::Revert => "git revert --abort",
+            // `--quit` rather than `--abort`: it forgets the queue **without rewinding
+            // HEAD**, and the commits already made here may be the user's own (or
+            // jigc's) — the baseline's L5 is exactly the loss `--abort` causes.
+            InProgress::Sequencer => "git cherry-pick --quit",
+            InProgress::Bisect => "git bisect reset",
+            InProgress::UnmergedIndex => "git reset --merge",
+        }
+    }
+}
+
+/// **Does `repo_root`'s index carry unmerged paths?** — `git ls-files -u`, the one
+/// question in this family that no file on disk answers.
+///
+/// A probe that cannot answer reads as **no breach** (module header): a git that cannot
+/// be spawned, a non-zero exit, or empty output all answer `false`.
+fn index_has_unmerged_paths(repo_root: &Path) -> bool {
+    std::process::Command::new("git")
+        .args(["ls-files", "-u"])
+        .current_dir(repo_root)
+        .output()
+        .ok()
+        .filter(|out| out.status.success())
+        .is_some_and(|out| !String::from_utf8_lossy(&out.stdout).trim().is_empty())
 }
 
 /// One breach of the posture family: the member, plus the concrete operation when the
@@ -240,15 +412,24 @@ impl PostureBreach {
                 // `posture` never builds this member without an operation; the fallback
                 // keeps the renderer total rather than panicking on a shape it owns.
                 let operation = operation.unwrap_or(InProgress::Merge);
+                let route = match operation.conclude_command() {
+                    Some(conclude) => format!(
+                        "conclude it with `{conclude}` once its conflicts are resolved, or \
+                         abandon it with `{}`, then re-run this command",
+                        operation.abandon(),
+                    ),
+                    None => format!(
+                        "conclude it, or abandon it with `{}`, then re-run this command",
+                        operation.abandon(),
+                    ),
+                };
                 (
                     format!(
-                        "{} is in progress — the repository is not in a committable state",
-                        operation.noun()
+                        "{} {} — the repository is not in a committable state",
+                        operation.noun(),
+                        operation.predicate(),
                     ),
-                    format!(
-                        "conclude it, or abandon it with `{}`, then re-run this command",
-                        operation.abort_command()
-                    ),
+                    route,
                 )
             }
         };
@@ -572,6 +753,19 @@ pub fn posture(repo_root: &Path) -> Vec<PostureBreach> {
     if !git_dir.join("HEAD").exists() {
         return breaches;
     }
+    // The OPERATION is answered FIRST, before the HEAD it detached (M52 Increment 3;
+    // `settle-record.md` → D2.2). Both consumers take the first breach they adjudicate,
+    // and a stopped rebase detaches HEAD itself: answered detached-first, three states
+    // routed the user at a `git switch` git refuses at exit 128 while the operation that
+    // caused the detachment went unnamed
+    // ([baseline-posture.md](../../../completions/artifacts/M52/baseline-posture.md)
+    // §2.2, §3.1). The cause before the symptom.
+    if let Some(operation) = operation_in_progress(&git_dir, repo_root) {
+        breaches.push(PostureBreach {
+            member: PostureMember::OperationInProgress,
+            operation: Some(operation),
+        });
+    }
     if head_is_detached(repo_root) == Some(true) {
         breaches.push(PostureBreach {
             member: PostureMember::HeadDetached,
@@ -584,12 +778,6 @@ pub fn posture(repo_root: &Path) -> Vec<PostureBreach> {
         breaches.push(PostureBreach {
             member: PostureMember::HeadUnborn,
             operation: None,
-        });
-    }
-    for operation in operations_in_progress(&git_dir) {
-        breaches.push(PostureBreach {
-            member: PostureMember::OperationInProgress,
-            operation: Some(operation),
         });
     }
     breaches
@@ -635,18 +823,21 @@ fn head_ref(repo_root: &Path) -> Option<Option<String>> {
     }
 }
 
-/// The operations git has left un-concluded in **this worktree**, in [`InProgress::ALL`]
-/// order, read from the worktree's own `git_dir` — empty when none is in progress.
-fn operations_in_progress(git_dir: &Path) -> Vec<InProgress> {
+/// **The** operation git has left un-concluded in this worktree — the **first** member of
+/// [`InProgress::ALL`] whose own `detect` answers, `None` when none does.
+///
+/// One answer, not a list, because several members are true at once by construction and
+/// only one of them is what the user is in the middle of: a conflicting merge, pick,
+/// revert or rebase also leaves **unmerged paths**, and a multi-commit pick is also a
+/// **queue**. Probe order is what picks the right one — the pick and the revert before
+/// the queue they own, the queue before the bare unmerged index — so the route names the
+/// command that resolves *this* state rather than a menu, and
+/// [`InProgress::UnmergedIndex`]'s `git ls-files -u` is reached only where no marker on
+/// disk answered.
+fn operation_in_progress(git_dir: &Path, repo_root: &Path) -> Option<InProgress> {
     InProgress::ALL
         .into_iter()
-        .filter(|operation| {
-            operation
-                .markers()
-                .iter()
-                .any(|marker| git_dir.join(marker).exists())
-        })
-        .collect()
+        .find(|operation| operation.detect(git_dir, repo_root))
 }
 
 /// The **per-worktree** git dir of `repo_root` — where `MERGE_HEAD`, `rebase-merge` /

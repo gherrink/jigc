@@ -75,6 +75,7 @@
 #   am              a failing `git am`                  rebase-apply/applying, attached
 #   cherry-pick     a conflicting one-commit pick       CHERRY_PICK_HEAD + MERGE_MSG
 #   sequencer       a conflicting MULTI-commit pick     the same, plus sequencer/todo
+#   dangling-sequencer  the same, first pick concluded  sequencer/ ALONE, attached
 #   revert          a conflicting `git revert`          REVERT_HEAD + MERGE_MSG
 #   unmerged-index  a conflicted `git stash pop`        NO marker at all, 3 unmerged
 #   bisect          `git bisect start`                  BISECT_LOG + BISECT_START
@@ -182,6 +183,7 @@ GIT_STATES=(
     am
     cherry-pick
     sequencer
+    dangling-sequencer
     revert
     unmerged-index
     bisect
@@ -206,6 +208,7 @@ git_state_expect() {
         am)             printf 'rebase-apply rebase-apply/applying|attached|0' ;;
         cherry-pick)    printf 'CHERRY_PICK_HEAD MERGE_MSG|attached|3' ;;
         sequencer)      printf 'CHERRY_PICK_HEAD MERGE_MSG sequencer sequencer/todo|attached|3' ;;
+        dangling-sequencer) printf 'sequencer sequencer/todo|attached|0' ;;
         revert)         printf 'REVERT_HEAD MERGE_MSG|attached|3' ;;
         unmerged-index) printf '|attached|3' ;;
         bisect)         printf 'BISECT_LOG BISECT_START|attached|0' ;;
@@ -788,6 +791,19 @@ gs_commit posture-shared.txt 'posture fixture: ours'
 # Two picks, the FIRST of which conflicts — so the second stays queued in
 # `sequencer/todo` rather than being replayed, which is the whole point of the member.
 gs_must_conflict cherry-pick 'posture-theirs~1' posture-theirs
+EOF
+}
+
+# The same queue with its FIRST pick concluded by hand: git consumes CHERRY_PICK_HEAD
+# and MERGE_MSG with that commit and leaves `sequencer/` holding the pick it never ran.
+# It is the state jigc's own exit-0 `task finalize` produced at the M52 baseline (§2.7 /
+# L5), and the only one in which `InProgress::Sequencer` is the operation rather than a
+# property of a live pick or revert.
+gen_git_state_dangling_sequencer() {
+    gen_git_state_sequencer
+    cat <<'EOF'
+printf 'resolved\n' > posture-shared.txt
+gs_commit posture-shared.txt 'posture fixture: the pick, concluded by hand'
 EOF
 }
 

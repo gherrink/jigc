@@ -217,6 +217,12 @@ const OPERATION_MEMBERS: &[(&str, &str)] = &[
          the remaining picks are queued on disk and concluding is not one command's work",
     ),
     (
+        "dangling-sequencer",
+        "the same multi-commit pick with its FIRST pick concluded by hand: the commit \
+         consumes `CHERRY_PICK_HEAD` and `MERGE_MSG` and leaves `sequencer/` holding \
+         the pick git never ran — the one state whose whole evidence is the queue",
+    ),
+    (
         "revert",
         "a conflicting `git revert`: `REVERT_HEAD` names the commit being undone, and \
          the revert is concluded or aborted like a pick",

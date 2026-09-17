@@ -19,9 +19,11 @@
 //!
 //! The M51 per-axis review's posture auditor built eight of these by hand, in shell,
 //! once ([baseline-posture.md](../../../../completions/artifacts/M52/baseline-posture.md)
-//! §1). This module is that census turned into a substrate, with the twelfth member
-//! (`bisect`, attached) derived rather than observed — without it the family's
-//! acceptance cannot iterate the enum it claims to iterate.
+//! §1). This module is that census turned into a substrate, with two members derived
+//! rather than observed — `bisect` (attached) and `dangling-sequencer` — because
+//! without them the family's acceptance cannot iterate the enum it claims to iterate:
+//! `dangling-sequencer` is the only cell in which [`cli::repo::InProgress::Sequencer`]
+//! is the operation rather than a property of a live pick or revert.
 //!
 //! # The git it was proven on
 //!
@@ -56,11 +58,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
+use cli::repo::InProgress;
+
 use super::trial_corpus::{TrialCorpus, unique_root};
 
 /// One git state a user can leave behind — the axis the posture family answers over.
 ///
-/// The twelve are *distinguishable on disk*: two states that git leaves with the same
+/// The members are *distinguishable on disk*: two states that git leaves with the same
 /// marker set, the same HEAD shape and the same index are one member here, not two
 /// (which is why the detached-bisect cell is stated in [`GitState::Bisect`]'s
 /// documentation rather than built).
@@ -92,6 +96,16 @@ pub enum GitState {
     /// `sequencer/`, which is the whole point: the remaining picks are queued on
     /// disk, so concluding the operation is not one command's worth of work.
     Sequencer,
+    /// The same multi-commit pick with its **first** pick concluded by hand:
+    /// `CHERRY_PICK_HEAD` and `MERGE_MSG` are consumed by that commit and
+    /// `sequencer/` is left holding the picks git never ran.
+    ///
+    /// It is the state the M52 baseline caught **jigc's own exit-0 finalize
+    /// producing** ([baseline-posture.md](../../../../completions/artifacts/M52/baseline-posture.md)
+    /// §2.7 / L5), and the only cell in which [`cli::repo::InProgress::Sequencer`]
+    /// answers at all: while `CHERRY_PICK_HEAD` or `REVERT_HEAD` is still there the
+    /// pick or the revert is the operation, and the queue is one of its properties.
+    DanglingSequencer,
     /// A conflicting `git revert` — `REVERT_HEAD` + `MERGE_MSG`.
     Revert,
     /// A conflicted `git stash pop`: **unmerged index entries and no marker at all**.
@@ -126,6 +140,7 @@ impl GitState {
         GitState::Am,
         GitState::CherryPick,
         GitState::Sequencer,
+        GitState::DanglingSequencer,
         GitState::Revert,
         GitState::UnmergedIndex,
         GitState::Bisect,
@@ -143,11 +158,49 @@ impl GitState {
             GitState::Am => "am",
             GitState::CherryPick => "cherry-pick",
             GitState::Sequencer => "sequencer",
+            GitState::DanglingSequencer => "dangling-sequencer",
             GitState::Revert => "revert",
             GitState::UnmergedIndex => "unmerged-index",
             GitState::Bisect => "bisect",
             GitState::Detached => "detached",
             GitState::Unborn => "unborn",
+        }
+    }
+
+    /// **The operation the posture family must name in this state** — `None` for the
+    /// two members that are *postures* rather than operations
+    /// ([`cli::repo::PostureMember::HeadDetached`] / `HeadUnborn`: there is nothing to
+    /// conclude and no git command to route at).
+    ///
+    /// The map is **declared, not derived**: it is the fixture's claim about what the
+    /// probe owes in the state the fixture just built, so a suite that derived it from
+    /// the probe would assert the probe against itself. Every cell was driven on git
+    /// 2.54.0 with the same census that produced [`EXPECTATIONS`].
+    ///
+    /// Two cells carry the discriminations the family exists for, and both are the
+    /// probe's **order** rather than its predicates:
+    ///
+    ///   * [`GitState::Sequencer`] answers `CherryPick`, not `Sequencer` — a
+    ///     multi-commit pick is a pick *and* a queue, and `git cherry-pick --abort`
+    ///     (driven, exit 0) clears both. `Sequencer` is what is left when the pick
+    ///     itself is gone, which is [`GitState::DanglingSequencer`].
+    ///   * [`GitState::Merge`], `CherryPick`, `Revert`, `RebaseMerge` and
+    ///     `RebaseApply` all leave **unmerged index entries** too, and each answers
+    ///     its own operation rather than `UnmergedIndex`: that member is the probe's
+    ///     last question, asked only where no operation marker answered — the
+    ///     conflicted `git stash pop` no marker-set widening can reach.
+    pub fn in_progress(self) -> Option<InProgress> {
+        match self {
+            GitState::Merge => Some(InProgress::Merge),
+            GitState::SquashMerge => Some(InProgress::SquashMerge),
+            GitState::RebaseMerge | GitState::RebaseApply => Some(InProgress::Rebase),
+            GitState::Am => Some(InProgress::Am),
+            GitState::CherryPick | GitState::Sequencer => Some(InProgress::CherryPick),
+            GitState::DanglingSequencer => Some(InProgress::Sequencer),
+            GitState::Revert => Some(InProgress::Revert),
+            GitState::UnmergedIndex => Some(InProgress::UnmergedIndex),
+            GitState::Bisect => Some(InProgress::Bisect),
+            GitState::Detached | GitState::Unborn => None,
         }
     }
 
@@ -293,6 +346,18 @@ pub const EXPECTATIONS: &[(GitState, Expectation)] = &[
             ],
             head: Head::Attached,
             unmerged: 3,
+        },
+    ),
+    (
+        GitState::DanglingSequencer,
+        // The hand-made commit consumes `CHERRY_PICK_HEAD` **and** `MERGE_MSG` and
+        // resolves the index, leaving the queue alone: the one state whose whole
+        // evidence is `sequencer/`, which is why it is the cell that proves
+        // `InProgress::Sequencer` answers anything at all.
+        Expectation {
+            markers: &["sequencer", "sequencer/todo"],
+            head: Head::Attached,
+            unmerged: 0,
         },
     ),
     (
@@ -468,6 +533,22 @@ fn diverge(driver: &Driver, branch: &str) {
     driver.commit(&[SHARED], "posture fixture: ours");
 }
 
+/// Queue **two** picks whose first conflicts, so the second stays in `sequencer/todo`
+/// rather than being replayed — the shared prelude of [`GitState::Sequencer`] and
+/// [`GitState::DanglingSequencer`], which differ only in what the user does next.
+fn queue_two_picks(driver: &Driver) {
+    let branch = seed(driver);
+    driver.ok(&["checkout", "-q", "-b", THEIRS_BRANCH]);
+    driver.write(SHARED, "theirs\n");
+    driver.commit(&[SHARED], "posture fixture: theirs one");
+    driver.write(SECOND, "second\n");
+    driver.commit(&[SECOND], "posture fixture: theirs two");
+    driver.ok(&["checkout", "-q", &branch]);
+    driver.write(SHARED, "ours\n");
+    driver.commit(&[SHARED], "posture fixture: ours");
+    driver.must_conflict(&["cherry-pick", &format!("{THEIRS_BRANCH}~1"), THEIRS_BRANCH]);
+}
+
 /// Drive `repo` into `state`. Every branch runs the command a user runs; nothing
 /// writes a marker directly.
 fn drive(driver: &Driver, state: GitState) {
@@ -524,19 +605,16 @@ fn drive(driver: &Driver, state: GitState) {
             diverge(driver, &branch);
             driver.must_conflict(&["cherry-pick", THEIRS_BRANCH]);
         }
-        GitState::Sequencer => {
-            let branch = seed(driver);
-            driver.ok(&["checkout", "-q", "-b", THEIRS_BRANCH]);
-            driver.write(SHARED, "theirs\n");
-            driver.commit(&[SHARED], "posture fixture: theirs one");
-            driver.write(SECOND, "second\n");
-            driver.commit(&[SECOND], "posture fixture: theirs two");
-            driver.ok(&["checkout", "-q", &branch]);
-            driver.write(SHARED, "ours\n");
-            driver.commit(&[SHARED], "posture fixture: ours");
-            // Two picks, the FIRST of which conflicts — so the second stays queued
-            // in `sequencer/todo` rather than being replayed.
-            driver.must_conflict(&["cherry-pick", &format!("{THEIRS_BRANCH}~1"), THEIRS_BRANCH]);
+        GitState::Sequencer => queue_two_picks(driver),
+        GitState::DanglingSequencer => {
+            queue_two_picks(driver);
+            // The user concludes the FIRST pick by hand. git consumes
+            // `CHERRY_PICK_HEAD` and `MERGE_MSG` with that commit and leaves
+            // `sequencer/` holding the pick it never ran — the exact residue jigc's
+            // own exit-0 `task finalize` left at the M52 baseline (§2.7 / L5), where
+            // the recovery `git status` then advertises destroys jigc's commit.
+            driver.write(SHARED, "resolved\n");
+            driver.commit(&[SHARED], "posture fixture: the pick, concluded by hand");
         }
         GitState::Revert => {
             seed(driver);

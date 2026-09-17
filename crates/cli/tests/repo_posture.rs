@@ -1,21 +1,30 @@
-//! The repository-posture family, driven (M51 Increment 2 / T1).
+//! The repository-posture family, driven (M51 Increment 2 / T1; the operation axis
+//! M52 Increment 3 / T1).
 //!
 //! `cli::repo::posture` is the one home for the three states a door that commits or moves
 //! on the user's behalf must adjudicate before it acts — **HEAD detached** · **HEAD
-//! unborn** · **an operation in progress** (`MERGE_HEAD` · `rebase-merge`/`rebase-apply` ·
-//! `BISECT_LOG`). [`design/finalize.md`](../../../design/finalize.md) → 1. Preflight has
+//! unborn** · **an operation in progress**.
+//! [`design/finalize.md`](../../../design/finalize.md) → 1. Preflight has
 //! promised the third verbatim (*"No in-progress merge/rebase/bisect"*) since it was
 //! written, with **zero** probes behind it in either crate, and the M51 baseline drove the
 //! other two as live damage at exit 0.
 //!
-//! **What this suite drives.** A real `git` repository is driven into **each of the five
-//! states** — detached · unborn · merge · rebase · bisect — plus a **clean control** and a
+//! **The third member is a set of operations, not a set of markers** (M52 Increment 3).
+//! `cli::repo::InProgress` names every operation git can leave un-concluded — nine of
+//! them — because two of those states (a `git merge --squash` and a conflicted index with
+//! no operation) write no marker any widening could have reached, and one marker
+//! (`rebase-apply/`) is written by **two** operations git itself discriminates.
+//!
+//! **What this suite drives.** A real `git` repository is driven into **every member of
+//! the fixture builder's `GitState`** — the operation axis, one construction per state,
+//! built by running the command a user runs — plus a **clean control** and a
 //! **linked-worktree control**, and each row asserts the breach identity, its code,
-//! **exactly one `route:` line**, and the git command that resolves the state named
-//! **verbatim** inside it. Two further rows carry the probe's two stated non-answers: the
-//! **unanswerable** cell (a git that cannot be spawned · a path that is no work tree · a
-//! fake `.git`) reads as **no breach**, and the **`GIT_DIR` redirect is declared out** —
-//! present here as a row rather than as a silence.
+//! **exactly one `route:` line**, the operation's noun in the message, and the git
+//! command that resolves the state named **verbatim** inside it — then **runs that
+//! command** and requires git to accept it. Two further rows carry the probe's two stated
+//! non-answers: the **unanswerable** cell (a git that cannot be spawned · a path that is
+//! no work tree · a fake `.git`) reads as **no breach**, and the **`GIT_DIR` redirect is
+//! declared out** — present here as a row rather than as a silence.
 //!
 //! **The assertions read the emitted bytes.** Every route assertion renders the breach's
 //! finding through the shipped `cli::render::finding_error` carrier — the same
@@ -23,8 +32,11 @@
 //! hand-built equivalent, so a finding that renders two routes or drops the git command
 //! cannot pass here while the printed surface is broken.
 //!
-//! **No door consumes the probe yet** (T3 wires it), so nothing else in the suite moves.
+//! **The probe reports the operation before the HEAD it detached** (M52 Increment 3):
+//! a stopped rebase is *a rebase*, and calling it a detached HEAD routed the user at a
+//! `git switch` git refuses at exit 128 while the operation that caused it went unnamed.
 
+use crate::support::git_state::{GitState, GitStateRepo};
 use cli::render::finding_error;
 use cli::repo::{InProgress, PostureBreach, PostureMember, posture};
 use std::collections::BTreeSet;
@@ -228,10 +240,12 @@ fn a_rebase_in_progress_breaches_and_the_route_names_git_rebase_abort() {
     assert_eq!(
         members(&breaches),
         vec![
-            PostureMember::HeadDetached,
             PostureMember::OperationInProgress,
+            PostureMember::HeadDetached,
         ],
-        "a stopped rebase detaches HEAD as well — both members are real",
+        "a stopped rebase detaches HEAD as well — both members are real, and the OPERATION \
+         is answered first: the detachment is the rebase's own doing, so a consumer taking \
+         the first breach must be handed the cause and not the symptom (M52 Increment 3)",
     );
     let breach = only(&breaches, PostureMember::OperationInProgress);
     assert_eq!(breach.operation(), Some(InProgress::Rebase));
@@ -396,6 +410,162 @@ fn the_git_dir_redirect_is_declared_out_of_this_probe() {
         members(&posture(elsewhere.path())),
         vec![PostureMember::HeadDetached],
     );
+}
+
+// ───────── the operation axis: every git state a user can leave un-concluded ─────────
+
+/// **Every git state, its own operation, and a route git accepts** (M52 Increment 3 /
+/// T1) — the arm that turns the family's third member from three markers into the set
+/// of operations git can leave behind.
+///
+/// The set is [`GitState::ALL`], the fixture builder's own case-set, every member
+/// **built by driving real git** and asserting the marker set back at the build
+/// (`support/git_state.rs`). Four claims per member, and the last is the one the
+/// M51 per-axis review could not make:
+///
+///   1. the probe answers the [`InProgress`] variant the fixture's own
+///      [`GitState::in_progress`] map declares — so `git am` is an `am` and not *a
+///      rebase*, and a dangling `sequencer/` is not a cherry-pick that has already
+///      been concluded;
+///   2. the rendered finding **names that operation's noun** — the message is where a
+///      user learns which of nine things they are in the middle of;
+///   3. it prints **exactly one** route (`validation.md`'s *never a menu of three*);
+///   4. **the abandoning command in that route, extracted from the emitted bytes and
+///      run verbatim in that repository, is accepted by git** (exit 0) and leaves no
+///      operation behind. This is the whole point: the shipped binary names `git
+///      rebase --abort` under a `git am`, where git answers *"It looks like 'git am'
+///      is in progress. Cannot rebase."* at exit **128** — a route that cannot be
+///      followed is a route that does not exist (baseline-posture.md §2.2).
+///
+/// The two **postures** — detached and unborn — carry no operation and are asserted as
+/// such rather than skipped: a member that answered an operation there would be the
+/// family's own ordering defect in the other direction.
+///
+/// Red at this task's start on every cell but merge, rebase and bisect: five states
+/// answered **no operation at all** (a clean squash merge, a cherry-pick, a revert, a
+/// dangling sequencer and a conflicted index with no marker), and `am` answered
+/// `Rebase` with a route git refuses.
+#[test]
+fn every_git_state_names_its_own_operation_and_a_route_git_accepts() {
+    let mut covered: BTreeSet<String> = BTreeSet::new();
+    for state in GitState::ALL {
+        let fixture = GitStateRepo::build(*state);
+        let repo = fixture.repo();
+        let label = state.name();
+        let breaches = posture(&repo);
+
+        let Some(expected) = state.in_progress() else {
+            assert!(
+                !breaches
+                    .iter()
+                    .any(|breach| breach.member() == PostureMember::OperationInProgress),
+                "`{label}` is a POSTURE, not an operation — there is nothing to conclude \
+                 and no git command to route at, so the family must answer \
+                 `{:?}` and no operation; got {:?}",
+                state,
+                breaches,
+            );
+            continue;
+        };
+        covered.insert(format!("{expected:?}"));
+
+        let breach = only(&breaches, PostureMember::OperationInProgress);
+        assert_eq!(
+            breach.operation(),
+            Some(expected),
+            "the `{label}` fixture must be answered as `{expected:?}` — the fixture built \
+             it by running the command a user runs and asserted git's own markers back, \
+             so a different variant here is the probe's discrimination, not the state's",
+        );
+
+        let text = rendered(breach);
+        assert!(
+            text.contains(expected.noun()),
+            "the `{label}` finding must NAME the operation (`{}`) — a user in the middle \
+             of one of nine things learns which one here or nowhere:\n{text}",
+            expected.noun(),
+        );
+        assert_identity_and_route(breach, "repo.operation-in-progress", expected.abandon());
+
+        // (4) The emitted bytes, run verbatim. The command is read out of the rendered
+        // route — never rebuilt from `abandon()` — because the route is the artifact a
+        // user copies, and a test that rebuilt it could pass while the printed line was
+        // broken.
+        let argv = abandoning_argv(&text, label);
+        let out = std::process::Command::new(&argv[0])
+            .args(&argv[1..])
+            .current_dir(&repo)
+            .env("HOME", fixture.home())
+            .output()
+            .unwrap_or_else(|err| panic!("`{}` (the `{label}` route): {err}", argv.join(" ")));
+        assert!(
+            out.status.success(),
+            "the `{label}` route must be a command git ACCEPTS in the repository it is \
+             printed in — `{}` exited {}:\n{}",
+            argv.join(" "),
+            out.status,
+            String::from_utf8_lossy(&out.stderr),
+        );
+        let after = posture(&repo);
+        assert!(
+            !after
+                .iter()
+                .any(|breach| breach.member() == PostureMember::OperationInProgress),
+            "…and it must leave NO operation behind — after `{}` the `{label}` repository \
+             still answers {:?}",
+            argv.join(" "),
+            after,
+        );
+    }
+
+    // Completeness in the other direction: an operation the probe can answer and no
+    // fixture can produce is a route nobody has ever run.
+    let unreached: Vec<String> = InProgress::ALL
+        .iter()
+        .map(|operation| format!("{operation:?}"))
+        .filter(|name| !covered.contains(name))
+        .collect();
+    assert!(
+        unreached.is_empty(),
+        "every member of `InProgress::ALL` must be produced by at least one `GitState` \
+         cell, or its noun and its route are asserted by nothing: {unreached:?}",
+    );
+}
+
+/// The phrase the route mold puts in front of the command that **abandons** the
+/// operation — the one command that is runnable from the state the fixture is in, since
+/// every fixture holds an un-concluded operation by construction and concluding one
+/// needs the user's own resolution first.
+const ABANDON_LEAD: &str = "abandon it with `";
+
+/// The abandoning command, read out of the **rendered** route and split into an argv.
+///
+/// It panics rather than falling back: a route that does not carry a runnable command
+/// in the shape the mold declares is the defect this arm exists to catch, and a lenient
+/// parse here would turn it into a skip.
+fn abandoning_argv(text: &str, label: &str) -> Vec<String> {
+    let route = text
+        .lines()
+        .find(|line| line.trim_start().starts_with("route: "))
+        .unwrap_or_else(|| panic!("the `{label}` finding must print a route:\n{text}"));
+    let tail = route.split_once(ABANDON_LEAD).unwrap_or_else(|| {
+        panic!(
+            "the `{label}` route must name the command that abandons the operation, after \
+             `{ABANDON_LEAD}` — the mold every member shares, so a user can copy one \
+             runnable command out of it: {route}"
+        )
+    });
+    let command = tail
+        .1
+        .split_once('`')
+        .unwrap_or_else(|| panic!("the `{label}` route's command must be closed: {route}"))
+        .0;
+    assert!(
+        command.starts_with("git "),
+        "the `{label}` route abandons an operation with GIT, not with jigc — a posture is \
+         a repository state the user resolves themselves: {command}",
+    );
+    command.split_whitespace().map(str::to_owned).collect()
 }
 
 // ───────── the finding inventory registers exactly this increment's codes ─────────

@@ -3475,7 +3475,8 @@ $ jigc doc create adr --slug <300 bytes>                 # …and at all 6 --slu
 $ jigc task finalize <id>          # …and every acting door, in ONE mid-merge repo
 > blocking · repo.operation-in-progress — a merge is in progress — the repository is not
 >   in a committable state
->   route: conclude it, or abandon it with `git merge --abort`, then re-run this command
+>   route: conclude it with `git merge --continue` once its conflicts are resolved, or
+>   abandon it with `git merge --abort`, then re-run this command
 #   THEN: MERGE_HEAD still present · HEAD unmoved · the conflicted bytes untouched
 $ jigc setup            # on an unborn HEAD — the registry's one stated Exempt(reason)
 > install commit → e3ecb61      # the QUICKSTART on-ramp, intact
