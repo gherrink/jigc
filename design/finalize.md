@@ -152,7 +152,7 @@ After the commit lands, three updates happen — none can affect commit truth, a
 
 - **Invalidate the edge-index stamp** ([storage.md](storage.md) → Derived caches). The next read rebuilds from the new HEAD.
 - **Update `file-state` hashes** for every committed managed doc. The next `file-state` probe sees them as in-sync.
-- **Remove `.jigc/tasks/<task-id>/`.** The staging area's job is done; it persisted until here so rollback was possible across phases 4–6.
+- **Keep what jigc did not write, then remove `.jigc/tasks/<task-id>/`.** The staging area's job is done; it persisted until here so rollback was possible across phases 4–6. The removal's subject is jigc's own files only: the area's **complement** ([team-ready-state.md](team-ready-state.md) → The working area's two populations) is moved aside first, to `.jigc/displaced/<task-id>/` with its relative paths intact, and named on stderr and on the landed envelope ([storage.md](storage.md) → The per-task working area, which owns the rule and its rationale). The removal itself is never skipped — a left-over area makes `jigc task list` report an active task that finalized.
 
 A failure in any of these is **logged**, not raised — the commit is real, the system reads correctly because the edge-index stamp invalidates eventually, and a stale `.jigc/tasks/<id>/` gets cleaned up by `jigc task discard <id>` or the next `finalize` reusing the slot.
 

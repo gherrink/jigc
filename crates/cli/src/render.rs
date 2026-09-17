@@ -1809,6 +1809,34 @@ pub struct Landed {
     /// two fds reads the hook text from the one document it already parses, never off a
     /// stderr stream it may have folded into stdout.
     pub hook_output: String,
+    /// Every byte jigc did **not** write into the task's working area, **moved aside**
+    /// rather than destroyed when phase 7 tore that area down (M52 Increment 4 / T3;
+    /// `design/storage.md` → The per-task working area). **Present always, `[]` on the
+    /// ordinary path**, sorted by `from`: a key that appeared only when something moved
+    /// would leave a driver guessing which of the two it was reading.
+    ///
+    /// This door takes no consent flag — a `task finalize --force` would be a new
+    /// capability — and it cannot narrate a loss on the landed-boundary warrant either,
+    /// because the commit carries the promoted docs and the index and nothing at all out of
+    /// the working area. So it keeps the bytes: [`crate::task::displace_foreign_area`] moves
+    /// each entry to `.jigc/displaced/<task-id>/<relative>` before the teardown, and this is
+    /// what it moved — the same repo-relative pairs the stderr narration names.
+    pub displaced: Vec<Displaced>,
+}
+
+/// One entry a displacing door **moved aside** instead of destroying, both halves
+/// repo-relative (law 1: a surface prints no host filesystem).
+///
+/// The unit is a working area's complement **entry**, never a file walk: a foreign directory
+/// moves whole, so `analysis/perf.txt` rides its own `analysis` pair and the subtree is
+/// preserved by the move itself (`design/team-ready-state.md` → The working area's two
+/// populations).
+#[derive(Serialize, Clone, PartialEq, Eq, Debug)]
+pub struct Displaced {
+    /// Where the entry was — its working-area path, repo-relative.
+    pub from: String,
+    /// Where it is now — under `.jigc/displaced/<unit-id>/`, repo-relative.
+    pub to: String,
 }
 
 /// How a path entered the finalize commit set in the pre-commit manifest (B1 dirty-tree
@@ -9146,6 +9174,7 @@ mod tests {
                 kind: ManifestKind::Untracked,
             }],
             hook_output: "hook: doc-code backstop clean".to_string(),
+            displaced: Vec::new(),
         };
 
         let agent = finalize_landed(Format::Agent, &report, &landed);

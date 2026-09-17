@@ -295,7 +295,15 @@ fn relocate_one(
 /// `design/reconciliation.md` → Relocation collisions). A dedicated home (not `tasks/`,
 /// `milestones/`, or `worktrees/`, each of which a reader enumerates) so parked detritus never
 /// masquerades as a task/worktree; listed in [`crate::gitignore::ENTRIES`].
-const WORKBENCH_SUBDIR: &str = "displaced";
+///
+/// **Two producers park here, and they park differently** (M52 Increment 4 / T3): this arm
+/// parks one squatter by **basename** at the root, while
+/// [`crate::task::displace_foreign_area`] parks a whole working area's complement under
+/// `<unit-id>/`, relative paths preserved. The home is shared because the property both need
+/// is the same one — a gitignored tree inside `.jigc/` that no commit can sweep up — and it is
+/// named from here rather than re-spelled, so the entry in
+/// [`crate::gitignore::ENTRIES`] governs both.
+pub(crate) const WORKBENCH_SUBDIR: &str = "displaced";
 
 /// Resolve a **collision at the relocation destination** `dest_rel` by *kind*
 /// (`design/reconciliation.md` → Relocation collisions — the two-resolutions reconcile):

@@ -319,7 +319,12 @@ const REGISTRY: &[(&[&str], Tier)] = &[
              riding the whole-value `committed` object: the success section renders from \
              `Landed` alone — hash, subject, manifest, file count, the left-out residue — and \
              the envelope carries that value WHOLE beside the report, a whole-value carry \
-             being the strongest form of the parity rule, not an exception to it); the \
+             being the strongest form of the parity rule, not an exception to it; TWO of \
+             `Landed`'s members render outside that section and both are still on a text \
+             channel — `hook_output`, relayed as its own delimited block (M45), and \
+             `displaced`, the stderr loss-shaped narration of what the teardown moved rather \
+             than destroyed (M52 Inc 4 / T3): printed on both formats, carried on the \
+             envelope, withheld nowhere); the \
              `--dry-run` FORECAST is a manifest block, and that arm is where the census found \
              the gap",
             // The forecast arm's gap, closed here (M50 Inc 12 / F-7): phase 3 renders the

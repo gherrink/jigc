@@ -91,6 +91,24 @@ const DOCS_TREE_JOINS: &[(&str, usize, &str)] = &[
     ),
 ];
 
+/// The **complement**: production sites that join a working-area entry the complement
+/// derivation has *already* classified as **not jigc's**, by file and count, with the
+/// reason (M52 Increment 4 / T3).
+///
+/// A third answer, and it has to be its own: the receiver *is* a working area — so
+/// [`NON_AREA_JOINS`]' reason would be false of it — while the joined name is a runtime
+/// value that must **never** be a registry member, which is the exact inverse of what
+/// [`DOCS_TREE_JOINS`] says about its sites. Demanding a registry name here would demand
+/// the impossible in the other direction: these are the names the registry excludes.
+const COMPLEMENT_JOINS: &[(&str, usize, &str)] = &[(
+    "crates/cli/src/task.rs",
+    1,
+    "`displace_foreign_area`'s `<area>.join(<complement entry>)` — the source of the move \
+     that keeps a foreign byte out of the teardown; its name comes from \
+     `engine::state::foreign_area_paths`, so it is a registry member's complement by \
+     construction",
+)];
+
 /// Every production `<…dir>.join(<name>)` site whose receiver is **not** a working area,
 /// by file, with the count and the reason — the remainder, stated as a number so that
 /// nothing goes stale silently (`repo_relative_paths.rs` → the unswept remainder is a
@@ -369,6 +387,10 @@ fn every_area_join_name_is_a_registry_member_or_a_counted_remainder() {
     for (table, kind) in [
         (DOCS_TREE_JOINS, "a staged `docs/` body (the tree rule)"),
         (NON_AREA_JOINS, "no working area"),
+        (
+            COMPLEMENT_JOINS,
+            "a complement entry, moved rather than written",
+        ),
     ] {
         for (file, count, reason) in table {
             assert!(!reason.trim().is_empty(), "{file}: carries no reason");
@@ -395,8 +417,9 @@ fn every_area_join_name_is_a_registry_member_or_a_counted_remainder() {
         offenders.push(format!(
             "  {file}: {} `.join(<name>)` site(s) on a directory receiver whose name is in \
              NEITHER registry row and in no remainder row — a new working-area writer joins \
-             `engine::state::TASK_AREA_FILES` (or its milestone sibling), and anything else \
-             joins `NON_AREA_JOINS` with its reason:\n      {}",
+             `engine::state::TASK_AREA_FILES` (or its milestone sibling), a site that moves \
+             an already-classified foreign entry joins `COMPLEMENT_JOINS`, and anything \
+             else joins `NON_AREA_JOINS` with its reason:\n      {}",
             sites.len(),
             sites.join("\n      "),
         ));

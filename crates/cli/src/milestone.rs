@@ -4288,6 +4288,10 @@ fn run_milestone_finalize(
             },
             &mut ignore_ack,
             &mut rollback_conflicts,
+            // No displacement subject here: the executor's `cleanup_dir` is the MILESTONE
+            // area, a different registry row, and each sub-task area is removed at this
+            // boundary's own sink (`cleanup_subtask_areas`) — `settle-record.md` → §18.
+            None,
         )? {
             Ok(hook_output) => {
                 // The boundary landed — the flipped record rode the aggregate commit; disarm
@@ -4397,6 +4401,10 @@ fn run_milestone_finalize(
             crate::task::StagePolicy::Combine(worktrees, record_pathspec),
             &mut ignore_ack,
             &mut rollback_conflicts,
+            // No displacement subject here: the executor's `cleanup_dir` is the MILESTONE
+            // area, a different registry row, and each sub-task area is removed at this
+            // boundary's own sink (`cleanup_subtask_areas`) — `settle-record.md` → §18.
+            None,
         )? {
             // The boundary landed. Clean up the per-sub-task working areas too (the
             // executor only removed the milestone area). A failed/rolled-back finalize

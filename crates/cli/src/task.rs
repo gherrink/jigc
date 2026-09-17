@@ -2375,6 +2375,10 @@ impl TaskArea {
         // T3) — empty on a landed commit, and empty on a refused one unless something else
         // rewrote a file jigc had rewritten while the transaction was still running.
         let mut rollback_conflicts: Vec<Finding> = Vec::new();
+        // What phase 7 moved out of this task's working area before tearing it down (M52
+        // Increment 4 / T3) — empty on the ordinary path, and empty on every arm that never
+        // reached the teardown, because nothing was removed there either.
+        let mut displaced_foreign: Vec<render::Displaced> = Vec::new();
         match try_execute_finalize_plan(
             &self.repo_root,
             &self.jigc_root,
@@ -2386,6 +2390,7 @@ impl TaskArea {
             stage,
             &mut ignore_ack,
             &mut rollback_conflicts,
+            Some((&self.id, &mut displaced_foreign)),
         )? {
             // T1 captures the aggregate hook output; the per-task relay site (T2) consumes it.
             Ok(hook_output) => {
@@ -2435,6 +2440,10 @@ impl TaskArea {
                     // Stream discipline). Cloned here for the JSON `committed.hook_output`
                     // key; `relay_hook_output` still trims the same source for stderr.
                     hook_output: hook_output.clone(),
+                    // M52 Inc 4 T3 — what phase 7 moved aside rather than destroyed, as the
+                    // same repo-relative pairs it already named on stderr. Empty on the
+                    // ordinary path, and present either way.
+                    displaced: displaced_foreign,
                 };
                 print!("{}", render::finalize_landed(format, &report, &landed));
                 if format != Format::Json {
@@ -3209,6 +3218,12 @@ impl StagePolicy {
 /// landed structs those surfaces render serialize verbatim as the pinned `committed`
 /// envelope, and declaring a key there is not this task's act
 /// ([`crate::gitignore::emit_ack`]).
+///
+/// `displace` is phase 7's **task-area** arm (M52 Increment 4 / T3) — the task id whose
+/// working area `cleanup_dir` is, and the sink the moves leave by, so the landed surface can
+/// carry them as `committed.displaced`. `None` from the two milestone boundaries, whose
+/// `cleanup_dir` is a *milestone* area: see [`post_commit`] for why that subject is not this
+/// one's.
 // The shared executor threads many distinct, independent facts (repo/jigc/tmp/cleanup
 // roots, the plan, schemas, the post-sweep record, the stage policy, the ignore-amend
 // report it hands back); each is a real input, not incidental coupling, so an allow is
@@ -3225,6 +3240,7 @@ pub(crate) fn try_execute_finalize_plan(
     stage: StagePolicy,
     ignore_ack: &mut Option<crate::gitignore::Ensured>,
     rollback_conflicts: &mut Vec<Finding>,
+    displace: Option<(&str, &mut Vec<render::Displaced>)>,
 ) -> Result<Result<String>> {
     let msg_path = msg_tmp_dir.join("finalize-message.tmp");
     std::fs::write(&msg_path, &plan.message)
@@ -3477,6 +3493,7 @@ pub(crate) fn try_execute_finalize_plan(
         schemas,
         &plan.hash_updates,
         post_sweep,
+        displace,
     );
     Ok(Ok(hook_output))
 }
@@ -5127,6 +5144,129 @@ fn rollback_promotions(
     }
 }
 
+/// **The bytes jigc did not write into `area`, kept** — every entry of the working area's
+/// complement (`engine::state::foreign_area_paths`, whose registry decides membership) moved
+/// to `<jigc_root>/displaced/<unit_id>/<relative>`, with its relative path preserved, before
+/// the caller removes the area (M52 Increment 4 / T3; `settle-record.md` → D3.3 as amended by
+/// §8; `design/storage.md` → The per-task working area).
+///
+/// **Why a new primitive rather than `relocate::displace_foreign_squatter`.** That one
+/// classifies *one* destination against the file-state record, frees its index slot with `git
+/// rm --cached`, and parks it by **basename** into a flat directory. Every one of those is
+/// wrong here: the subject is an enumerated set inside a **gitignored** tree no index knows,
+/// and a flat park by basename would collapse `analysis/perf.txt` and `docs/perf.txt` onto one
+/// name. Only the same-filesystem `fs::rename` technique carries over — `.jigc/displaced/` and
+/// `.jigc/tasks/` are siblings, so the move is a rename and never a copy.
+///
+/// **The unit is the complement's entry, not a file.** A foreign directory arrives whole and
+/// is moved whole, which preserves its subtree by construction and is also what the door
+/// *names*: one pair per entry.
+///
+/// **A pre-existing destination is never overwritten.** The parking home is never cleaned by
+/// jigc, so a later task minted from the same intent — the same id — can meet its own earlier
+/// `NOTES.md` there; the move then lands at `<name>.2`, `<name>.3`, … and the returned `to`
+/// says where it actually went. Silently replacing it would be this door's own loss cell, one
+/// directory over.
+///
+/// **Best-effort, and honest about it.** The teardown that follows is *not* skippable — a
+/// left-over working area makes `jigc task list` report an active task that finalized — so a
+/// move that cannot be made is narrated as a `note:` on stderr rather than raised, and the
+/// return carries only what actually moved (the outcome-keyed narration rule
+/// `crate::milestone::PendingLoss` states: name what the act *took*, never what it intended).
+///
+/// **Declared bound:** the complement's entries reach here through `to_string_lossy`
+/// (`engine::state::foreign_area_paths`), so an **undecodable** filename arrives
+/// U+FFFD-substituted and its rename fails — the move is then narrated as a failure and the
+/// teardown takes the byte. Visible, not kept; the repair belongs where the name is lost.
+pub(crate) fn displace_foreign_area(
+    repo_root: &Path,
+    jigc_root: &Path,
+    area: &Path,
+    kind: state::WorkArea,
+    unit_id: &str,
+) -> Vec<render::Displaced> {
+    let foreign = match state::foreign_area_paths(area, kind) {
+        Ok(paths) => paths,
+        Err(err) => {
+            eprintln!(
+                "note: could not read {} to move aside what jigc did not write there \
+                 (the removal below takes whatever is in it): {err}",
+                render::repo_relative(repo_root, area),
+            );
+            return Vec::new();
+        }
+    };
+    let home = jigc_root
+        .join(crate::relocate::WORKBENCH_SUBDIR)
+        .join(unit_id);
+    let mut moved: Vec<render::Displaced> = Vec::new();
+    for entry in foreign {
+        let from = area.join(&entry);
+        let to = free_displacement_path(home.join(&entry));
+        let parent = to.parent().unwrap_or(&home);
+        if let Err(err) = std::fs::create_dir_all(parent) {
+            eprintln!(
+                "note: could not open {} to move {} aside: {err}",
+                render::repo_relative(repo_root, parent),
+                render::repo_relative(repo_root, &from),
+            );
+            continue;
+        }
+        match std::fs::rename(&from, &to) {
+            Ok(()) => moved.push(render::Displaced {
+                from: render::repo_relative(repo_root, &from),
+                to: render::repo_relative(repo_root, &to),
+            }),
+            Err(err) => eprintln!(
+                "note: could not move {} aside to {}: {err}",
+                render::repo_relative(repo_root, &from),
+                render::repo_relative(repo_root, &to),
+            ),
+        }
+    }
+    moved.sort_by(|a, b| a.from.cmp(&b.from));
+    moved
+}
+
+/// `wanted`, or the first `<wanted>.<n>` (n ≥ 2) nothing occupies — the no-clobber rule
+/// [`displace_foreign_area`] states, asked with `symlink_metadata` so a dangling symlink
+/// counts as occupied (it is a name in the way, not an absence).
+fn free_displacement_path(wanted: PathBuf) -> PathBuf {
+    if std::fs::symlink_metadata(&wanted).is_err() {
+        return wanted;
+    }
+    let mut n = 2u32;
+    loop {
+        let candidate = PathBuf::from(format!("{}.{n}", wanted.to_string_lossy()));
+        if std::fs::symlink_metadata(&candidate).is_err() {
+            return candidate;
+        }
+        n += 1;
+    }
+}
+
+/// Name on **stderr** every move [`displace_foreign_area`] made — the side channel, so the
+/// landed document still owns stdout undiluted on every format
+/// (`design/command-output-contract.md` → Stream discipline). Silent when nothing moved: the
+/// omitting context prints no bytes at all.
+fn narrate_displacement(moved: &[render::Displaced]) {
+    if moved.is_empty() {
+        return;
+    }
+    let listing: Vec<String> = moved
+        .iter()
+        .map(|m| format!("    {} → {}", m.from, m.to))
+        .collect();
+    eprintln!(
+        "note: the working area held {} entr{} jigc did not write, and removing it would \
+         have destroyed bytes no commit has a copy of — they were moved aside, not \
+         taken:\n{}",
+        moved.len(),
+        if moved.len() == 1 { "y" } else { "ies" },
+        listing.join("\n"),
+    );
+}
+
 /// Phase 7 (`design/finalize.md` → 7. Post-commit, best-effort). Three updates, none of
 /// which can affect commit truth, all self-healing: advance the `file-state` record for
 /// every committed file (the plan's managed-doc hash set plus the committed working-tree
@@ -5134,6 +5274,13 @@ fn rollback_promotions(
 /// Edge index lifecycle — remove the persisted index so the next read rebuilds against
 /// the new HEAD), then remove the `cleanup_dir` working area. Each step self-heals on
 /// failure, so a failure is logged to stderr, never raised (the commit is already truth).
+///
+/// `displace` is the **task-area** arm of the removal (M52 Increment 4 / T3): the id whose
+/// area `cleanup_dir` is, and the sink the moves leave by. Given, the complement is moved
+/// aside and narrated **before** `remove_dir_all` runs, so the door destroys only bytes it
+/// wrote. The milestone boundaries pass `None`: `cleanup_dir` is then a *milestone* area, a
+/// different registry row whose own displacement is Increment 4 / T4's act (`settle-record.md`
+/// → §18), and this door must not answer for a subject it was not given.
 fn post_commit(
     repo_root: &Path,
     jigc_root: &Path,
@@ -5141,12 +5288,23 @@ fn post_commit(
     schemas: &BTreeMap<String, Schema>,
     hash_updates: &BTreeMap<String, String>,
     post_sweep: Option<FileStateRecord>,
+    displace: Option<(&str, &mut Vec<render::Displaced>)>,
 ) {
     if let Err(err) = advance_file_state(repo_root, jigc_root, schemas, hash_updates, post_sweep) {
         eprintln!("note: post-commit file-state update failed (self-heals): {err:#}");
     }
     if let Err(err) = engine::index::invalidate(jigc_root) {
         eprintln!("note: post-commit edge-index invalidation failed (self-heals): {err:#}");
+    }
+    if let Some((task_id, sink)) = displace {
+        *sink = displace_foreign_area(
+            repo_root,
+            jigc_root,
+            cleanup_dir,
+            state::WorkArea::Task,
+            task_id,
+        );
+        narrate_displacement(sink);
     }
     if let Err(err) = std::fs::remove_dir_all(cleanup_dir) {
         eprintln!("note: post-commit working-area removal failed (self-heals): {err:#}");
@@ -6824,6 +6982,9 @@ mod tests {
             StagePolicy::MigrationFixed,
             &mut None,
             &mut Vec::new(),
+            // The rejection arm never reaches phase 7, so no area is removed and no
+            // displacement subject exists to hand it.
+            None,
         )
         .expect("no setup I/O error");
         assert!(
