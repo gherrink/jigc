@@ -710,3 +710,37 @@ so the shipped set cannot reach it.
 
 Recorded in §14's first bullet: fail-closed at `candidate_docs`' enumeration only; `pack.rs`'s
 best-effort sweep load stays declared.
+
+### §18 — D3, the fifth destroying door: `jigc milestone finalize` displaces too (build halt, Increment 4 plan, 2026-09-17)
+
+**The halt.** The destroying class has **five** doors — [baseline-destroying.md](baseline-destroying.md)
+§3.2 drove `task discard` · `task finalize` · `milestone discard` · `milestone finalize` · `uninstall`
+independently — and D3.2/D3.3/D3.5 and §7 dispose **four**: three consenting doors and one displacing
+door. `jigc milestone finalize` was named in none of them. The Increment 4 planner drove the gap at
+HEAD `af0b5903`: a sub-task's `NOTES.md` and `analysis/perf.txt` under `.jigc/tasks/<id>/` die at
+**exit 0 with empty stderr** when the boundary lands (`cleanup_subtask_areas`, `milestone.rs:4554`, a
+bare `remove_dir_all` at both `squash` arms, while `run_discard`'s identical sink at `:3311-3316` is
+guarded and narrated). Under the generalized registry the door would become a `Narrate` member whose
+sink emits no narration — the one arm the rule forbids.
+
+**The fork, and the case.** *(B) Narrate* — keep M46's landed-boundary `Narrate` member and route
+the sink through the outcome-keyed loss narration; *(A) Displace* — the tree-preserving primitive at
+`cleanup_subtask_areas` too. The independent robust case is [advocates/F3.md](advocates/F3.md) §2(b)
+unchanged: the landed-boundary warrant (*the staged set is already in git*) needs the commit to have
+taken the area's bytes, and the planner drove that it took `README.md` and the record and nothing
+from the area. (B) ships `task finalize` keeping bytes while `milestone finalize` destroys
+byte-identical bytes one door over — the M50-adjudicated asymmetry re-minted at the milestone boundary
+— and falsifies Increment 4's own Deliverable sentence at the moment it lands.
+
+**Decided (the human, 2026-09-17) — (A):** `cleanup_subtask_areas` moves each sub-task area's
+complement to `.jigc/displaced/<sub-task-id>/<relative>` through the same primitive D3.3 mints, at both
+`squash` arms; the **`displaced`** key (§8's shape, always present) joins `milestone finalize`'s landed
+envelope as a second declared key on the same M48 parity rule, recorded in `ENVELOPE_ARMS` and
+`command-output-contract.md` in the same motion; the door's `DESTROYING_DOORS` row is `Displace`;
+acceptance arm 3's parenthetical reads *the two displacing doors (`task finalize`, `milestone
+finalize`) × their one mode*. **Riders the planner drove, stated so the executor does not chase them:**
+a foreign *regular* `docs/*.md` is not a reachable displacement cell — it blocks first at
+`schema-conformance.unknown-type` (exit 3) — so §6's *"a `docs/*.md` that is no staged id"* is reachable
+only as a **directory** named `*.md`, which is L-3; and `validate.rs:372`'s `STORE_SNAPSHOT_FILE` goes to
+a scratch path, never a task area, so the writer set is 12 consts + `renames.json` + **two** probe
+snapshots (baseline §5's *up to three* resolves to two).
