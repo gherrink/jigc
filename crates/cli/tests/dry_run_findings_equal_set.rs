@@ -31,6 +31,18 @@
 //! blocking member with an advisory would compare a short-circuited set against a
 //! complete one and prove nothing about either.
 //!
+//! **The axis is the sweep-invoked members.** Since M52 a previewed member also states
+//! *where* in the preview it runs ([`gate_coverage::Invocation`]), and this suite scopes
+//! itself to [`gate_coverage::Invocation::PreviewGates`] — the members the shared
+//! task-scope sweep computes and all three doors report in a `findings` envelope on
+//! **stdout**. The `SeparatelyAtDoor` member (the repository-posture family) is a
+//! *refusal*: all three doors decline before the sweep runs, and the refusal document
+//! rides **stderr**, so `emitted_codes` would read it from the wrong stream. Its own
+//! three-door equality is pinned — byte-identically, over the whole git-state axis —
+//! by `validate_previews_posture.rs`, so the property this suite asserts holds for that
+//! member too; what differs is the stream it is read from, and the scoping is stated on
+//! the row rather than special-cased by member id.
+//!
 //! **Declared bounds.**
 //!
 //!   * **`--carry-staged` is outside the fence.** It is a *consent* flag: declared, the
@@ -416,8 +428,8 @@ struct Row {
     build: fn(&Corpus) -> String,
 }
 
-/// Every member of [`Tier::Previewed`], one row each. The ⇔ against the registry is
-/// [`every_previewed_member_carries_a_row`].
+/// Every **sweep-invoked** member of [`Tier::Previewed`], one row each. The ⇔ against the
+/// registry is [`every_previewed_member_carries_a_row`].
 const ROWS: &[Row] = &[
     Row {
         member: "content-findings",
@@ -501,12 +513,17 @@ fn three_doors(corpus: &Corpus, task: &str) -> [Vec<String>; 3] {
     ]
 }
 
-/// **The axis is the registry.** Every [`Tier::Previewed`] member has exactly one row, and
-/// every row names a member — so a fifth member joining the tier reddens here rather than
-/// slipping through a fence that iterates a hand-written list.
+/// **The axis is the registry.** Every sweep-invoked [`Tier::Previewed`] member has
+/// exactly one row, and every row names one — so a member joining the tier reddens here
+/// rather than slipping through a fence that iterates a hand-written list.
+///
+/// The filter is the row's own stated [`gate_coverage::Invocation`], never a member id:
+/// a `SeparatelyAtDoor` member refuses before the sweep and its envelope rides stderr
+/// (module header), and its equality is pinned by `validate_previews_posture.rs`.
 #[test]
 fn every_previewed_member_carries_a_row() {
     let mut members: Vec<&str> = gate_coverage::members(Tier::Previewed)
+        .filter(|row| row.door.invocation() == Some(gate_coverage::Invocation::PreviewGates))
         .map(|row| row.id)
         .collect();
     let mut rows: Vec<&str> = ROWS.iter().map(|row| row.member).collect();

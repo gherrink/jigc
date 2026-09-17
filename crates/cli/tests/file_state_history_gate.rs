@@ -1045,6 +1045,23 @@ fn store_scope_stays_blocking_where_task_scope_is_advisory() {
 /// baseline keeps the **blocking** weak-deletion shape rather than silently
 /// downgrading a possible deletion to the advisory. Flipping the default to `false`
 /// (advisory) reddens this test.
+///
+/// **The door moved at M52 Increment 3 / T6, and the arm asserts why.** An unborn HEAD is
+/// a member of the repository-posture family, so `jigc task finalize` refuses in this
+/// fixture — and since T6 `jigc task validate` previews that refusal, byte-identically,
+/// instead of reporting the task's content over a state the commit boundary will not act
+/// in. That is asserted here first, because this fixture is the **only** live task on an
+/// unborn HEAD in the suite set and `validate_previews_posture.rs` cannot build one (the
+/// git-state axis refuses to overlay `unborn` on a corpus `jigc setup` has committed
+/// into) — so this arm covers that axis's thirteenth cell.
+///
+/// The history predicate is then reached through **bare `jigc start`**, which runs the
+/// identical task-scope sweep (`crate::task::sweep_for_orientation`, `GatePreview::On`)
+/// and is classified `ActsOnBehalf::Neither`, so no posture stands between the fixture
+/// and the classification under test. What it cannot carry is `task validate`'s exit
+/// code — orientation is a reader and reports at exit 0 — so the discriminating
+/// assertion is the **severity**, which is the whole of what the conservative default
+/// decides: flipped to `false`, this finding is advisory and the arm reddens.
 #[test]
 fn unborn_head_keeps_the_conservative_weak_deletion_block() {
     let repo = TempDir::new("unborn");
@@ -1070,6 +1087,51 @@ fn unborn_head_keeps_the_conservative_weak_deletion_block() {
 
     let task = "warm-the-read-cache";
     stage_commit_only(repo.path(), home.path(), task, "warm the read cache");
-    let (out, findings) = validate_task_json(repo.path(), home.path(), task, "unborn-head");
-    assert_weak_deletion_block(&out, &findings, ADR_PATH, "unborn-head");
+
+    // The posture cell: the preview refuses what the commit boundary refuses.
+    let preview = jigc(repo.path(), home.path(), &["task", "validate", task]);
+    assert_eq!(
+        preview.status.code(),
+        Some(1),
+        "an unborn HEAD is a posture `task finalize` refuses, so its preview refuses too; \
+         stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&preview.stdout),
+        String::from_utf8_lossy(&preview.stderr),
+    );
+    let refusal = String::from_utf8_lossy(&preview.stderr);
+    assert!(
+        refusal.contains("repo.head-unborn"),
+        "and names the member; got:\n{refusal}",
+    );
+
+    // The classification under test, through the door the posture does not guard.
+    let out = jigc(repo.path(), home.path(), &["start", "--format", "json"]);
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    let orientation: serde_json::Value = serde_json::from_str(&stdout).unwrap_or_else(|err| {
+        panic!("unborn-head: bare `jigc start` must emit its envelope ({err}); got:\n{stdout}")
+    });
+    let findings: Vec<serde_json::Value> = orientation["tasks"]
+        .as_array()
+        .unwrap_or_else(|| panic!("unborn-head: the envelope carries `tasks`; got:\n{stdout}"))
+        .iter()
+        .find(|row| row["id"] == task)
+        .unwrap_or_else(|| panic!("unborn-head: `{task}` is active; got:\n{stdout}"))["findings"]
+        .as_array()
+        .unwrap_or_else(|| {
+            panic!("unborn-head: the sweep ran and its findings ride the row; got:\n{stdout}")
+        })
+        .clone();
+    let rename = rename_finding(&findings, ADR_PATH, "unborn-head");
+    assert_eq!(
+        rename["severity"], "blocking",
+        "unborn-head: a failing history probe stays conservative — history PRESENT, so the \
+         dangling baseline keeps blocking; got:\n{rename:#?}",
+    );
+    assert!(
+        !rename["message"]
+            .as_str()
+            .expect("the weak finding carries a message")
+            .contains("git mv"),
+        "unborn-head: the weak finding must not claim a `git mv` suspect; got:\n{rename:#?}",
+    );
 }

@@ -551,7 +551,17 @@ fn refuse_on_posture(command: &Command, format: Format) -> Option<Outcome> {
         Ok(cwd) => cwd,
         Err(refusal) => return Some(refusal),
     };
-    let repo_root = crate::repo::discover_repo_root(&cwd)?;
+    posture_refusal_in(&cwd, acts, format)
+}
+
+/// The refusal a door acting as `acts` owes in `cwd`'s repository, or `None` when the
+/// posture is committable, unanswerable, or outside a git repository.
+///
+/// Split out of [`refuse_on_posture`] so the **preview** can ask the identical question
+/// ([`finalize_posture_refusal`]): one producer, so the door and the surface that
+/// forecasts it cannot answer differently.
+fn posture_refusal_in(cwd: &Path, acts: &ActsOnBehalf, format: Format) -> Option<Outcome> {
+    let repo_root = crate::repo::discover_repo_root(cwd)?;
     let subject = crate::repo::posture_subject(&repo_root);
     let breach = crate::repo::posture(&repo_root)
         .into_iter()
@@ -571,6 +581,35 @@ fn refuse_on_posture(command: &Command, format: Format) -> Option<Outcome> {
         format,
         &render::finding_error(&breach.finding()),
     ))
+}
+
+/// **The refusal `jigc task finalize` would make in `cwd`'s repository** — the posture
+/// `jigc task validate` previews (M52 Increment 3 / T6;
+/// `completions/artifacts/M52/settle-record.md` → D2.6 as amended by §4).
+///
+/// The preview is a **separate invocation at the door**, not a member of
+/// [`crate::task::TaskArea::preview_gates`]: the posture family is a fact about the
+/// repository, not about the task's content, and folding it into the task-scope sweep
+/// would report it at the sweep's severity and exit code
+/// ([`crate::gate_coverage::Invocation::SeparatelyAtDoor`] carries that distinction for
+/// every surface that states the coverage claim). What it must *not* be is a second
+/// answer: it asks this module's one producer with the **`task finalize` row's own**
+/// [`ActsOnBehalf`], so the finding, its route and its exit code are the committing
+/// door's, byte for byte, and an exemption added to that row reaches the preview with no
+/// edit anywhere else.
+///
+/// A sub-task's commit boundary is `jigc milestone finalize`, whose row is
+/// commit-on-behalf with the same empty exemption set — so one lookup answers for both
+/// doors rather than the preview having to know which one a task belongs to.
+///
+/// `None` — the miss arm — keeps a table hole a missing guard rather than an exit-101 on
+/// top of the user's command, exactly as [`refuse_on_posture`] does.
+pub(crate) fn finalize_posture_refusal(cwd: &Path, format: Format) -> Option<Outcome> {
+    let acts = &BEHALF_DOORS
+        .iter()
+        .find(|row| row.door == ["task", "finalize"])?
+        .acts;
+    posture_refusal_in(cwd, acts, format)
 }
 
 impl Cli {
@@ -3429,9 +3468,9 @@ fn tip_task_read_shaped() -> String {
         .as_str(),
         engine::finding::Route::mechanical(
             ["jigc", "task", "validate", "<task-id>"],
-            " previews part of the finalize gate for one task — content findings, \
-             carryover, the owner-artifact causes that need no staging, and the \
-             granted-but-unused changelog gate",
+            " previews part of the finalize gate for one task — the repository posture \
+             finalize refuses under, content findings, carryover, the owner-artifact \
+             causes that need no staging, and the granted-but-unused changelog gate",
         )
         .as_str(),
     )

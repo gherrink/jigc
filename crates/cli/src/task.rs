@@ -439,7 +439,25 @@ fn run_diff(cwd: &Path, id: &str, format: Format) -> Result<()> {
 /// preview's half of finalize's consent flag: with it declared, the carryover gate is
 /// omitted at both doors, so a driver that always intends to carry reads a preview of
 /// *its own* finalize instead of a permanently-red one.
+///
+/// **The repository posture is previewed first, and separately** (M52 Increment 3 / T6;
+/// `completions/artifacts/M52/settle-record.md` → D2.6 as amended by §4). Under an
+/// operation git has left un-concluded — a merge, a rebase, a half-finished pick — or a
+/// detached HEAD, `finalize` refuses outright before it reaches this phase at all, and
+/// through M52 Increment 2 the preview reported the task's content findings over that
+/// state and exited 0 or 3 while the door it forecasts would not act. So it asks
+/// [`crate::cli::finalize_posture_refusal`] — the **committing** door's own producer,
+/// with that door's own exemptions — and renders the identical finding at the identical
+/// exit code. It is **not** folded into [`TaskArea::preview_gates`]: the family is a fact
+/// about the repository rather than about the task's content, and the separate
+/// invocation is what [`crate::gate_coverage::Invocation::SeparatelyAtDoor`] states on
+/// every surface that carries the coverage claim.
 fn run_validate(cwd: &Path, id: &str, format: Format, carry_staged: bool) -> Outcome {
+    // The one pre-commit phase a caller can resolve BEFORE finalizing, asked here and
+    // answered by the committing door's own producer (M52 Increment 3 / T6).
+    if let Some(refusal) = crate::cli::finalize_posture_refusal(cwd, format) {
+        return refusal;
+    }
     let task = match TaskArea::resolve(cwd, id) {
         Ok(task) => task,
         Err(err) => {

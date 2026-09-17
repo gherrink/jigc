@@ -81,6 +81,8 @@ mod severity_tuning;
 mod store_version_stamp;
 #[path = "../temp_mint_fence.rs"]
 mod temp_mint_fence;
+#[path = "../validate_previews_posture.rs"]
+mod validate_previews_posture;
 #[path = "../write_finding_keys.rs"]
 mod write_finding_keys;
 #[path = "../write_miss_shape_axis.rs"]

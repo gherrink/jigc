@@ -2195,6 +2195,16 @@ fn preview_cell(row: &GateCoverage) -> PreviewCell {
             "owner_artifact_cause_axis.rs",
             "every_owned_location_cause_previews_except_the_untracked_one",
         ),
+        // The one member invoked SEPARATELY at the door rather than inside the sweep
+        // (`cli::gate_coverage::Invocation::SeparatelyAtDoor`): it refuses at the
+        // operational exit code over a repository state, so it cannot be a finding code
+        // in this arm's fixture, whose whole point is a task standing in every driven
+        // member's condition at once. Its own suite drives it over the full git-state
+        // axis and asserts the three doors byte-identical.
+        "posture" => PreviewCell::Cited(
+            "validate_previews_posture.rs",
+            "validate_refuses_every_posture_finalize_refuses_and_concludes_nothing",
+        ),
         other => panic!(
             "`{other}` is a `Tier::Previewed` member of the code-side `GATE_COVERAGE` table \
              with no cell in this arm — a member added there owes one here, and a missing \

@@ -34,7 +34,7 @@ commands:
   - id: validate-task
     command: jigc
     args: ["task", "validate", { from: "task.id" }]
-    hint: "Preview part of the finalize gate — content findings, carryover, owner-artifact, the granted-but-unused changelog gate — without committing."
+    hint: "Preview part of the finalize gate — the repository posture, content findings, carryover, owner-artifact, the granted-but-unused changelog gate — without committing."
 
   - id: finalize-task
     command: jigc

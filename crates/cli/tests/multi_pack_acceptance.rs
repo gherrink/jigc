@@ -586,14 +586,15 @@ per carried path): unstage it, or pass `--carry-staged` to declare the carryover
 deliberate.
 
 To see what's left before committing, run `jigc task validate add-a-thing` — it
-previews part of what finalize gates on (this task's content findings, the
-carryover gate, the owner-artifact causes that need no staging, and the
-granted-but-unused changelog gate), without committing anything; the staged set,
-promotion and the commit itself are decided at finalize.
+previews part of what finalize gates on (the repository posture finalize refuses
+under, this task's content findings, the carryover gate, the owner-artifact causes
+that need no staging, and the granted-but-unused changelog gate), without
+committing anything; the staged set, promotion and the commit itself are decided
+at finalize.
 
 Run: `jigc task finalize add-a-thing`
 resume: `jigc start --task add-a-thing`   — re-composes this workflow if context is lost
-what's-left: `jigc task validate add-a-thing`   — previews part of the finalize gate: this task's content findings, the carryover gate, the owner-artifact causes that need no staging, and the granted-but-unused changelog gate; the staged set, promotion and the commit surface at finalize
+what's-left: `jigc task validate add-a-thing`   — previews part of the finalize gate: the repository posture finalize refuses under, this task's content findings, the carryover gate, the owner-artifact causes that need no staging, and the granted-but-unused changelog gate; the staged set, promotion and the commit surface at finalize
 task scope: `jigc doc` writes default to the single active task; `--task add-a-thing` is the explicit override and wins when several are active — several open tasks are legal, each addressed by its own `--task`, so you can run them in parallel while their work stays disjoint; once a sibling task commits a path this one also touches, resuming or finalizing here blocks and names the overlapping paths
 create-gates: adr, changelog   — the doc-types this task is allowed to create; any other type is refused
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
@@ -692,16 +693,17 @@ makes finalize refuse too (one blocking finding per carried path): unstage it, o
 pass `--carry-staged` to declare the carryover deliberate.
 
 To see what's left before committing, run `jigc task validate add-rate-limiter` — it
-previews part of what finalize gates on (this task's content findings, the
-carryover gate, the owner-artifact causes that need no staging, and the
-granted-but-unused changelog gate), without committing anything; the staged set,
-promotion and the commit itself are decided at finalize.
+previews part of what finalize gates on (the repository posture finalize refuses
+under, this task's content findings, the carryover gate, the owner-artifact causes
+that need no staging, and the granted-but-unused changelog gate), without
+committing anything; the staged set, promotion and the commit itself are decided
+at finalize.
 
 Then validate and commit:
 
 Run: `jigc task finalize add-rate-limiter`
 resume: `jigc start --task add-rate-limiter`   — re-composes this workflow if context is lost
-what's-left: `jigc task validate add-rate-limiter`   — previews part of the finalize gate: this task's content findings, the carryover gate, the owner-artifact causes that need no staging, and the granted-but-unused changelog gate; the staged set, promotion and the commit surface at finalize
+what's-left: `jigc task validate add-rate-limiter`   — previews part of the finalize gate: the repository posture finalize refuses under, this task's content findings, the carryover gate, the owner-artifact causes that need no staging, and the granted-but-unused changelog gate; the staged set, promotion and the commit surface at finalize
 task scope: `jigc doc` writes default to the single active task; `--task add-rate-limiter` is the explicit override and wins when several are active — several open tasks are legal, each addressed by its own `--task`, so you can run them in parallel while their work stays disjoint; once a sibling task commits a path this one also touches, resuming or finalizing here blocks and names the overlapping paths
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 ";

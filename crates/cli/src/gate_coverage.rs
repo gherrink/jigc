@@ -40,8 +40,16 @@
 //! prose the fence neither requires nor forbids. What it buys is that a member of the
 //! *set* cannot join one enumeration and miss the other seven.
 //!
+//! **Two invocations, one tier.** Since M52 a previewed member carries *where* in the
+//! preview it runs ([`Invocation`]): the task-scope sweep computes most of them, while
+//! the repository-posture family is asked separately at the door, by the committing
+//! door's own producer, and refuses at the operational exit code. Both are previewed in
+//! the sense this table fences — the surfaces must name them, and `jigc task validate`
+//! answers about them — and a consumer that genuinely depends on the difference reads the
+//! payload rather than special-casing a member by id.
+//!
 //! The **membership** of [`Tier::Previewed`] is owned elsewhere — the checks
-//! `TaskArea::preview_gates` actually runs ([validation.md](../../../design/validation.md);
+//! `TaskArea::preview_gates` actually runs, plus the posture the door asks about ([validation.md](../../../design/validation.md);
 //! [finalize.md](../../../design/finalize.md) → 2. Validate). This table states what the
 //! surfaces must say about that membership, and the base pin stays out of the previewed
 //! set per the M47 Settle, Decision 1.
@@ -86,14 +94,55 @@ impl NotPreviewable {
     }
 }
 
+/// **How a previewed member's check is reached at `jigc task validate`** — carried as
+/// the [`Door::Previewed`] payload, so a member cannot claim the preview without saying
+/// where in the preview it runs.
+///
+/// The distinction is not decoration. A member of the task-scope sweep is reported in the
+/// validation report at [`crate::task::EXIT_VALIDATION_BLOCKED`]; the posture family is a
+/// fact about the **repository** rather than about the task's content, so it is asked at
+/// the door — by the committing door's own producer — and refuses at the operational exit
+/// code, identically at both doors. Both satisfy [`Door::Previewed`]'s promise (*same
+/// check, same severity, same exit code, at `validate` and at `finalize`*); they satisfy
+/// it at different exit codes from each other, and a surface or a fence that iterates the
+/// tier can read this rather than special-casing a member by id.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Invocation {
+    /// Run inside `TaskArea::preview_gates` — the shared task-scope sweep both doors
+    /// compute, reported as a finding in the validation report.
+    PreviewGates,
+    /// Invoked **separately at the door**, before the sweep, and refusing at the
+    /// operational exit code rather than the validation one (M52 Increment 3 / T6;
+    /// `completions/artifacts/M52/settle-record.md` → D2.6 as amended by §4). It is
+    /// deliberately not folded into the sweep: folding it in would report a repository
+    /// state at the task-content severity, and the Settle decided the preview must exit
+    /// *exactly as `finalize` would*.
+    SeparatelyAtDoor,
+}
+
 /// Which door decides a member.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Door {
     /// Previewed at `jigc task validate` and re-run at `finalize`, same check, same
-    /// severity, same exit code.
-    Previewed,
+    /// severity, same exit code — the payload says **where** in the preview it runs.
+    Previewed(Invocation),
     /// Decided only by the real `finalize`, for the carried reason.
     FinalizeOnly(NotPreviewable),
+}
+
+impl Door {
+    /// The member's [`Invocation`] when it is previewed at all.
+    ///
+    /// The accessor exists so a consumer scoping itself to the sweep-invoked members
+    /// (`dry_run_findings_equal_set.rs`'s three-door equality reads the envelope off
+    /// **stdout**, and a refusal's envelope rides **stderr**) filters on the stated
+    /// property rather than on a member id.
+    pub fn invocation(self) -> Option<Invocation> {
+        match self {
+            Door::Previewed(invocation) => Some(invocation),
+            Door::FinalizeOnly(_) => None,
+        }
+    }
 }
 
 /// One member of the finalize transaction's check set, as the surfaces must state it.
@@ -118,22 +167,35 @@ pub struct GateCoverage {
 /// The table. Order is the order the generated fragment renders in.
 pub const GATE_COVERAGE: &[GateCoverage] = &[
     GateCoverage {
+        // The repository-posture family (M52 Increment 3 / T6). It leads because it is
+        // adjudicated first at both doors — before the task's content is read at all —
+        // and it is the member that shows why [`Door::Previewed`] had to carry an
+        // [`Invocation`]: `finalize` refuses under an un-concluded merge, rebase or pick
+        // at exit 1, and until M52 the preview reported the task's findings over that
+        // state and exited 0.
+        id: "posture",
+        door: Door::Previewed(Invocation::SeparatelyAtDoor),
+        tiers: &[Tier::Previewed],
+        fragment: "the repository posture finalize refuses under",
+        token: "repository posture",
+    },
+    GateCoverage {
         id: "content-findings",
-        door: Door::Previewed,
+        door: Door::Previewed(Invocation::PreviewGates),
         tiers: &[Tier::Previewed],
         fragment: "this task's content findings",
         token: "content findings",
     },
     GateCoverage {
         id: "carryover",
-        door: Door::Previewed,
+        door: Door::Previewed(Invocation::PreviewGates),
         tiers: &[Tier::Previewed],
         fragment: "the carryover gate",
         token: "carryover",
     },
     GateCoverage {
         id: "owner-artifact-unstaged",
-        door: Door::Previewed,
+        door: Door::Previewed(Invocation::PreviewGates),
         tiers: &[Tier::Previewed],
         fragment: "the owner-artifact causes that need no staging",
         token: "owner-artifact",
@@ -144,7 +206,7 @@ pub const GATE_COVERAGE: &[GateCoverage] = &[
         // ran only on the committing path, so seven surfaces stated a coverage claim
         // that was one member short of the truth and none of them knew it.
         id: "changelog-gate",
-        door: Door::Previewed,
+        door: Door::Previewed(Invocation::PreviewGates),
         tiers: &[Tier::Previewed],
         fragment: "the granted-but-unused changelog gate",
         token: "changelog gate",
@@ -285,7 +347,7 @@ mod tests {
         for row in GATE_COVERAGE {
             let previewed = row.tiers.contains(&Tier::Previewed);
             match row.door {
-                Door::Previewed => assert!(
+                Door::Previewed(_) => assert!(
                     previewed && row.tiers.len() == 1,
                     "`{}` is previewed, so it is stated at exactly the previewed tier",
                     row.id,
@@ -350,7 +412,7 @@ mod tests {
     fn the_checker_reports_an_absent_token() {
         const ABSENT: GateCoverage = GateCoverage {
             id: "synthetic-absent",
-            door: Door::Previewed,
+            door: Door::Previewed(Invocation::PreviewGates),
             tiers: &[Tier::Previewed],
             fragment: "a member no surface names",
             token: "no surface names this",
@@ -370,10 +432,10 @@ mod tests {
     fn the_generated_fragment_is_the_shipped_sentence() {
         assert_eq!(
             whats_left_coverage(),
-            "previews part of the finalize gate: this task's content findings, the \
-             carryover gate, the owner-artifact causes that need no staging, and the \
-             granted-but-unused changelog gate; the staged set, promotion and the \
-             commit surface at finalize",
+            "previews part of the finalize gate: the repository posture finalize refuses \
+             under, this task's content findings, the carryover gate, the owner-artifact \
+             causes that need no staging, and the granted-but-unused changelog gate; the \
+             staged set, promotion and the commit surface at finalize",
         );
     }
 

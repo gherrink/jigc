@@ -311,12 +311,13 @@ fn the_fence_reddens_when_a_site_drops_a_member() {
             checked += 1;
         }
     }
-    // The axis today is 51 cells (8 sites × the tiers each owes) — 45 before the
-    // changelog gate joined [`Tier::Previewed`], which is one cell per site owing that
-    // tier. The floor guards against it silently collapsing — a site whose region
-    // stopped resolving, or a tier that lost its members, would otherwise pass as a
-    // vacuous green.
-    assert!(checked >= 51, "the mutation axis ran only {checked} cells");
+    // The axis today is 58 cells (8 sites × the tiers each owes) — 45 before the
+    // changelog gate joined [`Tier::Previewed`] and 51 before the repository posture
+    // did (M52 Increment 3 / T6), each of them one cell per site owing that tier, and
+    // seven sites owe it. The floor guards against the axis silently collapsing — a
+    // site whose region stopped resolving, or a tier that lost its members, would
+    // otherwise pass as a vacuous green.
+    assert!(checked >= 58, "the mutation axis ran only {checked} cells");
 }
 
 /// Remove **every** occurrence of `token` from the normalized view's perspective:
@@ -389,7 +390,7 @@ fn every_finalize_only_member_states_why_it_cannot_preview() {
             cli::gate_coverage::Door::FinalizeOnly(reason) => {
                 assert!(!reason.stated().is_empty(), "`{}` states no reason", row.id)
             }
-            cli::gate_coverage::Door::Previewed => {
+            cli::gate_coverage::Door::Previewed(_) => {
                 panic!(
                     "`{}` is stated at a later tier but marked previewed",
                     row.id
