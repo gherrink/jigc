@@ -17,6 +17,7 @@
 
 pub mod committing_doors;
 pub mod frozen_pack;
+pub mod git_state;
 pub mod goldens;
 pub mod leaf_argv;
 pub mod rust_source;

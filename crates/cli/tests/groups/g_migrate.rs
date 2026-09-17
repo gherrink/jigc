@@ -25,6 +25,8 @@ mod flow27_marquee;
 mod flow36_corpus_structural;
 #[path = "../foreign_at_both_doors.rs"]
 mod foreign_at_both_doors;
+#[path = "../git_state_fixtures.rs"]
+mod git_state_fixtures;
 #[path = "../gitignore_amend_union.rs"]
 mod gitignore_amend_union;
 #[path = "../gitignore_writer_acks.rs"]
