@@ -51,6 +51,12 @@
 //! plants leftovers at *unregistered* paths, so `cli::milestone::remove_worktrees` — the
 //! narrate-then-remove pair `discard` and `finalize` share — is never entered from here.
 //!
+//! **And one plant [`Shape`] cannot express**: every shape above is a path
+//! `symlink_metadata` answers about, so none of them reaches the arm where the *stat itself*
+//! fails — the near-miss this suite shipped with, and the one that let `jigc milestone
+//! discard` settle a record over unreadable worktrees at exit 0 until M52
+//! ([`an_unreadable_worktrees_root_is_a_hold_at_every_refusing_door`]).
+//!
 //! Every cell asserts, on the **planted bytes**:
 //!
 //! 1. narrated ⇔ removed, per planted path — and a refusal leaves every one byte-intact;
@@ -858,4 +864,113 @@ fn a_symlink_leftover_is_one_shape_at_every_destroying_door_and_the_target_survi
         "every door that named the planted symlink's shape must have named the same one — a \
          leaf whose own bytes the removal takes, never a directory to enumerate through",
     );
+}
+
+/// **The plant this suite never made: an unreadable `.jigc/worktrees/` root** (M52 Increment
+/// 4 / T1, defect L-1 — `completions/artifacts/M52/baseline-destroying.md` §4).
+///
+/// The suite above plants at the **leaf** — a file, a directory, a symlink, an unremovable
+/// directory — and every one of those is a path `symlink_metadata` answers about. None of
+/// them reaches the arm where the *stat itself* fails, which is the arm
+/// `cli::milestone::probe_leftover`'s own doc-comment has claimed since M50: *"`Some(hold)`
+/// … **including** the case where the probe could not read the path at all, which is a hold
+/// like any other."* It was not. `leftover_at` mapped every `symlink_metadata` failure to
+/// `Absent`, and `Absent` is the one answer `probe_leftover` returns `None` for — *provably
+/// safe to delete*.
+///
+/// Driven at `ffb4064c` over a provisioned fan-out with `chmod 000 .jigc/worktrees`,
+/// `jigc milestone discard <id>` exited **0** with an empty stderr, settled the record and
+/// removed the milestone workbench, while both sub-task worktrees stayed on disk holding
+/// uncommitted work `git worktree list` no longer named — an irreversible settle taken over
+/// bytes nothing could vouch for, which is the whole thing the guard exists to prevent.
+/// (`jigc uninstall` survived the same state only because `fanout_worktree_paths`' own
+/// `read_dir` fails before the probe is reached — the fail-closed behaviour at the one door
+/// that had it came from a different function.)
+///
+/// **Why it is a test of its own rather than a fifth [`Shape`].** The cells above assert that
+/// a refusal names **every planted path** and offers a runnable `--force` consent. A door
+/// that cannot read the root cannot name what is under it — naming `.jigc/worktrees/` and the
+/// errno is the most any of them may honestly say — so the per-path obligations do not apply
+/// here, and `jigc uninstall`'s refusal over this state carries a route M52 fixes elsewhere
+/// (D-4). What every door owes on this state is the fail-closed core, and that is what this
+/// asserts: it refuses, under its own code, with a route, having moved nothing.
+///
+/// **Declared bound, inherited from [`Shape::Unremovable`]:** run as `root` the permission
+/// bits do not bind, the probe reads the root normally, and the cell degenerates into
+/// `Shape::Both` — both leftovers still hold content, so every door still refuses and every
+/// assertion below still asserts truthfully.
+#[test]
+fn an_unreadable_worktrees_root_is_a_hold_at_every_refusing_door() {
+    let refusing: Vec<&DestroyingDoor> = DESTROYING_DOORS
+        .into_iter()
+        .filter(|door| door.code.is_some())
+        .collect();
+
+    for door in refusing {
+        let code = door.code.expect("filtered to the refusing members");
+        // Both shapes under the root: whatever the door manages to see, it must not have
+        // taken either.
+        let fx = Fixture::plant(Shape::Both);
+        let root = fx.repo.join(".jigc").join("worktrees");
+        let workbench = fx.repo.join(".jigc").join("milestones").join(MILESTONE);
+        assert!(
+            workbench.is_dir(),
+            "the fixture must carry the milestone's workbench before the door runs",
+        );
+        set_dir_mode(&root, 0o000);
+
+        let argv = argv_at(door, false);
+        let args: Vec<&str> = argv.iter().map(String::as_str).collect();
+        let out = fx.run(&args);
+        let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+        let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+        let cell = format!("{} × unreadable root", door.verb);
+
+        assert!(
+            !out.status.success(),
+            "[{cell}] a probe that could not read the path must hold, not clear\n\
+             stdout:\n{stdout}\nstderr:\n{stderr}",
+        );
+        assert!(
+            stderr.contains(&format!("blocking · {code}")),
+            "[{cell}] the hold carries the door's own code `{code}`; got:\n{stderr}",
+        );
+        assert!(
+            stderr.contains("route:"),
+            "[{cell}] the hold carries a route — the route floor; got:\n{stderr}",
+        );
+        for sub in [SUB_DIR, SUB_FILE] {
+            assert!(
+                !narrated(&stderr, &fx.printed(sub)),
+                "[{cell}] a hold narrates no removal at `{}`; got:\n{stderr}",
+                fx.printed(sub),
+            );
+        }
+
+        // Run it again on the same state: a door that settled something the first time
+        // answers differently the second. `jigc milestone discard` is the cell where that
+        // was the harm — the settled record made re-entry `milestone.terminal`.
+        let again = fx.run(&args);
+        let again_err = String::from_utf8_lossy(&again.stderr).into_owned();
+        assert!(
+            again_err.contains(&format!("blocking · {code}")),
+            "[{cell}] the hold is idempotent — nothing was settled, so the same state answers \
+             the same way; got:\n{again_err}",
+        );
+
+        // Only now open the root: every assertion above met the state the cell planted.
+        set_dir_mode(&root, 0o755);
+        for sub in [SUB_DIR, SUB_FILE] {
+            assert!(
+                fx.bytes_survive(sub),
+                "[{cell}] a hold leaves `{}` byte-intact\nstderr:\n{stderr}",
+                fx.printed(sub),
+            );
+        }
+        assert!(
+            workbench.is_dir(),
+            "[{cell}] a hold tears no workbench down — `.jigc/milestones/{MILESTONE}` must \
+             still be there\nstdout:\n{stdout}\nstderr:\n{stderr}",
+        );
+    }
 }

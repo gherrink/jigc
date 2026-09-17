@@ -749,3 +749,89 @@ fn the_forced_abandons_loss_narration_rides_stderr_under_format_json() {
          machine format too; got:\n{stderr}",
     );
 }
+
+/// **Arm (i)** — a **directory** named `<type>:<slug>.md` under a task's `docs/` is a staged
+/// identity at no surface (M52 Increment 4 / T1, defect L-3 —
+/// `completions/artifacts/M52/baseline-destroying.md` §4).
+///
+/// `cli::task::staged_doc_ids` is the one probe every one of these surfaces reads, and it
+/// asked a **name** question — `strip_suffix(".md")` — and no shape question at all. Driven
+/// at `ffb4064c` with `mkdir '.jigc/tasks/<id>/docs/fake:thing.md'`: `jigc task discard`
+/// refused naming *"stages 1 doc(s) … : fake:thing"* and routed at
+/// `jigc doc show fake:thing --task <id>`, which dead-ends at `store.unknown-type`; the
+/// forced discard acked *"dropped staged edits to: fake:thing"*; and `jigc doc list --task`
+/// — a **1.0-pinned** contract — listed it `managed`. Four surfaces claiming a staged doc
+/// that no doc read can open.
+///
+/// Low severity in bytes (the door **over**-refused, so nothing died) and a law-1 claim the
+/// bytes do not support on a pinned surface, which is why it is pinned here rather than left
+/// to the guard that owns it. **The subject boundary is the point:** what a non-file entry
+/// there *is* — a byte jigc did not write into a task area — is the destroying doors'
+/// question about foreign bytes, not this probe's question about staged prose, and a probe
+/// that answers the wrong one of those answers it wrongly.
+///
+/// The real staged doc is planted beside it as the control: an arm that passed by the
+/// surfaces going quiet would prove nothing.
+#[test]
+fn a_directory_named_like_a_staged_doc_is_an_identity_at_no_surface() {
+    let (repo, home) = workbench("shaped-like-a-doc");
+    let (repo, home) = (repo.path(), home.path());
+    let squatter = repo
+        .join(".jigc")
+        .join("tasks")
+        .join(TOP_TASK)
+        .join("docs")
+        .join("fake:thing.md");
+    fs::create_dir(&squatter).expect("plant a directory shaped like a staged doc");
+    let real = format!("commit:{TOP_TASK}");
+
+    // The pinned index read.
+    let listed = jigc(repo, home, &["doc", "list", "--task", TOP_TASK]);
+    let listed_text = both_streams(&listed);
+    assert!(
+        listed.status.success(),
+        "`jigc doc list --task` must still answer; got:\n{listed_text}",
+    );
+    assert!(
+        listed_text.contains(&real),
+        "the control: the task's real staged doc is still listed; got:\n{listed_text}",
+    );
+    assert!(
+        !listed_text.contains("fake:thing"),
+        "a directory is not a staged doc, and the 1.0-pinned index read must not call it \
+         `managed`; got:\n{listed_text}",
+    );
+
+    // The refusal.
+    let refused = jigc(repo, home, &["task", "discard", TOP_TASK]);
+    let refused_text = both_streams(&refused);
+    assert!(
+        !refused.status.success(),
+        "the real staged doc still draws the consent guard; got:\n{refused_text}",
+    );
+    assert!(
+        refused_text.contains(&real),
+        "the control: the refusal still names the real staged doc; got:\n{refused_text}",
+    );
+    assert!(
+        !refused_text.contains("fake:thing"),
+        "the refusal must not name an identity `jigc doc show` cannot open — its own route \
+         dead-ends there; got:\n{refused_text}",
+    );
+
+    // The ack.
+    let dropped = jigc(repo, home, &["task", "discard", TOP_TASK, "--force"]);
+    let dropped_text = both_streams(&dropped);
+    assert!(
+        dropped.status.success(),
+        "the consent performs the discard; got:\n{dropped_text}",
+    );
+    assert!(
+        dropped_text.contains(&real),
+        "the control: the ack still names the staged doc it dropped; got:\n{dropped_text}",
+    );
+    assert!(
+        !dropped_text.contains("fake:thing"),
+        "the ack must not claim it dropped staged edits to a directory; got:\n{dropped_text}",
+    );
+}

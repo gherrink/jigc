@@ -3049,6 +3049,16 @@ fn fanout_worktree_paths(repo_root: &Path) -> std::io::Result<Vec<PathBuf>> {
 /// path is a reason to recurse into it, never a reason to drop it from the set. Recursion
 /// is decided on `symlink_metadata`, so a symlink is a leaf rather than a door out of the
 /// tree.
+///
+/// **And the exclusion above obeys the same rule** (M52 Increment 4 / T1, defect L-2). It
+/// used to be a bare **name** match, which is M49's shape-vs-bytes error re-appearing as a
+/// name-vs-shape error one function over — inside the guard M48 built to close it, and
+/// against the paragraph directly above. A transient *prefix* is a directory; a plain file at
+/// one of those names is no subtree at all, and the two doors that own those subtrees are
+/// blind to it for the same reason this one was (`fanout_worktree_paths` and
+/// [`crate::task::staged_task_prose`] both open with `if !<root>.is_dir()`). Driven at
+/// `ffb4064c` on a fresh install, six files planted at `ENTRIES` names were destroyed at
+/// **exit 0**, named by nothing, refused by nothing.
 fn workbench_paths(repo_root: &Path) -> std::io::Result<Vec<String>> {
     let jigc_dir = repo_root.join(".jigc");
     if !jigc_dir.is_dir() {
@@ -3062,13 +3072,23 @@ fn workbench_paths(repo_root: &Path) -> std::io::Result<Vec<String>> {
     let mut stack: Vec<PathBuf> = Vec::new();
     for entry in std::fs::read_dir(&jigc_dir)? {
         let entry = entry?;
-        if transient
-            .iter()
-            .any(|prefix| entry.file_name() == std::ffi::OsStr::new(prefix))
+        let path = entry.path();
+        // **A prefix is a directory.** The name alone does not make a path one of the
+        // transient subtrees this set excludes — a plain file at `.jigc/tasks` is not the
+        // working area, it is a leaf `remove_dir_all(.jigc/)` takes like any other, and the
+        // two doors that own those subtrees cannot see it either (both begin
+        // `if !<root>.is_dir() { return empty }`). Read with `symlink_metadata`, the same
+        // question the recursion below asks, so a symlink at one of these names is a leaf
+        // here rather than a door out of the tree.
+        let is_dir = std::fs::symlink_metadata(&path)?.is_dir();
+        if is_dir
+            && transient
+                .iter()
+                .any(|prefix| entry.file_name() == std::ffi::OsStr::new(prefix))
         {
             continue;
         }
-        stack.push(entry.path());
+        stack.push(path);
     }
 
     let mut paths: Vec<String> = Vec::new();

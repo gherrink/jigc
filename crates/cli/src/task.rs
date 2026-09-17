@@ -626,20 +626,46 @@ fn discard_rejection_frame(id: &str, force: bool) -> RejectionFrame {
 /// `provenance.json`, so an emptiness probe over the directory answers "there is prose
 /// here" for every task that ever existed.
 ///
+/// **The name is not enough: the entry has to be a file** (M52 Increment 4 / T1, defect
+/// L-3). This asked `strip_suffix(".md")` and no shape question at all, so a *directory*
+/// named `<type>:<slug>.md` became a staged identity at every surface reading this probe.
+/// Driven at `ffb4064c` with `mkdir '.jigc/tasks/<id>/docs/fake:thing.md'`: `jigc task
+/// discard` refused naming `fake:thing` and routed at `jigc doc show fake:thing --task <id>`,
+/// which dead-ends at `store.unknown-type`; the forced discard acked *"dropped staged edits
+/// to: fake:thing"*; and `jigc doc list --task` — a 1.0-pinned contract — listed it
+/// `managed`. Four surfaces claiming a staged doc that no doc read can open.
+///
+/// The shape question is asked through `std::fs::metadata`, which **follows** a symlink: the
+/// id this yields *is* the address `jigc doc show` takes, and that read follows one too, so a
+/// link to a real `.md` is a doc this can honestly name while a link to a directory is not.
+/// What a non-file entry there *is* — a byte jigc did not write into a working area — is the
+/// destroying doors' question about their own subject, not this probe's question about staged
+/// prose, and a probe that answers the wrong one of those answers it wrongly.
+///
 /// `Ok(vec![])` for an absent dir; an unreadable *present* dir is an `Err`, so a caller
 /// that must fail closed can ([`staged_task_prose`], the destroying doors' guard —
-/// enumerating nothing must never be indistinguishable from finding nothing). Callers
-/// for whom the list is decoration take `.unwrap_or_default()`.
+/// enumerating nothing must never be indistinguishable from finding nothing). An entry whose
+/// own shape cannot be read is an `Err` for the same reason. Callers for whom the list is
+/// decoration take `.unwrap_or_default()`.
 pub(crate) fn staged_doc_ids(docs_dir: &Path) -> std::io::Result<Vec<String>> {
     if !docs_dir.exists() {
         return Ok(Vec::new());
     }
     let mut ids: Vec<String> = Vec::new();
     for entry in std::fs::read_dir(docs_dir)? {
-        let name = entry?.file_name();
-        if let Some(id) = name.to_string_lossy().strip_suffix(".md") {
-            ids.push(id.to_string());
+        let entry = entry?;
+        let name = entry.file_name();
+        let Some(id) = name
+            .to_string_lossy()
+            .strip_suffix(".md")
+            .map(str::to_owned)
+        else {
+            continue;
+        };
+        if !std::fs::metadata(entry.path())?.is_file() {
+            continue;
         }
+        ids.push(id);
     }
     ids.sort();
     Ok(ids)

@@ -2405,10 +2405,12 @@ fn provision_worktrees(
 fn remove_leftover(path: &Path) -> std::io::Result<()> {
     match leftover_at(path) {
         LeftoverAt::Directory => std::fs::remove_dir_all(path),
-        // `Absent` included: the shape read swallows a stat failure, and `remove_file`
-        // surfaces the real errno (`NotFound`, `EACCES`) rather than this function inventing
-        // one.
-        LeftoverAt::Absent | LeftoverAt::Leaf => std::fs::remove_file(path),
+        // `Absent` and `Unreadable` included: at neither one is there a shape to dispatch on,
+        // and `remove_file` surfaces the real errno (`NotFound`, `EACCES`) rather than this
+        // function inventing one.
+        LeftoverAt::Absent | LeftoverAt::Leaf | LeftoverAt::Unreadable(_) => {
+            std::fs::remove_file(path)
+        }
     }
 }
 
@@ -2787,13 +2789,21 @@ pub(crate) fn because(hold: &LeftoverHold) -> &'static str {
 /// all four doors and the fourth is asserted to say nothing
 /// (`crates/cli/tests/leftover_probe_fail_closed.rs`).
 ///
-/// An unreadable parent reads as [`LeftoverAt::Absent`], which is what both readers already
-/// did with it (`.ok()?` and `exists()`): the question *"is there a directory here to look
-/// inside"* has no third answer, and the door that then tries the removal surfaces the real
-/// errno.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+/// **Absence is `NotFound`, and nothing else** (M52 Increment 4 / T1, defect L-1). This read
+/// used to map *every* `symlink_metadata` failure to [`LeftoverAt::Absent`] — *"which is what
+/// both readers already did with it"*, said the paragraph this one replaces — and `Absent` is
+/// the single answer [`probe_leftover`] returns `None` for, i.e. **provably safe to delete**.
+/// An `EACCES` on the parent is not absence. Driven at `ffb4064c` over a provisioned fan-out
+/// with `chmod 000 .jigc/worktrees`, `jigc milestone discard <id>` exited **0** with an empty
+/// stderr, settled the record as `discarded` and removed the milestone workbench, while both
+/// sub-task worktrees sat on disk holding uncommitted work `git worktree list` no longer
+/// named — an irreversible settle taken over bytes nothing could vouch for. So the question
+/// *"is there a directory here to look inside"* has exactly three answers — there is, there
+/// is not, and **the probe could not tell** — and the third is the one the guard exists for.
+#[derive(Clone, PartialEq, Eq, Debug)]
 enum LeftoverAt {
-    /// Nothing is there — or nothing that can be stat'd.
+    /// Nothing is there: `symlink_metadata` said `NotFound`, the one failure that *is* an
+    /// answer about the path rather than about the reader's access to it.
     Absent,
     /// A directory the door may look inside, and `remove_dir_all` may clear.
     Directory,
@@ -2801,14 +2811,19 @@ enum LeftoverAt {
     /// any kind** — a link is never a door out of the tree, and a **dangling** one reads as
     /// absent through `exists()` while still sitting in the way of `git worktree add`.
     Leaf,
+    /// The stat itself failed for a reason that is not absence — a permission wall, a broken
+    /// mount — carrying the failure verbatim for the surface that renders it. The
+    /// **fail-closed** answer: every reader here turns it into a hold, never a clearance.
+    Unreadable(String),
 }
 
 /// Read [`LeftoverAt`] at `path`.
 fn leftover_at(path: &Path) -> LeftoverAt {
     match std::fs::symlink_metadata(path) {
-        Err(_) => LeftoverAt::Absent,
         Ok(meta) if meta.is_dir() => LeftoverAt::Directory,
         Ok(_) => LeftoverAt::Leaf,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => LeftoverAt::Absent,
+        Err(err) => LeftoverAt::Unreadable(format!("{err}")),
     }
 }
 
@@ -2842,6 +2857,15 @@ pub(crate) fn probe_leftover(repo_root: &Path, path: &Path) -> Option<LeftoverHo
             return Some(LeftoverHold {
                 verdict: LeftoverVerdict::Unverifiable,
                 shape: LeftoverShape::File,
+                entries: Vec::new(),
+            });
+        }
+        // The stat failed and the failure was not absence, so nothing here has been read at
+        // all: the hold its own doc-comment has promised since M50, finally produced.
+        LeftoverAt::Unreadable(err) => {
+            return Some(LeftoverHold {
+                verdict: LeftoverVerdict::Unverifiable,
+                shape: LeftoverShape::Unreadable(err),
                 entries: Vec::new(),
             });
         }
@@ -5344,15 +5368,22 @@ struct DoomedLine {
     at: PathBuf,
 }
 
-/// Probe what a removal at `path` would take. An empty `lines` means the removal destroys
-/// nothing that is not already in git: an absent path, an empty directory, or a worktree
-/// whose whole content is staged.
+/// Probe what a removal at `path` would take. An empty `lines` means the narration has
+/// nothing it may honestly print: an absent path, an empty directory, a worktree whose whole
+/// content is staged — or a path this could not read at all, where the honest claim is that
+/// there is none (see the arm below).
 fn doomed_at(repo_root: &Path, path: &Path) -> Result<Doomed> {
     const WORKTREE: &str = "fan-out worktree";
     // The shape is [`leftover_at`]'s, the refusal's own — never `exists()`/`is_dir()`, which
     // follow a symlink and had this surface enumerating through one (M51 EC-17).
     let at = leftover_at(path);
-    if at == LeftoverAt::Absent {
+    // Nothing to name in either cell, for opposite reasons — and `Unreadable` must name
+    // nothing *especially*: [`PendingLoss::narrate_taken`] calls a line taken when
+    // `symlink_metadata` at it fails afterwards, which is the very condition that put the
+    // path in this arm, so any line composed here would be reported as destroyed whether the
+    // removal happened or not. A door that cannot read a path cannot honestly claim to have
+    // taken what was under it.
+    if matches!(at, LeftoverAt::Absent | LeftoverAt::Unreadable(_)) {
         return Ok(Doomed {
             subject: WORKTREE,
             lines: Vec::new(),

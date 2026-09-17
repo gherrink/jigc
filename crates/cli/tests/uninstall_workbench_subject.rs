@@ -408,3 +408,74 @@ fn a_tracked_workbench_file_edited_and_staged_is_still_narrated() {
         "the teardown must still have removed `.jigc/`",
     );
 }
+
+/// **(h)** The `ENTRIES` exclusion is a **prefix** exclusion, and a prefix is a directory
+/// (M52 Increment 4 / T1, defect L-2 — `completions/artifacts/M52/baseline-destroying.md`
+/// §4). `workbench_paths` dropped an entry whose *name* matched a transient prefix with no
+/// shape check at all, so a plain file at `.jigc/tasks` — bytes in no index, outside every
+/// transient subtree because there is no subtree — was invisible to this guard. It was
+/// invisible to the other two in the same stroke (`fanout_worktree_paths` and
+/// `staged_task_prose` both start `if !<root>.is_dir() { return empty }`), so all three
+/// guards and all three narrations missed it at once: driven at `ffb4064c`, six such files
+/// were destroyed at **exit 0**, named by nothing.
+///
+/// That is M49's `path.is_dir()` shape-vs-bytes error re-appearing as a **name**-vs-shape
+/// error one function over, inside the guard M48 built to close it — and against
+/// `workbench_paths`' own doc-comment: *"**Every child that is not a directory**, symlinks
+/// included: the shape of a path is a reason to recurse into it, never a reason to drop it
+/// from the set."*
+///
+/// The arm iterates `cli::gitignore::ENTRIES` rather than a hand-listed name or the one
+/// reported cell, so an eighth transient prefix joins this assertion by existing.
+#[test]
+fn a_plain_file_at_every_transient_prefix_name_blocks_the_teardown() {
+    let site = Installed::new("prefix-shaped-file");
+    let jigc = site.repo().join(".jigc");
+
+    let names: Vec<&str> = cli::gitignore::ENTRIES
+        .lines()
+        .map(|entry| entry.trim_end_matches('/'))
+        .collect();
+    assert!(
+        !names.is_empty(),
+        "the transient prefix set must be non-empty, or this arm asserts nothing",
+    );
+
+    for name in &names {
+        let at = jigc.join(name);
+        // `setup` leaves some of these as empty directories; the plant replaces them, which
+        // is the state an operator's own stray file would land in.
+        if at.is_dir() {
+            fs::remove_dir_all(&at).unwrap_or_else(|err| panic!("clear `.jigc/{name}`: {err}"));
+        }
+        fs::write(&at, format!("PRECIOUS {name} BYTES\n"))
+            .unwrap_or_else(|err| panic!("plant `.jigc/{name}`: {err}"));
+    }
+
+    let out = site.run(&["uninstall"]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "a plain file at a transient prefix name is in no index and in no subtree — it must \
+         block; stdout:\n{}\nstderr:\n{stderr}",
+        String::from_utf8_lossy(&out.stdout),
+    );
+    assert!(
+        stderr.contains(CODE),
+        "the refusal must carry `{CODE}` — the third subject's own code; got:\n{stderr}",
+    );
+    for name in &names {
+        assert!(
+            stderr.contains(&format!(".jigc/{name}")),
+            "the refusal must name `.jigc/{name}`: a door that names one of the things it \
+             would destroy is the law-1 half-truth; got:\n{stderr}",
+        );
+        let at = jigc.join(name);
+        assert_eq!(
+            fs::read_to_string(&at).ok(),
+            Some(format!("PRECIOUS {name} BYTES\n")),
+            "the refused teardown must leave `.jigc/{name}` byte-intact",
+        );
+    }
+    site.assert_install_intact("prefix-shaped-file");
+}
