@@ -53,7 +53,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use cli::cli::VERB_KINDS;
+use crate::support::leaf_argv;
 
 /// The sentence stem every spelling of this refusal has always shared — the needle the
 /// source arm counts and the emitted-bytes arm asserts appears exactly once.
@@ -88,114 +88,23 @@ impl Drop for TempDir {
     }
 }
 
-/// One cell of the axis: a leaf verb's [`VERB_KINDS`] path, and the **tail** appended after
-/// it to make an argv clap accepts — so the run reaches the repository precondition rather
-/// than dying at the parser.
-///
-/// Each tail is minimal-but-parseable: every required argument present, every value a
-/// plausible-but-absent id. Nothing here needs to resolve — the precondition fires before
-/// any id, path or address is adjudicated, which is the point (a user outside a repo is
-/// told *that*, not that their doctype is unknown).
-type Arm = (&'static [&'static str], &'static [&'static str]);
+/// The axis input — **the shared minimal-argv table**, not a copy of one
+/// ([`crate::support::leaf_argv`]). It moved out of this file at M52 Increment 1 / T3,
+/// when the pre-dispatch fault axis needed the same 47 rows; a second copy would rot the
+/// first time a leaf gained a required argument, and the suite that was not edited would
+/// die at clap with an exit 2 that reads like a declared carve-out.
+const ARMS: &[leaf_argv::Arm] = leaf_argv::MINIMAL_ARGV;
 
-/// Every leaf verb, with the argv that reaches its repository precondition — fenced total
-/// against [`VERB_KINDS`] by [`arms_cover_every_leaf_verb`].
-const ARMS: &[Arm] = &[
-    // Top level.
-    (&["start"], &[]),
-    (&["workflow"], &["single-task", "--preview"]),
-    (&["setup"], &[]),
-    (&["uninstall"], &[]),
-    (&["upgrade"], &[]),
-    (&["ingest"], &[]),
-    (&["migrate"], &["FOREIGN.md", "--as", "changelog"]),
-    (&["migrate-corpus"], &[]),
-    (&["unmanage"], &["FOREIGN.md"]),
-    (&["rename"], &["adr:a-decision", "--to", "A Decision"]),
-    (&["relocate"], &["changelog", "--from", "docs"]),
-    (&["describe"], &[]),
-    (&["validate"], &[]),
-    // `jigc doc` — the managed-doc surface.
-    (&["doc", "create"], &["adr", "--title", "A Decision"]),
-    (
-        &["doc", "add-item"],
-        &["adr:a-decision#options", "--title", "An Option"],
-    ),
-    (
-        &["doc", "remove-item"],
-        &["adr:a-decision#options.an-option"],
-    ),
-    (
-        &["doc", "retitle-item"],
-        &["adr:a-decision#options.an-option", "--title", "Another"],
-    ),
-    (
-        &["doc", "rename"],
-        &["adr:a-decision", "--to", "Another Decision"],
-    ),
-    (
-        &["doc", "set-field"],
-        &["adr:a-decision#status", "--value", "accepted"],
-    ),
-    (
-        &["doc", "set-slot"],
-        &["adr:a-decision#context", "--from-file", "payload.yaml"],
-    ),
-    (&["doc", "author"], &["adr", "--from-file", "payload.yaml"]),
-    (&["doc", "show"], &["adr:a-decision"]),
-    (&["doc", "schema"], &["adr"]),
-    (&["doc", "list"], &[]),
-    // `jigc task` — the task lifecycle.
-    (&["task", "list"], &[]),
-    (&["task", "diff"], &["a-task"]),
-    (&["task", "validate"], &["a-task"]),
-    (&["task", "discard"], &["a-task"]),
-    (&["task", "finalize"], &["a-task"]),
-    (&["task", "bind"], &["spec", "spec:a-spec", "a-task"]),
-    // `jigc config` — the cascade surface.
-    (&["config", "set"], &["docs-root", "docs"]),
-    (
-        &["config", "insert-step"],
-        &["step.md", "--workflow", "single-task", "--after", "orient"],
-    ),
-    (
-        &["config", "replace-step"],
-        &["single-task:orient", "step.md"],
-    ),
-    (&["config", "remove-step"], &["single-task:orient"]),
-    (
-        &["config", "fill"],
-        &["single-task:orient", "--from-file", "payload.yaml"],
-    ),
-    (&["config", "fork"], &["single-task:orient"]),
-    (&["config", "get"], &["docs-root"]),
-    (&["config", "list"], &[]),
-    // `jigc milestone` — the work-unit surface.
-    (&["milestone", "create"], &["A Milestone"]),
-    (
-        &["milestone", "add-task"],
-        &["m-a-milestone", "do the thing"],
-    ),
-    (
-        &["milestone", "add-from-spec"],
-        &["m-a-milestone", "spec:a-spec"],
-    ),
-    (&["milestone", "list-tasks"], &["m-a-milestone"]),
-    (&["milestone", "provision"], &["m-a-milestone"]),
-    (&["milestone", "execute"], &["m-a-milestone"]),
-    (&["milestone", "join"], &["m-a-milestone"]),
-    (&["milestone", "finalize"], &["m-a-milestone"]),
-    (&["milestone", "discard"], &["m-a-milestone"]),
-];
-
-/// A directory with **no `.git` anywhere above it**, plus the two files the argvs point at
+/// A directory with **no `.git` anywhere above it**, plus the files the argvs point at
 /// (so a cell that somehow got past the precondition would fail on something else, loudly,
-/// rather than on a missing file that looks like the same refusal).
+/// rather than on a missing file that looks like the same refusal). The file set is the
+/// argv table's own ([`leaf_argv::FIXTURE_FILES`]) — the tails name them, so they belong
+/// beside the tails.
 fn outside_a_repo(tag: &str) -> TempDir {
     let dir = TempDir::new(tag);
-    fs::write(dir.path().join("FOREIGN.md"), "# Foreign\n").expect("write foreign file");
-    fs::write(dir.path().join("payload.yaml"), "title: X\n").expect("write payload");
-    fs::write(dir.path().join("step.md"), "# Step\n").expect("write step file");
+    for (name, body) in leaf_argv::FIXTURE_FILES {
+        fs::write(dir.path().join(name), body).expect("write an argv-table fixture file");
+    }
     assert!(
         dir.path().ancestors().all(|a| !a.join(".git").exists()),
         "the axis fixture must have no `.git` above it; got {}",
@@ -218,32 +127,12 @@ fn jigc(dir: &Path, home: &Path, argv: &[&str]) -> std::process::Output {
 // The fence — the arm set is the binary's leaf-verb set
 // ---------------------------------------------------------------------------------
 
-/// [`ARMS`] ⇔ [`VERB_KINDS`]: every leaf verb the clap tree carries has exactly one arm,
+/// [`ARMS`] ⇔ [`cli::cli::VERB_KINDS`]: every leaf verb the clap tree carries has exactly one arm,
 /// and no arm names a path the tree no longer has. A verb added to the surface reddens
 /// here until someone decides what it says outside a repository.
 #[test]
 fn arms_cover_every_leaf_verb() {
-    for (path, _) in VERB_KINDS {
-        let hits = ARMS.iter().filter(|(known, _)| known == path).count();
-        assert_eq!(
-            hits,
-            1,
-            "`jigc {}` is a leaf verb and needs exactly one not-in-repo arm; got {hits}",
-            path.join(" "),
-        );
-    }
-    for (path, _) in ARMS {
-        assert!(
-            VERB_KINDS.iter().any(|(known, _)| known == path),
-            "the arm for `jigc {}` names a path the clap tree no longer has",
-            path.join(" "),
-        );
-    }
-    assert_eq!(
-        ARMS.len(),
-        VERB_KINDS.len(),
-        "one arm per leaf verb, no duplicates",
-    );
+    leaf_argv::assert_covers_every_leaf_verb();
 }
 
 // ---------------------------------------------------------------------------------

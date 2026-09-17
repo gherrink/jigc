@@ -768,10 +768,22 @@ const UNSWEPT_PRODUCERS: &[(&str, usize, &str)] = &[
     ),
     (
         "crates/cli/src/pack.rs",
-        9,
-        "pack-load and `--explain`; the four that reach a surface \
-         (`assert_project_schema_shadows`) are already disposed `DeclaredAbsolute` above — \
-         pack-load has no repo-root subject to be relative to",
+        6,
+        "**[Corrected 2026-09-17 (M52 Increment 1, T3).** This row read `9` and gave the \
+         reason *\"pack-load has no repo-root subject to be relative to\"*. Falsifying \
+         datum, driven on rc.15: a corrupt `packs.yaml` printed \
+         `/private/var/folders/…/repo/.jigc/config/packs.yaml` — and \
+         `discover_project_config()` finds the repo root **one call earlier**, so the \
+         subject the reason denied was in hand the whole time. The **four** sites that \
+         composed that spelling — the two readers' `could not read` and their two \
+         `is not a valid pack-set list` — now reach `repo_relative` through \
+         `pack::located`, whose own fallback is the one site back (9 − 4 + 1 = 6).**] \
+         Six: the four \
+         `assert_project_schema_shadows` sites, disposed `DeclaredAbsolute` above; \
+         `located`'s own **fallback**, which is the honest absolute answer for a config \
+         dir that anchors no repository; and `resolving_path`, which renders a directory \
+         pack's root for `--explain` — a pack home is routinely outside the checkout \
+         (`~/packs/house`), so relativizing it would name a different directory",
     ),
     (
         "crates/cli/src/setup.rs",

@@ -683,6 +683,46 @@ impl Cli {
     }
 }
 
+/// The process working directory, or **the one refusal every leaf gives for a working
+/// directory it cannot read** — the pre-dispatch funnel's first half (M52 Increment 1 /
+/// T3; `design/surface-contract.md` → The pre-dispatch stream rule).
+///
+/// The fault is real and ordinary: a shell sitting in a directory another process removed,
+/// a worktree pruned under an agent, a build step that deletes its own scratch dir. It
+/// fires **before** jigc has located a repository, a project layer or a pack, so it
+/// precedes every per-verb reject funnel — and through rc.15 each of the 23 dispatch arms
+/// answered it with its own `eprintln!` of plain prose and a bare `Outcome::failure()`. A
+/// `--format json` driver therefore got, at **all 47 leaves**, bytes it cannot parse and an
+/// exit code with nothing behind it: neither reject arm, no `(code, target)` key, and
+/// nothing in the invocation log.
+///
+/// Routing it through [`crate::invocation_log::operational_failure`] settles all three at
+/// once — `{"error": …}` under `--format json`, the same sentence as before under the text
+/// formats, and the run's identity recorded — because that seam is where this codebase
+/// already pairs a printed operational error with its logged outcome. There is **no
+/// finding behind this fault**, so it takes the `{error}` arm by the rule T1 of this
+/// increment wrote down ([command-output-contract.md](../../../design/command-output-contract.md)
+/// → *Which reject arm a run takes*): a reject that carries a finding takes the findings
+/// arm, a reject with none takes `{error}`.
+///
+/// **One reader of the cwd in this module does not come here**, and that is stated rather
+/// than left to be discovered: [`refuse_on_posture`] takes `current_dir().ok()?` and
+/// **silently** skips the whole M51 posture family on this same fault. Closing it is a
+/// control-flow change on an `Option<Outcome>` rather than an expression substitution, and
+/// it belongs to D2.4 in Increment 3 (settle-record §12). The arithmetic is measured, not
+/// asserted, by `crates/cli/tests/pre_dispatch_faults.rs`'s count fence: at rc.15 this
+/// module held **24** readers of the process cwd, one per dispatch arm plus that skip; it
+/// now holds **two** — this seam and that skip — with **23** arms reaching this seam. A
+/// 24th arm added tomorrow reddens the fence rather than quietly reviving the prose.
+fn cwd_or_refusal(format: Format) -> Result<std::path::PathBuf, Outcome> {
+    std::env::current_dir().map_err(|err| {
+        crate::invocation_log::operational_failure(
+            format,
+            &anyhow::anyhow!("cannot determine the current directory: {err}"),
+        )
+    })
+}
+
 /// Run `jigc describe` against the current working directory: locate the repo +
 /// project layer, build the **pack-only** resolved definitions (the unfiltered
 /// workflow set + the full doctype set + the command catalog), assemble the
@@ -692,12 +732,9 @@ impl Cli {
 /// (`design/introspection.md` → Command surface). Reads-only — it composes nothing
 /// and writes nothing.
 fn run_describe(format: Format, kinds: describe::Kinds) -> Outcome {
-    let cwd = match std::env::current_dir() {
+    let cwd = match cwd_or_refusal(format) {
         Ok(cwd) => cwd,
-        Err(err) => {
-            eprintln!("cannot determine the current directory: {err}");
-            return Outcome::failure();
-        }
+        Err(refusal) => return refusal,
     };
     match describe::run(&cwd, kinds) {
         Ok(description) => {
@@ -717,12 +754,9 @@ fn run_describe(format: Format, kinds: describe::Kinds) -> Outcome {
 /// exits non-zero (`design/assistant-adapter.md` → Generated, minimal,
 /// regenerated; the block-payload envelope, `DECISIONS.md` 2026-05-31).
 fn run_setup(format: Format, force: bool) -> Outcome {
-    let cwd = match std::env::current_dir() {
+    let cwd = match cwd_or_refusal(format) {
         Ok(cwd) => cwd,
-        Err(err) => {
-            eprintln!("cannot determine the current directory: {err}");
-            return Outcome::failure();
-        }
+        Err(refusal) => return refusal,
     };
     match setup::run(&cwd, force) {
         Ok((summary, ignore)) => {
@@ -756,12 +790,9 @@ fn run_setup(format: Format, force: bool) -> Outcome {
 /// `uninstall.*` finding (with its route) on stderr and exits non-zero
 /// (`design/project-setup.md` → Flow 2 hardening → Teardown / cleanup (G5), bullet (b)).
 fn run_uninstall(format: Format, force: bool) -> Outcome {
-    let cwd = match std::env::current_dir() {
+    let cwd = match cwd_or_refusal(format) {
         Ok(cwd) => cwd,
-        Err(err) => {
-            eprintln!("cannot determine the current directory: {err}");
-            return Outcome::failure();
-        }
+        Err(refusal) => return refusal,
     };
     match setup::run_uninstall(&cwd, force) {
         Ok(summary) => {
@@ -783,12 +814,9 @@ fn run_uninstall(format: Format, force: bool) -> Outcome {
 /// directory. The selected `--format` flows through to the finding renderer for
 /// `validate`; `diff` / `discard` produce plain output.
 fn run_task(format: Format, verb: TaskCommand) -> Outcome {
-    let cwd = match std::env::current_dir() {
+    let cwd = match cwd_or_refusal(format) {
         Ok(cwd) => cwd,
-        Err(err) => {
-            eprintln!("cannot determine the current directory: {err}");
-            return Outcome::failure();
-        }
+        Err(refusal) => return refusal,
     };
     verb.dispatch(&cwd, format)
 }
@@ -801,12 +829,9 @@ fn run_task(format: Format, verb: TaskCommand) -> Outcome {
 /// format-honoring operational-error funnel) and exits non-zero
 /// (`design/overrides.md` → Authoring deltas).
 fn run_config(format: Format, verb: ConfigCommand) -> Outcome {
-    let cwd = match std::env::current_dir() {
+    let cwd = match cwd_or_refusal(format) {
         Ok(cwd) => cwd,
-        Err(err) => {
-            eprintln!("cannot determine the current directory: {err}");
-            return Outcome::failure();
-        }
+        Err(refusal) => return refusal,
     };
     verb.dispatch(&cwd, format)
 }
@@ -817,12 +842,9 @@ fn run_config(format: Format, verb: ConfigCommand) -> Outcome {
 /// (serial collision, unknown milestone) surfaces on stderr with its route and
 /// exits non-zero (`design/write-commands.md` → Minting a milestone).
 fn run_milestone(format: Format, verb: MilestoneCommand) -> Outcome {
-    let cwd = match std::env::current_dir() {
+    let cwd = match cwd_or_refusal(format) {
         Ok(cwd) => cwd,
-        Err(err) => {
-            eprintln!("cannot determine the current directory: {err}");
-            return Outcome::failure();
-        }
+        Err(refusal) => return refusal,
     };
     verb.dispatch(&cwd, format)
 }
@@ -837,12 +859,9 @@ fn run_milestone(format: Format, verb: MilestoneCommand) -> Outcome {
 /// routes to stderr and exits non-zero (`design/overrides.md` → The `jigc upgrade`
 /// command, step 3: report through the standard renderer, blocking-by-default).
 fn run_upgrade(format: Format) -> Outcome {
-    let cwd = match std::env::current_dir() {
+    let cwd = match cwd_or_refusal(format) {
         Ok(cwd) => cwd,
-        Err(err) => {
-            eprintln!("cannot determine the current directory: {err}");
-            return Outcome::failure();
-        }
+        Err(refusal) => return refusal,
     };
     // The adapter's **owned guide artifact**, read before the classifier runs (M48
     // Increment 10 / T2): a copy the user has edited is reported here with its route and
@@ -882,12 +901,9 @@ fn run_upgrade(format: Format) -> Outcome {
 /// locator error (no repo / no project layer) routes to stderr and exits non-zero
 /// (`design/project-setup.md` → Flow 2; `design/worked-examples.md` → flow 12).
 fn run_ingest(format: Format) -> Outcome {
-    let cwd = match std::env::current_dir() {
+    let cwd = match cwd_or_refusal(format) {
         Ok(cwd) => cwd,
-        Err(err) => {
-            eprintln!("cannot determine the current directory: {err}");
-            return Outcome::failure();
-        }
+        Err(refusal) => return refusal,
     };
     match ingest::run(&cwd) {
         Ok(report) => {
@@ -907,12 +923,9 @@ fn run_ingest(format: Format) -> Outcome {
 /// (with its route) and exits non-zero (`design/auto-migration.md` → The `jigc migrate`
 /// verb / The source seam).
 fn run_migrate(format: Format, path: &str, doctype: &str, slug_override: Option<&str>) -> Outcome {
-    let cwd = match std::env::current_dir() {
+    let cwd = match cwd_or_refusal(format) {
         Ok(cwd) => cwd,
-        Err(err) => {
-            eprintln!("cannot determine the current directory: {err}");
-            return Outcome::failure();
-        }
+        Err(refusal) => return refusal,
     };
     migrate::run(&cwd, path, doctype, slug_override, format)
 }
@@ -930,12 +943,9 @@ fn run_migrate(format: Format, path: &str, doctype: &str, slug_override: Option<
 /// commit boundary): `--no-commit` (write, land nothing) and `--dry-run` (write nothing, land
 /// nothing — the report an applying run would print).
 fn run_migrate_corpus(format: Format, options: migrate_corpus::Options) -> Outcome {
-    let cwd = match std::env::current_dir() {
+    let cwd = match cwd_or_refusal(format) {
         Ok(cwd) => cwd,
-        Err(err) => {
-            eprintln!("cannot determine the current directory: {err}");
-            return Outcome::failure();
-        }
+        Err(refusal) => return refusal,
     };
     migrate_corpus::run(&cwd, format, options)
 }
@@ -948,12 +958,9 @@ fn run_migrate_corpus(format: Format, options: migrate_corpus::Options) -> Outco
 /// nothing to move — an idempotent no-op); a locator error or a frozen-doctype refusal routes
 /// to stderr and exits non-zero.
 fn run_relocate(format: Format, doctype: &str, from: &str) -> Outcome {
-    let cwd = match std::env::current_dir() {
+    let cwd = match cwd_or_refusal(format) {
         Ok(cwd) => cwd,
-        Err(err) => {
-            eprintln!("cannot determine the current directory: {err}");
-            return Outcome::failure();
-        }
+        Err(refusal) => return refusal,
     };
     relocate::run(&cwd, doctype, from, format)
 }
@@ -966,12 +973,9 @@ fn run_relocate(format: Format, doctype: &str, from: &str) -> Outcome {
 /// stderr and exits non-zero (`design/project-setup.md` → Flow 2 hardening → Teardown /
 /// cleanup (G5)).
 fn run_unmanage(format: Format, path: &str) -> Outcome {
-    let cwd = match std::env::current_dir() {
+    let cwd = match cwd_or_refusal(format) {
         Ok(cwd) => cwd,
-        Err(err) => {
-            eprintln!("cannot determine the current directory: {err}");
-            return Outcome::failure();
-        }
+        Err(refusal) => return refusal,
     };
     match unmanage::run(&cwd, path) {
         Ok(report) => {
@@ -990,12 +994,9 @@ fn run_unmanage(format: Format, path: &str) -> Outcome {
 /// transaction rolled back) surfaces on stderr (with its route) and exits non-zero
 /// (`design/write-commands.md` → `jigc rename`).
 fn run_rename(format: Format, old_slug: &str, to: &str, slug: Option<&str>) -> Outcome {
-    let cwd = match std::env::current_dir() {
+    let cwd = match cwd_or_refusal(format) {
         Ok(cwd) => cwd,
-        Err(err) => {
-            eprintln!("cannot determine the current directory: {err}");
-            return Outcome::failure();
-        }
+        Err(refusal) => return refusal,
     };
     match rename::run(&cwd, old_slug, to, slug) {
         Ok(report) => {
@@ -1081,12 +1082,9 @@ fn run_rename(format: Format, old_slug: &str, to: &str, slug: Option<&str>) -> O
 /// with one operational error here. A locator error (no repo / no project layer) likewise
 /// routes to stderr and exits non-zero.
 fn run_validate_store(format: Format) -> Outcome {
-    let cwd = match std::env::current_dir() {
+    let cwd = match cwd_or_refusal(format) {
         Ok(cwd) => cwd,
-        Err(err) => {
-            eprintln!("cannot determine the current directory: {err}");
-            return Outcome::failure();
-        }
+        Err(refusal) => return refusal,
     };
     match validate_store_in_repo(&cwd) {
         Ok(StoreSweep {
@@ -1442,12 +1440,9 @@ fn require_project_layer(cwd: &Path) -> Result<PathBuf> {
 /// the global `--format` (a JSON envelope under `--format json`), so an agent on
 /// `--format json` gets a parseable block (`design/write-commands.md` → The verbs).
 fn run_doc(format: Format, verb: DocCommand) -> Outcome {
-    let cwd = match std::env::current_dir() {
+    let cwd = match cwd_or_refusal(format) {
         Ok(cwd) => cwd,
-        Err(err) => {
-            eprintln!("cannot determine the current directory: {err}");
-            return Outcome::failure();
-        }
+        Err(refusal) => return refusal,
     };
     verb.dispatch(&cwd, format)
 }
@@ -1458,12 +1453,9 @@ fn run_doc(format: Format, verb: DocCommand) -> Outcome {
 /// blocking gate / minting finding surfaces on stderr (with its route) and exits
 /// non-zero; nothing is emitted past a block.
 fn run_compose(format: Format, intent: &str, slug: Option<&str>) -> Outcome {
-    let cwd = match std::env::current_dir() {
+    let cwd = match cwd_or_refusal(format) {
         Ok(cwd) => cwd,
-        Err(err) => {
-            eprintln!("cannot determine the current directory: {err}");
-            return Outcome::failure();
-        }
+        Err(refusal) => return refusal,
     };
     match start::compose_in_repo(&cwd, intent, slug) {
         Ok(view) => {
@@ -1484,12 +1476,9 @@ fn run_compose(format: Format, intent: &str, slug: Option<&str>) -> Outcome {
 /// (with its route) and exits non-zero — nothing is emitted past a block, and an
 /// unknown id is rejected before any mint.
 fn run_compose_named(format: Format, intent: &str, workflow: &str, slug: Option<&str>) -> Outcome {
-    let cwd = match std::env::current_dir() {
+    let cwd = match cwd_or_refusal(format) {
         Ok(cwd) => cwd,
-        Err(err) => {
-            eprintln!("cannot determine the current directory: {err}");
-            return Outcome::failure();
-        }
+        Err(refusal) => return refusal,
     };
     match start::compose_named_in_repo(&cwd, intent, workflow, slug) {
         Ok(view) => {
@@ -1509,12 +1498,9 @@ fn run_compose_named(format: Format, intent: &str, workflow: &str, slug: Option<
 /// success (exit 0); a rejection or blocking finding surfaces on stderr (with its
 /// route) and exits non-zero.
 fn run_compose_named_no_intent(format: Format, workflow: &str) -> Outcome {
-    let cwd = match std::env::current_dir() {
+    let cwd = match cwd_or_refusal(format) {
         Ok(cwd) => cwd,
-        Err(err) => {
-            eprintln!("cannot determine the current directory: {err}");
-            return Outcome::failure();
-        }
+        Err(refusal) => return refusal,
     };
     match start::compose_named_no_intent_in_repo(&cwd, workflow) {
         Ok(view) => {
@@ -1533,12 +1519,9 @@ fn run_compose_named_no_intent(format: Format, workflow: &str) -> Outcome {
 /// route) and exits non-zero (`design/workflow-dialect.md` → `--explain` output
 /// contract; `design/worked-examples.md` → 3a).
 fn run_explain(format: Format, intent: Option<&str>, workflow: Option<&str>) -> Outcome {
-    let cwd = match std::env::current_dir() {
+    let cwd = match cwd_or_refusal(format) {
         Ok(cwd) => cwd,
-        Err(err) => {
-            eprintln!("cannot determine the current directory: {err}");
-            return Outcome::failure();
-        }
+        Err(refusal) => return refusal,
     };
     match start::compose_explain_in_repo(&cwd, intent, workflow) {
         Ok((tree, pack_label)) => {
@@ -1557,12 +1540,9 @@ fn run_explain(format: Format, intent: Option<&str>, workflow: Option<&str>) -> 
 /// or a blocking gate finding surfaces on stderr (with its route) and exits
 /// non-zero.
 fn run_resume(format: Format, id: &str) -> Outcome {
-    let cwd = match std::env::current_dir() {
+    let cwd = match cwd_or_refusal(format) {
         Ok(cwd) => cwd,
-        Err(err) => {
-            eprintln!("cannot determine the current directory: {err}");
-            return Outcome::failure();
-        }
+        Err(refusal) => return refusal,
     };
     match start::resume_in_repo(&cwd, id) {
         Ok(view) => {
@@ -1582,12 +1562,9 @@ fn run_resume(format: Format, id: &str) -> Outcome {
 /// blocking gate finding likewise surfaces on stderr and exits non-zero
 /// (`design/write-commands.md` → Sub-agent re-entry).
 fn run_reenter(format: Format, workflow: &str, task: &str) -> Outcome {
-    let cwd = match std::env::current_dir() {
+    let cwd = match cwd_or_refusal(format) {
         Ok(cwd) => cwd,
-        Err(err) => {
-            eprintln!("cannot determine the current directory: {err}");
-            return Outcome::failure();
-        }
+        Err(refusal) => return refusal,
     };
     match start::reenter_in_repo(&cwd, workflow, task) {
         Ok(view) => {
@@ -1604,12 +1581,9 @@ fn run_reenter(format: Format, workflow: &str, task: &str) -> Outcome {
 /// `creates-task: false` `<W>` (the router and its kind) mints nothing to begin with,
 /// so [`start::preview_in_repo`] rejects it with the route to run it directly.
 fn run_preview(format: Format, workflow: &str) -> Outcome {
-    let cwd = match std::env::current_dir() {
+    let cwd = match cwd_or_refusal(format) {
         Ok(cwd) => cwd,
-        Err(err) => {
-            eprintln!("cannot determine the current directory: {err}");
-            return Outcome::failure();
-        }
+        Err(refusal) => return refusal,
     };
     match start::preview_in_repo(&cwd, workflow) {
         Ok(view) => {
@@ -1624,12 +1598,9 @@ fn run_preview(format: Format, workflow: &str) -> Outcome {
 /// render the structured result through the selected `format`, and print it —
 /// mapping success/failure to the process exit code.
 fn run_orient(format: Format) -> Outcome {
-    let cwd = match std::env::current_dir() {
+    let cwd = match cwd_or_refusal(format) {
         Ok(cwd) => cwd,
-        Err(err) => {
-            eprintln!("cannot determine the current directory: {err}");
-            return Outcome::failure();
-        }
+        Err(refusal) => return refusal,
     };
     match orient::orient(&cwd) {
         Ok(view) => {

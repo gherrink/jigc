@@ -1661,6 +1661,30 @@ const FS_LOCAL_VERSION: &str = "fs-local";
 /// See overrides.md → the `FilesystemPack` seam.
 const PACK_DIR_ENV: &str = "JIGC_PACK_DIR";
 
+/// How a fault **names** the project layer's `packs.yaml` — law 1's printed-path rule
+/// reaching pack-load (`design/surface-contract.md` → The printed-path fence).
+///
+/// Repo-relative whenever the directory handed in is the project layer
+/// [`discover_project_config`] builds — `<repo_root>/.jigc/config`, so the root is the two
+/// components above it, confirmed with the same `.git` predicate discovery itself used.
+/// Absolute otherwise, which is the honest answer for a bare directory that anchors no
+/// repository: the unit tests below hand one, and so would any future caller pointing at a
+/// config dir outside a checkout.
+///
+/// **It exists because the reason for its absence was false.** Through rc.15 both readers
+/// rendered `path.display()` and `crates/cli/tests/repo_relative_paths.rs` disposed this
+/// module with *"pack-load has no repo-root subject to be relative to"* — driven, a
+/// corrupt `packs.yaml` printed `/private/var/folders/…/repo/.jigc/config/packs.yaml`,
+/// and the root it claims not to have was found one call earlier (M52 Increment 1 / T3).
+fn located(project_config_dir: &std::path::Path, path: &std::path::Path) -> String {
+    match project_config_dir.parent().and_then(|jigc| jigc.parent()) {
+        Some(repo_root) if repo_root.join(".git").exists() => {
+            crate::render::repo_relative(repo_root, path)
+        }
+        _ => path.display().to_string(),
+    }
+}
+
 /// The pre-cascade pack-assembly input: the ordered list of project-local pack
 /// directories read from `<project_config_dir>/packs.yaml`, **highest-precedence
 /// first** (earlier in the list = higher precedence). The composite `PackSource`
@@ -1679,11 +1703,12 @@ pub fn read_pack_list(project_config_dir: &std::path::Path) -> anyhow::Result<Ve
     use anyhow::Context;
 
     let path = project_config_dir.join("packs.yaml");
+    let named = located(project_config_dir, &path);
     let text = match std::fs::read_to_string(&path) {
         Ok(text) => text,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(e) => {
-            return Err(e).with_context(|| format!("could not read {}", path.display()));
+            return Err(e).with_context(|| format!("could not read {named}"));
         }
     };
 
@@ -1694,7 +1719,7 @@ pub fn read_pack_list(project_config_dir: &std::path::Path) -> anyhow::Result<Ve
     }
 
     let parsed: PacksFile = serde_yaml_ng::from_str(&text)
-        .with_context(|| format!("{} is not a valid pack-set list", path.display()))?;
+        .with_context(|| format!("{named} is not a valid pack-set list"))?;
     Ok(parsed.packs)
 }
 
@@ -1715,11 +1740,12 @@ pub fn read_compose_marker(project_config_dir: &std::path::Path) -> anyhow::Resu
     use anyhow::Context;
 
     let path = project_config_dir.join("packs.yaml");
+    let named = located(project_config_dir, &path);
     let text = match std::fs::read_to_string(&path) {
         Ok(text) => text,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
         Err(e) => {
-            return Err(e).with_context(|| format!("could not read {}", path.display()));
+            return Err(e).with_context(|| format!("could not read {named}"));
         }
     };
 
@@ -1730,7 +1756,7 @@ pub fn read_compose_marker(project_config_dir: &std::path::Path) -> anyhow::Resu
     }
 
     let parsed: MarkerFile = serde_yaml_ng::from_str(&text)
-        .with_context(|| format!("{} is not a valid pack-set list", path.display()))?;
+        .with_context(|| format!("{named} is not a valid pack-set list"))?;
     Ok(parsed.compose_embedded_methodology)
 }
 
@@ -1779,20 +1805,23 @@ pub fn make_pack() -> anyhow::Result<Box<dyn PackSource>> {
     // compose marker, the project-layer freeze arm, and the ref-target fence's resolved
     // read) — one walk, one answer.
     let project_config = discover_project_config();
-    let listed = discover_pack_list(project_config.as_deref()).unwrap_or_else(|err| {
-        // A malformed `packs.yaml` is a real authoring fault; surface it rather
-        // than silently falling back to the base. (An *absent* file is `Ok(vec![])`
-        // from `read_pack_list`, so this arm fires only on genuine corruption.)
-        eprintln!("warning: {err:#}");
-        Vec::new()
-    });
-    let compose_methodology =
-        discover_compose_marker(project_config.as_deref()).unwrap_or_else(|err| {
-            // Same fail-loud-but-don't-abort posture as the list discovery above: a
-            // malformed `packs.yaml` is surfaced, then treated as no marker (the floor).
-            eprintln!("warning: {err:#}");
-            false
-        });
+    // **A malformed `packs.yaml` propagates** (M52 Increment 1 / T3). An *absent* file is
+    // `Ok(vec![])` / `Ok(false)` from the two readers — the cold-start floor — so these
+    // `?`s fire only on genuine corruption, and corruption is not a footnote: the file
+    // names the project's pack-set, so a run that cannot read it is composing a pack-set
+    // the operator did not ask for. Through rc.15 both arms swallowed the located error
+    // into `eprintln!("warning: …")` and carried on at exit 0 against `[base]` — the
+    // false-green shape, and against this function's own doc-comment above, which has said
+    // *propagated, not swallowed* since M14. It was also unreadable to a `--format json`
+    // driver twice over: the plain lines prepended themselves to whatever document the run
+    // emitted, and `invocation_log::enabled_logs_dir` calls this factory **before**
+    // `Cli::try_parse()`, so the pair fired again ahead of the format's existence — two
+    // stray lines on `jigc --version`, which dispatches nothing. Surfaced here, the fault
+    // is raised **once**, at the verb's own call, where the format is in hand and the
+    // caller's `?` routes it through the shipped reject funnel; the instrumentation call's
+    // `.ok()?` swallows it silently, which is exactly what its doc-comment already claims.
+    let listed = discover_pack_list(project_config.as_deref())?;
+    let compose_methodology = discover_compose_marker(project_config.as_deref())?;
     let pack_dir = std::env::var_os(PACK_DIR_ENV);
     // A purely in-binary pack-set — exactly `[dev]` or `[dev ▸ methodology]`,
     // no filesystem constituent — is immutable in-process, so the eager

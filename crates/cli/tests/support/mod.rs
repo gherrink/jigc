@@ -18,6 +18,7 @@
 pub mod committing_doors;
 pub mod frozen_pack;
 pub mod goldens;
+pub mod leaf_argv;
 pub mod rust_source;
 pub mod shape_space;
 pub mod trial_corpus;

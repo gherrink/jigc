@@ -389,6 +389,15 @@ pub fn enabled_logs_dir() -> Option<PathBuf> {
     // pack-load freeze gate, and a drifted frozen schema must not turn instrumentation
     // into a failure surface — it silently disables the log here, while the verb itself
     // blocks loudly on its own `make_pack()?` a moment later.
+    //
+    // **`.ok()?` means silently, and until M52 it did not.** This call runs **before**
+    // `Cli::try_parse()` in `main`, so it precedes the format's existence and precedes
+    // dispatch entirely — and `make_pack` used to `eprintln!` a warning for a malformed
+    // `packs.yaml` rather than returning it, which put two unparseable lines on stderr for
+    // every run in such a repo, `jigc --version` included. The factory now propagates that
+    // fault (M52 Increment 1 / T3), so this call is what its own sentence above says it is:
+    // the consumer that disables the log and says nothing, leaving the surfacing to the
+    // verb's `?`, where the format and the repo root are both in hand.
     let pack = crate::pack::make_pack().ok()?;
     let resolved = crate::start::resolve_severity_cascade(pack.as_ref(), &project_config).ok()?;
     if resolved.scalar(KNOB_KEY) != Some("true") {
