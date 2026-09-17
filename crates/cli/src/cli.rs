@@ -517,6 +517,16 @@ impl Command {
 /// that was asked (`tests/not_in_repo_axis.rs`) rather than being pre-empted by a posture
 /// the probe could not have read anyway.
 ///
+/// **A working directory it cannot read is a refusal, not a stand-down** (M52 Increment 3
+/// / T3; `settle-record.md` → D2.4). Through rc.15 this read the cwd as
+/// `current_dir().ok()?` and answered `None` on the fault — indistinguishable, from here,
+/// from *nothing to refuse* — so a door that commits or moves on the user's behalf went on
+/// to act for a repository nobody could name. It now goes through [`cwd_or_refusal`], the
+/// module's one reader of the process cwd, so the fault takes the same `{error}` arm at
+/// the same exit code it takes at every dispatch arm, one step earlier and from the guard
+/// rather than past it. The [`ActsOnBehalf::Neither`] doors return above this line and are
+/// untouched: they still meet the fault at their own arm.
+///
 /// **The refusal carries no override.** The route names the git command that resolves the
 /// state — a posture is a repository state the user can resolve, not bytes only they can
 /// value — so `--force` at `jigc setup` keeps exactly one meaning, and a flag that consents
@@ -537,7 +547,10 @@ fn refuse_on_posture(command: &Command, format: Format) -> Option<Outcome> {
     if matches!(acts, ActsOnBehalf::Neither) {
         return None;
     }
-    let cwd = std::env::current_dir().ok()?;
+    let cwd = match cwd_or_refusal(format) {
+        Ok(cwd) => cwd,
+        Err(refusal) => return Some(refusal),
+    };
     let repo_root = crate::repo::discover_repo_root(&cwd)?;
     let subject = crate::repo::posture_subject(&repo_root);
     let breach = crate::repo::posture(&repo_root)
@@ -705,15 +718,16 @@ impl Cli {
 /// → *Which reject arm a run takes*): a reject that carries a finding takes the findings
 /// arm, a reject with none takes `{error}`.
 ///
-/// **One reader of the cwd in this module does not come here**, and that is stated rather
-/// than left to be discovered: [`refuse_on_posture`] takes `current_dir().ok()?` and
-/// **silently** skips the whole M51 posture family on this same fault. Closing it is a
-/// control-flow change on an `Option<Outcome>` rather than an expression substitution, and
-/// it belongs to D2.4 in Increment 3 (settle-record §12). The arithmetic is measured, not
-/// asserted, by `crates/cli/tests/pre_dispatch_faults.rs`'s count fence: at rc.15 this
-/// module held **24** readers of the process cwd, one per dispatch arm plus that skip; it
-/// now holds **two** — this seam and that skip — with **23** arms reaching this seam. A
-/// 24th arm added tomorrow reddens the fence rather than quietly reviving the prose.
+/// **Every reader of the cwd in this module comes here.** Increment 1 left one that did
+/// not — [`refuse_on_posture`]'s `current_dir().ok()?`, which **silently** skipped the
+/// whole M51 posture family on this same fault — and declared it rather than omitting it,
+/// because closing it is a control-flow change on an `Option<Outcome>` and not an
+/// expression substitution; Increment 3 / T3 closed it (D2.4, settle-record §12). The
+/// arithmetic is measured, not asserted, by `crates/cli/tests/pre_dispatch_faults.rs`'s
+/// count fence: at rc.15 this module held **24** readers of the process cwd, one per
+/// dispatch arm; it now holds **one** — this seam — with **24** callers reaching it, the
+/// 23 dispatch arms plus the posture guard. A 25th caller added tomorrow, or a second raw
+/// reader, reddens the fence rather than quietly reviving the prose.
 fn cwd_or_refusal(format: Format) -> Result<std::path::PathBuf, Outcome> {
     std::env::current_dir().map_err(|err| {
         crate::invocation_log::operational_failure(

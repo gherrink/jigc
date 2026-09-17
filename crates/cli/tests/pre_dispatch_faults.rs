@@ -40,15 +40,28 @@
 //! mold (`crates/cli/tests/repo_relative_paths.rs`): *a bound nothing measures is a
 //! sentence*.
 //!
-//! **One site is declared out rather than silently omitted.** At rc.15 `cli.rs` held
-//! **24** `std::env::current_dir()` occurrences and only **23** of them rendered the
-//! refusal; the 24th is `refuse_on_posture`'s `current_dir().ok()?`, which skips the whole
-//! M51 posture family **without a word** on the same fault. Closing it is a control-flow
-//! change on an `Option<Outcome>` and belongs to D2.4 in Increment 3 — so it rides
-//! [`Fault::unanswered`] with that reason. After the funnel the module holds **two**
-//! readers of the process cwd — the seam and that declared skip — which the count fence
-//! measures alongside the 23 dispatch arms that reach the seam, so neither half of the
-//! arithmetic can go stale in silence.
+//! **The one site that was declared out is closed, and the declaration with it.** At rc.15
+//! `cli.rs` held **24** `std::env::current_dir()` occurrences and only **23** of them
+//! rendered the refusal; the 24th was `refuse_on_posture`'s `current_dir().ok()?`, which
+//! skipped the whole M51 posture family **without a word** on the same fault — a door
+//! adjudicating on behalf of a repository it could not name, and answering `None` as if it
+//! had found nothing to refuse. Increment 1 declared that hole on [`Fault::unanswered`]
+//! rather than omitting it, because closing it is a control-flow change on an
+//! `Option<Outcome>` and not an expression substitution; Increment 3 / T3 (D2.4) closes it
+//! by routing that reader through the same seam, so the guard **refuses** the fault
+//! instead of standing down on it. The module now holds **one** reader of the process cwd
+//! — the seam — with **24** callers reaching it, and this fault's `unanswered` set is
+//! empty. Both halves stay measured, so neither can go stale in silence.
+//!
+//! **What catches a guard that calls the seam and then stands down anyway** is the driven
+//! arm, not the count — and that is worth writing down, because the arm and the exit are
+//! deliberately *unchanged* by D2.4, so the obvious reading is that nothing driveable can
+//! tell the two apart. It can. [`cwd_or_refusal`] renders and logs as it constructs, so a
+//! guard that calls it and discards what it returns falls through to the dispatch arm
+//! behind it and that arm calls the seam again: the run emits the document **twice**, and
+//! [`every_reachable_cell_answers_its_fault_with_one_document`] fails on `stderr: NotJson`
+//! at the first acting leaf. Applied as a mutant (`Err(_) => return None`) before this was
+//! written, it reddened exactly there.
 
 use std::fs;
 use std::path::Path;
@@ -130,24 +143,28 @@ const PRE_DISPATCH_FAULTS: &[Fault] = &[
         phase: Phase::BeforeDiscovery,
         fixture: Fixture::DeletedCwd,
         sites: &[
-            // Every reader of the process cwd in the dispatch module — **two**: the seam
-            // below, and `refuse_on_posture`'s declared skip. At rc.15 there were 24, one
-            // per dispatch arm, which is what made the fault answerable 23 different ways.
+            // Every reader of the process cwd in the dispatch module — **one**: the seam
+            // below. At rc.15 there were 24 — one per dispatch arm, which is what made the
+            // fault answerable 23 different ways — and through Increment 1 there were two,
+            // the seam plus `refuse_on_posture`'s `.ok()?`, which answered it in no way at
+            // all. A second reader re-appearing here is the whole class re-opening.
             (
                 "crates/cli/src/cli.rs",
                 "std::env::current_dir()",
-                2,
+                1,
                 Reading::Code,
             ),
-            // The 23 dispatch arms, each reaching that seam …
+            // The 23 dispatch arms **and the posture guard**, each reaching that seam. The
+            // 24th is D2.4: a door that commits or moves on the user's behalf refuses the
+            // fault rather than standing its whole guard down on it.
             (
                 "crates/cli/src/cli.rs",
                 "cwd_or_refusal(format)",
-                23,
+                24,
                 Reading::Code,
             ),
             // … and none of which prints the refusal as prose any more. The needle is the
-            // sentence itself: a 24th site copying its neighbour would reintroduce it.
+            // sentence itself: a 25th site copying its neighbour would reintroduce it.
             (
                 "crates/cli/src/cli.rs",
                 "cannot determine the current directory",
@@ -155,13 +172,7 @@ const PRE_DISPATCH_FAULTS: &[Fault] = &[
                 Reading::Literals,
             ),
         ],
-        unanswered: &[(
-            "crates/cli/src/cli.rs::refuse_on_posture",
-            "`current_dir().ok()?` silently skips the whole M51 posture family on this \
-             fault — it is D2.4's, in Increment 3, because closing it is a control-flow \
-             change on an `Option<Outcome>` and not an expression substitution \
-             (settle-record §12)",
-        )],
+        unanswered: &[],
     },
     Fault {
         id: "packs-yaml-malformed",
