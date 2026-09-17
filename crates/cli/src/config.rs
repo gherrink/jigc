@@ -1072,7 +1072,10 @@ fn route_docs_root_repoint_orphans(
 /// new home is parked out of the way, never clobbered.
 ///
 /// Best-effort: a resolution/store-access hiccup returns silently, and a per-doc failure is
-/// surfaced (routing the operator to move it by hand) but never fails the write.
+/// surfaced (routing the operator to move it by hand) but never fails the write. A
+/// **repository-posture** refusal is surfaced the same way and additionally **ends the
+/// sweep** — it is a fact about the repository, so every remaining pair would meet it
+/// ([`crate::relocate::relocate_stranded`], M52 Increment 3 / T4).
 ///
 /// **Returns the moves that landed**, on the same rule as its `docs-root` sibling (M51
 /// Increment 5 / T4): every silent return yields the empty list, a `blocked` per-doc failure is
@@ -1139,7 +1142,18 @@ fn route_placement_root_repoint_strands(
     );
     let jigc_root = repo_root.join(".jigc");
     for (prior, current) in &pairs {
-        let report = crate::relocate::relocate_stranded(repo_root, &jigc_root, prior, current);
+        // A refusal about the **repository** — an operation the user has not concluded,
+        // opened after this door's own posture verdict — ends the sweep rather than joining
+        // the per-doc `blocked` rows: every remaining pair meets the identical state
+        // (`crate::relocate::relocate_stranded`).
+        let report = match crate::relocate::relocate_stranded(repo_root, &jigc_root, prior, current)
+        {
+            Ok(report) => report,
+            Err(err) => {
+                narrate(format, format!("  - {err:#}"));
+                break;
+            }
+        };
         for (from, to) in &report.moved {
             narrate(format, format!("  - {from} → {to}"));
             relocated.push(Relocated {

@@ -186,7 +186,7 @@ pub(crate) fn relocate_freeze_exempt(
             schema.ty
         )
     })?;
-    Ok(relocate_stranded(repo_root, jigc_root, &prior, &current))
+    relocate_stranded(repo_root, jigc_root, &prior, &current)
 }
 
 /// Detect every committed doc **stranded** at `prior` (sitting there, no longer at `current`)
@@ -194,12 +194,19 @@ pub(crate) fn relocate_freeze_exempt(
 /// same `git ls-files` committed truth the orphan detector does, keying on
 /// [`orphan::is_stranded`]. A per-doc failure (a `git mv` clobber, an unreadable file) is
 /// captured in `blocked` and surfaced, never fatal — the rest still relocate.
+///
+/// **One error is not a per-doc failure and ends the sweep: the posture family's operation
+/// in progress** (M52 Increment 3 / T4). Both acts below re-probe it immediately before
+/// they touch the index ([`displace_foreign_squatter`]'s `git rm --cached`, [`move_doc`]'s
+/// `git mv`), and what they answer is a fact about the *repository* — so collecting it as a
+/// row would exit 0 over a refusal, and would go on asking the same question of every
+/// remaining instance.
 pub(crate) fn relocate_stranded(
     repo_root: &Path,
     jigc_root: &Path,
     prior: &Home,
     current: &Home,
-) -> RelocationReport {
+) -> Result<RelocationReport> {
     let mut report = RelocationReport {
         moved: Vec::new(),
         blocked: Vec::new(),
@@ -222,13 +229,38 @@ pub(crate) fn relocate_stranded(
                     report.displaced.push(pair);
                 }
             }
+            // A posture refusal is about the **repository**, not about this doc: every
+            // remaining stranded instance would meet the identical state, and a sweep that
+            // collected it as one `blocked` row would exit 0 over a refusal — the run
+            // saying *success* about a repository it was not allowed to act in. So it ends
+            // the sweep. The moves that already landed stay as the staged `git mv`s they
+            // were (`git status` names them, exactly as for a run that completed), and the
+            // re-run the route asks for relocates what is left: a doc already at its home
+            // is no longer stranded.
+            Err(err) if is_operation_in_progress(&err) => return Err(err),
             Err(err) => report.blocked.push((rel, format!("{err:#}"))),
         }
     }
     report.moved.sort();
     report.displaced.sort();
     report.blocked.sort();
-    report
+    Ok(report)
+}
+
+/// Whether `err` is the posture family's **operation in progress** refusal — the one error
+/// [`relocate_stranded`]'s per-doc loop can meet that is a fact about the repository rather
+/// than about the doc in hand.
+///
+/// It reads the **carried finding's code** rather than the rendered message: the two seam
+/// sites above ([`displace_foreign_squatter`], [`move_doc`]) both raise it through
+/// [`crate::render::finding_error`], so the identity is on the error, and a message match
+/// would be a second spelling of a code that already has one home
+/// ([`crate::repo::PostureMember::code`]).
+fn is_operation_in_progress(err: &anyhow::Error) -> bool {
+    err.downcast_ref::<crate::render::BlockedFinding>()
+        .is_some_and(|blocked| {
+            blocked.finding.code == crate::repo::PostureMember::OperationInProgress.code()
+        })
 }
 
 /// Move one stranded doc `old_rel` → `new_rel` byte-preserving via [`move_doc`]. A pure
@@ -305,6 +337,19 @@ fn displace_foreign_squatter(
     std::fs::create_dir_all(&workbench_dir)
         .with_context(|| format!("creating the .jigc workbench {workbench_dir:?}"))?;
     let workbench_abs = workbench_dir.join(name);
+    // **Re-probe immediately before the index mutation** (M52 Increment 3 / T4;
+    // `settle-record.md` → D2.5), as [`crate::repo::SeamAct::Move`] — the same class
+    // [`move_doc`] asks, for the same reason, at the last of the eleven index-mutating
+    // sites the M52 baseline enumerated and the only one no probe stood in front of
+    // ([baseline-posture.md](../../../completions/artifacts/M52/baseline-posture.md)
+    // §1.3, §2.10). The door adjudicated the posture many calls earlier; a hook, a
+    // concurrent process or an earlier phase of this same run can open an operation in
+    // between, and `move_doc`'s own probe is **too late** for this file: by the time it
+    // runs, the `git rm --cached` below has already dropped the user's
+    // committed-but-unmanaged bytes from the index and the `fs::rename` has parked them
+    // in a gitignored tree — driven, that ran under an un-concluded cherry-pick at exit
+    // 0 (`tests/relocate.rs`).
+    crate::repo::SeamSubject::live(repo_root).verify(crate::repo::SeamAct::Move)?;
     // Free any index slot the squatter holds (a committed-but-unmanaged file) so the managed
     // `git mv` into the destination succeeds; `--ignore-unmatch` makes an untracked squatter a
     // no-op.
