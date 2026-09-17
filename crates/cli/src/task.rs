@@ -754,9 +754,12 @@ pub(crate) fn staged_task_prose(
             continue;
         }
         let docs = staged_doc_ids(&path.join("docs")).map_err(|err| {
+            // Law 1's printed-path rule binds a blocking finding surface, and this fault is
+            // one at three doors (M52 Increment 4 / T7, D-3). The subject is always under
+            // `<repo>/.jigc/tasks/`, so a repo-relative spelling exists by construction.
             unverified(std::io::Error::other(format!(
                 "{}: {err}",
-                path.join("docs").display()
+                crate::render::repo_relative(repo_root, &path.join("docs"))
             )))
         })?;
         if !docs.is_empty() {
@@ -928,8 +931,15 @@ fn refuse_over_staged_prose(task: &TaskArea, id: &str, force: bool) -> Result<()
     if docs.is_empty() {
         return Ok(());
     }
+    // The sub-task discriminator, asked at the finding's CONSTRUCTION SITE (M52 Increment 4 /
+    // T7, D-1): the route this finding composes is only true of a task the per-task finalize
+    // will accept, and `engine::milestone::owning_milestone` is the same membership answer
+    // the `finalize.milestone-sub-task` guard itself keys on.
+    let owner = engine::milestone::owning_milestone(&task.jigc_root, id);
     Err(crate::render::finding_error(&discard_staged_prose_finding(
-        id, &docs,
+        id,
+        &docs,
+        owner.as_deref(),
     )))
 }
 
@@ -946,7 +956,31 @@ fn refuse_over_staged_prose(task: &TaskArea, id: &str, force: bool) -> Result<()
 /// are about to lose is followable as printed; `jigc task finalize` follows with the condition
 /// that makes it available (over the dominant skeleton cell it cannot succeed — the empty doc
 /// fails `schema-conformance`); and the consent lands last, carrying the real id.
-fn discard_staged_prose_finding(id: &str, docs: &[String]) -> Finding {
+///
+/// **`owner` is the sub-task discriminator** (M52 Increment 4 / T7, D-1). Over a milestone
+/// sub-task the landing exit above is a **dead end**: `jigc task finalize <sub>` answers
+/// `finalize.milestone-sub-task` at exit 3, because the parent milestone's boundary is the
+/// only one that commits it. So on that branch the route names the boundary that does accept
+/// it and the consent that does work there, and it states the consent's **record
+/// side-effect** — `jigc task discard <sub> --force` settles that sub-task as `discarded` in
+/// the committed milestone record, which the ack prints and the route previously left for the
+/// operator to discover after the fact.
+fn discard_staged_prose_finding(id: &str, docs: &[String], owner: Option<&str>) -> Finding {
+    let exits = match owner {
+        Some(milestone) => format!(
+            "or land them with `jigc milestone finalize {milestone}` — this task is a \
+             sub-task of milestone `{milestone}`, whose boundary is the only one that \
+             commits it, so `jigc task finalize` refuses it — or, once you have confirmed \
+             the task holds nothing you need, `jigc task discard {id} --force` removes the \
+             working area with them and settles this sub-task as `discarded` in the \
+             committed milestone record"
+        ),
+        None => format!(
+            "or land them with `jigc task finalize {id}` (which refuses while a required \
+             slot is empty) — or, once you have confirmed the task holds nothing you need, \
+             `jigc task discard {id} --force` removes the working area with them"
+        ),
+    };
     Finding::block(
         DISCARD_STAGED_PROSE,
         format!(
@@ -955,12 +989,7 @@ fn discard_staged_prose_finding(id: &str, docs: &[String]) -> Finding {
             docs.len(),
             docs.join(", "),
         ),
-        format!(
-            "read what is in them with `jigc doc show <address> --task {id}`, or land them \
-             with `jigc task finalize {id}` (which refuses while a required slot is empty) — \
-             or, once you have confirmed the task holds nothing you need, `jigc task discard \
-             {id} --force` removes the working area with them"
-        ),
+        format!("read what is in them with `jigc doc show <address> --task {id}`, {exits}"),
     )
 }
 

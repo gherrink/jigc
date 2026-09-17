@@ -3484,15 +3484,28 @@ fn run_discard(cwd: &Path, milestone_id: &str, force: bool) -> Result<(String, S
     // The complement goes with the area here: this door's disposition over bytes jigc did
     // not write is a refusal with `--force` as the single consent, and it lives at the door
     // (M52 Increment 4 / T5), never in the sink — `SubtaskComplement`.
-    cleanup_subtask_areas(&jigc_root, &list, SubtaskComplement::Take);
+    // **The ack keys on the OUTCOME of all three sinks, never on having run them** (M52
+    // Increment 4 / T7, D-2). Driven at `a8489bab` with `.jigc/worktrees` unwritable, this
+    // door warned twice that it could not remove a fan-out worktree and then printed
+    // `workbench removed` at exit 0 with both worktrees still on disk — the loss narration
+    // beside it having been outcome-keyed since M50 while the ack was not. Class size 1: the
+    // sibling `milestone finalize` ack was driven on the identical failure and is honest.
+    let mut workbench_gone = cleanup_subtask_areas(&jigc_root, &list, SubtaskComplement::Take);
     prose.narrate_taken(&jigc_home);
-    remove_worktrees(&repo_root, &jigc_home, &list);
-    remove_milestone_area(&repo_root, &dir);
+    workbench_gone &= remove_worktrees(&repo_root, &jigc_home, &list);
+    workbench_gone &= remove_milestone_area(&repo_root, &dir);
     foreign.narrate_taken(&jigc_home);
 
+    // The warnings each sink already printed name *what* is left; the ack's job is to stop
+    // claiming otherwise and to point at them.
+    let workbench = if workbench_gone {
+        "workbench removed"
+    } else {
+        "workbench NOT fully removed — the warnings above name what is left"
+    };
     Ok((
         format!(
-            "discarded milestone:{milestone_id} ({} sub-task(s); workbench removed)",
+            "discarded milestone:{milestone_id} ({} sub-task(s); {workbench})",
             list.enumerate().len()
         ),
         hook_output,
@@ -3918,7 +3931,10 @@ fn dirty_worktree_finding(milestone_id: &str, repo_root: &Path, held: &[HeldWork
 /// executor: without it an abandoned milestone leaves a cache `provision` would re-provision
 /// worktrees from. Best-effort, logged-not-raised — the record commit has already landed, so a
 /// cleanup failure must not fail it (the [`cleanup_subtask_areas`] self-heal stance).
-fn remove_milestone_area(repo_root: &Path, dir: &Path) {
+///
+/// **Returns whether the area is gone** — the ack keys on the outcome, never on the attempt
+/// (M52 Increment 4 / T7, D-2).
+fn remove_milestone_area(repo_root: &Path, dir: &Path) -> bool {
     if dir.exists()
         && let Err(err) = std::fs::remove_dir_all(dir)
     {
@@ -3926,7 +3942,9 @@ fn remove_milestone_area(repo_root: &Path, dir: &Path) {
             "note: milestone workbench removal at `{}` failed (self-heals): {err:#}",
             render::repo_relative(repo_root, dir),
         );
+        return false;
     }
+    true
 }
 
 /// Dispatch `jigc milestone execute <milestone-id>`: compose the milestone-execution
@@ -4864,12 +4882,17 @@ fn flip_record_for_finalize(
 /// `settle-record.md` → §18): the two landed arms **keep** those bytes, and the abandon path
 /// takes them under its own door's consent and narration. A disposition read off the
 /// function instead of the call would silently re-decide `jigc milestone discard`.
+///
+/// **Returns whether every area it reached is gone** — a caller that acks the teardown keys
+/// that ack on this, never on having run the loop (M52 Increment 4 / T7, D-2). The landed
+/// finalize arms ignore it: their ack names the commit, not the workbench.
 fn cleanup_subtask_areas(
     jigc_root: &Path,
     list: &engine::milestone::TaskList,
     mut complement: SubtaskComplement<'_>,
-) {
+) -> bool {
     let tasks_root = jigc_root.join("tasks");
+    let mut all_gone = true;
     for sub_id in list.enumerate() {
         let area = tasks_root.join(&sub_id);
         if !area.exists() {
@@ -4895,8 +4918,10 @@ fn cleanup_subtask_areas(
             eprintln!(
                 "note: post-commit sub-task working-area removal for `{sub_id}` failed (self-heals): {err:#}"
             );
+            all_gone = false;
         }
     }
+    all_gone
 }
 
 /// What a [`cleanup_subtask_areas`] call does with each sub-task area's **complement** —
@@ -4946,7 +4971,16 @@ enum SubtaskComplement<'a> {
 /// so the two never both speak). **Honest bound:** this makes the loss *visible*, not
 /// *prevented* — a `discard`-style refusal on the landed path is new surface, chartered
 /// to M46 (`implementation/decisions-pending.md` → the capability wave).
-fn remove_worktrees(repo_root: &Path, jigc_home: &Path, list: &engine::milestone::TaskList) {
+///
+/// **Returns whether every registered worktree it reached is gone** — the warnings say *what*
+/// is left, and this is what stops a caller's ack from claiming otherwise (M52 Increment 4 /
+/// T7, D-2).
+fn remove_worktrees(
+    repo_root: &Path,
+    jigc_home: &Path,
+    list: &engine::milestone::TaskList,
+) -> bool {
+    let mut all_gone = true;
     // **This function's two warnings name the host path, deliberately** (M50 Increment 12 /
     // T1). The second carries a `git worktree remove --force <path>` the operator pastes, and
     // git resolves a worktree path against the CALLER's cwd — so a repo-relative remedy works
@@ -4970,6 +5004,7 @@ fn remove_worktrees(repo_root: &Path, jigc_home: &Path, list: &engine::milestone
         }
         let Some(path_str) = path.to_str() else {
             eprintln!("warning: fan-out worktree path {path:?} is not valid UTF-8 (left in place)");
+            all_gone = false;
             continue;
         };
         // Read the loss BEFORE the removal and name what it actually TOOK after it (law 1
@@ -4980,6 +5015,7 @@ fn remove_worktrees(repo_root: &Path, jigc_home: &Path, list: &engine::milestone
         let removed = git_worktree(repo_root, &["worktree", "remove", "--force", path_str]);
         pending.narrate_taken(repo_root);
         if let Err(err) = removed {
+            all_gone = false;
             // A2 — pinned non-blocking warning, naming the leaked path + the prune remedy.
             eprintln!(
                 "warning: could not remove the fan-out worktree {path_str}: {err:#}\n  \
@@ -4992,6 +5028,7 @@ fn remove_worktrees(repo_root: &Path, jigc_home: &Path, list: &engine::milestone
     // Drop admin records for any worktree dir removed out-of-band (the provision prune
     // inverse) — best-effort; a prune failure is itself non-fatal to a landed commit.
     let _ = git_worktree(repo_root, &["worktree", "prune"]);
+    all_gone
 }
 
 /// The `commit` doc type the per-sub-task render addresses — a sub-task's authored

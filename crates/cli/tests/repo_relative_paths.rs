@@ -621,6 +621,23 @@ const PATH_TEXT_SITES: &[(&str, &str, Disposition, &str)] = &[
          hand-written strip; it now reads the shared home, which is what makes the home \
          shared rather than a seventh copy",
     ),
+    // --- the staged-prose probe, three destroying doors' fail-closed message (M52 Inc 4/T7)
+    (
+        "crates/cli/src/task.rs",
+        "staged_task_prose",
+        Disposition::Relative,
+        "the one probe behind `task-discard.staged-prose`, `uninstall.staged-prose` and \
+         `milestone.staged-prose`; its `docs/` fault composed the host path into all three \
+         **blocking** messages (D-3, driven on rc.15). The subject is always under \
+         `<repo>/.jigc/tasks/`, so a repo-relative spelling exists by construction. \
+         **Disposed, not driven, and the reason is measured:** since M52 Increment 4 / T5 no \
+         door can reach this arm — the foreign-byte guard is asked first at all three and \
+         probes a superset, because `staged_doc_ids` errors only where `std::fs::metadata` \
+         fails on an entry whose name parses as a staged doc id, and every such entry is \
+         `!file_type().is_file()`, which `engine::state::foreign_area_paths` calls foreign. \
+         Law 1 binds the surface whether or not a door currently reaches it, so the site is \
+         fixed and held here by disposition and by the standing fence",
+    ),
     // --- the shared trackability predicate (M50 audit, finding 3) ---------------------
     (
         "crates/cli/src/trackable.rs",
@@ -795,8 +812,16 @@ const UNSWEPT_PRODUCERS: &[(&str, usize, &str)] = &[
     ),
     (
         "crates/cli/src/task.rs",
-        3,
-        "two `with_context` promote/probe faults and one `git archive --prefix=`, which is an \
+        2,
+        "**[Corrected 2026-09-18 (M52 Increment 4, T7).** This row read `3` and gave the \
+         reason *\"two `with_context` promote/probe faults and one `git archive --prefix=`\"*. \
+         Falsifying datum, measured against the source: the three sites were \
+         `staged_task_prose`'s `docs/` fault, `git archive --prefix=` and **one** \
+         `promotion.source` fault — the count was right and the reason false for one of \
+         three, and the one it was false about was a **blocking finding surface** rather \
+         than an error channel. That site now reaches `repo_relative` and is disposed \
+         `Relative` above, so the remainder is two.**] \
+         Two: one `with_context` promote fault, and the `git archive --prefix=`, which is an \
          argument handed to a subprocess (the `dirty_worktrees` precedent)",
     ),
     (

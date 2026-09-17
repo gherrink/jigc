@@ -271,7 +271,9 @@ pub enum Command {
     /// under `.jigc/tasks/` holding a staged doc no commit has a copy of blocks
     /// with `uninstall.staged-prose` (throw the task away with `jigc task discard
     /// <task-id> --force`, or land it with `jigc task finalize <task-id>` once its doc
-    /// is complete), and any other file under `.jigc/` that no index has a copy of —
+    /// is complete — a milestone sub-task lands only through its milestone's own
+    /// boundary, and the refusal's listing names each sub-task's two exits), and any
+    /// other file under `.jigc/` that no index has a copy of —
     /// a recorded config delta among them — blocks with
     /// `uninstall.untracked-workbench-file` (`git add <path>` is enough to make it
     /// recoverable), and a file jigc did not write inside a working area under

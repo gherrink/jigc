@@ -2735,7 +2735,15 @@ fn uninstall(
             &crate::task::unverified_prose_finding,
         )?;
         if !staged.is_empty() {
-            return Err(staged_prose_finding(&staged));
+            // The sub-task discriminator, per listed task, asked where the finding is
+            // constructed (M52 Increment 4 / T7, D-1): a sub-task's landing exit is its
+            // milestone's boundary, never `jigc task finalize <id>`, which refuses it.
+            let jigc_root = repo_root.join(".jigc");
+            let owners: Vec<Option<String>> = staged
+                .iter()
+                .map(|(task, _)| engine::milestone::owning_milestone(&jigc_root, task))
+                .collect();
+            return Err(staged_prose_finding(&staged, &owners));
         }
         // The fourth subject: everything else under `.jigc/` that no index has a copy of
         // — the three guards above stated over the rest of the tree
@@ -3711,6 +3719,13 @@ fn dirty_worktree_finding(repo_root: &Path, dirty: &[HeldWorktreePath]) -> Findi
 /// by [`dirty_worktree_finding`] beside its siblings; what is left here is the one failure
 /// with no path to name — `read_dir` on `.jigc/worktrees/` itself — where there is no set to
 /// enumerate at all.
+///
+/// **Its route says what actually failed, and names the consent** (M52 Increment 4 / T7,
+/// D-4). Driven at `a8489bab` over an unreadable root it blamed `git` on PATH for an `EACCES`
+/// on a directory — a remedy that fits nothing it had found — while the same door's two
+/// sibling fail-closed refusals ([`crate::task::unverified_prose_finding`],
+/// [`unverified_foreign_finding`]) both name `--force`, the single consent past every guard
+/// here.
 fn unverified_worktrees_finding(err: anyhow::Error) -> Finding {
     Finding::block(
         "uninstall.dirty-worktree",
@@ -3718,10 +3733,11 @@ fn unverified_worktrees_finding(err: anyhow::Error) -> Finding {
             "cannot check `.jigc/worktrees/` for uncommitted fan-out work, so removing `.jigc/` \
              could destroy it: {err:#}"
         ),
-        "make sure `git` is on PATH and the repository is readable, then re-run \
-         `jigc uninstall` — or, once you have confirmed the fan-out worktrees hold nothing \
-         you need, remove them yourself (`git worktree list`, then `git worktree remove`) and \
-         re-run",
+        "make sure `.jigc/worktrees/` is readable — this failure is a `read_dir` of that \
+         directory, not a git fault — then re-run `jigc uninstall`; or remove the worktrees \
+         yourself (`git worktree list`, then `git worktree remove`) and re-run — or, once \
+         you have confirmed the fan-out worktrees hold nothing you need, `jigc uninstall \
+         --force` deletes them with the install",
     )
 }
 
@@ -3750,12 +3766,39 @@ fn unverified_worktrees_finding(err: anyhow::Error) -> Finding {
 /// route — this finding fires *because* that task stages a doc — so the exit it names would
 /// have been a route the wave's own guard blocks. `--force` is inert where nothing is staged,
 /// so the consent can be named unconditionally.
-fn staged_prose_finding(staged: &[(String, Vec<String>)]) -> Finding {
+///
+/// **`owners` is the per-task sub-task discriminator, positional with `staged`** (M52
+/// Increment 4 / T7, D-1). The route's landing exit `jigc task finalize <task-id>` is a dead
+/// end over a milestone sub-task — `finalize.milestone-sub-task`, exit 3 — but this finding
+/// enumerates *several* tasks and its route can only carry a placeholder, so the exits that
+/// differ per task belong on the **row**, which already carries the real id. A listed
+/// sub-task's row therefore names its own two concrete, runnable exits; the route gains one
+/// qualifier and only when at least one row is a sub-task, so an ordinary corpus sees exactly
+/// the text it saw before. The two slices are built together at the one call site; a short
+/// `owners` degrades a row to its un-discriminated form rather than misattributing one.
+fn staged_prose_finding(staged: &[(String, Vec<String>)], owners: &[Option<String>]) -> Finding {
     let listing: Vec<String> = staged
         .iter()
-        .map(|(task, docs)| format!("  {task}: {}", docs.join(", ")))
+        .enumerate()
+        .map(|(i, (task, docs))| {
+            let row = format!("  {task}: {}", docs.join(", "));
+            match owners.get(i).and_then(Option::as_deref) {
+                Some(milestone) => format!(
+                    "{row} — a sub-task of milestone `{milestone}`, which `jigc task \
+                     finalize` refuses: land it with `jigc milestone finalize {milestone}`, \
+                     or drop it with `jigc task discard {task} --force`, which also settles \
+                     it as `discarded` in the committed milestone record"
+                ),
+                None => row,
+            }
+        })
         .collect();
     let docs: usize = staged.iter().map(|(_, docs)| docs.len()).sum();
+    let sub_task_note = if owners.iter().any(Option::is_some) {
+        ", and refuses a sub-task outright — each sub-task above names its own two exits"
+    } else {
+        ""
+    };
     Finding::block(
         "uninstall.staged-prose",
         format!(
@@ -3764,11 +3807,13 @@ fn staged_prose_finding(staged: &[(String, Vec<String>)]) -> Finding {
             staged.len(),
             listing.join("\n"),
         ),
-        "read what is in them with `jigc doc show <address> --task <task-id>`, then throw the \
-         task away with `jigc task discard <task-id> --force` — or, once its doc is complete, \
-         land it with `jigc task finalize <task-id>` (which refuses while a required slot is \
-         empty) — then re-run `jigc uninstall`; `jigc uninstall --force` deletes them with the \
-         install",
+        format!(
+            "read what is in them with `jigc doc show <address> --task <task-id>`, then throw \
+             the task away with `jigc task discard <task-id> --force` — or, once its doc is \
+             complete, land it with `jigc task finalize <task-id>` (which refuses while a \
+             required slot is empty{sub_task_note}) — then re-run `jigc uninstall`; `jigc \
+             uninstall --force` deletes them with the install"
+        ),
     )
 }
 

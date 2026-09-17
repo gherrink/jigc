@@ -5,6 +5,8 @@
 #[path = "../support/mod.rs"]
 mod support;
 
+#[path = "../destroying_door_sibling_surfaces.rs"]
+mod destroying_door_sibling_surfaces;
 #[path = "../flow42_acceptance.rs"]
 mod flow42_acceptance;
 #[path = "../flow43_acceptance.rs"]
