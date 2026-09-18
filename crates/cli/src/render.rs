@@ -4939,6 +4939,7 @@ pub fn finding_error(finding: &Finding) -> anyhow::Error {
     anyhow::Error::new(BlockedFinding {
         finding: finding.clone(),
         envelope: false,
+        beside: Vec::new(),
     })
 }
 
@@ -4962,6 +4963,30 @@ pub fn envelope_finding_error(finding: &Finding) -> anyhow::Error {
     anyhow::Error::new(BlockedFinding {
         finding: finding.clone(),
         envelope: true,
+        beside: Vec::new(),
+    })
+}
+
+/// The sibling of [`envelope_finding_error`] for a refusal that **carries other findings the
+/// same reject document owes** — M52 Increment 5 / T8.
+///
+/// The contract's selection rule is *a reject that carries a finding takes the findings arm,
+/// with the operational error itself as a finding*, and *on the arm whose document is
+/// stderr's, nothing else is written there*
+/// (`design/command-output-contract.md` → The two reject arms / Stream discipline). A door
+/// whose transaction rolled back has two facts to report — what failed, and every path the
+/// rollback could not put back — and printing the second beside the first is exactly the
+/// shape M52 Increment 1 closed at the committing doors. `beside` is that second set: the
+/// one funnel renders it *inside* the document and records every code in the invocation log.
+///
+/// `finding` stays the carrier's [`Display`](std::fmt::Display) and the head of the rendered
+/// report, so a door with nothing beside it is byte-identical to
+/// [`envelope_finding_error`].
+pub fn envelope_finding_error_beside(finding: &Finding, beside: Vec<Finding>) -> anyhow::Error {
+    anyhow::Error::new(BlockedFinding {
+        finding: finding.clone(),
+        envelope: true,
+        beside,
     })
 }
 
@@ -4984,6 +5009,23 @@ pub fn envelope_projecting_finding(err: &anyhow::Error) -> Option<&Finding> {
     err.downcast_ref::<BlockedFinding>()
         .filter(|blocked| blocked.envelope)
         .map(|blocked| &blocked.finding)
+}
+
+/// **Every finding an envelope-projecting refusal puts in its one document** — the refusal
+/// itself, then whatever the door carried [`beside`](BlockedFinding::beside) it (M52
+/// Increment 5 / T8).
+///
+/// The funnel reads this rather than [`envelope_projecting_finding`] so a door cannot report
+/// the failure and drop the conflicts its own rollback raised; for every producer that
+/// carries nothing beside, the two return the same one finding.
+pub fn envelope_projecting_findings(err: &anyhow::Error) -> Option<Vec<Finding>> {
+    err.downcast_ref::<BlockedFinding>()
+        .filter(|blocked| blocked.envelope)
+        .map(|blocked| {
+            let mut findings = vec![blocked.finding.clone()];
+            findings.extend(blocked.beside.iter().cloned());
+            findings
+        })
 }
 
 /// A blocking [`Finding`] travelling as an `anyhow::Error` — the carrier
@@ -5009,6 +5051,11 @@ pub struct BlockedFinding {
     /// re-derived from the code at the funnel, so the door that raises the refusal is the
     /// one that declares its machine shape.
     pub envelope: bool,
+    /// Findings the **same reject document** owes, rendered after `finding` and logged with
+    /// it — the rollback conflicts a failed transaction raised, whose only other home would
+    /// be bytes printed beside the envelope that a driver has to drop
+    /// ([`envelope_finding_error_beside`]). Empty for every other producer.
+    pub beside: Vec<Finding>,
 }
 
 impl std::fmt::Display for BlockedFinding {

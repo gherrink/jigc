@@ -31,6 +31,8 @@ mod config_fork_compose;
 mod config_insert_step;
 #[path = "../config_read.rs"]
 mod config_read;
+#[path = "../config_relocation_rollback.rs"]
+mod config_relocation_rollback;
 #[path = "../config_replace_remove_step.rs"]
 mod config_replace_remove_step;
 #[path = "../config_set_relocation_ack.rs"]

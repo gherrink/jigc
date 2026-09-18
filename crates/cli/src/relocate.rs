@@ -19,6 +19,7 @@ use anyhow::{Context, Result, anyhow};
 use std::path::Path;
 
 use engine::file_state::{FileStateRecord, hash_bytes};
+use engine::finding::Finding;
 use engine::packsource::PackSource;
 use engine::schema::Schema;
 
@@ -86,6 +87,138 @@ pub fn move_doc(
         .save(jigc_root)
         .with_context(|| format!("could not save the file-state record under {jigc_root:?}"))?;
     Ok(())
+}
+
+/// **The undo of a staged `git mv` batch** — the capture half of `ROLLBACK_POPULATIONS`'
+/// `config-root-relocation` row (M52 Increment 5 / T8; `settle-record.md` → **D1.5**,
+/// population 10).
+///
+/// It lives beside [`move_doc`] because it is that primitive's inverse, and because both
+/// doors that batch moves reach the primitive from different modules — `config set
+/// docs-root`'s own loop calls it directly, `config set placement-root` reaches it through
+/// [`relocate_stranded`]. One home, so the two arms of one knob pair cannot capture
+/// differently.
+///
+/// **What a move writes, and therefore what the undo puts back**, per doc: the destination
+/// (created), the prior home (emptied), and — once for the whole batch — the gitignored
+/// `.jigc/state/file-state.json` the primitive re-keys. All three ride the shared
+/// compare-and-swap ([`crate::rollback::PreImageFamily`]), so a path a third party has
+/// written to since jigc left it is never overwritten: its bytes stand, jigc's pre-image
+/// parks in the gitignored workbench, and one blocking `<door>.rollback-conflict` names both.
+///
+/// The **index** is the other axis and is not the family's: each landed pair's entries are
+/// un-staged with `git restore --staged`, deliberately without `--worktree`, because the
+/// bytes at both paths are the swap's subject ([`crate::rename`]'s landing arm, same rule).
+pub(crate) struct MoveRollback {
+    /// The worktree paths this batch rewrote, compare-and-swap.
+    family: crate::rollback::PreImageFamily,
+    /// The `(prior, destination)` pairs whose **index** entries the rollback un-stages —
+    /// only the moves that actually landed, so a failed one is never un-staged twice.
+    staged: Vec<(String, String)>,
+    /// The file-state record's own identity, once captured — the one entry of the batch
+    /// that is not per-doc, since [`move_doc`] rewrites that file on every call.
+    record: Option<String>,
+}
+
+impl MoveRollback {
+    /// An empty undo set for `door` — inert until a move captures into it, because the
+    /// family restores **per entry** (`crate::rollback::PreImageFamily`): a capture that
+    /// never ran and a capture that found nothing are the same safe value.
+    pub(crate) fn for_door(door: crate::rollback::ConflictDoor) -> Self {
+        Self {
+            family: crate::rollback::PreImageFamily::empty(door),
+            staged: Vec::new(),
+            record: None,
+        }
+    }
+
+    /// Capture what a move is **about** to overwrite: the destination as it stands now, and
+    /// (once per batch) the file-state record.
+    ///
+    /// Called immediately before [`move_doc`]. The prior home is deliberately **not**
+    /// captured here — see [`Self::landed`].
+    pub(crate) fn before_move(
+        &mut self,
+        repo_root: &Path,
+        jigc_root: &Path,
+        new_rel: &str,
+    ) -> Result<()> {
+        if self.record.is_none() {
+            let path = FileStateRecord::path_in(jigc_root);
+            let identity = render::repo_relative(repo_root, &path);
+            self.family.push(
+                crate::rollback::PreImage::capture(identity.clone(), path).with_context(|| {
+                    format!(
+                        "could not read the file-state record under {jigc_root:?} — the \
+                             re-point will not re-key a record it cannot put back"
+                    )
+                })?,
+            );
+            self.record = Some(identity);
+        }
+        self.family.push(
+            crate::rollback::PreImage::capture(new_rel, repo_root.join(new_rel))
+                .with_context(|| format!("could not read the relocation destination {new_rel}"))?,
+        );
+        Ok(())
+    }
+
+    /// Record a move that **landed**: what jigc left at the destination and in the record,
+    /// the prior home it emptied, and the index pair to un-stage.
+    ///
+    /// The prior home's entry is pushed **here** rather than at the capture, and that is the
+    /// ordering M52 Increment 5 / T3 paid for once already: an entry claiming *jigc removed
+    /// this* over a move that failed would find the doc still there, read it as a racer's,
+    /// and park a pre-image for a file jigc never touched. `bytes` are the doc's own — read
+    /// by the caller one statement before the move, since by now they are at `new_rel`.
+    pub(crate) fn landed(
+        &mut self,
+        repo_root: &Path,
+        old_rel: &str,
+        new_rel: &str,
+        bytes: Vec<u8>,
+    ) {
+        self.family.wrote(new_rel);
+        if let Some(record) = self.record.clone() {
+            self.family.wrote(&record);
+        }
+        self.family.push(crate::rollback::PreImage::removed(
+            old_rel,
+            repo_root.join(old_rel),
+            bytes,
+        ));
+        self.staged.push((old_rel.to_owned(), new_rel.to_owned()));
+    }
+}
+
+/// Undo a landed batch of moves — the restore unit `ROLLBACK_POPULATIONS`'
+/// `config-root-relocation` names (M52 Increment 5 / T8).
+///
+/// Two axes, in the order that keeps them from reading each other's work: the **index**
+/// first (`git restore --staged`, which moves no byte on disk), then the **worktree**'s
+/// compare-and-swap, which returns one blocking `<door>.rollback-conflict` per path whose
+/// bytes are no longer jigc's.
+///
+/// Best-effort on the index arm, exactly as every sibling rollback is: the door's own
+/// failure is what the operator has to act on, and a `git restore` that cannot run must not
+/// replace it.
+///
+/// **Declared bound: a displaced foreign squatter is not put back.**
+/// [`displace_foreign_squatter`] parks a working file that occupied a destination into the
+/// gitignored `.jigc/displaced/` workbench *before* the move, and this undo leaves it there —
+/// the bytes survive, at a path the success narration names, but the destination is not
+/// re-occupied. It is the residual M52 Increment 5's plan carries by name (bound (vi)):
+/// restoring it is a second, opposite act — a move back *out* of the workbench — and it has
+/// no entry in this family because the displacement is not one of the moves this batch made.
+pub(crate) fn rollback_relocations(
+    repo_root: &Path,
+    jigc_root: &Path,
+    undo: &MoveRollback,
+) -> Vec<Finding> {
+    for (old_rel, new_rel) in &undo.staged {
+        let _ = git_run(repo_root, &["restore", "--staged", "--", old_rel, new_rel]);
+    }
+    undo.family.restore(repo_root, jigc_root)
 }
 
 /// The outcome of a freeze-exempt relocation run, rendered by
@@ -186,7 +319,10 @@ pub(crate) fn relocate_freeze_exempt(
             schema.ty
         )
     })?;
-    relocate_stranded(repo_root, jigc_root, &prior, &current)
+    // `jigc relocate` is not a transaction: it has no second act to fail after the moves, so
+    // there is nothing for a rollback to be triggered by (`ROLLBACK_POPULATIONS` carries the
+    // population under `config set <root-knob>`, the door that does).
+    relocate_stranded(repo_root, jigc_root, &prior, &current, None)
 }
 
 /// Detect every committed doc **stranded** at `prior` (sitting there, no longer at `current`)
@@ -206,6 +342,7 @@ pub(crate) fn relocate_stranded(
     jigc_root: &Path,
     prior: &Home,
     current: &Home,
+    mut undo: Option<&mut MoveRollback>,
 ) -> Result<RelocationReport> {
     let mut report = RelocationReport {
         moved: Vec::new(),
@@ -222,7 +359,7 @@ pub(crate) fn relocate_stranded(
         if dest == rel {
             continue; // already at the destination (is_stranded guards this — defensive).
         }
-        match relocate_one(repo_root, jigc_root, &rel, &dest) {
+        match relocate_one(repo_root, jigc_root, &rel, &dest, undo.as_deref_mut()) {
             Ok(displaced) => {
                 report.moved.push((rel, dest));
                 if let Some(pair) = displaced {
@@ -275,6 +412,7 @@ fn relocate_one(
     jigc_root: &Path,
     old_rel: &str,
     new_rel: &str,
+    undo: Option<&mut MoveRollback>,
 ) -> Result<Option<(String, String)>> {
     let displaced = displace_foreign_squatter(repo_root, jigc_root, new_rel)?;
     let bytes = std::fs::read(repo_root.join(old_rel))
@@ -286,7 +424,16 @@ fn relocate_one(
         std::fs::create_dir_all(repo_root.join(parent))
             .with_context(|| format!("creating the destination dir for {new_rel}"))?;
     }
-    move_doc(repo_root, jigc_root, old_rel, new_rel, &new_hash)?;
+    match undo {
+        // A caller that can undo this batch captures the destination **before** the move and
+        // registers the vacated home **after** it (M52 Increment 5 / T8).
+        Some(undo) => {
+            undo.before_move(repo_root, jigc_root, new_rel)?;
+            move_doc(repo_root, jigc_root, old_rel, new_rel, &new_hash)?;
+            undo.landed(repo_root, old_rel, new_rel, bytes);
+        }
+        None => move_doc(repo_root, jigc_root, old_rel, new_rel, &new_hash)?,
+    }
     Ok(displaced)
 }
 

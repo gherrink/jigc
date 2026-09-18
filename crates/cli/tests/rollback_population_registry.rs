@@ -332,6 +332,13 @@ const NOT_A_POPULATION: &[(&str, &str, usize, &str)] = &[
 /// no byte on disk.
 const OTHER_AXIS_CALLS: &[(&str, &str, usize, &str)] = &[
     (
+        "crates/cli/src/relocate.rs",
+        "rollback_relocations",
+        1,
+        "`git restore --staged` un-stages both sides of each landed `git mv`; the bytes at \
+         those two paths are the compare-and-swap's subject",
+    ),
+    (
         "crates/cli/src/task.rs",
         "rollback_promotions",
         1,
@@ -588,11 +595,12 @@ fn every_row_names_a_discipline_and_something_the_source_has() {
     if sorted.len() != ids.len() {
         offenders.push("  two rows share an id".to_string());
     }
-    if siteless.len() != 2 {
+    if siteless.len() != 1 {
         offenders.push(format!(
-            "  {} row(s) carry no restore site ({siteless:?}); exactly two are admitted, each \
-             because the record names it — the rollback-less `config set <root-knob>` \
-             relocation and `jigc setup`'s guard-by-refusal",
+            "  {} row(s) carry no restore site ({siteless:?}); exactly ONE is admitted, \
+             because the record names it — `jigc setup`'s guard-by-refusal. It was two until \
+             M52 Increment 5 / T8, when the `config set <root-knob>` relocation stopped being \
+             rollback-less and took a site like every other `FileCas` row",
             siteless.len(),
         ));
     }

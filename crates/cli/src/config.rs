@@ -487,35 +487,182 @@ fn run_set(cwd: &Path, format: Format, key: &str, value: &str) -> Result<ConfigA
     // the *current* cascade (its `docs-root` is the old root) and enumerates `git ls-files`,
     // comparing the old resolved root against the new value (`design/storage.md` → docs-root;
     // `design/reconciliation.md` → the route home). It runs BEFORE the knob lands so the
-    // resolution reads the old cascade. Best-effort: it never fails the write (the set lands).
+    // resolution reads the old cascade.
+    //
+    // **The re-point is ONE transaction** (M52 Increment 5 / T8; `settle-record.md` → D1.5,
+    // population 10). The moves and the knob write only make sense together — the moves
+    // re-home the docs the new root strands, the knob is what makes the new root the store's
+    // — and through rc.15 there was nothing between them: a failing `write_scalar` left every
+    // `git mv` staged and every file-state key re-pointed against a knob that never landed,
+    // at exit 1, with the store pointing at a home no doc was at. So both floors now capture
+    // what they overwrite into `undo`, and both report a doc they could **not** move into
+    // `failures` instead of exiting 0 over it — the two triggers that roll the batch back.
     //
     // The floors **return** what they moved (M51 Increment 5 / T4, EC-4): the moves
     // narrate on stderr as they land, and until the ack carried them a `--format json`
     // driver — which reads stdout alone — got bytes identical to a re-point that moved
     // nothing.
     let mut relocated: Vec<Relocated> = Vec::new();
+    let mut undo = crate::relocate::MoveRollback::for_door(crate::rollback::CONFIG_DOOR);
+    let mut failures: Vec<RepointBlocker> = Vec::new();
     if key == "docs-root" {
-        relocated = route_docs_root_repoint_orphans(pack.as_ref(), format, &project_config, value);
+        relocated = route_docs_root_repoint_orphans(
+            pack.as_ref(),
+            format,
+            &project_config,
+            value,
+            &mut undo,
+            &mut failures,
+        );
     }
 
     // `placement-root` re-point: the placement sibling of the loop above, same place and
     // same posture — it runs BEFORE the knob lands (so the prior home resolves off the old
-    // cascade) and is best-effort (a hiccup never fails the write). T1 shipped the knob and
+    // cascade). T1 shipped the knob and
     // said so plainly: a re-point re-resolves every nested placement home while the
     // committed instance stays put, and the store goes QUIET about it (the record still
     // baselines the old path and the file still matches). This is the floor that closes it.
     if key == "placement-root" {
-        relocated =
-            route_placement_root_repoint_strands(pack.as_ref(), format, &project_config, value);
+        relocated = route_placement_root_repoint_strands(
+            pack.as_ref(),
+            format,
+            &project_config,
+            value,
+            &mut undo,
+            &mut failures,
+        );
     }
 
-    // Step 3 — record the `scalar-set` into the project manifest (last-write-wins).
-    write_scalar(&project_config, key, value)?;
+    // Step 3 — record the `scalar-set` into the project manifest (last-write-wins), and close
+    // the transaction. A knob write that fails is the second trigger; it is asked only when
+    // the moves left none of their own, because a batch that already has to be undone must
+    // not also land the knob it was undone for.
+    if failures.is_empty()
+        && let Err(err) = write_scalar(&project_config, key, value)
+    {
+        failures.push(RepointBlocker::Cause {
+            at: crate::render::repo_relative(
+                repo_root_of(&project_config).unwrap_or(&project_config),
+                &project_config.join("manifest.yaml"),
+            ),
+            cause: format!("{err:#}"),
+        });
+    }
+    if !failures.is_empty() {
+        return Err(reject_repoint(
+            &project_config,
+            key,
+            value,
+            &failures,
+            &undo,
+        ));
+    }
     Ok(ConfigAck::Set {
         key: key.to_owned(),
         value: value.to_owned(),
         relocated,
     })
+}
+
+/// `<repo>/.jigc/config` → the repository root the committed docs live at — the derivation
+/// every root rule and both move floors already made privately, named once so the
+/// transaction's rollback and its findings resolve the same root they do.
+fn repo_root_of(project_config: &Path) -> Option<&Path> {
+    project_config.parent().and_then(Path::parent)
+}
+
+/// **One reason a root-knob re-point did not complete** (M52 Increment 5 / T8).
+///
+/// Three produce one, and the second is the discharge of M52 Increment 1 / T1's declared
+/// residual: the knob write failing (`at` = the project manifest), a committed doc the floor
+/// could not relocate (`at` = the doc's prior home), and the sweep-ending repository refusal.
+/// The per-doc failure used to narrate `could not relocate … — move it by hand` on stderr,
+/// be withheld entirely under `--format json`, and exit **0** with the knob landed — so a
+/// driver could not read it and a human was left with a store pointing at a home the doc was
+/// not at.
+enum RepointBlocker {
+    /// A fault this door has to word itself, as `config.repoint-failed` keyed at `at` — the
+    /// repo-relative path the fault is about, which is also what discriminates two faults in
+    /// one run.
+    Cause {
+        /// The path the reason is about, repo-relative.
+        at: String,
+        /// What went wrong, in the producer's own words (a rendered `anyhow` chain).
+        cause: String,
+    },
+    /// A refusal another seam **already worded, with its own code, target and route** — the
+    /// posture family's operation-in-progress, which ends the sweep because it is a fact
+    /// about the repository. It is carried verbatim rather than flattened into a
+    /// `config.repoint-failed` message, because a code inside a message is not a key
+    /// (`design/command-output-contract.md` → the membership test).
+    Raised(Finding),
+}
+
+/// Roll the re-point back and compose its refusal — **one document**, carrying the failure(s)
+/// and every path the rollback could not put back (M52 Increment 5 / T8).
+///
+/// The contract's selection rule is *a reject that carries a finding takes the findings arm,
+/// with the operational error itself as a finding*, and *on the arm whose document is
+/// stderr's, nothing else is written there*
+/// (`design/command-output-contract.md` → The two reject arms / Stream discipline) — so the
+/// conflicts ride [`crate::render::envelope_finding_error_beside`] rather than printing
+/// beside the envelope, which is the shape M52 Increment 1 closed at the committing doors.
+fn reject_repoint(
+    project_config: &Path,
+    key: &str,
+    value: &str,
+    failures: &[RepointBlocker],
+    undo: &crate::relocate::MoveRollback,
+) -> anyhow::Error {
+    let conflicts = match repo_root_of(project_config) {
+        Some(repo_root) => {
+            crate::relocate::rollback_relocations(repo_root, &repo_root.join(".jigc"), undo)
+        }
+        // No repository root to resolve against is a shape the door cannot reach (the project
+        // layer was located under one), and a rollback that cannot name its paths must not
+        // guess at them: the failures below still refuse the run.
+        None => Vec::new(),
+    };
+    let mut findings: Vec<Finding> = failures
+        .iter()
+        .map(|failure| match failure {
+            RepointBlocker::Cause { at, cause } => {
+                repoint_failed(key, value, at, cause, !conflicts.is_empty())
+            }
+            RepointBlocker::Raised(finding) => finding.clone(),
+        })
+        .collect();
+    let head = findings.remove(0);
+    findings.extend(conflicts);
+    crate::render::envelope_finding_error_beside(&head, findings)
+}
+
+/// The refusal one [`RepointBlocker::Cause`] raises: blocking, keyed at the path the cause
+/// names, routed at the human who has to fix the cause and re-run.
+///
+/// **The route states what was undone, and says so differently when it could not be.** A
+/// conflicted rollback leaves one path holding somebody else's bytes, so the unqualified
+/// *"every doc is back at its prior home"* would be a law-1 lie on exactly the run where the
+/// reader most needs the truth (`design/surface-contract.md` → law 1).
+fn repoint_failed(key: &str, value: &str, at: &str, cause: &str, conflicted: bool) -> Finding {
+    let restored = if conflicted {
+        "every doc this re-point moved is back at its prior home except the path(s) \
+         the `config.rollback-conflict` finding(s) beside this one name"
+    } else {
+        "every doc this re-point moved is back at its prior home"
+    };
+    Finding::graded(
+        engine::finding::Severity::Blocking,
+        "config.repoint-failed",
+        format!("`{key}` was not set to `{value}`: {cause} — the re-point was undone"),
+        Some(engine::finding::Location::addressed(at.to_owned(), 1, 1)),
+        Some(engine::finding::Route::human(format!(
+            "`{key}` is unchanged and {restored}. Fix what this message names, then \
+             re-run `jigc config set {} {}`",
+            engine::finding::shell_token(key),
+            engine::finding::shell_token(value),
+        ))),
+    )
 }
 
 /// Fold a root-knob value to the **one spelling every reader resolves** — `./` segments
@@ -967,6 +1114,8 @@ fn route_docs_root_repoint_orphans(
     format: Format,
     project_config: &Path,
     new_value: &str,
+    undo: &mut crate::relocate::MoveRollback,
+    failures: &mut Vec<RepointBlocker>,
 ) -> Vec<Relocated> {
     let mut relocated: Vec<Relocated> = Vec::new();
     let Ok(resolved) = crate::start::resolve_severity_cascade(pack, project_config) else {
@@ -1020,27 +1169,43 @@ fn route_docs_root_repoint_orphans(
             continue;
         };
         // A pure relocation preserves the bytes, so the re-keyed hash is the current file's.
-        let new_hash = match std::fs::read(repo_root.join(old_rel)) {
-            Ok(bytes) => engine::file_state::hash_bytes(&bytes),
-            Err(_) => continue,
+        let Ok(bytes) = std::fs::read(repo_root.join(old_rel)) else {
+            continue;
         };
+        let new_hash = engine::file_state::hash_bytes(&bytes);
         // `git mv` needs the destination directory to exist (a re-point to a fresh root creates
         // dirs that never existed).
         if let Some(parent) = Path::new(&new_rel).parent() {
             let _ = std::fs::create_dir_all(repo_root.join(parent));
         }
+        // The undo set's capture, **before** the move: the destination as it stands now, and
+        // (once) the file-state record this batch re-keys (M52 Increment 5 / T8). A capture
+        // that cannot read what it is about to overwrite ends this doc's move rather than
+        // moving what it could not put back.
+        if let Err(err) = undo.before_move(repo_root, &jigc_root, &new_rel) {
+            failures.push(RepointBlocker::Cause {
+                at: old_rel.clone(),
+                cause: format!("{err:#}"),
+            });
+            continue;
+        }
         match crate::relocate::move_doc(repo_root, &jigc_root, old_rel, &new_rel, &new_hash) {
             Ok(()) => {
+                undo.landed(repo_root, old_rel, &new_rel, bytes);
                 narrate(format, format!("  - {old_rel} → {new_rel}"));
                 relocated.push(Relocated {
                     from: old_rel.clone(),
                     to: new_rel,
                 });
             }
-            Err(err) => narrate(
-                format,
-                format!("  - {old_rel}: could not relocate ({err:#}) — move it by hand"),
-            ),
+            // A move that failed is a **transaction** failure now, not a routed note beside a
+            // knob that lands anyway: the store would otherwise point at a home this doc is
+            // not at. The narration it replaces said `move it by hand`, which the rollback
+            // makes false — the whole re-point is undone, and the finding's route says so.
+            Err(err) => failures.push(RepointBlocker::Cause {
+                at: old_rel.clone(),
+                cause: format!("{err:#}"),
+            }),
         }
     }
     relocated
@@ -1086,6 +1251,8 @@ fn route_placement_root_repoint_strands(
     format: Format,
     project_config: &Path,
     new_value: &str,
+    undo: &mut crate::relocate::MoveRollback,
+    failures: &mut Vec<RepointBlocker>,
 ) -> Vec<Relocated> {
     let mut relocated: Vec<Relocated> = Vec::new();
     let Ok(resolved) = crate::start::resolve_severity_cascade(pack, project_config) else {
@@ -1146,11 +1313,29 @@ fn route_placement_root_repoint_strands(
         // opened after this door's own posture verdict — ends the sweep rather than joining
         // the per-doc `blocked` rows: every remaining pair meets the identical state
         // (`crate::relocate::relocate_stranded`).
-        let report = match crate::relocate::relocate_stranded(repo_root, &jigc_root, prior, current)
-        {
+        let report = match crate::relocate::relocate_stranded(
+            repo_root,
+            &jigc_root,
+            prior,
+            current,
+            Some(undo),
+        ) {
             Ok(report) => report,
+            // It ends the sweep **and** the transaction (M52 Increment 5 / T8): a refusal
+            // about the repository leaves the moves that landed standing against a knob that
+            // must not now land either. It is carried with its own identity rather than
+            // re-worded, because a code inside a message is not a key.
             Err(err) => {
-                narrate(format, format!("  - {err:#}"));
+                failures.push(match crate::render::blocked_finding(&err) {
+                    Some(finding) => RepointBlocker::Raised(finding.clone()),
+                    None => RepointBlocker::Cause {
+                        at: crate::render::repo_relative(
+                            repo_root,
+                            &project_config.join("manifest.yaml"),
+                        ),
+                        cause: format!("{err:#}"),
+                    },
+                });
                 break;
             }
         };
@@ -1169,11 +1354,14 @@ fn route_placement_root_repoint_strands(
                 ),
             );
         }
+        // The `docs-root` sibling's rule, one floor over: a doc this sweep could not relocate
+        // ends the transaction instead of narrating `move it by hand` beside a knob that
+        // lands anyway.
         for (path, reason) in &report.blocked {
-            narrate(
-                format,
-                format!("  - {path}: could not relocate ({reason}) — move it by hand"),
-            );
+            failures.push(RepointBlocker::Cause {
+                at: path.clone(),
+                cause: reason.clone(),
+            });
         }
     }
     relocated

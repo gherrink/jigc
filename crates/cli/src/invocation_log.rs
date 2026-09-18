@@ -318,15 +318,21 @@ impl Outcome {
 ///
 /// Both arms record the same thing: the finding's `code` in `finding_codes`. Which arm a
 /// refusal takes is declared at the door that raises it (the carrier's `envelope` flag), never
-/// guessed here from the code.
+/// guessed here from the code — and a door that carried findings **beside** its refusal
+/// ([`crate::render::envelope_finding_error_beside`]) records every one of them, since the
+/// envelope render reads the whole set rather than the head alone.
 pub fn operational_failure(format: crate::cli::Format, err: &anyhow::Error) -> Outcome {
-    if let Some(finding) = crate::render::envelope_projecting_finding(err) {
+    // Every finding the refusal's **one** document owes — the refusal itself, plus whatever
+    // the door carried beside it (M52 Increment 5 / T8): a failed transaction's rollback
+    // conflicts belong *in* the document, because the arm that carries it owns stderr and a
+    // line printed beside it is a line a driver has to drop.
+    if let Some(findings) = crate::render::envelope_projecting_findings(err) {
         // A no-delta cascade: this is a refusal, not an inventory sweep, so the M6 severity
         // post-pass is a no-op over it. A cascade that cannot be resolved at all is not worth
         // a second failure surface — the flattened arm below still carries the code, the locus
         // and the route in its message — so the fall-through is the degradation, not a panic.
         if let Ok(resolved) = crate::cascade_util::no_delta_resolved() {
-            let report = engine::result::ValidationReport::new(vec![finding.clone()], &resolved);
+            let report = engine::result::ValidationReport::new(findings, &resolved);
             eprint!("{}", crate::render::validation(format, &report));
             if format != crate::cli::Format::Json {
                 eprintln!();

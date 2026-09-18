@@ -41,22 +41,23 @@
 //!
 //! # Two honest notes, both discharged by name
 //!
-//! **(1) One row declares a discipline the source does not yet bind.** This module was the
-//! increment's *first* task, and each later task retires one of its declarations: what is
-//! left is the one `FileCas` row that is not yet compare-and-swap — the config relocation,
-//! which has no rollback at all — a declaration of what the increment binds rather than a
-//! reading of what the binary does today. **T10** is the task whose totality fence makes
-//! every row a checked fact and strikes this paragraph. *(It read **eight** when this module
-//! landed; **T3 bound `promote-destination` and `retired-original`**, **T4 bound
+//! **(1) Every row now declares a discipline the source binds.** This module was the
+//! increment's *first* task, and each later task retired one of its declarations: **zero**
+//! are left. **T10** is the task whose totality fence makes every row a checked *fact* rather
+//! than a count a reader has to trust, and strikes this paragraph. *(It read **eight** when
+//! this module landed; **T3 bound `promote-destination` and `retired-original`**, **T4 bound
 //! `milestone-record`** — whose five doors now mint two door-keyed identities,
 //! `milestone.rollback-conflict` and `task-discard.rollback-conflict` — **T5 bound
 //! `fan-out-record-flip`**, the sixth write of that same file, onto the first of those two
 //! identities, **T6 bound `rename-worktree`**, whose two unconditional arms take a fourth
-//! identity, `rename.rollback-conflict`, and **T7 bound both `MintedSet` rows** — the datum
+//! identity, `rename.rollback-conflict`, **T7 bound both `MintedSet` rows** — the datum
 //! was `unwind_mint`'s single `remove_dir_all`, which both rows reached and which no area set
 //! governed; the sink is now `engine::state::unwind_area`, the area's own registry row
 //! followed by a non-recursive `remove_dir`, and the third party's bytes it will not take are
-//! named by `milestone.foreign-bytes`. So the count moves with the source rather than
+//! named by `milestone.foreign-bytes` — and **T8 bound `config-root-relocation`**, the one
+//! row that had no rollback of any kind: the batch's inverse is now
+//! `relocate::rollback_relocations`, its worktree half the same compare-and-swap under a
+//! fifth identity, `config.rollback-conflict`. So the count moves with the source rather than
 //! standing as a stale number; the plan's decomposition says "six" for the `FileCas` half
 //! alone.)*
 //!
@@ -74,13 +75,14 @@
 //!
 //! Twelve is 9 + 1 + 1 + 1, every addend cited. Nothing is dropped and nothing is invented.
 //!
-//! # The site-less rows are an enumerated exception, not a loophole
+//! # The site-less row is an enumerated exception, not a loophole
 //!
 //! Membership is the source scan, so a row with **no restore site** would be unfalsifiable.
-//! Exactly two are admitted, each because the record names it: the `config set <root-knob>`
-//! relocation (rollback-**less**, the defect T8 closes) and `jigc setup`'s install (guard-by-
-//! refusal, M51 Increment 3, decided rather than unfinished). [`Site::NoRestore`] carries the
-//! citation, and the fence asserts there are no others.
+//! Exactly **one** is admitted, because the record names it: `jigc setup`'s install
+//! (guard-by-refusal, M51 Increment 3, decided rather than unfinished). It was two until T8,
+//! when the `config set <root-knob>` relocation stopped being rollback-**less** and took a
+//! site like every other `FileCas` row. [`Site::NoRestore`] carries the citation, and the
+//! fence asserts there are no others.
 
 use std::path::{Path, PathBuf};
 
@@ -362,17 +364,27 @@ pub const ROLLBACK_POPULATIONS: &[Population] = &[
     },
     Population {
         id: "config-root-relocation",
-        subject: "the committed docs a `docs-root` / `placement-root` re-point moved to their \
-                  new home before the knob write that justifies the move",
+        subject: "the prior homes a `docs-root` / `placement-root` re-point vacated, the \
+                  destinations it created, and the file-state record it re-keyed — put back \
+                  when the knob write that justifies the moves does not land",
         doors: &[&["config", "set"]],
-        site: Site::NoRestore {
-            reason: "there is no rollback of any kind: the two move floors run before \
-                     `write_scalar`, so a failed knob write leaves every `git mv` staged and \
-                     every file-state key re-pointed against a knob that never landed. The \
-                     row is in the registry *because* it is missing — an absent discipline \
-                     that nothing enumerates is how this class stayed invisible.",
-            cited: "settle-record.md → D1.5; baseline-rollback.md §1 table A's last row; \
-                    built at M52 Increment 5 / T8",
+        site: Site::Source {
+            file: "crates/cli/src/relocate.rs",
+            unit: "rollback_relocations",
+            // None of its own since T8: this population's whole worktree restore is the
+            // shared compare-and-swap at `rollback.rs::restore`, counted once at the row
+            // whose site that unit is. What stays in this unit is its **index** arm — one
+            // `git restore --staged` per landed pair, deliberately without `--worktree`,
+            // since the bytes at both paths are the swap's subject — counted onto
+            // `OTHER_AXIS_CALLS`. A row owning zero is still fenced: deleting it leaves this
+            // unit's count unclaimed.
+            //
+            // Until T8 this row was `Site::NoRestore`, and the reason it carried is the
+            // defect it recorded: *the two move floors run before `write_scalar`, so a failed
+            // knob write leaves every `git mv` staged and every file-state key re-pointed
+            // against a knob that never landed.* Driven at the wave's base, exactly that
+            // (`baseline-rollback.md` §1 table A's last row; `settle-record.md` → D1.5).
+            restores: 0,
         },
         discipline: Discipline::FileCas,
     },
@@ -489,11 +501,27 @@ pub const RENAME_DOOR: ConflictDoor = ConflictDoor {
     undone: "nothing was committed",
 };
 
+/// `jigc config set docs-root` / `config set placement-root` — the **root-knob re-point**,
+/// whose transaction moves the committed docs the new root would strand and then writes the
+/// knob that justifies the moves (M52 Increment 5 / T8).
+///
+/// Its own identity because the population is its own: the paths it races are committed
+/// *documents* at their prior homes, which no other door in this family writes, and a driver
+/// branching on `(code, target)` would otherwise read a raced re-point as a raced finalize at
+/// the same path. The noun is the verb family, so `.jigc/displaced/config/` and the route's
+/// *"this config"* are one fact.
+pub const CONFIG_DOOR: ConflictDoor = ConflictDoor {
+    code: "config.rollback-conflict",
+    noun: "config",
+    undone: "the knob was not set",
+};
+
 pub const ROLLBACK_DOORS: &[ConflictDoor] = &[
     FINALIZE_DOOR,
     MILESTONE_DOOR,
     TASK_DISCARD_DOOR,
     RENAME_DOOR,
+    CONFIG_DOOR,
 ];
 
 /// One file's **worktree pre-image**: what it held before the transaction, and the exact
