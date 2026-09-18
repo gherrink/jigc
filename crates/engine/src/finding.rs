@@ -239,7 +239,12 @@ pub struct FindingKey {
 ///   up applied to the doors that share its subject. Enumerated, **not** namespaced:
 ///   `task-discard.` and `milestone.` both carry siblings (the staged-prose and
 ///   dirty-worktree guards) that keep the flattened arm and are not serialized as findings at
-///   all, so a prefix here would exempt codes nobody has looked at.
+///   all, so a prefix here would exempt codes nobody has looked at. `milestone.foreign-bytes`
+///   gained a **third** producer at M52 Increment 5 / T7 — the mint unwind, which can raise
+///   one per seed area in a single `add-from-spec` — and that producer is **located at the
+///   area** rather than admitted here: the exemption covers the two fail-fast guards whose
+///   door bails on the first, and a producer that can emit several at once carries the target
+///   that tells them apart.
 ///
 /// Anything else with no address is the un-swept state of a family nobody has looked at, and
 /// [`debug_assert_targets_declared`] says so at the seam.

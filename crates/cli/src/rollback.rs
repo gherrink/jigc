@@ -41,24 +41,24 @@
 //!
 //! # Two honest notes, both discharged by name
 //!
-//! **(1) Three rows declare a discipline the source does not yet bind.** This module was the
-//! increment's *first* task, and each later task retires one of its declarations: the one
-//! `FileCas` row that is not yet compare-and-swap (the config relocation, which has no
-//! rollback at all) and
-//! **both** `MintedSet` rows (still `remove_dir_all`) are declarations of what the increment
-//! binds, not readings of what the binary does today. **T10** is the task whose totality
-//! fence makes every row a checked fact and strikes this paragraph. *(It read **eight** when
-//! this module landed; **T3 bound `promote-destination` and `retired-original`**, **T4
-//! bound `milestone-record`** — whose five doors now mint two door-keyed identities,
+//! **(1) One row declares a discipline the source does not yet bind.** This module was the
+//! increment's *first* task, and each later task retires one of its declarations: what is
+//! left is the one `FileCas` row that is not yet compare-and-swap — the config relocation,
+//! which has no rollback at all — a declaration of what the increment binds rather than a
+//! reading of what the binary does today. **T10** is the task whose totality fence makes
+//! every row a checked fact and strikes this paragraph. *(It read **eight** when this module
+//! landed; **T3 bound `promote-destination` and `retired-original`**, **T4 bound
+//! `milestone-record`** — whose five doors now mint two door-keyed identities,
 //! `milestone.rollback-conflict` and `task-discard.rollback-conflict` — **T5 bound
 //! `fan-out-record-flip`**, the sixth write of that same file, onto the first of those two
-//! identities, and **T6 bound `rename-worktree`**, whose two unconditional arms take a
-//! fourth identity, `rename.rollback-conflict`; so the
-//! count moves with the source rather than standing as a stale number. The plan's
-//! decomposition says "six" for the `FileCas` half alone; `unwind_mint` and
-//! `unwind_unrecorded_seeds` are equally unbound until T7 — the datum is `unwind_mint`'s
-//! single `remove_dir_all`, which both `MintedSet` rows reach and which no area set governs
-//! at HEAD.)*
+//! identities, **T6 bound `rename-worktree`**, whose two unconditional arms take a fourth
+//! identity, `rename.rollback-conflict`, and **T7 bound both `MintedSet` rows** — the datum
+//! was `unwind_mint`'s single `remove_dir_all`, which both rows reached and which no area set
+//! governed; the sink is now `engine::state::unwind_area`, the area's own registry row
+//! followed by a non-recursive `remove_dir`, and the third party's bytes it will not take are
+//! named by `milestone.foreign-bytes`. So the count moves with the source rather than
+//! standing as a stale number; the plan's decomposition says "six" for the `FileCas` half
+//! alone.)*
 //!
 //! **(2) The rows are twelve, and the plan's "ten" is struck with its arithmetic.** The plan
 //! derives ten as *baseline §1 table A's nine worktree-restore populations + the rollback-less
@@ -332,8 +332,13 @@ pub const ROLLBACK_POPULATIONS: &[Population] = &[
         doors: &[&["milestone", "create"], &["milestone", "add-task"]],
         site: Site::Source {
             file: "crates/cli/src/milestone.rs",
+            // One, since T7 bound this row to the discipline it declares: the area's removal
+            // moved to `engine::state::unwind_area`, beside the registry that decides which
+            // files are jigc's, and is counted in the fence's remainder as that sink rather
+            // than as a population of its own. What stays here is the `tasks.json` restore —
+            // the only byte this unit puts *back*.
             unit: "unwind_mint",
-            restores: 2,
+            restores: 1,
         },
         // Both rows, because one unwind serves two doors over two different areas — and the
         // `create` door writes `staged-snapshot.json` and `record-commit-msg.txt` into the

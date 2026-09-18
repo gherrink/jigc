@@ -280,6 +280,166 @@ pub fn foreign_area_paths(area: &Path, kind: WorkArea) -> std::io::Result<Vec<Pa
     Ok(foreign)
 }
 
+/// What [`unwind_area`] left behind — the three answers a caller about to report on a
+/// working area needs to tell apart.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AreaUnwind {
+    /// There was no area at that path to unwind.
+    Absent,
+    /// Every jigc-written entry is gone, and the directory with it.
+    Removed,
+    /// **The area survives**, because it holds bytes jigc did not write and removing it would
+    /// have taken them. Two shapes answer this: the ordinary one, a minted directory with a
+    /// foreign entry still in it, and the degenerate one, a non-directory squatting the area's
+    /// own path — which jigc's mint never produced, so nothing there is jigc's to remove.
+    Foreign,
+}
+
+/// A path [`unwind_area`] could neither remove nor account for — carried with the path
+/// because the caller's whole job is to name it: an unwind that failed leaves a workbench
+/// the operator may have to clear by hand, and *"could not unwind"* without a path is not
+/// something anyone can act on (`design/surface-contract.md` → law 1).
+#[derive(Debug)]
+pub struct AreaUnwindError {
+    /// The exact path whose removal (or whose read) failed.
+    pub path: PathBuf,
+    /// What the filesystem said.
+    pub source: std::io::Error,
+}
+
+impl AreaUnwindError {
+    fn at(path: &Path, source: std::io::Error) -> Self {
+        Self {
+            path: path.to_path_buf(),
+            source,
+        }
+    }
+}
+
+impl std::fmt::Display for AreaUnwindError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.path.display(), self.source)
+    }
+}
+
+impl std::error::Error for AreaUnwindError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.source)
+    }
+}
+
+/// **Remove exactly what jigc wrote into `area`, and then the area — non-recursively** — the
+/// removal half of [`foreign_area_paths`]' partition, and the sink of
+/// `cli::rollback::ROLLBACK_POPULATIONS`' two `MintedSet` rows (M52 Increment 5 / T7;
+/// `settle-record.md` → §2; `design/finalize.md` → Rollback discipline).
+///
+/// **Why it is not `remove_dir_all`.** A door that minted a working area and then failed to
+/// record it must unwind the mint, or the identical re-run blocks on the id it already minted
+/// forever (M47 Inc 2). Until M52 that unwind took the **directory**, and the interval it runs
+/// in is exactly the interval that contains the door's rejecting hook — arbitrary code, with
+/// the workbench in front of it. Driven at `032dbd93`: a `pre-commit` hook that wrote a file
+/// into `.jigc/tasks/<id>/docs/` and exited 1 had that file destroyed at exit 1, named by
+/// nothing, and `.jigc/` is gitignored whole, so it had no second copy.
+///
+/// **The removal is keyed on the registry, never on a hand-list.** The set is the area's own
+/// [`WorkArea::jigc_written`] row plus the `docs/` tree rule — the same membership
+/// [`foreign_area_paths`] reports the complement of, so the two cannot disagree about a file.
+/// A hand-list of *"what the mint wrote"* drove short at `milestone create`, whose door writes
+/// `staged-snapshot.json` and `record-commit-msg.txt` into the area **after** the mint: every
+/// rejected run would have left the area standing over jigc's own bytes.
+///
+/// **The safety is structural, not a check.** Nothing is enumerated and then deleted: each
+/// removal names a registry member, and the directory itself goes through `remove_dir`, which
+/// refuses a non-empty directory. So a third party's file — including one written *after* this
+/// walk read the directory — survives by construction, and the caller is told
+/// ([`AreaUnwind::Foreign`]) rather than the loss being discovered later.
+///
+/// **Shape is part of membership**, exactly as in [`foreign_area_paths`]: a *directory* named
+/// `base.json`, a plain file named `docs/`, a symlink wearing either — none of those is
+/// something jigc wrote, so none is removed, and the area then survives as `Foreign`. Shapes
+/// are read without following symlinks.
+///
+/// `Err` is the fail-loud arm: a removal or a read that failed for any reason other than the
+/// member being absent (or the directory being non-empty) stops the unwind **where it is**,
+/// with the path, leaving the rest of the area as found.
+pub fn unwind_area(area: &Path, kind: WorkArea) -> Result<AreaUnwind, AreaUnwindError> {
+    match std::fs::symlink_metadata(area) {
+        Ok(shape) if shape.is_dir() => {}
+        // A plain file or a symlink wearing the area's name is not an area any mint of
+        // jigc's produced, so nothing here is jigc's to remove.
+        Ok(_) => return Ok(AreaUnwind::Foreign),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(AreaUnwind::Absent),
+        Err(err) => return Err(AreaUnwindError::at(area, err)),
+    }
+
+    for name in kind.jigc_written() {
+        let path = area.join(name);
+        let shape = match std::fs::symlink_metadata(&path) {
+            Ok(shape) => shape,
+            // Not every member is written on every path through a door — an absent one is
+            // the ordinary case, not a fault.
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(err) => return Err(AreaUnwindError::at(&path, err)),
+        };
+        if kind.tree_member(name) {
+            if !shape.is_dir() {
+                continue;
+            }
+            match kind {
+                // `docs/` holds the task's staged instances next to whatever else was put
+                // there, so its own rule decides entry by entry ([`TASK_DOCS_FILES`]).
+                WorkArea::Task => unwind_docs(&path)?,
+                // `merged/` is jigc's wholesale and nothing inside it is walked — the
+                // registry row's own statement, and the reason this one arm is recursive.
+                WorkArea::Milestone => {
+                    std::fs::remove_dir_all(&path)
+                        .map_err(|err| AreaUnwindError::at(&path, err))?;
+                }
+            }
+        } else if shape.is_file() {
+            std::fs::remove_file(&path).map_err(|err| AreaUnwindError::at(&path, err))?;
+        }
+    }
+
+    match std::fs::remove_dir(area) {
+        Ok(()) => Ok(AreaUnwind::Removed),
+        // Something jigc did not write is still in there. That is the answer, not an error:
+        // the bytes survive and the caller names the area.
+        Err(err) if err.kind() == std::io::ErrorKind::DirectoryNotEmpty => Ok(AreaUnwind::Foreign),
+        Err(err) => Err(AreaUnwindError::at(area, err)),
+    }
+}
+
+/// [`unwind_area`]'s `docs/` arm: remove the staged instances and the provenance manifest —
+/// [`TASK_DOCS_FILES`] plus the [`staged_doc_id`] rule, the identical membership
+/// [`foreign_area_paths`] descends one level to ask — then the directory, non-recursively.
+///
+/// A non-empty `docs/` is **not** an error here: what is left is somebody else's, and the
+/// area's own `remove_dir` one frame up is where that becomes [`AreaUnwind::Foreign`]. Saying
+/// it twice would make one third-party file two answers.
+fn unwind_docs(docs: &Path) -> Result<(), AreaUnwindError> {
+    for entry in std::fs::read_dir(docs).map_err(|err| AreaUnwindError::at(docs, err))? {
+        let entry = entry.map_err(|err| AreaUnwindError::at(docs, err))?;
+        let raw = entry.file_name();
+        let name = raw.to_string_lossy();
+        let shape = entry
+            .file_type()
+            .map_err(|err| AreaUnwindError::at(&entry.path(), err))?;
+        let mine = shape.is_file()
+            && (TASK_DOCS_FILES.contains(&name.as_ref()) || staged_doc_id(&name).is_some());
+        if !mine {
+            continue;
+        }
+        let path = entry.path();
+        std::fs::remove_file(&path).map_err(|err| AreaUnwindError::at(&path, err))?;
+    }
+    match std::fs::remove_dir(docs) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::DirectoryNotEmpty => Ok(()),
+        Err(err) => Err(AreaUnwindError::at(docs, err)),
+    }
+}
+
 /// The on-disk path a staged `<type>:<slug>` instance lives at within `task_dir`:
 /// `<task_dir>/docs/<type>:<slug>.md`.
 pub fn instance_path(task_dir: &Path, type_name: &str, slug: &str) -> PathBuf {

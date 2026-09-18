@@ -111,6 +111,23 @@ const COMPLEMENT_JOINS: &[(&str, usize, &str)] = &[(
      members' complement by construction",
 )];
 
+/// **The registry row itself**: production sites that join a name taken from
+/// `engine::state::WorkArea::jigc_written()`, by file and count, with the reason (M52
+/// Increment 5 / T7).
+///
+/// A fourth answer, and like the third it has to be its own: the receiver **is** a working
+/// area, so [`NON_AREA_JOINS`]' reason is false of it; the joined name is a registry member
+/// **by construction**, which is the exact inverse of [`COMPLEMENT_JOINS`]; and it is not a
+/// `docs/` body composed at runtime. A fence demanding a registry *literal* here would be
+/// demanding a literal where the code has the row — the joined name is every member, in turn.
+const ROW_JOINS: &[(&str, usize, &str)] = &[(
+    "crates/engine/src/state.rs",
+    1,
+    "`unwind_area`'s `<area>.join(<row member>)` — the `MintedSet` sink walking the area's \
+     own row to remove jigc's own writes before a **non-recursive** `remove_dir`, so what \
+     jigc did not write survives by construction",
+)];
+
 /// Every production `<…dir>.join(<name>)` site whose receiver is **not** a working area,
 /// by file, with the count and the reason — the remainder, stated as a number so that
 /// nothing goes stale silently (`repo_relative_paths.rs` → the unswept remainder is a
@@ -392,9 +409,10 @@ fn every_area_join_name_is_a_registry_member_or_a_counted_remainder() {
         "the fence found no guarded site at all — it has stopped reading the source",
     );
 
-    // Each file's remainder is the **sum** of its two dispositions — the `docs/` bodies
-    // the tree rule covers, and the receivers that are no working area at all. One table
-    // with both would be one word for two different answers.
+    // Each file's remainder is the **sum** of its dispositions — the `docs/` bodies the tree
+    // rule covers, the receivers that are no working area at all, the complement entries a
+    // door moves rather than writes, and the registry row a sink walks. One table for them
+    // would be one word for four different answers.
     let mut expected: BTreeMap<String, (usize, Vec<String>)> = BTreeMap::new();
     for (table, kind) in [
         (DOCS_TREE_JOINS, "a staged `docs/` body (the tree rule)"),
@@ -403,6 +421,7 @@ fn every_area_join_name_is_a_registry_member_or_a_counted_remainder() {
             COMPLEMENT_JOINS,
             "a complement entry, moved rather than written",
         ),
+        (ROW_JOINS, "the registry row itself, walked"),
     ] {
         for (file, count, reason) in table {
             assert!(!reason.trim().is_empty(), "{file}: carries no reason");

@@ -613,8 +613,19 @@ fn run_create(cwd: &Path, title: &str, conflicts: &mut Vec<Finding>) -> Result<(
         // pre-existing area, so `minted.dir` is one this call created, never one it found.
         // Without it the re-run blocks on `milestone.serial-collision` forever, and the approved
         // recoverability ("fix the hook, re-run, it succeeds") is unreachable.
-        let landed = materialize_and_commit_record(&jigc_home, schema, &minted, stamp, conflicts)
-            .inspect_err(|_| unwind_mint(&minted.dir, None))?;
+        let landed =
+            match materialize_and_commit_record(&jigc_home, schema, &minted, stamp, conflicts) {
+                Ok(landed) => landed,
+                Err(err) => {
+                    conflicts.extend(unwind_mint(
+                        &jigc_home,
+                        &minted.dir,
+                        engine::state::WorkArea::Milestone,
+                        None,
+                    ));
+                    return Err(err);
+                }
+            };
         hook_output = landed.hook_output;
         record = Some(landed.record);
     }
@@ -905,29 +916,96 @@ fn rollback_record_pre_image(
 ///
 /// **The unwind is the CLI door's, never a relaxation of the engine's identity guard.** Both
 /// engine mints refuse on a pre-existing id before creating anything, which is what makes the
-/// removal safe: an `area` reaching here is one *this* call minted, not one it found.
+/// removal of jigc's own files safe: an `area` reaching here is one *this* call minted, not one
+/// it found.
+///
+/// **It removes what jigc wrote, not the directory** (M52 Increment 5 / T7;
+/// `cli::rollback::ROLLBACK_POPULATIONS` → the two `MintedSet` rows; `settle-record.md` → §2).
+/// Until M52 this took the whole area with `remove_dir_all`, and the interval it runs in is
+/// precisely the interval holding the door's rejecting hook — arbitrary code, with the
+/// gitignored workbench in front of it. Driven at `032dbd93`, a hook that wrote a file into
+/// `.jigc/tasks/<id>/docs/` and exited 1 had that file destroyed at exit 1, named by nothing.
+/// [`engine::state::unwind_area`] removes the area's own registry row and then the directory
+/// **non-recursively**, so a third party's bytes survive by construction; what comes back is
+/// which of the three things happened, and this function turns *"the area survives"* into the
+/// one thing the operator can act on — a blocking finding naming it.
 ///
 /// The restore goes through `engine::state::persist` (temp + `rename`), never a plain
 /// `std::fs::write`: `tasks.json` is a **shared** workbench file every milestone door parses,
 /// and this rollback runs on a live door's failure path — so truncating it in place opened
 /// exactly the zero-byte window `engine::milestone::TASKS_FILE` → *Shared state* names, on the
-/// file that comment is written on (M46 completion-audit F4).
+/// file that comment is written on (M46 completion-audit F4). It runs on **every** outcome of
+/// the removal above: the cache must stop naming a sub-task the record does not, whether or not
+/// that sub-task's area could be taken.
 ///
-/// Best-effort, like every sibling rollback: the commit did **not** land, so a cleanup failure
-/// must not replace the door's real error (the hook's stderr stays the correction signal) — but
-/// it is noted on stderr rather than swallowed, because what survives is a workbench the operator
-/// may have to remove by hand.
-fn unwind_mint(area: &Path, restore: Option<(&Path, &[u8])>) {
-    if area.exists()
-        && let Err(err) = std::fs::remove_dir_all(area)
-    {
-        eprintln!("note: could not unwind the minted working area at {area:?}: {err:#}");
+/// **Why an unwind fault is a stderr note and not the door's outcome.** §2 disposes the
+/// non-`ENOTEMPTY` branch as *an operational failure naming the path*, and this is the one
+/// rendering of that available: the unwind only ever runs on a failure path, so the door
+/// already has an error — usually a hook's verbatim stderr, which `design/finalize.md` → the
+/// M40 refinement 3 forbids replacing. So the fault is noted beside it, with the path, rather
+/// than swallowed or promoted over the correction signal the operator actually needs.
+fn unwind_mint(
+    jigc_home: &Path,
+    area: &Path,
+    kind: engine::state::WorkArea,
+    restore: Option<(&Path, &[u8])>,
+) -> Vec<Finding> {
+    let mut conflicts = Vec::new();
+    match engine::state::unwind_area(area, kind) {
+        Ok(engine::state::AreaUnwind::Absent | engine::state::AreaUnwind::Removed) => {}
+        Ok(engine::state::AreaUnwind::Foreign) => {
+            conflicts.push(mint_foreign_bytes_finding(jigc_home, area));
+        }
+        Err(err) => eprintln!("note: could not unwind the minted working area at {err}"),
     }
     if let Some((path, bytes)) = restore
         && let Err(err) = engine::state::persist(path, bytes)
     {
         eprintln!("note: could not restore {path:?} to its pre-append bytes: {err:#}");
     }
+    conflicts
+}
+
+/// The refusal a **mint unwind** raises over an area it may not remove: this call minted the
+/// working area, its record commit was refused, and by the time the unwind ran the area held
+/// bytes jigc did not write (M52 Increment 5 / T7; `settle-record.md` → §2, §14).
+///
+/// It is [`DISCARD_FOREIGN_BYTES_CODE`]'s third producer and takes that identity deliberately:
+/// the operator's subject is the same one the `milestone discard` guard refuses over — *files
+/// in the milestone workbench that jigc did not write* — and a second spelling of it would
+/// make one state answer two ways (`design/surface-contract.md` → law 1).
+///
+/// **Located at the area**, unlike its two sibling producers. Those are door refusals that bail
+/// on the first one, so [`engine::finding::is_declared_singleton`] admits them address-less;
+/// this one can fire **once per seed area** in a single `add-from-spec` unwind, and a driver
+/// branching on `(code, target)` needs the area to tell two of them apart.
+///
+/// The route is a [`engine::finding::Route::human`] one because no `jigc` argv reconciles it:
+/// what is at that path is somebody else's, and only they can say whether it is worth keeping.
+/// It names the honest cost rather than hiding it — an area left standing is an id already
+/// minted, so the identical re-run collides until the path is gone.
+///
+/// **Its wording is shape-neutral on purpose.** [`engine::state::AreaUnwind::Foreign`] answers
+/// for two shapes — the ordinary one, a minted directory a third party wrote into, and the
+/// degenerate one, a non-directory squatting the area's own path — and *"holds files"* would
+/// be false of the second at the moment an operator is recovering.
+fn mint_foreign_bytes_finding(jigc_home: &Path, area: &Path) -> Finding {
+    let listed = render::repo_relative(jigc_home, area);
+    Finding::graded(
+        Severity::Blocking,
+        DISCARD_FOREIGN_BYTES_CODE,
+        format!(
+            "`{listed}` holds bytes jigc did not write, so the working area this call \
+             minted was left standing rather than removed with them — `.jigc/` is \
+             gitignored, so nothing else has a copy of what is there"
+        ),
+        Some(Location::addressed(listed.clone(), 1, 1)),
+        Some(Route::human(format!(
+            "nothing was committed. Keep what you need from `{listed}` and delete the \
+             rest — until that path is gone, the identical re-run blocks on the id this \
+             call already minted"
+        ))),
+    )
 }
 
 /// [`commit_record_only`] as a **transaction**: on any failure of the stage/commit (a
@@ -1379,7 +1457,7 @@ fn run_add_task(
         // bytes — so the demoted cache never names a sub-task the record does not, and the
         // identical re-run mints the same id instead of blocking on
         // `milestone.sub-task-collision`.
-        hook_output = append_and_commit_record(
+        let landed = append_and_commit_record(
             &jigc_home,
             &jigc_root,
             schema,
@@ -1388,15 +1466,21 @@ fn run_add_task(
             intent,
             workflow,
             conflicts,
-        )
-        .inspect_err(|_| {
-            unwind_mint(
-                &added.task.dir,
-                pre_list
-                    .as_deref()
-                    .map(|bytes| (list_path.as_path(), bytes)),
-            );
-        })?;
+        );
+        hook_output = match landed {
+            Ok(stream) => stream,
+            Err(err) => {
+                conflicts.extend(unwind_mint(
+                    &jigc_home,
+                    &added.task.dir,
+                    engine::state::WorkArea::Task,
+                    pre_list
+                        .as_deref()
+                        .map(|bytes| (list_path.as_path(), bytes)),
+                ));
+                return Err(err);
+            }
+        };
     }
 
     Ok((
@@ -1554,7 +1638,12 @@ fn run_add_from_spec(
     .map_err(|aborted| {
         // An abort mid-loop minted sub-tasks the record will never name — the same
         // divergence a rejected k-th record commit leaves, through the same unwind.
-        unwind_unrecorded_seeds(&jigc_root, milestone_id, &aborted.minted);
+        conflicts.extend(unwind_unrecorded_seeds(
+            &jigc_home,
+            &jigc_root,
+            milestone_id,
+            &aborted.minted,
+        ));
         finding_to_err(aborted.finding)
     })?;
 
@@ -1596,7 +1685,12 @@ fn run_add_from_spec(
                     // The mid-loop unwind (M47 Inc 2 T3): the k−1 landed record commits are
                     // history and cannot be undone, so this call's atomicity is "the workbench
                     // names exactly what the record names" — every mint from here on goes.
-                    unwind_unrecorded_seeds(&jigc_root, milestone_id, &seeded.added[landed..]);
+                    conflicts.extend(unwind_unrecorded_seeds(
+                        &jigc_home,
+                        &jigc_root,
+                        milestone_id,
+                        &seeded.added[landed..],
+                    ));
                     print_resume_route(
                         format,
                         milestone_id,
@@ -1650,18 +1744,32 @@ fn run_add_from_spec(
 /// Best-effort, like every sibling rollback — the door's real error (the hook's stderr) stays
 /// the correction signal — but a failure is noted on stderr rather than swallowed, because
 /// what survives is a workbench the operator may have to repair by hand.
+///
+/// **Per seed, not per call** (M52 Increment 5 / T7): each area is unwound through
+/// [`unwind_mint`], so a seed holding bytes jigc did not write is left standing and **named**
+/// while its clean siblings are still taken. The returned findings are the union, one per such
+/// area — which is why that producer is located at the area rather than riding
+/// [`engine::finding::is_declared_singleton`]'s address-less admission like its two sibling
+/// producers: this is the one cell where the family can emit more than one instance at a time.
 fn unwind_unrecorded_seeds(
+    jigc_home: &Path,
     jigc_root: &Path,
     milestone_id: &str,
     unrecorded: &[engine::milestone::AddedTask],
-) {
+) -> Vec<Finding> {
     // Nothing minted — nothing to unwind, and no list to re-render (the failure may well be
     // that there is no milestone area at all).
     if unrecorded.is_empty() {
-        return;
+        return Vec::new();
     }
+    let mut conflicts = Vec::new();
     for a in unrecorded {
-        unwind_mint(&a.task.dir, None);
+        conflicts.extend(unwind_mint(
+            jigc_home,
+            &a.task.dir,
+            engine::state::WorkArea::Task,
+            None,
+        ));
     }
     let ids: Vec<String> = unrecorded.iter().map(|a| a.task.id.clone()).collect();
     if let Err(err) = engine::milestone::drop_sub_tasks(jigc_root, milestone_id, &ids) {
@@ -1670,6 +1778,7 @@ fn unwind_unrecorded_seeds(
              `{milestone_id}`'s task list: {err:#}"
         );
     }
+    conflicts
 }
 
 /// Print what a mid-loop rejection actually left behind, and the **command that recovers it**
@@ -3610,6 +3719,16 @@ fn run_discard(
 /// Like its two siblings it is a door refusal, so it joins neither
 /// `engine::result::CHECK_INVENTORY` nor [`crate::invocation_log::ERROR_CODE_REGISTRY`], and
 /// like them it is logged through the `render::BlockedFinding` carrier.
+///
+/// **Three producers, one subject** (M52 Increment 5 / T7). Beside this door's two — the
+/// listing and the fail-closed enumeration fault — [`mint_foreign_bytes_finding`] raises it
+/// from the *mint unwind*, where the same state (a milestone workbench holding files jigc did
+/// not write) stops a removal rather than a teardown. One state, one identity: a second
+/// spelling would make a driver branch twice on one fact. The third producer differs in two
+/// ways that are properties of its cell, not of the code — it is **located** at the area,
+/// because a single `add-from-spec` unwind can raise one per seed, and it rides the door's
+/// rollback-conflict carrier rather than [`finding_to_err`], because the door already has an
+/// error the hook wrote and `design/finalize.md` → the M40 refinement 3 forbids replacing it.
 const DISCARD_FOREIGN_BYTES_CODE: &str = "milestone.foreign-bytes";
 
 /// **Exactly what this door's teardown removes**, in the order it removes it: each sub-task's
@@ -6521,9 +6640,19 @@ mod tests {
         let minted = area.join("minted-sub-task-area");
         std::fs::create_dir_all(&minted).expect("stage the minted area");
         let pre_append = br#"{"tasks":["task:a"]}"#;
-        unwind_mint(&minted, Some((list.as_path(), pre_append)));
+        let conflicts = unwind_mint(
+            &area,
+            &minted,
+            engine::state::WorkArea::Task,
+            Some((list.as_path(), pre_append)),
+        );
 
         assert!(!minted.exists(), "the minted area is unwound");
+        assert!(
+            conflicts.is_empty(),
+            "an area holding nothing a third party wrote raises nothing (M52 Inc 5 / T7); \
+             got {conflicts:?}",
+        );
         assert_eq!(
             std::fs::read(&list).expect("the list survives"),
             pre_append,

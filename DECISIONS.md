@@ -2,6 +2,22 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-09-18 — M52 Increment 5 / T7: `MintedSet` removes what this call minted, and nothing else
+
+The two `MintedSet` rows declared a discipline the source did not bind: `unwind_mint` and `unwind_unrecorded_seeds` both reached **one** `remove_dir_all`, and the interval they run in is precisely the interval holding the door's rejecting hook. Driven at `032dbd93`: a `pre-commit` hook writing `THIRD PARTY PROSE` into `.jigc/tasks/<id>/docs/` and exiting 1 had that file **destroyed at exit 1, named by nothing** — out of a tree `.jigc/` gitignores whole, so nothing else had a copy ([settle-record](completions/artifacts/M52/settle-record.md) → §2).
+
+**The set is the registry's, and the mint's own constant list is the wrong one.** §2 drove it with a listing hook and this task re-drove it as the acceptance's control: at `milestone create`'s unwind the area holds **four** files — `base.json` + `tasks.json` from the mint, **plus** `staged-snapshot.json` and `record-commit-msg.txt`, written by the door *after* it. So the removal reads `engine::state::WorkArea`'s row (M52 Increment 4's registry) — the same membership `foreign_area_paths` reports the complement of, so the removal and the three guards over that subject cannot disagree about a file — and then `remove_dir`, **non-recursively**.
+
+**The safety is structural rather than a check.** Nothing is enumerated and then deleted: each removal names a registry member, and `remove_dir` refuses a non-empty directory — so a third party's file survives even if it is written *after* the walk read the directory. `ENOTEMPTY` is the answer, not an error.
+
+**Located, unlike its two sibling producers.** The conflict takes Increment 4 / T5's shipped `milestone.foreign-bytes` — one state, one identity — but a single `add-from-spec` unwind can raise **one per seed area**, which is not the fail-fast shape `engine::finding::is_declared_singleton` admits address-less. It carries the area path, so `(code, target)` stays a key; the clean sibling seeds are still taken whole.
+
+**The honest cost is in the route, not discovered afterwards:** an area left standing is an id already minted, so the identical re-run collides until the operator clears it — which is the only exit, because what is in that directory is somebody else's and only they can say whether it is worth keeping.
+
+**`design/finalize.md`'s directory carve-out is re-scoped with the datum that falsified it.** *"A worktree pre-image over a directory is a different shape"* reads as a rule about directories; it is false of the one directory a door owns — a minted area, whose contents are exactly a registry row. The carve-out is now *a directory jigc did **not** create in this transaction*.
+
+Registry bookkeeping: `unwind_mint` drops 2 → **1** restore (the `tasks.json` `state::persist`, the only byte it puts *back*); the sink `engine::state::unwind_area` + its `docs/` arm join the fence's counted remainder as a **fourth kind** — an implementation of a discipline, not a population, and in the engine because that is where the registry deciding which files are jigc's already lives. `crates/cli/tests/task_area_writer_registry.rs` gains **`ROW_JOINS`**, a fourth disposition for a `<area>.join(<name>)` whose joined name is a registry member *by construction* rather than a literal the fence can read. The module's honest note goes 3 → **1**: only the config relocation's row is still unbound, which is T8's.
+
 ## 2026-09-18 — M52 Increment 5 / T6: `rename`'s two unguarded arms, and `rename.rollback-conflict`
 
 `rollback_rename` has **three** arms and exactly one of them was guarded (`crates/cli/src/rename.rs`; [validation.md](design/validation.md) → The M52 registrations — Increment 5). That asymmetry is why `ROLLBACK_POPULATIONS` carries this door as **two rows**: the `tracked_restore` loop restores the old doc and every referrer **from HEAD**, and the door refuses to run at all over a dirty tree, so HEAD is what the worktree held and there are no third-party bytes for it to take — `DoorGuard("rename.dirty-tree")`, untouched. The other two arms had nothing between them and a racer.

@@ -1518,3 +1518,326 @@ fn add_from_spec_never_drops_a_criterion_from_the_record_at_any_divergence_produ
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// T7 — the minted-area unwind removes what THIS call minted, and nothing else
+// ---------------------------------------------------------------------------
+//
+// T2/T3 above assert that the mint is unwound. They do not ask **what** the unwind removes,
+// and driven at `032dbd93` the answer was *the directory* — a bare `remove_dir_all` over an
+// area a rejecting hook (or any other process) had written into. `.jigc/` is gitignored
+// whole, so those bytes had no second copy: they died at exit 1, named by nothing, on the
+// recovery path jigc's own survivable frame calls re-runnable.
+//
+// The discipline `cli::rollback::ROLLBACK_POPULATIONS` declares for both `MintedSet` rows is
+// the fix: remove **the door's own jigc-written area set** (`engine::state::WorkArea`, M52
+// Increment 4's registry) and then the directory *non-recursively*, so a third party's file
+// survives by construction rather than by a check that could race
+// (`completions/artifacts/M52/settle-record.md` → §2).
+//
+// **Two arms, and the control is the load-bearing half.** The removal is keyed on a *set*,
+// so the way it fails is by being short: a member the set forgets is a member `remove_dir`
+// then trips over, and every rejected run would survive as an area the re-run collides with.
+// So the control does not assume the set — it **proves** it, by listing the area from inside
+// the hook, at the one moment the unwind is about to run.
+
+/// The bytes a third party writes into the working area while the door's record commit is
+/// being refused — the subject of the whole arm, asserted **by content**, so a fresh file at
+/// the same path would not pass for the one that was planted.
+const THIRD_PARTY_PROSE: &str = "THIRD PARTY PROSE";
+
+/// The identity a mint unwind raises over an area it may not remove — M52 Increment 4 / T5's
+/// code, shared by the three minting doors (`settle-record.md` → §2, §14).
+const FOREIGN_BYTES_CODE: &str = "milestone.foreign-bytes";
+
+/// Where the listing hook leaves the area's contents — under `.git/`, so it is neither
+/// staged, nor gitignored workbench, nor a foreign byte in the area under test.
+const AREA_LISTING: &str = ".git/area-listing";
+
+/// One minting door, as both T7 arms drive it.
+///
+/// The set is **the three doors that mint a working area and unwind it when their record
+/// commit is refused** — `cli::rollback::ROLLBACK_POPULATIONS`' two `MintedSet` rows and
+/// their doors, which is why `discard` (which mints nothing) is not a member here and is
+/// asserted to *survive* on the T2 axis above instead.
+struct MintDoor {
+    /// The label the assertion messages name.
+    name: &'static str,
+    /// The door's own argv.
+    argv: &'static [&'static str],
+    /// The area this call mints and the unwind removes, repo-relative — and the path the
+    /// foreign-byte arm's finding must name.
+    area: &'static str,
+    /// Where the hook plants its prose inside that area, relative to it.
+    ///
+    /// A **non-`.md`** name under `docs/` on purpose: the shipped membership rule reads any
+    /// `docs/*.md` as a staged doc identity (`engine::state::staged_doc_id`), deliberately
+    /// loose so a stager that failed to record provenance cannot make jigc's own staged prose
+    /// foreign — §18's rider, and the reason the reachable foreign cell under `docs/` is a
+    /// name that is not one.
+    plant: &'static str,
+    /// What the area holds **at the moment the unwind runs** — the set the removal must know,
+    /// proven by the listing hook rather than written down from the mint's own constants. The
+    /// mint's list is the wrong set: `create` writes two more files into its area *after* the
+    /// mint (`settle-record.md` → §2).
+    holds: &'static [&'static str],
+    /// The sibling areas this same call minted, which the unwind must still take whole — the
+    /// per-seed unwind's own axis.
+    siblings: &'static [&'static str],
+}
+
+/// The three minting doors, each entered from a state where everything it needs has already
+/// landed, so the only refused commit is the door's own.
+const UNWINDING_DOORS: &[MintDoor] = &[
+    MintDoor {
+        name: "create",
+        argv: &["milestone", "create", MILESTONE_TITLE],
+        area: ".jigc/milestones/cache-rework",
+        plant: "NOTES.txt",
+        // The four §2 drove — `base.json` and `tasks.json` from the mint, and
+        // `staged-snapshot.json` + `record-commit-msg.txt` written by the door afterwards.
+        holds: &[
+            "base.json",
+            "record-commit-msg.txt",
+            "staged-snapshot.json",
+            "tasks.json",
+        ],
+        siblings: &[],
+    },
+    MintDoor {
+        name: "add-task",
+        argv: &["milestone", "add-task", MILESTONE_ID, ADD_TASK_INTENT],
+        area: ".jigc/tasks/evict-cold-entries",
+        plant: "docs/third-party.txt",
+        holds: &["base.json", "intent", "workflow"],
+        siblings: &[],
+    },
+    MintDoor {
+        name: "add-from-spec",
+        argv: &[
+            "milestone",
+            "add-from-spec",
+            MILESTONE_ID,
+            "spec:gateway-rate-limiting",
+        ],
+        // The **third** seed of the mid-loop unwind, so the arm drives a per-seed decision
+        // rather than the first one the loop reaches.
+        area: ".jigc/tasks/recovers-after-the-window",
+        plant: "docs/third-party.txt",
+        holds: &["base.json", "intent", "workflow"],
+        siblings: &[
+            ".jigc/tasks/rejects-the-101st-request",
+            ".jigc/tasks/admits-within-the-window",
+        ],
+    },
+];
+
+/// Bring the repo to the state `door` is entered from, and return `(repo, home)` guards.
+fn mint_door_repo(door: &MintDoor, tag: &str) -> (TempDir, TempDir) {
+    let repo = TempDir::new(&format!("t7-{}-{tag}", door.name));
+    let home = TempDir::new(&format!("t7-home-{}-{tag}", door.name));
+    init_repo(repo.path());
+    write_compose_marker(repo.path());
+    match door.name {
+        "create" => {}
+        "add-task" => ok(
+            repo.path(),
+            home.path(),
+            &["milestone", "create", MILESTONE_TITLE],
+            "milestone create",
+        ),
+        "add-from-spec" => {
+            commit_three_criteria_spec(repo.path());
+            ok(
+                repo.path(),
+                home.path(),
+                &["milestone", "create", MILESTONE_TITLE],
+                "milestone create",
+            );
+        }
+        other => panic!("unknown minting door `{other}`"),
+    }
+    (repo, home)
+}
+
+/// Install a `pre-commit` hook that runs `body` on a record-staging commit and then rejects
+/// it — the shared shape of both arms' hooks. `body` is shell, run with the worktree root as
+/// cwd (git's own contract for a hook).
+fn install_record_rejecting_hook_running(repo: &Path, body: &str) {
+    let hook = repo.join(".git").join("hooks").join("pre-commit");
+    fs::write(
+        &hook,
+        format!(
+            "#!/bin/sh\n\
+             if git diff --cached --name-only | grep -q '^{RECORD_LOCATION}'; then\n\
+             {body}\n\
+             \x20 echo '{HOOK_STDERR}' >&2\n\
+             \x20 exit 1\n\
+             fi\n\
+             exit 0\n"
+        ),
+    )
+    .expect("write the pre-commit hook");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&hook).expect("hook metadata").permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&hook, perms).expect("chmod hook");
+    }
+}
+
+/// Run `door`'s argv and return its combined output, asserting the refusal is the door's own
+/// (non-zero, with the hook's stderr verbatim).
+fn drive_refused(door: &MintDoor, repo: &Path, home: &Path) -> String {
+    let out = jigc(repo, home, door.argv, None);
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        !out.status.success(),
+        "door `{}`: a rejected record commit must exit non-zero; got success:\n{combined}",
+        door.name,
+    );
+    assert!(
+        combined.contains(HOOK_STDERR),
+        "door `{}`: the hook's stderr stays VERBATIM; got:\n{combined}",
+        door.name,
+    );
+    combined
+}
+
+/// **T7 arm 1 — a third party's bytes survive the unwind, and the area is named.**
+///
+/// The hook writes `THIRD PARTY PROSE` into the area the door just minted and rejects the
+/// record commit. The unwind then removes jigc's own files, finds the directory non-empty,
+/// and stops: the prose is still there, byte-for-byte, and one blocking
+/// `milestone.foreign-bytes` names the area it left standing — including at
+/// `add-from-spec`'s **per-seed** unwind, where the two clean sibling seeds are still taken
+/// whole, so the refusal is per area and not a whole-call bail.
+#[test]
+fn a_rejected_mint_leaves_a_third_partys_bytes_standing_and_names_the_area() {
+    for door in UNWINDING_DOORS {
+        let (repo, home) = mint_door_repo(door, "foreign");
+        let (repo, home) = (repo.path(), home.path());
+        let planted = repo.join(door.area).join(door.plant);
+        install_record_rejecting_hook_running(
+            repo,
+            &format!(
+                "\x20 mkdir -p '{}'\n\x20 printf '%s' '{THIRD_PARTY_PROSE}' > '{}/{}'",
+                Path::new(door.area)
+                    .join(door.plant)
+                    .parent()
+                    .expect("the plant has a parent")
+                    .display(),
+                door.area,
+                door.plant,
+            ),
+        );
+
+        let combined = drive_refused(door, repo, home);
+
+        assert_eq!(
+            fs::read_to_string(&planted).ok().as_deref(),
+            Some(THIRD_PARTY_PROSE),
+            "door `{}`: the bytes a third party wrote into `{}` must survive the unwind — \
+             `.jigc/` is gitignored, so they have no second copy; door output:\n{combined}",
+            door.name,
+            door.area,
+        );
+        assert!(
+            combined.contains(FOREIGN_BYTES_CODE),
+            "door `{}`: an area the unwind could not remove must be NAMED, not left silent — \
+             expected `{FOREIGN_BYTES_CODE}`; got:\n{combined}",
+            door.name,
+        );
+        assert!(
+            combined.contains(door.area),
+            "door `{}`: the finding must name the area it left standing (`{}`); got:\n{combined}",
+            door.name,
+            door.area,
+        );
+        // jigc's own files inside that area are gone all the same: the refusal is about the
+        // third party's bytes, not a decision to leave the workbench as it was.
+        for name in door.holds {
+            assert!(
+                !repo.join(door.area).join(name).exists(),
+                "door `{}`: `{}/{name}` is jigc's own write and must be removed even when the \
+                 area survives; door output:\n{combined}",
+                door.name,
+                door.area,
+            );
+        }
+        // …and the sibling areas this same call minted, which hold nothing of anyone else's,
+        // are taken whole — a foreign byte in one seed does not strand the others.
+        for sibling in door.siblings {
+            assert!(
+                !repo.join(sibling).exists(),
+                "door `{}`: sibling area `{sibling}` holds nothing a third party wrote and \
+                 must be removed whole; door output:\n{combined}",
+                door.name,
+            );
+        }
+    }
+}
+
+/// **T7 arm 2, the control — with no foreign byte the area goes, whole and silently.**
+///
+/// The zero-false-fire half, and the one that makes arm 1 a fix rather than a refusal to
+/// clean up: the same rejected commit over an area holding only jigc's own writes must leave
+/// **nothing** on disk and raise **no** finding.
+///
+/// It proves the set rather than assuming it. The hook lists the area at the moment the
+/// unwind is about to run and the listing is asserted against `holds`, so the two ways this
+/// can be wrong both redden here: a member the removal forgets leaves the directory non-empty
+/// (the area survives), and a member this suite invented would fail the listing assertion
+/// instead of quietly passing.
+#[test]
+fn a_rejected_mint_with_nothing_foreign_in_it_unwinds_the_whole_area_and_says_nothing() {
+    for door in UNWINDING_DOORS {
+        let (repo, home) = mint_door_repo(door, "control");
+        let (repo, home) = (repo.path(), home.path());
+        install_record_rejecting_hook_running(
+            repo,
+            &format!("\x20 ls -1 '{}' > '{AREA_LISTING}'", door.area),
+        );
+
+        let combined = drive_refused(door, repo, home);
+
+        // What the area actually held when the unwind ran — the set the removal has to know.
+        let listing = fs::read_to_string(repo.join(AREA_LISTING))
+            .unwrap_or_else(|err| panic!("door `{}`: read the area listing: {err}", door.name));
+        let mut listed: Vec<&str> = listing.lines().filter(|l| !l.is_empty()).collect();
+        listed.sort_unstable();
+        assert_eq!(
+            listed, door.holds,
+            "door `{}`: the area `{}` holds this set at the unwind — a removal cut from the \
+             mint's own constants is short of it (`settle-record.md` → §2)",
+            door.name, door.area,
+        );
+
+        assert!(
+            !repo.join(door.area).exists(),
+            "door `{}`: an area holding only jigc's own writes must be removed whole — a \
+             survivor blocks the identical re-run on the id this call already minted; door \
+             output:\n{combined}",
+            door.name,
+        );
+        for sibling in door.siblings {
+            assert!(
+                !repo.join(sibling).exists(),
+                "door `{}`: sibling area `{sibling}` must be removed whole too; door \
+                 output:\n{combined}",
+                door.name,
+            );
+        }
+        assert!(
+            !combined.contains(FOREIGN_BYTES_CODE),
+            "door `{}`: nothing foreign was there, so nothing may be claimed about foreign \
+             bytes; got:\n{combined}",
+            door.name,
+        );
+    }
+}

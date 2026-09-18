@@ -238,13 +238,34 @@ fn scanned_units() -> BTreeMap<(String, String), Unit> {
 /// Scanned units that are **not** rollback populations — by file, unit, the byte-restoring
 /// calls they hold, and the reason. A unit may not sit here and be claimed by a row.
 ///
-/// Three kinds sit here, and each is its own answer rather than one word for three: the
+/// Four kinds sit here, and each is its own answer rather than one word for four: the
 /// **index axis** (five populations, all `git update-index`-keyed — no byte of a worktree
 /// file is written, so none of them can take a third party's edit); the **conflict
-/// surface** the `FileCas` discipline produces; and a `Drop` that tears down **jigc's own
+/// surface** the `FileCas` discipline produces; a `Drop` that tears down **jigc's own
 /// throwaway scratch**, which the fail-closed `Drop` rule sweeps in on purpose — a teardown
-/// that removes a file jigc created seconds earlier in a temp dir restores nothing.
+/// that removes a file jigc created seconds earlier in a temp dir restores nothing; and the
+/// **`MintedSet` sink** (M52 Increment 5 / T7), which is an *implementation* of a discipline
+/// rather than a population of its own — the two rows that reach it are `milestone-mint-area`
+/// and `unrecorded-seed-areas`, and it lives in the engine because that is where the registry
+/// deciding which files are jigc's already lives.
 const NOT_A_POPULATION: &[(&str, &str, usize, &str)] = &[
+    (
+        "crates/engine/src/state.rs",
+        "unwind_area",
+        3,
+        "the `MintedSet` sink: it removes the area's own `engine::state::WorkArea` row and \
+         then the directory non-recursively, so a third party's file survives by \
+         construction. It puts no byte back — the two rows that call it do, and their \
+         restores are counted at their own units",
+    ),
+    (
+        "crates/engine/src/state.rs",
+        "unwind_docs",
+        2,
+        "the same sink's `docs/` arm, where the staged instances and the provenance manifest \
+         are removed entry by entry under `TASK_DOCS_FILES` + `staged_doc_id` — the one \
+         member of a `WorkArea` row whose shape is a tree",
+    ),
     (
         "crates/cli/src/task.rs",
         "rollback_owner_artifact_index",
