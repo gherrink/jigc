@@ -238,20 +238,26 @@ fn resolve_read_schema<'a>(
         ));
     };
 
-    // A placement doctype is a singleton homed at its one literal `placement.file`, so
-    // `canonical_path` resolves it regardless of `slug`. On the read path the only valid
-    // address is the singleton's canonical slug (= the type id, mirroring how `create`
-    // fixes a singleton's slug to `schema.ty`); any other slug names no committed doc, so
-    // route a not-found block rather than silently returning the singleton's content for
-    // an invalid reference (M39 read-surface hardening — a read verb must route a bad ref
-    // like every other). This guard is read-scoped: the write/promote/reconcile callers
-    // use `canonical_path` directly and are unaffected.
+    // A **fixed-identity** doctype ([`Schema::has_fixed_identity`]) has exactly one
+    // instance, at the slug the CLI supplies (= the type id, which is the slug `create`
+    // mints); any other slug names no committed doc, so route a not-found block rather
+    // than silently returning the singleton's content for an invalid reference (M39
+    // read-surface hardening — a read verb must route a bad ref like every other). This
+    // guard is read-scoped: the write/promote/reconcile callers use `canonical_path`
+    // directly and are unaffected.
+    //
+    // **The question is asked at one home** (M52 Increment 6 T1): this guard had keyed
+    // on `placement.is_some()` while the mint keyed on `singleton`, so a `location:` +
+    // `singleton: true` doctype — a supported shape no shipped pack takes — minted at
+    // its fixed slug and then read through this guard entirely, reaching a bare
+    // `store.not-found` that named no rule and routed at *create the referenced doc*,
+    // an act that doctype cannot take. Both seams now ask `has_fixed_identity`.
     //
     // **The block splits on the copy the caller asked for** (M51, N15): the staged arm
     // never consulted the committed store, so a block saying *committed* is a lie, and a
     // route dropping `--task` serves the other copy than the one that was asked for. The
     // sibling `not_staged_block` has named its copy since M43; this arm now does too.
-    if schema.placement.is_some() && slug != schema.ty {
+    if schema.has_fixed_identity() && slug != schema.ty {
         let canonical = format!("{type_name}:{}", schema.ty);
         let tail = " — a singleton doctype has one instance at a fixed slug";
         return Err(match staged_in {

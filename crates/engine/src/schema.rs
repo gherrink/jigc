@@ -136,6 +136,30 @@ impl Schema {
                 .unwrap_or_else(|| self.ty.clone())
         })
     }
+
+    /// Does this doctype have a **fixed identity** — exactly one instance, at a slug
+    /// the CLI supplies (= the type id) rather than the author? The predicate is the
+    /// **disjunction** of the two declarations that produce that shape: `placement:`
+    /// (one instance at one literal file) and `singleton: true` (one running instance
+    /// at the fixed slug).
+    ///
+    /// **One home for a question the mint and both identity guards ask** — and it is
+    /// one home because they had been asking *different* questions. The mint keys on
+    /// `singleton` alone ([`crate::state`]'s `mint_instance`: `let slug = if
+    /// schema.singleton { … }`), while the read guard ([`crate::store`]'s
+    /// `resolve_read_schema`) and the CLI's bare-head expansion (`cli::doc`) both keyed
+    /// on `placement` alone. Every shipped doctype declaring either declares both —
+    /// five at M52 (`changelog` · `vision` · `roadmap` · `decisions-log` ·
+    /// `deferral-ledger`) — so the divergence was invisible on the shipped packs and
+    /// live for the one shape that separates them: a `location:` + `singleton: true`
+    /// doctype created and promoted at its fixed slug while `<ty>:<anything-else>` read
+    /// through to a bare `store.not-found` naming no rule (`design/storage.md` →
+    /// Placement, the `cli::doc::fixed_identity_refusal` row's converse; driven in
+    /// `crates/cli/tests/fixed_identity_axis.rs` over a manufactured doctype, the only
+    /// place the second disjunct is reachable).
+    pub fn has_fixed_identity(&self) -> bool {
+        self.placement.is_some() || self.singleton
+    }
 }
 
 /// Normalize a declared `location:` to the trailing-slash spelling every
@@ -1787,6 +1811,73 @@ sections: []
         assert!(
             !plain_json.contains("singleton"),
             "a false singleton flag serializes nothing (skip-on-false); got {plain_json}",
+        );
+    }
+
+    /// (M52 inc-6 T1) [`Schema::has_fixed_identity`] over its four cells — the two
+    /// declarations that fix an identity, the located-but-free doctype, and the
+    /// transient one. The **second cell is the reason the predicate exists**: a
+    /// `location:` + `singleton: true` doctype is a supported shape whose mint already
+    /// fixes the slug (`crate::state`'s `mint_instance`: `if schema.singleton`), while
+    /// both seams that police the identity asked `placement` alone. No shipped doctype
+    /// takes that shape — the five that declare either declare both — so the cell is
+    /// manufactured here and driven through the binary in
+    /// `crates/cli/tests/fixed_identity_axis.rs`.
+    #[test]
+    fn fixed_identity_is_the_disjunction_of_placement_and_singleton() {
+        let cell = |yaml: &[u8]| load_schema(yaml).expect("fixture schema loads");
+
+        // (1) `placement:` — one instance at one literal file.
+        let placement = cell(
+            b"\
+type: vision
+placement: { file: VISION.md }
+sections: []
+",
+        );
+        assert!(
+            placement.has_fixed_identity(),
+            "a placement doctype's single instance homes at a literal file",
+        );
+
+        // (2) `singleton: true` under an ordinary `location:` — the manufactured cell.
+        let located_singleton = cell(
+            b"\
+type: runbook
+singleton: true
+location: runbooks/
+sections: []
+",
+        );
+        assert!(
+            located_singleton.has_fixed_identity(),
+            "a `singleton` fixes its slug to the type id whether or not it also \
+             declares `placement:` — the mint keys on this flag alone",
+        );
+
+        // (3) `location:` alone — a per-instance doctype; the author supplies the slug.
+        let located = cell(
+            b"\
+type: adr
+location: decisions/
+sections: []
+",
+        );
+        assert!(
+            !located.has_fixed_identity(),
+            "a located per-instance doctype has as many identities as it has docs",
+        );
+
+        // (4) transient — no home at all, the slug is the task id.
+        let transient = cell(
+            b"\
+type: commit
+sections: []
+",
+        );
+        assert!(
+            !transient.has_fixed_identity(),
+            "a transient doctype's slug comes from the task, not from the schema",
         );
     }
 

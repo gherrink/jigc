@@ -6227,19 +6227,20 @@ fn doc_schema_argv(doctype: &str) -> Vec<String> {
     argv
 }
 
-/// Expand a bare **singleton** head to its canonical `<type>:<type>` spelling, carrying any
-/// `#fragment` through (`changelog#releases` → `changelog:changelog#releases`); every other
-/// address passes through verbatim.
+/// Expand a bare **fixed-identity** head to its canonical `<type>:<type>` spelling, carrying
+/// any `#fragment` through (`changelog#releases` → `changelog:changelog#releases`); every
+/// other address passes through verbatim.
 ///
-/// The singleton set is the **placement** doctypes (`design/storage.md` → Placement): their
-/// slug is fixed to the type id by construction — `engine::store::read_slice` refuses every
-/// *other* slug for one — so the bare type names the instance unambiguously.
+/// The set is [`Schema::has_fixed_identity`]'s (`design/storage.md` → Placement): their slug
+/// is fixed to the type id by construction — `engine::store::read_slice` refuses every
+/// *other* slug for one, asking that same predicate — so the bare type names the instance
+/// unambiguously.
 fn expand_bare_singleton(pack: &dyn PackSource, project_config: &Path, addr: &str) -> String {
     let (head, fragment) = match addr.split_once('#') {
         Some((head, fragment)) => (head, Some(fragment)),
         None => (addr, None),
     };
-    if head.contains(':') || !is_singleton_type(pack, project_config, head) {
+    if head.contains(':') || !is_fixed_identity_type(pack, project_config, head) {
         return addr.to_string();
     }
     match fragment {
@@ -6248,17 +6249,23 @@ fn expand_bare_singleton(pack: &dyn PackSource, project_config: &Path, addr: &st
     }
 }
 
-/// Does `ty` name a **placement** doctype — one whose single instance homes at a literal
-/// file and whose slug is therefore fixed to the type id? An unknown or malformed doctype
-/// answers `false`, so the address falls through to the grammar's own rejection.
+/// Does `ty` name a **fixed-identity** doctype — one whose single instance the CLI slugs
+/// for the caller? An unknown or malformed doctype answers `false`, so the address falls
+/// through to the grammar's own rejection.
 ///
-/// Asked of the **resolved** schema: `placement:` is a project-shadowable key, so a
-/// pack-only answer left the bare spelling refused as malformed for a doctype the
-/// cascade had made a singleton — while `<ty>:<ty>`, the spelling this expansion exists
-/// to save the caller from, read the document (M49 Increment 3 T2).
-fn is_singleton_type(pack: &dyn PackSource, project_config: &Path, ty: &str) -> bool {
+/// The question itself lives in the engine ([`Schema::has_fixed_identity`]), shared with
+/// the read guard: this door asked `placement.is_some()` and never `Schema::singleton`,
+/// so a `location:` + `singleton: true` doctype — minted at its fixed slug by a mint that
+/// keys on exactly that flag — had its bare spelling refused as a *malformed address*
+/// (M52 Increment 6 T1).
+///
+/// Asked of the **resolved** schema: both keys are project-shadowable, so a pack-only
+/// answer left the bare spelling refused as malformed for a doctype the cascade had made
+/// a singleton — while `<ty>:<ty>`, the spelling this expansion exists to save the caller
+/// from, read the document (M49 Increment 3 T2).
+fn is_fixed_identity_type(pack: &dyn PackSource, project_config: &Path, ty: &str) -> bool {
     crate::start::resolved_schema(pack, project_config, ty)
-        .is_ok_and(|schema| schema.placement.is_some())
+        .is_ok_and(|schema| schema.has_fixed_identity())
 }
 
 /// The staged on-disk path of `address`'s instance within the task working area,
