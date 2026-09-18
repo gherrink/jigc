@@ -45,6 +45,7 @@
 
 use crate::support;
 use cli::invocation_log::{COMMITTING_DOORS, ERROR_CODE_REGISTRY};
+use cli::rollback::ROLLBACK_POPULATIONS;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -795,5 +796,173 @@ fn the_write_miss_axis_sizes_are_the_axis_tables_own() {
             .iter()
             .map(|(c, s)| format!("{} ({s})", c.phrase.trim()))
             .collect::<Vec<_>>(),
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The record-only door set (M52 Increment 5, T11) — the third subject, same mold.
+// ---------------------------------------------------------------------------
+//
+// G-4 found this one axis stated **three** different sizes inside one tree — four in
+// `design/finalize.md`'s rollback row, five in the code, six in the Settle's own draft — and
+// every suite passed, because every suite iterated the doors and nothing read the prose. The
+// set is now `cli::rollback::ROLLBACK_POPULATIONS`' `milestone-record` row, so the prose is
+// fenced against it here rather than re-counted by hand a fourth time.
+//
+// **The shape is strictly adjacent, and that is the discriminating half.** Only an
+// unqualified `<N> record-only doors` is a claim about the whole set. *`four` **milestone**
+// `record-only doors`* is a different and **true** claim — the four milestone ops share one
+// `ConflictDoor` while a sub-task `jigc task discard` carries its own — so a fence that read a
+// qualified form would report a defect at the one sentence that draws the split correctly
+// (`design/validation.md` → The M52 registrations; `cli::rollback::MILESTONE_DOOR`).
+
+/// The `milestone-record` population's doors — the enumeration `design/finalize.md` carried as
+/// prose until this increment, and the subject every home below states the size of.
+fn record_only_doors() -> &'static [&'static [&'static str]] {
+    ROLLBACK_POPULATIONS
+        .iter()
+        .find(|row| row.id == "milestone-record")
+        .map(|row| row.doors)
+        .expect("`ROLLBACK_POPULATIONS` carries the `milestone-record` population")
+}
+
+/// Every design doc that states the size of the record-only door set, enumerated on [`HOMES`]'
+/// reason: a sweep of every `.md` would reach the dated records, whose job is to state the
+/// world as it was.
+///
+/// Each home must **also** name the registry, so the number a reader finds is followable to
+/// the list rather than being a second list one edit away from disagreeing with it.
+const RECORD_DOOR_HOMES: &[&str] = &[
+    "design/finalize.md",
+    "design/reconciliation.md",
+    "design/team-ready-state.md",
+];
+
+/// The registry a [`RECORD_DOOR_HOMES`] member must point at.
+const RECORD_DOOR_REGISTRY: &str = "ROLLBACK_POPULATIONS";
+
+/// Every unqualified `<N> record-only doors` claim `text` states.
+fn record_only_door_claims(text: &[char], map: &[usize]) -> Vec<Claim> {
+    let mut found = Vec::new();
+    let mut at = 0usize;
+    while at < text.len() {
+        if at > 0 && text[at - 1].is_alphanumeric() {
+            at += 1;
+            continue;
+        }
+        let Some((value, after_number)) = number_at(text, at) else {
+            at += 1;
+            continue;
+        };
+        let end = word_at(text, skip_joiners(text, after_number), "record-only")
+            .and_then(|after| word_at(text, skip_joiners(text, after), "doors"));
+        let Some(end) = end else {
+            at = after_number;
+            continue;
+        };
+        found.push(Claim {
+            value,
+            phrase: text[at..end].iter().collect(),
+            at: map[at],
+        });
+        at = end;
+    }
+    found
+}
+
+/// Every claim a record-only-door home states, partitioned exactly as [`claims_of`] does —
+/// all of them, and the ones outside every dated correction bracket.
+fn record_door_claims_of(path: &str) -> (Vec<Claim>, Vec<Claim>) {
+    let body = read(path);
+    let brackets = dated_correction_spans(&body);
+    let mut all = Vec::new();
+    for (start, end) in units(&body) {
+        let (text, map) = normalize(&body[start..end]);
+        let absolute: Vec<usize> = map.iter().map(|at| start + at).collect();
+        all.extend(record_only_door_claims(&text, &absolute));
+    }
+    let uncorrected = all
+        .iter()
+        .filter(|claim| {
+            !brackets
+                .iter()
+                .any(|(s, e)| claim.at >= *s && claim.at < *e)
+        })
+        .cloned()
+        .collect();
+    (all, uncorrected)
+}
+
+/// Every home that states the size of the record-only door set states the size the registry
+/// carries — and names the registry, so the count is followable to the list.
+#[test]
+fn every_record_only_door_home_states_the_registrys_door_count() {
+    let expected = record_only_doors().len();
+    let mut stale = Vec::new();
+    for path in RECORD_DOOR_HOMES {
+        let body = read(path);
+        let (all, uncorrected) = record_door_claims_of(path);
+        assert!(
+            !all.is_empty(),
+            "{path} states no record-only-door count any more, in its own voice or in a dated \
+             bracket — either the sentence moved (re-key the home) or the home stopped stating \
+             it, in which case it is fencing nothing",
+        );
+        assert!(
+            body.contains(RECORD_DOOR_REGISTRY),
+            "{path} states the size of the record-only door set without naming \
+             `cli::rollback::{RECORD_DOOR_REGISTRY}` — a count whose list a reader cannot reach \
+             is the second list this fence exists to stop",
+        );
+        for claim in uncorrected.into_iter().filter(|c| c.value != expected) {
+            stale.push(format!(
+                "{path}:{} says `{}` — the `milestone-record` row carries {expected} doors",
+                line_of(&body, claim.at),
+                claim.phrase.trim(),
+            ));
+        }
+    }
+    assert!(
+        stale.is_empty(),
+        "the record-only door set is a code-side row (`cli::rollback::ROLLBACK_POPULATIONS` → \
+         `milestone-record`) and these homes state a size it does not carry. A count that is \
+         *historical* — what a past wave's cell said — takes a dated `[Corrected …]**` bracket \
+         instead of today's number:\n{}",
+        stale.join("\n"),
+    );
+}
+
+/// The fence is a property of its predicate: it must **catch** a stale count, **spare** a
+/// dated one, and **ignore** both the singular and the qualified sub-set claim.
+#[test]
+fn a_qualified_record_only_door_claim_is_not_a_claim_about_the_whole_set() {
+    let scan = |text: &str| -> Vec<usize> {
+        let (chars, map) = normalize(text);
+        record_only_door_claims(&chars, &map)
+            .into_iter()
+            .map(|c| c.value)
+            .collect()
+    };
+
+    assert_eq!(
+        scan("the commit one of **the five record-only doors** lands is rejected"),
+        vec![5],
+        "the unqualified shape is the claim, emphasis and all",
+    );
+    assert_eq!(
+        scan("the **four milestone record-only doors** raise `milestone.rollback-conflict`"),
+        Vec::<usize>::new(),
+        "the milestone ops are a real sub-set with their own shared code — a true claim, and \
+         not a claim about the size of the whole set",
+    );
+    assert_eq!(
+        scan("a record-only door captures the record's pre-image before writing"),
+        Vec::<usize>::new(),
+        "the singular is never a statement of the set's size",
+    );
+    assert_eq!(
+        scan("the write path reaches all 25 doors of the corpus"),
+        Vec::<usize>::new(),
+        "another registry's door count is not this set's",
     );
 }
