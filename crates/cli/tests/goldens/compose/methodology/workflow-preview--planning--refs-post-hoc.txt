@@ -210,9 +210,16 @@ roadmap is copied in for append):
 Run: `jigc doc create roadmap --title Roadmap --task your-task-id`
 
 The `roadmap` schema is the authority on what you write into it — its required
-slots and fields, each field's enum members, and every address a write can take:
+slots and fields, and each field's enum members:
 
 jigc doc schema roadmap
+
+It is not the authority on WHICH doc you write into. What it prints is
+type-level: every address it advertises places the doc under a `<slug>`
+placeholder, and `roadmap`'s slug is not yours to choose — this doctype has
+one fixed identity, the `roadmap:roadmap` every line below spells. Any other
+slug is refused (`store.fixed-identity`); the `--format json` projection names
+it under `identity`.
 
 Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
 directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which
@@ -257,10 +264,16 @@ existing committed ledger is copied in for append):
 Run: `jigc doc create deferral-ledger --title 'Deferral Ledger' --task your-task-id`
 
 The `deferral-ledger` schema is the authority on what you write into it — its
-required slots and fields, each field's enum members, and every address a write
-can take:
+required slots and fields, and each field's enum members:
 
 jigc doc schema deferral-ledger
+
+It is not the authority on WHICH doc you write into. What it prints is
+type-level: every address it advertises places the doc under a `<slug>`
+placeholder, and `deferral-ledger`'s slug is not yours to choose — this
+doctype has one fixed identity, the `deferral-ledger:deferral-ledger` every
+line below spells. Any other slug is refused (`store.fixed-identity`); the
+`--format json` projection names it under `identity`.
 
 Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
 directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which
@@ -295,10 +308,16 @@ copied in for append):
 Run: `jigc doc create decisions-log --title 'Decisions Log' --task your-task-id`
 
 The `decisions-log` schema is the authority on what you write into it — its
-required slots and fields, each field's enum members, and every address a write
-can take:
+required slots and fields, and each field's enum members:
 
 jigc doc schema decisions-log
+
+It is not the authority on WHICH doc you write into. What it prints is
+type-level: every address it advertises places the doc under a `<slug>`
+placeholder, and `decisions-log`'s slug is not yours to choose — this doctype
+has one fixed identity, the `decisions-log:decisions-log` every line below
+spells. Any other slug is refused (`store.fixed-identity`); the
+`--format json` projection names it under `identity`.
 
 Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
 directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which

@@ -1648,3 +1648,222 @@ fn the_heads_ceiling_is_the_derived_constant_at_both_sides_of_the_boundary() {
         "one byte over the ceiling is over the ceiling; got:\n{rendered}",
     );
 }
+
+// ---------------------------------------------------------------------------
+// M52 Increment 6 / T8 — the author steps stop calling `doc schema <ty>` the
+// authority on a fixed-identity doctype's addresses
+// ---------------------------------------------------------------------------
+//
+// T2–T5 closed what a caller *may type*. This half closes what the pack *tells* the
+// caller to type, and it is last because the sentence it corrects only became false
+// when the doors started refusing (settle-record → D5.5).
+//
+// The sentence, at the wave's base, on five methodology author steps and one dev step:
+//
+//     The `vision` schema is the authority on what you write into it — its required
+//     slots and fields, each field's enum members, and every address a write can take:
+//
+//     jigc doc schema vision
+//
+// `doc schema` is a **type-level** projection: every address it advertises places the
+// instance under [`engine::schema::SLUG_PLACEHOLDER`] — `vision:<slug>#thesis` on both
+// arms, plain and JSON. For a **slugged** doctype that is the whole truth. For a
+// fixed-identity one it is the one thing the schema read cannot answer: `<slug>` is not
+// the caller's to fill, and since T2 a caller who fills it with anything but the type id
+// is refused `store.fixed-identity` at every door. So a step that names that projection
+// *the authority on every address a write can take* sends an agent to a surface which,
+// followed literally, produces the refusal — a law-1 lie at the exact seam this
+// increment made refusable (`design/surface-contract.md` → nothing lies).
+//
+// **The fence is derived twice over, which is the point.** The doctype set is the
+// loaded packs filtered by T1's predicate ([`engine::schema::Schema::has_fixed_identity`])
+// — never a list of the five shipped today — and the step set is *the steps that name
+// that doctype's schema read*, read out of the same pack trees. So the sixth author step
+// added tomorrow, for a doctype that is fixed-identity tomorrow, joins the axis with no
+// edit here.
+//
+// **What the fence buys, stated.** Two absences and one presence: no `<ty>:<slug>`
+// pattern (the projection's spelling, reproduced in prose), no *"every address a write
+// can take"* clause, and the doctype's real identity spelled at least once. It does not
+// grade the replacement's prose — that is the A-3 presence-never-content bound the
+// `states-constraints` tier already draws (`design/methodology-docs.md`) — so a step
+// could still say something false in some third wording. What it does make impossible is
+// the shipped sentence coming back, and a new fixed-identity doctype's author step
+// inheriting it by copy.
+
+use cli::pack::{FilesystemPack, load_pack_schema};
+use engine::packsource::{PackResourceKind, PackSource};
+use engine::schema::SLUG_PLACEHOLDER;
+
+/// The clause the shipped steps carried, and the one no step over a fixed-identity
+/// doctype may carry again: it promises the schema read enumerates the write addresses,
+/// and for this doctype class the read's `<slug>` is exactly what it cannot say.
+///
+/// Authored in [`normalized`]'s view — lowercase, single-spaced — because the shipped
+/// prose wraps it across a line break in four of the six steps (`…every address a write\n
+/// can take:`). A first cut of this fence compared against the raw body and was **green
+/// over the mutant**: restoring one wrapped step's sentence changed nothing, and the axis
+/// bought only the one step whose clause happened to fit on a line.
+const EVERY_ADDRESS_CLAUSE: &str = "every address a write can take";
+
+/// The comparison view every leg below reads: whitespace runs collapsed to one space,
+/// ASCII case folded — so a phrase that wraps across a newline or opens a sentence
+/// capitalized still matches.
+///
+/// This is `cli::pack::normalized_body`'s rule, and re-implemented rather than shared
+/// because that function is `pub(crate)` and this is an integration test. Stated rather
+/// than silently duplicated: if the two ever diverge, the pack's own named-fact map is
+/// the authority and this is the copy that is wrong.
+fn normalized(body: &str) -> String {
+    let mut out = String::new();
+    let mut pending_space = false;
+    for ch in body.chars() {
+        if ch.is_whitespace() {
+            pending_space = true;
+            continue;
+        }
+        if pending_space && !out.is_empty() {
+            out.push(' ');
+        }
+        pending_space = false;
+        out.push(ch.to_ascii_lowercase());
+    }
+    out
+}
+
+/// The two shipped pack trees, by the name their steps are reported under.
+fn pack_trees() -> Vec<(&'static str, PathBuf)> {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    vec![
+        ("dev", manifest.join("pack")),
+        (
+            "methodology",
+            manifest
+                .join("..")
+                .join("..")
+                .join("packs")
+                .join("methodology"),
+        ),
+    ]
+}
+
+/// The **fixed-identity doctype set of the loaded packs** — every schema either shipped
+/// tree declares, parsed through the production `load_pack_schema` (so a pack-declared
+/// field type resolves exactly as it does at pack load) and filtered by T1's predicate.
+///
+/// Read from the packs rather than written down: the five members at HEAD (`changelog` ·
+/// `vision` · `roadmap` · `decisions-log` · `deferral-ledger`) are what the trees happen
+/// to hold today, and a sixth joins this set by being declared, not by being listed.
+fn fixed_identity_doctypes() -> Vec<String> {
+    let mut found: Vec<String> = Vec::new();
+    for (_, root) in pack_trees() {
+        let pack = FilesystemPack::new(root);
+        for id in pack.list(PackResourceKind::Schemas) {
+            let bytes = pack
+                .read(PackResourceKind::Schemas, &id)
+                .expect("a listed schema resource is readable");
+            let schema = load_pack_schema(&pack, &bytes)
+                .unwrap_or_else(|e| panic!("shipped schema `{}` loads: {e:?}", id.as_str()));
+            if schema.has_fixed_identity() && !found.contains(&schema.ty) {
+                found.push(schema.ty.clone());
+            }
+        }
+    }
+    found.sort();
+    found
+}
+
+/// Every `(pack, step id, body)` in the shipped trees.
+fn all_steps() -> Vec<(&'static str, String, String)> {
+    let mut steps = Vec::new();
+    for (label, root) in pack_trees() {
+        let pack = FilesystemPack::new(root);
+        for id in pack.list(PackResourceKind::Steps) {
+            let bytes = pack
+                .read(PackResourceKind::Steps, &id)
+                .expect("a listed step resource is readable");
+            steps.push((
+                label,
+                id.as_str().to_owned(),
+                String::from_utf8(bytes).expect("a shipped step is UTF-8"),
+            ));
+        }
+    }
+    steps.sort();
+    steps
+}
+
+/// The axis: `(doctype, pack, step id, body)` for every step that sends the agent to a
+/// **fixed-identity** doctype's schema read. That command line is the structural signal
+/// — a step naming `jigc doc schema <ty>` is a step telling an agent where the authority
+/// on writing `<ty>` lives — so the pairing is derived from the two sets rather than
+/// hand-paired.
+fn schema_authority_steps() -> Vec<(String, &'static str, String, String)> {
+    let doctypes = fixed_identity_doctypes();
+    let mut pairs = Vec::new();
+    for (pack, step, body) in all_steps() {
+        for ty in &doctypes {
+            if body.contains(&format!("jigc doc schema {ty}")) {
+                pairs.push((ty.clone(), pack, step.clone(), body.clone()));
+            }
+        }
+    }
+    pairs
+}
+
+/// **The axis.** No step that points at a fixed-identity doctype's schema read may
+/// reproduce that read's `<ty>:<slug>` pattern or promise it enumerates the addresses —
+/// and each must spell the one identity the doctype actually has.
+#[test]
+fn no_author_step_calls_doc_schema_the_authority_on_a_fixed_identitys_addresses() {
+    let doctypes = fixed_identity_doctypes();
+    assert!(
+        doctypes.len() >= 2,
+        "the predicate must find the shipped fixed-identity doctypes in the pack trees, \
+         or this axis sweeps nothing; got {doctypes:?}",
+    );
+
+    let pairs = schema_authority_steps();
+    assert!(
+        !pairs.is_empty(),
+        "at least one shipped step must point at a fixed-identity doctype's schema read, \
+         or the fence is vacuous; fixed-identity doctypes: {doctypes:?}",
+    );
+    // Both trees, because the plan's own list reached only one of them: the sentence shipped
+    // on five methodology steps AND on the dev pack's `author-change` over `changelog`, which
+    // is the first of the five doctypes T1 enumerates. A derivation that silently read one
+    // tree would satisfy every leg below over half the class.
+    for tree in ["dev", "methodology"] {
+        assert!(
+            pairs.iter().any(|(_, pack, _, _)| *pack == tree),
+            "the axis must reach the {tree} pack — its fixed-identity author steps are in the \
+             class too; pairs: {:?}",
+            pairs
+                .iter()
+                .map(|(ty, pack, step, _)| (ty, pack, step))
+                .collect::<Vec<_>>(),
+        );
+    }
+
+    for (ty, pack, step, body) in &pairs {
+        let body = normalized(body);
+        let pattern = format!("{ty}:{SLUG_PLACEHOLDER}");
+        assert!(
+            !body.contains(&pattern),
+            "the {pack} pack's `{step}` reproduces the type-level pattern `{pattern}` for \
+             the fixed-identity doctype `{ty}` — a slug the doors refuse \
+             (`store.fixed-identity`); its one address is `{ty}:{ty}`",
+        );
+        assert!(
+            !body.contains(EVERY_ADDRESS_CLAUSE),
+            "the {pack} pack's `{step}` calls `jigc doc schema {ty}` the authority on \
+             `{EVERY_ADDRESS_CLAUSE}` — the one thing a type-level projection cannot say \
+             about a fixed-identity doctype, whose `<slug>` is the CLI's",
+        );
+        assert!(
+            body.contains(&format!("{ty}:{ty}")),
+            "the {pack} pack's `{step}` must spell `{ty}`'s one identity (`{ty}:{ty}`) \
+             somewhere in the step it authors it from",
+        );
+    }
+}

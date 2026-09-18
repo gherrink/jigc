@@ -88,6 +88,19 @@ sections:
     slot: { hint: "What is deliberately unsettled — the directions still open." }
 ```
 
+**`singleton: true` fixes the identity, not only the H1.** The `display-title:` knob in the
+block above is the *visible* half of one fact about a singleton: both the doc's id and its
+heading are the schema's, never the author's. The id half: `vision`'s slug **is** the type id,
+so the doctype has exactly one address (`vision:vision`, which the bare head `vision` expands
+to), one home, and no `<slug>` for a caller to choose. Every door asks one predicate for this
+— `placement.is_some() || singleton` ([storage.md](storage.md) → Placement) — and refuses a
+write, rename or read under any other slug with `store.fixed-identity`. Consequence for the
+pack's own prose, and the reason it is stated here: `jigc doc schema vision` is a
+**type-level** projection, so it advertises `vision:<slug>#…` like every other doctype and is
+therefore the authority on this doctype's slots, fields and enum members but **not** on its
+address — the `identity` key of the pinned `--format json` projection is (M52 Increment 6; the
+fence that holds the author steps to it is `crates/cli/tests/fixed_identity_axis.rs`).
+
 `invariants`/`open-questions` are **prose slots, not repeatable sections**. Unlike the
 `prd` fixed→repeatable migration (M25 rework), this carries no debt: methodology is
 freeze-exempt (graduating a slot to a repeatable section later needs no version bump), and

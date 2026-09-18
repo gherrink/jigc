@@ -10,9 +10,16 @@ of the title:
 Run: `jigc doc create vision --title Vision --task sweep-the-compose-surface`
 
 The `vision` schema is the authority on what you write into it — its required
-slots and fields, each field's enum members, and every address a write can take:
+slots and fields, and each field's enum members:
 
 jigc doc schema vision
+
+It is not the authority on WHICH doc you write into. What it prints is
+type-level: every address it advertises places the doc under a `<slug>`
+placeholder, and `vision`'s slug is not yours to choose — this doctype has one
+fixed identity, the `vision:vision` every line below spells. Any other slug is
+refused (`store.fixed-identity`); the `--format json` projection names it
+under `identity`.
 
 Ground the vision in the committed research it rests on. Set `grounded-in` to the
 research this vision is formed from — pass ALL of it in ONE call as an inline list

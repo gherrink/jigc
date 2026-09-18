@@ -10,10 +10,17 @@ is copied in for append):
 
 Run: `jigc doc create changelog --title Changelog --task your-task-id`
 
-The `changelog` schema is the authority on what you write into it — its required
-slots and fields, each field's enum members, and every address a write can take:
+The `changelog` schema is the authority on what you write into it — its
+required slots and fields, and each field's enum members:
 
 jigc doc schema changelog
+
+It is not the authority on WHICH doc you write into. What it prints is
+type-level: every address it advertises places the doc under a `<slug>`
+placeholder, and `changelog`'s slug is not yours to choose — this doctype has
+one fixed identity, the `changelog:changelog` every line below spells. Any
+other slug is refused (`store.fixed-identity`); the `--format json` projection
+names it under `identity`.
 
 Then author the change. To cut a release, mint a release item (its id is minted
 from the version title you give — e.g. `1.0.0` mints `1-0-0` — and its `date` is

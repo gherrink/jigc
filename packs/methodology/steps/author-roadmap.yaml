@@ -8,9 +8,16 @@ roadmap is copied in for append):
 {{ cli.create-roadmap }}
 
 The `roadmap` schema is the authority on what you write into it — its required
-slots and fields, each field's enum members, and every address a write can take:
+slots and fields, and each field's enum members:
 
 jigc doc schema roadmap
+
+It is not the authority on WHICH doc you write into. What it prints is
+type-level: every address it advertises places the doc under a `<slug>`
+placeholder, and `roadmap`'s slug is not yours to choose — this doctype has
+one fixed identity, the `roadmap:roadmap` every line below spells. Any other
+slug is refused (`store.fixed-identity`); the `--format json` projection names
+it under `identity`.
 
 Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
 directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which
