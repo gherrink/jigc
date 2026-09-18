@@ -24,7 +24,7 @@
 //!   a reason each. Mutant-proven **in both directions**: a fourteenth writer const reddens
 //!   it, and a member deleted from the registry reddens it.
 //! - **(b) the complement over a manufactured shape space** — the baseline's §1.4 plant
-//!   (S-a…S-j) plus the two `docs/` cells and the directory wearing a `*.md` name, each
+//!   (S-a…S-j) plus the three `docs/` cells and the directory wearing a `*.md` name, each
 //!   classified foreign, with every registry member beside them classified jigc's. The
 //!   space is **manufactured and says so**: the shapes a filesystem admits are not a set
 //!   any registry computes.
@@ -527,6 +527,12 @@ const FOREIGN_CELLS: &[(&str, &str)] = &[
         "docs/fake:thing.md",
         "§18's rider · a DIRECTORY wearing a staged doc's name (L-3's cell at the \
          destroying door's own question)",
+    ),
+    (
+        "docs/agent-notes.md",
+        "the `.md` half of §6's `docs/` rule · a plain `.md` FILE under `docs/` whose name \
+         is no staged identity — jigc's own writer emits `<type>:<slug>.md` at every site \
+         (`engine::state::instance_path`), so a colon-less `.md` is something else's",
     ),
     (
         "docs/sub",

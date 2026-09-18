@@ -1568,14 +1568,20 @@ struct MintDoor {
     /// The area this call mints and the unwind removes, repo-relative — and the path the
     /// foreign-byte arm's finding must name.
     area: &'static str,
-    /// Where the hook plants its prose inside that area, relative to it.
+    /// Where the hook plants its prose inside that area, relative to it — **one arm run per
+    /// entry**, because *which name* a third party uses is the axis this cell turns on and
+    /// pinning one shape is how the destroying half went unswept.
     ///
-    /// A **non-`.md`** name under `docs/` on purpose: the shipped membership rule reads any
-    /// `docs/*.md` as a staged doc identity (`engine::state::staged_doc_id`), deliberately
-    /// loose so a stager that failed to record provenance cannot make jigc's own staged prose
-    /// foreign — §18's rider, and the reason the reachable foreign cell under `docs/` is a
-    /// name that is not one.
-    plant: &'static str,
+    /// The `.md` cell is the one M52 Increment 5 shipped un-driven. §18's rider reads *"the
+    /// one reachable foreign `docs/*.md` cell is a **directory** wearing that name"*, and its
+    /// reachability premise — that a plain foreign `docs/*.md` blocks first at
+    /// `schema-conformance.unknown-type` — is about the *displacement* door at `task
+    /// finalize`, where a validate runs. **No validate runs before a mint unwind**, so the
+    /// plain-file cell is reachable here directly, and at `1d0bd171` it was destroyed at exit
+    /// 1 and named by nothing while the area-root `.md` beside it survived. The membership
+    /// rule is the fix: jigc's own writer emits `<type>:<slug>.md` at every site
+    /// (`engine::state::instance_path`), so a colon-less `.md` is something else's.
+    plants: &'static [&'static str],
     /// What the area holds **at the moment the unwind runs** — the set the removal must know,
     /// proven by the listing hook rather than written down from the mint's own constants. The
     /// mint's list is the wrong set: `create` writes two more files into its area *after* the
@@ -1593,7 +1599,11 @@ const UNWINDING_DOORS: &[MintDoor] = &[
         name: "create",
         argv: &["milestone", "create", MILESTONE_TITLE],
         area: ".jigc/milestones/cache-rework",
-        plant: "NOTES.txt",
+        // A milestone area has no `docs/` rule, so both cells sit at its root — and the
+        // `.md` one is the control that made the task-area gap visible: at the area root a
+        // name is jigc's only by being a registry member, so `NOTES.md` was already safe
+        // while `docs/NOTES.md` one level down was not.
+        plants: &["NOTES.txt", "NOTES.md"],
         // The four §2 drove — `base.json` and `tasks.json` from the mint, and
         // `staged-snapshot.json` + `record-commit-msg.txt` written by the door afterwards.
         holds: &[
@@ -1608,7 +1618,7 @@ const UNWINDING_DOORS: &[MintDoor] = &[
         name: "add-task",
         argv: &["milestone", "add-task", MILESTONE_ID, ADD_TASK_INTENT],
         area: ".jigc/tasks/evict-cold-entries",
-        plant: "docs/third-party.txt",
+        plants: &["docs/third-party.txt", "docs/third-party.md"],
         holds: &["base.json", "intent", "workflow"],
         siblings: &[],
     },
@@ -1623,7 +1633,7 @@ const UNWINDING_DOORS: &[MintDoor] = &[
         // The **third** seed of the mid-loop unwind, so the arm drives a per-seed decision
         // rather than the first one the loop reaches.
         area: ".jigc/tasks/recovers-after-the-window",
-        plant: "docs/third-party.txt",
+        plants: &["docs/third-party.txt", "docs/third-party.md"],
         holds: &["base.json", "intent", "workflow"],
         siblings: &[
             ".jigc/tasks/rejects-the-101st-request",
@@ -1717,68 +1727,75 @@ fn drive_refused(door: &MintDoor, repo: &Path, home: &Path) -> String {
 /// `milestone.foreign-bytes` names the area it left standing — including at
 /// `add-from-spec`'s **per-seed** unwind, where the two clean sibling seeds are still taken
 /// whole, so the refusal is per area and not a whole-call bail.
+///
+/// **Door × plant**, one run per cell: the name a third party happens to use is what the
+/// membership rule branches on, so a single shape proves the door and not the rule
+/// (`MintDoor::plants`).
 #[test]
 fn a_rejected_mint_leaves_a_third_partys_bytes_standing_and_names_the_area() {
     for door in UNWINDING_DOORS {
-        let (repo, home) = mint_door_repo(door, "foreign");
-        let (repo, home) = (repo.path(), home.path());
-        let planted = repo.join(door.area).join(door.plant);
-        install_record_rejecting_hook_running(
-            repo,
-            &format!(
-                "\x20 mkdir -p '{}'\n\x20 printf '%s' '{THIRD_PARTY_PROSE}' > '{}/{}'",
-                Path::new(door.area)
-                    .join(door.plant)
-                    .parent()
-                    .expect("the plant has a parent")
-                    .display(),
+        for (cell, plant) in door.plants.iter().enumerate() {
+            let (repo, home) = mint_door_repo(door, &format!("foreign-{cell}"));
+            let (repo, home) = (repo.path(), home.path());
+            let planted = repo.join(door.area).join(plant);
+            install_record_rejecting_hook_running(
+                repo,
+                &format!(
+                    "\x20 mkdir -p '{}'\n\x20 printf '%s' '{THIRD_PARTY_PROSE}' > '{}/{}'",
+                    Path::new(door.area)
+                        .join(plant)
+                        .parent()
+                        .expect("the plant has a parent")
+                        .display(),
+                    door.area,
+                    plant,
+                ),
+            );
+
+            let combined = drive_refused(door, repo, home);
+
+            assert_eq!(
+                fs::read_to_string(&planted).ok().as_deref(),
+                Some(THIRD_PARTY_PROSE),
+                "door `{}`, plant `{plant}`: the bytes a third party wrote into `{}` must survive \
+             the unwind — `.jigc/` is gitignored, so they have no second copy; door \
+             output:\n{combined}",
+                door.name,
                 door.area,
-                door.plant,
-            ),
-        );
-
-        let combined = drive_refused(door, repo, home);
-
-        assert_eq!(
-            fs::read_to_string(&planted).ok().as_deref(),
-            Some(THIRD_PARTY_PROSE),
-            "door `{}`: the bytes a third party wrote into `{}` must survive the unwind — \
-             `.jigc/` is gitignored, so they have no second copy; door output:\n{combined}",
-            door.name,
-            door.area,
-        );
-        assert!(
-            combined.contains(FOREIGN_BYTES_CODE),
-            "door `{}`: an area the unwind could not remove must be NAMED, not left silent — \
-             expected `{FOREIGN_BYTES_CODE}`; got:\n{combined}",
-            door.name,
-        );
-        assert!(
-            combined.contains(door.area),
-            "door `{}`: the finding must name the area it left standing (`{}`); got:\n{combined}",
-            door.name,
-            door.area,
-        );
-        // jigc's own files inside that area are gone all the same: the refusal is about the
-        // third party's bytes, not a decision to leave the workbench as it was.
-        for name in door.holds {
+            );
             assert!(
-                !repo.join(door.area).join(name).exists(),
-                "door `{}`: `{}/{name}` is jigc's own write and must be removed even when the \
+                combined.contains(FOREIGN_BYTES_CODE),
+                "door `{}`, plant `{plant}`: an area the unwind could not remove must be NAMED, \
+             not left silent — expected `{FOREIGN_BYTES_CODE}`; got:\n{combined}",
+                door.name,
+            );
+            assert!(
+                combined.contains(door.area),
+                "door `{}`: the finding must name the area it left standing (`{}`); got:\n{combined}",
+                door.name,
+                door.area,
+            );
+            // jigc's own files inside that area are gone all the same: the refusal is about the
+            // third party's bytes, not a decision to leave the workbench as it was.
+            for name in door.holds {
+                assert!(
+                    !repo.join(door.area).join(name).exists(),
+                    "door `{}`: `{}/{name}` is jigc's own write and must be removed even when the \
                  area survives; door output:\n{combined}",
-                door.name,
-                door.area,
-            );
-        }
-        // …and the sibling areas this same call minted, which hold nothing of anyone else's,
-        // are taken whole — a foreign byte in one seed does not strand the others.
-        for sibling in door.siblings {
-            assert!(
-                !repo.join(sibling).exists(),
-                "door `{}`: sibling area `{sibling}` holds nothing a third party wrote and \
+                    door.name,
+                    door.area,
+                );
+            }
+            // …and the sibling areas this same call minted, which hold nothing of anyone else's,
+            // are taken whole — a foreign byte in one seed does not strand the others.
+            for sibling in door.siblings {
+                assert!(
+                    !repo.join(sibling).exists(),
+                    "door `{}`: sibling area `{sibling}` holds nothing a third party wrote and \
                  must be removed whole; door output:\n{combined}",
-                door.name,
-            );
+                    door.name,
+                );
+            }
         }
     }
 }

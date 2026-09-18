@@ -741,9 +741,16 @@ acceptance arm 3's parenthetical reads *the two displacing doors (`task finalize
 finalize`) × their one mode*. **Riders the planner drove, stated so the executor does not chase them:**
 a foreign *regular* `docs/*.md` is not a reachable displacement cell — it blocks first at
 `schema-conformance.unknown-type` (exit 3) — so §6's *"a `docs/*.md` that is no staged id"* is reachable
-only as a **directory** named `*.md`, which is L-3; and `validate.rs:372`'s `STORE_SNAPSHOT_FILE` goes to
-a scratch path, never a task area, so the writer set is 12 consts + `renames.json` + **two** probe
-snapshots (baseline §5's *up to three* resolves to two).
+only as a **directory** named `*.md`, which is L-3 **[Struck 2026-09-18 (Increment 5, the validation
+fix). The premise holds for the *displacement* door, where a validate runs; it is false for the **mint
+unwind**, which runs no validate at all. Driven at `1d0bd171`: a `pre-commit` hook writing
+`.jigc/tasks/<id>/docs/agent-notes.md` during `jigc milestone add-task` had that file destroyed at exit
+1, named by nothing, while the identical bytes at the area root survived and were named. The regular
+`docs/*.md` cell was reachable, and the rider is why nobody drove it. `engine::state::staged_doc_id` now
+requires the writer's own `<type>:<slug>` form, the shape `engine::finalize`'s two enumerations always
+did, and `UNWINDING_DOORS.plants` iterates `{non-.md, .md}`.]**; and `validate.rs:372`'s
+`STORE_SNAPSHOT_FILE` goes to a scratch path, never a task area, so the writer set is 12 consts +
+`renames.json` + **two** probe snapshots (baseline §5's *up to three* resolves to two).
 
 ### §19 — D1, the sixth door: `CreatedDoc::rollback` stays `Declared`, and `doc-author.rollback-conflict` is not minted (build halt, Increment 5 plan, 2026-09-18)
 

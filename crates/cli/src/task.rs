@@ -3186,6 +3186,13 @@ impl TaskArea {
     /// The staged managed-doc instances under the working area's `docs/`, in
     /// path-sorted filename order, as `(filename, body)` pairs. An absent `docs/`
     /// yields an empty list (nothing staged yet).
+    ///
+    /// **The name rule is [`engine::state::staged_doc_id`]'s**, the one home
+    /// ([`staged_doc_ids`]' rule, and the inverse of the writer's own
+    /// `<type>:<slug>.md`). It asked `ends_with(".md")` until M52 Increment 5's audit fix,
+    /// which was the same looseness the `docs/` membership predicate carried — here it lies
+    /// rather than destroys: `jigc task diff --format json` reported a third party's
+    /// `docs/agent-notes.md` as a staged doc under an `id` no `jigc doc show` can open.
     fn staged_docs(&self) -> Result<Vec<(String, String)>> {
         let docs = self.dir.join("docs");
         let read = match std::fs::read_dir(&docs) {
@@ -3206,7 +3213,7 @@ impl TaskArea {
                 continue;
             }
             let name = entry.file_name().to_string_lossy().into_owned();
-            if name.ends_with(".md") {
+            if engine::state::staged_doc_id(&name).is_some() {
                 names.push(name);
             }
         }

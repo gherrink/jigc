@@ -150,13 +150,13 @@ pub const TASK_AREA_FILES: &[&str] = &[
 /// addresses, so the rule is carried by [`foreign_area_paths`] rather than by a constant;
 /// this names the one entry that is fixed.
 ///
-/// **Why the `.md` set and not `provenance.json`'s key set**, which is the more precise
-/// answer to *"did jigc stage this?"*: a stager that failed to record provenance would
-/// make every doc it staged foreign, and the doors this feeds *destroy* or *move* the
-/// complement — so the exact discriminator's failure mode is losing authored prose, and
-/// the loose one's is keeping a file too many. The loose one is the only one that may be
-/// wrong (`settle-record.md` → §18's riders: the one reachable foreign `docs/*.md` cell is
-/// a **directory** wearing that name, which is exactly what the shape question catches).
+/// **Why the instance-name set and not `provenance.json`'s key set**, which is the more
+/// precise answer to *"did jigc stage this?"*: a stager that failed to record provenance
+/// would make every doc it staged foreign, and the doors this feeds *destroy* or *move* the
+/// complement — so the exact discriminator's failure mode is losing authored prose, and the
+/// looser one's is keeping a file too many. The name rule is [`staged_doc_id`], and it is
+/// the writer's own form rather than *any* `.md`: see that function for the cell where
+/// *any* `.md` was the loss it was chosen to avoid.
 pub const TASK_DOCS_FILES: &[&str] = &[PROVENANCE_FILE];
 
 /// **Everything jigc itself writes into a milestone's working area** — [`TASK_AREA_FILES`]'
@@ -204,12 +204,32 @@ impl WorkArea {
 /// The staged-doc identity a working-area `docs/` entry **name** stands for — the inverse
 /// of [`instance_filename`], and the one home that rule has.
 ///
-/// It answers about the *name* only. The **shape** question is the caller's, and the two
-/// callers ask it differently on purpose: [`foreign_area_paths`] asks whether jigc wrote
-/// the entry, so it does not follow a symlink; `cli::task::staged_doc_ids` asks what
-/// `jigc doc show <id> --task` can open, so it does.
+/// **It is the inverse, not `.md`-anything** (M52 Increment 5, the audit fix). Every site
+/// that writes a staged body goes through [`instance_path`], which composes
+/// `<type>:<slug>.md` — so the `:` is not decoration, it is what makes a name one jigc's own
+/// writer could have produced, and `engine::finalize`'s two enumerations (`plan_promotions`,
+/// `plan_owner_artifacts`) have always required it before treating a staged file as an
+/// instance. This asked `strip_suffix(".md")` alone, so *every* `.md` under `docs/` was
+/// jigc's — and this rule is the **destroying** doors' subject, not only a read probe's:
+/// driven at `1d0bd171`, a `pre-commit` hook that wrote `docs/agent-notes.md` into the area
+/// a `jigc milestone add-task` had just minted had that file removed by [`unwind_docs`] at
+/// exit 1, out of a gitignored tree with no second copy, while the identical bytes at the
+/// area *root* survived and were named — one run, two answers, because the root's membership
+/// is the registry row and `docs/`'s was this predicate.
+///
+/// The narrowing keeps the reason the rule is **not** `provenance.json`'s key set
+/// ([`TASK_DOCS_FILES`]): a stager that failed to record provenance still has every doc it
+/// staged recognised here, because the name it wrote is the name this reads. What it stops
+/// recognising is a name jigc's writer cannot emit.
+///
+/// It answers about the *name* only. The **shape** question is the caller's, and the callers
+/// ask it two ways on purpose: [`foreign_area_paths`] and `cli::task::TaskArea::staged_docs`
+/// ask whether jigc wrote the entry, so they do not follow a symlink;
+/// `cli::task::staged_doc_ids` asks what `jigc doc show <id> --task` can open, so it does.
 pub fn staged_doc_id(file_name: &str) -> Option<&str> {
-    file_name.strip_suffix(".md")
+    file_name
+        .strip_suffix(".md")
+        .filter(|identity| identity.contains(':'))
 }
 
 /// **The bytes jigc did not write into `area`** — every entry of the working area that is
