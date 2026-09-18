@@ -6,11 +6,8 @@
 //!
 //! # What was broken
 //!
-//! `rollback_rename` has three arms and exactly one of them was guarded. The
-//! `tracked_restore` loop restores the old doc + every referrer **from HEAD**, and the door
-//! refuses to run at all over a dirty tree — so HEAD is what the worktree held and there are
-//! no third-party bytes for it to take (`ROLLBACK_POPULATIONS`' `rename-head-restore` row,
-//! `DoorGuard("rename.dirty-tree")`). The other two took bytes unconditionally:
+//! `rollback_rename` has three arms and **none** of them was guarded — T6 closed two, and the
+//! third only looked closed:
 //!
 //!   * the **landing path** — `remove_file` on the path the move landed at, whenever it was
 //!     not at HEAD. The user's `pre-commit` hook runs *inside* the interval between that
@@ -21,11 +18,23 @@
 //!     pre-image, under no condition at all. A third party's edit inside the same interval
 //!     went the same way, and the *absent* cell was worse than an overwrite: a `file-state.json`
 //!     this transaction never reached (a failure before the move) was removed anyway.
+//!   * the **`tracked_restore` loop** — `git restore --staged --worktree` over the old doc and
+//!     every structured referrer, classified `DoorGuard("rename.dirty-tree")` on the reason
+//!     *"the door refuses to run at all over a dirty tree — so HEAD is what the worktree held,
+//!     and there are no third-party bytes for the restore to take"*. The reason is about the
+//!     tree **before** the run; the racer runs **inside** the window, which is what the bullet
+//!     above says in as many words. Driven, HEAD's copy went back over a hook's bytes at exit
+//!     1, raising nothing and parking nothing — so the arm took the mechanism, the two rows
+//!     became one, and `rename-head-restore` is gone.
 //!
-//! # The two cells, and why the control is half the test
+//! # The three cells, and why the control is half the test
 //!
-//! 1. [`a_raced_landing_path_survives_and_is_named`] / [`a_raced_file_state_record_survives_and_names_both_copies`]
-//!    — a `pre-commit` hook that writes at the arm's own path and exits 1. The racer's bytes
+//! 1. [`a_raced_landing_path_survives_and_is_named`] /
+//!    [`a_raced_file_state_record_survives_and_names_both_copies`] /
+//!    [`a_raced_head_sourced_path_survives_and_names_both_copies`], the last of which iterates
+//!    the HEAD-sourced arm's own axis rather than sampling it — the old doc *and* a structured
+//!    referrer, the two kinds of path `tracked_restore` holds — a `pre-commit` hook that writes
+//!    at the arm's own path and exits 1. The racer's bytes
 //!    are on disk when the run exits, the door's own blocking `rename.rollback-conflict`
 //!    names the live path, and — where there was a pre-image to keep — jigc's copy is parked
 //!    under `.jigc/displaced/rename/` rather than discarded.
@@ -45,8 +54,8 @@ use std::path::{Path, PathBuf};
 use cli::rollback::{Discipline, RENAME_DOOR, ROLLBACK_POPULATIONS};
 
 use crate::support::committing_doors::{
-    DoorCase, HOOK_MARKER, drive, install_rejecting_hook, jigc, log_records, record_for,
-    remove_hook,
+    DoorCase, HOOK_MARKER, adr_body, drive, git, install_rejecting_hook, jigc, log_records,
+    record_for, remove_hook,
 };
 
 /// The bytes the racing hook writes — the third party's, which must be on disk when the run
@@ -68,19 +77,19 @@ fn population() -> &'static cli::rollback::Population {
 /// Replace the fixture's rejecting hook with one that **writes at `target` first** — the racer
 /// running exactly where it can run: inside the transaction, between jigc's write and the
 /// rollback.
-fn install_racing_hook(repo: &Path, target: &str) {
+fn install_racing_hook(repo: &Path, targets: &[&str]) {
     let hook = repo.join(".git").join("hooks").join("pre-commit");
     fs::create_dir_all(hook.parent().expect("hooks dir")).expect("mk hooks dir");
-    let path = repo.join(target);
-    fs::write(
-        &hook,
-        format!(
-            "#!/bin/sh\nmkdir -p {parent:?}\necho '{RACE_LINE}' >> {path:?}\n\
-             echo '{HOOK_MARKER}' 1>&2\nexit 1\n",
+    let mut script = String::from("#!/bin/sh\n");
+    for target in targets {
+        let path = repo.join(target);
+        script.push_str(&format!(
+            "mkdir -p {parent:?}\necho '{RACE_LINE}' >> {path:?}\n",
             parent = path.parent().expect("the raced path has a parent"),
-        ),
-    )
-    .expect("write the racing pre-commit hook");
+        ));
+    }
+    script.push_str(&format!("echo '{HOOK_MARKER}' 1>&2\nexit 1\n"));
+    fs::write(&hook, script).expect("write the racing pre-commit hook");
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -114,6 +123,24 @@ fn parked(repo: &Path, noun: &str) -> Vec<PathBuf> {
 /// than as the empty string.
 fn bytes_at(repo: &Path, rel: &str) -> Option<Vec<u8>> {
     fs::read(repo.join(rel)).ok()
+}
+
+/// Commit a second `adr` that **references** `target` through `supersedes` — the referrer
+/// half of the HEAD-sourced set, which the rename repoints in lockstep and therefore
+/// rewrites inside the same transaction.
+fn commit_referrer(repo: &Path, slug: &str, title: &str, target: &str) {
+    let body =
+        adr_body(title, Some(2)).replacen("\n---\n", &format!("\nsupersedes: {target}\n---\n"), 1);
+    let dir = repo.join("docs").join("decisions");
+    fs::create_dir_all(&dir).expect("mk docs/decisions/");
+    fs::write(dir.join(format!("{slug}.md")), body).expect("write the referrer adr");
+    git(repo, &["add", "."]);
+    // `--no-verify`: the fixture has already installed its rejecting hook, and this is the
+    // fixture's own seed rather than a commit under test.
+    git(
+        repo,
+        &["commit", "-q", "--no-verify", "-m", "seed referrer"],
+    );
 }
 
 /// Land one successful rename in the fixture, so `.jigc/state/file-state.json` **exists**
@@ -171,7 +198,7 @@ fn a_raced_landing_path_survives_and_is_named() {
     let case: DoorCase = drive("jigc rename");
     let repo = case.repo.path();
     let landing = "docs/decisions/beta-decision.md";
-    install_racing_hook(repo, landing);
+    install_racing_hook(repo, &[landing]);
 
     let driven: Vec<&str> = case.driven.iter().map(String::as_str).collect();
     let rejected = jigc(repo, case.home.path(), &driven, None);
@@ -257,7 +284,7 @@ fn a_raced_file_state_record_survives_and_names_both_copies() {
     land_a_rename(&case, "adr:alpha-decision", "Gamma decision");
 
     let before = bytes_at(repo, FILE_STATE).expect("the landed rename wrote the file-state record");
-    install_racing_hook(repo, FILE_STATE);
+    install_racing_hook(repo, &[FILE_STATE]);
 
     let rejected = jigc(
         repo,
@@ -315,6 +342,125 @@ fn a_raced_file_state_record_survives_and_names_both_copies() {
     assert!(
         stderr.contains(&parked_label),
         "the route must name the parked copy at `{parked_label}`; stderr:\n{stderr}",
+    );
+}
+
+/// Arm 3 — **the HEAD-sourced set, iterated rather than sampled**: every path
+/// `rollback_rename`'s `tracked_restore` loop puts back is one cell, and the loop holds two
+/// kinds — the old doc the `git mv` empties, and every structured referrer the repoint
+/// rewrites (`crates/cli/src/rename.rs`, step 1 + step 2). Both are driven in one run,
+/// because the racer that reaches one reaches the other: it is the same hook, in the same
+/// interval.
+///
+/// Through rc.15 this arm was classified `DoorGuard("rename.dirty-tree")` on the reason
+/// *"the door refuses to run at all over a dirty tree — so HEAD is what the worktree held,
+/// and there are no third-party bytes for the restore to take"*. That reason is about the
+/// tree **before** the run; the racer runs **inside** the window, which the sibling
+/// `rename-worktree` arm's own doc-comment states three lines further down. Driven, the
+/// restore took those bytes: `git restore --staged --worktree` put HEAD's copy back over the
+/// hook's, at exit 1, with no conflict raised and nothing parked.
+#[test]
+fn a_raced_head_sourced_path_survives_and_names_both_copies() {
+    let case: DoorCase = drive("jigc rename");
+    let repo = case.repo.path();
+    // The second cell of the axis: a committed referrer, so the transaction rewrites a
+    // tracked path that is not the doc being renamed.
+    commit_referrer(
+        repo,
+        "later-decision",
+        "Later decision",
+        "adr:alpha-decision",
+    );
+
+    let old_doc = "docs/decisions/alpha-decision.md";
+    let referrer = "docs/decisions/later-decision.md";
+    let before_old = bytes_at(repo, old_doc).expect("the doc to rename is committed");
+    let before_referrer = bytes_at(repo, referrer).expect("the referrer is committed");
+    install_racing_hook(repo, &[old_doc, referrer]);
+
+    let driven: Vec<&str> = case.driven.iter().map(String::as_str).collect();
+    let rejected = jigc(repo, case.home.path(), &driven, None);
+    let stderr = String::from_utf8_lossy(&rejected.stderr).into_owned();
+    assert!(
+        !rejected.status.success(),
+        "a rejected pre-commit hook must fail the rename; stderr:\n{stderr}",
+    );
+
+    // Every cell of the axis, asked the same three questions.
+    for cell in [old_doc, referrer] {
+        // (1) **the third party's bytes are on disk** — the claim, at both kinds of path.
+        let after = bytes_at(repo, cell).unwrap_or_else(|| {
+            panic!(
+                "the raced `{cell}` must survive the rollback — the HEAD-sourced arm may not \
+                 overwrite a file a third party wrote; stderr:\n{stderr}",
+            )
+        });
+        assert!(
+            String::from_utf8_lossy(&after).contains(RACE_LINE),
+            "the racer's own line must still be in `{cell}` after the rollback; it now \
+             reads:\n{}",
+            String::from_utf8_lossy(&after),
+        );
+        // (2) the door's own identity, naming the live path — `(code, target)` is the key a
+        // driver branches on, and an unnamed loss is the half of this defect that made it
+        // silent.
+        assert!(
+            stderr.contains(cell),
+            "the conflict must name the live path `{cell}`; stderr:\n{stderr}",
+        );
+    }
+    assert!(
+        stderr.contains(&format!("blocking · {}", RENAME_DOOR.code)),
+        "a raced restore must raise this door's own blocking `{}`; stderr:\n{stderr}",
+        RENAME_DOOR.code,
+    );
+
+    // (3) **both copies**, per cell: jigc's pre-image is parked under this door's noun rather
+    // than discarded, and the route names each parked path.
+    let parked_copies = parked(repo, RENAME_DOOR.noun);
+    let parked_bytes: Vec<Vec<u8>> = parked_copies
+        .iter()
+        .map(|path| fs::read(path).expect("read the parked pre-image"))
+        .collect();
+    assert_eq!(
+        parked_copies.len(),
+        2,
+        "one pre-image per raced cell must be parked under `.jigc/displaced/{}/`; found \
+         {parked_copies:?}",
+        RENAME_DOOR.noun,
+    );
+    for (cell, before) in [(old_doc, &before_old), (referrer, &before_referrer)] {
+        assert!(
+            parked_bytes.contains(before),
+            "`{cell}`'s pre-write bytes must be among the parked copies — a pre-image \
+             dropped on the floor is the loss in its other direction; parked: \
+             {parked_copies:?}",
+        );
+    }
+    for parked_copy in &parked_copies {
+        let label = parked_copy
+            .strip_prefix(repo)
+            .expect("the park lives in the repo")
+            .to_string_lossy()
+            .replace('\\', "/");
+        assert!(
+            stderr.contains(&label),
+            "the route must name the parked copy at `{label}`; stderr:\n{stderr}",
+        );
+    }
+
+    // (4) the code reaches the invocation log, read off the record.
+    let records = log_records(repo);
+    let record = record_for(&records, &case.driven)
+        .unwrap_or_else(|| panic!("the refused run must be logged; records:\n{records:#?}"));
+    let codes: Vec<&str> = record["finding_codes"]
+        .as_array()
+        .map(|a| a.iter().filter_map(|v| v.as_str()).collect())
+        .unwrap_or_default();
+    assert!(
+        codes.contains(&RENAME_DOOR.code),
+        "the log must carry `{}` in `finding_codes`; got {record}",
+        RENAME_DOOR.code,
     );
 }
 
@@ -391,7 +537,7 @@ fn an_unraced_rejected_rename_reports_no_conflict_and_restores_byte_identically(
 fn the_machine_arm_carries_the_conflict_in_the_reject_document() {
     let case: DoorCase = drive("jigc rename");
     let repo = case.repo.path();
-    install_racing_hook(repo, "docs/decisions/beta-decision.md");
+    install_racing_hook(repo, &["docs/decisions/beta-decision.md"]);
 
     let mut driven: Vec<&str> = case.driven.iter().map(String::as_str).collect();
     driven.extend_from_slice(&["--format", "json"]);

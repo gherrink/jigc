@@ -397,9 +397,11 @@ const OTHER_AXIS_CALLS: &[(&str, &str, usize, &str)] = &[
     (
         "crates/cli/src/rename.rs",
         "rollback_rename",
-        1,
-        "`git restore --staged <new path>` un-stages the move's landing; the landing's \
-         worktree copy is `rename-worktree`'s",
+        2,
+        "`git restore --staged` un-stages the move's landing and, in the loop above it, the \
+         old path plus every repointed referrer; the worktree copy of all of them is \
+         `rename-worktree`'s compare-and-swap. The loop's call carried `--worktree` too \
+         through rc.15, which is the restore that took a racing hook's bytes",
     ),
 ];
 
@@ -702,7 +704,7 @@ fn reaches(
 ///
 /// T1 shipped this registry with eight rows declaring a discipline the source did not yet
 /// bind, and each later task retired one of those declarations. This arm is what makes the
-/// last of them a *checked* fact — and what keeps a twelfth row from being added with a
+/// last of them a *checked* fact — and what keeps a further row from being added with a
 /// discipline written down and nothing behind it:
 ///
 ///   * a **`FileCas`** row's restore provably reaches T2's generic entry — it *is* the entry,

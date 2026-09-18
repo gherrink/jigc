@@ -57,21 +57,23 @@
 //! Where this paragraph used to *count* what was left declaring, the fence now checks that
 //! nothing is: a row added with a discipline written down and nothing behind it reddens.
 //!
-//! # The row count is twelve, and the plan's "ten" is struck with its arithmetic
+//! # The row count is eleven, and the plan's "ten" is struck with its arithmetic
 //!
 //! The plan derives ten as *baseline §1 table A's nine worktree-restore populations + the
 //! rollback-less `config set <root-knob>` relocation*, and that derivation is right about
-//! both halves. It cannot, however, also carry the two `DoorGuard` classifications D1.1
-//! states by name:
+//! both halves. What it has no slot for is `jigc setup`'s pre-write refusal, which is not in
+//! table A at all — it is baseline §1 group **C**, a declared no-rollback population.
 //!
-//!   * `rollback_rename`'s HEAD-sourced `tracked_restore` arm is **inside** table A's row 6,
-//!     whose other two arms the increment binds to `FileCas` — and a row carries **one**
-//!     discipline, because T10's fence reads them per row (*"every `FileCas` row… every
-//!     `DoorGuard` row…"*). Two disciplines, two rows.
-//!   * `jigc setup`'s pre-write refusal is not in table A at all — it is baseline §1 group
-//!     **C**, a declared no-rollback population — so the ten never had a slot for it.
+//! Eleven is 9 + 1 + 1, every addend cited. Nothing is dropped and nothing is invented.
 //!
-//! Twelve is 9 + 1 + 1 + 1, every addend cited. Nothing is dropped and nothing is invented.
+//! **It was twelve for one increment**, because `rollback_rename`'s HEAD-sourced
+//! `tracked_restore` arm was split off table A's row 6 as a second row carrying a second
+//! discipline (a row carries **one**, since T10's fence reads them per row). That split is
+//! struck with the datum that falsifies it: the `DoorGuard("rename.dirty-tree")` reason is
+//! about the tree **before** the run, the racer runs **inside** the window, and driving one
+//! `pre-commit` hook that writes at the old doc showed HEAD's copy put back over it at exit
+//! 1 with nothing raised and nothing parked. One discipline, one row — and table A's row 6
+//! is one population again, as the baseline counted it.
 //!
 //! # The site-less row is an enumerated exception, not a loophole
 //!
@@ -272,8 +274,9 @@ pub const ROLLBACK_POPULATIONS: &[Population] = &[
     },
     Population {
         id: "rename-worktree",
-        subject: "the landing path the rename wrote, and the gitignored \
-                  `.jigc/state/file-state.json` it re-keyed",
+        subject: "every path `jigc rename`'s transaction writes — the old doc the `git mv` \
+                  empties, every structured referrer the repoint rewrites, the landing path, \
+                  and the gitignored `.jigc/state/file-state.json` it re-keyed",
         doors: &[&["rename"]],
         site: Site::Source {
             file: "crates/cli/src/rename.rs",
@@ -282,29 +285,26 @@ pub const ROLLBACK_POPULATIONS: &[Population] = &[
             // record's write-or-remove were three unconditional calls in this unit, and this
             // population's whole worktree restore is now the shared compare-and-swap at
             // `rollback.rs::restore`, counted once at the row whose site that unit is. What
-            // stays in this unit is the landing path's **index** arm — the `git restore
-            // --staged` that unstages the move, deliberately without `--worktree`, since the
-            // bytes are the swap's subject — and that is counted onto `OTHER_AXIS_CALLS`,
-            // where it has always been. A row owning zero is still fenced: deleting it leaves
-            // this unit's count unclaimed.
+            // stays in this unit is its **index** arm — `git restore --staged` over the
+            // transaction's staged paths, deliberately without `--worktree`, since the bytes
+            // there are the swap's subject — counted onto `OTHER_AXIS_CALLS`. A row owning
+            // zero is still fenced: deleting it leaves this unit's count unclaimed.
             restores: 0,
         },
+        // **One discipline over the whole transaction**, since the M52 Increment 5 fix. The
+        // old doc + referrers were a second row, `rename-head-restore`, classified
+        // `DoorGuard("rename.dirty-tree")` on the reason *"the door refuses to run at all
+        // over a dirty tree — so HEAD is what the worktree held, and there are no
+        // third-party bytes for the restore to take"*. That reason is about the tree
+        // **before** the run; the racer runs **inside** the window — which is precisely what
+        // the sibling arm's `FileCas` classification is written for, three lines further
+        // down the same doc-comment. Driven, `git restore --staged --worktree` put HEAD's
+        // copy over a racing hook's bytes at exit 1, with no conflict raised and nothing
+        // parked, while `config-root-relocation` answered the identical state one door over
+        // by preserving the racer. Two doors disagreeing about one state is the shape this
+        // registry exists to end, so the arm took the mechanism rather than keeping the
+        // reason.
         discipline: Discipline::FileCas,
-    },
-    Population {
-        id: "rename-head-restore",
-        subject: "the old doc and every structured referrer, restored from HEAD",
-        doors: &[&["rename"]],
-        site: Site::Source {
-            file: "crates/cli/src/rename.rs",
-            unit: "rollback_rename",
-            restores: 1,
-        },
-        // Sharing a unit with `rename-worktree` and **not** its discipline, which is why the
-        // two are two rows: this arm restores from HEAD, and the door refuses to run at all
-        // over a dirty tree — so HEAD is what the worktree held, and there are no third-party
-        // bytes for the restore to take.
-        discipline: Discipline::DoorGuard("rename.dirty-tree"),
     },
     Population {
         id: "created-doc-staged-write",
