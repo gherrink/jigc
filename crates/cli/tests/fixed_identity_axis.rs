@@ -1137,3 +1137,296 @@ fn every_sibling_door_answers_the_refusal_on_the_findings_arm() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// M52 Increment 6 / T4 — the reslug refusal keys on the predicate, and its route
+// is the schema's
+// ---------------------------------------------------------------------------
+//
+// T3 closed the **head**: a fixed-identity doctype's non-canonical address no longer
+// reaches this door's body. What is left is the cell one argument in — the **canonical**
+// head asked to move to a different slug — and there the door still asked the old,
+// narrower question. Arm (d) of `cli::rename`'s validation gate keyed on
+// `schema.placement.is_some()`, so the second disjunct of `Schema::has_fixed_identity`
+// fell straight through it.
+//
+// Driven at `d11c6b51` over the manufactured `location:` + `singleton: true` doctype,
+// with the instance committed by a real `jigc task finalize`:
+//
+//     $ jigc rename runbook:runbook --to Phantom --slug other
+//     renamed runbook:runbook -> runbook:other (docs/runbooks/runbook.md ->
+//       docs/runbooks/other.md), repointed 0 referrer(s)   # exit 0, commit 3943896
+//
+// …after which the doc was addressable by **nothing**: `jigc doc show runbook:other`
+// refused `store.fixed-identity` (T2's guard, naming `runbook:runbook` as the one
+// identity this doctype has) and `jigc doc show runbook` reported `store.not-found` at
+// `docs/runbooks/runbook.md`. A committing door had moved a managed doc to an identity
+// its own read doors refuse — the loss shape the predicate exists to prevent, reached
+// through the *mint's* own disjunct.
+//
+// The second half is the route. A fixed-identity reslug refusal carries a
+// [`Repair::Command`] route — the retitle this door *does* support — and it composed
+// that argv from the **caller's** parsed address. That is correct today only because
+// T3's guard sits upstream and has already forced the head canonical: a non-local
+// invariant standing in for a local fact. Both halves are now read from the resolved
+// schema (`<ty>:<ty>` and `--slug <ty>`), so the route is right at the site rather than
+// by the grace of a guard three gates earlier — and the cells below **run the emitted
+// argv** rather than asserting its shape, because a route that does not land is a dead
+// end whatever it says (`design/surface-contract.md` → nothing dead-ends).
+
+/// The code `jigc rename` raises for a reslug of a fixed identity
+/// ([`cli::rename::RefusalKind::FixedIdentity`]).
+const IDENTITY_CHANGE: &str = "write.identity-change";
+
+/// `git <args>` in `repo`, returning trimmed stdout.
+fn git_capture(repo: &Path, args: &[&str]) -> String {
+    let out = Command::new("git")
+        .args(args)
+        .current_dir(repo)
+        .output()
+        .expect("run git");
+    assert!(
+        out.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout).trim().to_string()
+}
+
+/// The **emitted** route's argv: the first backticked span of the rendered `route:` line,
+/// split on whitespace. Read off the surface the binary printed, never rebuilt here — the
+/// bytes an agent would paste are the contract.
+fn emitted_route_argv(rendered: &str) -> Vec<String> {
+    let route = rendered
+        .lines()
+        .map(str::trim_start)
+        .find(|line| line.starts_with("route:"))
+        .unwrap_or_else(|| panic!("the refusal must print a route; got:\n{rendered}"));
+    let (_, rest) = route
+        .split_once('`')
+        .unwrap_or_else(|| panic!("a `Command` route names its argv in backticks: {route}"));
+    let (command, _) = rest
+        .split_once('`')
+        .unwrap_or_else(|| panic!("a route's command span must close: {route}"));
+    command.split_whitespace().map(str::to_owned).collect()
+}
+
+/// Fill the fixture task's transient `commit` doc and land it, so the manufactured
+/// singleton exists as a **committed** doc — the only state `jigc rename` acts on.
+fn commit_the_runbook(repo: &Path, home: &Path, task: &str) {
+    let commit = format!("commit:{task}");
+    assert_ok(
+        &jigc(
+            repo,
+            home,
+            &[
+                "doc",
+                "set-field",
+                &format!("{commit}#header/type"),
+                "--task",
+                task,
+                "--value",
+                "chore",
+            ],
+        ),
+        "`jigc doc set-field commit:<task>#header/type`",
+    );
+    assert_ok(
+        &jigc_stdin(
+            repo,
+            home,
+            &[
+                "doc",
+                "set-slot",
+                &format!("{commit}#summary"),
+                "--task",
+                task,
+                "--from-file",
+                "-",
+            ],
+            b"seed the runbook\n",
+        ),
+        "`jigc doc set-slot commit:<task>#summary`",
+    );
+    assert_ok(
+        &jigc(repo, home, &["task", "finalize", task]),
+        "`jigc task finalize` (landing the manufactured singleton)",
+    );
+}
+
+/// **The red cell** — a `location:`-homed singleton's reslug, which arm (d)'s
+/// `placement`-only key let through: the file moved, the commit landed, and the doc
+/// became unaddressable. Both spellings of the ask refuse — the explicit `--slug other`
+/// and the title-derived one a bare `--to` mints — and neither moves a byte.
+#[test]
+fn rename_refuses_a_reslug_of_a_location_homed_singleton() {
+    let (repo, home, task) = corpus("rename-reslug-location-singleton");
+    commit_the_runbook(repo.path(), home.path(), &task);
+
+    let doc = repo.path().join("docs").join("runbooks").join("runbook.md");
+    let before = fs::read(&doc).expect("the committed runbook");
+    let head_before = git_capture(repo.path(), &["rev-parse", "HEAD"]);
+
+    for argv in [
+        vec![
+            "rename",
+            "runbook:runbook",
+            "--to",
+            "Phantom",
+            "--slug",
+            "other",
+        ],
+        vec!["rename", "runbook:runbook", "--to", "Phantom"],
+    ] {
+        let out = jigc(repo.path(), home.path(), &argv);
+        let rendered = streams(&out);
+        assert_eq!(
+            out.status.code(),
+            Some(1),
+            "`jigc {}` must refuse at exit 1; got:\n{rendered}",
+            argv.join(" "),
+        );
+        assert!(
+            rendered.contains(IDENTITY_CHANGE),
+            "`jigc {}` must refuse with `{IDENTITY_CHANGE}`; got:\n{rendered}",
+            argv.join(" "),
+        );
+        assert_eq!(
+            fs::read(&doc).expect("the runbook is still at its home"),
+            before,
+            "`jigc {}`: a refused reslug may not have touched the doc",
+            argv.join(" "),
+        );
+        for stray in ["other.md", "phantom.md"] {
+            assert!(
+                !repo
+                    .path()
+                    .join("docs")
+                    .join("runbooks")
+                    .join(stray)
+                    .exists(),
+                "`jigc {}`: a refused reslug may not have minted `{stray}`",
+                argv.join(" "),
+            );
+        }
+        assert_eq!(
+            git_capture(repo.path(), &["rev-parse", "HEAD"]),
+            head_before,
+            "`jigc {}`: a refused reslug may not have committed",
+            argv.join(" "),
+        );
+    }
+}
+
+/// **The route, on the second disjunct** — composed from the resolved schema and *run*.
+///
+/// The refusal withholds the reslug and offers the retitle; the argv it prints is
+/// executed verbatim here, and what it lands is asserted: the H1 rewritten, the doc still
+/// at the home its identity fixes it to, and one commit.
+#[test]
+fn a_location_homed_singletons_reslug_route_is_the_schemas_and_it_lands() {
+    let (repo, home, task) = corpus("rename-reslug-route-location");
+    commit_the_runbook(repo.path(), home.path(), &task);
+    let doc = repo.path().join("docs").join("runbooks").join("runbook.md");
+    let head_before = git_capture(repo.path(), &["rev-parse", "HEAD"]);
+
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &[
+            "rename",
+            "runbook:runbook",
+            "--to",
+            "Phantom",
+            "--slug",
+            "other",
+        ],
+    );
+    let rendered = streams(&out);
+    let route = emitted_route_argv(&rendered);
+    assert_eq!(
+        route,
+        vec![
+            "jigc",
+            "rename",
+            "runbook:runbook",
+            "--to",
+            "Phantom",
+            "--slug",
+            "runbook",
+        ],
+        "the route's identity and its `--slug` are the schema's — `<ty>:<ty>` and the \
+         type id — never the caller's `other` echoed back; got:\n{rendered}",
+    );
+
+    let followed: Vec<&str> = route[1..].iter().map(String::as_str).collect();
+    let landed = jigc(repo.path(), home.path(), &followed);
+    assert_ok(&landed, "the emitted route, run verbatim");
+    assert!(
+        fs::read_to_string(&doc)
+            .expect("the runbook is still at its home")
+            .starts_with("# Phantom\n"),
+        "the retitle the refusal offered must land: the H1 is the new title and the doc \
+         never moved; got:\n{}",
+        fs::read_to_string(&doc).unwrap_or_default(),
+    );
+    assert_ne!(
+        git_capture(repo.path(), &["rev-parse", "HEAD"]),
+        head_before,
+        "the retitle commits — the refusal withheld the reslug, not the whole verb",
+    );
+}
+
+/// **The route, on the first disjunct** — the shipped `placement:` doctype, under the
+/// `--slug` override cell (`flow37_rename`'s own scene drives the bare `--to`). The same
+/// two halves come off the same schema, and the same argv runs.
+#[test]
+fn a_placement_singletons_reslug_route_is_the_schemas_and_it_lands() {
+    let corpus = TrialCorpus::build(State::CommittedSingletons);
+    let vision = corpus.repo().join("VISION.md");
+
+    let out = corpus.jigc(&[
+        "rename",
+        "vision:vision",
+        "--to",
+        "Phantom",
+        "--slug",
+        "other",
+    ]);
+    let rendered = streams(&out);
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "a placement singleton's reslug refuses at exit 1; got:\n{rendered}",
+    );
+    assert!(
+        rendered.contains(IDENTITY_CHANGE),
+        "the refusal carries `{IDENTITY_CHANGE}`; got:\n{rendered}",
+    );
+    let route = emitted_route_argv(&rendered);
+    assert_eq!(
+        route,
+        vec![
+            "jigc",
+            "rename",
+            "vision:vision",
+            "--to",
+            "Phantom",
+            "--slug",
+            "vision",
+        ],
+        "the route's identity and its `--slug` are the schema's; got:\n{rendered}",
+    );
+
+    let followed: Vec<&str> = route[1..].iter().map(String::as_str).collect();
+    let landed = corpus.jigc(&followed);
+    assert!(
+        landed.status.success(),
+        "the emitted route must run verbatim at exit 0; got:\n{}",
+        streams(&landed),
+    );
+    assert!(
+        vision.is_file(),
+        "the retitle keeps the doc at the literal home its placement fixes it to",
+    );
+}

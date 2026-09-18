@@ -26,9 +26,10 @@
 //! reslug** (the new title slugs to the doc's own current slug) degrades to a **retitle-only**
 //! (rewrite the H1 + commit, no `git mv`, no referrer repoint); a **mid-fan-out** guard
 //! blocks whenever any task working area *or* milestone is in-flight ([DECISIONS.md] 2026-06-28,
-//! pins I2/I4); a **placement-singleton** reslug rejects with the real rule (identity fixed to
-//! the type; retitle-only) and a **milestone-record** reslug refuses always — between milestones
-//! too (M40 A4); and a **`--slug` override that is not a slug** blocks before the destination
+//! pins I2/I4); a **fixed-identity** reslug rejects with the real rule (identity fixed to
+//! the type; retitle-only — `Schema::has_fixed_identity`, so a `location:`-homed singleton is
+//! refused alongside a `placement:` one, M52 Inc 6 / T4) and a **milestone-record** reslug
+//! refuses always — between milestones too (M40 A4); and a **`--slug` override that is not a slug** blocks before the destination
 //! path is built, the sixth and last of the mint doors to ask that question (M50 Inc 2 / T2);
 //! and a **destination git cannot record** — the doctype's home inside a submodule, an
 //! embedded repo or git's own directory — is refused *here* rather than from inside the
@@ -256,20 +257,29 @@ fn refuse(kind: RefusalKind, at: &str, message: String, route: Route) -> anyhow:
     ))
 }
 
-/// The **retitle** route the two fixed-identity refusals carry: this exact doc, the title
-/// the caller asked for, and an explicit `--slug` pinning the identity that may not move.
+/// The **retitle** route the two fixed-identity refusals carry: the doc under the identity
+/// that may not move, the title the caller asked for, and an explicit `--slug` pinning
+/// that identity.
 ///
 /// It is [`Repair::Command`] and not a judgment because both halves are *derivable* — the
-/// slug is the type id (a placement singleton) or the milestone work-unit id, and the
+/// slug is the type id (a fixed-identity doctype) or the milestone work-unit id, and the
 /// title is the caller's own `--to` — so the command is concrete rather than a shape the
 /// reader has to fill in. Run verbatim it lands the retitle-only arm this door does
 /// support, which is the whole of what the refusal is withholding.
-fn retitle_route(old_id: &str, title: &str, fixed_slug: &str) -> Route {
+///
+/// **`id` and `fixed_slug` are the *rule's*, never the caller's** (M52 Increment 6 / T4).
+/// The fixed-identity arm reads both off the resolved [`Schema`]; the work-unit arm reads
+/// them off the target's own committed identity, which is what its rule fixes. Both used
+/// to come off the parsed address — correct only because T3's guard sits upstream and has
+/// already forced the head canonical, i.e. a non-local invariant standing in for a local
+/// fact. It emits the same bytes today and is right at the site rather than three gates
+/// away.
+fn retitle_route(id: &str, title: &str, fixed_slug: &str) -> Route {
     Route::mechanical(
         [
             "jigc",
             "rename",
-            old_id,
+            id,
             "--to",
             &crate::task::shell_token(title),
             "--slug",
@@ -499,23 +509,42 @@ pub(crate) fn run(
     //     is unchanged, so the rename degrades to a retitle-only (rewrite H1 + commit, no
     //     `git mv`, no referrer repoint — nothing dangles).
     let is_retitle = new_slug == old_slug;
-    // (d) **placement-singleton reslug** — undefined, not merely blocked (M40 A4;
-    //     write-commands.md → Placement singletons): a placement doctype's identity is fixed
-    //     to its type — the singleton's slug IS the type id and the doc lives at its literal
-    //     `placement.file` — so there is no reslug to perform. Reject with the real rule
-    //     rather than falling through to (f)'s misleading collision text (`doc_path` resolves
-    //     the placement literal ignoring the slug, so `new_abs == old_abs`: it is the SAME
-    //     file, not a collision). Retitle-only (the degenerate arm (c)) stays supported.
-    if !is_retitle && schema_map[ty.as_str()].placement.is_some() {
+    // (d) **fixed-identity reslug** — undefined, not merely blocked (M40 A4;
+    //     write-commands.md → Placement singletons): the doctype's identity is fixed to
+    //     its type — the slug IS the type id — so there is no reslug to perform. Reject with
+    //     the real rule rather than falling through to (f)'s misleading collision text (for a
+    //     `placement:` doctype `doc_path` resolves the literal ignoring the slug, so
+    //     `new_abs == old_abs`: it is the SAME file, not a collision). Retitle-only (the
+    //     degenerate arm (c)) stays supported.
+    //
+    //     **The question is [`Schema::has_fixed_identity`]'s, not `placement.is_some()`'s**
+    //     (M52 Increment 6 / T4). Keyed on `placement` alone this arm answered only the
+    //     first disjunct, so a `location:` + `singleton: true` doctype — minted at its fixed
+    //     slug by a mint that keys on exactly the *other* disjunct — reslugged straight
+    //     through it. Driven at `d11c6b51` over a manufactured one, `jigc rename
+    //     runbook:runbook --to Phantom --slug other` exited **0** and committed
+    //     `docs/runbooks/runbook.md -> docs/runbooks/other.md`, after which the doc was
+    //     addressable by nothing: `jigc doc show runbook:other` refused
+    //     `store.fixed-identity` and `jigc doc show runbook` reported `store.not-found`
+    //     (`crates/cli/tests/fixed_identity_axis.rs`, the T4 section).
+    let schema = &schema_map[ty.as_str()];
+    if !is_retitle && schema.has_fixed_identity() {
         return Err(refuse(
             RefusalKind::FixedIdentity,
             &old_id,
             format!(
-                "cannot reslug `{old_id}` — a placement singleton's identity is fixed to \
-                 its type (the slug IS the type id `{ty}` and the doc lives at the literal \
-                 {old_rel}); only a retitle is supported"
+                "cannot reslug `{old_id}` — this doctype's identity is fixed to its type \
+                 (the slug IS the type id `{ty}`, and the doc lives at {old_rel}); only a \
+                 retitle is supported",
+                ty = schema.ty,
             ),
-            retitle_route(&old_id, title, &old_slug),
+            // Both halves read off the resolved schema — the identity this doctype has,
+            // never the caller's token echoed back into the escape hatch.
+            retitle_route(
+                &format!("{ty}:{ty}", ty = schema.ty),
+                title,
+                schema.ty.as_str(),
+            ),
         ));
     }
     // (e) **milestone-record reslug** — refused always, between milestones too (M40 A4.4;
