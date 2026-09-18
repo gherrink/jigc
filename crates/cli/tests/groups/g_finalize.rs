@@ -79,6 +79,8 @@ mod reconciliation_baseline_contrast;
 mod ref_edge_guidance;
 #[path = "../repo_posture.rs"]
 mod repo_posture;
+#[path = "../rollback_population_registry.rs"]
+mod rollback_population_registry;
 #[path = "../severity_tuning.rs"]
 mod severity_tuning;
 #[path = "../store_version_stamp.rs"]

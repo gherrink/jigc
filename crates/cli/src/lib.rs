@@ -40,6 +40,7 @@ pub mod relocate;
 pub mod rename;
 pub mod render;
 pub mod repo;
+pub mod rollback;
 pub mod route_fence;
 pub mod setup;
 pub mod start;
