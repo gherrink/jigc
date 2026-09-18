@@ -445,3 +445,114 @@ fn every_ignore_door_names_what_it_appended() {
         );
     }
 }
+
+// ─── (c) an amend only a success needs is made only by a success (M52 Inc 5 / T9) ───
+
+/// The plant both refusal cells write: the canonical set's **first** entry plus the
+/// user's own lines, so every other [`ENTRIES`] line is missing and an amend cannot be
+/// mistaken for a no-op. Read from the constant, so no fixture transcribes the set.
+fn plant_under_set(corpus: &TrialCorpus) -> (PathBuf, String) {
+    let first = ENTRIES.lines().next().expect("ENTRIES is non-empty");
+    let body = format!("{first}\n{PRIVATE}");
+    let path = corpus.repo().join(".jigc").join(".gitignore");
+    fs::write(&path, &body).expect("plant the under-set .gitignore");
+    (path, body)
+}
+
+/// Everything the door said, both streams — a refusal renders on stderr.
+fn both_streams(out: &std::process::Output) -> String {
+    format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    )
+}
+
+/// Assert `door` refused with `code` and left the planted `.gitignore` byte-identical.
+fn assert_refusal_amends_nothing(
+    out: &std::process::Output,
+    planted: &(PathBuf, String),
+    code: &str,
+    door: &str,
+) {
+    let said = both_streams(out);
+    assert!(
+        !out.status.success() && said.contains(code),
+        "[{door}] the cell must reach the `{code}` refusal; got ({}):\n{said}",
+        out.status,
+    );
+    let after = fs::read_to_string(&planted.0).expect("read the .gitignore back");
+    assert_eq!(
+        after, planted.1,
+        "[{door}] a door that refused needs no ignore entry, so it must write none — \
+         `.jigc/.gitignore` is the user's file too and the failed run leaves it exactly \
+         as it found it (M52 Increment 5 / T9, C4)",
+    );
+}
+
+/// **`jigc milestone provision <unknown-id>`** refuses without amending — and the same
+/// door, on the success it *does* need the entry for, still amends and still says so.
+///
+/// Driven red at `032dbd93`: the refusal exited 1 with `milestone.unknown` and five
+/// canonical entries appended to the planted file on the way out.
+#[test]
+fn a_refused_provision_amends_nothing_and_a_successful_one_still_does() {
+    let corpus = TrialCorpus::build(State::Fresh);
+    corpus.jigc_ok(&["milestone", "create", "Cache rework"]);
+    corpus.jigc_ok(&["milestone", "add-task", "cache-rework", "Area zed"]);
+
+    let planted = plant_under_set(&corpus);
+    let refused = corpus.jigc(&["milestone", "provision", "nonexistent-milestone"]);
+    assert_refusal_amends_nothing(
+        &refused,
+        &planted,
+        "milestone.unknown",
+        "jigc milestone provision",
+    );
+
+    // The control, on the same planted file: the success still needs `worktrees/` ignored,
+    // so it still appends it and still names what it appended.
+    let ok = corpus.jigc_ok(&["milestone", "provision", "cache-rework"]);
+    assert!(
+        names_the_amend(&ok),
+        "the successful provision still names the amend it made; got:\n{ok}",
+    );
+    let after = fs::read_to_string(&planted.0).expect("read the .gitignore back");
+    for entry in ENTRIES.lines() {
+        assert!(
+            after.lines().any(|line| line == entry),
+            "the successful provision amends to the canonical union; `{entry}` is \
+             missing from:\n{after}",
+        );
+    }
+    assert!(
+        after.contains(PRIVATE.trim_end()),
+        "the amend preserves the user's own lines; got:\n{after}",
+    );
+}
+
+/// **`jigc milestone create "<a title a record already owns>"`** refuses without
+/// amending — the `guard_record_free` arm of the same class.
+#[test]
+fn a_refused_create_amends_nothing_and_a_successful_one_still_does() {
+    let corpus = TrialCorpus::build(State::Fresh);
+    // The first create lands the committed record that makes the slug taken.
+    corpus.jigc_ok(&["milestone", "create", "Cache rework"]);
+
+    let planted = plant_under_set(&corpus);
+    let refused = corpus.jigc(&["milestone", "create", "Cache rework"]);
+    assert_refusal_amends_nothing(
+        &refused,
+        &planted,
+        "milestone.record-exists",
+        "jigc milestone create",
+    );
+
+    // The control: a create that mints still writes into `.jigc/milestones/`, so it still
+    // appends the entry and still names it.
+    let ok = corpus.jigc_ok(&["milestone", "create", "Cache polish"]);
+    assert!(
+        names_the_amend(&ok),
+        "the successful create still names the amend it made; got:\n{ok}",
+    );
+}

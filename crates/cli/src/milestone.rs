@@ -554,11 +554,6 @@ fn run_create(cwd: &Path, title: &str, conflicts: &mut Vec<Finding>) -> Result<(
     let repo_root = discover_repo_root(cwd).ok_or_else(|| crate::locate::not_in_repo(cwd))?;
     let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
     let jigc_root = jigc_home.join(".jigc");
-    // What the `.jigc/.gitignore` amend did, carried to the ack: `create` writes into a
-    // file the user legitimately co-owns, so an appended entry is named rather than left
-    // for `git diff` to discover (M51 Increment 4 / T2; `crate::gitignore::IGNORE_DOORS`).
-    let ignore = crate::gitignore::ensure(&jigc_root)?;
-
     // The record-home split (`design/team-ready-state.md` → The `milestone-record` doctype;
     // The commit model): under a `[dev ▸ methodology]` project the composed cascade resolves
     // the methodology-pack `milestone-record` doctype, so materialize the committed record and
@@ -571,6 +566,17 @@ fn run_create(cwd: &Path, title: &str, conflicts: &mut Vec<Finding>) -> Result<(
     if let Some(schema) = schemas.get(MILESTONE_RECORD_TYPE) {
         guard_record_free(&jigc_home, schema, title)?;
     }
+
+    // What the `.jigc/.gitignore` amend did, carried to the ack: `create` writes into a
+    // file the user legitimately co-owns, so an appended entry is named rather than left
+    // for `git diff` to discover (M51 Increment 4 / T2; `crate::gitignore::IGNORE_DOORS`).
+    //
+    // **Made here — after the refusal, before the first write that needs it** (M52
+    // Increment 5 / T9, C4): the entry this door owes is `milestones/`, and it owes it
+    // because [`mint_milestone`] below puts an area there. A `create` that refuses at
+    // `guard_record_free` mints nothing, so it needs no entry — and amending anyway wrote
+    // into the user's own file on the way out of a run that changed nothing else.
+    let ignore = crate::gitignore::ensure(&jigc_root)?;
 
     let base = read_head(&repo_root)?;
     // The carryover gate's door half (M43 T1, `design/surface-contract.md` → The
@@ -2379,14 +2385,6 @@ fn run_provision(cwd: &Path, milestone_id: &str, force: bool) -> Result<String> 
     let repo_root = discover_repo_root(cwd).ok_or_else(|| crate::locate::not_in_repo(cwd))?;
     let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
     let jigc_root = jigc_home.join(".jigc");
-    // `.jigc/worktrees/` must be ignored or the linked worktrees pollute the main
-    // checkout's `git status` / `git add --all`.
-    //
-    // This door **never commits**, so an entry appended here lives in the worktree alone —
-    // which makes naming it the only channel there is (M51 Increment 4 / T2;
-    // `crate::gitignore::IGNORE_DOORS`).
-    let ignore = crate::gitignore::ensure(&jigc_root)?;
-
     // Fresh-clone resume (M39 T5): re-derive the demoted cache from the committed record before
     // the `dir.is_dir()` guard + base-pin/task-list reads, so `provision` on a fresh clone
     // re-derives the milestone shape (`design/team-ready-state.md` → Engine capability 2).
@@ -2413,6 +2411,26 @@ fn run_provision(cwd: &Path, milestone_id: &str, force: bool) -> Result<String> 
     // rebuilds one), so a worktree for it is a checkout nothing can ever run in
     // ([`live_sub_task_ids`]).
     let ids = live_sub_task_ids(&jigc_home, &schemas, milestone_id, list.enumerate())?;
+
+    // `.jigc/worktrees/` must be ignored or the linked worktrees pollute the main
+    // checkout's `git status` / `git add --all`.
+    //
+    // This door **never commits**, so an entry appended here lives in the worktree alone —
+    // which makes naming it the only channel there is (M51 Increment 4 / T2;
+    // `crate::gitignore::IGNORE_DOORS`).
+    //
+    // **Made here — after the refusals, before the walk that needs it** (M52 Increment 5 /
+    // T9, C4): `provision` owes `worktrees/` because [`provision_worktrees`] puts linked
+    // worktrees there, and a run refused at `milestone.unknown` or `milestone.stale-base`
+    // adds none. It used to amend at the top of the door, so `jigc milestone provision
+    // <unknown-id>` appended to the user's own file on its way to exit 1.
+    //
+    // The one write that still precedes it is [`reseed_cache`]'s, which materializes the
+    // cache under `milestones/` on a fresh clone — and it runs only when the record
+    // resolves, which is the case this door does not refuse for. That cache survives the
+    // stale-base refusal either way (nothing rolls it back), so the entry it needs is owed
+    // to the re-run that follows the repair, which amends here.
+    let ignore = crate::gitignore::ensure(&jigc_root)?;
 
     let paths = provision_worktrees(&repo_root, &jigc_home, milestone_id, &base.sha, &ids, force)?;
     let mut out = format!(
