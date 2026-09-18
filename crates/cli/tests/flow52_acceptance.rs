@@ -1499,11 +1499,29 @@ fn a_refused_transaction_restores_its_config_layer_writes_without_overwriting_a_
         "concurrent-stamp\n",
         "and the raced stamp is the editor's too",
     );
-    let parked: BTreeSet<String> = fs::read_dir(repo.join(".jigc").join("displaced"))
-        .expect("the displaced workbench exists after a rollback conflict")
-        .flatten()
-        .map(|entry| entry.file_name().to_string_lossy().into_owned())
-        .collect();
+    // A recursive walk: the park is keyed `.jigc/displaced/<door>/<identity>.pre-image.<nanos>`
+    // (M52 Increment 5 / T2), so the door owns a directory and the entry's identity keeps its
+    // own path inside it — which is what makes two populations sharing a basename tellable
+    // apart. A flat listing would see one directory and call it one parked copy.
+    let parked: BTreeSet<PathBuf> = {
+        let root = repo.join(".jigc").join("displaced");
+        let mut found = BTreeSet::new();
+        let mut stack = vec![root.clone()];
+        while let Some(dir) = stack.pop() {
+            for entry in fs::read_dir(&dir)
+                .expect("the displaced workbench exists after a rollback conflict")
+                .flatten()
+            {
+                let path = entry.path();
+                if path.is_dir() {
+                    stack.push(path);
+                } else {
+                    found.insert(path);
+                }
+            }
+        }
+        found
+    };
     assert_eq!(
         parked.len(),
         2,
@@ -1512,11 +1530,9 @@ fn a_refused_transaction_restores_its_config_layer_writes_without_overwriting_a_
         raced.rendered,
     );
     assert!(
-        parked.iter().any(|name| fs::read_to_string(
-            repo.join(".jigc").join("displaced").join(name)
-        )
-        .unwrap_or_default()
-        .contains("scratch-notes/")),
+        parked.iter().any(|path| fs::read_to_string(path)
+            .unwrap_or_default()
+            .contains("scratch-notes/")),
         "and one of them is the ignore file's pre-image, private line and all",
     );
     assert_eq!(

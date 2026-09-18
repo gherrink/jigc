@@ -1441,7 +1441,7 @@ pub const FINALIZE_FAMILY: &[FinalizeCode] = &[
     },
     FinalizeCode {
         code: "finalize.rollback-conflict",
-        producer: "cli::task",
+        producer: "cli::rollback",
         subject: FinalizeSubject::FilePath,
         subject_note: "the config-layer file the transaction rewrote and could not put back — \
                        its bytes changed while the finalize was running, so one finding per \

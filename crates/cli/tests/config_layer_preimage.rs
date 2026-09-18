@@ -51,6 +51,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+use cli::rollback::{FINALIZE_DOOR, PreImage, PreImageFamily};
 use cli::task::{CONFIG_LAYER_SPECS, ConfigLayerWrite};
 
 /// The finding one conflicted path mints.
@@ -387,21 +388,36 @@ impl Driven {
         git(self.repo(), &["status", "--porcelain"])
     }
 
-    /// Every file parked in the gitignored relocation workbench, `(file name, bytes)`.
+    /// Every file parked in the gitignored relocation workbench, as
+    /// `(path relative to `.jigc/displaced/`, bytes)`.
+    ///
+    /// **A recursive walk, because the park is keyed by the DOOR and then by the entry's own
+    /// identity** — `.jigc/displaced/<door>/<identity>.pre-image.<nanos>` — so a flat
+    /// `read_dir` sees only the door directory. The identity is what makes two populations
+    /// sharing a basename distinguishable, which is exactly what a flat listing threw away.
     fn parked(&self) -> Vec<(String, String)> {
-        let dir = self.repo().join(".jigc").join("displaced");
-        let Ok(entries) = fs::read_dir(&dir) else {
-            return Vec::new();
-        };
-        let mut out: Vec<(String, String)> = entries
-            .flatten()
-            .map(|entry| {
-                (
-                    entry.file_name().to_string_lossy().into_owned(),
-                    fs::read_to_string(entry.path()).unwrap_or_default(),
-                )
-            })
-            .collect();
+        let root = self.repo().join(".jigc").join("displaced");
+        let mut out = Vec::new();
+        let mut stack = vec![root.clone()];
+        while let Some(dir) = stack.pop() {
+            let Ok(entries) = fs::read_dir(&dir) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    stack.push(path);
+                    continue;
+                }
+                out.push((
+                    path.strip_prefix(&root)
+                        .unwrap_or(&path)
+                        .to_string_lossy()
+                        .into_owned(),
+                    fs::read_to_string(&path).unwrap_or_default(),
+                ));
+            }
+        }
         out.sort();
         out
     }
@@ -555,6 +571,26 @@ fn the_manufactured_shape_space_holds_over_both_files() {
                     2,
                     "{label}: both pre-images must be parked in `.jigc/displaced/`; got {parked:?}",
                 );
+                // **The park is keyed by the door and then by the entry's own identity.**
+                // A flat `<basename>.pre-image.<nanos>` says nothing about which live path
+                // the bytes came from, so two populations sharing a basename land
+                // indistinguishably in one directory — which is the shape this task
+                // replaces (`settle-record.md` → §1).
+                for identity in [".jigc/.gitignore", ".jigc/version"] {
+                    let prefix = format!("finalize/{identity}.pre-image.");
+                    assert_eq!(
+                        parked
+                            .iter()
+                            .filter(|(path, _)| path.starts_with(&prefix))
+                            .count(),
+                        1,
+                        "{label}: `{identity}`'s pre-image must be parked at \
+                         `.jigc/displaced/{prefix}<nanos>` — the door names the \
+                         sub-directory and the entry's own identity names the file, so a \
+                         reader can tell which live path each parked copy came from; got \
+                         {parked:?}",
+                    );
+                }
                 let bodies: Vec<&str> = parked.iter().map(|(_, body)| body.as_str()).collect();
                 assert!(
                     bodies.contains(&ignore_pre_image().as_str()),
@@ -695,6 +731,11 @@ fn a_path_jigc_never_wrote_is_neither_restored_nor_reported() {
         parked[0].1, STALE_STAMP,
         "and it is the stamp's, verbatim; got {parked:?}",
     );
+    assert!(
+        parked[0].0.starts_with("finalize/.jigc/version.pre-image."),
+        "and it is parked under the door's own sub-directory, named by the entry's \
+         identity; got {parked:?}",
+    );
 }
 
 /// **The totality arm, driven rather than restated.** The family's subject is the two files
@@ -754,6 +795,127 @@ fn every_config_layer_pathspec_carries_a_disposition() {
          wrote; the run printed:\n{}",
         run.rendered,
     );
+}
+
+// ---------------------------------------------------------------------------
+// The park identity discriminates (M52 Increment 5 / T2)
+// ---------------------------------------------------------------------------
+
+/// **Two entries sharing a basename park distinctly, and the route names each one.**
+///
+/// The shipped M51 park was `<basename>.pre-image.<nanos>` in one flat `.jigc/displaced/`.
+/// The two config-layer rows have different basenames, so the corpus was safe by accident of
+/// shape — and the moment a second `FileCas` population joins (promote, retire, the milestone
+/// record, `rename`), two raced paths called `notes.md` in different directories park as two
+/// files a reader cannot tell apart, in a directory shared with every other door's parks.
+///
+/// **Manufactured, and this arm says so.** No registry carries "two populations that share a
+/// basename": it is a property of a *corpus*, so there is nothing to enumerate. The cell is
+/// built directly on the seam the driven cells above reach through the binary — the same
+/// [`PreImageFamily`], the same shipped [`FINALIZE_DOOR`] metadata, so the bytes asserted here
+/// are the bytes an operator reads.
+///
+/// **Red under the shipped park** (applied as a mutant: `park` reverted to
+/// `<jigc_root>/displaced/<basename>.pre-image.<nanos>`): both copies land as
+/// `notes.md.pre-image.<nanos>` beside each other, so the `alpha/` assertion below fails —
+/// the files are two, and which live path either came from is unrecoverable.
+#[test]
+fn two_entries_sharing_a_basename_park_distinctly_and_name_both() {
+    let dir = TempDir::new("basename");
+    let repo = dir.path();
+    let jigc = repo.join(".jigc");
+    fs::create_dir_all(&jigc).expect("create the workbench root");
+
+    let sides = ["alpha", "beta"];
+    let mut family = PreImageFamily::empty(FINALIZE_DOOR);
+    for side in sides {
+        fs::create_dir_all(repo.join(side)).expect("create the side directory");
+        let live = repo.join(side).join("notes.md");
+        fs::write(&live, format!("{side}: the pre-image\n")).expect("write the pre-image");
+        let identity = format!("{side}/notes.md");
+        family.push(PreImage::capture(identity.clone(), live.clone()).expect("capture"));
+        // jigc writes, and reports what it wrote one statement later.
+        fs::write(&live, format!("{side}: jigc wrote this\n")).expect("write jigc's bytes");
+        family.wrote(&identity);
+        // …and a third party writes over it before the rollback runs.
+        fs::write(&live, format!("{side}: a third party wrote this\n")).expect("the race");
+    }
+
+    let conflicts = family.restore(repo, &jigc);
+    assert_eq!(
+        conflicts.len(),
+        2,
+        "one conflict per raced path, never one `(code, null)` for the rollback",
+    );
+
+    for side in sides {
+        let live = repo.join(side).join("notes.md");
+        assert_eq!(
+            fs::read_to_string(&live).expect("the live file survives"),
+            format!("{side}: a third party wrote this\n"),
+            "the racer's bytes are not overwritten — that is the same loss the rollback \
+             exists to prevent, in the other direction",
+        );
+        let home = jigc.join("displaced").join("finalize").join(side);
+        let parked: Vec<(String, String)> = fs::read_dir(&home)
+            .unwrap_or_else(|err| {
+                panic!(
+                    "`{}` must hold `{side}`'s parked copy: {err}",
+                    home.display()
+                )
+            })
+            .flatten()
+            .map(|entry| {
+                (
+                    entry.file_name().to_string_lossy().into_owned(),
+                    fs::read_to_string(entry.path()).unwrap_or_default(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            parked.len(),
+            1,
+            "`{side}`'s pre-image parks alone under its own identity — the shipped flat \
+             `<basename>.pre-image.<nanos>` put both here and named neither; got {parked:?}",
+        );
+        assert!(
+            parked[0].0.starts_with("notes.md.pre-image."),
+            "…named for the file it came from; got {parked:?}",
+        );
+        assert_eq!(
+            parked[0].1,
+            format!("{side}: the pre-image\n"),
+            "…and holding that side's own bytes, verbatim",
+        );
+
+        // And the route names THIS side's park, so the two findings are followable apart.
+        let expected = format!(".jigc/displaced/finalize/{side}/{}", parked[0].0);
+        let matching: Vec<&engine::finding::Finding> = conflicts
+            .iter()
+            .filter(|finding| {
+                finding
+                    .route
+                    .as_ref()
+                    .is_some_and(|route| route.as_str().contains(&expected))
+            })
+            .collect();
+        assert_eq!(
+            matching.len(),
+            1,
+            "exactly one finding must name `{expected}` — a conflict that preserves both \
+             copies is only useful to a reader told where the second one is, and two \
+             findings naming one park is the flat shape's failure wearing a new path; \
+             routes: {:?}",
+            conflicts
+                .iter()
+                .map(|f| f.route.as_ref().map(|r| r.as_str().to_owned()))
+                .collect::<Vec<_>>(),
+        );
+        assert_eq!(
+            matching[0].code, FINALIZE_DOOR.code,
+            "…under the door's own injected code",
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------

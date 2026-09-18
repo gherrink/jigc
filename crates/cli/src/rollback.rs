@@ -9,7 +9,7 @@
 //! it is **nine**, of which exactly **one** — the config layer's — is compare-and-swap; five of
 //! the nine sit outside the finalize executor entirely and are reached by doors the review's
 //! axis never listed. Nobody owned the enumeration, so the populations disagreed about the same
-//! cell in one binary: `ConfigLayerWorktree::restore`'s absent-pre-image arm deletes a file
+//! cell in one binary: the config layer's absent-pre-image arm deletes a file
 //! **only while it still holds jigc's bytes**, while `rollback_record_pre_image`'s identical arm
 //! deletes it unconditionally — so a third party who wrote at the record path during a rejected
 //! `jigc milestone create` lost the file at exit 1, named by nothing.
@@ -72,6 +72,9 @@
 //! refusal, M51 Increment 3, decided rather than unfinished). [`Site::NoRestore`] carries the
 //! citation, and the fence asserts there are no others.
 
+use std::path::{Path, PathBuf};
+
+use engine::finding::{Finding, Location, Severity};
 use engine::state::WorkArea;
 
 /// What keeps one population's restore from overwriting bytes that are not jigc's.
@@ -81,8 +84,8 @@ use engine::state::WorkArea;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Discipline {
     /// Compare-and-swap against the bytes jigc wrote: restore while they stand, park the
-    /// pre-image and name both copies when they do not (`task.rs`'s `ConfigLayerWorktree`,
-    /// the shipped M51 restore this increment generalizes).
+    /// pre-image and name both copies when they do not ([`PreImageFamily`], the shipped M51
+    /// restore generalized at T2 onto an entry every `FileCas` row can carry).
     FileCas,
     /// Remove **the door's own jigc-written area set** and then the directory, non-recursively
     /// — the rows whose subject is a minted working area rather than a file's pre-image. The
@@ -157,9 +160,13 @@ pub const ROLLBACK_POPULATIONS: &[Population] = &[
                   rewrites in the worktree",
         doors: &[&["task", "finalize"], &["milestone", "finalize"]],
         site: Site::Source {
-            file: "crates/cli/src/task.rs",
-            // `ConfigLayerWorktree::restore` — the scan names a method by its own name, and
-            // this file declares exactly one `fn restore`.
+            // [`PreImageFamily::restore`], the generic compare-and-swap this module ships —
+            // the scan names a method by its own name, and this file declares exactly one
+            // `fn restore`. It moved here at T2: the shipped body was typed over the config
+            // layer's own row type and hard-coded one door's code, noun and park name, so
+            // what transfers to the other `FileCas` rows is the LOGIC, carried by a generic
+            // entry with the door's metadata injected (`settle-record.md` → §1).
+            file: "crates/cli/src/rollback.rs",
             unit: "restore",
             restores: 2,
         },
@@ -336,3 +343,315 @@ pub const ROLLBACK_POPULATIONS: &[Population] = &[
         discipline: Discipline::DoorGuard("setup.dirty-install-path"),
     },
 ];
+
+// ---------------------------------------------------------------------------
+// The generic pre-image entry, and the compare-and-swap every `FileCas` row runs
+// ---------------------------------------------------------------------------
+
+/// **The door metadata a `FileCas` population injects** into the shared entry — M52
+/// Increment 5 / T2 (`completions/artifacts/M52/settle-record.md` → **§1**, which struck
+/// D1.2's *"the restore body transfers unchanged"*).
+///
+/// The **logic** transfers; the body could not, because the shipped one was typed over the
+/// config layer's own row type, hard-coded `finalize.rollback-conflict` with *"this
+/// finalize"* in its route, and parked by the **last path component** — so two populations
+/// sharing a basename landed indistinguishably in one flat `.jigc/displaced/`. Those three
+/// hard-codings are exactly this struct: the code, the noun the prose and the park
+/// sub-directory are both named by, and the clause naming what the door's failure left
+/// undone.
+///
+/// `noun` is deliberately one fact serving two places — `.jigc/displaced/<noun>/` and *"this
+/// `<noun>`"* — because a door whose park directory and whose prose disagreed would make the
+/// route name a path the reader cannot find.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ConflictDoor {
+    /// The `<door>.rollback-conflict` identity this door's raced restores raise.
+    pub code: &'static str,
+    /// The door's noun: the park sub-directory under `.jigc/displaced/`, and the word the
+    /// route prose uses (*"this finalize"*). One path component, so it can never escape the
+    /// workbench.
+    pub noun: &'static str,
+    /// What the door's failure left undone, as the route's lead clause — *"nothing was
+    /// committed"* at `finalize`.
+    pub undone: &'static str,
+}
+
+/// `jigc task finalize` / `jigc milestone finalize` — the shipped M51 population's door, and
+/// the first caller of the generic entry. Its code, severity, key form and route sentence are
+/// unchanged by the generalization; only the park path moved.
+pub const FINALIZE_DOOR: ConflictDoor = ConflictDoor {
+    code: "finalize.rollback-conflict",
+    noun: "finalize",
+    undone: "nothing was committed",
+};
+
+/// **Every door that raises a `<door>.rollback-conflict`**, one row each.
+///
+/// It exists because the finding's code is now a *parameter* rather than a string literal
+/// inside the constructor call: `crates/cli/tests/finalize_family_registry.rs`' producer scan
+/// is a lexer, so it cannot see a code that arrives this way, and its stated remedy for that
+/// shape is to complete the derived set **from the registry that decides membership** rather
+/// than from a hand-written exception (the `COMMITTING_DOORS` precedent, M52 Increment 1).
+/// A door added here whose identity lies in the `finalize.` namespace therefore grows that
+/// expected set and reddens the family table, which is the property the literal shape bought
+/// for free.
+pub const ROLLBACK_DOORS: &[ConflictDoor] = &[FINALIZE_DOOR];
+
+/// One file's **worktree pre-image**: what it held before the transaction, and the exact
+/// bytes jigc wrote over it.
+///
+/// It carries **four** values rather than a pre-image and a path, and each one is
+/// load-bearing:
+///
+/// - `identity` — the population's own key, and the name the park is written under. A
+///   repo-relative path wherever the population has one, because a *basename* does not
+///   discriminate two files with the same name in different directories.
+/// - `path` — the absolute path the writer actually writes, which is not derivable from the
+///   identity: the config layer's two writers hang their files off **different roots**.
+/// - `pre` — the bytes before the transaction, `None` when the file was **absent**. Absent
+///   means absent, never *unreadable*: only `NotFound` yields `None`, because that value is
+///   what makes the restore a **delete**, and swallowing a permission fault into it would
+///   delete a file this run never created.
+/// - `post` — **the exact bytes jigc wrote here**, `None` when jigc wrote nothing at this
+///   path this run. Not cosmetic: *"jigc wrote identical bytes"* and *"jigc wrote nothing"*
+///   are different facts, and only the second may never be rolled back.
+pub struct PreImage {
+    identity: String,
+    path: PathBuf,
+    pre: Option<Vec<u8>>,
+    post: Option<Vec<u8>>,
+}
+
+impl PreImage {
+    /// Read the pre-image at `path` and key it under `identity`.
+    ///
+    /// `Err` on any read fault that is not `NotFound` — a transaction may not rewrite a file
+    /// it cannot put back, and the caller is the one that knows how to say so about its own
+    /// subject.
+    pub fn capture(identity: impl Into<String>, path: PathBuf) -> std::io::Result<Self> {
+        let pre = match std::fs::read(&path) {
+            Ok(bytes) => Some(bytes),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => None,
+            Err(err) => return Err(err),
+        };
+        Ok(Self {
+            identity: identity.into(),
+            path,
+            pre,
+            post: None,
+        })
+    }
+
+    /// The population's key for this entry.
+    pub fn identity(&self) -> &str {
+        &self.identity
+    }
+
+    /// Record that jigc **just wrote** here, reading back the bytes it left.
+    ///
+    /// Called one statement after the write, which is what makes the recorded image jigc's
+    /// own rather than a later reader's. A read that fails leaves `post` at `None` — the
+    /// entry is then treated as *never written* and the rollback leaves it alone: jigc cannot
+    /// prove what it put there, and the safe direction is not to overwrite.
+    pub fn wrote(&mut self) {
+        self.post = std::fs::read(&self.path).ok();
+    }
+}
+
+/// **One `FileCas` population's entries plus the door they answer for** — captured before the
+/// transaction's first write, restored **compare-and-swap** at its failure arm.
+///
+/// **Why compare-and-swap and not a rewrite** (M51 `settle-record.md` → §6, Codex 4): the
+/// interval between jigc's write and the rollback runs arbitrary code — promotion,
+/// retirement, staging, the user's own hooks. An unconditional restore over that interval
+/// destroys a concurrent edit, *which is the same loss this family exists to prevent, in the
+/// other direction*. So an entry restores **only while the file still holds the bytes jigc
+/// wrote**; when it does not, nothing is overwritten — the pre-image is parked in the
+/// gitignored `.jigc/displaced/<door>/` workbench and one blocking `<door>.rollback-conflict`
+/// names both copies.
+///
+/// **An empty family is inert, and that is a property rather than a hope.** Unlike a rollback
+/// keyed on a set difference — where an empty capture reads as *"the whole set was absent"* —
+/// this one is keyed **per entry**: no entry, nothing restored. A capture that never ran and
+/// a capture that found nothing are therefore the same safe value.
+pub struct PreImageFamily {
+    door: ConflictDoor,
+    entries: Vec<PreImage>,
+}
+
+impl PreImageFamily {
+    /// The value a caller holds **before** its capture point — no entries, so every later
+    /// call is a no-op (see the type's note on inertness).
+    pub fn empty(door: ConflictDoor) -> Self {
+        Self {
+            door,
+            entries: Vec::new(),
+        }
+    }
+
+    /// Add a captured entry.
+    pub fn push(&mut self, entry: PreImage) {
+        self.entries.push(entry);
+    }
+
+    /// Record that jigc just wrote the entry keyed `identity`. An identity this family does
+    /// not carry is ignored — a write site may report a path the capture declared out.
+    pub fn wrote(&mut self, identity: &str) {
+        if let Some(entry) = self
+            .entries
+            .iter_mut()
+            .find(|entry| entry.identity == identity)
+        {
+            entry.wrote();
+        }
+    }
+
+    /// Restore the family on a failed transaction, compare-and-swap, returning one
+    /// `<door>.rollback-conflict` per path whose bytes are no longer jigc's.
+    ///
+    /// Best-effort on the restore itself: the door's own failure is what the operator has to
+    /// act on, so a write fault here must not replace it — the hook's stderr stays the
+    /// correction signal.
+    pub fn restore(&self, repo_root: &Path, jigc_root: &Path) -> Vec<Finding> {
+        let mut conflicts = Vec::new();
+        for entry in &self.entries {
+            // jigc wrote nothing at this path this run (an arm that never reached the write,
+            // a write that found nothing to change, a read-back that failed) — so there is
+            // nothing to roll back, and nothing to report however much the file has changed.
+            let Some(post) = &entry.post else {
+                continue;
+            };
+            // jigc's write produced the bytes that were already there. Nothing changed, so
+            // nothing is restored — and a concurrent edit here lost nothing to jigc, so it is
+            // not a conflict either.
+            if entry.pre.as_deref() == Some(post.as_slice()) {
+                continue;
+            }
+            let holds_jigcs_bytes = match std::fs::read(&entry.path) {
+                Ok(bytes) => bytes == *post,
+                // Absent now, and jigc wrote a file here: somebody removed it. Not jigc's
+                // bytes, so the swap fails and the pre-image is preserved rather than
+                // rewritten over a deletion this transaction did not make.
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => false,
+                // Unreadable is neither absent nor jigc's: a restore would overwrite bytes it
+                // could not compare.
+                Err(_) => false,
+            };
+            if holds_jigcs_bytes {
+                match &entry.pre {
+                    Some(bytes) => {
+                        let _ = std::fs::write(&entry.path, bytes);
+                    }
+                    // The absent pre-image's restore is a DELETE, under the identical rule —
+                    // jigc created the file, and a capture modelling only "present" would
+                    // leave that creation behind.
+                    None => {
+                        let _ = std::fs::remove_file(&entry.path);
+                    }
+                }
+                continue;
+            }
+            let parked = entry
+                .pre
+                .as_deref()
+                .and_then(|bytes| park(jigc_root, self.door, &entry.identity, bytes));
+            conflicts.push(rollback_conflict_finding(
+                repo_root,
+                self.door,
+                entry,
+                parked.as_deref(),
+            ));
+        }
+        conflicts
+    }
+}
+
+/// Park a conflicted pre-image in the **gitignored `.jigc/displaced/` workbench** — the home
+/// the relocation arm already uses for bytes that must survive without becoming committable
+/// (`crate::relocate`'s `WORKBENCH_SUBDIR`, a `crate::gitignore::ENTRIES` member).
+///
+/// The name is `<door noun>/<identity>.pre-image.<nanos>`, and each of the three parts is
+/// there for a reason the flat `<basename>.pre-image.<nanos>` it replaces could not serve:
+/// the **door** separates populations that would otherwise share one directory, the
+/// **identity** keeps its directory structure so two files with the same name stay
+/// distinguishable and each parked copy says which live path it came from, and the **nanos**
+/// keeps a second refused run from overwriting the copy that is now the only one of those
+/// bytes.
+///
+/// Only [`std::path::Component::Normal`] components of the identity are walked, so an
+/// identity that is absolute or climbs with `..` parks nowhere rather than writing outside
+/// the workbench — `None`, and the finding then says the copy is gone rather than naming a
+/// path that is not there. The same `None` covers a write that simply failed.
+fn park(jigc_root: &Path, door: ConflictDoor, identity: &str, bytes: &[u8]) -> Option<PathBuf> {
+    let relative = Path::new(identity);
+    let name = relative.file_name()?;
+    let mut dir = jigc_root.join("displaced").join(door.noun);
+    for component in relative.parent()?.components() {
+        match component {
+            std::path::Component::Normal(part) => dir.push(part),
+            _ => return None,
+        }
+    }
+    std::fs::create_dir_all(&dir).ok()?;
+    let parked = dir.join(format!(
+        "{}.pre-image.{}",
+        name.to_string_lossy(),
+        engine::tempname::unique_nanos(),
+    ));
+    std::fs::write(&parked, bytes).ok()?;
+    Some(parked)
+}
+
+/// The refusal a **raced rollback** raises: jigc rewrote this file inside the transaction, the
+/// transaction then failed, and by the time the rollback ran the bytes on disk were no longer
+/// the ones jigc wrote (M51 `settle-record.md` → §6; `design/validation.md` → the M51
+/// registrations).
+///
+/// On §10's mold — blocking, a [`engine::finding::Route::human`], exit 1 — because no `jigc`
+/// argv reconciles two versions of a file a human co-owns; the act is a comparison only they
+/// can make. It **keys at the file path** ([`crate::render::FinalizeSubject::FilePath`]), the
+/// form that discriminates: two raced paths in one rollback are two findings, not one
+/// `(code, null)`.
+///
+/// It is printed **beside** the door's own frame and never in place of it
+/// ([`crate::task::carry_rollback_conflicts`]): the transaction's failure is still whatever
+/// failed it, and a hook's stderr stays verbatim and unwrapped (`design/finalize.md` →
+/// 6. Commit).
+fn rollback_conflict_finding(
+    repo_root: &Path,
+    door: ConflictDoor,
+    entry: &PreImage,
+    parked: Option<&Path>,
+) -> Finding {
+    let live = crate::render::repo_relative(repo_root, &entry.path);
+    let noun = door.noun;
+    let both = match (parked, entry.pre.is_some()) {
+        (Some(parked), _) => format!(
+            "both versions are on disk: the file as it now stands at `{live}`, and this \
+             {noun}'s pre-image at `{}`. Compare them, keep what you want, and delete the \
+             parked copy",
+            crate::render::repo_relative(repo_root, parked),
+        ),
+        (None, true) => format!(
+            "the file as it now stands is at `{live}`; jigc could not park a copy of its \
+             pre-image, so that version is gone. Recover it from git if the path is tracked"
+        ),
+        (None, false) => format!(
+            "`{live}` did not exist before this {noun}, so the rollback would have deleted \
+             the copy jigc created — it did not. Remove it by hand if you do not want it"
+        ),
+    };
+    Finding::graded(
+        Severity::Blocking,
+        door.code,
+        format!(
+            "`{live}` changed while this {noun} was running, so the rollback did not restore \
+             it: the bytes on disk are not the ones jigc wrote"
+        ),
+        Some(Location::addressed(live.clone(), 1, 1)),
+        Some(engine::finding::Route::human(format!(
+            "{} and {both}",
+            door.undone,
+        ))),
+    )
+}

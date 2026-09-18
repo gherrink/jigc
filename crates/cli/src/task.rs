@@ -3455,7 +3455,8 @@ pub(crate) fn try_execute_finalize_plan(
     // rewrites standing on disk. Unlike the config-layer INDEX axis this one needs no `Option`
     // wrapper: it is keyed per entry, so an unread family restores nothing rather than acting
     // destructively on an empty set (the type's own note).
-    let mut config_worktree = ConfigLayerWorktree::unread();
+    let mut config_worktree =
+        crate::rollback::PreImageFamily::empty(crate::rollback::FINALIZE_DOOR);
     let commit_result = (|| -> Result<String> {
         // Phase 4a — the pre-images, taken FIRST (M51 Inc 1 validation; `design/finalize.md`
         // → Rollback discipline). **Every index axis's capture precedes every failure point
@@ -3502,7 +3503,7 @@ pub(crate) fn try_execute_finalize_plan(
         // retire run below it and touch neither file, so this read is as genuine here as it
         // would be one statement before each write — and genuine at the failure points in
         // between, which a later capture would not be.
-        config_worktree = ConfigLayerWorktree::capture(repo_root, jigc_root)?;
+        config_worktree = capture_config_layer_worktree(repo_root, jigc_root)?;
         // Phase 4b — promote: copy each staged managed doc to `<repo>/<destination>`,
         // capturing any displaced pre-existing destination bytes for the rollback. The
         // captures accumulate into the outer `displaced` (&mut, not returned-on-`Ok`),
@@ -3982,7 +3983,7 @@ fn retire(
 fn stage_migration(
     repo_root: &Path,
     plan: &engine::finalize::FinalizePlan,
-    config_worktree: &mut ConfigLayerWorktree,
+    config_worktree: &mut crate::rollback::PreImageFamily,
 ) -> Result<Vec<String>> {
     let mut pathspecs: Vec<String> = Vec::new();
     for promotion in &plan.promotions {
@@ -4273,7 +4274,7 @@ pub struct ConfigLayerSpec {
 /// **Since M51 it carries the worktree disposition too**, because the set-fence above was
 /// only ever about the *index*: two of these three paths are also **rewritten on disk** by
 /// the transaction, and for a whole milestone nothing rolled that back. The rows are what
-/// [`ConfigLayerWorktree::capture`] reads, so the two families share one enumeration and a
+/// [`capture_config_layer_worktree`] reads, so the two families share one enumeration and a
 /// fourth pathspec cannot join one without answering the other.
 pub const CONFIG_LAYER_SPECS: &[ConfigLayerSpec] = &[
     ConfigLayerSpec {
@@ -4306,9 +4307,10 @@ fn jigc_config_layer_pathspecs() -> Vec<&'static str> {
     CONFIG_LAYER_SPECS.iter().map(|row| row.spec).collect()
 }
 
-/// One config-layer file's **worktree pre-image** — the axis M45's four index axes left open
-/// (M51 Increment 4 / T3; `design/finalize.md` → Rollback discipline; `settle-record.md` →
-/// §6 / D4).
+/// Capture the **worktree pre-image** of every [`ConfigLayerWrite::Rewritten`] row — the axis
+/// M45's four index axes left open (M51 Increment 4 / T3; `design/finalize.md` → Rollback
+/// discipline; M51's `settle-record.md` → §6 / D4), carried since M52 Increment 5 / T2 by the
+/// generic [`crate::rollback::PreImageFamily`] every `FileCas` population shares.
 ///
 /// The four index axes restore the *index*; nothing restored the **bytes on disk**. So a
 /// refused `finalize` left the file the amend appended to and the stamp the refresh rewrote
@@ -4316,240 +4318,43 @@ fn jigc_config_layer_pathspecs() -> Vec<&'static str> {
 /// amend landed one task earlier, the ignore file's rewrite matched `HEAD`, so `git status`
 /// read **clean** and a user's uncommitted private line existed in no git object at all.
 ///
-/// It carries **three** values rather than the index axes' two, and each one is load-bearing:
+/// Called at **Phase 4a**, beside the four index captures and before `gitignore::ensure` and
+/// the stamp refresh — promote and retire run between, and neither touches these two files,
+/// so the read is exactly as genuine there and it is genuine at every failure point below it
+/// (`design/finalize.md` → *Every capture precedes every failure point*).
 ///
-/// - `pre` — the bytes before the transaction, `None` when the file was **absent**. Absent
-///   means absent, never *unreadable* (the `RecordPreImage` discipline, one family over):
-///   only `NotFound` yields `None`, because that value is what makes the restore a **delete**,
-///   and swallowing a permission fault into it would delete a file this run never created.
-/// - `post` — **the exact bytes jigc wrote here**, `None` when jigc wrote nothing at this path
-///   this run. That distinction is not cosmetic: the fan-out arms never run
-///   [`refresh_version_stamp`], and an amend that finds nothing missing writes not a byte, so
-///   *"jigc wrote identical bytes"* and *"jigc wrote nothing"* are different facts and only
-///   the second may never be rolled back (M51 Increment 1's `Option` lesson, one axis over).
-/// - `path` — resolved through the row's [`ConfigLayerHome`], because the two writers hang
-///   off different roots.
-struct ConfigLayerPreImage {
-    /// The row's repo-relative pathspec — the family's key, and what [`ConfigLayerWorktree`]
-    /// matches when a write site reports what it wrote.
-    spec: &'static str,
-    /// The absolute path the writer actually writes.
-    path: PathBuf,
-    /// The bytes before the transaction; `None` == the file was absent.
-    pre: Option<Vec<u8>>,
-    /// The bytes jigc wrote here this run; `None` == jigc wrote nothing at this path.
-    post: Option<Vec<u8>>,
-}
-
-/// The **config-layer worktree pre-image family**: one entry per [`CONFIG_LAYER_SPECS`] row
-/// `finalize` rewrites, captured at Phase 4a and restored **compare-and-swap** at the shared
-/// `Err` arm.
-///
-/// **Why compare-and-swap and not a rewrite** (`settle-record.md` → §6, Codex 4): the interval
-/// between jigc's write and the rollback spans promotion, retirement, staging and the user's
-/// own hooks — arbitrary code, running inside the transaction. An unconditional restore over
-/// that interval destroys a concurrent edit, *which is the same loss this family exists to
-/// prevent, in the other direction*. So an entry restores **only while the file still holds
-/// the bytes jigc wrote**; when it does not, nothing is overwritten — the pre-image is parked
-/// in the gitignored `.jigc/displaced/` workbench and one blocking
-/// `finalize.rollback-conflict` names both copies.
-///
-/// **An empty family is inert, and that is a property rather than a hope.** Unlike the
-/// config-layer *index* axis — whose drop arm is a set difference taken at rollback time, so
-/// an empty capture reads as *"the whole layer was absent"* and un-tracks everything — this
-/// family is keyed **per entry**: no entry, nothing restored. A capture that never ran and a
-/// capture that found nothing are therefore the same safe value here, which is why this one
-/// needs no `Option` wrapper where the index axis does.
-pub(crate) struct ConfigLayerWorktree(Vec<ConfigLayerPreImage>);
-
-impl ConfigLayerWorktree {
-    /// The value the executor holds before Phase 4a — no entries, so every later call is a
-    /// no-op (see the type's note on inertness).
-    fn unread() -> Self {
-        Self(Vec::new())
-    }
-
-    /// Capture the pre-image of every [`ConfigLayerWrite::Rewritten`] row. Called at
-    /// **Phase 4a**, beside the four index captures and before `gitignore::ensure` and the
-    /// stamp refresh — promote and retire run between, and neither touches these two files,
-    /// so the read is exactly as genuine there and it is genuine at every failure point
-    /// below it (`design/finalize.md` → *Every capture precedes every failure point*).
-    fn capture(repo_root: &Path, jigc_root: &Path) -> Result<Self> {
-        let mut entries = Vec::new();
-        for row in CONFIG_LAYER_SPECS {
-            let ConfigLayerWrite::Rewritten { home } = row.write else {
-                continue;
-            };
-            let path = match home {
-                // `gitignore::ensure` is handed `jigc_root` and joins the file name onto it.
-                ConfigLayerHome::JigcRoot => {
-                    jigc_root.join(row.spec.rsplit('/').next().unwrap_or(row.spec))
-                }
-                ConfigLayerHome::RepoRoot => repo_root.join(row.spec),
-            };
-            let pre = match std::fs::read(&path) {
-                Ok(bytes) => Some(bytes),
-                Err(err) if err.kind() == std::io::ErrorKind::NotFound => None,
-                Err(err) => {
-                    return Err(err).with_context(|| {
-                        format!(
-                            "could not read the pre-finalize `{}` — the transaction will not \
-                             rewrite a file it cannot put back",
-                            row.spec,
-                        )
-                    });
-                }
-            };
-            entries.push(ConfigLayerPreImage {
-                spec: row.spec,
-                path,
-                pre,
-                post: None,
-            });
-        }
-        Ok(Self(entries))
-    }
-
-    /// Record that jigc **just wrote** `spec`, reading back the bytes it left there.
-    ///
-    /// Called one statement after the write, which is what makes the recorded image jigc's
-    /// own rather than a later reader's. A read that fails leaves `post` at `None` — so the
-    /// entry is treated as *never written* and the rollback leaves it alone: jigc cannot
-    /// prove what it put there, and the safe direction is not to overwrite.
-    fn wrote(&mut self, spec: &str) {
-        let Some(entry) = self.0.iter_mut().find(|entry| entry.spec == spec) else {
-            return;
-        };
-        entry.post = std::fs::read(&entry.path).ok();
-    }
-
-    /// Restore the family on a failed transaction, compare-and-swap, returning one
-    /// `finalize.rollback-conflict` per path whose bytes are no longer jigc's.
-    ///
-    /// Best-effort on the restore itself, exactly like every sibling axis: the commit did not
-    /// land, so a write fault here must not replace the door's real error — the hook's stderr
-    /// stays the correction signal.
-    fn restore(&self, repo_root: &Path, jigc_root: &Path) -> Vec<Finding> {
-        let mut conflicts = Vec::new();
-        for entry in &self.0 {
-            // jigc wrote nothing at this path this run (a fan-out arm's stamp, an amend that
-            // found nothing missing, a read-back that failed) — so there is nothing to roll
-            // back, and nothing to report however much the file has changed.
-            let Some(post) = &entry.post else {
-                continue;
-            };
-            // jigc's write produced the bytes that were already there. Nothing changed, so
-            // nothing is restored — and a concurrent edit here lost nothing to jigc, so it is
-            // not a conflict either.
-            if entry.pre.as_deref() == Some(post.as_slice()) {
-                continue;
-            }
-            let holds_jigcs_bytes = match std::fs::read(&entry.path) {
-                Ok(bytes) => bytes == *post,
-                // Absent now, and jigc wrote a file here: somebody removed it. Not jigc's
-                // bytes, so the swap fails and the pre-image is preserved rather than rewritten
-                // over a deletion this transaction did not make.
-                Err(err) if err.kind() == std::io::ErrorKind::NotFound => false,
-                // Unreadable is neither absent nor jigc's: a restore would overwrite bytes it
-                // could not compare.
-                Err(_) => false,
-            };
-            if holds_jigcs_bytes {
-                match &entry.pre {
-                    Some(bytes) => {
-                        let _ = std::fs::write(&entry.path, bytes);
-                    }
-                    // The absent pre-image's restore is a DELETE, under the identical rule —
-                    // `gitignore::ensure` creates the file on a fresh store, and a capture
-                    // modelling only "present" would leave jigc's creation behind.
-                    None => {
-                        let _ = std::fs::remove_file(&entry.path);
-                    }
-                }
-                continue;
-            }
-            let parked = entry
-                .pre
-                .as_deref()
-                .and_then(|bytes| park_pre_image(jigc_root, entry.spec, bytes));
-            conflicts.push(rollback_conflict_finding(
-                repo_root,
-                entry,
-                parked.as_deref(),
-            ));
-        }
-        conflicts
-    }
-}
-
-/// Park a conflicted pre-image in the **gitignored `.jigc/displaced/` workbench** — the home
-/// the relocation arm already uses for a file that must survive without becoming committable
-/// (`crate::relocate`'s `WORKBENCH_SUBDIR`, a `crate::gitignore::ENTRIES` member). The name
-/// carries a process-unique disambiguator, so a second refused finalize parks beside the
-/// first rather than overwriting the copy that is now the only one of its bytes.
-///
-/// `None` when the copy could not be written — in which case the finding says so rather than
-/// naming a path that is not there.
-fn park_pre_image(jigc_root: &Path, spec: &str, bytes: &[u8]) -> Option<PathBuf> {
-    let name = spec.rsplit('/').next().unwrap_or(spec);
-    let dir = jigc_root.join("displaced");
-    std::fs::create_dir_all(&dir).ok()?;
-    let parked = dir.join(format!(
-        "{name}.pre-image.{}",
-        engine::tempname::unique_nanos()
-    ));
-    std::fs::write(&parked, bytes).ok()?;
-    Some(parked)
-}
-
-/// The refusal a **raced rollback** raises: jigc rewrote this file inside the transaction, the
-/// transaction then failed, and by the time the rollback ran the bytes on disk were no longer
-/// the ones jigc wrote (`settle-record.md` → §6; `design/validation.md` → the M51
-/// registrations).
-///
-/// On §10's mold — blocking, a [`engine::finding::Route::human`], exit 1 — because no `jigc`
-/// argv reconciles two versions of a file a human co-owns; the act is a comparison only they
-/// can make. It **keys at the file path** ([`crate::render::FinalizeSubject::FilePath`]), the
-/// form that discriminates: two raced paths in one rollback are two findings, not one
-/// `(code, null)`.
-///
-/// It is printed **beside** the door's own frame and never in place of it
-/// ([`carry_rollback_conflicts`]): the transaction's failure is still whatever failed it, and
-/// a hook's stderr stays verbatim and unwrapped (`design/finalize.md` → 6. Commit).
-fn rollback_conflict_finding(
+/// Each entry is keyed by the row's **pathspec**, which is both the family's key (what
+/// [`crate::rollback::PreImageFamily::wrote`] matches when a write site reports what it
+/// wrote) and the name its pre-image is parked under on a conflict. Its absolute path is
+/// resolved through the row's [`ConfigLayerHome`], because the two writers hang off different
+/// roots and a pre-image taken from the wrong one would restore a file nobody wrote.
+fn capture_config_layer_worktree(
     repo_root: &Path,
-    entry: &ConfigLayerPreImage,
-    parked: Option<&Path>,
-) -> Finding {
-    let live = crate::render::repo_relative(repo_root, &entry.path);
-    let both = match (parked, entry.pre.is_some()) {
-        (Some(parked), _) => format!(
-            "both versions are on disk: the file as it now stands at `{live}`, and this \
-             finalize's pre-image at `{}`. Compare them, keep what you want, and delete the \
-             parked copy",
-            crate::render::repo_relative(repo_root, parked),
-        ),
-        (None, true) => format!(
-            "the file as it now stands is at `{live}`; jigc could not park a copy of its \
-             pre-image, so that version is gone. Recover it from git if the path is tracked"
-        ),
-        (None, false) => format!(
-            "`{live}` did not exist before this finalize, so the rollback would have deleted \
-             the copy jigc created — it did not. Remove it by hand if you do not want it"
-        ),
-    };
-    Finding::graded(
-        Severity::Blocking,
-        "finalize.rollback-conflict",
-        format!(
-            "`{live}` changed while this finalize was running, so the rollback did not restore \
-             it: the bytes on disk are not the ones jigc wrote"
-        ),
-        Some(Location::addressed(live.clone(), 1, 1)),
-        Some(engine::finding::Route::human(format!(
-            "nothing was committed and {both}",
-        ))),
-    )
+    jigc_root: &Path,
+) -> Result<crate::rollback::PreImageFamily> {
+    let mut family = crate::rollback::PreImageFamily::empty(crate::rollback::FINALIZE_DOOR);
+    for row in CONFIG_LAYER_SPECS {
+        let ConfigLayerWrite::Rewritten { home } = row.write else {
+            continue;
+        };
+        let path = match home {
+            // `gitignore::ensure` is handed `jigc_root` and joins the file name onto it.
+            ConfigLayerHome::JigcRoot => {
+                jigc_root.join(row.spec.rsplit('/').next().unwrap_or(row.spec))
+            }
+            ConfigLayerHome::RepoRoot => repo_root.join(row.spec),
+        };
+        family.push(
+            crate::rollback::PreImage::capture(row.spec, path).with_context(|| {
+                format!(
+                    "could not read the pre-finalize `{}` — the transaction will not rewrite \
+                     a file it cannot put back",
+                    row.spec,
+                )
+            })?,
+        );
+    }
+    Ok(family)
 }
 
 /// Print each rollback conflict **beside** the door's own frame, and fold its identity into
@@ -4715,7 +4520,7 @@ fn rollback_config_layer_index(repo_root: &Path, captured: Option<&[ConfigLayerI
 /// *"jigc wrote nothing here"* from *"jigc wrote identical bytes"*.
 fn refresh_version_stamp(
     repo_root: &Path,
-    config_worktree: &mut ConfigLayerWorktree,
+    config_worktree: &mut crate::rollback::PreImageFamily,
 ) -> Result<()> {
     crate::setup::write_version_stamp(repo_root)
         .with_context(|| "refreshing the binary-provenance stamp `.jigc/version`")?;
@@ -4737,7 +4542,7 @@ fn refresh_version_stamp(
 fn stage_index_honoring(
     repo_root: &Path,
     plan: &engine::finalize::FinalizePlan,
-    config_worktree: &mut ConfigLayerWorktree,
+    config_worktree: &mut crate::rollback::PreImageFamily,
 ) -> Result<()> {
     let mut pathspecs: Vec<String> = Vec::new();
     for promotion in &plan.promotions {

@@ -31,8 +31,8 @@
 //! **Declared bounds.** (i) The scan reads **names and bodies**, not semantics: a production
 //! function that restores bytes under a name carrying none of the family's vocabulary is
 //! outside its reach, and no static reader can close that — what closes it is the driven
-//! acceptance of T3–T8. (ii) `park_pre_image` writes bytes and is deliberately *not* a
-//! restore unit: it parks a pre-image into the gitignored workbench, which is the opposite
+//! acceptance of T3–T8. (ii) `cli::rollback`'s `park` writes bytes and is deliberately *not*
+//! a restore unit: it parks a pre-image into the gitignored workbench, which is the opposite
 //! act. (iii) The count leg is a **partition of calls**, not a proof that a call restores;
 //! the disposition tables carry the reason for every call the rows do not own.
 
@@ -258,11 +258,12 @@ const NOT_A_POPULATION: &[(&str, &str, usize, &str)] = &[
          `git update-index` only",
     ),
     (
-        "crates/cli/src/task.rs",
+        "crates/cli/src/rollback.rs",
         "rollback_conflict_finding",
         0,
-        "the `FileCas` discipline's *output*: the blocking finding a raced restore raises. \
-         It composes a message; it puts no bytes anywhere",
+        "the `FileCas` discipline's *output*: the blocking finding a raced restore raises, \
+         carrying the door's own injected code and noun since T2. It composes a message; it \
+         puts no bytes anywhere",
     ),
     (
         "crates/cli/src/task.rs",

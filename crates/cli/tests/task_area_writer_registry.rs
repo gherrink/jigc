@@ -184,11 +184,18 @@ const NON_AREA_JOINS: &[(&str, usize, &str)] = &[
     ),
     ("crates/cli/src/start.rs", 1, "`.git` — the repo-root probe"),
     (
+        "crates/cli/src/rollback.rs",
+        1,
+        "the conflicted pre-image `park` copies into `.jigc/displaced/<door>/` by the \
+         entry's own identity (a runtime value, not a declared name) — the workbench is \
+         where bytes are kept OUT of a teardown, never a working area \
+         (M52 Increment 5 / T2)",
+    ),
+    (
         "crates/cli/src/task.rs",
-        3,
-        "`.git` (the repo-root probe), the finalize message temp in a process-unique temp \
-         dir, and `park_pre_image`'s parked copy under `.jigc/displaced/` — none of them a \
-         working area",
+        2,
+        "`.git` (the repo-root probe) and the finalize message temp in a process-unique \
+         temp dir — neither a working area",
     ),
     (
         "crates/engine/src/target_surface.rs",

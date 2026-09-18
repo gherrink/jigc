@@ -262,6 +262,19 @@ fn the_registry_equals_the_production_producer_set() {
         }
     }
 
+    // **The same shape, one family over (M52 Increment 5 / T2).** A raced rollback's conflict
+    // is minted by one generic seam (`cli::rollback`'s `rollback_conflict_finding`) whose code
+    // arrives as a parameter, from the door's own
+    // [`ROLLBACK_DOORS`](cli::rollback::ROLLBACK_DOORS) row — again invisible to a literal
+    // scan, and again completed from the registry that decides membership rather than from a
+    // hand-written exception. A door added there whose identity lies in this namespace grows
+    // this set and reddens the registry.
+    for door in cli::rollback::ROLLBACK_DOORS {
+        if door.code.starts_with(NAMESPACE) {
+            scanned.insert((door.code.to_string(), "cli::rollback".to_string()));
+        }
+    }
+
     // A silent lexer regression would empty `scanned` and read as agreement with an empty
     // registry; the floor makes that impossible to mistake for a clean pass.
     assert!(
