@@ -1057,7 +1057,11 @@ fn run_rename(format: Format, old_slug: &str, to: &str, slug: Option<&str>) -> O
         Ok(cwd) => cwd,
         Err(refusal) => return refusal,
     };
-    match rename::run(&cwd, old_slug, to, slug) {
+    // The rollback's compare-and-swap conflicts, gathered on the failure arm and printed
+    // beside this door's own frame (M52 Increment 5 / T6). Empty on every success and on every
+    // pre-transaction refusal, so the `Err` arm below carries it unconditionally.
+    let mut conflicts: Vec<engine::finding::Finding> = Vec::new();
+    match rename::run(&cwd, old_slug, to, slug, &mut conflicts) {
         Ok(report) => {
             println!("{}", render::rename(format, &report));
             // The atomic rename commit's captured non-blocking hook stream — the same
@@ -1110,8 +1114,12 @@ fn run_rename(format: Format, old_slug: &str, to: &str, slug: Option<&str>) -> O
                     ),
                 },
                 // A pre-transaction refusal and a rejected commit both roll the rename back
-                // in full; no shared-executor rollback runs here, so there is nothing to fold.
-                &[],
+                // in full — and since M52 Increment 5 / T6 the two worktree paths HEAD cannot
+                // answer for (the landing path, the gitignored file-state record) roll back
+                // compare-and-swap, so a raced restore travels here as a blocking
+                // `rename.rollback-conflict` printed beside the frame rather than in place of
+                // it. A pre-transaction refusal never reaches a write, so its set is empty.
+                &conflicts,
             )
         }
     }

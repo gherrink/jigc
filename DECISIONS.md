@@ -2,6 +2,20 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-09-18 — M52 Increment 5 / T6: `rename`'s two unguarded arms, and `rename.rollback-conflict`
+
+`rollback_rename` has **three** arms and exactly one of them was guarded (`crates/cli/src/rename.rs`; [validation.md](design/validation.md) → The M52 registrations — Increment 5). That asymmetry is why `ROLLBACK_POPULATIONS` carries this door as **two rows**: the `tracked_restore` loop restores the old doc and every referrer **from HEAD**, and the door refuses to run at all over a dirty tree, so HEAD is what the worktree held and there are no third-party bytes for it to take — `DoorGuard("rename.dirty-tree")`, untouched. The other two arms had nothing between them and a racer.
+
+**The landing path's arm was a `remove_file`, so this cell is deletion rather than a lost edit.** The user's `pre-commit` hook runs *inside* the interval between the move's write and the rollback; driven at the wave's base, a hook that wrote at the rename's destination had that file **taken at exit 1 with nothing on any surface saying so** ([baseline-rollback.md](completions/artifacts/M52/baseline-rollback.md) §2.3b: `[ -f docs/research/axis-four-research.md ]` → NO, `rollback-conflict` in output: 0). The gitignored `.jigc/state/file-state.json` arm was the same shape one file over — a write-or-remove from a captured pre-image under no condition at all.
+
+**Its own identity, not a borrowed one.** `rename.rollback-conflict` on T4's mold — blocking, `Human`-routed, exit 1, keyed at the file path, riding `finding_codes` beside the door's unchanged `rename.commit-rejected` `error_code` — because a driver branches on `(code, target)` and both paths this door races are paths `finalize` also writes in its own transactions, the file-state record most sharply. The noun is the verb, so `.jigc/displaced/rename/` and the route's *"this rename"* are one fact.
+
+**Two writes per path, so the read-back is per write.** Each entry is told what jigc left immediately after *every* write that reaches it — the move writes both paths, the H1 rewrite the landing path again, the referrer re-baseline the record again — because an arm that never reached its write must stay `Untouched` and be left alone. That closes a second cell the unconditional shape carried: a failure **before** the move removed a `file-state.json` this transaction had never touched.
+
+**The landing entry is captured only while the HEAD arm does not already own that path.** On a **retitle-only** the landing path *is* the doc's own committed path — `tracked_restore`'s first member — and two rows restoring one file would read each other's work as a racer's. The two rows partition the paths, which is what makes them two rows.
+
+Registry bookkeeping: `rename-worktree` drops 3 → **0** restores, its whole worktree restore now being the shared compare-and-swap counted at the row whose site that unit is, while the `git restore --staged <new path>` index arm stays on `OTHER_AXIS_CALLS` where it already was; the module's honest note moves 4 → **3**.
+
 ## 2026-09-18 — M52 Increment 5 / T5: the fan-out record flip, both `squash` arms
 
 The **sixth** write of the milestone record joins the discipline its registry row declares (`crates/cli/src/milestone.rs`; [finalize.md](design/finalize.md) → Rollback discipline, the 5–6 fan-out record row; [validation.md](design/validation.md) → The M52 registrations — Increment 5). `RecordFlipGuard` held an unconditional `fs::write` of its captured pre-image, and the interval it wrote across is the **widest in the binary** — promotion, retirement, the live-index stage, the combine and the user's own `pre-commit` hook all run inside it. Driven at both `squash` arms, a hook that appended to the record and exited 1 had its line rewritten away at exit 1, named by nothing; now the racer's bytes stand, the pre-flip image is parked under `.jigc/displaced/milestone-op/`, and the conflict names both copies.

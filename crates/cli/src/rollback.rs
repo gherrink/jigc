@@ -41,18 +41,19 @@
 //!
 //! # Two honest notes, both discharged by name
 //!
-//! **(1) Four rows declare a discipline the source does not yet bind.** This module was the
-//! increment's *first* task, and each later task retires one of its declarations: the two
-//! `FileCas` rows that are not yet compare-and-swap (`rename`'s unguarded arms, and the
-//! config relocation, which has no rollback at all) and
+//! **(1) Three rows declare a discipline the source does not yet bind.** This module was the
+//! increment's *first* task, and each later task retires one of its declarations: the one
+//! `FileCas` row that is not yet compare-and-swap (the config relocation, which has no
+//! rollback at all) and
 //! **both** `MintedSet` rows (still `remove_dir_all`) are declarations of what the increment
 //! binds, not readings of what the binary does today. **T10** is the task whose totality
 //! fence makes every row a checked fact and strikes this paragraph. *(It read **eight** when
 //! this module landed; **T3 bound `promote-destination` and `retired-original`**, **T4
 //! bound `milestone-record`** — whose five doors now mint two door-keyed identities,
-//! `milestone.rollback-conflict` and `task-discard.rollback-conflict` — and **T5 bound
+//! `milestone.rollback-conflict` and `task-discard.rollback-conflict` — **T5 bound
 //! `fan-out-record-flip`**, the sixth write of that same file, onto the first of those two
-//! identities; so the
+//! identities, and **T6 bound `rename-worktree`**, whose two unconditional arms take a
+//! fourth identity, `rename.rollback-conflict`; so the
 //! count moves with the source rather than standing as a stale number. The plan's
 //! decomposition says "six" for the `FileCas` half alone; `unwind_mint` and
 //! `unwind_unrecorded_seeds` are equally unbound until T7 — the datum is `unwind_mint`'s
@@ -276,8 +277,16 @@ pub const ROLLBACK_POPULATIONS: &[Population] = &[
         site: Site::Source {
             file: "crates/cli/src/rename.rs",
             unit: "rollback_rename",
-            // The landing path's removal, and the file-state record's write-or-remove.
-            restores: 3,
+            // None of its own since T6: the landing path's removal and the file-state
+            // record's write-or-remove were three unconditional calls in this unit, and this
+            // population's whole worktree restore is now the shared compare-and-swap at
+            // `rollback.rs::restore`, counted once at the row whose site that unit is. What
+            // stays in this unit is the landing path's **index** arm — the `git restore
+            // --staged` that unstages the move, deliberately without `--worktree`, since the
+            // bytes are the swap's subject — and that is counted onto `OTHER_AXIS_CALLS`,
+            // where it has always been. A row owning zero is still fenced: deleting it leaves
+            // this unit's count unclaimed.
+            restores: 0,
         },
         discipline: Discipline::FileCas,
     },
@@ -461,7 +470,26 @@ pub const TASK_DISCARD_DOOR: ConflictDoor = ConflictDoor {
     undone: "nothing was committed",
 };
 
-pub const ROLLBACK_DOORS: &[ConflictDoor] = &[FINALIZE_DOOR, MILESTONE_DOOR, TASK_DISCARD_DOOR];
+/// `jigc rename` — the atomic identity op, whose transaction rewrites **two** paths no other
+/// door's family covers: the landing path the move wrote, and the gitignored
+/// `.jigc/state/file-state.json` it re-keyed (M52 Increment 5 / T6).
+///
+/// Its own identity rather than a borrowed one for the reason the whole family is keyed by
+/// door: a driver branches on `(code, target)`, and the two paths this door races are paths
+/// `finalize` also writes in its own transactions — the file-state record most sharply. The
+/// noun is the verb, so the park directory and the route's *"this rename"* are one fact.
+pub const RENAME_DOOR: ConflictDoor = ConflictDoor {
+    code: "rename.rollback-conflict",
+    noun: "rename",
+    undone: "nothing was committed",
+};
+
+pub const ROLLBACK_DOORS: &[ConflictDoor] = &[
+    FINALIZE_DOOR,
+    MILESTONE_DOOR,
+    TASK_DISCARD_DOOR,
+    RENAME_DOOR,
+];
 
 /// One file's **worktree pre-image**: what it held before the transaction, and the exact
 /// bytes jigc wrote over it.

@@ -54,7 +54,6 @@ use crate::ingest::{load_schemas, require_project_layer};
 use crate::pack::make_pack;
 use crate::task::{
     WORK_UNIT_ID_GRAMMAR, git_capture, git_commit, git_head, git_run, git_status_entries,
-    path_at_head,
 };
 
 /// **The refusal axis of `jigc rename`** — every state this door declines *before it has
@@ -314,11 +313,18 @@ pub struct RenameReport {
 /// rename substrate (schemas, committed index, file-state), re-derive the new identity,
 /// repoint every referrer + rewrite the moved doc's H1, `git mv`, and commit as one
 /// atomic transaction with a real rollback on any pre-commit failure.
+///
+/// `conflicts` is the out-param the rollback's compare-and-swap fills on a failed
+/// transaction: one blocking `rename.rollback-conflict` per path whose bytes are no longer
+/// jigc's (M52 Increment 5 / T6). It stays empty on every success and on every pre-transaction
+/// refusal, so the caller can carry it unconditionally on its `Err` arm — the same shape the
+/// milestone record-only doors take one file over.
 pub(crate) fn run(
     cwd: &Path,
     old_addr: &str,
     title: &str,
     slug_override: Option<&str>,
+    conflicts: &mut Vec<Finding>,
 ) -> Result<RenameReport> {
     let repo_root = require_project_layer(cwd)?;
     let pack = make_pack()?;
@@ -598,18 +604,40 @@ pub(crate) fn run(
     let new_source =
         rewrite_h1(&old_source, title).ok_or_else(|| anyhow!("the doc at {old_rel} has no H1"))?;
 
-    // Capture the file-state record's pre-image (the gitignored cache is not git-tracked,
-    // so `git restore` can't recover it — it rides the rollback inventory by bytes, pin I3).
-    let fs_path = FileStateRecord::path_in(&jigc_root);
-    let fs_pre = match std::fs::read(&fs_path) {
-        Ok(bytes) => Some(bytes),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-        Err(e) => return Err(e).context("could not read the file-state record"),
-    };
     // The tracked paths the transaction restores from HEAD on rollback (the old path +
-    // every referrer — all committed at HEAD).
+    // every referrer — all committed at HEAD). `ROLLBACK_POPULATIONS`' `rename-head-restore`
+    // row: the door refuses over a dirty tree, so HEAD is what the worktree held and the
+    // restore has no third-party bytes to take.
     let mut tracked_restore: Vec<String> = vec![old_rel.clone()];
     tracked_restore.extend(referrer_writes.iter().map(|w| w.rel.clone()));
+
+    // …and the two paths HEAD does **not** answer for — `ROLLBACK_POPULATIONS`'
+    // `rename-worktree` row, the `FileCas` half of this door (M52 Increment 5 / T6). Both were
+    // restored unconditionally through rc.15, and the user's `pre-commit` hook runs *inside*
+    // the interval between jigc's write and that restore, so both took a third party's bytes
+    // there. They carry the same entry every `FileCas` population carries — the pre-image, and
+    // what jigc left at the path, read back one statement after each write — so the rollback
+    // asks the family's one question instead of assuming the answer.
+    let fs_path = FileStateRecord::path_in(&jigc_root);
+    let fs_spec = crate::render::repo_relative(&repo_root, &fs_path);
+    let mut worktree = crate::rollback::PreImageFamily::empty(crate::rollback::RENAME_DOOR);
+    // The gitignored file-state cache: git tracks it nowhere, so `git restore` cannot recover
+    // it and it rides the rollback by bytes (pin I3).
+    worktree.push(
+        crate::rollback::PreImage::capture(fs_spec.clone(), fs_path.clone())
+            .context("could not read the file-state record")?,
+    );
+    // The landing path — but only while it is a path the HEAD-sourced arm does not already
+    // own. On a **retitle-only** the landing path *is* the doc's own committed path, which is
+    // `tracked_restore`'s first member; registering it here too would set two rows restoring
+    // one file against each other, and the second would read the first's work as a racer's.
+    // The two rows partition the paths, which is why they are two rows.
+    if !tracked_restore.contains(&new_rel) {
+        worktree.push(
+            crate::rollback::PreImage::capture(new_rel.clone(), new_abs.clone())
+                .with_context(|| format!("could not read the rename's destination at {new_rel}"))?,
+        );
+    }
 
     // The transaction proper: any failure rolls the store back byte-and-record identical.
     // A landed commit yields its short sha + captured non-blocking hook stream for the
@@ -623,16 +651,21 @@ pub(crate) fn run(
         &new_rel,
         &new_source,
         &referrer_writes,
+        &mut worktree,
+        &fs_spec,
     ) {
         Ok(landed) => landed,
         Err(err) => {
-            rollback_rename(
+            // The restore may refuse a path whose bytes are no longer jigc's; those findings
+            // travel out to the dispatch arm, which prints them beside this door's own frame
+            // and folds them into the log — never in place of the door's own error.
+            conflicts.extend(rollback_rename(
                 &repo_root,
+                &jigc_root,
                 &tracked_restore,
                 &new_rel,
-                &fs_path,
-                fs_pre.as_deref(),
-            );
+                &worktree,
+            ));
             // The rollback has run, so the door's clause ("the rename was rolled back") is
             // true of what is now on disk — mark the failure so the surface frames it rather
             // than dropping the frame (N20; a stale `.git/index.lock` meeting the move's
@@ -685,6 +718,14 @@ struct ReferrerWrite {
 /// non-blocking hook stream (the hook_output producer axis — dropping it here was this
 /// producer's defect), and `Err` on any failure (a `git mv` error, a dangling-ref integrity
 /// violation, or a hook/commit rejection); the caller rolls back on `Err`.
+///
+/// `worktree` is the caller's captured `FileCas` family and `fs_spec` its file-state entry's
+/// identity. Each is told *what jigc left* immediately after every write that reaches its
+/// path — `PreImageFamily::wrote` re-reads the file, so a later call simply refreshes the
+/// image and an arm that never reached its write leaves the entry `PostWrite::Untouched`,
+/// which the rollback treats as *never written* and leaves alone. That is why the calls sit
+/// at each write rather than once at the end: a failure between the move and the H1 rewrite
+/// would otherwise leave the rollback unable to prove what it put there.
 #[allow(clippy::too_many_arguments)]
 fn apply_and_commit(
     repo_root: &Path,
@@ -695,6 +736,8 @@ fn apply_and_commit(
     new_rel: &str,
     new_source: &str,
     referrer_writes: &[ReferrerWrite],
+    worktree: &mut crate::rollback::PreImageFamily,
+    fs_spec: &str,
 ) -> Result<(Option<String>, String)> {
     // 0. Capture the **pre-rename** dangling-edge set off the committed store *before* any
     // mutation (disk == HEAD here). The integrity gate (step 4) refuses only on a dangle the
@@ -726,8 +769,13 @@ fn apply_and_commit(
         new_rel,
         &hash_bytes(new_source.as_bytes()),
     )?;
+    // The move wrote both of this family's paths — the landing path and the file-state
+    // record's re-key — so both learn what jigc left there before anything can fail below.
+    worktree.wrote(new_rel);
+    worktree.wrote(fs_spec);
     std::fs::write(repo_root.join(new_rel), new_source)
         .with_context(|| format!("could not write the retitled doc at {new_rel}"))?;
+    worktree.wrote(new_rel);
     // 3. Stage the content changes (the move is staged; the H1 + referrer edits are not).
     git_run(repo_root, &["add", "--", new_rel])?;
     for write in referrer_writes {
@@ -762,6 +810,7 @@ fn apply_and_commit(
     record
         .save(jigc_root)
         .with_context(|| format!("could not save the file-state record under {jigc_root:?}"))?;
+    worktree.wrote(fs_spec);
 
     // 6a. The **idempotent** run stops here (M48 Increment 8): a `--to` title that slugs to
     // the doc's own current slug AND matches the H1 the doc already carries rewrites nothing,
@@ -805,37 +854,49 @@ fn apply_and_commit(
 }
 
 /// Roll the store back to its pre-rename state on a pre-commit failure: restore every
-/// tracked path (the old doc + referrers) from HEAD, undo the move's landing, and restore
-/// the gitignored file-state record from its captured pre-image bytes. Best-effort — a
-/// failure is swallowed (the commit did not land, so the worst case is a stray file the
-/// next op overwrites), mirroring `rollback_promotions`.
+/// tracked path (the old doc + referrers) from HEAD, unstage the move's landing, and put the
+/// two worktree paths HEAD cannot answer for back **compare-and-swap**. Best-effort on the
+/// restore itself — a failure is swallowed (the commit did not land, and the door's own error
+/// is what the operator has to act on), mirroring `rollback_promotions`.
+///
+/// Returns one blocking `rename.rollback-conflict` per path whose bytes are no longer jigc's;
+/// the caller carries them beside its own frame ([`crate::task::carry_rollback_conflicts`]).
+///
+/// **The two populations, and why they are two** (`cli::rollback::ROLLBACK_POPULATIONS`):
+///
+///   * `rename-head-restore` — the old doc + every referrer, restored **from HEAD**. Its
+///     discipline is `DoorGuard("rename.dirty-tree")`: the door refuses to run at all over a
+///     dirty tree, so HEAD is what the worktree held and there are no third-party bytes for
+///     this arm to take.
+///   * `rename-worktree` — the landing path and the gitignored
+///     `.jigc/state/file-state.json`, neither of which HEAD answers for. Its discipline is
+///     `FileCas`, because the user's `pre-commit` hook runs *inside* the interval between
+///     jigc's write and this restore. Through rc.15 both arms here were unconditional, and
+///     both took a third party's bytes: the landing path's `remove_file` **deleted** a file a
+///     racing hook had written, at exit 1, named by nothing
+///     (`completions/artifacts/M52/baseline-rollback.md` §2.3b), and the file-state arm
+///     rewrote or removed the record however it had changed — including removing one this
+///     transaction had never reached.
 fn rollback_rename(
     repo_root: &Path,
+    jigc_root: &Path,
     tracked_restore: &[String],
     new_rel: &str,
-    fs_path: &Path,
-    fs_pre: Option<&[u8]>,
-) {
+    worktree: &crate::rollback::PreImageFamily,
+) -> Vec<Finding> {
     // The old path + every referrer are committed at HEAD — `git restore --staged
     // --worktree` brings their index + worktree bytes back to HEAD (= pre-rename).
     for rel in tracked_restore {
         let _ = git_run(repo_root, &["restore", "--staged", "--worktree", rel]);
     }
-    // The move's landing has no HEAD content: unstage it and drop the worktree copy.
+    // The move's landing: unstage it. An **index** arm, deliberately without `--worktree` —
+    // the bytes there are the swap's subject below, and dropping them here would re-enact the
+    // unconditional removal one statement earlier.
     let _ = git_run(repo_root, &["restore", "--staged", new_rel]);
-    if !path_at_head(repo_root, new_rel) {
-        let _ = std::fs::remove_file(repo_root.join(new_rel));
-    }
-    // The file-state cache is not git-tracked: restore its captured pre-image (or remove
-    // it when it did not exist before the transaction).
-    match fs_pre {
-        Some(bytes) => {
-            let _ = std::fs::write(fs_path, bytes);
-        }
-        None => {
-            let _ = std::fs::remove_file(fs_path);
-        }
-    }
+    // The two worktree paths HEAD cannot answer for, each restored only while it still holds
+    // the bytes jigc wrote. A landing path jigc created is removed under that same condition;
+    // when it does not hold them, nothing is overwritten and nothing is discarded.
+    worktree.restore(repo_root, jigc_root)
 }
 
 /// An in-flight fan-out marker: the **work-unit kind** (`task` / `milestone`) and its id.

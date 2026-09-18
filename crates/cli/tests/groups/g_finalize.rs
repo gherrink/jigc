@@ -77,6 +77,8 @@ mod pre_guard_repair_route;
 mod reconciliation_baseline_contrast;
 #[path = "../ref_edge_guidance.rs"]
 mod ref_edge_guidance;
+#[path = "../rename_rollback_conflict.rs"]
+mod rename_rollback_conflict;
 #[path = "../repo_posture.rs"]
 mod repo_posture;
 #[path = "../rollback_population_registry.rs"]
