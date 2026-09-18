@@ -1373,6 +1373,16 @@ fn config_ack_parity() {
                 key,
                 value,
                 relocated,
+                // **No `carries` half, by declaration** (M52 Increment 6 / T6) — the mirror
+                // image of `relocated` below. A root-knob value the door FOLDED renders a
+                // clause naming what the operator typed beside what landed; the envelope's
+                // `value` is what landed, which is the half a driver cannot compute, and the
+                // typed spelling is the driver's own argument, which it sent and still holds.
+                // So the wire withholds no fact — and `ConfigAck::Set`'s pinned
+                // `ENVELOPE_ARMS` shape does not move for a human-tier reading. The clause is
+                // fenced over a real corpus, where the door does the folding, by
+                // `crates/cli/tests/root_knob_rules.rs`.
+                folded_from: _,
             } => {
                 text_prints(&text, key, &label, "key");
                 carries(&doc, "key", key, &label, "key");

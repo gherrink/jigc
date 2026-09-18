@@ -759,3 +759,207 @@ fn no_root_knob_accepts_a_value_that_does_not_read_back_as_itself() {
         }
     }
 }
+
+// ---------------------------------------------------------------------------------------
+// M52 Increment 6 / T6 — **a root the filesystem cannot NAME is refused at the door**
+// (`settle-record.md` → D5.6, *A1-D5 both knobs*; gate-record row 5;
+// `completions/artifacts/M52/baseline-tokens.md` §2.5 rows 10–11 and §2.5b).
+//
+// The three shipped predicates ask about escape (`untrackable_reason`), ownership
+// (`is_workbench_root`) and shape (`unusable_root_reason`). None of them asks whether the
+// value can be **named** on the filesystem at all, and the refusal the shape rule already
+// prints states exactly the harm an unnameable one produces: *"`README.md` is a file, not a
+// directory — every move into it fails while the knob lands anyway"*.
+//
+// Driven at HEAD (`1922c7f5`+, the `committed-singletons` rig), a 300-byte component:
+//
+// ```text
+// $ jigc config set docs-root "$(python3 -c "print('a'*300)")"
+// config: set `docs-root` = `aaaa…` — written to `.jigc/config/`, uncommitted …     rc=0
+// $ jigc validate
+// validating the committed store at "…/repo": File name too long (os error 63)      rc=1
+// ```
+//
+// …the knob landed, and the *next* read of the store failed with a code-less, route-less OS
+// error. The placement knob reaches the same door from the other side — since Increment 5 / T8
+// closed the byte-loss half, it now **tries the move, fails per doc and rolls back**:
+//
+// ```text
+// $ jigc config set placement-root "$(python3 -c "print('a'*300)")"
+// relocating the committed doc(s) stranded by the `placement-root` re-point to `aaaa…`:
+// blocking · config.repoint-failed — `placement-root` was not set to `aaaa…`: creating the
+//   destination dir for aaaa…/decisions-log.md: File name too long (os error 63) —
+//   the re-point was undone
+//   route: … Fix what this message names, then re-run `jigc config set placement-root aaaa…`
+// ```
+//
+// …which is a fault the operator cannot fix as named — the value is the problem, the corpus
+// is not — and it is discovered by *attempting* a move rather than by adjudicating the value.
+// So this is a **door-position and surface** fix, not a data-loss fix: the leg joins
+// `unusable_root_reason` as its sixth reason under the shipped `config.unusable-root` code
+// (that code's five-reasons-one-code precedent — the operator's fix is the same in every
+// case: supply a different root), and it refuses BEFORE anything moves and before the knob
+// lands, the position the door's own sentence argues for.
+//
+// Two sets, each named:
+//
+//   * **The refusing arm** — the code-side registry `cli::config::ROOT_KNOBS` × the three
+//     positions an over-long component can take in a value (the whole value, an ancestor, an
+//     interior component). The subject is every component, never the leaf — the correction
+//     `offending_component` and the whitespace leg both already carry.
+//   * **The admitting arm — the over-refusal guard** — the same registry × the two values
+//     that sit **at** the ceiling, which a rule reading the value's total length (rather than
+//     its components') would refuse: one component of exactly the ceiling, and that component
+//     with a second one under it, whose *path* is twice the ceiling.
+//
+// The ceiling is **read from the constant the refusal is derived from**
+// (`cli::cli::NAME_MAX_BYTES`), never restated here: M49's *statement == constant* lesson,
+// applied to the test as well as to the code. Both bounds are driven, not assumed — the
+// repro above is the refusing side, and on the same `committed-singletons` rig a component of
+// exactly 255 bytes moved both committed docs and staged `R` at exit 0, which is why the
+// boundary cell below admits rather than refuses.
+// ---------------------------------------------------------------------------------------
+
+/// A component one byte **over** the per-component ceiling — the smallest value of the class,
+/// built from the constant so the cell moves when the constant does.
+fn over_ceiling() -> String {
+    "a".repeat(cli::cli::NAME_MAX_BYTES + 1)
+}
+
+/// A component **at** the ceiling — the boundary the admitting arm proves is still a home.
+fn at_ceiling() -> String {
+    "a".repeat(cli::cli::NAME_MAX_BYTES)
+}
+
+/// The three positions an unnameable component takes: the whole value, an ancestor of it, and
+/// an interior component under a perfectly ordinary first one.
+fn unnameable_values() -> Vec<String> {
+    let over = over_ceiling();
+    vec![over.clone(), format!("{over}/sub"), format!("docs/{over}")]
+}
+
+/// The two values at the ceiling — the second one's whole **path** is over twice the ceiling,
+/// which is the point: `NAME_MAX` bounds a component, never a path.
+fn nameable_values() -> Vec<String> {
+    let at = at_ceiling();
+    vec![at.clone(), format!("{at}/sub")]
+}
+
+/// **The six refusing cells.** Every [`cli::config::ROOT_KNOBS`] member × every position the
+/// unnameable component takes: refused with `config.unusable-root` before anything moves and
+/// before the knob lands, with the *working tree* byte-identical to what it was before the run
+/// (the loss shape here is a staged `git mv`, so `git status --porcelain` is the assertion).
+#[test]
+fn no_root_knob_accepts_a_root_the_filesystem_cannot_name() {
+    let corpus = Corpus::new("nameable");
+    for key in cli::config::ROOT_KNOBS {
+        for value in unnameable_values() {
+            let porcelain = corpus.git(&["status", "--porcelain"]);
+            let stderr = assert_refused_and_inert(&corpus, key, &value, "config.unusable-root");
+
+            assert_eq!(
+                corpus.git(&["status", "--porcelain"]),
+                porcelain,
+                "`jigc config set {key} <{} bytes>` stages nothing — the refusal lands before \
+                 the move floor runs, not after it has to be rolled back",
+                value.len(),
+            );
+            // The *component's* byte count, derived from the constant — the discriminating
+            // half. The route enumerates the ceiling too (`a component over 255 bytes`), so
+            // asserting the bare number would be satisfied by a refusal that never named this
+            // reason; only the reason says `is 256 bytes`.
+            assert!(
+                stderr.contains(&format!("is {} bytes", cli::cli::NAME_MAX_BYTES + 1)),
+                "the reason names the offending component's length — `config.unusable-root` \
+                 carries six reasons under one code, so a refusal that does not say which one \
+                 it is leaves the operator reading about files and symlinks; stderr:\n{stderr}",
+            );
+        }
+    }
+}
+
+/// **The four admitting cells — the over-refusal guard.** A component *at* the ceiling is a
+/// perfectly good directory name, and a value whose **path** is twice the ceiling while every
+/// component is under it is a perfectly good home: a rule that measured the value rather than
+/// its components would refuse both and still pass the arm above.
+#[test]
+fn a_root_at_the_name_ceiling_is_still_admitted() {
+    for key in cli::config::ROOT_KNOBS {
+        for (cell, value) in nameable_values().iter().enumerate() {
+            let corpus = Corpus::new(&format!("at-ceiling-{key}-{cell}"));
+            corpus.ok(&["config", "set", key, value]);
+
+            let reading = corpus.ok(&["config", "get", key]);
+            assert!(
+                reading.contains(&format!("{key} = {value}")),
+                "`{key}` = a {}-byte component is a home like any other; got:\n{reading}",
+                value.len(),
+            );
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------
+// M52 Increment 6 / T6, second half — **neither silent coercion lands silently**
+// (`settle-record.md` → D8's surface tier, *the `""`-acked-`= .` root knobs · `x/../y`
+// normalized silently*; `baseline-tokens.md` §2.5b's two flagged cells).
+//
+// The door folds a root value once, for every reader (`cli::config::normalize_root_value`),
+// and until now the ack printed only what landed. Driven at HEAD:
+//
+// ```text
+// $ jigc config set docs-root ""
+// config: set `docs-root` = `.` — written to `.jigc/config/`, uncommitted …          rc=0
+// $ jigc --format json config set placement-root 'x/../y'
+// { "op": "config-set", "key": "placement-root", "value": "y", … }                   rc=0
+// ```
+//
+// The empty cell is the sharper one: `CLAUDE.md` → M50 records the design as *"`""` unset and
+// `.` the repo root kept **unmixable at the type level**"* — and the door mixes them, silently
+// choosing *the repository root* for an operator whose token says *unset*. The fold is
+// deliberately **kept** (an empty `placement-root` that landed verbatim would read back as
+// never-set and silently do nothing), so the fix is that the ack says so.
+//
+// The set iterated is `cli::config::ROOT_KNOBS` × the two coercions, each driven through the
+// real binary and adjudicated on the **ack** — the surface the operator reads — not on a
+// rendering helper.
+// ---------------------------------------------------------------------------------------
+
+/// The two values the door folds, each with the value that lands and the word the ack has to
+/// say about the fold. Spelled per cell rather than computed, so this arm cannot re-implement
+/// the fold it is checking.
+const FOLDED_VALUES: [(&str, &str, &str); 2] = [
+    // An empty value is not *unset*: it names the repository root, which is what lands.
+    ("", ".", "repository root"),
+    // An interior `..` folds to the one spelling every reader resolves.
+    ("x/../y", "y", "folds"),
+];
+
+/// **The four folding cells.** Each coercion still lands — nothing here refuses — and the ack
+/// names both halves: the value the operator typed and the value that landed.
+#[test]
+fn a_folded_root_value_is_not_accepted_silently() {
+    for key in cli::config::ROOT_KNOBS {
+        for (cell, (typed, landed, word)) in FOLDED_VALUES.iter().enumerate() {
+            let corpus = Corpus::new(&format!("folded-{key}-{cell}"));
+            let ack = corpus.ok(&["config", "set", key, typed]);
+
+            assert!(
+                ack.contains(&format!("`{key}` = `{landed}`")),
+                "`jigc config set {key} {typed:?}` still lands `{landed}`; ack:\n{ack}",
+            );
+            assert!(
+                ack.contains(word),
+                "the ack names the fold — an operator who typed {typed:?} must be able to read \
+                 why the knob says `{landed}`; ack:\n{ack}",
+            );
+            if !typed.is_empty() {
+                assert!(
+                    ack.contains(&format!("`{typed}`")),
+                    "the ack quotes the value the operator typed beside the one that landed; \
+                     ack:\n{ack}",
+                );
+            }
+        }
+    }
+}

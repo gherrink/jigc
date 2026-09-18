@@ -2796,9 +2796,19 @@ pub const SLUG_DOORS: &[SlugDoor] = &[
 
 /// The **per-component** byte ceiling a filename may not exceed. `NAME_MAX` is 255 on every
 /// filesystem jigc supports (APFS, HFS+, ext4, btrfs, XFS, NTFS), and it bounds a single
-/// path *component*, never the whole path — which is why the subject here is the slug and
-/// not the directory it lands in.
-const NAME_MAX_BYTES: usize = 255;
+/// path *component*, never the whole path.
+///
+/// **Two rules read it, and they take different subjects** (M52 Increment 6 / T6). The slug
+/// family below reserves what jigc wraps around an identity on its way to becoming a
+/// *filename*, which is why its subject is the slug and not the directory it lands in
+/// ([`SLUG_NAME_CEILING`]); a **root knob**'s value becomes one or more *directory*
+/// components, and nothing is appended to a directory name, so
+/// `config::unusable_root_reason`'s nameability leg takes this constant bare.
+///
+/// Public so that leg's own suite (`crates/cli/tests/root_knob_rules.rs`) builds its cells
+/// from the constant the refusal is derived from instead of restating 255 — M49's
+/// *statement == constant* lesson, applied to the test as well as to the code.
+pub const NAME_MAX_BYTES: usize = 255;
 
 /// Decimal digits in `n` — the width its `Display` renders, used to reserve room for the
 /// two numbers [`TEMP_SIBLING_RESERVE`] cannot know in advance.
@@ -3287,8 +3297,8 @@ pub const PATH_ARG_OCCURRENCES: &[PathArgOccurrence] = &[
                     predicate: "crate::trackable::untrackable_reason · \
                                 crate::config::is_workbench_root · \
                                 crate::config::unusable_root_reason (absolute · edge \
-                                whitespace · git pathspec magic · symlinked or file-shaped \
-                                component)",
+                                whitespace · git pathspec magic · unnameable component · \
+                                symlinked or file-shaped component)",
                     codes: &[
                         "config.untrackable-root",
                         "config.workbench-root",

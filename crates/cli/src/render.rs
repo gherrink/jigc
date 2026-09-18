@@ -2877,6 +2877,27 @@ pub enum ConfigAck {
         key: String,
         value: String,
         relocated: Vec<Relocated>,
+        /// The spelling the operator **typed**, when the door folded it into a different
+        /// `value` — `None` when what landed is what was typed (M52 Increment 6 / T6).
+        ///
+        /// Only a root knob folds (`config::normalize_root_value`), and until this field the
+        /// two coercions it performs landed **silently**: `config set docs-root ""` acked
+        /// `= `.`` and `config set placement-root x/../y` acked `= `y``, each at exit 0 with
+        /// nothing saying a fold had happened. The empty one is the sharper: `CLAUDE.md` →
+        /// M50 records the design as *"`""` unset and `.` the repo root kept unmixable at the
+        /// type level"*, and the door mixed them — choosing *the repository root* for an
+        /// operator whose token said *unset*. The fold itself is kept (an empty
+        /// `placement-root` landing verbatim would read back as never-set and silently do
+        /// nothing); what changes is that the ack says so.
+        ///
+        /// **Text-only, by declaration** — the inverse of `relocated` beside it, and the
+        /// declaration the parity fence (`crates/cli/tests/text_json_parity_axis.rs`) carries.
+        /// The envelope's `value` is the value that **landed**, which is the fact a driver
+        /// needs and the one half it cannot compute; the other half is the driver's own
+        /// argument, which it sent and still holds. So no key is withheld from the wire — the
+        /// clause is the *human* reading of a comparison a driver makes by construction, and
+        /// `ConfigAck::Set`'s pinned `ENVELOPE_ARMS` shape does not move for it.
+        folded_from: Option<String>,
     },
     /// `config insert-step` spliced a native `step` into `workflow`, `side`
     /// (`"after"`/`"before"`) the `anchor` step id.
@@ -2932,6 +2953,10 @@ impl ConfigAck {
             witness: || ConfigAck::Set {
                 key: "docs-root".to_owned(),
                 value: "docs".to_owned(),
+                // The fold is a **root-knob** event with no wire half, and the witness feeds
+                // the wire fences; the clause it renders is fenced over a real corpus by
+                // `crates/cli/tests/root_knob_rules.rs`, where the door does the folding.
+                folded_from: None,
                 // A **populated** relocation, so the parity fence proves the key carries
                 // this field's own value rather than proving that two empty lists match.
                 relocated: vec![Relocated {
@@ -3002,6 +3027,30 @@ impl ConfigAck {
 const CONFIG_ACK_UNCOMMITTED: &str =
     "written to `.jigc/config/`, uncommitted — commit it with your next commit";
 
+/// What the ack says about a root value the door **folded** — the clause
+/// [`ConfigAck::Set`]'s `folded_from` earns (M52 Increment 6 / T6).
+///
+/// Two sentences, because the two coercions are different facts and one generic *"was
+/// normalized"* would state neither. An **empty** value is not a spelling of the value that
+/// landed at all — it is the operator asking for *unset* and getting *the repository root*, a
+/// distinction `CLAUDE.md` → M50 records as kept unmixable at the type level and the door
+/// mixes by necessity (a root knob has no unset spelling: an empty `placement-root` landing
+/// verbatim reads back as never-set). Every other fold is one spelling of one home, and the
+/// operator's question is only *why does it read back differently* — answered by naming both
+/// halves and what the fold buys.
+fn fold_clause(typed: &str, landed: &str) -> String {
+    if typed.is_empty() {
+        return format!(
+            "you typed an empty value, which names the repository root `{landed}` — a root \
+             knob has no unset spelling"
+        );
+    }
+    format!(
+        "you typed `{typed}`, which folds to `{landed}` — the one spelling every reader \
+         resolves"
+    )
+}
+
 /// Render a successful `jigc config <verb>` confirmation ([`ConfigAck`]) to the surface
 /// `format` selects: `agent` / `human` emit the terse `config: <effect>` line (no
 /// footer — symmetric with the bare-line doc/task acks), closed by
@@ -3012,10 +3061,14 @@ pub fn config_ack(format: Format, ack: &ConfigAck) -> String {
     match format {
         Format::Json => {
             let mut envelope = match ack {
+                // `folded_from` is deliberately absent: `value` is what landed, which is
+                // what a driver cannot compute, and the typed spelling is the driver's own
+                // argument (see the field's own declaration).
                 ConfigAck::Set {
                     key,
                     value,
                     relocated,
+                    folded_from: _,
                 } => serde_json::json!({
                     "op": "config-set", "key": key, "value": value,
                     "relocated": relocated,
@@ -3064,7 +3117,14 @@ pub fn config_ack(format: Format, ack: &ConfigAck) -> String {
                     key,
                     value,
                     relocated: _,
-                } => format!("config: set `{key}` = `{value}`"),
+                    folded_from,
+                } => format!(
+                    "config: set `{key}` = `{value}`{}",
+                    folded_from
+                        .as_deref()
+                        .map(|typed| format!(" ({})", fold_clause(typed, value)))
+                        .unwrap_or_default(),
+                ),
                 ConfigAck::InsertStep {
                     workflow,
                     step,

@@ -473,11 +473,15 @@ fn run_set(cwd: &Path, format: Format, key: &str, value: &str) -> Result<ConfigA
         return Err(finding_to_err(Finding::block(
             "config.unusable-root",
             format!("`{typed}` cannot be the `{key}`: {reason}"),
-            "re-run with a repo-relative directory — an existing one, or one jigc should create; \
-             never a file, an absolute path, a path through a symlink, a value padded with \
-             whitespace, or one git reads as a pathspec rather than a name (a leading `:`, or \
-             a `*`, `?`, `[` or `\\` anywhere); `jigc config list` shows the value in force \
-             and the layer it wins from",
+            format!(
+                "re-run with a repo-relative directory — an existing one, or one jigc should \
+                 create; never a file, an absolute path, a path through a symlink, a value \
+                 padded with whitespace, a component over {} bytes, or one git reads as a \
+                 pathspec rather than a name (a leading `:`, or a `*`, `?`, `[` or `\\` \
+                 anywhere); `jigc config list` shows the value in force and the layer it \
+                 wins from",
+                crate::cli::NAME_MAX_BYTES,
+            ),
         )));
     }
 
@@ -561,6 +565,14 @@ fn run_set(cwd: &Path, format: Format, key: &str, value: &str) -> Result<ConfigA
         key: key.to_owned(),
         value: value.to_owned(),
         relocated,
+        // **The fold is named in the ack, never performed silently** (M52 Increment 6 / T6;
+        // `settle-record.md` → D8's surface tier). `typed` is what the operator wrote and
+        // `value` is what landed; they differ only when the root-knob fold above changed the
+        // spelling, which is exactly when the operator cannot read the one from the other.
+        // Driven at HEAD, both coercions landed at exit 0 saying nothing: `docs-root ""`
+        // acked `= `.`` — *the repository root* for a token that says *unset* — and
+        // `placement-root x/../y` acked `= `y``.
+        folded_from: (typed != value).then(|| typed.to_owned()),
     })
 }
 
@@ -810,12 +822,13 @@ pub(crate) fn is_workbench_root(value: &str) -> bool {
 /// Why `value` is a root the store **cannot describe** — `None` when it can (M50 Increment 4 /
 /// T3). Asked of both root knobs, of the value as typed, before anything moves.
 ///
-/// **Five shapes now, and the list has grown twice by the same route** — one driven cell at a
-/// time, each joining this predicate rather than minting a code of its own, because the
+/// **Six shapes now, and the list has grown three times by the same route** — one driven cell
+/// at a time, each joining this predicate rather than minting a code of its own, because the
 /// operator's fix is the same in every case: supply a different root
 /// (`config.untrackable-root`'s five-reasons-one-code precedent). M50 shipped three; M51
 /// Increment 1 / T5 added **edge whitespace** ([`whitespace_padded_component`]) and T6 added
-/// **git pathspec magic** ([`pathspec_magic_root`]), each with its own driven repro in its own
+/// **git pathspec magic** ([`pathspec_magic_root`]); M52 Increment 6 / T6 added
+/// **unnameable** ([`over_name_ceiling_component`]) — each with its own driven repro in its own
 /// doc-comment. Each shape was driven at HEAD before its guard existed and each left the store
 /// lying in its own way (the repros are in `crates/cli/tests/root_knob_rules.rs` and
 /// `crates/cli/tests/path_arg_occurrence_axis.rs`). The three original ones:
@@ -847,9 +860,11 @@ pub(crate) fn is_workbench_root(value: &str) -> bool {
 /// door whose subject is a **source file** (M51 Increment 1 / T1) — the two legs still travel one
 /// pass over one subject; only the sentences they earn are the caller's.
 ///
-/// **The two lexical legs are asked before the walk**, so a value refused twice over keeps the
-/// stronger sentence: `/tmp/x  ` still answers *an absolute path*, and `:(top)docs` answers
-/// about the magic rather than about a directory that does not exist.
+/// **The three lexical legs are asked before the walk**, so a value refused twice over keeps
+/// the stronger sentence: `/tmp/x  ` still answers *an absolute path*, `:(top)docs` answers
+/// about the magic rather than about a directory that does not exist, and an unnameable
+/// component answers about its length rather than about a directory the filesystem could not
+/// have been asked for in the first place.
 fn unusable_root_reason(repo_root: &Path, value: &str) -> Option<String> {
     if Path::new(value).is_absolute() {
         return Some(format!(
@@ -877,6 +892,15 @@ fn unusable_root_reason(repo_root: &Path, value: &str) -> Option<String> {
             "{clause} — every managed doc's path is built from this value, so the \
              `git add`/`git mv` that stages one would match a set of files nobody named \
              instead of the doc"
+        ));
+    }
+
+    if let Some((shown, bytes)) = over_name_ceiling_component(value) {
+        let ceiling = crate::cli::NAME_MAX_BYTES;
+        return Some(format!(
+            "`{shown}` is {bytes} bytes — a path component may carry at most {ceiling}, so \
+             every directory the re-point has to create fails to be *named* while the knob \
+             lands anyway, and the store then resolves its docs to homes nothing is at"
         ));
     }
 
@@ -932,6 +956,71 @@ fn whitespace_padded_component(value: &str) -> Option<String> {
             }
             // `.`/`..` name no component to read back, and a root or prefix component belongs to
             // the absolute value its caller refuses one leg above.
+            Component::CurDir
+            | Component::ParentDir
+            | Component::RootDir
+            | Component::Prefix(_) => None,
+        })
+}
+
+/// The first component of `value` the filesystem **cannot name** — its own spelling and its
+/// byte length — `None` when every component fits (M52 Increment 6 / T6;
+/// `completions/artifacts/M52/settle-record.md` → D5.6, *A1-D5 both knobs*).
+///
+/// The nameability leg of [`unusable_root_reason`], and the third of its legs that asks
+/// nothing of the filesystem. The three predicates a root knob had through rc.15 test
+/// **escape** ([`crate::trackable::untrackable_reason`]), **ownership**
+/// ([`is_workbench_root`]) and **shape** (the rest of this function) — never whether the
+/// value can be named at all. Driven at the wave's baseline
+/// (`completions/artifacts/M52/baseline-tokens.md` §2.5 rows 10–11), a 300-byte component:
+///
+/// ```text
+/// $ jigc config set docs-root "$(python3 -c "print('a'*300)")"
+/// config: set `docs-root` = `aaaa…` — written to `.jigc/config/`, uncommitted …     rc=0
+/// $ jigc validate
+/// validating the committed store at "…/repo": File name too long (os error 63)      rc=1
+/// ```
+///
+/// — the knob landed and the **next read of the store** failed with a code-less, route-less
+/// OS error. The placement knob reaches the same fault from the other side: since M52
+/// Increment 5 / T8 closed the byte-loss half it now attempts the move, fails per doc and
+/// rolls the batch back, so the operator gets two `config.repoint-failed` findings whose
+/// route — *fix what this message names* — cannot be followed, because the value is the
+/// problem and the corpus is not.
+///
+/// **So this leg is a door-position fix, not a data-loss fix**, and the position is the one
+/// the sibling file-shaped reason already argues for in its own sentence: *every move into it
+/// fails while the knob lands anyway*. It refuses before anything moves and before the knob
+/// lands, and it joins `config.unusable-root` rather than minting a code, on that code's
+/// five-reasons-one-code precedent.
+///
+/// **The subject is every component, not the leaf** — the correction [`offending_component`]
+/// and [`whitespace_padded_component`] both already carry: `docs/<300 bytes>` is as unnameable
+/// as the bare component is, and the message quotes the component so the refusal points at the
+/// half of the value that is wrong.
+///
+/// **The ceiling is [`crate::cli::NAME_MAX_BYTES`] bare**, not the slug family's derived
+/// [`crate::cli::SLUG_NAME_CEILING`]: that one reserves the `<type>:` prefix, the `.md`
+/// extension and the atomic write's temp suffix, which are what jigc wraps around an identity
+/// on its way to becoming a **filename**. A root's components become **directories**, and
+/// nothing is appended to a directory name — driven, a component of exactly
+/// [`crate::cli::NAME_MAX_BYTES`] bytes relocates both committed docs and stages `R`.
+///
+/// Bytes, not characters, because `NAME_MAX` is a byte bound: a 200-character root of
+/// two-byte scalars is 400 bytes and the filesystem refuses it.
+fn over_name_ceiling_component(value: &str) -> Option<(String, usize)> {
+    use std::path::Component;
+
+    Path::new(value)
+        .components()
+        .find_map(|component| match component {
+            Component::Normal(part) => {
+                let bytes = part.as_encoded_bytes().len();
+                (bytes > crate::cli::NAME_MAX_BYTES)
+                    .then(|| (part.to_string_lossy().into_owned(), bytes))
+            }
+            // `.`/`..` name no component the filesystem has to create, and a root or prefix
+            // component belongs to the absolute value the first leg refuses.
             Component::CurDir
             | Component::ParentDir
             | Component::RootDir
@@ -2439,6 +2528,9 @@ mod tests {
                 from: "docs/decisions/x.md".to_owned(),
                 to: "docs2/decisions/x.md".to_owned(),
             }],
+            // A value the door did not fold — this unit asks what the JSON arm carries, and
+            // the fold clause is text-only by declaration (`ConfigAck::Set`'s own field doc).
+            folded_from: None,
         };
         let out = crate::render::config_ack(crate::cli::Format::Json, &ack);
         let parsed: serde_json::Value = serde_json::from_str(&out).expect("json ack parses");
