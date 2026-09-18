@@ -16,7 +16,9 @@
 //!     mold, because **no clap tree bijects this class**: a restore is a property of a
 //!     function body, not of a verb. Every production **restore unit** (a function whose name
 //!     carries the family's vocabulary, plus every production `Drop` body that restores —
-//!     the two shapes a name-only grep misses, `impl Drop for RecordFlipGuard` among them) is
+//!     the two shapes a name-only grep misses; `impl Drop for RecordFlipGuard` was a claimed
+//!     unit under that rule until M52 Increment 5 / T5 moved its restore onto the shared
+//!     compare-and-swap, which left the destructor with no byte-restoring call to count) is
 //!     claimed by a registry row or sits in a counted remainder with a reason; and each
 //!     claimed unit's byte-restoring **calls** are counted against the rows that own them, so
 //!     a unit hosting two populations (`rollback_promotions`: promote **and** retire) fences

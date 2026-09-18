@@ -2,6 +2,18 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-09-18 — M52 Increment 5 / T5: the fan-out record flip, both `squash` arms
+
+The **sixth** write of the milestone record joins the discipline its registry row declares (`crates/cli/src/milestone.rs`; [finalize.md](design/finalize.md) → Rollback discipline, the 5–6 fan-out record row; [validation.md](design/validation.md) → The M52 registrations — Increment 5). `RecordFlipGuard` held an unconditional `fs::write` of its captured pre-image, and the interval it wrote across is the **widest in the binary** — promotion, retirement, the live-index stage, the combine and the user's own `pre-commit` hook all run inside it. Driven at both `squash` arms, a hook that appended to the record and exited 1 had its line rewritten away at exit 1, named by nothing; now the racer's bytes stand, the pre-flip image is parked under `.jigc/displaced/milestone-op/`, and the conflict names both copies.
+
+**No new code, because the subject is one file.** The flip raises T4's `milestone.rollback-conflict` rather than an identity of its own: a raced `milestone create` and a raced `milestone finalize` present the operator with the same two copies of the same path and the same comparison. The split T4 made was between *doors that collide on one file with different acts*; this is the same act.
+
+**A destructor returns nothing, so the conflicts go to a caller-owned sink** — a `RefCell<Vec<Finding>>` the boundary owns and the guard borrows — which both `squash` arms drain on their refusal path, forcing the drop first so the findings exist before the rejection is composed. **Declared bound:** a failure *between* the flip and the boundary (a pre-commit block — zero-contribution, carryover — or a propagated `?`) drops the guard with nothing draining the sink, so the restore still runs under the same compare-and-swap (no byte is overwritten, the pre-image is parked) but the conflict is not carried onto that arm's document. Those arms commit nothing and run no hook, so a racer there is an unrelated concurrent process rather than the transaction's own interval.
+
+The guard's worktree/index split is untouched: the **index** half — a `joined` blob left staged for a milestone that never finalized — stays the executor's fifth family (M47 Inc 3 T5), and the two halves together are still the transaction.
+
+The success control is half the test, for a destructor specifically: `a_landed_boundary_disarms_and_reports_nothing` drives both arms with no hook at all, because a compare-and-swap that fired on the path that succeeded would revert a landed commit's own bytes. Registry bookkeeping: `fan-out-record-flip`'s site moves from the destructor to the named `rollback_record_flip` it now calls, at **0** restores of its own — the shared swap is counted at the row whose site that unit is — and the module's honest note moves 5 → **4**.
+
 ## 2026-09-18 — M52 Increment 5 / T4: the milestone record's five doors, and the two codes they split into
 
 The record axis is the third `FileCas` population bound to the discipline its registry row declares (`crates/cli/src/milestone.rs`; [finalize.md](design/finalize.md) → Rollback discipline, the record-only-door row; [validation.md](design/validation.md) → The M52 registrations — Increment 5). `RecordPreImage` keeps its two axes — the index half stays on the shared `capture_owner_artifact_index` primitive, untouched — and its **worktree** half becomes T2's generic entry, so the restore now asks the family's one question: *is what is there now still what jigc left?*

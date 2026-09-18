@@ -41,16 +41,18 @@
 //!
 //! # Two honest notes, both discharged by name
 //!
-//! **(1) Five rows declare a discipline the source does not yet bind.** This module was the
-//! increment's *first* task, and each later task retires one of its declarations: the three
-//! `FileCas` rows that are not yet compare-and-swap (the fan-out flip, `rename`'s unguarded
-//! arms, and the config relocation, which has no rollback at all) and
+//! **(1) Four rows declare a discipline the source does not yet bind.** This module was the
+//! increment's *first* task, and each later task retires one of its declarations: the two
+//! `FileCas` rows that are not yet compare-and-swap (`rename`'s unguarded arms, and the
+//! config relocation, which has no rollback at all) and
 //! **both** `MintedSet` rows (still `remove_dir_all`) are declarations of what the increment
 //! binds, not readings of what the binary does today. **T10** is the task whose totality
 //! fence makes every row a checked fact and strikes this paragraph. *(It read **eight** when
-//! this module landed; **T3 bound `promote-destination` and `retired-original`** and **T4
+//! this module landed; **T3 bound `promote-destination` and `retired-original`**, **T4
 //! bound `milestone-record`** — whose five doors now mint two door-keyed identities,
-//! `milestone.rollback-conflict` and `task-discard.rollback-conflict` — so the
+//! `milestone.rollback-conflict` and `task-discard.rollback-conflict` — and **T5 bound
+//! `fan-out-record-flip`**, the sixth write of that same file, onto the first of those two
+//! identities; so the
 //! count moves with the source rather than standing as a stale number. The plan's
 //! decomposition says "six" for the `FileCas` half alone; `unwind_mint` and
 //! `unwind_unrecorded_seeds` are equally unbound until T7 — the datum is `unwind_mint`'s
@@ -254,10 +256,15 @@ pub const ROLLBACK_POPULATIONS: &[Population] = &[
         doors: &[&["milestone", "finalize"]],
         site: Site::Source {
             file: "crates/cli/src/milestone.rs",
-            // A destructor, not a function the family's vocabulary names — one of the two
-            // restores a name-only grep is blind to.
-            unit: "RecordFlipGuard::drop",
-            restores: 1,
+            // It was a destructor's body — one of the two restores a name-only grep is blind
+            // to, and the reason the scan reads `Drop` bodies at all. Since T5 the destructor
+            // calls this **named** unit, whose whole restore is the shared compare-and-swap
+            // at `rollback.rs::restore` (counted once at the row whose site that unit is), so
+            // the `Drop` holds no byte-restoring call of its own and the scan no longer counts
+            // it. A row owning zero is still fenced: deleting it leaves this unit's count
+            // unclaimed.
+            unit: "rollback_record_flip",
+            restores: 0,
         },
         discipline: Discipline::FileCas,
     },

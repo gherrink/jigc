@@ -4460,7 +4460,17 @@ fn run_milestone_finalize(
     // finalize below (the flip must not persist on a non-landed commit — "Writes are
     // transactional"); the success paths [`disarm`](RecordFlipGuard::disarm) it once the commit
     // has landed.
-    let mut record_flip = flip_record_for_finalize(&repo_root, &jigc_home, &schemas, milestone_id)?;
+    // The sink the guard's destructor pushes a raced restore's conflicts into — owned here, so
+    // both `squash` arms' refusal paths can drain it ([`drain_record_flip`]).
+    let record_flip_sink: std::cell::RefCell<Vec<Finding>> = std::cell::RefCell::new(Vec::new());
+    let mut record_flip = flip_record_for_finalize(
+        &repo_root,
+        &jigc_root,
+        &jigc_home,
+        &schemas,
+        milestone_id,
+        &record_flip_sink,
+    )?;
     let record_changed = record_flip.as_ref().is_some_and(|f| f.changed);
     let record_pathspec = record_flip.as_ref().map(|f| f.pathspec.clone());
 
@@ -4725,6 +4735,10 @@ fn run_milestone_finalize(
             // a dirty worktree unless `--force`.) Surface git's stderr verbatim and exit
             // `FAILURE`.
             Err(err) => {
+                // The record flip's own restore is the guard's destructor, which can return
+                // nothing — so force it here, before the rejection is composed, and carry its
+                // conflicts beside the executor's (M52 Increment 5 / T5).
+                rollback_conflicts.extend(drain_record_flip(&mut record_flip, &record_flip_sink));
                 // A rejected chain names ITSELF in the invocation log — the `squash: false`
                 // arm's own identity, not the task door's (M47 Inc 3 T7) — and states what
                 // the abort above leaves behind, while git's stderr stays verbatim.
@@ -4829,29 +4843,35 @@ fn run_milestone_finalize(
             // inlined here so the landed arm can print the manifest. The executor already
             // rolled back its promoted-doc copies and the record flip's guard restores the
             // record, so the milestone is left exactly as the boundary found it.
-            Err(err) => Ok(crate::task::surface_commit_rejection(
-                format,
-                &err,
-                &crate::task::RejectionFrame {
-                    code: crate::invocation_log::ERROR_MILESTONE_FINALIZE_REJECTED,
-                    target: format!("milestone:{milestone_id}"),
-                    survived: format!(
-                        "milestone:{milestone_id} is intact — nothing was committed, the \
-                         merged docs were rolled back, and every provisioned sub-task \
-                         worktree still holds its staged code"
-                    ),
-                    survived_non_hook: None,
-                    rerun: milestone_finalize_rerun(milestone_id, carry_staged),
-                },
-                &rollback_conflicts,
-            )),
+            Err(err) => {
+                // The record flip's restore is the guard's destructor, which can return
+                // nothing — so force it here, before the rejection is composed, and carry its
+                // conflicts beside the executor's (M52 Increment 5 / T5).
+                rollback_conflicts.extend(drain_record_flip(&mut record_flip, &record_flip_sink));
+                Ok(crate::task::surface_commit_rejection(
+                    format,
+                    &err,
+                    &crate::task::RejectionFrame {
+                        code: crate::invocation_log::ERROR_MILESTONE_FINALIZE_REJECTED,
+                        target: format!("milestone:{milestone_id}"),
+                        survived: format!(
+                            "milestone:{milestone_id} is intact — nothing was committed, the \
+                             merged docs were rolled back, and every provisioned sub-task \
+                             worktree still holds its staged code"
+                        ),
+                        survived_non_hook: None,
+                        rerun: milestone_finalize_rerun(milestone_id, carry_staged),
+                    },
+                    &rollback_conflicts,
+                ))
+            }
         }
     }
 }
 
 /// A transactional guard over the milestone record's `joined` flip that the finalize commit
 /// folds in (`design/team-ready-state.md` → The commit model — join folds). Holds the record's
-/// pre-flip bytes; on `Drop` (any early return / blocked / failed finalize) it rewrites them, so
+/// pre-flip bytes; on `Drop` (any early return / blocked / failed finalize) it puts them back, so
 /// a non-landed finalize leaves the committed record at its pre-flip `active` state ("Writes are
 /// transactional" — the flip must not persist without the commit). The success paths call
 /// [`disarm`](RecordFlipGuard::disarm) once the commit has landed, so the committed `joined`
@@ -4864,40 +4884,94 @@ fn run_milestone_finalize(
 /// finalized. The **index** half is the executor's fifth-family capture/restore
 /// ([`crate::task::StagePolicy::live_index_record_pathspecs`]; M47 Inc 3 T5,
 /// `design/finalize.md` → Rollback discipline). The two halves together are the transaction.
-struct RecordFlipGuard {
-    /// The committed record's on-disk path (outside `.jigc/`).
-    path: PathBuf,
-    /// The pre-flip bytes to restore on an aborted finalize.
-    before: String,
+///
+/// **The worktree half is compare-and-swap since M52 Increment 5 / T5**, on the discipline
+/// `cli::rollback::ROLLBACK_POPULATIONS`' `fan-out-record-flip` row declares. The interval
+/// this guard writes across is the widest one in the binary — promotion, retirement, the
+/// live-index stage, the combine and the user's own `pre-commit` hook all run inside it — so
+/// an unconditional rewrite of the captured pre-image took a third party's bytes at exit 1
+/// with nothing saying so, the sixth write of the file whose other five doors T4 closed.
+/// Now the restore asks the shared question (*is what is there now still what jigc left?*)
+/// and a `No` preserves both copies and raises [`crate::rollback::MILESTONE_DOOR`]'s
+/// `milestone.rollback-conflict` — the same identity the record's own doors raise, because
+/// the subject is the same file and the operator's act is the same comparison.
+struct RecordFlipGuard<'a> {
+    /// The worktree axis: the record's pre-flip image plus the door a raced restore names.
+    /// Keyed by [`RecordFlipGuard::pathspec`], which is also the park identity.
+    worktree: crate::rollback::PreImageFamily,
     /// Whether the flip actually changed bytes — folded into the `has_diff` signal.
     changed: bool,
     /// The repo-relative pathspec the finalize commit path-adds.
     pathspec: String,
+    /// The two roots the compare-and-swap's restore and park need, owned because the restore
+    /// runs in a destructor that borrows nothing from its caller's frame.
+    repo_root: PathBuf,
+    jigc_root: PathBuf,
     /// Cleared by [`disarm`](RecordFlipGuard::disarm) once the commit lands.
     armed: bool,
+    /// **The caller-owned sink.** A destructor returns nothing, so the conflicts a raced
+    /// restore raises are pushed here and the boundary's refusal arm drains them
+    /// ([`drain_record_flip`]) into the document it is composing, beside its own frame.
+    sink: &'a std::cell::RefCell<Vec<Finding>>,
 }
 
-impl RecordFlipGuard {
+impl RecordFlipGuard<'_> {
     fn disarm(&mut self) {
         self.armed = false;
     }
+
+    /// The flip's restore: the shared compare-and-swap, returning one
+    /// `milestone.rollback-conflict` per path whose bytes are no longer jigc's (at most one —
+    /// this family holds exactly one entry).
+    ///
+    /// A named unit rather than the destructor's body, because the registry's membership
+    /// scan keys a population at `(file, unit)` and this is the row's site
+    /// (`crates/cli/tests/rollback_population_registry.rs`).
+    fn rollback_record_flip(&self) -> Vec<Finding> {
+        self.worktree.restore(&self.repo_root, &self.jigc_root)
+    }
 }
 
-impl Drop for RecordFlipGuard {
+impl Drop for RecordFlipGuard<'_> {
     fn drop(&mut self) {
         if self.armed {
-            // Best-effort restore — the finalize did not land, so revert the working-tree flip.
-            let _ = std::fs::write(&self.path, &self.before);
+            // Best-effort restore — the finalize did not land, so revert the working-tree
+            // flip, but only while the record still holds the bytes the flip wrote. The
+            // restore runs before the sink is borrowed, never inside the borrow.
+            let conflicts = self.rollback_record_flip();
+            self.sink.borrow_mut().extend(conflicts);
         }
     }
 }
 
 /// Disarm the (optional) record-flip guard on a landed finalize — a `None` (dev-only, no record)
 /// is inert.
-fn disarm_record_flip(guard: &mut Option<RecordFlipGuard>) {
+fn disarm_record_flip(guard: &mut Option<RecordFlipGuard<'_>>) {
     if let Some(guard) = guard {
         guard.disarm();
     }
+}
+
+/// Run the flip's restore **now** and take the conflicts it raised — the refusal arm's half of
+/// the caller-owned sink.
+///
+/// The restore is the destructor's, so forcing the drop here is what makes its findings
+/// available to the arm that is composing the refusal; afterwards the guard is `None` and the
+/// end-of-scope drop is inert. Called on both `squash` arms' `Err` paths, before the rejection
+/// is surfaced.
+///
+/// **Declared bound.** A failure *between* the flip and the boundary — a pre-commit block
+/// (zero-contribution, carryover) or a propagated `?` — drops the guard without a drain, so the
+/// restore still runs under the same compare-and-swap (no byte is overwritten and the pre-image
+/// is parked) but the conflict is not carried onto that arm's document. Those arms commit
+/// nothing and run no hook, so the racer there is an unrelated concurrent process rather than
+/// the transaction's own interval.
+fn drain_record_flip(
+    guard: &mut Option<RecordFlipGuard<'_>>,
+    sink: &std::cell::RefCell<Vec<Finding>>,
+) -> Vec<Finding> {
+    drop(guard.take());
+    std::mem::take(&mut sink.borrow_mut())
 }
 
 /// Flip the committed `milestone-record` to `joined` in place and set up its fold into the
@@ -4913,12 +4987,20 @@ fn disarm_record_flip(guard: &mut Option<RecordFlipGuard>) {
 /// pathspec the finalize commit path-adds. The record home is under `jigc_home`'s docs-root; the
 /// pathspec is stripped against the git-commit `repo_root` (they coincide outside a worktree,
 /// and milestone-finalize-in-a-worktree is the deferred WF4/WF5 concern).
-fn flip_record_for_finalize(
+///
+/// The pre-flip bytes are carried as a [`crate::rollback::PreImage`] captured **before**
+/// `join_record` writes and read back **one statement after** it — at rollback time the
+/// read-back would return a racer's bytes and call them jigc's, which is the whole of the
+/// compare-and-swap. `sink` is where the guard's destructor puts the conflicts a raced restore
+/// raises ([`drain_record_flip`]).
+fn flip_record_for_finalize<'a>(
     repo_root: &Path,
+    jigc_root: &Path,
     jigc_home: &Path,
     schemas: &BTreeMap<String, Schema>,
     milestone_id: &str,
-) -> Result<Option<RecordFlipGuard>> {
+    sink: &'a std::cell::RefCell<Vec<Finding>>,
+) -> Result<Option<RecordFlipGuard<'a>>> {
     let Some(schema) = schemas.get(MILESTONE_RECORD_TYPE) else {
         return Ok(None);
     };
@@ -4933,20 +5015,33 @@ fn flip_record_for_finalize(
         .context("the `milestone-record` doctype declares no committed location")?;
     let before = std::fs::read_to_string(&record_path)
         .with_context(|| format!("could not read the milestone record {record_path:?}"))?;
-    let joined = engine::milestone::join_record(&record_path, schema, milestone_id)
-        .map_err(finding_to_err)?;
     let pathspec = record_path
         .strip_prefix(repo_root)
         .unwrap_or(&record_path)
         .to_str()
         .with_context(|| format!("record path {record_path:?} is not valid UTF-8"))?
         .to_owned();
+    // The rollback's own pre-image, captured before the flip writes. It re-reads rather than
+    // reusing `before` because the entry owns its bytes (`before` is the `has_diff`
+    // comparison below and nothing else), and this population's pre-image is always
+    // **present** — the read above would have failed otherwise, so the absent arm the shared
+    // entry models belongs to `milestone create`'s population and not to this one.
+    let mut entry = crate::rollback::PreImage::capture(pathspec.clone(), record_path.clone())
+        .with_context(|| format!("could not read the milestone record {record_path:?}"))?;
+    let joined = engine::milestone::join_record(&record_path, schema, milestone_id)
+        .map_err(finding_to_err)?;
+    // One statement after the write, which is what makes the recorded image jigc's own.
+    entry.wrote();
+    let mut worktree = crate::rollback::PreImageFamily::empty(crate::rollback::MILESTONE_DOOR);
+    worktree.push(entry);
     Ok(Some(RecordFlipGuard {
         changed: joined != before,
-        path: record_path,
-        before,
+        worktree,
         pathspec,
+        repo_root: repo_root.to_path_buf(),
+        jigc_root: jigc_root.to_path_buf(),
         armed: true,
+        sink,
     }))
 }
 
