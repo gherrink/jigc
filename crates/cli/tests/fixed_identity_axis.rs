@@ -1430,3 +1430,221 @@ fn a_placement_singletons_reslug_route_is_the_schemas_and_it_lands() {
         "the retitle keeps the doc at the literal home its placement fixes it to",
     );
 }
+
+// ---------------------------------------------------------------------------
+// M52 Increment 6 / T5 — the OS name ceiling at the address head
+// ---------------------------------------------------------------------------
+//
+// T2/T3 closed *which* identity a fixed-identity doctype may be addressed by. This half
+// closes a question one tier below the doctype, and therefore below the identity guard:
+// whether the caller's `<slug>` head can be a **name** at all. A doc's slug becomes one
+// filesystem path component — `<docs-root>/<location>/<slug>.md` committed,
+// `.jigc/tasks/<id>/docs/<type>:<slug>.md` staged — which is the exact path shape
+// `cli::cli::SLUG_NAME_CEILING` is derived for, so the head takes that constant and the
+// code M51 Increment 9 / T3 minted for it (`cli::task::SLUG_NAME_CEILING_CODE`), on that
+// code's own *one code for the whole family* reading.
+//
+// **The state this refuses, driven at the wave's base** (`completions/artifacts/M52/
+// baseline-tokens.md` §2.5 row 1): `jigc doc set-slot "vision:<300 bytes>#thesis"
+// --from-file - --task <id>` answered
+//
+//     could not copy in `vision:aaaa…#thesis` for editing: File name too long (os error 63)
+//
+// — no code, no `at:`, no route, and under `--format json` the same sentence inside
+// `{"error": …}`. A door had accepted a token it could never name, discovered that at the
+// write, and reported the discovery as an I/O fault.
+//
+// **Why the guard is one edit and not five.** The baseline measured the symptom at five
+// `doc` write doors, because only there did the head reach a `create_dir_all`/`write`. But
+// an over-long head is unusable wherever it is typed — at the read doors it resolves
+// nothing, at `rename` it names no file to move, at `add-from-spec` no spec to seed from —
+// so the guard rides **beside the grammar reject**, inside
+// `cli::task::reject_malformed_slug_head`, which all **four** user-address parse
+// boundaries already call (`doc::parse_verb_addr` · `rename::parse_addr` ·
+// `milestone::run_add_from_spec` · `TaskArea::bind`). That is `reject_slug_over_name_
+// ceiling`'s own rule one family over: *an override that is inert at one door today is an
+// identity at that door tomorrow*.
+//
+// **Precedence, and why the identity guard now runs second.** The order inside the
+// boundary is the fault order — is this token a slug (`store.malformed-slug`), can it be a
+// name (`write.slug-name-ceiling`), is it the identity this doctype has
+// (`store.fixed-identity`). The first two are facts about the **token**; the third needs a
+// resolved doctype. So a 300-byte head on `vision` answers the ceiling, not the identity —
+// T2's cells are all short heads and are untouched.
+
+/// The code an over-long `<slug>` head carries — `cli::task::SLUG_NAME_CEILING_CODE`,
+/// spelled out rather than imported: a test comparing emitted bytes against the constant
+/// that produced them proves only that the constant equals itself.
+const NAME_CEILING: &str = "write.slug-name-ceiling";
+
+/// The bare OS fault no boundary may leak any longer — the baseline's whole symptom.
+const OS_FAULT: &str = "File name too long";
+
+/// A well-formed `<slug>` head of `bytes` bytes. 300 is the token the baseline drove: it
+/// clears every filesystem's own `NAME_MAX` by enough that a boundary which let it through
+/// fails loudly rather than subtly.
+fn head_of(bytes: usize) -> String {
+    "a".repeat(bytes)
+}
+
+/// The staged docs a task holds, by filename — `[]` before the first write creates the
+/// directory.
+fn staged_docs(repo: &Path, task: &str) -> Vec<String> {
+    let dir = repo.join(".jigc").join("tasks").join(task).join("docs");
+    let Ok(entries) = fs::read_dir(&dir) else {
+        return Vec::new();
+    };
+    let mut names: Vec<String> = entries
+        .map(|e| {
+            e.expect("a staged entry")
+                .file_name()
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+    names.sort();
+    names
+}
+
+/// **The axis: all four user-address parse boundaries.** Each refuses the over-long head
+/// with the ceiling code, an `at:` and a route; none leaks the OS fault; and the task's
+/// staged set is byte-for-byte what it was before the sweep.
+#[test]
+fn every_user_address_parse_boundary_refuses_a_head_over_the_os_name_ceiling() {
+    let corpus = TrialCorpus::build(State::CommittedSingletons);
+    assert_ok(
+        &corpus.jigc(&["milestone", "create", "Probe milestone"]),
+        "`jigc milestone create`",
+    );
+    let workflow = seed_vision_reader_pack(&corpus.repo());
+    let task = corpus.start_workflow(workflow, "consult the vision");
+    let before = staged_docs(&corpus.repo(), &task);
+
+    let head = head_of(300);
+    let cells: Vec<(&str, Vec<String>)> = vec![
+        (
+            "doc::parse_verb_addr (`doc set-field`)",
+            vec![
+                "doc".into(),
+                "set-field".into(),
+                format!("vision:{head}#meta/grounded-in"),
+                "--value".into(),
+                "[research:x]".into(),
+                "--task".into(),
+                task.clone(),
+            ],
+        ),
+        (
+            "rename::parse_addr",
+            vec![
+                "rename".into(),
+                format!("adr:{head}"),
+                "--to".into(),
+                "Phantom".into(),
+            ],
+        ),
+        (
+            "milestone::run_add_from_spec",
+            vec![
+                "milestone".into(),
+                "add-from-spec".into(),
+                "probe-milestone".into(),
+                format!("spec:{head}"),
+            ],
+        ),
+        (
+            "TaskArea::bind",
+            vec![
+                "task".into(),
+                "bind".into(),
+                "vision".into(),
+                format!("vision:{head}"),
+                task.clone(),
+            ],
+        ),
+    ];
+
+    for (boundary, argv) in cells {
+        let args: Vec<&str> = argv.iter().map(String::as_str).collect();
+        let out = corpus.jigc(&args);
+        let rendered = streams(&out);
+        assert_eq!(
+            out.status.code(),
+            Some(1),
+            "[{boundary}] an over-long `<slug>` head refuses at exit 1; got:\n{rendered}",
+        );
+        assert!(
+            rendered.contains(NAME_CEILING),
+            "[{boundary}] the refusal must carry `{NAME_CEILING}` — the head is a slug the \
+             grammar accepts and a name the filesystem cannot hold; got:\n{rendered}",
+        );
+        assert!(
+            !rendered.contains(OS_FAULT),
+            "[{boundary}] the boundary adjudicates the token, so the OS fault must never \
+             be reached, let alone reported; got:\n{rendered}",
+        );
+        assert!(
+            rendered
+                .lines()
+                .any(|line| line.trim_start().starts_with("at:")),
+            "[{boundary}] the refusal must say where — the address the caller typed; \
+             got:\n{rendered}",
+        );
+        assert!(
+            rendered
+                .lines()
+                .any(|line| line.trim_start().starts_with("route:")),
+            "[{boundary}] the refusal must carry a route; got:\n{rendered}",
+        );
+    }
+
+    assert_eq!(
+        staged_docs(&corpus.repo(), &task),
+        before,
+        "no boundary may mint a staged instance at a head it refused",
+    );
+}
+
+/// **The boundary is the derived constant, not a number written here.** `SLUG_NAME_CEILING`
+/// bytes is accepted by the guard; one byte more is not.
+///
+/// Read from `cli::cli::SLUG_NAME_CEILING` on purpose, and this is where this suite parts
+/// from its `slug_override_axis` sibling — which spells the same number out. That suite
+/// asserts the *rendered message* names the ceiling, and comparing emitted bytes against
+/// the constant that produced them proves only that the constant equals itself. This cell
+/// asserts **behaviour at N and N+1**, which is a claim about what the guard reads: a
+/// re-derivation that moved the ceiling and left the guard on a stale literal would pass a
+/// hard-coded `165` and fail here.
+#[test]
+fn the_heads_ceiling_is_the_derived_constant_at_both_sides_of_the_boundary() {
+    let corpus = TrialCorpus::build(State::CommittedSingletons);
+    let ceiling = cli::cli::SLUG_NAME_CEILING;
+
+    // At the ceiling: the guard is silent and the door answers on its own merits — there
+    // is no such doc, which is a fact about the corpus and not about the token.
+    let accepted = corpus.jigc(&["doc", "show", &format!("adr:{}", head_of(ceiling))]);
+    let rendered = streams(&accepted);
+    assert!(
+        !rendered.contains(NAME_CEILING),
+        "a head of exactly {ceiling} bytes is nameable — the guard must stay silent and \
+         let the door answer; got:\n{rendered}",
+    );
+    assert!(
+        rendered.contains("store.not-found"),
+        "…and the door's own answer is that no such doc exists; got:\n{rendered}",
+    );
+
+    // One byte over: refused.
+    let refused = corpus.jigc(&["doc", "show", &format!("adr:{}", head_of(ceiling + 1))]);
+    let rendered = streams(&refused);
+    assert_eq!(
+        refused.status.code(),
+        Some(1),
+        "a head of {} bytes refuses at exit 1; got:\n{rendered}",
+        ceiling + 1,
+    );
+    assert!(
+        rendered.contains(NAME_CEILING),
+        "one byte over the ceiling is over the ceiling; got:\n{rendered}",
+    );
+}

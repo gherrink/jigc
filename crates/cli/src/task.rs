@@ -1498,20 +1498,85 @@ pub(crate) const MALFORMED_SLUG_HEAD: &str = "store.malformed-slug";
 /// (never `jigc describe`, which lists doctypes and answers nothing about a slug) plus the
 /// grammar in [`WORK_UNIT_ID_GRAMMAR`]'s one shipped spelling. Reused, not copied: a
 /// second spelling of *what a slug is* is exactly the drift the surface contract forbids.
+///
+/// **Two faults, one boundary** (M52 Increment 6 / T5). Since the name-ceiling guard rides
+/// beside the grammar reject ([`reject_slug_head_over_name_ceiling`]), this function is the
+/// four boundaries' whole *is this head usable* door: the grammar fault
+/// ([`MALFORMED_SLUG_HEAD`]) first, because a token that is not a slug is not a question
+/// about length; the ceiling fault ([`SLUG_NAME_CEILING_CODE`]) second. Both are facts
+/// about the **token**, so both precede the doctype question a resolved schema answers
+/// ([`reject_fixed_identity_alias`]) — the order every caller inherits by calling this.
 pub(crate) fn reject_malformed_slug_head(addr: &str, slug: &str) -> Result<()> {
-    if engine::slug::is_slug(slug) {
+    if !engine::slug::is_slug(slug) {
+        return Err(crate::render::finding_error(&Finding::graded(
+            Severity::Blocking,
+            MALFORMED_SLUG_HEAD,
+            format!("{slug:?} is not a valid doc slug — the `<slug>` head of address `{addr}`"),
+            None,
+            Some(engine::finding::Route::mechanical(
+                ["jigc", "doc", "list"],
+                format!(
+                    " lists the committed docs and the identity each one carries; \
+                     {WORK_UNIT_ID_GRAMMAR}"
+                ),
+            )),
+        )));
+    }
+    reject_slug_head_over_name_ceiling(addr, slug)
+}
+
+/// Refuse a caller-typed address whose `<slug>` head is a well-formed slug the filesystem
+/// cannot **name** — the ceiling family's second half, at the same four boundaries
+/// [`reject_malformed_slug_head`] guards (M52 Increment 6 / T5;
+/// `completions/artifacts/M52/settle-record.md` → D5.6).
+///
+/// **The state it refuses.** A head becomes one path component — `<slug>.md` committed,
+/// `<type>:<slug>.md` staged in the task working area — which is exactly the path shape
+/// [`crate::cli::SLUG_NAME_CEILING`] is derived for, so the head takes that constant and
+/// that code rather than a second ceiling of its own. Driven at the wave's baseline
+/// (`completions/artifacts/M52/baseline-tokens.md` §2.5 row 1), a 300-byte head at the five
+/// `doc` write doors reached the copy-in and reported the discovery as I/O —
+/// ``could not copy in `vision:aaaa…#thesis` for editing: File name too long (os error 63)``,
+/// with no code, no `at:` and no route, and the same sentence inside `{"error": …}` under
+/// `--format json`.
+///
+/// **Why it rides the boundary and not those five doors.** An over-long head is unusable
+/// wherever it is typed: it resolves nothing at the read doors, names no file for `rename`
+/// to move, and no spec for `milestone add-from-spec` to seed from. Guarding the five that
+/// fail loudly would key the fix on today's symptom — the mistake
+/// [`reject_slug_over_name_ceiling`]'s own *one flag, one ceiling, six doors* reading names
+/// one family over. One edit here lands it at all four parse boundaries.
+///
+/// **It refuses rather than truncating**, for that sibling's reason: a truncated identity
+/// names a different doc.
+///
+/// The two halves of the family differ only in locus and route, and each is right for its
+/// own caller. The flag half carries **no** location — the fault is the value, and five of
+/// its six doors have no doc, task or path to key it at — and routes at re-running with a
+/// shorter `--slug`. This half carries the address the caller typed as its locus, because
+/// that address *is* where the fault is, and routes at the family's discovery verb
+/// `jigc doc list`, the same one [`reject_malformed_slug_head`] names.
+fn reject_slug_head_over_name_ceiling(addr: &str, slug: &str) -> Result<()> {
+    let ceiling = crate::cli::SLUG_NAME_CEILING;
+    if slug.len() <= ceiling {
         return Ok(());
     }
     Err(crate::render::finding_error(&Finding::graded(
         Severity::Blocking,
-        MALFORMED_SLUG_HEAD,
-        format!("{slug:?} is not a valid doc slug — the `<slug>` head of address `{addr}`"),
-        None,
+        SLUG_NAME_CEILING_CODE,
+        format!(
+            "the `<slug>` head of address `{addr}` is {} bytes — over the {ceiling}-byte \
+             ceiling a doc identity carries",
+            slug.len(),
+        ),
+        Some(Location::addressed(addr, 1, 1)),
         Some(engine::finding::Route::mechanical(
             ["jigc", "doc", "list"],
             format!(
-                " lists the committed docs and the identity each one carries; \
-                 {WORK_UNIT_ID_GRAMMAR}"
+                " lists the committed docs and the identity each one carries; a slug is one \
+                 filesystem path component, so an identity is at most {ceiling} bytes — jigc \
+                 refuses rather than truncating, because a truncated identity names a \
+                 different doc"
             ),
         )),
     )))
@@ -1598,10 +1663,18 @@ pub(crate) fn reject_fixed_identity_slug(
     ))
 }
 
-/// The blocking finding code a `--slug` override longer than the OS name ceiling carries
-/// (M51 Increment 9 / T3, EC-28) — **one** code for the whole `--slug` family, on
-/// [`MALFORMED_SLUG_HEAD`]'s reading: it is one fault, and which of the six doors the
-/// caller typed does not change what they have to do about it.
+/// The blocking finding code a caller token longer than the OS name ceiling carries —
+/// **one** code for the whole **name-ceiling** family, on [`MALFORMED_SLUG_HEAD`]'s
+/// reading: it is one fault, and which door the caller typed does not change what they have
+/// to do about it.
+///
+/// Two halves, one code, because one thing is wrong in both: a token jigc would turn into a
+/// single filesystem path component is longer than one can be. The `--slug` **override**,
+/// at every [`crate::cli::SLUG_DOORS`] row (M51 Increment 9 / T3, EC-28;
+/// [`reject_slug_over_name_ceiling`]), and the `<slug>` **head** of a caller-typed address,
+/// at the four user-address parse boundaries (M52 Increment 6 / T5;
+/// [`reject_slug_head_over_name_ceiling`]) — which differ only in locus and route, each
+/// stated at its own predicate.
 ///
 /// Deliberately **not** `write.malformed-slug`, M50's *"this token is not a slug"*: the
 /// override here **is** a slug — the grammar has nothing to say about it — it is simply too

@@ -2,6 +2,22 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-09-18 — M52 Increment 6 / T5: the OS name ceiling is asked at the address head, beside the grammar reject rather than at the doors that fail loudly
+
+**A caller-typed `<slug>` head over `cli::cli::SLUG_NAME_CEILING` refuses `write.slug-name-ceiling` at all four user-address parse boundaries** — `cli::doc::parse_verb_addr`, `cli::rename::parse_addr`, `cli::milestone::run_add_from_spec`, `cli::task::TaskArea::bind`. Settle [D5](completions/artifacts/M52/settle-record.md).6 (A1-D4); [baseline-tokens](completions/artifacts/M52/baseline-tokens.md) §2.5 row 1.
+
+**The state it refuses.** A head becomes one filesystem path component — `<slug>.md` committed, `<type>:<slug>.md` staged — so a 300-byte head is a value no door can name from. Driven at the wave's baseline, the five `doc` write doors accepted it, discovered that at the copy-in, and reported the discovery as I/O: *"could not copy in `vision:aaaa…#thesis` for editing: File name too long (os error 63)"* — no code, no `at:`, no route, and the same sentence inside `{"error": …}` under `--format json`.
+
+**One edit at the boundary, not five at the doors whose symptom was measured.** The guard rides **beside** the grammar reject, inside `cli::task::reject_malformed_slug_head`, which all four boundaries already call — so it lands wherever a head is typed, not only where a head reaches a `write`. That is `reject_slug_over_name_ceiling`'s own reading one family over (*an override that is inert at one door today is an identity at that door tomorrow*): an over-long head resolves nothing at the read doors, names no file for `rename` to move and no spec for `add-from-spec` to seed from, and every one of those answers used to be about something else — `store.not-found` at a path that could never exist, `store.no-such-section` off a file the head never named.
+
+**Same constant, same code, no second ceiling.** `SLUG_NAME_CEILING` (**165**) is derived for exactly this path shape, and `write.slug-name-ceiling` is already *one code for the whole family* on `store.malformed-slug`'s reading — the head half and the `--slug` half are one fault, and which door the caller typed does not change what they have to do. The increment's one registered code is `store.fixed-identity`; this is **not** a second.
+
+**The two halves differ in locus and route, each right for its caller.** The flag half carries no `location` — the fault is the value, and five of its six doors have no doc, task or path to key it at — and routes at re-running with a shorter `--slug`. The head half carries **the address the caller typed**, because that address *is* where the fault is, and routes at `jigc doc list`, the same discovery verb its grammar sibling names. [validation.md](design/validation.md)'s registry row is widened rather than left stating *"one finding over the flag, so it carries no `location`"* as the whole truth.
+
+**Precedence is the fault order, and it moves the identity guard to third.** Grammar, then ceiling — both facts about the **token** — then `store.fixed-identity`, which needs a resolved doctype. So a 300-byte head on `vision` now answers the ceiling rather than the identity; T2's cells are all short heads and are untouched.
+
+**Red first** (`crates/cli/tests/fixed_identity_axis.rs`, the T5 section): the four-boundary cell failed at the first door with `store.fixed-identity` in hand, and the boundary cell failed at `ceiling + 1` with a bare `store.not-found`. The boundary is read from `cli::cli::SLUG_NAME_CEILING` and **not** spelled out — the departure from `slug_override_axis`'s sibling literal is deliberate and stated at the test: that suite asserts the *rendered message* names the ceiling, where a constant compared against its own output proves only that it equals itself, while this cell asserts behaviour at N and N+1, which is a claim about what the guard reads. `slug_override_axis::` green with its six `--slug` rows unchanged.
+
 ## 2026-09-18 — M52 Increment 6 / T4: the reslug arm asks the identity predicate, and its escape hatch is read off the schema
 
 **`cli::rename`'s validation gate, arm (d), keys on `Schema::has_fixed_identity` instead of `placement.is_some()`.** Settle [D5](completions/artifacts/M52/settle-record.md).3 · **D8**'s `rename --slug` cell.
