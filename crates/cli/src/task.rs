@@ -1517,6 +1517,69 @@ pub(crate) fn reject_malformed_slug_head(addr: &str, slug: &str) -> Result<()> {
     )))
 }
 
+/// The blocking finding code an address carries whose `<slug>` head is **not the identity
+/// its doctype has** — M52 Increment 6 / T2 (settle-record → D5.2; `design/validation.md`
+/// → The M52 registrations). **One** code for the family on [`MALFORMED_SLUG_HEAD`]'s
+/// reading: it is one fault at every door, and which verb the caller typed does not change
+/// what they have to do about it.
+///
+/// Deliberately **not** `store.not-found`, the answer this address used to get at the two
+/// read doors: *not found* is a fact about the corpus and invites the caller to create the
+/// thing, while a fixed-identity doctype's slug is **supplied by the CLI**, so the address
+/// names nothing that could ever exist and creating it is not an act jigc offers. And
+/// deliberately not `store.malformed-slug`, M50's *this token is not a slug*: `bogus` **is**
+/// a slug — the grammar has nothing to say about it.
+pub(crate) const FIXED_IDENTITY: &str = "store.fixed-identity";
+
+/// Refuse a caller-typed address whose `<slug>` head is not the one identity a
+/// **fixed-identity** doctype has ([`engine::schema::Schema::has_fixed_identity`] — the
+/// predicate's one engine home, M52 Increment 6 / T1).
+///
+/// **The state it refuses, driven at `89ff8232` on the shipped packs.** `jigc doc set-field
+/// vision:alpha#meta/grounded-in --value "[research:x]" --task <id>` exited **0** and minted
+/// `.jigc/tasks/<id>/docs/vision:alpha.md` — a staged instance at an identity the store
+/// cannot hold — while `jigc doc list` carried no `alpha` row and `jigc doc show
+/// vision:alpha` refused. Taken end to end on the released `1.0.0-rc.15` over the sibling
+/// `roadmap:bogus` (`completions/artifacts/M52/advocates/F5.md` §1) it **finalized and
+/// committed**: the real `docs/roadmap.md` rewritten, `jigc validate` clean at exit 0, and
+/// the pinned write ack handing the driver `target.slug: "bogus"` with `findings: []`.
+/// Between that write and the finalize there is **no address at which the agent can read
+/// what it wrote**, so M48's read-back fence is defeated structurally rather than by
+/// omission.
+///
+/// Returned as a bare [`Finding`] rather than an error, so each door declares its own arm:
+/// the nine `doc` doors wrap it in `DocFailure::block` (the findings envelope), and the
+/// three sibling doors that resolve their schema separately carry their own.
+///
+/// **The route is built from the schema alone** — `jigc doc show <ty>:<ty>`, the identity
+/// the doctype does have. It carries no `--task`: this guard sits at the parse boundary,
+/// *before* any door selects a copy, and a `--task` it does not hold would be a guess —
+/// which is the law-1 lie this wave closes, not a convenience.
+pub(crate) fn reject_fixed_identity_alias(
+    schema: &Schema,
+    address: &Address,
+) -> Result<(), Finding> {
+    if !schema.has_fixed_identity() || address.slug.as_str() == schema.ty {
+        return Ok(());
+    }
+    let typed = address.to_string();
+    let canonical = format!("{ty}:{ty}", ty = schema.ty);
+    Err(Finding::graded(
+        Severity::Blocking,
+        FIXED_IDENTITY,
+        format!(
+            "`{typed}` is not an address `{ty}` can have: its identity is fixed — the CLI \
+             supplies the slug, so `{canonical}` is the one instance this doctype has",
+            ty = schema.ty,
+        ),
+        Some(Location::addressed(&typed, 1, 1)),
+        Some(engine::finding::Route::mechanical(
+            ["jigc", "doc", "show", canonical.as_str()],
+            " — a fixed-identity doctype has one instance at a fixed slug",
+        )),
+    ))
+}
+
 /// The blocking finding code a `--slug` override longer than the OS name ceiling carries
 /// (M51 Increment 9 / T3, EC-28) — **one** code for the whole `--slug` family, on
 /// [`MALFORMED_SLUG_HEAD`]'s reading: it is one fault, and which of the six doors the

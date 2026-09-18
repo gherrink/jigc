@@ -1751,19 +1751,32 @@ fn the_waves_seven_wire_changes_each_match_the_registry_that_declares_them() {
          information-free on the wave's #1-ranked v1 gate",
     );
 
-    // ── (7) N15: the `--task` read miss names the copy it looked in and KEEPS `--task`. ──
+    // ── (7) N15: the `--task` read miss names the copy it looked in. ──
     //
-    //     `vision` is a `placement` singleton, so every slug but `vision` names no instance
-    //     in either copy — which is the one address whose block has to say WHICH copy it
-    //     looked in. Until Increment 5 the two reads emitted byte-identical blocks: the
-    //     staged arm said *"names no committed doc"* and routed without `--task`, so the
-    //     route, followed exactly, served the other copy than the caller had asked for.
+    //     A read under `--task` that finds nothing has to say WHICH copy it looked in.
+    //     Until Increment 5 the two reads emitted byte-identical blocks: the staged arm
+    //     said *"names no committed doc"* and routed without `--task`, so the route,
+    //     followed exactly, served the other copy than the caller had asked for.
+    //
+    //     **[Re-pointed 2026-09-18 (M52 Increment 6, T2).** This arm drove
+    //     `vision:wrong-slug --task <id>`, and that address no longer reaches either read
+    //     arm: the nine `doc` doors refuse a non-canonical **fixed-identity** slug at their
+    //     shared parse boundary (`store.fixed-identity`), *before* any copy is selected, so
+    //     the assertion below could only have been kept by pinning a code the binary no
+    //     longer emits there. Two consequences, stated rather than dropped. (1) The subject
+    //     moves to a miss that **still** reaches the staged arm — a committed doc this task
+    //     does not stage — where N15's property is live and is what is asserted. (2) The
+    //     *"the route keeps `--task`"* half is **retired with its datum**: the singleton-slug
+    //     staged block was its only producer, and this miss's route correctly names the
+    //     **task-less** read, because the committed copy is the one that exists. The full
+    //     reading, and both arms driven, live in
+    //     `crates/cli/tests/staged_read_miss_arm.rs`.**]**
     let read_miss = TrialCorpus::build(State::CommittedSingletons);
     let task = read_miss.start_workflow("form-vision", "revise the vision");
     let missed = read_miss.jigc(&[
         "doc",
         "show",
-        "vision:wrong-slug",
+        "roadmap:roadmap",
         "--task",
         &task,
         "--format",
@@ -1772,36 +1785,33 @@ fn the_waves_seven_wire_changes_each_match_the_registry_that_declares_them() {
     let text = surface(&missed);
     assert!(
         !missed.status.success(),
-        "a read of an address neither copy carries is a miss\n{text}",
+        "a read of a doc this task does not stage is a miss under `--task`\n{text}",
     );
     let document = assert_wire(&missed, &[], "Reject::Findings");
     let findings = document["findings"]
         .as_array()
         .expect("the findings envelope carries a findings array");
-    assert!(
-        findings
-            .iter()
-            .any(|finding| finding["code"] == "store.not-found"),
-        "the miss is a typed finding on the pinned reject funnel, never a bare `error` \
-         key\n{text}",
-    );
     let block = findings
         .iter()
-        .find(|finding| finding["code"] == "store.not-found")
-        .expect("the miss carries the finding just asserted");
+        .find(|finding| finding["code"] == "store.not-staged")
+        .unwrap_or_else(|| {
+            panic!(
+                "the miss is a typed finding on the pinned reject funnel, never a bare \
+                 `error` key\n{text}"
+            )
+        });
     assert!(
         block["message"]
             .as_str()
-            .is_some_and(|message| message.contains(&task) && !message.contains("committed")),
+            .is_some_and(|message| message.contains("not staged in this task")),
         "the staged arm names the copy it looked in — a block phrased for the committed \
          store under `--task` is a law-1 lie\n{text}",
     );
     assert!(
         block["route"]
             .as_str()
-            .is_some_and(|route| route.contains(&format!("--task {task}"))),
-        "and its route keeps the `--task` scope the caller was reading in — a route that \
-         dropped it would, followed exactly, serve the other copy\n{text}",
+            .is_some_and(|route| route.contains("jigc doc show roadmap:roadmap")),
+        "and its route names the copy that does exist, which is the committed one\n{text}",
     );
 }
 

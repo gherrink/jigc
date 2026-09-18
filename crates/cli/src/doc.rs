@@ -6117,7 +6117,27 @@ fn parse_addr(addr: &str) -> Result<Address> {
 ///
 /// `engine::address::Address::parse` is **untouched**: the grammar is not widened, this is
 /// an expansion at the verb boundary — the one place a human/agent types an address.
-fn parse_verb_addr(pack: &dyn PackSource, project_config: &Path, addr: &str) -> Result<Address> {
+///
+/// **The identity guard lands here, once, for all nine `doc.rs` doors** (M52 Increment 6 /
+/// T2; settle-record → D5.2): this function already resolves the pack and is the single
+/// funnel every caller-typed `doc` address passes through, so a fixed-identity doctype's
+/// slug is adjudicated in one home rather than at nine call sites that can drift apart.
+/// The order is the fault order — grammar, then *is this token a slug*
+/// ([`crate::task::reject_malformed_slug_head`]), then *is this slug the identity this
+/// doctype has* ([`crate::task::reject_fixed_identity_alias`]) — and the **precedence is
+/// unchanged**: an unknown doctype resolves to no schema, so the predicate is false and the
+/// address falls through to the door's own `store.unknown-type`, exactly as before.
+///
+/// The error type is [`DocFailure`] so the two refusals can declare **different arms** for
+/// the same `--format json` caller: `store.malformed-slug` keeps M50's flattened `{error}`
+/// shape (`design/command-output-contract.md` → the `store.*` exception), while the
+/// identity refusal rides the findings envelope with its `(code, target)` key, like the
+/// `store.*` siblings it joins.
+fn parse_verb_addr(
+    pack: &dyn PackSource,
+    project_config: &Path,
+    addr: &str,
+) -> Result<Address, DocFailure> {
     let expanded = expand_bare_singleton(pack, project_config, addr);
     let address = Address::parse(&expanded).map_err(|err| {
         let (explanation, route) = address_parse_guidance(&err, head_doctype(&expanded));
@@ -6126,6 +6146,11 @@ fn parse_verb_addr(pack: &dyn PackSource, project_config: &Path, addr: &str) -> 
     // The grammar accepted the shape; the **slug head** still has to be a slug, because it
     // is what names the file (M50 Inc 2 / T1 — `crate::task::reject_malformed_slug_head`).
     crate::task::reject_malformed_slug_head(addr, address.slug.as_str())?;
+    // …and a well-formed slug still has to be an identity this doctype can have.
+    if let Ok(schema) = crate::start::resolved_schema(pack, project_config, address.r#type.as_str())
+    {
+        crate::task::reject_fixed_identity_alias(&schema, &address).map_err(DocFailure::block)?;
+    }
     Ok(address)
 }
 

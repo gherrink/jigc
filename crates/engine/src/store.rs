@@ -253,6 +253,14 @@ fn resolve_read_schema<'a>(
     // `store.not-found` that named no rule and routed at *create the referenced doc*,
     // an act that doctype cannot take. Both seams now ask `has_fixed_identity`.
     //
+    // **This guard is no longer the CLI's first answer, and it stays anyway** (M52
+    // Increment 6 T2): the nine `doc` doors refuse such an address at their shared parse
+    // boundary (`cli::doc::parse_verb_addr` → `cli::task::reject_fixed_identity_alias`,
+    // `store.fixed-identity`), *before* either read arm selects a copy. What still
+    // reaches here are the callers that type no address — `compose`'s ref resolution,
+    // `doc list`, `validate` — none of which passes through that boundary, so removing
+    // this guard would hand exactly those an invalid reference's content.
+    //
     // **The block splits on the copy the caller asked for** (M51, N15): the staged arm
     // never consulted the committed store, so a block saying *committed* is a lie, and a
     // route dropping `--task` serves the other copy than the one that was asked for. The

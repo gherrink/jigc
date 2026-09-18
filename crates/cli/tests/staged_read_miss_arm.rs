@@ -1,5 +1,6 @@
 //! M51 Increment 5 / T6 — **the `--task` read miss names the copy it looked in and
-//! keeps `--task <id>` in its route** (N15).
+//! keeps `--task <id>` in its route** (N15) — **re-pointed at M52 Increment 6 / T2**,
+//! when the address this suite was built on stopped reaching either read arm.
 //!
 //! Cited as the `pinned-by:` for the rc.14 trial's
 //! [findings-verification](../../../completions/artifacts/RC-rc14/findings-verification.md)
@@ -25,49 +26,53 @@
 //! it serves the *committed* copy while the caller asked for the staged one
 //! (`completions/artifacts/M51/baseline-prose.md` §6; the Settle's §12).
 //!
-//! ## The producer is one guard, not the `--task` arm in general
+//! ## Why the subject moved, and why the equality is no longer the defect
 //!
-//! Both arms share `engine::store::resolve_read_schema`, and its **singleton-slug guard**
-//! fires *before* either selects a source — so the staged arm inherited a block phrased for
-//! the committed store. Driven on a non-singleton, the staged arm already answers
-//! `store.not-staged` correctly, naming its copy and routing at the right door: the correct
-//! shape was three inches away in the same file.
+//! M52 Increment 6 / T2 refuses a non-canonical **fixed-identity** address at the parse
+//! boundary (`cli::doc::parse_verb_addr` → `cli::task::reject_fixed_identity_alias`), so
+//! `vision:wrong-slug` never reaches `engine::store::resolve_read_schema`'s singleton-slug
+//! guard through any `doc` door — and both reads are once again byte-identical.
+//!
+//! **That equality is legitimate where N15's was not, and the difference is checkable
+//! rather than asserted.** N15's block *claimed a copy* — it said `committed` to a caller
+//! who had asked for the staged one, and routed at the copy it had not been asked about.
+//! The M52 refusal is **copy-blind**: it is a fact about the address, true in both copies
+//! and before either is selected, which is the shape `store.unknown-type` has had since
+//! M43 (`engine::store::resolve_read_schema`'s own note: *"a doctype id names nothing in
+//! either copy, so the unknown-type block is copy-blind and stays shared verbatim"*). So
+//! arm 1 below asserts what makes it legitimate — the block **names no copy at all** — and
+//! not the equality, which is by itself neither right nor wrong.
+//!
+//! **N15's property is still live, and arm 2 drives it where it is still reachable**: an
+//! address whose doctype does *not* have a fixed identity still reaches both read arms, and
+//! the staged one still has to say which copy it looked in. The two arms are asserted to
+//! differ there, which is the regression guard the original suite carried.
+//!
+//! The engine's singleton-slug guard is **kept, not retired** (M52 T2's scope note): the
+//! committed arm still answers for `compose`, `doc list` and `validate`, none of which
+//! passes through `parse_verb_addr`.
 //!
 //! ## What this suite drives
 //!
-//! Both reads of one non-canonical singleton address on a `committed-singletons` corpus with
-//! a live task, through the real binary:
-//!
-//! * the two surfaces are **no longer byte-identical** — the regression guard for the whole
-//!   finding, since the defect *was* their equality;
-//! * the `--task` arm **names the staged copy and the task**, never says *committed*, and
-//!   carries `--task <id>` in a route that runs;
-//! * the route, **run verbatim**, serves the **staged** bytes — which is the fact the
-//!   dropped `--task` destroyed. The task stages a copy whose thesis differs from the
-//!   committed one, so a route that quietly served the committed copy would be visible
-//!   here rather than indistinguishable;
-//! * the task-less arm is **byte-identical to HEAD's** — pinned as a literal, because the
-//!   fix's scope is the staged arm and a committed-arm byte move would be a silent
-//!   contract change on a 1.0-pinned read surface.
+//! Every read below runs through the real binary on a `committed-singletons` corpus with a
+//! live task that stages a copy whose thesis differs from the committed one — so *which
+//! copy a route served* stays a visible fact rather than an inference.
 
 use crate::support;
 use support::trial_corpus::{State, TrialCorpus};
 
-/// The non-canonical singleton address both arms are driven with — `vision` is a
-/// `placement` singleton, so every slug but `vision` names no instance in either copy.
+/// The non-canonical singleton address the trial hit and M52 now refuses at the door.
 const MISS: &str = "vision:wrong-slug";
 
-/// The thesis the task stages over the committed one, so *which copy the route served*
-/// is a visible fact rather than an inference.
-const STAGED_THESIS: &str = "The staged copy says something else entirely.";
+/// A **committed** doc this task does not stage — the miss shape that still reaches both
+/// read arms. It is addressed at the identity its doctype **has**, so M52's door guard is
+/// silent and the two arms adjudicate exactly as they did before it: the miss is about the
+/// *copy*, which is the question N15 was about.
+const NOT_STAGED: &str = "roadmap:roadmap";
 
-/// The task-less arm's finding block, verbatim at HEAD. Spelled out rather than derived:
-/// the claim is that these bytes **do not move**, and a derivation would move with them.
-const COMMITTED_ARM: &str = "\
-blocking · store.not-found — `vision:wrong-slug` names no committed doc: `vision` is a singleton, so its only address is `vision:vision`
-  at: vision:wrong-slug
-  route: read `vision:vision` — a singleton doctype has one instance at a fixed slug
-";
+/// The thesis the task stages over the committed one, so *which copy the route served* is
+/// a visible fact rather than an inference.
+const STAGED_THESIS: &str = "The staged copy says something else entirely.";
 
 /// The finding block a read prints — stderr up to (not including) the adapter trailer, so
 /// the pin is over the finding and not over the footer every surface carries.
@@ -79,14 +84,22 @@ fn finding_block(out: &std::process::Output) -> String {
     }
 }
 
-/// **The arm** — the two reads of one miss address, and the three facts that separate them.
-#[test]
-fn the_task_read_miss_names_the_staged_copy_and_keeps_the_task_in_its_route() {
+/// A corpus with a live `form-vision` task whose staged vision differs from the committed
+/// one. Returns `(corpus, task_id)`.
+fn corpus_with_staged_vision() -> (TrialCorpus, String) {
     let corpus = TrialCorpus::build(State::CommittedSingletons);
     // `form-vision` is the workflow that gates the vision, and the write copies the
     // committed doc into the task — so the staged copy really exists and really differs.
     let task = corpus.start_workflow("form-vision", "revise the vision");
     corpus.set_slot("vision:vision#thesis", &task, STAGED_THESIS);
+    (corpus, task)
+}
+
+/// **Arm 1** — the address N15 was reported on is refused before either copy is selected,
+/// and the refusal claims no copy.
+#[test]
+fn the_fixed_identity_miss_is_refused_before_either_copy_is_selected() {
+    let (corpus, task) = corpus_with_staged_vision();
 
     let staged = corpus.jigc(&["doc", "show", MISS, "--task", &task]);
     let committed = corpus.jigc(&["doc", "show", MISS]);
@@ -106,52 +119,69 @@ fn the_task_read_miss_names_the_staged_copy_and_keeps_the_task_in_its_route() {
     let staged_block = finding_block(&staged);
     let committed_block = finding_block(&committed);
 
-    // The defect *was* the equality: one block answered for two different copies.
-    assert_ne!(
-        staged_block, committed_block,
-        "the `--task` read looked in the staged copy and the task-less read in the \
-         committed one — one block cannot answer for both",
+    for (label, block) in [("--task", &staged_block), ("task-less", &committed_block)] {
+        assert!(
+            block.contains("store.fixed-identity"),
+            "the {label} read is refused at the door, on the address rather than on a \
+             copy: {block}",
+        );
+        // What makes the two arms' equality legitimate: the block claims neither copy.
+        assert!(
+            !block.contains("committed") && !block.contains("staged"),
+            "a copy-blind refusal may not name a copy — that was N15's whole defect: \
+             {block}",
+        );
+        assert!(
+            block.contains("vision:vision"),
+            "the {label} read names the identity this doctype does have: {block}",
+        );
+    }
+
+    // The route, run verbatim, resolves — the identity it names is the one that exists.
+    let repaired = corpus.jigc(&["doc", "show", "vision:vision", "--task", &task]);
+    assert!(
+        repaired.status.success(),
+        "the refusal's route must be followable: {}",
+        String::from_utf8_lossy(&repaired.stderr),
+    );
+}
+
+/// **Arm 2** — N15's property, driven on the miss shape that still reaches both read arms:
+/// the staged arm names the copy it looked in, and the two arms do not answer alike.
+#[test]
+fn the_task_read_miss_names_the_staged_copy_it_looked_in() {
+    let (corpus, task) = corpus_with_staged_vision();
+
+    let staged = corpus.jigc(&["doc", "show", NOT_STAGED, "--task", &task]);
+    let committed = corpus.jigc(&["doc", "show", NOT_STAGED]);
+
+    assert!(
+        !staged.status.success(),
+        "`{NOT_STAGED}` is committed but not staged in this task — the `--task` read blocks",
+    );
+    assert!(
+        committed.status.success(),
+        "`{NOT_STAGED}` is committed, so the task-less read serves it: {}",
+        String::from_utf8_lossy(&committed.stderr),
     );
 
-    // The staged arm: which copy it looked in, and a route that keeps `--task`.
+    let staged_block = finding_block(&staged);
     assert!(
-        staged_block.contains("store.not-found"),
-        "the staged arm keeps the family's code: {staged_block}",
+        staged_block.contains("store.not-staged"),
+        "the staged arm answers for the copy it looked in: {staged_block}",
     );
     assert!(
-        staged_block.contains("staged") && staged_block.contains(task.as_str()),
-        "the staged arm must name the copy it looked in and the task it looked in it for: \
-         {staged_block}",
-    );
-    assert!(
-        !staged_block.contains("committed"),
-        "the staged arm never consulted the committed store, so it may not say so: \
-         {staged_block}",
-    );
-    assert!(
-        staged_block.contains(&format!("--task {task}")),
-        "the staged arm's route must keep `--task {task}` — dropped, it serves the other \
-         copy than the one the caller asked for: {staged_block}",
+        staged_block.contains("not staged in this task"),
+        "the staged arm must name the copy it looked in — the half of N15 that survives \
+         the M52 door guard: {staged_block}",
     );
 
-    // The route, run verbatim, serves the STAGED copy — the fact the dropped `--task`
-    // destroyed: followed exactly, the old route served committed prose to a caller who
-    // had asked for the staged one.
-    let repaired = corpus.jigc(&["doc", "show", "vision:vision#thesis", "--task", &task]);
+    // The route, run verbatim, serves the copy it names — the committed one, which is the
+    // copy that exists. A route is followable or it is not a route.
+    let repaired = corpus.jigc(&["doc", "show", NOT_STAGED]);
     assert!(
         repaired.status.success(),
         "the staged arm's route must be followable: {}",
         String::from_utf8_lossy(&repaired.stderr),
-    );
-    assert_eq!(
-        String::from_utf8_lossy(&repaired.stdout).trim(),
-        STAGED_THESIS,
-        "the route keeps the caller in the copy they asked for",
-    );
-
-    // The committed arm's bytes do not move.
-    assert_eq!(
-        committed_block, COMMITTED_ARM,
-        "the task-less arm is out of this fix's scope — its bytes are a 1.0-pinned surface",
     );
 }
