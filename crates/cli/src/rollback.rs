@@ -8,11 +8,13 @@
 //! The M51 per-axis review stated the class as **four** worktree-restore populations. Driven,
 //! it is **nine**, of which exactly **one** — the config layer's — is compare-and-swap; five of
 //! the nine sit outside the finalize executor entirely and are reached by doors the review's
-//! axis never listed. Nobody owned the enumeration, so the populations disagreed about the same
-//! cell in one binary: the config layer's absent-pre-image arm deletes a file
-//! **only while it still holds jigc's bytes**, while `rollback_record_pre_image`'s identical arm
-//! deletes it unconditionally — so a third party who wrote at the record path during a rejected
-//! `jigc milestone create` lost the file at exit 1, named by nothing.
+//! axis never listed. Nobody owned the enumeration, so at the wave's base the populations
+//! disagreed about the same cell in one binary: the config layer's absent-pre-image arm deleted
+//! a file **only while it still held jigc's bytes**, while `rollback_record_pre_image`'s
+//! identical arm deleted it unconditionally — so a third party who wrote at the record path
+//! during a rejected `jigc milestone create` lost the file at exit 1, named by nothing. (Closed
+//! at T4, which is what the `milestone-record` row's discipline now records rather than
+//! declares.)
 //!
 //! A class nobody enumerates is a class a fix is cut short of, which is this wave's whole
 //! subject. So the enumeration is code, and `crates/cli/tests/rollback_population_registry.rs`
@@ -39,14 +41,16 @@
 //!
 //! # Two honest notes, both discharged by name
 //!
-//! **(1) Six rows declare a discipline the source does not yet bind.** This module was the
-//! increment's *first* task, and each later task retires one of its declarations: the four
-//! `FileCas` rows that are not yet compare-and-swap (the milestone record, the fan-out flip,
-//! `rename`'s unguarded arms, and the config relocation, which has no rollback at all) and
+//! **(1) Five rows declare a discipline the source does not yet bind.** This module was the
+//! increment's *first* task, and each later task retires one of its declarations: the three
+//! `FileCas` rows that are not yet compare-and-swap (the fan-out flip, `rename`'s unguarded
+//! arms, and the config relocation, which has no rollback at all) and
 //! **both** `MintedSet` rows (still `remove_dir_all`) are declarations of what the increment
 //! binds, not readings of what the binary does today. **T10** is the task whose totality
 //! fence makes every row a checked fact and strikes this paragraph. *(It read **eight** when
-//! this module landed; **T3 bound `promote-destination` and `retired-original`**, so the
+//! this module landed; **T3 bound `promote-destination` and `retired-original`** and **T4
+//! bound `milestone-record`** — whose five doors now mint two door-keyed identities,
+//! `milestone.rollback-conflict` and `task-discard.rollback-conflict` — so the
 //! count moves with the source rather than standing as a stale number. The plan's
 //! decomposition says "six" for the `FileCas` half alone; `unwind_mint` and
 //! `unwind_unrecorded_seeds` are equally unbound until T7 — the datum is `unwind_mint`'s
@@ -234,7 +238,13 @@ pub const ROLLBACK_POPULATIONS: &[Population] = &[
         site: Site::Source {
             file: "crates/cli/src/milestone.rs",
             unit: "rollback_record_pre_image",
-            restores: 2,
+            // None of its own since T4: this population's whole worktree restore is the
+            // shared compare-and-swap at `rollback.rs::restore`, counted once at the row
+            // whose site that unit is. What stays in this unit is its **index** arm, and
+            // that is the third axis's primitive — counted onto `NOT_A_POPULATION`'s
+            // `rollback_owner_artifact_index` row, which is where it has always been. A row
+            // owning zero is still fenced: deleting it leaves this unit's count unclaimed.
+            restores: 0,
         },
         discipline: Discipline::FileCas,
     },
@@ -386,7 +396,11 @@ pub struct ConflictDoor {
     pub code: &'static str,
     /// The door's noun: the park sub-directory under `.jigc/displaced/`, and the word the
     /// route prose uses (*"this finalize"*). One path component, so it can never escape the
-    /// workbench.
+    /// workbench — and **space-free**, because the route tells the reader to delete the
+    /// parked copy at a path it names, and a path jigc itself chose with a space in it is
+    /// the shape M51's `ShellUnsafeName` class exists to stop jigc minting. A door whose
+    /// natural noun is two words is hyphenated here rather than spaced (`milestone-op`,
+    /// `task-discard`).
     pub noun: &'static str,
     /// What the door's failure left undone, as the route's lead clause — *"nothing was
     /// committed"* at `finalize`.
@@ -412,7 +426,35 @@ pub const FINALIZE_DOOR: ConflictDoor = ConflictDoor {
 /// A door added here whose identity lies in the `finalize.` namespace therefore grows that
 /// expected set and reddens the family table, which is the property the literal shape bought
 /// for free.
-pub const ROLLBACK_DOORS: &[ConflictDoor] = &[FINALIZE_DOOR];
+/// The **four milestone record-only doors** — `create` · `add-task` · `add-from-spec` ·
+/// `discard` — which write the committed `milestone-record` and commit only it (M52
+/// Increment 5 / T4).
+///
+/// One door value for four verbs, because the *subject* is one file and the operator's act
+/// is one comparison: whichever milestone op raced, the two copies to reconcile are the
+/// record as it now stands and the pre-image of the record this op rewrote. The
+/// discrimination a reader needs is the **path**, which the finding is keyed at, not a
+/// fourth spelling of `milestone` in the code.
+pub const MILESTONE_DOOR: ConflictDoor = ConflictDoor {
+    code: "milestone.rollback-conflict",
+    noun: "milestone-op",
+    undone: "nothing was committed",
+};
+
+/// `jigc task discard <sub-task>` — the **fifth** record-only door, and the one
+/// `design/finalize.md`'s four-door enumeration never named (`settle-record.md` → §19).
+///
+/// It takes its own identity rather than the milestone one because the stable `(code,
+/// target)` key is what a driver branches on: a raced sub-task discard and a raced
+/// `milestone discard` rewrite the *same record file*, so sharing a code would make the two
+/// indistinguishable at exactly the path where they collide.
+pub const TASK_DISCARD_DOOR: ConflictDoor = ConflictDoor {
+    code: "task-discard.rollback-conflict",
+    noun: "task-discard",
+    undone: "nothing was committed",
+};
+
+pub const ROLLBACK_DOORS: &[ConflictDoor] = &[FINALIZE_DOOR, MILESTONE_DOOR, TASK_DISCARD_DOOR];
 
 /// One file's **worktree pre-image**: what it held before the transaction, and the exact
 /// bytes jigc wrote over it.

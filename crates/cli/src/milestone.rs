@@ -266,18 +266,29 @@ impl MilestoneCommand {
         // commit's captured non-blocking hook stream (the hook_output producer axis;
         // `design/command-output-contract.md` → Stream discipline). The read-only verbs
         // commit nothing, so their stream is the empty string (present-always).
+        // The record-only doors' rollback conflicts, gathered on the failure arm and printed
+        // beside the door's own frame (M52 Increment 5 / T4). Empty on every success and on
+        // every read-only verb, so the `Err` arm below carries it unconditionally.
+        let mut conflicts: Vec<Finding> = Vec::new();
         let result = match self {
-            MilestoneCommand::Create { title } => run_create(cwd, &title),
+            MilestoneCommand::Create { title } => run_create(cwd, &title, &mut conflicts),
             MilestoneCommand::AddTask {
                 milestone_id,
                 intent,
                 workflow,
-            } => run_add_task(cwd, &milestone_id, &intent, &workflow),
+            } => run_add_task(cwd, &milestone_id, &intent, &workflow, &mut conflicts),
             MilestoneCommand::AddFromSpec {
                 milestone_id,
                 spec_addr,
                 workflow,
-            } => run_add_from_spec(cwd, format, &milestone_id, &spec_addr, &workflow),
+            } => run_add_from_spec(
+                cwd,
+                format,
+                &milestone_id,
+                &spec_addr,
+                &workflow,
+                &mut conflicts,
+            ),
             MilestoneCommand::ListTasks { milestone_id } => {
                 run_list_tasks(cwd, &milestone_id).map(|summary| (summary, String::new()))
             }
@@ -288,7 +299,7 @@ impl MilestoneCommand {
             MilestoneCommand::Discard {
                 milestone_id,
                 force,
-            } => run_discard(cwd, &milestone_id, force),
+            } => run_discard(cwd, &milestone_id, force, &mut conflicts),
             MilestoneCommand::Execute { .. } => unreachable!("`Execute` is handled above"),
             MilestoneCommand::Join { .. } => unreachable!("`Join` is handled above"),
             MilestoneCommand::Finalize { .. } => unreachable!("`Finalize` is handled above"),
@@ -312,7 +323,9 @@ impl MilestoneCommand {
                 // A record-only door: a hook rejection is framed with what survived + this
                 // door's own re-run, and names itself in the log. Every other failure keeps
                 // the plain operational-error envelope.
-                Some(frame) => crate::task::surface_commit_rejection(format, &err, frame, &[]),
+                Some(frame) => {
+                    crate::task::surface_commit_rejection(format, &err, frame, &conflicts)
+                }
                 // A read-only verb — it runs no commit, so no `CommitRejected` can reach here.
                 None => crate::invocation_log::operational_failure(format, &err),
             },
@@ -535,7 +548,7 @@ fn no_such_milestone(milestone_id: &str) -> anyhow::Error {
 /// **overwrite the committed record** of a milestone that was abandoned, or one whose work
 /// landed. So `create` refuses **first** when a record already owns the slug
 /// ([`guard_record_free`]), before HEAD is read or any area is minted.
-fn run_create(cwd: &Path, title: &str) -> Result<(String, String)> {
+fn run_create(cwd: &Path, title: &str, conflicts: &mut Vec<Finding>) -> Result<(String, String)> {
     // The base pin is the *worktree* HEAD; the `.jigc/` area binds to jigc_home (the main
     // checkout), so all worktrees share one `.jigc/` (M31 Inc 2 / WF3).
     let repo_root = discover_repo_root(cwd).ok_or_else(|| crate::locate::not_in_repo(cwd))?;
@@ -600,7 +613,7 @@ fn run_create(cwd: &Path, title: &str) -> Result<(String, String)> {
         // pre-existing area, so `minted.dir` is one this call created, never one it found.
         // Without it the re-run blocks on `milestone.serial-collision` forever, and the approved
         // recoverability ("fix the hook, re-run, it succeeds") is unreachable.
-        let landed = materialize_and_commit_record(&jigc_home, schema, &minted, stamp)
+        let landed = materialize_and_commit_record(&jigc_home, schema, &minted, stamp, conflicts)
             .inspect_err(|_| unwind_mint(&minted.dir, None))?;
         hook_output = landed.hook_output;
         record = Some(landed.record);
@@ -677,6 +690,7 @@ fn materialize_and_commit_record(
     schema: &Schema,
     minted: &MintedMilestone,
     schema_version: u32,
+    conflicts: &mut Vec<Finding>,
 ) -> Result<LandedRecord> {
     let record_path = engine::store::canonical_path(jigc_home, schema, &minted.id)
         .context("the `milestone-record` doctype declares no committed location")?;
@@ -687,10 +701,15 @@ fn materialize_and_commit_record(
     // The pre-image, captured BEFORE the write — for `create` it is the absent record
     // (`bytes: absent, index: absent`), so a rejected commit **deletes** the write back out
     // ([`RecordPreImage`]).
-    let pre = capture_record_pre_image(jigc_home, &record_path)?;
+    let mut pre =
+        capture_record_pre_image(jigc_home, &record_path, crate::rollback::MILESTONE_DOOR)?;
     let body = render_fresh_record(schema, &minted.id, &minted.base, schema_version);
     std::fs::write(&record_path, &body)
         .with_context(|| format!("could not write the milestone record {record_path:?}"))?;
+    // Read back what jigc just left here — the other half of the swap. Taken one statement
+    // after the write, so a racer that edits the record during the commit below is a
+    // mismatch rather than being mistaken for jigc's own bytes.
+    pre.wrote();
 
     // The message temp file lands in the gitignored milestone area (never a tracked path).
     let hook_output = commit_record_transaction(
@@ -702,6 +721,7 @@ fn materialize_and_commit_record(
             minted.id
         ),
         &pre,
+        conflicts,
     )?;
     // Seed the record's `file-state` baseline to what `create` just wrote, so the first
     // `add-task`'s reconcile preflight compares against the CLI's own write (T6).
@@ -774,67 +794,103 @@ fn record_pathspec(repo_root: &Path, record_path: &Path) -> Result<String> {
 /// residue tripped the next unrelated task's carryover gate. The pre-image carries **both**
 /// axes so the restore can put back exactly what was there:
 ///
-/// - `bytes` — the worktree file's content **or `None`** when the record did not exist. This
-///   third axis is what the promotions / owner-artifact / config-layer families never needed:
-///   `create` writes a record where none existed, so its pre-image is
+/// - `worktree` — the file's content **or absent**, carried by the generic
+///   [`crate::rollback::PreImage`] entry every `FileCas` population shares (M52 Increment 5 /
+///   T4). This third axis is what the promotions / owner-artifact / config-layer families
+///   never needed: `create` writes a record where none existed, so its pre-image is
 ///   `(bytes: absent, index: absent)` and the restore is a **delete**. A capture that models
 ///   only "present" silently leaves `create`'s record behind.
 /// - `index` — the pre-write index entry, captured through the shared index primitive
 ///   ([`crate::task::capture_owner_artifact_index`], which already models "absent"), so this
 ///   family reuses the third axis's `(mode, blob-sha)` discipline rather than minting a
 ///   parallel one.
+///
+/// **The worktree half is compare-and-swap since M52 Increment 5 / T4**, on the discipline
+/// `cli::rollback::ROLLBACK_POPULATIONS`' `milestone-record` row declares. It was the reason
+/// that registry could point at two populations disagreeing about one cell inside one binary:
+/// the config layer's absent-pre-image arm deleted a file only while it still held jigc's
+/// bytes, and this one deleted it unconditionally — so a third party who wrote at the record
+/// path during a rejected `jigc milestone create` lost the file at exit 1, named by nothing.
+/// Now the restore asks the shared question (*is what is there now still what jigc left?*) and
+/// a `No` preserves both copies and raises this door's own `<door>.rollback-conflict`.
 struct RecordPreImage {
-    /// The record's absolute on-disk path (the worktree axis's restore target).
-    path: PathBuf,
-    /// The record's pre-write bytes, `None` when the record did not exist.
-    bytes: Option<Vec<u8>>,
+    /// The record's repo-relative pathspec — the identity the entry is keyed and parked under,
+    /// and the string [`RecordPreImage::wrote`] reads the entry back by.
+    spec: String,
+    /// The worktree axis: one entry, plus the door whose identity a raced restore raises.
+    worktree: crate::rollback::PreImageFamily,
     /// The record path's pre-write index entry (0 or 1 entries — the shared primitive's shape).
     index: Vec<crate::task::OwnerArtifactIndexEntry>,
+}
+
+impl RecordPreImage {
+    /// Record that the door **just wrote** the record, reading back the bytes it left — the
+    /// other half of the compare-and-swap, and the reason it must be called one statement
+    /// after the write rather than at rollback time (at rollback time the read would return a
+    /// racer's bytes and call them jigc's).
+    ///
+    /// An arm that captures and then fails **before** writing never calls it, which is the
+    /// safe value: the entry stays `PostWrite::Untouched` and the rollback leaves the path
+    /// alone however much it has changed.
+    fn wrote(&mut self) {
+        self.worktree.wrote(&self.spec);
+    }
 }
 
 /// Capture the record's pre-write image — called **before** the door writes the record, so a
 /// rejected commit can restore exactly what was there ([`RecordPreImage`]).
 ///
-/// **"Absent" means absent**, never "unreadable": only `NotFound` yields `bytes: None`, because
-/// that value is what makes the rollback *delete* the file — swallowing a permission/IO error
-/// into it would turn a rejected commit into a deletion of a record that still exists.
-fn capture_record_pre_image(repo_root: &Path, record_path: &Path) -> Result<RecordPreImage> {
+/// `door` is the caller's own [`crate::rollback::ConflictDoor`]: the four milestone
+/// record-only doors pass [`crate::rollback::MILESTONE_DOOR`] and a sub-task
+/// `jigc task discard` passes [`crate::rollback::TASK_DISCARD_DOOR`], so a raced restore names
+/// the door it happened at rather than borrowing a sibling's identity.
+///
+/// **"Absent" means absent**, never "unreadable": only `NotFound` yields an absent pre-image,
+/// because that value is what makes the rollback *delete* the file — swallowing a
+/// permission/IO error into it would turn a rejected commit into a deletion of a record that
+/// still exists.
+fn capture_record_pre_image(
+    repo_root: &Path,
+    record_path: &Path,
+    door: crate::rollback::ConflictDoor,
+) -> Result<RecordPreImage> {
     let spec = record_pathspec(repo_root, record_path)?;
-    let bytes = match std::fs::read(record_path) {
-        Ok(bytes) => Some(bytes),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => None,
-        Err(err) => {
-            return Err(err)
-                .with_context(|| format!("could not read the milestone record {record_path:?}"));
-        }
-    };
+    let mut worktree = crate::rollback::PreImageFamily::empty(door);
+    worktree.push(
+        crate::rollback::PreImage::capture(spec.clone(), record_path.to_path_buf())
+            .with_context(|| format!("could not read the milestone record {record_path:?}"))?,
+    );
     Ok(RecordPreImage {
-        path: record_path.to_path_buf(),
-        bytes,
         index: crate::task::capture_owner_artifact_index(repo_root, std::slice::from_ref(&spec))?,
+        spec,
+        worktree,
     })
 }
 
-/// Restore a captured [`RecordPreImage`] — the worktree bytes first (rewritten, or the file
-/// **deleted** when the pre-image was absent), then the index entry through the shared
-/// primitive (`update-index --cacheinfo` for a present entry, `--force-remove` for an absent
-/// one — the worktree is never reset to HEAD). Best-effort, exactly like every sibling axis:
-/// the commit did **not** land, so a restore failure is swallowed rather than replacing the
-/// door's real error (the hook's stderr stays the correction signal).
+/// Restore a captured [`RecordPreImage`] — the worktree bytes first (**compare-and-swap**:
+/// rewritten, or the file deleted when the pre-image was absent, but only while the path still
+/// holds the bytes jigc wrote), then the index entry through the shared primitive
+/// (`update-index --cacheinfo` for a present entry, `--force-remove` for an absent one — the
+/// worktree is never reset to HEAD). Best-effort on the restore itself, exactly like every
+/// sibling axis: the commit did **not** land, so a restore failure is swallowed rather than
+/// replacing the door's real error (the hook's stderr stays the correction signal).
+///
+/// Returns one blocking `<door>.rollback-conflict` per path whose bytes are no longer jigc's —
+/// at most one here, this family holding exactly one entry. The caller carries them beside its
+/// own frame ([`crate::task::carry_rollback_conflicts`]); nothing is overwritten and nothing is
+/// discarded on that arm.
 ///
 /// The `file-state` baseline is deliberately **not** touched: nothing landed, so nothing
 /// re-baselines and `design/reconciliation.md` → Hash re-baselining stands untouched — the
 /// restored bytes match the baseline the last *landed* write recorded.
-fn rollback_record_pre_image(repo_root: &Path, pre: &RecordPreImage) {
-    match &pre.bytes {
-        Some(bytes) => {
-            let _ = std::fs::write(&pre.path, bytes);
-        }
-        None => {
-            let _ = std::fs::remove_file(&pre.path);
-        }
-    }
+fn rollback_record_pre_image(
+    repo_root: &Path,
+    jigc_root: &Path,
+    pre: &RecordPreImage,
+) -> Vec<Finding> {
+    let conflicts = pre.worktree.restore(repo_root, jigc_root);
     crate::task::rollback_owner_artifact_index(repo_root, &pre.index);
+    conflicts
 }
 
 /// **Unwind exactly what this door minted in the same call** — the *workbench* half of a
@@ -885,10 +941,18 @@ fn commit_record_transaction(
     msg_dir: &Path,
     message: &str,
     pre: &RecordPreImage,
+    conflicts: &mut Vec<Finding>,
 ) -> Result<String> {
     commit_record_only(repo_root, record_path, msg_dir, message)
         .inspect_err(|_| {
-            rollback_record_pre_image(repo_root, pre);
+            // The restore may refuse a path whose bytes are no longer jigc's; those findings
+            // travel out to the door's dispatch arm, which prints them beside the frame and
+            // folds them into the log — never in place of the door's own error.
+            conflicts.extend(rollback_record_pre_image(
+                repo_root,
+                &repo_root.join(".jigc"),
+                pre,
+            ));
         })
         // N20 — the rollback above has run, so the door's state-truth clause is true of what is
         // now on disk. Mark the failure as a commit-transaction failure so the record-only
@@ -1248,6 +1312,7 @@ fn run_add_task(
     milestone_id: &str,
     intent: &str,
     workflow: &str,
+    conflicts: &mut Vec<Finding>,
 ) -> Result<(String, String)> {
     // The `.jigc/` area binds to jigc_home (the main checkout); no git read here.
     let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
@@ -1322,6 +1387,7 @@ fn run_add_task(
             &added.task.id,
             intent,
             workflow,
+            conflicts,
         )
         .inspect_err(|_| {
             unwind_mint(
@@ -1352,6 +1418,11 @@ fn run_add_task(
 /// agent's in-flight staged/untracked WIP (the M30/M31 path-scoped discipline). A failed
 /// append (a malformed record, a duplicate id) surfaces the engine's routed blocking finding.
 /// Returns the record commit's captured non-blocking hook stream.
+// One more than clippy's ceiling since T4, and the added argument is the one this door owes
+// its caller: the rollback conflicts a refused record commit could not put back. The
+// alternative — a struct bundling five unrelated scalars — would hide the out-param the
+// `crate::task` finalize executor already carries in exactly this shape.
+#[allow(clippy::too_many_arguments)]
 fn append_and_commit_record(
     jigc_home: &Path,
     jigc_root: &Path,
@@ -1360,6 +1431,7 @@ fn append_and_commit_record(
     task_id: &str,
     intent: &str,
     workflow: &str,
+    conflicts: &mut Vec<Finding>,
 ) -> Result<String> {
     let record_path = engine::store::canonical_path(jigc_home, schema, milestone_id)
         .context("the `milestone-record` doctype declares no committed location")?;
@@ -1372,9 +1444,11 @@ fn append_and_commit_record(
     // the pre-append bytes AND the pre-append index entry ([`RecordPreImage`]). Under
     // `add-from-spec` this runs once per seeded sub-task, so the k-th rejection unwinds
     // exactly the k-th append.
-    let pre = capture_record_pre_image(jigc_home, &record_path)?;
+    let mut pre =
+        capture_record_pre_image(jigc_home, &record_path, crate::rollback::MILESTONE_DOOR)?;
     std::fs::write(&record_path, &appended)
         .with_context(|| format!("could not write the milestone record {record_path:?}"))?;
+    pre.wrote();
 
     // The message temp file lands in the gitignored milestone WIP area (never a tracked path).
     let msg_dir = milestone_dir(jigc_root, milestone_id);
@@ -1384,6 +1458,7 @@ fn append_and_commit_record(
         &msg_dir,
         &format!("chore(milestone): record task:{task_id} on milestone:{milestone_id}\n"),
         &pre,
+        conflicts,
     )?;
     // Advance the record's `file-state` baseline to the appended bytes, so the next overwrite's
     // reconcile preflight compares against this write, not the pre-append record (T6).
@@ -1406,6 +1481,7 @@ fn run_add_from_spec(
     milestone_id: &str,
     spec_addr: &str,
     workflow: &str,
+    conflicts: &mut Vec<Finding>,
 ) -> Result<(String, String)> {
     // **The `<slug>` head is adjudicated at the door** — the fourth user-address parse
     // boundary, joining `doc::parse_verb_addr`, `TaskArea::bind` and `rename::parse_addr`
@@ -1511,6 +1587,7 @@ fn run_add_from_spec(
                         &a.task.id,
                         &intent,
                         workflow,
+                        conflicts,
                     )
                 });
             match recorded {
@@ -1776,6 +1853,7 @@ pub(crate) fn settle_discarded_sub_task(
     jigc_root: &Path,
     task_id: &str,
     msg_dir: &Path,
+    conflicts: &mut Vec<Finding>,
 ) -> Result<Option<SettledSubTask>> {
     let schemas = shipped_schemas(jigc_home)?;
     let Some(schema) = schemas.get(MILESTONE_RECORD_TYPE) else {
@@ -1804,16 +1882,20 @@ pub(crate) fn settle_discarded_sub_task(
         .context("the `milestone-record` doctype declares no committed location")?;
     // Captured BEFORE the settle writes — a rejected commit restores the pre-settle bytes AND
     // the pre-settle index entry ([`RecordPreImage`]).
-    let pre = capture_record_pre_image(jigc_home, &record_path)?;
+    let mut pre =
+        capture_record_pre_image(jigc_home, &record_path, crate::rollback::TASK_DISCARD_DOOR)?;
     let settled =
         engine::milestone::discard_sub_task_item(&record_path, schema, &milestone_id, task_id)
             .map_err(finding_to_err)?;
+    // The engine writes the settled record; the read-back is the door's, one statement after.
+    pre.wrote();
     let hook_output = commit_record_transaction(
         jigc_home,
         &record_path,
         msg_dir,
         &format!("chore(milestone): discard task:{task_id} on milestone:{milestone_id}\n"),
         &pre,
+        conflicts,
     )?;
     baseline_record(jigc_root, schema, &milestone_id, settled.as_bytes());
     Ok(Some(SettledSubTask {
@@ -3357,7 +3439,12 @@ fn git_worktree(repo_root: &Path, args: &[&str]) -> Result<String> {
 ///
 /// Dev-only (no methodology pack → no `milestone-record` schema) degrades exactly as every other
 /// record arm does: no record to settle, no commit — and the workbench teardown still runs.
-fn run_discard(cwd: &Path, milestone_id: &str, force: bool) -> Result<(String, String)> {
+fn run_discard(
+    cwd: &Path,
+    milestone_id: &str,
+    force: bool,
+    conflicts: &mut Vec<Finding>,
+) -> Result<(String, String)> {
     let repo_root = discover_repo_root(cwd).ok_or_else(|| crate::locate::not_in_repo(cwd))?;
     let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
     let jigc_root = jigc_home.join(".jigc");
@@ -3439,9 +3526,11 @@ fn run_discard(cwd: &Path, milestone_id: &str, force: bool) -> Result<(String, S
         // The pre-image, captured BEFORE the settle overwrites the record — a rejected commit
         // restores the pre-settle bytes AND the index entry, so the abandon is re-runnable
         // once the hook's complaint is fixed ([`RecordPreImage`]).
-        let pre = capture_record_pre_image(&jigc_home, &record_path)?;
+        let mut pre =
+            capture_record_pre_image(&jigc_home, &record_path, crate::rollback::MILESTONE_DOOR)?;
         let settled = engine::milestone::discard_record(&record_path, schema, milestone_id)
             .map_err(finding_to_err)?;
+        pre.wrote();
         // The message temp file lands in the (gitignored) milestone area — removed by the
         // teardown below, so it is written before the area goes.
         hook_output = commit_record_transaction(
@@ -3450,6 +3539,7 @@ fn run_discard(cwd: &Path, milestone_id: &str, force: bool) -> Result<(String, S
             &dir,
             &format!("chore(milestone): discard record for milestone:{milestone_id}\n"),
             &pre,
+            conflicts,
         )?;
         // Advance the record's file-state baseline to the settled bytes (the [`baseline_record`]
         // discipline every record write follows), so a later store sweep sees no drift.

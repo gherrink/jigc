@@ -79,6 +79,8 @@ mod placement_acceptance;
 mod provision_leftover_guard;
 #[path = "../read_verb_acts_nothing.rs"]
 mod read_verb_acts_nothing;
+#[path = "../record_rollback_conflict.rs"]
+mod record_rollback_conflict;
 #[path = "../repo_relative_paths.rs"]
 mod repo_relative_paths;
 #[path = "../spawn_template_executes.rs"]

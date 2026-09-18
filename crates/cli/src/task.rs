@@ -308,7 +308,11 @@ impl TaskCommand {
                 // framed with this door's state-truth clause + re-run and names itself in the
                 // invocation log, instead of falling to the plain operational envelope.
                 let frame = discard_rejection_frame(&id, force);
-                return match run_discard(cwd, &id, format, force) {
+                // The sub-task record's rollback conflicts, gathered on the failure arm and
+                // printed beside this door's frame (M52 Increment 5 / T4). Empty on success
+                // and on every ordinary (non-sub-task) discard, which settles no record.
+                let mut conflicts: Vec<Finding> = Vec::new();
+                return match run_discard(cwd, &id, format, force, &mut conflicts) {
                     Ok(()) => Outcome::success(),
                     Err(err) => {
                         // The **staged-prose refusal** names itself (M50 Inc 3 / T2, the
@@ -322,7 +326,7 @@ impl TaskCommand {
                         // `surface_commit_rejection` falls through to
                         // ([`crate::invocation_log::operational_failure`]); the printed bytes
                         // are unchanged.
-                        surface_commit_rejection(format, &err, &frame, &[])
+                        surface_commit_rejection(format, &err, &frame, &conflicts)
                     }
                 };
             }
@@ -561,7 +565,13 @@ pub(crate) fn sweep_for_orientation(cwd: &Path, id: &str) -> std::result::Result
 /// *commits* the milestone record — a refusal after it would leave a committed record
 /// settling a sub-task whose working area survives, which is the lying-record defect M49
 /// closed, re-opened by the fix for it.
-fn run_discard(cwd: &Path, id: &str, format: Format, force: bool) -> Result<()> {
+fn run_discard(
+    cwd: &Path,
+    id: &str,
+    format: Format,
+    force: bool,
+    conflicts: &mut Vec<Finding>,
+) -> Result<()> {
     let task = TaskArea::resolve(cwd, id)?;
     refuse_over_foreign_bytes(&task, id, force)?;
     refuse_over_staged_prose(&task, id, force)?;
@@ -571,6 +581,7 @@ fn run_discard(cwd: &Path, id: &str, format: Format, force: bool) -> Result<()> 
         &task.jigc_root,
         id,
         &task.dir,
+        conflicts,
     )?;
     // Absent settle ⇒ no commit at all (an ordinary task, or a dev-only project): the ack
     // names no sha, which is the fact, not a withheld value.
