@@ -1,7 +1,15 @@
 {
-  "contract-version": 6,
+  "contract-version": 7,
   "type": "adr",
   "schema-version": 2,
+  "identity": {
+    "kind": "slugged",
+    "address": "adr:<slug>"
+  },
+  "home": {
+    "kind": "location",
+    "path": "decisions/<slug>.md"
+  },
   "fields": [
     {
       "id": "status",

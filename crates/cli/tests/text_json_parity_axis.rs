@@ -271,15 +271,16 @@ const REGISTRY: &[(&[&str], Tier)] = &[
             "a separately versioned read contract — the text arm is the agent listing, the \
              envelope its own `contract-version`ed projection",
             Disposition::DeclaredOut(
-                "governed by its own explicitly versioned contract, bumped 4→5 by this very \
-                 increment (T1, the id-source `write-key`) — its evolution is a version bump, \
+                "governed by its own explicitly versioned contract, bumped 4→5 by the M48 \
+                 id-source `write-key` and 6→7 by M52's `identity`/`home` pair — its \
+                 evolution is a version bump, \
                  which is what the window's successor regime asks for, not a silent key. M50 \
                  T4 adds a pack-declared type's VALUE GRAMMAR to the text arm and \
                  deliberately not to the envelope: the grammar is a property of the declared \
                  `type` the envelope already carries, so a driver is told nothing less than \
-                 before, and `contract-version` stays 6 (`one bump, one wave`). Recorded here \
+                 before, and no version moved FOR IT. Recorded here \
                  as a decision, not an omission; fenced by \
-                 `code_anchor_grammar_sites::the_pinned_json_projection_withholds_nothing_and_does_not_move`",
+                 `code_anchor_grammar_sites::the_pinned_json_projection_carries_no_grammar_key`",
             ),
         ),
     ),

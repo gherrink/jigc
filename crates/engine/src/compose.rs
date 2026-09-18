@@ -1191,26 +1191,29 @@ fn render_schema_projection(schema: &crate::schema::Schema, task: Option<&str>) 
 /// The projection's home line: the doctype + where its instances live — the
 /// literal `placement.file` for a placement doctype, the (cascade-resolved, fed)
 /// `location:` for a located one, or the transient statement for a sink-only type.
+///
+/// **Rendered from [`crate::schema::Schema::projection`], never re-derived here**
+/// (M52 Increment 6 / T7). This prose and the pinned `jigc doc schema --format json`
+/// projection (`cli::doc::SchemaContract`) answer the same question for the same
+/// reader, and until this task each read `placement` / `location` / `singleton` for
+/// itself — two independent derivations of one rule, which is how
+/// `Schema::has_fixed_identity`'s three seams came to disagree one task earlier. The
+/// bytes are unchanged: what moved is where the fact comes from.
 fn projection_home_line(schema: &crate::schema::Schema) -> String {
     let ty = &schema.ty;
-    if let Some(placement) = &schema.placement {
-        format!(
-            "The `{ty}` schema — the managed singleton at `{}`.",
-            placement.file
-        )
-    } else if let Some(location) = &schema.location {
-        if schema.singleton {
-            format!("The `{ty}` schema — the managed singleton at `{location}{ty}.md`.")
-        } else if let Some(id_from) = &schema.id_from {
-            format!(
-                "The `{ty}` schema — each instance a managed file at `{location}<slug>.md`, \
-                 its `<slug>` minted from `{id_from}`."
-            )
-        } else {
-            format!("The `{ty}` schema — each instance a managed file at `{location}<slug>.md`.")
-        }
-    } else {
-        format!("The `{ty}` schema — transient (no committed file).")
+    let projection = schema.projection();
+    let Some(path) = projection.home.path.as_deref() else {
+        return format!("The `{ty}` schema — transient (no committed file).");
+    };
+    if projection.identity.kind == crate::schema::IdentityKind::Fixed {
+        return format!("The `{ty}` schema — the managed singleton at `{path}`.");
+    }
+    match &schema.id_from {
+        Some(id_from) => format!(
+            "The `{ty}` schema — each instance a managed file at `{path}`, \
+             its `<slug>` minted from `{id_from}`."
+        ),
+        None => format!("The `{ty}` schema — each instance a managed file at `{path}`."),
     }
 }
 
@@ -4046,6 +4049,95 @@ sections:
                 <<The handbook body.>>
         EOF
         ");
+    }
+
+    /// (M52 inc-6 T7) **The composed home line and the pinned `doc schema` json read
+    /// ONE primitive.** Both state where a doctype's instances live; until this task
+    /// each read `placement` / `location` / `singleton` for itself, which is how
+    /// `Schema::has_fixed_identity`'s three seams came to disagree one task earlier.
+    ///
+    /// The assertion is a **derivation**, not a second copy of the sentence: for each
+    /// shape, the home path is taken from [`crate::schema::Schema::projection`] — the
+    /// same value `cli::doc::SchemaContract`'s `home.path` carries — and the EMITTED
+    /// step body must name it. Mutate the primitive and this arm and the CLI's
+    /// `doc_schema::doc_schema_names_each_doctypes_identity_and_home` move together;
+    /// re-derive the prose locally again and this arm is what catches it.
+    #[test]
+    fn the_composed_home_line_names_the_primitive_the_json_projection_carries() {
+        let catalog = CommandCatalog {
+            commands: std::collections::BTreeMap::new(),
+        };
+        let emitted_home_line = |yaml: &[u8], ty: &str| -> (String, crate::schema::Schema) {
+            let schema = crate::schema::load_schema(yaml).expect("fixture schema loads");
+            let mut ctx = crate::data_value::ComposeContext::default();
+            ctx.schemas.insert(ty.to_owned(), schema.clone());
+            let emitted =
+                emit_step_body(&format!("{{{{ schema:{ty} }}}}\n"), &ctx, &catalog).expect("emits");
+            let line = emitted
+                .lines()
+                .find(|line| line.starts_with("The `"))
+                .expect("the projection opens with its home line")
+                .to_owned();
+            (line, schema)
+        };
+
+        // The three homed shapes: whatever the primitive says the path is, the
+        // composed prose names THAT string.
+        for (yaml, ty) in [
+            (
+                &b"\
+type: vision
+placement: { file: VISION.md }
+sections: []
+"[..],
+                "vision",
+            ),
+            (
+                &b"\
+type: runbook
+singleton: true
+location: runbooks/
+sections: []
+"[..],
+                "runbook",
+            ),
+            (
+                &b"\
+type: adr
+location: decisions/
+id-from: title
+sections: []
+"[..],
+                "adr",
+            ),
+        ] {
+            let (line, schema) = emitted_home_line(yaml, ty);
+            let path = schema
+                .projection()
+                .home
+                .path
+                .expect("a homed doctype's projection carries a path");
+            assert!(
+                line.contains(&format!("`{path}`")),
+                "the composed home line must name the primitive's own path `{path}`; \
+                 got:\n{line}",
+            );
+        }
+
+        // The transient shape has no path, and the line says so rather than naming
+        // one — the `HomeKind::Transient` cell, stated on both surfaces.
+        let (line, schema) = emitted_home_line(
+            b"\
+type: commit
+sections: []
+",
+            "commit",
+        );
+        assert_eq!(schema.projection().home.path, None);
+        assert_eq!(
+            line, "The `commit` schema — transient (no committed file).",
+            "a doctype with no home states that, and names no path",
+        );
     }
 
     /// The unfedness stance — the deliberate opposite of the `{{source}}` seam's

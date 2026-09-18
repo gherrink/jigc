@@ -1,9 +1,17 @@
 exit: 0
 --- stdout ---
 {
-  "contract-version": 6,
+  "contract-version": 7,
   "type": "completion-record",
   "schema-version": 2,
+  "identity": {
+    "kind": "slugged",
+    "address": "completion-record:<slug>"
+  },
+  "home": {
+    "kind": "location",
+    "path": "docs/completions/<slug>.md"
+  },
   "fields": [
     {
       "id": "verdict",

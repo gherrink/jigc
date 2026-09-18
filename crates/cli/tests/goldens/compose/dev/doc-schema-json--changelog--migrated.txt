@@ -1,9 +1,17 @@
 exit: 0
 --- stdout ---
 {
-  "contract-version": 6,
+  "contract-version": 7,
   "type": "changelog",
   "schema-version": 2,
+  "identity": {
+    "kind": "fixed",
+    "address": "changelog"
+  },
+  "home": {
+    "kind": "placement",
+    "path": "CHANGELOG.md"
+  },
   "fields": [
     {
       "id": "schema-version",

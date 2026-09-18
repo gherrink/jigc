@@ -1,9 +1,17 @@
 exit: 0
 --- stdout ---
 {
-  "contract-version": 6,
+  "contract-version": 7,
   "type": "dogfood-record",
   "schema-version": 1,
+  "identity": {
+    "kind": "slugged",
+    "address": "dogfood-record:<slug>"
+  },
+  "home": {
+    "kind": "location",
+    "path": "docs/dogfood/<slug>.md"
+  },
   "fields": [
     {
       "id": "case",

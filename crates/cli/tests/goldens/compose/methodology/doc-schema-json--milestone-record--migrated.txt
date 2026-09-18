@@ -1,9 +1,17 @@
 exit: 0
 --- stdout ---
 {
-  "contract-version": 6,
+  "contract-version": 7,
   "type": "milestone-record",
   "schema-version": 3,
+  "identity": {
+    "kind": "slugged",
+    "address": "milestone-record:<slug>"
+  },
+  "home": {
+    "kind": "location",
+    "path": "docs/milestone-records/<slug>.md"
+  },
   "fields": [
     {
       "id": "base",
@@ -11,7 +19,11 @@ exit: 0
       "required": true,
       "author-required": false,
       "set": "on-create",
-      "section": "meta"
+      "section": "meta",
+      "json-shape": {
+        "sha": "string",
+        "short": "string"
+      }
     },
     {
       "id": "status",

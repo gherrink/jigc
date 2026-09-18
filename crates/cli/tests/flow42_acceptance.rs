@@ -665,8 +665,9 @@ fn two_dangling_ref_sweep_emits_two_uniquely_keyed_findings_every_advisory_route
 // ───────────── Arm V3/V6 — the schema read surface: enum members + field→section ─────────────
 
 /// **Arm V3/V6.** `jigc doc schema adr --format json` projects the per-field enum members
-/// (`of`) and the top-level field→owning-`section` mapping (contract-version 6 since M50
-/// — a `ref`'s `to` target; 5 was the M48 id-source `write-key`, 4 the M45 settability
+/// (`of`) and the top-level field→owning-`section` mapping (contract-version 7 since M52
+/// — the `identity`/`home` pair; 6 was the M50 `ref`'s `to` target, 5 the M48 id-source
+/// `write-key`, 4 the M45 settability
 /// states; proven byte-verbatim in `doc_schema.rs`):
 /// the `status` field carries its enum members, names the `status` section it lives
 /// under, and names its concrete `set-field` write address.
@@ -686,7 +687,7 @@ fn doc_schema_shows_enum_members_and_field_sections() {
     let value: serde_json::Value =
         serde_json::from_str(&stdout_of(&out)).expect("the schema projection is json");
     assert_eq!(
-        value["contract-version"], 6,
+        value["contract-version"], 7,
         "the projection carries the pinned contract version"
     );
 

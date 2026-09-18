@@ -1,9 +1,17 @@
 exit: 0
 --- stdout ---
 {
-  "contract-version": 6,
+  "contract-version": 7,
   "type": "arch-doc",
   "schema-version": 1,
+  "identity": {
+    "kind": "slugged",
+    "address": "arch-doc:<slug>"
+  },
+  "home": {
+    "kind": "location",
+    "path": "docs/architecture/<slug>.md"
+  },
   "fields": [
     {
       "id": "cites",

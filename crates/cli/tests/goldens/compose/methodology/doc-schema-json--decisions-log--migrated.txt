@@ -1,9 +1,17 @@
 exit: 0
 --- stdout ---
 {
-  "contract-version": 6,
+  "contract-version": 7,
   "type": "decisions-log",
   "schema-version": 1,
+  "identity": {
+    "kind": "fixed",
+    "address": "decisions-log"
+  },
+  "home": {
+    "kind": "placement",
+    "path": "docs/decisions-log.md"
+  },
   "fields": [
     {
       "id": "schema-version",

@@ -1,9 +1,17 @@
 exit: 0
 --- stdout ---
 {
-  "contract-version": 6,
+  "contract-version": 7,
   "type": "idea",
   "schema-version": 1,
+  "identity": {
+    "kind": "slugged",
+    "address": "idea:<slug>"
+  },
+  "home": {
+    "kind": "location",
+    "path": "docs/ideas/<slug>.md"
+  },
   "fields": [
     {
       "id": "trigger",

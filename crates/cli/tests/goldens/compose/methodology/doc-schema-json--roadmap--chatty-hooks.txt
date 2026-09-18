@@ -1,9 +1,17 @@
 exit: 0
 --- stdout ---
 {
-  "contract-version": 6,
+  "contract-version": 7,
   "type": "roadmap",
   "schema-version": 1,
+  "identity": {
+    "kind": "fixed",
+    "address": "roadmap"
+  },
+  "home": {
+    "kind": "placement",
+    "path": "docs/roadmap.md"
+  },
   "fields": [
     {
       "id": "schema-version",

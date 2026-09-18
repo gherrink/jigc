@@ -1,9 +1,17 @@
 exit: 0
 --- stdout ---
 {
-  "contract-version": 6,
+  "contract-version": 7,
   "type": "vision",
   "schema-version": 1,
+  "identity": {
+    "kind": "fixed",
+    "address": "vision"
+  },
+  "home": {
+    "kind": "placement",
+    "path": "VISION.md"
+  },
   "fields": [
     {
       "id": "grounded-in",

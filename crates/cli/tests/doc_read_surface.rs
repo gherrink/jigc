@@ -2,7 +2,7 @@
 //!
 //! The contract property suite for the **address grammar** — pinned in
 //! [doc-read-surface.md](../../../design/doc-read-surface.md) → The address grammar /
-//! Three settability states (contract-version 6), and required by
+//! Three settability states (contract-version 7), and required by
 //! [pinning.md](../../../implementation/pinning.md) §2 (*Address grammar*, both halves).
 //! Revising that doc's statement and breaking this fence are visibly the same event —
 //! the linkage the §2 naming rule requires.

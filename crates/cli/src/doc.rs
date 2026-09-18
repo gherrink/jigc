@@ -463,7 +463,7 @@ pub enum DocCommand {
     /// Injected stamp field included — the third read surface, next to `describe`
     /// (the non-contractual menu) and `doc show` (the committed-content read).
     /// `--format json` is the separately-pinned, explicitly versioned contract
-    /// (`contract-version: 6` — `design/doc-read-surface.md` → Why json is a contract
+    /// (`contract-version: 7` — `design/doc-read-surface.md` → Why json is a contract
     /// here); plain text is a non-contractual human listing. Task-less — a schema
     /// projection is never task-scoped.
     Schema {
@@ -4571,8 +4571,9 @@ struct DocRow {
 /// as they evolve. Golden-pinned at ship (`crates/cli/tests/doc_schema.rs`).
 #[derive(serde::Serialize)]
 struct SchemaContract<'a> {
-    /// The projection's own version — 6 since M50 (a `ref` field's `to`, the target
-    /// doctype it references); 5 was the M48 id-source `write-key`, 4 the M45 three
+    /// The projection's own version — 7 since M52 (the `identity`/`home` pair below,
+    /// pooled with `base`'s compound `json-shape`); 6 was the M50 `ref` field's `to`,
+    /// 5 the M48 id-source `write-key`, 4 the M45 three
     /// settability states (an id-from leaf's `add-item`/`retitle-item` pair, a
     /// `set: on-create` stamp's `set-field`), 3 the M43 rc.7 write-verb address join,
     /// 2 the M41 rc.5 `of`/`section` join; bumps on any structural change to these
@@ -4585,6 +4586,28 @@ struct SchemaContract<'a> {
     /// The doctype's freeze-manifest schema-version, else null — always emitted.
     #[serde(rename = "schema-version")]
     schema_version: Option<u32>,
+    /// **Which addresses this doctype's instances have** (M52 Increment 6 / T7) —
+    /// `{kind, address}`, rendered from [`engine::schema::Schema::projection`], the
+    /// same primitive the `{{schema:<doctype>}}` compose seam's home line reads.
+    ///
+    /// The gap it closes: every advertised write address below places the instance
+    /// under `<slug>` (`vision:<slug>#thesis`), and through `contract-version` 6
+    /// nothing on this surface said what `<slug>` may be — so a driver could read the
+    /// whole contract and still address `vision:alpha`, which the store cannot hold
+    /// and every door now refuses (`store.fixed-identity`). `identity.address` is the
+    /// authority: the **one** address a fixed-identity doctype has, or the
+    /// `<ty>:<slug>` pattern a per-instance one's addresses follow. The per-leaf
+    /// addresses stay **type-level** either way — that is their own shipped rule, and
+    /// keeping it is what lets this key answer the question without widening the
+    /// address grammar (`design/doc-read-surface.md` → the identity and home).
+    identity: ContractIdentity,
+    /// **Where this doctype's instances live** (M52 Increment 6 / T7) —
+    /// `{kind, path}`, from the same primitive. The path is the one the **cascade**
+    /// resolved: `run_schema` projects [`committed_schemas`], whose `location:` is
+    /// already nested under `docs-root` and whose `placement.file` is already rerooted
+    /// through `placement-root`, so this key names the repo-relative home the store
+    /// actually reads and writes rather than the schema's declaration.
+    home: ContractHome,
     /// Every simple section's fields flattened (header front-matter + body field
     /// groups), in schema-declared order.
     fields: Vec<ContractField<'a>>,
@@ -4593,8 +4616,33 @@ struct SchemaContract<'a> {
     sections: Vec<ContractSection<'a>>,
 }
 
+/// The `identity` half of the pinned projection — see [`SchemaContract::identity`].
+#[derive(serde::Serialize)]
+struct ContractIdentity {
+    /// `fixed` | `slugged` — [`engine::schema::IdentityKind`]'s wire spelling.
+    kind: &'static str,
+    /// The one address a `fixed` doctype has (the bare type id, which the verb
+    /// boundary expands to `<ty>:<ty>`), or a `slugged` doctype's `<ty>:<slug>`
+    /// pattern.
+    address: String,
+}
+
+/// The `home` half of the pinned projection — see [`SchemaContract::home`].
+#[derive(serde::Serialize)]
+struct ContractHome {
+    /// `placement` | `location` | `transient` — [`engine::schema::HomeKind`]'s wire
+    /// spelling.
+    kind: &'static str,
+    /// The cascade-resolved repo-relative path of an instance, `<slug>`-placeheld for
+    /// a slugged doctype — **`null` for a transient doctype**, and emitted as null
+    /// rather than skipped, so a driver's read of the key is total (the
+    /// `schema-version` precedent above).
+    path: Option<String>,
+}
+
 /// One field of the pinned projection: `{id, type, of?, to?, required, author-required,
-/// default?, set?, section?, set-field? | (add-item? + retitle-item?)}`. `required` is
+/// default?, set?, section?, set-field? | (add-item? + retitle-item?), json-shape?}`.
+/// `required` is
 /// presence-in-a-conformant-instance — the author must supply it OR the CLI stamps it
 /// (`default:`/`set:`); `author-required` is the shared engine predicate
 /// ([`engine::validate::is_author_required`]) — the same authority the create
@@ -4667,6 +4715,22 @@ struct ContractField<'a> {
     retitle_item: Option<String>,
     #[serde(rename = "write-key", skip_serializing_if = "Option::is_none")]
     write_key: Option<&'static str>,
+    /// **The json shape this field's value takes on the content read surface, where
+    /// that differs from its declared `type`** (M52 Increment 6 / T7 — baseline LD-2;
+    /// `contract-version` 6 → 7). Exactly one field in the pinned surface has one: the
+    /// milestone-record's `base` pin, whose `.md` stores the space-joined
+    /// `<sha> <short>` scalar its declared `type: string` names, and which
+    /// `jigc doc show …#meta/base` projects as the object `{sha, short}`
+    /// (`design/doc-read-surface.md` → the pinned json contract).
+    ///
+    /// Driven at HEAD before this key existed, the two pinned contracts disagreed: the
+    /// **type** surface a driver reads to know what to expect said `string`, the
+    /// **content** surface returned an object. `type` is not corrected to say
+    /// `compound` — `string` is the schema's truth and the `.md`'s — so the projection
+    /// *adds* the shape rather than restating the type wrongly, and both surfaces read
+    /// [`CompoundBase`], so the member names cannot drift apart.
+    #[serde(rename = "json-shape", skip_serializing_if = "Option::is_none")]
+    json_shape: Option<CompoundBase<&'static str>>,
 }
 
 /// One section of the pinned projection: `{id, kind: "slot"|"repeatable",
@@ -4732,7 +4796,14 @@ fn is_false(value: &bool) -> bool {
 /// come from `doc list` / `doc show`'s item `id` key), so the projection stays a
 /// schema read, never an instance read.
 fn schema_contract(schema: &Schema, schema_version: Option<u32>) -> SchemaContract<'_> {
-    let doc = format!("{}:<slug>", schema.ty);
+    // The advertised addresses' instance part, in the ONE placeholder spelling the
+    // identity/home primitive also renders (M52 Inc 6 T7) — a driver's substitution
+    // target is one string across the whole projection, not a convention re-typed here.
+    let doc = format!(
+        "{ty}:{slug}",
+        ty = schema.ty,
+        slug = engine::schema::SLUG_PLACEHOLDER,
+    );
     // The whole-doctype write suppression (M45 Inc 3): a `milestone-record` is
     // machine-maintained in full — [`machine_maintained_guard`] refuses EVERY `jigc
     // doc` write to it (`design/team-ready-state.md` → The record is not writable) — so
@@ -4762,9 +4833,15 @@ fn schema_contract(schema: &Schema, schema_version: Option<u32>) -> SchemaContra
                     let address = (!suppress
                         && !engine::schema::is_machine_maintained_absolute(field))
                     .then(|| format!("{doc}#{}/{}", section.id, field.id));
-                    let mut field = contract_field(field, address, None, None);
-                    field.section = Some(&section.id);
-                    field
+                    let mut projected = contract_field(field, address, None, None);
+                    projected.section = Some(&section.id);
+                    // The one compound leaf in the pinned read surface, asked through
+                    // the same predicate `header_field_json` answers with (M52 Inc 6
+                    // T7): the type surface and the content surface read one home, so
+                    // they cannot report different shapes for the same field again.
+                    projected.json_shape =
+                        is_compound_base(schema, &field.id).then(CompoundBase::json_types);
+                    projected
                 }));
                 if let Some(slot) = slot {
                     sections.push(ContractSection {
@@ -4790,10 +4867,19 @@ fn schema_contract(schema: &Schema, schema_version: Option<u32>) -> SchemaContra
             }
         }
     }
+    let projection = schema.projection();
     SchemaContract {
-        contract_version: 6,
+        contract_version: 7,
         ty: &schema.ty,
         schema_version,
+        identity: ContractIdentity {
+            kind: projection.identity.kind.as_str(),
+            address: projection.identity.address,
+        },
+        home: ContractHome {
+            kind: projection.home.kind.as_str(),
+            path: projection.home.path,
+        },
         fields,
         sections,
     }
@@ -4847,6 +4933,9 @@ fn contract_field(
         add_item,
         retitle_item,
         write_key,
+        // Set by `schema_contract` for the one compound top-level field; every other
+        // field — and every item leaf, none of which can be the compound — stays None.
+        json_shape: None,
     }
 }
 
@@ -4986,7 +5075,8 @@ fn push_field_line(out: &mut String, field: &ContractField<'_>, depth: usize) {
     // followed by the pack's declared `hint:`. Text-only and deliberately absent from
     // the pinned json: the grammar is a property of the declared `type` the envelope
     // already carries, so nothing is withheld from a driver and `contract-version`
-    // does not move (M50 Increment 12 / T4; the disposition is recorded at
+    // does not move FOR IT (M50 Increment 12 / T4 — a claim about this addition, not
+    // about the numeral, which M52 has since taken to 7; the disposition is recorded at
     // `text_json_parity_axis.rs`'s `doc schema` row). Absent on every native type and
     // on a pack type declaring no grammar: inert, not wrong.
     if let Some(hint) = field.type_hint() {
@@ -5589,6 +5679,36 @@ fn slot_json(span: Option<&engine::parse::Span>, source: &str) -> serde_json::Va
 const COMPOUND_BASE_DOCTYPE: &str = "milestone-record";
 const COMPOUND_BASE_FIELD: &str = "base";
 
+/// Does `(schema, field_id)` name that one compound leaf? **The one home both pinned
+/// surfaces ask** (M52 Increment 6 / T7): the content read ([`header_field_json`]) to
+/// decide whether to project an object, and the type read ([`schema_contract`]) to
+/// decide whether to declare one. Until this task only the content side knew, which is
+/// how `doc schema` came to report `string` for a field `doc show` serves as an object
+/// (`completions/artifacts/M52/baseline-contracts.md` → LD-2).
+fn is_compound_base(schema: &Schema, field_id: &str) -> bool {
+    schema.ty == COMPOUND_BASE_DOCTYPE && field_id == COMPOUND_BASE_FIELD
+}
+
+/// The compound's two members — **one type, two uses**, so the member names the type
+/// surface declares and the ones the content surface emits are the same tokens rather
+/// than two literal lists that can drift. `T` is the value on the content side (each
+/// SHA) and the member's json *type name* on the schema side.
+#[derive(Clone, Copy, serde::Serialize)]
+struct CompoundBase<T> {
+    sha: T,
+    short: T,
+}
+
+impl CompoundBase<&'static str> {
+    /// The members' json types, as the pinned `doc schema` projection declares them.
+    fn json_types() -> Self {
+        CompoundBase {
+            sha: "string",
+            short: "string",
+        }
+    }
+}
+
 /// A **simple-section header** field's json value. The milestone-record's `base` field
 /// is the one compound leaf in the pinned read surface: its stored value is the
 /// space-joined `<sha> <short>` scalar the `.md` renders (the lossless round-trip that
@@ -5600,12 +5720,12 @@ const COMPOUND_BASE_FIELD: &str = "base";
 /// the normal path is always `<sha> <short>`. Every other field falls through to the
 /// scalar/list [`field_json`].
 fn header_field_json(schema: &Schema, key: &str, value: &Value) -> serde_json::Value {
-    if schema.ty == COMPOUND_BASE_DOCTYPE
-        && key == COMPOUND_BASE_FIELD
+    if is_compound_base(schema, key)
         && let Value::Scalar(raw) = value
         && let Some((sha, short)) = raw.split_once(' ')
     {
-        return serde_json::json!({ "sha": sha, "short": short });
+        return serde_json::to_value(CompoundBase { sha, short })
+            .expect("a two-string struct serializes");
     }
     field_json(value)
 }

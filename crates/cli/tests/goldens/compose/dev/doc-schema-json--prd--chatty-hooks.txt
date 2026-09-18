@@ -1,9 +1,17 @@
 exit: 0
 --- stdout ---
 {
-  "contract-version": 6,
+  "contract-version": 7,
   "type": "prd",
   "schema-version": 1,
+  "identity": {
+    "kind": "slugged",
+    "address": "prd:<slug>"
+  },
+  "home": {
+    "kind": "location",
+    "path": "docs/prds/<slug>.md"
+  },
   "fields": [
     {
       "id": "schema-version",

@@ -1,9 +1,17 @@
 exit: 0
 --- stdout ---
 {
-  "contract-version": 6,
+  "contract-version": 7,
   "type": "commit",
   "schema-version": 1,
+  "identity": {
+    "kind": "slugged",
+    "address": "commit:<slug>"
+  },
+  "home": {
+    "kind": "transient",
+    "path": null
+  },
   "fields": [
     {
       "id": "type",

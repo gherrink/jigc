@@ -1,9 +1,17 @@
 exit: 0
 --- stdout ---
 {
-  "contract-version": 6,
+  "contract-version": 7,
   "type": "research",
   "schema-version": 1,
+  "identity": {
+    "kind": "slugged",
+    "address": "research:<slug>"
+  },
+  "home": {
+    "kind": "location",
+    "path": "docs/research/<slug>.md"
+  },
   "fields": [
     {
       "id": "date",

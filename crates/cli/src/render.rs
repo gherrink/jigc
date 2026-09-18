@@ -5957,9 +5957,14 @@ pub const ENVELOPE_ARMS: &[EnvelopeArm] = &[
         path: &["doc", "schema"],
         arm: "Projection",
         origin: ArmOrigin::Sole,
+        // `home` and `identity` join at `contract-version` 7 (M52 Increment 6 / T7):
+        // the projection now names which addresses a doctype's instances have and
+        // where they live, from `engine::schema::Schema::projection`.
         shape: ArmShape::Object(&[
             "contract-version",
             "fields",
+            "home",
+            "identity",
             "schema-version",
             "sections",
             "type",

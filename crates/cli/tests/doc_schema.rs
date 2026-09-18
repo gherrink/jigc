@@ -6,15 +6,22 @@
 //! 2026-07-10 → M40 Settle #3).
 //!
 //! The load-bearing contract this pins is the **separately-pinned, explicitly
-//! versioned `--format json` shape** — `contract-version: 6` (the M50 bump: a `ref`
-//! field's `to:`, the target doctype it references; 5 was the M48
+//! versioned `--format json` shape** — `contract-version: 7` (the M52 bump: the
+//! `identity`/`home` pair naming which addresses a doctype's instances have and where
+//! they live, pooled with `base`'s compound `json-shape`; 6 was the M50 `ref` field's
+//! `to:`, the target doctype it references; 5 was the M48
 //! id-source's `write-key`; 4 was the M45 three settability states — an id-from leaf
 //! carries `add-item` [+ `retitle-item` iff its type is string], a `set: on-create`
 //! stamp carries `set-field`, a machine-maintained absolute carries none; 3 was the
 //! M43 rc.7 write-address join, 2 the M41 rc.5 `of`/`section` join), golden-pinned at
-//! ship: `{ contract-version, type, schema-version-or-null, fields, sections }` with
+//! ship: `{ contract-version, type, schema-version-or-null, identity, home, fields,
+//! sections }` — `identity` = `{kind: fixed|slugged, address}` and `home` =
+//! `{kind: placement|location|transient, path-or-null}`, both rendered from the ONE
+//! engine primitive `Schema::projection` the `{{schema:<doctype>}}` compose seam's
+//! home line reads, so the two surfaces cannot answer the same question differently —
+//! with
 //! per-field `{id, type, of?, to?, required, author-required, default?, set?, section?,
-//! set-field? | (add-item? + retitle-item? + write-key)}` (`of` = the enum members,
+//! set-field? | (add-item? + retitle-item? + write-key), json-shape?}` (`of` = the enum members,
 //! universal across depths; `to` = a `ref`'s target doctype, the one thing
 //! `write.malformed-value`'s own route sends the author here to read;
 //! `section` = the owning simple-section id, top-level fields
@@ -23,7 +30,10 @@
 //! `on-transition`] and on a block's `id-from` leaf, which instead carries
 //! `add-item` [the block address, always] + `retitle-item` [the item address, iff a
 //! string id-from — an enum id-from carries `add-item` alone] + `write-key` [the
-//! payload key both those verbs take, `--title` whatever the field is called]) and
+//! payload key both those verbs take, `--title` whatever the field is called];
+//! `json-shape` = the object shape the CONTENT read returns where it differs from the
+//! declared `type` — the milestone-record's `base` pin, the one compound leaf in the
+//! pinned surface) and
 //! per-section `{id, kind, optional?, set-slot?|add-item?, item: {fields, slots,
 //! nested}}` —
 //! a slot section carries its `set-slot` address, a repeatable its `add-item`
@@ -127,6 +137,31 @@ fn init_repo_with_setup(repo: &Path, home: &Path) {
     assert_ok(&out, "`jigc setup`");
 }
 
+/// A repo whose project layer composes the **embedded** methodology pack under the dev
+/// pack (`compose-embedded-methodology: true`), plus a real `jigc setup` — the
+/// composition the shipped binary ships, and the one this suite's identity/home arms
+/// need: with **dev** primary its `knobs.yaml` wins, so `docs-root` is a declared knob.
+/// Under [`init_repo`]'s methodology-primary layout it is not — methodology's whole-file
+/// `knobs.yaml` shadow drops `docs-root` deliberately (a recorded divergence,
+/// `packs/methodology/config/knobs.yaml`), and `jigc config set docs-root` answers
+/// `config.undeclared-key` there.
+fn init_repo_embedded_with_setup(repo: &Path, home: &Path) {
+    git(repo, &["init", "-q"]);
+    fs::create_dir_all(repo.join(".jigc").join("config")).expect("create project layer");
+    fs::write(
+        repo.join(".jigc").join("config").join("packs.yaml"),
+        "compose-embedded-methodology: true\n",
+    )
+    .expect("write packs.yaml composing the embedded methodology pack");
+    git(repo, &["config", "user.email", "doc-schema@example.com"]);
+    git(repo, &["config", "user.name", "Doc Schema Suite"]);
+    fs::write(repo.join("README.md"), "doc schema suite\n").expect("write README");
+    git(repo, &["add", "."]);
+    git(repo, &["commit", "-q", "-m", "initial"]);
+    let out = jigc(repo, home, &["setup"]);
+    assert_ok(&out, "`jigc setup`");
+}
+
 /// Run `jigc <args>` with `cwd = repo` and `$HOME = home`.
 fn jigc(repo: &Path, home: &Path, args: &[&str]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_jigc"))
@@ -154,16 +189,24 @@ fn stdout_of(out: &std::process::Output) -> String {
     String::from_utf8(out.stdout.clone()).expect("utf-8 stdout")
 }
 
-// ---- the pinned `--format json` goldens (contract-version 5, byte-verbatim) ----
+// ---- the pinned `--format json` goldens (contract-version 7, byte-verbatim) ----
 
 /// dogfood-record — methodology, frozen v1 (M40 A1): `schema-version` 1 with the
 /// loader-injected stamp field appended; the 14 meta fields stay author-required
 /// (no default, no set, no optional/pack exemption) and each carries its
 /// `set-field` write address (the stamp, `set:`-derived, carries none).
 const DOGFOOD_RECORD_JSON: &str = r#"{
-  "contract-version": 6,
+  "contract-version": 7,
   "type": "dogfood-record",
   "schema-version": 1,
+  "identity": {
+    "kind": "slugged",
+    "address": "dogfood-record:<slug>"
+  },
+  "home": {
+    "kind": "location",
+    "path": "dogfood/<slug>.md"
+  },
   "fields": [
     {
       "id": "case",
@@ -314,9 +357,17 @@ const DOGFOOD_RECORD_JSON: &str = r#"{
 /// and carries `set-field`; the optional `link` carries `set-field`; every item
 /// slot `set-slot`; and every repeatable — nested included — its section `add-item`.
 const CHANGELOG_JSON: &str = r#"{
-  "contract-version": 6,
+  "contract-version": 7,
   "type": "changelog",
   "schema-version": 2,
+  "identity": {
+    "kind": "fixed",
+    "address": "changelog"
+  },
+  "home": {
+    "kind": "placement",
+    "path": "CHANGELOG.md"
+  },
   "fields": [
     {
       "id": "schema-version",
@@ -438,9 +489,17 @@ const CHANGELOG_JSON: &str = r#"{
 /// section (its `set-slot` address carried like its required siblings).
 /// Schema-version 2: the M36 `options`-slot migration bumped adr past v1.
 const ADR_JSON: &str = r#"{
-  "contract-version": 6,
+  "contract-version": 7,
   "type": "adr",
   "schema-version": 2,
+  "identity": {
+    "kind": "slugged",
+    "address": "adr:<slug>"
+  },
+  "home": {
+    "kind": "location",
+    "path": "decisions/<slug>.md"
+  },
   "fields": [
     {
       "id": "status",
@@ -536,7 +595,7 @@ fn doc_schema_json_is_the_pinned_contract() {
     assert_eq!(
         dogfood.trim_end(),
         DOGFOOD_RECORD_JSON,
-        "the dogfood-record schema json is the pinned contract-version-6 shape",
+        "the dogfood-record schema json is the pinned contract-version-7 shape",
     );
 
     // (2) dogfood-record — the Proves line, asserted behaviorally (not just bytes):
@@ -544,7 +603,7 @@ fn doc_schema_json_is_the_pinned_contract() {
     //     fields plus the injected stamp, every meta field author-required.
     let value: serde_json::Value =
         serde_json::from_str(&dogfood).expect("the emitted contract parses as json");
-    assert_eq!(value["contract-version"], 6, "the contract is versioned");
+    assert_eq!(value["contract-version"], 7, "the contract is versioned");
     assert_eq!(
         value["schema-version"], 1,
         "a manifest-frozen methodology doctype reports schema-version 1",
@@ -982,7 +1041,7 @@ fn doc_schema_id_source_names_its_write_key() {
     assert_ok(&out, "`jigc doc schema changelog --format json`");
     let value: serde_json::Value =
         serde_json::from_str(&stdout_of(&out)).expect("the changelog contract parses as json");
-    assert_eq!(value["contract-version"], 6, "the contract is versioned");
+    assert_eq!(value["contract-version"], 7, "the contract is versioned");
 
     // The three id-source leaves, at both nesting depths and both id-from types.
     let sections = value["sections"]
@@ -1152,7 +1211,7 @@ fn doc_schema_milestone_record_advertises_no_write_address() {
     // schema shape: the contract version, and the `tasks` repeatable (address-less).
     let value: serde_json::Value =
         serde_json::from_str(&json).expect("the milestone-record contract parses as json");
-    assert_eq!(value["contract-version"], 6, "the contract is versioned");
+    assert_eq!(value["contract-version"], 7, "the contract is versioned");
     let section_ids: Vec<&str> = value["sections"]
         .as_array()
         .expect("`sections` is an array")
@@ -1356,5 +1415,204 @@ fn doc_schema_answers_the_route_a_wrong_typed_ref_write_prints() {
         field_line(&answer, "supersedes").contains("ref -> adr"),
         "the route the rejection printed names the type it blamed the value for \
          missing; ran `{argv_text}`, got:\n{answer}",
+    );
+}
+
+/// M52 Increment 6 / T7 — **the projection names each doctype's identity and its
+/// home**, so the one surface a driver is told to read can say which addresses a
+/// doctype has (settle-record → D5.4 as amended by §10; `design/doc-read-surface.md`
+/// → the identity and home of a doctype).
+///
+/// The gap it closes: through `contract-version` 6 the projection advertised
+/// `vision:<slug>#thesis` and named **no** value `<slug>` may take, so nothing on the
+/// pinned surface said `vision:alpha` is not an address this doctype can have — the
+/// refusal the three doors now raise had no read surface to point back at.
+///
+/// Four cells, one per shape the primitive distinguishes, each driven on the emitted
+/// bytes of the real binary:
+///
+/// * **`vision`** — placement + singleton: identity `fixed` at the bare type id,
+///   home `placement` at the literal **root** file, which `placement-root` never
+///   re-roots (the rule's own carve-out, asserted with the knob set).
+/// * **`roadmap`** — placement whose declared home carries a **leading directory
+///   component**, so its path is the one the **`placement-root` knob** resolved.
+/// * **`adr`** — located + `id-from`: identity `slugged` at the `<ty>:<slug>`
+///   pattern, home `location` at the **`docs-root`-resolved** directory.
+/// * **`commit`** — neither: home `transient`, `path` null and present (an absent key
+///   would make a driver's read of it partial).
+///
+/// **Both root knobs are set to non-defaults** before anything is read. That is what
+/// makes these home cells a test of the **cascade-resolved** schema rather than of a
+/// raw `schema.location` / `placement.file` read: under the defaults every path below
+/// is byte-identical to its declaration, so the assertion would pass over the exact
+/// bug it exists to catch.
+#[test]
+fn doc_schema_names_each_doctypes_identity_and_home() {
+    let repo = TempDir::new("identity-home-repo");
+    let home = TempDir::new("identity-home-home");
+    init_repo_embedded_with_setup(repo.path(), home.path());
+
+    // NON-DEFAULT roots on both knobs: every home below must be the CASCADE's answer,
+    // so a projection reading `schema.location` / `placement.file` raw reddens here
+    // rather than shipping. Under the defaults each path equals its declaration, and
+    // the assertion would pass over the bug it exists to catch.
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &["config", "set", "docs-root", "papers"],
+    );
+    assert_ok(&out, "`jigc config set docs-root papers`");
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &["config", "set", "placement-root", "papers"],
+    );
+    assert_ok(&out, "`jigc config set placement-root papers`");
+
+    let projection = |doctype: &str| -> serde_json::Value {
+        let out = jigc(
+            repo.path(),
+            home.path(),
+            &["doc", "schema", doctype, "--format", "json"],
+        );
+        assert_ok(&out, "`jigc doc schema <doctype> --format json`");
+        serde_json::from_str(&stdout_of(&out)).expect("the emitted contract parses as json")
+    };
+
+    let vision = projection("vision");
+    assert_eq!(
+        vision["contract-version"], 7,
+        "the identity/home keys ride a contract-version bump, not a silent addition; \
+         got:\n{vision:#}",
+    );
+    assert_eq!(vision["identity"]["kind"], "fixed");
+    assert_eq!(
+        vision["identity"]["address"], "vision",
+        "a fixed-identity doctype names its ONE address, not a `<slug>` pattern; \
+         got:\n{vision:#}",
+    );
+    assert_eq!(vision["home"]["kind"], "placement");
+    assert_eq!(
+        vision["home"]["path"], "VISION.md",
+        "a home declared AT the repo root is never re-rooted — `placement-root` is \
+         `papers` here and the ecosystem-idiomatic file stays put by derivation; \
+         got:\n{vision:#}",
+    );
+
+    let roadmap = projection("roadmap");
+    assert_eq!(roadmap["identity"]["kind"], "fixed");
+    assert_eq!(roadmap["identity"]["address"], "roadmap");
+    assert_eq!(roadmap["home"]["kind"], "placement");
+    assert_eq!(
+        roadmap["home"]["path"], "papers/roadmap.md",
+        "a placement home carrying a LEADING DIRECTORY COMPONENT reports the path the \
+         `placement-root` knob resolved — declared `docs/roadmap.md`, so a raw \
+         `placement.file` read would answer that; got:\n{roadmap:#}",
+    );
+
+    let adr = projection("adr");
+    assert_eq!(adr["identity"]["kind"], "slugged");
+    assert_eq!(
+        adr["identity"]["address"], "adr:<slug>",
+        "a per-instance doctype names the pattern its addresses take; got:\n{adr:#}",
+    );
+    assert_eq!(adr["home"]["kind"], "location");
+    assert_eq!(
+        adr["home"]["path"], "papers/decisions/<slug>.md",
+        "the located home is the CASCADE-RESOLVED path — `docs-root` is set to \
+         `papers` above, so a raw `schema.location` read would answer \
+         `decisions/<slug>.md`; got:\n{adr:#}",
+    );
+
+    let commit = projection("commit");
+    assert_eq!(commit["home"]["kind"], "transient");
+    assert!(
+        commit["home"]
+            .as_object()
+            .is_some_and(|home| home.get("path").is_some_and(serde_json::Value::is_null)),
+        "a transient doctype emits `path: null` — present and null, never absent, so \
+         a driver's read of the key is total; got:\n{commit:#}",
+    );
+}
+
+/// M52 Increment 6 / T7 — **the two pinned read surfaces agree on the type of the one
+/// compound field they both carry** (baseline-contracts LD-2; settle D6.5).
+///
+/// Driven at HEAD before this task: `jigc doc schema milestone-record --format json`
+/// reported `"type": "string"` for `base` while `jigc doc show
+/// milestone-record:<slug>#meta/base --format json` returned the **object**
+/// `{"sha": …, "short": …}` — so a driver type-checking the content read against the
+/// type read was told the wrong shape on the one compound field the 1.0 pin carries.
+///
+/// The assertion is a **cross-surface equality**, not two hard-coded key lists: the
+/// member set is read off the projection and compared with the member set `doc show`
+/// actually emits, so the two cannot drift apart in silence.
+#[test]
+fn doc_schema_projects_the_compound_field_as_the_shape_doc_show_returns() {
+    let repo = TempDir::new("compound-repo");
+    let home = TempDir::new("compound-home");
+    init_repo_embedded_with_setup(repo.path(), home.path());
+
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &["milestone", "create", "Cache rework"],
+    );
+    assert_ok(&out, "`jigc milestone create`");
+
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "schema", "milestone-record", "--format", "json"],
+    );
+    assert_ok(&out, "`jigc doc schema milestone-record --format json`");
+    let schema: serde_json::Value =
+        serde_json::from_str(&stdout_of(&out)).expect("the schema projection parses");
+    let base = schema["fields"]
+        .as_array()
+        .expect("`fields` is an array")
+        .iter()
+        .find(|field| field["id"] == "base")
+        .unwrap_or_else(|| panic!("the record declares a `base` field; got:\n{schema:#}"));
+    let declared = base["json-shape"]
+        .as_object()
+        .unwrap_or_else(|| panic!("`base` names its json shape; got:\n{base:#}"));
+    assert_eq!(
+        declared.get("sha").and_then(serde_json::Value::as_str),
+        Some("string"),
+        "the compound's members carry their own json type; got:\n{base:#}",
+    );
+    assert_eq!(
+        declared.get("short").and_then(serde_json::Value::as_str),
+        Some("string"),
+    );
+
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &[
+            "doc",
+            "show",
+            "milestone-record:cache-rework#meta/base",
+            "--format",
+            "json",
+        ],
+    );
+    assert_ok(&out, "`jigc doc show milestone-record:…#meta/base`");
+    let served: serde_json::Value =
+        serde_json::from_str(&stdout_of(&out)).expect("the content read parses");
+    let served = served
+        .as_object()
+        .unwrap_or_else(|| panic!("the compound leaf serves an object; got:\n{served:#}"));
+
+    let mut advertised: Vec<&str> = declared.keys().map(String::as_str).collect();
+    advertised.sort_unstable();
+    let mut emitted: Vec<&str> = served.keys().map(String::as_str).collect();
+    emitted.sort_unstable();
+    assert_eq!(
+        advertised, emitted,
+        "the type surface's declared member set must equal the content surface's \
+         emitted one — a driver type-checking `doc show` against `doc schema` reads \
+         one fact, not two",
     );
 }

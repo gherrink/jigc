@@ -160,6 +160,155 @@ impl Schema {
     pub fn has_fixed_identity(&self) -> bool {
         self.placement.is_some() || self.singleton
     }
+
+    /// The doctype's **identity and home** as one structured value — the single
+    /// answer every surface that states *where a doctype's instances live, and under
+    /// what identity* derives from (M52 Increment 6 / T7; settle-record D5.4 as
+    /// amended by §10).
+    ///
+    /// **It exists because that fact had two renderers and no source.**
+    /// [`crate::compose`]'s `projection_home_line` composed the prose the
+    /// `{{schema:<doctype>}}` seam renders, and `cli::doc::SchemaContract` — the
+    /// separately-versioned `jigc doc schema --format json` projection — answered the
+    /// same question again, in its own shape, from the same three raw keys. Two
+    /// independent readings of `placement` / `location` / `singleton` are two places
+    /// the rule can be re-derived differently, which is exactly how
+    /// [`Schema::has_fixed_identity`]'s three disagreeing seams came about one task
+    /// earlier. Both renderers now read this.
+    ///
+    /// **Both halves are type-level, never instance-level** — the projection is a
+    /// *schema* read, so a per-instance doctype's slug renders as the
+    /// [`SLUG_PLACEHOLDER`] every advertised write address already places it under
+    /// (`design/doc-read-surface.md` → the pinned `doc schema` projection). A
+    /// **fixed**-identity doctype has no placeholder to fill: its address is the bare
+    /// type id, the spelling the verb boundary expands to `<ty>:<ty>` and the one
+    /// answer to *"which slug may I address this doctype under"*.
+    ///
+    /// **The path is whatever the caller's `Schema` carries.** This reads the schema
+    /// it is given and concatenates; it resolves no knob. A caller holding a
+    /// **cascade-resolved** schema (the `docs-root` / `placement-root` nesting
+    /// already applied — `cli::start::resolved_schemas`, which every production read
+    /// goes through) gets the repo-relative home; a caller holding a raw pack read
+    /// gets the declared one. That is the same contract `location:`'s own consumers
+    /// have always had, stated here because this value is rendered to users.
+    pub fn projection(&self) -> DoctypeProjection {
+        let home = match (&self.placement, &self.location) {
+            (Some(placement), _) => DoctypeHome {
+                kind: HomeKind::Placement,
+                path: Some(placement.file.clone()),
+            },
+            (None, Some(location)) => DoctypeHome {
+                kind: HomeKind::Location,
+                path: Some(format!(
+                    "{location}{stem}.md",
+                    stem = if self.has_fixed_identity() {
+                        self.ty.as_str()
+                    } else {
+                        SLUG_PLACEHOLDER
+                    },
+                )),
+            },
+            (None, None) => DoctypeHome {
+                kind: HomeKind::Transient,
+                path: None,
+            },
+        };
+        let identity = if self.has_fixed_identity() {
+            DoctypeIdentity {
+                kind: IdentityKind::Fixed,
+                address: self.ty.clone(),
+            }
+        } else {
+            DoctypeIdentity {
+                kind: IdentityKind::Slugged,
+                address: format!("{ty}:{SLUG_PLACEHOLDER}", ty = self.ty),
+            }
+        };
+        DoctypeProjection { identity, home }
+    }
+}
+
+/// The token every **type-level** surface writes where an instance's slug would go —
+/// the pinned `doc schema` projection's advertised addresses, and the home path
+/// [`Schema::projection`] renders. One spelling, so a driver's substitution target is
+/// one string rather than a convention re-typed per surface.
+pub const SLUG_PLACEHOLDER: &str = "<slug>";
+
+/// A doctype's identity and home, together — see [`Schema::projection`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DoctypeProjection {
+    /// Under what address this doctype's instances are reachable.
+    pub identity: DoctypeIdentity,
+    /// Where they live on disk.
+    pub home: DoctypeHome,
+}
+
+/// The identity half of [`DoctypeProjection`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DoctypeIdentity {
+    /// Whose the `<slug>` is — the CLI's or the author's.
+    pub kind: IdentityKind,
+    /// The **fixed** doctype's one address (the bare type id), or the slugged
+    /// doctype's `<ty>:<slug>` pattern.
+    pub address: String,
+}
+
+/// The home half of [`DoctypeProjection`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DoctypeHome {
+    /// Which of the three declarations homes this doctype.
+    pub kind: HomeKind,
+    /// The repo-relative path of an instance — `<slug>`-placeheld for a slugged
+    /// doctype — or `None` for a [`HomeKind::Transient`] doctype, which has no
+    /// committed file at all.
+    pub path: Option<String>,
+}
+
+/// Whether a doctype's `<slug>` belongs to the CLI or to the author —
+/// [`Schema::has_fixed_identity`] as a rendered value.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IdentityKind {
+    /// One instance, at a slug the CLI supplies (= the type id).
+    Fixed,
+    /// One instance per author-supplied slug.
+    Slugged,
+}
+
+impl IdentityKind {
+    /// The wire spelling — the pinned `doc schema` projection's `identity.kind`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            IdentityKind::Fixed => "fixed",
+            IdentityKind::Slugged => "slugged",
+        }
+    }
+}
+
+/// Which declaration homes a doctype's instances — the three arms of
+/// [`Schema::projection`]'s home, named after the schema key that produces each.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HomeKind {
+    /// `placement:` — one exact repo-relative file (`design/storage.md` → Placement).
+    Placement,
+    /// `location:` — a directory instances are named into.
+    Location,
+    /// Neither — a transient doctype whose sink is not a repo file (`commit`, whose
+    /// sink is the git message). **Declared here rather than left to a `null` home
+    /// kind**: the settle named the two persisted arms, and a doctype with no home is
+    /// a third state a driver must be able to read off `kind` without inferring it
+    /// from an absent `path`.
+    Transient,
+}
+
+impl HomeKind {
+    /// The wire spelling — the pinned `doc schema` projection's `home.kind`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            HomeKind::Placement => "placement",
+            HomeKind::Location => "location",
+            HomeKind::Transient => "transient",
+        }
+    }
 }
 
 /// Normalize a declared `location:` to the trailing-slash spelling every
@@ -1879,6 +2028,87 @@ sections: []
             !transient.has_fixed_identity(),
             "a transient doctype's slug comes from the task, not from the schema",
         );
+    }
+
+    /// (M52 inc-6 T7) [`Schema::projection`] over the same four cells — the structured
+    /// value both renderers of *"where does this doctype live, and under what
+    /// identity"* now read (`cli::doc::SchemaContract`'s pinned json and
+    /// [`crate::compose`]'s `{{schema:<doctype>}}` home line).
+    ///
+    /// Two properties this pins beyond the cell values. **The slug placeholder is one
+    /// token** — an address's and a home path's `<slug>` are the same
+    /// [`SLUG_PLACEHOLDER`], not two conventions. And **a fixed identity's home names
+    /// the type id where a slugged one names the placeholder**, which is the whole
+    /// reason a fixed-identity doctype can be told apart from a placeheld one by
+    /// reading the value rather than by re-deriving the rule.
+    #[test]
+    fn projection_names_each_doctypes_identity_and_home() {
+        let cell = |yaml: &[u8]| load_schema(yaml).expect("fixture schema loads");
+
+        // (1) `placement:` — the literal file, fixed identity at the bare type id.
+        let placement = cell(
+            b"\
+type: vision
+placement: { file: VISION.md }
+sections: []
+",
+        )
+        .projection();
+        assert_eq!(placement.identity.kind, IdentityKind::Fixed);
+        assert_eq!(placement.identity.address, "vision");
+        assert_eq!(placement.home.kind, HomeKind::Placement);
+        assert_eq!(placement.home.path.as_deref(), Some("VISION.md"));
+
+        // (2) `location:` + `singleton: true` — the manufactured cell: a LOCATED home
+        //     whose stem is the type id, because the mint fixes the slug.
+        let located_singleton = cell(
+            b"\
+type: runbook
+singleton: true
+location: runbooks/
+sections: []
+",
+        )
+        .projection();
+        assert_eq!(located_singleton.identity.kind, IdentityKind::Fixed);
+        assert_eq!(located_singleton.identity.address, "runbook");
+        assert_eq!(located_singleton.home.kind, HomeKind::Location);
+        assert_eq!(
+            located_singleton.home.path.as_deref(),
+            Some("runbooks/runbook.md"),
+            "a fixed identity's home names the type id, never the placeholder — this \
+             is the cell where the two disjuncts differ",
+        );
+
+        // (3) `location:` alone — the placeheld pattern, on both halves.
+        let located = cell(
+            b"\
+type: adr
+location: decisions/
+sections: []
+",
+        )
+        .projection();
+        assert_eq!(located.identity.kind, IdentityKind::Slugged);
+        assert_eq!(located.identity.address, format!("adr:{SLUG_PLACEHOLDER}"));
+        assert_eq!(located.home.kind, HomeKind::Location);
+        assert_eq!(
+            located.home.path.as_deref(),
+            Some(format!("decisions/{SLUG_PLACEHOLDER}.md").as_str()),
+        );
+
+        // (4) transient — no home, so `path` is None and the kind says which of the
+        //     three states that is (never inferred from the absent path).
+        let transient = cell(
+            b"\
+type: commit
+sections: []
+",
+        )
+        .projection();
+        assert_eq!(transient.identity.kind, IdentityKind::Slugged);
+        assert_eq!(transient.home.kind, HomeKind::Transient);
+        assert_eq!(transient.home.path, None);
     }
 
     /// (M37 inc-1 T1) The doctype-level `display-title:` knob serde-roundtrips: a

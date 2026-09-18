@@ -34,10 +34,14 @@
 //! --help`, and the guide artifact `jigc setup` installs.
 //!
 //! **The recorded non-addition** (the last arm): the pinned `--format json`
-//! projection is byte-unchanged and its `contract-version` stays 6. The grammar is a
+//! projection carries **no grammar key**. The grammar is a
 //! property of the declared `type` the envelope already carries, so nothing is
 //! withheld from a driver — the same disposition `text_json_parity_axis.rs` records
-//! for the `doc schema` row.
+//! for the `doc schema` row. *(M50 stated this as "`contract-version` stays 6". The
+//! version has since moved — M52's `identity`/`home` pair took it to 7 — so the claim
+//! is restated over what M50 actually decided: no version moved **for the grammar**.
+//! Pinning the numeral pinned the wrong thing; the arm asserts the absent key, and
+//! the version it asserts beside it is the current one.)*
 //!
 //! **Declared bound:** the reverse scan covers the *shipping* surfaces (engine + CLI
 //! sources, both packs, both guides). `design/` states the grammar in its own
@@ -523,12 +527,18 @@ fn copy_tree(src: &Path, dst: &Path) {
     }
 }
 
-/// **The recorded non-addition.** The pinned `--format json` projection is unchanged:
-/// its `contract-version` stays 6 and it carries no grammar key. The grammar is a
+/// **The recorded non-addition.** The pinned `--format json` projection carries **no
+/// grammar key**. The grammar is a
 /// property of the declared `type` the envelope already names, so a driver is told
 /// nothing less than before — and Increment 8's *one bump, one wave* stands.
+///
+/// The version assertion beside it is a **currency check, not the claim**: it reads 7
+/// since M52's `identity`/`home` pair, and it is asserted here so that a projection
+/// change arriving without a bump reddens. What M50 decided — and what this test was
+/// named for — is that no version moved **for the grammar**, which a frozen numeral
+/// could never express (M52 Increment 6 / T7).
 #[test]
-fn the_pinned_json_projection_withholds_nothing_and_does_not_move() {
+fn the_pinned_json_projection_carries_no_grammar_key() {
     let repo = TempDir::new("json-repo");
     let home = TempDir::new("json-home");
     init_repo(repo.path());
@@ -540,8 +550,8 @@ fn the_pinned_json_projection_withholds_nothing_and_does_not_move() {
     );
     let text = ok_stdout(&out, "`jigc doc schema adr --format json`");
     assert!(
-        text.contains("\"contract-version\": 6"),
-        "the schema read contract stays at version 6; got:\n{text}",
+        text.contains("\"contract-version\": 7"),
+        "the schema read contract carries its current version; got:\n{text}",
     );
     assert!(
         !text.contains(GRAMMAR),
