@@ -3396,16 +3396,18 @@ pub(crate) fn try_execute_finalize_plan(
     let msg_path = msg_tmp_dir.join("finalize-message.tmp");
     std::fs::write(&msg_path, &plan.message)
         .with_context(|| format!("could not write the commit message to {msg_path:?}"))?;
-    // The bytes retire deleted, captured pre-deletion so a rollback can rewrite an
-    // untracked foreign original `git restore` cannot recover (review F3). Empty unless a
-    // migration retire ran.
-    let mut retired: Vec<(PathBuf, Vec<u8>)> = Vec::new();
-    // The bytes promote displaced at a pre-existing destination, captured pre-overwrite
-    // (confidence-audit minor item 10 — the retire capture's promote sibling): a
-    // same-path migration of an UNTRACKED foreign plans no retirement, so these are the
-    // only copy of the foreign bytes a rollback can restore. Empty when no destination
-    // file pre-exists.
-    let mut displaced: Vec<(String, Vec<u8>)> = Vec::new();
+    // The promote and retire **worktree** axes, on the shared compare-and-swap entry (M52
+    // Increment 5 / T3; `crate::rollback::ROLLBACK_POPULATIONS` → `promote-destination` and
+    // `retired-original`, both `Discipline::FileCas`). One family, because the two
+    // populations are two disciplines only in the registry's bookkeeping sense — on disk they
+    // ask the identical question, *is what is there now still what jigc left?*, and answering
+    // it in one place is what keeps them from disagreeing the way the class's populations did
+    // before it was enumerated. Each entry carries the destination's pre-promote bytes (or
+    // *absent* for a doc the promotion creates) or the retirement's pre-deletion bytes
+    // against *absence*, plus what jigc left there read back one statement after the act.
+    // Empty — and therefore inert — on every arm that promotes and retires nothing.
+    let mut promote_worktree =
+        crate::rollback::PreImageFamily::empty(crate::rollback::FINALIZE_DOOR);
     // The pathspecs the migration stage actually `git add`ed (M40 F7) — the rollback's
     // index-axis key, so only a deletion jigc itself staged is un-staged on failure.
     // Empty on every non-migration stage arm (those have no retirements to un-stage).
@@ -3509,14 +3511,14 @@ pub(crate) fn try_execute_finalize_plan(
         // captures accumulate into the outer `displaced` (&mut, not returned-on-`Ok`),
         // so a MID-promote failure still hands the `Err` arm every capture taken so far
         // (confidence-audit code-review MEDIUM — the failure-POINT axis).
-        promote(repo_root, &plan.promotions, &mut displaced)?;
+        promote(repo_root, &plan.promotions, &mut promote_worktree)?;
         // Retire each foreign original (`design/auto-migration.md` →
         // Retire-the-foreign-original) — the first byte-destructive write, inside the
         // commit closure so `git add --all` stages the deletion into the same commit as
         // the promoted doc. Empty (inert) on every non-migration finalize. Same
         // caller-owned capture discipline: a MID-retire failure keeps the bytes already
         // captured for the rollback's worktree axis.
-        retire(repo_root, &plan.retirements, &mut retired)?;
+        retire(repo_root, &plan.retirements, &mut promote_worktree)?;
         // The transient `.jigc/` subdirs are gitignored via `.jigc/.gitignore` — the
         // working area is never committed (`design/storage.md` → repository layout).
         // Ensure it exists so the `git add --all` stage picks up `config/` + the promoted
@@ -3600,13 +3602,13 @@ pub(crate) fn try_execute_finalize_plan(
             // leaves the foreign file deleted with no commit, never resurrects a user's
             // own pre-staged deletion, and never destroys a blob the user staged at a
             // destination mid-task (the promotions index axis).
-            rollback_promotions(
+            let mut conflicts = rollback_promotions(
                 repo_root,
+                jigc_root,
                 &plan.promotions,
                 &promo_index,
-                &displaced,
+                &promote_worktree,
                 &plan.retirements,
-                &retired,
                 &staged,
             );
             // The third scoped axis (M45 Inc 8 T2): restore each owner-artifact path's
@@ -3629,7 +3631,11 @@ pub(crate) fn try_execute_finalize_plan(
             // is left exactly as that editor left it and its pre-image is preserved beside it.
             // Each such path hands back one blocking `finalize.rollback-conflict`, which the
             // door prints beside its own frame; the door's error is never replaced.
-            *rollback_conflicts = config_worktree.restore(repo_root, jigc_root);
+            // …joined by the promote/retire worktree axis's own conflicts, gathered above:
+            // one blocking finding per raced path, whichever population the path belongs to,
+            // because the operator's act is the same comparison in every case.
+            conflicts.extend(config_worktree.restore(repo_root, jigc_root));
+            *rollback_conflicts = conflicts;
             // Every rollback above has run, so the state each door's frame describes is the
             // state that is now on disk — and the error is marked as a commit-transaction
             // failure so the door frames it instead of dropping the frame (N20). A hook
@@ -3704,25 +3710,35 @@ pub(crate) fn fold_hook_streams<'a, I: IntoIterator<Item = &'a str>>(streams: I)
 /// **copy, not move**, so rollback is a removal of the copies and the working area stays
 /// intact. Creates the destination's parent directory (e.g. `decisions/`) when absent.
 ///
-/// **Captures the displaced destination bytes** keyed by repo-relative destination
+/// **Captures the destination's pre-image** keyed by repo-relative destination
 /// (confidence-audit minor item 10 — the retire byte-capture discipline, applied to the
 /// promote): a **same-path** migration (`destination == source`, the M43 carve-out)
 /// plans no retirement, so when the foreign original is **untracked** the promotion
 /// destination is the user's only copy of its bytes and `git restore` has nothing to
-/// recover from — the captured bytes are what [`rollback_promotions`] rewrites so a
-/// rejected commit never deletes them. Untouched when no destination file pre-exists.
+/// recover from — the captured bytes are what [`rollback_promotions`] restores so a
+/// rejected commit never deletes them.
 ///
-/// The captures accumulate into the **caller-owned** `displaced` (confidence-audit
+/// **Since M52 Increment 5 / T3 the capture is a [`crate::rollback::PreImage`] and the
+/// restore is compare-and-swap** (`rollback::ROLLBACK_POPULATIONS` → `promote-destination`,
+/// `Discipline::FileCas`). Two things follow, and both are the point. The **post-image is
+/// read back one statement after the copy**, which is what lets the rollback tell *jigc's own
+/// promoted bytes* from a third party's edit made inside the transaction — an unconditional
+/// rewrite destroyed that edit silently. And an **unreadable** destination now refuses the
+/// transaction instead of promoting over it: recording `pre` as *absent* there would make the
+/// rollback **delete** a file this run did not create, which is the loss in the other
+/// direction (`PreImage::capture`'s own rule — absent means absent, never unreadable).
+///
+/// The entries accumulate into the **caller-owned** family (confidence-audit
 /// code-review MEDIUM — the failure-POINT axis): a mid-promote failure at promotion *k*
 /// (disk full, permissions, a directory squatting the destination) must not discard the
 /// captures already taken for promotions 1..k — a returned-only-on-`Ok` collection did,
 /// and the shared `Err` arm's rollback then deleted a same-path untracked foreign it had
 /// no bytes to restore. Each capture is pushed **before** its `fs::copy`, so even the
-/// failing promotion's own displaced bytes reach the rollback.
+/// failing promotion's own pre-image reaches the rollback.
 fn promote(
     repo_root: &Path,
     promotions: &[Promotion],
-    displaced: &mut Vec<(String, Vec<u8>)>,
+    worktree: &mut crate::rollback::PreImageFamily,
 ) -> Result<()> {
     for promotion in promotions {
         let dest = repo_root.join(&promotion.destination);
@@ -3730,10 +3746,21 @@ fn promote(
             std::fs::create_dir_all(parent)
                 .with_context(|| format!("could not create {parent:?} to promote into"))?;
         }
-        if let Ok(bytes) = std::fs::read(&dest) {
-            displaced.push((promotion.destination.clone(), bytes));
-        }
-        std::fs::copy(&promotion.source, &dest).with_context(|| {
+        worktree.push(
+            crate::rollback::PreImage::capture(promotion.destination.clone(), dest.clone())
+                .with_context(|| format!("could not read {dest:?} before promoting over it"))?,
+        );
+        let copied = std::fs::copy(&promotion.source, &dest);
+        // The post-image, read back one statement after the write — the swap's other half,
+        // and the only moment at which the bytes on disk are provably jigc's. Read on the
+        // FAILING arm too, before the `?`: a `fs::copy` that errs part-way through leaves a
+        // truncated file at the destination, and those bytes are as much jigc's doing as a
+        // whole one's. Read only after an `Ok` they would be `Untouched` — *jigc cannot prove
+        // what it put there* — and the swap would leave the truncation standing. A copy that
+        // failed without touching the file reads back as its own pre-image, which the
+        // `pre == post` rule already treats as nothing having happened.
+        worktree.wrote(&promotion.destination);
+        copied.with_context(|| {
             format!(
                 "could not promote {:?} to {dest:?}",
                 promotion.source.display()
@@ -3921,7 +3948,16 @@ fn retire_untrackable_finding(
 /// recover on a rollback, so the captured bytes are what `rollback_promotions` rewrites
 /// to keep an approved-but-failed commit from permanently losing it.
 ///
-/// The captures accumulate into the **caller-owned** `captured` (confidence-audit
+/// **Since M52 Increment 5 / T3 the capture is a [`crate::rollback::PreImage`] whose
+/// post-image is *absence*** (`crate::rollback::PostWrite::Removed`), so the restore is the
+/// same compare-and-swap every other `FileCas` population runs: the bytes come back **only
+/// while the path is still absent**, and a third party who re-created it inside the
+/// transaction keeps their file *and is told* — before, that racer kept their file silently
+/// while jigc's own capture was dropped on the floor and the deletion of the original bytes
+/// survived, named by nothing (`rollback::ROLLBACK_POPULATIONS` → `retired-original`;
+/// baseline-rollback.md §1 table A row 3, *"jigc's deletion survives silently"*).
+///
+/// The captures accumulate into the **caller-owned** family (confidence-audit
 /// code-review MEDIUM — the same failure-POINT axis as [`promote`]): a mid-retire
 /// failure at retirement *k* must not discard the captures for retirements already
 /// deleted — a returned-only-on-`Ok` collection did, leaving the rollback's worktree
@@ -3929,7 +3965,7 @@ fn retire_untrackable_finding(
 fn retire(
     repo_root: &Path,
     retirements: &[PathBuf],
-    captured: &mut Vec<(PathBuf, Vec<u8>)>,
+    worktree: &mut crate::rollback::PreImageFamily,
 ) -> Result<()> {
     for retirement in retirements {
         // The sink's own adjudication (M51 Increment 1 / T3), asked HERE — one statement
@@ -3941,9 +3977,21 @@ fn retire(
         let path = validated.target();
         match std::fs::read(&path) {
             Ok(bytes) => {
-                captured.push((retirement.clone(), bytes));
                 std::fs::remove_file(&path)
                     .with_context(|| format!("could not retire the foreign original {path:?}"))?;
+                // Pushed AFTER the unlink succeeded, carrying the bytes the read above
+                // already holds — the two halves of one act. The entry's post-image is
+                // *absence*, so an entry pushed before a removal that then FAILED would
+                // claim jigc had emptied a path still holding its own bytes, and the swap
+                // would raise a conflict and park a pre-image over a file jigc never touched.
+                // The failure-POINT discipline is untouched: this family is the caller's, so
+                // a mid-loop failure at retirement *k* keeps every entry 1..k-1, and there is
+                // nothing at *k* to restore.
+                worktree.push(crate::rollback::PreImage::removed(
+                    retirement.to_string_lossy().into_owned(),
+                    path.clone(),
+                    bytes,
+                ));
             }
             // Already absent — idempotent (the goal is the file gone); nothing to capture.
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
@@ -5002,58 +5050,84 @@ fn existing_pathspecs(repo_root: &Path, candidates: &[&str]) -> Vec<String> {
 /// `git restore --staged` reset to HEAD, which destroyed a blob the user staged at the
 /// destination mid-task (post-mint, so outside the carryover snapshot; for a destination
 /// new at HEAD the reset dropped the entry entirely) — and the **worktree** back to what it
-/// held before [`promote`] wrote it (the captured **displaced** pre-promote bytes for any
-/// destination that pre-existed — the same-path untracked-foreign cell, confidence-audit
-/// minor item 10, and for a tracked destination the capture preserves an uncommitted
-/// pre-promote modification `--source=HEAD` would destroy, reviewer LOW-2; HEAD's bytes
-/// for a tracked destination with no capture; the promoted copy
-/// removed for a genuinely new one). Retirements are restored **two-axis scoped (M40 F7)** —
-/// restore only what jigc's own retire/staging touched, never what the user deleted:
+/// held before [`promote`] wrote it and what [`retire`] deleted.
 ///
-/// - **worktree axis, keyed on the retire byte-capture set** (`retired`): a path
-///   [`retire`] itself deleted has its captured pre-deletion bytes rewritten if still
-///   absent (this also recovers an **untracked** foreign, which `git restore` cannot —
-///   review F3);
-/// - **index axis, keyed on the staged-pathspec set** (`staged`, what
-///   [`stage_migration`] actually `git add`ed): only a deletion jigc's own stage staged
-///   is un-staged (`git restore --staged`).
+/// **The worktree axis is `worktree`'s, and it is compare-and-swap** (M52 Increment 5 / T3;
+/// `crate::rollback::ROLLBACK_POPULATIONS` → `promote-destination` / `retired-original`).
+/// Both populations restore **only while the path is still as jigc left it** — the promoted
+/// bytes at a destination, absence at a retirement — and a path a third party changed inside
+/// the transaction keeps that third party's version, with jigc's pre-image parked in the
+/// gitignored workbench and one blocking `finalize.rollback-conflict` per raced path. Before
+/// that, both arms acted unconditionally on their own half: the promote rewrote its capture
+/// over a racer's edit, and the retire's *"restore only while absent"* silently dropped its
+/// capture and left jigc's deletion of the original bytes standing (baseline-rollback.md §1
+/// table A rows 2 and 3). What each entry restores is unchanged: the captured pre-promote
+/// bytes for a destination that pre-existed (the same-path untracked-foreign cell,
+/// confidence-audit minor item 10, and for a tracked destination a capture strictly more
+/// faithful than `--source=HEAD`, which destroyed an uncommitted pre-promote modification —
+/// reviewer LOW-2), the promoted copy removed for a genuinely new doc, and the retire's own
+/// byte-capture rewritten (which recovers an **untracked** foreign `git restore` cannot —
+/// review F3).
 ///
-/// A planned-but-untouched retirement — the user's pre-finalize `git rm` (absent from
-/// both sets) — is never restored on either axis: the prior unconditional
-/// per-planned-retirement `git restore --staged --worktree` resurrected it on any
-/// commit failure. Best-effort: a failure is logged, never raised — the commit did not
-/// land, so the worst case is a stray copy the next `finalize`/`discard` overwrites.
+/// Two arms stay **here**, both keyed on a destination this promotion **created** — asked of
+/// the family rather than of a list beside it, so the two cannot disagree — and both reached
+/// only once the swap has actually removed the copy, never over a racer's file:
+///
+/// - a destination **tracked at HEAD** with no pre-image (deleted from the worktree
+///   pre-promote) is restored from git (`--source=HEAD --worktree` — index untouched, that
+///   axis is restored above). It is not a pre-image population: it has no third-party byte to
+///   lose, because the bytes it writes come out of the object DB;
+/// - a genuinely new doc's now-empty parent directories are swept.
+///
+/// Retirements keep their **index axis, keyed on the staged-pathspec set** (`staged`, what
+/// [`stage_migration`] actually `git add`ed): only a deletion jigc's own stage staged is
+/// un-staged (`git restore --staged`). A planned-but-untouched retirement — the user's
+/// pre-finalize `git rm` (in neither set) — is restored on neither axis: the prior
+/// unconditional per-planned-retirement `git restore --staged --worktree` resurrected it on
+/// any commit failure.
+///
+/// Best-effort on the restores: a failure is logged, never raised — the commit did not land,
+/// so the worst case is a stray copy the next `finalize`/`discard` overwrites. The returned
+/// findings are the raced paths, which the door prints beside its own frame.
 fn rollback_promotions(
     repo_root: &Path,
+    jigc_root: &Path,
     promotions: &[Promotion],
     promo_index: &[OwnerArtifactIndexEntry],
-    displaced: &[(String, Vec<u8>)],
+    worktree: &crate::rollback::PreImageFamily,
     retirements: &[PathBuf],
-    retired: &[(PathBuf, Vec<u8>)],
     staged: &[String],
-) {
+) -> Vec<Finding> {
     // Index axis: restore each destination's captured pre-finalize index entry — a user's
     // mid-task staged blob comes back byte-exact, and a pre-staged deletion (entry absent
     // pre-finalize) is NOT resurrected (`--force-remove` drops the stage's overwrite).
     rollback_owner_artifact_index(repo_root, promo_index);
+    for retirement in retirements {
+        // Index axis: un-stage the deletion ONLY when jigc's own stage staged it — a
+        // user's pre-staged `git rm` is not in `staged` and stays staged.
+        let path = retirement.to_string_lossy();
+        if staged.iter().any(|spec| *spec == path) {
+            let _ = git_run(repo_root, &["restore", "--staged", &path]);
+        }
+    }
+    // The worktree axis, both populations, compare-and-swap.
+    let conflicts = worktree.restore(repo_root, jigc_root);
     for promotion in promotions {
-        // Worktree axis: undo [`promote`]'s write. A destination that PRE-EXISTED gets
-        // its captured displaced pre-promote bytes rewritten — checked FIRST (reviewer
-        // LOW-2): for a destination tracked at HEAD the captured worktree bytes are
-        // strictly more faithful than `--source=HEAD`, which destroyed an uncommitted
-        // modification the user held there pre-promote; for an untracked one they are
-        // the only copy (the same-path untracked foreign — `git restore` has no
-        // committed bytes to recover, exactly the retire capture's rationale). A tracked
-        // destination with NO capture (deleted from the worktree pre-promote) falls back
-        // to HEAD's bytes (`--source=HEAD --worktree` — index untouched, that axis is
-        // restored above); a genuinely new doc has no pre-promote content, so remove the
-        // copy outright.
-        if let Some((_, bytes)) = displaced
-            .iter()
-            .find(|(path, _)| *path == promotion.destination)
+        // Only a destination the promotion CREATED reaches the two arms below — a
+        // pre-existing one was restored by the swap above, or left to its racer.
+        if !worktree
+            .entry(&promotion.destination)
+            .is_some_and(crate::rollback::PreImage::created)
         {
-            let _ = std::fs::write(repo_root.join(&promotion.destination), bytes);
-        } else if path_at_head(repo_root, &promotion.destination) {
+            continue;
+        }
+        let dest = repo_root.join(&promotion.destination);
+        // Still there: the swap declined to remove it because the bytes are somebody else's,
+        // and a conflict already names both copies. Neither arm below may touch it.
+        if dest.exists() {
+            continue;
+        }
+        if path_at_head(repo_root, &promotion.destination) {
             let _ = git_run(
                 repo_root,
                 &[
@@ -5064,40 +5138,21 @@ fn rollback_promotions(
                     &promotion.destination,
                 ],
             );
-        } else {
-            let dest = repo_root.join(&promotion.destination);
-            let _ = std::fs::remove_file(&dest);
-            // Sweep up any now-empty parent dirs `promote`'s `create_dir_all` opened (e.g.
-            // an untracked `docs/decisions/`), up to — but never including — repo_root, so the
-            // rollback leaves no empty scratch dir behind ("as-if-finalize-was-never-called").
-            // `remove_dir` only succeeds on an EMPTY dir, so a dir holding other ADRs survives.
-            let mut parent = dest.parent();
-            while let Some(dir) = parent {
-                if dir == repo_root || std::fs::remove_dir(dir).is_err() {
-                    break;
-                }
-                parent = dir.parent();
+            continue;
+        }
+        // Sweep up any now-empty parent dirs `promote`'s `create_dir_all` opened (e.g.
+        // an untracked `docs/decisions/`), up to — but never including — repo_root, so the
+        // rollback leaves no empty scratch dir behind ("as-if-finalize-was-never-called").
+        // `remove_dir` only succeeds on an EMPTY dir, so a dir holding other ADRs survives.
+        let mut parent = dest.parent();
+        while let Some(dir) = parent {
+            if dir == repo_root || std::fs::remove_dir(dir).is_err() {
+                break;
             }
+            parent = dir.parent();
         }
     }
-    for retirement in retirements {
-        // Index axis: un-stage the deletion ONLY when jigc's own stage staged it — a
-        // user's pre-staged `git rm` is not in `staged` and stays staged.
-        let path = retirement.to_string_lossy();
-        if staged.iter().any(|spec| *spec == path) {
-            let _ = git_run(repo_root, &["restore", "--staged", &path]);
-        }
-        // Worktree axis: rewrite ONLY the bytes [`retire`] itself captured pre-deletion —
-        // exact bytes, so an untracked foreign (no committed bytes for `git restore` to
-        // recover — review F3) comes back too; a user-deleted worktree file (never
-        // captured) stays gone.
-        let abs = repo_root.join(retirement);
-        if !abs.exists()
-            && let Some((_, bytes)) = retired.iter().find(|(p, _)| p == retirement)
-        {
-            let _ = std::fs::write(&abs, bytes);
-        }
-    }
+    conflicts
 }
 
 /// **Which registry row a destroying door's subject is read through**, and the noun the

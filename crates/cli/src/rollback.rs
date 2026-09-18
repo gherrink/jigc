@@ -39,16 +39,19 @@
 //!
 //! # Two honest notes, both discharged by name
 //!
-//! **(1) Eight rows declare a discipline the source does not yet bind.** This module is the
-//! increment's *first* task: the six `FileCas` rows that are not yet compare-and-swap (promote,
-//! retire, the milestone record, the fan-out flip, `rename`'s unguarded arms, and the config
-//! relocation, which has no rollback at all) and **both** `MintedSet` rows (still
-//! `remove_dir_all`) are declarations of what the increment binds, not readings of what the
-//! binary does today. **T10** is the task whose totality fence makes every row a checked fact
-//! and strikes this paragraph. *(The plan's decomposition says "six"; it counted the `FileCas`
-//! half. `unwind_mint` and `unwind_unrecorded_seeds` are equally unbound until T7, so the
-//! honest number is eight — the datum is `unwind_mint`'s single `remove_dir_all`, which both
-//! `MintedSet` rows reach and which no area set governs at HEAD.)*
+//! **(1) Six rows declare a discipline the source does not yet bind.** This module was the
+//! increment's *first* task, and each later task retires one of its declarations: the four
+//! `FileCas` rows that are not yet compare-and-swap (the milestone record, the fan-out flip,
+//! `rename`'s unguarded arms, and the config relocation, which has no rollback at all) and
+//! **both** `MintedSet` rows (still `remove_dir_all`) are declarations of what the increment
+//! binds, not readings of what the binary does today. **T10** is the task whose totality
+//! fence makes every row a checked fact and strikes this paragraph. *(It read **eight** when
+//! this module landed; **T3 bound `promote-destination` and `retired-original`**, so the
+//! count moves with the source rather than standing as a stale number. The plan's
+//! decomposition says "six" for the `FileCas` half alone; `unwind_mint` and
+//! `unwind_unrecorded_seeds` are equally unbound until T7 — the datum is `unwind_mint`'s
+//! single `remove_dir_all`, which both `MintedSet` rows reach and which no area set governs
+//! at HEAD.)*
 //!
 //! **(2) The rows are twelve, and the plan's "ten" is struck with its arithmetic.** The plan
 //! derives ten as *baseline §1 table A's nine worktree-restore populations + the rollback-less
@@ -182,21 +185,35 @@ pub const ROLLBACK_POPULATIONS: &[Population] = &[
         site: Site::Source {
             file: "crates/cli/src/task.rs",
             unit: "rollback_promotions",
-            // The displaced-bytes rewrite, the `--source=HEAD` fallback for a tracked
-            // destination with no capture, the new destination's removal, and the empty-parent
-            // sweep that removal opens.
-            restores: 4,
+            // Two, since T3 bound this row to the discipline it declares: the destination's
+            // own restore — the displaced-bytes rewrite, and the removal of a destination the
+            // promotion created — is the shared compare-and-swap at `rollback.rs::restore`,
+            // counted once at the row whose site that unit is. What stays here is the pair of
+            // arms keyed on *a destination this promotion created*: the `--source=HEAD`
+            // fallback for one tracked at HEAD with no pre-image, and the empty-parent sweep
+            // the removal opens. The fallback is not a pre-image population and could not be
+            // one — its bytes come out of the object DB, so there is no third party's edit for
+            // it to take.
+            restores: 2,
         },
         discipline: Discipline::FileCas,
     },
     Population {
         id: "retired-original",
-        subject: "the bytes a retirement deleted, rewritten from the retire's own capture",
+        subject: "the bytes a retirement deleted, rewritten from the retire's own capture \
+                  while the path it deleted is still absent",
         doors: &[&["task", "finalize"]],
         site: Site::Source {
             file: "crates/cli/src/task.rs",
             unit: "rollback_promotions",
-            restores: 1,
+            // None of its own since T3: this population's whole restore is the shared
+            // compare-and-swap at `rollback.rs::restore` — its post-image being *absence*
+            // rather than bytes is a value, not a second code path — and those calls are
+            // counted at `config-layer-worktree`'s row, the one whose site that unit is. What
+            // remains of this population in this unit is its **index** arm, counted onto
+            // `OTHER_AXIS_CALLS`. A row owning zero is still fenced: deleting it leaves this
+            // unit's count unclaimed.
+            restores: 0,
         },
         discipline: Discipline::FileCas,
     },
@@ -412,14 +429,48 @@ pub const ROLLBACK_DOORS: &[ConflictDoor] = &[FINALIZE_DOOR];
 ///   means absent, never *unreadable*: only `NotFound` yields `None`, because that value is
 ///   what makes the restore a **delete**, and swallowing a permission fault into it would
 ///   delete a file this run never created.
-/// - `post` — **the exact bytes jigc wrote here**, `None` when jigc wrote nothing at this
-///   path this run. Not cosmetic: *"jigc wrote identical bytes"* and *"jigc wrote nothing"*
-///   are different facts, and only the second may never be rolled back.
+/// - `post` — **what jigc left here** ([`PostWrite`]). Not cosmetic: *"jigc wrote identical
+///   bytes"*, *"jigc wrote nothing"* and *"jigc removed the file"* are three different facts,
+///   and only the second may never be rolled back.
 pub struct PreImage {
     identity: String,
     path: PathBuf,
     pre: Option<Vec<u8>>,
-    post: Option<Vec<u8>>,
+    post: PostWrite,
+}
+
+/// **What jigc left at a path** — the other half of the compare-and-swap, and the value the
+/// live file is compared against.
+///
+/// The third variant is what makes a **deletion** a first-class write (M52 Increment 5 / T3):
+/// the retire's rollback has the same question as every other `FileCas` row — *is what is
+/// there now still what jigc left?* — except that what jigc left is **absence**. Modelled as
+/// a missing post-image instead, a re-created path would read as *jigc wrote nothing here*
+/// and the retire's own byte-capture would be dropped on the floor unnamed, which is exactly
+/// the silent arm this row was built to close.
+enum PostWrite {
+    /// jigc wrote nothing at this path this run — an arm that never reached the write, a
+    /// write that found nothing to change, or a read-back that failed. Never rolled back,
+    /// however much the file has since changed.
+    Untouched,
+    /// The exact bytes jigc wrote.
+    Bytes(Vec<u8>),
+    /// jigc **removed** the file: what it left here is absence, and absence is what the swap
+    /// compares against.
+    Removed,
+}
+
+impl PostWrite {
+    /// The bytes jigc left, `None` when what it left is **absence** — the shape both the
+    /// `pre == post` no-op test and the live compare read, so a deletion and a write are one
+    /// comparison rather than two branches. `None` for [`PostWrite::Untouched`] would say
+    /// *jigc left absence here*, which is why that variant is answered before this is asked.
+    fn left(&self) -> Option<&[u8]> {
+        match self {
+            PostWrite::Untouched | PostWrite::Removed => None,
+            PostWrite::Bytes(bytes) => Some(bytes.as_slice()),
+        }
+    }
 }
 
 impl PreImage {
@@ -438,8 +489,23 @@ impl PreImage {
             identity: identity.into(),
             path,
             pre,
-            post: None,
+            post: PostWrite::Untouched,
         })
+    }
+
+    /// The entry for a path jigc **removed**: `pre` is the bytes the caller read one statement
+    /// before the unlink, and what jigc left is absence (M52 Increment 5 / T3, the retire row).
+    ///
+    /// The pre-image is handed in rather than read, because by the time a caller can say
+    /// *"jigc removed this"* the bytes are gone — the read and the unlink are one step at the
+    /// sink that owns them, and a second read here would find nothing.
+    pub fn removed(identity: impl Into<String>, path: PathBuf, pre: Vec<u8>) -> Self {
+        Self {
+            identity: identity.into(),
+            path,
+            pre: Some(pre),
+            post: PostWrite::Removed,
+        }
     }
 
     /// The population's key for this entry.
@@ -447,14 +513,26 @@ impl PreImage {
         &self.identity
     }
 
+    /// Whether the file was **absent** before the transaction — so a restore of this entry is
+    /// a *deletion*, and a caller with a second arm keyed on "the path jigc created" (the
+    /// promote's HEAD-sourced fallback and its empty-parent sweep) can ask rather than keep a
+    /// parallel list of its own.
+    pub fn created(&self) -> bool {
+        self.pre.is_none()
+    }
+
     /// Record that jigc **just wrote** here, reading back the bytes it left.
     ///
     /// Called one statement after the write, which is what makes the recorded image jigc's
-    /// own rather than a later reader's. A read that fails leaves `post` at `None` — the
-    /// entry is then treated as *never written* and the rollback leaves it alone: jigc cannot
-    /// prove what it put there, and the safe direction is not to overwrite.
+    /// own rather than a later reader's. A read that fails leaves `post` at
+    /// [`PostWrite::Untouched`] — the entry is then treated as *never written* and the
+    /// rollback leaves it alone: jigc cannot prove what it put there, and the safe direction
+    /// is not to overwrite.
     pub fn wrote(&mut self) {
-        self.post = std::fs::read(&self.path).ok();
+        self.post = match std::fs::read(&self.path) {
+            Ok(bytes) => PostWrite::Bytes(bytes),
+            Err(_) => PostWrite::Untouched,
+        };
     }
 }
 
@@ -494,6 +572,14 @@ impl PreImageFamily {
         self.entries.push(entry);
     }
 
+    /// The entry keyed `identity`, for a caller whose **own** arms depend on what the capture
+    /// found — the promote's HEAD-sourced fallback and its empty-parent sweep both key on
+    /// *"the destination jigc created"*, and reading that off the family keeps one answer
+    /// where a parallel list beside it would be a second one that can disagree.
+    pub fn entry(&self, identity: &str) -> Option<&PreImage> {
+        self.entries.iter().find(|entry| entry.identity == identity)
+    }
+
     /// Record that jigc just wrote the entry keyed `identity`. An identity this family does
     /// not carry is ignored — a write site may report a path the capture declared out.
     pub fn wrote(&mut self, identity: &str) {
@@ -518,21 +604,26 @@ impl PreImageFamily {
             // jigc wrote nothing at this path this run (an arm that never reached the write,
             // a write that found nothing to change, a read-back that failed) — so there is
             // nothing to roll back, and nothing to report however much the file has changed.
-            let Some(post) = &entry.post else {
+            if matches!(entry.post, PostWrite::Untouched) {
                 continue;
-            };
-            // jigc's write produced the bytes that were already there. Nothing changed, so
-            // nothing is restored — and a concurrent edit here lost nothing to jigc, so it is
-            // not a conflict either.
-            if entry.pre.as_deref() == Some(post.as_slice()) {
+            }
+            // What jigc left here — bytes, or absence where it removed the file. Both halves
+            // of the comparison below are that one shape, so a deletion is the same swap as a
+            // write rather than a second code path beside it.
+            let post = entry.post.left();
+            // jigc's write produced what was already there (identical bytes, or a removal of
+            // a file that was already absent). Nothing changed, so nothing is restored — and
+            // a concurrent edit here lost nothing to jigc, so it is not a conflict either.
+            if entry.pre.as_deref() == post {
                 continue;
             }
             let holds_jigcs_bytes = match std::fs::read(&entry.path) {
-                Ok(bytes) => bytes == *post,
-                // Absent now, and jigc wrote a file here: somebody removed it. Not jigc's
-                // bytes, so the swap fails and the pre-image is preserved rather than
-                // rewritten over a deletion this transaction did not make.
-                Err(err) if err.kind() == std::io::ErrorKind::NotFound => false,
+                Ok(bytes) => post == Some(bytes.as_slice()),
+                // Absent now. That IS jigc's own act when jigc removed the file, and is
+                // somebody else's removal when jigc wrote bytes here — in the second case the
+                // swap fails and the pre-image is preserved rather than rewritten over a
+                // deletion this transaction did not make.
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => post.is_none(),
                 // Unreadable is neither absent nor jigc's: a restore would overwrite bytes it
                 // could not compare.
                 Err(_) => false,
@@ -641,12 +732,21 @@ fn rollback_conflict_finding(
              the copy jigc created — it did not. Remove it by hand if you do not want it"
         ),
     };
+    // What jigc left here, said in the operator's terms — because a retirement's rollback is
+    // as raced as a write's and *"the bytes on disk are not the ones jigc wrote"* would be a
+    // law-1 lie at a path jigc wrote no bytes to at all: it removed one.
+    let left = match entry.post {
+        PostWrite::Removed => "jigc removed it and something has since put a file back",
+        PostWrite::Untouched | PostWrite::Bytes(_) => {
+            "the bytes on disk are not the ones jigc wrote"
+        }
+    };
     Finding::graded(
         Severity::Blocking,
         door.code,
         format!(
             "`{live}` changed while this {noun} was running, so the rollback did not restore \
-             it: the bytes on disk are not the ones jigc wrote"
+             it: {left}"
         ),
         Some(Location::addressed(live.clone(), 1, 1)),
         Some(engine::finding::Route::human(format!(

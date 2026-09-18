@@ -891,3 +891,263 @@ fn same_path_untracked_foreign_survives_a_hook_rejection_rollback() {
         "the same-path untracked foreign must be restored byte-intact",
     );
 }
+
+// ---------------------------------------------------------------------------
+// M52 Increment 5 / T3 — the promote and retire worktree axes stop overwriting a racer
+// ---------------------------------------------------------------------------
+
+/// Seed a `pre-commit` hook that **writes `body` at `rel`** and then rejects — the racer
+/// that runs *inside* the transaction, between jigc's promote/retire write and its
+/// rollback. git runs hooks from the top level of the worktree, which is where the live
+/// migration finalize commits from, so the relative path is the repo-relative one.
+fn seed_racing_precommit(repo: &Path, rel: &str, body: &str) {
+    let hooks = repo.join(".git").join("hooks");
+    fs::create_dir_all(&hooks).expect("mk hooks dir");
+    let hook = hooks.join("pre-commit");
+    fs::write(
+        &hook,
+        format!("#!/bin/sh\ncat > {rel} <<'RACER'\n{body}RACER\necho REJECTING-HOOK >&2\nexit 1\n"),
+    )
+    .expect("write racing hook");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).expect("chmod hook");
+    }
+}
+
+/// The bytes the racing hook leaves behind — what must still be on disk afterwards.
+const RACER: &str = "THIRD PARTY PROSE\n";
+
+/// Every parked pre-image under `.jigc/displaced/finalize/`, as
+/// `(path relative to that directory, bytes)`.
+fn parked_pre_images(repo: &Path) -> Vec<(String, String)> {
+    let root = repo.join(".jigc").join("displaced").join("finalize");
+    let mut found = Vec::new();
+    let mut stack = vec![root.clone()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else {
+                found.push((
+                    path.strip_prefix(&root)
+                        .unwrap_or(&path)
+                        .to_string_lossy()
+                        .replace('\\', "/"),
+                    fs::read_to_string(&path).expect("read parked pre-image"),
+                ));
+            }
+        }
+    }
+    found.sort();
+    found
+}
+
+/// How many blocking `finalize.rollback-conflict` findings a run rendered.
+fn conflicts(out: &std::process::Output) -> usize {
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    format!("{stdout}{stderr}")
+        .matches("blocking · finalize.rollback-conflict")
+        .count()
+}
+
+/// **The promote destination's racer** (M52 Increment 5 / T3; settle-record → D1.2). The
+/// promote's worktree rollback rewrote the captured displaced bytes **unconditionally**, so
+/// a third party who wrote at the destination inside the transaction lost their bytes at
+/// exit 1, named by nothing — the same loss the config layer's compare-and-swap exists to
+/// prevent, one population over. Under the `FileCas` discipline the racer's bytes stand, the
+/// pre-promote image is parked in the gitignored workbench, and one blocking
+/// `finalize.rollback-conflict` names both copies.
+///
+/// The same-path fixture is the sharpest cell: the promotion destination **is** the foreign
+/// original, absent from `HEAD`, so the parked pre-image is the only copy of those bytes.
+#[test]
+fn a_raced_promotion_destination_keeps_the_racers_bytes_and_parks_the_pre_image() {
+    let repo = TempDir::new("raced-promote");
+    let home = TempDir::new("home");
+    let pack = dev_pack();
+    init_repo(repo.path());
+
+    fs::write(repo.path().join("CHANGELOG.md"), FOREIGN).expect("write foreign CHANGELOG.md");
+    git(repo.path(), &["add", "CHANGELOG.md"]);
+    ok(
+        run_jigc(repo.path(), home.path(), &pack, &["setup"]),
+        "jigc setup",
+    );
+    let composed = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["migrate", "CHANGELOG.md", "--as", "changelog"],
+    );
+    ok(composed.clone(), "jigc migrate CHANGELOG.md");
+    let task = String::from_utf8_lossy(&composed.stdout)
+        .lines()
+        .find_map(|l| l.strip_prefix("task minted: ").map(str::to_owned))
+        .expect("the migrate compose announces the minted task id");
+    author_migrated_changelog(repo.path(), home.path(), &pack, &task);
+
+    let head_before = git(repo.path(), &["rev-parse", "HEAD"]);
+    seed_racing_precommit(repo.path(), "CHANGELOG.md", RACER);
+
+    let out = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["task", "finalize", &task, "--approve"],
+    );
+    assert!(
+        !out.status.success(),
+        "a hook-rejected --approve finalize must exit non-zero; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert_eq!(
+        git(repo.path(), &["rev-parse", "HEAD"]),
+        head_before,
+        "HEAD must be unchanged — no commit landed",
+    );
+
+    assert_eq!(
+        fs::read_to_string(repo.path().join("CHANGELOG.md")).expect("read destination"),
+        RACER,
+        "the racer's bytes must stand — the rollback may not rewrite a destination whose \
+         bytes are no longer the ones jigc promoted",
+    );
+    let parked = parked_pre_images(repo.path());
+    assert_eq!(
+        parked.len(),
+        1,
+        "exactly one pre-image must be parked under `.jigc/displaced/finalize/`; got {parked:?}",
+    );
+    assert!(
+        parked[0].0.starts_with("CHANGELOG.md.pre-image."),
+        "the park must be keyed at the promotion's own identity; got {:?}",
+        parked[0].0,
+    );
+    assert_eq!(
+        parked[0].1, FOREIGN,
+        "the parked copy must be the pre-promote image byte-intact",
+    );
+    assert_eq!(
+        conflicts(&out),
+        1,
+        "one blocking `finalize.rollback-conflict` per raced path; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+}
+
+/// **The retirement's racer** (M52 Increment 5 / T3; settle-record → D1.2). The retire's
+/// worktree rollback rewrote its byte-capture only while the path was **still absent** — so
+/// a third party who re-created the retired path inside the transaction kept their file, but
+/// *silently*: jigc's deletion of the original bytes survived, the capture was dropped on the
+/// floor, and nothing named either copy. Under the same `FileCas` discipline the racer's file
+/// still stands — and now the retire's capture is parked and the conflict named.
+#[test]
+fn a_recreated_retirement_keeps_the_racers_file_and_parks_the_pre_image() {
+    let repo = TempDir::new("raced-retire");
+    let home = TempDir::new("home");
+    let pack = dev_pack();
+    init_repo(repo.path());
+    committed_staged_migration(repo.path(), home.path(), &pack);
+
+    let head_before = git(repo.path(), &["rev-parse", "HEAD"]);
+    seed_racing_precommit(repo.path(), "HISTORY.md", RACER);
+
+    let out = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["task", "finalize", TASK, "--approve"],
+    );
+    assert!(
+        !out.status.success(),
+        "a hook-rejected --approve finalize must exit non-zero; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert_eq!(
+        git(repo.path(), &["rev-parse", "HEAD"]),
+        head_before,
+        "HEAD must be unchanged — no commit landed",
+    );
+
+    assert_eq!(
+        fs::read_to_string(repo.path().join("HISTORY.md")).expect("read retired path"),
+        RACER,
+        "the racer's file must stand — the rollback may not rewrite a path it deleted whose \
+         bytes are no longer absent",
+    );
+    let parked = parked_pre_images(repo.path());
+    assert_eq!(
+        parked.len(),
+        1,
+        "exactly one pre-image must be parked under `.jigc/displaced/finalize/`; got {parked:?}",
+    );
+    assert!(
+        parked[0].0.starts_with("HISTORY.md.pre-image."),
+        "the park must be keyed at the retirement's own identity; got {:?}",
+        parked[0].0,
+    );
+    assert_eq!(
+        parked[0].1, FOREIGN,
+        "the parked copy must be the retire's own byte-capture, intact",
+    );
+    assert_eq!(
+        conflicts(&out),
+        1,
+        "one blocking `finalize.rollback-conflict` per raced path; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+}
+
+/// The un-raced rejection is **silent**: nothing changed under jigc's write, so the restore
+/// runs and raises nothing. The compare-and-swap's cost may not be a conflict on the ordinary
+/// path (the config layer's own `pre == post` no-op rule, one population over).
+#[test]
+fn an_unraced_rejection_restores_byte_identically_and_names_no_conflict() {
+    let repo = TempDir::new("unraced");
+    let home = TempDir::new("home");
+    let pack = dev_pack();
+    init_repo(repo.path());
+    committed_staged_migration(repo.path(), home.path(), &pack);
+
+    seed_rejecting_precommit(repo.path());
+    let out = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["task", "finalize", TASK, "--approve"],
+    );
+    assert!(!out.status.success(), "the hook rejects the commit");
+
+    assert_eq!(
+        fs::read_to_string(repo.path().join("HISTORY.md")).expect("read restored foreign"),
+        FOREIGN,
+        "the un-raced retirement is restored byte-identically",
+    );
+    assert!(
+        !repo.path().join("CHANGELOG.md").exists(),
+        "the un-raced new destination is removed again",
+    );
+    assert_eq!(
+        parked_pre_images(repo.path()),
+        Vec::<(String, String)>::new(),
+        "an un-raced rollback parks nothing",
+    );
+    assert_eq!(
+        conflicts(&out),
+        0,
+        "an un-raced rollback names no conflict; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+}
