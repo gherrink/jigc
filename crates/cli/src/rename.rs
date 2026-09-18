@@ -85,6 +85,14 @@ use crate::task::{
 /// every **head** fault the `<type>:<slug>` sentence and the `jigc describe` route and
 /// left the family code-less. This door's local parser gives exactly that answer, so
 /// minting a code for it **here alone** would fork one class across two doors. The
+/// **fixed-identity alias** reject is a non-member for the same reason, one wave later
+/// (M52 Increment 6 / T3): `store.fixed-identity` is the *class's* code, produced by
+/// [`crate::task::reject_fixed_identity_alias`] for the nine `doc` doors and for this
+/// door's two sibling doors alike, with one message and one route — so a `RefusalKind`
+/// row here would be a second home for a sentence the class already owns, and its
+/// `code()` arm would carry a reused literal rather than the constant. It is driven,
+/// with its exit, its identity and its route, by that class's own axis
+/// (`crates/cli/tests/fixed_identity_axis.rs`) rather than by this door's. The
 /// in-transaction failures are the other non-members, for the opposite reason: they are
 /// the *transaction's*, not the gate's — each rolls the store back ([`rollback_rename`]),
 /// and a commit-phase rejection already carries its own log identity
@@ -338,9 +346,30 @@ pub(crate) fn run(
 
     // Resolve the target's identity + on-disk path.
     let (ty, old_slug) = parse_addr(old_addr)?;
+    let old_id = format!("{ty}:{old_slug}");
+    // A well-formed slug still has to be an identity this doctype **can have** (M52
+    // Increment 6 / T3; settle-record → D5.2 as amended by §9). Here rather than at the
+    // nine `doc` doors' shared funnel, because this door has its own parser and its own
+    // schema resolution — and **after** `parse_addr`'s grammar and slug-head rejects and
+    // **before** [`doc_path`], so an unknown doctype still resolves to no schema and
+    // falls through to `doc_path`'s own `store.unknown-type`, exactly as before.
+    //
+    // **Why ahead of every other gate.** `doc_path`'s placement branch **ignores the
+    // slug entirely** — that is the whole mechanism — so a bogus head resolved to the
+    // real committed file and the door proceeded to rewrite and commit it. Driven at
+    // `14b9ebb5`: `jigc rename vision:alpha --to Phantom --slug alpha` exited **0**,
+    // rewrote `VISION.md`'s `# Vision` to `# Phantom` and landed a commit
+    // (`completions/artifacts/M52/baseline-tokens.md` §4.1) — a committing,
+    // `MovesOnBehalf` door taking an identity `vision` cannot have. One argument away,
+    // the reslug refusal composed the caller's own bogus slug into the escape hatch it
+    // printed; that route is now unreachable from a bogus head, and its remaining
+    // canonical-head cell is T4's.
+    if let Some(schema) = schema_map.get(&ty) {
+        crate::task::reject_fixed_identity_slug(schema, &old_id, &old_slug)
+            .map_err(|finding| crate::render::envelope_finding_error(&finding))?;
+    }
     let old_rel = doc_path(&schema_map, &ty, &old_slug)?;
     let old_abs = repo_root.join(&old_rel);
-    let old_id = format!("{ty}:{old_slug}");
     if !old_abs.is_file() {
         return Err(refuse(
             RefusalKind::NoSuchDoc,

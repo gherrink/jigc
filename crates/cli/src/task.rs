@@ -1559,10 +1559,28 @@ pub(crate) fn reject_fixed_identity_alias(
     schema: &Schema,
     address: &Address,
 ) -> Result<(), Finding> {
-    if !schema.has_fixed_identity() || address.slug.as_str() == schema.ty {
+    reject_fixed_identity_slug(schema, &address.to_string(), address.slug.as_str())
+}
+
+/// [`reject_fixed_identity_alias`]'s core, addressed by `<slug>` rather than by a parsed
+/// [`Address`] — the form `jigc rename` needs (M52 Increment 6 / T3).
+///
+/// That door splits its target with its own local parser into a `(ty, slug)` pair and
+/// never builds an [`Address`], so an `Address`-only entry point would make it re-parse a
+/// string it has already validated — a fallible call for an infallible fact, and a second
+/// place the address could be spelled. `typed` is what the refusal is **about**: the
+/// address as the door holds it, so the locus and the `(code, target)` key name that.
+///
+/// One message, one route, one home: the two entry points differ only in how the caller
+/// already holds the address, never in what the refusal says.
+pub(crate) fn reject_fixed_identity_slug(
+    schema: &Schema,
+    typed: &str,
+    slug: &str,
+) -> Result<(), Finding> {
+    if !schema.has_fixed_identity() || slug == schema.ty {
         return Ok(());
     }
-    let typed = address.to_string();
     let canonical = format!("{ty}:{ty}", ty = schema.ty);
     Err(Finding::graded(
         Severity::Blocking,
@@ -1572,7 +1590,7 @@ pub(crate) fn reject_fixed_identity_alias(
              supplies the slug, so `{canonical}` is the one instance this doctype has",
             ty = schema.ty,
         ),
-        Some(Location::addressed(&typed, 1, 1)),
+        Some(Location::addressed(typed, 1, 1)),
         Some(engine::finding::Route::mechanical(
             ["jigc", "doc", "show", canonical.as_str()],
             " — a fixed-identity doctype has one instance at a fixed slug",
@@ -3003,6 +3021,24 @@ impl TaskArea {
                 &engine::store::unknown_doctype(address.r#type.as_str()),
             ));
         };
+
+        // …and a well-formed slug still has to be an identity this doctype **can have**
+        // (M52 Increment 6 / T3; settle-record → D5.2 as amended by §9). Here rather than
+        // at the parse above, because the predicate needs a resolved `Schema` and this
+        // door is not a caller of `cli::doc::parse_verb_addr`'s funnel — and **after**
+        // the unknown-doctype answer above, so that precedence is unchanged.
+        //
+        // Driven at `14b9ebb5` over a manufactured `reads:` role, `jigc task bind vision
+        // vision:alpha <task>` exited **0** and wrote `"vision": "vision:alpha"` into
+        // `roles.json` — because step 3b below resolves through `canonical_path`, whose
+        // placement branch ignores the slug and finds the real committed `VISION.md`. The
+        // task is then carrying a recorded read role at an identity every read surface
+        // refuses (`jigc doc show vision:alpha` blocks). The `location:`-homed sibling
+        // refused instead, but with step 3b's **code-less** `no such doc <addr>` bail: a
+        // fact about the corpus, inviting the caller to create a doc this doctype cannot
+        // have.
+        reject_fixed_identity_alias(schema, &address)
+            .map_err(|finding| crate::render::envelope_finding_error(&finding))?;
 
         // Step 3b — the addr must resolve in the committed store: its canonical
         // `<location>/<slug>.md` must exist (identity is the path). A transient

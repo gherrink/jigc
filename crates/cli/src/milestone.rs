@@ -1733,6 +1733,26 @@ fn run_add_from_spec(
     let jigc_root = jigc_home.join(".jigc");
     let schemas = shipped_schemas(&jigc_home)?;
 
+    // …and a well-formed slug still has to be an identity the doctype **can have** (M52
+    // Increment 6 / T3; settle-record → D5.2 as amended by §9). Here, at this door's own
+    // schema resolution — it is not a caller of the nine `doc` doors' shared funnel and
+    // the predicate needs a `Schema` — and still **ahead of** the reconcile preflight,
+    // the cache reseed and every mint. An unknown doctype is absent from `schemas`, so the
+    // predicate is not applicable and the engine's own `store.unknown-type` still answers
+    // first, unchanged.
+    //
+    // **The state it refuses.** `canonical_path`'s placement branch ignores the slug, so
+    // driven at `14b9ebb5` this read door resolved `vision:alpha` to the real committed
+    // `VISION.md`, read it, enumerated its sections and refused with
+    // `store.no-such-section` — routed at `jigc doc show vision:alpha`, an address its
+    // sibling read door refuses (`completions/artifacts/M52/baseline-tokens.md` §4.2). A
+    // dead end jigc printed itself, over a file the caller never named.
+    if let Ok(address) = engine::address::Address::parse(spec_addr)
+        && let Some(schema) = schemas.get(address.r#type.as_str())
+    {
+        crate::task::reject_fixed_identity_alias(schema, &address).map_err(finding_to_err)?;
+    }
+
     // Reconcile preflight (T6): before any mutation, conflict-block if the committed record
     // drifted out-of-band, leaving both the cache and the record untouched
     // (`design/team-ready-state.md` → F3). Inert dev-only. Ahead of the reseed's terminal guard —
@@ -6577,9 +6597,14 @@ fn finding_to_err(finding: Finding) -> anyhow::Error {
 ///   *Codes it registers*), and `uninstall`'s member has answered there since it landed; this
 ///   door's two producers flattened it, so one registration shipped two shapes a driver
 ///   cannot discriminate.
+/// - [`crate::task::FIXED_IDENTITY`] (M52 Increment 6 / T3) — T2 landed the code on the
+///   findings arm at the nine `doc` doors' shared funnel; this door is one of the three
+///   sibling producers T3 adds, and a flattened answer here would ship two wire shapes
+///   for one registered code.
 const ENVELOPE_ARM_CODES: &[&str] = &[
     engine::milestone::UNKNOWN_MILESTONE_CODE,
     DISCARD_FOREIGN_BYTES_CODE,
+    crate::task::FIXED_IDENTITY,
 ];
 
 #[cfg(test)]

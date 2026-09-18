@@ -22,11 +22,13 @@
 //! exists to accept.
 //!
 //! Scope of this suite, stated: it drives the two seams the predicate is shared by —
-//! and, since **T2**, the doors that act on its answer. The second half below is the
-//! nine-door axis: `store.fixed-identity` at `cli::doc::parse_verb_addr`, the one funnel
-//! every caller-typed `doc` address passes through. The **three sibling doors** that
-//! resolve their schema separately (`jigc rename`, `jigc milestone add-from-spec`,
-//! `jigc task bind`) are **T3's** and are deliberately not asserted here.
+//! and, since **T2**, the doors that act on its answer. The second half is the nine-door
+//! axis: `store.fixed-identity` at `cli::doc::parse_verb_addr`, the one funnel every
+//! caller-typed `doc` address passes through. The third half (**T3**) is the **three
+//! sibling doors** that hold no such funnel and resolve their schema each for itself —
+//! `jigc rename`, `jigc milestone add-from-spec`, `jigc task bind` — each guarded at its
+//! own resolution point, ahead of every mutation and behind `store.unknown-type`
+//! (settle-record → D5.2 as amended by §9).
 
 use crate::support::trial_corpus::{State, TrialCorpus};
 use std::fs;
@@ -125,6 +127,12 @@ fn streams(out: &std::process::Output) -> String {
 /// The fixture ships alongside a `creates-task: true` workflow whose create-gate admits
 /// it, so the staged instance this suite reads back is minted by the real `doc create`
 /// door at the slug the mint chooses — never hand-written at the slug the test hopes for.
+///
+/// Its `reads:` role is the **manufactured** half of the `jigc task bind` cell (T3's
+/// declared bound): across both shipped packs there is exactly one `reads` role —
+/// `implement-from-spec.yaml:6`, type `spec`, non-singleton — so `bind`'s fixed-identity
+/// cell is unreachable on a stock corpus and is never claimed to be reachable there
+/// (`completions/artifacts/M52/baseline-tokens.md` §2.3).
 fn seed_fixture_pack(pack: &Path) {
     let schemas = pack.join("schemas");
     let workflows = pack.join("workflows");
@@ -155,6 +163,7 @@ fn seed_fixture_pack(pack: &Path) {
          usage: proving the fixed-identity predicate over a location-homed singleton.\n\
          creates-task: true\n\
          allows-create: [{type: runbook, as: book}]\n\
+         reads: [{role: manual, type: runbook}]\n\
          ---\n\
          {{ include: step:keep }}\n",
     )
@@ -676,4 +685,455 @@ fn the_refusal_rides_the_findings_arm_with_a_key() {
             .is_some_and(|route| route.contains("vision:vision")),
         "the route names the identity this doctype has; envelope:\n{json:#}",
     );
+}
+
+// ---------------------------------------------------------------------------
+// M52 Increment 6 / T3 — the three sibling doors
+// ---------------------------------------------------------------------------
+//
+// `parse_verb_addr` is the nine `doc` doors' shared funnel; these three doors are not its
+// callers and hold no funnel of their own — each parses the caller's address and resolves
+// its schema at its own site (settle-record → §9). So each takes the predicate **at that
+// resolution point**: after the door's `store.unknown-type` answer, so precedence is
+// unchanged, and ahead of every mutation, because two of the three mutate.
+//
+// Driven at `14b9ebb5` (T2's HEAD), the state each cell below refuses:
+//
+//   * `jigc rename vision:alpha --to Phantom --slug alpha` → **exit 0**, `# Vision`
+//     rewritten to `# Phantom` in the real `VISION.md`, commit `7107ec5` landed. A
+//     committing, `MovesOnBehalf` door taking an identity `vision` cannot have — and the
+//     no-`--slug` cell one argument away refused `write.identity-change` while *composing
+//     the caller's bogus slug into the escape hatch it printed*
+//     (`completions/artifacts/M52/baseline-tokens.md` §4.1).
+//   * `jigc milestone add-from-spec probe-milestone vision:alpha` → exit 1, but the head
+//     was **accepted**: `store.no-such-section` read off the real committed `VISION.md`
+//     (it enumerates that file's sections), routed at `jigc doc show vision:alpha` — an
+//     address its sibling read door refuses (§4.2). A dead end printed by jigc itself.
+//   * `jigc task bind vision vision:alpha <task>` over a manufactured `reads:` role →
+//     **exit 0**, `roles.json` carrying `"vision": "vision:alpha"` — a read role bound to
+//     an identity no read door resolves.
+
+/// The `store.unknown-type` control every sibling owes: the predicate needs a resolved
+/// schema, so an unknown doctype must still answer *unknown doctype* rather than being
+/// re-diagnosed as an identity fault.
+fn assert_unknown_type_answers_first(out: &Output, what: &str) {
+    let rendered = streams(out);
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "{what}: an unknown doctype refuses at exit 1; got:\n{rendered}",
+    );
+    assert!(
+        rendered.contains("store.unknown-type"),
+        "{what}: an unknown doctype resolves to no schema, so the identity predicate is \
+         not applicable and the door's own `store.unknown-type` still answers first; \
+         got:\n{rendered}",
+    );
+    assert!(
+        !rendered.contains(FIXED_IDENTITY),
+        "{what}: the identity guard must not pre-empt the unknown-doctype answer; \
+         got:\n{rendered}",
+    );
+}
+
+/// The refusal shape every sibling door owes: exit 1, the code, and the canonical address
+/// in the message or the route — never the caller's own token as the way forward.
+fn assert_fixed_identity_refusal(out: &Output, doctype: &str, bogus: &str, what: &str) {
+    let rendered = streams(out);
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "{what}: a fixed-identity alias refuses at exit 1; got:\n{rendered}",
+    );
+    assert!(
+        rendered.contains(FIXED_IDENTITY),
+        "{what}: the refusal must carry `{FIXED_IDENTITY}`; got:\n{rendered}",
+    );
+    let canonical = format!("{doctype}:{doctype}");
+    assert!(
+        rendered.contains(&canonical),
+        "{what}: the refusal must name the identity this doctype does have \
+         (`{canonical}`); got:\n{rendered}",
+    );
+    for route in rendered
+        .lines()
+        .map(str::trim_start)
+        .filter(|line| line.starts_with("route:"))
+    {
+        assert!(
+            !route.contains(bogus),
+            "{what}: the route must be built from the schema, never by composing the \
+             caller's own `{bogus}` back into the escape hatch; got:\n{route}",
+        );
+    }
+}
+
+/// **Sibling 1 — `jigc rename`, the committing door.** Both head shapes refuse, with and
+/// without the `--slug` override that made the bogus head land at exit 0, and the real
+/// file and the git history are untouched.
+#[test]
+fn rename_refuses_a_non_canonical_fixed_identity_head() {
+    let corpus = TrialCorpus::build(State::CommittedSingletons);
+    let vision = corpus.repo().join("VISION.md");
+    let before = fs::read(&vision).expect("read the committed VISION.md");
+    let head_before = corpus.git(&["rev-parse", "HEAD"]);
+
+    // The cell that landed: the override pins the bogus identity, so the reslug guard
+    // one task over sees no identity change and every later guard is about the title.
+    let pinned = corpus.jigc(&[
+        "rename",
+        "vision:alpha",
+        "--to",
+        "Phantom",
+        "--slug",
+        "alpha",
+    ]);
+    assert_fixed_identity_refusal(&pinned, "vision", "alpha", "`rename … --slug <bogus>`");
+
+    // …and the cell one argument away, whose refusal used to be about the *reslug* and
+    // composed `alpha` into the route it printed.
+    let bare = corpus.jigc(&["rename", "vision:alpha", "--to", "Phantom"]);
+    assert_fixed_identity_refusal(&bare, "vision", "alpha", "`rename` (no `--slug`)");
+
+    assert_eq!(
+        fs::read(&vision).expect("re-read VISION.md"),
+        before,
+        "a refused rename may not have rewritten the real file's `# H1`",
+    );
+    assert_eq!(
+        corpus.git(&["rev-parse", "HEAD"]),
+        head_before,
+        "a refused rename may not have committed",
+    );
+
+    assert_unknown_type_answers_first(
+        &corpus.jigc(&["rename", "nosuch:thing", "--to", "Phantom"]),
+        "`rename nosuch:thing`",
+    );
+
+    // The control: the identity this doctype does have is not touched by the guard.
+    let canonical = corpus.jigc(&[
+        "rename",
+        "vision:vision",
+        "--to",
+        "Phantom",
+        "--slug",
+        "vision",
+    ]);
+    assert!(
+        !streams(&canonical).contains(FIXED_IDENTITY),
+        "the canonical spelling names the identity this doctype has — the guard must stay \
+         silent; got:\n{}",
+        streams(&canonical),
+    );
+}
+
+/// **Sibling 1, the second disjunct** — the manufactured `location:` + `singleton: true`
+/// doctype at the same door. The fixture's open task is settled first, so the cell is
+/// about the identity and nothing else.
+///
+/// This cell also carries the **log identity** every `jigc rename` refusal owes
+/// (`cli::rename::RefusalKind`'s doc: the code that reaches `finding_codes`, without
+/// which a refused rename is one more anonymous exit 1 there). This refusal is
+/// deliberately *not* a `RefusalKind` member — the code, the message and the route belong
+/// to the class, not to this door — so the obligation the enum states is discharged here,
+/// in the class's own axis, rather than left unasserted on the strength of that sentence.
+#[test]
+fn rename_refuses_a_non_canonical_location_singleton_head() {
+    let (repo, home, task) = corpus("rename-location-singleton");
+    assert_ok(
+        &jigc(
+            repo.path(),
+            home.path(),
+            &["task", "discard", &task, "--force"],
+        ),
+        "`jigc task discard` (settling the fixture's open task)",
+    );
+    fs::write(
+        repo.path()
+            .join(".jigc")
+            .join("config")
+            .join("manifest.yaml"),
+        "scalar:\n  invocation-log: true\n",
+    )
+    .expect("enable the invocation log");
+
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &[
+            "rename",
+            "runbook:bogus",
+            "--to",
+            "Phantom",
+            "--slug",
+            "bogus",
+        ],
+    );
+    assert_fixed_identity_refusal(&out, "runbook", "bogus", "`rename runbook:bogus`");
+
+    let log = repo
+        .path()
+        .join(".jigc")
+        .join("logs")
+        .join("invocations.jsonl");
+    let body = fs::read_to_string(&log).expect("the invocation log");
+    let record: serde_json::Value = body
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| serde_json::from_str(line).expect("each log line is valid JSON"))
+        .rfind(|record: &serde_json::Value| record["argv"].to_string().contains("runbook:bogus"))
+        .expect("a logged record for the refused rename");
+    assert!(
+        record["finding_codes"]
+            .as_array()
+            .expect("finding_codes is an array")
+            .iter()
+            .any(|code| code == FIXED_IDENTITY),
+        "the refused rename must be legible in the invocation log by its code, not as one \
+         more anonymous exit 1; record:\n{record:#}",
+    );
+    assert_eq!(
+        record["exit_code"], 1,
+        "the logged record must carry exit 1; record:\n{record:#}",
+    );
+}
+
+/// **Sibling 2 — `jigc milestone add-from-spec`.** The door stops reading the real
+/// committed file under an identity its sibling read door refuses, seeds no sub-task and
+/// lands no record commit.
+#[test]
+fn milestone_add_from_spec_refuses_a_non_canonical_fixed_identity_head() {
+    let corpus = TrialCorpus::build(State::CommittedSingletons);
+    assert_ok(
+        &corpus.jigc(&["milestone", "create", "Probe milestone"]),
+        "`jigc milestone create`",
+    );
+    let head_before = corpus.git(&["rev-parse", "HEAD"]);
+    let tasks_json = corpus
+        .repo()
+        .join(".jigc/milestones/probe-milestone/tasks.json");
+    let seeded_before = fs::read_to_string(&tasks_json).unwrap_or_default();
+
+    let out = corpus.jigc(&[
+        "milestone",
+        "add-from-spec",
+        "probe-milestone",
+        "vision:alpha",
+    ]);
+    assert_fixed_identity_refusal(
+        &out,
+        "vision",
+        "alpha",
+        "`milestone add-from-spec … vision:alpha`",
+    );
+    // The door read the file's own section list before refusing; naming those sections is
+    // the tell that the bogus identity resolved to the real `VISION.md`.
+    let rendered = streams(&out);
+    assert!(
+        !rendered.contains("thesis"),
+        "the refusal must land before the committed file is read, so it cannot enumerate \
+         that file's sections; got:\n{rendered}",
+    );
+    assert_eq!(
+        fs::read_to_string(&tasks_json).unwrap_or_default(),
+        seeded_before,
+        "a refused seeding may not have minted a sub-task",
+    );
+    assert_eq!(
+        corpus.git(&["rev-parse", "HEAD"]),
+        head_before,
+        "a refused seeding may not have landed a record commit",
+    );
+
+    assert_unknown_type_answers_first(
+        &corpus.jigc(&[
+            "milestone",
+            "add-from-spec",
+            "probe-milestone",
+            "nosuch:thing",
+        ]),
+        "`milestone add-from-spec … nosuch:thing`",
+    );
+
+    let canonical = corpus.jigc(&[
+        "milestone",
+        "add-from-spec",
+        "probe-milestone",
+        "vision:vision",
+    ]);
+    assert!(
+        !streams(&canonical).contains(FIXED_IDENTITY),
+        "the canonical spelling must pass the guard and fail on its own merits (a vision \
+         carries no `criteria` section); got:\n{}",
+        streams(&canonical),
+    );
+}
+
+/// List a project-layer pack declaring a `reads:` role of the **shipped** `vision`
+/// placement doctype, and return its workflow id.
+///
+/// The manufactured half is the *role*, never the doctype: `vision` is a shipped
+/// placement singleton with a committed instance in this state, so the cell drives the
+/// harm — a role bound to an identity no read door resolves — over real managed bytes.
+fn seed_vision_reader_pack(repo: &Path) -> &'static str {
+    let pack = repo.join("fixture-reader-pack");
+    for dir in ["schemas", "workflows", "steps", "config"] {
+        fs::create_dir_all(pack.join(dir)).expect("mk fixture reader pack subdir");
+    }
+    fs::write(
+        pack.join("workflows").join("read-the-vision.yaml"),
+        "---\n\
+         when: a committed vision is the ground for this work\n\
+         description: A fixture workflow that reads the committed vision as a bound role.\n\
+         usage: proving the fixed-identity predicate at the bind door.\n\
+         creates-task: true\n\
+         reads: [{role: vision, type: vision}]\n\
+         ---\n\
+         {{ include: step:consult }}\n",
+    )
+    .expect("seed the read-the-vision workflow");
+    fs::write(
+        pack.join("steps").join("consult.yaml"),
+        "Consult the bound vision for the following intent:\n\n{{ task.intent }}\n",
+    )
+    .expect("seed the consult step");
+    fs::write(pack.join("config").join("commands.yaml"), "commands: []\n")
+        .expect("seed empty catalog");
+    crate::support::seed_ambush_class_declarer(&pack);
+
+    let packs_yaml = repo.join(".jigc").join("config").join("packs.yaml");
+    let existing = fs::read_to_string(&packs_yaml).unwrap_or_default();
+    fs::write(
+        &packs_yaml,
+        format!("{existing}packs:\n  - {}\n", pack.display()),
+    )
+    .expect("list the fixture reader pack");
+    "read-the-vision"
+}
+
+/// **Sibling 3 — `jigc task bind`.** A `reads:` role may not be bound to an identity its
+/// doctype cannot have — the cell that bound one at exit 0.
+#[test]
+fn task_bind_refuses_a_non_canonical_fixed_identity_address() {
+    let corpus = TrialCorpus::build(State::CommittedSingletons);
+    let workflow = seed_vision_reader_pack(&corpus.repo());
+    let task = corpus.start_workflow(workflow, "consult the vision");
+    let roles = corpus
+        .repo()
+        .join(".jigc/tasks")
+        .join(&task)
+        .join("roles.json");
+
+    let out = corpus.jigc(&["task", "bind", "vision", "vision:alpha", &task]);
+    assert_fixed_identity_refusal(&out, "vision", "alpha", "`task bind vision vision:alpha`");
+    assert!(
+        !fs::read_to_string(&roles)
+            .unwrap_or_default()
+            .contains("alpha"),
+        "a refused bind may not have recorded the role: {}",
+        fs::read_to_string(&roles).unwrap_or_default(),
+    );
+
+    assert_unknown_type_answers_first(
+        &corpus.jigc(&["task", "bind", "vision", "nosuch:thing", &task]),
+        "`task bind vision nosuch:thing`",
+    );
+
+    // The control: the identity this doctype does have binds, as it always did.
+    let canonical = corpus.jigc(&["task", "bind", "vision", "vision:vision", &task]);
+    assert!(
+        canonical.status.success(),
+        "the canonical address must still bind; got:\n{}",
+        streams(&canonical),
+    );
+}
+
+/// **Sibling 3, the second disjunct** — the manufactured `location:` + `singleton: true`
+/// doctype at the bind door. This shape did refuse before the guard, but with the door's
+/// **code-less** `no such doc <addr>` bail: a fact about the corpus, carrying no identity
+/// and inviting the caller to create a doc this doctype cannot have.
+#[test]
+fn task_bind_refuses_a_non_canonical_location_singleton_address() {
+    let (repo, home, task) = corpus("bind-location-singleton");
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &["task", "bind", "manual", "runbook:bogus", &task],
+    );
+    assert_fixed_identity_refusal(&out, "runbook", "bogus", "`task bind manual runbook:bogus`");
+}
+
+/// **One code, one wire shape.** T2 put `store.fixed-identity` on the findings arm with a
+/// non-null `(code, target)` key; a sibling answering the flattened `{"error": …}` default
+/// would ship two shapes for one registered code, which is exactly what
+/// `cli::milestone::ENVELOPE_ARM_CODES` exists to prevent.
+#[test]
+fn every_sibling_door_answers_the_refusal_on_the_findings_arm() {
+    let corpus = TrialCorpus::build(State::CommittedSingletons);
+    assert_ok(
+        &corpus.jigc(&["milestone", "create", "Probe milestone"]),
+        "`jigc milestone create`",
+    );
+    let workflow = seed_vision_reader_pack(&corpus.repo());
+    let task = corpus.start_workflow(workflow, "consult the vision");
+
+    let cells: Vec<(&str, Vec<String>)> = vec![
+        (
+            "rename",
+            vec![
+                "rename".into(),
+                "vision:alpha".into(),
+                "--to".into(),
+                "Phantom".into(),
+                "--format".into(),
+                "json".into(),
+            ],
+        ),
+        (
+            "milestone add-from-spec",
+            vec![
+                "milestone".into(),
+                "add-from-spec".into(),
+                "probe-milestone".into(),
+                "vision:alpha".into(),
+                "--format".into(),
+                "json".into(),
+            ],
+        ),
+        (
+            "task bind",
+            vec![
+                "task".into(),
+                "bind".into(),
+                "vision".into(),
+                "vision:alpha".into(),
+                task.clone(),
+                "--format".into(),
+                "json".into(),
+            ],
+        ),
+    ];
+
+    for (door, argv) in cells {
+        let args: Vec<&str> = argv.iter().map(String::as_str).collect();
+        let out = corpus.jigc(&args);
+        let body = String::from_utf8_lossy(&out.stderr);
+        let json: serde_json::Value = serde_json::from_str(body.trim())
+            .unwrap_or_else(|e| panic!("[{door}] the envelope parses: {e}\n{body}"));
+        let finding = &json["findings"][0];
+        assert_eq!(
+            finding["code"], FIXED_IDENTITY,
+            "[{door}] the refusal rides the findings arm; envelope:\n{json:#}",
+        );
+        assert_eq!(
+            finding["key"]["code"], FIXED_IDENTITY,
+            "[{door}] envelope:\n{json:#}",
+        );
+        assert_eq!(
+            finding["key"]["target"], "vision:alpha",
+            "[{door}] the key's target is the address the caller named, never null; \
+             envelope:\n{json:#}",
+        );
+    }
 }
