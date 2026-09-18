@@ -744,3 +744,28 @@ a foreign *regular* `docs/*.md` is not a reachable displacement cell — it bloc
 only as a **directory** named `*.md`, which is L-3; and `validate.rs:372`'s `STORE_SNAPSHOT_FILE` goes to
 a scratch path, never a task area, so the writer set is 12 consts + `renames.json` + **two** probe
 snapshots (baseline §5's *up to three* resolves to two).
+
+### §19 — D1, the sixth door: `CreatedDoc::rollback` stays `Declared`, and `doc-author.rollback-conflict` is not minted (build halt, Increment 5 plan, 2026-09-18)
+
+**The halt.** D1.1 classifies `CreatedDoc::rollback` — the only rollback population `jigc doc author`
+reaches — as `Declared(intra-process)`, and [baseline-rollback.md](baseline-rollback.md) §2.8 grades it
+*built + proven, no third-party racer cell*; yet D1.3 and §14 listed `doc-author` among the doors that
+mint `<door>.rollback-conflict`, and Increment 5's *Codes it registers* carried the spelling. The
+Increment 5 planner drove the window at HEAD `bde393e5`: the create → leaf-chain → rollback span
+(`doc.rs:3835-3845`) spawns **no subprocess** — zero git or hook calls in `doc.rs`, none in
+`author.rs` — so arm 1's racer cannot enter it, and the code would register a surface claim the
+binary can never make. **The D1.3 listing was the orchestrator's transcription error against the
+advocate's own concession** ([advocates/F1.md](advocates/F1.md) §9: *a `DoorGuard`/`Declared` row is
+sufficient; the robust arm should not grow a mechanism for them*).
+
+**Decided (the human, 2026-09-18) — Arm B:** `CreatedDoc::rollback` keeps its `Declared` row with the
+reason *intra-process, no subprocess in the window*; **`doc-author.rollback-conflict` is not minted**;
+the `<door>.rollback-conflict` family is **five** doors — `finalize` · `rename` · `milestone` ·
+`task-discard` · `config` — and D1.3's and §14's lists are read with this bracket. **Struck with its
+datum:** `RecordPreImage` reaches **five** doors through four capture sites (`milestone create` ·
+`add-task` · `add-from-spec` · `task discard <sub-task>` · `milestone discard`), not six — D1.8 makes
+the registry the count, and the *six* in D1.2 and Increment 5's Grouped scope is corrected here.
+**Bound carried:** the `Some(pre_image)` arm of `CreatedDoc::rollback` is an unconditional
+`fs::write` inside a window no instrument this wave owns can race; if a door ever spawns a subprocess
+inside that window, the row's reason is false and it becomes a `FileCas` row — that condition is the
+row's reopening trigger, written on the registry row itself.
