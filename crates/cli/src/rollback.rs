@@ -39,32 +39,30 @@
 //!   * [`Discipline::Declared`] — no mechanism, by decision, with the reason **and the
 //!     condition that reopens it** on the row itself (§19).
 //!
-//! # Two honest notes, both discharged by name
+//! # The discipline is a checked fact, not a declaration
 //!
-//! **(1) Every row now declares a discipline the source binds.** This module was the
-//! increment's *first* task, and each later task retired one of its declarations: **zero**
-//! are left. **T10** is the task whose totality fence makes every row a checked *fact* rather
-//! than a count a reader has to trust, and strikes this paragraph. *(It read **eight** when
-//! this module landed; **T3 bound `promote-destination` and `retired-original`**, **T4 bound
-//! `milestone-record`** — whose five doors now mint two door-keyed identities,
-//! `milestone.rollback-conflict` and `task-discard.rollback-conflict` — **T5 bound
-//! `fan-out-record-flip`**, the sixth write of that same file, onto the first of those two
-//! identities, **T6 bound `rename-worktree`**, whose two unconditional arms take a fourth
-//! identity, `rename.rollback-conflict`, **T7 bound both `MintedSet` rows** — the datum
-//! was `unwind_mint`'s single `remove_dir_all`, which both rows reached and which no area set
-//! governed; the sink is now `engine::state::unwind_area`, the area's own registry row
-//! followed by a non-recursive `remove_dir`, and the third party's bytes it will not take are
-//! named by `milestone.foreign-bytes` — and **T8 bound `config-root-relocation`**, the one
-//! row that had no rollback of any kind: the batch's inverse is now
-//! `relocate::rollback_relocations`, its worktree half the same compare-and-swap under a
-//! fifth identity, `config.rollback-conflict`. So the count moves with the source rather than
-//! standing as a stale number; the plan's decomposition says "six" for the `FileCas` half
-//! alone.)*
+//! Every row's discipline is bound by the source, and
+//! `crates/cli/tests/rollback_population_registry.rs` →
+//! `every_row_binds_the_discipline_it_declares` is what checks it (M52 Increment 5 / T10): a
+//! [`Discipline::FileCas`] row's restore provably reaches [`PreImageFamily::restore`], a
+//! [`Discipline::MintedSet`] row's unwind reaches `engine::state::unwind_area`, a
+//! [`Discipline::DoorGuard`] row names a guard production source mints, and a
+//! [`Discipline::Declared`] row carries a reason **and** the condition that reopens it.
 //!
-//! **(2) The rows are twelve, and the plan's "ten" is struck with its arithmetic.** The plan
-//! derives ten as *baseline §1 table A's nine worktree-restore populations + the rollback-less
-//! `config set <root-knob>` relocation*, and that derivation is right about both halves. It
-//! cannot, however, also carry the two `DoorGuard` classifications D1.1 states by name:
+//! This module was the increment's **first** task and shipped eight rows declaring a
+//! discipline the source did not yet bind; T3–T8 retired them one at a time (`T3` the promote
+//! destination and the retired original, `T4` the milestone record's five doors, `T5` the
+//! fan-out record flip, `T6` `rename`'s two unguarded arms, `T7` both `MintedSet` rows, `T8`
+//! the `config set <root-knob>` relocation, the one row that had no rollback of any kind).
+//! Where this paragraph used to *count* what was left declaring, the fence now checks that
+//! nothing is: a row added with a discipline written down and nothing behind it reddens.
+//!
+//! # The row count is twelve, and the plan's "ten" is struck with its arithmetic
+//!
+//! The plan derives ten as *baseline §1 table A's nine worktree-restore populations + the
+//! rollback-less `config set <root-knob>` relocation*, and that derivation is right about
+//! both halves. It cannot, however, also carry the two `DoorGuard` classifications D1.1
+//! states by name:
 //!
 //!   * `rollback_rename`'s HEAD-sourced `tracked_restore` arm is **inside** table A's row 6,
 //!     whose other two arms the increment binds to `FileCas` — and a row carries **one**
@@ -92,7 +90,8 @@ use engine::state::WorkArea;
 /// What keeps one population's restore from overwriting bytes that are not jigc's.
 ///
 /// One per row: a population whose arms want two disciplines is two rows (see the module
-/// header's note 2), because every fence over this registry reads the discipline *per row*.
+/// header's *row count* section), because every fence over this registry reads the discipline
+/// *per row*.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Discipline {
     /// Compare-and-swap against the bytes jigc wrote: restore while they stand, park the
@@ -449,16 +448,6 @@ pub const FINALIZE_DOOR: ConflictDoor = ConflictDoor {
     undone: "nothing was committed",
 };
 
-/// **Every door that raises a `<door>.rollback-conflict`**, one row each.
-///
-/// It exists because the finding's code is now a *parameter* rather than a string literal
-/// inside the constructor call: `crates/cli/tests/finalize_family_registry.rs`' producer scan
-/// is a lexer, so it cannot see a code that arrives this way, and its stated remedy for that
-/// shape is to complete the derived set **from the registry that decides membership** rather
-/// than from a hand-written exception (the `COMMITTING_DOORS` precedent, M52 Increment 1).
-/// A door added here whose identity lies in the `finalize.` namespace therefore grows that
-/// expected set and reddens the family table, which is the property the literal shape bought
-/// for free.
 /// The **four milestone record-only doors** — `create` · `add-task` · `add-from-spec` ·
 /// `discard` — which write the committed `milestone-record` and commit only it (M52
 /// Increment 5 / T4).
@@ -516,6 +505,25 @@ pub const CONFIG_DOOR: ConflictDoor = ConflictDoor {
     undone: "the knob was not set",
 };
 
+/// **Every door that raises a `<door>.rollback-conflict`**, one row each — the family, and
+/// **five is all of it** (`settle-record.md` → §19, the human's Arm B: `doc-author` is named
+/// there to say it is *not* minted).
+///
+/// It exists because the finding's code is now a *parameter* rather than a string literal
+/// inside the constructor call: `crates/cli/tests/finalize_family_registry.rs`' producer scan
+/// is a lexer, so it cannot see a code that arrives this way, and its stated remedy for that
+/// shape is to complete the derived set **from the registry that decides membership** rather
+/// than from a hand-written exception (the `COMMITTING_DOORS` precedent, M52 Increment 1).
+/// A door added here whose identity lies in the `finalize.` namespace therefore grows that
+/// expected set and reddens the family table, which is the property the literal shape bought
+/// for free.
+///
+/// **What holds the membership** (M52 Increment 5 / T10,
+/// `rollback_population_registry.rs` → `the_rollback_conflict_family_is_five_doors_and_no_sixth`):
+/// this list ⇔ the [`ConflictDoor`] constants this file declares, ⇔ the whole-literal
+/// `*.rollback-conflict` codes production source mints, ⇔ the codes `design/validation.md`'s
+/// registration tables name — and each member is driven at the seam, so its route floor and
+/// its park are facts rather than intentions. A sixth door has to pass all four.
 pub const ROLLBACK_DOORS: &[ConflictDoor] = &[
     FINALIZE_DOOR,
     MILESTONE_DOOR,

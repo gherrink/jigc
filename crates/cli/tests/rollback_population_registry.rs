@@ -10,7 +10,10 @@
 //! at the class counted **four** where the source has **nine**. A fix cut against a
 //! hand-drawn list is a fix cut short, which is this wave's subject.
 //!
-//! **Two arms, each naming the kind of set it iterates.**
+//! **Four arms, each naming the kind of set it iterates.** The first two landed with the
+//! registry at T1; the last two are M52 Increment 5 / **T10**, which turns every row's
+//! discipline from a classification a reader has to trust into a fact the source binds, and
+//! closes the `<door>.rollback-conflict` family at the five doors §19 decided.
 //!
 //!   * **(a) the counted source scan** — a *counted* scan on the `repo_relative_paths.rs`
 //!     mold, because **no clap tree bijects this class**: a restore is a property of a
@@ -25,10 +28,30 @@
 //!     each of them separately. Mutant-proven both ways — a restore added without a row
 //!     reddens, a row whose site is deleted reddens, and a row deleted from a unit it shares
 //!     reddens on the count.
-//!   * **(b) the discipline leg** — every row's discipline is one of the four, and the two
-//!     that name something (`DoorGuard`'s guard code, `Declared`'s reason **and** its
-//!     reopening trigger) name something the source actually has. A row's doors are its
-//!     `cli::VERB_KINDS` leaf paths, so a door that is not a verb cannot be written down.
+//!   * **(b) the row shape** — every row says what it puts back, which doors reach it, and
+//!     where its restore lives. A row's doors are its `cli::VERB_KINDS` leaf paths, so a door
+//!     that is not a verb cannot be written down, and exactly one row may carry no restore
+//!     site at all.
+//!   * **(c) the binding totality fence (T10)** — every row's **discipline** is bound by the
+//!     source, per discipline and over the whole registry: a `FileCas` row's restore reaches
+//!     T2's generic entry (`cli::rollback::PreImageFamily::restore`), a `MintedSet` row's
+//!     unwind reaches T7's sink (`engine::state::unwind_area`), a `DoorGuard` row names a
+//!     guard production source mints, and a `Declared` row carries a reason **and** its
+//!     reopening trigger. The discipline match is exhaustive by the compiler, so a fifth
+//!     kind cannot compile until someone says what would bind it. Mutant-proven: a row's
+//!     restore switched to an unconditional `fs::write` reddens, an unwind that stops reading
+//!     the area registry reddens both `MintedSet` rows — the second through the one hop the
+//!     walk allows — and a `Declared` row stripped of its trigger reddens.
+//!   * **(d) the `<door>.rollback-conflict` family (T10)** — a **four-way ⇔** over the five
+//!     doors: `cli::rollback::ROLLBACK_DOORS` ⇔ the `ConflictDoor` constants the registry
+//!     home declares ⇔ the whole-literal `*.rollback-conflict` codes production source mints
+//!     ⇔ the codes `design/validation.md`'s registration tables name — plus the floor,
+//!     **driven** once per door at the production seam: the racer's bytes survive, the
+//!     pre-image is parked under that door's own noun, and the finding is blocking, located
+//!     at the raced path, `Human`-routed, serializable (where the route floor asserts) and
+//!     **not** an `ERROR_CODE_REGISTRY` member. A sixth producer reddens wherever it is
+//!     written, which is what makes §19's refusal of `doc-author.rollback-conflict` hold in
+//!     code.
 //!
 //! **Declared bounds.** (i) The scan reads **names and bodies**, not semantics: a production
 //! function that restores bytes under a name carrying none of the family's vocabulary is
@@ -36,7 +59,12 @@
 //! acceptance of T3–T8. (ii) `cli::rollback`'s `park` writes bytes and is deliberately *not*
 //! a restore unit: it parks a pre-image into the gitignored workbench, which is the opposite
 //! act. (iii) The count leg is a **partition of calls**, not a proof that a call restores;
-//! the disposition tables carry the reason for every call the rows do not own.
+//! the disposition tables carry the reason for every call the rows do not own. (iv) Arm (d)
+//! separates a **mint** from a **mention**: a code is minted when a production literal's
+//! *whole value* is `<door>.rollback-conflict`, and named into the family when a registration
+//! table's first column carries it. Prose naming a refused spelling is neither — which is how
+//! the registry's own `Declared` row explains why `doc-author.rollback-conflict` is not
+//! minted, and how the roadmap records that amendment, without either being a violation.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -70,13 +98,16 @@ const RESTORE_PRIMITIVES: &[&str] = &[
     "\"restore\"",
 ];
 
-/// One production restore unit: where it is and how many byte-restoring calls it holds.
+/// One production restore unit: where it is, how many byte-restoring calls it holds, and
+/// **what its body says** — the last of those is what arm (c) reads, because *this row's
+/// restore goes through the shared entry* is a fact about a call, not about a name.
 #[derive(Debug)]
 struct Unit {
     file: String,
     name: String,
     line: usize,
     prims: usize,
+    body: String,
 }
 
 fn workspace_root() -> PathBuf {
@@ -151,6 +182,7 @@ fn restore_units(path: &Path) -> Vec<Unit> {
             name,
             line: body[..decl].lines().count(),
             prims,
+            body: region.to_string(),
         });
     };
 
@@ -480,7 +512,7 @@ fn every_restore_unit_is_a_registry_row_or_a_counted_remainder() {
 }
 
 // ---------------------------------------------------------------------------
-// (b) the disciplines
+// (b) the row shape
 // ---------------------------------------------------------------------------
 
 /// The registry's own home, **excluded** from the literal reader below.
@@ -489,6 +521,11 @@ fn every_restore_unit_is_a_registry_row_or_a_counted_remainder() {
 /// string literal in this file, so a reader that swept the whole crate would resolve
 /// `DoorGuard("rename.no-such-guard")` against the row that invented it and pass. Caught by
 /// running exactly that mutant, which the fence let through before this line existed.
+///
+/// The family arm (d) reads this home **deliberately**, for the opposite reason: the door
+/// constants live here, so excluding it would leave that scan reading nothing. What keeps it
+/// honest there is that its ⇔ runs against two things this file does not write — the codes
+/// production source mints elsewhere, and the codes `design/validation.md` registers.
 const REGISTRY_HOME: &str = "crates/cli/src/rollback.rs";
 
 /// Every string literal in production source, both crates minus [`REGISTRY_HOME`] — the
@@ -513,9 +550,13 @@ fn door_paths() -> Vec<&'static [&'static str]> {
     cli::cli::VERB_KINDS.iter().map(|(path, _)| *path).collect()
 }
 
+/// **A row says what it puts back, which doors reach it, and where its restore lives.**
+///
+/// The shape half of the registry; the *discipline* half — what each row's declared
+/// discipline binds to in the source — is [`every_row_binds_the_discipline_it_declares`],
+/// which is the one place it is checked (M52 Increment 5 / T10).
 #[test]
-fn every_row_names_a_discipline_and_something_the_source_has() {
-    let literals = production_literals();
+fn every_row_names_a_subject_a_door_and_a_site() {
     let doors = door_paths();
     let mut offenders: Vec<String> = Vec::new();
     let mut ids: Vec<&str> = Vec::new();
@@ -526,7 +567,9 @@ fn every_row_names_a_discipline_and_something_the_source_has() {
         subject,
         doors: row_doors,
         site,
-        discipline,
+        // The discipline's own payload is arm (c)'s subject — what the source **binds** —
+        // and is deliberately checked in exactly one place.
+        discipline: _,
     } in ROLLBACK_POPULATIONS
     {
         ids.push(id);
@@ -555,38 +598,6 @@ fn every_row_names_a_discipline_and_something_the_source_has() {
                 }
             }
         }
-        match discipline {
-            Discipline::FileCas => {}
-            Discipline::MintedSet(areas) => {
-                if areas.is_empty() {
-                    offenders.push(format!(
-                        "  `{id}` is a `MintedSet` row naming no working area — the set it \
-                         removes would be empty",
-                    ));
-                }
-            }
-            Discipline::DoorGuard(code) => {
-                if !literals.contains(&format!("\"{code}\"")) {
-                    offenders.push(format!(
-                        "  `{id}` is guarded by `{code}`, which no production source mints",
-                    ));
-                }
-            }
-            Discipline::Declared {
-                reason,
-                reopens_when,
-            } => {
-                if reason.trim().is_empty() {
-                    offenders.push(format!("  `{id}` is declared with no reason"));
-                }
-                if reopens_when.trim().is_empty() {
-                    offenders.push(format!(
-                        "  `{id}` is declared with no reopening trigger — a declared row \
-                         whose reason can go stale unnoticed is the shape §19 refused",
-                    ));
-                }
-            }
-        }
     }
 
     let mut sorted = ids.clone();
@@ -607,8 +618,493 @@ fn every_row_names_a_discipline_and_something_the_source_has() {
 
     assert!(
         offenders.is_empty(),
-        "a registry row must carry one of the four disciplines and name things the source \
-         has:\n{}",
+        "a registry row must name what it puts back, the doors that reach it, and where its \
+         restore lives:\n{}",
         offenders.join("\n"),
     );
+}
+
+// ---------------------------------------------------------------------------
+// (c) the binding totality fence — every row's discipline is a checked fact
+// ---------------------------------------------------------------------------
+
+/// **The generic pre-image entry** every `FileCas` population's restore runs through (M52
+/// Increment 5 / T2) — `cli::rollback::PreImageFamily::restore`, as the scan keys it.
+const FILE_CAS_ENTRY: (&str, &str) = ("crates/cli/src/rollback.rs", "restore");
+
+/// Its **call form**. Every caller holds a `PreImageFamily` value, so the compare-and-swap is
+/// reached as a method call; the marker is unambiguous because [`the scan`](scanned_units)
+/// asserts below that this workspace declares exactly one production unit named `restore`.
+const FILE_CAS_CALL: &str = ".restore(";
+
+/// **The `MintedSet` sink** (M52 Increment 5 / T7) — `engine::state::unwind_area`, which
+/// removes the door's own area set and then the directory non-recursively, in its call form.
+const MINTED_SET_SINK: &str = "unwind_area(";
+
+/// Whether the restore unit at `from` **reaches** `marker` — in its own body, or through
+/// another scanned restore unit it calls.
+///
+/// One hop is not a convenience: `unwind_unrecorded_seeds` unwinds each seed *through*
+/// `unwind_mint`, so a body-only reader would report the row's discipline unbound while the
+/// source binds it. The walk is closed over the scanned units alone (a call into anything
+/// else is not a restore unit and cannot be the sink), and `seen` keeps a cycle finite.
+fn reaches(
+    units: &BTreeMap<(String, String), Unit>,
+    from: &(String, String),
+    marker: &str,
+) -> bool {
+    fn walk(
+        units: &BTreeMap<(String, String), Unit>,
+        at: &(String, String),
+        marker: &str,
+        seen: &mut BTreeMap<(String, String), ()>,
+    ) -> bool {
+        if seen.insert(at.clone(), ()).is_some() {
+            return false;
+        }
+        let Some(unit) = units.get(at) else {
+            return false;
+        };
+        if unit.body.contains(marker) {
+            return true;
+        }
+        let callees: Vec<(String, String)> = units
+            .keys()
+            .filter(|key| key != &at && unit.body.contains(&format!("{}(", key.1)))
+            .cloned()
+            .collect();
+        callees
+            .iter()
+            .any(|callee| walk(units, callee, marker, seen))
+    }
+    walk(units, from, marker, &mut BTreeMap::new())
+}
+
+/// **Every row's discipline is a fact the source binds, not a classification it declares**
+/// (M52 Increment 5 / T10; `settle-record.md` → D1.1 as amended by §1, §2 and §19).
+///
+/// T1 shipped this registry with eight rows declaring a discipline the source did not yet
+/// bind, and each later task retired one of those declarations. This arm is what makes the
+/// last of them a *checked* fact — and what keeps a twelfth row from being added with a
+/// discipline written down and nothing behind it:
+///
+///   * a **`FileCas`** row's restore provably reaches T2's generic entry — it *is* the entry,
+///     or its unit calls it, so the compare-and-swap is the only way this population's bytes
+///     go back. A restore switched to an unconditional `fs::write` reddens here (and again on
+///     the count leg, which sees the new primitive);
+///   * a **`MintedSet`** row's unwind provably reaches T7's sink, and names a non-empty area
+///     set — a hand-list of "the mint's own files" is what drove short at `milestone create`;
+///   * a **`DoorGuard`** row names a guard **production source mints**, resolved outside the
+///     registry's own home so a row cannot be its own witness;
+///   * a **`Declared`** row carries a reason **and** the condition that makes the reason
+///     false (§19) — a declared row whose reason can go stale unnoticed is the shape the
+///     Settle refused.
+///
+/// The match is exhaustive by the compiler, so a fifth discipline cannot compile until
+/// someone says what binds it.
+#[test]
+fn every_row_binds_the_discipline_it_declares() {
+    let scan = scanned_units();
+    let literals = production_literals();
+    let mut offenders: Vec<String> = Vec::new();
+
+    // The two markers are only as good as their unambiguity, so both are asserted rather than
+    // assumed: exactly one production unit is named `restore`, and it is the entry itself.
+    let restores: Vec<&(String, String)> = scan.keys().filter(|key| key.1 == "restore").collect();
+    assert_eq!(
+        restores,
+        vec![&(FILE_CAS_ENTRY.0.to_string(), FILE_CAS_ENTRY.1.to_string())],
+        "`{FILE_CAS_CALL}` can only stand for the shared compare-and-swap while this \
+         workspace declares exactly one production unit named `restore`; it declares \
+         {restores:?}",
+    );
+    assert!(
+        scan.contains_key(&(
+            "crates/engine/src/state.rs".to_string(),
+            "unwind_area".to_string()
+        )),
+        "the `MintedSet` sink `engine::state::unwind_area` is not in the scan — the marker \
+         `{MINTED_SET_SINK}` would then be satisfiable by nothing, and every `MintedSet` row \
+         would redden for the wrong reason",
+    );
+
+    for row in ROLLBACK_POPULATIONS {
+        let site = match row.site {
+            Site::Source { file, unit, .. } => Some((file.to_string(), unit.to_string())),
+            // The one admitted site-less row (arm (b) fences that it is the only one): there
+            // is no restore to bind, which is exactly what its `DoorGuard` discipline says.
+            Site::NoRestore { .. } => None,
+        };
+        match row.discipline {
+            Discipline::FileCas => match &site {
+                Some(key)
+                    if *key == (FILE_CAS_ENTRY.0.to_string(), FILE_CAS_ENTRY.1.to_string()) => {}
+                Some(key) if reaches(&scan, key, FILE_CAS_CALL) => {}
+                Some(key) => offenders.push(format!(
+                    "  `{}` is a `FileCas` row whose unit {}::{} never reaches the shared \
+                     compare-and-swap (`{}::{}`) — its bytes go back some other way, which is \
+                     an unconditional restore however it is spelled",
+                    row.id, key.0, key.1, FILE_CAS_ENTRY.0, FILE_CAS_ENTRY.1,
+                )),
+                None => offenders.push(format!(
+                    "  `{}` is a `FileCas` row with no restore site at all",
+                    row.id,
+                )),
+            },
+            Discipline::MintedSet(areas) => {
+                if areas.is_empty() {
+                    offenders.push(format!(
+                        "  `{}` is a `MintedSet` row naming no working area — the set it \
+                         removes would be empty",
+                        row.id,
+                    ));
+                }
+                match &site {
+                    Some(key) if reaches(&scan, key, MINTED_SET_SINK) => {}
+                    Some(key) => offenders.push(format!(
+                        "  `{}` is a `MintedSet` row whose unit {}::{} never reaches \
+                         `engine::state::unwind_area` — a removal that does not read the \
+                         area's own registry row is a removal that can take a third party's \
+                         file",
+                        row.id, key.0, key.1,
+                    )),
+                    None => offenders.push(format!(
+                        "  `{}` is a `MintedSet` row with no unwind site at all",
+                        row.id,
+                    )),
+                }
+            }
+            Discipline::DoorGuard(code) => {
+                if !literals.contains(&format!("\"{code}\"")) {
+                    offenders.push(format!(
+                        "  `{}` is guarded by `{code}`, which no production source mints",
+                        row.id,
+                    ));
+                }
+            }
+            Discipline::Declared {
+                reason,
+                reopens_when,
+            } => {
+                if reason.trim().is_empty() {
+                    offenders.push(format!("  `{}` is declared with no reason", row.id));
+                }
+                if reopens_when.trim().is_empty() {
+                    offenders.push(format!(
+                        "  `{}` is declared with no reopening trigger — a declared row whose \
+                         reason can go stale unnoticed is the shape §19 refused",
+                        row.id,
+                    ));
+                }
+            }
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "a row's discipline is what keeps its restore from destroying a third party's bytes, \
+         so the source must bind it — declaring one is not carrying one:\n{}",
+        offenders.join("\n"),
+    );
+}
+
+// ---------------------------------------------------------------------------
+// (d) the `<door>.rollback-conflict` family — five doors, and no sixth
+// ---------------------------------------------------------------------------
+
+/// The doc whose Severity inventory is where a minted finding is **registered**
+/// (`completions/artifacts/M51/settle-record.md` → §10; the registration home
+/// `config_layer_preimage.rs`' inventory arm already reads for the `finalize` member).
+const INVENTORY_DOC: &str = "design/validation.md";
+
+/// The suffix the family's identities share. A code is *minted* when a production string
+/// literal's **whole value** is `<door>.rollback-conflict`; a code named inside a sentence is
+/// a **mention**, which is how the registry's own `Declared` row explains why
+/// `doc-author.rollback-conflict` is not minted (§19) and how the roadmap records that
+/// amendment. Mint and mention are different acts, so the scan reads whole literals.
+const CONFLICT_SUFFIX: &str = ".rollback-conflict";
+
+/// A throwaway directory, removed on drop — the family arm drives the production seam against
+/// real files, because *the racer's bytes survive* is a fact about a file and not about a type.
+struct TempDir(PathBuf);
+
+impl TempDir {
+    fn new(tag: &str) -> Self {
+        let mut path = std::env::temp_dir();
+        path.push(format!(
+            "jigc-rollback-family-{tag}-{}-{:?}",
+            std::process::id(),
+            engine::tempname::unique_nanos(),
+        ));
+        fs::create_dir_all(&path).expect("create temp dir");
+        TempDir(path)
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+/// Every whole-literal `*.rollback-conflict` code **production source mints**, both crates,
+/// the registry's own home included — it is where the door constants live, so excluding it
+/// would leave the scan reading nothing.
+fn minted_conflict_codes() -> std::collections::BTreeSet<String> {
+    let mut out = std::collections::BTreeSet::new();
+    for dir in CRATE_SRC {
+        for path in rust_source::rust_files(&workspace_root().join(dir)) {
+            let body = fs::read_to_string(&path).expect("read source");
+            let code = rust_source::code_only(&body);
+            let regions = rust_source::cfg_test_regions(&code);
+            for literal in rust_source::string_literals(&body) {
+                if rust_source::is_test_domain(&path, &regions, literal.offset) {
+                    continue;
+                }
+                if literal.value.ends_with(CONFLICT_SUFFIX)
+                    && !literal.value[..literal.value.len() - CONFLICT_SUFFIX.len()]
+                        .contains(|c: char| !c.is_ascii_lowercase() && c != '-')
+                    && !literal.value.is_empty()
+                {
+                    out.insert(literal.value.clone());
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Every code a registration table in [`INVENTORY_DOC`] names in its **first column** — the
+/// act of registering, as distinct from naming a code in prose.
+fn registered_conflict_codes() -> std::collections::BTreeSet<String> {
+    let doc = fs::read_to_string(workspace_root().join(INVENTORY_DOC))
+        .unwrap_or_else(|err| panic!("read {INVENTORY_DOC}: {err}"));
+    doc.lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with('|'))
+        .filter_map(|line| line.trim_start_matches('|').split('|').next())
+        .flat_map(|cell| {
+            cell.split('`')
+                .skip(1)
+                .step_by(2)
+                .map(str::trim)
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        })
+        .filter(|code| code.ends_with(CONFLICT_SUFFIX))
+        .collect()
+}
+
+/// **The conflict family is the five doors the registry names — registered, route-floor
+/// green, on the findings arm, and no sixth** (M52 Increment 5 / T10; `settle-record.md` →
+/// §19, the human's Arm B).
+///
+/// Four legs, each closing a different way in:
+///
+///   1. **⇔ with the source's own door constants.** Every `ConflictDoor` declared at the
+///      registry home is a `ROLLBACK_DOORS` member and every member is one of them, so a
+///      sixth door cannot be declared and left out of the family — nor listed in the family
+///      without being declared.
+///   2. **⇔ with what production mints.** The whole-literal `*.rollback-conflict` codes the
+///      binary carries are exactly the members' codes. A sixth producer reddens here
+///      **wherever** it is written, which is what makes §19's refusal hold in code rather
+///      than in a sentence: `doc-author.rollback-conflict` is mentioned by the `Declared`
+///      row that explains why it is not minted, and a mention is not a mint.
+///   3. **⇔ with the registration home.** Every member has a row in [`INVENTORY_DOC`]'s
+///      registration tables and no non-member does — *named into the family* is a table row,
+///      never a sentence, which is why the roadmap's own amendment bracket naming the refused
+///      spelling is not a violation.
+///   4. **Driven, per door: the floor.** The production seam is run over a raced path for
+///      every member — the racer's bytes must survive, the pre-image must be parked under
+///      that door's own noun, and the finding must be blocking, located at the raced path,
+///      `Human`-routed and **serializable**, which is where the M43 route floor asserts. And
+///      none of the five may be an `ERROR_CODE_REGISTRY` member: that registry mirrors door
+///      **identities** derived from `COMMITTING_DOORS`, and a blocking `Finding` rides the
+///      findings arm, never an `Outcome`'s flattened error identity (§10).
+#[test]
+fn the_rollback_conflict_family_is_five_doors_and_no_sixth() {
+    use cli::rollback::{PreImage, PreImageFamily, ROLLBACK_DOORS};
+    use engine::finding::{RouteKind, Severity};
+
+    let codes: std::collections::BTreeSet<String> = ROLLBACK_DOORS
+        .iter()
+        .map(|door| door.code.to_string())
+        .collect();
+    assert_eq!(
+        codes.len(),
+        ROLLBACK_DOORS.len(),
+        "two doors share a code — the family's whole point is that `(code, target)` \
+         discriminates a raced door from its neighbour at the same path",
+    );
+
+    // 1 — the family and the source's door constants, in both directions.
+    let home = fs::read_to_string(workspace_root().join(REGISTRY_HOME)).expect("read registry");
+    let code_only = rust_source::code_only(&home);
+    let declared: Vec<String> = code_only
+        .match_indices(": ConflictDoor = ConflictDoor {")
+        .filter_map(|(at, _)| {
+            let head = &code_only[..at];
+            let name_start = head.rfind(|c: char| c.is_whitespace())? + 1;
+            Some(head[name_start..].to_string())
+        })
+        .collect();
+    let listed_at = code_only
+        .find("pub const ROLLBACK_DOORS: &[ConflictDoor] = &[")
+        .expect("the registry home must declare `ROLLBACK_DOORS`");
+    let listed_end = code_only[listed_at..]
+        .find("];")
+        .map(|off| listed_at + off)
+        .expect("`ROLLBACK_DOORS` must be a closed array literal");
+    let listed = &code_only[listed_at..listed_end];
+    assert_eq!(
+        declared.len(),
+        ROLLBACK_DOORS.len(),
+        "{REGISTRY_HOME} declares {} `ConflictDoor` constant(s) ({declared:?}) and \
+         `ROLLBACK_DOORS` carries {} — a door declared outside the family is a door whose \
+         code every fence over the family is blind to",
+        declared.len(),
+        ROLLBACK_DOORS.len(),
+    );
+    for name in &declared {
+        assert!(
+            listed.contains(name.as_str()),
+            "`{name}` is a `ConflictDoor` the registry home declares and `ROLLBACK_DOORS` \
+             does not list",
+        );
+    }
+
+    // 2 — and what production actually mints.
+    assert_eq!(
+        minted_conflict_codes(),
+        codes,
+        "the `*.rollback-conflict` codes production source mints as whole literals must be \
+         exactly the family's. A code minted with no door row is a sixth member nothing \
+         fences; a member nothing mints is a claim the binary cannot make (settle-record \
+         §19: `doc-author.rollback-conflict` is NOT minted — the `Declared` row mentions it \
+         to say so, and a mention is not a mint)",
+    );
+
+    // 3 — and what the registration home registers.
+    assert_eq!(
+        registered_conflict_codes(),
+        codes,
+        "{INVENTORY_DOC}'s registration tables must name exactly the family's codes in their \
+         first column — a member with no row is the silence §10 exists to end, and a row for \
+         a code the binary never mints is how a refused spelling gets admitted by being \
+         named into the family",
+    );
+
+    // 4 — the floor, driven at the production seam, once per door.
+    for door in ROLLBACK_DOORS {
+        assert!(
+            !door.noun.is_empty()
+                && !door.noun.contains(' ')
+                && Path::new(door.noun).components().count() == 1,
+            "`{}`'s park noun `{}` must be one space-free path component: it is both the \
+             `.jigc/displaced/` sub-directory and the word the route tells the reader to \
+             delete a copy at",
+            door.code,
+            door.noun,
+        );
+        assert!(
+            !door.undone.trim().is_empty(),
+            "`{}` must say what its failure left undone — it is the route's lead clause",
+            door.code,
+        );
+        assert!(
+            !cli::invocation_log::ERROR_CODE_REGISTRY.contains(&door.code),
+            "`{}` must stay OUT of `ERROR_CODE_REGISTRY`: that registry mirrors door \
+             identities derived from `COMMITTING_DOORS`, and this family rides the findings \
+             arm (settle-record §10)",
+            door.code,
+        );
+
+        let tmp = TempDir::new(door.noun);
+        let repo = tmp.0.join("repo");
+        let jigc = repo.join(".jigc");
+        let path = repo.join("docs").join("raced.md");
+        fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+        fs::create_dir_all(&jigc).expect("mkdir .jigc");
+        fs::write(&path, b"the pre-image").expect("write pre-image");
+
+        let mut entry = PreImage::capture("docs/raced.md", path.clone()).expect("capture");
+        fs::write(&path, b"what jigc wrote").expect("jigc's own write");
+        entry.wrote();
+        // The race: a third party rewrites the path inside the transaction's window.
+        fs::write(&path, b"THIRD PARTY PROSE").expect("the racer's write");
+        let mut family = PreImageFamily::empty(*door);
+        family.push(entry);
+        let findings = family.restore(&repo, &jigc);
+
+        assert_eq!(
+            findings.len(),
+            1,
+            "`{}` must raise exactly one finding for one raced path",
+            door.code,
+        );
+        let finding = &findings[0];
+        assert_eq!(finding.code, door.code);
+        assert_eq!(
+            finding.severity,
+            Severity::Blocking,
+            "`{}` must block: nothing but a human can reconcile two versions of a file they \
+             co-own",
+            door.code,
+        );
+        let route = finding
+            .route
+            .as_ref()
+            .unwrap_or_else(|| panic!("`{}` must carry a route (the route floor)", door.code));
+        assert!(matches!(route.kind(), RouteKind::Human));
+        assert!(route.as_str().contains(door.undone));
+        assert_eq!(
+            finding
+                .location
+                .as_ref()
+                .and_then(|location| location.address.clone()),
+            Some("docs/raced.md".to_string()),
+            "`{}` keys at the raced file path — two raced paths are two findings, never one \
+             `(code, null)`",
+            door.code,
+        );
+        // The floor's machine half: the engine asserts the route rules on this seam.
+        serde_json::to_string(finding)
+            .unwrap_or_else(|err| panic!("`{}` must serialize: {err}", door.code));
+
+        assert_eq!(
+            fs::read(&path).expect("read the raced path"),
+            b"THIRD PARTY PROSE",
+            "`{}` must leave the racer's bytes exactly where they are — restoring over them \
+             is the loss this family exists to prevent, in the other direction",
+            door.code,
+        );
+        let parked = jigc.join("displaced").join(door.noun).join("docs");
+        let copies: Vec<PathBuf> = fs::read_dir(&parked)
+            .unwrap_or_else(|err| {
+                panic!(
+                    "`{}` must park its pre-image under `.jigc/displaced/{}/`: {err}",
+                    door.code, door.noun,
+                )
+            })
+            .map(|entry| entry.expect("dir entry").path())
+            .collect();
+        assert_eq!(copies.len(), 1, "one refused restore, one parked copy");
+        assert_eq!(
+            fs::read(&copies[0]).expect("read the parked copy"),
+            b"the pre-image",
+            "the parked copy must hold the bytes the transaction was going to put back",
+        );
+        assert!(
+            route.as_str().contains(
+                copies[0]
+                    .strip_prefix(&repo)
+                    .expect("the park is inside the repo")
+                    .to_string_lossy()
+                    .as_ref()
+            ),
+            "`{}`'s route must name the parked copy — both versions are on disk, and a route \
+             that names only one of them is the half a reader cannot derive",
+            door.code,
+        );
+    }
 }
