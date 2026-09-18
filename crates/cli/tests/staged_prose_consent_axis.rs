@@ -1335,3 +1335,101 @@ fn each_foreign_byte_refusal_logs_the_code_it_printed() {
         );
     }
 }
+
+/// **T5 arm (q)** — the three codes answer on the **declared machine arm**.
+///
+/// The increment registers all three of them on the **findings arm**
+/// (`implementation/roadmap.md` → Increment 4, *Codes it registers*), and two of them did not
+/// get there: the task door and the abandon door raised their refusal through the flattened
+/// `{"error": …}` carrier, so a driver that parsed `--format json` got one prose string with
+/// the code inside it — and a code inside a message is not a key
+/// (`design/command-output-contract.md` → The membership test). The third door, `uninstall`,
+/// answered the envelope, so **one registration shipped two wire shapes**, which is the fact
+/// that makes this an arm defect rather than a preference: a driver cannot discriminate the
+/// family it was handed.
+///
+/// Driven at `f8baa640`: `task discard` and `milestone discard` each emitted
+/// `{"error": "blocking · <code> — …"}` with no `schema_version`, no `findings` and no `key`.
+///
+/// The target half of the key is **not** asserted: every code in this family is a declared
+/// singleton — each door is fail-fast, so two instances of one code cannot coexist in one
+/// output and there is nothing for a target to discriminate
+/// (`design/command-output-contract.md` → The declared singleton exception). The shipped
+/// `uninstall` cell keys at `target: null` for exactly that reason.
+#[test]
+fn each_foreign_byte_refusal_answers_on_the_declared_findings_arm() {
+    let (repo, home) = workbench("foreign-arm");
+    let (repo, home) = (repo.path(), home.path());
+    let sub_area = repo.join(".jigc").join("tasks").join(SUB_TASK);
+    fs::create_dir_all(&sub_area).expect("the sub-task area");
+    plant_foreign(&sub_area);
+    plant_foreign(&repo.join(".jigc").join("tasks").join(TOP_TASK));
+
+    for (code, argv) in [
+        (
+            "task-discard.foreign-bytes",
+            vec!["task", "discard", SUB_TASK, "--format", "json"],
+        ),
+        (
+            "milestone.foreign-bytes",
+            vec!["milestone", "discard", MILESTONE_ID, "--format", "json"],
+        ),
+        (
+            "uninstall.foreign-bytes",
+            vec!["uninstall", "--format", "json"],
+        ),
+    ] {
+        let what = argv.join(" ");
+        let out = jigc(repo, home, &argv);
+        let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+        let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+        assert!(
+            !out.status.success(),
+            "`jigc {what}` must refuse; stdout:\n{stdout}\nstderr:\n{stderr}",
+        );
+        assert!(
+            stdout.trim().is_empty(),
+            "a reject puts nothing on stdout; `jigc {what}` printed:\n{stdout}",
+        );
+        let doc: serde_json::Value = serde_json::from_str(stderr.trim()).unwrap_or_else(|err| {
+            panic!("`jigc {what}` must emit exactly one JSON document ({err});\n{stderr}")
+        });
+        assert!(
+            doc.get("code").is_none() && doc.get("severity").is_none(),
+            "`jigc {what}`: a reject document is never a bare `Finding` at the root; \
+             got:\n{doc:#}",
+        );
+        assert!(
+            doc.get("schema_version").is_some(),
+            "`jigc {what}` answers on the declared findings arm, which carries \
+             `schema_version` — the flattened `{{\"error\": …}}` arm is the one this code was \
+             NOT registered on; got:\n{doc:#}",
+        );
+        let findings = doc["findings"]
+            .as_array()
+            .unwrap_or_else(|| {
+                panic!("`jigc {what}`: the envelope carries `findings`; got:\n{doc:#}")
+            })
+            .clone();
+        let hit = findings
+            .iter()
+            .find(|f| f["code"].as_str() == Some(code))
+            .unwrap_or_else(|| {
+                panic!("`jigc {what}` must carry `{code}` as a finding; got:\n{doc:#}")
+            });
+        assert_eq!(
+            hit["key"]["code"].as_str(),
+            Some(code),
+            "`jigc {what}`: `{code}` projects its own `key.code`; got:\n{hit:#}",
+        );
+        assert_eq!(
+            hit["severity"].as_str(),
+            Some("blocking"),
+            "`jigc {what}`: the refusal is blocking; got:\n{hit:#}",
+        );
+        assert!(
+            hit["route"].is_object() || hit["route"].is_string(),
+            "`jigc {what}`: the refusal carries its route as data; got:\n{hit:#}",
+        );
+    }
+}

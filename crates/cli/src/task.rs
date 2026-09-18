@@ -801,6 +801,15 @@ pub(crate) fn unverified_prose_finding(err: std::io::Error) -> Finding {
 /// exactly like the staged-prose sibling it pairs with. It is still **logged**: the refusal
 /// travels as a `render::BlockedFinding`, so the identity the surface prints is the identity
 /// the invocation log records.
+///
+/// **And on the declared arm.** M52 Increment 4 registers this code, `milestone.foreign-bytes`
+/// and `uninstall.foreign-bytes` on the **findings arm** (`implementation/roadmap.md` →
+/// Increment 4, *Codes it registers*), so both of this door's producers raise through
+/// [`crate::render::envelope_finding_error`], never the flattened `{"error": …}` default.
+/// Registering one family and then shipping two wire shapes of it is the defect the arm
+/// declaration exists to prevent: a driver cannot key on a code that lives inside a message
+/// (`design/command-output-contract.md` → The membership test), and the `uninstall` sibling
+/// answered the envelope from the day it landed.
 pub(crate) const DISCARD_FOREIGN_BYTES: &str = "task-discard.foreign-bytes";
 
 /// The `jigc task discard` door's guard over the working area's **other** population: every
@@ -823,13 +832,13 @@ fn refuse_over_foreign_bytes(task: &TaskArea, id: &str, force: bool) -> Result<(
     }
     let found =
         foreign_areas(&task.jigc_home, &[(task.dir.clone(), AreaKind::Task)]).map_err(|err| {
-            crate::render::finding_error(&discard_unverified_foreign_finding(id, err))
+            crate::render::envelope_finding_error(&discard_unverified_foreign_finding(id, err))
         })?;
     let lines = foreign_lines(&found);
     if lines.is_empty() {
         return Ok(());
     }
-    Err(crate::render::finding_error(
+    Err(crate::render::envelope_finding_error(
         &discard_foreign_bytes_finding(id, &lines),
     ))
 }

@@ -230,6 +230,16 @@ pub struct FindingKey {
 ///   error sink (`Option<Finding>`, last write wins) and drained as the verb's single
 ///   located error, so at most one instance reaches an output. Declared with the route
 ///   at the M43 completion audit, same rationale as the parse errors above.
+/// - `task-discard.foreign-bytes` and `milestone.foreign-bytes` — the two non-`uninstall.`
+///   members of M52 Increment 4's foreign-byte family, which the increment registers on the
+///   **findings arm**. Each door's guard (`cli::task::refuse_over_foreign_bytes` and its
+///   `cli::milestone` sibling) returns `Err` on the first of its two mutually-exclusive
+///   producers — the fail-closed enumeration error or the listing — and the door bails, so
+///   exactly one instance reaches an output, which is the `uninstall.*` rationale two bullets
+///   up applied to the doors that share its subject. Enumerated, **not** namespaced:
+///   `task-discard.` and `milestone.` both carry siblings (the staged-prose and
+///   dirty-worktree guards) that keep the flattened arm and are not serialized as findings at
+///   all, so a prefix here would exempt codes nobody has looked at.
 ///
 /// Anything else with no address is the un-swept state of a family nobody has looked at, and
 /// [`debug_assert_targets_declared`] says so at the seam.
@@ -241,6 +251,8 @@ pub fn is_declared_singleton(code: &str) -> bool {
         || code.starts_with("structural-target.")
         || code.starts_with("slot-fill-target.")
         || code == "overrides.project-step-missing"
+        || code == "task-discard.foreign-bytes"
+        || code == "milestone.foreign-bytes"
 }
 
 /// The **route-exempt parse diagnostics** — one row per code, each with its reason, in the

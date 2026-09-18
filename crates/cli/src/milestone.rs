@@ -6101,20 +6101,35 @@ fn discover_repo_root(start: &Path) -> Option<PathBuf> {
 /// than only its rendering also lets the dispatch log the identity it prints
 /// ([`crate::render::blocked_finding`]).
 fn finding_to_err(finding: Finding) -> anyhow::Error {
-    // **The unknown-milestone arm** (M51 Increment 6 / T2). The engine returns a bare
-    // `Finding` — it is clap-blind and knows nothing of envelopes — so the arm each
-    // condition's machine surface takes is declared here, at the one seam where this
-    // surface's engine findings become errors. Exactly one condition is declared: the
-    // absent milestone, whose code the contract lists under the **work-unit** target form
-    // and whose sibling doors ([`no_such_milestone`]) answer the envelope. It is asked of
-    // the producing crate's own constant, never of a copied literal, so a renamed code
-    // cannot leave this seam quietly matching nothing. Every other finding keeps the
-    // flattened default and its declared bound.
-    if finding.code == engine::milestone::UNKNOWN_MILESTONE_CODE {
+    // **The declared arms** ([`ENVELOPE_ARM_CODES`]). The engine returns a bare `Finding` —
+    // it is clap-blind and knows nothing of envelopes — so the arm each condition's machine
+    // surface takes is declared here, at the one seam where this surface's findings become
+    // errors. Each member is asked of the producing crate's own constant, never of a copied
+    // literal, so a renamed code cannot leave this seam quietly matching nothing. Every
+    // other finding keeps the flattened default and its declared bound.
+    if ENVELOPE_ARM_CODES.contains(&finding.code.as_str()) {
         return crate::render::envelope_finding_error(&finding);
     }
     crate::render::finding_error(&finding)
 }
+
+/// The codes this module's refusals answer on the **findings arm** rather than on
+/// [`crate::render::finding_error`]'s flattened `{"error": …}` default — the one place that
+/// choice is made for every [`finding_to_err`] caller, so two producers of one code cannot
+/// ship two wire shapes.
+///
+/// - `UNKNOWN_MILESTONE_CODE` (M51 Increment 6 / T2) — the contract lists it under the
+///   **work-unit** target form, and its sibling doors ([`no_such_milestone`]) answer the
+///   envelope.
+/// - [`DISCARD_FOREIGN_BYTES_CODE`] (M52 Increment 4) — the increment registers the whole
+///   `*.foreign-bytes` family on the findings arm (`implementation/roadmap.md` → Increment 4,
+///   *Codes it registers*), and `uninstall`'s member has answered there since it landed; this
+///   door's two producers flattened it, so one registration shipped two shapes a driver
+///   cannot discriminate.
+const ENVELOPE_ARM_CODES: &[&str] = &[
+    engine::milestone::UNKNOWN_MILESTONE_CODE,
+    DISCARD_FOREIGN_BYTES_CODE,
+];
 
 #[cfg(test)]
 mod tests {
