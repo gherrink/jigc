@@ -321,6 +321,23 @@ const NOT_A_POPULATION: &[(&str, &str, usize, &str)] = &[
          puts no bytes anywhere",
     ),
     (
+        "crates/cli/src/milestone.rs",
+        "unwind_failed_finding",
+        0,
+        "the `MintedSet` discipline's *output*, the sibling of `rollback_conflict_finding` \
+         above: the shared shape of the blocking `milestone.unwind-failed` a rollback step \
+         that could not complete raises. It composes a message and a route; it puts no bytes \
+         anywhere",
+    ),
+    (
+        "crates/cli/src/milestone.rs",
+        "mint_unwind_failed_finding",
+        0,
+        "that output's area producer — the unwind stopped on a path it could neither remove \
+         nor account for, so it names the area it left standing. It removes nothing and \
+         restores nothing; the sink it reports on is `engine::state::unwind_area`",
+    ),
+    (
         "crates/cli/src/task.rs",
         "carry_rollback_conflicts",
         0,

@@ -944,12 +944,26 @@ fn rollback_record_pre_image(
 /// the removal above: the cache must stop naming a sub-task the record does not, whether or not
 /// that sub-task's area could be taken.
 ///
-/// **Why an unwind fault is a stderr note and not the door's outcome.** §2 disposes the
-/// non-`ENOTEMPTY` branch as *an operational failure naming the path*, and this is the one
-/// rendering of that available: the unwind only ever runs on a failure path, so the door
-/// already has an error — usually a hook's verbatim stderr, which `design/finalize.md` → the
-/// M40 refinement 3 forbids replacing. So the fault is noted beside it, with the path, rather
-/// than swallowed or promoted over the correction signal the operator actually needs.
+/// **Every error branch is a carried finding, never a stderr note** (§2's *"any other
+/// `remove_file`/`remove_dir` error ⇒ `operational_failure` naming the path, the area left as
+/// found"*, built at the M52 Increment 5 validation). `operational_failure` is a *door outcome*
+/// and this runs only on a failure path, so the door already has an error — usually a hook's
+/// verbatim stderr, which `design/finalize.md` → the M40 refinement 3 forbids replacing. §2's
+/// other half settles what is left: *a reject that carries a finding is emitted on the
+/// findings arm, with the operational error itself rendered as a finding* — so each fault
+/// rides [`crate::task::carry_rollback_conflicts`] beside the door's own frame, exactly as the
+/// `Foreign` arm does.
+///
+/// **Shipped as three bare `eprintln!` notes until then, and all three were wrong in the same
+/// three ways.** They said *"the mint was rolled back"* by silence while the thing stood — so
+/// the identical re-run dead-ended on the id this call had already minted (driven at
+/// `7f6d6bf3`: `task.serial-collision` at `add-task`) with nothing on any surface naming the
+/// survivor; they printed a **host absolute** path (`design/surface-contract.md`
+/// → law 1's printed-path rule); and they went to **stderr on a reject arm**, whose document
+/// stderr already owns, so under `--format json` the stream stopped parsing at all
+/// (`design/command-output-contract.md` → Stream discipline — the M52 Increment 1 sweep that
+/// withheld [`print_resume_route`]'s notes reached the door's own narration and not this
+/// family's faults). A finding is format-aware by construction and fixes all three at once.
 fn unwind_mint(
     jigc_home: &Path,
     area: &Path,
@@ -962,12 +976,12 @@ fn unwind_mint(
         Ok(engine::state::AreaUnwind::Foreign) => {
             conflicts.push(mint_foreign_bytes_finding(jigc_home, area));
         }
-        Err(err) => eprintln!("note: could not unwind the minted working area at {err}"),
+        Err(err) => conflicts.push(mint_unwind_failed_finding(jigc_home, area, &err)),
     }
     if let Some((path, bytes)) = restore
         && let Err(err) = engine::state::persist(path, bytes)
     {
-        eprintln!("note: could not restore {path:?} to its pre-append bytes: {err:#}");
+        conflicts.push(task_list_stale_finding(jigc_home, path, &err));
     }
     conflicts
 }
@@ -1011,6 +1025,115 @@ fn mint_foreign_bytes_finding(jigc_home: &Path, area: &Path) -> Finding {
              rest — until that path is gone, the identical re-run blocks on the id this \
              call already minted"
         ))),
+    )
+}
+
+/// The identity a **workbench rollback step that could not complete** carries — the mint
+/// unwind's non-`ENOTEMPTY` arm and its `tasks.json` restore sibling (M52 Increment 5 / T7;
+/// `settle-record.md` → §2, *"any other `remove_file`/`remove_dir` error … ⇒ … naming the
+/// path, the area left as found"*; built at the increment's validation, where all three of
+/// its branches were found shipped as bare stderr notes).
+///
+/// **One code, three producers, discriminated by target.** The subject is one state — *a
+/// piece of this call's workbench that the rollback could not put back* — and `(code, target)`
+/// is what tells the instances apart: the area a removal stopped inside, or the task list a
+/// restore could not rewrite. A second spelling per site would make a driver branch twice on
+/// one fact, which is the rationale [`DISCARD_FOREIGN_BYTES_CODE`] already states for its own
+/// three producers (`design/surface-contract.md` → law 1). It is **located** for the same
+/// reason that one is: a single `add-from-spec` unwind walks N seed areas, so several can
+/// coexist in one output and an address-less admission through
+/// [`engine::finding::is_declared_singleton`] would be unkeyable.
+///
+/// Like every sibling at this door it is a door refusal carried beside the door's own error,
+/// so it joins neither `engine::result::CHECK_INVENTORY` nor
+/// [`crate::invocation_log::ERROR_CODE_REGISTRY`] — the door's error identity stays the
+/// frame's (`milestone-<verb>.commit-rejected`), and this rides the log through
+/// [`crate::task::carry_rollback_conflicts`]' `finding_codes` fold.
+const MINT_UNWIND_FAILED_CODE: &str = "milestone.unwind-failed";
+
+/// [`MINT_UNWIND_FAILED_CODE`]'s shared shape — blocking, located at `listed` (already
+/// repo-relative), one message and one `Human` route.
+///
+/// The route is [`engine::finding::Route::human`] at both producers because no `jigc` argv
+/// reconciles either state: what stopped the rollback is a filesystem the operator owns, and
+/// jigc mints no verb that retries a rollback whose door has already returned.
+fn unwind_failed_finding(listed: &str, message: String, route: String) -> Finding {
+    Finding::graded(
+        Severity::Blocking,
+        MINT_UNWIND_FAILED_CODE,
+        message,
+        Some(Location::addressed(listed.to_owned(), 1, 1)),
+        Some(Route::human(route)),
+    )
+}
+
+/// The **area** producer: [`engine::state::unwind_area`] stopped on a path it could neither
+/// remove nor account for, so the working area this call minted is standing.
+///
+/// Two paths are named because they are two facts: `err.path` is where the removal stopped —
+/// [`engine::state::AreaUnwindError`] carries it precisely so the caller can — and `area` is
+/// the thing that survives and that the honest cost is about. Both are rendered through
+/// [`render::repo_relative`], law 1's one home for a printed path; `err.source` is an
+/// [`std::io::Error`] whose `Display` carries no path of its own, so quoting it adds the cause
+/// without re-admitting the host absolute path the shipped note printed.
+///
+/// The cost rides the route rather than being discovered later, exactly as
+/// [`mint_foreign_bytes_finding`]'s does: an area left standing is an id already minted, so
+/// the identical re-run collides until the path is gone. The **frame beside it says the mint
+/// was rolled back** — true of every other outcome of this function — which is why this cell
+/// may not be silent: the finding is what makes the pair honest.
+fn mint_unwind_failed_finding(
+    jigc_home: &Path,
+    area: &Path,
+    err: &engine::state::AreaUnwindError,
+) -> Finding {
+    let listed_area = render::repo_relative(jigc_home, area);
+    let listed_path = render::repo_relative(jigc_home, &err.path);
+    unwind_failed_finding(
+        &listed_area,
+        format!(
+            "`{listed_path}` could not be removed ({}), so the working area \
+             `{listed_area}` this call minted was left as found rather than unwound — the \
+             mint did not roll back",
+            err.source
+        ),
+        format!(
+            "nothing was committed, but this call's mint survives. Clear \
+             `{listed_area}` yourself once that path is writable again — until it is gone, \
+             the identical re-run blocks on the id this call already minted"
+        ),
+    )
+}
+
+/// The **task-list** producer: the milestone's shared `tasks.json` could not be put back to
+/// its pre-append bytes (the [`unwind_mint`] restore), or an `add-from-spec` mid-loop unwind
+/// could not drop its un-recorded seeds from it ([`unwind_unrecorded_seeds`]).
+///
+/// One state, named once: the demoted cache lists sub-task(s) the committed record does not.
+/// The route names the exit that actually exists, read off the seam rather than assumed —
+/// [`engine::milestone::reseed_cache_from_record`] no-ops only while **both** `base.json` and
+/// `tasks.json` are present, so deleting the stale list makes the next milestone op re-derive
+/// it from the record. It stays a [`engine::finding::Route::human`] one because jigc mints no
+/// argv for that deletion, and it does not offer the door's own re-run: the re-run collides on
+/// the id the cache still names, which is the state this finding is about.
+///
+/// `err` is an [`std::io::Error`]: like its sibling above it carries no path in its `Display`,
+/// so the only path on the surface is the repo-relative one this function renders.
+fn task_list_stale_finding(jigc_home: &Path, path: &Path, err: &std::io::Error) -> Finding {
+    let listed = render::repo_relative(jigc_home, path);
+    unwind_failed_finding(
+        &listed,
+        format!(
+            "`{listed}` could not be rewritten ({err}), so this milestone's task list \
+             still names the sub-task(s) this call minted while the committed record does not"
+        ),
+        format!(
+            "nothing was committed, and the committed `milestone-record` is the source of \
+             truth for what this milestone holds — `{listed}` is a rebuildable cache that is \
+             now ahead of it. Delete `{listed}` and the next milestone op re-derives it from \
+             the record; until then the identical re-run blocks on the id this call already \
+             minted"
+        ),
     )
 }
 
@@ -1748,8 +1871,12 @@ fn run_add_from_spec(
 /// does not, and the resume dead-ends on `milestone.sub-task-collision`.
 ///
 /// Best-effort, like every sibling rollback — the door's real error (the hook's stderr) stays
-/// the correction signal — but a failure is noted on stderr rather than swallowed, because
-/// what survives is a workbench the operator may have to repair by hand.
+/// the correction signal — but a failure is **named**, because what survives is a workbench the
+/// operator may have to repair by hand. It is the third member of [`unwind_mint`]'s error-branch
+/// axis and answers with that function's identity ([`task_list_stale_finding`]): the state a
+/// failed `drop_sub_tasks` leaves is the same one a failed restore leaves one door over — the
+/// demoted cache naming sub-tasks the record does not — so it is the same finding, keyed at the
+/// same path. It shipped as a bare stderr note with the same three defects its two siblings had.
 ///
 /// **Per seed, not per call** (M52 Increment 5 / T7): each area is unwound through
 /// [`unwind_mint`], so a seed holding bytes jigc did not write is left standing and **named**
@@ -1779,10 +1906,12 @@ fn unwind_unrecorded_seeds(
     }
     let ids: Vec<String> = unrecorded.iter().map(|a| a.task.id.clone()).collect();
     if let Err(err) = engine::milestone::drop_sub_tasks(jigc_root, milestone_id, &ids) {
-        eprintln!(
-            "note: could not drop the un-recorded sub-task(s) {ids:?} from milestone \
-             `{milestone_id}`'s task list: {err:#}"
-        );
+        conflicts.push(task_list_stale_finding(
+            jigc_home,
+            &engine::milestone::milestone_dir(jigc_root, milestone_id)
+                .join(engine::milestone::TASKS_FILE),
+            &err,
+        ));
     }
     conflicts
 }

@@ -1858,3 +1858,215 @@ fn a_rejected_mint_with_nothing_foreign_in_it_unwinds_the_whole_area_and_says_no
         );
     }
 }
+
+/// The identity a **workbench rollback step that could not complete** carries — M52 Increment
+/// 5 / T7's `settle-record.md` → §2 branch *"any other `remove_file`/`remove_dir` error ⇒ …
+/// naming the path, the area left as found"*, built at the increment's validation.
+const UNWIND_FAILED_CODE: &str = "milestone.unwind-failed";
+
+/// The two output formats arms 3 and 4 cross every door with. `json` is not decoration: the
+/// defect being pinned put a raw `note:` line on **stderr on a reject arm**, whose document
+/// stderr already owns, so the stream stopped parsing at all
+/// (`design/command-output-contract.md` → Stream discipline). A finding is format-aware by
+/// construction; a note is not, and only the `json` cell can tell the two apart.
+const REJECT_FORMATS: &[&str] = &["agent", "json"];
+
+/// Run `door`'s argv under `--format <format>`, returning `(combined, stderr)`.
+fn drive_refused_as(door: &MintDoor, repo: &Path, home: &Path, format: &str) -> (String, String) {
+    let mut argv: Vec<&str> = vec!["--format", format];
+    argv.extend_from_slice(door.argv);
+    let out = jigc(repo, home, &argv, None);
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    let combined = format!("{}{stderr}", String::from_utf8_lossy(&out.stdout));
+    assert!(
+        !out.status.success(),
+        "door `{}` (--format {format}): a rejected record commit must exit non-zero; got \
+         success:\n{combined}",
+        door.name,
+    );
+    assert!(
+        combined.contains(HOOK_STDERR),
+        "door `{}` (--format {format}): the hook's stderr stays VERBATIM; got:\n{combined}",
+        door.name,
+    );
+    (combined, stderr)
+}
+
+/// Set `path`'s mode, so an arm can take a directory's write bit away and give it back (the
+/// `TempDir` guard cannot remove a tree it may not write into).
+#[cfg(unix)]
+fn chmod(path: &Path, mode: u32) {
+    use std::os::unix::fs::PermissionsExt;
+    let mut perms = fs::metadata(path)
+        .unwrap_or_else(|err| panic!("metadata for {}: {err}", path.display()))
+        .permissions();
+    perms.set_mode(mode);
+    fs::set_permissions(path, perms)
+        .unwrap_or_else(|err| panic!("chmod {:o} {}: {err}", mode, path.display()));
+}
+
+/// Every assertion the **surface** owes on a rollback step that could not complete, shared by
+/// arms 3 and 4 because the three ways the shipped code got this wrong are one set, not one
+/// per producer.
+///
+///   - the state is **named**, with [`UNWIND_FAILED_CODE`] and the repo-relative path it is
+///     about — the shipped code said *"the mint was rolled back"* by silence while the thing
+///     stood, so the identical re-run dead-ended on a collision named by nothing;
+///   - **no host absolute path** reaches the surface (`design/surface-contract.md` → law 1's
+///     printed-path rule) — the shipped note printed `/private/var/folders/…`;
+///   - **no bare `note:` line**, and under `--format json` stderr parses as **exactly one**
+///     document whose `findings` carry both the door's frame and this finding — the shipped
+///     note was written to the stream the reject document owns.
+fn assert_rollback_step_named(
+    label: &str,
+    format: &str,
+    combined: &str,
+    stderr: &str,
+    repo: &Path,
+    target: &str,
+) {
+    assert!(
+        combined.contains(UNWIND_FAILED_CODE),
+        "{label} (--format {format}): a rollback step that could not complete must be NAMED — \
+         expected `{UNWIND_FAILED_CODE}`; got:\n{combined}",
+    );
+    assert!(
+        combined.contains(target),
+        "{label} (--format {format}): the finding must name `{target}`, the path the rollback \
+         left as found; got:\n{combined}",
+    );
+    assert!(
+        !combined.contains("note: could not"),
+        "{label} (--format {format}): the fault rides the door's findings carrier, never a \
+         bare stderr note; got:\n{combined}",
+    );
+    assert!(
+        !combined.contains("/.jigc/") && !combined.contains(&repo.display().to_string()),
+        "{label} (--format {format}): every printed path is repo-relative (law 1's \
+         printed-path rule); got:\n{combined}",
+    );
+    if format == "json" {
+        let doc: serde_json::Value = serde_json::from_str(stderr.trim()).unwrap_or_else(|err| {
+            panic!(
+                "{label}: the reject document owns stderr, so it must parse as exactly ONE \
+                 JSON value ({err}); got:\n{stderr}"
+            )
+        });
+        let codes: Vec<&str> = doc["findings"]
+            .as_array()
+            .unwrap_or_else(|| panic!("{label}: the reject envelope carries `findings`:\n{stderr}"))
+            .iter()
+            .filter_map(|f| f["code"].as_str())
+            .collect();
+        assert!(
+            codes.contains(&UNWIND_FAILED_CODE),
+            "{label}: the one document carries the rollback fault beside the door's frame; \
+             got codes {codes:?}",
+        );
+        assert!(
+            codes.iter().any(|code| code.ends_with(".commit-rejected")),
+            "{label}: the door's own frame is still in the document — the fault is carried \
+             BESIDE it, never in place of it; got codes {codes:?}",
+        );
+    }
+}
+
+/// **T7 arm 3 — an unwind the filesystem refuses is named, not noted.**
+///
+/// The `ENOTEMPTY` branch (arm 1) shipped; its sibling did not. The hook takes the write bit
+/// off the area the door just minted and rejects the record commit, so
+/// `engine::state::unwind_area` returns `Err` on the first member it may not remove and leaves
+/// the area **as found** — the state the door's own frame, one line below, calls *"rolled
+/// back"*. Driven at `7f6d6bf3` the whole cell was a `note:` on stderr with a host absolute
+/// path in it, and the surviving area was named by nothing: the identical re-run then blocked
+/// on the id this call had already minted — `task.serial-collision` at the `add-task` cell —
+/// with no route from the door that caused it.
+///
+/// **Door × format**, one run per cell — the format axis is where the note's third defect
+/// lives (see [`REJECT_FORMATS`]).
+#[test]
+#[cfg(unix)]
+fn a_rejected_mint_whose_unwind_is_refused_names_the_area_it_left_standing() {
+    for door in UNWINDING_DOORS {
+        for format in REJECT_FORMATS {
+            let (repo_guard, home) = mint_door_repo(door, &format!("unwind-err-{format}"));
+            let (repo, home) = (repo_guard.path(), home.path());
+            install_record_rejecting_hook_running(repo, &format!("\x20 chmod 555 '{}'", door.area));
+
+            let (combined, stderr) = drive_refused_as(door, repo, home, format);
+            let area = repo.join(door.area);
+            // Give the write bit back before anything else — the guard's own teardown needs
+            // it, and so does every assertion's failure path.
+            chmod(&area, 0o755);
+
+            assert_rollback_step_named(
+                &format!("door `{}`", door.name),
+                format,
+                &combined,
+                &stderr,
+                repo,
+                door.area,
+            );
+            // The area really is standing, jigc's own files and all: this arm is about a
+            // removal that could not run, not one that ran and was refused.
+            assert!(
+                area.join(door.holds[0]).exists(),
+                "door `{}` (--format {format}): the unwind stopped where it was, so `{}/{}` is \
+                 still there — the finding above is what makes that state legible; door \
+                 output:\n{combined}",
+                door.name,
+                door.area,
+                door.holds[0],
+            );
+        }
+    }
+}
+
+/// **T7 arm 4 — a task list the rollback could not rewrite is named at its own path.**
+///
+/// [`unwind_mint`](cli::milestone)'s second error branch, and its `add-from-spec` sibling one
+/// door over: the mint's area unwinds cleanly, but the milestone's shared `tasks.json` cannot
+/// be put back (here: its directory is read-only when the rollback runs), so the demoted cache
+/// names sub-task(s) the committed record does not. Both shipped as bare `note:` lines with the
+/// same three defects arm 3 pins, and this arm is what holds the two producers to **one**
+/// identity keyed at the path — a driver branching on `(code, target)` sees one fact, not two.
+///
+/// The set is the two doors that pass a restore or drop a seed list; `create` is excluded with
+/// its reason — it appends to no task list, so the branch does not exist at that door.
+#[test]
+#[cfg(unix)]
+fn a_task_list_the_rollback_cannot_rewrite_is_named_at_its_own_path() {
+    let task_list = format!(".jigc/milestones/{MILESTONE_ID}/tasks.json");
+    for door in UNWINDING_DOORS.iter().filter(|door| door.name != "create") {
+        for format in REJECT_FORMATS {
+            let (repo_guard, home) = mint_door_repo(door, &format!("list-err-{format}"));
+            let (repo, home) = (repo_guard.path(), home.path());
+            let milestone_area = repo.join(".jigc/milestones").join(MILESTONE_ID);
+            install_record_rejecting_hook_running(
+                repo,
+                &format!("\x20 chmod 555 '.jigc/milestones/{MILESTONE_ID}'"),
+            );
+
+            let (combined, stderr) = drive_refused_as(door, repo, home, format);
+            chmod(&milestone_area, 0o755);
+
+            assert_rollback_step_named(
+                &format!("door `{}`", door.name),
+                format,
+                &combined,
+                &stderr,
+                repo,
+                &task_list,
+            );
+            // The mint's own area still unwound — the two branches are independent, and a
+            // task list that could not be rewritten must not be reported as an area that
+            // could not be removed.
+            assert!(
+                !repo.join(door.area).exists(),
+                "door `{}` (--format {format}): the area unwinds whatever the task list does; \
+                 door output:\n{combined}",
+                door.name,
+            );
+        }
+    }
+}
