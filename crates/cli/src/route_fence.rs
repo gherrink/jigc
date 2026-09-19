@@ -70,8 +70,9 @@ pub fn install() {
 /// cannot know in advance that its result parses, and the constructor's own check is
 /// debug-posture — so it asks here, in every posture, and emits the derived route only when
 /// the answer is yes. The fence therefore governs a derived route in release builds too,
-/// where its panic never fires.
-pub(crate) fn accepts(argv: &[String]) -> bool {
+/// where its panic never fires. It is `pub` because the pack-load suppression fence's
+/// suite asks the same question of every shipped `suppressed.door` (M52 Increment 9 / T1).
+pub fn accepts(argv: &[String]) -> bool {
     validate_mechanical_argv(argv).is_ok()
 }
 

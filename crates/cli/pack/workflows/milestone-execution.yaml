@@ -6,6 +6,7 @@ creates-task: false
 suppressed:
   reason: "composes a degenerate walk — zero `Spawn:` lines and an unresolved `<MILESTONE_ID>` off-verb, so a router pick could never land"
   expires: a front-door milestone on-ramp verb ships
+  door: jigc milestone execute <milestone-id>
 ---
 {{ include: step:provision-worktrees }}
 {{ include: step:implement-tasks }}

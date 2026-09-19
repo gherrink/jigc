@@ -7,6 +7,7 @@ selectable: false
 suppressed:
   reason: verb-routed — reached only through `jigc migrate <path> --as deferral-ledger`, which stages the foreign source bytes the author step rewrites; a router pick would compose with no staged source
   expires: never
+  door: jigc migrate <path> --as deferral-ledger
 allows-create: [{type: deferral-ledger, as: ledger}]
 ---
 {{ include: step:author-migration-deferral-ledger }}

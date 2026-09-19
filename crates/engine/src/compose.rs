@@ -91,6 +91,32 @@ pub struct Suppressed {
     pub reason: String,
     /// `never` (permanent by design) or the condition that un-hides it.
     pub expires: String,
+    /// The **door** this workflow is actually reached through, as the argv string
+    /// of a real `jigc` command line (`jigc migrate <path> --as adr`) — optional,
+    /// and absent for a workflow whose absence from the catalog has no single
+    /// command line behind it (M52, `surface-contract.md` → The suppression fence).
+    ///
+    /// Present ⇒ shape-fenced: non-blank, leading with `jigc`, every
+    /// whitespace-separated token either a `<placeholder>` the caller fills or
+    /// shell-inert as emitted ([`crate::finding::shell_safe`]) — the lexical half,
+    /// checked here so a project-layer shadow is covered too. The other half — that
+    /// the argv **parses against the real CLI** — is clap-shaped and lives at the
+    /// CLI pack-load seam, which is the only layer that can see the verb tree.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub door: Option<String>,
+}
+
+impl Suppressed {
+    /// The declared `door` split into argv tokens — **the one tokenizer** both
+    /// halves of the fence read, so the lexical check here and the parse check at
+    /// the CLI seam can never disagree about what the tokens are.
+    ///
+    /// Whitespace-separated, which is exactly the rule the lexical half enforces: a
+    /// token carrying a space would have to be quoted, and each of its halves fails
+    /// [`crate::finding::shell_safe`], so such a door never loads.
+    pub fn door_argv(door: &str) -> Vec<String> {
+        door.split_whitespace().map(str::to_owned).collect()
+    }
 }
 
 /// A parsed workflow definition: its metadata front-matter plus the ordered
@@ -168,14 +194,24 @@ struct SuppressedFrontMatter {
     reason: Option<String>,
     #[serde(default)]
     expires: Option<String>,
+    #[serde(default)]
+    door: Option<String>,
 }
 
 /// Shape-check an authored `suppressed:` block into [`Suppressed`] (M43 law 2,
-/// `surface-contract.md` → The suppression fence). Both fields are required
-/// and non-blank; `expires` is carried verbatim (`never` or a condition). A
+/// `surface-contract.md` → The suppression fence). `reason` and `expires` are
+/// required and non-blank; `expires` is carried verbatim (`never` or a
+/// condition); `door` is **optional and shape-fenced when present** (M52). A
 /// violation is a blocking `workflow-refs.suppressed-malformed` [`Finding`] —
 /// present-but-malformed must block, so the front-matter's unknown-key
 /// tolerance cannot silently eat a typo'd key inside the block.
+///
+/// The `door` check here is the **lexical** half — non-blank, leading with
+/// `jigc`, every token shell-inert or a `<placeholder>` — and it lives in the
+/// engine so a project-layer workflow shadow is covered by the same rule. The
+/// half this layer structurally cannot ask, whether the argv **parses against
+/// the real CLI**, is asked at the CLI pack-load seam (`crate::pack` →
+/// `assert_workflow_front_matter`), which alone can see the verb tree.
 fn validate_suppressed(block: SuppressedFrontMatter) -> Result<Suppressed, Finding> {
     let malformed = |msg: &str| {
         blocking_workflow_refs(
@@ -196,7 +232,40 @@ fn validate_suppressed(block: SuppressedFrontMatter) -> Result<Suppressed, Findi
                 "`suppressed` requires an `expires:` (`never`, or the condition that un-hides)",
             )
         })?;
-    Ok(Suppressed { reason, expires })
+    let door = match block.door {
+        None => None,
+        Some(door) if door.trim().is_empty() => {
+            return Err(malformed(
+                "`suppressed.door`, when declared, must be a non-empty `jigc …` command line",
+            ));
+        }
+        Some(door) => {
+            let door = door.trim().to_owned();
+            let argv = Suppressed::door_argv(&door);
+            if argv.first().map(String::as_str) != Some("jigc") {
+                return Err(malformed(
+                    "`suppressed.door` must be a `jigc …` command line — the real door the \
+                     workflow is reached through, as an agent would run it",
+                ));
+            }
+            for token in &argv {
+                let placeholder = token.starts_with('<') && token.ends_with('>') && token.len() > 2;
+                if !placeholder && !crate::finding::shell_safe(token) {
+                    return Err(malformed(&format!(
+                        "`suppressed.door` token `{token}` is not shell-safe as emitted — a \
+                         door is bytes an agent pastes into a shell, so every token must be \
+                         shell-inert or a `<placeholder>` the caller fills"
+                    )));
+                }
+            }
+            Some(door)
+        }
+    };
+    Ok(Suppressed {
+        reason,
+        expires,
+        door,
+    })
 }
 
 fn default_true() -> bool {
@@ -5715,6 +5784,7 @@ allows-create: [{type: adr, as: decision}]
             Some(Suppressed {
                 reason: "spawned by fan-out, never picked".to_owned(),
                 expires: "never".to_owned(),
+                door: None,
             })
         );
     }
@@ -5732,6 +5802,7 @@ allows-create: [{type: adr, as: decision}]
             Some(Suppressed {
                 reason: "the router cannot yet match on this axis".to_owned(),
                 expires: "the router catalog discriminates on spec-bound intent".to_owned(),
+                door: None,
             })
         );
     }
@@ -5794,6 +5865,54 @@ allows-create: [{type: adr, as: decision}]
         .expect_err("blank expires rejected");
         assert_eq!(err.code, "workflow-refs.suppressed-malformed");
         assert_eq!(err.severity, Severity::Blocking);
+    }
+
+    /// **The `door` key** (M52): an optional `jigc …` command line naming the door the
+    /// workflow is actually reached through, round-tripped verbatim onto `WorkflowDef`.
+    #[test]
+    fn suppressed_door_round_trips() {
+        let def = load_workflow_def(
+            b"---\nwhen: x\nselectable: false\nsuppressed:\n  reason: verb-routed\n  expires: never\n  door: jigc migrate <path> --as adr\n---\n{{ include: step:locate }}\n",
+        )
+        .expect("loads");
+        assert_eq!(
+            def.suppressed.and_then(|s| s.door).as_deref(),
+            Some("jigc migrate <path> --as adr"),
+        );
+    }
+
+    /// A **declared but blank** `door:` blocks — the block's own posture: a key the
+    /// author wrote and left empty is malformed, never silently absent.
+    #[test]
+    fn suppressed_blank_door_is_blocking_finding() {
+        let err = load_workflow_def(
+            b"---\nwhen: x\nselectable: false\nsuppressed:\n  reason: verb-routed\n  expires: never\n  door: \"  \"\n---\n{{ include: step:locate }}\n",
+        )
+        .expect_err("blank door rejected");
+        assert_eq!(err.code, "workflow-refs.suppressed-malformed");
+    }
+
+    /// The lexical half, leg one: a door that does not lead with `jigc` is not a door —
+    /// the value is the command line an agent runs, and it is missing the binary name.
+    #[test]
+    fn suppressed_door_not_leading_with_jigc_is_blocking_finding() {
+        let err = load_workflow_def(
+            b"---\nwhen: x\nselectable: false\nsuppressed:\n  reason: verb-routed\n  expires: never\n  door: migrate <path> --as adr\n---\n{{ include: step:locate }}\n",
+        )
+        .expect_err("headless door rejected");
+        assert_eq!(err.code, "workflow-refs.suppressed-malformed");
+    }
+
+    /// The lexical half, leg two: a token a shell would not re-lex as itself is refused
+    /// here, in the engine — so a **project-layer** workflow shadow, which never reaches
+    /// the CLI pack-load seam's parse check, is covered by the same rule.
+    #[test]
+    fn suppressed_door_with_a_shell_unsafe_token_is_blocking_finding() {
+        let err = load_workflow_def(
+            b"---\nwhen: x\nselectable: false\nsuppressed:\n  reason: verb-routed\n  expires: never\n  door: jigc migrate $(touch PWNED) --as adr\n---\n{{ include: step:locate }}\n",
+        )
+        .expect_err("shell-unsafe door rejected");
+        assert_eq!(err.code, "workflow-refs.suppressed-malformed");
     }
 
     /// A `suppressed:` value that is not a map at all fails the front-matter

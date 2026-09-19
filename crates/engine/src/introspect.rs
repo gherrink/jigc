@@ -528,6 +528,7 @@ mod tests {
         def.suppressed = Some(Suppressed {
             reason: "spawned by fan-out, never picked".to_owned(),
             expires: "never".to_owned(),
+            door: None,
         });
         let description = Description::assemble(
             [("sub-task", &def, None)],
@@ -581,6 +582,7 @@ mod tests {
         def.suppressed = Some(Suppressed {
             reason: "verb-routed — reached only through `jigc migrate`".to_owned(),
             expires: "never".to_owned(),
+            door: None,
         });
         let description = Description::assemble(
             [("migrate-spec", &def, None)],

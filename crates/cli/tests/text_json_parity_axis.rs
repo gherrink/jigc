@@ -1641,6 +1641,7 @@ fn describe_router_hidden_close() {
         suppressed: Some(Suppressed {
             reason: reason.to_owned(),
             expires: "never".to_owned(),
+            door: None,
         }),
         allows_create: Vec::new(),
         reads: Vec::new(),

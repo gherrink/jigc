@@ -745,6 +745,22 @@ fn assert_workflow_front_matter(pack: &dyn PackSource) -> anyhow::Result<()> {
                     id.as_str(),
                 );
             }
+            if let Some(door) = def.suppressed.as_ref().and_then(|s| s.door.as_deref()) {
+                let argv = engine::compose::Suppressed::door_argv(door);
+                if !crate::route_fence::accepts(&argv) {
+                    anyhow::bail!(
+                        "pack-load suppression fence failed \
+                         (workflow-refs.suppressed-malformed): workflow `{}` declares \
+                         `suppressed.door: {door}`, which does not parse against the real \
+                         CLI — a declared door is a command line an agent is handed, so one \
+                         that does not parse names a command that cannot run \
+                         (design/surface-contract.md → The suppression fence)\n\
+                         route: correct the `door:` in the workflow's front-matter to the \
+                         command line the workflow is actually reached through",
+                        id.as_str(),
+                    );
+                }
+            }
             if def.creates_task && def.selectable {
                 for (field, value) in [
                     ("when", &def.when),

@@ -7,6 +7,7 @@ selectable: false
 suppressed:
   reason: verb-routed — reached only through `jigc migrate <path> --as decisions-log`, which stages the foreign source bytes the author step rewrites; a router pick would compose with no staged source
   expires: never
+  door: jigc migrate <path> --as decisions-log
 allows-create: [{type: decisions-log, as: log}]
 ---
 {{ include: step:author-migration-decisions-log }}

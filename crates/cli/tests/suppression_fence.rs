@@ -330,3 +330,171 @@ fn a_manifest_less_pack_is_unchecked() {
         String::from_utf8_lossy(&out.stderr),
     );
 }
+
+// ---------------------------------------------------------------------------
+// The `door` key (M52 Increment 9 / T1) — `suppressed:` gains an optional
+// `door: <argv string>` naming the **real command line** a verb-routed workflow
+// is reached through. The key is what D9's compose-door refusal renders as its
+// `Mechanical` route, so a declared door that does not parse against the real
+// CLI would compose a route an agent cannot run — the defect the fence below
+// refuses at pack-load, naming the workflow and
+// `workflow-refs.suppressed-malformed`
+// (`design/surface-contract.md` → The suppression fence; settle-record §11).
+// ---------------------------------------------------------------------------
+
+/// The **declared** verb-routed set: the fourteen workflows the packs reach only
+/// through a verb, each with the door it is reached through.
+///
+/// **Declared bound — this is a declaration, not a derivation.** The eight other
+/// suppressed workflows (`router`, `ingest-existing`, `increment`, `planning`,
+/// `completion`, `fix-task`, `record-change`, `record-dogfood`) are off the catalog
+/// for reasons no machine-readable key discriminates from verb-routing, so **no
+/// fence can prove a missing fifteenth member**. What this pins is the other
+/// direction and the shape: no workflow gains a `door` without being named here,
+/// and every named door is a command line the real CLI accepts.
+const VERB_ROUTED_DOORS: &[(&str, &str)] = &[
+    ("migrate-adr", "jigc migrate <path> --as adr"),
+    ("migrate-arch-doc", "jigc migrate <path> --as arch-doc"),
+    ("migrate-changelog", "jigc migrate <path> --as changelog"),
+    ("migrate-prd", "jigc migrate <path> --as prd"),
+    ("migrate-spec", "jigc migrate <path> --as spec"),
+    (
+        "migrate-completion-record",
+        "jigc migrate <path> --as completion-record",
+    ),
+    (
+        "migrate-decisions-log",
+        "jigc migrate <path> --as decisions-log",
+    ),
+    (
+        "migrate-deferral-ledger",
+        "jigc migrate <path> --as deferral-ledger",
+    ),
+    ("migrate-idea", "jigc migrate <path> --as idea"),
+    ("migrate-research", "jigc migrate <path> --as research"),
+    ("migrate-roadmap", "jigc migrate <path> --as roadmap"),
+    ("migrate-vision", "jigc migrate <path> --as vision"),
+    ("sub-task", "jigc workflow sub-task --task <task-id>"),
+    (
+        "milestone-execution",
+        "jigc milestone execute <milestone-id>",
+    ),
+];
+
+/// Every shipped workflow of **both** embedded packs, read from the source trees
+/// at runtime and parsed through the production loader — `(workflow id, def)`,
+/// sorted by id.
+fn shipped_workflow_defs() -> Vec<(String, engine::compose::WorkflowDef)> {
+    let mut out = Vec::new();
+    for tree in [embedded_pack_tree(), methodology_pack_tree()] {
+        let dir = tree.join("workflows");
+        for entry in fs::read_dir(&dir).expect("read the pack's workflows dir") {
+            let path = entry.expect("dir entry").path();
+            if path.extension().and_then(|e| e.to_str()) != Some("yaml") {
+                continue;
+            }
+            let id = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .expect("workflow file stem")
+                .to_owned();
+            let bytes = fs::read(&path).expect("read the workflow");
+            let def = engine::compose::load_workflow_def(&bytes)
+                .unwrap_or_else(|f| panic!("`{id}` must load: {}", f.message));
+            out.push((id, def));
+        }
+    }
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out
+}
+
+/// (a) The set of shipped workflows carrying a `door:` is **exactly** the fourteen
+/// declared members, and each declares the door it is reached through.
+#[test]
+fn exactly_the_declared_verb_routed_workflows_carry_a_door() {
+    let mut carrying: Vec<(String, String)> = shipped_workflow_defs()
+        .into_iter()
+        .filter_map(|(id, def)| {
+            def.suppressed
+                .and_then(|s| s.door)
+                .map(|door| (id.clone(), door))
+        })
+        .collect();
+    carrying.sort();
+
+    let mut declared: Vec<(String, String)> = VERB_ROUTED_DOORS
+        .iter()
+        .map(|(id, door)| ((*id).to_owned(), (*door).to_owned()))
+        .collect();
+    declared.sort();
+
+    assert_eq!(
+        carrying, declared,
+        "the shipped set carrying `suppressed.door` must be exactly the declared \
+         verb-routed members, each with its own door",
+    );
+}
+
+/// (b) Every declared door is a command line the **real CLI** accepts — asked as a
+/// question through the shipped argv fence (`route_fence::accepts`), never by
+/// constructing a `Route::mechanical`, whose own check is a debug-only panic.
+#[test]
+fn every_declared_door_is_accepted_by_the_cli_argv_fence() {
+    for (id, def) in shipped_workflow_defs() {
+        let Some(door) = def.suppressed.as_ref().and_then(|s| s.door.as_deref()) else {
+            continue;
+        };
+        let argv = engine::compose::Suppressed::door_argv(door);
+        assert!(
+            cli::route_fence::accepts(&argv),
+            "the `{id}` workflow's declared door `{door}` must parse against the real CLI",
+        );
+    }
+}
+
+/// (c) The fence: a `JIGC_PACK_DIR` copy whose `migrate-adr` declares a door that
+/// does **not** parse (`jigc migrat …` — the typo'd verb) is blocked at pack-load,
+/// naming the workflow and the code.
+#[test]
+fn a_non_parsing_door_is_blocked_at_pack_load() {
+    let repo = TempDir::new("door-repo");
+    let home = TempDir::new("door-home");
+    let pack = pack_copy("door-strip", &embedded_pack_tree());
+    init_repo(repo.path());
+    retarget_door(pack.path(), "migrate-adr", "jigc migrat <path> --as adr");
+
+    let out = run_with_pack(repo.path(), home.path(), pack.path(), START);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "a declared door that does not parse must make `jigc start` exit non-zero; stdout:\n{}\nstderr:\n{stderr}",
+        String::from_utf8_lossy(&out.stdout),
+    );
+    assert!(
+        stderr.contains("migrate-adr") && stderr.contains("workflow-refs.suppressed-malformed"),
+        "stderr must name the offending workflow and `workflow-refs.suppressed-malformed`; got:\n{stderr}",
+    );
+}
+
+/// Rewrite the named workflow's `door:` line in a copied pack to `door`.
+fn retarget_door(pack: &Path, workflow: &str, door: &str) {
+    let path = pack.join("workflows").join(format!("{workflow}.yaml"));
+    let body = fs::read_to_string(&path).expect("read the copied workflow");
+    let mut out = String::new();
+    let mut hit = false;
+    for line in body.lines() {
+        if line.trim_start().starts_with("door:") {
+            let indent = &line[..line.len() - line.trim_start().len()];
+            out.push_str(&format!("{indent}door: {door}\n"));
+            hit = true;
+            continue;
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    assert!(
+        hit,
+        "the shipped `{workflow}` workflow must declare a `door:` to retarget"
+    );
+    fs::write(&path, out).expect("write the retargeted workflow");
+}
