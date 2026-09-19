@@ -1693,7 +1693,7 @@ fn the_heads_ceiling_is_the_derived_constant_at_both_sides_of_the_boundary() {
 
 use cli::pack::{FilesystemPack, load_pack_schema};
 use engine::packsource::{PackResourceKind, PackSource};
-use engine::schema::SLUG_PLACEHOLDER;
+use engine::schema::{SLUG_PLACEHOLDER, Schema};
 
 /// The clause the shipped steps carried, and the one no step over a fixed-identity
 /// doctype may carry again: it promises the schema read enumerates the write addresses,
@@ -1747,30 +1747,18 @@ fn pack_trees() -> Vec<(&'static str, PathBuf)> {
     ]
 }
 
-/// The **fixed-identity doctype set of the loaded packs** — every schema either shipped
-/// tree declares, parsed through the production `load_pack_schema` (so a pack-declared
-/// field type resolves exactly as it does at pack load) and filtered by T1's predicate.
+/// The **fixed-identity doctype set of the loaded packs**, by type id — the walk lives in
+/// [`fixed_identity_schemas`] (M52 Increment 8 / T5 gave it a second consumer, so the two
+/// cannot read the class differently).
 ///
 /// Read from the packs rather than written down: the five members at HEAD (`changelog` ·
 /// `vision` · `roadmap` · `decisions-log` · `deferral-ledger`) are what the trees happen
 /// to hold today, and a sixth joins this set by being declared, not by being listed.
 fn fixed_identity_doctypes() -> Vec<String> {
-    let mut found: Vec<String> = Vec::new();
-    for (_, root) in pack_trees() {
-        let pack = FilesystemPack::new(root);
-        for id in pack.list(PackResourceKind::Schemas) {
-            let bytes = pack
-                .read(PackResourceKind::Schemas, &id)
-                .expect("a listed schema resource is readable");
-            let schema = load_pack_schema(&pack, &bytes)
-                .unwrap_or_else(|e| panic!("shipped schema `{}` loads: {e:?}", id.as_str()));
-            if schema.has_fixed_identity() && !found.contains(&schema.ty) {
-                found.push(schema.ty.clone());
-            }
-        }
-    }
-    found.sort();
-    found
+    fixed_identity_schemas()
+        .into_iter()
+        .map(|schema| schema.ty)
+        .collect()
 }
 
 /// Every `(pack, step id, body)` in the shipped trees.
@@ -1866,4 +1854,358 @@ fn no_author_step_calls_doc_schema_the_authority_on_a_fixed_identitys_addresses(
              somewhere in the step it authors it from",
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// M52 Increment 8 / T5 — a fixed-identity doctype has ONE identity, minted once:
+// the adopt seam stops re-deriving it
+// ---------------------------------------------------------------------------
+//
+// T1 gave the predicate one home and T2/T3 made the doors refuse a non-canonical
+// address. This half closes the other direction: what jigc itself **writes down** as a
+// fixed-identity doc's identity. Driven at the wave's base
+// (`completions/artifacts/M52/baseline-freeze.md` §1.5, §4 L-2/L-3):
+//
+//     dev/jigc-rig refs-post-hoc → land the staged edge → jigc ingest → exit 0
+//     .jigc/index/edges.json:
+//       { "from": "vision:VISION", "relation": "grounded-in", … }
+//       { "from": "vision:vision", "relation": "grounded-in", … }
+//
+// Two identities, one document, one relation, one target. `engine::ingest::adopt` minted
+// `<ty>:<filename stem>` while, two frames earlier, `cli::ingest::classify_row` had
+// already asked `cli::ingest::home_identity` — which answers `<ty>:<ty>` for a
+// fixed-identity doctype, the same answer `engine::index::committed_instances`,
+// `cli::unmanage::identity_of`, `cli::doc`'s bare-head expansion and the mint all give.
+// The stem coincides for `roadmap` / `decisions-log` / `deferral-ledger`, so the two
+// derivations disagreed for exactly the two members whose home file is not spelled like
+// their type (`vision` → `VISION.md`, `changelog` → `CHANGELOG.md`).
+//
+// **Bound, read rather than assumed:** of those agreeing surfaces, two still ask
+// `placement.is_some()` rather than the class predicate — `engine::index::instance_slug`
+// (and through it `committed_instances`) and `cli::unmanage::identity_of`. Both are
+// nonetheless correct *at a fixed-identity doctype's home*, because a `location:` +
+// `singleton: true` doctype's one file is `<location>/<ty>.md` and its stem **is** the
+// type id, which is why the arms below find them agreeing. What they would answer about a
+// hand-placed sibling at such a home is undecided here and untouched: `ingest` now refuses
+// to adopt one (`ingest.unaddressable-identity`), so no jigc operation produces the state,
+// and re-keying an *enumeration* on the predicate would hide that file from the store
+// sweep rather than report it — the opposite of what the sweep is for.
+//
+// Its consequence was L-3, the same defect read from the other end: `jigc unmanage
+// VISION.md` drops the edges of the identity it computes (`vision:vision`), so the
+// stem-keyed ones survive **and the door says `nothing to drop`** while `edges.json`
+// still carries them — three runs in a row, exit 0 every time.
+//
+// **The fix is the seam, not a branch** (`implementation/dev-workflow.md` → the fix-shape
+// hierarchy: unify the seam > derive from the registry > …). `adopt` no longer derives an
+// identity at all; it takes the caller's, and the caller has exactly one mint. So the
+// class is swept by construction — there is no per-doctype branch left to get wrong — and
+// the arms below assert the *agreement* that fact buys, over the class read from the
+// resolved schemas rather than from a list of the five members shipped today.
+
+/// Every **fixed-identity** schema either shipped pack tree declares, parsed through the
+/// production `load_pack_schema` and filtered by T1's predicate — the one walk
+/// [`fixed_identity_doctypes`] and [`fixed_identity_homes`] both read.
+///
+/// Deduped by type id, in type order, so a doctype a project pack would shadow is counted
+/// once and the sweep order is stable.
+fn fixed_identity_schemas() -> Vec<Schema> {
+    let mut found: Vec<Schema> = Vec::new();
+    for (_, root) in pack_trees() {
+        let pack = FilesystemPack::new(root);
+        for id in pack.list(PackResourceKind::Schemas) {
+            let bytes = pack
+                .read(PackResourceKind::Schemas, &id)
+                .expect("a listed schema resource is readable");
+            let schema = load_pack_schema(&pack, &bytes)
+                .unwrap_or_else(|e| panic!("shipped schema `{}` loads: {e:?}", id.as_str()));
+            if schema.has_fixed_identity() && !found.iter().any(|s| s.ty == schema.ty) {
+                found.push(schema);
+            }
+        }
+    }
+    found.sort_by(|a, b| a.ty.cmp(&b.ty));
+    found
+}
+
+/// The fixed-identity class as `(type id, canonical identity, declared home path)` —
+/// **all three read through [`engine::schema::Schema::projection`]**, the one structured
+/// answer to *where this doctype's instances live and under what identity* (M52 Increment
+/// 6 / T7). Never a written list: a sixth doctype joins by being declared.
+///
+/// The home is the **declared** one, which at the default cascade is also the resolved one:
+/// `placement-root`'s default is `""` = unset, under which every declared home stands
+/// byte-identical to no knob at all (`crates/cli/pack/config/knobs.yaml`). The arms below
+/// intersect it with what the corpus actually committed rather than assuming it is on
+/// disk, so a corpus that *did* re-point the knob drops out of the sweep instead of
+/// failing it on a path this helper guessed.
+fn fixed_identity_homes() -> Vec<(String, String, String)> {
+    fixed_identity_schemas()
+        .into_iter()
+        .filter_map(|schema| {
+            let projection = schema.projection();
+            let home = projection.home.path?;
+            // The projection's `identity.address` is the bare type id for a fixed-identity
+            // doctype; the `<ty>:<ty>` spelling is that address under its own type.
+            let identity = format!("{}:{}", schema.ty, projection.identity.address);
+            Some((schema.ty.clone(), identity, home))
+        })
+        .collect()
+}
+
+/// The `from` identities `.jigc/index/edges.json` holds, sorted — `[]` when the index has
+/// not been written yet (it is a rebuildable cache, absent until a door persists one).
+fn edge_froms(repo: &Path) -> Vec<String> {
+    let path = repo.join(".jigc").join("index").join("edges.json");
+    let Ok(body) = fs::read_to_string(&path) else {
+        return Vec::new();
+    };
+    let json: serde_json::Value =
+        serde_json::from_str(&body).expect("the edge index is valid JSON");
+    let mut froms: Vec<String> = json["edges"]
+        .as_array()
+        .expect("the edge index carries an `edges` array")
+        .iter()
+        .map(|edge| {
+            edge["from"]
+                .as_str()
+                .expect("every edge carries a `from` identity")
+                .to_owned()
+        })
+        .collect();
+    froms.sort();
+    froms
+}
+
+/// The fixed-identity doctypes this corpus has actually **committed** — the class
+/// intersected with the homes on disk, so an arm below drives real documents and says so
+/// when the intersection is empty rather than passing vacuously over nothing.
+fn committed_fixed_identity_docs(repo: &Path) -> Vec<(String, String, String)> {
+    let present: Vec<(String, String, String)> = fixed_identity_homes()
+        .into_iter()
+        .filter(|(_, _, home)| repo.join(home).is_file())
+        .collect();
+    assert!(
+        present.len() >= 2,
+        "the corpus must commit at least two of the shipped fixed-identity doctypes, or \
+         every arm below sweeps nothing; class: {:?}",
+        fixed_identity_homes(),
+    );
+    present
+}
+
+/// Build the `refs-post-hoc` state and **land its staged edge**: the fixture leaves the
+/// `form-vision` task live with `vision —grounded-in→ research` set on the committed
+/// vision and its `commit` doc unfilled, so the edge only reaches the committed index
+/// through a finalize the fixture deliberately does not perform.
+fn corpus_with_a_landed_fixed_identity_edge() -> TrialCorpus {
+    let corpus = TrialCorpus::build(State::RefsPostHoc);
+    let task = corpus
+        .live_task()
+        .expect("`refs-post-hoc` leaves the form-vision task live")
+        .to_owned();
+    corpus.finalize(&task, "vision", "ground the vision in research", false);
+    corpus
+}
+
+/// **The axis: every committed fixed-identity doctype × the five surfaces that name its
+/// identity.** `jigc doc show`, `jigc rename`, `jigc ingest`, the edge index it writes,
+/// and — in the sibling arm — `jigc unmanage` must all say `<ty>:<ty>`, and a second
+/// `ingest` must add nothing.
+///
+/// The discriminating leg is the last one: at the wave's base the first `ingest` left
+/// **two** identities for `vision`, and a surface that reads one of them (`doc show`,
+/// `validate`'s ref resolution) cannot see the other's edges.
+#[test]
+fn every_surface_names_one_fixed_identity_and_ingest_mints_it_once() {
+    let corpus = corpus_with_a_landed_fixed_identity_edge();
+    let repo = corpus.repo();
+    let docs = committed_fixed_identity_docs(&repo);
+
+    // The two read doors, over each committed member.
+    for (ty, identity, home) in &docs {
+        let shown = corpus.jigc_ok(&["doc", "show", ty, "--format", "json"]);
+        let json: serde_json::Value =
+            serde_json::from_str(shown.trim()).expect("`doc show --format json` emits JSON");
+        assert_eq!(
+            format!(
+                "{}:{}",
+                json["type"].as_str().expect("the read names its type"),
+                json["slug"].as_str().expect("the read names its slug"),
+            ),
+            *identity,
+            "`jigc doc show {ty}` must name `{identity}` for the doc at `{home}`",
+        );
+
+        let renamed = corpus.jigc(&["rename", &format!("{ty}:bogus"), "--to", "Renamed"]);
+        assert!(
+            !renamed.status.success(),
+            "`jigc rename {ty}:bogus` must refuse a non-canonical head",
+        );
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&renamed.stdout),
+            String::from_utf8_lossy(&renamed.stderr),
+        );
+        assert!(
+            text.contains(identity),
+            "`jigc rename {ty}:bogus`'s refusal must name the one identity `{identity}`; \
+             got:\n{text}",
+        );
+    }
+
+    // The write door, and the index it writes: one identity per fixed-identity doc, and a
+    // re-run adds none.
+    corpus.jigc_ok(&["ingest"]);
+    let first = edge_froms(&repo);
+    corpus.jigc_ok(&["ingest"]);
+    let second = edge_froms(&repo);
+    assert_eq!(
+        first, second,
+        "a second `jigc ingest` over an unchanged corpus must add no identity",
+    );
+
+    // Non-vacuity, asserted rather than hoped for: the fixture must carry at least one
+    // edge *originating* at a fixed-identity doc, or the leg below iterates an empty set.
+    let owned: Vec<&String> = first
+        .iter()
+        .filter(|from| {
+            docs.iter()
+                .any(|(ty, _, _)| from.split_once(':').is_some_and(|(head, _)| head == ty))
+        })
+        .collect();
+    assert!(
+        !owned.is_empty(),
+        "the fixture must land at least one forward edge FROM a fixed-identity doc, or \
+         this arm asserts nothing; the index holds {first:?}",
+    );
+    for from in owned {
+        let (head, _) = from
+            .split_once(':')
+            .expect("an identity is `<type>:<slug>`");
+        let (_, identity, home) = docs
+            .iter()
+            .find(|(ty, _, _)| ty == head)
+            .expect("the head was filtered from this set");
+        assert_eq!(
+            from, identity,
+            "`jigc ingest` indexed the doc at `{home}` under `{from}`, but its one \
+             identity is `{identity}` — the whole index holds {first:?}",
+        );
+    }
+}
+
+/// **Three consecutive `jigc unmanage` over each committed fixed-identity doc**: the
+/// first drops the identity it names, the next two are honest no-ops, and no forward edge
+/// of that doc survives any of them.
+///
+/// Driven at the base (L-3): run 1 reported `unmanaged VISION.md (vision:vision) —
+/// dropped its file-state baseline + forward edges`, runs 2 and 3 reported `no-op:
+/// VISION.md is not managed (nothing to drop)`, and `edges.json` carried
+/// `{"from":"vision:VISION", …}` throughout. The door dropped the edges of the identity it
+/// computes; the ones `adopt` had minted were not that identity, so they were left behind
+/// and then denied.
+///
+/// Each member runs on its **own copy** of the built state, so the arms cannot mask one
+/// another through a shared index.
+#[test]
+fn three_consecutive_unmanages_drop_the_edge_and_claim_no_drop_they_did_not_make() {
+    let built = corpus_with_a_landed_fixed_identity_edge();
+    built.jigc_ok(&["ingest"]);
+    let docs = committed_fixed_identity_docs(&built.repo());
+
+    for (ty, identity, home) in &docs {
+        let corpus = built.copy_state();
+        let repo = corpus.repo();
+        let before = edge_froms(&repo);
+
+        for run in 1..=3 {
+            let out = corpus.jigc_ok(&["unmanage", home]);
+            if run == 1 {
+                assert!(
+                    out.contains(identity),
+                    "the first `jigc unmanage {home}` must name the identity it drops \
+                     (`{identity}`); got:\n{out}",
+                );
+            } else {
+                assert!(
+                    out.contains("nothing to drop"),
+                    "run {run} of `jigc unmanage {home}` must be an honest no-op; got:\n{out}",
+                );
+            }
+            let survivors: Vec<String> = edge_froms(&repo)
+                .into_iter()
+                .filter(|from| from.split_once(':').is_some_and(|(head, _)| head == ty))
+                .collect();
+            assert!(
+                survivors.is_empty(),
+                "after run {run} of `jigc unmanage {home}`, `{ty}` still owns \
+                 {survivors:?} in the edge index — the door dropped one identity and \
+                 left another; the index held {before:?} before the sweep",
+            );
+        }
+    }
+}
+
+/// **The widened cell, on the manufactured doctype.** [`home_identity`]'s first branch
+/// asks `has_fixed_identity()` rather than `placement.is_some()`, which brings the
+/// predicate's second disjunct — `singleton: true` over a `location:` home — into the
+/// fixed-identity branch. A `location:` home is a *directory*, so unlike a `placement:`
+/// literal it can hold siblings, and this is the only shape where that matters.
+///
+/// A sibling's filename stem is not this doctype's slug and never can be: the slug is the
+/// type id. Adopting it under `<ty>:<stem>` would record an edge-index entry
+/// [`engine::store`]'s own read guard refuses to resolve — the identity-no-door-can-name
+/// class `ingest.unaddressable-identity` exists for — so the sibling is refused, and the
+/// refusal names **the doctype's one home** as the destination rather than a slugified
+/// version of the name it happens to carry (the repair is *this file is a duplicate*, not
+/// *this file is misnamed*).
+///
+/// The bytes are the ones the real writer staged for the canonical instance, copied to a
+/// sibling name: a hand-authored fixture would be asserting against my guess at
+/// conformance rather than against the doctype's actual shape.
+#[test]
+fn a_location_homed_singletons_sibling_is_refused_adoption_and_routed_at_the_one_home() {
+    let (repo, home, task) = corpus("singleton-sibling");
+
+    let staged = repo
+        .path()
+        .join(".jigc")
+        .join("tasks")
+        .join(&task)
+        .join("docs")
+        .join("runbook:runbook.md");
+    let conformant = fs::read(&staged).expect("the staged runbook was authored by the real writer");
+
+    let sibling = repo.path().join("docs").join("runbooks").join("other.md");
+    fs::create_dir_all(sibling.parent().expect("the runbook home")).expect("mk the runbook home");
+    fs::write(&sibling, &conformant).expect("write the sibling");
+
+    let out = jigc(repo.path(), home.path(), &["ingest"]);
+    assert_ok(&out, "`jigc ingest`");
+    let text = streams(&out);
+
+    assert!(
+        text.contains("ingest.unaddressable-identity"),
+        "a `runbook` beside the one `runbook` home must be refused adoption, not adopted \
+         under `runbook:other`; got:\n{text}",
+    );
+    assert!(
+        text.contains("docs/runbooks/runbook.md"),
+        "the refusal must route at the doctype's ONE home, not at a slugified copy of \
+         the sibling's own name; got:\n{text}",
+    );
+    assert!(
+        text.contains("needs-reconcile docs/runbooks/other.md")
+            && !text.contains("adoptable docs/runbooks/other.md"),
+        "the sibling's verdict must be `needs-reconcile`, never `adoptable`; got:\n{text}",
+    );
+    assert!(
+        edge_froms(repo.path())
+            .iter()
+            .all(|from| from != "runbook:other"),
+        "no edge may be indexed under an identity no door can resolve; the index holds \
+         {:?}",
+        edge_froms(repo.path()),
+    );
 }

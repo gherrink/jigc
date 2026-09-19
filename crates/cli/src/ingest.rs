@@ -228,7 +228,10 @@ pub(crate) fn run(cwd: &Path) -> Result<IngestReport> {
         let bytes = read_candidate_bytes(&jigc_home, &rel_path)?;
         let source = String::from_utf8_lossy(&bytes).into_owned();
         let registered = record.get(&rel_path).is_some();
-        let mut row = classify_row(
+        let Classified {
+            mut row,
+            identity: minted,
+        } = classify_row(
             &rel_path,
             &source,
             &schemas,
@@ -250,10 +253,18 @@ pub(crate) fn run(cwd: &Path) -> Result<IngestReport> {
         // substrate and refuses anything non-conformant — so a row is only marked
         // `adopted` when the re-gate *also* passes (nothing adopted without a schema
         // check). A refusal leaves the row un-adopted, never erroring the whole scan.
+        //
+        // The identity is `minted` — the one [`home_identity`] answered inside
+        // `classify_row`, carried here rather than computed again (M52 Increment 8 / T5).
+        // An `adoptable` row always carries one (a `None` is exactly the verdict the
+        // identity gate turns into `ingest.unaddressable-identity`), so the `let Some`
+        // below is the type system holding that invariant rather than a fallback.
         if row.verdict == "adoptable"
             && let Some(ty) = row.best_match.as_deref()
             && let Some(schema) = schema_map.get(ty)
-            && engine::ingest::adopt(&mut record, &mut index, schema, &rel_path, &bytes).is_ok()
+            && let Some(from) = minted.as_deref()
+            && engine::ingest::adopt(&mut record, &mut index, schema, from, &rel_path, &bytes)
+                .is_ok()
         {
             row.adopted = true;
             adopted_any = true;
@@ -321,6 +332,32 @@ fn git_candidates(jigc_home: &Path) -> Result<Vec<String>> {
     Ok(candidates.into_iter().collect())
 }
 
+/// One classified candidate: the [`TriageRow`] the report renders, and — for an
+/// `adoptable` row — the **managed identity** [`home_identity`] minted for it.
+///
+/// The identity rides here rather than on the row because it is not part of the report:
+/// the row is the pinned `jigc ingest --format json` shape, and this is a value the
+/// adopt call needs. It is carried rather than re-derived so the mint happens **once per
+/// candidate**, which is the whole point of M52 Increment 8 / T5 — the identity that
+/// reaches the edge index is the identity the classifier already decided, not a second
+/// answer computed one frame later.
+struct Classified {
+    row: TriageRow,
+    /// The `<type>:<slug>` identity to index this candidate's forward edges under;
+    /// `None` for every row that is not adopted.
+    identity: Option<String>,
+}
+
+impl Classified {
+    /// A row that carries no managed identity — every non-`adoptable` verdict.
+    fn unidentified(row: TriageRow) -> Self {
+        Classified {
+            row,
+            identity: None,
+        }
+    }
+}
+
 /// Classify one candidate into a [`TriageRow`], re-deriving the routed finding for a
 /// `needs-reconcile` verdict from the same `parse_sections` / `schema_conformance`
 /// substrate the engine reduced over (the engine discards it; the triage surface
@@ -334,7 +371,7 @@ fn classify_row(
     exempt: &str,
     migratable: &std::collections::BTreeSet<String>,
     registered: bool,
-) -> TriageRow {
+) -> Classified {
     match classify(rel_path, source, schemas) {
         Verdict::Adoptable { ty } => {
             let home = schemas.iter().find(|s| s.ty == ty);
@@ -344,65 +381,69 @@ fn classify_row(
             // records a baseline + edge-index entry no door can name. The subject is
             // exactly `home_identity`'s `None`, so the refusal and the identity every other
             // consumer mints come from one function rather than two agreeing predicates.
+            let identity = home.and_then(|home| home_identity(rel_path, home));
             if let Some(home) = home
-                && home_identity(rel_path, home).is_none()
+                && identity.is_none()
             {
-                return TriageRow {
+                return Classified::unidentified(TriageRow {
                     file: rel_path.to_string(),
                     best_match: Some(home.ty.clone()),
                     verdict: "needs-reconcile",
                     finding: Some(unaddressable_identity_finding(rel_path, home)),
                     adopted: false,
                     annotations: Vec::new(),
-                };
+                });
             }
             let annotations = home
                 .map(|schema| adopt_annotations(schema, source, exempt))
                 .unwrap_or_default();
-            TriageRow {
-                file: rel_path.to_string(),
-                best_match: Some(ty),
-                verdict: "adoptable",
-                finding: None,
-                // The caller adopts the row (re-gate → index → baseline) and flips this.
-                adopted: false,
-                annotations,
+            Classified {
+                row: TriageRow {
+                    file: rel_path.to_string(),
+                    best_match: Some(ty),
+                    verdict: "adoptable",
+                    finding: None,
+                    // The caller adopts the row (re-gate → index → baseline) and flips this.
+                    adopted: false,
+                    annotations,
+                },
+                identity,
             }
         }
-        Verdict::Unmanaged => TriageRow {
+        Verdict::Unmanaged => Classified::unidentified(TriageRow {
             file: rel_path.to_string(),
             best_match: None,
             verdict: "unmanaged",
             finding: None,
             adopted: false,
             annotations: Vec::new(),
-        },
+        }),
         Verdict::NeedsReconcile => {
             // Split the two needs-reconcile shapes the same way the engine's verdict
             // reduction does: a near-miss sits under a schema's location dir; a
             // wrong-location doc conforms to a schema it does not live under.
             if let Some(home) = schemas.iter().find(|s| under_location(rel_path, s)) {
                 let finding = near_miss_finding(rel_path, source, home, migratable, registered);
-                TriageRow {
+                Classified::unidentified(TriageRow {
                     file: rel_path.to_string(),
                     best_match: Some(home.ty.clone()),
                     verdict: "needs-reconcile",
                     finding: Some(finding),
                     adopted: false,
                     annotations: Vec::new(),
-                }
+                })
             } else {
                 let conformant = schemas.iter().find(|s| conforms(s, source));
                 let ty = conformant.map(|s| s.ty.clone());
                 let finding = wrong_location_finding(rel_path, conformant);
-                TriageRow {
+                Classified::unidentified(TriageRow {
                     file: rel_path.to_string(),
                     best_match: ty,
                     verdict: "needs-reconcile",
                     finding: Some(finding),
                     adopted: false,
                     annotations: Vec::new(),
-                }
+                })
             }
         }
     }
@@ -566,25 +607,43 @@ fn near_miss_route(
 /// ([`engine::index::committed_instances`]), so a finding raised over the candidate keys
 /// exactly as the store sweep's finding over the committed doc does.
 ///
-/// - a **placement** doctype's literal `placement.file` → the `<type>:<type>` singleton;
-/// - a **direct child** `.md` of the doctype's `location:` dir **whose stem is a
-///   well-formed slug** → `<type>:<file-stem>`;
+/// - a **fixed-identity** doctype's one home ([`Schema::has_fixed_identity`], the home
+///   [`Schema::projection`] names) → the `<type>:<type>` singleton;
+/// - a **direct child** `.md` of a per-instance doctype's `location:` dir **whose stem is
+///   a well-formed slug** → `<type>:<file-stem>`;
 /// - anything else → `None`: a candidate at a managed home that no `<type>:<slug>` address
 ///   reaches, which keeps the path-form target — and, when it is otherwise *conformant*,
 ///   is refused adoption outright ([`unaddressable_identity_finding`]).
 ///
 /// **The `<slug>` this mints is the only component the filesystem supplies, so it is the
-/// only one checked** (M51 Inc 9 / T4). A placement doctype's identity is `<type>:<type>`,
-/// both halves read off the schema; a location doctype's is `<type>:<file-stem>`, whose
-/// second half is whatever a human typed into a filename. The [`engine::slug::is_slug`] leg
-/// is therefore on that branch alone — the same leg
+/// only one checked** (M51 Inc 9 / T4). A fixed-identity doctype's identity is
+/// `<type>:<type>`, both halves read off the schema; a per-instance doctype's is
+/// `<type>:<file-stem>`, whose second half is whatever a human typed into a filename. The
+/// [`engine::slug::is_slug`] leg is therefore on that branch alone — the same leg
 /// [`engine::validate::is_unadopted_foreign`]'s identity arm applies to a *committed*
 /// instance (M50 Inc 2), asked here at the *adoption* door so the two surfaces stop telling
 /// two stories about one file.
+///
+/// **The first branch asks the class predicate, not `placement.is_some()`** (M52 Increment
+/// 8 / T5). Both are true of all five doctypes either shipped pack declares, so on the
+/// shipped corpus the two spellings are indistinguishable — but the predicate's second
+/// disjunct (`singleton: true` over a `location:` home) is a supported shape, and under
+/// `placement.is_some()` it fell through to the location branch, which would mint
+/// `<type>:<file-stem>` for a doctype whose slug is the CLI's. That identity is one
+/// [`engine::store`]'s own read guard refuses, so adopting under it records an edge no
+/// door can name — exactly the class [`unaddressable_identity_finding`] exists for, which
+/// is where such a candidate now goes. The home itself comes from
+/// [`Schema::projection`] rather than a second reading of `placement` / `location`, so
+/// *where the one instance lives* has one answer here too.
+///
+/// **This is the one mint.** [`crate::ingest::run`] hands its answer to
+/// `engine::ingest::adopt`, which derives no identity of its own — see that function's
+/// *the identity is the caller's* paragraph for the defect that closed.
 fn home_identity(rel_path: &str, schema: &Schema) -> Option<String> {
     let ty = &schema.ty;
-    if let Some(placement) = &schema.placement {
-        return (rel_path == placement.file).then(|| format!("{ty}:{ty}"));
+    if schema.has_fixed_identity() {
+        let home = schema.projection().home.path?;
+        return (rel_path == home).then(|| format!("{ty}:{ty}"));
     }
     let dir = schema.location.as_deref()?.trim_end_matches('/');
     let rest = rel_path.strip_prefix(&format!("{dir}/"))?;
@@ -600,9 +659,9 @@ fn home_identity(rel_path: &str, schema: &Schema) -> Option<String> {
 /// `design/validation.md` → The M51 registrations — Increment 9).
 ///
 /// Its subject is exactly the set [`home_identity`] answers `None` over, which is one class
-/// with two shapes and one consequence: **no `<type>:<slug>` address reaches the file**, so
+/// with three shapes and one consequence: **no `<type>:<slug>` address reaches the file**, so
 /// adopting it records a file-state baseline and an edge-index entry under an identity no
-/// door can name. Driven at the base, both shapes adopted at exit 0:
+/// door can name. Driven at the base, the first two shapes adopted at exit 0:
 ///
 /// - **the name is not a doc id** (`docs/decisions/My Decision.md`) — `jigc doc list` then
 ///   called it `unregistered`, `jigc doc show` refused it `store.malformed-slug`, and `jigc
@@ -610,7 +669,23 @@ fn home_identity(rel_path: &str, schema: &Schema) -> Option<String> {
 ///   ingest`** — a loop, the door the sweep names having just claimed the file was adopted;
 /// - **the path is nested below the flat home** (`docs/decisions/sub/nested-one.md`) — worse,
 ///   because [`engine::index::committed_instances`] enumerates a location home with a flat
-///   `read_dir`, so after the silent adoption *no* surface mentioned the file again.
+///   `read_dir`, so after the silent adoption *no* surface mentioned the file again;
+/// - **the doctype has one home and this is not it** — a **fixed-identity** doctype
+///   ([`Schema::has_fixed_identity`]) whose `location:`-declared home holds a sibling
+///   `.md`. Joined at M52 Increment 8 / T5, when [`home_identity`]'s first branch moved
+///   off `placement.is_some()` onto the class predicate: such a sibling's stem is not
+///   this doctype's slug and never can be, because its slug is the CLI's, so the identity
+///   the location branch used to mint for it is one [`engine::store`]'s read guard
+///   refuses. The cell is unreachable on the shipped packs — all five fixed-identity
+///   doctypes declare `placement:`, whose home is a literal file with no siblings — and
+///   is driven on a manufactured `location:` + `singleton: true` doctype in
+///   `crates/cli/tests/fixed_identity_axis.rs`.
+///
+/// **Each shape names its own destination**, because the repair differs: the first two
+/// rename or move *this* file onto an address that reaches it, while the third's file has
+/// no address of its own to reach — the doctype's one instance already has the only one —
+/// so the destination is that home, and `git mv` onto an occupied home is exactly the
+/// loud refusal a duplicate deserves.
 ///
 /// **The route is a [`Route::human`] naming `git mv`**, on M45's `owner-artifact.present`
 /// precedent (a `git add` route rendered the same way): `jigc doc rename` is not the repair —
@@ -621,6 +696,13 @@ fn home_identity(rel_path: &str, schema: &Schema) -> Option<String> {
 /// refuses an occupied destination loudly rather than clobbering it.
 fn unaddressable_identity_finding(rel_path: &str, schema: &Schema) -> Finding {
     let ty = &schema.ty;
+    // A fixed-identity doctype's one home, when that is what this candidate is beside —
+    // read through the same [`Schema::projection`] `home_identity` compared against, so
+    // the refusal names the path the gate actually measured.
+    let fixed_home = schema
+        .has_fixed_identity()
+        .then(|| schema.projection().home.path)
+        .flatten();
     let dir = schema
         .location
         .as_deref()
@@ -636,27 +718,40 @@ fn unaddressable_identity_finding(rel_path: &str, schema: &Schema) -> Finding {
         .and_then(|name| name.strip_suffix(".md"))
         .unwrap_or_default();
     let minted = engine::slug::slugify(stem);
-    let destination = (!dir.is_empty() && !minted.is_empty()).then(|| format!("{dir}/{minted}.md"));
     let nested = !dir.is_empty()
         && rel_path
             .strip_prefix(&format!("{dir}/"))
             .is_some_and(|rest| rest.contains('/'));
 
-    let cause = if nested {
-        format!(
-            "it sits below `{dir}/` rather than directly in it, and jigc homes \
-             every `{ty}` as a direct child of that directory, so no \
-             `<type>:<slug>` address reaches it"
-        )
-    } else {
-        "its name is not a doc id, so no `<type>:<slug>` address reaches it — jigc \
-         names every doc it writes `<slug>.md`"
-            .to_string()
-    };
-    let act = if nested {
-        format!("move it onto the `{ty}` home")
-    } else {
-        "rename it to a doc id".to_string()
+    let (cause, act, destination) = match &fixed_home {
+        // The doctype has exactly one instance, at one home, under an identity the CLI
+        // supplies — so this file's own name is not the thing to repair: it is a second
+        // file at a home that holds one.
+        Some(home) => (
+            format!(
+                "`{ty}` has one instance, at `{home}`, and its slug is the type id \
+                 rather than a filename — so no `<type>:<slug>` address reaches any \
+                 other `{ty}` file"
+            ),
+            format!("move it onto the one `{ty}` home"),
+            Some(home.clone()),
+        ),
+        None if nested => (
+            format!(
+                "it sits below `{dir}/` rather than directly in it, and jigc homes \
+                 every `{ty}` as a direct child of that directory, so no \
+                 `<type>:<slug>` address reaches it"
+            ),
+            format!("move it onto the `{ty}` home"),
+            (!dir.is_empty() && !minted.is_empty()).then(|| format!("{dir}/{minted}.md")),
+        ),
+        None => (
+            "its name is not a doc id, so no `<type>:<slug>` address reaches it — jigc \
+             names every doc it writes `<slug>.md`"
+                .to_string(),
+            "rename it to a doc id".to_string(),
+            (!dir.is_empty() && !minted.is_empty()).then(|| format!("{dir}/{minted}.md")),
+        ),
     };
     let repair = match &destination {
         Some(destination) => format!(

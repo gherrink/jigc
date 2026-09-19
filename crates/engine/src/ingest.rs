@@ -191,16 +191,29 @@ fn conforms(schema: &Schema, source: &str) -> bool {
 ///
 /// `rel_path` is the candidate's forward-slash repo-relative path (its `file-state`
 /// record key); `bytes` are its raw on-disk bytes; `schema` is the matched doc-type the
-/// classifier verdict named. Adopt **re-gates** rather than trusting the verdict:
+/// classifier verdict named; `from` is the doc's `<type>:<slug>` **managed identity**,
+/// minted by the caller. Adopt **re-gates** rather than trusting the verdict:
 ///
 /// 1. **parse → conformance** against `schema` (the same binary gate [`classify`] runs);
 ///    a non-conformant doc returns `Err(findings)` — **refused, never adopted** (the hole
 ///    closed).
-/// 2. **`EdgeIndex::absorb_doc`** for the doc's identity `<type>:<slug>` (the `slug` is
-///    `rel_path`'s filename stem), so an adopted `adr`'s `supersedes` edge enters the
-///    forward index (unlike `baseline-adopt`, which indexes nothing).
+/// 2. **`EdgeIndex::absorb_doc`** under `from`, so an adopted `adr`'s `supersedes` edge
+///    enters the forward index (unlike `baseline-adopt`, which indexes nothing).
 /// 3. **`FileStateRecord::record(rel_path, hash_bytes(bytes))`** — the file-state
 ///    baseline for the now-managed doc.
+///
+/// **The identity is the caller's, and adopt derives none** (M52 Increment 8 / T5;
+/// `completions/artifacts/M52/baseline-freeze.md` §1.5, §4 L-2). It used to mint
+/// `<type>:<rel_path's filename stem>` here, while its one production caller
+/// (`cli::ingest::classify_row`) had *already* minted the doc's identity two frames
+/// earlier through the function every other consumer reads — and a **fixed-identity**
+/// doctype ([`Schema::has_fixed_identity`]) has no filename-derived slug at all: its slug
+/// is the type id, whatever its home file is called. So `jigc ingest` over a healthy
+/// corpus indexed the managed vision a second time, as `vision:VISION` beside the
+/// `vision:vision` every other surface names, and `jigc unmanage` then dropped one of the
+/// two and reported *nothing to drop* about the survivor. Taking the identity closes the
+/// class **by construction** rather than by teaching a second derivation the same rule:
+/// there is no derivation left here to disagree.
 ///
 /// **Register-only — it never moves or rewrites the file.** No I/O of its own: the caller
 /// supplies the bytes already read and persists the advanced `record` + `index`. A
@@ -210,6 +223,7 @@ pub fn adopt(
     record: &mut FileStateRecord,
     index: &mut EdgeIndex,
     schema: &Schema,
+    from: &str,
     rel_path: &str,
     bytes: &[u8],
 ) -> Result<(), Vec<Finding>> {
@@ -223,13 +237,9 @@ pub fn adopt(
         return Err(conformance);
     }
 
-    // The `<type>:<slug>` identity — slug is the candidate's filename stem.
-    let slug = rel_path.rsplit('/').next().unwrap_or(rel_path);
-    let slug = slug.strip_suffix(".md").unwrap_or(slug);
-    let from = format!("{}:{slug}", schema.ty);
-
-    // Index the doc's forward edges, then baseline the file-state hash (register-only).
-    index.absorb_doc(schema, &from, &doc);
+    // Index the doc's forward edges under the caller's identity, then baseline the
+    // file-state hash (register-only).
+    index.absorb_doc(schema, from, &doc);
     record.record(rel_path, hash_bytes(bytes));
     Ok(())
 }
@@ -538,7 +548,6 @@ Slightly higher write latency for resilience.
     /// Adopt re-gates a conformant adr (carrying `supersedes: adr:single-node-cache`)
     /// and (a) populates the `(adr:<slug>, supersedes, adr:single-node-cache)` forward
     /// edge in the index + (b) records the file-state baseline hash for the rel-path.
-    /// The slug is the candidate's filename stem.
     #[test]
     fn adopt_indexes_the_supersedes_edge_and_records_the_baseline() {
         let schema = adr_schema();
@@ -548,9 +557,17 @@ Slightly higher write latency for resilience.
         let rel_path = "decisions/distributed-cache.md";
         let bytes = CONFORMANT_ADR_SUPERSEDES.as_bytes();
 
-        adopt(&mut record, &mut index, &schema, rel_path, bytes).expect("conformant adr adopts");
+        adopt(
+            &mut record,
+            &mut index,
+            &schema,
+            "adr:distributed-cache",
+            rel_path,
+            bytes,
+        )
+        .expect("conformant adr adopts");
 
-        // (a) The forward supersedes edge is indexed under the slug-derived identity.
+        // (a) The forward supersedes edge is indexed under the caller's identity.
         assert_eq!(
             index.edges,
             vec![Edge {
@@ -569,6 +586,54 @@ Slightly higher write latency for resilience.
         );
     }
 
+    /// **The identity is the caller's, and adopt derives none** (M52 Increment 8 / T5).
+    /// Adopting the same conformant adr under a `from` that is *not* the filename stem
+    /// indexes the forward edge under that `from`, and the stem appears nowhere: the
+    /// derivation this seam used to carry is gone, not merely taught a second rule.
+    ///
+    /// That is what closes the fixed-identity class by construction. A doctype whose
+    /// slug is the CLI's ([`Schema::has_fixed_identity`]) has no filename-derived
+    /// identity at all — the shipped `vision` lives at `VISION.md` and is
+    /// `vision:vision` — so the stem-keyed mint indexed it a second time, under an
+    /// identity no other surface names. Its production caller mints one identity, for
+    /// every doctype, in one place; this test pins that adopt honours it verbatim rather
+    /// than re-deriving one beside it.
+    #[test]
+    fn adopt_indexes_under_the_identity_the_caller_minted() {
+        let schema = adr_schema();
+        let mut record = FileStateRecord::new();
+        let mut index = EdgeIndex::default();
+
+        let rel_path = "decisions/distributed-cache.md";
+        let minted = "adr:not-the-filename-stem";
+        let bytes = CONFORMANT_ADR_SUPERSEDES.as_bytes();
+
+        adopt(&mut record, &mut index, &schema, minted, rel_path, bytes)
+            .expect("conformant adr adopts");
+
+        assert_eq!(
+            index.edges,
+            vec![Edge {
+                from: minted.to_string(),
+                relation: "supersedes".to_string(),
+                to: "adr:single-node-cache".to_string(),
+            }],
+            "adopt indexes under the identity it was given"
+        );
+        assert!(
+            !index.edges.iter().any(|e| e.from.contains("distributed")),
+            "no edge is keyed at the filename stem: {:?}",
+            index.edges
+        );
+        // The file-state baseline is still keyed by the PATH, not the identity — the two
+        // surfaces address a doc differently, and adopt's change touches only the index.
+        assert_eq!(
+            record.get(rel_path),
+            Some(hash_bytes(bytes).as_str()),
+            "the baseline stays keyed by rel-path"
+        );
+    }
+
     /// Register-only: adopt reads the file's bytes but **never moves or rewrites** it —
     /// the on-disk bytes are byte-identical before and after, and no new file appears.
     #[test]
@@ -583,7 +648,15 @@ Slightly higher write latency for resilience.
         let schema = adr_schema();
         let mut record = FileStateRecord::new();
         let mut index = EdgeIndex::default();
-        adopt(&mut record, &mut index, &schema, rel_path, &before).expect("adopts");
+        adopt(
+            &mut record,
+            &mut index,
+            &schema,
+            "adr:distributed-cache",
+            rel_path,
+            &before,
+        )
+        .expect("adopts");
 
         // The file's bytes on disk are unchanged (register-only — no move, no rewrite).
         let after = std::fs::read(&on_disk).expect("read after");
@@ -638,8 +711,15 @@ Slightly higher write latency for resilience.
             let mut index = EdgeIndex::default();
             let bytes = source.as_bytes();
 
-            let err = adopt(&mut record, &mut index, &schema, rel_path, bytes)
-                .expect_err("a non-conformant doc is refused, never adopted");
+            let err = adopt(
+                &mut record,
+                &mut index,
+                &schema,
+                "adr:refused",
+                rel_path,
+                bytes,
+            )
+            .expect_err("a non-conformant doc is refused, never adopted");
             assert!(!err.is_empty(), "refusal carries the conformance findings");
             assert!(
                 err.iter().any(|f| f.severity == Severity::Blocking),
@@ -676,7 +756,8 @@ Slightly higher write latency for resilience.
         let bytes = CONFORMANT_ADR_SUPERSEDES.as_bytes();
 
         // Adopt: the doc is now managed (indexed + baselined).
-        adopt(&mut record, &mut index, &schema, rel_path, bytes).expect("conformant adr adopts");
+        adopt(&mut record, &mut index, &schema, from, rel_path, bytes)
+            .expect("conformant adr adopts");
         assert!(record.get(rel_path).is_some(), "adopt baselined the doc");
         assert!(
             index.edges.iter().any(|e| e.from == from),
