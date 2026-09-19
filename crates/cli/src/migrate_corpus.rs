@@ -78,6 +78,18 @@ pub(crate) struct DoctypeMigration {
     /// [`candidate_docs`] re-applies the prefix. The in-place `to.location` is
     /// already docs-root-resolved (via `all_schemas`), so this is inert there.
     pub docs_root: String,
+    /// The resolved `placement-root` — `None` when the knob is unset, `Some("")` for the repo
+    /// root ([`crate::start::placement_root`]'s vocabulary). `docs_root`'s twin, and for the
+    /// same one reason: the walk consumes a **prior** home out of the snapshot store, and a
+    /// snapshot stores its `placement.file` as the raw **declaration**, so the knob has to be
+    /// re-applied to it exactly as schema resolution applies it to the current shape.
+    ///
+    /// Applied through [`crate::start::reroot_placement_file`] and **only to a declaration**:
+    /// re-rooting an already-resolved home is that primitive's documented trap (under a root
+    /// the resolved home has no leading component left, so the second re-root is a silent
+    /// no-op). The current `to.placement.file` is already resolved (via `all_schemas`), so
+    /// this is inert there.
+    pub placement_root: Option<String>,
 }
 
 /// The two operator flags of the commit boundary (`design/corpus-migration.md` → The commit
@@ -349,6 +361,9 @@ fn migrate_in_repo(cwd: &Path, options: Options) -> Result<CorpusMigrationReport
     // The resolved docs-root prefix — re-applied to a relocated doctype's prior (snapshot,
     // raw) `location:` walk-home so the committed instances under `docs-root` are found.
     let docs_root = crate::start::docs_root_prefix(&resolved).to_string();
+    // Its twin for the placement half of the walk — re-applied to a prior snapshot's raw
+    // `placement:` **declaration**, never to the already-resolved current home.
+    let placement_root = crate::start::placement_root(&resolved).map(str::to_string);
 
     let mut doctypes = Vec::new();
     for (ty, to) in schemas {
@@ -381,6 +396,7 @@ fn migrate_in_repo(cwd: &Path, options: Options) -> Result<CorpusMigrationReport
             to,
             version,
             docs_root: docs_root.clone(),
+            placement_root: placement_root.clone(),
         });
     }
     // Deterministic doctype order (the committed walk + the fold both consume it in order).
@@ -2046,95 +2062,139 @@ enum Corpus {
 /// Relocation: the walk keys on the from home). Empty when nothing is committed to walk.
 ///
 /// `corpus` selects **which** corpus is walked: [`Corpus::Worktree`] for the migration itself,
-/// [`Corpus::Head`] for the landed-state audit in [`unlanded_paths`]. The home resolution —
-/// the `location:` branch, the prior-home union, the placement file — is identical for both;
-/// only the enumeration primitive differs.
+/// [`Corpus::Head`] for the landed-state audit in [`unlanded_paths`]. The home resolution is
+/// identical for both; only the enumeration primitive differs.
 ///
-/// - A doctype whose **current** shape declares a `location:` directory migrates
-///   **in place** — every `.md` under that (already docs-root-resolved) directory,
-///   `destination == source`.
-/// - A doctype whose current shape is a single-file `placement:` (no `location:`) walks the
-///   **union of both homes** (`design/corpus-migration.md` → The corpus walk — the placement
-///   branches become a union):
-///   - the **prior homes** — for a *relocated* doctype (the M38 changelog) the versioned
-///     snapshots below the current version (via [`crate::pack::load_prior_schema`]) declare the
-///     `location:` homes its committed instances may still sit at; walk **every** such old
-///     directory (not merely `version - 1`'s — see below), each instance destined for the
-///     placement `file`. A *placement-born* doctype (the M40 methodology singletons — placement
-///     at v1) has no location-bearing prior snapshot, so this half is empty;
-///   - the **placement home** — the literal `placement.file`, if committed: that instance is
-///     migrated **in place** (`destination == source`).
+/// # The walk keys on `from`, over **every prior home of every kind**
 ///
-///   Pre-M42 these two were **mutually exclusive**, keyed on whether the prior snapshot
-///   carried a `location:` — and for `changelog` it always does, so the in-place half was
-///   *dead code for that doctype* and a stale root `CHANGELOG.md` was **invisible** to the
-///   verb (`0 migrated, 0 already current, 0 blocked`; the stamp stayed at 1 forever, and the
-///   detector's `migrate` route pointed at a verb that did nothing). Walking both halves and
-///   deduping the `(source, destination)` pairs makes a placement doctype's instances findable
-///   *wherever* a partially-completed migration left them. A destination shared by two
-///   candidates (both homes populated) is resolved at the write boundary — see
-///   [`destination_collision_route`].
+/// A doctype's home moves in one of four ways — `location:`→`location:`,
+/// `location:`→`placement:`, `placement:`→`placement:`, `placement:`→`location:` — and the
+/// snapshot store records the whole prior [`Schema`] either way, so all four are derivable.
+/// The union is therefore taken over **both** home kinds of **every** snapshot below the
+/// current version, plus the current home itself (the in-place half):
 ///
-///   **The union is over every prior home** (M42 completion audit, Finding 3). It first shipped
-///   consulting `version - 1` only, which re-opens the same hole one version along: a doctype
-///   that relocated at v2 and has since bumped to v3 loads only the v2 snapshot — already the
-///   placement shape, no `location:` — so its **v1** home goes unwalked and an instance stranded
-///   there is invisible to the verb again. *Wherever* a partially-completed migration left them
-///   is a claim over **every** home the doctype has ever declared, so the walk is the union of
-///   all of them.
+/// - a prior **`location:`** home contributes every committed `.md` directly under it, each
+///   destined for the current home keyed on its own slug — the file **stem**, which is the
+///   identity that has to survive the move ([`engine::index::instance_slug`]);
+/// - a prior **`placement:`** home contributes that one file, if committed. Its identity is
+///   the doctype's **type id** (`instance_slug`'s placement rule — the one address a
+///   fixed-identity doctype has), so landing it in a `location:` directory names it
+///   `<location><ty>.md` rather than keeping the old file's stem;
+/// - the **current** home is walked in place (`destination == source`), which is what makes a
+///   partially-completed migration re-runnable: the instances are findable *wherever* it left
+///   them.
+///
+/// A destination two candidates share (both homes populated) is adjudicated at the write
+/// boundary — see [`destination_collision_finding`] — never by candidate order.
+///
+/// **Why the prior homes need re-rooting and the current one does not.** A snapshot stores its
+/// `location:` and its `placement.file` as the raw **declaration**; the current shape arrives
+/// here already resolved through the cascade (`CascadeDefs::all_schemas`' closing
+/// `apply_docs_root` + `apply_placement_root`). So each prior home is put through the same two
+/// knobs — the `docs_root` prefix and [`crate::start::reroot_placement_file`] — and this is the
+/// sole re-application site. It is applied to the declaration and never to an already-resolved
+/// home, which is that primitive's documented trap: under a root a resolved home has no leading
+/// component left, so re-rooting *it* is a silent no-op.
+///
+/// # What each half cost before it existed
+///
+/// **The both-homes union** (M42): keyed on whether the prior snapshot carried a `location:`,
+/// the two placement branches were mutually exclusive — and for `changelog` the prior snapshot
+/// always does, so the in-place half was *dead code for that doctype* and a stale root
+/// `CHANGELOG.md` was **invisible** to the verb (`0 migrated, 0 already current, 0 blocked`;
+/// the stamp stayed at 1 forever, and the detector's `migrate` route pointed at a verb that
+/// did nothing).
+///
+/// **Every prior home, not just `version - 1`'s** (M42 completion audit, Finding 3): consulting
+/// only the immediately-prior snapshot re-opens that hole one version along — a doctype that
+/// relocated at v2 and has since bumped to v3 loads only the v2 snapshot, already the placement
+/// shape, so its **v1** home goes unwalked.
+///
+/// **Every prior home of every *kind*** (M52 Increment 7 / T1): three of the four home-pair
+/// cells were invisible for the same reason one version at a time was. The `location:` branch
+/// returned early having loaded **no snapshot at all**, so a `location:`→`location:` move (and
+/// a `placement:`→`location:` one) saw nothing but the new home; and the placement branch's
+/// `.filter_map(|prior| prior.location)` dropped every prior `placement:` home by construction,
+/// so `placement:`→`placement:` saw nothing but the new file. Driven at `1932c00f`
+/// (`completions/artifacts/M52/baseline-freeze.md` §2.1), each stranded doc reported
+/// `0 migrated, 0 already current, 0 blocked` at exit 0 — and where the stranded home was the
+/// repo root, **no surface named the document at all**: `validate` said *"validates clean"*.
+/// The bump kind is not the discriminator (W2 and W5 carry a content change and behave
+/// identically to W1 and W4); the home pair is.
 fn candidate_docs(
     pack: &dyn PackSource,
     repo_root: &Path,
     dt: &DoctypeMigration,
     corpus: Corpus,
 ) -> Vec<(String, String)> {
-    if let Some(location) = &dt.to.location {
-        return committed_slugs(repo_root, location, corpus)
-            .into_iter()
-            .map(|slug| {
-                let key = format!("{location}{slug}.md");
-                (key.clone(), key)
-            })
-            .collect();
-    }
-    let Some(placement) = &dt.to.placement else {
-        return Vec::new();
-    };
-    // EVERY prior home, not just `version - 1`'s (M42 completion audit, Finding 3). Consulting
-    // only the immediately-prior snapshot re-opens the very hole the union closes, one version
-    // along: a doctype that **relocated at v2** and has since bumped to **v3** would load only
-    // the v2 snapshot — already the placement shape, carrying no `location:` — so its **v1**
-    // folder home would go unwalked and an instance stranded there would be invisible to the
-    // verb again. The union's own rationale is *findable **wherever** a partially-completed
-    // migration left them*, and that is a claim over every home the doctype has ever declared.
-    // De-duplicated (successive versions usually re-declare one home) and ordered, so the walk
-    // is deterministic.
-    let prior_locations: std::collections::BTreeSet<String> = (1..dt.version)
-        .filter_map(|k| crate::pack::load_prior_schema(pack, &dt.ty, k).ok())
-        .filter_map(|prior| prior.location)
-        .collect();
-    let mut out: Vec<(String, String)> = Vec::new();
-    for raw_home in prior_locations {
-        // A prior snapshot stores its `location:` **raw** (docs-root-free), but the
-        // committed instances sit under the resolved `docs-root` prefix — re-apply it
-        // (the in-place branch above walks an already-resolved `to.location`, so this is
-        // the sole re-application site; `crate::start::docs_root_prefix`).
-        let from_home = if dt.docs_root.is_empty() {
-            raw_home
-        } else {
-            format!("{}/{raw_home}", dt.docs_root)
+    // EVERY prior snapshot below the current version, of BOTH home kinds. De-duplicated
+    // (successive versions usually re-declare one home) and ordered, so the walk is
+    // deterministic. A snapshot that fails to load is skipped here and blocks per doc at the
+    // fold's own missing-snapshot arm.
+    let mut prior_locations: std::collections::BTreeSet<String> = Default::default();
+    let mut prior_files: std::collections::BTreeSet<String> = Default::default();
+    for k in 1..dt.version {
+        let Ok(prior) = crate::pack::load_prior_schema(pack, &dt.ty, k) else {
+            continue;
         };
-        out.extend(
-            committed_slugs(repo_root, &from_home, corpus)
-                .into_iter()
-                .map(|slug| (format!("{from_home}{slug}.md"), placement.file.clone())),
-        );
+        if let Some(raw_home) = prior.location {
+            prior_locations.insert(if dt.docs_root.is_empty() {
+                raw_home
+            } else {
+                format!("{}/{raw_home}", dt.docs_root)
+            });
+        }
+        if let Some(placement) = prior.placement {
+            prior_files.insert(crate::start::reroot_placement_file(
+                &placement.file,
+                dt.placement_root.as_deref(),
+            ));
+        }
     }
-    if exists_in(repo_root, &placement.file, corpus) {
-        out.push((placement.file.clone(), placement.file.clone()));
+
+    let mut out: Vec<(String, String)> = Vec::new();
+    if let Some(location) = &dt.to.location {
+        // Every prior folder home **and** the current one, each instance keyed on its own
+        // stem: `docs/decisions/x.md` → `docs/adrs/x.md`, and `docs/adrs/x.md` → itself.
+        for from_home in prior_locations.iter().chain(std::iter::once(location)) {
+            out.extend(
+                committed_slugs(repo_root, from_home, corpus)
+                    .into_iter()
+                    .map(|slug| {
+                        (
+                            format!("{from_home}{slug}.md"),
+                            format!("{location}{slug}.md"),
+                        )
+                    }),
+            );
+        }
+        // A prior single-file home: its identity is the type id, so it lands under the stem
+        // that keeps the identity rather than under the old file's name.
+        for file in &prior_files {
+            if exists_in(repo_root, file, corpus) {
+                out.push((file.clone(), format!("{location}{}.md", dt.ty)));
+            }
+        }
+    } else if let Some(placement) = &dt.to.placement {
+        for from_home in &prior_locations {
+            out.extend(
+                committed_slugs(repo_root, from_home, corpus)
+                    .into_iter()
+                    .map(|slug| (format!("{from_home}{slug}.md"), placement.file.clone())),
+            );
+        }
+        // Every prior single-file home **and** the current one (in place).
+        for file in prior_files.iter().chain(std::iter::once(&placement.file)) {
+            if exists_in(repo_root, file, corpus) {
+                out.push((file.clone(), placement.file.clone()));
+            }
+        }
+    } else {
+        return Vec::new(); // a transient doctype has no committed home to walk.
     }
-    // Dedupe: the placement file can *itself* sit under the prior home (a `docs/x.md`
-    // placement whose prior home was `docs/`), which enumerates the identical pair twice.
+    // Dedupe: a home re-declared across versions, or a placement file that itself sits under a
+    // prior folder home (a `docs/x.md` placement whose prior home was `docs/`), enumerates the
+    // identical pair twice.
     out.sort();
     out.dedup();
     out
@@ -2652,6 +2712,7 @@ The read path only.
             to,
             version,
             docs_root: DOCS_ROOT.to_string(),
+            placement_root: None,
         }
     }
 

@@ -45,6 +45,8 @@ mod migrate_byte_floor;
 mod migrate_corpus_foreign;
 #[path = "../migrate_corpus_halt_causes.rs"]
 mod migrate_corpus_halt_causes;
+#[path = "../migrate_corpus_home_pairs.rs"]
+mod migrate_corpus_home_pairs;
 #[path = "../migrate_corpus_item_leaf_residual.rs"]
 mod migrate_corpus_item_leaf_residual;
 #[path = "../migrate_corpus_item_slot.rs"]
