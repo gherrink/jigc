@@ -196,6 +196,17 @@ pub(crate) fn frozen_doctype_versions(
 /// malformed simply contributes no prior shape (the classifier then narrows to *stamp or
 /// parses-against-current* for it), never an error — the sweep is read-only and must not fail
 /// on a pack that ships no snapshot store.
+///
+/// **This stays best-effort while the migration walk fails closed over the same store, and the
+/// split is deliberate** (M52 Increment 7 / T2; settle-record §17). `migrate_corpus`'s
+/// `candidate_docs` reads prior *homes* out of the snapshot store, so a snapshot it cannot load
+/// makes its enumeration silently narrower than the doctype's history — it refuses, with
+/// `migrate-corpus.missing-snapshot`. What this function feeds is a **classifier**, not a walk:
+/// a prior shape it cannot load costs it one recognition leg, never a wrong home, and it runs
+/// inside `jigc validate`'s store sweep, whose exit an adopter's stock repo depends on. Making
+/// it strict would redden the store over a *pack's* omission the sweep never asked about —
+/// which is the same posture M51 settled for a manifest-less pack (`unversioned-doctype`:
+/// *unchecked* by the manifest header's own design, advisory, flipping no exit).
 pub(crate) fn prior_doctype_schemas(
     pack: &dyn PackSource,
     versions: &std::collections::BTreeMap<String, u32>,

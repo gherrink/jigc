@@ -707,13 +707,32 @@ pub(crate) fn migrate_committed_corpus(
         // run's writes, so it names only the *earlier* run's residue. It is both the recovery's
         // commit pathspec and — narrowed to the docs the walk below reports current — the set
         // the report must NOT call `already current` (F11).
-        let unlanded = unlanded_paths(pack, repo_root, dt);
+        //
+        // BOTH READS OF THE WALK FAIL CLOSED (M52 Increment 7 / T2). A snapshot the store
+        // cannot answer for makes the doctype's home history unknowable, so neither the
+        // recovery audit nor the fold may proceed over a silently narrower union: the doctype
+        // is refused whole, with one blocking finding keyed at the snapshot the pack owes, and
+        // not one of its documents is reported migrated, current or anything else.
+        let unlanded = match unlanded_paths(pack, repo_root, dt) {
+            Ok(paths) => paths,
+            Err(finding) => {
+                report.blocked.push(finding);
+                continue;
+            }
+        };
         report.unlanded.extend(unlanded.iter().cloned());
         report.touched.extend(unlanded);
         // Each candidate is `(source, destination)` — the FROM home the walk found the
         // committed instance at, and the path the gated bytes land at
         // (`design/corpus-migration.md` → Relocation: the walk keys on the from home).
-        for (rel_key, target_key) in candidate_docs(pack, repo_root, dt, Corpus::Worktree) {
+        let candidates = match candidate_docs(pack, repo_root, dt, Corpus::Worktree) {
+            Ok(candidates) => candidates,
+            Err(finding) => {
+                report.blocked.push(finding);
+                continue;
+            }
+        };
+        for (rel_key, target_key) in candidates {
             let Ok(bytes) = std::fs::read(repo_root.join(&rel_key)) else {
                 continue; // read race: skip; the next run re-checks.
             };
@@ -1348,6 +1367,11 @@ fn stamp_section_id(schema: &Schema) -> Option<String> {
 /// a file whose managed identity is absent or contested
 /// (`design/command-output-contract.md` → the six declared target forms).
 ///
+/// **One member of the family is keyed on something that is not a file, and it is declared**
+/// (M52 Increment 7 / T2): [`enumeration_missing_snapshot_finding`] refuses *before* any
+/// document is in hand, so its `path` argument carries the `<ty>@v<k>` snapshot the pack owes.
+/// Every other caller passes a repo-relative file path.
+///
 /// `message` carries the diagnosis, `route` the repair — never the two fused, so a driver can act
 /// on the route alone.
 fn blocked_finding(code: &str, path: &str, message: String, route: String) -> Finding {
@@ -1532,6 +1556,15 @@ fn future_stamp_finding(rel_key: &str, ty: &str, stamp: u32, current: u32) -> Fi
 /// A below-version stamped doc whose prior-shape snapshot is **not shipped**: the migration
 /// cannot source the `from` it would diff against, so the doc is blocked (never a silent
 /// `already-current` — the detector routes it `migrate`). Ship the snapshot, re-run.
+///
+/// **The doc-keyed half of one code's two target forms** (M52 Increment 7 / T2). Since the
+/// enumeration fails closed over the same store ([`enumeration_missing_snapshot_finding`]),
+/// every stamp in `1..current` is proven loadable before the fold ever asks — so what still
+/// reaches *this* arm is the stamp the enumeration does not cover: a doc carrying an
+/// out-of-band `schema-version: 0` (a written zero, distinct from the stamp-*absent* v0 corpus
+/// state the add-field branch owns), for which no `<ty>.v0.yaml` can exist. It is the per-doc
+/// refusal because a doc **is** in hand there, and that is exactly why its target stays the
+/// file path while the enumeration's is `<ty>@v<k>`.
 fn missing_snapshot_finding(rel_key: &str, ty: &str, stamp: u32) -> Finding {
     blocked_finding(
         "migrate-corpus.missing-snapshot",
@@ -1543,6 +1576,44 @@ fn missing_snapshot_finding(rel_key: &str, ty: &str, stamp: u32) -> Finding {
         ),
         format!(
             "ship the prior-schema snapshot `schema-snapshots/{ty}.v{stamp}.yaml`, then re-run \
+             `jigc migrate-corpus`"
+        ),
+    )
+}
+
+/// The **enumeration's** missing-snapshot refusal — the walk itself could not be built
+/// (M52 Increment 7 / T2; `design/corpus-migration.md` → Prior-schema sourcing).
+///
+/// [`candidate_docs`] reads the doctype's homes out of the snapshot store, so a snapshot that
+/// will not load is not one document's problem: the homes that version declared cannot be
+/// enumerated at all, and **every** committed instance of that doctype leaves the run's subject.
+/// Swallowed (`load_prior_schema(…).ok()`), that is silent in both directions — a doc that
+/// happens to sit at the current home is reported `already current`, and one stranded at a home
+/// only the missing snapshot names is reported by nothing at all — at **exit 0**, while the
+/// version-aware detector goes on routing `migrate`. The rule `corpus-migration.md:90` states
+/// per doc (*never a silent `already-current`*) is therefore made true here for the walk.
+///
+/// **The target is `<ty>@v<k>`, the one divergence in a file-path-keyed family**
+/// (`design/command-output-contract.md` → the `migrate-corpus.*` sub-table, where both forms of
+/// this code are declared). No document is in hand at the enumeration and none can be: the
+/// subject is the **snapshot the pack owes**, which is also why the per-doc
+/// [`missing_snapshot_finding`] is not reused — its target names a file, and naming an arbitrary
+/// one of the docs this refusal covers would key the refusal on a bystander.
+///
+/// The route is the pack author's act, not an operator's: author the snapshot
+/// (`implementation/doctype-authoring.md` → Freeze / versioning), then re-run.
+fn enumeration_missing_snapshot_finding(ty: &str, version: u32, current: u32) -> Finding {
+    blocked_finding(
+        "migrate-corpus.missing-snapshot",
+        &format!("{ty}@v{version}"),
+        format!(
+            "`{ty}` is at schema-version {current}, but no prior-schema snapshot \
+             `schema-snapshots/{ty}.v{version}.yaml` is shipped — the corpus walk cannot \
+             enumerate the homes schema-version {version} declared, so no `{ty}` document is \
+             this run's subject at all"
+        ),
+        format!(
+            "ship the prior-schema snapshot `schema-snapshots/{ty}.v{version}.yaml`, then re-run \
              `jigc migrate-corpus`"
         ),
     )
@@ -2087,6 +2158,18 @@ enum Corpus {
 /// A destination two candidates share (both homes populated) is adjudicated at the write
 /// boundary — see [`destination_collision_finding`] — never by candidate order.
 ///
+/// # A snapshot that will not load refuses the walk (M52 Increment 7 / T2)
+///
+/// Because the homes are *read out of the store*, a snapshot the store cannot answer for is not
+/// one document's problem: the homes that version declared are unknowable, so the union this
+/// function returns would be **silently narrower than the doctype's history**. Skipping it
+/// (`load_prior_schema(…).ok()`) therefore removed every instance of the doctype from the run's
+/// subject at exit 0. It is an `Err` instead — one blocking
+/// [`enumeration_missing_snapshot_finding`] keyed at `<ty>@v<k>` — and **both** call sites fail
+/// closed on it, the prepared walk and [`unlanded_paths`], so a rejected-commit recovery cannot
+/// narrow either. The read-only store sweep's prior-shape load stays best-effort by contrast and
+/// deliberately ([`crate::pack::prior_doctype_schemas`]).
+///
 /// **Why the prior homes need re-rooting and the current one does not.** A snapshot stores its
 /// `location:` and its `placement.file` as the raw **declaration**; the current shape arrives
 /// here already resolved through the cascade (`CascadeDefs::all_schemas`' closing
@@ -2126,17 +2209,16 @@ fn candidate_docs(
     repo_root: &Path,
     dt: &DoctypeMigration,
     corpus: Corpus,
-) -> Vec<(String, String)> {
+) -> Result<Vec<(String, String)>, Finding> {
     // EVERY prior snapshot below the current version, of BOTH home kinds. De-duplicated
     // (successive versions usually re-declare one home) and ordered, so the walk is
-    // deterministic. A snapshot that fails to load is skipped here and blocks per doc at the
-    // fold's own missing-snapshot arm.
+    // deterministic. A snapshot that fails to load refuses the whole walk (above): the homes
+    // it declared cannot be enumerated, so a narrower union would be a silent lie about scope.
     let mut prior_locations: std::collections::BTreeSet<String> = Default::default();
     let mut prior_files: std::collections::BTreeSet<String> = Default::default();
     for k in 1..dt.version {
-        let Ok(prior) = crate::pack::load_prior_schema(pack, &dt.ty, k) else {
-            continue;
-        };
+        let prior = crate::pack::load_prior_schema(pack, &dt.ty, k)
+            .map_err(|_| enumeration_missing_snapshot_finding(&dt.ty, k, dt.version))?;
         if let Some(raw_home) = prior.location {
             prior_locations.insert(if dt.docs_root.is_empty() {
                 raw_home
@@ -2190,14 +2272,14 @@ fn candidate_docs(
             }
         }
     } else {
-        return Vec::new(); // a transient doctype has no committed home to walk.
+        return Ok(Vec::new()); // a transient doctype has no committed home to walk.
     }
     // Dedupe: a home re-declared across versions, or a placement file that itself sits under a
     // prior folder home (a `docs/x.md` placement whose prior home was `docs/`), enumerates the
     // identical pair twice.
     out.sort();
     out.dedup();
-    out
+    Ok(out)
 }
 
 /// The committed-doc slugs of a persisted type — the `.md` file stems directly under
@@ -2274,9 +2356,13 @@ fn doc_source(repo_root: &Path, path: &str, corpus: Corpus) -> Option<String> {
 /// It cannot fire on a doc this run migrates (that doc's worktree bytes are still the *old*
 /// ones when this is computed) nor on ambient dirt (only the doctypes' own homes are walked),
 /// and a doc landed at the current version in `HEAD` is skipped outright.
-fn unlanded_paths(pack: &dyn PackSource, repo_root: &Path, dt: &DoctypeMigration) -> Vec<String> {
+fn unlanded_paths(
+    pack: &dyn PackSource,
+    repo_root: &Path,
+    dt: &DoctypeMigration,
+) -> Result<Vec<String>, Finding> {
     let mut out = Vec::new();
-    for (source, target) in candidate_docs(pack, repo_root, dt, Corpus::Head) {
+    for (source, target) in candidate_docs(pack, repo_root, dt, Corpus::Head)? {
         // Landed: `HEAD` carries this doc at its final home, already at the current version.
         if source == target
             && doc_source(repo_root, &source, Corpus::Head)
@@ -2303,7 +2389,7 @@ fn unlanded_paths(pack: &dyn PackSource, repo_root: &Path, dt: &DoctypeMigration
         }
         out.push(target);
     }
-    out
+    Ok(out)
 }
 
 /// Locate the repo root and its `.jigc/config/` project layer — the store-walk locate
@@ -3884,11 +3970,15 @@ sections:
         assert_eq!(after, migrated, "the re-run leaves the doc byte-untouched");
     }
 
-    /// A below-version stamped doc whose prior-shape snapshot is **not shipped** is **blocked**
-    /// with a route naming the missing snapshot — never a silent `already-current` (the
-    /// detector routes it `migrate`, so the verb must surface it, not drop it).
+    /// A prior-shape snapshot that is **not shipped** blocks **at the enumeration** — never a
+    /// silent `already-current`, and never a walk silently narrower than the doctype's home
+    /// history (M52 Increment 7 / T2).
+    ///
+    /// The refusal is keyed at `<ty>@v<k>` because no document is in hand there: the walk reads
+    /// the doctype's homes out of the store, so the missing snapshot removes **every** instance
+    /// of the doctype from the run's subject, not the one that happens to carry that stamp.
     #[test]
-    fn below_version_doc_with_a_missing_snapshot_is_blocked_with_a_route() {
+    fn a_missing_snapshot_blocks_the_whole_doctype_at_the_enumeration() {
         let repo = TempDir::new("missing-snap");
         let jigc_root = repo.path().join(".jigc");
 
@@ -3940,9 +4030,17 @@ sections:
             report.migrated.is_empty() && report.already_current.is_empty(),
             "a missing snapshot is neither migrated nor already-current: {report:?}"
         );
-        assert_eq!(report.blocked.len(), 1, "the doc is blocked: {report:?}");
+        assert_eq!(
+            report.blocked.len(),
+            1,
+            "the doctype is refused: {report:?}"
+        );
         let blocked = &report.blocked[0];
-        assert_eq!(blocked_path(blocked), "docs/cards/first-card.md");
+        assert_eq!(
+            blocked_path(blocked),
+            "card@v1",
+            "the subject is the snapshot the pack owes, not a bystanding document: {blocked:?}"
+        );
         assert_eq!(blocked.code, "migrate-corpus.missing-snapshot");
         assert!(
             blocked_route(blocked).contains("schema-snapshots/card.v1.yaml")
@@ -3953,6 +4051,88 @@ sections:
         // The doc is left byte-untouched (never silently rewritten).
         let after = fs::read_to_string(repo.path().join("docs/cards/first-card.md")).expect("read");
         assert_eq!(after, v1, "the blocked doc is byte-untouched");
+    }
+
+    /// The **doc-keyed** half of the same code, and what still reaches it (M52 Increment 7 / T2).
+    ///
+    /// The enumeration proves every stamp in `1..current` loadable, so the fold's own
+    /// missing-snapshot arm answers only the stamp the enumeration does not cover: an
+    /// out-of-band `schema-version: 0` — a *written* zero, which no `<ty>.v0.yaml` can ever
+    /// source. A document is in hand there, so the target stays the file path, and the run's
+    /// other documents are unaffected.
+    #[test]
+    fn a_doc_stamped_zero_is_blocked_at_its_own_path_while_the_walk_still_builds() {
+        let repo = TempDir::new("stamp-zero");
+        let jigc_root = repo.path().join(".jigc");
+
+        // The store is COMPLETE for `1..current` (`card.v1.yaml` ships), so the walk builds.
+        let pack_dir = multi_snapshot_pack("card", &[(1, card_v1_yaml())]);
+        let pack = crate::pack::FilesystemPack::new(pack_dir.path().to_path_buf());
+
+        let to = v1_schema(card_v2_yaml());
+        let from_shape = {
+            let mut s = load_schema(card_v1_yaml().as_bytes()).expect("v1 card loads");
+            inject_schema_version_stamp(&mut s);
+            s
+        };
+        let render_card = |title: &str, stamp: &str| {
+            render(
+                &from_shape,
+                &Instance {
+                    title: title.to_string(),
+                    sections: vec![
+                        SectionContent {
+                            id: "meta".to_string(),
+                            fields: vec![Field {
+                                key: SCHEMA_VERSION_FIELD.to_string(),
+                                value: Value::Scalar(stamp.to_string()),
+                            }],
+                            ..Default::default()
+                        },
+                        SectionContent {
+                            id: "body".to_string(),
+                            slot: Some("Wire the cache.".to_string()),
+                            ..Default::default()
+                        },
+                    ],
+                },
+            )
+        };
+        let zero = render_card("Zero Card", "0");
+        write_doc(repo.path(), "docs/cards/zero-card.md", &zero);
+        write_doc(
+            repo.path(),
+            "docs/cards/first-card.md",
+            &render_card("First Card", "1"),
+        );
+
+        let report = migrate_committed_corpus(
+            &pack,
+            repo.path(),
+            &jigc_root,
+            &[migration(to, 2)],
+            Options::default(),
+        )
+        .expect("migration runs");
+
+        assert_eq!(report.blocked.len(), 1, "one doc is blocked: {report:?}");
+        let blocked = &report.blocked[0];
+        assert_eq!(blocked.code, "migrate-corpus.missing-snapshot");
+        assert_eq!(
+            blocked_path(blocked),
+            "docs/cards/zero-card.md",
+            "a document IS in hand here, so the target is its path: {blocked:?}"
+        );
+        assert!(
+            blocked_route(blocked).contains("schema-snapshots/card.v0.yaml"),
+            "the route names the stamp's own unsourceable snapshot: {}",
+            blocked_route(blocked)
+        );
+        assert_eq!(
+            fs::read_to_string(repo.path().join("docs/cards/zero-card.md")).expect("read"),
+            zero,
+            "the blocked doc is byte-untouched",
+        );
     }
 
     /// The v1 prior shape of the `log` doctype: a folder-location home (`changelog/`) with a
@@ -4894,7 +5074,8 @@ sections:
             "# Thing\n\n## Body\n\nX.\n",
         );
 
-        let candidates = candidate_docs(&pack, repo.path(), &dt, Corpus::Worktree);
+        let candidates = candidate_docs(&pack, repo.path(), &dt, Corpus::Worktree)
+            .expect("the store ships every snapshot below current, so the walk builds");
 
         assert!(
             candidates.contains(&("docs/things/thing.md".to_string(), "THING.md".to_string())),

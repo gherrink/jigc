@@ -33,6 +33,14 @@
 //! from-home cell reaches it. Both pre-states are asserted; what is uniform across all eight
 //! cells is the **post**-state — landed at the current home, stamp bumped, prose byte-preserved,
 //! `validate` exit 0 with neither diagnosis left standing.
+//!
+//! **The walk's other half rides here too (T2): what it refuses to enumerate over.** The union is
+//! read out of the snapshot store, so a snapshot that will not load is not one document's problem
+//! — the homes that version declared cannot be enumerated at all, and every document of that
+//! doctype leaves the run's subject in silence. `migrate-corpus` therefore fails **closed** at the
+//! enumeration, keyed at the snapshot the pack owes rather than at a document (none is in hand
+//! there). The read-only store sweep keeps reading the same store best-effort, and the two arms at
+//! the foot of this file drive both halves of that split.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -700,5 +708,144 @@ fn a_destination_already_populated_blocks_instead_of_clobbering() {
         fs::read_to_string(repo.path().join("CHANGELOG.md")).expect("read the source"),
         stranded,
         "and the stranded source is byte-untouched too — nothing is half-moved",
+    );
+}
+
+// ---------------------------------------------------------------------------------------------
+// The walk's other half: what it refuses to enumerate over (M52 Increment 7 / T2).
+// ---------------------------------------------------------------------------------------------
+
+/// **A snapshot the walk cannot load blocks the whole doctype, at the enumeration** — never a
+/// silent `already current` (M52 Increment 7 / T2; `design/corpus-migration.md` → Prior-schema
+/// sourcing: *a **missing** snapshot **blocks** that doc with a route (never a silent
+/// `already-current`)*).
+///
+/// The rule shipped in the doc-keyed direction only. Since T1 the walk **is** the union of every
+/// prior home the snapshot store records, so a snapshot that will not load is not one doc's
+/// problem: the homes that version declared cannot be enumerated at all. Through HEAD the
+/// `.filter_map(… .ok())` swallowed it — every document of that doctype left the run's subject
+/// in silence, reported `already current` where it happened to sit at the current home and named
+/// by nothing at all where it did not, at **exit 0**, with the version-aware detector still
+/// routing `migrate`.
+///
+/// Manufactured at the act a pack author actually performs: `adr` bumps to schema-version 3 with
+/// its `v2` snapshot never shipped (its `v1` one, shipped, is left in place — so the failure is a
+/// *hole* in the store, not an empty store). The subject is the **snapshot**, not a document —
+/// none is in hand at the enumeration — so the target takes the `<ty>@v<k>` form, the one
+/// divergence in a file-path-keyed family.
+///
+/// The second half is the **exemption** (settle-record §17): the identical hole leaves
+/// `jigc validate` at exit 0. Its store sweep reads prior shapes best-effort
+/// (`cli::pack::prior_doctype_schemas`) to classify managed-vs-foreign, and a read-only
+/// classifier that reddens over a pack's own omission would turn every un-snapshotted pack's
+/// corpus red for a question the sweep never asks.
+#[test]
+fn a_missing_snapshot_blocks_the_enumeration_while_the_read_only_sweep_stays_exempt() {
+    let (pack, shipped) = bumped_pack(
+        "missing-snapshot",
+        "adr",
+        |shipped| shipped.to_string(),
+        with_optional_section,
+    );
+    // The hole: the snapshot for the version the corpus was authored under is never shipped.
+    let hole = pack
+        .path()
+        .join("schema-snapshots")
+        .join(format!("adr.v{shipped}.yaml"));
+    fs::remove_file(&hole).expect("drop the prior-version snapshot");
+
+    let home = TempDir::new("home-missing-snapshot");
+    let repo = set_up_repo("missing-snapshot", home.path(), pack.path());
+    // A document at the doctype's **current** home, stamped current — the doc that was reported
+    // `already current` while its doctype's walk was silently truncated.
+    let current = shipped + 1;
+    commit_doc(
+        repo.path(),
+        "docs/decisions/cache-sessions-in-memory.md",
+        &adr_body(current),
+    );
+
+    // THE EXEMPTION: the read-only store sweep reads the same store, best-effort, and stays 0.
+    let (validated, validate_ok) = run(repo.path(), home.path(), pack.path(), &["validate"]);
+    assert!(
+        validate_ok,
+        "the store sweep's prior-shape load stays best-effort — a pack's missing snapshot is \
+         not a corpus fault; validate said:\n{validated}",
+    );
+
+    // THE REFUSAL: the walk cannot be built, so the run refuses instead of narrowing.
+    let (report, ok) = report(
+        repo.path(),
+        home.path(),
+        pack.path(),
+        &["migrate-corpus", "--format", "json"],
+    );
+    assert!(
+        !ok,
+        "a walk that cannot be built holds the exit non-zero; report:\n{report:#}",
+    );
+    let blocked = report["blocked"].as_array().expect("a `blocked[]` array");
+    assert_eq!(
+        blocked.len(),
+        1,
+        "one refusal, keyed at the snapshot the pack owes; report:\n{report:#}",
+    );
+    let finding = &blocked[0];
+    assert_eq!(finding["severity"], "blocking");
+    assert_eq!(finding["key"]["code"], "migrate-corpus.missing-snapshot");
+    assert_eq!(
+        finding["key"]["target"],
+        serde_json::json!(format!("adr@v{shipped}")),
+        "no doc is in hand at the enumeration — the subject is the snapshot; finding:\n{finding:#}",
+    );
+    assert!(
+        finding["route"]
+            .as_str()
+            .expect("a refusal carries a route")
+            .contains(&format!("schema-snapshots/adr.v{shipped}.yaml")),
+        "the route names the snapshot to ship; finding:\n{finding:#}",
+    );
+
+    // And nothing of that doctype is reported migrated or current — the silence is the defect.
+    assert!(
+        report["already_current"]
+            .as_array()
+            .is_some_and(|a| a.is_empty()),
+        "a doctype whose walk could not be built reports NO doc `already current`; \
+         report:\n{report:#}",
+    );
+    assert!(
+        report["migrated"].as_array().is_some_and(|a| a.is_empty()),
+        "and migrates nothing; report:\n{report:#}",
+    );
+}
+
+/// **The manifest-less control** — the other end of the exemption (settle-record §17).
+///
+/// A pack that ships no freeze manifest declares nothing frozen, so it owes no snapshot store at
+/// all: `cli::pack::frozen_doctype_versions` resolves an empty version map and the sweep's
+/// prior-shape read has nothing to ask for. The fail-closed enumeration must not reach it —
+/// *unchecked by the manifest header's own design* is the shipped posture (M51's
+/// `schema-conformance.unversioned-doctype`), and a class sweep that reddened here would turn
+/// every manifest-less pack's store red.
+#[test]
+fn a_manifest_less_pack_leaves_the_store_sweep_at_exit_zero() {
+    let pack = TempDir::new("manifest-less");
+    frozen_pack::manifest_less_dev_pack(pack.path());
+    let home = TempDir::new("home-manifest-less");
+    let repo = set_up_repo("manifest-less", home.path(), pack.path());
+    // An unstamped `adr` at the pack's declared home — a corpus a frozen pack would want
+    // migrated and a manifest-less one declares nothing about.
+    commit_doc(
+        repo.path(),
+        "docs/decisions/cache-sessions-in-memory.md",
+        &adr_body(1).replace("schema-version: 1\n", ""),
+    );
+
+    let (validated, ok) = run(repo.path(), home.path(), pack.path(), &["validate"]);
+    assert!(
+        ok,
+        "a pack that declares nothing frozen freezes nothing, and its store validates clean; \
+         validate said:\n{validated}",
     );
 }
