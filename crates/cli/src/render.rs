@@ -938,7 +938,7 @@ pub struct StoreExitFlip {
 /// keying on the code **is** that condition, and each home keeps its own closing line and its
 /// own route (`jigc migrate-corpus` for the unmigrated managed doc, `jigc ingest` for the file
 /// jigc was never handed). What no longer follows from it is the **exit**: the squatter is the
-/// fifth member below, so a stock brownfield repo carrying an un-adopted file at a managed home
+/// last member below, so a stock brownfield repo carrying an un-adopted file at a managed home
 /// exits **non-zero**. Reporting it at exit 0 was a green over a home jigc has never been
 /// handed — the false all-clear that member exists to retire
 /// (`crates/cli/tests/managed_vs_foreign.rs`, the two foreign arms).
@@ -1047,12 +1047,45 @@ pub const STORE_EXIT_FLIPS: &[StoreExitFlip] = &[
         cause: ORPHANED_INSTANCE_CAUSE,
         sweep_untrustworthy: true,
     },
+    // (M52 Inc 7 / T6) A **declared home the repository committed into that is now empty** —
+    // a resolved doctype's exact declared path whose history is non-empty while no committed
+    // instance is there. Like the squatter below it the sweep **worked**: it read the schema's
+    // declared home, the committed census and `git log`, and is reporting a standing fact about
+    // the corpus rather than an inability to adjudicate — so `sweep_untrustworthy: false`, and
+    // nothing may state this class as a sweep that failed.
+    //
+    // **Its position is a decision, and the reason is the reader's, not the appender's.** Both
+    // this and the squatter are standing facts about the corpus, so the table's stated ordering
+    // rule (what taints the result · what this commit introduced · standing facts) does not
+    // separate them; what does is which closing line a reader is handed when both fire — and
+    // this one names a managed document the repository's own history says it *had* and no
+    // longer has, where the squatter names a file jigc was never handed. **Loss outranks
+    // non-adoption**, so this member precedes it. Both findings are on the report either way,
+    // each with its own route, so the precedence buys only the closing sentence — which is why
+    // it is decided on that and driven
+    // (`crates/cli/tests/home_vacated.rs` → `a_vacated_home_closes_the_report_ahead_of_a_never_adopted_file`).
+    StoreExitFlip {
+        id: "home-vacated",
+        matches: |f| f.code == crate::orphan::HOME_VACATED_CODE,
+        // The witness IS the producer (`orphaned-instance`'s precedent): a hand-built copy of
+        // the production finding is a second place for the code, the target form and the route
+        // to drift, and this member's whole claim is that they cannot.
+        witness: || {
+            crate::orphan::home_vacated_finding(&crate::orphan::FixedHome {
+                ty: "changelog".to_string(),
+                path: "CHANGELOG.md".to_string(),
+            })
+        },
+        trailer: home_vacated_trailer,
+        cause: HOME_VACATED_CAUSE,
+        sweep_untrustworthy: false,
+    },
     // (M46 Inc 3 / T1) The **foreign** arm of that same discriminator: a committed file at a
     // managed doctype's home that jigc was never handed. Last in precedence — every condition
-    // above it either taints the sweep's own result or is a change this commit introduced,
-    // where this one is a standing fact about the corpus. Like `reconciliation.rename` the
-    // sweep **worked**: it found the file and named it foreign, so this member is not an
-    // untrustworthy sweep either.
+    // above it either taints the sweep's own result, is a change this commit introduced, or is
+    // the standing fact that outranks this one (a managed document the store has lost). Like
+    // `reconciliation.rename` the sweep **worked**: it found the file and named it foreign, so
+    // this member is not an untrustworthy sweep either.
     StoreExitFlip {
         id: "foreign-squatter",
         matches: |f| f.code == UNADOPTED_INSTANCE_CODE,
@@ -1606,6 +1639,28 @@ pub(crate) fn orphaned_instance_trailer() -> String {
          are, so the sweep could not adjudicate them and {STORE_EXIT_FLIP_PHRASE}; restore \
          what claims them (re-add the pack that defines the type, or move them home), or \
          follow each finding's own route above, then re-validate.\n"
+    )
+}
+
+/// The words the vacated-home closing line names its condition with — deliberately **not** a
+/// substring of the finding's own message, so a fence asserting the trailer says this is
+/// driving the trailer and not the finding line above it.
+pub(crate) const HOME_VACATED_CAUSE: &str =
+    "a declared home the repository committed into is empty";
+
+/// The store trailer for a declared home the repository committed into and then emptied (M52
+/// Inc 7 / T6). Like the squatter's, it says nothing about an untrustworthy sweep: this sweep
+/// **worked** — it read the declared home, the committed census and the repository's history,
+/// and what it refuses is a green over a managed document the store has lost. The repair is
+/// per-home, so the line hands the reader on to each finding's own route rather than naming one
+/// verb: a locator, a restore and a re-register, which `crate::orphan::home_vacated_finding`
+/// composes against the path that actually went.
+pub(crate) fn home_vacated_trailer() -> String {
+    format!(
+        "{HOME_VACATED_CAUSE} — the repository's history says that home held a document and \
+         nothing is there now, so the sweep {STORE_EXIT_FLIP_PHRASE} rather than report a green \
+         over a managed document the store has lost; restore it at the declared home (each \
+         finding above carries the locator for where it went), then re-validate.\n"
     )
 }
 
@@ -8837,7 +8892,7 @@ mod tests {
         );
         assert!(
             validation_store_exit_flips(&squatter),
-            "and it flips the sweep's exit — the fifth member of the axis: {agent}",
+            "and it flips the sweep's exit — a member of the axis: {agent}",
         );
         assert!(
             !agent.contains("report-only at store scope (exit 0)")

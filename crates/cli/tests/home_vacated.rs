@@ -25,9 +25,11 @@
 //! (`cli::orphan::fixed_identity_homes`) and is pinned there; what this suite lists are the
 //! homes a **fixture state** happens to fill, which is a property of the fixture.
 //!
-//! **The exit is not this suite's.** T5 mints the finding; T6 makes it
-//! `cli::render::STORE_EXIT_FLIPS`' seventh member and owns the exit assertion, so nothing
-//! here asserts an exit code in either direction.
+//! **The exit is T6's, and arms 6-8 are it.** T5 minted the finding and asserted no exit in
+//! either direction; T6 makes the condition a `cli::render::STORE_EXIT_FLIPS` member, so from
+//! arm 6 down the set iterated is a **code-side registry** — the member is *found in* that
+//! table and every string those arms assert (the cause a closing line must name, the witness
+//! they drive) is read back off it, which makes membership itself the assertion.
 //!
 //! **The route's named exits are driven, not read** (M46's PT-1 rule — a route that, followed
 //! exactly, changes nothing is the defect). Every backticked command the emitted route carries
@@ -40,6 +42,7 @@ use crate::support;
 
 use std::process::Output;
 
+use cli::render::{STORE_EXIT_FLIPS, StoreExitFlip};
 use support::trial_corpus::{State, TrialCorpus};
 
 /// The code under test. Read from the production const so the suite and the producer cannot
@@ -113,29 +116,13 @@ fn backticked(route: &str) -> Vec<String> {
         .collect()
 }
 
-/// Put the corpus into the **fresh-clone shape**: the gitignored file-state cache emptied, so
-/// what remains is what a `git clone` hands a CI runner.
-fn fresh_clone_shape(corpus: &TrialCorpus) {
-    let state = corpus.repo().join(".jigc").join("state");
-    if state.is_dir() {
-        for entry in std::fs::read_dir(&state).expect("read the file-state dir") {
-            let path = entry.expect("dir entry").path();
-            if path.is_dir() {
-                std::fs::remove_dir_all(&path).expect("clear a file-state subdir");
-            } else {
-                std::fs::remove_file(&path).expect("clear a file-state file");
-            }
-        }
-    }
-}
-
 /// The corpus with `CHANGELOG.md` renamed out from under `changelog`'s declared home and the
 /// rename committed — the advocate's driven cell, in the fresh-clone shape.
 fn vacated_changelog() -> TrialCorpus {
     let corpus = TrialCorpus::build(State::CommittedSingletons);
     corpus.git(&["mv", "CHANGELOG.md", "HISTORY.md"]);
     corpus.git(&["commit", "-q", "-m", "rename the changelog"]);
-    fresh_clone_shape(&corpus);
+    corpus.fresh_clone_shape();
     corpus
 }
 
@@ -179,7 +166,7 @@ fn a_declared_home_the_repository_committed_into_and_then_emptied_is_named() {
 #[test]
 fn a_declared_home_the_repository_never_committed_into_stays_silent() {
     let corpus = TrialCorpus::build(State::CommittedSingletons);
-    fresh_clone_shape(&corpus);
+    corpus.fresh_clone_shape();
     let out = corpus.jigc(&["validate"]);
     let text = printed(&out);
 
@@ -218,7 +205,7 @@ fn an_emptied_collection_directory_is_not_a_declared_home() {
     corpus.git(&["commit", "-q", "-m", "an adr"]);
     corpus.git(&["rm", "-q", "docs/decisions/first.md"]);
     corpus.git(&["commit", "-q", "-m", "retire the adr"]);
-    fresh_clone_shape(&corpus);
+    corpus.fresh_clone_shape();
 
     let out = corpus.jigc(&["validate"]);
     let text = printed(&out);
@@ -238,7 +225,7 @@ fn a_rerooted_home_whose_file_is_present_stays_silent() {
     let corpus = TrialCorpus::build(State::CommittedSingletons);
     corpus.jigc_ok(&["config", "set", "placement-root", "papers"]);
     corpus.git(&["commit", "-q", "-m", "re-point placement-root"]);
-    fresh_clone_shape(&corpus);
+    corpus.fresh_clone_shape();
 
     assert!(
         corpus.repo().join("papers").join("roadmap.md").is_file(),
@@ -318,5 +305,157 @@ fn the_emitted_routes_named_exits_each_clear_the_finding() {
     assert!(
         !fires_at(&after, "CHANGELOG.md"),
         "the route's second step must leave the finding cleared, not resurrect it; got:\n{after}",
+    );
+}
+
+// ---------------------------------------------------------------------------------------
+// T6 — the exit
+// ---------------------------------------------------------------------------------------
+
+/// The [`StoreExitFlip`] member this condition is, read off the production table rather than
+/// hand-spelled: the cause a closing line must name and the witness it is driven through are
+/// the member's own, so nothing below can drift from what the renderer prints.
+fn vacated_flip() -> &'static StoreExitFlip {
+    STORE_EXIT_FLIPS
+        .iter()
+        .find(|flip| flip.id == "home-vacated")
+        .expect(
+            "`home-vacated` must be a member of `cli::render::STORE_EXIT_FLIPS` — the store \
+             sweep's exit rule *is* that table, so a blocking store finding that is not a \
+             member is reported at exit 0 and an adopter's CI stays green over a managed \
+             document the repository has lost",
+        )
+}
+
+/// **Arm 6 — the sweep exits non-zero, and the closing line names this condition.**
+///
+/// The red this arm was written against, driven on the same fixture at `0556c4f0` (T5's own
+/// commit, the finding already shipping): `blocking · schema-conformance.home-vacated — …`
+/// on one line and *"5 finding(s) — report-only at store scope (exit 0); each gates nowhere"*
+/// on the next, at **exit 0**. A blocking store finding that is not an axis member is a green
+/// CI over a lost document — which is the only thing this condition exists to refuse.
+#[test]
+fn a_vacated_declared_home_flips_the_store_sweeps_exit() {
+    let corpus = vacated_changelog();
+    let out = corpus.jigc(&["validate"]);
+    let text = printed(&out);
+
+    assert!(
+        fires_at(&text, "CHANGELOG.md"),
+        "the arm only means anything while the condition still fires; got:\n{text}",
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "a declared home the repository committed into and then emptied must fail the run \
+         an adopter's CI gates on; got:\n{text}",
+    );
+    assert!(
+        !text.contains("report-only at store scope (exit 0)"),
+        "the report-only closing line is the sentence that made the base's exit 0 read as a \
+         verdict rather than an omission — it must be gone; got:\n{text}",
+    );
+    assert!(
+        text.contains(vacated_flip().cause),
+        "the closing line must name which condition flipped the exit ({:?}); got:\n{text}",
+        vacated_flip().cause,
+    );
+}
+
+/// **Arm 7 — the member's witness is the production producer, and its declared
+/// trustworthiness is what its own closing line says.**
+///
+/// The witness rule is `orphaned-instance`'s precedent: a hand-built copy of the finding is a
+/// second place for the code, the target form and the route to drift, and the member's whole
+/// claim is that they cannot. The trustworthiness rule is the axis's narrowing guard read from
+/// the other end — the flag is declared per member, so the flag and the words must agree.
+#[test]
+fn the_members_witness_is_the_producer_and_its_trailer_matches_its_verdict() {
+    let flip = vacated_flip();
+    let witness = (flip.witness)();
+
+    assert_eq!(
+        witness.code,
+        code(),
+        "the witness must carry the production code — a hand-built copy is a second place \
+         for the identity to drift",
+    );
+    assert!(
+        witness.location.is_some() && witness.route.is_some(),
+        "the membership seam refuses to serialize a target-less finding, so a witness \
+         without a target and a route is drivable on the agent surface alone; got: {witness:?}",
+    );
+
+    assert!(
+        !flip.sweep_untrustworthy,
+        "this sweep **worked** — it read the schema's declared home, the committed census \
+         and the repository's history, and is reporting a standing fact it found; declaring \
+         it untrustworthy would state the whole class as one",
+    );
+    let trailer = (flip.trailer)();
+    for claim in [
+        "could not be trusted",
+        "cannot be trusted",
+        "not trustworthy",
+    ] {
+        assert!(
+            !trailer.contains(claim),
+            "the member declares `sweep_untrustworthy: false`, so its own closing line may \
+             not say {claim:?}; got:\n{trailer}",
+        );
+    }
+}
+
+/// **Arm 8 — the position, driven.** Where this member sits in the table is a decision about
+/// which closing line the reader is handed when two standing facts about the corpus fire at
+/// once, and it is settled here by driving the co-occurrence rather than by asserting an
+/// index: the vacated home is a managed document the repository's own history says it had and
+/// no longer has, the squatter a file jigc was never handed — loss outranks non-adoption, so
+/// this condition precedes it and `foreign-squatter` keeps its stated last place.
+///
+/// Both findings are on the report either way and each carries its own route, so what the
+/// precedence buys is only which sentence closes the report — which is exactly why it is
+/// decided on the reader's need rather than on where the row was appended.
+#[test]
+fn a_vacated_home_closes_the_report_ahead_of_a_never_adopted_file() {
+    let squatter = STORE_EXIT_FLIPS
+        .iter()
+        .find(|flip| flip.id == "foreign-squatter")
+        .expect("`foreign-squatter` is the other standing-fact member this one is ordered against");
+
+    let corpus = vacated_changelog();
+    // A committed file at a *different* declared home that jigc was never handed. That home
+    // has no history of its own, so it is not itself vacated — the two conditions are at two
+    // homes, which is the only way they co-occur (a foreign file **at** a vacated home fills
+    // the census and the vacated leg goes false).
+    std::fs::write(
+        corpus.repo().join("docs").join("deferral-ledger.md"),
+        "---\ntitle: Deferral ledger\n---\n\n# Deferral ledger\n",
+    )
+    .expect("plant a foreign file at another declared home");
+    corpus.git(&["add", "docs/deferral-ledger.md"]);
+    corpus.git(&["commit", "-q", "-m", "plant a never-adopted ledger"]);
+
+    let text = printed(&corpus.jigc(&["validate"]));
+    // Both conditions must really be on the report, else the arm discriminates nothing. The
+    // squatter is looked for by the **code its own member's witness carries** — its `cause` is
+    // the trailer's wording and only one trailer prints, so asking for that here would be
+    // asking for the thing under test.
+    let squatter_code = (squatter.witness)().code;
+    assert!(
+        text.lines()
+            .any(|line| line.contains(&squatter_code)
+                && line.contains("`docs/deferral-ledger.md`")),
+        "the never-adopted file must be on this report too; got:\n{text}",
+    );
+    let closing = text
+        .lines()
+        .rev()
+        .find(|line| line.contains(squatter.cause) || line.contains(vacated_flip().cause))
+        .expect("one of the two closes the report");
+    assert!(
+        closing.contains(vacated_flip().cause),
+        "with both firing, the closing line must be the lost document's, not the \
+         never-adopted file's; got:\n{closing}",
     );
 }

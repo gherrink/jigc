@@ -2145,6 +2145,21 @@ fn corpus_foreign_squatter() -> TrialCorpus {
     corpus
 }
 
+/// A corpus whose `changelog` was moved out of its declared home and committed, read in the
+/// **fresh-clone shape** — the gitignored file-state cache emptied, which is what a `git clone`
+/// hands a CI runner. The cache is what makes this an honest cell rather than a duplicate of
+/// the out-of-band-rename one above: with it in place the reconciler also raises
+/// `reconciliation.rename`, a higher-precedence member, and the closing line under test would
+/// be that member's; without it — the state every clone is in — the only thing left that can
+/// see the lost document is the declared home itself.
+fn corpus_home_vacated() -> TrialCorpus {
+    let corpus = TrialCorpus::build(State::CommittedSingletons);
+    corpus.git(&["mv", "CHANGELOG.md", "HISTORY.md"]);
+    corpus.git(&["commit", "-q", "-m", "rename the changelog"]);
+    corpus.fresh_clone_shape();
+    corpus
+}
+
 /// A corpus whose baselined managed doc was moved **out of band** with `git mv` — the
 /// member whose sweep *worked*, and which the preload's class may therefore not describe
 /// as an untrustworthy sweep.
@@ -2402,6 +2417,7 @@ fn a_read_intent_lands_on_a_read_verb_and_every_ack_and_flip_states_its_fact() {
             "unmigrated-corpus" => FlipCell::Live(corpus_below_version),
             "ahead-corpus" => FlipCell::Live(corpus_ahead),
             "foreign-squatter" => FlipCell::Live(corpus_foreign_squatter),
+            "home-vacated" => FlipCell::Live(corpus_home_vacated),
             "orphaned-instance" => FlipCell::ProvenElsewhere {
                 suite: "orphaned_instance.rs",
                 why: "it needs a corpus composed against a pack set that no longer defines a \

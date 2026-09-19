@@ -373,6 +373,30 @@ impl TrialCorpus {
         self.root.join("home")
     }
 
+    /// Empty the gitignored file-state cache — **the fresh-clone shape**.
+    ///
+    /// `.jigc/state/` is gitignored, so what a `git clone` hands a teammate or a CI runner is
+    /// this corpus *without* it. A store-scope condition that is only visible through that
+    /// cache is therefore invisible to every clone, which is what makes the shape worth a
+    /// named fixture act rather than an inline `remove_dir_all` per suite: the suites that
+    /// reach for it are asserting a property **about** the clone, not tidying up.
+    ///
+    /// The directory itself is left in place; only its contents go.
+    pub fn fresh_clone_shape(&self) {
+        let state = self.repo().join(".jigc").join("state");
+        if !state.is_dir() {
+            return;
+        }
+        for entry in fs::read_dir(&state).expect("read the file-state dir") {
+            let path = entry.expect("a file-state dir entry").path();
+            if path.is_dir() {
+                fs::remove_dir_all(&path).expect("clear a file-state subdir");
+            } else {
+                fs::remove_file(&path).expect("clear a file-state file");
+            }
+        }
+    }
+
     /// Run `jigc <args>` against this corpus and return its raw [`Output`].
     ///
     /// `cwd` is the repo, `$HOME` the corpus home, and `JIGC_PACK_DIR` is either

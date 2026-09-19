@@ -105,6 +105,8 @@ mod record_stale_reasons;
 mod record_two_loci_retired;
 #[path = "../record_unbuilt_cells_retired.rs"]
 mod record_unbuilt_cells_retired;
+#[path = "../record_vacated_home.rs"]
+mod record_vacated_home;
 #[path = "../registry_seam.rs"]
 mod registry_seam;
 #[path = "../retire_sink_validation.rs"]
