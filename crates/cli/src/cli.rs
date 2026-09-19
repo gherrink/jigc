@@ -1461,6 +1461,34 @@ fn validate_store_in_repo(cwd: &Path) -> Result<StoreSweep> {
             .push(crate::orphan::orphaned_instance_finding(&rel));
     }
 
+    // The vacated-home break (M52 Increment 7 / T5; settle-record D7.1 as amended by §5): a
+    // resolved doctype's **exact declared home** — a `placement:` file, a `location:`
+    // singleton's `<location><ty>.md` — that the repository's history touches while no
+    // committed instance is there. Blocking.
+    //
+    // **The hole it fills is the one the two arms above structurally cannot see.** Both of them
+    // reason about a *file* and ask where it sits; this asks about a *home* and whether anything
+    // is in it, so a document that left the repository's managed set entirely — `git mv
+    // CHANGELOG.md HISTORY.md`, one ordinary human act — is visible to neither. Driven at the
+    // wave's baseline on exactly that state in the fresh-clone shape (`.jigc/state/` is
+    // gitignored, so it is what every clone and every CI runner has): `jigc validate` printed
+    // *"4 finding(s) — report-only at store scope (exit 0)"*, named neither path on any line,
+    // and `jigc doc list` dropped `changelog` entirely. The only thing between an adopter and a
+    // green CI over a lost managed document was a cache that does not survive `git clone`.
+    //
+    // The subject is **exact declared paths only** — never a directory — so a corpus that
+    // legitimately retired its last ADR is not a break, and no team document anywhere can be
+    // this condition's subject. `orphan::Territory` is therefore untouched: M51's HIGH narrowing
+    // is not re-opened by a rule that never enumerates a tree.
+    //
+    // CLI-side like every arm above it: both legs are git questions (the committed census, and
+    // `git log HEAD -1 -- <path>`), and the engine ships empty by invariant.
+    for home in crate::orphan::vacated_homes(&jigc_home, &schemas) {
+        report
+            .findings
+            .push(crate::orphan::home_vacated_finding(&home));
+    }
+
     // The gate-claim discriminator (M42 Inc 4): which of the committed docs this sweep just
     // adjudicated carry no file-state baseline. Derived from the same `record` + `schemas` the
     // families ran against, so the trailer's claim and the sweep's verdicts describe one store.

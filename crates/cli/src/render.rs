@@ -1130,6 +1130,14 @@ pub(crate) fn validation_store_exit_flips(report: &ValidationReport) -> bool {
 ///   than tidy — the code is `schema-conformance.*` and located at a path, so without the row
 ///   the per-finding gate label would claim a `finalize` gate that does not exist.
 ///
+/// - `schema-conformance.home-vacated` — the vacated-declared-home break (M52 Inc 7 / T5),
+///   minted by `crate::cli`'s store sweep alone from `crate::orphan::vacated_homes`. Its
+///   subject is a **home**, not a doc: the condition is that nothing is at the path, so there
+///   is no document for a task to address and no task-scope door that could raise it.
+///   Membership is load-bearing on the same footing as its sibling above — the code is
+///   `schema-conformance.*` and located at a path, so without the row the per-finding gate
+///   label would claim a `finalize` gate that does not exist.
+///
 /// - `schema-conformance.schema-version-current` — the version-currency break
 ///   (`validate_store_families`' fifth family, managed arm). It gates **nowhere** in the system:
 ///   at task scope a stale committed doc downgrades to `advisory ·
@@ -1146,6 +1154,7 @@ pub(crate) fn validation_store_exit_flips(report: &ValidationReport) -> bool {
 /// need the baseline discriminator on top of this list.
 const GATES_NOWHERE: &[&str] = &[
     crate::orphan::ORPHANED_INSTANCE_CODE,
+    crate::orphan::HOME_VACATED_CODE,
     "schema-conformance.mention-resolves",
     "schema-conformance.repeatable-populated",
     "schema-conformance.surplus-sections-absent",

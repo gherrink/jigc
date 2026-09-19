@@ -33,6 +33,8 @@ mod gitignore_amend_union;
 mod gitignore_writer_acks;
 #[path = "../golden_harness.rs"]
 mod golden_harness;
+#[path = "../home_vacated.rs"]
+mod home_vacated;
 #[path = "../managed_vs_foreign.rs"]
 mod managed_vs_foreign;
 #[path = "../migrate_adr.rs"]

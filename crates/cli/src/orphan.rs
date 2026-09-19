@@ -487,6 +487,147 @@ pub(crate) fn orphaned_instance_finding(rel: &str) -> engine::finding::Finding {
     )
 }
 
+/// The check id of the **vacated-home** break (M52 Increment 7 / T5; settle-record D7.1 as
+/// amended by §5) — a resolved doctype's **exact declared home** that the repository's history
+/// touches while no committed instance is there. Named once so the producer below, the store
+/// sweep that calls it, and every fence over either cannot drift apart on a string.
+pub const HOME_VACATED_CODE: &str = "schema-conformance.home-vacated";
+
+/// One resolved doctype's **exact declared home** — the doctype id and the single
+/// repo-relative path its one instance lives at. Only a **fixed-identity** doctype has one:
+/// see [`fixed_identity_homes`].
+pub(crate) struct FixedHome {
+    /// The doctype whose schema declares this home.
+    pub(crate) ty: String,
+    /// The one repo-relative path that doctype's instance lives at, **resolved** (the
+    /// `docs-root` / `placement-root` nesting already applied).
+    pub(crate) path: String,
+}
+
+/// **The fixed-identity home set** — every resolved doctype whose schema names *one exact
+/// path*, address-sorted. Read off [`engine::schema::Schema::projection`], the one answer to
+/// *where does this doctype's instance live, and under what identity*, so this set cannot be
+/// re-derived differently from what `jigc doc schema` advertises: a projection is a member
+/// exactly when its identity is [`engine::schema::IdentityKind::Fixed`] **and** it has a home
+/// path — a `placement:` doctype's resolved `placement.file`, and a `location:` +
+/// `singleton: true` doctype's `<location><ty>.md`.
+///
+/// **What it excludes, and why that is the point** (settle-record §5): a `location:` doctype
+/// with a per-author slug renders its home as `<location>/<slug>.md` — a *pattern*, not a
+/// path — so it contributes no member. Reading *"each resolved doctype home"* as a
+/// **directory** would make a corpus that legitimately retired its last ADR a break; a
+/// collection directory is never a subject here. A transient doctype (`commit`) has no home
+/// path at all and is likewise excluded, even though its identity is fixed.
+///
+/// The `location:` + `singleton: true` disjunct is **unreachable on the shipped packs** —
+/// all five shipped `singleton: true` doctypes are also `placement:` — so it is exercised on
+/// a manufactured schema in this module's own tests and claimed nowhere as stock behaviour.
+pub(crate) fn fixed_identity_homes(
+    resolved: &std::collections::BTreeMap<String, Schema>,
+) -> Vec<FixedHome> {
+    let mut homes: Vec<FixedHome> = resolved
+        .values()
+        .filter_map(|schema| {
+            let projection = schema.projection();
+            if projection.identity.kind != engine::schema::IdentityKind::Fixed {
+                return None;
+            }
+            Some(FixedHome {
+                ty: schema.ty.clone(),
+                path: projection.home.path?,
+            })
+        })
+        .collect();
+    homes.sort_by(|a, b| a.path.cmp(&b.path));
+    homes
+}
+
+/// The fixed-identity homes that have been **vacated** — the repository's history touches the
+/// declared path while no committed instance is there, address-sorted
+/// ([`fixed_identity_homes`] is).
+///
+/// **Two legs, each the one the rest of the code already asks.** *Nothing is there* is
+/// [`engine::index::committed_instances`] over the resolved schema — the same census
+/// [`orphaned_instances`], the store sweep's un-baselined trailer and `jigc doc list` all
+/// read, so "empty" means empty to the doors that act on it rather than to a second opinion;
+/// and it is asked **at the exact path**, never of the doctype's instance set, so a `location:`
+/// singleton whose directory holds other files still reads as vacated at its own home. *The
+/// home was filled* is [`crate::task::git_path_has_history`] — `git log HEAD -1 -- <path>`,
+/// M45's shipped file-state history gate verbatim — which is what makes this check survive a
+/// `git clone`, where the gitignored file-state cache that used to be the only witness does
+/// not.
+///
+/// **Git failure is conservative**, matching the predicate's two shipped consumers
+/// (`crate::task`'s file-state gate and `crate::milestone`'s): an unanswerable history question
+/// reads as *history present*, so an empty declared home is named rather than silently
+/// excused.
+///
+/// A path that git tracks but the worktree no longer holds reads as vacated, because the
+/// census reads the worktree. That is the honest answer to *is the document there* and it is
+/// the same answer every other consumer of the census gets; the uncommitted-deletion case is
+/// additionally adjudicated by the file-state gate, which grades the deletion itself.
+pub(crate) fn vacated_homes(
+    repo_root: &Path,
+    resolved: &std::collections::BTreeMap<String, Schema>,
+) -> Vec<FixedHome> {
+    fixed_identity_homes(resolved)
+        .into_iter()
+        .filter(|home| {
+            let Some(schema) = resolved.get(&home.ty) else {
+                return false; // the set came from this map — defensive.
+            };
+            let at_home = repo_root.join(&home.path);
+            let occupied = engine::index::committed_instances(repo_root, &home.ty, schema)
+                .iter()
+                .any(|(_identity, path)| path == &at_home);
+            !occupied && crate::task::git_path_has_history(repo_root, &home.path).unwrap_or(true)
+        })
+        .collect()
+}
+
+/// The **blocking** store-scope finding for one vacated declared home, located at the path.
+///
+/// **The message states the two legs that were computed.** That the doctype homes one document
+/// at this exact path (its schema says so), that the repository's history touches the path, and
+/// that nothing is there now. It does not claim *jigc* wrote what the history carries — nothing
+/// in `git log` says who committed a file — nor why it went; a rename, a `git rm`, a bad merge
+/// and a checkout that never landed are one condition here, and the message names the condition.
+///
+/// **The route names one exit, and says plainly what is not one** (M46's PT-1 rule — a route
+/// that, followed exactly, changes nothing is the defect at another door). Restoring the
+/// document at the declared home is the exit, with the locator that finds where it went and the
+/// verb that re-registers it once it is back. `jigc unmanage` is named as a **non**-exit because
+/// it is the verb a reader reaches for: it drops a file-state baseline, and this home is
+/// declared by a *schema*, so driven on this state it is a no-op at exit 0 and the finding
+/// stands. Retiring the doctype for good is stated as what it is — taking the pack that declares
+/// it out of the composition — rather than dressed up as a jigc verb that does not exist.
+///
+/// The settle's other two named verbs are deliberately absent, each falsified before this
+/// shipped: `jigc ingest <path>` takes no path (`jigc ingest` is a whole-store sweep), and
+/// `jigc rename` refuses every doctype in this subject set — the set *is* the fixed-identity
+/// set, and a fixed-identity reslug is `store.fixed-identity`, so naming it would route the
+/// reader into a refusal.
+pub(crate) fn home_vacated_finding(home: &FixedHome) -> engine::finding::Finding {
+    let FixedHome { ty, path } = home;
+    let token = crate::task::shell_token(path);
+    engine::finding::Finding::graded(
+        engine::finding::Severity::Blocking,
+        HOME_VACATED_CODE,
+        format!(
+            "`{ty}` homes its one document at `{path}`, the repository's history touches that \
+             path, and nothing is there now — a declared home that was filled has been vacated"
+        ),
+        Some(engine::finding::Location::addressed(path, 1, 1)),
+        Some(engine::finding::Route::human(format!(
+            "restore the document at `{path}` and commit it — `git log --diff-filter=D -1 -- \
+             {token}` names the commit that removed it — then `jigc ingest` to re-register it; \
+             retiring `{ty}` for good means taking the pack that declares this home out of the \
+             composition — `jigc unmanage {token}` drops a file-state baseline and leaves the \
+             home declared, so on its own it clears nothing"
+        ))),
+    )
+}
+
 /// The route for the **unregistered** tier of the two-tier orphan advisory (M40;
 /// `design/validation.md` → M40 two-tier route). A never-adopted basename-coincidence
 /// file is not a tracked strand, so `jigc unmanage` (a clean no-op on a never-registered
@@ -1002,5 +1143,94 @@ mod tests {
         let current = Home::placement("DECISIONS.md");
         assert!(is_stranded("decisions/cache.md", &prior, &current));
         assert!(!is_stranded("DECISIONS.md", &prior, &current));
+    }
+
+    /// A `location:` + `singleton: true` doctype — the **only** shape whose exact declared
+    /// home is a `location:` path, and one no shipped pack has: all five shipped
+    /// `singleton: true` doctypes are also `placement:`. Manufactured here so the disjunct is
+    /// exercised rather than claimed reachable on stock.
+    fn location_singleton_schema(ty: &str, location: &str) -> Schema {
+        let yaml = format!(
+            "type: {ty}\nlocation: {location}\nsingleton: true\nid-from: title\nsections:\n  - id: body\n    slot: {{ hint: x }}\n"
+        );
+        engine::schema::load_schema(yaml.as_bytes()).expect("location singleton schema loads")
+    }
+
+    /// (M52 inc-7 T5) The **fixed-identity home set** is exactly the doctypes whose schema
+    /// names *one exact path*, over all four home shapes at once: a `placement:` file and a
+    /// `location:` singleton are members; a **slugged** `location:` doctype is not (its home is
+    /// a pattern, and reading it as a directory would make a corpus that retired its last ADR
+    /// a break); a **transient** doctype is not (fixed identity, no home path).
+    #[test]
+    fn the_fixed_identity_home_set_is_the_exact_declared_paths_and_nothing_else() {
+        let transient =
+            engine::schema::load_schema(b"type: commit\nsections: []\n").expect("transient loads");
+        let schemas = map(vec![
+            placement_schema("changelog", "CHANGELOG.md"),
+            location_singleton_schema("ledger", "notes/"),
+            adr_schema("docs/decisions/"),
+            transient,
+        ]);
+        let homes: Vec<(String, String)> = fixed_identity_homes(&schemas)
+            .into_iter()
+            .map(|h| (h.ty, h.path))
+            .collect();
+        assert_eq!(
+            homes,
+            vec![
+                ("changelog".to_string(), "CHANGELOG.md".to_string()),
+                ("ledger".to_string(), "notes/ledger.md".to_string()),
+            ],
+            "only a `placement:` file and a `location:` singleton name one exact path; a \
+             slugged `location:` doctype names a pattern and a transient doctype names nothing",
+        );
+    }
+
+    /// (M52 inc-7 T5) The emptiness leg is asked **at the exact path**, never of the
+    /// doctype's directory: a `location:` singleton whose own file is gone is vacated even
+    /// while its directory still holds other committed `.md`s. Driven over real git history, so
+    /// both legs are the production predicates.
+    #[test]
+    fn a_location_singleton_vacates_at_its_own_path_not_at_its_directory() {
+        let repo = TempRepo::new();
+        let schemas = map(vec![location_singleton_schema("ledger", "notes/")]);
+        repo.commit_file("notes/ledger.md", "# Ledger\n");
+        repo.commit_file("notes/other.md", "# Other\n");
+
+        assert!(
+            vacated_homes(repo.path(), &schemas).is_empty(),
+            "the home holds its document — nothing is vacated",
+        );
+
+        repo.git(&["rm", "-q", "--", "notes/ledger.md"]);
+        repo.git(&["commit", "-q", "-m", "retire the ledger"]);
+        let vacated: Vec<String> = vacated_homes(repo.path(), &schemas)
+            .into_iter()
+            .map(|h| h.path)
+            .collect();
+        assert_eq!(
+            vacated,
+            vec!["notes/ledger.md".to_string()],
+            "`notes/other.md` still sits in the directory, and the home is still empty — the \
+             question is about the path, not about the tree",
+        );
+    }
+
+    /// (M52 inc-7 T5) The history leg is what separates a **vacated** home from one the
+    /// repository never wrote to: an empty home in a corpus that has not needed that doctype
+    /// yet is the ordinary state, and naming it would fire on every fresh repo.
+    #[test]
+    fn a_home_the_repository_never_committed_into_is_not_vacated() {
+        let repo = TempRepo::new();
+        repo.commit_file("README.md", "# readme\n");
+        let schemas = map(vec![
+            placement_schema("changelog", "CHANGELOG.md"),
+            location_singleton_schema("ledger", "notes/"),
+        ]);
+        assert!(
+            vacated_homes(repo.path(), &schemas).is_empty(),
+            "neither declared home has ever held a document — an empty home is not a vacated \
+             one",
+        );
     }
 }
