@@ -4205,7 +4205,14 @@ pub fn freeze_exempt_relocation(
                 ));
             }
             for (path, reason) in &report.blocked {
-                out.push_str(&format!("  blocked   {path}\n    {reason}\n"));
+                out.push_str(&format!("  blocked   {path}\n"));
+                // Indent **every** line of the reason, not only the first: since M52
+                // Increment 8 / T6 a blocked row can carry a whole house-rendered finding
+                // (`ingest.unaddressable-identity`'s head, `at:` locus and `route:`), and
+                // an unindented continuation reads as a new top-level row.
+                for line in reason.trim_end().lines() {
+                    out.push_str(&format!("    {line}\n"));
+                }
             }
             out.push_str(ROUTING_FOOTER);
             out

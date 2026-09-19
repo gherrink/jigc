@@ -389,7 +389,11 @@ fn classify_row(
                     file: rel_path.to_string(),
                     best_match: Some(home.ty.clone()),
                     verdict: "needs-reconcile",
-                    finding: Some(unaddressable_identity_finding(rel_path, home)),
+                    finding: Some(unaddressable_identity_finding(
+                        rel_path,
+                        home,
+                        UnaddressableDoor::Ingest,
+                    )),
                     adopted: false,
                     annotations: Vec::new(),
                 });
@@ -639,7 +643,7 @@ fn near_miss_route(
 /// **This is the one mint.** [`crate::ingest::run`] hands its answer to
 /// `engine::ingest::adopt`, which derives no identity of its own — see that function's
 /// *the identity is the caller's* paragraph for the defect that closed.
-fn home_identity(rel_path: &str, schema: &Schema) -> Option<String> {
+pub(crate) fn home_identity(rel_path: &str, schema: &Schema) -> Option<String> {
     let ty = &schema.ty;
     if schema.has_fixed_identity() {
         let home = schema.projection().home.path?;
@@ -654,9 +658,65 @@ fn home_identity(rel_path: &str, schema: &Schema) -> Option<String> {
     engine::slug::is_slug(slug).then(|| format!("{ty}:{slug}"))
 }
 
-/// The adoption refusal for a candidate that is **conformant at a managed home but bears no
-/// managed identity** — `ingest.unaddressable-identity` (M51 Inc 9 / T4;
-/// `design/validation.md` → The M51 registrations — Increment 9).
+/// **Which door refused** — the one clause of [`unaddressable_identity_finding`] that is
+/// not a fact about the file's own identity (M52 Increment 8 / T6).
+///
+/// The identity fault, its cause, its destination and its route are the file's and the
+/// schema's, so they are computed once and read identically at both doors. What differs is
+/// the *act* being refused, and a door that names the other one's act would be exactly the
+/// law-1 lie this wave exists to close: `jigc relocate` adopts nothing, and `jigc ingest`
+/// moves nothing.
+///
+/// - [`Ingest`](UnaddressableDoor::Ingest) — the file is already at the managed home and
+///   `jigc ingest` declines to **adopt** it ([`classify_row`], before the `adoptable`
+///   verdict is kept);
+/// - [`Relocate`](UnaddressableDoor::Relocate) — the file is at a **prior** home and
+///   `jigc relocate` declines to **move** it there ([`crate::relocate::relocate_stranded`]),
+///   because the move is byte-faithful and would carry this name onto the home.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum UnaddressableDoor {
+    Ingest,
+    Relocate,
+}
+
+impl UnaddressableDoor {
+    /// The repair's closing clause. Same verb at both doors — `jigc ingest` is what brings
+    /// a file at a managed home under management, and the `git mv` above lands it there —
+    /// but only one of them is a *re*-run: the relocate door's caller never ran it.
+    fn follow_up(self) -> &'static str {
+        match self {
+            UnaddressableDoor::Ingest => "then re-run `jigc ingest`",
+            UnaddressableDoor::Relocate => "then run `jigc ingest`",
+        }
+    }
+
+    /// The refusal's lead clause — what this door declined to do with `rel_path`.
+    fn lead(self, ty: &str, rel_path: &str) -> String {
+        match self {
+            // `conformant` is load-bearing here and only here: the ingest gate runs
+            // *after* the conformance verdict, so the sentence states the half that did
+            // hold before naming the half that did not.
+            UnaddressableDoor::Ingest => {
+                format!("conformant `{ty}` at `{rel_path}` is not adopted")
+            }
+            // `relocate` never parses the doc, so it claims nothing about conformance —
+            // it moves committed bytes, and this is the move it declined.
+            UnaddressableDoor::Relocate => {
+                format!("`{ty}` at `{rel_path}` is not moved to the `{ty}` home")
+            }
+        }
+    }
+}
+
+/// The refusal for a file that would sit at a managed home under **no managed identity** —
+/// `ingest.unaddressable-identity` (M51 Inc 9 / T4; `design/validation.md` → The M51
+/// registrations — Increment 9).
+///
+/// **Two doors raise it**, and `door` is the only thing they supply differently
+/// ([`UnaddressableDoor`]): `jigc ingest` declining to adopt a file already at the home, and
+/// — since M52 Increment 8 / T6 — `jigc relocate` declining to move one onto it
+/// ([`crate::relocate::unaddressable_destination`], which asks [`home_identity`] about the
+/// **destination**, since a byte-faithful move carries the source's own filename there).
 ///
 /// Its subject is exactly the set [`home_identity`] answers `None` over, which is one class
 /// with three shapes and one consequence: **no `<type>:<slug>` address reaches the file**, so
@@ -694,7 +754,11 @@ fn home_identity(rel_path: &str, schema: &Schema) -> Option<String> {
 /// as itself over a name holding a space or a metachar — which is the very class of name that
 /// lands here. The destination is named, never performed (jigc does not auto-move), and git
 /// refuses an occupied destination loudly rather than clobbering it.
-fn unaddressable_identity_finding(rel_path: &str, schema: &Schema) -> Finding {
+pub(crate) fn unaddressable_identity_finding(
+    rel_path: &str,
+    schema: &Schema,
+    door: UnaddressableDoor,
+) -> Finding {
     let ty = &schema.ty;
     // A fixed-identity doctype's one home, when that is what this candidate is beside —
     // read through the same [`Schema::projection`] `home_identity` compared against, so
@@ -755,22 +819,23 @@ fn unaddressable_identity_finding(rel_path: &str, schema: &Schema) -> Finding {
     };
     let repair = match &destination {
         Some(destination) => format!(
-            "{act} — `git mv {} {}` — then re-run `jigc ingest`",
+            "{act} — `git mv {} {}` — {}",
             crate::task::shell_token(rel_path),
             crate::task::shell_token(destination),
+            door.follow_up(),
         ),
         // No destination can be minted (the name normalizes to nothing), so the route
         // names the grammar the new name must satisfy instead of an empty path.
         None => format!(
             "{act}: give it a `<slug>.md` name directly under the `{ty}` home — a \
-             lowercase `[a-z0-9-]` stem with no leading, trailing or doubled `-` \
-             — then re-run `jigc ingest`"
+             lowercase `[a-z0-9-]` stem with no leading, trailing or doubled `-` — {}",
+            door.follow_up()
         ),
     };
     Finding::graded(
         Severity::Blocking,
         "ingest.unaddressable-identity",
-        format!("conformant `{ty}` at `{rel_path}` is not adopted: {cause}"),
+        format!("{}: {cause}", door.lead(ty, rel_path)),
         // The path form, and necessarily so: the whole fault is that this file has no
         // `<type>:<slug>` identity to key at (`design/command-output-contract.md` → the
         // target-normal forms, the declared `ingest.*` / `file-state.*` exception).

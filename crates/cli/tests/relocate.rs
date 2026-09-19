@@ -442,3 +442,247 @@ fn a_cherry_pick_opened_after_the_doors_verdict_refuses_before_the_squatters_slo
          stderr:\n{stderr}",
     );
 }
+
+/// The `digest` fixture doctype — **freeze-exempt and `placement:`-homed**, at a literal
+/// file whose own name is not a slug. It is the *omitting context* for the destination
+/// gate below: a fixed-identity doctype's slug is the type id, so the filename supplies
+/// nothing to the identity and the gate is vacuous there by construction.
+fn write_digest_pack(dir: &Path) {
+    fs::create_dir_all(dir.join("schemas")).expect("mk fixture pack schemas/");
+    fs::write(
+        dir.join("schemas").join("digest.yaml"),
+        "type: digest\nsingleton: true\nplacement: { file: \"Digest Of Notes.md\" }\n\
+         id-from: title\nsections:\n  - id: body\n    slot: { hint: \"The digest.\" }\n",
+    )
+    .expect("write the digest schema");
+}
+
+/// Write the manifest-less `note` pack into `repo` and point the project layer at it.
+fn install_note_pack(repo: &Path, pack_rel: &str) {
+    let pack = repo.join(".jigc").join(pack_rel);
+    write_note_pack(&pack);
+    fs::write(
+        repo.join(".jigc").join("config").join("packs.yaml"),
+        format!("packs:\n  - {}\n", pack.display()),
+    )
+    .expect("write packs.yaml naming the fixture pack");
+}
+
+/// **`relocate` asks the predicate `ingest` asks, about the destination** (M52 Increment 8
+/// / T6; `design/validation.md` → the `ingest.unaddressable-identity` row).
+///
+/// The move is **byte-faithful**, so a `location:`-homed relocation carries the source's
+/// own filename into the doctype's home — which means the destination's identity is
+/// decided by a name the caller never typed on the command line. Driven at HEAD the door
+/// asked nothing: three stranded docs moved, and `jigc doc list` then named
+/// `note:My Note` and `note:UPPER_CASE` **managed** while `jigc doc show` refused both
+/// `store.malformed-slug` — routing the reader back at `jigc doc list`, the surface that
+/// had just claimed them. That is `ingest.unaddressable-identity`'s exact class, at the
+/// other door that puts a file at a managed home.
+///
+/// The arm asserts the whole shape, not only the refusal: the addressable sibling in the
+/// **same run** still moves (a triage door classifies the rest — the door's exit is
+/// unchanged), neither refused file is moved on disk or in the index, and the store
+/// surface afterwards names no managed identity the read surface refuses.
+#[test]
+fn an_unaddressable_destination_is_refused_and_the_addressable_sibling_still_moves() {
+    let repo = TempDir::new("unaddressable-dest");
+    let home = TempDir::new("home");
+    git_init(repo.path());
+    install_note_pack(repo.path(), "note-pack");
+
+    // Three committed docs stranded at a legacy home. Two carry names that no
+    // `<type>:<slug>` address reaches; one is a well-formed doc id.
+    for (rel, body) in [
+        ("notes/My Note.md", "# My Note\n\n## Body\n\nprose\n"),
+        ("notes/UPPER_CASE.md", "# Upper Case\n\n## Body\n\nprose\n"),
+        ("notes/good-note.md", "# Good Note\n\n## Body\n\nprose\n"),
+    ] {
+        fs::create_dir_all(repo.path().join("notes")).expect("mk prior home");
+        fs::write(repo.path().join(rel), body).expect("write the stranded doc");
+    }
+    git(repo.path(), &["add", "-A"]);
+    git(repo.path(), &["commit", "-q", "-m", "strand three notes"]);
+
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &["relocate", "note", "--from", "notes"],
+    );
+    let report = stdout_of(&out);
+    // The door's EXIT is not changed: `jigc ingest`'s triage divergence is the mold — a
+    // blocking finding inside a run that classifies everything else.
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "the destination gate binds the MOVE, not the run — the door stays a triage door; \
+         stdout:\n{report}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    // (1) Both refusals carry `ingest.unaddressable-identity`'s code and route.
+    for rel in ["notes/My Note.md", "notes/UPPER_CASE.md"] {
+        assert!(
+            report.contains(rel),
+            "the report must name the doc it refused to move; got:\n{report}"
+        );
+        assert!(
+            report.contains("ingest.unaddressable-identity"),
+            "the refusal must carry the predicate's own code; got:\n{report}"
+        );
+        assert!(
+            repo.path().join(rel).exists(),
+            "a refused doc must stay where it was — {rel} moved anyway;\n{report}"
+        );
+    }
+    assert_eq!(
+        report.matches("ingest.unaddressable-identity").count(),
+        2,
+        "one refusal per refused doc; got:\n{report}"
+    );
+    assert!(
+        report.contains("git mv"),
+        "the route must name the act that resolves the state; got:\n{report}"
+    );
+
+    // (2) The addressable sibling in the SAME run still moves.
+    assert!(
+        repo.path().join("docs/notes/good-note.md").exists(),
+        "the addressable sibling must still relocate; got:\n{report}"
+    );
+
+    // (3) The index carries no rename for the refused pair.
+    let status = git(repo.path(), &["status", "--porcelain"]);
+    for name in ["My Note.md", "UPPER_CASE.md"] {
+        assert!(
+            !status.contains(&format!("docs/notes/{name}")),
+            "the refused pair must produce no staged rename; git status:\n{status}"
+        );
+    }
+    assert!(
+        status.contains("docs/notes/good-note.md"),
+        "the sibling's move must be staged; git status:\n{status}"
+    );
+
+    // (4) The store surface names no managed identity the read surface refuses — the
+    //     loop this gate closes.
+    let listed = jigc(repo.path(), home.path(), &["doc", "list"]);
+    assert_ok(&listed, "`jigc doc list`");
+    let listing = stdout_of(&listed);
+    for line in listing.lines() {
+        if !line.ends_with("managed") {
+            continue;
+        }
+        let Some(id) = line.split_whitespace().next() else {
+            continue;
+        };
+        if !id.contains(':') {
+            continue;
+        }
+        let shown = jigc(repo.path(), home.path(), &["doc", "show", id]);
+        assert!(
+            shown.status.success(),
+            "`jigc doc list` named `{id}` managed but `jigc doc show` refuses it — the \
+             loop the destination gate closes;\nlisting:\n{listing}\nstderr:\n{}",
+            String::from_utf8_lossy(&shown.stderr),
+        );
+    }
+
+    // (5) The code reaches the machine surface too, not only the text one.
+    let json = jigc(
+        repo.path(),
+        home.path(),
+        &["--format", "json", "relocate", "note", "--from", "notes"],
+    );
+    let json_report = stdout_of(&json);
+    assert!(
+        json_report.contains("ingest.unaddressable-identity"),
+        "the refusal must reach `--format json`; got:\n{json_report}"
+    );
+
+    // (6) The EMITTED route is run verbatim — the command string an agent would copy,
+    //     lifted out of the report rather than rebuilt here, through a real shell. It is
+    //     the whole claim that this refusal is not a dead end: after it, the doc is at the
+    //     `note` home under an identity `jigc doc show` resolves.
+    let emitted = backticked_git_mv(&report)
+        .unwrap_or_else(|| panic!("the refusal must emit a runnable `git mv`; got:\n{report}"));
+    let ran = Command::new("sh")
+        .arg("-c")
+        .arg(&emitted)
+        .current_dir(repo.path())
+        .output()
+        .expect("run the emitted route");
+    assert!(
+        ran.status.success(),
+        "the emitted route must run verbatim: `{emitted}`\nstderr:\n{}",
+        String::from_utf8_lossy(&ran.stderr),
+    );
+    let adopted = jigc(repo.path(), home.path(), &["ingest"]);
+    assert_ok(&adopted, "`jigc ingest` after the emitted route");
+    let shown = jigc(repo.path(), home.path(), &["doc", "show", "note:my-note"]);
+    assert!(
+        shown.status.success(),
+        "after the route the doc must be addressable; ingest said:\n{}\nstderr:\n{}",
+        stdout_of(&adopted),
+        String::from_utf8_lossy(&shown.stderr),
+    );
+}
+
+/// The first backtick-delimited `git mv …` span in `report` — the **emitted** command an
+/// agent would copy, lifted out of the printed bytes rather than reconstructed, so the arm
+/// above runs what the binary actually said.
+fn backticked_git_mv(report: &str) -> Option<String> {
+    report
+        .split('`')
+        .find(|span| span.starts_with("git mv "))
+        .map(str::to_string)
+}
+
+/// **The omitting context: a `placement:` destination is never gated** (M52 Increment 8 /
+/// T6).
+///
+/// A fixed-identity doctype's slug is the type id, so the filename at its one home
+/// supplies nothing to the identity — `Digest Of Notes.md` reads as `digest:digest` and
+/// always has. The identical name that blocks a `location:` relocation above must
+/// therefore relocate here untouched: the gate is inert in the context that omits its
+/// subject, never an error.
+#[test]
+fn a_placement_destination_relocates_even_when_its_file_name_is_not_a_slug() {
+    let repo = TempDir::new("placement-dest");
+    let home = TempDir::new("home");
+    git_init(repo.path());
+    let pack = repo.path().join(".jigc").join("digest-pack");
+    write_digest_pack(&pack);
+    fs::write(
+        repo.path().join(".jigc").join("config").join("packs.yaml"),
+        format!("packs:\n  - {}\n", pack.display()),
+    )
+    .expect("write packs.yaml naming the digest pack");
+
+    let prior_rel = "legacy/Digest Of Notes.md";
+    fs::create_dir_all(repo.path().join("legacy")).expect("mk prior home");
+    fs::write(
+        repo.path().join(prior_rel),
+        "# Digest Of Notes\n\n## Body\n\nprose\n",
+    )
+    .expect("write the stranded digest");
+    git(repo.path(), &["add", "-A"]);
+    git(repo.path(), &["commit", "-q", "-m", "strand the digest"]);
+
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &["relocate", "digest", "--from", prior_rel],
+    );
+    assert_ok(&out, "`jigc relocate digest --from <prior placement home>`");
+    let report = stdout_of(&out);
+    assert!(
+        !report.contains("ingest.unaddressable-identity"),
+        "a fixed-identity home's file name supplies no identity — the gate must be inert \
+         here; got:\n{report}"
+    );
+    assert!(
+        repo.path().join("Digest Of Notes.md").exists(),
+        "the placement instance must land at its one home; got:\n{report}"
+    );
+}

@@ -339,7 +339,7 @@ pub(crate) fn relocate_freeze_exempt(
     // `jigc relocate` is not a transaction: it has no second act to fail after the moves, so
     // there is nothing for a rollback to be triggered by (`ROLLBACK_POPULATIONS` carries the
     // population under `config set <root-knob>`, the door that does).
-    relocate_stranded(repo_root, jigc_root, &prior, &current, None)
+    relocate_stranded(repo_root, jigc_root, &prior, &current, Some(schema), None)
 }
 
 /// Detect every committed doc **stranded** at `prior` (sitting there, no longer at `current`)
@@ -347,6 +347,16 @@ pub(crate) fn relocate_freeze_exempt(
 /// same `git ls-files` committed truth the orphan detector does, keying on
 /// [`orphan::is_stranded`]. A per-doc failure (a `git mv` clobber, an unreadable file) is
 /// captured in `blocked` and surfaced, never fatal — the rest still relocate.
+///
+/// **`schema` is the destination-identity gate's subject** (M52 Increment 8 / T6): when a
+/// caller supplies the *resolved* schema whose home is `current`, each destination is asked
+/// [`unaddressable_destination`] before anything moves, and a destination no
+/// `<type>:<slug>` address reaches becomes a `blocked` row carrying
+/// `ingest.unaddressable-identity` instead of a move. `None` is the `placement-root` sweep,
+/// whose destinations are fixed-identity homes the gate is vacuous over — see that helper.
+/// The gate binds the **move**, never the run: `jigc relocate` is a triage door, so the
+/// addressable instances of the same sweep still relocate and the exit is unchanged
+/// (`design/validation.md` → the row's exit clause, `jigc ingest`'s own divergence).
 ///
 /// **One error is not a per-doc failure and ends the sweep: the posture family's operation
 /// in progress** (M52 Increment 3 / T4). Both acts below re-probe it immediately before
@@ -359,6 +369,7 @@ pub(crate) fn relocate_stranded(
     jigc_root: &Path,
     prior: &Home,
     current: &Home,
+    schema: Option<&Schema>,
     mut undo: Option<&mut MoveRollback>,
 ) -> Result<RelocationReport> {
     let mut report = RelocationReport {
@@ -375,6 +386,14 @@ pub(crate) fn relocate_stranded(
         };
         if dest == rel {
             continue; // already at the destination (is_stranded guards this — defensive).
+        }
+        if let Some(schema) = schema
+            && let Some(finding) = unaddressable_destination(&rel, &dest, schema)
+        {
+            report
+                .blocked
+                .push((rel, render::finding_line(&finding, false)));
+            continue;
         }
         match relocate_one(repo_root, jigc_root, &rel, &dest, undo.as_deref_mut()) {
             Ok(displaced) => {
@@ -543,6 +562,51 @@ fn displace_foreign_squatter(
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_else(|_| workbench_abs.to_string_lossy().into_owned());
     Ok(Some((dest_rel.to_string(), workbench_rel)))
+}
+
+/// **The destination-identity gate** — `Some(finding)` when moving `rel` to `dest` would
+/// put a file at `schema`'s home that no `<type>:<slug>` address reaches (M52 Increment 8 /
+/// T6; `design/validation.md` → the `ingest.unaddressable-identity` row).
+///
+/// **The subject is the destination, not the `--from` token.** The move is byte-faithful —
+/// `git mv` carries the source's own filename into the home — so the identity the store
+/// will mint is decided by a name the caller never typed on the command line. Driven at
+/// `a2e10a52`, `jigc relocate note --from notes` over `notes/My Note.md` moved it at exit
+/// 0; `jigc doc list` then reported `note:My Note` **managed** and `jigc doc show` refused
+/// that very identity `store.malformed-slug`, routing the reader back at `jigc doc list` —
+/// the loop `ingest.unaddressable-identity` was minted to close, at the *other* door that
+/// puts a file at a managed home.
+///
+/// **One predicate, not two agreeing ones.** It asks [`crate::ingest::home_identity`] — the
+/// same function `jigc ingest`'s adoption gate asks and `engine::index::committed_instances`
+/// mints from — rather than re-deriving the slug rule here, so the two doors cannot answer
+/// differently about one filename.
+///
+/// **A `Placement` destination is never gated, by construction**, which is why the caller
+/// may pass no schema at all: a fixed-identity doctype's slug is the type id, so its home's
+/// file name supplies nothing to the identity and [`crate::ingest::home_identity`] answers
+/// `<ty>:<ty>` whatever that file is called.
+///
+/// **Declared bound: the route is the identity repair, not a file-state repair.** The
+/// finding's `git mv` names the home *and* an addressable name, so running it verbatim
+/// achieves what the relocation was for and leaves the doc adoptable. If the stranded doc
+/// was already baselined, that hand move leaves the record keyed at the old path — the
+/// pre-existing, already-routed `file-state.orphaned-doc` state, not a dead end this gate
+/// introduces.
+fn unaddressable_destination(rel: &str, dest: &str, schema: &Schema) -> Option<Finding> {
+    crate::ingest::home_identity(dest, schema)
+        .is_none()
+        .then(|| {
+            // Keyed at `rel`, the path that **exists**: law 1's printed-path rule — `dest` is
+            // where the doc would have gone, and naming a file that is not there is the lie
+            // the rule forbids. The identity fault is the same either way: a `Location` move
+            // keeps the filename, so the stem the gate measured at `dest` is `rel`'s own.
+            crate::ingest::unaddressable_identity_finding(
+                rel,
+                schema,
+                crate::ingest::UnaddressableDoor::Relocate,
+            )
+        })
 }
 
 /// The destination path a stranded doc `rel` moves to inside `current`: a `Placement` home is

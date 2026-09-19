@@ -1407,6 +1407,12 @@ fn route_placement_root_repoint_strands(
             &jigc_root,
             prior,
             current,
+            // No destination-identity gate: every pair here is a **placement** doctype,
+            // whose destination is its one fixed-identity home — the file name supplies
+            // nothing to the identity, so the gate is vacuous by construction
+            // (`crate::relocate::unaddressable_destination`). The schemas this sweep holds
+            // are the *declared* ones besides, and the homes are re-rooted from them.
+            None,
             Some(undo),
         ) {
             Ok(report) => report,
