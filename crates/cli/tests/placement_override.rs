@@ -39,9 +39,14 @@
 //! `author-migration-*` steps — were left standing by those tasks and closed by T4, whose
 //! arms sit at the foot of this module.
 
+use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+use cli::pack::EmbeddedPack;
+use engine::packsource::{PackResourceKind, PackSource, ResourceId};
 
 /// A throwaway directory that removes itself on drop.
 struct TempDir(PathBuf);
@@ -74,6 +79,10 @@ impl Drop for TempDir {
 struct Corpus {
     repo: TempDir,
     home: TempDir,
+    /// How many foreign sources of each doctype this corpus has migrated — the source
+    /// path's discriminator, so a second composition of one `migrate-*` workflow takes
+    /// a fresh subject instead of colliding with the first task's id.
+    migrated: RefCell<BTreeMap<String, usize>>,
 }
 
 impl Corpus {
@@ -99,7 +108,11 @@ impl Corpus {
         git(&["add", "."]);
         git(&["commit", "-q", "-m", "initial"]);
 
-        let corpus = Self { repo, home };
+        let corpus = Self {
+            repo,
+            home,
+            migrated: RefCell::new(BTreeMap::new()),
+        };
         corpus.ok(&["setup"]);
         corpus
     }
@@ -127,10 +140,59 @@ impl Corpus {
         String::from_utf8(out.stdout).expect("utf-8 stdout")
     }
 
-    /// The composed `jigc workflow <id> --preview` bytes.
-    fn preview(&self, workflow: &str) -> String {
-        self.ok(&["workflow", workflow, "--preview"])
+    /// The composed bytes of `workflow` — **through whichever door composes it**.
+    ///
+    /// A workflow whose `suppressed:` block declares a `door:` is verb-routed and both
+    /// compose-by-name doors refuse it (M52 Increment 9 / T2): the verb is what stages
+    /// the foreign source its body rewrites, so it is composed here through that
+    /// declared door over a freshly committed foreign file, the target doctype read off
+    /// the door's own `--as` operand. Everything else still previews.
+    ///
+    /// The source path is deterministic per `(doctype, call index)`, so two corpora
+    /// driven through the **same sequence** mint the same task ids and compose
+    /// byte-identically — which is what the fixed-point arm below compares.
+    fn composed(&self, workflow: &str) -> String {
+        let Some(door) = declared_door(workflow) else {
+            return self.ok(&["workflow", workflow, "--preview"]);
+        };
+        let argv = engine::compose::Suppressed::door_argv(&door);
+        let ty = argv
+            .iter()
+            .position(|token| token == "--as")
+            .and_then(|at| argv.get(at + 1))
+            .unwrap_or_else(|| panic!("`{workflow}`'s door `{door}` names no `--as <doctype>`"))
+            .clone();
+        let nth = {
+            let mut seen = self.migrated.borrow_mut();
+            let slot = seen.entry(ty.clone()).or_insert(0);
+            *slot += 1;
+            *slot
+        };
+        let rel = format!("foreign-{ty}-{nth}.md");
+        // Committed, not merely written: `jigc migrate` refuses a source git has never
+        // recorded, and the retirement its composed body promises needs a committed
+        // copy to point at.
+        self.commit_file(
+            &rel,
+            &format!("# Foreign {ty}\n\n## Section\n\nSome prose.\n"),
+        );
+        self.ok(&["migrate", &rel, "--as", &ty])
     }
+}
+
+/// The `door:` a workflow's `suppressed:` block declares, read from the embedded packs
+/// — the same declaration the refusal routes at, so this helper and the binary cannot
+/// disagree about which workflows compose by name.
+fn declared_door(workflow: &str) -> Option<String> {
+    for pack in [EmbeddedPack::new(), EmbeddedPack::methodology()] {
+        let Ok(bytes) = pack.read(PackResourceKind::Workflows, &ResourceId::from(workflow)) else {
+            continue;
+        };
+        let def = engine::compose::load_workflow_def(&bytes)
+            .unwrap_or_else(|f| panic!("`{workflow}` must load: {}", f.message));
+        return def.suppressed.and_then(|s| s.door);
+    }
+    panic!("`{workflow}` ships in neither embedded pack")
 }
 
 /// The home the `{{ schema:<ty> }}` projection line of an emitted preview names — read out
@@ -166,18 +228,18 @@ fn a_placement_root_reroots_a_nested_home_and_never_a_root_one() {
     corpus.ok(&["config", "set", "placement-root", "notes"]);
 
     assert_eq!(
-        projected_home(&corpus.preview("migrate-roadmap"), "roadmap"),
+        projected_home(&corpus.composed("migrate-roadmap"), "roadmap"),
         "notes/roadmap.md",
         "a declared home with a leading directory component re-roots under `placement-root`",
     );
     assert_eq!(
-        projected_home(&corpus.preview("migrate-vision"), "vision"),
+        projected_home(&corpus.composed("migrate-vision"), "vision"),
         "VISION.md",
         "a home declared AT the repo root is never re-rooted — `VISION.md` is unburiable \
          by derivation, not by an allow-list",
     );
     assert_eq!(
-        projected_home(&corpus.preview("migrate-changelog"), "changelog"),
+        projected_home(&corpus.composed("migrate-changelog"), "changelog"),
         "CHANGELOG.md",
         "the dev pack's root-declared `changelog` is re-rooted by nothing either — the \
          rule reads the DECLARATION, so it holds across both packs",
@@ -199,12 +261,12 @@ fn the_repo_root_value_flattens_a_nested_home_and_is_reachable_as_the_empty_stri
         "`config set placement-root \"\"` canonicalizes to the `.` repo-root sentinel; got:\n{resolved}",
     );
     assert_eq!(
-        projected_home(&corpus.preview("migrate-roadmap"), "roadmap"),
+        projected_home(&corpus.composed("migrate-roadmap"), "roadmap"),
         "roadmap.md",
         "`.` is the repo root: the leading `docs/` component is dropped, nothing prepended",
     );
     assert_eq!(
-        projected_home(&corpus.preview("migrate-vision"), "vision"),
+        projected_home(&corpus.composed("migrate-vision"), "vision"),
         "VISION.md",
         "a root-declared home has no leading component to drop, so `.` leaves it alone",
     );
@@ -224,24 +286,31 @@ fn the_repo_root_value_flattens_a_nested_home_and_is_reachable_as_the_empty_stri
 /// committed goldens; a knob that leaked into the unset path moves those files.)
 #[test]
 fn the_unset_knob_leaves_every_declared_home_standing() {
-    let corpus = Corpus::new("unset");
+    let unset = Corpus::new("unset");
+    let fixed_point = Corpus::new("fixed-point");
+    fixed_point.ok(&["config", "set", "placement-root", "docs"]);
 
-    let roadmap = corpus.preview("migrate-roadmap");
-    let vision = corpus.preview("migrate-vision");
-    let changelog = corpus.preview("migrate-changelog");
-    assert_eq!(projected_home(&roadmap, "roadmap"), "docs/roadmap.md");
-    assert_eq!(projected_home(&vision, "vision"), "VISION.md");
-    assert_eq!(projected_home(&changelog, "changelog"), "CHANGELOG.md");
-
-    corpus.ok(&["config", "set", "placement-root", "docs"]);
-    assert_eq!(
-        corpus.preview("migrate-roadmap"),
-        roadmap,
-        "re-rooting `docs/roadmap.md` under `docs` is a fixed point — the composed bytes \
-         must be identical to the unset composition, not merely contain the same home",
-    );
-    assert_eq!(corpus.preview("migrate-vision"), vision);
-    assert_eq!(corpus.preview("migrate-changelog"), changelog);
+    // Two corpora rather than two passes over one: the `migrate-*` members compose
+    // through their own verb since M52 Increment 9 / T2, and that verb mints, so a
+    // second pass in one repository would take a different source and a different task
+    // id. Driven through the SAME sequence the two corpora mint the same ids — the
+    // task id is a function of the source path — so the comparison stays on bytes,
+    // which is the whole point of the arm.
+    for (workflow, ty, home) in [
+        ("migrate-roadmap", "roadmap", "docs/roadmap.md"),
+        ("migrate-vision", "vision", "VISION.md"),
+        ("migrate-changelog", "changelog", "CHANGELOG.md"),
+    ] {
+        let composed = unset.composed(workflow);
+        assert_eq!(projected_home(&composed, ty), home);
+        assert_eq!(
+            fixed_point.composed(workflow),
+            composed,
+            "re-rooting `docs/roadmap.md` under `docs` is a fixed point — `{workflow}`'s \
+             composed bytes must be identical to the unset composition, not merely \
+             contain the same home",
+        );
+    }
 }
 
 // -------------------------------------------------------------------------------------
@@ -868,7 +937,7 @@ fn the_compose_time_store_collection_follows_the_overridden_home() {
         step.to_str().expect("utf-8 path"),
     ]);
 
-    let preview = corpus.preview("planning");
+    let preview = corpus.composed("planning");
     assert!(
         preview.contains("The committed roadmap collection:\n\n> roadmap:roadmap\n"),
         "`{{{{store.roadmap}}}}` resolves the singleton at the RESOLVED home; got:\n{preview}",
@@ -893,7 +962,7 @@ fn the_compose_time_store_collection_follows_the_overridden_home() {
         "plan-scope",
         step.to_str().expect("utf-8 path"),
     ]);
-    let stray_preview = stray.preview("planning");
+    let stray_preview = stray.composed("planning");
     assert!(
         stray_preview.contains("The committed roadmap collection:"),
         "the probe step still composes; got:\n{stray_preview}",
@@ -1224,7 +1293,7 @@ fn the_same_path_contract_still_stands_and_the_composed_home_is_the_resolved_one
             (&rerooted, format!("notes/{ty}.md")),
             (&unset, format!("docs/{ty}.md")),
         ] {
-            let preview = corpus.preview(workflow);
+            let preview = corpus.composed(workflow);
             assert!(
                 normalized(&preview).contains("same-path migration"),
                 "`{workflow}` must keep stating the same-path branch — the lie is the path it \
@@ -1326,7 +1395,7 @@ fn the_two_home_knobs_have_disjoint_subjects() {
     );
     // …and leaves the placement world untouched: the absent branch is the behaviour.
     assert_eq!(
-        projected_home(&corpus.preview("migrate-roadmap"), "roadmap"),
+        projected_home(&corpus.composed("migrate-roadmap"), "roadmap"),
         DECLARED_HOME,
         "`docs-root` never applies to a placement doctype (`storage.md` → Placement) — the \
          `:185` row records the absent branch as correct, not as a hole `placement-root` fills",
@@ -1335,7 +1404,7 @@ fn the_two_home_knobs_have_disjoint_subjects() {
     // `placement-root` re-points the placement world…
     corpus.ok(&["config", "set", "placement-root", "prose"]);
     assert_eq!(
-        projected_home(&corpus.preview("migrate-roadmap"), "roadmap"),
+        projected_home(&corpus.composed("migrate-roadmap"), "roadmap"),
         "prose/roadmap.md",
         "the second function beside `apply_docs_root` moves the home its twin may not",
     );

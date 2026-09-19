@@ -71,3 +71,5 @@ mod start_resume;
 mod stdin_form_naming;
 #[path = "../superseding_decision.rs"]
 mod superseding_decision;
+#[path = "../verb_routed_compose.rs"]
+mod verb_routed_compose;

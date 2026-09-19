@@ -377,18 +377,24 @@ fn every_site_bearing_step_names_the_permitted_form() {
     );
 }
 
-/// **The emitted bytes.** Every workflow of both packs, previewed through the real
+/// **The emitted bytes.** Every workflow of both packs, composed through the real
 /// binary: each site in the composed text must have the statement above it. This arm
 /// sees what the source arm cannot — the catalog-rendered `Run:` sites, and whatever
 /// step ordering composition actually produces.
 #[test]
 fn every_composed_workflow_names_the_form_above_its_sites() {
     let corpus = TrialCorpus::build(State::Fresh);
+    let mut doors = support::composed::DoorFixtures::new(&corpus);
     let mut gaps = Vec::new();
     let mut asserted = 0usize;
     for (pack_name, pack) in embedded_packs() {
         for id in pack.list(PackResourceKind::Workflows) {
-            let composed = compose(&corpus, id.as_str());
+            let bytes = pack
+                .read(PackResourceKind::Workflows, &id)
+                .expect("a listed workflow reads back");
+            let def = engine::compose::load_workflow_def(&bytes)
+                .unwrap_or_else(|f| panic!("`{}` must load: {}", id.as_str(), f.message));
+            let composed = doors.compose(id.as_str(), &def);
             let lines: Vec<&str> = composed.lines().collect();
             let sites: Vec<(usize, &str)> = lines
                 .iter()
@@ -425,25 +431,6 @@ fn every_composed_workflow_names_the_form_above_its_sites() {
          feed `--from-file -` before the site that needs it:\n  {}",
         gaps.join("\n  "),
     );
-}
-
-/// Compose one workflow through the real binary. `--preview` is the read that mints
-/// nothing, but it is defined only for a task-minting workflow; a `creates-task: false`
-/// workflow **cannot** mint, so plain `start` composes it with no side effect. Which
-/// door applies is read off the binary's own refusal rather than re-derived from front
-/// matter, and any other failure is still a failure.
-fn compose(corpus: &TrialCorpus, workflow: &str) -> String {
-    let preview = corpus.jigc(&["workflow", workflow, "--preview"]);
-    if preview.status.success() {
-        return String::from_utf8(preview.stdout).expect("utf-8 jigc stdout");
-    }
-    let stderr = String::from_utf8_lossy(&preview.stderr).into_owned();
-    assert!(
-        stderr.contains("mints no task"),
-        "`jigc workflow {workflow} --preview` failed for a reason other than the \
-         workflow minting no task:\n{stderr}",
-    );
-    corpus.jigc_ok(&["start", "--workflow", workflow])
 }
 
 /// **The named form is run, not just printed.** The demonstration is extracted from a

@@ -156,12 +156,90 @@ fn ok_stdout(out: std::process::Output, what: &str) -> String {
     String::from_utf8(out.stdout).expect("utf-8 stdout")
 }
 
-/// Compose a workflow through the real binary: `jigc start --workflow <w> <intent>`.
+/// Compose a workflow through the real binary — **through whichever door composes it**.
+///
+/// `jigc start --workflow <w> <intent>` for an ordinary workflow; for a **verb-routed**
+/// one, the door its `suppressed:` block declares, because the compose-by-name doors
+/// refuse it since M52 Increment 9 / T2. `sub-task` is the member this suite reaches:
+/// its door is the fanned sub-agent's re-entry, which needs a provisioned worktree —
+/// [`fanned_sub_task`] stands one up. Composing it any other way would mean dropping
+/// the one omitting context whose body the claim is about.
 fn compose(repo: &Path, home: &Path, pack: &Path, workflow: &str, intent: &str) -> String {
+    if declares_a_door(pack, workflow) {
+        let (sub, worktree) = fanned_sub_task(repo, home, pack, intent);
+        return ok_stdout(
+            run_jigc(
+                &worktree,
+                home,
+                pack,
+                &["workflow", workflow, "--task", &sub],
+            ),
+            &format!("jigc workflow {workflow} --task {sub}"),
+        );
+    }
     ok_stdout(
         run_jigc(repo, home, pack, &["start", "--workflow", workflow, intent]),
         &format!("jigc start --workflow {workflow}"),
     )
+}
+
+/// Whether `workflow`'s `suppressed:` block declares the `door:` it is reached through
+/// — read from the pack under test, so this helper and the binary cannot disagree.
+fn declares_a_door(pack: &Path, workflow: &str) -> bool {
+    let path = pack.join("workflows").join(format!("{workflow}.yaml"));
+    let Ok(bytes) = fs::read(&path) else {
+        return false;
+    };
+    engine::compose::load_workflow_def(&bytes)
+        .unwrap_or_else(|f| panic!("`{workflow}` must load: {}", f.message))
+        .suppressed
+        .and_then(|s| s.door)
+        .is_some()
+}
+
+/// A milestone with one provisioned sub-task — the state `sub-task`'s door needs. The
+/// worktree is where a fanned sub-agent re-enters from: the main checkout's HEAD moves
+/// ahead of the shared base pin when the milestone record commits, by design.
+fn fanned_sub_task(repo: &Path, home: &Path, pack: &Path, intent: &str) -> (String, PathBuf) {
+    ok_stdout(
+        run_jigc(repo, home, pack, &["milestone", "create", "Door fixture"]),
+        "jigc milestone create",
+    );
+    let added = ok_stdout(
+        run_jigc(
+            repo,
+            home,
+            pack,
+            &[
+                "milestone",
+                "add-task",
+                "door-fixture",
+                intent,
+                "--workflow",
+                "sub-task",
+            ],
+        ),
+        "jigc milestone add-task",
+    );
+    ok_stdout(
+        run_jigc(
+            repo,
+            home,
+            pack,
+            &["milestone", "provision", "door-fixture"],
+        ),
+        "jigc milestone provision",
+    );
+    // The id the binary printed, never a test-side re-slug of the intent: the ack is
+    // `added task:<id> to milestone:<m>`.
+    let sub = added
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("added task:"))
+        .and_then(|rest| rest.split_whitespace().next())
+        .expect("`milestone add-task` acks the task it added")
+        .to_owned();
+    let worktree = repo.join(".jigc").join("worktrees").join(&sub);
+    (sub, worktree)
 }
 
 /// The command a composed line instructs, stripped of the command-ref frame the

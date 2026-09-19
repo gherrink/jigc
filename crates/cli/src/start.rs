@@ -798,12 +798,77 @@ fn with_also_open(mut composed: Composition, start: &Path) -> Result<Composition
     Ok(composed)
 }
 
+/// The finding code a composing door raises for a workflow the pack declares
+/// **verb-routed** — reached through its own `jigc` verb, never composed by name
+/// (`design/validation.md` → The M52 registrations — Increment 9).
+pub const VERB_ROUTED_CODE: &str = "workflow.verb-routed";
+
+/// The **named-workflow definition read** both `--workflow <X>` doors and
+/// `jigc workflow <X> --preview` perform — with the verb-routed refusal in front of it.
+///
+/// A workflow whose `suppressed:` block declares a `door:` composes correctly **only**
+/// through that door, because the door is what binds the input the body reads: `jigc
+/// migrate <path> --as adr` stages the foreign source the twelve `migrate-*` bodies
+/// rewrite, `jigc milestone execute <id>` binds the milestone whose sub-tasks the
+/// fan-out spawns, and `jigc workflow sub-task --task <id>` names the sub-area the
+/// body writes into. Composed by name from here, all three render a body whose
+/// instructions point at nothing — driven at rc.15, `jigc start --workflow migrate-adr
+/// "x"` minted a task and printed *"Below is the foreign source the CLI staged for
+/// you"* over three blank lines, and the walk it opened landed a commit its own text
+/// said was impossible (`completions/artifacts/M52/baseline-surfaces.md` §2.2).
+///
+/// So the declaration becomes a refusal: **blocking, exit 1**, keyed at the pack
+/// resource (`workflow:<id>` — the pack-resource target form) and routed at the
+/// declared door itself, argv-for-argv, so the reader's next command is the one that
+/// works. The `reason` prose rides the message verbatim — it is the pack's own
+/// statement of *why* the composition would be degenerate, and `describe --workflows`
+/// already shows it one surface over.
+///
+/// **Where it does not live, and why.** Not in [`compose_drained`] / [`compose_core`]:
+/// `jigc milestone execute` and every resume compose through those, and the resume of
+/// a `sub-task`-minted task is exactly a composition of a verb-routed workflow that
+/// *is* reachable — its door already ran. The check binds at the three doors that take
+/// a workflow **by name from the caller**, which is the act that has no door behind it.
+/// The cascade-default front door ([`compose_in_repo`]) is out of scope by decision
+/// (settle-record D9's declared bound): its workflow comes from the `default-workflow`
+/// knob, not from an argv the caller typed.
+fn read_named_workflow(
+    pack: &dyn PackSource,
+    defs: &CascadeDefs<'_>,
+    workflow_id: &str,
+) -> Result<WorkflowDef> {
+    let def = load_workflow_def(&defs.read_workflow(pack, workflow_id)?).map_err(finding_to_err)?;
+    if let Some(suppressed) = def.suppressed.as_ref()
+        && let Some(door) = suppressed.door.as_deref()
+    {
+        return Err(crate::render::envelope_finding_error(&Finding::graded(
+            Severity::Blocking,
+            VERB_ROUTED_CODE,
+            format!(
+                "workflow `{workflow_id}` is not composed by name: {}",
+                suppressed.reason,
+            ),
+            Some(engine::finding::Location::addressed(
+                format!("workflow:{workflow_id}"),
+                1,
+                1,
+            )),
+            Some(engine::finding::Route::mechanical(
+                engine::compose::Suppressed::door_argv(door),
+                "",
+            )),
+        )));
+    }
+    Ok(def)
+}
+
 /// Compose the workflow named by `workflow_id` from `intent` — the explicit
 /// `jigc start --workflow <X> "<intent>"` front door (Form D, `write-commands.md`
 /// → Task origination). Unlike [`compose_in_repo`] it bypasses the cascade
 /// `default-workflow` knob and composes the *named* workflow, minting iff `X`
-/// declares `creates-task: true`; an unknown `<X>` is rejected with a routed
-/// finding before any mint. The cascade-presence guard (a missing project layer
+/// declares `creates-task: true`; an unknown `<X>` — or a **verb-routed** one, which
+/// this door cannot bind the input for ([`read_named_workflow`]) — is rejected with a
+/// routed finding before any mint. The cascade-presence guard (a missing project layer
 /// routes to `jigc setup`) is identical to the default front door.
 pub fn compose_named_in_repo(
     start: &Path,
@@ -820,6 +885,15 @@ pub fn compose_named_in_repo(
     // cascade for phase-2 file owners + the phase-4/5 deltas, so a project step
     // override or slot-fill applies to a `--workflow <X>`-composed workflow too.
     let (resolved, overrides) = resolve_cascade(pack, &project_config)?;
+    // The verb-routed refusal, before anything mints: a `<X>` whose `suppressed:`
+    // block declares a `door:` is reached through that door, never composed by name
+    // ([`read_named_workflow`]). It precedes the compose for the same reason the
+    // unknown-`<X>` rejection does — a refused name must strand no task dir.
+    read_named_workflow(
+        pack,
+        &CascadeDefs::new(&resolved, &project_config),
+        workflow_id,
+    )?;
     let source = CascadeStepSource::new(pack, &resolved, &project_config);
     let composed = compose_drained(
         &repo_root,
@@ -864,10 +938,14 @@ pub fn compose_named_no_intent_in_repo(start: &Path, workflow_id: &str) -> Resul
     // Read the named workflow's `creates-task` declaration through the cascade — the
     // same definition read `compose_core` performs to decide minting — so the gate
     // below keys off the real declaration. An unknown `<X>` is rejected here (the
-    // `read_workflow` membership check maps `NotFound` to a routed finding).
-    let def_bytes =
-        CascadeDefs::new(&resolved, &project_config).read_workflow(pack, workflow_id)?;
-    let def = load_workflow_def(&def_bytes).map_err(finding_to_err)?;
+    // `read_workflow` membership check maps `NotFound` to a routed finding), and a
+    // verb-routed `<X>` ahead of the `creates-task` branch, so a `creates-task: false`
+    // member is routed at its verb rather than at this door.
+    let def = read_named_workflow(
+        pack,
+        &CascadeDefs::new(&resolved, &project_config),
+        workflow_id,
+    )?;
     if def.creates_task {
         bail!(
             "workflow '{workflow_id}' requires an intent: jigc start \"<intent>\" --workflow {workflow_id}"
@@ -907,8 +985,10 @@ pub fn compose_named_no_intent_in_repo(start: &Path, workflow_id: &str) -> Resul
 /// direction: a **`creates-task: false`** `<X>` (the router and its kind) mints
 /// nothing to begin with, so `jigc start --workflow <X>` already composes it without
 /// a mint — there is nothing to preview, and it is **rejected** here with that route.
-/// An unknown `<X>` surfaces its routed not-found finding from the cascade read,
-/// before the branch.
+/// An unknown `<X>` surfaces its routed not-found finding from the cascade read, and a
+/// **verb-routed** `<X>` its own refusal ([`read_named_workflow`]) — both before the
+/// branch, which is why a verb-routed `creates-task: false` member is now routed at
+/// its verb instead of at the compose door that could only compose it degenerately.
 // The `jigc workflow <id> --preview` dispatch (`cli.rs` → `run_preview`) calls this
 // (Inc 3 T2, the `--preview` surface + render).
 pub fn preview_in_repo(start: &Path, workflow_id: &str) -> Result<Composition> {
@@ -921,10 +1001,13 @@ pub fn preview_in_repo(start: &Path, workflow_id: &str) -> Result<Composition> {
     // Read the named workflow's `creates-task` declaration through the cascade — the
     // same definition read `compose_core` performs to decide minting. An unknown
     // `<X>` is rejected here (the `read_workflow` membership check maps `NotFound` to
-    // a routed finding).
-    let def_bytes =
-        CascadeDefs::new(&resolved, &project_config).read_workflow(pack, workflow_id)?;
-    let def = load_workflow_def(&def_bytes).map_err(finding_to_err)?;
+    // a routed finding), and a verb-routed `<X>` ahead of the `creates-task` branch —
+    // which is what stops this door routing INTO the compose that cannot bind it.
+    let def = read_named_workflow(
+        pack,
+        &CascadeDefs::new(&resolved, &project_config),
+        workflow_id,
+    )?;
     if !def.creates_task {
         bail!(
             "workflow '{workflow_id}' mints no task, so there is nothing to preview — run it directly: jigc start --workflow {workflow_id}"

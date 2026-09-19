@@ -1864,83 +1864,46 @@ fn serial_re_run_of_the_same_intent_blocks() {
 }
 
 #[test]
-fn form_d_sub_task_mints_and_composes_fan_out_free_without_finalize() {
+fn form_d_refuses_a_verb_routed_workflow_and_mints_nothing() {
     let repo = TempDir::new("form-d-sub-task");
     init_repo(repo.path());
     let home = TempDir::new("home");
 
-    // `--workflow sub-task <intent>`: the fanned target the `milestone-execution`
-    // fan-out references (Increment 5, T2). It is `creates-task: true`, so Form D
-    // mints + composes it — but it is **fan-out-free by construction**: its body is
-    // `locate` / `implement` / `author-commit` and carries **no `finalize` step**
-    // (the parent's `jigc milestone finalize` is the only commit boundary), so a
-    // sub-agent's workflow can never itself fan out
-    // (`workflow-dialect.md` → On-disk definition format — the fan-out-free sub-task).
+    // `sub-task` is `creates-task: true`, so Form D used to mint and compose it — and
+    // that was the defect: the body writes into a milestone sub-area this door binds
+    // none of, so the composed walk instructed an agent into a task with no commit
+    // boundary (M52 Increment 9 / T2; `completions/artifacts/M52/baseline-surfaces.md`
+    // §4.1). The pack declares the door it IS reached through
+    // (`suppressed.door: jigc workflow sub-task --task <task-id>`), so this door now
+    // refuses and names it. The composed body itself is pinned at that door, in
+    // `workflow_reentry.rs`.
     let out = run_start(
         repo.path(),
         home.path(),
         &["--workflow", "sub-task", "add rate limiter"],
     );
-    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    let stderr = String::from_utf8(out.stderr).expect("utf-8 stderr");
 
-    assert!(
-        out.status.success(),
-        "`jigc start --workflow sub-task \"<intent>\"` must exit 0; got {:?}\nstderr:\n{}",
-        out.status,
-        String::from_utf8_lossy(&out.stderr),
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "`jigc start --workflow sub-task \"<intent>\"` must refuse at exit 1; stdout:\n{}\nstderr:\n{stderr}",
+        String::from_utf8_lossy(&out.stdout),
     );
-
-    // sub-task is `creates-task: true`: Form D minted a working area + base pin.
-    let task_dir = repo
-        .path()
-        .join(".jigc")
-        .join("tasks")
-        .join("add-rate-limiter");
     assert!(
-        task_dir.join("base.json").is_file(),
-        "sub-task is creates-task: true, so it must open .jigc/tasks/add-rate-limiter/ with a base pin",
+        stderr.contains("workflow.verb-routed")
+            && stderr.contains("`jigc workflow sub-task --task <task-id>`"),
+        "the refusal names the code and routes at the declared door; got:\n{stderr}",
     );
-
-    // It emits the `locate` body (the intent reasoning) ...
+    // Refused before anything mints — a refused name strands no task dir.
     assert!(
-        stdout.contains("Reason about the change. The intent is:")
-            && stdout.contains("add rate limiter"),
-        "the composed sub-task view must carry the locate body with the resolved intent; got:\n{stdout}",
-    );
-    // ... the `implement` body (the commit-summary authoring) ...
-    assert!(
-        stdout.contains("Run: `jigc doc set-slot commit:add-rate-limiter#summary --from-file - --task add-rate-limiter`"),
-        "the composed sub-task view must carry the implement step's commit-summary authoring; got:\n{stdout}",
-    );
-    // ... and the net-new `author-commit` body (authoring the commit prose).
-    assert!(
-        stdout.to_lowercase().contains("commit"),
-        "the composed sub-task view must carry the author-commit body; got:\n{stdout}",
-    );
-
-    // Fan-out-free, on the EMITTED bytes — the contract is what the agent runs.
-    // No `finalize` step: the composed view carries no `jigc task finalize` Run line
-    // (the parent's `jigc milestone finalize` is the only commit boundary). The prose
-    // MAY name the command — only to ban it (asserted below); what must never appear
-    // is a `Run:` affordance for it.
-    assert!(
-        !stdout.contains("Run: `jigc task finalize"),
-        "sub-task is finalize-free — its composed view must emit no `jigc task finalize` Run line; got:\n{stdout}",
-    );
-    // C0 (round-2 surface fixes) — the author-commit step states the boundary precisely:
-    // staging (`git add`) is required (the milestone folds each worktree's staged index),
-    // committing is banned, and the two commit-shaped commands are banned BY NAME so an
-    // agent cannot read "never run git here" as contradicting the `git add` instruction.
-    assert!(
-        stdout.contains("never `git commit` and never `jigc task finalize`"),
-        "the author-commit prose must ban committing (git commit / jigc task finalize) by \
-         name while requiring `git add`; got:\n{stdout}",
-    );
-    // No `fan-out`/`join` step: a sub-agent's workflow can never itself fan out, so
-    // the composed view emits no `Spawn:` directive (the fan-out emit class).
-    assert!(
-        !stdout.lines().any(|l| l.starts_with("Spawn:")),
-        "sub-task is fan-out-free — its composed view must emit no `Spawn:` directive; got:\n{stdout}",
+        !repo
+            .path()
+            .join(".jigc")
+            .join("tasks")
+            .join("add-rate-limiter")
+            .exists(),
+        "a refused Form D must open no working area",
     );
 }
 

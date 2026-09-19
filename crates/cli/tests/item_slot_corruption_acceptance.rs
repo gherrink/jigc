@@ -77,6 +77,22 @@ impl Fixture {
         Fixture { corpus, task }
     }
 
+    /// Migrate a **second** committed foreign source of `doctype`, returning the
+    /// composed bytes — the `migrate-<doctype>` workflow's own door, and since M52
+    /// Increment 9 / T2 the only door that composes it.
+    fn migrate_again(&self, doctype: &str) -> String {
+        let source = format!("docs/legacy-{doctype}-again.md");
+        fs::write(
+            self.corpus.repo().join(&source),
+            format!("# Legacy {doctype} again\n\nmore free-form prose.\n"),
+        )
+        .expect("write the second foreign source");
+        self.corpus.git(&["add", &source]);
+        self.corpus
+            .git(&["commit", "-q", "-m", "the second foreign source"]);
+        self.corpus.jigc_ok(&["migrate", &source, "--as", doctype])
+    }
+
     /// `jigc doc create <doctype>`, returning the doc id the binary emitted.
     fn create(&self, doctype: &str, title: &str) -> String {
         self.corpus
@@ -722,9 +738,12 @@ fn the_read_side_matching_label_arm_is_declared_open_not_claimed_closed() {
         ),
         (
             "the {{schema:roadmap}} projection",
-            fixture
-                .corpus
-                .jigc_ok(&["workflow", "migrate-roadmap", "--preview"]),
+            // Composed through `migrate-roadmap`'s own declared door — the workflow is
+            // verb-routed, so both compose-by-name doors refuse it (M52 Increment 9 /
+            // T2) and the verb that stages the foreign source is what composes the
+            // projection this arm reads. A second source, so the mint does not collide
+            // with the one the fixture already opened.
+            fixture.migrate_again("roadmap"),
         ),
     ] {
         let lowered = text.to_lowercase();

@@ -108,6 +108,26 @@ fn setup(tag: &str) -> (TempDir, TempDir) {
     (repo, home)
 }
 
+/// Compose one `migrate-<doctype>` workflow through **its own declared door** —
+/// `jigc migrate <path> --as <doctype>` over a freshly committed foreign source.
+///
+/// Since M52 Increment 9 / T2 that door is the only one that composes it: a workflow
+/// whose `suppressed:` block declares a `door:` is refused at both compose-by-name
+/// doors, the verb being what stages the source its body rewrites.
+fn composed_migration(repo: &Path, home: &Path, doctype: &str) -> String {
+    let rel = format!("foreign-{doctype}.md");
+    fs::write(
+        repo.join(&rel),
+        format!("# Foreign {doctype}\n\n## Section\n\nSome prose.\n"),
+    )
+    .expect("write the foreign source");
+    // Committed, not merely written: `jigc migrate` refuses a source git has never
+    // recorded.
+    git(repo, &["add", &rel]);
+    git(repo, &["commit", "-q", "-m", "the foreign source"]);
+    jigc_ok(repo, home, &["migrate", &rel, "--as", doctype])
+}
+
 /// Collapse whitespace runs to single spaces — prose in YAML steps and clap
 /// help is wrapped, so a sentence assertion must be wrap-insensitive.
 fn collapsed(text: &str) -> String {
@@ -363,11 +383,7 @@ const RETIRED_GLOBAL_CLAIM: &str = "headings must sit at `####` depth or deeper"
 #[test]
 fn migrate_roadmap_preview_states_the_milestone_slot_reserved_set() {
     let (repo, home) = setup("ceiling-roadmap");
-    let preview = jigc_ok(
-        repo.path(),
-        home.path(),
-        &["workflow", "--preview", "migrate-roadmap"],
-    );
+    let preview = composed_migration(repo.path(), home.path(), "roadmap");
     let flat = collapsed(&preview);
     for fragment in [
         "headings must sit at `#####` depth or deeper",
@@ -393,11 +409,7 @@ fn migrate_roadmap_preview_states_the_milestone_slot_reserved_set() {
 #[test]
 fn migrate_decisions_log_preview_keeps_the_shallower_reserved_set() {
     let (repo, home) = setup("ceiling-log");
-    let preview = jigc_ok(
-        repo.path(),
-        home.path(),
-        &["workflow", "--preview", "migrate-decisions-log"],
-    );
+    let preview = composed_migration(repo.path(), home.path(), "decisions-log");
     let flat = collapsed(&preview);
     assert!(
         flat.contains(

@@ -182,13 +182,36 @@ fn ok_stdout(out: &std::process::Output, what: &str) -> String {
     String::from_utf8(out.stdout.clone()).expect("utf-8 stdout")
 }
 
-/// A minimal jigc-readable repo: a git repo with the project config directory. Enough
-/// for every **read-only** arm (`doc schema`, `workflow --preview`), which need no
-/// workbench.
+/// A minimal jigc-readable repo: a git repo with a committer identity and the project
+/// config directory. Enough for the read-only arms (`doc schema`) and for the migrate
+/// door, which commits its foreign source and mints into the workbench it creates.
 fn init_repo(repo: &Path) {
     git(repo, &["init", "-q"]);
+    git(repo, &["config", "user.email", "test@example.com"]);
+    git(repo, &["config", "user.name", "Test"]);
     fs::create_dir_all(repo.join(".jigc").join("config")).expect("create project layer");
 }
+
+/// The composed `{{schema:adr}}` seam is reached through `jigc migrate <path> --as adr`
+/// — `migrate-adr` is verb-routed, so `jigc workflow migrate-adr --preview` refuses it
+/// (M52 Increment 9 / T2): the verb stages the foreign source the author step rewrites,
+/// and the compose-by-name doors stage none. This commits that source and returns the
+/// door's argv.
+fn migrate_adr_door(repo: &Path) -> Vec<&'static str> {
+    fs::write(
+        repo.join(FOREIGN_ADR),
+        "# Foreign ADR\n\n## Status\n\nAccepted\n\n## Context\n\nWhy.\n",
+    )
+    .expect("write the foreign adr");
+    // Committed, not merely written: `jigc migrate` refuses a source git has never
+    // recorded.
+    git(repo, &["add", FOREIGN_ADR]);
+    git(repo, &["commit", "-q", "-m", "the foreign adr"]);
+    vec!["migrate", FOREIGN_ADR, "--as", "adr"]
+}
+
+/// The foreign source [`migrate_adr_door`] commits.
+const FOREIGN_ADR: &str = "foreign-adr.md";
 
 // ---------------------------------------------------------------------------
 // The derivation — the code-anchor field set, read from the shipped pack.
@@ -386,12 +409,9 @@ fn the_compose_schema_seam_names_the_grammar() {
     let home = TempDir::new("compose-home");
     init_repo(repo.path());
 
-    let out = jigc(
-        repo.path(),
-        home.path(),
-        &["workflow", "migrate-adr", "--preview"],
-    );
-    let text = ok_stdout(&out, "`jigc workflow migrate-adr --preview`");
+    let door = migrate_adr_door(repo.path());
+    let out = jigc(repo.path(), home.path(), &door);
+    let text = ok_stdout(&out, "`jigc migrate foreign-adr.md --as adr`");
     let line = text
         .lines()
         .find(|l| l.contains("`cites-code`"))
@@ -482,10 +502,7 @@ fn the_rendered_surfaces_are_fed_by_the_pack_declaration() {
     let home = TempDir::new("stripped-home");
     init_repo(repo.path());
 
-    for args in [
-        vec!["doc", "schema", "adr"],
-        vec!["workflow", "migrate-adr", "--preview"],
-    ] {
+    for args in [vec!["doc", "schema", "adr"], migrate_adr_door(repo.path())] {
         let out = Command::new(env!("CARGO_BIN_EXE_jigc"))
             .args(&args)
             .current_dir(repo.path())

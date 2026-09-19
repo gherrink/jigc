@@ -236,6 +236,10 @@ struct Workflow {
     id: String,
     creates_task: bool,
     migrate: bool,
+    /// The `door:` its `suppressed:` block declares, when it is verb-routed — the one
+    /// argv that composes it since M52 Increment 9 / T2, both compose-by-name doors
+    /// refusing it.
+    door: Option<String>,
     leaves: Vec<String>,
 }
 
@@ -298,6 +302,7 @@ fn composite_workflows() -> Vec<Workflow> {
                 id,
                 creates_task: def.creates_task,
                 migrate: by_name,
+                door: def.suppressed.and_then(|s| s.door),
                 leaves: leaves.clone(),
             });
         }
@@ -339,6 +344,213 @@ fn emitted_writes(text: &str, task: &str, leaf: &str) -> Vec<String> {
         .collect()
 }
 
+/// The fixture state a declared `door:` needs, stood up lazily on one repo.
+///
+/// A verb-routed workflow composes **only** through its own door (M52 Increment 9 /
+/// T2), and the door takes the very input the compose-by-name doors could not bind: a
+/// foreign source for `jigc migrate`, a milestone for `jigc milestone execute`, a
+/// provisioned sub-area for `jigc workflow sub-task --task`. Composing those members
+/// any other way is not available, and dropping them would leave twelve migrate cells
+/// asserted against empty output — a vacuous pass exactly where the axis has its
+/// zero-solicit side.
+#[derive(Default)]
+struct Doors {
+    milestone: Option<String>,
+    sub_task: Option<(String, PathBuf)>,
+    foreign: usize,
+}
+
+/// One composed workflow: its bytes, the task id its emitted writes address, and the
+/// directory those writes must run in.
+struct Composed {
+    text: String,
+    task: String,
+    cwd: PathBuf,
+}
+
+impl Doors {
+    /// Compose `workflow` through whichever door composes it. `mint` picks the
+    /// non-verb-routed door: `jigc start --workflow <id> <intent>` when the caller
+    /// needs a real task to write into, the mint-free preview otherwise.
+    fn compose(
+        &mut self,
+        repo: &Path,
+        home: &Path,
+        workflow: &Workflow,
+        intent: &str,
+        mint: bool,
+    ) -> Composed {
+        let Some(door) = workflow.door.clone() else {
+            // A `creates-task: false` workflow mints nothing, so it has no preview —
+            // `jigc start --workflow <id>` composes it, which is the route the preview
+            // door's own refusal names.
+            let argv: Vec<String> = if !workflow.creates_task {
+                vec!["start".into(), "--workflow".into(), workflow.id.clone()]
+            } else if mint {
+                vec![
+                    "start".into(),
+                    "--workflow".into(),
+                    workflow.id.clone(),
+                    intent.into(),
+                ]
+            } else {
+                vec!["workflow".into(), workflow.id.clone(), "--preview".into()]
+            };
+            let args: Vec<&str> = argv.iter().map(String::as_str).collect();
+            let out = jigc(repo, home, &args);
+            assert!(
+                out.status.success(),
+                "`jigc {}` must succeed; stderr:\n{}",
+                args.join(" "),
+                String::from_utf8_lossy(&out.stderr),
+            );
+            let text = stdout_of(&out);
+            let task = if mint && workflow.creates_task {
+                minted(&text).expect("a minting compose names the task id")
+            } else {
+                PREVIEW_TASK.to_string()
+            };
+            return Composed {
+                text,
+                task,
+                cwd: repo.to_path_buf(),
+            };
+        };
+
+        let declared = engine::compose::Suppressed::door_argv(&door);
+        let doctype = declared
+            .iter()
+            .position(|token| token == "--as")
+            .and_then(|at| declared.get(at + 1))
+            .cloned();
+        let mut filled: Vec<String> = Vec::new();
+        let mut cwd = repo.to_path_buf();
+        let mut task: Option<String> = None;
+        for token in declared.iter().skip(1) {
+            match token.as_str() {
+                "<path>" => {
+                    let ty = doctype
+                        .clone()
+                        .expect("a `<path>` door names `--as <doctype>`");
+                    filled.push(self.foreign_source(repo, &ty));
+                }
+                "<milestone-id>" => filled.push(self.milestone(repo, home).to_owned()),
+                "<task-id>" => {
+                    let (sub, worktree) = self.sub_task(repo, home, intent);
+                    cwd = worktree;
+                    task = Some(sub.clone());
+                    filled.push(sub);
+                }
+                other if other.starts_with('<') => panic!(
+                    "`{}`'s door carries the placeholder `{other}`, which this fixture \
+                     set does not fill — add it rather than skipping the member",
+                    workflow.id,
+                ),
+                other => filled.push(other.to_owned()),
+            }
+        }
+        let args: Vec<&str> = filled.iter().map(String::as_str).collect();
+        let out = jigc(&cwd, home, &args);
+        assert!(
+            out.status.success(),
+            "`{door}` is `{}`'s declared door and must compose it; stderr:\n{}",
+            workflow.id,
+            String::from_utf8_lossy(&out.stderr),
+        );
+        let text = stdout_of(&out);
+        // The re-entry door was handed its id; a minting door names the one it minted;
+        // `jigc milestone execute` mints nothing at all, so there is no commit doc for
+        // a write to address and the unbindable token stands.
+        let task = task
+            .or_else(|| minted(&text))
+            .unwrap_or_else(|| PREVIEW_TASK.to_string());
+        Composed { text, task, cwd }
+    }
+
+    /// A committed foreign source for `doctype`, fresh each call so two migrations
+    /// never contend for one subject (the task id is a function of the source path).
+    fn foreign_source(&mut self, repo: &Path, doctype: &str) -> String {
+        self.foreign += 1;
+        let rel = format!("foreign-{doctype}-{}.md", self.foreign);
+        std::fs::write(
+            repo.join(&rel),
+            format!("# Foreign {doctype}\n\n## Section\n\nSome prose.\n"),
+        )
+        .expect("write the foreign source");
+        // Committed, not merely written: `jigc migrate` refuses a source git has
+        // never recorded.
+        git(repo, &["add", &rel]);
+        git(
+            repo,
+            &["commit", "-q", "-m", &format!("the foreign {doctype}")],
+        );
+        rel
+    }
+
+    fn milestone(&mut self, repo: &Path, home: &Path) -> &str {
+        if self.milestone.is_none() {
+            let out = jigc(repo, home, &["milestone", "create", "Door fixture"]);
+            assert!(
+                out.status.success(),
+                "`jigc milestone create` must succeed; stderr:\n{}",
+                String::from_utf8_lossy(&out.stderr),
+            );
+            self.milestone = Some("door-fixture".to_string());
+        }
+        self.milestone.as_deref().expect("the milestone is created")
+    }
+
+    /// A provisioned sub-task and its worktree — where a fanned sub-agent re-enters
+    /// from, the main checkout's HEAD having moved ahead of the shared base pin when
+    /// the milestone record committed.
+    fn sub_task(&mut self, repo: &Path, home: &Path, intent: &str) -> (String, PathBuf) {
+        if self.sub_task.is_none() {
+            let milestone = self.milestone(repo, home).to_owned();
+            let added = jigc(
+                repo,
+                home,
+                &[
+                    "milestone",
+                    "add-task",
+                    &milestone,
+                    intent,
+                    "--workflow",
+                    "sub-task",
+                ],
+            );
+            assert!(
+                added.status.success(),
+                "`jigc milestone add-task` must succeed; stderr:\n{}",
+                String::from_utf8_lossy(&added.stderr),
+            );
+            let provisioned = jigc(repo, home, &["milestone", "provision", &milestone]);
+            assert!(
+                provisioned.status.success(),
+                "`jigc milestone provision` must succeed; stderr:\n{}",
+                String::from_utf8_lossy(&provisioned.stderr),
+            );
+            // The id the binary acked (`added task:<id> to milestone:<m>`), never a
+            // test-side re-slug of the intent.
+            let sub = stdout_of(&added)
+                .lines()
+                .find_map(|line| line.trim().strip_prefix("added task:"))
+                .and_then(|rest| rest.split_whitespace().next())
+                .expect("`milestone add-task` acks the task it added")
+                .to_string();
+            let worktree = repo.join(".jigc").join("worktrees").join(&sub);
+            self.sub_task = Some((sub, worktree));
+        }
+        self.sub_task.clone().expect("the sub-task is provisioned")
+    }
+}
+
+/// The task id a composition printed it minted, when it minted one.
+fn minted(text: &str) -> Option<String> {
+    text.lines()
+        .find_map(|line| line.trim().strip_prefix("task minted: "))
+        .map(|id| id.trim().to_string())
+}
+
 // ---------------------------------------------------------------------------
 // Arm 1 — the count over every dev workflow
 // ---------------------------------------------------------------------------
@@ -351,6 +563,7 @@ fn every_workflow_solicits_each_required_commit_leaf_exactly_as_its_gate_demands
     let repo = TempDir::new("count-repo");
     init_repo(repo.path(), home.path());
 
+    let mut doors = Doors::default();
     let mut wrong = Vec::new();
     let (mut expecting_one, mut expecting_zero) = (0usize, 0usize);
     let mut packs_at_one: Vec<&str> = Vec::new();
@@ -368,14 +581,15 @@ fn every_workflow_solicits_each_required_commit_leaf_exactly_as_its_gate_demands
                 packs_at_zero.push(workflow.pack);
             }
         }
-        let out = jigc(
+        let composed = doors.compose(
             repo.path(),
             home.path(),
-            &["workflow", &workflow.id, "--preview"],
+            workflow,
+            &format!("count the {} arm", workflow.id),
+            false,
         );
-        let text = stdout_of(&out);
         for leaf in &workflow.leaves {
-            let found = emitted_writes(&text, PREVIEW_TASK, leaf).len();
+            let found = emitted_writes(&composed.text, &composed.task, leaf).len();
             if found != expected {
                 wrong.push(format!(
                     "  [{}] {} — `#{leaf}`: expected {expected}, composed {found}",
@@ -513,35 +727,23 @@ fn following_the_composed_text_leaves_no_commit_finding() {
         init_repo(repo.path(), home.path());
 
         let intent = format!("exercise {}", workflow.id);
-        let out = jigc(
-            repo.path(),
-            home.path(),
-            &["start", "--workflow", &workflow.id, &intent],
-        );
-        assert!(
-            out.status.success(),
-            "`jigc start --workflow {}` must succeed; stderr:\n{}",
-            workflow.id,
-            String::from_utf8_lossy(&out.stderr),
-        );
-        let composed = stdout_of(&out);
-        let task = composed
-            .lines()
-            .find_map(|line| line.strip_prefix("task minted: "))
-            .expect("the mint names the task id")
-            .trim()
-            .to_string();
+        // Through whichever door composes it — and the writes are followed from the
+        // directory that door composed in, which for the fan-out sub-task is its own
+        // provisioned worktree.
+        let mut doors = Doors::default();
+        let Composed { text, task, cwd } =
+            doors.compose(repo.path(), home.path(), workflow, &intent, true);
 
         for leaf in &workflow.leaves {
-            let writes = emitted_writes(&composed, &task, leaf);
+            let writes = emitted_writes(&text, &task, leaf);
             assert_eq!(
                 writes.len(),
                 1,
-                "`{}` must compose exactly one write for `#{leaf}`; composed:\n{composed}",
+                "`{}` must compose exactly one write for `#{leaf}`; composed:\n{text}",
                 workflow.id,
             );
             run_composed(
-                repo.path(),
+                &cwd,
                 home.path(),
                 &writes[0],
                 &commit_type,
@@ -550,7 +752,7 @@ fn following_the_composed_text_leaves_no_commit_finding() {
         }
 
         let validated = jigc(
-            repo.path(),
+            &cwd,
             home.path(),
             &["--format", "json", "task", "validate", &task],
         );

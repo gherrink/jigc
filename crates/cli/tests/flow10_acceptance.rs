@@ -490,75 +490,55 @@ fn the_three_emitted_milestone_run_lines_carry_the_resolved_id_and_run_verbatim(
     }
 }
 
-/// **The marker survives exactly where the milestone is NOT bound.** `jigc start
-/// --workflow milestone-execution` composes the same workflow off the `milestone
-/// execute` verb — the door `jigc workflow milestone-execution --preview` routes to,
-/// since a `creates-task: false` workflow has nothing to preview — so no work-unit is
-/// bound: the three `Run:` lines keep the `<MILESTONE_ID>` agent-substitution marker
-/// and the compose stays **clean** (exit 0, no finding).
+/// **Off the verb there is no door left to compose it through.** `milestone-execution`
+/// reads a milestone the `jigc milestone execute <id>` door binds; composed by name it
+/// bound none, so the three `Run:` lines kept a `<MILESTONE_ID>` the surface gave no
+/// source for and the walk fanned out over nothing — at exit 0, which is what the
+/// workflow's own `suppressed:` reason had been describing in prose since M43.
 ///
-/// This is the empty-vs-unresolvable stance the sibling roots already take
-/// (`workflow-dialect.md` → data-value roots): an unfed root resolves absent, never
-/// the intrinsic-blocking dangling-`from:` finding (`command-catalog.md` → Validation)
-/// a bare `{ from: "milestone.id" }` arg would emit here. It is also the standing check
-/// behind `milestone-execution.yaml`'s `suppressed:` reason, which cites this
-/// degenerate off-verb walk — zero `Spawn:` lines, an unresolved `<MILESTONE_ID>` — as
-/// its rationale.
+/// Since M52 Increment 9 / T2 that reason carries the door as a key
+/// (`door: jigc milestone execute <milestone-id>`) and **both** compose-by-name doors
+/// refuse: `jigc start --workflow milestone-execution` and `jigc workflow
+/// milestone-execution --preview`, the latter having previously routed *into* the
+/// defect by naming the former. The bound arm above is unaffected — it is the door the
+/// refusal points at, and the test above asserts its emitted lines carry the real id.
 #[test]
-fn the_off_verb_compose_keeps_the_milestone_id_marker_and_stays_clean() {
+fn the_off_verb_compose_is_refused_at_both_doors_and_routes_at_the_verb() {
     let repo = TempDir::new("milestone-off-verb");
     let home = TempDir::new("milestone-off-verb-home");
     init_repo(repo.path());
 
-    // The `--preview` door refuses a no-task workflow and routes to the compose door;
-    // that refusal is what makes `start --workflow` the off-verb compose under test.
-    let previewed = run(
-        repo.path(),
-        home.path(),
-        &["workflow", "milestone-execution", "--preview"],
-    );
-    let preview_err = String::from_utf8_lossy(&previewed.stderr).into_owned();
-    assert!(
-        !previewed.status.success()
-            && preview_err.contains("jigc start --workflow milestone-execution"),
-        "the preview door must keep routing a no-task workflow to the compose door; \
-         got:\n{preview_err}",
-    );
-
-    let composed = run(
-        repo.path(),
-        home.path(),
-        &["start", "--workflow", "milestone-execution"],
-    );
-    expect_ok(&composed, "start --workflow milestone-execution");
-    let view = String::from_utf8(composed.stdout).expect("utf-8 compose stdout");
-    let stderr = String::from_utf8_lossy(&composed.stderr).into_owned();
-
-    let commands: Vec<String> = view
-        .lines()
-        .filter_map(|l| l.strip_prefix("Run: `").and_then(|r| r.strip_suffix('`')))
-        .filter(|c| c.starts_with("jigc milestone "))
-        .map(str::to_owned)
-        .collect();
-    assert_eq!(
-        commands,
-        vec![
-            "jigc milestone provision <MILESTONE_ID>".to_owned(),
-            "jigc milestone join <MILESTONE_ID>".to_owned(),
-            "jigc milestone finalize <MILESTONE_ID>".to_owned(),
-        ],
-        "with no milestone bound the three lines keep the agent-fill marker; got:\n{view}",
-    );
-    // The degenerate walk composes CLEAN — an unfed root is absent, not a finding.
-    assert!(
-        !view.contains("blocking ·") && !stderr.contains("blocking ·"),
-        "the off-verb compose must carry no finding; stdout:\n{view}\nstderr:\n{stderr}",
-    );
-    assert!(
-        !view.contains("Spawn: "),
-        "the off-verb walk fans out over nothing (the `suppressed:` reason's other half); \
-         got:\n{view}",
-    );
+    for argv in [
+        vec!["start", "--workflow", "milestone-execution"],
+        vec!["workflow", "milestone-execution", "--preview"],
+    ] {
+        let out = run(repo.path(), home.path(), &argv);
+        let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+        assert_eq!(
+            out.status.code(),
+            Some(1),
+            "`jigc {}` must refuse a workflow it cannot bind; stdout:\n{}\nstderr:\n{stderr}",
+            argv.join(" "),
+            String::from_utf8_lossy(&out.stdout),
+        );
+        assert!(
+            stderr.contains("blocking · workflow.verb-routed"),
+            "`jigc {}`: the refusal carries its code; got:\n{stderr}",
+            argv.join(" "),
+        );
+        assert!(
+            stderr.contains("route: `jigc milestone execute <milestone-id>`"),
+            "`jigc {}`: the route is the verb that binds the milestone — not the compose \
+             door that cannot; got:\n{stderr}",
+            argv.join(" "),
+        );
+        assert!(
+            out.stdout.is_empty(),
+            "`jigc {}`: nothing is composed past the refusal; got:\n{}",
+            argv.join(" "),
+            String::from_utf8_lossy(&out.stdout),
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------

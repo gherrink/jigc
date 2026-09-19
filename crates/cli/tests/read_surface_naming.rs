@@ -38,8 +38,9 @@
 //!
 //! **Asserted on the COMPOSED bytes through the real binary**
 //! ([`every_composed_workflow_names_the_read_surfaces_its_steps_owe`]): each workflow
-//! of both packs is previewed with `jigc workflow <id> --preview` and must carry the
-//! statements its own included steps owe. Step ids resolve first-wins across the pack
+//! of both packs is composed through the real binary — through whichever door composes
+//! it ([`support::composed`]) — and must carry the statements its own included steps
+//! owe. Step ids resolve first-wins across the pack
 //! precedence order, the way composition resolves them, so a step shadowed by a
 //! same-id sibling is not asserted against output that never renders it.
 //!
@@ -235,7 +236,7 @@ fn every_soliciting_step_disposes_both_read_surfaces() {
 }
 
 /// The composed half — **the emitted bytes an agent actually reads**. Every workflow
-/// of both packs is previewed through the real binary, and must carry the statements
+/// of both packs is composed through the real binary, and must carry the statements
 /// its own included steps owe.
 #[test]
 fn every_composed_workflow_names_the_read_surfaces_its_steps_owe() {
@@ -250,6 +251,10 @@ fn every_composed_workflow_names_the_read_surfaces_its_steps_owe() {
     }
 
     let corpus = TrialCorpus::build(State::Fresh);
+    // Composed through whichever door composes each member — a verb-routed workflow's
+    // own declared door included, so the sweep keeps the fourteen members whose bodies
+    // a migration or a fanned sub-agent actually reads (M52 Increment 9 / T2).
+    let mut doors = support::composed::DoorFixtures::new(&corpus);
     let mut gaps = Vec::new();
     let mut asserted = 0usize;
     for (pack_name, pack) in embedded_packs() {
@@ -271,7 +276,9 @@ fn every_composed_workflow_names_the_read_surfaces_its_steps_owe() {
             if owed.is_empty() {
                 continue;
             }
-            let composed = corpus.jigc_ok(&["workflow", id.as_str(), "--preview"]);
+            let def = engine::compose::load_workflow_def(source.as_bytes())
+                .unwrap_or_else(|f| panic!("`{}` must load: {}", id.as_str(), f.message));
+            let composed = doors.compose(id.as_str(), &def);
             for statement in owed {
                 asserted += 1;
                 if !composed.contains(&statement) {

@@ -776,8 +776,18 @@ fn the_migration_finalize_step_states_what_both_admissible_cells_actually_do() {
          source first if you want one",
     );
 
-    // The statement itself, read off the composed surface the agent actually sees.
-    let composed = corpus.jigc_ok(&["workflow", "--preview", "migrate-vision"]);
+    // The statement itself, read off the composed surface the agent actually sees —
+    // composed through `migrate-vision`'s own declared door, the only one that composes
+    // it since M52 Increment 9 / T2 (both compose-by-name doors refuse a verb-routed
+    // workflow). A second committed source, so the mint has its own subject.
+    fs::write(
+        corpus.repo().join("docs/direction-again.md"),
+        FOREIGN_VISION,
+    )
+    .expect("write the second source");
+    corpus.git(&["add", "--", "docs/direction-again.md"]);
+    corpus.git(&["commit", "-q", "-m", "the second foreign vision"]);
+    let composed = corpus.jigc_ok(&["migrate", "docs/direction-again.md", "--as", "vision"]);
     let flat = composed.split_whitespace().collect::<Vec<_>>().join(" ");
     for fragment in [
         "the deletion staged",

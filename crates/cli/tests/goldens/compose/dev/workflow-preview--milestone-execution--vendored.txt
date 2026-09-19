@@ -1,4 +1,7 @@
 exit: 1
 --- stdout ---
 --- stderr ---
-workflow 'milestone-execution' mints no task, so there is nothing to preview — run it directly: jigc start --workflow milestone-execution
+blocking · workflow.verb-routed — workflow `milestone-execution` is not composed by name: composes a degenerate walk — zero `Spawn:` lines and an unresolved `<MILESTONE_ID>` off-verb, so a router pick could never land
+  at: workflow:milestone-execution
+  route: `jigc milestone execute <milestone-id>`
+— jigc · run `jigc start` for orientation; all writes through `jigc`.

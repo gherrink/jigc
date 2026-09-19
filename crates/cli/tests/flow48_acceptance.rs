@@ -1054,6 +1054,10 @@ fn every_write_soliciting_step_names_the_read_back_and_the_read_runs() {
 
     // ── the composed surface: every workflow including a declarer prints the line ──
     let corpus = TrialCorpus::build(State::Fresh);
+    // Composed through whichever door composes each member: a verb-routed workflow is
+    // refused at both compose-by-name doors since M52 Increment 9 / T2, and the twelve
+    // `migrate-*` members are exactly the authoring surface this fence is about.
+    let mut doors = support::composed::DoorFixtures::new(&corpus);
     let mut composed_with_declarer = 0usize;
     for (name, pack) in &packs {
         for id in pack.list(PackResourceKind::Workflows) {
@@ -1070,14 +1074,7 @@ fn every_write_soliciting_step_names_the_read_back_and_the_read_runs() {
                 continue;
             }
             composed_with_declarer += 1;
-            let preview = corpus.jigc(&["workflow", id.as_str(), "--preview"]);
-            assert!(
-                preview.status.success(),
-                "[{name}:{}] the preview must compose; got:\n{}",
-                id.as_str(),
-                printed(&preview),
-            );
-            let text = stdout_of(&preview);
+            let text = doors.compose(id.as_str(), &def);
             assert!(
                 text.contains("jigc doc show") && text.contains("--task"),
                 "[{name}:{}] a composition including a write-soliciting step must print the \

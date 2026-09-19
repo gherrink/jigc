@@ -154,8 +154,11 @@ pub enum Command {
         intent: Option<String>,
 
         /// Compose a named workflow explicitly, bypassing the cascade default.
-        /// Mints a task iff the workflow declares `creates-task: true`. Combines
-        /// with the `<intent>` positional; mutually exclusive with `--task`.
+        /// Mints a task iff the workflow declares `creates-task: true`. A workflow
+        /// the pack declares verb-routed is refused here and named with the verb it
+        /// is reached through — that verb binds the input its body reads, and this
+        /// door binds none. Combines with the `<intent>` positional; mutually
+        /// exclusive with `--task`.
         #[arg(long, conflicts_with = "task")]
         workflow: Option<String>,
 
@@ -189,13 +192,15 @@ pub enum Command {
     /// (`<W>` must equal the sub-task's recorded mint workflow, else rejected —
     /// distinct from `jigc start --task`, which recomposes a top-level task's own
     /// workflow). `--preview` composes a `creates-task: true` `<W>` **without minting a
-    /// task**, so an agent can read what it will ask before consenting to mint. Exactly
-    /// one of the two is required.
+    /// task**, so an agent can read what it will ask before consenting to mint —
+    /// excluding a workflow the pack declares verb-routed, which is refused here and
+    /// named with the verb it is reached through. Exactly one of the two is required.
     #[command(group(ArgGroup::new("workflow_mode").required(true).args(["task", "preview"])))]
     Workflow {
         /// The workflow to compose — with `--task`, the fan-out step's `run:`
         /// workflow (must equal the sub-task's recorded mint workflow); with
-        /// `--preview`, any `creates-task: true` workflow.
+        /// `--preview`, any `creates-task: true` workflow that is not verb-routed
+        /// (a verb-routed one runs through its own verb, which the refusal names).
         workflow: String,
 
         /// Re-enter the named milestone sub-task. Mutually exclusive with `--preview`.
@@ -205,7 +210,9 @@ pub enum Command {
         /// Preview the workflow's composed step text **without minting a task** — the
         /// read surface for a mutation-cautious agent. The workflow must declare
         /// `creates-task: true` (a `creates-task: false` workflow mints nothing, so it
-        /// has nothing to preview — run it directly). Mutually exclusive with `--task`.
+        /// has nothing to preview — run it directly) and must not be verb-routed (a
+        /// workflow whose `suppressed:` block declares a `door:` composes only through
+        /// that door, which the refusal names). Mutually exclusive with `--task`.
         #[arg(long)]
         preview: bool,
     },
@@ -1674,7 +1681,9 @@ fn run_reenter(format: Format, workflow: &str, task: &str) -> Outcome {
 /// `creates-task: true` workflow `<W>`'s step text **without minting a task**, and
 /// render it through the mint-first [`render::composed_preview`] surface. A
 /// `creates-task: false` `<W>` (the router and its kind) mints nothing to begin with,
-/// so [`start::preview_in_repo`] rejects it with the route to run it directly.
+/// so [`start::preview_in_repo`] rejects it with the route to run it directly — and a
+/// verb-routed `<W>` is rejected ahead of that branch, routed at its own verb rather
+/// than at the compose door that could only compose it degenerately.
 fn run_preview(format: Format, workflow: &str) -> Outcome {
     let cwd = match cwd_or_refusal(format) {
         Ok(cwd) => cwd,

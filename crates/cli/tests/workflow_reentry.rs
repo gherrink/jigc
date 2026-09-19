@@ -224,6 +224,22 @@ fn workflow_reentry_composes_w_with_the_equality_guard() {
         !composed_sub_out.contains("Run: `jigc task finalize"),
         "the fan-out-free sub-task view must emit no `jigc task finalize` Run line; got:\n{composed_sub_out}",
     );
+    // The C0 author-commit wording, and the fan-out-free emit — asserted here since
+    // M52 Increment 9 / T2, because the door that used to carry these pins
+    // (`jigc start --workflow sub-task "<intent>"`) now refuses `workflow.verb-routed`
+    // and this is the one door that composes the body at all. Staging is required and
+    // committing is banned BY NAME, so an agent cannot read "never commit here" as
+    // contradicting the `git add` instruction.
+    assert!(
+        composed_sub_out.contains("never `git commit` and never `jigc task finalize`"),
+        "the author-commit prose must ban committing by name while requiring `git add`; \
+         got:\n{composed_sub_out}",
+    );
+    assert!(
+        !composed_sub_out.lines().any(|l| l.starts_with("Spawn:")),
+        "sub-task is fan-out-free — a sub-agent's workflow can never itself fan out, so \
+         its composed view emits no `Spawn:` directive; got:\n{composed_sub_out}",
+    );
 }
 
 /// The path a sub-task's provisioned commit doc lives at: `.jigc/tasks/<sub>/docs/commit:<sub>.md`.

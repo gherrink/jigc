@@ -187,6 +187,129 @@ fn start(repo: &Path, home: &Path, workflow: &str, intent: &str) -> String {
         .to_string()
 }
 
+/// Open a task on `workflow` **through whichever door composes it**, returning the task
+/// id and the directory its `--task` writes run in.
+///
+/// A workflow whose `suppressed:` block declares a `door:` is verb-routed: since M52
+/// Increment 9 / T2 `jigc start --workflow <id>` refuses it, because the door is what
+/// binds the input its body reads. The twelve `migrate-*` members and `sub-task` are
+/// exactly that, and every one of them declares an object-form create-gate — so the
+/// sweep below would lose thirteen of its pairs if it reached for `start` alone.
+fn start_through_its_door(
+    repo: &Path,
+    home: &Path,
+    workflow: &str,
+    intent: &str,
+) -> (String, PathBuf) {
+    let Some(door) = declared_door(workflow) else {
+        return (start(repo, home, workflow, intent), repo.to_path_buf());
+    };
+    let argv = load_door_argv(&door);
+    if let Some(at) = argv.iter().position(|token| token == "--as") {
+        // `jigc migrate <path> --as <doctype>` — it stages a committed foreign source
+        // and mints the migration task.
+        let doctype = argv[at + 1].clone();
+        let rel = format!("foreign-{doctype}.md");
+        fs::write(
+            repo.join(&rel),
+            format!("# Foreign {doctype}\n\n## Section\n\nSome prose.\n"),
+        )
+        .expect("write the foreign source");
+        // Committed, not merely written: `jigc migrate` refuses a source git has never
+        // recorded.
+        git(repo, &["add", &rel]);
+        git(
+            repo,
+            &["commit", "-q", "-m", &format!("the foreign {doctype}")],
+        );
+        let out = jigc(repo, home, &["migrate", &rel, "--as", &doctype], None);
+        assert_ok(&out, &format!("`jigc migrate {rel} --as {doctype}`"));
+        let stdout = String::from_utf8(out.stdout).expect("utf-8");
+        let task = stdout
+            .lines()
+            .find_map(|l| l.strip_prefix("task minted: "))
+            .unwrap_or_else(|| panic!("`jigc migrate` prints the id it minted; got:\n{stdout}"))
+            .trim()
+            .to_string();
+        return (task, repo.to_path_buf());
+    }
+    // `jigc workflow sub-task --task <task-id>` — the fanned sub-agent's re-entry,
+    // which runs from the provisioned worktree: the main checkout's HEAD moves ahead
+    // of the shared base pin when the milestone record commits, by design.
+    assert!(
+        argv.iter().any(|token| token == "<task-id>"),
+        "`{workflow}`'s door `{door}` is neither the migrate nor the re-entry shape — \
+         fill its placeholders here rather than skipping the member",
+    );
+    assert_ok(
+        &jigc(repo, home, &["milestone", "create", "Door fixture"], None),
+        "`jigc milestone create`",
+    );
+    let added = jigc(
+        repo,
+        home,
+        &[
+            "milestone",
+            "add-task",
+            "door-fixture",
+            intent,
+            "--workflow",
+            workflow,
+        ],
+        None,
+    );
+    assert_ok(&added, "`jigc milestone add-task`");
+    assert_ok(
+        &jigc(
+            repo,
+            home,
+            &["milestone", "provision", "door-fixture"],
+            None,
+        ),
+        "`jigc milestone provision`",
+    );
+    let sub = String::from_utf8(added.stdout)
+        .expect("utf-8")
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("added task:"))
+        .and_then(|rest| rest.split_whitespace().next())
+        .expect("`milestone add-task` acks the task it added")
+        .to_string();
+    let worktree = repo.join(".jigc").join("worktrees").join(&sub);
+    assert_ok(
+        &jigc(
+            &worktree,
+            home,
+            &["workflow", workflow, "--task", &sub],
+            None,
+        ),
+        &format!("`jigc workflow {workflow} --task {sub}`"),
+    );
+    (sub, worktree)
+}
+
+/// The `door:` a workflow's `suppressed:` block declares, read from the composite — the
+/// same declaration the refusal routes at.
+fn declared_door(workflow: &str) -> Option<String> {
+    let pack = composite();
+    let bytes = pack
+        .read(
+            PackResourceKind::Workflows,
+            &engine::packsource::ResourceId::from(workflow),
+        )
+        .unwrap_or_else(|err| panic!("`{workflow}` must read from the composite: {err:?}"));
+    load_workflow_def(&bytes)
+        .unwrap_or_else(|f| panic!("`{workflow}` must load: {}", f.message))
+        .suppressed
+        .and_then(|s| s.door)
+}
+
+/// The declared door split into argv tokens — the production tokenizer, so this helper
+/// and the pack-load fence read one spelling.
+fn load_door_argv(door: &str) -> Vec<String> {
+    engine::compose::Suppressed::door_argv(door)
+}
+
 /// Set one prose slot through the binary (stdin `--from-file -`), asserting success.
 fn set_slot(repo: &Path, home: &Path, addr: &str, task: &str, prose: &[u8]) {
     assert_ok(
@@ -383,7 +506,8 @@ fn every_object_form_pair_acks_existed_on_recreate() {
         let home = TempDir::new("home");
         init_repo(repo.path());
 
-        let task = start(repo.path(), home.path(), &workflow, "sweep the class");
+        let (task, cwd) =
+            start_through_its_door(repo.path(), home.path(), &workflow, "sweep the class");
         // The mint title: a singleton's `# H1` is the schema's own, so a divergent one is
         // refused since M48 (`write.title-ignored`) — the sweep asks the schema rather
         // than assuming one label fits every doctype.
@@ -391,7 +515,7 @@ fn every_object_form_pair_acks_existed_on_recreate() {
         // First create stages the instance (and binds the role — existing behavior).
         assert_ok(
             &jigc(
-                repo.path(),
+                &cwd,
                 home.path(),
                 &[
                     "doc", "create", &doctype, "--title", &title, "--task", &task,
@@ -402,7 +526,7 @@ fn every_object_form_pair_acks_existed_on_recreate() {
         );
         // Second create over the same-identity STAGED copy must ack `existed`, not reject.
         let again = jigc(
-            repo.path(),
+            &cwd,
             home.path(),
             &[
                 "doc", "create", &doctype, "--title", &title, "--task", &task,

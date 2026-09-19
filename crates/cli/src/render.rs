@@ -5328,7 +5328,7 @@ pub fn describe(format: Format, description: &Description) -> String {
 
             if !workflows.is_empty() {
                 out.push_str(
-                    "The workflows you can compose here. To read a task-minting one's full step text before you commit to running it, run `jigc workflow <id> --preview`, which composes the steps without minting a task; a workflow that mints nothing has no preview, and `jigc start --workflow <id>` composes it directly without minting either. ",
+                    "The workflows you can compose here. To read a task-minting one's full step text before you commit to running it, run `jigc workflow <id> --preview`, which composes the steps without minting a task; a workflow that mints nothing has no preview, and `jigc start --workflow <id>` composes it directly without minting either. Neither reaches a workflow whose line below says it is reached only through a verb: that verb binds what its steps read, so it is the one door that composes it, and both of these refuse it by name. ",
                 );
                 out.push_str(&workflows.join("\n\n"));
                 out.push_str("\n\n");
@@ -6422,7 +6422,10 @@ pub const ENVELOPE_ARMS: &[EnvelopeArm] = &[
              transaction raised — the one stream rule, so a reject's stream parses whole; \
              and M52 Increment 1 / T2's `setup` / `uninstall`, which until then answered on \
              a THIRD root shape no row here described (the bare `Finding` serialized whole, \
-             through the deleted `render::setup_block`). With them this arm and the one \
+             through the deleted `render::setup_block`); and M52 Increment 9 / T2's \
+             `workflow.verb-routed`, whose subject is a pack resource the contract keys \
+             under the pack-resource target form, so the flattened arm could not carry it. \
+             With them this arm and the one \
              above are the whole reject surface, which is what makes the two of them a \
              declaration a driver can discriminate on rather than a pair of common cases",
         ),
