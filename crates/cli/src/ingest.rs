@@ -751,7 +751,7 @@ pub(crate) fn require_project_layer(cwd: &Path) -> Result<PathBuf> {
     let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
     let project_config = jigc_home.join(".jigc").join("config");
     if !project_config.is_dir() {
-        return Err(crate::locate::not_set_up());
+        return Err(crate::locate::not_set_up(&project_config));
     }
     Ok(jigc_home)
 }

@@ -2455,7 +2455,7 @@ fn unlanded_paths(
 pub(crate) fn require_project_layer(cwd: &Path) -> Result<PathBuf> {
     let ctx = crate::locate::locate(cwd)?;
     if ctx.project_config.is_none() {
-        return Err(crate::locate::not_set_up());
+        return Err(crate::locate::not_set_up(&ctx.project_config_path()));
     }
     Ok(ctx.jigc_home)
 }

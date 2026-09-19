@@ -196,7 +196,6 @@ fn error_arm(out: &Output, label: &str) -> String {
 
 #[test]
 fn every_milestone_door_refuses_a_repository_with_no_jigc_setup() {
-    let expected = format!("{:#}", cli::locate::not_set_up());
     let route = engine::finding::Route::mechanical(["jigc", "setup"], "").to_string();
 
     let cells = milestone_cells();
@@ -204,6 +203,14 @@ fn every_milestone_door_refuses_a_repository_with_no_jigc_setup() {
     for (path, tail) in &cells {
         let label = path.join(" ");
         let bare = BareRepo::build(&label.replace(' ', "-"));
+        // The constructor is asked about **this cell's own** absent layer: since M52
+        // Inc 8 / T2 it tells *absent* from *unreadable* by `stat`-ing the path, so the
+        // expected bytes are derived from the fixture rather than from a path that
+        // happens to be missing (`tests/unreadable_project_layer.rs`).
+        let expected = format!(
+            "{:#}",
+            cli::locate::not_set_up(&bare.repo().join(".jigc").join("config")),
+        );
         let mut argv: Vec<&str> = path.to_vec();
         argv.extend_from_slice(tail);
         let out = bare.drive(&argv);

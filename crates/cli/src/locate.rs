@@ -5,9 +5,10 @@
 //! resolves. See `implementation/module-layout.md` → The I/O boundary and
 //! `design/overrides.md`.
 //!
-//! This module does *location* only: where each cascade source lives and which
-//! are present. It reads no bytes and resolves no deltas — that is the engine's
-//! job (feed-layers-in / assert-results-out).
+//! This module does *location* only: where each cascade source lives, which are
+//! present, and — since M52 Inc 8 / T2 — why a missing one is missing. It reads no
+//! file bytes and resolves no deltas — that is the engine's job (feed-layers-in /
+//! assert-results-out).
 
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
@@ -42,23 +43,72 @@ const PROJECT_CONFIG_REL: &str = ".jigc/config";
 /// The team-layer sub-path under `$HOME` (`~/.config/jigc/`).
 const TEAM_CONFIG_REL: &str = ".config/jigc";
 
-/// The one not-set-up rejection every project-layer-requiring verb shares —
-/// `jigc describe` / `ingest` / `migrate` / `migrate-corpus` / `upgrade` / the
-/// compose paths all converge on this constructor when the `.jigc/config/` cascade
-/// layer is absent (M43 T7: the anyhow-embedded route rewrite,
-/// `design/surface-contract.md` → The route fence, closing paragraph). The
+impl RunContext {
+    /// The path the project cascade layer occupies, **present or not** — the subject
+    /// [`not_set_up`] needs to tell *absent* from *unreadable*. Spelled here rather than
+    /// re-joined at each caller so the two facts (where the layer lives, what its absence
+    /// means) stay in one home.
+    pub(crate) fn project_config_path(&self) -> PathBuf {
+        self.jigc_home.join(PROJECT_CONFIG_REL)
+    }
+}
+
+/// The one project-layer-missing rejection every project-layer-requiring verb shares —
+/// `jigc describe` / `ingest` / `migrate` / `migrate-corpus` / `upgrade` / `validate` /
+/// the nine `milestone` doors / the compose paths all converge on this constructor when
+/// `<jigc_home>/.jigc/config/` is not a readable directory (M43 T7: the anyhow-embedded
+/// route rewrite, `design/surface-contract.md` → The route fence, closing paragraph). The
 /// `jigc setup` span rides the checked [`engine::finding::Route::mechanical`]
 /// constructor, so the CLI-seam parse fence asserts it parses against the real CLI.
 ///
-/// `pub` rather than `pub(crate)` so a suite sweeping the axis byte-compares against
+/// # The two states, told apart here
+///
+/// Every caller reaches this after one `is_dir()`, and `is_dir()` answers `false` for
+/// **absent** and for **unreadable** alike. Saying *"this project isn't set up"* over a
+/// project that is set up — its `.jigc/` merely unreadable — is a law-1 lie the binary can
+/// disprove with the same `stat` it just made, and the `jigc setup` route it prints would
+/// fail for the identical reason (`completions/artifacts/M52/baseline-contracts.md` §4
+/// LD-4, driven). So the discrimination lands **here, at the producer of the answer**,
+/// rather than at each door: one `metadata` call, and every leaf sharing the constructor
+/// shares the correction (`completions/artifacts/M52/settle-record.md` §13).
+///
+/// * a read fault (`Err` that is not `NotFound` — `EACCES` on a `chmod 000 .jigc`, an
+///   unmounted home, an I/O error) names the fault and carries a
+///   [`engine::finding::Route::human`] direction: no `jigc` argv repairs an unreadable
+///   directory, so the constructor is not contorted into claiming a mechanical conversion
+///   (the same judgment [`not_in_repo_route`] ships for its own axis);
+/// * everything else — `NotFound`, and a path that resolves to a non-directory — keeps
+///   the shipped not-set-up sentence **byte-for-byte**, which is what makes this a
+///   discrimination rather than a replacement.
+///
+/// **Declared bound — the one arm this producer does not reach:** bare `jigc start`'s
+/// orientation never calls it. [`crate::orient`] reads [`RunContext::project_config`]
+/// itself and answers `OrientationView::UnsetProject` at exit 0 for `None`, so over an
+/// unreadable `.jigc/` it still reports *unset-project*. Correcting that means a second
+/// decision site or a fourth orientation variant — a pinned-envelope move this wave's
+/// *fixes-and-understandability-only* boundary does not carry
+/// (`tests/unreadable_project_layer.rs` states it too).
+///
+/// `pub` rather than `pub(crate)` so a suite sweeping either axis byte-compares against
 /// **this** constructor instead of a copy typed into the test — the discipline
 /// [`not_in_repo_message`] already ships for its own axis
-/// (`tests/milestone_not_set_up_axis.rs`, `tests/not_in_repo_axis.rs`).
-pub fn not_set_up() -> anyhow::Error {
-    let setup = engine::finding::Route::mechanical(["jigc", "setup"], "");
-    anyhow::anyhow!(
-        "this project isn't set up — run {setup} (no `.jigc/config/` cascade layer found)"
-    )
+/// (`tests/milestone_not_set_up_axis.rs`, `tests/not_in_repo_axis.rs`,
+/// `tests/unreadable_project_layer.rs`).
+pub fn not_set_up(project_config: &Path) -> anyhow::Error {
+    match std::fs::metadata(project_config) {
+        Err(err) if err.kind() != std::io::ErrorKind::NotFound => {
+            let restore = engine::finding::Route::human(
+                "restore read access to the `.jigc/` directory and run the command again",
+            );
+            anyhow::anyhow!("cannot read the `.jigc/config/` cascade layer: {err} — {restore}")
+        }
+        _ => {
+            let setup = engine::finding::Route::mechanical(["jigc", "setup"], "");
+            anyhow::anyhow!(
+                "this project isn't set up — run {setup} (no `.jigc/config/` cascade layer found)"
+            )
+        }
+    }
 }
 
 /// The one route a not-inside-a-git-repository refusal carries.

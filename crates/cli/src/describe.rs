@@ -222,8 +222,9 @@ fn require_project_layer(cwd: &Path) -> Result<PathBuf> {
     // resolves the one shared layer (M31 Inc 2 / WF3). `describe` reads only the cascade
     // + pack, so jigc_home is the single base it needs (no git, no worktree code).
     let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
-    if !jigc_home.join(".jigc").join("config").is_dir() {
-        return Err(crate::locate::not_set_up());
+    let project_config = jigc_home.join(".jigc").join("config");
+    if !project_config.is_dir() {
+        return Err(crate::locate::not_set_up(&project_config));
     }
     Ok(jigc_home)
 }

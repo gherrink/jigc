@@ -154,7 +154,7 @@ pub(crate) fn jigc_home_or_repo(start: &Path) -> Result<PathBuf> {
 pub(crate) fn require_project_config(start: &Path) -> Result<PathBuf> {
     let project_config = jigc_home_or_repo(start)?.join(".jigc").join("config");
     if !project_config.is_dir() {
-        return Err(crate::locate::not_set_up());
+        return Err(crate::locate::not_set_up(&project_config));
     }
     Ok(project_config)
 }

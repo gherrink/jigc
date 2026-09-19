@@ -303,7 +303,7 @@ fn migrate_in_repo(
 ) -> Result<(crate::start::Composition, Option<Finding>)> {
     let ctx = crate::locate::locate(cwd)?;
     if ctx.project_config.is_none() {
-        return Err(crate::locate::not_set_up());
+        return Err(crate::locate::not_set_up(&ctx.project_config_path()));
     }
     let repo_root = ctx.repo_root;
     let project_config = repo_root.join(".jigc").join("config");

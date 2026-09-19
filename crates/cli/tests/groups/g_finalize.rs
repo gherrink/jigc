@@ -89,6 +89,8 @@ mod severity_tuning;
 mod store_version_stamp;
 #[path = "../temp_mint_fence.rs"]
 mod temp_mint_fence;
+#[path = "../unreadable_project_layer.rs"]
+mod unreadable_project_layer;
 #[path = "../validate_previews_posture.rs"]
 mod validate_previews_posture;
 #[path = "../write_finding_keys.rs"]
