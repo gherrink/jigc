@@ -121,6 +121,8 @@ fn init_repo(repo: &Path, methodology: bool) {
     }
     git(repo, &["add", "."]);
     git(repo, &["commit", "-q", "-m", "initial"]);
+    // The project cascade layer — `jigc milestone`'s door-top precondition (M52 Inc 8 / T1).
+    crate::support::mint_project_layer(repo);
 }
 
 /// Run `jigc <args>` with `cwd = repo` and `$HOME = home`, never inheriting a harness

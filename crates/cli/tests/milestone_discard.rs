@@ -166,6 +166,8 @@ fn init_repo(repo: &Path) {
     fs::write(repo.join("README.md"), "hello\n").expect("write file");
     git(repo, &["add", "README.md"]);
     git(repo, &["commit", "-q", "-m", "initial"]);
+    // The project cascade layer — `jigc milestone`'s door-top precondition (M52 Inc 8 / T1).
+    crate::support::mint_project_layer(repo);
 }
 
 /// Write the `[dev ▸ methodology]` compose marker — the exact key `make_pack` reads, so the

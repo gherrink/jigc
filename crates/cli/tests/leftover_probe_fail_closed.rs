@@ -240,6 +240,8 @@ impl Fixture {
         fs::write(repo.join("README.md"), "hello\n").expect("write README");
         git_ok(&repo, &["add", "."]);
         git_ok(&repo, &["commit", "-q", "-m", "initial"]);
+        // The project cascade layer — `jigc milestone`'s door-top precondition (M52 Inc 8 / T1).
+        crate::support::mint_project_layer(&repo);
 
         let fx = Fixture {
             _root: root,

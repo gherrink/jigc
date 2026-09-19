@@ -78,6 +78,8 @@ fn init_repo(root: &Path) -> String {
     fs::write(root.join("README.md"), "hello\n").expect("write file");
     git(&["add", "."]);
     git(&["commit", "-q", "-m", "initial"]);
+    // The project cascade layer — `jigc milestone`'s door-top precondition (M52 Inc 8 / T1).
+    crate::support::mint_project_layer(root);
     let head = git(&["rev-parse", "HEAD"]);
     String::from_utf8(head.stdout)
         .expect("utf-8 head")

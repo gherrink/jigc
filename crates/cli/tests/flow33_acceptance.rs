@@ -95,6 +95,8 @@ fn init_repo(root: &Path, extra: &[(&str, &str)]) {
     }
     git(root, &["add", "."]);
     git(root, &["commit", "-q", "-m", "initial"]);
+    // The project cascade layer — `jigc milestone`'s door-top precondition (M52 Inc 8 / T1).
+    crate::support::mint_project_layer(root);
 }
 
 /// Run `jigc milestone <args>` with `cwd = repo`, `$HOME = home`, and the embedded pack.

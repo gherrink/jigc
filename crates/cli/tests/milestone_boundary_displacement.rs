@@ -97,6 +97,8 @@ fn init_repo(root: &Path) {
     fs::write(root.join("README.md"), "hello\n").expect("write file");
     git_ok(root, &["add", "."]);
     git_ok(root, &["commit", "-q", "-m", "initial"]);
+    // The project cascade layer — `jigc milestone`'s door-top precondition (M52 Inc 8 / T1).
+    crate::support::mint_project_layer(root);
 }
 
 /// Run `jigc milestone <args>` with `cwd = repo` and `$HOME = home`.

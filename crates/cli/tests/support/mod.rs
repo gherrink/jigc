@@ -68,6 +68,27 @@ pub fn seed_ambush_class_declarer(pack: &std::path::Path) {
     .expect("seed the fixture pack's ambush-class declarer");
 }
 
+/// Mint the **project cascade layer** (`<repo>/.jigc/config/`) without the rest of
+/// `jigc setup` — the one thing every `jigc milestone` door asks for.
+///
+/// Since M52 Increment 8 / T1 the whole `milestone` family refuses a repository with no
+/// `.jigc/config/`: a milestone minted there would live only in the gitignored workbench,
+/// which no clone sees and no fresh clone can re-derive — the inverse of
+/// `design/team-ready-state.md`'s settlement that the committed record is the source of
+/// truth. Nineteen fixtures went from `git init` straight to `jigc milestone create` with
+/// no layer at all, a state no `jigc setup` produces, and they are repaired here rather
+/// than nineteen times over.
+///
+/// **Why not run `jigc setup`.** The install also lands the adapter files, a `pre-commit`
+/// hook and a commit of its own, and most of these suites measure commit counts, hook
+/// behaviour, destroying-door subjects or pack composition that the install would
+/// perturb. An empty project layer carries no deltas, so the cascade resolves exactly as
+/// it did before — the door's question is answered and nothing else moves.
+pub fn mint_project_layer(repo: &std::path::Path) {
+    std::fs::create_dir_all(repo.join(".jigc").join("config"))
+        .expect("mk the project cascade layer");
+}
+
 /// The `--title` a `jigc doc create <doctype>` must carry against the **shipped** packs.
 ///
 /// A `placement` / `display-title` singleton's `# H1` is the schema's own, so since M48 a

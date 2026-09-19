@@ -222,6 +222,26 @@ impl MilestoneCommand {
         {
             return crate::invocation_log::operational_failure(format, &err);
         }
+        // **Is this a repository jigc was ever installed into?** — one ask for the whole
+        // family, above every arm including `execute`'s, because a second reader is the
+        // class re-opening (M52 Inc 8 / T1). Driven at `HEAD~` over a bare repo, six of
+        // the nine doors ran at exit 0 — `provision` registering a real detached worktree
+        // in `.git/worktrees/` — and `add-from-spec` resolved a docs-root path in an
+        // unconfigured repo to refuse with `store.not-found`; only `execute` asked. The
+        // whole arc then lived in a gitignored `.jigc/` no clone sees, which inverts
+        // `design/team-ready-state.md`'s settlement that the committed record is the
+        // source of truth. The answer is the SHIPPED `locate::not_set_up()` on the
+        // `{error}` arm — the one every other door requiring the project layer already
+        // gives (21 of the 47 leaves, measured at this wave's baseline, before this
+        // change) — a deliberate consistency with the surface rather than an omission,
+        // and no new finding code (`completions/artifacts/M52/settle-record.md` §13).
+        //
+        // It sits BELOW the malformed-id guard above and above everything else: that
+        // guard is about the token the caller typed, and moving it would change a set-up
+        // repository's answer to buy nothing.
+        if let Err(err) = crate::migrate_corpus::require_project_layer(cwd) {
+            return crate::invocation_log::operational_failure(format, &err);
+        }
         // The `join` verb reports a `JoinOutcome` (overlay + findings), not a one-line
         // summary, and a same-doc clash is a *blocking finding inside an Ok outcome*
         // (the merge ran, then routed the contention) — so it has its own dispatch arm.

@@ -289,6 +289,8 @@ struct LeftoverCell {
 /// so the leftover planted at `area-zed` ([`plant_precious`]) is the **last** path every
 /// door reaches, never the first.
 fn mint_milestone(repo: &Path, home: &Path) {
+    // The project cascade layer — `jigc milestone`'s door-top precondition (M52 Inc 8 / T1).
+    crate::support::mint_project_layer(repo);
     run_jigc_ok(
         repo,
         home,

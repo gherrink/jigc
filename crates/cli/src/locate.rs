@@ -49,7 +49,12 @@ const TEAM_CONFIG_REL: &str = ".config/jigc";
 /// `design/surface-contract.md` → The route fence, closing paragraph). The
 /// `jigc setup` span rides the checked [`engine::finding::Route::mechanical`]
 /// constructor, so the CLI-seam parse fence asserts it parses against the real CLI.
-pub(crate) fn not_set_up() -> anyhow::Error {
+///
+/// `pub` rather than `pub(crate)` so a suite sweeping the axis byte-compares against
+/// **this** constructor instead of a copy typed into the test — the discipline
+/// [`not_in_repo_message`] already ships for its own axis
+/// (`tests/milestone_not_set_up_axis.rs`, `tests/not_in_repo_axis.rs`).
+pub fn not_set_up() -> anyhow::Error {
     let setup = engine::finding::Route::mechanical(["jigc", "setup"], "");
     anyhow::anyhow!(
         "this project isn't set up — run {setup} (no `.jigc/config/` cascade layer found)"

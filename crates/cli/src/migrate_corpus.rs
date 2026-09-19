@@ -2446,6 +2446,12 @@ fn unlanded_paths(
 /// preamble shared with `jigc validate` / `jigc ingest` (and the freeze-exempt relocation
 /// path in `crate::relocate`). Errors with routed messages when the repo or the project
 /// layer is absent.
+///
+/// Since M52 Increment 8 / T1 it is also the **whole `jigc milestone` family's** door-top
+/// ask ([`crate::milestone::MilestoneCommand::dispatch`]), where the caller wants only
+/// the refusal: a milestone minted into a repository with no `jigc setup` lives in a
+/// gitignored `.jigc/` no clone sees, inverting `design/team-ready-state.md`'s
+/// committed-record-is-the-source-of-truth settlement.
 pub(crate) fn require_project_layer(cwd: &Path) -> Result<PathBuf> {
     let ctx = crate::locate::locate(cwd)?;
     if ctx.project_config.is_none() {

@@ -364,9 +364,12 @@ fn stage_worktree_code(repo: &Path, sub: &str, rel: &str, body: &str) {
 /// provision the N base-pin worktrees with disjoint staged code in each — the fan-out
 /// shape both commit models commit from.
 fn setup_fan_out(repo: &Path, home: &Path, squash_false: bool) {
+    // The project cascade layer, unconditionally — `jigc milestone`'s door-top
+    // precondition (M52 Inc 8 / T1). The `squash:false` arm used to create it as a side
+    // effect of writing its knob file; its `squash:true` twin had none at all.
+    crate::support::mint_project_layer(repo);
+    let config = repo.join(".jigc").join("config");
     if squash_false {
-        let config = repo.join(".jigc").join("config");
-        fs::create_dir_all(&config).expect("mk config layer");
         fs::write(
             config.join("manifest.yaml"),
             "scalar:\n  finalize.fan-out.squash: false\n",
