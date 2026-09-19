@@ -1032,10 +1032,12 @@ pub const STORE_EXIT_FLIPS: &[StoreExitFlip] = &[
         sweep_untrustworthy: true,
     },
     // (M51 Inc 8 / T3) A committed doc jigc stamped that no resolved doctype claims — the
-    // pack that defined its type left the composition, or the file sits where no doctype
-    // homes. The sweep could not adjudicate those files at all (there is no schema to
-    // adjudicate them against), so it refuses the green rather than reporting that it found
-    // nothing in them.
+    // pack that defined its type left the composition, or that type is composed and homed
+    // somewhere this path is not. Either way the sweep never read those files against a
+    // schema, so it refuses the green rather than reporting that it found nothing in them.
+    // (M52 Inc 8 / T4: the second cause is why neither this comment nor the trailer may say
+    // *no schema in the composed set* — driven, the schema was composed and `jigc ingest`
+    // named it at the same commit.)
     StoreExitFlip {
         id: "orphaned-instance",
         matches: |f| f.code == crate::orphan::ORPHANED_INSTANCE_CODE,
@@ -1628,17 +1630,24 @@ pub(crate) const UNADOPTED_SQUATTER_CAUSE: &str = "a never-adopted file sits at 
 pub(crate) const ORPHANED_INSTANCE_CAUSE: &str =
     "a stamped committed doc is claimed by no resolved doctype";
 
-/// The store trailer for a committed instance whose doctype left the resolved set (M51 Inc 8
-/// / T3). Like the two version-stamp members it *is* an untrustworthy sweep — there is no
-/// schema to adjudicate those docs against, so every other verdict about them is an absence
-/// rather than a result — and the closing line says so instead of letting a green stand for
-/// *"I stopped looking at these files"*.
+/// The store trailer for committed instances no resolved doctype claims (M51 Inc 8 / T3).
+/// Like the two version-stamp members it *is* an untrustworthy sweep — the sweep reads a
+/// doctype's instances at that doctype's home, so a path no doctype claims was never read
+/// against a schema and every other verdict about it is an absence rather than a result — and
+/// the closing line says so instead of letting a green stand for *"I stopped looking at these
+/// files"*.
+///
+/// **What it may not say** (M52 Inc 8 / T4): that no schema in the composed set knows those
+/// files. That was this line's wording and its finding's, and it is false in the
+/// relocated-home cell — so the line names the claim the producer computed and hands the
+/// reader to the door that tells the two causes apart, exactly as the finding's own route does.
 pub(crate) fn orphaned_instance_trailer() -> String {
     format!(
-        "{ORPHANED_INSTANCE_CAUSE} — no schema in the composed set says what those files \
-         are, so the sweep could not adjudicate them and {STORE_EXIT_FLIP_PHRASE}; restore \
-         what claims them (re-add the pack that defines the type, or move them home), or \
-         follow each finding's own route above, then re-validate.\n"
+        "{ORPHANED_INSTANCE_CAUSE} — no resolved doctype claims those paths, so the sweep \
+         never read them against a schema and {STORE_EXIT_FLIP_PHRASE}; ask `jigc ingest` \
+         which of them a resolved schema still accepts, restore what claims the rest (re-add \
+         the pack that defines the type), or follow each finding's own route above, then \
+         re-validate.\n"
     )
 }
 

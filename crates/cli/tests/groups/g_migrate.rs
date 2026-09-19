@@ -125,6 +125,8 @@ mod snapshot_store_two_snapshots;
 mod step_source_rules;
 #[path = "../test_target_registration.rs"]
 mod test_target_registration;
+#[path = "../unclaimed_file_family.rs"]
+mod unclaimed_file_family;
 #[path = "../verb_suite_coverage.rs"]
 mod verb_suite_coverage;
 #[path = "../version_mismatch_break.rs"]

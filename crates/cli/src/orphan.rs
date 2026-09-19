@@ -33,8 +33,8 @@
 //! **The sibling condition, and why it is not a strand (M51 Increment 8 / T3).** Everything
 //! above is about a *home* that moved while the doctype stayed. [`orphaned_instances`] is the
 //! other half: a committed stamped doc **no resolved doctype claims** — the pack that defined
-//! its type left the composition, or the file sits where no doctype homes — so there is no
-//! home to compare it against and no schema to parse it with. It is
+//! its type left the composition, or the type is composed and homed somewhere this path is
+//! not, so the sweep never read the file against any schema. It is
 //! `schema-conformance.orphaned-instance`: blocking, and a member of
 //! [`crate::render::STORE_EXIT_FLIPS`]. The two are partitioned by the strand walk's own
 //! verdict — a path it can name a doctype for is the strand advisory's, and what it cannot
@@ -447,41 +447,51 @@ fn carries_stamp(repo_root: &Path, rel: &str) -> bool {
 
 /// The **blocking** store-scope finding for one orphaned instance, located at its path.
 ///
-/// **The message states what was computed, not what was inferred.** Two things were computed
+/// **The message states what was computed, not what was inferred.** Three things were computed
 /// and the wording carries exactly those: the file sits **inside a home jigc was handed**
-/// ([`Territory`]), and it carries a **`schema-version:` stamp** that **no resolved doctype
-/// claims**. What was *not* computed is whose stamp it is — the key is unnamespaced, so
-/// `a jigc schema-version stamp` (the wording this message shipped with until the M51
-/// completion audit) was a law-1 overclaim about bytes jigc may never have written. It is
-/// likewise not computed *why* nothing claims it: the pack that defined the type may have left
-/// the composition, or the file may be a hand-placed copy or a bad merge sitting where no
-/// doctype homes. Both are the one condition this code names, and the message says that much
-/// and no more.
+/// ([`Territory`]), it carries a **`schema-version:` stamp**, and **no resolved doctype claims
+/// this path** — *claimed* being membership in the union of [`engine::index::committed_instances`]
+/// over the resolved schemas. What was *not* computed is whose stamp it is — the key is
+/// unnamespaced, so `a jigc schema-version stamp` (the wording this message shipped with until
+/// the M51 completion audit) was a law-1 overclaim about bytes jigc may never have written.
 ///
-/// **The route names both directions of repair, and says what its exit leaves behind.**
-/// Restoring what claims the file is the first — re-adding the pack that defines its type, or
-/// moving the file to a resolved doctype's home, which is the exit that fits the population
-/// actually reaching this finding (it is already inside jigc's homes; what it is not at is any
-/// doctype's). `jigc unmanage` is the alternative — it runs cleanly here (a path at no
-/// doctype's home drops its file-state baseline and exits 0) but **leaves the bytes on disk**,
-/// so on its own it does not clear this finding. A route that, followed exactly, changes
-/// nothing is the defect M46's PT-1 closed at another door, so that exit names the act that
-/// finishes it (`DECISIONS.md` → 2026-09-15 M51 Increment 8 / T3).
+/// **Nor was it computed that no schema knows this file** (M52 Increment 8 / T4;
+/// settle-record D10.2). Until this task the message closed *"— no schema in the composed set
+/// says what this file is"*, and that is a claim about the **composed set** where the producer
+/// had only asked about the **path**. Driven at the wave's baseline it was simply false: move
+/// `adr`'s `location:` and leave its instance behind, and at the same commit `jigc doc schema
+/// adr` answered and `jigc ingest` raised `ingest.wrong-location` naming the `adr` schema —
+/// two doors, two stories, one file. The two causes are the departed doctype and the composed
+/// doctype homed elsewhere; the producer cannot tell them apart, so the message names both and
+/// the route leads with the door that can.
+///
+/// **The route leads with the door that answers, then names both directions of repair and what
+/// its exit leaves behind.** `jigc ingest` re-reads the file and, where a resolved schema
+/// accepts it, names the home to move it to — the exit that fits the relocated-home cell, and
+/// the one this finding could not reach while it was denying that any schema existed. Where no
+/// schema accepts it, restoring what claims the file is next — re-adding the pack that defines
+/// its type. `jigc unmanage` is the alternative — it runs cleanly here (a path at no doctype's
+/// home drops its file-state baseline and exits 0) but **leaves the bytes on disk**, so on its
+/// own it does not clear this finding. A route that, followed exactly, changes nothing is the
+/// defect M46's PT-1 closed at another door, so that exit names the act that finishes it
+/// (`DECISIONS.md` → 2026-09-15 M51 Increment 8 / T3).
 pub(crate) fn orphaned_instance_finding(rel: &str) -> engine::finding::Finding {
     engine::finding::Finding::graded(
         engine::finding::Severity::Blocking,
         ORPHANED_INSTANCE_CODE,
         format!(
             "committed doc `{rel}` sits at a jigc-managed home and carries a \
-             `schema-version:` stamp, but no resolved doctype claims it — no schema in the \
-             composed set says what this file is"
+             `schema-version:` stamp, but no resolved doctype claims this path — its type may \
+             be defined by nothing in the composed set, or defined and homed elsewhere"
         ),
         Some(engine::finding::Location::addressed(rel, 1, 1)),
         Some(engine::finding::Route::human(format!(
-            "restore what claims it — re-add the pack that defines its type, or move it to a \
-             resolved doctype's home — or take it out of jigc's world: `jigc unmanage \
-             {token}`, then delete the file or its `schema-version:` stamp (`unmanage` drops \
-             the baseline and leaves the bytes, so the stamp alone keeps this finding alive)",
+            "ask `jigc ingest`, which re-reads the file: where a resolved doctype's schema \
+             accepts it, that door names the home to move it to. Where none does, restore \
+             what claims it — re-add the pack that defines its type — or take it out of \
+             jigc's world: `jigc unmanage {token}`, then delete the file or its \
+             `schema-version:` stamp (`unmanage` drops the baseline and leaves the bytes, so \
+             the stamp alone keeps this finding alive)",
             token = crate::task::shell_token(rel)
         ))),
     )

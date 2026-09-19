@@ -3547,9 +3547,10 @@ $ JIGC_PACK_DIR=<copy with one declarer withdrawn> jigc {start,validate,describe
 # ── Arm 9 · a doctype leaves the resolved set. ──
 #     (a CODE-SIDE REGISTRY where MEMBERSHIP IS THE ASSERTION: STORE_EXIT_FLIPS)
 $ jigc validate                       # under a pack that no longer defines `vision`
-> blocking · schema-conformance.orphaned-instance — committed doc `VISION.md` carries a
->   jigc schema-version stamp but sits at no resolved doctype's home …
->   route: restore what claims it — re-add the pack that defines its type … — or take it
+> blocking · schema-conformance.orphaned-instance — committed doc `VISION.md` sits at a
+>   jigc-managed home and carries a `schema-version:` stamp, but no resolved doctype
+>   claims this path …
+>   route: ask `jigc ingest` … re-add the pack that defines its type … — or take it
 >   out of jigc's world: `jigc unmanage VISION.md` …
 > exit 1                              # the adopter's CI is no longer green over it
 $ jigc doc list --format json
