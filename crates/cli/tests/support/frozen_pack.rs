@@ -130,3 +130,89 @@ pub fn manifest_less_dev_pack(root: &Path) {
     fs::remove_file(root.join("config").join("schema-manifest.yaml"))
         .expect("drop the freeze manifest");
 }
+
+/// Doctype `ty`'s **shipped** manifest `schema-version` in the pack at `root` — read from the
+/// manifest rather than written down, so a fixture keeps meaning what it means after the next
+/// real bump.
+pub fn manifest_version(root: &Path, ty: &str) -> u32 {
+    let manifest = fs::read_to_string(root.join("config").join("schema-manifest.yaml"))
+        .expect("read the copied schema-manifest.yaml");
+    let mut in_entry = false;
+    for line in manifest.lines() {
+        if let Some(rest) = line.strip_prefix("  - type: ") {
+            in_entry = rest.trim_end() == ty;
+        }
+        if in_entry && let Some(v) = line.strip_prefix("    schema-version: ") {
+            return v.trim().parse().expect("a numeric schema-version");
+        }
+    }
+    panic!("the manifest must declare a `{ty}` entry");
+}
+
+/// Rewrite doctype `ty`'s manifest `schema-version` in the pack at `root`.
+pub fn set_manifest_version(root: &Path, ty: &str, to: u32) {
+    let path = root.join("config").join("schema-manifest.yaml");
+    let manifest = fs::read_to_string(&path).expect("read the copied schema-manifest.yaml");
+    let mut out = String::new();
+    let mut in_entry = false;
+    let mut hit = false;
+    for line in manifest.lines() {
+        if let Some(rest) = line.strip_prefix("  - type: ") {
+            in_entry = rest.trim_end() == ty;
+        }
+        if in_entry && line.starts_with("    schema-version: ") {
+            out.push_str(&format!("    schema-version: {to}"));
+            hit = true;
+            in_entry = false;
+        } else {
+            out.push_str(line);
+        }
+        out.push('\n');
+    }
+    assert!(hit, "the manifest must declare a `{ty}` entry to bump");
+    fs::write(&path, out).expect("write the bumped schema-manifest.yaml");
+}
+
+/// A dev-pack copy at `root` in which doctype `ty` **bumps one version**: `prior` shapes the
+/// snapshot stored at the shipped version (`schema-snapshots/<ty>.v<shipped>.yaml`, the shape
+/// the committed corpus was authored under) and `current` shapes `schemas/<ty>.yaml`. The
+/// manifest version is bumped and the hash re-pinned **through the production loader**
+/// ([`repin_manifest_hash`]), so the pack passes its own freeze gate — the act a pack author
+/// performs, never a project-layer shadow that bypasses the freeze.
+///
+/// Returns the version the committed corpus is stamped at (the shipped one); the current
+/// version is that plus one.
+///
+/// Shared by the suites that need a *legal* home or shape move of a frozen doctype — M52
+/// Increment 7's walk acceptance (T1) and its route-family fence (T4) — because a second copy
+/// of "what a legal bump looks like" is a second set of bugs about the freeze.
+pub fn bumped_pack(
+    root: &Path,
+    ty: &str,
+    prior: impl FnOnce(&str) -> String,
+    current: impl FnOnce(&str) -> String,
+) -> u32 {
+    copy_dev_pack(root);
+
+    let schema_path = root.join("schemas").join(format!("{ty}.yaml"));
+    let shipped = fs::read_to_string(&schema_path).expect("read the copied schema");
+    let from = manifest_version(root, ty);
+
+    let prior_yaml = prior(&shipped);
+    let current_yaml = current(&shipped);
+    assert_ne!(
+        prior_yaml, current_yaml,
+        "the bump must actually move `{ty}.yaml` — a pack that changes nothing proves nothing",
+    );
+    fs::write(
+        root.join("schema-snapshots")
+            .join(format!("{ty}.v{from}.yaml")),
+        prior_yaml,
+    )
+    .expect("write the prior-version snapshot");
+    fs::write(&schema_path, current_yaml).expect("write the reshaped schema");
+
+    set_manifest_version(root, ty, from + 1);
+    repin_manifest_hash(root, ty);
+    from
+}

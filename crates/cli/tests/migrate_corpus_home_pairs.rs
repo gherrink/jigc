@@ -116,53 +116,8 @@ fn run(repo: &Path, home: &Path, pack: &Path, args: &[&str]) -> (String, bool) {
 // The manufactured pack: one doctype whose home moves at a real version bump.
 // ---------------------------------------------------------------------------------------------
 
-/// The doctype's **shipped** manifest `schema-version` — read from the copied manifest rather
-/// than written down, so the fixture keeps meaning what it means after the next real bump.
-fn shipped_version(root: &Path, ty: &str) -> u32 {
-    let manifest = fs::read_to_string(root.join("config").join("schema-manifest.yaml"))
-        .expect("read the copied schema-manifest.yaml");
-    let mut in_entry = false;
-    for line in manifest.lines() {
-        if let Some(rest) = line.strip_prefix("  - type: ") {
-            in_entry = rest.trim_end() == ty;
-        }
-        if in_entry && let Some(v) = line.strip_prefix("    schema-version: ") {
-            return v.trim().parse().expect("a numeric schema-version");
-        }
-    }
-    panic!("the manifest must declare a `{ty}` entry");
-}
-
-/// Rewrite doctype `ty`'s manifest `schema-version` to `to`.
-fn set_manifest_version(root: &Path, ty: &str, to: u32) {
-    let path = root.join("config").join("schema-manifest.yaml");
-    let manifest = fs::read_to_string(&path).expect("read the copied schema-manifest.yaml");
-    let mut out = String::new();
-    let mut in_entry = false;
-    let mut hit = false;
-    for line in manifest.lines() {
-        if let Some(rest) = line.strip_prefix("  - type: ") {
-            in_entry = rest.trim_end() == ty;
-        }
-        if in_entry && line.starts_with("    schema-version: ") {
-            out.push_str(&format!("    schema-version: {to}"));
-            hit = true;
-            in_entry = false;
-        } else {
-            out.push_str(line);
-        }
-        out.push('\n');
-    }
-    assert!(hit, "the manifest must declare a `{ty}` entry to bump");
-    fs::write(&path, out).expect("write the bumped schema-manifest.yaml");
-}
-
-/// A dev-pack copy in which doctype `ty` **bumps one version**: `prior` shapes the snapshot
-/// stored at the shipped version (`schema-snapshots/<ty>.v<shipped>.yaml`, the shape the
-/// committed corpus was authored under) and `current` shapes `schemas/<ty>.yaml`. The manifest
-/// version is bumped and the hash re-pinned **through the production loader**
-/// ([`frozen_pack::repin_manifest_hash`]), so the pack passes its own freeze gate — the act a
-/// pack author performs, never a project-layer shadow that bypasses the freeze.
+/// A dev-pack copy in which doctype `ty` **bumps one version** — the shared builder
+/// ([`frozen_pack::bumped_pack`]), wrapped in the throwaway root this suite owns.
 ///
 /// Returns the pack dir and the version the corpus is stamped at.
 fn bumped_pack(
@@ -172,29 +127,7 @@ fn bumped_pack(
     current: impl FnOnce(&str) -> String,
 ) -> (TempDir, u32) {
     let dir = TempDir::new(tag);
-    frozen_pack::copy_dev_pack(dir.path());
-
-    let schema_path = dir.path().join("schemas").join(format!("{ty}.yaml"));
-    let shipped = fs::read_to_string(&schema_path).expect("read the copied schema");
-    let from = shipped_version(dir.path(), ty);
-
-    let prior_yaml = prior(&shipped);
-    let current_yaml = current(&shipped);
-    assert_ne!(
-        prior_yaml, current_yaml,
-        "the bump must actually move `{ty}.yaml` — a pack that changes nothing proves nothing",
-    );
-    fs::write(
-        dir.path()
-            .join("schema-snapshots")
-            .join(format!("{ty}.v{from}.yaml")),
-        prior_yaml,
-    )
-    .expect("write the prior-version snapshot");
-    fs::write(&schema_path, current_yaml).expect("write the reshaped schema");
-
-    set_manifest_version(dir.path(), ty, from + 1);
-    frozen_pack::repin_manifest_hash(dir.path(), ty);
+    let from = frozen_pack::bumped_pack(dir.path(), ty, prior, current);
     (dir, from)
 }
 

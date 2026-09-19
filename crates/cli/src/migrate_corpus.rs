@@ -2236,6 +2236,24 @@ enum Corpus {
 /// repo root, **no surface named the document at all**: `validate` said *"validates clean"*.
 /// The bump kind is not the discriminator (W2 and W5 carry a content change and behave
 /// identically to W1 and W4); the home pair is.
+///
+/// # What an adopter sees change, and where they are told (M52 Increment 7 / T4)
+///
+/// Widening the walk is a **tightening** at the store surface, and a deliberate one
+/// (settle-record D4.3). A below-version instance at a prior home was previously invisible to
+/// this function, so on a repo-root home no surface named it at all — `jigc validate` said
+/// *"validates clean"* at exit 0. Seen, it is adjudicated like any other managed doc: the
+/// existing `schema-conformance.schema-version-current` fires and, as a `STORE_EXIT_FLIPS`
+/// member, flips `validate` **0 → 1** on a corpus that graded clean before the upgrade. Nothing
+/// about the doc changed; what changed is that the sweep can now see it — and the verb the
+/// finding routes to can now land it, which is the half that makes the tightening followable
+/// rather than a new dead end (`crates/cli/tests/migrate_route_family.rs` drives that route
+/// end to end).
+///
+/// The adopter-facing half of this — the flip-list line in
+/// [MIGRATING.md](../../../MIGRATING.md) — is **owed to M52 Increment 10**, the wave's guide
+/// batch, which is where the roadmap places every adopter-guide edit; it is named here so the
+/// punt is tracked to a landing rather than left as prose.
 fn candidate_docs(
     pack: &dyn PackSource,
     repo_root: &Path,

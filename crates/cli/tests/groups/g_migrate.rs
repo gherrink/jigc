@@ -77,6 +77,8 @@ mod migrate_retire_safety;
 mod migrate_review_gate;
 #[path = "../migrate_rollback.rs"]
 mod migrate_rollback;
+#[path = "../migrate_route_family.rs"]
+mod migrate_route_family;
 #[path = "../migrate_seam.rs"]
 mod migrate_seam;
 #[path = "../migrate_source_rules.rs"]

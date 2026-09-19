@@ -298,6 +298,23 @@ fn parse_prior_home(from: &str) -> Result<Home> {
 /// relocates through the version-gated `jigc migrate-corpus`, so it is **refused** here — the
 /// reconciliation of the two paths), reads its **current** home from the schema, and delegates
 /// the detect+move to [`relocate_stranded`].
+///
+/// # The refusal's route became true rather than being repaired (M52 Increment 7 / T4)
+///
+/// That hand-off named the right owner of the act and, for three of the four
+/// `{location, placement}²` home moves, pointed at a verb that did **nothing**: the corpus
+/// walk keyed on the *current* home alone, so an operator sent here ran `jigc migrate-corpus`
+/// against a genuinely stranded instance and read `0 migrated, 0 already current, 0 blocked`
+/// at exit 0. T1 widened the walk to every prior home of every kind
+/// (`crate::migrate_corpus::candidate_docs`), which is why this sentence stands unchanged:
+/// the fix belonged in the verb the route names, not in the route (settle-record D4.5).
+///
+/// It is **driven, not asserted** —
+/// `crates/cli/tests/migrate_route_family.rs::the_relocate_refusal_routes_to_a_verb_that_acts`
+/// lifts the emitted command out of this refusal, runs it verbatim through a real shell, and
+/// reads the stranded instance back landed at the current home. That suite also fences the rest
+/// of the family: every production site naming the verb carries a stated firing state and
+/// disposition (D4.6).
 pub(crate) fn relocate_freeze_exempt(
     pack: &dyn PackSource,
     repo_root: &Path,
