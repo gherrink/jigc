@@ -4,7 +4,9 @@ Implement from a committed spec. The intent is:
 Pick the spec this work implements from the committed specs below and bind it by
 its FULL address exactly as listed — `spec:<slug>`, the `spec:` prefix included
 (a bare slug is rejected as a malformed address) — then re-run to read its
-criteria:
+criteria (nothing is listed until a `spec` is committed; with none there is
+nothing to bind here — author one first through the `plan` workflow, then start
+this work again):
 
 {{ store.specs }}
 
@@ -12,7 +14,9 @@ criteria:
 {{ cli.recompose-task }}
 
 The bound spec's criteria — `spec:<slug>#criteria`, one item per criterion, each
-carrying the `{#id}` anchor that addresses it:
+carrying the `{#id}` anchor that addresses it (nothing appears until you bind a
+spec above and re-compose, and nothing appears when the bound spec carries no
+criteria yet):
 
 {{ @task.spec#criteria }}
 

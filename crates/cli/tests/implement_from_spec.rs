@@ -479,3 +479,169 @@ fn dangling_implements_blocks_finalize_with_the_three_routing_options() {
         .unwrap();
     assert_eq!(before, after, "a dangling-ref block must create no commit");
 }
+
+// ── M52 Increment 9 T3 — the legitimately-empty renders state their empty case ────
+
+/// The `{{store.specs}}` render's asserting sentence — the paragraph that tells the
+/// agent to pick from a list, and therefore the one that owes the empty case.
+const SPECS_ASSERTING_HEAD: &str = "Pick the spec this work implements";
+
+/// The `{{@task.spec#criteria}}` render's asserting sentence.
+const CRITERIA_ASSERTING_HEAD: &str = "The bound spec's criteria";
+
+/// The empty-case clause `{{store.specs}}`'s asserting sentence must carry.
+/// **Conditional** by construction, so it stays true over a populated store too —
+/// the shape the pack already ships at `step:superseded-context` and methodology's
+/// `step:author-vision`.
+const SPECS_EMPTY_CASE: &str = "nothing is listed until a `spec` is committed";
+
+/// The empty-case clause `{{@task.spec#criteria}}`'s asserting sentence must carry.
+const CRITERIA_EMPTY_CASE: &str = "nothing appears until you bind a spec above and re-compose";
+
+/// The composed bytes with every whitespace run collapsed to one space — step prose
+/// is hard-wrapped, so a clause legitimately spans a line break and matching the raw
+/// bytes would fail on presentation rather than on content.
+fn unwrapped(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// The blank-line-separated block of `composed` that opens with `head`, paired with
+/// the block that follows it — the asserting sentence and the render it introduces.
+/// An empty render is an empty block, which is exactly the cell under test.
+fn asserting_block_and_render<'a>(composed: &'a str, head: &str) -> (&'a str, &'a str) {
+    let blocks: Vec<&str> = composed.split("\n\n").collect();
+    let at = blocks
+        .iter()
+        .position(|block| block.trim_start().starts_with(head))
+        .unwrap_or_else(|| {
+            panic!("the composed workflow must carry the `{head}` paragraph; got:\n{composed}")
+        });
+    (blocks[at], blocks.get(at + 1).copied().unwrap_or(""))
+}
+
+/// D9(2) — `implement-from-spec` asserts twice over a set it then renders (*"from the
+/// committed specs below"*, *"The bound spec's criteria … :"*). Over a corpus with no
+/// committed `spec` both renders come out **empty** under an asserting sentence: the
+/// agent is pointed at a list that is not there, which is law 1's lie. The fix is the
+/// shape the pack already ships twice — a **conditional** clause inside the asserting
+/// sentence itself (`step:superseded-context`'s *"nothing appears if it supersedes
+/// none"*; methodology `step:author-vision`'s grounding parenthetical).
+///
+/// Driven on **both** cells, because a green pass over one hides the other:
+///
+///  - the omitting corpus (no committed `spec`): each render is empty, and each
+///    asserting sentence carries its empty-case clause;
+///  - the composing corpus (one committed `spec`, then bound): each render is
+///    populated, and the same clauses are present **byte-identical** — so a populated
+///    compose never claims the set is empty, the clause being conditional, not a
+///    state-dependent assertion that could go stale.
+#[test]
+fn the_two_empty_renders_state_their_empty_case_and_stay_true_when_populated() {
+    // ── Cell 1: the omitting corpus — no committed `spec` anywhere ────────────────
+    let empty_repo = TempDir::new("emptycase");
+    let empty_home = TempDir::new("home");
+    init_repo(empty_repo.path());
+
+    let mint = jigc(
+        empty_repo.path(),
+        empty_home.path(),
+        &[
+            "start",
+            "--workflow",
+            "implement-from-spec",
+            "enforce the rate limit at the gateway",
+        ],
+    );
+    assert_ok(
+        &mint,
+        "`jigc start --workflow implement-from-spec` (no spec)",
+    );
+    let spec_less = String::from_utf8(mint.stdout).expect("utf-8");
+
+    let (specs_say, specs_render) = asserting_block_and_render(&spec_less, SPECS_ASSERTING_HEAD);
+    assert!(
+        specs_render.trim().is_empty(),
+        "over a spec-less corpus `{{{{store.specs}}}}` must render empty — that is the \
+         cell this claim is about; got:\n{spec_less}",
+    );
+    assert!(
+        unwrapped(specs_say).contains(SPECS_EMPTY_CASE),
+        "the asserting sentence over an empty `{{{{store.specs}}}}` must state its empty \
+         case (`{SPECS_EMPTY_CASE}`); got:\n{specs_say}",
+    );
+
+    let (criteria_say, criteria_render) =
+        asserting_block_and_render(&spec_less, CRITERIA_ASSERTING_HEAD);
+    assert!(
+        criteria_render.trim().is_empty(),
+        "with nothing bound `{{{{@task.spec#criteria}}}}` must render empty; got:\n{spec_less}",
+    );
+    assert!(
+        unwrapped(criteria_say).contains(CRITERIA_EMPTY_CASE),
+        "the asserting sentence over an empty `{{{{@task.spec#criteria}}}}` must state its \
+         empty case (`{CRITERIA_EMPTY_CASE}`); got:\n{criteria_say}",
+    );
+
+    // ── Cell 2: the composing corpus — one committed spec, bound and re-composed ──
+    let full_repo = TempDir::new("populated");
+    let full_home = TempDir::new("home");
+    init_repo(full_repo.path());
+    commit_spec_with_criterion(full_repo.path(), full_home.path());
+
+    let task = "enforce-the-rate-limit";
+    let mint = jigc(
+        full_repo.path(),
+        full_home.path(),
+        &[
+            "start",
+            "--workflow",
+            "implement-from-spec",
+            "enforce the rate limit at the gateway",
+        ],
+    );
+    assert_ok(
+        &mint,
+        "`jigc start --workflow implement-from-spec` (one spec)",
+    );
+    let listed = String::from_utf8(mint.stdout).expect("utf-8");
+
+    let bind = jigc(
+        full_repo.path(),
+        full_home.path(),
+        &["task", "bind", "spec", &format!("spec:{SPEC_SLUG}"), task],
+    );
+    assert_ok(&bind, "`jigc task bind spec`");
+    let resume = jigc(
+        full_repo.path(),
+        full_home.path(),
+        &["start", "--task", task],
+    );
+    assert_ok(&resume, "`jigc start --task <id>` re-compose");
+    let bound = String::from_utf8(resume.stdout).expect("utf-8");
+
+    let (populated_specs_say, populated_specs_render) =
+        asserting_block_and_render(&listed, SPECS_ASSERTING_HEAD);
+    assert!(
+        populated_specs_render.contains(&format!("spec:{SPEC_SLUG}")),
+        "with a committed spec the render must still list it; got:\n{listed}",
+    );
+    let (populated_criteria_say, populated_criteria_render) =
+        asserting_block_and_render(&bound, CRITERIA_ASSERTING_HEAD);
+    assert!(
+        populated_criteria_render.contains(CRITERION_STATEMENT),
+        "with a spec bound the criteria render must still dereference; got:\n{bound}",
+    );
+
+    // The clauses are static and conditional: byte-identical across both cells, so a
+    // populated compose carries no claim that the set is empty.
+    assert_eq!(
+        populated_specs_say, specs_say,
+        "the `{{{{store.specs}}}}` asserting sentence must read the same over a populated \
+         store — a conditional empty case, never a claim about this corpus",
+    );
+    assert_eq!(
+        populated_criteria_say, criteria_say,
+        "the `{{{{@task.spec#criteria}}}}` asserting sentence must read the same once a \
+         spec is bound — a conditional empty case, never a claim about this task",
+    );
+}
