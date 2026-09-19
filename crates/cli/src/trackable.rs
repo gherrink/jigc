@@ -199,6 +199,16 @@ pub(crate) fn untrackable_reason(repo_root: &Path, relative: &str) -> Option<Str
 ///      not, because the root knobs' names a consequence (`RD`-staged docs) that a source does
 ///      not have.
 ///
+/// **Stated bound: the adapter-install leg is deliberately not asked here** (M52 Increment 8 /
+/// T7). [`crate::config::installed_artifact_root`] joined that same usability rule as its
+/// seventh shape, and it is a **destination** rule in the sense step 3 already draws: it
+/// refuses a directory managed docs would be *resolved against*, or swept *out of*. A source
+/// under the adapter's install root is neither — `jigc migrate .claude/skills/jigc/SKILL.md`
+/// reads a committed file and retires it on `--approve`, which is recoverable from the index,
+/// so the ground step 3 stands on (*bytes no index has a copy of*) does not transfer. Refusing
+/// it would narrow a shipped affordance to close nothing, which is the same call
+/// [`source_read_reason`]'s out-of-repo admission takes.
+///
 /// The reason is a sentence, not a code: one door, one code, the reason in the message — the
 /// `config.untrackable-root` precedent, where the operator's fix is the same whichever leg
 /// answered.

@@ -331,10 +331,16 @@ fn expectation(door: &str, arg: &str, arm: &PathArgArm, cell: Cell) -> Outcome {
             Absolute | ParentEscape | Symlink | GitComponent | WorkbenchRoot | UntrackedInRepo
             | PathspecMagic | PathspecGlob | ShellUnsafeName | StdinSentinel => Accepted,
         },
-        // `jigc relocate --from <prior-home>` — a prefix over committed spellings.
+        // `jigc relocate --from <prior-home>` — a prefix over committed spellings, with the
+        // one class the prefix reaches that is jigc's own: the roots the install writes into
+        // (M52 Increment 8 / T7). `.jigc/docs` is the workbench cell, and the adapter's own
+        // artifact roots are driven as their own class by
+        // [`relocate_refuses_every_root_jigcs_own_install_writes_into`] — they are read from
+        // the installed profile, which no cell of a fixed escape axis can spell.
         ("relocate", "from", _, _) => match cell {
-            Absolute | ParentEscape | Symlink | GitComponent | WorkbenchRoot | UntrackedInRepo
-            | PathspecMagic | PathspecGlob | ShellUnsafeName | StdinSentinel => Accepted,
+            WorkbenchRoot => PathRuleBlocks("config.workbench-root"),
+            Absolute | ParentEscape | Symlink | GitComponent | UntrackedInRepo | PathspecMagic
+            | PathspecGlob | ShellUnsafeName | StdinSentinel => Accepted,
         },
         // The two `<file>` occurrences — a SOURCE rule: an out-of-repo source is admitted
         // and copied in; git's own directory and jigc's transient workbench are not.
@@ -805,4 +811,81 @@ fn every_adjudicated_disposition_names_a_code_the_axis_drives() {
         expected, driven,
         "every code a disposition claims is a code the axis drives, and the reverse",
     );
+}
+
+/// **`jigc relocate --from` refuses every root jigc's own install writes into** — the class
+/// the escape axis above cannot carry, because its members are not a spelling anybody chose
+/// (M52 Increment 8 / T7).
+///
+/// `--from` names a **prior home**, and the door sweeps every committed `.md` under it into
+/// the doctype's home. Driven at `a5deabf4` on a freeze-exempt pack, twice. With one
+/// ordinarily-named doc planted under each root, `jigc relocate adr --from .claude` and
+/// `--from .jigc` each reported `1 moved` at exit **0** and staged
+/// `R .claude/notes.md -> docs/decisions/notes.md` / `R .jigc/notes.md -> …`. On the bare
+/// install footprint, with nothing planted, all three roots reported `0 moved, 1 blocked` at
+/// exit **0** — jigc's own artifacts escaped only by T6's destination-identity gate, which
+/// then printed, as the repair, `` git mv .jigc/AGENT.md docs/decisions/agent.md `` followed
+/// by `jigc ingest`: a route that, followed, adopts the install as an ADR.
+///
+/// **The set is read, not written.** `.jigc` is spelled here because production spells it —
+/// every door computes the workbench as `repo_root.join(".jigc")` — while the adapter's roots
+/// come from [`cli::config::installed_artifact_roots`], which derives them from the installed
+/// profile's declared artifacts. A profile that declares an artifact somewhere new joins this
+/// class with no edit here, which is the half a hand-written `.claude` could never have.
+#[test]
+fn relocate_refuses_every_root_jigcs_own_install_writes_into() {
+    let pack = FixturePack::from_dev_pack("relocate-installed-roots");
+    let base = TrialCorpus::build_with_pack(State::Fresh, &pack);
+
+    let mut roots: Vec<(String, &str)> = vec![(".jigc".to_owned(), "config.workbench-root")];
+    roots.extend(
+        cli::config::installed_artifact_roots()
+            .into_iter()
+            .map(|root| (root, "config.unusable-root")),
+    );
+    assert!(
+        roots.len() > 1,
+        "the installed profile declares artifacts, so this class has adapter members too — \
+         an empty derivation would make this suite assert nothing",
+    );
+
+    for (root, code) in roots {
+        let corpus = base.copy_state();
+        // A doc whose basename IS a doc id, so the destination-identity gate (T6) cannot be
+        // what answers: at HEAD this file was the one that moved. A root that is a *file*
+        // (the always-loaded bootstrap file) has nothing to plant under and is swept as
+        // itself.
+        if corpus.repo().join(&root).is_dir() {
+            let planted = format!("{root}/notes.md");
+            fs::write(corpus.repo().join(&planted), "# Notes\n\nSome prose.\n")
+                .expect("plant a doc under an installed root");
+            corpus.git(&["add", "-f", &planted]);
+            corpus.git(&["commit", "-q", "-m", "a doc under an installed root"]);
+        }
+
+        let before = tree(&corpus);
+        let out = corpus.jigc(&["relocate", "adr", "--from", &root]);
+        let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+        let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+        let shown = format!("jigc relocate adr --from {root}");
+
+        assert!(
+            !out.status.success(),
+            "{shown}: a prior home naming jigc's own install must refuse\n{stdout}{stderr}",
+        );
+        assert!(
+            stderr.contains(&format!("· {code} — ")),
+            "{shown}: must refuse with the sibling door's shipped `{code}`\n{stderr}",
+        );
+        assert!(
+            stderr.contains("route:"),
+            "{shown}: a blocking refusal carries a route\n{stderr}",
+        );
+        assert_command_spans_run(&shown, &root, &stderr);
+        assert_eq!(
+            tree(&corpus),
+            before,
+            "{shown}: the refusal moved something",
+        );
+    }
 }

@@ -476,10 +476,10 @@ fn run_set(cwd: &Path, format: Format, key: &str, value: &str) -> Result<ConfigA
             format!(
                 "re-run with a repo-relative directory — an existing one, or one jigc should \
                  create; never a file, an absolute path, a path through a symlink, a value \
-                 padded with whitespace, a component over {} bytes, or one git reads as a \
+                 padded with whitespace, a component over {} bytes, one git reads as a \
                  pathspec rather than a name (a leading `:`, or a `*`, `?`, `[` or `\\` \
-                 anywhere); `jigc config list` shows the value in force and the layer it \
-                 wins from",
+                 anywhere), or a root jigc's own install writes its adapter artifacts under; \
+                 `jigc config list` shows the value in force and the layer it wins from",
                 crate::cli::NAME_MAX_BYTES,
             ),
         )));
@@ -793,6 +793,21 @@ fn normalize_root_value(value: &str) -> String {
 /// [`crate::trackable`] already applies to `.git` for git's own reason
 /// (`core.protectHFS`/`protectNTFS`), asked here of the one directory jigc owns.
 pub(crate) fn is_workbench_root(value: &str) -> bool {
+    // The first component of the normalized value decides, in both directions.
+    first_normalized_component(value).is_some_and(|part| part.eq_ignore_ascii_case(".jigc"))
+}
+
+/// The **first component of `value` after the lexical fold** — a `./` dropped, a `..` applied
+/// against the components accumulated so far — or `None` when the value reaches no component
+/// of this repository at all (it is absolute, it climbs above the repository root, or it names
+/// nothing).
+///
+/// Extracted from [`is_workbench_root`] when [`installed_artifact_root`] needed the identical
+/// question asked of a different set of directories (M52 Increment 8 / T7). Both rules are
+/// about **which one directory the value lands in**, and the fold is what makes them hold over
+/// the destination rather than over the spelling — the evasion [`is_workbench_root`]'s own
+/// doc-comment records being driven (`docs/../.jigc` exited 0 while `.jigc` was refused).
+fn first_normalized_component(value: &str) -> Option<String> {
     use std::path::Component;
 
     let mut normalized: Vec<&std::ffi::OsStr> = Vec::new();
@@ -801,36 +816,103 @@ pub(crate) fn is_workbench_root(value: &str) -> bool {
             // A leading (or interior) `./` is the same path; it names nothing to keep.
             Component::CurDir => continue,
             Component::ParentDir => {
-                if normalized.pop().is_none() {
-                    // Climbs above the repository root — whatever is up there, it is not this
-                    // repo's workbench (and step 2b refuses the value before this is asked).
-                    return false;
-                }
+                normalized.pop()?;
+                // A pop with nothing to cancel climbs above the repository root — whatever is
+                // up there, it is none of this repository's directories (and the root knobs'
+                // step 2b refuses the value before this is asked).
             }
             Component::Normal(part) => normalized.push(part),
             // An absolute value: refused one step below as a root the store cannot describe,
-            // and never this repo's workbench.
-            Component::RootDir | Component::Prefix(_) => return false,
+            // and never one of this repository's own directories.
+            Component::RootDir | Component::Prefix(_) => return None,
         }
     }
-    // The first component of the normalized value decides, in both directions.
     normalized
         .first()
-        .is_some_and(|part| part.eq_ignore_ascii_case(".jigc"))
+        .map(|part| part.to_string_lossy().into_owned())
+}
+
+/// The repo-relative **roots jigc's own install writes the assistant adapter's artifacts
+/// under**, read from the installed profile's declarations — never spelled here (M52
+/// Increment 8 / T7; `settle-record.md` → D10.5).
+///
+/// The subject is every path the profile declares as a file `jigc setup` writes or edits: the
+/// always-loaded bootstrap file and the managed file it imports
+/// ([`crate::adapter::ReferenceTarget`]), the assistant's settings file
+/// ([`crate::adapter::Allowlist::file`]), and the adapter's owned guide artifact
+/// ([`crate::adapter::GuideTarget::file`]). Each is
+/// reduced to its **first folded component** — the one directory (or, for a repo-root file,
+/// the one name) the artifact lands in — because that is the granularity a *home* rule can
+/// answer at: a door handed `.claude` is handed the tree, not the file.
+///
+/// **The workbench is excluded on purpose.** `.jigc/AGENT.md` is one of the declared
+/// artifacts, and its root is already [`is_workbench_root`]'s subject with its own code and
+/// its own sentence. Leaving it in would give one value two answers and make which one a
+/// caller reads depend on the order it asked its questions in.
+///
+/// **A profile that will not load contributes nothing**, rather than failing the caller: this
+/// is a predicate two doors ask *beside* their other rules, and the door that genuinely cannot
+/// proceed without a profile is `jigc setup`, which refuses with `setup.profile-load` of its
+/// own. The shipped profile is embedded at compile time, so the empty case is not a state a
+/// user reaches — which is also why the suite that drives this class asserts the derivation is
+/// non-empty before it iterates.
+pub fn installed_artifact_roots() -> Vec<String> {
+    let Ok(profile) = crate::adapter::load_profile(crate::setup::SETUP_ASSISTANT) else {
+        return Vec::new();
+    };
+    let declared = profile
+        .reference()
+        .into_iter()
+        .flat_map(|reference| [reference.file.clone(), reference.to.clone()])
+        .chain(std::iter::once(profile.allowlist.file.clone()))
+        .chain(profile.guide().map(|guide| guide.file.clone()));
+    let mut roots: Vec<String> = Vec::new();
+    for path in declared {
+        let Some(root) = first_normalized_component(&path) else {
+            continue;
+        };
+        if is_workbench_root(&root) || roots.iter().any(|seen| seen.eq_ignore_ascii_case(&root)) {
+            continue;
+        }
+        roots.push(root);
+    }
+    roots.sort();
+    roots
+}
+
+/// The installed adapter artifact root `value` lands in, as that root's own spelling — `None`
+/// for every value that lands in none of them (M52 Increment 8 / T7).
+///
+/// The same first-folded-component question [`is_workbench_root`] asks, of the set
+/// [`installed_artifact_roots`] derives, and case-**insensitively** for the same driven reason:
+/// on a case-insensitive filesystem the index and the worktree would name different directories
+/// for one file.
+///
+/// **The fact is this predicate's; the sentence is the caller's.** A root knob's consequence
+/// (managed docs homed among files the install rewrites) is not `jigc relocate`'s (a prior-home
+/// sweep carrying jigc's own install out of the paths it is loaded from), so each door composes
+/// its own — the split [`crate::trackable::resolve_source_token`] already takes over the root
+/// knobs' symlink leg.
+pub fn installed_artifact_root(value: &str) -> Option<String> {
+    let first = first_normalized_component(value)?;
+    installed_artifact_roots()
+        .into_iter()
+        .find(|root| root.eq_ignore_ascii_case(&first))
 }
 
 /// Why `value` is a root the store **cannot describe** — `None` when it can (M50 Increment 4 /
 /// T3). Asked of both root knobs, of the value as typed, before anything moves.
 ///
-/// **Six shapes now, and the list has grown three times by the same route** — one driven cell
+/// **Seven shapes now, and the list has grown four times by the same route** — one driven cell
 /// at a time, each joining this predicate rather than minting a code of its own, because the
 /// operator's fix is the same in every case: supply a different root
 /// (`config.untrackable-root`'s five-reasons-one-code precedent). M50 shipped three; M51
 /// Increment 1 / T5 added **edge whitespace** ([`whitespace_padded_component`]) and T6 added
 /// **git pathspec magic** ([`pathspec_magic_root`]); M52 Increment 6 / T6 added
-/// **unnameable** ([`over_name_ceiling_component`]) — each with its own driven repro in its own
-/// doc-comment. Each shape was driven at HEAD before its guard existed and each left the store
-/// lying in its own way (the repros are in `crates/cli/tests/root_knob_rules.rs` and
+/// **unnameable** ([`over_name_ceiling_component`]) and Increment 8 / T7 added **jigc's own
+/// adapter install root** ([`installed_artifact_root`]) — each with its own driven repro in its
+/// own doc-comment. Each shape was driven at HEAD before its guard existed and each left the
+/// store lying in its own way (the repros are in `crates/cli/tests/root_knob_rules.rs` and
 /// `crates/cli/tests/path_arg_occurrence_axis.rs`). The three original ones:
 ///
 ///   - **absolute** — the value is resolved against the repository root by everything
@@ -904,7 +986,7 @@ fn unusable_root_reason(repo_root: &Path, value: &str) -> Option<String> {
         ));
     }
 
-    match offending_component(repo_root, value) {
+    let walked = match offending_component(repo_root, value) {
         // Every named component walked and none of them refused — including the case of no
         // named component at all (`""`, `.`), which is the repo root and the flat layout both
         // knobs document.
@@ -918,7 +1000,30 @@ fn unusable_root_reason(repo_root: &Path, value: &str) -> Option<String> {
             "`{shown}` is a file, not a directory — every move into it fails while the knob \
              lands anyway, and the store then resolves its docs to homes nothing is at"
         )),
-    }
+    };
+
+    // **Seventh shape, and it is asked LAST** (M52 Increment 8 / T7): the roots jigc's own
+    // install writes the assistant adapter's artifacts under ([`installed_artifact_roots`]).
+    // It joins this predicate rather than minting a code of its own, on the growth rule stated
+    // above — the operator's fix is the same one it always is, supply a different root — and
+    // it is asked after the walk rather than before it so a value the six existing shapes
+    // already refuse keeps the sentence it already had: the always-loaded bootstrap file is a
+    // declared artifact *and* a file, and *"a file, not a directory"* is the sentence a root
+    // knob's operator can act on.
+    //
+    // **What it is not.** The workbench is [`is_workbench_root`]'s, one step earlier and under
+    // its own code, and [`installed_artifact_roots`] excludes it for that reason. This leg's
+    // subject is the rest of the install footprint, which until now no rule answered for at
+    // either door.
+    walked.or_else(|| {
+        installed_artifact_root(value).map(|root| {
+            format!(
+                "`{root}` is where jigc's own install writes the assistant adapter's \
+                 artifacts — a root there homes managed docs among the files `jigc setup` \
+                 rewrites on every run and `jigc uninstall` takes back out"
+            )
+        })
+    })
 }
 
 /// The first component of `value` carrying **leading or trailing whitespace**, as its own

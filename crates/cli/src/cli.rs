@@ -3068,17 +3068,33 @@ pub const PATH_ARG_OCCURRENCES: &[PathArgOccurrence] = &[
         door: &["relocate"],
         arg: "from",
         arms: &[PathArgArm {
-            when: "always",
+            when: "always — though the argv reaches the token only under a MANUFACTURED \
+                   freeze-exempt pack: every doctype both shipped packs carry is \
+                   manifest-governed since M40, and this door refuses a frozen doctype before \
+                   it parses `--from`, so the freeze-exempt relocation path's domain on a \
+                   stock corpus is empty (`design/corpus-migration.md` → The freeze-exempt \
+                   sibling). The witness is `path_arg_occurrence_axis`'s `FixturePack::\
+                   from_dev_pack` corpus, which ships no freeze manifest",
             token: ArmToken::Caller,
             subject: PathArgSubject::Home,
             argv: &["relocate", "adr", "--from", PATH_ARG_SLOT],
-            disposition: PathArgDisposition::NoRule {
-                why: "the prior home is a PREFIX matched against the committed spellings \
-                      `git ls-files` reports (`crate::orphan::is_stranded`) — never a path \
-                      opened, written, or handed to git as a pathspec. A value that is not \
-                      one of those spellings selects no instance, so the door relocates \
-                      nothing. The DESTINATION is the schema's own home, and it is the \
-                      destination M49's trackability rule guards.",
+            disposition: PathArgDisposition::Adjudicated {
+                predicate: "crate::relocate::installed_root_refusal — \
+                            crate::config::is_workbench_root, then \
+                            crate::config::installed_artifact_root (the seventh shape of \
+                            crate::config::unusable_root_reason's family, derived from the \
+                            installed adapter profile's declared artifacts). Every OTHER \
+                            spelling stays a stated no-rule: the prior home is a PREFIX \
+                            matched against the committed spellings `git ls-files` reports \
+                            (crate::orphan::is_stranded) — never a path opened, written, or \
+                            handed to git as a pathspec — so a value that is not one of those \
+                            spellings selects no instance and the door relocates nothing, \
+                            while the DESTINATION is the schema's own home, which is what \
+                            M49's trackability rule and M52's identity gate guard. The two \
+                            prefixes that are NOT the operator's own are jigc's install \
+                            footprint, and driven they reached files: `--from .claude` staged \
+                            `R .claude/notes.md -> docs/decisions/notes.md` at exit 0",
+                codes: &["config.workbench-root", "config.unusable-root"],
             },
         }],
     },
@@ -3326,7 +3342,8 @@ pub const PATH_ARG_OCCURRENCES: &[PathArgOccurrence] = &[
                                 crate::config::is_workbench_root · \
                                 crate::config::unusable_root_reason (absolute · edge \
                                 whitespace · git pathspec magic · unnameable component · \
-                                symlinked or file-shaped component)",
+                                symlinked or file-shaped component · jigc's own adapter \
+                                install root)",
                     codes: &[
                         "config.untrackable-root",
                         "config.workbench-root",

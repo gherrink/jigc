@@ -274,16 +274,74 @@ fn relocate_in_repo(cwd: &Path, ty: &str, from: &str) -> Result<RelocationReport
 
 /// Parse a `--from` value into a prior [`Home`]: a value ending in `.md` is a literal
 /// **placement** file (`docs/vision.md`), any other non-empty value is a **location**
-/// directory (`docs/vision/`, trailing slash stripped). Empty is an error.
+/// directory (`docs/vision/`, trailing slash stripped). Empty is an error, and so is a prior
+/// home naming one of jigc's own installed roots ([`installed_root_refusal`]).
 fn parse_prior_home(from: &str) -> Result<Home> {
     if from.trim().is_empty() {
         anyhow::bail!("`--from` (the prior home) is required");
+    }
+    if let Some(finding) = installed_root_refusal(from) {
+        return Err(render::finding_error(&finding));
     }
     if from.ends_with(".md") {
         Ok(Home::placement(from))
     } else {
         Home::location(from).ok_or_else(|| anyhow!("`--from` `{from}` is not a valid prior home"))
     }
+}
+
+/// Why a `--from` value naming **one of jigc's own installed roots** is refused before
+/// anything is swept — `None` for every prior home that is the operator's own (M52 Increment
+/// 8 / T7; `completions/artifacts/M52/settle-record.md` → D10.5, A1-D2).
+///
+/// `--from` is a **prefix**: the door moves every committed `.md` under it into the doctype's
+/// home. Every other spelling reaches at worst nothing — an absolute value, a `../` hop and a
+/// symlink all match no committed spelling, which is the no-rule this row used to carry — but
+/// two prefixes are guaranteed to reach files, and both of them are **jigc's own install**.
+/// Driven at `a5deabf4` on a freeze-exempt pack with one ordinarily-named doc planted under
+/// each: `--from .claude` reported `1 moved` at exit **0** and staged
+/// `R .claude/notes.md -> docs/decisions/notes.md`, and `--from .jigc` did the same to
+/// `.jigc/notes.md`; the artifacts whose basenames are not doc ids (`.jigc/AGENT.md`,
+/// `.claude/skills/jigc/SKILL.md`, `CLAUDE.md`) escaped only by T6's destination-identity
+/// gate, which then printed — as the repair — a `git mv` of jigc's own bootstrap file into
+/// the docs root followed by `jigc ingest`.
+///
+/// **No code is minted: both refusals take a sibling door's shipped code**, under the rule
+/// this wave's ledger declares. `jigc config set <root-knob>` adjudicates the same *kind* of
+/// value (a directory managed docs are resolved against) and already owns both answers —
+/// [`crate::config::is_workbench_root`] → `config.workbench-root` for jigc's workbench, and
+/// [`crate::config::installed_artifact_root`], the seventh shape of
+/// [`crate::config::unusable_root_reason`]'s family → `config.unusable-root` for the adapter
+/// install roots the profile declares. **The sentence is this door's**, because the
+/// consequence is: a root knob's is *docs homed among files the install rewrites*, and this
+/// one's is *the install carried out of the paths it is loaded from*.
+fn installed_root_refusal(from: &str) -> Option<Finding> {
+    let route = "re-run `--from` with the directory this doctype's instances actually sat at \
+                 — `jigc doc list` names every committed doc jigc knows and the path each one \
+                 is at";
+    if crate::config::is_workbench_root(from) {
+        return Some(Finding::block(
+            "config.workbench-root",
+            format!(
+                "`{from}` is inside jigc's own workbench (`.jigc/`) — `--from` sweeps every \
+                 committed doc under the prior home into this doctype's home, and jigc's own \
+                 state was never a home any doctype's instances sat at"
+            ),
+            route,
+        ));
+    }
+    crate::config::installed_artifact_root(from).map(|root| {
+        Finding::block(
+            "config.unusable-root",
+            format!(
+                "`{from}` is inside jigc's own adapter install — `{root}` is one of the paths \
+                 `jigc setup` writes, and `--from` sweeps every committed doc under the prior \
+                 home into this doctype's home, which would carry jigc's own install out of \
+                 the paths it is loaded from"
+            ),
+            route,
+        )
+    })
 }
 
 /// The **parallel freeze-exempt relocation path** — the sibling of the frozen, snapshot-gated
