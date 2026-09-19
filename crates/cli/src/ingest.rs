@@ -74,10 +74,21 @@ pub struct TriageRow {
 }
 
 /// The triage report — the discovered candidates classified, in sorted candidate
-/// order (the deterministic report order [`git_candidates`] yields).
+/// order (the deterministic report order [`git_candidates`] yields), plus the run's
+/// **non-blocking findings**.
 #[derive(Clone, Debug)]
 pub struct IngestReport {
     pub rows: Vec<TriageRow>,
+    /// The scan's **non-blocking** findings — advisories about what the run *did*, as
+    /// opposed to the per-row `finding` that says what a candidate *is*. Today's one
+    /// member is `file-state.absorbed`, one per adopted candidate whose baseline this run
+    /// advanced past an out-of-band edit (M52 Increment 8 / T3;
+    /// `design/reconciliation.md` → The absorb surface). Empty on an ordinary scan.
+    ///
+    /// Findings-as-data on the success path, the `setup` precedent
+    /// (`design/command-output-contract.md` → findings-as-data): a driver reads the
+    /// advisory and its route as a value, never by grepping the triage prose.
+    pub findings: engine::finding::Findings,
 }
 
 /// The verdict-class rollup + per-directory unmanaged breakdown that rides the
@@ -147,15 +158,21 @@ impl serde::Serialize for IngestReport {
     /// `Serialize` — the guard is on the projection, not on a caller who must remember to call
     /// it (`design/command-output-contract.md` → The membership test).
     ///
-    /// The emitted struct carries two fields: the full per-row `rows` projection and the
-    /// derived [`IngestSummary`] rollup (T4) — a pure projection of `rows`, no gate.
+    /// The emitted struct carries three fields: the full per-row `rows` projection, the
+    /// derived [`IngestSummary`] rollup (T4) — a pure projection of `rows`, no gate — and
+    /// the run's own `findings` (M52 Increment 8 / T3), whose uniqueness half rides
+    /// [`engine::finding::Findings`]' own `Serialize`.
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
         let findings: Vec<Finding> = self.rows.iter().filter_map(|r| r.finding.clone()).collect();
         engine::finding::debug_assert_keys_discriminate(&findings);
-        let mut st = serializer.serialize_struct("IngestReport", 2)?;
+        let mut st = serializer.serialize_struct("IngestReport", 3)?;
         st.serialize_field("rows", &self.rows)?;
         st.serialize_field("summary", &IngestSummary::of(&self.rows))?;
+        // The run's own advisories, checked by `Findings`' own `Serialize` over its own set
+        // — a separate array from the per-row findings above, because the two answer
+        // different questions about different subjects and a shared key would collide them.
+        st.serialize_field("findings", &self.findings)?;
         st.end()
     }
 }
@@ -205,6 +222,7 @@ pub(crate) fn run(cwd: &Path) -> Result<IngestReport> {
 
     let candidates = git_candidates(&jigc_home)?;
     let mut rows = Vec::with_capacity(candidates.len());
+    let mut findings = engine::finding::Findings::from(Vec::new());
     let mut adopted_any = false;
     for rel_path in candidates {
         let bytes = read_candidate_bytes(&jigc_home, &rel_path)?;
@@ -219,6 +237,14 @@ pub(crate) fn run(cwd: &Path) -> Result<IngestReport> {
             registered,
         );
 
+        // Would adopting this candidate carry an out-of-band edit forward? Asked **before**
+        // `adopt` re-keys the record, because afterwards the evidence is gone — the whole
+        // defect this closes is that the advance was invisible (M52 Increment 8 / T3).
+        // `adopt` is what decides whether the absorb happens at all (its parse + conformance
+        // re-gate refuses a non-conformant edit), so the answer is only kept on a row that
+        // actually adopted.
+        let absorbing = engine::file_state::absorbed_drift(&record, &rel_path, &bytes);
+
         // Adopt every `adoptable` candidate (schema-gated, register-only). The verdict
         // already named the conformant-at-location type; `adopt` re-gates over the same
         // substrate and refuses anything non-conformant — so a row is only marked
@@ -231,6 +257,9 @@ pub(crate) fn run(cwd: &Path) -> Result<IngestReport> {
         {
             row.adopted = true;
             adopted_any = true;
+            if let Some(absorbed) = absorbing {
+                findings.push(absorbed);
+            }
         }
 
         rows.push(row);
@@ -248,7 +277,7 @@ pub(crate) fn run(cwd: &Path) -> Result<IngestReport> {
             .with_context(|| format!("could not save the file-state record under {jigc_root:?}"))?;
     }
 
-    Ok(IngestReport { rows })
+    Ok(IngestReport { rows, findings })
 }
 
 /// Discover the sorted, deduped repo-relative `.md` candidate set from **git** (M40 /

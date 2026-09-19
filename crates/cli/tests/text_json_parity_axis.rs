@@ -766,14 +766,34 @@ fn uninstall_success_parity() {
     }
 }
 
-/// `jigc ingest` — the triage report. Its one field rides the wire whole (the envelope
-/// adds the derived `summary` rollup beside it, which is projection, not parity).
-fn ingest_parity() {
-    let report = IngestReport { rows: Vec::new() };
-    let IngestReport { rows } = &report;
+/// The real `file-state.absorbed` finding, from the one producer both doors ask (M52
+/// Increment 8 / T3) — never a hand-built stand-in, so the parity fence checks the bytes the
+/// binary emits.
+fn absorbed_finding(path: &str) -> engine::finding::Finding {
+    let mut record = engine::file_state::FileStateRecord::new();
+    record.record(path, "a-hash-the-bytes-below-do-not-have");
+    engine::file_state::absorbed_drift(&record, path, b"the drifted bytes")
+        .expect("a recorded baseline that differs from the bytes in hand is an absorb")
+}
 
+/// `jigc ingest` — the triage report. Its two fields ride the wire whole (the envelope
+/// adds the derived `summary` rollup beside them, which is projection, not parity).
+fn ingest_parity() {
+    let absorbed = absorbed_finding("docs/decisions/use-sqlite.md");
+    let report = IngestReport {
+        rows: Vec::new(),
+        findings: vec![absorbed].into(),
+    };
+    let IngestReport { rows, findings } = &report;
+
+    let text = ingest(Format::Agent, &report);
     let doc = envelope(&ingest(Format::Json, &report), "jigc ingest");
     carries(&doc, "rows", rows, "jigc ingest", "rows");
+    // Findings-as-data: an out-of-band edit the scan absorbed is *said* on both surfaces.
+    for finding in findings {
+        text_prints(&text, &finding.message, "jigc ingest", "findings[].message");
+    }
+    carries(&doc, "findings", findings, "jigc ingest", "findings");
 }
 
 /// `jigc unmanage` — the drop report, carried whole.
@@ -809,6 +829,7 @@ fn rename_parity() {
         referrers: vec!["adr:cache-strategy#supersedes".to_owned()],
         prose_mentions: vec!["README.md:12".to_owned()],
         commit: Some("a1b2c3d".to_owned()),
+        findings: vec![absorbed_finding("docs/decisions/use-sqlite.md")].into(),
         hook_output: String::new(),
     };
     let RenameReport {
@@ -820,9 +841,11 @@ fn rename_parity() {
         referrers,
         prose_mentions,
         commit,
+        findings,
         hook_output,
     } = &report;
 
+    let text = rename(Format::Agent, &report);
     let doc = envelope(&rename(Format::Json, &report), "jigc rename");
     for (field_name, value) in [
         ("from", from),
@@ -845,6 +868,12 @@ fn rename_parity() {
         "jigc rename",
         "prose_mentions",
     );
+    // Findings-as-data: an out-of-band edit the transaction absorbed is *said* on both
+    // surfaces (M52 Increment 8 / T3).
+    for finding in findings {
+        text_prints(&text, &finding.message, "jigc rename", "findings[].message");
+    }
+    carries(&doc, "findings", findings, "jigc rename", "findings");
 }
 
 /// `jigc relocate` — the freeze-exempt relocation report, carried whole.

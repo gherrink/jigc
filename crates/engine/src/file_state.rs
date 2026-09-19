@@ -969,6 +969,69 @@ fn unbaselined_finding(path: &str) -> Finding {
     )
 }
 
+/// **The absorb question, asked once for the two doors that answer it outside the
+/// classifier** (M52 Increment 8 / T3): would advancing `path`'s recorded baseline to
+/// `bytes` carry an **out-of-band edit** forward — and if so, the advisory that says so.
+///
+/// [`reconcile_committed`] classifies drift and emits `reconciliation.absorb` on the arm
+/// that absorbs it, so the task/finalize sweep already obeys
+/// [reconciliation.md](../../../design/reconciliation.md)'s *"every absorb surfaces"*. Two
+/// **register-only** doors advance a committed doc's baseline without going through it —
+/// `jigc ingest` (via [`crate::ingest::adopt`]) and `jigc rename` (via the move primitive's
+/// re-key and its referrer re-baseline) — and through `1.0.0-rc.15` both did it in silence,
+/// so a blocking `file-state.hash-matches` simply vanished from the next `jigc validate`
+/// with no line on any surface saying an external edit had been taken
+/// (`completions/artifacts/M52/baseline-freeze.md` §2.2 F1/F3 and §4 L-1, both driven).
+///
+/// The predicate is the *same comparison* the classifier's `DRIFTED` arm makes — a recorded
+/// hash that differs from the bytes in hand — asked here rather than re-derived at each
+/// door, so the two doors cannot disagree with each other or with the sweep about what
+/// counts as an out-of-band edit. **`None` is the ordinary answer** on every clean corpus:
+/// no recorded baseline is not drift (that is the `UNKNOWN` arm's `file-state.un-baselined`
+/// business), and a matching one is `IN_SYNC`.
+///
+/// It **classifies nothing and records nothing**: the caller passes the bytes it is about to
+/// baseline, so this reports what the door did rather than deciding it. Which drift a door is
+/// willing to absorb at all is that door's own gate, and the two differ — `adopt` re-gates
+/// parse + conformance and refuses a non-conformant edit, while `rename` has no such gate and
+/// absorbs one (driven at M52 Increment 8 / T3: the blocking `conformance.section-renamed`
+/// survives into the next `jigc validate`, so nothing is greened). Hence the message makes
+/// **no** conformance claim — only the baseline claim, which is true at both doors.
+pub fn absorbed_drift(record: &FileStateRecord, path: &str, bytes: &[u8]) -> Option<Finding> {
+    match record.get(path) {
+        Some(recorded) if recorded != hash_bytes(bytes) => Some(absorbed_baseline_finding(path)),
+        _ => None,
+    }
+}
+
+/// The advisory **`file-state.absorbed`** finding — the surface
+/// [reconciliation.md](../../../design/reconciliation.md) → *What reconciliation does NOT do*
+/// has always owed at a register-only absorb.
+///
+/// Informational, like its `reconciliation.absorb` sibling: a clean external edit is honored,
+/// not a problem to repair. It carries an **`Informational` route naming the finding it
+/// retired**, because the reader's question at this line is *why did `jigc validate` stop
+/// telling me about this file* — and the answer is that this run is what stopped it.
+fn absorbed_baseline_finding(path: &str) -> Finding {
+    Finding::graded(
+        Severity::Advisory,
+        "file-state.absorbed",
+        format!(
+            "out-of-band edit to `{path}` absorbed — its file-state baseline now records the \
+             on-disk bytes"
+        ),
+        Some(Location::addressed(path, 1, 1)),
+        // `Route::informational` explicitly, never `String::into` — that `From` impl maps to
+        // `RouteKind::Human`, so an *informs-only* route written as a bare string is silently
+        // filed as a direction a human must take. The registration says `Informational` and
+        // the constructed kind has to agree with it.
+        Some(crate::finding::Route::informational(format!(
+            "no action needed — this retires the `file-state.hash-matches` finding for \
+             `{path}`; review the edit in git history if it was not yours"
+        ))),
+    )
+}
+
 /// Whether `path` (a `file-state` record key like `decisions/x.md`) lives under a
 /// persisted schema's `location:` — i.e. it is a committed managed doc, not a code
 /// path. The `:` exclusion is a structural guard on the staged working-area namespace
@@ -1526,6 +1589,49 @@ Adopt the distributed cache instead.
 ## Consequences
 Referrers must point at the new decision.
 ";
+
+    /// [`absorbed_drift`] — the predicate the two **register-only** doors ask, over all
+    /// three of its cells (M52 Increment 8 / T3). The positive cell's **route kind** is the
+    /// load-bearing assertion here and nowhere else: the wire projects a route as its flat
+    /// text, so no integration suite driving the binary can see that the registration's
+    /// `Informational` was not silently filed as `Human` by a `String::into`.
+    #[test]
+    fn absorbed_drift_answers_only_over_a_baseline_the_bytes_do_not_match() {
+        let mut record = FileStateRecord::new();
+        let bytes = b"the bytes in hand";
+
+        // UNKNOWN — no recorded baseline is not drift (that is `un-baselined`'s business).
+        assert!(
+            absorbed_drift(&record, ADR_B_PATH, bytes).is_none(),
+            "an absent baseline is not an absorb"
+        );
+
+        // IN_SYNC — a matching baseline is nothing to report.
+        record.record(ADR_B_PATH, hash_bytes(bytes));
+        assert!(
+            absorbed_drift(&record, ADR_B_PATH, bytes).is_none(),
+            "a matching baseline is not an absorb"
+        );
+
+        // DRIFTED — the one cell that answers.
+        record.record(ADR_B_PATH, hash_bytes(b"what the record still remembers"));
+        let finding = absorbed_drift(&record, ADR_B_PATH, bytes).expect("a differing baseline");
+        assert_eq!(finding.code, "file-state.absorbed");
+        assert_eq!(finding.severity, Severity::Advisory);
+        assert!(
+            finding.message.contains(ADR_B_PATH),
+            "the message names the absorbed path: {finding:?}"
+        );
+        let route = finding.route.as_ref().expect("the advisory-route floor");
+        assert!(
+            matches!(route.kind(), crate::finding::RouteKind::Informational),
+            "the registration says `Informational`, so the constructed kind must be: {route:?}"
+        );
+        assert!(
+            route.as_str().contains("file-state.hash-matches"),
+            "the route names the finding this retires: {route:?}"
+        );
+    }
 
     /// The DRIFTED+UNTOUCHED clean-reparse branch: a committed ADR with a recorded
     /// baseline hash, edited on disk to add a `supersedes`, reconciles to **absorb** —

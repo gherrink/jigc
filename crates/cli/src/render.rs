@@ -3567,13 +3567,10 @@ pub fn setup_success(format: Format, summary: &SetupSummary) -> String {
             // The install's non-blocking findings (M48 Increment 10 / T2) — an artifact jigc
             // declined to overwrite is *said*, never silently skipped, and it reads exactly
             // like every other agent-text finding (`advisory · <code> — <message>` + its
-            // `route:` line) through the house [`finding_line`].
-            if !summary.findings.is_empty() {
-                out.push('\n');
-                for finding in &summary.findings {
-                    out.push_str(&finding_line(finding, false));
-                }
-            }
+            // `route:` line) through the house [`finding_line`]. This block *was* the shape
+            // [`run_findings`] is named after; it is the same bytes, from one home since M52
+            // Increment 8 / T3 gave it a second and third producer.
+            out.push_str(&run_findings(&summary.findings));
             out.push_str(ROUTING_FOOTER);
             out
         }
@@ -3680,13 +3677,10 @@ pub fn uninstall_success(format: Format, summary: &UninstallSummary) -> String {
             }
             // What the teardown declined to remove, and why (M48 Increment 10 / T3) — a
             // file left standing is *said*, never silently skipped, and it reads exactly
-            // like every other agent-text finding through the house [`finding_line`].
-            if !summary.findings.is_empty() {
-                out.push('\n');
-                for finding in &summary.findings {
-                    out.push_str(&finding_line(finding, false));
-                }
-            }
+            // like every other agent-text finding through the house [`finding_line`], from
+            // the shared trailing block [`run_findings`] (same bytes; one home since M52
+            // Increment 8 / T3 found this shape written out four times).
+            out.push_str(&run_findings(&summary.findings));
             out.push_str(ROUTING_FOOTER);
             out
         }
@@ -3791,6 +3785,11 @@ pub fn ingest(format: Format, report: &IngestReport) -> String {
                     }
                 }
             }
+            // The run's own advisories (M52 Increment 8 / T3) — an out-of-band edit this
+            // scan absorbed into a baseline is *said*, never silently taken, and it reads
+            // exactly like every other agent-text finding through the house
+            // [`finding_line`], the `setup` precedent.
+            out.push_str(&run_findings(&report.findings));
             out.push_str(ROUTING_FOOTER);
             out
         }
@@ -3902,6 +3901,32 @@ pub fn unmanage(format: Format, report: &crate::unmanage::UnmanageReport) -> Str
     }
 }
 
+/// The trailing **non-blocking findings block** a success surface appends before its routing
+/// footer: a blank line, then each finding through the house [`finding_line`]. Empty string
+/// for an empty set, so an ordinary run's bytes are unchanged.
+///
+/// **One shape, four producers**: `setup_success`'s install advisories, `uninstall_success`'s
+/// declined removals, and — since M52 Increment 8 / T3 — the two doors that report an absorbed
+/// out-of-band edit ([`ingest`], [`rename`]). The first two had written it out inline, so the
+/// shape already existed in two copies before this had a name; a copy of a shape is a place
+/// for it to drift, which is why the name is the shape rather than either producer.
+///
+/// Not every agent-text finding render is this shape, and the two that are not stay where they
+/// are: `jigc start`'s orientation view lists a task's findings under a `findings:` **label**
+/// (no leading blank line, inside the task block), and [`ingest`]'s per-row finding is
+/// **indented under its row**. Both say something about a listed subject; this block says
+/// something about the run.
+fn run_findings(findings: &engine::finding::Findings) -> String {
+    if findings.is_empty() {
+        return String::new();
+    }
+    let mut out = String::from("\n");
+    for finding in findings {
+        out.push_str(&finding_line(finding, false));
+    }
+    out
+}
+
 /// Render a `jigc rename` outcome to the surface `format` selects: `agent` / `human` emit
 /// the move summary (old→new identity + path, the count of repointed referrers, each
 /// listed), followed by the routing footer; `json` emits the generic projection (no
@@ -3921,6 +3946,11 @@ pub fn rename(format: Format, report: &crate::rename::RenameReport) -> String {
                  committed\n",
                 report.from, report.title, report.old_path,
             );
+            // …and the absorb block, which this arm owes exactly as much as the arm below:
+            // an idempotent run stages nothing and commits nothing, and the move primitive
+            // re-keys the file-state baseline anyway, so a drifted doc is absorbed *here*
+            // too (M52 Increment 8 / T3, driven).
+            out.push_str(&run_findings(&report.findings));
             out.push_str(ROUTING_FOOTER);
             out
         }
@@ -3947,6 +3977,9 @@ pub fn rename(format: Format, report: &crate::rename::RenameReport) -> String {
                     out.push_str(&format!("  {mention}\n"));
                 }
             }
+            // The transaction's absorbed out-of-band edits — the renamed doc's and every
+            // repointed referrer's (M52 Increment 8 / T3).
+            out.push_str(&run_findings(&report.findings));
             out.push_str(ROUTING_FOOTER);
             out
         }
@@ -5735,7 +5768,7 @@ pub const ENVELOPE_ARMS: &[EnvelopeArm] = &[
         path: &["ingest"],
         arm: "Triaged",
         origin: ArmOrigin::Sole,
-        shape: ArmShape::Object(&["rows", "summary"]),
+        shape: ArmShape::Object(&["findings", "rows", "summary"]),
         status: ArmStatus::Pinned,
         outcome: ArmOutcome::Success,
         root: ArmRoot::AdHoc("cli::ingest::IngestReport"),
@@ -5782,6 +5815,7 @@ pub const ENVELOPE_ARMS: &[EnvelopeArm] = &[
         origin: ArmOrigin::Sole,
         shape: ArmShape::Object(&[
             "commit",
+            "findings",
             "from",
             "hook_output",
             "new_path",
@@ -7866,6 +7900,7 @@ mod tests {
         use engine::finding::{Finding, Location, Severity};
 
         let report = IngestReport {
+            findings: Vec::new().into(),
             rows: vec![
                 TriageRow {
                     file: "decisions/auth-choice.md".to_string(),
@@ -7963,6 +7998,7 @@ mod tests {
         use crate::ingest::{IngestReport, TriageRow};
 
         let report = IngestReport {
+            findings: Vec::new().into(),
             rows: vec![TriageRow {
                 file: "docs/notes.md".to_string(),
                 best_match: None,
@@ -7996,6 +8032,7 @@ mod tests {
         use crate::ingest::{IngestReport, TriageRow};
 
         let report = IngestReport {
+            findings: Vec::new().into(),
             rows: vec![TriageRow {
                 file: "docs/notes.md".to_string(),
                 best_match: None,
@@ -8036,7 +8073,13 @@ mod tests {
     fn render_ingest_empty_report_renders_no_legend() {
         use crate::ingest::IngestReport;
 
-        let agent = ingest(Format::Agent, &IngestReport { rows: Vec::new() });
+        let agent = ingest(
+            Format::Agent,
+            &IngestReport {
+                rows: Vec::new(),
+                findings: Vec::new().into(),
+            },
+        );
         assert!(
             !agent.contains("What the verdicts"),
             "no rows → no legend heading; got:\n{agent}",
@@ -8061,6 +8104,7 @@ mod tests {
             annotations: Vec::new(),
         };
         let report = IngestReport {
+            findings: Vec::new().into(),
             rows: vec![
                 TriageRow {
                     file: "decisions/keep.md".to_string(),
@@ -8119,6 +8163,7 @@ mod tests {
         // relative order render byte-identical text (per-directory aggregation is
         // keyed on the directory, never row-encounter order).
         let reversed = IngestReport {
+            findings: Vec::new().into(),
             rows: vec![
                 report.rows[0].clone(),
                 unmanaged("src/y.md"),
@@ -8177,6 +8222,7 @@ mod tests {
             annotations: Vec::new(),
         };
         let report = IngestReport {
+            findings: Vec::new().into(),
             rows: vec![
                 adoptable.clone(),
                 needs_reconcile.clone(),
@@ -8212,6 +8258,7 @@ mod tests {
         // **byte-identical** summary (the per-directory collapse is keyed on the
         // directory via a BTreeMap, never row-encounter order).
         let reversed = IngestReport {
+            findings: Vec::new().into(),
             rows: vec![
                 needs_reconcile,
                 adoptable,

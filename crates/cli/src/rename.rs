@@ -320,6 +320,16 @@ pub struct RenameReport {
     /// `design/write-commands.md` → `jigc rename` step 2, the degenerate arm). The
     /// `migrate-corpus` precedent (`CorpusMigrationReport::commit`).
     pub commit: Option<String>,
+    /// The rename's **non-blocking** findings — advisories about what the transaction did
+    /// beyond the move itself. Today's one member is `file-state.absorbed`, one per path
+    /// whose committed baseline this rename advanced past an out-of-band edit: the renamed
+    /// doc and every repointed referrer (M52 Increment 8 / T3; `design/reconciliation.md`
+    /// → The absorb surface). Empty on every undrifted corpus, which is every ordinary one.
+    ///
+    /// Findings-as-data on the success path, the `setup` precedent
+    /// (`design/command-output-contract.md` → findings-as-data). A **blocking** outcome is
+    /// not here: that is this door's `Err` arm and the `conflicts` out-param.
+    pub findings: engine::finding::Findings,
     /// The atomic rename commit's captured non-blocking hook stream — **present-always**,
     /// the empty string when no hook spoke **or nothing was committed** (the hook_output
     /// producer axis; `design/command-output-contract.md` → Stream discipline). The caller
@@ -628,6 +638,14 @@ pub(crate) fn run(
     // retitle-only has no identity change, so it repoints nothing.
     let mut referrer_writes: Vec<ReferrerWrite> = Vec::new();
     let mut referrer_labels: Vec<String> = Vec::new();
+    // **Every committed path this transaction re-baselines, with the bytes it found there**
+    // (M52 Increment 8 / T3). The move primitive re-keys the renamed doc at its *post*-drift
+    // bytes and step 5 re-keys every repointed referrer at theirs, so a doc carrying an
+    // out-of-band edit has that edit absorbed by an operation whose subject is the title —
+    // and through rc.15 nothing said so (`baseline-freeze.md` §4, L-1, driven, commit
+    // included). The renamed doc is the first subject; the referrers join it as they are
+    // read, below.
+    let mut absorb_subjects: Vec<(String, String)> = vec![(old_rel.clone(), old_source.clone())];
     if !is_retitle {
         let mut by_from: BTreeMap<String, Vec<String>> = BTreeMap::new();
         for edge in index::referrers_of(&index, &old_id) {
@@ -645,6 +663,11 @@ pub(crate) fn run(
             let fabs = repo_root.join(&frel);
             let mut source = std::fs::read_to_string(&fabs)
                 .with_context(|| format!("could not read the referrer at {frel}"))?;
+            // The bytes **as found**, before the repoint rewrites them — the absorb question
+            // below is about what was on disk when this transaction arrived, and step 5
+            // re-baselines every referrer to its repointed bytes, so after the rewrite the
+            // difference is this run's own and says nothing about an external edit.
+            absorb_subjects.push((frel.clone(), source.clone()));
             for relation in relations {
                 source = engine::write::repoint_ref(fschema, &source, relation, &old_id, &new_id)
                     .map_err(|e| anyhow!("could not repoint {from_id}#{relation}: {e:?}"))?;
@@ -720,6 +743,27 @@ pub(crate) fn run(
         );
     }
 
+    // **The absorb surface, computed before the transaction** — afterwards the evidence is
+    // gone, the record having been re-keyed. One advisory per subject whose recorded baseline
+    // differs from the bytes found on disk, from the one predicate
+    // [`engine::file_state::absorbed_drift`] the sibling door asks, keyed by path so the set
+    // is sorted and order-invariant however the subjects were gathered. It is built here and
+    // reported only on the success arm below: a failed transaction rolls the record back, so
+    // nothing was absorbed and nothing may claim otherwise.
+    let absorbed: Vec<Finding> = {
+        let record = FileStateRecord::load(&jigc_root)
+            .with_context(|| format!("could not load the file-state record under {jigc_root:?}"))?;
+        absorb_subjects
+            .iter()
+            .filter_map(|(rel, source)| {
+                engine::file_state::absorbed_drift(&record, rel, source.as_bytes())
+                    .map(|finding| (rel.clone(), finding))
+            })
+            .collect::<BTreeMap<String, Finding>>()
+            .into_values()
+            .collect()
+    };
+
     // The transaction proper: any failure rolls the store back byte-and-record identical.
     // A landed commit yields its short sha + captured non-blocking hook stream for the
     // report; an idempotent run (nothing staged) yields `None` and commits nothing.
@@ -775,6 +819,7 @@ pub(crate) fn run(
 
     referrer_labels.sort();
     Ok(RenameReport {
+        findings: absorbed.into(),
         from: old_id,
         to: new_id,
         old_path: old_rel,

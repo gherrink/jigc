@@ -5,6 +5,8 @@
 #[path = "../support/mod.rs"]
 mod support;
 
+#[path = "../absorb_surface.rs"]
+mod absorb_surface;
 #[path = "../changelog_cold_create.rs"]
 mod changelog_cold_create;
 #[path = "../changelog_gate_advisory.rs"]
