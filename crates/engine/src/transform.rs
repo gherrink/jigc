@@ -152,6 +152,26 @@ pub enum TransformError {
         /// ([`crate::write::ItemSlotError::UnmodelledContent`]).
         item: String,
     },
+    /// A [`SchemaChange::ValueRemapped`] whose field is the block's **`id-from`** — the leaf
+    /// the item's identity is derived from — over a document carrying at least one committed
+    /// identity the rename orphans.
+    ///
+    /// The `id-from` leaf is never a committed `- key: value` bullet: the parser consumes it
+    /// as the item's heading and slugs the `{#id}` anchor from it, so "remap the value" would
+    /// mean *re-mint the item's id* — an identity change, which `jigc doc retitle-item`
+    /// refuses unconditionally for an enum id-source and which no migration performs
+    /// (`design/storage.md` → Identity). There is no arm to build: the refusal is the verdict.
+    ///
+    /// **Scoped to the docs the rename actually orphans** ([`crate::validate::IdFromViolation`]
+    /// → `NotEnumMember`, the shipped adjudicator the conformance gate itself asks). An
+    /// instance whose every committed identity is still a declared member has nothing to
+    /// rewrite and migrates, so this never blocks a doc that already conforms.
+    IdFromRemap {
+        /// The locus whose block declares the field as its `id-from`.
+        locus: Locus,
+        /// The `id-from` leaf the rename was made on.
+        field: String,
+    },
     /// The **empty-diff backstop** fired: the schema pair moved its conformance-relevant
     /// structural projection but classified **no transform kind**
     /// ([`SchemaChange::Unclassified`]). There are no bytes to fold — the repair is to
@@ -635,6 +655,12 @@ fn items_at_locus<'a>(
 /// bound) — surfaces [`TransformError::Unsupported`]: an uncovered value blocks loudly,
 /// never a silent no-op. A field/section the instance omits is a byte no-op (nothing to
 /// remap).
+///
+/// **A rename made on the block's own `id-from` is refused before the fold**
+/// ([`TransformError::IdFromRemap`]): that leaf is the item's heading rather than a bullet,
+/// so remapping it would re-mint the item's `{#id}` — an identity change, not a value
+/// rewrite. Refused only over the identities the rename orphans, so an instance carrying
+/// none of them still migrates.
 fn apply_value_remap(
     schema: &Schema,
     source: &str,
@@ -672,12 +698,61 @@ fn apply_value_remap(
                 schema, source, section, field, &new_value,
             )?)
         }
-        SectionBody::Repeatable { .. } => {
+        SectionBody::Repeatable { repeatable } => {
+            // THE `id-from` ROLE, asked before the fold (M52 Increment 7 / T3). The block the
+            // change names is resolved at the change's OWN locus — the hop-walk
+            // [`apply_added_item_field`] performs for the same reason: a nested leaf whose id
+            // also exists in the outer block would otherwise be adjudicated against the wrong
+            // declaration.
+            //
+            // The comment that stood below asserted the converse — *"the enum field is never
+            // the id-from — an enum id-from item is reslug-refused"* — and never checked it.
+            // It is false for the shipped `changelog` change-group, whose `category` enum IS
+            // the block's `id-from` at both item loci; driven, the loop below found no bullet
+            // on any item, wrote zero bytes, and handed the byte-identical buffer to the
+            // caller's conformance gate, which broke on the heading the rename had just
+            // orphaned. So the rule the code performs is stated here instead, and enforced: an
+            // `id-from` value is the item's identity, a remap of it is a re-slug, and no
+            // migration performs one.
+            //
+            // **Scoped to the identities the rename orphans**, and scoped by the adjudicator
+            // the conformance gate itself asks, so the two can never disagree about which
+            // heading is still a member: an instance carrying only declared identities has
+            // nothing to rewrite and migrates. The other two verdicts are deliberately not
+            // ours — a malformed or non-trailer-shaped heading is a pre-existing doc problem
+            // this rename neither caused nor repairs, and the gate owns it.
+            let mut block = repeatable;
+            for hop in locus.nested() {
+                let Some(Leaf::Repeatable {
+                    repeatable: inner, ..
+                }) = block
+                    .block
+                    .iter()
+                    .find(|leaf| matches!(leaf, Leaf::Repeatable { id, .. } if id == hop))
+                else {
+                    return Err(unsupported(locus));
+                };
+                block = inner;
+            }
+            if block.id_from == field
+                && items_at_locus(parsed, locus).iter().any(|(_, item)| {
+                    matches!(
+                        crate::validate::id_from_enum_violation(block, &item.title, &schema.ty),
+                        Some(crate::validate::IdFromViolation::NotEnumMember(_)),
+                    )
+                })
+            {
+                return Err(TransformError::IdFromRemap {
+                    locus: locus.clone(),
+                    field: field.to_string(),
+                });
+            }
+
             // Collect (item chain, remapped value) for every item AT THE CHANGE'S OWN LOCUS
             // from the initial parse, then splice each via the present-field item write path.
-            // Item ids are stable under a value-span splice (the enum field is never the
-            // id-from — an enum id-from item is reslug-refused), so a fresh write locates each
-            // item after the prior splice.
+            // Item ids are stable under a value-span splice — the `id-from` is the one leaf a
+            // splice could move, and the guard above has refused it — so a fresh write locates
+            // each item after the prior splice.
             //
             // An item that does not carry the bullet is skipped, at every locus: the field is
             // absent in that instance and there is nothing to remap.
@@ -4488,6 +4563,221 @@ sections:
             "the value bytes are the only bytes the fold may move — including around \
              content the parse does not model",
         );
+    }
+
+    // ---- (h'') the same axis crossed with the field's ROLE — the `id-from` cell ----
+
+    /// v1 of a ledger whose item blocks are keyed **by the enum itself**: `id-from: kind` at
+    /// both item loci, so each item's heading *is* its committed enum value and its `{#id}`
+    /// anchor is slugged from it. That is the shipped `changelog` change-group
+    /// (`id-from: category` over `[added, changed, …]`, included at the staging section and
+    /// again inside every release), which is why the role is reachable at **both** loci
+    /// rather than manufactured for one.
+    ///
+    /// The members are slug-form on purpose: an `id-from` heading's committed value is
+    /// `slug(title)` ([`crate::validate::id_from_enum_violation`]), so a `CamelCase` member
+    /// would make the fixture non-conformant rather than give it a member to carry.
+    const ID_FROM_LEDGER_V1: &str = "\
+type: ledger
+sections:
+  - id: entries
+    repeatable:
+      id-from: kind
+      block:
+        - { id: kind, type: enum, of: [decision, idea] }
+        - id: notes
+          repeatable:
+            id-from: kind
+            block:
+              - { id: kind, type: enum, of: [decision, idea] }
+              - { id: body, slot: { hint: \"the note\" } }
+";
+
+    /// The `kind` declaration line the rename is made in, per locus — the outer block's at
+    /// locus 2, the nested block's at the deepest one. The two differ **only** by
+    /// indentation, exactly as [`nested_ledger_anchor`]'s pair does.
+    fn id_from_ledger_anchor(locus: usize) -> &'static str {
+        if locus == LOCI {
+            "              - { id: kind, type: enum, of: [decision, idea] }\n"
+        } else {
+            "        - { id: kind, type: enum, of: [decision, idea] }\n"
+        }
+    }
+
+    /// [`ID_FROM_LEDGER_V1`] with the `kind` enum's `decision` member **renamed** at `locus`
+    /// and left alone at the other one. `idea` is deliberately kept: a rename that moved
+    /// every member would leave no way to author a doc that carries nothing orphaned, and
+    /// that doc is half the claim below.
+    fn id_from_ledger_v2(locus: usize) -> Schema {
+        let anchor = id_from_ledger_anchor(locus);
+        let yaml = ID_FROM_LEDGER_V1.replacen(
+            anchor,
+            &anchor.replace("[decision, idea]", "[call, idea]"),
+            1,
+        );
+        assert_ne!(
+            yaml, ID_FROM_LEDGER_V1,
+            "the fixture must declare the locus-{locus} anchor `{anchor}`",
+        );
+        assert_eq!(
+            yaml.matches("[call, idea]").count(),
+            1,
+            "exactly one of the two declarations may move; got:\n{yaml}",
+        );
+        load_schema(yaml.as_bytes())
+            .unwrap_or_else(|err| panic!("the locus-{locus} v2 schema loads: {err}\n{yaml}"))
+    }
+
+    /// An [`ID_FROM_LEDGER_V1`] instance: one outer item per `(kind, nested kinds)` pair,
+    /// each item's heading being the committed enum value itself.
+    fn id_from_ledger_doc(schema: &Schema, entries: &[(&str, &[&str])]) -> String {
+        let item = |kind: &str, notes: Vec<ItemContent>| ItemContent {
+            id: crate::slug::slugify(kind),
+            title: kind.to_string(),
+            items: notes,
+            ..Default::default()
+        };
+        let inst = Instance {
+            title: "Ledger".to_string(),
+            sections: vec![SectionContent {
+                id: "entries".to_string(),
+                items: entries
+                    .iter()
+                    .map(|(kind, notes)| {
+                        item(
+                            kind,
+                            notes
+                                .iter()
+                                .map(|note| ItemContent {
+                                    slot: Some(format!("The {note} note.")),
+                                    ..item(note, Vec::new())
+                                })
+                                .collect(),
+                        )
+                    })
+                    .collect(),
+                ..Default::default()
+            }],
+        };
+        render(schema, &inst)
+    }
+
+    /// **The `ValueRemapped` axis is the field's ROLE crossed with the locus — and the
+    /// `id-from` role refuses.** (M52 Increment 7 / T3; `completions/artifacts/M52` →
+    /// settle-record D4.4, gap-findings G-19, baseline-freeze §2.3 rows D3d/D3b and §4 L-4.)
+    ///
+    /// A block's `id-from` leaf is **not a committed bullet**: the parser consumes it as the
+    /// item's heading and the `{#id}` anchor is slugged from it. So this arm's per-item
+    /// lookup found nothing on any item, wrote **zero bytes**, and returned the source — and
+    /// the caller's conformance gate then broke on the heading the rename had just orphaned,
+    /// routing the doc at *"author the new required prose … then re-run"*, which no prose
+    /// clears and no re-run changes. The comment that stood here asserted the converse
+    /// (*"the enum field is never the id-from"*) rather than checking it.
+    ///
+    /// The axis is the **role**, not the locus, which is why the plain half runs in the same
+    /// loop over the same two loci: a covering map rewrites a committed bullet byte-faithfully
+    /// at both, so nothing about the locus explains the id-from outcome.
+    ///
+    /// The refusal is **scoped to the docs the rename actually orphans**: an instance whose
+    /// every committed identity is still a declared member has nothing to rewrite, and
+    /// blocking it would dead-end an adopter over a doc that already conforms.
+    ///
+    /// Red at HEAD: both `id-from` cells returned `Ok(src)` — a silent zero-byte fold — so the
+    /// refusal this asserts did not exist.
+    #[test]
+    fn the_value_remap_axis_discriminates_the_field_role_at_every_item_locus() {
+        let plain_v1 = load_schema(NESTED_LEDGER_V1.as_bytes()).expect("the plain v1 loads");
+        let plain_src = nested_ledger_doc(&plain_v1);
+        let id_from_v1 = load_schema(ID_FROM_LEDGER_V1.as_bytes()).expect("the id-from v1 loads");
+        // Every item at BOTH loci carries `decision` — the member each bump renames away — so
+        // each locus's cell is a real claim rather than an accident of which item sits where.
+        let orphaned = id_from_ledger_doc(
+            &id_from_v1,
+            &[
+                ("decision", &["decision", "idea"]),
+                ("idea", &["decision", "idea"]),
+            ],
+        );
+        // …and this one carries `idea` at both loci: the rename touches nothing it holds.
+        let conformant = id_from_ledger_doc(&id_from_v1, &[("idea", &["idea"])]);
+        let renamed = BTreeMap::from([("decision".to_string(), "call".to_string())]);
+
+        for locus in [2, LOCI] {
+            let at = nested_deferrals_locus(locus);
+
+            // ---- the PLAIN role: the enum is a committed bullet, and a covering map
+            //      rewrites every one of them byte-faithfully. The control that makes the
+            //      cell below a statement about the role and not about the locus.
+            let plain_v2 = nested_ledger_v2(locus);
+            let plain_out = transform(
+                &plain_v1,
+                &plain_v2,
+                &plain_src,
+                &[SchemaChange::ValueRemapped {
+                    locus: at.clone(),
+                    field: "kind".to_string(),
+                    map: ledger_full_map(),
+                }],
+            )
+            .unwrap_or_else(|err| panic!("locus {locus}: the plain remap folds; got {err:?}"));
+            assert_conforms(&plain_v2, &plain_out);
+            assert_ne!(
+                plain_out, plain_src,
+                "locus {locus}: the plain fold rewrites the committed values",
+            );
+            assert_eq!(
+                undo_ledger_remap(&plain_out),
+                plain_src,
+                "locus {locus}: the value bytes are the only bytes the plain fold may move",
+            );
+
+            // ---- the ID-FROM role: the same kind, the same locus, and a map that COVERS the
+            //      committed value — and it still refuses, because the value is the identity.
+            let id_from_v2 = id_from_ledger_v2(locus);
+            assert_eq!(
+                schema_diff(&id_from_v1, &id_from_v2),
+                vec![SchemaChange::ValueRemapped {
+                    locus: at.clone(),
+                    field: "kind".to_string(),
+                    map: BTreeMap::new(),
+                }],
+                "locus {locus}: the id-from rename classifies at the block it was made in",
+            );
+            let change = |map: BTreeMap<String, String>| {
+                vec![SchemaChange::ValueRemapped {
+                    locus: at.clone(),
+                    field: "kind".to_string(),
+                    map,
+                }]
+            };
+            for (tag, map) in [
+                ("a covering map", renamed.clone()),
+                ("no authored map", BTreeMap::new()),
+            ] {
+                assert_eq!(
+                    transform(&id_from_v1, &id_from_v2, &orphaned, &change(map)),
+                    Err(TransformError::IdFromRemap {
+                        locus: at.clone(),
+                        field: "kind".to_string(),
+                    }),
+                    "locus {locus}: with {tag}, an id-from rename refuses for the role — the \
+                     map gap is a different question and would not help if it were closed",
+                );
+            }
+
+            // ---- …and it refuses ONLY what the rename orphans: a doc whose every committed
+            //      identity is still a declared member folds to a byte no-op and restamps.
+            assert_eq!(
+                transform(
+                    &id_from_v1,
+                    &id_from_v2,
+                    &conformant,
+                    &change(renamed.clone())
+                ),
+                Ok(conformant.clone()),
+                "locus {locus}: a doc the rename orphans nothing in already conforms",
+            );
+        }
     }
 
     /// **A nested item's committed bytes the parse does not model survive the field add.**

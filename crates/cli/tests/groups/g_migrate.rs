@@ -47,6 +47,8 @@ mod migrate_corpus_foreign;
 mod migrate_corpus_halt_causes;
 #[path = "../migrate_corpus_home_pairs.rs"]
 mod migrate_corpus_home_pairs;
+#[path = "../migrate_corpus_id_from_remap.rs"]
+mod migrate_corpus_id_from_remap;
 #[path = "../migrate_corpus_item_leaf_residual.rs"]
 mod migrate_corpus_item_leaf_residual;
 #[path = "../migrate_corpus_item_slot.rs"]

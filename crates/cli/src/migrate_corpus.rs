@@ -1870,6 +1870,13 @@ fn docs_root_free(schema: &Schema, docs_root: &str) -> Schema {
 ///   schema pair or with the transform arm, so `fold_refused_finding`'s schema-authoring route
 ///   would itself be the lie this function exists to stop; the repair is to move those bytes
 ///   into a declared leaf and re-run;
+/// - the **`id-from` remap refusal** (M52 Increment 7 / T3) — a third non-gate cause with its
+///   own words, because the two it would otherwise borrow are both false for it: the fold did
+///   not fail for want of a map entry (declaring one changes nothing — the leaf carries no
+///   bullet to rewrite), and the arm is not un-built (there is no arm to build: a remap of the
+///   leaf an item's identity is slugged from is a re-slug, which no migration performs). It
+///   keeps `fold-refused`'s schema-authoring route, pointed at the bump rather than at jigc's
+///   source;
 /// - **anything else** — the transform arm refused, or its output does not parse. Nothing written
 ///   into this doc changes that, so it takes [`fold_refused_finding`] and a **schema-authoring**
 ///   route: the same treatment the pre-fold refusals (`unclassified-change`,
@@ -1943,6 +1950,31 @@ fn halt_finding(rel_key: &str, reason: &HaltReason) -> Finding {
                     ),
                 )
             }
+            // THE `id-from` ROLE (M52 Increment 7 / T3) — the one enum rename whose repair is
+            // neither a map entry nor an arm, so it must not borrow either message. The leaf
+            // the rename was made on is the one the item's identity is slugged from, so
+            // "remap the value" means "re-mint the item's `{#id}`" — an identity change no
+            // migration performs. Before this the fold wrote zero bytes and the doc fell
+            // through to the conformance gate's `prose-needed`, whose route asked for prose
+            // that does not exist and whose re-run reproduced the refusal byte for byte; and
+            // the map-gap arm above would be a false diagnosis in the other direction, since
+            // declaring the entry it names would change nothing.
+            TransformError::IdFromRemap { locus, field } => fold_refused_finding(
+                rel_key,
+                format!(
+                    "the migration renames the enum members of `{field}` in `{locus}`, and \
+                     `{field}` is that block's `id-from` — each item's heading *is* its \
+                     committed value and its `{{#id}}` anchor is slugged from it, so remapping \
+                     it would re-mint the identity of every item this doc carries, which no \
+                     migration performs"
+                ),
+                format!(
+                    "re-author the bump so the `id-from` field `{field}` in `{locus}` keeps \
+                     its declared members (rename a leaf the item's identity does not derive \
+                     from, or add the new members alongside the old ones), then re-run \
+                     `jigc migrate-corpus`"
+                ),
+            ),
             TransformError::Unsupported { kind, locus } => fold_refused_finding(
                 rel_key,
                 format!(
