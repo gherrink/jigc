@@ -690,6 +690,40 @@ impl UnaddressableDoor {
         }
     }
 
+    /// The repair's **prefix** — what the emitted line must do before its `git mv`, so that
+    /// running it verbatim from the repo root works in the state this door observed
+    /// (M52 Increment 8 / T6 fix).
+    ///
+    /// `git mv` needs its destination *directory* to exist and never creates one, so what
+    /// each door answers here is whether the directory the destination names is on disk when
+    /// the refusal prints:
+    ///
+    /// - [`Ingest`](UnaddressableDoor::Ingest) — **nothing**, in all three destination
+    ///   shapes. The refused file is itself at (or below) the doctype's home, so the
+    ///   directory holding the destination is the one already holding the subject.
+    /// - [`Relocate`](UnaddressableDoor::Relocate) — **`mkdir -p <dir> && `**. The refused
+    ///   file is at the *prior* home and the destination is inside the **new** one, which
+    ///   `jigc relocate` exists precisely because nothing has moved into yet: only
+    ///   [`crate::relocate::relocate_one`] creates it, as part of a move, and a refused row
+    ///   performs no move — so when the refused set is the whole set nothing creates it at
+    ///   all and the emitted `git mv` dies at exit 128 (`fatal: renaming … failed: No such
+    ///   file or directory`), the followed-exactly-and-nothing-happens dead end M46's PT-1
+    ///   names as the defect. Emitted unconditionally rather than probed: `mkdir -p` is a
+    ///   no-op over a home some addressable sibling of the same sweep already created, and a
+    ///   route whose text depends on which rows happened to precede it is a route no suite
+    ///   can pin.
+    fn repair_prefix(self, destination: &str) -> String {
+        match self {
+            UnaddressableDoor::Ingest => String::new(),
+            UnaddressableDoor::Relocate => Path::new(destination)
+                .parent()
+                .map(|dir| dir.to_string_lossy().into_owned())
+                .filter(|dir| !dir.is_empty())
+                .map(|dir| format!("mkdir -p {} && ", crate::task::shell_token(&dir)))
+                .unwrap_or_default(),
+        }
+    }
+
     /// The refusal's lead clause — what this door declined to do with `rel_path`.
     fn lead(self, ty: &str, rel_path: &str) -> String {
         match self {
@@ -753,7 +787,11 @@ impl UnaddressableDoor {
 /// operands render through [`crate::task::shell_token`], so the printed line survives a shell
 /// as itself over a name holding a space or a metachar — which is the very class of name that
 /// lands here. The destination is named, never performed (jigc does not auto-move), and git
-/// refuses an occupied destination loudly rather than clobbering it.
+/// refuses an occupied destination loudly rather than clobbering it. What the line has to do
+/// *before* the `git mv` for it to run verbatim is the door's third clause
+/// ([`UnaddressableDoor::repair_prefix`], beside its `lead` and its `follow_up`): `git mv`
+/// never creates its destination directory, and at the relocate door that directory is the
+/// new home nothing has moved into yet.
 pub(crate) fn unaddressable_identity_finding(
     rel_path: &str,
     schema: &Schema,
@@ -819,7 +857,12 @@ pub(crate) fn unaddressable_identity_finding(
     };
     let repair = match &destination {
         Some(destination) => format!(
-            "{act} — `git mv {} {}` — {}",
+            "{act} — `{}git mv {} {}` — {}",
+            // The destination's home is created by the emitted line itself where the door
+            // has not created it ([`UnaddressableDoor::repair_prefix`]) — a `git mv` into a
+            // directory that does not exist is a route that, followed exactly, changes
+            // nothing.
+            door.repair_prefix(destination),
             crate::task::shell_token(rel_path),
             crate::task::shell_token(destination),
             door.follow_up(),

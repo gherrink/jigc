@@ -604,7 +604,7 @@ fn an_unaddressable_destination_is_refused_and_the_addressable_sibling_still_mov
     //     lifted out of the report rather than rebuilt here, through a real shell. It is
     //     the whole claim that this refusal is not a dead end: after it, the doc is at the
     //     `note` home under an identity `jigc doc show` resolves.
-    let emitted = backticked_git_mv(&report)
+    let emitted = backticked_move_route(&report)
         .unwrap_or_else(|| panic!("the refusal must emit a runnable `git mv`; got:\n{report}"));
     let ran = Command::new("sh")
         .arg("-c")
@@ -628,14 +628,96 @@ fn an_unaddressable_destination_is_refused_and_the_addressable_sibling_still_mov
     );
 }
 
-/// The first backtick-delimited `git mv …` span in `report` — the **emitted** command an
-/// agent would copy, lifted out of the printed bytes rather than reconstructed, so the arm
-/// above runs what the binary actually said.
-fn backticked_git_mv(report: &str) -> Option<String> {
+/// The first backtick-delimited span in `report` that **contains** a `git mv` — the
+/// emitted command an agent would copy, lifted out of the printed bytes rather than
+/// reconstructed, so the arms above run what the binary actually said. It matches on
+/// containment, not on the span's first word, because the repair is whatever the door had
+/// to emit for the line to run verbatim — which at the relocate door is a `mkdir -p` of the
+/// home the move lands in, ahead of the `git mv` itself.
+fn backticked_move_route(report: &str) -> Option<String> {
     report
         .split('`')
-        .find(|span| span.starts_with("git mv "))
+        .find(|span| span.contains("git mv "))
         .map(str::to_string)
+}
+
+/// **The refused row's route runs when the refused set is the whole set** (M52 Increment 8
+/// / T6 — the completion the arm above did not reach).
+///
+/// The arm above drives the **mixed** topology: an addressable sibling relocates first and
+/// creates the `note` home, so by the time its emitted `git mv` runs the destination
+/// directory is already there. That is a property of the fixture, not of the product — and
+/// the dominant real shape is the opposite one, because `jigc relocate` exists precisely
+/// when a doctype's home has MOVED, so the new home typically holds nothing yet and a run
+/// whose every stranded doc is refused moves nothing into it. Driven at HEAD in that cell
+/// the emitted route died: `fatal: renaming 'notes/My Note.md' failed: No such file or
+/// directory`, exit **128** — the followed-exactly-and-nothing-happens dead end M46's PT-1
+/// and this wave's charter both name as the defect.
+///
+/// The axis is the refused set's **topology** — {some addressable sibling relocates, none
+/// does} — and this is the cell the suite had no row for.
+#[test]
+fn the_emitted_route_runs_verbatim_when_every_stranded_doc_is_refused() {
+    let repo = TempDir::new("all-refused-dest");
+    let home = TempDir::new("home");
+    git_init(repo.path());
+    install_note_pack(repo.path(), "note-pack");
+
+    // ONE stranded doc, and its name is not a doc id — so every row of the sweep is
+    // refused and nothing in the run creates the `note` home.
+    fs::create_dir_all(repo.path().join("notes")).expect("mk prior home");
+    fs::write(
+        repo.path().join("notes/My Note.md"),
+        "# My Note\n\n## Body\n\nprose\n",
+    )
+    .expect("write the stranded doc");
+    git(repo.path(), &["add", "-A"]);
+    git(repo.path(), &["commit", "-q", "-m", "strand one note"]);
+
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &["relocate", "note", "--from", "notes"],
+    );
+    let report = stdout_of(&out);
+    assert!(
+        report.contains("ingest.unaddressable-identity"),
+        "the only stranded doc must be refused; got:\n{report}"
+    );
+    assert!(
+        !repo.path().join("docs/notes").exists(),
+        "the premise of the cell: an all-refused run moves nothing, so nothing creates \
+         the home — got a `docs/notes` on disk;\n{report}"
+    );
+
+    // The EMITTED route, run verbatim through a real shell from the repo root. This is the
+    // whole claim that a refusal is not a dead end.
+    let emitted = backticked_move_route(&report)
+        .unwrap_or_else(|| panic!("the refusal must emit a runnable repair; got:\n{report}"));
+    let ran = Command::new("sh")
+        .arg("-c")
+        .arg(&emitted)
+        .current_dir(repo.path())
+        .output()
+        .expect("run the emitted route");
+    assert!(
+        ran.status.success(),
+        "the emitted route must run verbatim with no addressable sibling to have created \
+         the home: `{emitted}`\nexit: {:?}\nstderr:\n{}",
+        ran.status.code(),
+        String::from_utf8_lossy(&ran.stderr),
+    );
+
+    // …and after it the doc is at the home under an identity the read surface resolves.
+    let adopted = jigc(repo.path(), home.path(), &["ingest"]);
+    assert_ok(&adopted, "`jigc ingest` after the emitted route");
+    let shown = jigc(repo.path(), home.path(), &["doc", "show", "note:my-note"]);
+    assert!(
+        shown.status.success(),
+        "after the route the doc must be addressable; ingest said:\n{}\nstderr:\n{}",
+        stdout_of(&adopted),
+        String::from_utf8_lossy(&shown.stderr),
+    );
 }
 
 /// **The omitting context: a `placement:` destination is never gated** (M52 Increment 8 /
