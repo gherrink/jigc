@@ -80,6 +80,82 @@ file cited on the row.
 
 ## A · CONFIRMED defects and contradictions (39 entries)
 
+> **[Conversion ledger appended 2026-09-20 — M52 Increment 11 / T2.]** Every §A entry below now
+> carries, as an **appended** line, either a `pinned-by:` citation or a stated `UNPINNED: <why>`.
+> Nothing above those lines was rewritten: this is a dated record of what was driven on
+> `1.0.0-rc.15`, and a disposition is added to it, never folded into its repro prose. The rule is
+> [pinning.md](../../../../implementation/pinning.md) §3 and its 2026-08-18 addendum — a citation
+> is written from the cited test's **own assertions**, never from its name, and each one here was
+> verified by opening the test and writing the clause that says what it asserts. **No mechanical
+> checker fences this**; §3 refuses a `pinned-by:` symbol parser by name, and no command can check
+> what a test asserts.
+>
+> **Scope, and what is deliberately not here.** The subject is **§A** — the 39 CONFIRMED entries
+> naming a defect or a contradiction, which is the set the rc.16 wave (M52) was chartered on.
+> **§B**'s positive completeness claims and the review's **5 REFUTED / 7 OPEN** rows are *not*
+> re-dispositioned here: the seven open leads were dispositioned at the M52 Settle (D13), and the
+> refuted set is a record of claims that did not survive driving.
+>
+> **The count, reported honestly** — entries *and* distinct rows, because a token count is not a
+> row count (M50's ledger was chartered at *"21 rows"* and measured 18 occurrences over 11 rows).
+> §A holds **39 bolded entries**, and they are **39 distinct rows**: an id repeats across axes
+> (`D-1` in axes 3, 6 and 8; `D-2` in three; `C-1` in two), so a row is keyed **(axis, id)**, never
+> by id alone. **38 carry a citation · 1 carries a stated `UNPINNED:` · 0 are undisposed.** Two
+> entries — axis 4's `C1` and `DEFECT 2` — are one class stated twice by the review itself, and
+> they say so in their own dispositions rather than sharing one line. Five entries are pinned by a
+> citation that also serves a sibling row (axis 8's `CX-2` and `CX-3` both ride the guide-batch
+> arm; axis 2's `D1`, `D2` and `D3` all ride the posture sweep, each naming the **leg** that is its
+> own claim).
+>
+> **One row keeps a stated `UNPINNED:`** — axis 7's `C-2` — and it is the shape
+> [pinning.md](../../../../implementation/pinning.md) §5 names from the other end (*would pinning
+> it now pin the bug?*): the row was split at the Settle, its declared-home half shipped and is
+> cited inside the disposition, and its own repro is the half that stays a **declared residual** on
+> a written trigger. A standing test over that behaviour would pin the invisibility as expected
+> output.
+>
+> **The closure check, stated and re-runnable.** It fences the *form* — that every §A entry carries
+> exactly one disposition and that an `UNPINNED` has something after its colon — and nothing about
+> the reading:
+
+```
+awk '/^## A · / { ina = 1; next }
+     /^## B · / { ina = 0 }
+     !ina { next }
+     /^### Axis / { axis = $3; next }
+     /^\*\*/ {
+       line = $0; sub(/^\*\*/, "", line); split(line, w, /[ ]+/)
+       id = (w[1] == "DEFECT") ? w[1] " " w[2] : w[1]
+       sub(/[^A-Za-z0-9 -].*$/, "", id)
+       cur = "axis " axis " · " id; rows[++n] = cur; next
+     }
+     /^`pinned-by:`/ {
+       if (cur == "") { printf "STRAY pinned-by outside a row, line %d\n", NR; bad = 1; next }
+       seen[cur]++
+       if ($0 ~ /UNPINNED/) {
+         if ($0 !~ /UNPINNED:[[:space:]]*[^[:space:]]/) { printf "%s: UNPINNED with no reason\n", cur; bad = 1 }
+         else unpinned[cur] = 1
+       } else cited[cur] = 1
+     }
+     END {
+       for (i = 1; i <= n; i++) {
+         r = rows[i]
+         if (seen[r] == 0) { printf "%s: carries NEITHER a citation nor an UNPINNED reason\n", r; undisposed++ }
+         else if (seen[r] > 1) { printf "%s: %d pinned-by lines; a row carries exactly one\n", r, seen[r]; bad = 1 }
+         if (cited[r]) c++; if (unpinned[r]) u++
+       }
+       printf "rows=%d cited=%d unpinned=%d undisposed=%d\n", n, c+0, u+0, undisposed+0
+       exit (bad + undisposed) > 0 ? 1 : 0
+     }' completions/artifacts/M51/per-axis-review/README.md
+→ rows=39 cited=38 unpinned=1 undisposed=0        [exit 0]
+```
+
+A row opens with `**` at column zero and a disposition opens with the backticked token, so a
+multi-line citation is matched at its first line and no line of a disposition may itself start
+with `**` — which is how the first draft of this ledger was caught inventing two phantom rows
+(`rows=41 … undisposed=2`) out of its own bolded prose. Run at HEAD before this commit the same
+check reports `rows=39 cited=0 unpinned=0 undisposed=39` and exits **1**.
+
 ### Axis 1 · caller tokens — [axis-1.md](axis-1.md) §3, §11
 
 **A1-D1 (HIGH) — a bogus `<slug>` head on a singleton is accepted by five write doors, and `finalize`
@@ -106,6 +182,16 @@ and the write doors alike*) and M51's claim clause at a committing door. Honest 
 the axis file: `finalize` does print one `file-state.staged-copy` **advisory** per staged copy, whose route
 is *"no action needed"* — so it is not literally silent, but no surface says a payload was dropped.
 
+`pinned-by:` `fixed_identity_axis::every_doc_door_refuses_a_non_canonical_placement_identity`
++ `fixed_identity_axis::every_doc_door_refuses_a_non_canonical_location_singleton_identity`
+— **verified by reading what they assert**: each drives the five write doors this row names
+(`doc set-slot` · `add-item` · `remove-item` · `retitle-item` · `set-field`, plus `doc rename`
+and both `doc show` forms) under a bogus `<ty>:bogus` head and asserts exit 1, a refusal naming
+the canonical `<ty>:<ty>` address, **and that the task's staged docs directory holds no instance
+at the bogus identity** — so the second payload `finalize` used to drop can no longer be
+written; the canonical and bare spellings run green as the controls. (M52 Increment 6 / T2–T3,
+`14b9ebb5` + `d11c6b51`.)
+
 **A1-D2 (MEDIUM-HIGH) — `jigc relocate <freeze-exempt type> --from .jigc` moves jigc's own install
 artifacts into the doctype's home at exit 0.** Door: `relocate` (a `MovesOnBehalf` door). Cell: workbench
 root.
@@ -123,6 +209,13 @@ no identity. The two sibling doors refuse the same token (`config set docs-root 
 `config.workbench-root`; `jigc migrate .jigc/version` → `migrate.source-untrackable`). Recoverable (the
 rename is staged, HEAD unmoved); adopter-reachable through a PB-1 project-pack doctype.
 
+`pinned-by:` `path_arg_occurrence_axis::relocate_refuses_every_root_jigcs_own_install_writes_into`
+— asserts, over `.jigc` plus **every root read from `cli::config::installed_artifact_roots()`**
+rather than a hand-written `.claude`, that `jigc relocate adr --from <root>` on a freeze-exempt
+pack exits non-zero with the sibling door's shipped code (`config.workbench-root` /
+`config.unusable-root`), carries a route whose command span runs, and leaves `HEAD` and
+`git status --porcelain` byte-identical. (M52 Increment 8 / T7, `0fe27b0f`.)
+
 **A1-D3 (MEDIUM) — the `relocate`/`from` registry row's declared runnable argv cannot reach its own arm.**
 
 ```
@@ -134,6 +227,17 @@ observed: 14/14 exit 1, CODE-LESS, route-less —
 `PathArgArm::argv`'s doc-comment promises *a runnable argv … so the token is the only thing the door can
 fault on*; driven, the doctype faults first, unconditionally, so the axis fence proves nothing about the
 token.
+
+`pinned-by:` `path_arg_occurrence_axis::every_path_arg_occurrence_answers_the_whole_escape_axis`
+— asserts that the `relocate`/`from` occurrence is driven over **every** cell of the escape axis
+against a corpus built from `FixturePack::from_dev_pack`, the manifest-less pack that is the
+row's only witness on a stock corpus, and that each cell answers its declared expectation
+(`WorkbenchRoot` → `config.workbench-root`; the rest `Accepted`) — so the fence does now prove
+something about the token. **Declared bound, stated rather than hidden:** the repair itself is
+two prose statements — the registry row's `when:` clause now names that witness, and
+`design/corpus-migration.md`'s freeze-exempt path states its empty domain — and no mechanical
+checker asserts either sentence ([pinning.md](../../../../implementation/pinning.md) §3).
+(M52 Increment 8 / T7, `0fe27b0f`.)
 
 **A1-D4 (MEDIUM) — the OS-name-ceiling cell at the address `<slug>` head leaks a bare OS error at five
 write doors.**
@@ -151,6 +255,14 @@ the `--slug` family (6/6 verified) and not over the address family, whose `<slug
 path component. The counter-argument (the fix's scope sentence is *one flag, one ceiling, six doors*) is
 recorded in the axis file.
 
+`pinned-by:` `fixed_identity_axis::every_user_address_parse_boundary_refuses_a_head_over_the_os_name_ceiling`
++ `fixed_identity_axis::the_heads_ceiling_is_the_derived_constant_at_both_sides_of_the_boundary`
+— the first asserts every user-address parse boundary refuses a 300-byte head with the ceiling
+code, an `at:` and a route, leaks no bare OS error, and leaves the task's staged set byte-for-byte
+what it was; the second asserts behaviour **at `cli::cli::SLUG_NAME_CEILING` and at `+1`**, so a
+guard left on a stale literal reddens rather than comparing a constant with itself.
+(M52 Increment 6 / T5, `83a5a907`.)
+
 **A1-D5 (MEDIUM) — `jigc config set docs-root <component over NAME_MAX>` is accepted at exit 0 and leaves
 `jigc validate` unable to run.**
 
@@ -164,6 +276,13 @@ $ jigc validate                       # measured BARE, not through a pipe
 file-shaped component — **not nameability**. The driver's own first measurement (exit 0 through `| head`)
 is corrected in place: there is **no false green**; the defect is the accepted home and the code-less
 refusal.
+
+`pinned-by:` `root_knob_rules::no_root_knob_accepts_a_root_the_filesystem_cannot_name`
++ `root_knob_rules::a_root_at_the_name_ceiling_is_still_admitted`
+— the first asserts **both** `ROOT_KNOBS` members refuse an unnameable component in all three
+positions it can take, with `config.unusable-root`, a reason naming the offending component's
+length, and the run inert (neither doc moved, the knob not landed); the second keeps the nameable
+control admitted, so the predicate is a ceiling and not a ban. (M52 Increment 6 / T6, `8d07e65e`.)
 
 ### Axis 2 · posture — [axis-2.md](axis-2.md) §4, §R.1–R.2
 
@@ -183,6 +302,14 @@ $ git status --short →  D  docs/decisions/zsquat.md      ← the index WAS mut
 Reachability is race-only and stated as such; a positive control shows the door refusing when the marker
 is present at the door's own probe.
 
+`pinned-by:` `relocate::a_cherry_pick_opened_after_the_doors_verdict_refuses_before_the_squatters_slot_is_freed`
+— drives the real binary with a `git` shim that opens a real conflicting cherry-pick on the first
+`git ls-files -z`, i.e. **after** the door's own verdict, and asserts the squatter's bytes at the
+destination and its `git ls-files --stage` entry are byte-identical, nothing is parked in the
+workbench, the stranded doc stays put, the run exits 1, and the refusal carries
+`repo.operation-in-progress` naming the operation — which is the re-probe running before
+`git rm --cached`, not after it. (M52 Increment 3 / T4, `d53b8771`.)
+
 **D1 — a commit-on-behalf door never reports `repo.operation-in-progress` under a rebase or a bisect, and
 the code it reports instead routes at a command git refuses.**
 
@@ -201,6 +328,14 @@ bisect: same mask; `git switch` warns and exits 0 while BISECT_LOG survives
 `HeadDetached` masks `OperationInProgress` at all 10 commit-on-behalf doors. The right answer is in the
 binary, one class over, in the same run.
 
+`pinned-by:` `posture_door_axis::every_acting_door_adjudicates_the_posture_family`
+— drives every acting `BEHALF_DOORS` row × every `GitState::ALL` member (the cell total asserted
+against their product, so no cell is skipped) and asserts each refusing cell carries
+`blocking · <the adjudicated member's code>` and exactly one route — then **lifts that route out
+of the emitted bytes, runs it in the repository that printed it**, and asserts git accepts it and
+that it leaves no `OperationInProgress` behind. A `repo.head-detached` masking this family, routed
+at a `git switch` git exits 128 on, cannot survive that leg. (M52 Increment 3 / T1, `60b92008`.)
+
 **D2 — `rebase-apply` is `git am`'s marker too, and jigc names *a rebase* and routes at `git rebase
 --abort`, which git refuses.** HEAD stays **attached** in this cell, so all 12 acting doors reach it.
 
@@ -214,6 +349,14 @@ $ git rebase --abort
 
 `InProgress::markers()`' own doc-comment already says *"rebase-apply/ (the am backend)"* — the source knows
 what it is looking at and the message still says rebase (law 1).
+
+`pinned-by:` `posture_door_axis::every_acting_door_adjudicates_the_posture_family`
+— the same sweep's **naming** leg: in every state carrying an in-progress operation each refusing
+door's output must contain `state.in_progress().noun()`, and `GitState::ALL` carries the
+`rebase-apply`/`am` member as its own state beside the merge-backend rebase — so a door that calls
+`git am` *a rebase* reddens; the route leg above then requires the abandoning command it names to
+be one git accepts in that repository, which `git rebase --abort` under `git am` is not.
+(M52 Increment 3 / T1, `60b92008`.)
 
 **D3 — an un-concluded cherry-pick or revert is not a member of the family, and `jigc task finalize`
 concludes it under jigc's own subject at exit 0.**
@@ -231,6 +374,20 @@ The family's markers are 4 of the 6 git writes. The route in is jigc's own: a **
 (`--carry-staged`) silently also concludes the user's cherry-pick — exactly the damage
 `ActsOnBehalf::CommitsOnBehalf`'s doc-comment exists to prevent.
 
+`pinned-by:` `posture_door_axis::every_acting_door_adjudicates_the_posture_family`
++ `posture_door_axis::carry_staged_does_not_conclude_a_live_merge`
++ `posture_door_axis::a_resolved_and_staged_revert_is_still_a_revert`
+— cherry-pick and revert are `GitState::ALL` members, so they are cells of the sweep rather than a
+hand-listed pair, and the sweep asserts a `Snapshot` of the marker set, HEAD and the commit count
+over all refs is **unchanged** after every acting door has run in that state (re-asserted
+afterwards by the fixture's own `assert_state`); `carry_staged_…` drives the flag this row used
+as its way in and asserts it refuses first and leaves `MERGE_HEAD` in place, so the consent is not
+a second mechanism past the family; `a_resolved_and_staged_revert_…` drives the cell no
+marker-shaped guard reached — a revert whose conflict is resolved and staged, which git's own
+partial-commit guard does not see — and asserts the door names the revert, routes at
+`git revert --abort`, and leaves `REVERT_HEAD` where it found it.
+(M52 Increment 3 / T1 + T5, `60b92008`.)
+
 **D3b — git's own refusal during a cherry-pick is dressed as a pre-commit hook rejection, with no code and
 no route.**
 
@@ -243,6 +400,13 @@ $ jigc milestone create cpm2
 
 No hook exists in the rig. The rollback itself is correct and was verified (log unmoved, no record on
 disk); the frame names a mechanism that did not act.
+
+`pinned-by:` `commit_rejected_axis::no_committing_door_calls_gits_own_refusal_a_hooks_complaint`
+— drives all ten `COMMITTING_DOORS` with **every hook removed** (jigc's own warn-only backstop
+included) and a signing refusal planted, asserting per door: non-zero exit, HEAD untouched, git's
+own bytes relayed verbatim, **no hook diagnosis and no rejection assertion anywhere in the
+printed frame**, the door's own state clause, and exactly one route that is its own re-run, lifted
+and run. (M52 Increment 3 / T3, `dc8f6f23`.)
 
 ### Axis 3 · destroying doors — [axis-3.md](axis-3.md) §5, §2 of the ledger
 
@@ -269,6 +433,18 @@ door's question is about bytes*) — here the shape-claim is the `.md` suffix. S
 assumed: the state needs someone to write into `.jigc/tasks/<id>/`, which the adapter tells agents not to
 do — the same reachability argument M49 heard and rejected.
 
+`pinned-by:` `staged_prose_consent_axis::the_task_door_refuses_over_bytes_jigc_did_not_write_and_names_every_one`
++ `staged_prose_consent_axis::the_milestone_door_refuses_over_foreign_bytes_in_both_area_kinds`
++ `staged_prose_consent_axis::the_install_door_refuses_over_foreign_bytes_under_the_workbench`
++ `finalize_displacement::the_foreign_bytes_survive_the_landed_finalize_and_the_envelope_names_each_move`
++ `milestone_boundary_displacement::a_landed_milestone_boundary_keeps_every_sub_task_area_byte_it_did_not_write`
+— the five doors this row found, split by what each door can do. The three consenting doors assert
+a refusal under that door's own `*.foreign-bytes` code **naming every planted non-`.md` entry**,
+exactly one route carrying that door's own `--force` with the real id, and the plants intact; the
+two finalizing doors — which have nobody to ask — assert every plant survives **byte-intact** under
+`.jigc/displaced/<id>/` with one repo-relative `{from, to}` pair per moved entry on the envelope
+and on stderr. (M52 Increment 4 / T2–T5.)
+
 **D-1 (MEDIUM) — the staged-prose route at two destroying doors names a landing verb the state refuses.**
 `task-discard.staged-prose` and `uninstall.staged-prose` both offer *"land them with `jigc task finalize
 <id>` (which refuses while a required slot is empty)"*; over a **milestone sub-task** — the exact state both
@@ -276,15 +452,38 @@ doors list — that verb refuses with `finalize.milestone-sub-task` at **exit 3*
 parenthetical excludes. The third family member, `milestone.staged-prose`, is correct — which makes this an
 un-swept axis rather than a design choice.
 
+`pinned-by:` `destroying_door_sibling_surfaces::d1a_the_task_discard_refusal_over_a_sub_task_routes_where_the_door_accepts`
++ `destroying_door_sibling_surfaces::d1b_the_uninstall_refusal_names_a_sub_tasks_own_exits`
+— each extracts **every concrete backticked `jigc …` span the rendered refusal emitted** and runs
+it verbatim from its own fixture, asserting none is answered by `finalize.milestone-sub-task` at
+exit 3; `::d1a_an_ordinary_task_keeps_the_finalize_exit_that_works` is the omitting context, where
+the ordinary-task route is unchanged. (M52 Increment 4 / T7, `f8baa640`.)
+
 **D-2 (LOW) — `jigc milestone discard --force` acks `workbench removed` over a teardown that failed.** At
 exit 0 the ack asserts the removal unconditionally while two worktrees are still on disk and the same run
 printed two `could not remove the fan-out worktree …` warnings. The loss narration beside it *is*
 outcome-keyed (M50's fix, driven correct); the ack is a fixed string.
 
+`pinned-by:` `destroying_door_sibling_surfaces::d2_a_forced_discard_that_left_a_worktree_does_not_claim_the_workbench_removed`
+— makes the removal fail without making the *probe* fail, then asserts the run reaches
+`could not remove the fan-out worktree`, the worktree is still on disk, the output does **not**
+contain `workbench removed`, and the ack still says what happened to the workbench;
+`::d2_a_forced_discard_that_removed_everything_still_says_workbench_removed` is the omitting
+context, so the fix is keyed on the outcome rather than on deleting the sentence.
+(M52 Increment 4 / T7, `f8baa640`.)
+
 **D-3 (LOW) — the fail-closed staged-prose refusal prints the host path, and the bound that counts it
 describes a different site.** `task.rs:697` composes an absolute path into a blocking finding printed by
 `task discard` and `uninstall`. The site is in `UNSWEPT_PRODUCERS` with the right count and a **false
 reason** (it describes all three as error-channel faults; one is a finding surface at two destroying doors).
+
+`pinned-by:` `repo_relative_paths::every_path_a_door_prints_carries_a_disposition_the_source_backs`
++ `repo_relative_paths::the_unswept_remainder_is_counted_not_described`
+— the first asserts `crates/cli/src/task.rs`'s `staged_task_prose` carries a
+`Disposition::Relative` row **backed by the source**, so the host path cannot return at the site
+the three staged-prose refusals print as a blocking finding; the second asserts the `UNSWEPT_PRODUCERS` count
+for that file against its own source — now **2**, with the false reason struck and its falsifying
+datum quoted in the row rather than rewritten away. (M52 Increment 4 / T7, `f8baa640`.)
 
 **D-4 (LOW) — the worktrees-root fail-closed route blames `git` on PATH and omits the consent.**
 `unverified_worktrees_finding`'s route opens with *make sure `git` is on PATH* for a failure its own
@@ -292,10 +491,28 @@ doc-comment identifies as `read_dir` on `.jigc/worktrees/`, and never names `--f
 fail-closed refusals at the same door do — verbatim the defect `design/project-setup.md`:160 records as
 fixed at this door by M50, surviving at the one cell M50's repair did not cover.
 
+`pinned-by:` `destroying_door_sibling_surfaces::d4_the_unreadable_worktrees_root_names_read_dir_and_the_consent`
+— asserts the refusal reaches `uninstall.dirty-worktree`, names `.jigc/worktrees/`
+repo-relatively, names `read_dir` as what actually failed, does **not** contain
+`` `git` is on PATH ``, and that its concrete commands include `jigc uninstall --force`, the
+consent both sibling fail-closed refusals at that door already name;
+`::d4_a_readable_worktrees_root_never_reaches_the_fail_closed_route` is the omitting context.
+(M52 Increment 4 / T7, `f8baa640`.)
+
 ### Axis 4 · transaction / rollback — [axis-4.md](axis-4.md) §5, §R1–R6
 
 **C1 (origin Codex, driven) — the promote rollback is unconditional and emits no conflict finding.** Driven
 at `task finalize` and, new, at `milestone finalize`. See DEFECT 2 below, which is the same class.
+
+`pinned-by:` `migrate_rollback::a_raced_promotion_destination_keeps_the_racers_bytes_and_parks_the_pre_image`
++ `rollback_population_registry::every_row_binds_the_discipline_it_declares`
+— the first asserts that after a hook-rejected `--approve` finalize HEAD is unmoved, **the racer's
+bytes stand at the promotion destination**, exactly one pre-image is parked under
+`.jigc/displaced/finalize/` keyed at the promotion's own identity and byte-intact, and **one**
+blocking `finalize.rollback-conflict` is emitted per raced path; the second asserts a row
+declaring `FileCas` provably reaches the shared compare-and-swap entry, so a restore switched back
+to an unconditional write reddens. This row and **DEFECT 2** are one class — the retire arm rides
+DEFECT 2's citation. (M52 Increment 5 / T3 + T10, `89e5caba` + `d4fd7d12`.)
 
 **C2 (origin Codex, driven) — `RecordPreImage` rollback restores the milestone record unconditionally.**
 
@@ -307,8 +524,25 @@ $ jigc milestone add-task axis-four-milestone 'axis four sub task'
 after: the racer's appended line is GONE from the record; no finding named it
 ```
 
+`pinned-by:` `record_rollback_conflict::every_record_door_preserves_a_raced_record_and_names_both_copies`
++ `record_rollback_conflict::no_record_door_reports_a_conflict_when_nothing_raced`
+— the first drives **every** door of the registry's `RecordPreImage` population under a hook that
+appends to the record and exits 1, asserting per door that the run fails, that the racer's own line
+is **still in the record** after the rollback (and that at `create` the file exists at all), and
+that both copies are named; the second keeps the unraced path silent, and
+`::the_cells_are_the_registrys_record_population` fences the cell set against the registry rather
+than a hand list. (M52 Increment 5 / T5, `72e4ec26`.)
+
 **C3 (origin Codex, driven) — `RecordFlipGuard`'s `Drop` is a second unconditional restore**, driven at
 `milestone finalize` with the racer's edit likewise gone and no finding.
+
+`pinned-by:` `record_flip_rollback::a_raced_record_flip_preserves_the_racers_bytes_and_names_both_copies`
++ `record_flip_rollback::no_flip_reports_a_conflict_when_nothing_raced`
+— drives `RecordFlipGuard`'s `Drop` on **both** `finalize.fan-out.squash` arms (the cell set
+asserted to be exactly `[true, false]`, because the boundary has two commit channels) and asserts
+the racer's line survives the rollback with both copies named; the unraced control and
+`::a_landed_boundary_disarms_and_reports_nothing` keep the ordinary paths quiet.
+(M52 Increment 5 / T6, `e9a9a633`.)
 
 **C4 (origin Codex, driven) — `milestone provision` amends `.jigc/.gitignore` and then fails without
 acknowledging it.**
@@ -320,6 +554,15 @@ $ cat .jigc/.gitignore   → the user's private line kept, and FOUR lines append
 ```
 
 The registry says this ack is *"the only notice"* of the change; the run that failed gave none.
+
+`pinned-by:` `gitignore_writer_acks::a_refused_provision_amends_nothing_and_a_successful_one_still_does`
++ `gitignore_writer_acks::a_refused_create_amends_nothing_and_a_successful_one_still_does`
+— each plants a user-authored `.gitignore` line, asserts the **refusing** run (`milestone.unknown`
+at `provision`, the taken-slug guard at `create`) leaves that file unamended, and asserts the
+succeeding control still amends to the canonical union, still names what it appended, and still
+preserves the user's own lines — so the amend is made only by a run that needs it.
+`::ignore_doors_enumerates_every_production_gitignore_writer` fences the door set against the
+source. (M52 Increment 5 / T9, `8543c9bd`.)
 
 **DEFECT 1 — a rollback conflict breaks `--format json` stream discipline at the one class where the
 document is on stderr.**
@@ -336,6 +579,14 @@ python: json.decoder.JSONDecodeError: Extra data: line 4 column 1
 (*the document on stdout still parses*) that is false for exactly the reject class, where stdout is empty
 and the document is on stderr. Both `ConfigLayerWorktree::restore` doors reach it. The finding reaches the
 machine surface **nowhere** — the `{"error": …}` envelope is single-key.
+
+`pinned-by:` `reject_document_axis::a_raced_config_layer_file_rides_the_same_document`
+— asserts that under `--format json` a hook-rejected `task finalize` whose `.jigc/.gitignore` was
+raced leaves **stdout empty** and stderr parsing as **exactly one** JSON document, carrying both
+`finalize.commit-rejected` and `finalize.rollback-conflict` — the latter keyed on the raced path,
+with the parked pre-image's `.jigc/displaced/` path inside its route. The
+`json.decoder.JSONDecodeError: Extra data` this row drove is exactly what `one_document` forbids.
+(M52 Increment 1 / T1, `dfa10e8b`.)
 
 **DEFECT 2 — M51's compare-and-swap rollback discipline is applied to one of the three worktree axes, and
 the other two lose a third party's bytes silently.**
@@ -354,6 +605,15 @@ failure except where surviving it is the only way to avoid destroying someone el
 survival is named*. `CONFIG_LAYER_SPECS` got the M51 treatment; promote and retire are a third and fourth
 population of the same class and did not.
 
+`pinned-by:` `migrate_rollback::a_raced_promotion_destination_keeps_the_racers_bytes_and_parks_the_pre_image`
++ `migrate_rollback::a_recreated_retirement_keeps_the_racers_file_and_parks_the_pre_image`
++ `migrate_rollback::an_unraced_rejection_restores_byte_identically_and_names_no_conflict`
+— the promote and retire axes this row names, each asserting the third party's bytes stand, jigc's
+own pre-image is parked in the gitignored workbench byte-intact, and one
+`finalize.rollback-conflict` names both copies; the unraced control asserts a byte-identical
+restore with **no** conflict, so what shipped is the compare-and-swap discipline rather than a
+blanket refusal to roll back. (M52 Increment 5 / T3, `89e5caba`.)
+
 ### Axis 5 · pinned contracts — [axis-5.md](axis-5.md) §8, ledger A–B
 
 **DEFECT D (origin Codex, driven — and 47/47, larger than the claim) — the pre-dispatch `current_dir()`
@@ -366,11 +626,26 @@ $ jigc --format json describe                               → exit 1, stdout 0
 driven across every VERB_KINDS leaf:  47/47 not-JSON · 0/47 emitted either declared reject arm
 ```
 
+`pinned-by:` `pre_dispatch_faults::every_reachable_cell_answers_its_fault_with_one_document`
+— drives every `(PRE_DISPATCH_FAULTS, VERB_KINDS leaf)` cell through the real binary — the
+`DeletedCwd` fixture this row drove among them — and asserts a reached fault answers with **one
+JSON document of the declared arm on stderr, stdout empty, and nothing else on either stream**,
+while every cell declared unreached is asserted byte-identical to the same argv over a sound
+corpus. (M52 Increment 1 / T3, `5fb0b218`.)
+
 **DEFECT A — `jigc setup` and `jigc uninstall` reject with a third, undeclared envelope shape.** Both doors
 serialize a **bare `Finding`** (eight top-level keys) where the contract declares exactly two reject arms
 (`{error}` and `{findings, schema_version}`), and both rows declare `ArmOrigin::Sole`. Driven in three
 cells: outside a git repository, `setup.dirty-install-path` (the wave's own new refusal), and M50's
 `uninstall.untracked-workbench-file`. 45 of 47 leaves answer the declared funnel in the same directory.
+
+`pinned-by:` `reject_document_axis::setup_and_uninstall_reject_on_the_declared_findings_arm`
+— drives `jigc --format json setup` outside any git repository and `jigc --format json uninstall`
+over an untracked workbench file, asserting per door: non-zero exit, **stdout 0 bytes**, stderr
+parsing whole into the `{findings, schema_version}` envelope with the door's own code under a
+non-null `key.code`, and **no `error` key**, because one reject takes one arm. The agent-text
+frame's routing footer — the half a naive move onto the operational funnel would have dropped — is
+asserted on the emitted bytes in the same arm. (M52 Increment 1 / T2, `da18042c`.)
 
 **DEFECT B — `jigc doc show <addr>#<repeatable-section>` is a second top-level array, declared nowhere.**
 
@@ -385,11 +660,29 @@ $ jigc --format json doc show spec:rate-limiting#criteria/limits-per-ip
 `ArmShape::ArrayOf`'s own doc-comment (*"`jigc task list` is the surface's one array"*) **by name**. The
 binary is right and the registry is the false home.
 
+`pinned-by:` `format_json_success_axis::no_shape_claim_in_the_registry_survives_the_registry_falsifying_it`
++ `format_json_success_axis::every_registry_row_is_driven`
++ `format_json_success_axis::the_driven_key_set_equals_the_declared_key_set`
+— the first carries *"`jigc task list` is the surface's one array"* and *"whole doc, field group,
+slot — and two of the four are not objects at all"* as `Retired` phrasings whose predicates must
+stay **false**, so neither sentence can come back into `render.rs` while the registry falsifies it,
+and asserts every declared `ArmShape` member is claimed by at least one row; the other two assert
+each row — the added `doc show` projections included — is actually driven and emits exactly its
+declared key set. (M52 Increment 1 / T4, `60b7f5cc`.)
+
 **DEFECT C — `ArmOutcome::Success` claims exit 0 at three rows that ship non-zero by design.** `validate |
 StoreSweep` → exit 1 on any `STORE_EXIT_FLIPS` member; `migrate-corpus | Report` → exit 1 on the same;
 `task validate | Report` → exit 3 on a blocking preview. Each exit is itself declared by the exit-code
 taxonomy in the same contract doc, so two pinned statements about one surface disagree; `format_json_
 success_axis.rs` proof 4 cannot see it because each recipe drives one clean cell.
+
+`pinned-by:` `format_json_success_axis::no_shape_claim_in_the_registry_survives_the_registry_falsifying_it`
+— specifically the `SHAPE_CLAIMS` row whose phrase is *"Exit 0, the document on **stdout**, no JSON
+on stderr."*, marked `Retired` with `holds: || !a_success_row_flips_its_exit_on_a_store_condition()`:
+that sentence may appear in `crates/cli/src/render.rs` only while **no** `ArmOutcome::Success` row
+can be driven non-zero by a `STORE_EXIT_FLIPS` member — which `validate | StoreSweep` can — so the
+corrected comment cannot silently revert. The exit-code taxonomy is deliberately not reworded
+(settle-record D6.6). (M52 Increment 1 / T4, `60b7f5cc`.)
 
 Two Codex claims were driven and **CONFIRMED**: *the four pre-pin deletes are gone from the wire* (driven at
 its hardest cell, the exit-4 migration review hold: stdout keys `['retires','rewrites','source','task']`,
@@ -405,6 +698,15 @@ refusal from the other two and stops — and states (b) and (c) are the two whos
 data-loss half was driven end to end by the reconciler: work done in the shared checkout, invited by the
 composed body, is not what the boundary commits.
 
+`pinned-by:` `compose_statefulness::a_sub_tasks_resume_line_discriminates_the_posture_it_is_composed_in`
++ `milestone_teardown_loss::a_landed_boundary_names_the_shared_checkout_work_it_did_not_commit`
+— the first composes `jigc workflow <W> --task <sub>` through the real binary from **both**
+provisioned postures and asserts the two emitted `resume:` lines differ and each names its own
+posture while the backticked door span stays the same; the second drives the data-loss half over
+the landed-arm × output-surface cross and asserts the shared-checkout staged path **is named on
+the boundary's ack** and is genuinely uncommitted and still staged afterwards — narration, which is
+what the bytes surviving makes true. (M52 Increment 10 / T4 + T5, `508cfe0b` + `a2107c72`.)
+
 **A6-2 — `jigc start --workflow milestone-execution` composes three unrunnable `Run:` lines at exit 0, and
 jigc's own preview refusal routes there.**
 
@@ -417,10 +719,25 @@ $ jigc start --workflow milestone-execution                                     
     stated at `describe` and nowhere at the door that composes it              (law 3)
 ```
 
+`pinned-by:` `verb_routed_compose::every_verb_routed_member_is_refused_at_both_compose_doors`
++ `verb_routed_compose::the_declared_doors_and_the_resume_still_compose`
+— the first drives every derived verb-routed member × every refusing form at **both** compose
+doors and asserts exit 1, one blocking `workflow.verb-routed` keyed at its own pack resource, a
+refusal routing at the declared door, empty stdout, and **no mint on either axis a mint would
+show**; the second keeps the declared doors and the resume composing, so the refusal is scoped
+rather than blanket. (M52 Increment 9 / T2, `0e060d2f`.)
+
 **A6-3 — `implement-from-spec` over a corpus with no committed spec claims a list that is not there, then
 names an unanswerable step.** jigc's own `doc list spec` ships the sentence the composed surface needs
 (*"no committed `spec` docs"* plus the `--task` note); the composed step asserts the list instead (law 1),
 and its next step cannot be answered (law 2).
+
+`pinned-by:` `implement_from_spec::the_two_empty_renders_state_their_empty_case_and_stay_true_when_populated`
+— drives both cells: over a corpus with **no** committed `spec` each render is empty and each
+asserting sentence carries its empty-case clause; over a composing corpus the renders are populated
+and the same clauses are present **byte-identical** — so the clause is conditional, not a
+state-dependent assertion that goes stale the moment the set fills. (M52 Increment 9 / T3,
+`83216806`.)
 
 Six Codex claims were driven and **CONFIRMED** — the shared `render::composed` seam over its four producers
 (8 render sites / 4 leaves); the three expressible `resume:` states; orientation's three states **including
@@ -438,6 +755,15 @@ contributes zero edges (falsifying datum: exactly five `type: ref` fields across
 placement doctype carrying a `ref` is `vision`, and there the class fires exactly as claimed (driven on the
 `refs-post-hoc` rig).
 
+`pinned-by:` `fixed_identity_axis::every_surface_names_one_fixed_identity_and_ingest_mints_it_once`
++ `fixed_identity_axis::three_consecutive_unmanages_drop_the_edge_and_claim_no_drop_they_did_not_make`
+— the first asserts `doc show`, `rename`, `ingest` and the edge index all name `<ty>:<ty>` for every
+committed fixed-identity doctype and that a second `ingest` adds nothing; the second runs three
+consecutive `jigc unmanage`s per member, each on its own copy of the state, and asserts **no edge
+whose `from` head is that doctype survives any of them**, with runs 2 and 3 honest no-ops — which
+is this row's `vision` cell, the only placement doctype carrying a `ref`.
+(M52 Increment 8 / T5, `a2e10a52`.)
+
 **C-2 (origin Codex, driven) — the territory bound misses a root-placement orphan.**
 
 ```
@@ -450,12 +776,33 @@ $ jigc validate   → exit 1 · 2× schema-conformance.orphaned-instance (docs/�
 Already on the record as declared residual 2 (`orphan.rs:293-300`, `:346`) — not a new defect, but the
 amplifier that makes D-2's placement arm a **total** false green.
 
+`pinned-by:` **UNPINNED: the row was split at the Settle (D7) and only one half was taken.**
+The **declared-home** half shipped as `schema-conformance.home-vacated` and is pinned by
+`home_vacated::a_declared_home_the_repository_committed_into_and_then_emptied_is_named` +
+`home_vacated::a_vacated_declared_home_flips_the_store_sweeps_exit`, which assert the vacated
+home is named blocking at an exact path, that homes never committed into stay silent, and that the
+sweep now exits 1 with the report-only closing line gone. **This row's own repro is the
+departed-doctype half** — a stamped doc at a **root placement** home under a composition that no
+longer defines its doctype — which stays a **declared residual** on the namespaced-stamp trigger
+([decisions-pending.md](../../../../implementation/decisions-pending.md); `design/validation.md`'s
+rewritten paragraph states the half it covers and the half it does not). A standing test over
+today's behaviour there would pin the invisibility as expected output, which
+[pinning.md](../../../../implementation/pinning.md) §5 refuses.
+
 **D-1 — `jigc ingest` durably absorbs an out-of-band edit and surfaces nothing.** A `blocking (gates at
 finalize) · file-state.hash-matches` finding, whose route says *re-author it through the owning workflow*,
 is cleared by an `ingest` that prints the ordinary first-adoption line and emits `"finding": null,
 "adopted": true`; a later `validate` is green. `design/reconciliation.md`:186 — ***"No silent discard, ever.
 Every block surfaces; every absorb surfaces."*** No `external edit absorbed:` line exists on either surface.
 No data loss (the bytes are the user's); a blocking finding is retired by a door that never says it did.
+
+`pinned-by:` `absorb_surface::ingest_names_the_edit_it_absorbed`
++ `absorb_surface::an_undrifted_run_names_no_absorb`
+— the first asserts the fixture's drift really is a blocking `file-state.hash-matches` **before**
+the door runs, then that `jigc ingest` exits 0 while naming the path it absorbed and the finding it
+retired on the text arm **and** on the envelope, and that a later run no longer reports the drift;
+the second keeps an undrifted run silent, so the absorb line is keyed on the absorb rather than
+printed always. (M52 Increment 8 / T3, `f1b4cbb5`.)
 
 **D-2 — a `Relocated`-only bump is invisible to `migrate-corpus`, and the refusal that routes there is a
 dead end.** Driven on **both** home kinds.
@@ -474,11 +821,27 @@ The corpus walk is documented to key on the **`from`** home; driven, it keys on 
 refusal routes at `migrate-corpus`, which changes nothing — the M46 PT-1 class reopened at the relocation
 door.
 
+`pinned-by:` `migrate_corpus_home_pairs::a_below_version_doc_at_every_prior_home_kind_is_seen_and_landed`
++ `migrate_route_family::the_relocate_refusal_routes_to_a_verb_that_acts`
+— the first drives all four `{from, to}` home-pair cells × both bump kinds (content-bearing and
+`Relocated`-only) and asserts the below-version doc at the prior home is **seen and landed** at the
+current one; the second **runs the emitted route** — it lifts `jigc migrate-corpus` out of
+`relocate`'s frozen-doctype refusal, executes it verbatim on this row's placement→placement cell,
+and asserts the prior home is vacated, the committed prose survives, the stamp flips, and
+`jigc validate` comes back clean. (M52 Increment 7 / T1 + T4, `7ff83543` + `87a70dc1`.)
+
 **D-3 — `ValueRemapped` on an `id-from` enum falls through to `migrate-corpus.prose-needed`, whose route is
 a dead end.** The route says *author the new required prose … then re-run*; there is no new prose in the
 schema change, and the re-run reproduces the identical block at exit 1 while `validate` routes back to
 `migrate-corpus`. A **plain** enum field takes the correct map-gap arm (driven) — the complete-fix lens, one
 cell over. Bytes untouched.
+
+`pinned-by:` `migrate_corpus_id_from_remap::a_value_remap_on_an_id_from_enum_refuses_at_every_item_locus`
+— drives four cells (`{staging, nested} × {plain, id-from}`) and asserts the two `id-from` cells
+reach `migrate-corpus.fold-refused` with a cause naming the `id-from` role — never `prose-needed`,
+whose route asks for prose the schema change does not contain and whose re-run reproduces the
+block byte for byte — while the two plain cells keep the shipped, correct map-gap arm.
+(M52 Increment 7 / T3, `3d77b353`.)
 
 **D-4 — the orphan finding asserts *"no schema in the composed set says what this file is"* about a doc
 whose schema is in the composed set, and `ingest` contradicts it at the same commit.**
@@ -493,6 +856,15 @@ $ jigc validate          → exit 1 · "no schema in the composed set says what 
 The producer computes *no resolved doctype claims this path* and the message upgrades that to *no schema
 says what this file is* — the same class M46 Increment 3 closed for `migrate-corpus` vs the discriminator.
 
+`pinned-by:` `unclaimed_file_family::the_relocated_home_cell_stops_claiming_the_schema_is_absent`
++ `unclaimed_file_family::the_departed_doctype_cell_keeps_a_true_message_and_a_usable_route`
+— the first asserts, at one commit where `jigc doc schema adr` exits 0, that the orphan finding
+states *no resolved doctype claims this path* and **does not** carry *no schema in the composed
+set*, that its route hands the reader to `jigc ingest`, and that `ingest` at that same commit
+answers `ingest.wrong-location` naming `adr` and `adrs/` — the two doors agreeing; the second keeps
+one message true in the genuinely-departed cell, so the correction did not just face the other way.
+(M52 Increment 8 / T4, `4eb39373`.)
+
 ### Axis 8 · adopter docs & help — [axis-8.md](axis-8.md) §2, ledger A–B
 
 **CX-1 (origin Codex, driven) — `migrate-corpus --help`'s *"`--dry-run` writes nothing at all"* is falsified
@@ -505,15 +877,37 @@ $ wc -c < .jigc/logs/invocations.jsonl → 194 ; tail -1 → {"argv":["migrate-c
 bounds driven in the same run: git status byte-identical · HEAD unmoved · the path is gitignored
 ```
 
+`pinned-by:` `help_truth::the_three_no_write_claims_state_their_one_exception`
++ `help_truth::the_colon_scoped_no_write_claims_are_not_members`
+— the first asserts `migrate-corpus --help`, `validate --help` and the **driven**
+`migrate-corpus --dry-run` ack each carry `cli::cli::NO_WRITE_EXCEPTION` verbatim while the ack
+still names its run mode; the second asserts the three colon-scoped siblings stay byte-identical
+and carry no such qualifier, so a later sweep cannot paste the exception over the whole class and
+call it complete. (M52 Increment 10 / T1.)
+
 **CX-2 (origin Codex, driven) — the installed guide's *"every `jigc setup` rewrites it"* is false for a
 user-modified guide.** With the user's own `SKILL.md` **committed** first (so the dirty-install gate cannot
 be what fires), `jigc setup` exits 0, the ack carries **no** guide row, an `adapter-guide.user-modified`
 advisory fires, and the file is untouched — while the sentence ships into every adopter repo.
 
+`pinned-by:` `adapter_artifact::the_installed_guide_body_carries_every_fact_the_batch_landed`
+— reads the guide body out of a real `jigc setup` install and asserts it carries every `GuideFact`
+of the batch; this row's needle is `cli::setup::GUIDE_MODIFIED_CODE`, **read from the production
+constant** rather than respelled — so the copy that ships the *"every `jigc setup` rewrites it"*
+sentences also names the `adapter-guide.user-modified` state in which they are false, and a
+rename of that code cannot leave the guide green while naming nothing.
+(M52 Increment 10 / T9, `0f4dc805`.)
+
 **CX-3 (origin Codex, driven) — the installed guide's one install/upgrade command cannot run from the repo
 the guide is installed into.** `cargo install --path crates/cli`, run from an adopter repo after a real
 `jigc setup`, fails at exit 101 (`crates/` does not exist there). Complementary to the driver's row 20,
 which drove the same line from the jigc source tree at exit 0 — the only place it works.
+
+`pinned-by:` `adapter_artifact::the_installed_guide_body_carries_every_fact_the_batch_landed`
+— the same arm's CX-3 row: the installed body must carry *"clone of the jigc repository"*, the
+scope the install line lacked, because `cargo install --path crates/cli` exits 101 from an adopter
+repo and the generated preamble's disclaimer covers *documents*, not this path.
+(M52 Increment 10 / T9, `0f4dc805`.)
 
 **D-1 — the two surfaces F-9 named are the two that stay silent in the DEFAULT format, and three records say
 otherwise.** `commit-recording.stale-title` reaches five surfaces; the two F-9 named by name (`doc rename
@@ -522,6 +916,14 @@ format and carry it only under `--format json`. Neither fence sees it: the previ
 excludes the code deliberately, and M48's text/JSON parity fence runs **text → envelope**, the direction
 that cannot see a value the envelope prints and the text withholds. The class is wider than F-9 — the text
 manifest arm drops **every** advisory.
+
+`pinned-by:` `dry_run_findings_equal_set::the_dry_run_text_arm_names_every_code_its_envelope_carries`
++ `dry_run_findings_equal_set::every_doc_ack_arm_renders_a_carried_finding`
+— the first drives this row's reproduced cell (a granted-and-unused changelog gate) and asserts
+the **default-format** `task finalize --dry-run` names every code its `--format json` sibling carries;
+the second asserts the text arm renders a carried finding on **every** `DocAck` arm — the class,
+not the one arm with a known producer — with `::a_finding_free_doc_ack_is_still_one_line` as the
+omitting control. (M52 Increment 10 / T3, `61b1b137`.)
 
 **D-2 (LOW) — `jigc task discard --help` never says it commits.**
 
@@ -534,6 +936,13 @@ discarded task do-the-thing / record commit: 57d4285          exit 0, HEAD moved
 
 `task discard` is `COMMITTING_DOORS` row 10; both shipped guides were corrected in this wave to say so, and
 the sibling door's help does. Honest bound: the sentence is an **omission**, not a false predicate.
+
+`pinned-by:` `help_truth::committing_doors_say_so::every_committing_door_help_states_the_commit_it_lands`
++ `help_truth::committing_doors_say_so::the_two_seeding_doors_ack_the_record_commit_they_landed`
+— the first drives `jigc <leaf> --help` for **every** `COMMITTING_DOORS` member, not the four this
+row reported, and asserts each states the commit it lands; the second asserts `milestone add-task`
+and `add-from-spec` acks name the sha `git rev-parse HEAD` reports, closing the two silent acks
+beside the help texts. (M52 Increment 10 / T2, `9a308b5c`.)
 
 ## B · CONFIRMED source-pass claims driven and held
 
