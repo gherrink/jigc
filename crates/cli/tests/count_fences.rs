@@ -1465,8 +1465,49 @@ fn the_refusing_worktree_door_count_is_the_registrys_own() {
     );
 }
 
-/// The two phrase fences are properties of one predicate: whole words, a numeral in either
-/// spelling, and no match without one.
+// ---------------------------------------------------------------------------
+// The rollback registry's own row count (M52 Increment 11 fix) — the same class one
+// layer out: the registry other fences here read, unfenced about its own size.
+// ---------------------------------------------------------------------------
+//
+// `cli::rollback::ROLLBACK_POPULATIONS` is the registry two of the fences above already
+// read — and nothing read the prose that states **its** size. It was minted **twelve**
+// rows at M52 Increment 5 / T1 and became **eleven** at T9 (`9375d3cd`), when
+// `rename-head-restore` was deleted rather than re-worded: one discipline is one row, so
+// `rollback_rename`'s HEAD-sourced arm folded back into the door's single population. The
+// source header carries that strike with its arithmetic (`crates/cli/src/rollback.rs` →
+// *The row count is eleven*: 9 + 1 + 1, every addend cited), and both
+// `crates/cli/tests/rollback_population_registry.rs` and flow 53's arm 1 iterate the rows
+// — so **every suite stayed green while this wave's own fold-back, written two days
+// later, still said twelve**, in the one paragraph a reader of this repo reads first.
+//
+// **The phrase names its own subject**, so this needs neither a prose unit nor a proximity
+// window: `<N> ROLLBACK_POPULATIONS rows` carries the numeral and the list in one breath,
+// which is also the followability the homes above have to be asserted into separately. A
+// sub-set's row count (*both `MintedSet` rows*, *the two rows that have no restore site*)
+// is deliberately unreadable by it — the phrase, not the noun, is the subject.
+
+/// The home that states the registry's size in the **present tense**.
+///
+/// `DECISIONS.md` and `implementation/roadmap.md` state it too and are deliberately **not**
+/// homes, on [`UNSWEPT_HOMES`]' reason: they are dated records, and a superseded figure
+/// stays visible there beside the correction that superseded it — which is exactly the
+/// chain the roadmap's Increment 5 row now carries (ten → twelve → eleven).
+const ROLLBACK_ROW_HOME: &str = "CLAUDE.md";
+
+/// The registry's row count is the registry's own.
+#[test]
+fn the_rollback_population_row_count_is_the_registrys_own() {
+    assert_phrase_count(
+        &[ROLLBACK_ROW_HOME],
+        &["ROLLBACK_POPULATIONS", "rows"],
+        ROLLBACK_POPULATIONS.len(),
+        "`cli::rollback::ROLLBACK_POPULATIONS`",
+    );
+}
+
+/// The three phrase fences are properties of one predicate: whole words, a numeral in
+/// either spelling, and no match without one.
 #[test]
 fn a_phrase_claim_needs_its_numeral_and_its_whole_phrase() {
     let scan = |text: &str, phrase: &[&str]| -> Vec<usize> {
@@ -1513,5 +1554,22 @@ fn a_phrase_claim_needs_its_numeral_and_its_whole_phrase() {
         ),
         Vec::<usize>::new(),
         "another door count is not this one — the phrase, not the noun, is the subject",
+    );
+    assert_eq!(
+        scan(
+            "twelve `ROLLBACK_POPULATIONS` rows — `FileCas` · `MintedSet` · `DoorGuard`",
+            &["ROLLBACK_POPULATIONS", "rows"],
+        ),
+        vec![12],
+        "the registry's own name inside the phrase is what makes the claim self-naming, \
+         code ticks and all — this is the sentence that shipped stale",
+    );
+    assert_eq!(
+        scan(
+            "both `MintedSet` rows, and the two rows that have no restore site at all",
+            &["ROLLBACK_POPULATIONS", "rows"],
+        ),
+        Vec::<usize>::new(),
+        "a sub-set's row count is not the registry's size",
     );
 }
