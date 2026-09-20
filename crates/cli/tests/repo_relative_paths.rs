@@ -763,6 +763,19 @@ const GUARDED_SRC: &[&str] = &[
 /// `(file, production sites, why it is not here yet)`, and
 /// [`the_unswept_remainder_is_counted_not_described`] checks every count against the source —
 /// a bound nothing measures is a sentence, not a bound.
+///
+/// **The counts are fenced; the reasons are prose, and this note says so** (M52 Increment 10,
+/// T10). A count is a claim about a set the source carries, so it is measured — every row
+/// against its own file by the test below, and the table's *total* against the two records
+/// that state it by `crates/cli/tests/count_fences.rs`. A **reason** is a claim about what
+/// those sites *are* — a channel, a subject, a declared exemption — and no registry holds it,
+/// so nothing but a re-read catches one drifting. All ten were re-read against the source at
+/// M52 Increment 10; **three carried a falsified clause** and are struck below with the datum
+/// that falsifies it (`start.rs`, `config.rs`, `setup.rs`), joining the two struck at
+/// Increments 1 and 4 (`pack.rs`, `task.rs`). The five that hold — `finalize.rs` (its eleven
+/// sites are exactly the five named helpers, and none of them is handed a repo root),
+/// `locate.rs`, `doc.rs`, `adapter.rs` and `orient.rs` — stand as written, and this sentence
+/// is the record that they were checked rather than assumed.
 const UNSWEPT_PRODUCERS: &[(&str, usize, &str)] = &[
     (
         "crates/engine/src/finalize.rs",
@@ -775,16 +788,31 @@ const UNSWEPT_PRODUCERS: &[(&str, usize, &str)] = &[
     (
         "crates/cli/src/start.rs",
         22,
-        "TWO of the 22 reach a finding: `overrides.project-step-missing` names the project \
+        "**[Corrected 2026-09-20 (M52 Increment 10, T10).** This row read *\"The other 20 \
+         are `anyhow` load faults over cascade homes and delta manifests\"*. Falsifying \
+         datum, read at HEAD: `start.rs:3113`, in `load_project_layer`, is \
+         `layer.config_path(project_config.display().to_string())` — the cascade layer's \
+         **provenance-header stamp**, which is the very site `orient.rs`'s row below \
+         disposes `DeclaredAbsolute`, and a surface render rather than an error channel. \
+         The count was right and the reason false for one of the 22.**] \
+         TWO of the 22 reach a finding: `overrides.project-step-missing` names the project \
          layer's step file (under `.jigc/config/`, so a repo-relative spelling exists) in \
-         message and route. The other 20 are `anyhow` load faults over cascade homes and \
-         delta manifests — an error channel, not a finding surface",
+         message and route. NINETEEN are `anyhow` load faults over cascade homes and delta \
+         manifests — an error channel, not a finding surface. The twentieth is the header \
+         stamp above, absolute for `orient.rs`'s reason and not for this row's",
     ),
     (
         "crates/cli/src/config.rs",
         20,
-        "`with_context` I/O faults on cascade-layer writes — an error channel, not a finding \
-         surface; the door's own finding text is closed by `trackable.rs`",
+        "**[Corrected 2026-09-20 (M52 Increment 10, T10).** This row read *\"cascade-layer \
+         writes\"*. Falsifying datum, counted against the source: **eight** of the 20 are \
+         reads, parses or a missing basename — `could not read source step file` (×2), \
+         `{} is not valid YAML` (×2), `could not read {}` (×2) and `source file {} has no \
+         basename` (×2) — against twelve creates, writes and serializes. The load-bearing \
+         half of the reason is the channel, not the direction, and it held: all 20 are \
+         `with_context` on `anyhow`.**] \
+         `with_context` I/O faults on cascade-layer reads and writes — an error channel, \
+         not a finding surface; the door's own finding text is closed by `trackable.rs`",
     ),
     (
         "crates/cli/src/pack.rs",
@@ -808,9 +836,19 @@ const UNSWEPT_PRODUCERS: &[(&str, usize, &str)] = &[
     (
         "crates/cli/src/setup.rs",
         8,
-        "declared out of this class by M50 Increment 12 / T1 with a stated reason — install's \
-         subject is the installing binary and the git hooks dir, neither a repo path; \
-         `uninstall`'s own two sites are disposed `Relative` above",
+        "**[Corrected 2026-09-20 (M52 Increment 10, T10).** This row read *\"install's \
+         subject is the installing binary and the git hooks dir, neither a repo path\"*. \
+         Falsifying datum, read at HEAD: **two** of the eight name neither — `setup.rs:822` \
+         (`resolve_hooks_dir`) composes the **repo root itself** into git's failure text, \
+         and `:3878` (`write_compose_marker`) names the cascade's `packs.yaml` under \
+         `.jigc/config/`, a path repo-relative by construction. What actually keeps both \
+         out of this class is their **channel** — each is a `std::io::Error` a caller \
+         wraps, not a finding a surface prints — which is the reason this row should have \
+         given for them and did not.**] \
+         Declared out of this class by M50 Increment 12 / T1 with a stated reason — six of \
+         the eight have the installing binary or the git hooks dir as their subject, \
+         neither a repo path, and the other two are `io::Error` channels; `uninstall`'s own \
+         two sites are disposed `Relative` above",
     ),
     (
         "crates/cli/src/task.rs",
