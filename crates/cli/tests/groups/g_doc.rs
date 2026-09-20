@@ -87,6 +87,8 @@ mod uninstall;
 mod unknown_doctype_axis;
 #[path = "../unknown_subcommand_tip.rs"]
 mod unknown_subcommand_tip;
+#[path = "../workflow_resolution_unified.rs"]
+mod workflow_resolution_unified;
 #[path = "../write_reject_target_resolves.rs"]
 mod write_reject_target_resolves;
 #[path = "../write_title_divergence.rs"]

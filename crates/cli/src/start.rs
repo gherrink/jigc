@@ -3748,6 +3748,42 @@ pub(crate) fn resolved_schema(
     CascadeDefs::new(&resolved, project_config).schema(pack, ty)
 }
 
+/// One workflow's **cascade-resolved** definition bytes — the workflow twin of
+/// [`resolved_schema`], and the read every consumer of a task's **recorded** workflow
+/// owes.
+///
+/// The recorded id names a *definition*, and which layer provides that definition is the
+/// cascade's answer, not the pack's: a project `workflows/<id>.yaml` whole-file shadow
+/// wins, and a project-layer id no pack ships resolves at all. Every composing door has
+/// read it that way since M14 ([`CascadeDefs::read_workflow`]); the three doors that read
+/// the *recorded* id — the create-gate, the `reads` declaration and the finalize seam —
+/// read the **pack** until M52, so the workflow a task was minted on and the workflow its
+/// gates enforced were two different documents (`overrides.md` → whole-file definition
+/// shadow).
+///
+/// This is `TaskArea::schemas`' sibling one resource kind over: M49 Increment 3 T2 closed
+/// exactly this divergence for **schemas** (a pack-only read named the staged copy at the
+/// pack's home while the read surfaces looked at the resolved one), and left the workflow
+/// kind un-swept.
+pub(crate) fn resolved_workflow(
+    pack: &dyn PackSource,
+    project_config: &Path,
+    id: &str,
+) -> Result<Vec<u8>> {
+    let resolved = resolve_severity_cascade(pack, project_config)?;
+    let defs = CascadeDefs::new(&resolved, project_config);
+    if defs.project_owns(id) {
+        return defs.project_def("workflows", id);
+    }
+    // The pack branch is [`read_pack`], **not** [`read_workflow`]: the Form-D mapping to
+    // `workflow-refs.unknown-workflow` answers a **caller-typed** `<X>`, where "list the
+    // selectable work-workflows" is the repair. A *recorded* id the packs no longer ship
+    // is a pack-resource miss, and its shipped answer names the packs actually searched
+    // with a route that restores the file (`pack_resource_miss_axis` site 4). Routing it
+    // through the Form-D miss would hand the reader `jigc start`, which restores nothing.
+    read_pack(pack, PackResourceKind::Workflows, id)
+}
+
 /// Read a named workflow's bytes, mapping a **missing** workflow to a routed
 /// blocking finding — the Form-D unknown-`<X>` rejection (`write-commands.md`: an
 /// unknown `<X>` is rejected with a routed finding). Membership is the pack read:

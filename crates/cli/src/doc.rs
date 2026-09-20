@@ -6191,7 +6191,14 @@ impl ActiveTask {
     /// `allows-create` lives on its front-matter. The workflow is the one the task
     /// was minted on (recorded at `.jigc/tasks/<id>/workflow`), never a hardcoded
     /// default: a `plan` task's gate must read `plan`'s `allows-create`, not
-    /// `single-task`'s. Mirrors `start::resume_in_repo`'s bound-workflow read.
+    /// `single-task`'s. Mirrors `start::resume_in_repo`'s bound-workflow read — through
+    /// the **cascade** ([`crate::start::resolved_workflow`]), so the gate the CLI
+    /// enforces is the gate the door composed. Until M52 this read was pack-only, and
+    /// driven, the divergence ran both ways: over a project `single-task` shadow
+    /// granting only `{type: adr}`, `jigc doc create changelog --title Changelog --task
+    /// <id>` **succeeded at exit 0** against a gate the resolved workflow does not grant;
+    /// over a project-layer-only workflow id it refused every authoring verb with
+    /// `pack.resource-missing`, bricking a task the compose door had minted at exit 0.
     fn workflow_gate(&self) -> Result<(String, WorkflowDef)> {
         let workflow_id = state::read_workflow_id(&self.dir)
             .context("could not read the task's recorded workflow")?
@@ -6208,9 +6215,9 @@ impl ActiveTask {
                     engine::finding::Route::mechanical(["jigc", "start"], ""),
                 )
             })?;
-        let bytes = crate::start::read_pack(
+        let bytes = crate::start::resolved_workflow(
             self.pack.as_ref(),
-            PackResourceKind::Workflows,
+            &self.project_config(),
             workflow_id.as_str(),
         )?;
         let def = load_workflow_def(&bytes).map_err(finding_to_err)?;

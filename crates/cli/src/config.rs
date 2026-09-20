@@ -1698,7 +1698,8 @@ fn run_insert_step(
     let (_layer, existing_deltas, _slot_fills, _forks, _bases) =
         crate::start::load_project_layer(&project_config)?;
     check_basename_collision(pack, &project_config, &basename).map_err(finding_to_err)?;
-    check_anchor_present(pack, workflow, &existing_deltas, anchor_id).map_err(finding_to_err)?;
+    check_anchor_present(pack, &project_config, workflow, &existing_deltas, anchor_id)
+        .map_err(finding_to_err)?;
 
     // Write the native step file, then append the `insert-step` delta.
     let steps_dir = project_config.join("steps");
@@ -1761,8 +1762,14 @@ fn run_replace_step(cwd: &Path, target: &str, file: &Path) -> Result<ConfigAck> 
     let (_layer, existing_deltas, _slot_fills, _forks, _bases) =
         crate::start::load_project_layer(&project_config)?;
     check_basename_collision(pack, &project_config, &basename).map_err(finding_to_err)?;
-    check_anchor_present(pack, &parsed.workflow_id, &existing_deltas, &step_id)
-        .map_err(finding_to_err)?;
+    check_anchor_present(
+        pack,
+        &project_config,
+        &parsed.workflow_id,
+        &existing_deltas,
+        &step_id,
+    )
+    .map_err(finding_to_err)?;
 
     // The base-hash basis is the **displaced** pack unit — the target step `step_id`
     // being swapped out — read pack-direct (the same `pack.read(Steps, …)` basis
@@ -1809,8 +1816,14 @@ fn run_remove_step(cwd: &Path, target: &str) -> Result<ConfigAck> {
     let pack = pack.as_ref();
     let (_layer, existing_deltas, _slot_fills, _forks, _bases) =
         crate::start::load_project_layer(&project_config)?;
-    check_anchor_present(pack, &parsed.workflow_id, &existing_deltas, &step_id)
-        .map_err(finding_to_err)?;
+    check_anchor_present(
+        pack,
+        &project_config,
+        &parsed.workflow_id,
+        &existing_deltas,
+        &step_id,
+    )
+    .map_err(finding_to_err)?;
 
     // The base-hash basis is the **removed** pack unit — the target step `step_id`
     // being dropped — read pack-direct (the same `pack.read(Steps, …)` basis
@@ -1905,8 +1918,14 @@ fn run_fork(cwd: &Path, target: &str) -> Result<ConfigAck> {
     let (_layer, existing_deltas, _slot_fills, _forks, _bases) =
         crate::start::load_project_layer(&project_config)?;
     check_not_already_forked(&project_config, &step_id).map_err(finding_to_err)?;
-    check_anchor_present(pack, &parsed.workflow_id, &existing_deltas, &step_id)
-        .map_err(finding_to_err)?;
+    check_anchor_present(
+        pack,
+        &project_config,
+        &parsed.workflow_id,
+        &existing_deltas,
+        &step_id,
+    )
+    .map_err(finding_to_err)?;
 
     // The resolved unit is the step the `#<step-id>` names. After the collision guard,
     // no project file shadows this id, so the resolved owner is the pack — its body
@@ -2307,23 +2326,34 @@ pub(crate) fn check_basename_collision(
 /// anchor a prior remove retired is absent here and rejected. An absent target is a
 /// routed blocking `config.anchor-absent` [`Finding`]; a present one passes.
 ///
+/// **The include list is the cascade's** ([`crate::start::resolved_workflow`]), because
+/// that is the list resolution applies these deltas to — `start::explain_tree` reads the
+/// same seam before calling the same `apply_structural_deltas`. Until M52 this read was
+/// pack-only, and driven, it accepted a delta against a body nothing resolves: over a
+/// project `.jigc/config/workflows/single-task.yaml` shadow whose include list is
+/// `locate · author-commit · finalize`, `jigc config remove-step
+/// 'workflow:single-task#implement'` **wrote the delta at exit 0** against a step the
+/// resolved workflow does not contain — the write-time check's whole purpose inverted.
+///
 /// A pure write-time check (`overrides.md` → Write-time vs resolve-time split): it
 /// validates *this* edit's anchor against the current snapshot; whole-cascade
 /// consequences (cycles, a later delta orphaning an earlier one) stay at resolution
 /// time through `workflow-refs`.
 pub(crate) fn check_anchor_present(
     pack: &dyn PackSource,
+    project_config: &Path,
     workflow_id: &str,
     existing_deltas: &[StructuralDelta],
     anchor: &str,
 ) -> Result<(), Finding> {
-    let bytes = crate::start::read_workflow(pack, workflow_id).map_err(|err| {
-        Finding::block(
-            "config.anchor-absent",
-            format!("no workflow `{workflow_id}` to anchor against: {err:#}"),
-            "name an existing workflow id, then re-run",
-        )
-    })?;
+    let bytes =
+        crate::start::resolved_workflow(pack, project_config, workflow_id).map_err(|err| {
+            Finding::block(
+                "config.anchor-absent",
+                format!("no workflow `{workflow_id}` to anchor against: {err:#}"),
+                "name an existing workflow id, then re-run",
+            )
+        })?;
     let def = engine::compose::load_workflow_def(&bytes)?;
     let scoped = crate::start::scoped_deltas(workflow_id, existing_deltas);
     let snapshot = engine::compose::apply_structural_deltas(&def.includes, &scoped)?;
@@ -2749,10 +2779,37 @@ mod tests {
         }
     }
 
+    /// The shipped dev pack's `config/knobs.yaml`, included at compile time.
+    ///
+    /// Hand-rolling a knobs fixture is not an option: `cascade::resolve` requires every
+    /// **intrinsic** check to be declared with its demotion floor, so a minimal knobs
+    /// file fails resolution on a rule that has nothing to do with this test. Including
+    /// the real one keeps the fixture honest and makes it track the pack.
+    const DEV_PACK_KNOBS: &str = include_str!("../pack/config/knobs.yaml");
+
+    /// A project-config path that does not exist — the **no-override** cascade layer
+    /// (`crate::start::load_project_layer` yields an empty layer), so these arms
+    /// exercise the pack branch of the resolution with nothing shadowing it.
+    fn no_project_layer() -> &'static Path {
+        Path::new("/nonexistent-project-config")
+    }
+
     /// A `single-task` pack whose include list is `locate → implement → validate`,
     /// plus those three step files — the snapshot the anchor check resolves against.
+    ///
+    /// It also ships the two `config/` resources the **cascade** needs to resolve at
+    /// all (`config/defaults`' `pack-id` and `config/knobs`), because since M52 the
+    /// anchor check reads its workflow through [`crate::start::resolved_workflow`]
+    /// rather than the pack directly. A pack that resolves no cascade could only
+    /// exercise the pack-only read this check no longer performs.
     fn single_task_pack() -> FixturePack {
         FixturePack::with(vec![
+            (
+                PackResourceKind::Config,
+                "defaults",
+                "pack-id: fixture\ndefault-workflow: single-task\n",
+            ),
+            (PackResourceKind::Config, "knobs", DEV_PACK_KNOBS),
             (
                 PackResourceKind::Workflows,
                 "single-task",
@@ -2818,11 +2875,11 @@ mod tests {
         let pack = single_task_pack();
 
         // Present in the pack include list, no prior deltas → passes.
-        check_anchor_present(&pack, "single-task", &[], "implement")
+        check_anchor_present(&pack, no_project_layer(), "single-task", &[], "implement")
             .expect("a present anchor must pass");
 
         // Never in the include list → rejected with its route.
-        let absent = check_anchor_present(&pack, "single-task", &[], "nope")
+        let absent = check_anchor_present(&pack, no_project_layer(), "single-task", &[], "nope")
             .expect_err("an absent anchor must be rejected");
         assert_eq!(absent.code, "config.anchor-absent");
         assert!(absent.route.is_some(), "the rejection must carry a route");
@@ -2830,15 +2887,27 @@ mod tests {
         // A prior `remove-step` dropped `implement`; the snapshot applies it, so
         // re-anchoring on `implement` is now rejected (snapshot reflects prior deltas).
         let prior = vec![remove_at("single-task", "implement")];
-        let dropped = check_anchor_present(&pack, "single-task", &prior, "implement")
-            .expect_err("an anchor a prior remove dropped must be rejected");
+        let dropped = check_anchor_present(
+            &pack,
+            no_project_layer(),
+            "single-task",
+            &prior,
+            "implement",
+        )
+        .expect_err("an anchor a prior remove dropped must be rejected");
         assert_eq!(dropped.code, "config.anchor-absent");
 
         // A delta scoped to a *different* workflow must not affect this snapshot — a
         // remove of `implement` on `other` leaves `single-task`'s `implement` present.
         let other = vec![remove_at("other", "implement")];
-        check_anchor_present(&pack, "single-task", &other, "implement")
-            .expect("a delta scoped to another workflow must not drop this anchor");
+        check_anchor_present(
+            &pack,
+            no_project_layer(),
+            "single-task",
+            &other,
+            "implement",
+        )
+        .expect("a delta scoped to another workflow must not drop this anchor");
     }
 
     /// T2 — `run_replace_step` / `run_remove_step` record the **displaced pack

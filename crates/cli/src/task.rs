@@ -40,7 +40,7 @@ use engine::finalize::{
     CarryoverBoundary, Promotion, RepinDecision, decide_base_repin, decide_carryover, plan_finalize,
 };
 use engine::finding::{Finding, Findings, Location, Severity};
-use engine::packsource::{PackResourceKind, PackSource, ResourceId};
+use engine::packsource::PackSource;
 use engine::probe::{ProbeRequest, ProbeRun, ProbeRunStatus};
 use engine::schema::Schema;
 use engine::state::{self, BasePin, RolesRecord};
@@ -3170,8 +3170,16 @@ impl TaskArea {
 
     /// Load the task's own minting workflow definition — the source the `reads`
     /// declaration lives on, read back the same way the resume re-compose does
-    /// (`crate::start::resume_in_repo`). A working area with no recorded workflow id
-    /// is a clear fault, never a silent fall-through to the cascade default.
+    /// (`crate::start::resume_in_repo`), which since M52 is literally true: both go
+    /// through [`crate::start::resolved_workflow`], so a project `workflows/<id>.yaml`
+    /// shadow's `reads` roles are the ones `jigc task bind` enforces. Until M52 this
+    /// read was pack-only while resume read the cascade — driven, `jigc task bind` on a
+    /// task minted from a project-layer-only workflow id answered *"the recorded workflow
+    /// `offverb` reads back: no pack resource of kind workflows with id `offverb`"* at
+    /// exit 1 over a workflow the compose door had just resolved at exit 0.
+    ///
+    /// A working area with no recorded workflow id is a clear fault, never a silent
+    /// fall-through to the cascade default.
     fn workflow_def(&self) -> Result<WorkflowDef> {
         let workflow_id = state::read_workflow_id(&self.dir)
             .with_context(|| format!("could not read the recorded workflow for {:?}", self.dir))?
@@ -3182,13 +3190,11 @@ impl TaskArea {
                     engine::finding::Route::mechanical(["jigc", "start"], ""),
                 )
             })?;
-        let bytes = self
-            .pack
-            .read(
-                PackResourceKind::Workflows,
-                &ResourceId::from(workflow_id.as_str()),
-            )
-            .with_context(|| format!("the recorded workflow `{workflow_id}` reads back"))?;
+        let bytes = crate::start::resolved_workflow(
+            self.pack.as_ref(),
+            &self.project_config(),
+            workflow_id.as_str(),
+        )?;
         load_workflow_def(&bytes).map_err(finding_to_err)
     }
 
@@ -3201,7 +3207,10 @@ impl TaskArea {
     /// ([`Self::changelog_gate_advisory`]'s shipped posture, now shared).
     ///
     /// One home for the read, because two call sites deciding finalize behaviour from
-    /// the same recorded id must not diverge on how they resolve it. [`workflow_def`]
+    /// the same recorded id must not diverge on how they resolve it — and the read is
+    /// the **cascade's** ([`crate::start::resolved_workflow`]), because not diverging
+    /// from each other is worth nothing while both diverge from the door that composed
+    /// the body. [`workflow_def`]
     /// stays separate rather than wrapping this: its caller needs the *binding* source
     /// and a missing record there is a clear fault with its own route, not an absence to
     /// skip over.
@@ -3213,13 +3222,11 @@ impl TaskArea {
         else {
             return Ok(None);
         };
-        let bytes = self
-            .pack
-            .read(
-                PackResourceKind::Workflows,
-                &ResourceId::from(workflow_id.as_str()),
-            )
-            .with_context(|| format!("the recorded workflow `{workflow_id}` reads back"))?;
+        let bytes = crate::start::resolved_workflow(
+            self.pack.as_ref(),
+            &self.project_config(),
+            workflow_id.as_str(),
+        )?;
         let def = load_workflow_def(&bytes).map_err(finding_to_err)?;
         Ok(Some((workflow_id, def)))
     }
@@ -3234,8 +3241,21 @@ impl TaskArea {
     /// promised a hold and whose plain `jigc task finalize` landed a commit at exit 0
     /// (`design/auto-migration.md` → The review gate). It is also deliberately **not**
     /// keyed on `suppressed.door`: the cell that reaches this arm is precisely a
-    /// project-layer migrate-shaped workflow declaring none, which is the cell the
-    /// verb-routed compose refusal ([`crate::start::VERB_ROUTED_CODE`]) leaves open.
+    /// migrate-shaped workflow declaring none, which is the cell the verb-routed compose
+    /// refusal ([`crate::start::VERB_ROUTED_CODE`]) leaves open.
+    ///
+    /// **[Corrected 2026-09-20 (M52 Increment 9, the validate→fix loop):** that cell was
+    /// named *"a **project-layer** migrate-shaped workflow"*, and as written it was
+    /// **false at the layer it names** — [`Self::recorded_workflow`] resolved through the
+    /// pack while the compose door resolved through the cascade, so the project layer was
+    /// the one layer this arm could not see. Driven at the T4 commit: a project
+    /// `.jigc/config/workflows/single-task.yaml` shadow whose body includes
+    /// `step:migration-finalize` composed *"commits NOTHING — … holds (exit 4)"* and its
+    /// plain `jigc task finalize` landed a commit at **exit 0**; a project-layer-only id
+    /// died at exit 1 with `no pack resource of kind workflows with id`. What actually
+    /// reached the arm was a **project *pack*** member — which is what T4's own fixture
+    /// (`FixturePack`) exercises. The claim is now true of the layer it names, because
+    /// the read moved to [`crate::start::resolved_workflow`].**]**
     ///
     /// A task that recorded no workflow composes no such promise — `false`, never a
     /// fault.
