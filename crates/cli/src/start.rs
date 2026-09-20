@@ -703,6 +703,36 @@ pub struct SubTaskOf {
     /// is equality-guarded against it ([`reenter_in_repo`]'s W-equality guard). So it is
     /// the `<W>` the re-entry door accepts, never a second guess at it.
     pub workflow: String,
+    /// **Where this compose was run from** — the posture the `resume:` line's *where*
+    /// clause is scoped on (M52 Inc 10 / T4, the per-axis review's A6-1). Decided at the
+    /// one shared re-compose spine ([`compose_task_workflow`]), so the two doors a
+    /// sub-task can reach can never disagree about it either.
+    pub posture: SubTaskPosture,
+}
+
+/// Which checkout a **milestone sub-task**'s re-compose was run from
+/// ([`SubTaskOf::posture`]) — the discriminator the `resume:` line's *where* clause
+/// needs, and the only thing about a sub-task compose that the invocation's own
+/// location decides.
+///
+/// Driven at the M52 baseline (`completions/artifacts/M52/baseline-surfaces.md` §2.1):
+/// both provisioned postures composed **byte-identical** bytes, so the shipped line
+/// told a reader already standing in the sub-task's worktree to go where it already
+/// was (`design/surface-contract.md` → law 1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SubTaskPosture {
+    /// The invocation ran **inside the sub-task's own worktree** — the checkout
+    /// `jigc milestone provision` cut for it at `.jigc/worktrees/<id>`, where its work
+    /// happens.
+    OwnWorktree,
+    /// The invocation ran **somewhere else in the project** — the shared checkout
+    /// standing at the milestone's pin (the only other posture that composes at exit 0;
+    /// off the pin the door refuses before composing), or another sub-task's worktree.
+    /// Either way, not the worktree this sub-task's work belongs in. The worktree the
+    /// line then names is written **project-root-relative**, as it has been since M51
+    /// Inc 9 / T1 — followable from the shared checkout, and from a sibling worktree
+    /// readable only against the project root, which this row narrows but does not fix.
+    ElsewhereInProject,
 }
 
 /// The composing workflow's create-gate doctypes, in declaration order — the source of the
@@ -2229,7 +2259,10 @@ pub fn resume_in_repo(start: &Path, id: &str) -> Result<Composition> {
             )
         })?;
     compose_task_workflow(
-        &jigc_home,
+        ComposeCheckouts {
+            jigc_home: &jigc_home,
+            from: &repo_root,
+        },
         &project_config,
         &task_dir,
         id,
@@ -2354,7 +2387,10 @@ pub fn reenter_in_repo(start: &Path, workflow_id: &str, id: &str) -> Result<Comp
     }
 
     compose_task_workflow(
-        &jigc_home,
+        ComposeCheckouts {
+            jigc_home: &jigc_home,
+            from: &repo_root,
+        },
         &project_config,
         &task_dir,
         id,
@@ -2362,6 +2398,23 @@ pub fn reenter_in_repo(start: &Path, workflow_id: &str, id: &str) -> Result<Comp
         &head,
         true,
     )
+}
+
+/// The two checkouts a re-compose stands between ([`compose_task_workflow`]).
+///
+/// They are the **same directory** outside a linked worktree and differ inside one, and
+/// the pair is carried together because keeping them apart is exactly what the compose
+/// has to get right: every `.jigc/` read binds to [`jigc_home`](Self::jigc_home) (the
+/// main checkout, so all worktrees of one project share a single workbench), while
+/// [`from`](Self::from) — where the invocation actually ran — decides nothing but the
+/// sub-task [`SubTaskPosture`] (M52 Inc 10 / T4).
+struct ComposeCheckouts<'a> {
+    /// **jigc_home** — the main checkout the `.jigc/` workbench and the committed
+    /// doc-store bind to (`crate::repo::jigc_home`).
+    jigc_home: &'a Path,
+    /// The checkout the invocation was run **from** — the worktree root walked up from
+    /// the caller's cwd. Inside a linked worktree this is not `jigc_home`.
+    from: &'a Path,
 }
 
 /// Compose `workflow_id` over an existing task's working area — the read/compose
@@ -2375,8 +2428,13 @@ pub fn reenter_in_repo(start: &Path, workflow_id: &str, id: &str) -> Result<Comp
 /// write-ready area on first entry ([`provision_on_first_entry`], first-entry-only,
 /// `creates-task`-gated); resume (`provision == false`) provisions nothing — its
 /// top-level task was already provisioned at mint.
+///
+/// The [`ComposeCheckouts`] pair keeps *which `.jigc/`* and *where the caller stands*
+/// apart: every read below binds to `at.jigc_home`, while `at.from` decides only the
+/// sub-task [`SubTaskPosture`] — decided here, at the shared spine, so the two
+/// re-compose doors cannot answer it differently.
 fn compose_task_workflow(
-    repo_root: &Path,
+    at: ComposeCheckouts<'_>,
     project_config: &Path,
     task_dir: &Path,
     id: &str,
@@ -2384,6 +2442,10 @@ fn compose_task_workflow(
     head: &BasePin,
     provision: bool,
 ) -> Result<Composition> {
+    let ComposeCheckouts {
+        jigc_home: repo_root,
+        from: composed_in,
+    } = at;
     let intent = state::read_intent(task_dir)
         .with_context(|| format!("could not read intent for `{id}`"))?;
     let bound =
@@ -2541,12 +2603,35 @@ fn compose_task_workflow(
                 // [`SubTaskOf::workflow`]), so the `resume:` line's re-entry span is the
                 // one the re-entry guard admits.
                 workflow: workflow_id.to_string(),
+                // Where this invocation stands, decided once for both doors
+                // ([`SubTaskPosture`]).
+                posture: sub_task_posture(composed_in, repo_root, id),
             }
         }),
         // A re-compose door (resume / sub-agent re-entry) already names its task: the
         // reader is *in* the work, not looking for it.
         also_open: Vec::new(),
     })
+}
+
+/// Decide a sub-task compose's [`SubTaskPosture`]: is `composed_in` — the checkout the
+/// invocation ran from — the sub-task's **own** worktree, the one `jigc milestone
+/// provision` cut at `<jigc_home>/.jigc/worktrees/<id>`?
+///
+/// Both sides are canonicalized before the comparison, because the two paths arrive by
+/// different routes — `composed_in` is walked up from the caller's cwd while the
+/// worktree path is built from jigc_home — and on macOS the temp roots those walks start
+/// in are symlinks (`/var` → `/private/var`). A path that will not canonicalize (it was
+/// removed under the running process) falls back to its own bytes, so the comparison
+/// still answers rather than failing the compose: the posture decides one line's *where*
+/// clause, never whether the door opens.
+fn sub_task_posture(composed_in: &Path, jigc_home: &Path, id: &str) -> SubTaskPosture {
+    let real = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    if real(composed_in) == real(&jigc_home.join(engine::milestone::worktree_path(id))) {
+        SubTaskPosture::OwnWorktree
+    } else {
+        SubTaskPosture::ElsewhereInProject
+    }
 }
 
 /// Read a task's persisted source-seam artifact (`<task_dir>/source`, staged by

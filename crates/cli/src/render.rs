@@ -427,7 +427,12 @@ fn minted_header(view: &Composition) -> String {
 ///   door `jigc workflow <W> --task <id>` and the worktree it runs in, because that
 ///   is the door that provisions a sub-task's write-ready area
 ///   ([`crate::start`]'s `provision_on_first_entry`) and `jigc start --task <sub>`
-///   composes over it without provisioning anything;
+///   composes over it without provisioning anything. Its **where** clause is scoped a
+///   second time, on the [`SubTaskPosture`](crate::start::SubTaskPosture) the compose
+///   ran in (M52 Inc 10 / T4, law 1): *run it here* to a reader already standing in
+///   that worktree, *this checkout is not that worktree* to one composing from the
+///   shared checkout at the milestone's pin. Both postures rendered byte-identical
+///   bytes before, so the one line sent the first reader where it already was;
 /// - `what's-left:` — `jigc task validate <id>`, the preview of **part** of the
 ///   finalize gate: the [`crate::gate_coverage::Tier::Previewed`] members. It says so —
 ///   the staged set, promotion and the commit itself are decided only at
@@ -487,13 +492,28 @@ fn task_state_lines(view: &Composition) -> String {
             let milestone = &sub.milestone;
             let workflow = &sub.workflow;
             let worktree = engine::milestone::worktree_path(id);
+            // The *where* clause is scoped on the posture this compose was run in (M52
+            // Inc 10 / T4, law 1): the shipped line sent a reader already standing in the
+            // sub-task's worktree to go where it already was, and told a reader in the
+            // shared checkout nothing about standing outside it. The **door** is the same
+            // in both — only where to run it from differs.
+            let where_clause = match sub.posture {
+                crate::start::SubTaskPosture::OwnWorktree => format!(
+                    "you are in this sub-task's worktree at `{}`, where its work happens — \
+                     run it here",
+                    worktree.display(),
+                ),
+                crate::start::SubTaskPosture::ElsewhereInProject => format!(
+                    "this checkout is not that worktree — run it from this sub-task's own \
+                     worktree at `{}`, where its work happens",
+                    worktree.display(),
+                ),
+            };
             (
                 format!(
                     "resume: `jigc workflow {workflow} --task {id}`   — re-composes this \
                      workflow and provisions this sub-task's write-ready docs area on first \
-                     entry; run it from this sub-task's own worktree at `{}`, where its work \
-                     happens",
-                    worktree.display(),
+                     entry; {where_clause}",
                 ),
                 format!(
                     "this task is a sub-task of milestone `{milestone}`, whose `jigc milestone \
@@ -7207,6 +7227,7 @@ mod tests {
             sub_task_of: Some(crate::start::SubTaskOf {
                 milestone: "rework".to_string(),
                 workflow: "sub-task".to_string(),
+                posture: crate::start::SubTaskPosture::ElsewhereInProject,
             }),
             also_open: Vec::new(),
         };
@@ -7246,9 +7267,40 @@ mod tests {
             sub_resume,
             "resume: `jigc workflow sub-task --task add-rate-limiter`   — re-composes this \
              workflow and provisions this sub-task's write-ready docs area on first entry; \
-             run it from this sub-task's own worktree at `.jigc/worktrees/add-rate-limiter`, \
-             where its work happens",
+             this checkout is not that worktree — run it from this sub-task's own worktree \
+             at `.jigc/worktrees/add-rate-limiter`, where its work happens",
             "a sub-task's resume names the provisioning door and where it runs",
+        );
+
+        // The **third** scoping on the same line (M52 Inc 10 / T4, law 1): the posture the
+        // compose ran in. Both provisioned postures rendered these exact bytes before, so
+        // the line sent a reader already standing in the worktree where it already was.
+        // The end-to-end proof through the real binary is `compose_statefulness.rs`; this
+        // is the seam fence, and it holds the door span identical across the pair.
+        let in_worktree = Composition {
+            sub_task_of: Some(crate::start::SubTaskOf {
+                milestone: "rework".to_string(),
+                workflow: "sub-task".to_string(),
+                posture: crate::start::SubTaskPosture::OwnWorktree,
+            }),
+            ..sub
+        };
+        let worktree_agent = composed(Format::Agent, &in_worktree);
+        let worktree_resume = worktree_agent
+            .lines()
+            .find(|l| l.starts_with("resume:"))
+            .unwrap_or_else(|| panic!("a resume line renders; got:\n{worktree_agent}"));
+        assert_eq!(
+            worktree_resume,
+            "resume: `jigc workflow sub-task --task add-rate-limiter`   — re-composes this \
+             workflow and provisions this sub-task's write-ready docs area on first entry; \
+             you are in this sub-task's worktree at `.jigc/worktrees/add-rate-limiter`, \
+             where its work happens — run it here",
+            "composed inside the worktree, the line says the reader is already there",
+        );
+        assert_ne!(
+            worktree_resume, sub_resume,
+            "the two provisioned postures must not render the same bytes",
         );
         let top_resume = re
             .lines()

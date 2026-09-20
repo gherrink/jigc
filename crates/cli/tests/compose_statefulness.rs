@@ -549,3 +549,156 @@ fn a_sub_tasks_resume_names_the_door_that_provisions_its_area() {
         "jigc doc set-field commit:tune-eviction#type",
     );
 }
+
+/// M52 Increment 10, T4 (the per-axis review's A6-1) — a **milestone sub-task**'s
+/// `resume:` line discriminates the **posture it is composed in**
+/// (`design/surface-contract.md` → law 1: nothing lies).
+///
+/// Measured at the M52 baseline (`completions/artifacts/M52/baseline-surfaces.md` §2.1):
+/// the sub-task compose is **byte-identical** in both provisioned postures — inside the
+/// sub-task's own worktree, and in the shared checkout standing at the milestone's pin —
+/// because `render::task_state_lines` keys on `Composition::sub_task_of` alone and has no
+/// posture value in scope. So the one line shipped, *"run it from this sub-task's own
+/// worktree at `.jigc/worktrees/<id>`"*, tells the reader who is **already standing in
+/// that worktree** to go somewhere it already is, and says nothing to the reader in the
+/// shared checkout about being in the wrong one.
+///
+/// The arm drives the **real binary** through the door the fan-out's sub-agents take
+/// (`jigc workflow <W> --task <sub>`) from both provisioned postures, and asserts the two
+/// emitted `resume:` lines **differ** and each names its own posture — while the
+/// backticked span, which is the same door in both, stays the same.
+#[test]
+fn a_sub_tasks_resume_line_discriminates_the_posture_it_is_composed_in() {
+    let repo = TempDir::new("sub-task-posture");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    ok_stdout(
+        run_jigc_composed(repo.path(), home.path(), &["setup"]),
+        "jigc setup",
+    );
+    ok_stdout(
+        run_jigc_composed(
+            repo.path(),
+            home.path(),
+            &["milestone", "create", "rework the cache"],
+        ),
+        "jigc milestone create",
+    );
+    ok_stdout(
+        run_jigc_composed(
+            repo.path(),
+            home.path(),
+            &["milestone", "add-task", "rework-the-cache", "tune eviction"],
+        ),
+        "jigc milestone add-task",
+    );
+    ok_stdout(
+        run_jigc_composed(
+            repo.path(),
+            home.path(),
+            &["milestone", "provision", "rework-the-cache"],
+        ),
+        "jigc milestone provision",
+    );
+
+    let worktree = repo
+        .path()
+        .join(".jigc")
+        .join("worktrees")
+        .join("tune-eviction");
+    assert!(
+        worktree.is_dir(),
+        "`milestone provision` must cut the sub-task's worktree at {worktree:?}",
+    );
+
+    // The shared checkout must stand **at the milestone's pin** to reach the second
+    // provisioned posture — `milestone create` / `add-task` each commit their record, so
+    // the branch has moved past it. The pin is what the worktree was cut at, so git
+    // itself answers for it rather than a second read of the milestone's base file.
+    let pin = String::from_utf8(
+        Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(&worktree)
+            .output()
+            .expect("run git rev-parse in the sub-task worktree")
+            .stdout,
+    )
+    .expect("git prints utf-8");
+    let detach = Command::new("git")
+        .args(["checkout", "--detach", pin.trim()])
+        .current_dir(repo.path())
+        .output()
+        .expect("run git checkout --detach");
+    assert!(
+        detach.status.success(),
+        "the shared checkout must reach the milestone's pin; stderr:\n{}",
+        String::from_utf8_lossy(&detach.stderr),
+    );
+
+    let argv = [
+        "--format",
+        "agent",
+        "workflow",
+        "sub-task",
+        "--task",
+        "tune-eviction",
+    ];
+    let in_worktree = ok_stdout(
+        run_jigc_composed(&worktree, home.path(), &argv),
+        "jigc workflow sub-task --task tune-eviction (from the sub-task's worktree)",
+    );
+    let in_shared = ok_stdout(
+        run_jigc_composed(repo.path(), home.path(), &argv),
+        "jigc workflow sub-task --task tune-eviction (from the shared checkout at the pin)",
+    );
+
+    let resume_of = |composed: &str| -> String {
+        composed
+            .lines()
+            .find(|l| l.starts_with("resume:"))
+            .unwrap_or_else(|| panic!("a sub-task compose carries a resume line; got:\n{composed}"))
+            .to_string()
+    };
+    let worktree_resume = resume_of(&in_worktree);
+    let shared_resume = resume_of(&in_shared);
+
+    // The door is the same in both postures — only what the line says about *where the
+    // reader is standing* may differ.
+    assert_eq!(
+        backticked(&worktree_resume),
+        "jigc workflow sub-task --task tune-eviction",
+        "the re-entry door is the same in both postures; got:\n{worktree_resume}",
+    );
+    assert_eq!(
+        backticked(&shared_resume),
+        backticked(&worktree_resume),
+        "the re-entry door is the same in both postures; got:\n{shared_resume}",
+    );
+
+    // The claim: the two lines are not the same bytes — the baseline measured them
+    // byte-identical.
+    assert_ne!(
+        worktree_resume, shared_resume,
+        "the sub-task resume line must discriminate the posture it is composed in",
+    );
+
+    // ...and each names *its own* posture, not the other's.
+    assert!(
+        worktree_resume.contains("you are in this sub-task's worktree")
+            && worktree_resume.contains(".jigc/worktrees/tune-eviction"),
+        "composed inside the worktree, the line says the reader is already there; \
+         got:\n{worktree_resume}",
+    );
+    assert!(
+        !worktree_resume.contains("run it from this sub-task's own worktree"),
+        "composed inside the worktree, the line must not send the reader where it already \
+         stands; got:\n{worktree_resume}",
+    );
+    assert!(
+        shared_resume.contains("this checkout is not that worktree")
+            && shared_resume.contains(
+                "run it from this sub-task's own worktree at `.jigc/worktrees/tune-eviction`"
+            ),
+        "composed outside it, the line names the worktree to run in; got:\n{shared_resume}",
+    );
+}
