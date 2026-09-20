@@ -6269,10 +6269,8 @@ fn parse_verb_addr(
     addr: &str,
 ) -> Result<Address, DocFailure> {
     let expanded = expand_bare_singleton(pack, project_config, addr);
-    let address = Address::parse(&expanded).map_err(|err| {
-        let (explanation, route) = address_parse_guidance(&err, head_doctype(&expanded));
-        anyhow!("malformed address `{addr}`: {err} — {explanation}\n  route: {route}")
-    })?;
+    let address = Address::parse(&expanded)
+        .map_err(|err| malformed_address_error(addr, &expanded, &err, BareHead::Expanded))?;
     // The grammar accepted the shape; the **slug head** still has to be a slug, because it
     // is what names the file (M50 Inc 2 / T1 — `crate::task::reject_malformed_slug_head`).
     crate::task::reject_malformed_slug_head(addr, address.slug.as_str())?;
@@ -6282,6 +6280,45 @@ fn parse_verb_addr(
         crate::task::reject_fixed_identity_alias(&schema, &address).map_err(DocFailure::block)?;
     }
     Ok(address)
+}
+
+/// Whether the door composing an address rejection **expands a bare fixed-identity head**
+/// (`changelog` → `changelog:changelog`) before it parses, or parses the caller's bytes
+/// verbatim — the one fact the head explanation below is allowed to differ on.
+///
+/// It exists because a sentence offering a spelling the door refuses is a law-1 lie
+/// ([surface-contract.md](../../../design/surface-contract.md)): the nine `doc` doors
+/// expand through [`expand_bare_singleton`], so *"a singleton doctype … may be named bare"*
+/// is true there and followable; `jigc task bind` calls
+/// `engine::address::Address::parse` directly, so at that door the bare head is not an
+/// address at all and the clause would route the caller into the identical refusal.
+/// Everything else in the guidance — the `<type>:<slug>` sentence, all three fragment
+/// sentences, and **every route** — is shared verbatim, which is what keeps the two doors
+/// from drifting apart (M52 Increment 10 / T7).
+#[derive(Clone, Copy)]
+pub(crate) enum BareHead {
+    /// The door expands a bare fixed-identity head before parsing.
+    Expanded,
+    /// The door parses the caller's address verbatim.
+    Verbatim,
+}
+
+/// The rejection a **caller-typed** address's grammar fault earns — the message
+/// [`parse_verb_addr`] composes, hoisted to one home so a door outside the `doc` funnel
+/// answers the same explanation and the same route (M52 Increment 10 / T7:
+/// `jigc task bind`, whose grammar fault was a bare `anyhow` carrying neither).
+///
+/// `expanded` is the address **as this door parsed it** — the bare-head expansion for the
+/// `doc` doors, the caller's own bytes everywhere else; it is read only for the doctype hop
+/// a fragment fault routes at.
+pub(crate) fn malformed_address_error(
+    addr: &str,
+    expanded: &str,
+    err: &engine::address::ParseError,
+    bare: BareHead,
+) -> anyhow::Error {
+    let (explanation, route) = address_parse_guidance(err, head_doctype(expanded), bare);
+    anyhow!("malformed address `{addr}`: {err} — {explanation}\n  route: {route}")
 }
 
 /// The `<type>` hop of an address whose **head** parsed — `""` when it did not.
@@ -6309,7 +6346,9 @@ fn head_doctype(expanded: &str) -> &str {
 ///
 ///   * The **head** faults (`EmptyType` / `MissingColon` / `EmptySlug`) are about
 ///     `<type>:<slug>`, so they keep the `<type>:<slug>` form and the `jigc describe`
-///     doctype surface — true and followable where the caller got the head wrong.
+///     doctype surface — true and followable where the caller got the head wrong. Its one
+///     door-dependent clause is the bare fixed-identity spelling, carried iff the calling
+///     door expands one ([`BareHead`]).
 ///   * The **fragment** faults (`EmptyFragment` / `EmptyHop` / `TooManyHops`) sit over a head
 ///     that already parsed, so that sentence describes a part the caller typed correctly and
 ///     `jigc describe` — which lists doctypes, never addresses — answers nothing. They state
@@ -6317,14 +6356,23 @@ fn head_doctype(expanded: &str) -> &str {
 ///     M49 Increment 5 T1, lists only addresses the write path accepts. `TooManyHops` names
 ///     the **depth budget** it actually broke, generated from the two constants T1 tied
 ///     together, so the sentence cannot go stale the day the grammar moves.
-fn address_parse_guidance(err: &engine::address::ParseError, doctype: &str) -> (String, String) {
+fn address_parse_guidance(
+    err: &engine::address::ParseError,
+    doctype: &str,
+    bare: BareHead,
+) -> (String, String) {
     use engine::address::ParseError;
 
     let head = || {
         (
-            "a doc is addressed as `<type>:<slug>`, e.g. `adr:single-node-cache` (a singleton \
-             doctype like `changelog` or `vision` may be named bare)"
-                .to_owned(),
+            format!(
+                "a doc is addressed as `<type>:<slug>`, e.g. `adr:single-node-cache`{}",
+                match bare {
+                    BareHead::Expanded =>
+                        " (a singleton doctype like `changelog` or `vision` may be named bare)",
+                    BareHead::Verbatim => "",
+                },
+            ),
             format!(
                 "run {} for the doctype surface",
                 engine::finding::Route::mechanical(["jigc", "describe"], ""),
@@ -6373,8 +6421,16 @@ fn address_parse_guidance(err: &engine::address::ParseError, doctype: &str) -> (
 /// end-of-flags separator, so the emitted line runs as printed instead of failing the route
 /// fence's own argv parse.
 fn doc_schema_argv(doctype: &str) -> Vec<String> {
+    doctype_argv("schema", doctype)
+}
+
+/// The `jigc doc <leaf> <doctype>` argv a route naming a doctype is built from — the shape
+/// [`doc_schema_argv`] has shipped since M49 and `jigc task bind`'s store miss now reaches
+/// for too (M52 Increment 10 / T7, `jigc doc list <doctype>`), so the quoting rule lives in
+/// one place rather than in each route's own composition.
+pub(crate) fn doctype_argv(leaf: &str, doctype: &str) -> Vec<String> {
     let token = crate::task::shell_token(doctype);
-    let mut argv = vec!["jigc".to_owned(), "doc".to_owned(), "schema".to_owned()];
+    let mut argv = vec!["jigc".to_owned(), "doc".to_owned(), leaf.to_owned()];
     if token.starts_with('-') {
         argv.push("--".to_owned());
     }

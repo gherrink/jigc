@@ -198,7 +198,8 @@ fn task_bind_enforces_the_five_steps_and_records_the_binding() {
     );
 
     // Rejection 3 — `<addr>` does not resolve in the committed store (no spec
-    // committed yet): `no such doc <addr>`.
+    // committed yet): the blocking `store.not-found` this door raises since M52
+    // Increment 10 / T7 (it was a code-less, route-less `no such doc <addr>` bail).
     let no_doc = run(
         repo.path(),
         home.path(),
@@ -216,8 +217,9 @@ fn task_bind_enforces_the_five_steps_and_records_the_binding() {
     );
     let no_doc_err = stderr_of(&no_doc);
     assert!(
-        no_doc_err.contains("no such doc") && no_doc_err.contains("spec:cache-the-session-store"),
-        "the unresolved-addr rejection must read `no such doc <addr>`; got:\n{no_doc_err}",
+        no_doc_err.contains("store.not-found")
+            && no_doc_err.contains("no committed doc `spec:cache-the-session-store`"),
+        "the unresolved-addr rejection must name the code and the address; got:\n{no_doc_err}",
     );
 
     // Now commit the spec fixture so the store resolve succeeds for the rest, plus
@@ -527,5 +529,172 @@ fn the_task_state_verbs_ack_their_mutation() {
         plain_ack.lines().filter(|l| !l.trim().is_empty()).count() == 1
             && plain_ack.contains(task_id),
         "the plain discard ack must be one line naming the task; got:\n{plain_ack}",
+    );
+}
+
+/// Both streams of one run — a refusal's bytes reach stderr, an ack's stdout, and the
+/// arms below assert over whichever the door chose.
+fn streams(out: &Output) -> String {
+    format!("{}{}", stdout_of(out), stderr_of(out))
+}
+
+/// The **one** `route:` line a rendered refusal carries, trimmed of its indent. Panics on
+/// a surface carrying none or several, so a byte-equality claim below is about *the* route
+/// and never about the first of two.
+fn sole_route_line(rendered: &str, what: &str) -> String {
+    let routes: Vec<&str> = rendered
+        .lines()
+        .map(str::trim_start)
+        .filter(|line| line.starts_with("route:"))
+        .collect();
+    assert_eq!(
+        routes.len(),
+        1,
+        "{what}: expected exactly one `route:` line; got:\n{rendered}",
+    );
+    routes[0].to_string()
+}
+
+/// **M52 Increment 10 / T7 — `jigc task bind`'s two refusals join the route floor.**
+///
+/// Both shipped as bare `anyhow` bails — ``malformed address `padding` `` and ``no such
+/// doc `spec:nope` ``, flattened to `{"error": …}` under `--format json` with no code, no
+/// locus and no route (per-axis-review axis-6 §4 lead 2: *"the last inch of DEFECT A6-3's
+/// dead end"*; settle-record D13 lead 6a fires).
+///
+///   * the **grammar** fault now composes through `cli::doc`'s single guidance home, so
+///     its explanation and its route are the ones `jigc doc show` emits for the same
+///     fault — the route asserted **byte-equal** against the sibling's *emitted* line,
+///     never against a string rebuilt here;
+///   * the **store miss** raises `store.not-found` on the findings envelope, so the
+///     `(code, target)` key `design/command-output-contract.md` promises a driver for that
+///     code actually resolves at this door.
+///
+/// **The one byte the two doors do not share, and why.** The head sentence's parenthetical
+/// — *a singleton doctype … may be named bare* — is true at the nine `doc` doors, which
+/// expand a bare fixed-identity head, and **false here**: this door parses the address
+/// verbatim. The arm drives that divergence rather than asserting it from the source
+/// (`jigc doc show changelog` reaches `changelog:changelog`; `jigc task bind spec
+/// changelog <id>` is refused as malformed), so offering the bare spelling in this door's
+/// explanation would be a law-1 lie routing the caller into the same refusal.
+#[test]
+fn task_bind_refusals_carry_the_shared_guidance_and_the_store_not_found_key() {
+    let repo = TempDir::new("route-floor-repo");
+    init_repo(repo.path());
+    let home = TempDir::new("route-floor-home");
+
+    let mint = run(
+        repo.path(),
+        home.path(),
+        &[
+            "start",
+            "--workflow",
+            "implement-from-spec",
+            "implement the spec",
+        ],
+    );
+    assert!(
+        mint.status.success(),
+        "the implement-from-spec mint must succeed; stderr:\n{}",
+        stderr_of(&mint),
+    );
+    let task_id = "implement-the-spec";
+
+    // ── the grammar fault ────────────────────────────────────────────────────────────
+    let bind_bad = run(
+        repo.path(),
+        home.path(),
+        &["task", "bind", "spec", "padding", task_id],
+    );
+    assert_eq!(
+        bind_bad.status.code(),
+        Some(1),
+        "a malformed bind address refuses at exit 1",
+    );
+    let bind_rendered = streams(&bind_bad);
+    let show_bad = run(repo.path(), home.path(), &["doc", "show", "padding"]);
+    let show_rendered = streams(&show_bad);
+
+    assert_eq!(
+        sole_route_line(&bind_rendered, "`task bind spec padding`"),
+        sole_route_line(&show_rendered, "`doc show padding`"),
+        "the two doors answer one grammar fault with one route; got:\n{bind_rendered}\n---\n{show_rendered}",
+    );
+    let shared = "a doc is addressed as `<type>:<slug>`, e.g. `adr:single-node-cache`";
+    assert!(
+        bind_rendered.contains(shared) && show_rendered.contains(shared),
+        "both doors carry the shared head explanation; got:\n{bind_rendered}\n---\n{show_rendered}",
+    );
+
+    // The divergence, driven: the bare fixed-identity head IS an address at the `doc`
+    // door and is NOT one here, so this door's sentence may not offer it.
+    let show_bare = run(repo.path(), home.path(), &["doc", "show", "changelog"]);
+    assert!(
+        streams(&show_bare).contains("changelog:changelog"),
+        "`doc show changelog` must expand the bare head; got:\n{}",
+        streams(&show_bare),
+    );
+    let bind_bare = run(
+        repo.path(),
+        home.path(),
+        &["task", "bind", "spec", "changelog", task_id],
+    );
+    assert!(
+        streams(&bind_bare).contains("malformed address `changelog`"),
+        "`task bind` parses the address verbatim, so the bare head is malformed here; got:\n{}",
+        streams(&bind_bare),
+    );
+    assert!(
+        show_rendered.contains("may be named bare") && !bind_rendered.contains("may be named bare"),
+        "only the expanding door may offer the bare spelling; got:\n{bind_rendered}\n---\n{show_rendered}",
+    );
+
+    // ── the store miss ───────────────────────────────────────────────────────────────
+    let miss = run(
+        repo.path(),
+        home.path(),
+        &[
+            "task",
+            "bind",
+            "spec",
+            "spec:nope",
+            task_id,
+            "--format",
+            "json",
+        ],
+    );
+    assert_eq!(
+        miss.status.code(),
+        Some(1),
+        "a bind address that names no committed doc refuses at exit 1",
+    );
+    let envelope: serde_json::Value =
+        serde_json::from_str(streams(&miss).trim()).unwrap_or_else(|err| {
+            panic!(
+                "the miss must be the findings envelope, not a flattened \
+             `{{error}}`: {err}; got:\n{}",
+                streams(&miss)
+            )
+        });
+    let finding = &envelope["findings"][0];
+    assert_eq!(finding["code"], "store.not-found");
+    assert_eq!(finding["key"]["code"], "store.not-found");
+    assert_eq!(
+        finding["key"]["target"], "spec:nope",
+        "the key's target is the address the caller named; got:\n{envelope}",
+    );
+    // …and the route is followable, driven from the **emitted** bytes rather than rebuilt
+    // here: the backticked span of the finding's own route, run verbatim.
+    let route = finding["route"].as_str().expect("the refusal routes");
+    let span = route
+        .split('`')
+        .nth(1)
+        .unwrap_or_else(|| panic!("the route carries a command span; got: {route}"));
+    let argv: Vec<&str> = span.split_whitespace().skip(1).collect();
+    let followed = run(repo.path(), home.path(), &argv);
+    assert!(
+        followed.status.success(),
+        "the emitted route must run as printed (`{span}`); got:\n{}",
+        streams(&followed),
     );
 }

@@ -1089,7 +1089,8 @@ fn dropped_staged_docs(task: &TaskArea) -> Vec<render::DroppedStaged> {
 /// (`TaskArea::resolve` bails with the task-list route otherwise); (2) `<role>`
 /// is one of the task's workflow-declared `reads` roles, else reject listing the
 /// declared roles; (3) `<addr>` resolves in the committed store — its canonical
-/// `<location>/<slug>.md` exists at HEAD — else `no such doc <addr>`; (4) the
+/// `<location>/<slug>.md` exists at HEAD — else the blocking `store.not-found`
+/// [`no_committed_doc`] raises; (4) the
 /// target's doctype (the address's `<type>`) equals the role's declared `type`,
 /// else reject with the mismatch; (5) record the binding in the task's
 /// `roles.json` (last-write-wins). The agent supplies only the which-doc choice;
@@ -1692,6 +1693,52 @@ pub(crate) fn reject_fixed_identity_slug(
             " — a fixed-identity doctype has one instance at a fixed slug",
         )),
     ))
+}
+
+/// The blocking finding `jigc task bind` raises when its address names no **committed**
+/// doc — step 3b of the five-step enforcement (`design/write-commands.md` → Binding a
+/// context role), which shipped as a bare ``no such doc `<addr>` `` bail: no code, no
+/// locus, no route, and a flattened `{"error": …}` on `--format json` (M52 Increment 10 /
+/// T7; per-axis-review axis-6 §4 lead 2; settle-record D13 lead 6a).
+///
+/// **The code is reused, not minted.** `store.not-found` is what every read door already
+/// raises for this exact fact, and it is a code the contract lists under a declared target
+/// form — so a driver is promised its `(code, target)` key resolves.
+///
+/// **The arm is selection, not a decision taken here.** `design/command-output-contract.md`
+/// → *Which reject arm a run takes, in one rule* (M52 Increment 1): *a reject that carries
+/// a finding takes the findings arm; a reject with no finding behind it takes `{error}`*.
+/// This refusal carries one, so it takes that arm; the posture that admits the move from
+/// the flattened shape this door used to emit is the still-open pre-pin window, declared at
+/// that doc's *Evolution posture* — cited, not re-decided.
+///
+/// The message is this door's rather than the read doors': what a bind resolves is the
+/// committed store, so the sentence names that rule instead of inviting the caller to
+/// create the doc. `canonical` is `None` for a transient doctype, which has no committed
+/// home to name at all — the one cell where the *expected at* clause would be a guess.
+fn no_committed_doc(jigc_home: &Path, address: &Address, canonical: Option<&Path>) -> Finding {
+    let typed = address.to_string();
+    let expected = canonical
+        .map(|path| {
+            format!(
+                " (expected at `{}`)",
+                crate::render::repo_relative(jigc_home, path)
+            )
+        })
+        .unwrap_or_default();
+    Finding::graded(
+        Severity::Blocking,
+        "store.not-found",
+        format!(
+            "no committed doc `{typed}` to bind{expected} — a bind resolves in the committed \
+             store, and a doc that is only staged in an open task is not bindable"
+        ),
+        Some(Location::addressed(&typed, 1, 1)),
+        Some(engine::finding::Route::mechanical(
+            crate::doc::doctype_argv("list", address.r#type.as_str()),
+            " — the committed docs this doctype has",
+        )),
+    )
 }
 
 /// The blocking finding code a caller token longer than the OS name ceiling carries —
@@ -3145,7 +3192,9 @@ impl TaskArea {
     /// Loads the task's own minting workflow def (the `reads` declaration lives on
     /// its front-matter, the same source the resume re-compose reads), then:
     /// 2. `role` ∈ `def.reads` else reject, listing the declared roles;
-    /// 3. `<addr>` parses + its canonical committed path exists else `no such doc <addr>`;
+    /// 3. `<addr>` parses (a grammar fault answers with `cli::doc`'s shared guidance and
+    ///    route) + its canonical committed path exists, else [`no_committed_doc`]'s
+    ///    blocking `store.not-found`;
     /// 4. the address's `<type>` equals the role's declared `type` else the mismatch;
     /// 5. record `role -> <addr>` in `roles.json` (last-write-wins).
     ///
@@ -3168,8 +3217,18 @@ impl TaskArea {
         // Parse the address (it must name a `<type>:<slug>`), then ask whether the slug
         // head is a slug at all — the guard the ten `DoctypeArg::Address` doors share
         // (M50 Inc 2 / T1). This door's refusal was route-less; it gains the route with it.
-        let address = Address::parse(addr)
-            .map_err(|err| anyhow::anyhow!("malformed address `{addr}`: {err}"))?;
+        //
+        // The grammar fault composes through `cli::doc`'s single guidance home (M52
+        // Increment 10 / T7; per-axis-review axis-6 §4 lead 2 — both of this door's
+        // refusals were bare `anyhow` bails, *"the last inch of DEFECT A6-3's dead end"*),
+        // so the explanation and the route are the ones `jigc doc show` emits for the same
+        // fault and cannot drift from them. The address is handed over **twice** because
+        // this door does not expand a bare fixed-identity head: what it parses *is* what
+        // the caller typed, and `BareHead::Verbatim` is what keeps the head sentence from
+        // offering a spelling `Address::parse` refuses here.
+        let address = Address::parse(addr).map_err(|err| {
+            crate::doc::malformed_address_error(addr, addr, &err, crate::doc::BareHead::Verbatim)
+        })?;
         reject_malformed_slug_head(addr, address.slug.as_str())?;
 
         // Step 3a — an **unknown doctype** is its own fault, and it used to be folded into
@@ -3205,10 +3264,13 @@ impl TaskArea {
         // Step 3b — the addr must resolve in the committed store: its canonical
         // `<location>/<slug>.md` must exist (identity is the path). A transient
         // (location-less) type has no committed path → unresolved.
-        let resolves = canonical_path(&self.jigc_home, schema, address.slug.as_str())
-            .is_some_and(|path| path.is_file());
-        if !resolves {
-            bail!("no such doc `{addr}`");
+        let committed = canonical_path(&self.jigc_home, schema, address.slug.as_str());
+        if !committed.as_deref().is_some_and(Path::is_file) {
+            return Err(crate::render::envelope_finding_error(&no_committed_doc(
+                &self.jigc_home,
+                &address,
+                committed.as_deref(),
+            )));
         }
 
         // Step 4 — the target's doctype must equal the role's declared `type`.
