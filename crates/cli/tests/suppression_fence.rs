@@ -498,3 +498,240 @@ fn retarget_door(pack: &Path, workflow: &str, door: &str) {
     );
     fs::write(&path, out).expect("write the retargeted workflow");
 }
+
+// ---------------------------------------------------------------------------
+// The door-shape **axis** (M52 Increment 9, the validate→fix loop's B2).
+//
+// The parse half above shipped with its subject set to the manifest-shipping
+// origin packs — `origin_packs(Config, schema-manifest)`, the scope every
+// sibling pack-load fence uses. That scope is right for a fence over what a
+// pack *states* and wrong for one over a *door*: a declared door is the argv
+// the compose-door refusal renders as its `Mechanical` route, whose own check
+// is a **debug-only panic**. So two layers that serve workflow definitions were
+// never parse-checked, and both were driven at `c6b45da0` before this axis was
+// written — `jigc start --workflow <id>` panicked at exit **101** (release:
+// emitted a route that cannot run) for a **project-layer** shadow and for a
+// **manifest-less listed pack** alike.
+//
+// The axis below is **manufactured, and says so**: *which layer served the
+// definition* is a property of how a composition is assembled, not a set any
+// code-side registry holds — `origin_packs` enumerates the constituents of one
+// assembly and the project layer is not a pack at all.
+// ---------------------------------------------------------------------------
+
+/// The layers a workflow definition can be served from — the axis the door-shape
+/// fence's subject must cover, and the reason the fence's scope is wider than
+/// every other pack-load fence's.
+#[derive(Clone, Copy, Debug)]
+enum DoorLayer {
+    /// A `JIGC_PACK_DIR` copy of the dev pack: ships `config/schema-manifest.yaml`,
+    /// so it is the **one** layer the pre-fix subject reached.
+    ManifestShippingPack,
+    /// A `packs.yaml`-listed pack shipping **no** manifest — outside every
+    /// statement-shaped pack-load fence by the `assert_schema_freeze` opt-in
+    /// precedent, and inside this one because its door is still served.
+    ManifestLessListedPack,
+    /// `.jigc/config/workflows/<id>.yaml` — the whole-file definition shadow that
+    /// **outranks every pack** (`design/overrides.md` → Authored metadata on a
+    /// definition resolves by whole-file shadow).
+    ProjectShadow,
+}
+
+impl DoorLayer {
+    /// The two layers the pre-fix subject **missed** lead, deliberately: a red here
+    /// should name the cell that panicked the binary, not the one that merely failed
+    /// to say which layer it was refusing.
+    const ALL: &'static [DoorLayer] = &[
+        DoorLayer::ProjectShadow,
+        DoorLayer::ManifestLessListedPack,
+        DoorLayer::ManifestShippingPack,
+    ];
+
+    /// The token the refusal must carry to name **which layer** declared the door.
+    fn named_in_refusal(self) -> &'static str {
+        match self {
+            // The dev pack copy's own `config/defaults` pack-id.
+            DoorLayer::ManifestShippingPack => "pack `dev`",
+            DoorLayer::ManifestLessListedPack => "pack `probe-listed`",
+            DoorLayer::ProjectShadow => ".jigc/config/workflows/",
+        }
+    }
+
+    /// The workflow whose `door:` this layer carries.
+    fn workflow(self) -> &'static str {
+        match self {
+            // The shipped verb-routed member, retargeted in the copy.
+            DoorLayer::ManifestShippingPack => "migrate-adr",
+            DoorLayer::ManifestLessListedPack | DoorLayer::ProjectShadow => "probe-door",
+        }
+    }
+}
+
+/// Three malformed doors, one per way a door can fail the **parse** half while
+/// passing the engine's lexical half (which sees only `jigc`-leading + shell-inert
+/// tokens): an unknown verb, a `<placeholder>` outside the declared substitution
+/// table, and a bare `jigc` naming no subcommand at all.
+const MALFORMED_DOORS: &[(&str, &str)] = &[
+    ("unknown-verb", "jigc migraaate <path> --as adr"),
+    ("undeclared-placeholder", "jigc migrate <päth> --as adr"),
+    ("no-subcommand", "jigc"),
+];
+
+/// The well-formed control — a door the real CLI accepts.
+const WELL_FORMED_DOOR: &str = "jigc migrate <path> --as adr";
+
+/// A workflow definition whose `suppressed:` block declares `door`.
+fn door_workflow_source(door: &str) -> String {
+    format!(
+        "---\n\
+         when: probe one layer's declared door\n\
+         description: A manufactured verb-routed workflow for the door-shape axis.\n\
+         usage: probe.\n\
+         creates-task: true\n\
+         selectable: false\n\
+         suppressed:\n  \
+           reason: verb-routed — reached only through its own verb\n  \
+           expires: never\n  \
+           door: {door}\n\
+         ---\n\
+         {{{{ include: step:locate }}}}\n"
+    )
+}
+
+/// Stand one layer up carrying `door` and run a composing `jigc start` against it.
+/// The two `TempDir`s live until the child has exited, which is all the assertions
+/// read.
+fn drive_door_cell(layer: DoorLayer, door: &str) -> std::process::Output {
+    let repo = TempDir::new("axis-repo");
+    let home = TempDir::new("axis-home");
+    init_repo(repo.path());
+    match layer {
+        DoorLayer::ManifestShippingPack => {
+            let pack = pack_copy("axis-pack", &embedded_pack_tree());
+            retarget_door(pack.path(), layer.workflow(), door);
+            run_with_pack(repo.path(), home.path(), pack.path(), START)
+        }
+        DoorLayer::ManifestLessListedPack => {
+            let listed = TempDir::new("axis-listed");
+            fs::create_dir_all(listed.path().join("workflows")).expect("create listed workflows");
+            fs::create_dir_all(listed.path().join("config")).expect("create listed config");
+            fs::write(
+                listed.path().join("config").join("defaults.yaml"),
+                "pack-id: probe-listed\n",
+            )
+            .expect("write the listed pack id");
+            fs::write(
+                listed
+                    .path()
+                    .join("workflows")
+                    .join(format!("{}.yaml", layer.workflow())),
+                door_workflow_source(door),
+            )
+            .expect("write the listed workflow");
+            fs::write(
+                repo.path().join(".jigc").join("config").join("packs.yaml"),
+                format!("packs:\n  - {}\n", listed.path().display()),
+            )
+            .expect("write packs.yaml");
+            run_embedded(repo.path(), home.path(), START)
+        }
+        DoorLayer::ProjectShadow => {
+            let dir = repo.path().join(".jigc").join("config").join("workflows");
+            fs::create_dir_all(&dir).expect("create the project workflows dir");
+            fs::write(
+                dir.join(format!("{}.yaml", layer.workflow())),
+                door_workflow_source(door),
+            )
+            .expect("write the project workflow shadow");
+            run_embedded(repo.path(), home.path(), START)
+        }
+    }
+}
+
+/// The axis: **every** layer × **every** malformed door is refused at pack-load,
+/// naming the workflow, the code and the layer — and refused as a *finding*, never
+/// as the `Route::mechanical` construction panic the pre-fix project-layer and
+/// listed-pack cells exited 101 with.
+#[test]
+fn every_layer_that_serves_a_workflow_has_its_declared_door_parse_checked() {
+    for &layer in DoorLayer::ALL {
+        for (tag, door) in MALFORMED_DOORS {
+            let out = drive_door_cell(layer, door);
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            assert!(
+                !out.status.success(),
+                "{layer:?} / {tag}: a door that does not parse must refuse; stdout:\n{}\nstderr:\n{stderr}",
+                String::from_utf8_lossy(&out.stdout),
+            );
+            assert!(
+                !stderr.contains("panicked") && out.status.code() != Some(101),
+                "{layer:?} / {tag}: the refusal must be a finding, never a construction panic; \
+                 exit {:?}; stderr:\n{stderr}",
+                out.status.code(),
+            );
+            assert!(
+                stderr.contains(layer.workflow())
+                    && stderr.contains("workflow-refs.suppressed-malformed")
+                    && stderr.contains(layer.named_in_refusal()),
+                "{layer:?} / {tag}: the refusal must name the workflow, the code and the layer \
+                 (`{}`); stderr:\n{stderr}",
+                layer.named_in_refusal(),
+            );
+        }
+    }
+}
+
+/// The control, one per layer: a **well-formed** door on the same layer loads clean
+/// — the fence refuses unparseable doors, not declared ones.
+#[test]
+fn a_well_formed_door_loads_clean_on_every_layer() {
+    for &layer in DoorLayer::ALL {
+        let out = drive_door_cell(layer, WELL_FORMED_DOOR);
+        assert!(
+            out.status.success(),
+            "{layer:?}: a well-formed door must load clean; stdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr),
+        );
+    }
+}
+
+/// The finding's own repro, kept as its own cell because the axis above never
+/// composes the workflow whose door is malformed: a project shadow **of a shipped
+/// id** (`single-task`) declaring an unparseable door, named to the compose door
+/// that would render it as a `Mechanical` route. At `c6b45da0` this exited **101**
+/// with `a `Route::mechanical` argv must parse against the real CLI` — the fence
+/// having never looked at this layer. It must refuse as a finding instead, in the
+/// debug posture this suite runs in and in release alike.
+#[test]
+fn a_project_shadow_of_a_shipped_workflow_refuses_its_unparseable_door_rather_than_panicking() {
+    let repo = TempDir::new("repro-repo");
+    let home = TempDir::new("repro-home");
+    init_repo(repo.path());
+    let dir = repo.path().join(".jigc").join("config").join("workflows");
+    fs::create_dir_all(&dir).expect("create the project workflows dir");
+    fs::write(
+        dir.join("single-task.yaml"),
+        door_workflow_source("jigc migraaate <path> --as adr"),
+    )
+    .expect("write the project shadow");
+
+    let out = run_embedded(repo.path(), home.path(), START);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "the composed door must refuse at exit 1, never panic (101); stdout:\n{}\nstderr:\n{stderr}",
+        String::from_utf8_lossy(&out.stdout),
+    );
+    assert!(
+        !stderr.contains("panicked"),
+        "the refusal must not be a `Route::mechanical` construction panic; stderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("single-task")
+            && stderr.contains("workflow-refs.suppressed-malformed")
+            && stderr.contains(".jigc/config/workflows/"),
+        "the refusal must name the workflow, the code and the project layer; stderr:\n{stderr}",
+    );
+}

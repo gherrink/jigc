@@ -841,6 +841,38 @@ fn read_named_workflow(
     if let Some(suppressed) = def.suppressed.as_ref()
         && let Some(door) = suppressed.door.as_deref()
     {
+        let argv = engine::compose::Suppressed::door_argv(door);
+        // **Belt and braces, in both postures.** `Route::mechanical`'s own parse check is a
+        // debug-only *panic*, so a door that reaches this line without having passed the
+        // pack-load fence ([`crate::pack`] → `assert_workflow_doors` /
+        // `assert_project_workflow_doors`) would crash a debug build at exit 101 and emit an
+        // unrunnable route in release. Driven at `c6b45da0`, that is exactly what a
+        // project-layer workflow shadow did, because the parse fence's subject was the
+        // manifest-shipping origin packs alone. The fence's subject is now every layer a
+        // definition can be served from — and this door asks the same question again anyway,
+        // in **every** posture, because a producer that cannot prove its argv parses must not
+        // construct the route: the refusal is a blocking finding naming the workflow and the
+        // layer that declared the door, never a panic and never a route that does not run.
+        if !crate::route_fence::accepts(&argv) {
+            let layer = defs
+                .origin_pack_id(pack, PackResourceKind::Workflows, workflow_id)
+                .map_or_else(
+                    || format!("the project layer's `.jigc/config/workflows/{workflow_id}.yaml`"),
+                    |pack_id| format!("pack `{pack_id}`"),
+                );
+            return Err(finding_to_err(Finding::block(
+                engine::compose::SUPPRESSED_MALFORMED_CODE,
+                format!(
+                    "workflow `{workflow_id}` ({layer}) declares `suppressed.door: {door}`, \
+                     which does not parse against the real CLI — so the door it names is a \
+                     command that cannot run"
+                ),
+                format!(
+                    "correct the `door:` in `{workflow_id}`'s front-matter to the command line \
+                     the workflow is actually reached through"
+                ),
+            )));
+        }
         return Err(crate::render::envelope_finding_error(&Finding::graded(
             Severity::Blocking,
             VERB_ROUTED_CODE,
@@ -853,10 +885,7 @@ fn read_named_workflow(
                 1,
                 1,
             )),
-            Some(engine::finding::Route::mechanical(
-                engine::compose::Suppressed::door_argv(door),
-                "",
-            )),
+            Some(engine::finding::Route::mechanical(argv, "")),
         )));
     }
     Ok(def)

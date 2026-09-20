@@ -745,22 +745,6 @@ fn assert_workflow_front_matter(pack: &dyn PackSource) -> anyhow::Result<()> {
                     id.as_str(),
                 );
             }
-            if let Some(door) = def.suppressed.as_ref().and_then(|s| s.door.as_deref()) {
-                let argv = engine::compose::Suppressed::door_argv(door);
-                if !crate::route_fence::accepts(&argv) {
-                    anyhow::bail!(
-                        "pack-load suppression fence failed \
-                         (workflow-refs.suppressed-malformed): workflow `{}` declares \
-                         `suppressed.door: {door}`, which does not parse against the real \
-                         CLI — a declared door is a command line an agent is handed, so one \
-                         that does not parse names a command that cannot run \
-                         (design/surface-contract.md → The suppression fence)\n\
-                         route: correct the `door:` in the workflow's front-matter to the \
-                         command line the workflow is actually reached through",
-                        id.as_str(),
-                    );
-                }
-            }
             if def.creates_task && def.selectable {
                 for (field, value) in [
                     ("when", &def.when),
@@ -783,6 +767,130 @@ fn assert_workflow_front_matter(pack: &dyn PackSource) -> anyhow::Result<()> {
                 }
             }
         }
+    }
+    Ok(())
+}
+
+/// The **door-shape fence**, one home for both of its subjects — the parse half of the
+/// `suppressed.door` check (`design/surface-contract.md` → The suppression fence; M52
+/// Increment 9 / T1, widened here from the manifest-shipping constituents to every layer
+/// a composition serves a workflow definition from).
+///
+/// A declared `door:` is the argv `crate::start::read_named_workflow` renders as the
+/// verb-routed refusal's `Mechanical` route — bytes an agent is handed — so a door that
+/// does not parse against the real CLI names a command that cannot run. The engine's
+/// lexical half ([`engine::compose`] → `validate_suppressed`) passes such a door by
+/// construction: it can see that the line leads with `jigc` and that every token is
+/// shell-inert, and it is clap-blind by layering, so only this seam can ask whether the
+/// verb exists. Refused with the block's own `workflow-refs.suppressed-malformed`,
+/// naming the workflow **and the layer that declared it**.
+fn door_parse_failure(workflow: &str, layer: &str, door: &str) -> anyhow::Error {
+    let code = engine::compose::SUPPRESSED_MALFORMED_CODE;
+    anyhow::anyhow!(
+        "pack-load suppression fence failed ({code}): workflow `{workflow}` ({layer}) \
+         declares `suppressed.door: {door}`, which does not parse against the real CLI — a \
+         declared door is a command line an agent is handed, so one that does not parse \
+         names a command that cannot run \
+         (design/surface-contract.md → The suppression fence)\n\
+         route: correct the `door:` in the workflow's front-matter to the command line the \
+         workflow is actually reached through"
+    )
+}
+
+/// Check one declared door, or `Ok(())` when the workflow declares none.
+fn assert_door_parses(
+    workflow: &str,
+    layer: &str,
+    def: &engine::compose::WorkflowDef,
+) -> anyhow::Result<()> {
+    let Some(door) = def.suppressed.as_ref().and_then(|s| s.door.as_deref()) else {
+        return Ok(());
+    };
+    // Asked as a **question**, never by constructing a `Route::mechanical`, whose own fence
+    // is a debug-only panic — which is exactly the defect this fence exists to prevent.
+    if crate::route_fence::accepts(&engine::compose::Suppressed::door_argv(door)) {
+        return Ok(());
+    }
+    Err(door_parse_failure(workflow, layer, door))
+}
+
+/// The **pack half** of the door-shape fence: every constituent that ships a workflow id,
+/// not only the manifest-shipping ones.
+///
+/// **Why its subject is wider than every sibling pack-load fence's.** The suppression
+/// *presence* fence, the catalog shape fence and the four stated-at tiers are all scoped to
+/// manifest-shipping constituents by the [`assert_schema_freeze`] opt-in precedent — a pack
+/// opts into being held to what it *states*, and a manifest-less seeded / project-local pack
+/// stays on `introspection.md`'s skip-on-absent. That opt-in is right for a *statement* and
+/// wrong for a *door*: the failure mode here is not an absent narration but an emitted
+/// command line that cannot run — in a debug build, a panic at exit 101 before any verb
+/// dispatches. Driven at `c6b45da0`, a manifest-less **listed** pack whose workflow declared
+/// `door: jigc migraaate <path> --as adr` panicked `jigc start --workflow <that workflow>`
+/// exactly as the project-layer shadow did. So the subject of *this* half is the
+/// composition, and a constituent cannot opt out of it by shipping no manifest.
+///
+/// Every owner of an id is checked, not only the precedence winner, for the reason
+/// [`PackSource::origin_packs`] exists: a loser's door is one `packs.yaml` reorder away from
+/// being the served one.
+///
+/// A definition that does not **load** is skipped here rather than raised: malformed
+/// front-matter is [`assert_workflow_front_matter`]'s subject where a pack opted in, and the
+/// lazy compose-path read's everywhere else. This fence answers one question only.
+fn assert_workflow_doors(pack: &dyn PackSource) -> anyhow::Result<()> {
+    for id in pack.list(PackResourceKind::Workflows) {
+        for owner in pack.origin_packs(PackResourceKind::Workflows, &id) {
+            let Ok(bytes) = owner.read(PackResourceKind::Workflows, &id) else {
+                continue;
+            };
+            let Ok(def) = engine::compose::load_workflow_def(&bytes) else {
+                continue;
+            };
+            let pack_id = owner.own_pack_id();
+            let layer = if pack_id.is_empty() {
+                format!("the pack at {}", owner.resolving_path())
+            } else {
+                format!("pack `{pack_id}`")
+            };
+            assert_door_parses(id.as_str(), &layer, &def)?;
+        }
+    }
+    Ok(())
+}
+
+/// The **project-layer arm** of the door-shape fence — the sibling of
+/// [`assert_project_schema_shadows`], and for the same reason: `.jigc/config/workflows/
+/// <id>.yaml` is a whole-file definition shadow (`design/overrides.md` → Authored metadata
+/// on a definition resolves by whole-file shadow) that **outranks every pack**, so it is the
+/// definition every door adjudicates against. Every file in that dir is project-owned by
+/// construction (`crate::start::project_workflow_ids` feeds `OverrideLayer::shadow_file`, and
+/// project is the highest layer), so the enumeration is exact rather than conservative.
+///
+/// Driven at `c6b45da0`: a project shadow of `single-task` declaring
+/// `door: jigc migraaate <path> --as adr` panicked the debug binary at exit **101** and, in
+/// release, emitted a route an agent cannot run — the parse half had never looked at this
+/// layer, because its only subject was `origin_packs(Config, schema-manifest)`.
+///
+/// Deliberately **not** memoized with the pack sweeps: its subject is filesystem-live and
+/// CWD-discovered, so a cached verdict could answer for a different repository.
+///
+/// `None` (no discoverable project config) is the cold-start floor — nothing to check.
+fn assert_project_workflow_doors(project_config: Option<&Path>) -> anyhow::Result<()> {
+    let Some(project_config) = project_config else {
+        return Ok(());
+    };
+    for id in crate::start::project_workflow_ids(project_config) {
+        let path = project_config.join("workflows").join(format!("{id}.yaml"));
+        // Unreadable / malformed is the use-site's to raise, with the path-bearing message
+        // `CascadeDefs::project_def` already carries — never silently swallowed there, and
+        // not this fence's question.
+        let Ok(bytes) = std::fs::read(&path) else {
+            continue;
+        };
+        let Ok(def) = engine::compose::load_workflow_def(&bytes) else {
+            continue;
+        };
+        let layer = format!("the project layer's `.jigc/config/workflows/{id}.yaml`");
+        assert_door_parses(&id, &layer, &def)?;
     }
     Ok(())
 }
@@ -1864,7 +1972,10 @@ pub fn make_pack() -> anyhow::Result<Box<dyn PackSource>> {
     assert_ref_targets_resolve(pack.as_ref(), project_config.as_deref())?;
 
     // The eager front-matter sweeps (M43, `design/surface-contract.md` → The
-    // fences): the workflow sweep (suppression + catalog shape) and the step
+    // fences): the workflow sweep (suppression + catalog shape), the door-shape
+    // fence beside it ([`assert_workflow_doors`], whose subject is every
+    // constituent rather than the manifest-shipping ones — see its own scope
+    // statement), and the step
     // sweeps — the stated-at fence's ambush-class tier ([`assert_stated_at`]),
     // its M44 per-soliciting-step tier ([`assert_singleton_copy_in_stated`]), and
     // its M48 write-solicit tier ([`assert_staged_read_back_stated`], which owes the
@@ -1882,6 +1993,7 @@ pub fn make_pack() -> anyhow::Result<Box<dyn PackSource>> {
         EMBEDDED_SWEEPS[usize::from(compose_methodology)]
             .get_or_init(|| {
                 assert_workflow_front_matter(pack.as_ref())
+                    .and_then(|()| assert_workflow_doors(pack.as_ref()))
                     .and_then(|()| assert_stated_at(pack.as_ref()))
                     .and_then(|()| assert_singleton_copy_in_stated(pack.as_ref()))
                     .and_then(|()| assert_staged_read_back_stated(pack.as_ref()))
@@ -1892,11 +2004,16 @@ pub fn make_pack() -> anyhow::Result<Box<dyn PackSource>> {
             .map_err(|msg| anyhow::anyhow!(msg))?;
     } else {
         assert_workflow_front_matter(pack.as_ref())?;
+        assert_workflow_doors(pack.as_ref())?;
         assert_stated_at(pack.as_ref())?;
         assert_singleton_copy_in_stated(pack.as_ref())?;
         assert_staged_read_back_stated(pack.as_ref())?;
         assert_named_facts_stated(pack.as_ref())?;
     }
+    // The door-shape fence's **project-layer arm**, outside the memoized block on purpose
+    // ([`assert_project_workflow_doors`]): the project layer is filesystem-live and
+    // CWD-discovered, so it is the one subject a per-composition cache must not answer for.
+    assert_project_workflow_doors(project_config.as_deref())?;
     Ok(pack)
 }
 

@@ -198,6 +198,13 @@ struct SuppressedFrontMatter {
     door: Option<String>,
 }
 
+/// The `suppressed:` block's own malformed-shape code — **one home**, because it is raised
+/// from three places across two crates: the lexical half here, the CLI pack-load seam's
+/// parse half over every layer a definition can be served from (`crate::pack` →
+/// `assert_workflow_doors` / `assert_project_workflow_doors`), and the compose door's own
+/// re-check before it builds a route from a declared door.
+pub const SUPPRESSED_MALFORMED_CODE: &str = "workflow-refs.suppressed-malformed";
+
 /// Shape-check an authored `suppressed:` block into [`Suppressed`] (M43 law 2,
 /// `surface-contract.md` → The suppression fence). `reason` and `expires` are
 /// required and non-blank; `expires` is carried verbatim (`never` or a
@@ -211,11 +218,17 @@ struct SuppressedFrontMatter {
 /// engine so a project-layer workflow shadow is covered by the same rule. The
 /// half this layer structurally cannot ask, whether the argv **parses against
 /// the real CLI**, is asked at the CLI pack-load seam (`crate::pack` →
-/// `assert_workflow_front_matter`), which alone can see the verb tree.
+/// `assert_workflow_doors` and its project-layer arm
+/// `assert_project_workflow_doors`), which alone can see the verb tree — over
+/// **every** layer a definition is served from, this shadow included. Through
+/// M52 Increment 9 / T1 that half lived in `assert_workflow_front_matter`,
+/// whose subject is the manifest-shipping origin packs, so the sentence above
+/// was true of the lexical half only and a project shadow's unparseable door
+/// reached the composing door unchecked.
 fn validate_suppressed(block: SuppressedFrontMatter) -> Result<Suppressed, Finding> {
     let malformed = |msg: &str| {
         blocking_workflow_refs(
-            "workflow-refs.suppressed-malformed",
+            SUPPRESSED_MALFORMED_CODE,
             format!("workflow front-matter `suppressed:` block is malformed: {msg}"),
             Location::at(1, 1),
         )
