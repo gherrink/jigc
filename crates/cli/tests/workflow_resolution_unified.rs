@@ -250,19 +250,18 @@ const READ_CALLEES: &[&str] = &["read", "read_pack", "read_text"];
 ///   the Form-D `workflow-refs.unknown-workflow` mapping answers a *caller-typed* `<X>`,
 ///   while a *recorded* id the packs no longer ship owes the `pack.resource-missing`
 ///   answer that names what was searched — `pack_resource_miss_axis` site 4.)
-/// - `start.rs::selectable_workflows` is a **stated exemption, not an oversight**: its
-///   subject is the whole catalog (`pack.list` → the `catalog` data-value root and the
-///   `jigc start` menu), not a recorded id, and it is shadow-blind — driven at
-///   `0c2c2f7d`, `jigc start` printed the *pack's* `when` for a shipped id the project
-///   layer shadows with a different one. Repairing it threads `project_config` through
-///   four callers and moves what `jigc start` *offers*, which is a surface change with
-///   its own acceptance; it is recorded here so the next reader finds a driven lead
-///   rather than a silence.
+///
+/// **`start.rs::selectable_workflows` is no longer among them.** It rode here as a stated
+/// exemption carrying its own driven lead — `jigc start` printed the *pack's* `when` for a
+/// shipped id the project layer shadows — and M52 Increment 10 / T8 spent it: the router
+/// catalog reads each definition through [`CascadeDefs::read_workflow`] like every other
+/// composing surface, so the three arms below are the whole list. The datum that retired
+/// the row is re-driven at
+/// `the_catalog_hides_a_workflow_the_resolved_definition_suppresses`.
 const ALLOWED: &[(&str, &str)] = &[
     ("pack.rs", "*"),
     ("start.rs", "read_workflow"),
     ("start.rs", "resolved_workflow"),
-    ("start.rs", "selectable_workflows"),
 ];
 
 /// Every production workflow read in `crates/cli/src` goes through the one resolver.
@@ -370,5 +369,113 @@ fn the_pack_only_workflow_seam_has_one_caller_and_it_is_the_resolver() {
          {} offending caller(s):\n{}",
         offenders.len(),
         offenders.join("\n"),
+    );
+}
+
+/// A project-layer shadow of the shipped `quick-fix` id that **hides** it: the pack's
+/// copy is `selectable: true` with its own `when`, this one declares `selectable: false`
+/// plus the `suppressed:` block the pack-load fence requires — including a `door:`, which
+/// is what makes the two composing doors refuse it by name.
+const HIDING_SHADOW: &str = "\
+---
+when: the project layer's own selection hint
+description: A project-layer shadow that hides the id from the router catalog.
+usage: the catalog-membership cell.
+creates-task: true
+selectable: false
+suppressed:
+  reason: this shadow is reached through its own door
+  expires: never
+  door: jigc migrate <path> --as adr
+---
+{{ include: step:locate }}
+{{ include: step:author-commit }}
+{{ include: step:finalize }}
+";
+
+/// A project-layer shadow of `quick-fix` that changes **only** the `when` selection hint
+/// — still `creates-task: true`, still selectable, no `suppressed:` block. The catalog
+/// must therefore still list the id, with the project's text rather than the pack's.
+const WHEN_REWORDING_SHADOW: &str = "\
+---
+when: the project layer's own selection hint
+description: A project-layer shadow that rewords only the selection hint.
+usage: the catalog-text cell.
+creates-task: true
+allows-create: [{type: adr, as: decision}]
+---
+{{ include: step:locate }}
+{{ include: step:author-commit }}
+{{ include: step:finalize }}
+";
+
+/// The pack's own `quick-fix` selection hint — the text the catalog printed for a
+/// shadowed id before the fix, quoted here so a pack reword reddens this arm rather than
+/// letting it pass vacuously.
+const PACK_QUICK_FIX_WHEN: &str = "apply a small commit-only fix";
+
+/// `start::selectable_workflows` — the router catalog offers only what the composing
+/// doors will bind.
+///
+/// Driven at HEAD (2026-09-20): over a project shadow of `quick-fix` declaring
+/// `selectable: false` + `suppressed.door`, `jigc describe --workflows` reported it
+/// *hidden from the router catalog* and `jigc start --workflow quick-fix "probe"` refused
+/// `workflow.verb-routed` at exit 1 — while bare `jigc start` listed it anyway, under the
+/// **pack's** `when`. The catalog read `pack.list` → `read_pack`, the one production
+/// workflow read that never went through the cascade.
+#[test]
+fn the_catalog_hides_a_workflow_the_resolved_definition_suppresses() {
+    let corpus = TrialCorpus::build(State::Fresh);
+
+    // The omitting context first: with no shadow, the id is offered under the pack's own
+    // hint — so the assertion below is about the shadow, not about an empty catalog.
+    let unshadowed = corpus.jigc_ok(&["start"]);
+    assert!(
+        unshadowed.contains("- quick-fix — ") && unshadowed.contains(PACK_QUICK_FIX_WHEN),
+        "with no project shadow the catalog offers `quick-fix` under the pack's hint:\n\
+         {unshadowed}",
+    );
+
+    write_project_layer_workflow(&corpus, "quick-fix", HIDING_SHADOW);
+    let listed = corpus.jigc_ok(&["start"]);
+    assert!(
+        !listed.contains("- quick-fix — "),
+        "the resolved definition is `selectable: false`, so the catalog must not offer \
+         `quick-fix`:\n{listed}",
+    );
+
+    // …and the door the catalog would have sent the reader to still refuses it, so the
+    // two cannot disagree in either direction.
+    let refused = corpus.jigc(&["start", "--workflow", "quick-fix", "probe"]);
+    let printed = format!(
+        "{}{}",
+        String::from_utf8_lossy(&refused.stdout),
+        String::from_utf8_lossy(&refused.stderr),
+    );
+    assert!(
+        !refused.status.success() && printed.contains("workflow.verb-routed"),
+        "the composing door refuses the same definition the catalog now withholds; got \
+         exit {:?}:\n{printed}",
+        refused.status.code(),
+    );
+}
+
+/// The other half of the same read: a shadow that changes only the `when` is still
+/// offered — with the **project's** hint, which is the text the pack's copy does not
+/// carry. A catalog that dropped every shadowed id would pass the arm above and fail
+/// here.
+#[test]
+fn the_catalog_prints_the_resolved_definitions_selection_hint() {
+    let corpus = TrialCorpus::build(State::Fresh);
+    write_project_layer_workflow(&corpus, "quick-fix", WHEN_REWORDING_SHADOW);
+
+    let listed = corpus.jigc_ok(&["start"]);
+    assert!(
+        listed.contains("- quick-fix — the project layer's own selection hint"),
+        "the catalog prints the resolved definition's `when`:\n{listed}",
+    );
+    assert!(
+        !listed.contains(PACK_QUICK_FIX_WHEN),
+        "the pack's shadowed hint is gone from the catalog:\n{listed}",
     );
 }

@@ -25,7 +25,7 @@
 
 use crate::locate::{self, RunContext};
 use crate::pack::make_pack;
-use crate::start::selectable_workflows;
+use crate::start::{CascadeDefs, resolve_severity_cascade, selectable_workflows};
 use anyhow::{Context, Result};
 use engine::cascade::{self, OverrideLayer, PackDefaultLayer};
 use engine::knobs::load_knobs;
@@ -101,7 +101,17 @@ fn orient_with(ctx: &RunContext, pack: &dyn PackSource) -> Result<OrientationVie
     // workflows — the same increment-1 filter the front door feeds the router's
     // `{{catalog}}` — so a bare-`start` reader sees the workflows a router selects
     // among, never the router itself (`workflow-dialect.md` → Workflow selection).
-    let catalog = Catalog::new(selectable_workflows(pack)?);
+    //
+    // The catalog reads each definition through the cascade, so the entries are the
+    // ones the composing doors will bind (M52 Increment 10 / T8). It resolves its own
+    // [`CascadeDefs`] rather than reusing the layers resolved just above: those carry a
+    // deliberately **empty** project layer (this door needs the provenance header, not
+    // the project's deltas), so `file_owner` there answers `PackDefault` for every id
+    // and a project whole-file shadow would lose — which is the defect, one resolution
+    // further out.
+    let defs_resolved = resolve_severity_cascade(pack, project_config)?;
+    let defs = CascadeDefs::new(&defs_resolved, project_config);
+    let catalog = Catalog::new(selectable_workflows(pack, &defs)?);
 
     // Off-catalog discoverability (G6): name each off-catalog entry verb **iff**
     // the composed pack-set actually ships it — gated on `pack.list(Workflows)`

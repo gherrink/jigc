@@ -1199,7 +1199,7 @@ pub(crate) fn compose_migrate_in_repo(
 
     let origin = pack.origin_pack(PackResourceKind::Workflows, &ResourceId::from(workflow_id));
     let commands = load_catalog(origin)?;
-    let selectable = selectable_workflows(pack)?;
+    let selectable = selectable_workflows(pack, &defs)?;
     let schemas = defs.all_schemas(pack)?;
     let store_feed = committed_store(repo_root, &schemas);
 
@@ -1436,7 +1436,7 @@ fn compose_core(
     // The selectable-workflow list both arms feed to composition — the router's
     // `{{catalog}}` input, filtered to `creates-task: true` so it never lists
     // itself or any other `creates-task: false` workflow.
-    let selectable = selectable_workflows(pack)?;
+    let selectable = selectable_workflows(pack, defs)?;
     // The committed managed store both arms feed — the `{{store.<doctype>}}` input,
     // enumerated from the committed `<location>/<slug>.md` instances (CLI locates,
     // engine resolves). Schemas resolve through the cascade so a project
@@ -2061,10 +2061,28 @@ fn load_fills(project_config: &Path, slot_fills: &[SlotFillDelta]) -> Result<Res
 /// that cannot commit. A *selectable* workflow that declares no `when` is a
 /// definition bug, surfaced as a clear, id-bearing error; a non-selectable one
 /// need carry no `when`.
-pub(crate) fn selectable_workflows(pack: &dyn PackSource) -> Result<Vec<CatalogEntry>> {
+///
+/// **Each definition is read through the cascade** ([`CascadeDefs::read_workflow`]), so a
+/// project-layer whole-file shadow decides both halves of the entry — whether the id is
+/// offered at all, and the `when` it is offered under. Driven at HEAD before this
+/// (2026-09-20): over a project shadow of `quick-fix` declaring `selectable: false` +
+/// `suppressed.door`, `describe --workflows` said *hidden from the router catalog* and
+/// `jigc start --workflow quick-fix` refused `workflow.verb-routed`, while bare `jigc
+/// start` listed it anyway under the **pack's** `when` — the catalog offering a route two
+/// other doors refuse (`surface-contract.md` → law 1). This was the last production
+/// workflow read that did not go through the resolver, carried as a stated exemption in
+/// `tests/workflow_resolution_unified.rs`'s `ALLOWED`; that row is retired with this datum.
+///
+/// The **id set** stays `pack.list` — the same enumeration [`crate::describe`] and
+/// [`enumerate_store_workflows`] perform — so a project-layer-only id is listed by none of
+/// the three surfaces rather than by one of them.
+pub(crate) fn selectable_workflows(
+    pack: &dyn PackSource,
+    defs: &CascadeDefs<'_>,
+) -> Result<Vec<CatalogEntry>> {
     let mut entries = Vec::new();
     for id in pack.list(PackResourceKind::Workflows) {
-        let bytes = read_pack(pack, PackResourceKind::Workflows, id.as_str())?;
+        let bytes = defs.read_workflow(pack, id.as_str())?;
         let def = load_workflow_def(&bytes).map_err(finding_to_err)?;
         if !def.creates_task || !def.selectable {
             continue;
@@ -2481,7 +2499,7 @@ fn compose_task_workflow(
     // (origin = pack), so the resume floor stays byte-identical.
     let origin = pack.origin_pack(PackResourceKind::Workflows, &ResourceId::from(workflow_id));
     let commands = load_catalog(origin)?;
-    let selectable = selectable_workflows(pack)?;
+    let selectable = selectable_workflows(pack, &defs)?;
     // The committed store feed (`{{store.<doctype>}}`), enumerated from the committed
     // `<location>/<slug>.md` instances; the same `schemas` set the edge overlay below
     // resolves `<type>` prefixes against — resolved through the cascade so a project
@@ -4534,6 +4552,15 @@ mod tests {
         engine::cascade::resolve(&base, None, None).expect("no-shadow cascade resolves")
     }
 
+    /// The no-shadow [`CascadeDefs`] the catalog unit tests read definitions through —
+    /// [`no_shadow_resolved`] over a project config dir that does not exist, so
+    /// `project_owns` is false for every id and each read falls through to the pack.
+    /// The shadowed half is driven binary-side in
+    /// `tests/workflow_resolution_unified.rs`; this is the omitting context.
+    fn no_shadow_defs(resolved: &cascade::Resolved) -> CascadeDefs<'_> {
+        CascadeDefs::new(resolved, Path::new("no-project-layer"))
+    }
+
     /// The fan-out `sub-task` ships `creates-task: true` (so a `jigc workflow
     /// <W> --task` re-entry can compose it) but `selectable: false` (it ships no
     /// finalize step — its only commit boundary is the parent milestone's). It
@@ -4542,7 +4569,9 @@ mod tests {
     #[test]
     fn selectable_catalog_excludes_the_non_selectable_sub_task_over_the_embedded_pack() {
         let pack = crate::pack::EmbeddedPack::new();
-        let catalog = selectable_workflows(&pack).expect("catalog builds");
+        let resolved = no_shadow_resolved();
+        let catalog =
+            selectable_workflows(&pack, &no_shadow_defs(&resolved)).expect("catalog builds");
         let ids: Vec<&str> = catalog.iter().map(|e| e.id.as_str()).collect();
 
         assert!(
@@ -4568,7 +4597,9 @@ mod tests {
     #[test]
     fn selectable_catalog_excludes_ingest_existing_over_the_embedded_pack() {
         let pack = crate::pack::EmbeddedPack::new();
-        let catalog = selectable_workflows(&pack).expect("catalog builds");
+        let resolved = no_shadow_resolved();
+        let catalog =
+            selectable_workflows(&pack, &no_shadow_defs(&resolved)).expect("catalog builds");
         let ids: Vec<&str> = catalog.iter().map(|e| e.id.as_str()).collect();
 
         assert!(
@@ -4660,7 +4691,8 @@ mod tests {
                 "---\ncreates-task: true\nselectable: false\n---\n{{ include: step:noop }}\n",
             ),
         ]);
-        let catalog = selectable_workflows(&pack).expect(
+        let resolved = no_shadow_resolved();
+        let catalog = selectable_workflows(&pack, &no_shadow_defs(&resolved)).expect(
             "a `selectable: false` workflow with no `when` must not trip the missing-`when` error",
         );
         let ids: Vec<&str> = catalog.iter().map(|e| e.id.as_str()).collect();
