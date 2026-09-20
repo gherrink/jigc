@@ -33,6 +33,15 @@
 //!    commit) and `false` (the per-sub-task chain) each call `remove_worktrees` and each
 //!    build the landing manifest, so both must narrate.
 //!
+//! **The class is two axes, and this suite owns both** (M52 Increment 10 / T5;
+//! `completions/artifacts/M52/baseline-surfaces.md` §2.1 correction 1). What a landed
+//! boundary does **not** commit lives in two places, not one: the *fan-out worktree* the
+//! teardown removes (above — bytes destroyed, `discarded with the fan-out worktrees`) and
+//! the *shared checkout's index* a sub-agent working at the base pin stages into (below —
+//! bytes kept, `staged in the shared checkout`). The second axis was unnarrated at exit 0
+//! until M52, and it takes its **own** wording: those bytes are not lost, so borrowing the
+//! teardown block's *"not recoverable"* would be law 1's lie in the other direction.
+//!
 //! …across both output surfaces (`agent` text and the pinned `--format json` envelope),
 //! and on **both** channels the call names: the loss warning on stderr and the landing
 //! manifest on stdout. (Since the M50 Increment 12 audit that warning is printed *after* the
@@ -299,6 +308,28 @@ fn discarded_block(stdout: &str) -> String {
     });
     let header = lines.next().unwrap_or_else(|| {
         panic!("the landing manifest names no discarded work; stdout:\n{stdout}")
+    });
+    let mut block = header.to_owned();
+    for line in lines {
+        if !line.starts_with("    ") {
+            break;
+        }
+        block.push('\n');
+        block.push_str(line);
+    }
+    block
+}
+
+/// The landing manifest's shared-checkout block — the `  staged in the shared checkout`
+/// header through its indented body (M52 Increment 10 / T5).
+fn still_staged_block(stdout: &str) -> String {
+    let mut lines = stdout.lines().skip_while(|line| {
+        !line
+            .trim_start()
+            .starts_with("staged in the shared checkout")
+    });
+    let header = lines.next().unwrap_or_else(|| {
+        panic!("the landing manifest names no shared-checkout staged work; stdout:\n{stdout}")
     });
     let mut block = header.to_owned();
     for line in lines {
@@ -663,4 +694,168 @@ fn the_abandon_names_the_authored_task_prose_it_destroys() {
         tasks.join("solo-task").join("docs").exists(),
         "an unrelated open task's staged prose must survive the abandon",
     );
+}
+
+/// **The second axis of the same narration: the work staged in the SHARED checkout.**
+///
+/// The teardown axis above sweeps what a *fan-out worktree* held. It is one of two axes,
+/// not the whole class (M52 Increment 10 / T5; `completions/artifacts/M52/baseline-surfaces.md`
+/// §2.1 correction 1 — *"a narration with one of two axes swept, not an absent narration"*).
+///
+/// The other axis is the **shared checkout's index**. A sub-task's composed body invites
+/// work at the base pin, and a sub-agent that works in the main checkout rather than in its
+/// provisioned worktree stages there. Both aggregate channels build their commit from the
+/// sub-task worktrees over targeted pathspecs and land by `--ff-only`, so a live-index entry
+/// structurally **cannot** ride the boundary commit — the same fact the carryover gate states
+/// for the *pre*-milestone staged set (`engine::finalize`'s `CarryoverBoundary::Milestone`:
+/// *"the aggregate commit is built from the sub-task worktrees and cannot carry it, so the
+/// … stays staged"*). An entry staged **after** the milestone was minted is past that gate's
+/// subject, so until this cell it crossed the boundary named on **no** surface, at exit 0.
+///
+/// **This is narration, not loss prevention, and the wording must say so.** The bytes are not
+/// destroyed — they stay staged in the shared checkout, exactly where the sub-agent put them
+/// — so the sibling block's *"not recoverable"* words would be a law-1 lie in the other
+/// direction. The cell asserts both halves: the path is **named** on the ack, and it is
+/// **genuinely uncommitted and still staged** afterwards.
+///
+/// The axis it iterates is the landed-arm axis × the output-surface axis — the same four
+/// cells the teardown arm above drives, because both aggregate channels build the same
+/// landing manifest.
+#[test]
+fn a_landed_boundary_names_the_shared_checkout_work_it_did_not_commit() {
+    for (squash, json) in [(true, false), (true, true), (false, false), (false, true)] {
+        let label = format!(
+            "squash: {squash}, format: {}",
+            if json { "json" } else { "agent" }
+        );
+        let repo = TempDir::new(if squash {
+            "shared-squash"
+        } else {
+            "shared-chain"
+        });
+        init_repo(repo.path());
+        let home = TempDir::new("home");
+        if !squash {
+            set_squash_false(repo.path());
+        }
+
+        // The base pin is the HEAD the mint records — captured before `create`, whose own
+        // record commit moves `main` past it.
+        let pin = git_ok(repo.path(), &["rev-parse", "HEAD"])
+            .trim()
+            .to_owned();
+
+        assert!(
+            run_milestone(repo.path(), home.path(), &["create", "Cache rework"])
+                .status
+                .success(),
+            "[{label}] create must exit 0",
+        );
+        assert!(
+            run_milestone(
+                repo.path(),
+                home.path(),
+                &["add-task", "cache-rework", "Area low"]
+            )
+            .status
+            .success(),
+            "[{label}] add-task must exit 0",
+        );
+        stage_doc(
+            repo.path(),
+            "area-low",
+            "adr:low-policy",
+            &adr_plain("Low policy"),
+        );
+        stage_subtask_commit(repo.path(), "area-low", "rework the low cache path");
+        let provisioned = run_milestone(repo.path(), home.path(), &["provision", "cache-rework"]);
+        assert!(
+            provisioned.status.success(),
+            "[{label}] provision must exit 0; stderr:\n{}",
+            String::from_utf8_lossy(&provisioned.stderr),
+        );
+        // The worktree half: staged, so the boundary genuinely commits code — the block
+        // below must not name it (the over-report the sibling arm guards against too).
+        stage_wholly(repo.path(), "area-low", "src/low.rs", "pub fn low() {}\n");
+
+        // The cell: the sub-agent works in the SHARED checkout at the base pin — the state
+        // the sub-task's own composed body accepts — and stages there. The detach is how
+        // that state is reached (the record commit always moves `main` past the pin), and
+        // the re-attach is what `milestone finalize` requires (`repo.head-detached`).
+        git_ok(repo.path(), &["checkout", "--detach", &pin, "-q"]);
+        fs::write(
+            repo.path().join("shared-work.txt"),
+            "work done at the pin\n",
+        )
+        .expect("write shared-checkout file");
+        git_ok(repo.path(), &["add", "shared-work.txt"]);
+        git_ok(repo.path(), &["checkout", "main", "-q"]);
+        assert_eq!(
+            git_ok(repo.path(), &["diff", "--cached", "--name-only"]).trim(),
+            "shared-work.txt",
+            "[{label}] the fixture must reach the cell: staged in the shared checkout, and \
+             nothing else",
+        );
+
+        let mut args = vec!["finalize", "cache-rework"];
+        if json {
+            args.extend(["--format", "json"]);
+        }
+        let finalized = run_milestone(repo.path(), home.path(), &args);
+        let stdout = String::from_utf8(finalized.stdout).expect("utf-8 stdout");
+        let stderr = String::from_utf8(finalized.stderr).expect("utf-8 stderr");
+
+        // (1) The boundary lands — the narration is on the SUCCESS path.
+        assert!(
+            finalized.status.success(),
+            "[{label}] the finalize must exit 0; stdout:\n{stdout}\nstderr:\n{stderr}",
+        );
+
+        // (2) The ack NAMES the path it did not commit, on the surface the format selects.
+        if json {
+            let envelope: serde_json::Value =
+                serde_json::from_str(&stdout).expect("the landed envelope is valid JSON");
+            assert_eq!(
+                envelope["committed"]["still_staged"],
+                serde_json::json!(["shared-work.txt"]),
+                "[{label}] the landed envelope must carry the shared-checkout staged set, \
+                 and nothing the boundary committed; got:\n{stdout}",
+            );
+        } else {
+            let block = still_staged_block(&stdout);
+            assert!(
+                block.contains("shared-work.txt"),
+                "[{label}] the manifest must name the shared-checkout path the boundary did \
+                 not commit; got:\n{block}",
+            );
+            assert!(
+                !block.contains("src/low.rs") && !block.contains("milestone-records"),
+                "[{label}] a path the boundary DID commit must not be reported as still \
+                 staged; got:\n{block}",
+            );
+            // The bytes survive — the sibling block's `not recoverable` words would be a
+            // law-1 lie here, in the other direction.
+            assert!(
+                !block.contains("not recoverable"),
+                "[{label}] the shared-checkout set is staged, not destroyed; got:\n{block}",
+            );
+        }
+
+        // (3) …and the claim is true: genuinely uncommitted, genuinely still staged.
+        let tree = git_ok(repo.path(), &["ls-tree", "-r", "--name-only", "HEAD"]);
+        assert!(
+            !tree.lines().any(|p| p == "shared-work.txt"),
+            "[{label}] the boundary must not have committed the shared-checkout path; \
+             HEAD holds:\n{tree}",
+        );
+        assert_eq!(
+            git_ok(repo.path(), &["diff", "--cached", "--name-only"]).trim(),
+            "shared-work.txt",
+            "[{label}] the shared-checkout entry stays staged across the boundary",
+        );
+        assert!(
+            git_ok(repo.path(), &["status", "--short"]).contains("A  shared-work.txt"),
+            "[{label}] …and `git status` still reports it as staged",
+        );
+    }
 }

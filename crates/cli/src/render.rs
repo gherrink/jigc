@@ -4752,6 +4752,24 @@ pub struct MilestoneLanded {
     /// whole boundary; the stderr narration is per area, which is where the sub-task each
     /// move came from is already legible in the `from` path.
     pub displaced: Vec<Displaced>,
+    /// The **shared checkout's** still-staged set, read back from git *after* the boundary
+    /// landed — repo-relative, sorted, empty on the ordinary boundary (M52 Increment 10 /
+    /// T5; `completions/artifacts/M52/baseline-surfaces.md` §2.1 correction 1).
+    ///
+    /// The second axis of the same narration [`SubTaskContribution::discarded`] sweeps. A
+    /// sub-agent who works in the main checkout rather than in its provisioned worktree
+    /// stages **there**, and both aggregate channels build their commit from the sub-task
+    /// worktrees over targeted pathspecs and land by `--ff-only` — so a live-index entry
+    /// structurally cannot ride the boundary commit. That is the very fact the carryover
+    /// gate states for the *pre-milestone* staged set (`engine::finalize`'s
+    /// `CarryoverBoundary::Milestone`); an entry staged **after** the mint is past that
+    /// gate's subject and crossed the boundary named on no surface at all.
+    ///
+    /// **Not a loss key.** These bytes survive, staged, exactly where they were put, so
+    /// this set is worded as *kept* and never borrows the teardown block's *"not
+    /// recoverable"* — which would be law 1's lie in the other direction
+    /// (`design/surface-contract.md`).
+    pub still_staged: Vec<String>,
 }
 
 /// Render a **landed** `jigc milestone finalize` to the surface `format` selects
@@ -4763,7 +4781,10 @@ pub struct MilestoneLanded {
 /// (`<id>: 1 doc, 1 code file · <id>: nothing staged, no worktree provisioned`), then —
 /// only when the teardown destroyed something — the `  discarded with the fan-out
 /// worktrees` block naming each lost path and why it was not committed
-/// ([`DiscardedWork`]), followed by the routing
+/// ([`DiscardedWork`]), then — only when the shared checkout still holds one — the
+/// `  staged in the shared checkout` block naming each path the boundary could not carry
+/// ([`MilestoneLanded::still_staged`], the same narration's second axis), followed by the
+/// routing
 /// footer; `json` emits `{"committed": {…}}` — the same [`MilestoneLanded`]
 /// projection, no footer (tooling-consumed).
 pub fn milestone_finalized(format: Format, landed: &MilestoneLanded) -> String {
@@ -4816,6 +4837,21 @@ pub fn milestone_finalized(format: Format, landed: &MilestoneLanded) -> String {
                         .map(|work| format!("{} ({})", work.path, work.state.label()))
                         .collect();
                     out.push_str(&format!("    {}: {}\n", sub.id, paths.join(" · ")));
+                }
+            }
+            // The second axis of the same narration (M52 Inc 10 / T5): what the SHARED
+            // checkout still holds staged. Omitted entirely when it holds nothing, so the
+            // block's presence is itself the signal — the sibling block's rule. Its words
+            // state *kept*, never *lost*: the bytes are exactly where the sub-agent put
+            // them, and the boundary simply could not carry them.
+            if !landed.still_staged.is_empty() {
+                out.push_str(
+                    "  staged in the shared checkout (not committed by this boundary — \
+                     the aggregate commit is built from the sub-task worktrees; these stay \
+                     staged):\n",
+                );
+                for path in &landed.still_staged {
+                    out.push_str(&format!("    {path}\n"));
                 }
             }
             out.push_str(ROUTING_FOOTER);
@@ -8030,6 +8066,10 @@ mod tests {
             // The ordinary boundary: every sub-task area held only jigc's own files, so the
             // key is present and empty and the text says nothing (M52 Inc 4 / T4).
             displaced: Vec::new(),
+            // M52 Inc 10 / T5 — the narration's second axis: a sub-agent worked in the
+            // SHARED checkout, so its bytes stay staged there. Non-empty here so the block
+            // renders, and worded as kept rather than lost.
+            still_staged: vec!["cache_bench.py".to_string()],
         };
 
         let agent = milestone_finalized(Format::Agent, &landed);
@@ -8048,6 +8088,8 @@ mod tests {
           sub-tasks: implement-lru-eviction: 1 doc, 1 code file, committed as 41c0de1 · wire-cache-metrics-into: nothing staged, no worktree provisioned
           discarded with the fan-out worktrees (not committed, not recoverable):
             implement-lru-eviction: README.md (staged only in part) · notes/scratch.py (never staged)
+          staged in the shared checkout (not committed by this boundary — the aggregate commit is built from the sub-task worktrees; these stay staged):
+            cache_bench.py
         — jigc · run `jigc start` for orientation; all writes through `jigc`.
         ");
         assert!(agent.ends_with(ROUTING_FOOTER));
@@ -8096,6 +8138,14 @@ mod tests {
         // captured boundary-commit hook string (`design/command-output-contract.md` →
         // Stream discipline); the agent-text arm relays it separately and omits it here.
         assert_eq!(value["committed"]["hook_output"], "hook: fmt clean");
+        // M52 Inc 10 / T5 — the same narration's second axis is data on the machine
+        // surface too: what the shared checkout still holds staged, carried under its own
+        // key rather than folded into a per-sub-task one (no sub-task owns the shared
+        // index).
+        assert_eq!(
+            value["committed"]["still_staged"],
+            serde_json::json!(["cache_bench.py"]),
+        );
     }
 
     /// The `jigc ingest` triage report renders in sorted candidate order: one row

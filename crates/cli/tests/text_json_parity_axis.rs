@@ -1566,6 +1566,9 @@ fn milestone_finalized_parity() {
             from: ".jigc/tasks/warm-the-read-cache/NOTES.md".to_owned(),
             to: ".jigc/displaced/warm-the-read-cache/NOTES.md".to_owned(),
         }],
+        // M52 Inc 10 / T5 — the landed narration's second axis. Non-empty here so the key
+        // has to carry something.
+        still_staged: vec!["bench/shared.rs".to_owned()],
     };
     let MilestoneLanded {
         hash,
@@ -1576,6 +1579,7 @@ fn milestone_finalized_parity() {
         sub_tasks,
         hook_output,
         displaced,
+        still_staged,
     } = &landed;
 
     let text = milestone_finalized(Format::Agent, &landed);
@@ -1610,6 +1614,19 @@ fn milestone_finalized_parity() {
     // (M52 Inc 4 / T4; `milestone_boundary_displacement.rs` drives both channels on the
     // real binary).
     carries(committed, "displaced", displaced, label, "displaced");
+    // M52 Inc 10 / T5 — the shared checkout's still-staged set: printed in the landing
+    // manifest's own block and carried under its own key, so the driver reads the same
+    // "what this boundary did not commit" set the human does.
+    for path in still_staged {
+        text_prints(&text, path, label, "still_staged[]");
+    }
+    carries(
+        committed,
+        "still_staged",
+        still_staged,
+        label,
+        "still_staged",
+    );
 }
 
 // ────────────────────────── the judgment-tier census (T5) ──────────────────────────

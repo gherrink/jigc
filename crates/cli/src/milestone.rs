@@ -6603,7 +6603,60 @@ fn milestone_landed_summary(
         // as the same repo-relative pairs the caller already named on stderr. Empty on the
         // ordinary boundary, and present either way.
         displaced,
+        // M52 Inc 10 T5 — the narration's second axis: what the SHARED checkout still holds
+        // staged, read back POST-boundary from the index the boundary left behind.
+        still_staged: shared_checkout_staged(repo_root)?,
     })
+}
+
+/// The **shared checkout's** staged set, read back **after** the boundary landed — the
+/// second axis of the landed narration [`discarded_work`] sweeps (M52 Increment 10 / T5;
+/// `completions/artifacts/M52/baseline-surfaces.md` §2.1 correction 1).
+///
+/// A sub-task's composed body invites work at the base pin, and a sub-agent that works in
+/// the main checkout rather than in its provisioned worktree stages **there**. Both
+/// aggregate channels build their commit from the sub-task worktrees over targeted
+/// pathspecs and land by `--ff-only`, so a live-index entry structurally cannot ride the
+/// boundary commit — the fact the carryover gate already states for the *pre-milestone*
+/// staged set (`engine::finalize`'s `CarryoverBoundary::Milestone`). An entry staged
+/// **after** the mint is past that gate's subject, so until this probe it crossed the
+/// boundary named on no surface, at exit 0.
+///
+/// **Measured after the commit, not before, and by the same question the claim makes.**
+/// The surface says *these stay staged*, and `git diff --cached` against the landed HEAD is
+/// that sentence read back out of git: a path the boundary did carry is gone from it by
+/// construction, so the block cannot over-report the way a pre-commit snapshot minus a
+/// predicted landed set could. It is the `crate::task` landed-residual mold
+/// (`design/finalize.md` → the post-commit `left-out` residual), asked one directory up.
+///
+/// **`--name-only -z`, not the plain form** — the [`discarded_work`] rule, same reason: git
+/// display-quotes a path holding a space or a non-ASCII byte regardless of `core.quotePath`,
+/// and a shared checkout holds arbitrary user code, so the plain form would name a path the
+/// repo does not contain (`design/surface-contract.md` → law 1). Paths come back
+/// repo-relative from git and are sorted here, so the surface is order-stable.
+fn shared_checkout_staged(repo_root: &Path) -> Result<Vec<String>> {
+    const PROBE: [&str; 4] = ["diff", "--cached", "--name-only", "-z"];
+    let out = Command::new("git")
+        .args(PROBE)
+        .current_dir(repo_root)
+        .output()
+        .context("could not run `git diff --cached` (is git on PATH?)")?;
+    if !out.status.success() {
+        bail!(
+            "`git {}` in {repo_root:?} failed: {}",
+            PROBE.join(" "),
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    let mut staged: Vec<String> = out
+        .stdout
+        .split(|byte| *byte == 0)
+        .filter(|record| !record.is_empty())
+        .map(|record| String::from_utf8_lossy(record).into_owned())
+        .collect();
+    staged.sort();
+    staged.dedup();
+    Ok(staged)
 }
 
 /// **Every** commit the boundary landed, oldest first, each with the paths it changed —
