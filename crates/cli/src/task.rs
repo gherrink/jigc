@@ -6232,6 +6232,53 @@ pub(crate) fn git_path_has_history(repo_root: &Path, path: &str) -> Result<bool>
     Ok(!String::from_utf8_lossy(&out.stdout).trim().is_empty())
 }
 
+/// The bytes of the **last committed version** of `path`, or `None` when HEAD carries no
+/// history for it at all.
+///
+/// `git log HEAD -1 --format=%H -- <path>` names the most recent commit reachable from HEAD
+/// that touched the path — [`git_path_has_history`]'s own query, asked for *which* commit
+/// rather than *whether one exists*. The blob is then read from that commit when the path
+/// still exists there (the commit added or modified it, including the uncommitted-deletion
+/// cell where HEAD itself still carries the file) and from its **first parent** when that
+/// commit removed it — a `git rm`, or the source half of a `git mv`.
+///
+/// **A failure is a failure, not an absence.** Every unanswerable shape — git missing, a
+/// blob readable at neither revision (a merge whose first parent never had the path), a
+/// malformed revision — is an `Err`, so a caller that must read conservatively can, and one
+/// that must not cannot mistake it for *there was nothing there*. Only the empty `git log`
+/// is `Ok(None)`.
+pub(crate) fn git_last_committed_blob(repo_root: &Path, path: &str) -> Result<Option<Vec<u8>>> {
+    let out = Command::new("git")
+        .args(["log", "HEAD", "-1", "--format=%H", "--", path])
+        .current_dir(repo_root)
+        .output()
+        .context("could not run `git` (is it on PATH?)")?;
+    if !out.status.success() {
+        bail!(
+            "`git log HEAD -1 -- {path}` failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    let commit = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if commit.is_empty() {
+        return Ok(None);
+    }
+    for rev in [commit.clone(), format!("{commit}^")] {
+        let show = Command::new("git")
+            .args(["cat-file", "blob", &format!("{rev}:{path}")])
+            .current_dir(repo_root)
+            .output()
+            .context("could not run `git` (is it on PATH?)")?;
+        if show.status.success() {
+            return Ok(Some(show.stdout));
+        }
+    }
+    bail!(
+        "`git cat-file blob {commit}:{path}` and its first parent both failed — the commit \
+         that last touched `{path}` carries no readable blob for it"
+    )
+}
+
 /// The canonical git empty-tree SHA — the sentinel base a **zero-commit** (unborn
 /// HEAD) repo pins to so every `creates-task` workflow runs pre-first-commit
 /// (`design/project-setup.md` → Flow 2 hardening — zero-commit;

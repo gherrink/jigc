@@ -1493,8 +1493,8 @@ fn validate_store_in_repo(cwd: &Path) -> Result<StoreSweep> {
 
     // The vacated-home break (M52 Increment 7 / T5; settle-record D7.1 as amended by §5): a
     // resolved doctype's **exact declared home** — a `placement:` file, a `location:`
-    // singleton's `<location><ty>.md` — that the repository's history touches while no
-    // committed instance is there. Blocking.
+    // singleton's `<location><ty>.md` — that the repository last committed a *stamped*
+    // document into while no committed instance is there. Blocking.
     //
     // **The hole it fills is the one the two arms above structurally cannot see.** Both of them
     // reason about a *file* and ask where it sits; this asks about a *home* and whether anything

@@ -268,7 +268,10 @@ impl Drop for FixturePack {
 /// `$HOME` every child process sees), so one drop cleans both.
 pub struct TrialCorpus {
     root: PathBuf,
-    state: State,
+    /// The [`State`] this corpus was built as, or `None` for the **never-adopted**
+    /// shape ([`TrialCorpus::build_never_adopted`]), which is deliberately not a
+    /// `State` member.
+    state: Option<State>,
     live_task: Option<String>,
     /// The [`FixturePack`] every child composes, when this corpus was built with one
     /// ([`Self::build_with_pack`]); `None` is the embedded-pack default.
@@ -290,6 +293,37 @@ impl TrialCorpus {
         Self::build_over(state, Some(pack.path().to_path_buf()))
     }
 
+    /// A **never-adopted** corpus — `git init` plus the one initial commit, and **no
+    /// `jigc setup`**: the shape every real brownfield repository is in the moment before
+    /// it meets jigc, and the only shape from which a *pre-jigc* commit history at a path
+    /// jigc will later declare as a home can exist at all.
+    ///
+    /// Deliberately **not** a [`State`] member, for the reason `dev_rig_parity`'s
+    /// `RIG_ONLY_STATES` already records for the rig's own `bare`: every `State::ALL`
+    /// consumer presupposes [`Self::build_over`]'s `jigc setup`, and `compose_goldens`
+    /// sweeps each composed surface × every state — a corpus with no `.jigc/` has no
+    /// composed surface to golden. It is a named **fixture act** instead, so a suite that
+    /// needs the pre-adoption shape can say so rather than hand-rolling a git repo and
+    /// losing the corpus's `$HOME`, pack selection and self-cleaning root with it.
+    ///
+    /// The caller adopts it when it wants to — `corpus.jigc_ok(&["setup"])` — which is the
+    /// point: what happens *between* `git init` and `jigc setup` is what this shape exists
+    /// to let a suite write.
+    pub fn build_never_adopted() -> Self {
+        let root = unique_root("never-adopted");
+        fs::create_dir_all(root.join("repo")).expect("create the corpus repo dir");
+        fs::create_dir_all(root.join("home")).expect("create the corpus home dir");
+
+        let corpus = TrialCorpus {
+            root,
+            state: None,
+            live_task: None,
+            pack: None,
+        };
+        corpus.git_init();
+        corpus
+    }
+
     fn build_over(state: State, pack: Option<PathBuf>) -> Self {
         let root = unique_root(state.name());
         fs::create_dir_all(root.join("repo")).expect("create the corpus repo dir");
@@ -297,7 +331,7 @@ impl TrialCorpus {
 
         let mut corpus = TrialCorpus {
             root,
-            state,
+            state: Some(state),
             live_task: None,
             pack,
         };
@@ -338,10 +372,10 @@ impl TrialCorpus {
              into the source — the copy would read and write the ORIGINAL. Build a \
              worktree-bearing state fresh per arm, or re-provision after the copy \
              (pinning.md §4).",
-            self.state.name(),
+            self.label(),
         );
 
-        let root = unique_root(&format!("{}-copy", self.state.name()));
+        let root = unique_root(&format!("{}-copy", self.label()));
         copy_tree(&self.root, &root);
         TrialCorpus {
             root,
@@ -359,8 +393,25 @@ impl TrialCorpus {
     }
 
     /// The state this corpus was built as.
+    ///
+    /// Panics on the **never-adopted** shape ([`Self::build_never_adopted`]), which is
+    /// not a [`State`] member and must not be able to answer as one: a sweep that reads
+    /// this to label or dispatch on a state would otherwise be handed a state the corpus
+    /// is not in.
     pub fn state(&self) -> State {
-        self.state
+        self.state.expect(
+            "this corpus was built by `build_never_adopted` and is in no `State` — it has \
+             no `jigc setup`, so nothing that dispatches on a state applies to it",
+        )
+    }
+
+    /// The corpus's name for throwaway-root and copy labelling — the state's name, or
+    /// `never-adopted` for the shape that is in no [`State`].
+    fn label(&self) -> &'static str {
+        match self.state {
+            Some(state) => state.name(),
+            None => "never-adopted",
+        }
     }
 
     /// The git repo under test.

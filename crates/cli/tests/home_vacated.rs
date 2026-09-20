@@ -459,3 +459,198 @@ fn a_vacated_home_closes_the_report_ahead_of_a_never_adopted_file() {
          never-adopted file's; got:\n{closing}",
     );
 }
+
+// ---------------------------------------------------------------------------------------
+// M52 completion audit, fix 1 — the discriminator: **jigc wrote what the history carries**
+// ---------------------------------------------------------------------------------------
+//
+// The red these arms were written against, driven at `c80b3f8f` on a `bare` rig corpus:
+//
+//     printf '# Changelog\n\n## 0.1.0\n' > CHANGELOG.md && git add … && git commit
+//     git rm -q CHANGELOG.md && git commit
+//     jigc setup      # exit 0
+//     jigc validate   # exit 1 — blocking · schema-conformance.home-vacated `CHANGELOG.md`
+//
+// A stock brownfield repository that once had a `CHANGELOG.md`, a `VISION.md`, or any other
+// file at a path the shipped packs later declare as a home, was **red at exit 1 the moment
+// `jigc setup` ran**, with no exit that clears it: `jigc unmanage <path>` is a no-op there,
+// `jigc ingest` classifies nothing, the route's *take the pack out of the composition* is
+// unavailable for an embedded doctype, and a project schema shadow moving `placement:` trips
+// the freeze assert. Driven, all **five** shipped fixed-identity homes fired at once.
+//
+// The history leg was `git log HEAD -1 -- <path>` — *any* history at the path — and the
+// producer's own doc-comment admitted it: *"It does not claim jigc wrote what the history
+// carries."* That is the gap M51's completion-audit HIGH closed one check over, where
+// `orphaned-instance` was narrowed to `orphan::Territory` because the `schema-version:` stamp
+// is un-namespaced. D7's own words are *a declared home **jigc committed into** that is now
+// empty*, and these arms are that predicate.
+//
+// **The kind of set the two class arms iterate: a derivation stated as one** — every doctype
+// either embedded pack declares whose `Schema::projection()` says its identity is `Fixed` and
+// whose home has a path, read through `cli::pack::load_pack_schema`, the production loader.
+// Never a written list: the producer derives the same set the same way, so a sixth
+// fixed-identity doctype joins both sides by being declared.
+
+/// The fixed-identity home set of both embedded packs as `(doctype, repo-relative home)`,
+/// address-sorted — the class `cli::orphan::vacated_homes` sweeps, derived here through the
+/// production pack loader rather than written down.
+fn fixed_identity_homes() -> Vec<(String, String)> {
+    use engine::packsource::{PackResourceKind, PackSource};
+
+    let pack = cli::pack::CompositePack::new(vec![
+        Box::new(cli::pack::EmbeddedPack::new()),
+        Box::new(cli::pack::EmbeddedPack::methodology()),
+    ]);
+    let mut out: Vec<(String, String)> = Vec::new();
+    for id in pack.list(PackResourceKind::Schemas) {
+        let bytes = pack
+            .read(PackResourceKind::Schemas, &id)
+            .expect("a listed schema resource is readable");
+        let schema = cli::pack::load_pack_schema(&pack, &bytes)
+            .unwrap_or_else(|e| panic!("shipped schema `{}` loads: {e:?}", id.as_str()));
+        let projection = schema.projection();
+        if projection.identity.kind != engine::schema::IdentityKind::Fixed {
+            continue;
+        }
+        let Some(path) = projection.home.path else {
+            continue;
+        };
+        if out.iter().any(|(ty, _)| ty == &schema.ty) {
+            continue;
+        }
+        out.push((schema.ty.clone(), path));
+    }
+    out.sort();
+    assert!(
+        out.len() >= 4,
+        "the derived class is {} members — a sweep over a collapsed derivation passes \
+         vacuously",
+        out.len(),
+    );
+    out
+}
+
+/// Plant `body` at every derived fixed-identity home of `corpus`, commit it, remove all of
+/// them, and commit that — the *filled then vacated* history, laid down **before** the corpus
+/// is adopted. Returns the class it planted at.
+fn plant_then_vacate_every_home(corpus: &TrialCorpus, body: &str) -> Vec<(String, String)> {
+    let homes = fixed_identity_homes();
+    for (_, home) in &homes {
+        let at = corpus.repo().join(home);
+        if let Some(parent) = at.parent() {
+            std::fs::create_dir_all(parent).expect("create a declared home's parent dir");
+        }
+        std::fs::write(&at, body).expect("plant a document at a declared home");
+    }
+    corpus.git(&["add", "-A"]);
+    corpus.git(&["commit", "-q", "-m", "the project's own documents"]);
+    for (_, home) in &homes {
+        corpus.git(&["rm", "-q", home]);
+    }
+    corpus.git(&["commit", "-q", "-m", "retire them"]);
+    for (_, home) in &homes {
+        assert!(
+            !corpus
+                .git(&["log", "HEAD", "-1", "--format=%H", "--", home])
+                .trim()
+                .is_empty(),
+            "the arm only discriminates while `{home}` genuinely has committed history",
+        );
+    }
+    homes
+}
+
+/// **Arm 9 — a never-adopted repository's own pre-jigc history at a declared home is not a
+/// vacated home, at every member of the class.**
+///
+/// This is the audit's HIGH. `jigc setup` over a stock brownfield repository that once
+/// carried a `CHANGELOG.md` — or any file at a path the shipped packs declare a home at —
+/// turned `jigc validate` red at exit 1 with no exit that clears it. The documents jigc is
+/// accused of losing were never jigc's: no jigc operation ever wrote at those paths.
+#[test]
+fn a_never_adopted_repositorys_own_history_at_a_declared_home_is_not_a_vacated_home() {
+    let corpus = TrialCorpus::build_never_adopted();
+    let homes = plant_then_vacate_every_home(&corpus, "# Notes\n\nthe project's own prose\n");
+
+    corpus.jigc_ok(&["setup"]);
+    let out = corpus.jigc(&["validate"]);
+    let text = printed(&out);
+
+    for (ty, home) in &homes {
+        assert!(
+            !fires_at(&text, home),
+            "`{home}` has committed history and holds nothing, but nothing jigc wrote was \
+             ever there — `{ty}`'s home was never filled *by jigc*, so naming it accuses the \
+             adopter of losing a document they never had; got:\n{text}",
+        );
+    }
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "a stock brownfield repository must be green the moment it is adopted — a red \
+         `jigc validate` with no exit that clears it is a door an adopter cannot walk \
+         through; got:\n{text}",
+    );
+}
+
+/// **Arm 10 — the discriminator is the stamp on the last committed blob, at every member of
+/// the class.**
+///
+/// The complement of arm 9 on the same fixture act: identical history, identical homes, and
+/// the only difference is that the blob the history carries at each path bears a
+/// `schema-version:` stamp. Every home fires. This is what makes arm 9 a *narrowing* rather
+/// than a silencing — the condition still names a home whose last committed document was a
+/// managed one.
+///
+/// **What it still misses, pinned as expected output here rather than left to be found**: a
+/// pre-jigc document that happens to carry a `schema-version:` key in its own front matter
+/// would be read as jigc's, because the stamp key is un-namespaced. The subject is five
+/// **exact declared paths** rather than a tree, and the file must also be *gone*, so the cell
+/// is far narrower than the tree-wide one M51's HIGH closed — and the honest fix is the
+/// namespaced stamp already deferred with its trigger (`implementation/decisions-pending.md`
+/// → the namespaced stamp key), which is a `schema-version` bump this wave does not make.
+#[test]
+fn a_stamped_last_committed_blob_at_the_same_homes_still_names_every_one() {
+    let corpus = TrialCorpus::build_never_adopted();
+    let homes =
+        plant_then_vacate_every_home(&corpus, "---\nschema-version: 1\n---\n\n# Notes\n\nprose\n");
+
+    corpus.jigc_ok(&["setup"]);
+    let out = corpus.jigc(&["validate"]);
+    let text = printed(&out);
+
+    for (ty, home) in &homes {
+        assert!(
+            fires_at(&text, home),
+            "`{ty}` homes one document at `{home}`, the last blob the history committed \
+             there carried a `schema-version:` stamp, and nothing is there now — the \
+             narrowing must not have silenced the condition itself; got:\n{text}",
+        );
+    }
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "the condition is a `STORE_EXIT_FLIPS` member — a home whose managed document the \
+         store has lost must still fail the run an adopter's CI gates on; got:\n{text}",
+    );
+}
+
+/// **Arm 11 — an adopted home emptied in the worktree alone still fires.** The deletion is
+/// uncommitted, so the last committed blob at the path is the one at `HEAD` — jigc's own
+/// stamped document — and the narrowing reads it from there rather than from a parent commit
+/// that does not exist for this cell.
+#[test]
+fn an_adopted_home_emptied_in_the_worktree_alone_still_fires() {
+    let corpus = TrialCorpus::build(State::CommittedSingletons);
+    std::fs::remove_file(corpus.repo().join("CHANGELOG.md")).expect("empty the home on disk");
+    corpus.fresh_clone_shape();
+
+    let out = corpus.jigc(&["validate"]);
+    let text = printed(&out);
+    assert!(
+        fires_at(&text, "CHANGELOG.md"),
+        "`HEAD` still carries jigc's own stamped changelog at `CHANGELOG.md` and the \
+         worktree does not — the home is vacated whether or not the removal was committed; \
+         got:\n{text}",
+    );
+}

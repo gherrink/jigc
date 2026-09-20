@@ -552,8 +552,9 @@ pub(crate) fn fixed_identity_homes(
     homes
 }
 
-/// The fixed-identity homes that have been **vacated** — the repository's history touches the
-/// declared path while no committed instance is there, address-sorted
+/// The fixed-identity homes that have been **vacated** — the last document the repository
+/// committed at the declared path carried a jigc `schema-version:` stamp while no committed
+/// instance is there now, address-sorted
 /// ([`fixed_identity_homes`] is).
 ///
 /// **Two legs, each the one the rest of the code already asks.** *Nothing is there* is
@@ -562,15 +563,27 @@ pub(crate) fn fixed_identity_homes(
 /// read, so "empty" means empty to the doors that act on it rather than to a second opinion;
 /// and it is asked **at the exact path**, never of the doctype's instance set, so a `location:`
 /// singleton whose directory holds other files still reads as vacated at its own home. *The
-/// home was filled* is [`crate::task::git_path_has_history`] — `git log HEAD -1 -- <path>`,
-/// M45's shipped file-state history gate verbatim — which is what makes this check survive a
-/// `git clone`, where the gitignored file-state cache that used to be the only witness does
-/// not.
+/// home was **jigc-committed-into*** is [`jigc_committed_into`] — the history question asked
+/// of the bytes the history carries rather than of its mere existence — which is what makes
+/// this check survive a `git clone`, where the gitignored file-state cache that used to be the
+/// only witness does not.
 ///
-/// **Git failure is conservative**, matching the predicate's two shipped consumers
-/// (`crate::task`'s file-state gate and `crate::milestone`'s): an unanswerable history question
-/// reads as *history present*, so an empty declared home is named rather than silently
-/// excused.
+/// **That second leg was `git log HEAD -1 -- <path>` alone, and shipping it that way was the
+/// M52 completion audit's HIGH.** *Any* history at the path satisfied it, so `jigc setup` over
+/// a stock brownfield repository that had once carried a `CHANGELOG.md`, a `VISION.md` or any
+/// other file at a path the shipped packs declare a home at turned `jigc validate` **red at
+/// exit 1** — and no exit cleared it: `jigc unmanage <path>` is a no-op there, `jigc ingest`
+/// classifies nothing, the route's *take the pack out of the composition* is unavailable for
+/// an embedded doctype, and a project schema shadow moving `placement:` trips the freeze
+/// assert. Driven, all five shipped fixed-identity homes fired at once. D7's own words are *a
+/// declared home **jigc committed into** that is now empty*, and this comment used to admit
+/// the gap in the producer below — *"It does not claim jigc wrote what the history carries"* —
+/// which is the same gap M51's completion-audit HIGH closed one check over, where
+/// [`orphaned_instances`] was narrowed to [`Territory`] for the identical reason.
+///
+/// **Git failure is conservative**, matching the history predicate's two shipped consumers
+/// (`crate::task`'s file-state gate and `crate::milestone`'s): an unanswerable question reads
+/// as *the home was jigc's*, so an empty declared home is named rather than silently excused.
 ///
 /// A path that git tracks but the worktree no longer holds reads as vacated, because the
 /// census reads the worktree. That is the honest answer to *is the document there* and it is
@@ -590,18 +603,66 @@ pub(crate) fn vacated_homes(
             let occupied = engine::index::committed_instances(repo_root, &home.ty, schema)
                 .iter()
                 .any(|(_identity, path)| path == &at_home);
-            !occupied && crate::task::git_path_has_history(repo_root, &home.path).unwrap_or(true)
+            !occupied && jigc_committed_into(repo_root, &home.path)
         })
         .collect()
+}
+
+/// Whether the repository's history says **jigc committed a document into** the exact declared
+/// path `rel` — the honest discriminator for *this home was filled*, and the leg that keeps a
+/// never-adopted repository's own pre-jigc history from reading as a document jigc lost.
+///
+/// **The evidence is the last committed blob at that exact path**
+/// ([`crate::task::git_last_committed_blob`]) carrying a `schema-version:` front-matter stamp,
+/// read by [`engine::validate::schema_version_from_front_matter`] — the same no-parse,
+/// no-schema reader [`carries_stamp`] uses on the worktree. It is the strongest
+/// clone-surviving evidence available: the file is gone, so there are no bytes on disk to ask,
+/// and the gitignored file-state baseline that would otherwise answer does not survive a
+/// `git clone` — which is the whole reason this condition reads git at all.
+///
+/// **Three readings, and each is the honest one.** No history at all ⇒ `false`: the home was
+/// never filled by anyone. A last blob that carries no stamp ⇒ `false`: whatever the
+/// repository committed there, no jigc write produced it. Bytes that are not UTF-8 ⇒ `false`
+/// as well, and that is a *determination* rather than a failure — jigc writes UTF-8 markdown,
+/// so a non-UTF-8 blob carries no stamp by construction. Only an unanswerable git question is
+/// `Err`, and that reads `true`, conservative.
+///
+/// **What it still misses, stated rather than left to be found.** A *pre-jigc* document that
+/// happens to carry a `schema-version:` key in its own front matter is read as jigc's, because
+/// the stamp key is un-namespaced and nothing in the bytes says jigc wrote them — M51's
+/// residual, met again. It is accepted here on two grounds the tree-wide case did not have:
+/// the subject is a handful of **exact paths a schema declares**, never a directory walk, so a
+/// team document has to be sitting at precisely `CHANGELOG.md` or `VISION.md` to be a subject
+/// at all; and it must *also* be gone, so the finding names a path whose last committed
+/// document is missing either way. The honest fix is the namespaced stamp, already deferred
+/// with its trigger (`implementation/decisions-pending.md` → the namespaced stamp key) — a
+/// `schema-version` bump, which is the migration it has to ride.
+fn jigc_committed_into(repo_root: &Path, rel: &str) -> bool {
+    match crate::task::git_last_committed_blob(repo_root, rel) {
+        Ok(None) => false,
+        Ok(Some(bytes)) => String::from_utf8(bytes)
+            .ok()
+            .and_then(|source| engine::validate::schema_version_from_front_matter(&source))
+            .is_some(),
+        Err(_) => true,
+    }
 }
 
 /// The **blocking** store-scope finding for one vacated declared home, located at the path.
 ///
 /// **The message states the two legs that were computed.** That the doctype homes one document
-/// at this exact path (its schema says so), that the repository's history touches the path, and
-/// that nothing is there now. It does not claim *jigc* wrote what the history carries — nothing
-/// in `git log` says who committed a file — nor why it went; a rename, a `git rm`, a bad merge
-/// and a checkout that never landed are one condition here, and the message names the condition.
+/// at this exact path (its schema says so), that the last document the repository committed
+/// there carried a `schema-version:` stamp, and that nothing is there now. It does **not** say
+/// why the document went — nothing in `git log` says that — so a rename, a `git rm`, a bad
+/// merge and a checkout that never landed are one condition here, and the message names the
+/// condition rather than guessing the cause.
+///
+/// **The stamp clause is load-bearing and replaced a false one** (M52 completion audit, HIGH).
+/// This comment read *"It does not claim jigc wrote what the history carries"* while the finding
+/// was blocking and flipped the store sweep's exit — so a stock brownfield repository that had
+/// once carried a file at any declared home was red at exit 1 the moment `jigc setup` ran, with
+/// no exit that cleared it. [`jigc_committed_into`] is now the leg, and the message says what it
+/// asked; what that leg still cannot tell apart is stated there.
 ///
 /// **The route names one exit, and says plainly what is not one** (M46's PT-1 rule — a route
 /// that, followed exactly, changes nothing is the defect at another door). Restoring the
@@ -624,8 +685,9 @@ pub(crate) fn home_vacated_finding(home: &FixedHome) -> engine::finding::Finding
         engine::finding::Severity::Blocking,
         HOME_VACATED_CODE,
         format!(
-            "`{ty}` homes its one document at `{path}`, the repository's history touches that \
-             path, and nothing is there now — a declared home that was filled has been vacated"
+            "`{ty}` homes its one document at `{path}`, the last document the repository \
+             committed there carried a `schema-version:` stamp, and nothing is there now — a \
+             declared home jigc committed into has been vacated"
         ),
         Some(engine::finding::Location::addressed(path, 1, 1)),
         Some(engine::finding::Route::human(format!(
@@ -1196,6 +1258,14 @@ mod tests {
         );
     }
 
+    /// A document as **jigc** would have committed it — carrying the `schema-version:` stamp
+    /// [`jigc_committed_into`] reads. The fixtures below write this rather than bare prose
+    /// because the history leg asks what the last committed blob *was*, not merely that one
+    /// existed (M52 completion audit, fix 1).
+    fn stamped(title: &str) -> String {
+        format!("---\nschema-version: 1\n---\n\n# {title}\n")
+    }
+
     /// (M52 inc-7 T5) The emptiness leg is asked **at the exact path**, never of the
     /// doctype's directory: a `location:` singleton whose own file is gone is vacated even
     /// while its directory still holds other committed `.md`s. Driven over real git history, so
@@ -1204,8 +1274,8 @@ mod tests {
     fn a_location_singleton_vacates_at_its_own_path_not_at_its_directory() {
         let repo = TempRepo::new();
         let schemas = map(vec![location_singleton_schema("ledger", "notes/")]);
-        repo.commit_file("notes/ledger.md", "# Ledger\n");
-        repo.commit_file("notes/other.md", "# Other\n");
+        repo.commit_file("notes/ledger.md", &stamped("Ledger"));
+        repo.commit_file("notes/other.md", &stamped("Other"));
 
         assert!(
             vacated_homes(repo.path(), &schemas).is_empty(),
@@ -1241,6 +1311,61 @@ mod tests {
             vacated_homes(repo.path(), &schemas).is_empty(),
             "neither declared home has ever held a document — an empty home is not a vacated \
              one",
+        );
+    }
+
+    /// (M52 completion audit, fix 1) **The history leg asks what the history carries, not
+    /// that it carries something.** A repository that committed *its own* document at a path
+    /// a doctype later declares as a home, and then removed it, has lost nothing of jigc's —
+    /// and shipping the weaker leg made `jigc validate` red at exit 1 on a stock brownfield
+    /// repository the moment `jigc setup` ran, with no exit that cleared it.
+    ///
+    /// Both homes are driven with identical history and differ only in the bytes of the last
+    /// committed blob, so the arm pins the discriminator rather than the outcome.
+    #[test]
+    fn a_home_whose_last_committed_blob_was_never_jigcs_is_not_vacated() {
+        let repo = TempRepo::new();
+        let schemas = map(vec![
+            placement_schema("changelog", "CHANGELOG.md"),
+            placement_schema("vision", "VISION.md"),
+        ]);
+        repo.commit_file("CHANGELOG.md", "# Changelog\n\n## 0.1.0\n");
+        repo.commit_file("VISION.md", &stamped("Vision"));
+        repo.git(&["rm", "-q", "--", "CHANGELOG.md", "VISION.md"]);
+        repo.git(&["commit", "-q", "-m", "retire both"]);
+
+        let vacated: Vec<String> = vacated_homes(repo.path(), &schemas)
+            .into_iter()
+            .map(|h| h.path)
+            .collect();
+        assert_eq!(
+            vacated,
+            vec!["VISION.md".to_string()],
+            "both paths have committed history and both homes are empty; only the one whose \
+             last committed document carried a `schema-version:` stamp was ever jigc's",
+        );
+    }
+
+    /// (M52 completion audit, fix 1) The blob is read from the **parent** of the commit that
+    /// removed the document when that commit no longer carries it, and from `HEAD` itself when
+    /// the removal is uncommitted — the two shapes an emptied home reaches this predicate in.
+    #[test]
+    fn an_uncommitted_removal_reads_the_blob_head_still_carries() {
+        let repo = TempRepo::new();
+        let schemas = map(vec![placement_schema("changelog", "CHANGELOG.md")]);
+        repo.commit_file("CHANGELOG.md", &stamped("Changelog"));
+        std::fs::remove_file(repo.path().join("CHANGELOG.md")).expect("empty the home on disk");
+
+        let vacated: Vec<String> = vacated_homes(repo.path(), &schemas)
+            .into_iter()
+            .map(|h| h.path)
+            .collect();
+        assert_eq!(
+            vacated,
+            vec!["CHANGELOG.md".to_string()],
+            "`HEAD` still carries jigc's stamped document at the home and the worktree does \
+             not — the predicate must read the blob from `HEAD`, where no removing commit \
+             exists to take a parent of",
         );
     }
 }
