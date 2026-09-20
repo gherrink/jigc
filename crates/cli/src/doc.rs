@@ -2947,9 +2947,12 @@ fn run_doc_rename(
     // from is in the candidate set; a stale summary named by an earlier rename in the same
     // task is reported here too, the finding being one per task and not one per rename.
     //
-    // Declared bound, planned rather than discovered: `render::doc_ack`'s TEXT arm renders
-    // no findings at all, so this production reaches a driver only. The text reach is the
-    // sweep's four surfaces; widening it is a sweep of all nine `DocAck` variants.
+    // That bound is discharged (M52 Increment 10 / T3, per-axis review row D-1). It read:
+    // *"`render::doc_ack`'s TEXT arm renders no findings at all, so this production reaches
+    // a driver only"* — driven true at `9a308b5c`, and it meant the notice minted so the
+    // agent that made the title stale hears about it was the one surface that agent reads.
+    // The widening it named — all nine `DocAck` variants — is the sweep that landed, in the
+    // renderer's one `with_carried_findings` call, so this ack states it on both arms.
     if let Ok(commit_schema) = task.schema(crate::task::COMMIT_TYPE)
         && let Some(stale) =
             crate::task::stale_commit_summary_finding(&task.dir, &task.id, &commit_schema)?

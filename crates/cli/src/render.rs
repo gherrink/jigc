@@ -2224,10 +2224,18 @@ fn code_fence(content: &str) -> String {
 /// and was discarded, so the flag QUICKSTART presents *beside* `task validate` as one
 /// preview surface was silent about every advisory that surface reports.
 ///
-/// **It is a JSON-only key, deliberately.** The standing text/JSON parity fence runs text
-/// → envelope (*a value the text prints but the envelope withholds is a gap*), so an
-/// additive envelope key is inside it; the agent/human forecast keeps the shape it has,
-/// and `jigc task validate` remains the text surface for the findings themselves.
+/// **It rode the envelope only, and that sentence is why the gap shipped** (M52 Increment
+/// 10 / T3, per-axis review row D-1). What stood here was *"a JSON-only key, deliberately:
+/// the standing parity fence runs text → envelope, so an additive envelope key is inside
+/// it"* — true about the **fence** and false about the **surface**. Driven at `9a308b5c`
+/// on a granted-and-unused changelog gate, the forecast's agent arm printed its title, its
+/// `would commit — …` line and `added c.txt`, and named no finding at all, while the
+/// envelope three bytes away carried `changelog-recording.gate-granted-unused`: an agent
+/// reading the default surface was told the forecast was clean. The parity fence could not
+/// see it because it checks the other direction. The text arm now renders **every** carried
+/// finding through the house [`finding_line`] ([`with_carried_findings`]) — the class, not
+/// the one code the review reported — and `jigc task validate` is still the fuller preview,
+/// with its clean line and its routing footer.
 pub fn finalize_manifest(
     format: Format,
     subject: &str,
@@ -2250,9 +2258,32 @@ pub fn finalize_manifest(
             ];
             lines.extend(included.iter().map(manifest_line));
             lines.extend(left_out_lines(left_out));
-            lines.join("\n")
+            with_carried_findings(lines.join("\n"), findings)
         }
     }
+}
+
+/// Append the findings a surface carries to its rendered agent/human `block`, each through
+/// the house [`finding_line`] — the one place the two silent text arms reach (M52 Increment
+/// 10 / T3, per-axis review row D-1: [`finalize_manifest`]'s forecast and [`doc_ack`]'s
+/// write ack both carried `findings` into `--format json` and rendered none of it in text).
+///
+/// `block` ends **without** a trailing newline (both callers' contract — the caller's
+/// `println!` closes it), and so does the return: each finding's own trailing newline is
+/// trimmed and one `\n` separates it from what precedes it. An empty collection returns
+/// `block` byte-identical, so the ordinary clean write keeps the single terse line it has
+/// always had, with no header and no blank line standing in for nothing.
+///
+/// `gates: false`, like every non-store surface: the severity token already *is* the
+/// verdict here, and the `blocking (gates at finalize)` annotation belongs to `jigc
+/// validate`'s store view ([`finding_head`]).
+fn with_carried_findings(block: String, findings: &Findings) -> String {
+    let mut out = block;
+    for finding in findings.iter() {
+        out.push('\n');
+        out.push_str(finding_line(finding, false).trim_end_matches('\n'));
+    }
+    out
 }
 
 /// Render a **landed** `task finalize` to the surface `format` selects, pairing the
@@ -2320,9 +2351,16 @@ fn landed_summary(landed: &Landed) -> String {
 /// Every variant carries `findings` — the **intrinsic single-doc advisories** the write
 /// reports as data (`design/command-output-contract.md` §2 — findings-as-data on write;
 /// today the `schema-conformance.surplus-sections-absent` check computed from the staged
-/// buffer after persist). It projects into the JSON ack's `findings[]` (empty on a clean
-/// write); completeness + cross-doc families stay store-scope, so `findings: []` means "no
-/// intrinsic single-doc advisory," not "validated."
+/// buffer after persist, and the `commit-recording.stale-title` notice `doc rename` raises).
+/// It projects into the JSON ack's `findings[]` (empty on a clean write); completeness +
+/// cross-doc families stay store-scope, so `findings: []` means "no intrinsic single-doc
+/// advisory," not "validated."
+///
+/// **Both surfaces, since M52 Increment 10 / T3.** Until then the agent/human arm built one
+/// line per variant and never read `findings` at all, so `doc rename`'s stale-title notice
+/// — a finding minted precisely so the agent that made the title stale hears about it —
+/// reached a `--format json` driver and nobody else. The text arm renders them through the
+/// house [`finding_line`], in the one place [`DocAck::findings`] is read.
 ///
 /// The five **edit** verbs additionally carry `copied_in` — `true` when this write was the
 /// task's **first touch** of a base-committed doc, so reading it copied the committed body
@@ -2460,10 +2498,11 @@ pub struct AckTarget {
 }
 
 /// Render a successful single-write `jigc doc` verb confirmation ([`DocAck`]) to the
-/// surface `format` selects: `agent` / `human` emit a terse one-line confirmation (no
-/// footer — symmetric with the bare line `doc create` / `doc add-item` emit); `json`
-/// emits a small structured ack object on stdout (the house serde-object shape, like
-/// [`milestone`]), so an agent on `--format json` gets a parseable confirmation.
+/// surface `format` selects: `agent` / `human` emit a terse one-line confirmation — plus
+/// one house [`finding_line`] per carried finding, and still no routing footer (symmetric
+/// with the bare line `doc create` / `doc add-item` emit); `json` emits a small structured
+/// ack object on stdout (the house serde-object shape, like [`milestone`]), so an agent on
+/// `--format json` gets a parseable confirmation.
 pub fn doc_ack(format: Format, ack: &DocAck) -> String {
     // No seam call: the ack's `findings[]` is a `Findings`, so the membership test rides its
     // projection (`command-output-contract.md` → The membership test) — the presence half on
@@ -2639,10 +2678,15 @@ pub fn doc_ack(format: Format, ack: &DocAck) -> String {
             // this write's read copied the committed doc into the working area, so the
             // task now owns (and at finalize re-promotes) it. Appended in ONE place, so a
             // verb cannot join the seam and stay silent (M47 Inc 10 T3).
-            match ack.copied_in() {
+            let line = match ack.copied_in() {
                 true => format!("{line} {COPY_IN_NOTE}"),
                 false => line,
-            }
+            };
+            // The findings half of the same rule, in the same one place: every arm carries
+            // `findings` into the envelope, so every arm names them here (M52 Increment 10 /
+            // T3). Appended off [`DocAck::findings`], never per variant, so a tenth variant
+            // cannot render a line and stay silent about what it reports.
+            with_carried_findings(line, ack.findings())
         }
     }
 }
@@ -2670,6 +2714,24 @@ impl DocAck {
             | DocAck::Renamed { copied_in, .. }
             | DocAck::AddedItem { copied_in, .. } => *copied_in,
             DocAck::Created { .. } | DocAck::Authored { .. } => false,
+        }
+    }
+
+    /// The findings this ack carries — the **intrinsic single-doc advisories** every arm
+    /// projects into its envelope's `findings[]`, and (since M52 Increment 10 / T3) renders
+    /// on its agent/human arm too. One accessor, an or-pattern over all nine variants: the
+    /// two surfaces read the same value, so neither can report what the other withholds.
+    fn findings(&self) -> &Findings {
+        match self {
+            DocAck::Field { findings, .. }
+            | DocAck::UnsetField { findings, .. }
+            | DocAck::Slot { findings, .. }
+            | DocAck::RemovedItem { findings, .. }
+            | DocAck::RetitledItem { findings, .. }
+            | DocAck::Renamed { findings, .. }
+            | DocAck::Created { findings, .. }
+            | DocAck::AddedItem { findings, .. }
+            | DocAck::Authored { findings, .. } => findings,
         }
     }
 }
@@ -9347,7 +9409,10 @@ mod tests {
         would commit — feat(cache): forecast the subject
           promoted docs/decisions/x.md
           left-out (unstaged/untracked — git add to include):
-            scratch.txt");
+            scratch.txt
+        advisory · file-state.staged-copy — staged copy of `docs/decisions/x.md` — this task's in-flight version of the doc
+          at: docs/decisions/x.md
+          route: no action needed — the staged copy is validated in-task and baselined when its finalize lands");
         assert!(
             !agent.ends_with('\n'),
             "no trailing newline — the caller closes it"
@@ -9356,8 +9421,10 @@ mod tests {
             finalize_manifest(Format::Human, subject, &included, &left_out, &findings),
             agent
         );
-        // The declared bound of the M51 rider: `findings` is a JSON-only key, so the text
-        // surface is byte-identical with and without one.
+        // M52 Increment 10 / T3 replaced the M51 rider's bound (*"`findings` is a JSON-only
+        // key — the agent forecast keeps the shape it has"*, which is why an agent reading
+        // the default surface was told a gated forecast was clean). What survives of it is
+        // the *clean* shape: nothing to report adds nothing — no header, no blank line.
         assert_eq!(
             finalize_manifest(
                 Format::Agent,
@@ -9366,8 +9433,12 @@ mod tests {
                 &left_out,
                 &Findings::default()
             ),
-            agent,
-            "`findings` is a JSON-only key — the agent forecast keeps the shape it has",
+            "finalize --dry-run — pre-commit manifest (nothing committed)\n\
+             would commit — feat(cache): forecast the subject\n\
+             \x20 promoted docs/decisions/x.md\n\
+             \x20 left-out (unstaged/untracked — git add to include):\n\
+             \x20   scratch.txt",
+            "a findings-free forecast renders exactly the block it always did",
         );
 
         let json_out = finalize_manifest(Format::Json, subject, &included, &left_out, &findings);

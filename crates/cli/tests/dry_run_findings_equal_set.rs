@@ -1,7 +1,13 @@
 //! M51 Increment 5 / T5 — **the equal-set fence**: `jigc task validate`,
 //! `jigc task finalize --dry-run` and the committing `jigc task finalize` emit **one**
 //! finding-code set (EC-20; `implementation/roadmap.md` → Milestone 51, Increment 5 →
-//! Riders; `completions/artifacts/M51/settle-record.md` → D5, the S5 clause).
+//! Riders; `completions/artifacts/M51/settle-record.md` → D5, the S5 clause) — **joined at
+//! M52 Increment 10 / T3 by the fence's other half**: what the **text** arm says about the
+//! findings the envelope carries, at the forecast door and at every `DocAck` write ack
+//! (per-axis review row D-1; `completions/artifacts/M52/settle-record.md` → D11). The two
+//! halves share a home because they are one claim read twice — *the surfaces of one door do
+//! not disagree about what it found* — and the bound struck below is the M51 half's own
+//! sentence that let the second half ship broken.
 //!
 //! **What was broken.** Driven at `9ae1f40b`, one task, one moment: `task validate`
 //! emitted `file-state.staged-copy` and `changelog-recording.gate-granted-unused`, the
@@ -54,19 +60,31 @@
 //!     obeys the gate it forecasts* — applied to a second member, and that is a change to
 //!     `--dry-run`'s exit contract this task does not carry. The finding is on the wire,
 //!     which is what EC-20 asked for.
-//!   * **The text surface is unchanged.** The rider adds one envelope key; the standing
-//!     parity fence runs text → envelope (a value the text prints and the envelope
-//!     withholds is the gap), so a JSON-only addition is inside it.
+//!   * ~~**The text surface is unchanged.**~~ **Struck at M52 Increment 10 / T3** (per-axis
+//!     review row D-1). The M51 rider reasoned that *the standing parity fence runs text →
+//!     envelope, so a JSON-only addition is inside it* — true about the fence and false
+//!     about the surface: driven at `9a308b5c` on a granted-and-unused changelog gate, the
+//!     forecast's default agent arm named no finding while its envelope carried the
+//!     advisory, so the agent reading the surface jigc actually hands it was told a gated
+//!     forecast was clean. The two text-arm fences below
+//!     ([`the_dry_run_text_arm_names_every_code_its_envelope_carries`],
+//!     [`every_doc_ack_arm_renders_a_carried_finding`]) close it over the class rather than
+//!     over the one code the review reported.
 //!
 //! Every assertion runs on the **emitted bytes** of the real binary
-//! (`CARGO_BIN_EXE_jigc`) over throwaway `git init` repos.
+//! (`CARGO_BIN_EXE_jigc`) over throwaway `git init` repos — with the one stated exception
+//! of the `DocAck` sweep, which drives [`render::doc_ack`] directly because eight of its
+//! nine arms have no known non-empty producer to drive (see its own bound).
 
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+use cli::cli::Format;
 use cli::gate_coverage::{self, Tier};
+use cli::render::{self, AckTarget, DocAck};
+use engine::finding::{Finding, Findings, Location, Route, Severity};
 
 /// A throwaway directory that removes itself on drop.
 struct TempDir(PathBuf);
@@ -593,4 +611,207 @@ fn a_clean_task_emits_the_empty_set_at_all_three_doors() {
          answers to a driver",
     );
     assert_eq!(committing, empty, "the landed commit reports nothing");
+}
+
+// --- the text arm (M52 Increment 10 / T3, D-1) ---------------------------------------
+
+/// **The text arm names what the envelope carries.** A granted-and-unused changelog gate,
+/// forecast twice: `--format json` reports `changelog-recording.gate-granted-unused`, and
+/// the default agent-text arm must name it too.
+///
+/// Driven at HEAD before the fix, on this exact corpus: the text arm printed the manifest
+/// title, the `would commit — …` line and `added feature.rs`, and **no findings line at
+/// all**, while the envelope carried the advisory. The assertion is over the envelope's
+/// own code set rather than the one code this corpus fires, so the fence is *the text arm
+/// renders what its sibling carries*, not *it renders this string*.
+#[test]
+fn the_dry_run_text_arm_names_every_code_its_envelope_carries() {
+    let corpus = Corpus::new("dry-run-text");
+    let task = corpus_changelog_gate(&corpus);
+
+    let envelope = jigc(
+        &corpus,
+        &["--format", "json", "task", "finalize", &task, "--dry-run"],
+        None,
+    );
+    let codes = emitted_codes(&envelope, "jigc task finalize --dry-run");
+    assert!(
+        codes.contains(&"changelog-recording.gate-granted-unused".to_string()),
+        "the corpus must make the advisory fire; the envelope carried {codes:?}",
+    );
+
+    let text = jigc(&corpus, &["task", "finalize", &task, "--dry-run"], None);
+    assert!(
+        text.status.success(),
+        "`task finalize --dry-run` exits 0; stderr:\n{}",
+        String::from_utf8_lossy(&text.stderr),
+    );
+    let rendered = String::from_utf8_lossy(&text.stdout).into_owned();
+    for code in &codes {
+        assert!(
+            rendered.contains(code.as_str()),
+            "the forecast's text arm must name `{code}` — the envelope carries it and the \
+             two arms are one surface; text arm was:\n{rendered}",
+        );
+    }
+}
+
+/// **Every `DocAck` arm renders a carried finding.** The axis is the code-side registry
+/// [`render::DOC_ACK_ARMS`]: one sample per variant, its arm name read back through
+/// [`render::doc_ack_arm`]'s exhaustive match, and the two sets compared — so a tenth
+/// variant cannot reach the text arm without a row here.
+///
+/// **Declared bound, and it is why the sweep is over the renderer.** Eight of the nine
+/// arms have no known non-empty producer today (`baseline-surfaces.md` §2.7: only
+/// `DocAck::Renamed` reaches one, via `commit-recording.stale-title`), so driving nine
+/// cells through the binary is not available. The class D-1 names is the *renderer* —
+/// `render::doc_ack`'s agent/human arm built one line per variant and never read
+/// `findings` — and this asserts over exactly that.
+#[test]
+fn every_doc_ack_arm_renders_a_carried_finding() {
+    let carried = || {
+        Findings::from(vec![Finding::graded(
+            Severity::Advisory,
+            "commit-recording.stale-title",
+            "the staged commit summary names the pre-rename title",
+            Some(Location::addressed("adr:cache-policy", 1, 1)),
+            Some(Route::human(
+                "re-author the commit summary through `jigc doc set-slot`",
+            )),
+        )])
+    };
+    let target = || AckTarget {
+        doctype: "adr".to_owned(),
+        slug: "cache-policy".to_owned(),
+        section: Some("decision".to_owned()),
+        item: None,
+        leaf: None,
+    };
+    let head = || AckTarget {
+        doctype: "adr".to_owned(),
+        slug: "cache-policy".to_owned(),
+        section: None,
+        item: None,
+        leaf: None,
+    };
+    let address = "adr:cache-policy#decision".to_owned();
+
+    let acks = vec![
+        DocAck::Field {
+            address: address.clone(),
+            target: target(),
+            value: serde_json::Value::String("accepted".to_owned()),
+            findings: carried(),
+            copied_in: false,
+        },
+        DocAck::UnsetField {
+            address: address.clone(),
+            target: target(),
+            already_absent: false,
+            findings: carried(),
+            copied_in: false,
+        },
+        DocAck::Slot {
+            address: address.clone(),
+            target: target(),
+            chars: 42,
+            findings: carried(),
+            copied_in: false,
+        },
+        DocAck::RemovedItem {
+            address: address.clone(),
+            target: target(),
+            findings: carried(),
+            copied_in: false,
+        },
+        DocAck::Renamed {
+            address: "adr:cache-policy".to_owned(),
+            target: head(),
+            title: "Cache policy".to_owned(),
+            from: "adr:cache-strategy".to_owned(),
+            reslugged: true,
+            committed_identity: false,
+            findings: carried(),
+            copied_in: false,
+        },
+        DocAck::RetitledItem {
+            address: address.clone(),
+            target: target(),
+            title: "Limits by client".to_owned(),
+            findings: carried(),
+            copied_in: false,
+        },
+        DocAck::Created {
+            address: "adr:cache-policy".to_owned(),
+            target: head(),
+            existed: false,
+            findings: carried(),
+        },
+        DocAck::AddedItem {
+            address: address.clone(),
+            target: target(),
+            findings: carried(),
+            copied_in: false,
+        },
+        DocAck::Authored {
+            address: "adr:cache-policy".to_owned(),
+            target: head(),
+            findings: carried(),
+        },
+    ];
+
+    let mut covered: Vec<&str> = acks.iter().map(render::doc_ack_arm).collect();
+    let mut declared: Vec<&str> = render::DOC_ACK_ARMS.to_vec();
+    covered.sort_unstable();
+    declared.sort_unstable();
+    assert_eq!(
+        covered, declared,
+        "every `DocAck` arm needs a sample here, and every sample an arm — the axis is the \
+         registry, not a hand list",
+    );
+
+    for ack in &acks {
+        let arm = render::doc_ack_arm(ack);
+        for format in [Format::Agent, Format::Human] {
+            let rendered = render::doc_ack(format, ack);
+            assert!(
+                rendered.contains("commit-recording.stale-title"),
+                "[{arm}/{format:?}] the text ack must name the finding it carries into JSON; \
+                 got:\n{rendered}",
+            );
+            assert!(
+                rendered.contains("the staged commit summary names the pre-rename title"),
+                "[{arm}/{format:?}] the finding's message rides the text arm too; got:\n{rendered}",
+            );
+            assert!(
+                rendered.contains("re-author the commit summary"),
+                "[{arm}/{format:?}] a carried route reaches the text arm — the route floor \
+                 binds every surface that renders a finding; got:\n{rendered}",
+            );
+        }
+    }
+}
+
+/// **The clean ack is unchanged.** A `DocAck` carrying no finding renders exactly the one
+/// line it always did — the addition is the findings block, never a header or a blank line
+/// on the ordinary write.
+#[test]
+fn a_finding_free_doc_ack_is_still_one_line() {
+    let ack = DocAck::Slot {
+        address: "adr:cache-policy#decision".to_owned(),
+        target: AckTarget {
+            doctype: "adr".to_owned(),
+            slug: "cache-policy".to_owned(),
+            section: Some("decision".to_owned()),
+            item: None,
+            leaf: None,
+        },
+        chars: 42,
+        findings: Findings::default(),
+        copied_in: false,
+    };
+    assert_eq!(
+        render::doc_ack(Format::Agent, &ack),
+        "set slot adr:cache-policy#decision (42 chars)",
+    );
 }

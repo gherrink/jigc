@@ -864,10 +864,18 @@ fn dry_run_carry_staged_forecasts_the_carry_and_diverges_from_the_refusal() {
 /// **Re-pinned again at M51 Inc 5 (T5 / EC-20), on the same grounds.** The JSON envelope
 /// gained `findings` — the equal-set rider, an additive key inside the pre-pin window —
 /// and this corpus's `single-task` grants a changelog gate it never uses, so the forecast
-/// now reports the advisory the door it forecasts reports. The **agent-text** pin above is
-/// byte-unchanged, which is the rider's declared JSON-only bound holding: an additive
-/// envelope key is inside the text → envelope parity fence, and the text forecast keeps
-/// the shape it has. T3's claim is again untouched.
+/// now reports the advisory the door it forecasts reports.
+///
+/// **Re-pinned a third time at M52 Inc 10 / T3 (per-axis review row D-1), and this one
+/// corrects a claim rather than absorbing a sibling wave's line.** The M51 re-pin read:
+/// *"the agent-text pin above is byte-unchanged, which is the rider's declared JSON-only
+/// bound holding"*. What it was actually pinning is the defect — this very corpus is the
+/// one the review drove: the envelope names `changelog-recording.gate-granted-unused` and
+/// the surface an agent reads named nothing, so a gated forecast read as clean. The text
+/// pin now carries the advisory its envelope carries, verbatim, and the claim **arm (viii)
+/// makes is unchanged**: "unchanged" was never *these* bytes forever, it is *the carrying
+/// state and nothing else* — the byte pin is the instrument, re-captured against the
+/// post-D-1 binary, and T3's own claim stays fenced by arm (vii).
 #[test]
 fn a_non_carrying_dry_run_manifest_is_byte_unchanged() {
     let repo = TempDir::new("t3-unchanged");
@@ -888,9 +896,14 @@ fn a_non_carrying_dry_run_manifest_is_byte_unchanged() {
         "finalize --dry-run — pre-commit manifest (nothing committed)\n\
          would commit — feat(cache): surface the manifest\n  \
          added feature.rs\n  \
-         left-out (unstaged/untracked — git add to include):\n    scratch.txt\n",
+         left-out (unstaged/untracked — git add to include):\n    scratch.txt\n\
+         advisory · changelog-recording.gate-granted-unused — workflow `single-task` grants \
+         the `changelog` create-gate and this task recorded no changelog entry\n  \
+         at: task:dry-run-the-carry\n  \
+         route: if the change is user-facing, record it — `jigc start --workflow \
+         record-change \"<what changed>\"`; if it is not user-facing, no action is needed\n",
         "the agent-text forecast is byte-stable for a non-carrying task (F-7's subject line \
-         included)",
+         and D-1's advisory included)",
     );
 
     let json = run_jigc(
