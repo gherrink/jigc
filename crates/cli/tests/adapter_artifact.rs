@@ -992,3 +992,91 @@ fn uninstall_with_no_guide_target_is_inert() {
         "the guide-less teardown must still reverse the rest of the install",
     );
 }
+
+// ───────────────── T9: the batch's facts, asserted where the adopter reads them ─────────────────
+//
+// The guide bytes are `include_str!`'d into the artifact, so **every** guide edit moves
+// `jigc-body-blake3:` and engages the refuse-to-clobber path above — which is why the wave
+// lands them in *one* batch and *one* hash move (`design/assistant-adapter.md` → The
+// adapter's owned artifacts, *One batch, one hash move*). The arm below is the other half of
+// that rule: a batch is only worth its hash move if the facts actually arrived, and the copy
+// that has to carry them is the **installed** one, not the two source files a repo-side grep
+// would reach.
+//
+// Each row is one item of the M52 Increment 10 batch, keyed to its review row. Where the
+// fact is a code or a path the binary also prints, the needle is **read from the production
+// constant** rather than respelled here, so a rename cannot leave the guide naming a code
+// that no longer exists while this arm stays green.
+
+/// One fact the batch landed, and the row that demanded it.
+struct GuideFact {
+    /// The review row / planner item this fact answers.
+    row: &'static str,
+    /// A phrase the installed body must carry.
+    needle: String,
+    /// What the adopter would be told wrongly without it.
+    why: &'static str,
+}
+
+/// The batch, as facts rather than as a diff.
+fn batch_facts() -> Vec<GuideFact> {
+    vec![
+        GuideFact {
+            row: "CX-2",
+            needle: cli::setup::GUIDE_MODIFIED_CODE.to_string(),
+            why: "three sentences promise `setup` refreshes this file; all three are false \
+                  once the copy is the user's, and the advisory that says so must be named \
+                  in the copy carrying them",
+        },
+        GuideFact {
+            row: "CX-3",
+            needle: "clone of the jigc repository".to_string(),
+            why: "`cargo install --path crates/cli` exits 101 from an adopter repo — the \
+                  preamble's disclaimer covers *documents*, not this path",
+        },
+        GuideFact {
+            row: "T1's rule, applied to the guides",
+            needle: "invocations.jsonl".to_string(),
+            why: "two guide sentences claim a run writes nothing; the opt-in invocation \
+                  log is the one exception, and an unqualified absolute is the class T1 closed",
+        },
+        GuideFact {
+            row: "Increment 4 (the displacement)",
+            // Spelled, like `GUIDE_PATH` above, as the fixture's own premise: the parking
+            // home is `cli::relocate::WORKBENCH_SUBDIR`, which is `pub(crate)`, and widening
+            // it to `pub` for a needle is not this commit's business.
+            needle: ".jigc/displaced/".to_string(),
+            why: "finalize no longer deletes the working area's foreign bytes — it parks \
+                  them, and nothing clears the parking home",
+        },
+        GuideFact {
+            row: "Increment 7 (the vacated home)",
+            needle: cli::orphan::HOME_VACATED_CODE.to_string(),
+            why: "a hand edit that removes a managed doc from a declared home takes \
+                  `jigc validate` non-zero, and the reconcile ladder never named it",
+        },
+    ]
+}
+
+/// Every fact of the M52 Increment 10 guide batch, read out of the **installed** artifact.
+#[test]
+fn the_installed_guide_body_carries_every_fact_the_batch_landed() {
+    let repo = TempDir::new("batch");
+    mark_repo(repo.path());
+    let home = TempDir::new("batch-home");
+    assert_clean(&run_setup(repo.path(), home.path(), None), "setup");
+
+    let installed = fs::read_to_string(repo.path().join(GUIDE_PATH)).expect("installed");
+    let (_front, body) = split_artifact(&installed);
+
+    let missing: Vec<String> = batch_facts()
+        .into_iter()
+        .filter(|fact| !body.contains(&fact.needle))
+        .map(|fact| format!("  [{}] `{}` — {}", fact.row, fact.needle, fact.why))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "the installed guide must carry every fact the batch landed; missing:\n{}",
+        missing.join("\n"),
+    );
+}

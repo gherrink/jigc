@@ -70,20 +70,33 @@ const GUIDE_HASH_KEY: &str = "jigc-body-blake3:";
 const QUICKSTART_GUIDE: &str = include_str!("../../../QUICKSTART.md");
 const MIGRATING_GUIDE: &str = include_str!("../../../MIGRATING.md");
 
-/// The generated paragraph the artifact opens with — the ownership statement (this file is
-/// jigc's, refreshed by `setup`), the version it was written from, and the two facts an
-/// adopter needs to read the rest honestly: the guides ship concatenated, and their
-/// cross-references to jigc's *project* docs are named without links because those files
-/// live in the jigc repository, not in the reader's.
+/// The generated paragraph the artifact opens with — the ownership statement, the version
+/// it was written from, and the two facts an adopter needs to read the rest honestly: the
+/// guides ship concatenated, and their cross-references to jigc's *project* docs are named
+/// without links because those files live in the jigc repository, not in the reader's.
+///
+/// **The ownership statement carries its own condition** (M52 Increment 10, T9 — CX-2).
+/// It read *"and owns it: re-run `jigc setup` … to refresh it"*, unconditionally — and this
+/// paragraph is rendered into the very file [`GuideOwnership`] can decide against the
+/// user. Driven at the baseline: edit the artifact and `setup` raises
+/// [`GUIDE_MODIFIED_CODE`] and leaves the bytes alone, so from that moment the sentence
+/// promising a refresh sits in the one copy that will never get one. Both the key the
+/// condition is about and the code that fires are rendered from their own constants, so the
+/// statement cannot name a stamp line or an advisory that no longer exists.
 fn guide_preamble() -> String {
     format!(
-        "`jigc setup` wrote this file from jigc {} and owns it: re-run `jigc setup` after \
-         upgrading the binary to refresh it.\n\nIt carries the two guides that ship with that \
-         binary, one after the other — the quickstart loop, then the migration field notes. A \
-         cross-reference to `QUICKSTART.md` or `MIGRATING.md` means the matching part of this \
-         file; every other jigc document named below lives in the jigc project's own \
-         repository, not in this one, which is why none of them are links here.\n",
-        env!("CARGO_PKG_VERSION"),
+        "`jigc setup` wrote this file from jigc {version} and replaces it **while it is \
+         still jigc's** — while the body below still hashes to the `{GUIDE_HASH_KEY}` line \
+         above. Re-run `jigc setup` after upgrading the binary and jigc rewrites this copy. \
+         Edit it and it becomes yours: every later `setup` leaves it byte-identical and says \
+         so — `{GUIDE_MODIFIED_CODE}`, which names the file and the two ways out — so this \
+         copy then stops tracking the binary until you delete it and re-run.\n\nIt carries \
+         the two guides that ship with that binary, one after the other — the quickstart \
+         loop, then the migration field notes. A cross-reference to `QUICKSTART.md` or \
+         `MIGRATING.md` means the matching part of this file; every other jigc document \
+         named below lives in the jigc project's own repository, not in this one, which is \
+         why none of them are links here.\n",
+        version = env!("CARGO_PKG_VERSION"),
     )
 }
 

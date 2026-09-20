@@ -12,10 +12,14 @@ project documents. This walks the MVP loop on a real machine —
 
 ## Install
 
-`jigc` ships as a single binary, and there is **one** install command. This is
-the only place this guide states it, so an upgrade is the same line again:
+`jigc` ships as a single binary, and there is **one** install command. It is run
+from a **clone of the jigc repository** — `crates/cli` is a path in *that* tree, so
+the line fails from the project you are adopting jigc into, which has no such
+directory. This is the only place this guide states it, so an upgrade is the same
+line again:
 
 ```sh
+# cwd: a clone of the jigc repository, not your own project
 cargo install --path crates/cli
 ```
 
@@ -57,9 +61,13 @@ It does these things:
 - writes jigc's own guides — this file and the migration field notes — to the path
   your assistant reads skills from (`.claude/skills/jigc/SKILL.md` for Claude Code),
   as **one file jigc owns**: it opens with a `jigc-version:` stamp naming the build
-  that wrote it plus the hash of its own body, and every `jigc setup` rewrites it, so
-  the guidance in your repo always matches the binary in your `PATH`. Re-run `setup`
-  after upgrading and the copy follows;
+  that wrote it plus the hash of its own body, and `jigc setup` rewrites it whenever
+  the body still hashes to that stamp, so the guidance in your repo matches the binary
+  in your `PATH`. Re-run `setup` after upgrading and the copy follows — **until you
+  edit it**. An edited copy is yours: `setup` leaves it byte-identical, raises the
+  `adapter-guide.user-modified` advisory instead of overwriting it, and drops it from
+  the rest of the install's commit — the other bullets here still run — so from then on it stops tracking the binary until you delete it and
+  re-run (`jigc upgrade` reports the same state without replacing anything);
 - extracts the embedded `doc-code` probe beside the installed `jigc` (so the
   doc↔code probe resolves next to the binary — written if no sibling is present
   **or** if an existing sibling's bytes differ from the embedded copy, so a
@@ -135,7 +143,11 @@ the working tree, and (when a decision is warranted) records an ADR in-task
 through the workflow's `create` gate.
 
 Bare `jigc start` (no intent) orients instead: it reports project state and the
-next action, read-only.
+next action and changes nothing in your repository. That holds for every *writes
+nothing* claim in these guides, under one jigc-wide exception: with the opt-in
+`invocation-log` knob on, **every** jigc run — these reads included — appends one
+record to the gitignored `.jigc/logs/invocations.jsonl`. A run that claims to
+write nothing writes that record and nothing more.
 
 ### Reading while the task is open
 
@@ -202,6 +214,17 @@ a stray `scratch.txt` stands out as left behind, never swept in; each path is
 tagged by how it enters, and [MIGRATING.md](MIGRATING.md) → Reconciling and
 backing out names the whole tag vocabulary once).
 
+Finalize then clears the task's working area — but it is not a delete. The commit
+carries the promoted docs and your index, nothing out of `.jigc/tasks/<id>/`, so
+anything under there that jigc did not write (a scratch note, an analysis file,
+something you dropped beside the staged docs) is **moved** first to
+`.jigc/displaced/<id>/` at the same relative path, and every `from → to` pair is
+named on stderr and on the landed `--format json` envelope's `committed.displaced`.
+`jigc milestone finalize` does the same for each sub-task's area. Nothing clears
+`.jigc/displaced/` — those bytes are yours to read and remove with your own `rm` —
+and `jigc uninstall` refuses while it holds anything (`uninstall.foreign-bytes`), so
+they never go out with the workbench.
+
 To see that set *before* committing, run `jigc task finalize <id> --dry-run`. On a
 task that would otherwise commit cleanly it prints the manifest and stops,
 committing nothing. It forecasts no green it would refuse: over a state finalize
@@ -228,7 +251,10 @@ the ack names the sha it landed on a `record commit:` line. Nothing of yours is
 committed either way; only the record moves.) It **refuses first if that area
 stages docs no commit has a copy of** — one blocking `task-discard.staged-prose`
 naming each of them, so you can read them back (`jigc doc show <address> --task <id>`) or land them
-(`jigc task finalize <id>`) before deciding. **`--force` is the single consent**
+(`jigc task finalize <id>`) before deciding. It refuses over the working area's **other**
+population too — every path there jigc did not write, one blocking
+`task-discard.foreign-bytes` naming each, since `.jigc/` is gitignored whole and
+nothing else has a copy. **`--force` is the single consent**
 that discards them along with the area. Minting a task stages its commit doc, so
 expect that refusal on any task you have actually started. The full
 reconcile/back-out ladder (the migration review hold, the carryover gate, the
