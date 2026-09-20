@@ -79,7 +79,7 @@ use cli::cli::VERB_KINDS;
 /// How far a run has got when the fault fires — the **applicability relation**: it is
 /// what decides which leaves can reach a fault at all.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Phase {
+pub(crate) enum Phase {
     /// Before jigc has located anything: the process cwd itself is unreadable, so no
     /// repository, project layer or pack has been looked for. **Every** leaf reaches it.
     BeforeDiscovery,
@@ -94,7 +94,7 @@ enum Phase {
 /// The state a cell is driven in — the fault's **fixture constructor**, as a value rather
 /// than a closure so the registry stays a `const`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Fixture {
+pub(crate) enum Fixture {
     /// Run with a working directory that has been removed out from under the process.
     DeletedCwd,
     /// A set-up repository whose `.jigc/config/packs.yaml` is not valid YAML.
@@ -121,13 +121,13 @@ enum Reading {
 }
 
 /// One pre-dispatch fault.
-struct Fault {
+pub(crate) struct Fault {
     /// The row's id — the key the expectation table and the failure messages use.
-    id: &'static str,
+    pub(crate) id: &'static str,
     /// How far the run had got when it fired; the applicability relation above.
-    phase: Phase,
+    pub(crate) phase: Phase,
     /// The state that produces it.
-    fixture: Fixture,
+    pub(crate) fixture: Fixture,
     /// The production sites that can **raise** it, and the sites that must (or must not)
     /// exist for it to be answered — each measured against the source.
     sites: &'static [Sites],
@@ -136,8 +136,13 @@ struct Fault {
     unanswered: &'static [(&'static str, &'static str)],
 }
 
-/// The class, one row per fault. Iterated × [`VERB_KINDS`] by the arms below.
-const PRE_DISPATCH_FAULTS: &[Fault] = &[
+/// The class, one row per fault. Iterated × [`VERB_KINDS`] by the arms below — and, since
+/// M52 Increment 11, by `flow53_acceptance.rs`' arm 6, which crosses it with
+/// `cli::render::ENVELOPE_ARMS`. That consumer is the reason the row type and its three
+/// read fields are `pub(crate)` rather than private: the acceptance arm reads **this**
+/// registry instead of re-deriving a second one, so a fault added here joins the
+/// done-picture walk with no edit there.
+pub(crate) const PRE_DISPATCH_FAULTS: &[Fault] = &[
     Fault {
         id: "cwd-unreadable",
         phase: Phase::BeforeDiscovery,
