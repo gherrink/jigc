@@ -651,3 +651,150 @@ fn doc_show_help_names_exactly_the_pinned_whole_doc_keys() {
          (`{staged}`) beside the pinned set; got:\n{help}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// M52 Increment 10, T1 — the three no-write claims are qualified against the
+// invocation log (CX-1 · baseline-surfaces §2.4 / §4.5 · gate-record row 11).
+//
+// Three surfaces made an *unqualified* no-write claim and one opt-in byte
+// falsified all three. Baseline §2.4 drove it on the `committed-singletons`
+// rig with `invocation-log` ON: `jigc migrate-corpus --dry-run` and `jigc
+// validate` each appended a record to `.jigc/logs/invocations.jsonl` while
+// claiming to write nothing, and with the knob OFF the `.jigc` snapshot was
+// byte-identical before and after — which is what makes the log the *only*
+// falsifier and therefore the *one* exception.
+//
+// The fix is a single statement (`cli::cli::NO_WRITE_EXCEPTION`) rendered into
+// all three, so the qualification cannot be worded three ways — and the class is
+// exactly those three. The **colon-scoped** siblings name what they do not write
+// rather than claiming a universal, so they are true as written; leaving them
+// byte-identical is the discrimination this fix has to preserve, which is why
+// the second test asserts their bytes rather than trusting the first.
+//
+// Both tests drive the REAL binary and read the emitted bytes an agent reads.
+
+use crate::support::trial_corpus::{State, TrialCorpus};
+
+/// Collapse whitespace runs the way [`help_stdout`] does, so a statement written
+/// across source lines and re-wrapped by clap compares on its words.
+fn collapse(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// The one exception, as the emitted surfaces spell it.
+fn exception() -> String {
+    collapse(cli::cli::NO_WRITE_EXCEPTION)
+}
+
+/// Pull one option's help block out of a clap long help: the lines following the
+/// line whose first token is `flag`, up to the next blank line. Needed because
+/// `migrate-corpus --help` carries a *member* (its long about) and a
+/// *non-member* (this block) in one output, so the non-member assertion has to
+/// be scoped to the block or it would read the member's statement as its own.
+fn option_help(help: &str, flag: &str) -> String {
+    let mut lines = help.lines();
+    lines
+        .by_ref()
+        .find(|line| line.split_whitespace().next() == Some(flag))
+        .unwrap_or_else(|| panic!("the help must carry a `{flag}` option line; got:\n{help}"));
+    let block: Vec<&str> = lines.take_while(|line| !line.trim().is_empty()).collect();
+    assert!(
+        !block.is_empty(),
+        "the `{flag}` option line must be followed by its help block; got:\n{help}"
+    );
+    collapse(&block.join(" "))
+}
+
+/// (a) The three members each state the one exception they have.
+///
+/// The ack is driven rather than reconstructed: the bytes an agent reads come
+/// out of a real `jigc migrate-corpus --dry-run` against a real corpus, so a
+/// statement that reached the format string but not the emitted line would
+/// redden here.
+#[test]
+fn the_three_no_write_claims_state_their_one_exception() {
+    let exception = exception();
+
+    let corpus = TrialCorpus::build(State::Fresh);
+    let ack = corpus.jigc_ok(&["migrate-corpus", "--dry-run"]);
+
+    let members: [(&str, String); 3] = [
+        (
+            "jigc migrate-corpus --help",
+            help_stdout(&["migrate-corpus", "--help"]),
+        ),
+        ("jigc validate --help", help_stdout(&["validate", "--help"])),
+        ("the `migrate-corpus --dry-run` ack", collapse(&ack)),
+    ];
+
+    for (label, text) in &members {
+        assert!(
+            text.contains(&exception),
+            "`{label}` claims to write nothing, so it must state the one exception \
+             it has — `{exception}` — verbatim from `cli::cli::NO_WRITE_EXCEPTION`; \
+             got:\n{text}"
+        );
+    }
+
+    // The ack still says what the run IS (F2's run-mode discrimination, M48 Inc 9
+    // T4): the exception qualifies the claim, it does not replace it.
+    assert!(
+        collapse(&ack).contains("dry run — nothing written"),
+        "the dry-run ack must still name its run mode; got:\n{ack}"
+    );
+}
+
+/// (b) The three colon-scoped siblings are **not** members, and stay byte-identical.
+///
+/// Each names what it does not write instead of claiming a universal, so each is
+/// true exactly as written. Asserting the sentence verbatim *and* the absence of
+/// the exception is what stops a later sweep from pasting the qualification over
+/// the whole class and calling it complete.
+#[test]
+fn the_colon_scoped_no_write_claims_are_not_members() {
+    let exception = exception();
+
+    // 1. `migrate-corpus --dry-run`'s own arg help — scoped to its option block,
+    //    because the verb's long about is a member.
+    let dry_run = option_help(&help_stdout_raw(&["migrate-corpus", "--help"]), "--dry-run");
+    assert_eq!(
+        dry_run,
+        "Print the triage report the migration *would* produce and change nothing: \
+         no migrated bytes, no relocation move, no commit. Implies `--no-commit`",
+        "`migrate-corpus --dry-run`'s arg help enumerates what it does not write \
+         and is true as written — it must stay byte-identical"
+    );
+
+    // 2/3. `task finalize --dry-run` and `workflow --preview` — their whole help
+    //      carries no no-write universal, so the absence is asserted over the
+    //      whole output, not just the block.
+    let scoped: [(&str, &[&str], &str); 2] = [
+        (
+            "task finalize --dry-run",
+            &["task", "finalize", "--help"],
+            "commit nothing, no destructive side effect",
+        ),
+        (
+            "workflow --preview",
+            &["workflow", "--help"],
+            "Preview the workflow's composed step text **without minting a task**",
+        ),
+    ];
+    for (label, argv, phrase) in scoped {
+        let help = help_stdout(argv);
+        assert!(
+            help.contains(phrase),
+            "`{label}` names what it does not do (\"{phrase}\") and is true as \
+             written — it must stay byte-identical; got:\n{help}"
+        );
+        assert!(
+            !help.contains(&exception),
+            "`{label}` is not a member of the no-write-universal class, so the \
+             exception statement must not be pasted onto it; got:\n{help}"
+        );
+    }
+    assert!(
+        !dry_run.contains(&exception),
+        "`migrate-corpus --dry-run`'s arg help must not carry the exception either"
+    );
+}

@@ -1116,6 +1116,9 @@ struct RunModeCell {
 /// recovery comment names both), so the fixture is not built by the defect it tests.
 #[test]
 fn migrate_corpus_headline_states_its_run_mode_over_the_whole_axis() {
+    /// The dry-run run-mode token the cells below spell; the render appends the one
+    /// no-write exception to it (M52 Increment 10, T1).
+    const DRY_RUN_MODE: &str = "dry run — nothing written";
     const CELLS: &[RunModeCell] = &[
         // A plain unmigrated corpus — no earlier run, no recovery clause anywhere.
         RunModeCell {
@@ -1194,9 +1197,16 @@ fn migrate_corpus_headline_states_its_run_mode_over_the_whole_axis() {
         let out = String::from_utf8_lossy(&run.stdout);
         assert_ok(&run, &format!("`jigc {}`", argv.join(" ")));
 
+        // The dry-run cells' run-mode parenthetical carries the one no-write statement
+        // (M52 Inc 10 / T1), which lives in `cli::cli::NO_WRITE_EXCEPTION` and nowhere
+        // else — spelling it into the cells would give it a second home here.
+        let expected = cell.headline.replace(
+            DRY_RUN_MODE,
+            &format!("{DRY_RUN_MODE}; {}", cli::cli::NO_WRITE_EXCEPTION),
+        );
         assert_eq!(
             out.lines().next().unwrap_or_default(),
-            cell.headline,
+            expected,
             "the `{tag}` cell's headline states its run mode; stdout:\n{out}",
         );
         assert!(

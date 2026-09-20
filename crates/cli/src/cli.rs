@@ -42,6 +42,29 @@ pub const ARGUMENT_CONVENTION: &str = "The argument convention: a doc verb takes
      id-source as the `--title` flag, a work-unit verb takes its id-source as a \
      positional (`design/write-commands.md` → The argument convention).";
 
+/// The **one exception** every jigc surface that claims to write nothing owes, stated
+/// once and rendered verbatim into all three of them (M52 Increment 10, T1 — CX-1).
+///
+/// Three surfaces made an unqualified no-write claim and all three were falsified by the
+/// same byte: `jigc migrate-corpus --help`'s *"`--dry-run` writes nothing at all"*, `jigc
+/// validate --help`'s *"the store-wide, read-only sweep"*, and the dry-run ack's *"dry
+/// run — nothing written"* header. With the `invocation-log` knob on, every run appends
+/// one record to `.jigc/logs/invocations.jsonl` — those three runs included — so the
+/// absolutes were false, driven, with the log-off control byte-identical
+/// (`completions/artifacts/M52/baseline-surfaces.md` §2.4 / §4.5).
+///
+/// One `const` for the three so the qualification cannot be worded three ways, and so a
+/// fourth surface making the claim has a statement to render rather than invent.
+///
+/// **What is NOT a member, and why the discrimination matters.** A claim that names
+/// *what* it does not write — `--dry-run`'s own arg help (*"no migrated bytes, no
+/// relocation move, no commit"*), `task finalize --dry-run` (*"commit nothing"*), `jigc
+/// workflow --preview` (*"without minting a task"*) — is true exactly as written, and
+/// pasting this exception onto it would trade a lie for noise. The members are the
+/// **universals**; the scoped enumerations stay byte-identical.
+pub const NO_WRITE_EXCEPTION: &str = "the opt-in `invocation-log` knob's gitignored \
+     `.jigc/logs/invocations.jsonl` record is the one exception";
+
 /// The `migrate-corpus` long help — **generated from the kind set it classifies**, not
 /// a second home for it (M51 Increment 9, EC-11).
 ///
@@ -72,7 +95,7 @@ fn migrate_corpus_long_about() -> String {
          validate`; this migrates. Disjoint from `jigc migrate` (foreign adoption) and \
          `jigc upgrade` (config). The verb lands its own migration in a pathspec-limited \
          commit; `--no-commit` leaves the writes unstaged, `--dry-run` writes nothing at \
-         all.\n\n\
+         all — {NO_WRITE_EXCEPTION}.\n\n\
          The classification is closed and a refusal names the member it stopped at, so \
          here is the whole set — every change classifies as exactly one of these kinds: \
          {kinds}. A kind the transform driver folds byte-stable is applied. One that \
@@ -106,11 +129,11 @@ fn validate_long_about() -> String {
         .collect::<Vec<_>>()
         .join("; ");
     format!(
-        "Re-check the committed store and report drift — the store-wide, read-only \
-         sweep.\n\n\
+        "Re-check the committed store and report drift — the store-wide sweep.\n\n\
          `jigc validate` is **task-less**: it re-reads the committed store and reports \
          what it finds, where `jigc task validate <id>` previews one task's gate. \
-         Detect-and-report — it repairs nothing.\n\n\
+         Detect-and-report — it repairs nothing, and the sweep itself writes \
+         nothing: {NO_WRITE_EXCEPTION}.\n\n\
          It sweeps every content family, in sweep order: {families}."
     )
 }
@@ -430,7 +453,7 @@ pub enum Command {
         commands: bool,
     },
 
-    /// Re-check the committed store and report drift — the store-wide, read-only sweep.
+    /// Re-check the committed store and report drift — the store-wide sweep.
     #[command(long_about = validate_long_about())]
     Validate,
 }

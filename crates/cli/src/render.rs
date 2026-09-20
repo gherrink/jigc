@@ -4055,10 +4055,11 @@ pub fn corpus_migration(
             };
             let mut out = if report.dry_run {
                 format!(
-                    "corpus migration (dry run — nothing written): {} would migrate, {recovery}{} already current, {} blocked{not_adopted}{left_unfilled}\n",
+                    "corpus migration (dry run — nothing written; {exception}): {} would migrate, {recovery}{} already current, {} blocked{not_adopted}{left_unfilled}\n",
                     report.migrated.len(),
                     report.already_current.len(),
                     report.blocked.len(),
+                    exception = crate::cli::NO_WRITE_EXCEPTION,
                 )
             } else {
                 format!(
