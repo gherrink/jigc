@@ -102,9 +102,47 @@ pub struct CommittingDoor {
     pub verb: &'static str,
     /// The [`ERROR_CODE_REGISTRY`] member this door logs on a commit-phase rejection.
     pub error_code: &'static str,
+    /// The clause this door's own `--help` states its commit in (M52 Increment 10 / T2,
+    /// D-2) — the third consumer of the axis, fenced through the real binary by
+    /// `tests/help_truth.rs`.
+    ///
+    /// Four of the ten doors shipped a help that never said they commit, one of them
+    /// (`jigc milestone create`) volunteering *"opening its **gitignored** area"*, which
+    /// an adopter reads as *nothing is committed* while the door moves `HEAD`
+    /// (`completions/artifacts/M52/baseline-surfaces.md` §2.8).
+    ///
+    /// **The field has two halves, and the split is deliberate.** For those four, the
+    /// value is a `pub const` here and the door's long help *renders it* — one home, so a
+    /// reword cannot drop the claim. For the five that already stated their commit in
+    /// their own words, the row **quotes** that clause instead: rewriting five working
+    /// help texts to render a const buys exactly the property this fence already gives,
+    /// and would move surfaces nothing asked to move.
+    pub commits: &'static str,
 }
 
-/// The **committing-door axis** — ONE code-side list with two consumers (M47 Inc 3 T7;
+/// [`jigc milestone create`](COMMITTING_DOORS)'s commit clause — rendered into its long
+/// help by `crate::milestone::create_long_about`.
+pub const MILESTONE_CREATE_COMMITS: &str =
+    "lands the milestone's committed record in a record-only commit";
+
+/// [`jigc milestone add-task`](COMMITTING_DOORS)'s commit clause — rendered into its long
+/// help by `crate::milestone::add_task_long_about`.
+pub const MILESTONE_ADD_TASK_COMMITS: &str = "appends the sub-task to the milestone's committed record and commits that record on \
+     its own";
+
+/// [`jigc milestone add-from-spec`](COMMITTING_DOORS)'s commit clause — rendered into its
+/// long help by `crate::milestone::add_from_spec_long_about`. One commit per seeded
+/// sub-task, which is what the plural says.
+pub const MILESTONE_ADD_FROM_SPEC_COMMITS: &str =
+    "commits the milestone's record once per seeded sub-task";
+
+/// [`jigc task discard`](COMMITTING_DOORS)'s commit clause — rendered into its long help by
+/// `crate::task::discard_long_about`. The commit is the **sub-task** cell only; an ordinary
+/// task's discard is workbench-local, which the help states beside it.
+pub const TASK_DISCARD_COMMITS: &str =
+    "settles its milestone's committed record to `discarded` and commits it";
+
+/// The **committing-door axis** — ONE code-side list with three consumers (M47 Inc 3 T7;
 /// `DECISIONS.md` → 2026-07-26 M47 the Settle, Decision 6 + the cross-model review's
 /// condition that the producer set derive from the same axis):
 ///
@@ -113,7 +151,10 @@ pub struct CommittingDoor {
 /// - `tests/commit_rejected_axis.rs` iterates it through the real binary, driving each door
 ///   under a rejecting `pre-commit` hook and reading the logged `error_code` back — which is
 ///   what closes the **release hole**: [`Outcome::error`]'s membership check is a
-///   `debug_assert!`, compiled out of the release build a trial actually runs.
+///   `debug_assert!`, compiled out of the release build a trial actually runs;
+/// - `tests/help_truth.rs` iterates it through each door's `--help`, asserting the emitted
+///   bytes carry that row's [`commits`](CommittingDoor::commits) clause (M52 Inc 10 T2) — so
+///   a door that moves `HEAD` cannot ship a help that never says so.
 ///
 /// It is the **rejecting sibling** of `tests/hook_output_axis.rs`' non-blocking enumeration
 /// (the same door set, the same one exclusion: `jigc setup`'s install commit passes
@@ -131,42 +172,52 @@ pub const COMMITTING_DOORS: &[CommittingDoor] = &[
     CommittingDoor {
         verb: "jigc task finalize",
         error_code: ERROR_COMMIT_REJECTED,
+        commits: "validate, render, stage, `git commit`, post-commit",
     },
     CommittingDoor {
         verb: "jigc milestone finalize (squash: true)",
         error_code: ERROR_MILESTONE_FINALIZE_REJECTED,
+        commits: "The milestone commit boundary",
     },
     CommittingDoor {
         verb: "jigc milestone finalize (squash: false)",
         error_code: ERROR_MILESTONE_CHAIN_REJECTED,
+        commits: "The milestone commit boundary",
     },
     CommittingDoor {
         verb: "jigc rename",
         error_code: ERROR_RENAME_REJECTED,
+        commits: "commits as one atomic transaction",
     },
     CommittingDoor {
         verb: "jigc migrate-corpus",
         error_code: ERROR_MIGRATE_CORPUS_REJECTED,
+        commits: "lands its own migration in a pathspec-limited commit",
     },
     CommittingDoor {
         verb: "jigc milestone create",
         error_code: ERROR_MILESTONE_CREATE_REJECTED,
+        commits: MILESTONE_CREATE_COMMITS,
     },
     CommittingDoor {
         verb: "jigc milestone add-task",
         error_code: ERROR_MILESTONE_ADD_TASK_REJECTED,
+        commits: MILESTONE_ADD_TASK_COMMITS,
     },
     CommittingDoor {
         verb: "jigc milestone add-from-spec",
         error_code: ERROR_MILESTONE_ADD_FROM_SPEC_REJECTED,
+        commits: MILESTONE_ADD_FROM_SPEC_COMMITS,
     },
     CommittingDoor {
         verb: "jigc milestone discard",
         error_code: ERROR_MILESTONE_DISCARD_REJECTED,
+        commits: "in one record-only commit, then tear the workbench down",
     },
     CommittingDoor {
         verb: "jigc task discard",
         error_code: ERROR_TASK_DISCARD_REJECTED,
+        commits: TASK_DISCARD_COMMITS,
     },
 ];
 

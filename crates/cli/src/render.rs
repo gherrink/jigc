@@ -2776,8 +2776,12 @@ pub fn task_ack(format: Format, ack: &TaskAck) -> String {
             } => {
                 let landed = commit.as_ref().map_or_else(String::new, |sha| {
                     format!(
-                        "\nrecord commit: {sha}   — this sub-task's milestone record, \
-                         settled to `discarded` and committed on its own"
+                        "\n{}",
+                        record_commit_line(
+                            sha,
+                            "this sub-task's milestone record, settled to `discarded` and \
+                             committed on its own",
+                        )
                     )
                 });
                 if dropped.is_empty() {
@@ -4221,6 +4225,19 @@ pub fn freeze_exempt_relocation(
     }
 }
 
+/// The **`record commit: <sha>` line** every record-only committing door's ack prints — one
+/// home since M52 Increment 10 / T2 (D-2).
+///
+/// Four doors land a path-scoped commit of a milestone's committed record, and until this
+/// increment two of them printed the line and two printed nothing at all
+/// (`completions/artifacts/M52/baseline-surfaces.md` §4.4). The line's shape — the lead, the
+/// three-space gutter, the `— <tail>` — is the fact one home owes; the `tail` stays the
+/// caller's, because what the commit *was* differs per door (the milestone opening, a
+/// sub-task appended, a record settled to `discarded`).
+pub fn record_commit_line(sha: &str, tail: &str) -> String {
+    format!("record commit: {sha}   — {tail}")
+}
+
 /// The `jigc milestone create` summary — the mint line, what the mint **landed**, and the
 /// step that follows (M47 Inc 8 / T5; `completions/artifacts/M47/baseline.md` § 3c → N13,
 /// `design/surface-contract.md` → law 2, nothing hides). It is the summary text
@@ -4252,9 +4269,11 @@ pub fn milestone_created(created: &MilestoneCreated) -> String {
             record.path
         ));
         if let Some(sha) = &record.commit {
-            out.push_str(&format!(
-                "record commit: {sha}   — the record on its own; anything else you had staged stayed staged\n"
+            out.push_str(&record_commit_line(
+                sha,
+                "the record on its own; anything else you had staged stayed staged",
             ));
+            out.push('\n');
         }
     }
     // The ignore amend, when there was one (M51 Increment 4 / T2) — above the `next:`

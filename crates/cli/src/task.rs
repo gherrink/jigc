@@ -212,6 +212,28 @@ fn finalize_long_about() -> String {
     )
 }
 
+/// The `jigc task discard` long help — **the door says that it commits** (M52 Increment 10 /
+/// T2, D-2). Its two "commit" hits were both inside `--force`'s *"no commit has a copy of"*,
+/// so a literal scan read as truthful while the door never said it moves `HEAD`: a sub-task's
+/// discard settles its milestone's committed record and lands a record-only commit
+/// ([`crate::milestone::settle_discarded_sub_task`]) — this is
+/// [`COMMITTING_DOORS`](crate::invocation_log::COMMITTING_DOORS)' tenth member, and the claim
+/// renders that row's own
+/// [`TASK_DISCARD_COMMITS`](crate::invocation_log::TASK_DISCARD_COMMITS) clause.
+///
+/// The **conditional** is stated beside it rather than left to be discovered: an ordinary
+/// task's discard is workbench-local and commits nothing, which is the common cell.
+fn discard_long_about() -> String {
+    format!(
+        "Abandon the task — remove its working area `.jigc/tasks/<id>/`.\n\n\
+         A **sub-task** of a milestone is not workbench-local: discarding one {} before \
+         the area goes, so `HEAD` moves and the ack names the sha. That commit is \
+         path-scoped to the record — anything else you had staged stays staged. An \
+         ordinary task's discard commits nothing.",
+        crate::invocation_log::TASK_DISCARD_COMMITS,
+    )
+}
+
 /// The `jigc task <verb>` subcommand tree. Each verb names a task by its `<id>`.
 #[derive(Debug, clap::Subcommand, PartialEq, Eq)]
 pub enum TaskCommand {
@@ -234,6 +256,7 @@ pub enum TaskCommand {
         carry_staged: bool,
     },
     /// Abandon the task — remove its working area `.jigc/tasks/<id>/`.
+    #[command(long_about = discard_long_about())]
     Discard {
         /// The task id (the working-area slug under `.jigc/tasks/`).
         id: String,

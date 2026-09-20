@@ -64,20 +64,76 @@ const MILESTONE_EXECUTION_WORKFLOW: &str = "milestone-execution";
 /// met one verb read the other as an inconsistency (rc.9 trial, N20). Both sites
 /// render the one [`crate::cli::ARGUMENT_CONVENTION`] statement, so the pair cannot
 /// drift into describing two rules.
+///
+/// **It also says that it commits** (M52 Increment 10 / T2, D-2). This help volunteered
+/// *"opening its **gitignored** area"* and nothing else, which an adopter reads as
+/// *nothing is committed* — while the door writes the milestone's committed record and
+/// moves `HEAD`. The claim is the door's own
+/// [`MILESTONE_CREATE_COMMITS`](crate::invocation_log::MILESTONE_CREATE_COMMITS) clause,
+/// rendered from the axis rather than retyped, and the misleading half is **corrected**
+/// rather than merely extended: the gitignored subject is now named as the *working area*,
+/// which is what is actually gitignored.
 fn create_long_about() -> String {
     format!(
-        "Mint a milestone work-unit (id = frozen slug from the title), opening its \
-         gitignored area with one shared base pinned at HEAD and an empty task list.\n\n\
+        "Mint a milestone work-unit (id = frozen slug from the title) with one shared \
+         base pinned at HEAD and an empty task list.\n\n\
+         Only the working area under `.jigc/` is gitignored — the milestone's record is \
+         not. Where the composed cascade resolves the `milestone-record` doctype, this \
+         door {}: it writes that record under docs-root, `HEAD` moves, and the commit is \
+         path-scoped to the record, so anything else you had staged stays staged. A \
+         project whose cascade resolves no such doctype opens the working area and \
+         commits nothing.\n\n\
          {}",
+        crate::invocation_log::MILESTONE_CREATE_COMMITS,
         crate::cli::ARGUMENT_CONVENTION,
+    )
+}
+
+/// The `jigc milestone add-task` long help — **the door says that it commits** (M52
+/// Increment 10 / T2, D-2). It named the gitignored task list and stopped, while under a
+/// `[dev ▸ methodology]` project it appends to the milestone's committed record and lands a
+/// record-only commit; driven, the door moved `HEAD` with neither its help nor its ack
+/// saying so (`completions/artifacts/M52/baseline-surfaces.md` §4.4). The claim renders the
+/// door's own [`MILESTONE_ADD_TASK_COMMITS`](crate::invocation_log::MILESTONE_ADD_TASK_COMMITS)
+/// clause off the committing-door axis.
+fn add_task_long_about() -> String {
+    format!(
+        "Mint a sub-task under an existing milestone (pinned to the milestone's shared \
+         base, isolated `tasks/<sub>/` area) and append it to the task list.\n\n\
+         Where the composed cascade resolves the `milestone-record` doctype, this door \
+         also {}: `HEAD` moves, the commit is path-scoped to the record so anything else \
+         you had staged stays staged, and the ack names the sha it landed. A project whose \
+         cascade resolves no such doctype appends to the gitignored task list and commits \
+         nothing.",
+        crate::invocation_log::MILESTONE_ADD_TASK_COMMITS,
+    )
+}
+
+/// The `jigc milestone add-from-spec` long help — **the door says that it commits** (M52
+/// Increment 10 / T2, D-2). Its two "committed" hits were both *"a committed spec"*, so a
+/// literal scan read as truthful while the door was as silent as its `add-task` sibling. It
+/// lands **one record-only commit per seeded sub-task**, which is what the door's own
+/// [`MILESTONE_ADD_FROM_SPEC_COMMITS`](crate::invocation_log::MILESTONE_ADD_FROM_SPEC_COMMITS)
+/// clause says and what its ack now enumerates.
+fn add_from_spec_long_about() -> String {
+    format!(
+        "Seed a milestone's task list from a committed spec: mint one sub-task per \
+         repeatable `criterion` of the spec (criterion text as intent). A spec with zero \
+         criteria blocks with `milestone.no-criteria` (\"nothing to seed from\").\n\n\
+         Where the composed cascade resolves the `milestone-record` doctype, every seeded \
+         sub-task is appended to the milestone's committed record and this door {}: `HEAD` \
+         moves once per seed, each commit is path-scoped to the record, and the ack names \
+         every sha it landed. A project whose cascade resolves no such doctype seeds the \
+         gitignored task list and commits nothing.",
+        crate::invocation_log::MILESTONE_ADD_FROM_SPEC_COMMITS,
     )
 }
 
 /// The `jigc milestone <verb>` subcommand tree.
 #[derive(Debug, clap::Subcommand, PartialEq, Eq)]
 pub enum MilestoneCommand {
-    /// Mint a milestone work-unit (id = frozen slug from the title), opening its
-    /// gitignored area with one shared base pinned at HEAD and an empty task list.
+    /// Mint a milestone work-unit (id = frozen slug from the title) with one shared
+    /// base pinned at HEAD and an empty task list.
     #[command(long_about = create_long_about())]
     Create {
         /// The milestone title, taken as a positional — the work-unit form of the
@@ -87,6 +143,7 @@ pub enum MilestoneCommand {
     },
     /// Mint a sub-task under an existing milestone (pinned to the milestone's
     /// shared base, isolated `tasks/<sub>/` area) and append it to the task list.
+    #[command(long_about = add_task_long_about())]
     AddTask {
         /// The milestone id (the slug under `.jigc/milestones/`).
         milestone_id: String,
@@ -102,6 +159,7 @@ pub enum MilestoneCommand {
     /// Seed a milestone's task list from a committed spec: mint one sub-task per
     /// repeatable `criterion` of the spec (criterion text as intent). A spec with
     /// zero criteria blocks with `milestone.no-criteria` ("nothing to seed from").
+    #[command(long_about = add_from_spec_long_about())]
     AddFromSpec {
         /// The milestone id (the slug under `.jigc/milestones/`).
         milestone_id: String,
@@ -768,12 +826,7 @@ fn materialize_and_commit_record(
         &minted.id,
         body.as_bytes(),
     );
-    // The landed commit's short sha, read back the way `setup`'s install commit reads its own
-    // (`crate::setup` → `commit_install`): the commit is already in history, so a git hiccup
-    // here degrades to naming no sha, never to failing a `create` that succeeded.
-    let commit = crate::task::git_capture(jigc_home, &["rev-parse", "--short", "HEAD"])
-        .ok()
-        .filter(|sha| !sha.is_empty());
+    let commit = landed_record_sha(jigc_home);
     Ok(LandedRecord {
         hook_output,
         record: CreatedRecord {
@@ -807,6 +860,22 @@ fn commit_record_only(
     std::fs::write(&msg_path, message)
         .with_context(|| format!("could not write the record commit message {msg_path:?}"))?;
     git_commit_pathspec(repo_root, &msg_path, &spec)
+}
+
+/// The record-only commit a door **just landed**, as its short sha — read back the way
+/// `setup`'s install commit reads its own (`crate::setup` → `commit_install`).
+///
+/// The commit is already in history, so a git hiccup here degrades to naming **no** sha,
+/// never to failing an op that succeeded — which is why every caller's ack carries
+/// `Option<String>` and omits the line rather than printing `unknown`.
+///
+/// One home since M52 Increment 10 / T2: the four record-only committing doors all read it,
+/// and the two that gained their ack line there (`add-task`, `add-from-spec`) would otherwise
+/// have been the fourth and fifth copy of the same three lines.
+fn landed_record_sha(jigc_home: &Path) -> Option<String> {
+    crate::task::git_capture(jigc_home, &["rev-parse", "--short", "HEAD"])
+        .ok()
+        .filter(|sha| !sha.is_empty())
 }
 
 /// The record's **repo-relative pathspec** — the one string the stage, the commit, and the
@@ -1600,6 +1669,9 @@ fn run_add_task(
     // The record commit's captured non-blocking hook stream (the hook_output producer
     // axis) — empty dev-only (no record, no commit, no hook ran).
     let mut hook_output = String::new();
+    // The record-only commit this door lands, when it lands one — `None` dev-only (no record,
+    // no commit) and when the post-commit read-back failed (M52 Increment 10 / T2).
+    let mut record_commit: Option<String> = None;
     if let Some(schema) = schemas.get(MILESTONE_RECORD_TYPE) {
         // The mint unwinds with its record (M47 Inc 2 T2): on a rejected commit the sub-task
         // area this call minted goes, and the task list returns to its captured pre-append
@@ -1617,7 +1689,10 @@ fn run_add_task(
             conflicts,
         );
         hook_output = match landed {
-            Ok(stream) => stream,
+            Ok(appended) => {
+                record_commit = appended.commit;
+                appended.hook_output
+            }
             Err(err) => {
                 conflicts.extend(unwind_mint(
                     &jigc_home,
@@ -1632,13 +1707,18 @@ fn run_add_task(
         };
     }
 
-    Ok((
-        format!(
-            "added task:{} to milestone:{}",
-            added.task.id, added.milestone_id
-        ),
-        hook_output,
-    ))
+    // The ack names the commit it landed — the door moves `HEAD` and said so on no surface
+    // (D-2; `completions/artifacts/M52/baseline-surfaces.md` §4.4). The mint line stays the
+    // first line, which is what every caller reading the id back off this ack keys on.
+    let mut summary = format!(
+        "added task:{} to milestone:{}",
+        added.task.id, added.milestone_id
+    );
+    if let Some(sha) = &record_commit {
+        summary.push('\n');
+        summary.push_str(&record_commit_ack(sha, &added.task.id));
+    }
+    Ok((summary, hook_output))
 }
 
 /// Append one sub-task to the committed `milestone-record` and commit ONLY it — the
@@ -1665,7 +1745,7 @@ fn append_and_commit_record(
     intent: &str,
     workflow: &str,
     conflicts: &mut Vec<Finding>,
-) -> Result<String> {
+) -> Result<AppendedRecord> {
     let record_path = engine::store::canonical_path(jigc_home, schema, milestone_id)
         .context("the `milestone-record` doctype declares no committed location")?;
     let source = std::fs::read_to_string(&record_path)
@@ -1696,7 +1776,43 @@ fn append_and_commit_record(
     // Advance the record's `file-state` baseline to the appended bytes, so the next overwrite's
     // reconcile preflight compares against this write, not the pre-append record (T6).
     baseline_record(jigc_root, schema, milestone_id, appended.as_bytes());
-    Ok(hook_output)
+    Ok(AppendedRecord {
+        hook_output,
+        commit: landed_record_sha(jigc_home),
+    })
+}
+
+/// What one record append hands back ([`append_and_commit_record`]) — the record-only commit
+/// it landed, on the two axes the caller's surface needs: the captured non-blocking hook
+/// stream it relays, and the sha its ack names. The shape [`SettledSubTask`] already carries
+/// for the sibling door, reused so the two record-committing families describe one thing one
+/// way (M52 Increment 10 / T2).
+///
+/// `commit` is `None` only when the post-commit read-back itself failed; a door that landed
+/// no commit at all (dev-only, no `milestone-record` doctype) never calls this.
+struct AppendedRecord {
+    hook_output: String,
+    commit: Option<String>,
+}
+
+/// The `record commit: <sha>` ack line the two **seeding** doors print — one per record-only
+/// commit they land (M52 Increment 10 / T2, D-2).
+///
+/// Both doors were silent about a commit they had already made: driven, `add-task` and
+/// `add-from-spec` moved `HEAD` with neither `--help` nor ack naming it, while the four
+/// sibling record-committing doors all printed a sha
+/// (`completions/artifacts/M52/baseline-surfaces.md` §4.4). The line's shape is the shipped
+/// one ([`crate::render::record_commit_line`]), so the family speaks one way; the tail names
+/// the sub-task, because `add-from-spec` lands one commit per seeded sub-task and a reader
+/// otherwise cannot tell the N shas apart.
+fn record_commit_ack(sha: &str, task_id: &str) -> String {
+    crate::render::record_commit_line(
+        sha,
+        &format!(
+            "task:{task_id} on the milestone record, committed on its own; anything else \
+             you had staged stayed staged"
+        ),
+    )
 }
 
 /// `jigc milestone add-from-spec <milestone-id> <spec-addr>` — seed the milestone's
@@ -1827,6 +1943,9 @@ fn run_add_from_spec(
     // stream folds into the one acked string (the hook_output producer axis). Empty
     // dev-only (no record, no commits, no hook ran).
     let mut streams: Vec<String> = Vec::new();
+    // One `record commit:` ack line per landed record commit, in seed order — this door lands
+    // N of them and named none (M52 Increment 10 / T2, D-2). Empty dev-only.
+    let mut record_commits: Vec<String> = Vec::new();
     if let Some(schema) = schemas.get(MILESTONE_RECORD_TYPE) {
         for (landed, a) in seeded.added.iter().enumerate() {
             let recorded = engine::state::read_intent(&a.task.dir)
@@ -1849,7 +1968,12 @@ fn run_add_from_spec(
                     )
                 });
             match recorded {
-                Ok(stream) => streams.push(stream),
+                Ok(appended) => {
+                    streams.push(appended.hook_output);
+                    if let Some(sha) = &appended.commit {
+                        record_commits.push(record_commit_ack(sha, &a.task.id));
+                    }
+                }
                 Err(err) => {
                     // The mid-loop unwind (M47 Inc 2 T3): the k−1 landed record commits are
                     // history and cannot be undone, so this call's atomicity is "the workbench
@@ -1891,6 +2015,13 @@ fn run_add_from_spec(
             seeded.already_seeded.len(),
             seeded.already_seeded.join(", ")
         ));
+    }
+    // …and then every commit it landed, one line each: a re-run that skipped every criterion
+    // lands none and prints none, which is the same absent-vs-present rule the sibling acks
+    // use for a sha they do not have.
+    for line in &record_commits {
+        summary.push('\n');
+        summary.push_str(line);
     }
     Ok((
         summary,
@@ -2184,12 +2315,7 @@ pub(crate) fn settle_discarded_sub_task(
     baseline_record(jigc_root, schema, &milestone_id, settled.as_bytes());
     Ok(Some(SettledSubTask {
         hook_output,
-        // The landed commit's short sha, read back exactly the way `create`'s record commit
-        // reads its own: the commit is already in history, so a git hiccup here degrades to
-        // naming no sha, never to failing a settle that succeeded.
-        commit: crate::task::git_capture(jigc_home, &["rev-parse", "--short", "HEAD"])
-            .ok()
-            .filter(|sha| !sha.is_empty()),
+        commit: landed_record_sha(jigc_home),
     }))
 }
 

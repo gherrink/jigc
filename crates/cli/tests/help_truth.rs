@@ -798,3 +798,163 @@ fn the_colon_scoped_no_write_claims_are_not_members() {
         "`migrate-corpus --dry-run`'s arg help must not carry the exception either"
     );
 }
+
+/// M52 Increment 10, T2 (D-2) — **every committing door says it commits, on the two
+/// surfaces an operator reads before and after running it.**
+///
+/// The review's row was one door (`jigc task discard --help` never says it commits).
+/// Driven across the whole axis, the class is **four of the ten**
+/// [`COMMITTING_DOORS`](cli::invocation_log::COMMITTING_DOORS) rows — `task discard`,
+/// `milestone create`, `milestone add-task`, `milestone add-from-spec` — and two of those
+/// four (`add-task`, `add-from-spec`) are silent in the **ack** as well, while every other
+/// record-committing sibling prints its `record commit: <sha>` line
+/// (`completions/artifacts/M52/baseline-surfaces.md` §2.8 / §4.4). `milestone create` was
+/// the sharpest: its help volunteered *"opening its **gitignored** area"*, which reads as
+/// *nothing is committed*, while the door moves `HEAD`.
+///
+/// The fence is the **axis**, not the four rows: it iterates the code-side registry, so a
+/// door added there owes its help clause here rather than shipping silent.
+///
+/// **What each row's `commits` clause is, and why the two halves of that field differ.**
+/// For the four doors whose prose this increment writes, the help *renders* the const the
+/// registry row points at — one home, and a reword cannot drop the claim. For the five that
+/// already stated their commit in their own words, the row **quotes** that clause: a
+/// byte-identical rewrite of five working help texts buys exactly the property this fence
+/// already gives, and would risk drifting surfaces nothing else asked to move.
+mod committing_doors_say_so {
+    use super::help_stdout;
+    use crate::support::committing_doors::{TWO_CRITERIA_SPEC, base_repo, git, jigc_ok};
+    use cli::invocation_log::COMMITTING_DOORS;
+
+    /// The clap leaf path a [`COMMITTING_DOORS`] row's `verb` label names: `"jigc milestone
+    /// finalize (squash: true)"` → `["milestone", "finalize"]`. The commit-model suffix is
+    /// an arm of one leaf, so the two `milestone finalize` rows drive one help.
+    fn door_leaf(verb: &str) -> Vec<&str> {
+        verb.split(" (")
+            .next()
+            .expect("a row label is non-empty")
+            .strip_prefix("jigc ")
+            .unwrap_or_else(|| panic!("a row label names the binary: `{verb}`"))
+            .split(' ')
+            .collect()
+    }
+
+    /// Collapse whitespace runs the way [`help_stdout`] does, so a clause written across
+    /// source lines compares against a clap-wrapped help.
+    fn collapse(text: &str) -> String {
+        text.split_whitespace().collect::<Vec<_>>().join(" ")
+    }
+
+    #[test]
+    fn every_committing_door_help_states_the_commit_it_lands() {
+        assert_eq!(
+            COMMITTING_DOORS.len(),
+            10,
+            "the axis is the code-side `COMMITTING_DOORS` table, so a door added there \
+             owes its help clause here",
+        );
+        // Collected, not short-circuited: the class is four silent doors and a fence that
+        // panics at the first tells a fixer about one of them.
+        let mut silent: Vec<String> = Vec::new();
+        for door in COMMITTING_DOORS {
+            let mut argv = door_leaf(door.verb);
+            argv.push("--help");
+            let help = help_stdout(&argv);
+            let clause = collapse(door.commits);
+            if !help.contains(&clause) {
+                silent.push(format!(
+                    "[{}] expected the clause:\n  {clause}\ngot:\n  {help}",
+                    door.verb,
+                ));
+            }
+        }
+        assert!(
+            silent.is_empty(),
+            "every committing door's `--help` must state the commit it lands:\n\n{}",
+            silent.join("\n\n"),
+        );
+    }
+
+    #[test]
+    fn the_two_seeding_doors_ack_the_record_commit_they_landed() {
+        let (repo, home) = base_repo("ack-record-commit", None);
+        let (repo, home) = (repo.path(), home.path());
+        jigc_ok(
+            repo,
+            home,
+            &["milestone", "create", "Cache rework"],
+            "`jigc milestone create`",
+        );
+
+        // 1. `add-task` — one record commit, so HEAD is the sha the ack owes.
+        let out = jigc_ok(
+            repo,
+            home,
+            &["milestone", "add-task", "cache-rework", "Area low"],
+            "`jigc milestone add-task`",
+        );
+        // Collected, not short-circuited: both doors are silent at HEAD, and a fence that
+        // panics at the first names one of the two.
+        let mut silent: Vec<String> = Vec::new();
+        let add_task_ack = String::from_utf8_lossy(&out.stdout).into_owned();
+        // `git` hands back raw stdout, so the sha carries its newline.
+        let add_task_head = git(repo, &["rev-parse", "--short", "HEAD"])
+            .trim()
+            .to_string();
+        if !add_task_ack.contains(&format!("record commit: {add_task_head}")) {
+            silent.push(format!(
+                "`milestone add-task` landed {add_task_head} and named no commit; \
+                 got:\n{add_task_ack}"
+            ));
+        }
+
+        // 2. `add-from-spec` — one record commit per seeded sub-task; the LAST of them is
+        //    HEAD, and the ack names every one.
+        std::fs::create_dir_all(repo.join("docs").join("specs")).expect("mk docs/specs/");
+        std::fs::write(
+            repo.join("docs").join("specs").join("rate-limit.md"),
+            TWO_CRITERIA_SPEC,
+        )
+        .expect("write the spec");
+        git(repo, &["add", "."]);
+        git(repo, &["commit", "-q", "-m", "add spec"]);
+        jigc_ok(
+            repo,
+            home,
+            &["milestone", "create", "Rate limit"],
+            "`jigc milestone create`",
+        );
+        let out = jigc_ok(
+            repo,
+            home,
+            &[
+                "milestone",
+                "add-from-spec",
+                "rate-limit",
+                "spec:rate-limit",
+            ],
+            "`jigc milestone add-from-spec`",
+        );
+        let ack = String::from_utf8_lossy(&out.stdout).into_owned();
+        let head = git(repo, &["rev-parse", "--short", "HEAD"])
+            .trim()
+            .to_string();
+        if !ack.contains(&format!("record commit: {head}")) {
+            silent.push(format!(
+                "`milestone add-from-spec` landed {head} and named no commit; got:\n{ack}"
+            ));
+        }
+        assert!(
+            silent.is_empty(),
+            "a door that moved `HEAD` names the commit it landed:\n\n{}",
+            silent.join("\n\n"),
+        );
+        // The spec carries two criteria, so the door landed one record commit per seeded
+        // sub-task and the ack names each — the sha above is only the last of them.
+        assert_eq!(
+            ack.matches("record commit: ").count(),
+            2,
+            "two record commits landed, so the ack names both; got:\n{ack}"
+        );
+    }
+}
