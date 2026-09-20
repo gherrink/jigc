@@ -27,6 +27,8 @@ mod migration_commit_autoprovision;
 mod migration_dateless_date;
 #[path = "../migration_finalize_git_add.rs"]
 mod migration_finalize_git_add;
+#[path = "../migration_review_hold_axis.rs"]
+mod migration_review_hold_axis;
 #[path = "../migration_slot_fidelity.rs"]
 mod migration_slot_fidelity;
 #[path = "../multi_pack_acceptance.rs"]

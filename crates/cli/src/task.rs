@@ -1110,6 +1110,14 @@ pub(crate) const COMMIT_TYPE: &str = "commit";
 /// advisory). A `singleton`, so its slug is fixed to the type id.
 const CHANGELOG_TYPE: &str = "changelog";
 
+/// The step whose composed body **states** the migration review hold — *"a plain
+/// finalize commits NOTHING … and holds (exit 4)"*. Every migrate-shaped workflow of
+/// both shipped packs includes it, and so may a project-layer one.
+///
+/// It is the review hold's subject because it is the sentence the hold has to keep
+/// ([`TaskArea::composes_review_hold`]; `design/auto-migration.md` → The review gate).
+const MIGRATION_FINALIZE_STEP: &str = "migration-finalize";
+
 /// The changelog-gate advisory's finding code — one source for the finding it grades,
 /// the cascade key its route names as the not-user-facing exit, and the severity probe
 /// that decides which route that is ([`TaskArea::changelog_gate_refuses`]).
@@ -2381,13 +2389,24 @@ impl TaskArea {
             }
         };
 
-        // A migration task is identified once by the staged source seam: it selects the
-        // stage policy (`MigrationFixed`), gates the review block, and — read here, ahead
+        // A **staged** migration is identified once by the source seam: it selects the
+        // stage policy (`MigrationFixed`), feeds the fidelity diff, and — read here, ahead
         // of the empty-commit signal — keeps the migration `has_diff` on the proven
         // whole-tree probe (its blocks, e.g. the missing-replacement F1 retire-safety
         // gate, must precede the empty-commit guard inside `plan_finalize`).
         let source_seam = self.dir.join(engine::state::SOURCE_FILE);
-        let is_migration = source_seam.exists();
+        let staged_migration = source_seam.exists();
+
+        // The **review hold** keys on something else, and M52 Inc 9 / T4 is where the two
+        // part company: the hold is a promise the composed body makes, so its subject is
+        // the composed contract ([`Self::composes_review_hold`]), not the artifact one
+        // door happens to stage. Keyed on the seam alone, a migrate-shaped workflow
+        // composed by name landed a commit at exit 0 under its own text's "a plain
+        // finalize commits NOTHING … holds (exit 4)". The staged-source cell keeps every
+        // mechanic it had; the source-less cell gets the hold and nothing else — it stages
+        // no fixed pathspec, retires nothing, and cannot render a fidelity diff, which is
+        // the one thing the hold below has to say out loud.
+        let holds_for_review = staged_migration || self.composes_review_hold(id)?;
 
         // The diff-presence signal the planner's empty-commit guard needs. On the per-task
         // `IndexHonoring` path it is the NARROWED stage set the commit actually lands (M30
@@ -2397,7 +2416,7 @@ impl TaskArea {
         // reads empty), and the git-tracked config layer a first finalize must land;
         // unstaged/untracked WIP is excluded. A migration task keeps the original
         // whole-tree probe (`MigrationFixed` stages its own fixed set regardless).
-        let has_diff = if is_migration {
+        let has_diff = if staged_migration {
             !git_diff(&self.repo_root, &base.sha)?.trim().is_empty()
                 || !self.staged_docs()?.is_empty()
                 || !git_untracked(&self.repo_root)?.trim().is_empty()
@@ -2536,7 +2555,7 @@ impl TaskArea {
             if !carry_staged && !carried_findings.is_empty() {
                 return self.blocked(carried_findings, format);
             }
-            let (mut included, left_out) = self.predict_manifest(&plan, is_migration)?;
+            let (mut included, left_out) = self.predict_manifest(&plan, staged_migration)?;
             // Reached only under a declared `--carry-staged` or an empty carried set, so
             // the label can no longer claim a consent this run never carried.
             relabel_carried(&mut included, &carried_paths);
@@ -2597,10 +2616,18 @@ impl TaskArea {
             return self.blocked(carried_findings, format);
         }
 
-        if is_migration && !approve {
-            let foreign = std::fs::read_to_string(&source_seam).with_context(|| {
-                format!("could not read the staged source seam at {source_seam:?}")
-            })?;
+        if holds_for_review && !approve {
+            // `None` is the source-less cell: no seam was staged, so there is nothing to
+            // diff the rewrite against and the render says so. It is not the same as an
+            // empty source — an empty diff would read as *"the rewrite dropped
+            // everything"*, which is a claim this state has no basis to make.
+            let foreign = if staged_migration {
+                Some(std::fs::read_to_string(&source_seam).with_context(|| {
+                    format!("could not read the staged source seam at {source_seam:?}")
+                })?)
+            } else {
+                None
+            };
             let mut rewrites = Vec::with_capacity(plan.promotions.len());
             for promotion in &plan.promotions {
                 let rendered = std::fs::read_to_string(&promotion.source).with_context(|| {
@@ -2637,7 +2664,7 @@ impl TaskArea {
                 .collect::<Result<Vec<_>>>()?;
             print!(
                 "{}",
-                render::migration_review(format, id, &foreign, &rewrites, &retires)
+                render::migration_review(format, id, foreign.as_deref(), &rewrites, &retires)
             );
             if format != Format::Json {
                 println!();
@@ -2663,7 +2690,7 @@ impl TaskArea {
         // which stream carries this run's document is not known until the commit has been
         // attempted, and on a reject the document is stderr's ([`emit_or_defer`]).
         let mut deferred_advisories = String::new();
-        let (_, pending_left_out) = self.predict_manifest(&plan, is_migration)?;
+        let (_, pending_left_out) = self.predict_manifest(&plan, staged_migration)?;
         emit_left_out_advisory(format, &mut deferred_advisories, &pending_left_out);
 
         // M43 — the carried-over half of the pre-commit print: a `--carry-staged` run
@@ -2679,7 +2706,7 @@ impl TaskArea {
         // landed commit.
         // M30 G1 — the per-task stage policy: a migration keeps its proven fixed-pathspec
         // stage; every other per-task finalize honors the agent's existing index.
-        let stage = if is_migration {
+        let stage = if staged_migration {
             StagePolicy::MigrationFixed
         } else {
             StagePolicy::IndexHonoring
@@ -2926,7 +2953,7 @@ impl TaskArea {
     fn predict_manifest(
         &self,
         plan: &engine::finalize::FinalizePlan,
-        is_migration: bool,
+        staged_migration: bool,
     ) -> Result<(Vec<render::ManifestEntry>, Vec<render::ManifestEntry>)> {
         use render::{ManifestEntry, ManifestKind};
 
@@ -2936,7 +2963,7 @@ impl TaskArea {
             .map(|promotion| promotion.destination.clone())
             .collect();
 
-        if is_migration {
+        if staged_migration {
             let mut entries: Vec<ManifestEntry> = promoted
                 .iter()
                 .map(|path| ManifestEntry {
@@ -3165,6 +3192,61 @@ impl TaskArea {
         load_workflow_def(&bytes).map_err(finding_to_err)
     }
 
+    /// The workflow definition this task **recorded at mint**, with its id — or `None`
+    /// when the task recorded none.
+    ///
+    /// Absence is never a fault: a task minted before the workflow record existed
+    /// carries no id, and both callers read a *property of the composed body*, not a
+    /// state assertion — so a task with nothing recorded simply has no such property
+    /// ([`Self::changelog_gate_advisory`]'s shipped posture, now shared).
+    ///
+    /// One home for the read, because two call sites deciding finalize behaviour from
+    /// the same recorded id must not diverge on how they resolve it. [`workflow_def`]
+    /// stays separate rather than wrapping this: its caller needs the *binding* source
+    /// and a missing record there is a clear fault with its own route, not an absence to
+    /// skip over.
+    ///
+    /// [`workflow_def`]: Self::workflow_def
+    fn recorded_workflow(&self, id: &str) -> Result<Option<(String, WorkflowDef)>> {
+        let Some(workflow_id) = state::read_workflow_id(&self.dir)
+            .with_context(|| format!("could not read the recorded workflow of task `{id}`"))?
+        else {
+            return Ok(None);
+        };
+        let bytes = self
+            .pack
+            .read(
+                PackResourceKind::Workflows,
+                &ResourceId::from(workflow_id.as_str()),
+            )
+            .with_context(|| format!("the recorded workflow `{workflow_id}` reads back"))?;
+        let def = load_workflow_def(&bytes).map_err(finding_to_err)?;
+        Ok(Some((workflow_id, def)))
+    }
+
+    /// Whether this task's **composed body promises the migration review hold** — its
+    /// recorded workflow includes [`MIGRATION_FINALIZE_STEP`], whose text states that a
+    /// plain finalize commits nothing and holds at exit 4.
+    ///
+    /// **The subject is the composed contract, not the staged source.** Until M52 the
+    /// hold keyed on the source seam alone, which only `jigc migrate` writes — so a
+    /// migrate-shaped workflow composed *by name* minted a task whose own composed text
+    /// promised a hold and whose plain `jigc task finalize` landed a commit at exit 0
+    /// (`design/auto-migration.md` → The review gate). It is also deliberately **not**
+    /// keyed on `suppressed.door`: the cell that reaches this arm is precisely a
+    /// project-layer migrate-shaped workflow declaring none, which is the cell the
+    /// verb-routed compose refusal ([`crate::start::VERB_ROUTED_CODE`]) leaves open.
+    ///
+    /// A task that recorded no workflow composes no such promise — `false`, never a
+    /// fault.
+    fn composes_review_hold(&self, id: &str) -> Result<bool> {
+        Ok(self.recorded_workflow(id)?.is_some_and(|(_, def)| {
+            def.includes
+                .iter()
+                .any(|step| step == MIGRATION_FINALIZE_STEP)
+        }))
+    }
+
     /// The **granted-and-unused changelog gate** finding (M42 Settle fork 6;
     /// `design/validation.md` → The changelog-gate advisory): the task's minting
     /// workflow **grants** the `changelog` create-gate and the task authored **no**
@@ -3218,19 +3300,9 @@ impl TaskArea {
         // The gate lives on the task's MINTING workflow. A task minted before the
         // workflow record existed carries none — no gate, no finding (never a fault: this
         // check is an advisory, not a state assertion).
-        let Some(workflow_id) = state::read_workflow_id(&self.dir)
-            .with_context(|| format!("could not read the recorded workflow of task `{id}`"))?
-        else {
+        let Some((workflow_id, def)) = self.recorded_workflow(id)? else {
             return Ok(None);
         };
-        let bytes = self
-            .pack
-            .read(
-                PackResourceKind::Workflows,
-                &ResourceId::from(workflow_id.as_str()),
-            )
-            .with_context(|| format!("the recorded workflow `{workflow_id}` reads back"))?;
-        let def = load_workflow_def(&bytes).map_err(finding_to_err)?;
         if !def
             .allows_create
             .iter()

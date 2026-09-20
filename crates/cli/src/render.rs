@@ -4817,6 +4817,17 @@ fn suffix_of(
 /// on the same reasoning as the fidelity summary's `(none)` form below: an absent clause
 /// is ambiguous, and a promise the run will not keep is a law-1 lie.
 ///
+/// **`foreign` is `None` on the source-less hold** (M52 Increment 9 / T4). The hold's
+/// subject is the promise the task's composed body makes — a body including
+/// `step:migration-finalize` states that a plain finalize commits nothing and holds at
+/// exit 4 — and that promise is composable without `jigc migrate`, which is the only
+/// door that stages a source seam. In that cell there is nothing to be faithful *to*, so
+/// the render drops the fidelity scan and the `-`/`+` diff and **says so**, showing the
+/// canonical doc alone: an empty foreign half would read as a rewrite that dropped
+/// everything, and a `(none)` fidelity line would claim a scan that never ran. The JSON
+/// key set is unchanged — `source` is `null`, which no prior document could carry
+/// because no prior state produced this arm.
+///
 /// **The envelope carries no `review` key** (M51 Increment 5 / T2). It could only ever
 /// hold the string `"pending"`, and the hold's exit code — 4, declared in the exit-code
 /// taxonomy as *the* review-hold code — already says the same thing at the layer a driver
@@ -4825,7 +4836,7 @@ fn suffix_of(
 pub fn migration_review(
     format: Format,
     task_id: &str,
-    foreign: &str,
+    foreign: Option<&str>,
     rewrites: &[(String, String)],
     retires: &[String],
 ) -> String {
@@ -4846,9 +4857,19 @@ pub fn migration_review(
         })),
         Format::Agent | Format::Human => {
             let consequence = if retires.is_empty() {
-                "rewrite the foreign original in place and commit — this migration \
-                 deletes nothing (the canonical destination IS the foreign source)"
-                    .to_string()
+                match foreign {
+                    // The source-less cell (M52 Inc 9 / T4): nothing was staged to be
+                    // faithful to and nothing is deleted, so the sentence says what
+                    // approving does here rather than borrowing the in-place one, which
+                    // names a foreign original this task never had.
+                    None => "write the canonical doc and commit — this migration deletes \
+                             nothing (no foreign source was staged for it)"
+                        .to_string(),
+                    Some(_) => "rewrite the foreign original in place and commit — this \
+                                migration deletes nothing (the canonical destination IS \
+                                the foreign source)"
+                        .to_string(),
+                }
             } else {
                 let named = retires
                     .iter()
@@ -4862,11 +4883,28 @@ pub fn migration_review(
                 };
                 format!("write the canonical doc, DELETE {noun} {named}, and commit")
             };
+            // The whole premise paragraph varies, not a spliced tail: with no source
+            // there is no *rewrite* either — the agent authored the doc from the
+            // workflow, not from a foreign file — so the sentence names what is actually
+            // on the table. Stated, never silently omitted: the hold still fires (the
+            // composed body promised it), and what a reviewer needs is that the one thing
+            // the hold usually shows is absent, and why.
+            let premise = match foreign {
+                Some(_) => {
+                    "The rewrite is the agent's; the CLI guarantees structure, never \
+                     content-faithfulness — review the fidelity diff below, then approve."
+                }
+                None => {
+                    "The doc is the agent's; the CLI guarantees structure, never \
+                     content-faithfulness. No foreign source was staged for this task, so \
+                     there is no fidelity diff to render — review the canonical doc below, \
+                     then approve."
+                }
+            };
             let mut out = format!(
                 "migration review required — nothing committed. Re-run \
-                 `jigc task finalize {task_id} --approve` to {consequence}.\n\nThe rewrite \
-                 is the agent's; the CLI guarantees structure, never content-faithfulness \
-                 — review the fidelity diff below, then approve.\n\n",
+                 `jigc task finalize {task_id} --approve` to {consequence}.\n\n\
+                 {premise}\n\n",
             );
             // The structural fidelity summary (`design/auto-migration.md` → Hardening #5):
             // a release-level delta naming the source versions the rewrite dropped, split
@@ -4877,42 +4915,62 @@ pub fn migration_review(
             // false-alarmed non-changelog doctypes). Negative guard (DECISIONS C4, Framing
             // A): display-only — labeled fuzzy, feeds no gate, no agent logic, no
             // structural decision; never a second structural authority.
-            let dropped = dropped_release_versions(foreign, rewrites);
-            // The report is SPLIT (`design/auto-migration.md` → Hardening #5, the M44
-            // report-split): a package-qualified `pkg@version` and a bare version token
-            // render under two distinct labels, so the reviewer sees the package binding a
-            // bare scan drops. Always render both lines — the affirmative `(none)` form on
-            // a nothing-dropped category (matching `design/worked-examples.md` flow 26)
-            // gives the reviewer a trustworthy positive signal that the scan ran; an absent
-            // line is ambiguous. Display-only either way (DECISIONS C4, Framing A).
-            let package_absent = if dropped.packaged.is_empty() {
-                "(none)".to_string()
-            } else {
-                dropped.packaged.join(", ")
-            };
-            let token_absent = if dropped.bare.is_empty() {
-                "(none)".to_string()
-            } else {
-                dropped.bare.join(", ")
-            };
-            out.push_str(&format!(
-                "fidelity (heuristic version-scan — fuzzy, advisory; feeds no gate, no \
-                 structural decision):\n  package@version absent from the rewrite: \
-                 {package_absent}\n  version-like token absent from the rewrite: \
-                 {token_absent}\n\n",
-            ));
+            // The scan is a foreign-vs-rewrite *delta*, so the source-less cell has no
+            // delta to report and prints no fidelity block at all — a `(none)` there would
+            // be the affirmative "the scan ran and found nothing" signal over a scan that
+            // never ran.
+            if let Some(foreign) = foreign {
+                let dropped = dropped_release_versions(foreign, rewrites);
+                // The report is SPLIT (`design/auto-migration.md` → Hardening #5, the M44
+                // report-split): a package-qualified `pkg@version` and a bare version token
+                // render under two distinct labels, so the reviewer sees the package binding a
+                // bare scan drops. Always render both lines — the affirmative `(none)` form on
+                // a nothing-dropped category (matching `design/worked-examples.md` flow 26)
+                // gives the reviewer a trustworthy positive signal that the scan ran; an absent
+                // line is ambiguous. Display-only either way (DECISIONS C4, Framing A).
+                let package_absent = if dropped.packaged.is_empty() {
+                    "(none)".to_string()
+                } else {
+                    dropped.packaged.join(", ")
+                };
+                let token_absent = if dropped.bare.is_empty() {
+                    "(none)".to_string()
+                } else {
+                    dropped.bare.join(", ")
+                };
+                out.push_str(&format!(
+                    "fidelity (heuristic version-scan — fuzzy, advisory; feeds no gate, \
+                     no structural decision):\n  package@version absent from the rewrite: \
+                     {package_absent}\n  version-like token absent from the rewrite: \
+                     {token_absent}\n\n",
+                ));
+            }
             for (destination, rendered) in rewrites {
-                out.push_str("--- foreign source (staged seam)\n");
-                for line in foreign.lines() {
-                    out.push_str("- ");
-                    out.push_str(line);
-                    out.push('\n');
-                }
-                out.push_str(&format!("+++ canonical rewrite → {destination}\n"));
-                for line in rendered.lines() {
-                    out.push_str("+ ");
-                    out.push_str(line);
-                    out.push('\n');
+                // The `-`/`+` pairing is the diff; with no source there is only the
+                // canonical doc, so it renders unprefixed rather than as a `+` half whose
+                // missing counterpart reads as a deletion.
+                match foreign {
+                    Some(foreign) => {
+                        out.push_str("--- foreign source (staged seam)\n");
+                        for line in foreign.lines() {
+                            out.push_str("- ");
+                            out.push_str(line);
+                            out.push('\n');
+                        }
+                        out.push_str(&format!("+++ canonical rewrite → {destination}\n"));
+                        for line in rendered.lines() {
+                            out.push_str("+ ");
+                            out.push_str(line);
+                            out.push('\n');
+                        }
+                    }
+                    None => {
+                        out.push_str(&format!("=== canonical doc → {destination}\n"));
+                        out.push_str(rendered);
+                        if !rendered.ends_with('\n') {
+                            out.push('\n');
+                        }
+                    }
                 }
             }
             out.push_str(ROUTING_FOOTER);
@@ -9485,7 +9543,7 @@ mod tests {
                 .to_string(),
         )];
 
-        let out = migration_review(Format::Agent, "task-1", foreign, &rewrites, &[]);
+        let out = migration_review(Format::Agent, "task-1", Some(foreign), &rewrites, &[]);
         let summary = out
             .lines()
             .find(|l| l.contains("version-like token absent from the rewrite"))
@@ -9511,7 +9569,7 @@ mod tests {
             "# Notes PRD\n\n## Context\n\nNo version mentioned here.\n".to_string(),
         )];
 
-        let out = migration_review(Format::Agent, "task-1", foreign, &rewrites, &[]);
+        let out = migration_review(Format::Agent, "task-1", Some(foreign), &rewrites, &[]);
         let summary = out
             .lines()
             .find(|l| l.contains("version-like token absent from the rewrite"))
@@ -9570,7 +9628,7 @@ mod tests {
             "# Deps PRD\n\n## Context\n\nDependencies to be decided.\n".to_string(),
         )];
 
-        let out = migration_review(Format::Agent, "task-1", foreign, &rewrites, &[]);
+        let out = migration_review(Format::Agent, "task-1", Some(foreign), &rewrites, &[]);
 
         let pkg_line = out
             .lines()
@@ -9626,7 +9684,7 @@ mod tests {
             "# Changelog\n\n## Unreleased\n\nNothing yet.\n".to_string(),
         )];
 
-        let out = migration_review(Format::Agent, "task-1", foreign, &rewrites, &[]);
+        let out = migration_review(Format::Agent, "task-1", Some(foreign), &rewrites, &[]);
 
         let token_line = out
             .lines()
