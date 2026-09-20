@@ -2021,6 +2021,9 @@ impl TaskArea {
                     .map(state::MigrationSource::recorded),
             ),
             &engine::validate::AdoptionInputs::new(&versions, &priors, &migratable),
+            // The live-record carve-out is this caller's too (M52 Inc 10 / T6): only a task
+            // door knows which milestone owns the task it is sweeping.
+            &self.live_milestone_record(&schemas),
         )
         .with_context(|| format!("validating task at {:?}", self.dir))?;
         let report = self.preview_gates(report, preview, &schemas)?;
@@ -2239,6 +2242,42 @@ impl TaskArea {
     fn history_predicate(&self) -> impl Fn(&str) -> bool {
         let repo_root = self.repo_root.clone();
         move |path: &str| git_path_has_history(&repo_root, path).unwrap_or(true)
+    }
+
+    /// The **live milestone record** the committed-store sweep's dangling-baseline arm
+    /// carves out ([`engine::file_state::LiveRecord`]; M52 Inc 10 / T6) — the committed
+    /// record of the milestone **this** task belongs to, or
+    /// [`LiveRecord::none`](engine::file_state::LiveRecord::none) when it belongs to none.
+    ///
+    /// A sub-task is pinned to its milestone's **base**, which by construction predates the
+    /// record commit that `jigc milestone create` lands. So wherever the checkout stands at
+    /// that pin — the provisioned worktree does by construction, the shared checkout whenever
+    /// it is put there — the record is absent on disk with no HEAD history: the
+    /// dangling-baseline cell exactly, whose shipped route prunes the baseline with `jigc
+    /// unmanage`. Followed, that unmanages the record the milestone is run from. The engine
+    /// cannot see the membership, so the fact is supplied here, from the two enumerators that
+    /// already own it: [`engine::milestone::owning_milestone`] and
+    /// [`crate::milestone::record_key`] (the same string the sweep keys the baseline under).
+    ///
+    /// Path-keyed, never blanket: a record of some *other* milestone, and every non-record
+    /// managed doc, keep the shipped advisory and its prune route byte-identically — and
+    /// M45's history gate is untouched above this arm, so a genuine deletion of the record
+    /// (history present) still blocks.
+    fn live_milestone_record(
+        &self,
+        schemas: &BTreeMap<String, Schema>,
+    ) -> engine::file_state::LiveRecord {
+        let Some(milestone_id) = engine::milestone::owning_milestone(&self.jigc_root, &self.id)
+        else {
+            return engine::file_state::LiveRecord::none();
+        };
+        match schemas
+            .get(crate::milestone::MILESTONE_RECORD_TYPE)
+            .and_then(|schema| crate::milestone::record_key(schema, &milestone_id))
+        {
+            Some(key) => engine::file_state::LiveRecord::milestone(key, milestone_id),
+            None => engine::file_state::LiveRecord::none(),
+        }
     }
 
     /// Materialize the current git **index** into a fresh, self-cleaning temp tree — the

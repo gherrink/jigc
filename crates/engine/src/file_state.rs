@@ -372,6 +372,66 @@ impl ConflictBlock {
     }
 }
 
+/// The **live work-unit record** the validated subject belongs to — the one recorded
+/// managed-doc path whose absence from this checkout is not a stale baseline (M52 Inc 10 /
+/// T6).
+///
+/// The rename detector's dangling-baseline arm reads *absent on disk × no HEAD history* and
+/// concludes the recorded baseline outlived its checkout, so it routes **prune-first** at
+/// `jigc unmanage <path>`. That conclusion is wrong for exactly one path: the committed
+/// record of the milestone the task under validation belongs to. A sub-task is pinned to its
+/// milestone's **base**, which by construction predates the record commit, so wherever the
+/// checkout stands at that pin — the provisioned worktree does by construction, the shared
+/// checkout whenever it is put there — the record reads history-less while it is live,
+/// current, and the state the milestone is run from. Following the prune route there would
+/// unmanage exactly that.
+///
+/// Like [`ConflictBlock`], the fact belongs to the **caller, not the classifier**: the engine
+/// sees a path and a hash, never which work unit owns the task whose area it is sweeping. So
+/// the caller that knows hands the record's path and its work-unit id in, and the classifier
+/// picks on the one fact it holds — which path is missing. A caller with no such record
+/// ([`LiveRecord::none`]) leaves every dangling baseline graded by history alone, byte-
+/// identically to the shipped classification.
+///
+/// This is **not** a new observable of the git oracle (see [`detect_rename`]'s op-axis
+/// argument): no git operation produces or removes it, so the op table that argument rests on
+/// is unchanged. It is a membership fact about `.jigc/` state, supplied from outside.
+///
+/// No `Default`, deliberately: the absent case is a caller's **statement** that it swept no
+/// owned work unit ([`LiveRecord::none`], which says so and carries the reason), not a value
+/// that falls out of a struct literal.
+#[derive(Clone, Debug)]
+pub struct LiveRecord {
+    /// `(repo-relative record path, the work-unit id the message and route name)`.
+    keyed: Option<(String, String)>,
+}
+
+impl LiveRecord {
+    /// No live record — every dangling baseline grades by history alone (the shipped
+    /// classification). What a caller sweeping no task, or a task belonging to no milestone,
+    /// supplies.
+    pub fn none() -> Self {
+        Self { keyed: None }
+    }
+
+    /// The committed record of the **milestone the validated task belongs to**: `path` is its
+    /// repo-relative file-state key, `milestone_id` the id the message and route name.
+    pub fn milestone(path: impl Into<String>, milestone_id: impl Into<String>) -> Self {
+        Self {
+            keyed: Some((path.into(), milestone_id.into())),
+        }
+    }
+
+    /// The work-unit id when `path` **is** the live record, `None` otherwise — the one fact
+    /// the classifier asks of this value.
+    fn unit_at(&self, path: &str) -> Option<&str> {
+        match &self.keyed {
+            Some((keyed_path, unit)) if keyed_path == path => Some(unit.as_str()),
+            _ => None,
+        }
+    }
+}
+
 /// The full **OOB reconciliation classifier** for a single *committed* managed doc —
 /// the state machine [`file_state`] only baseline-adopted in inc-4
 /// (`reconciliation.md` → The state machine; `DECISIONS.md` 2026-05-31 → inc-5
@@ -585,6 +645,9 @@ pub fn committed_path_recordable(
 /// [`AdoptionInputs`](crate::validate::AdoptionInputs) — three pack facts the engine cannot
 /// produce, feeding [`reconcile_committed`]'s `UNKNOWN` + non-conformant arm so a foreign
 /// squatter draws the same code and route here it draws at store scope (M48 Inc 4 / T1).
+/// `live` is the caller's [`LiveRecord`] — the committed record of the work unit the swept
+/// task belongs to, if any, so the one history-less path whose prune route would unmanage
+/// the milestone's own state is graded as the live record it is (M52 Inc 10 / T6).
 ///
 /// Mutating: `record` (baseline-adopt / absorb) and `index` (absorb) advance in place;
 /// the caller persists them. Findings aggregate in a stable order: persisted schemas
@@ -601,6 +664,7 @@ pub fn reconcile_committed_store(
     history: &crate::validate::HistoryPredicate<'_>,
     conflict: &ConflictBlock,
     adoption: &crate::validate::AdoptionInputs<'_>,
+    live: &LiveRecord,
 ) -> Vec<Finding> {
     let mut findings = Vec::new();
     // Snapshot the recorded committed paths *before* the reconcile loop mutates the
@@ -729,6 +793,7 @@ pub fn reconcile_committed_store(
                 &recorded_hash,
                 &untracked_refs,
                 history,
+                live,
             ));
         }
     }
@@ -920,7 +985,16 @@ pub fn detect_committed_store_renames(
         // planning (the "only the task path is decided" verified base; Decision 7's own text
         // does not state the split). Pinned by
         // `file_state_history_gate::store_scope_stays_blocking_where_task_scope_is_advisory`.
-        let detected = detect_rename(&path, &from, &recorded_hash, &untracked_refs, &|_| true);
+        // No live record at store scope: this twin sweeps no task, so no work unit owns the
+        // sweep and the caller-supplied carve-out has no subject (`LiveRecord::none`).
+        let detected = detect_rename(
+            &path,
+            &from,
+            &recorded_hash,
+            &untracked_refs,
+            &|_| true,
+            &LiveRecord::none(),
+        );
         if !detected.is_empty() {
             renamed.insert(from);
             findings.extend(detected);
@@ -1182,7 +1256,11 @@ fn rename_landing_present(
 ///   baseline pointing at a path the checkout moved out from under the gitignored
 ///   file↔state cache (`git reset --hard` / branch switch / rebase past the creating
 ///   commit) — which downgrades to an **advisory** with a `jigc unmanage` prune route, so
-///   a moved checkout no longer wedges every subsequent task.
+///   a moved checkout no longer wedges every subsequent task. The one exception is the
+///   caller's [`LiveRecord`] (M52 Inc 10 / T6): when the history-less path **is** the
+///   committed record of the work unit the swept task belongs to, the prune route would
+///   unmanage the state the milestone is run from, so the same id and severity carry the
+///   live-record claim and an informational route instead ([`live_record_finding`]).
 ///
 /// **No auto-rewrite.** A path rename is an identity change; the MVP blocks and routes
 /// to revert, and **never** rewrites referrer refs or mutates the edge index
@@ -1205,7 +1283,10 @@ fn rename_landing_present(
 /// `crates/cli/tests/file_state_history_gate.rs` iterates the distinct **ops as real git
 /// operations** (its module doc carries the row table and the per-row collapse notes).
 /// Changing what this oracle consults requires re-deriving that table — the op suite will
-/// redden on any divergence.
+/// redden on any divergence. The M52 [`LiveRecord`] carve-out does **not** touch it: it is
+/// not a git observable at all — no git operation creates, removes or moves it — so every
+/// row still projects exactly as before, and the carve-out only re-presents one already-
+/// classified cell (history-less × no candidate) for one caller-named path.
 ///
 /// **Declared conservative bound — sparse-checkout (a false-deletion shape).** A
 /// sparse-checkout that excludes a baselined doc's path reads (absent from the worktree ×
@@ -1222,6 +1303,7 @@ pub fn detect_rename(
     recorded_hash: &str,
     untracked: &[(&str, String)],
     history: &crate::validate::HistoryPredicate<'_>,
+    live: &LiveRecord,
 ) -> Vec<Finding> {
     match untracked.iter().find(|(_, hash)| hash == recorded_hash) {
         Some((suspect, _)) => vec![rename_strong_finding(path, from, suspect)],
@@ -1234,7 +1316,14 @@ pub fn detect_rename(
         // root and its deletion diff never materializes, so the path reads history-less and
         // this arm downgrades a genuine deletion. It under-blocks, never over-blocks.
         None if history(path) => vec![rename_weak_finding(path, from)],
-        None => vec![rename_dangling_baseline_finding(path, from)],
+        // The caller's live-record carve-out (M52 Inc 10 / T6): the one history-less path
+        // whose prune route would unmanage the record the milestone is run from. Same id,
+        // same advisory severity — only what it says about the state, and what it asks the
+        // reader to do, differ.
+        None => match live.unit_at(path) {
+            Some(unit) => vec![live_record_finding(path, from, unit)],
+            None => vec![rename_dangling_baseline_finding(path, from)],
+        },
     }
 }
 
@@ -1296,6 +1385,37 @@ fn rename_dangling_baseline_finding(path: &str, from: &str) -> Finding {
             "prune the stale baseline: `jigc unmanage {token}`; or restore {path} if it should still exist",
             token = crate::finding::shell_token(path)
         ).into()),
+    )
+}
+
+/// The **live-record** dangling arm (M52 Inc 10 / T6): the recorded path has no HEAD
+/// history *and* is the committed record of the work unit the validated task belongs to
+/// ([`LiveRecord`]), so the baseline is current and nothing was deleted — this checkout
+/// simply predates the record commit (a sub-task is pinned to its milestone's base, which
+/// by construction sits before it).
+///
+/// Reuses the `reconciliation.rename` check id at [`Severity::Advisory`] — the same
+/// no-new-id pattern [`rename_dangling_baseline_finding`] already uses, so the
+/// `(code, target)` key and the exit behaviour are unchanged; what moves is the claim and
+/// the route. The route is **[`Informational`](crate::finding::RouteKind::Informational)**
+/// and names no verb: the only jigc act the shipped sibling offers here is the prune that
+/// would unmanage the milestone's own state, and there is nothing else to do.
+fn live_record_finding(path: &str, from: &str, unit: &str) -> Finding {
+    Finding::graded(
+        Severity::Advisory,
+        "reconciliation.rename",
+        format!(
+            "tracked managed doc {from} ({path}) is absent from this checkout, which carries \
+             no history for it — it is the live record of milestone {unit}, the milestone \
+             this task belongs to, so nothing was deleted and the baseline is current"
+        ),
+        Some(Location::addressed(path, 1, 1)),
+        // `Route::informational` explicitly, never `String::into` — that `From` impl files a
+        // route as a direction a human must take, and there is no act owed here.
+        Some(crate::finding::Route::informational(format!(
+            "no action needed — do not prune this baseline: it is the live record of \
+             milestone {unit}, and it is on disk in any checkout that carries its commit"
+        ))),
     )
 }
 
@@ -2171,7 +2291,14 @@ Referrers must point at the new decision.
         // so its raw-byte hash matches the recorded baseline (a suspected `git mv`).
         let untracked: Vec<(&str, String)> = vec![(MOVED, hash_bytes(ADR_B_BASE.as_bytes()))];
 
-        let findings = detect_rename(TRACKED, FROM, &recorded, &untracked, &|_| true);
+        let findings = detect_rename(
+            TRACKED,
+            FROM,
+            &recorded,
+            &untracked,
+            &|_| true,
+            &LiveRecord::none(),
+        );
 
         assert_eq!(findings.len(), 1, "strong signal emits exactly one finding");
         let f = &findings[0];
@@ -2212,7 +2339,14 @@ Referrers must point at the new decision.
         let untracked: Vec<(&str, String)> =
             vec![("decisions/unrelated.md", hash_bytes(b"some other body\n"))];
 
-        let findings = detect_rename(TRACKED, FROM, &recorded, &untracked, &|_| true);
+        let findings = detect_rename(
+            TRACKED,
+            FROM,
+            &recorded,
+            &untracked,
+            &|_| true,
+            &LiveRecord::none(),
+        );
 
         assert_eq!(findings.len(), 1, "weak signal emits exactly one finding");
         let f = &findings[0];
@@ -2252,7 +2386,14 @@ Referrers must point at the new decision.
             vec![("decisions/unrelated.md", hash_bytes(b"some other body\n"))];
 
         // `history` empty for the path: nothing was deleted, the baseline is stale.
-        let findings = detect_rename(TRACKED, FROM, &recorded, &untracked, &|_| false);
+        let findings = detect_rename(
+            TRACKED,
+            FROM,
+            &recorded,
+            &untracked,
+            &|_| false,
+            &LiveRecord::none(),
+        );
 
         assert_eq!(
             findings.len(),
@@ -2324,6 +2465,7 @@ Referrers must point at the new decision.
             &|_| true,
             &test_conflict(),
             &crate::validate::AdoptionInputs::inert(),
+            &LiveRecord::none(),
         );
 
         // The clean ADR absorbed (advisory) and its baseline advanced + edge folded in.
@@ -2401,6 +2543,7 @@ Referrers must point at the new decision.
             &|_| true,
             &test_conflict(),
             &crate::validate::AdoptionInputs::inert(),
+            &LiveRecord::none(),
         );
 
         let rename = findings
@@ -2455,6 +2598,7 @@ Referrers must point at the new decision.
             &|_| true,
             &test_conflict(),
             &crate::validate::AdoptionInputs::inert(),
+            &LiveRecord::none(),
         );
         assert!(
             findings.iter().all(|f| f.code != "reconciliation.rename"),
@@ -2477,6 +2621,7 @@ Referrers must point at the new decision.
             &|_| true,
             &test_conflict(),
             &crate::validate::AdoptionInputs::inert(),
+            &LiveRecord::none(),
         );
         let rename = findings
             .iter()
@@ -2559,6 +2704,7 @@ Referrers must point at the new decision.
             &|_| true,
             &test_conflict(),
             &crate::validate::AdoptionInputs::inert(),
+            &LiveRecord::none(),
         );
 
         // (i) NO rename finding — neither the weak-signal restore nor a strong block.
@@ -2590,6 +2736,7 @@ Referrers must point at the new decision.
             &|_| true,
             &test_conflict(),
             &crate::validate::AdoptionInputs::inert(),
+            &LiveRecord::none(),
         );
         assert!(
             again.iter().all(|f| f.code != "reconciliation.rename"),
@@ -3026,6 +3173,7 @@ sections: []
             &|_| true,
             &test_conflict(),
             &crate::validate::AdoptionInputs::inert(),
+            &LiveRecord::none(),
         );
 
         // (a) the OOB edit to the managed placement file is detected + routed.
@@ -3080,6 +3228,7 @@ sections: []
             &|_| true,
             &test_conflict(),
             &crate::validate::AdoptionInputs::inert(),
+            &LiveRecord::none(),
         );
 
         let rename = findings
@@ -3467,6 +3616,7 @@ sections: []
             &|_| true,
             &test_conflict(),
             &crate::validate::AdoptionInputs::inert(),
+            &LiveRecord::none(),
         );
 
         let real = "findings/findings-log.md";
@@ -3508,6 +3658,7 @@ sections: []
             &|_| true,
             &test_conflict(),
             &crate::validate::AdoptionInputs::inert(),
+            &LiveRecord::none(),
         );
         assert!(
             !again.iter().any(|f| f.code == "file-state.baseline-adopt"),

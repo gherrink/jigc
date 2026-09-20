@@ -1283,7 +1283,11 @@ fn git_commit_pathspec(repo_root: &Path, message_file: &Path, pathspec: &str) ->
 /// baseline hash under (`format!("{location}{slug}.md")`). The `location:` here is already
 /// docs-root-nested by [`shipped_schemas`] (`docs/milestone-records/`), so the key matches
 /// the store-sweep's exactly — the same string the reconcile finding names.
-fn record_key(schema: &Schema, milestone_id: &str) -> Option<String> {
+///
+/// `pub(crate)` for the one cross-verb consumer: the task-scope sweep's live-record
+/// carve-out ([`crate::task`], M52 Inc 10 / T6) keys on exactly this string, and a second
+/// hand-built `format!("{location}{id}.md")` there is a drift waiting to happen.
+pub(crate) fn record_key(schema: &Schema, milestone_id: &str) -> Option<String> {
     let location = schema.location.as_deref()?;
     Some(format!("{location}{milestone_id}.md"))
 }
@@ -5933,6 +5937,13 @@ fn milestone_boundary_gate(
             ),
         ),
         &engine::validate::AdoptionInputs::new(&versions, &priors, &migratable),
+        // No live-record carve-out at the join (M52 Inc 10 / T6). The carve-out names the
+        // record of the work unit whose TASK is being swept, and this door sweeps no task:
+        // the merged gate area belongs to none, which is why the `ConflictBlock` above cannot
+        // name one either. The boundary's own milestone is not that subject, so naming its
+        // record here would carve out a path on a different warrant than the one the value
+        // carries.
+        &engine::file_state::LiveRecord::none(),
     )
     .with_context(|| format!("validating the merged effective state under {staging_dir:?}"))?;
 

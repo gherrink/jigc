@@ -75,6 +75,16 @@
 //!   path decides, i.e. the same two observables as the branch rows; no submodule-specific
 //!   observable exists in the oracle.
 //!
+//! **The M52 live-record carve-out is not a new row** (Increment 10 / T6). The advisory
+//! arm's *route* now has one exception — the committed record of the milestone the swept
+//! task belongs to ([`engine::file_state::LiveRecord`]) — but the exception's input is not a
+//! git observable: no git operation creates, removes or moves a task's milestone membership,
+//! so every op above still projects onto the same (candidate × history) cell it did, and the
+//! table is carried unchanged rather than re-derived. What the carve-out changes is which of
+//! two caller-composed presentations one already-classified cell renders, for one
+//! caller-named path; `sub_task_at_its_milestone_base_pin_is_never_routed_to_unmanage_its_own_record`
+//! pins both sides of that split in one state.
+//!
 //! Also driven here (the audit's remaining holes): the **milestone-create baseline
 //! writer** — the trial's actual §1.3 repro writer
 //! (`milestone_create_baseline_reset_downgrades_to_advisory`) — and the **store/task
@@ -1133,5 +1143,130 @@ fn unborn_head_keeps_the_conservative_weak_deletion_block() {
             .expect("the weak finding carries a message")
             .contains("git mv"),
         "unborn-head: the weak finding must not claim a `git mv` suspect; got:\n{rename:#?}",
+    );
+}
+
+/// **M52 Increment 10 / T6 — the live milestone record.** A sub-task standing in the shared
+/// checkout at its milestone's **base pin** reads its own milestone record as an absent,
+/// history-less baseline: the pin predates the record commit `jigc milestone create` lands,
+/// by construction. That is the dangling-baseline cell exactly — and the shipped route,
+/// followed, runs `jigc unmanage` over the record the milestone is run from.
+///
+/// The carve-out is **path-keyed on the task's own milestone**, never blanket, so the state
+/// is built to discriminate in one repo: two milestones are created in sequence, the
+/// sub-task is added to the **first**, and the checkout returns to that first milestone's
+/// base pin — which predates **both** record commits, so both baselines dangle identically
+/// and the only difference between them is which milestone owns the task being swept. The
+/// other milestone's record must keep the shipped advisory and its prune route
+/// **byte-identically** (asserted as whole strings, not as a substring probe); the task's
+/// own record must say what it is and route at no destructive verb.
+///
+/// The history gate above this arm is untouched: a record with HEAD history — a genuine
+/// deletion — still reaches the blocking weak finding, which
+/// `branch_switch_to_deletion_branch_still_blocks` and proof (b) above pin over the ADR
+/// path.
+#[test]
+fn sub_task_at_its_milestone_base_pin_is_never_routed_to_unmanage_its_own_record() {
+    const OWN_RECORD: &str = "docs/milestone-records/cache-rework.md";
+    const OTHER_RECORD: &str = "docs/milestone-records/ledger-rework.md";
+    let repo = TempDir::new("live-record");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    fs::write(
+        repo.path().join(".jigc").join("config").join("packs.yaml"),
+        "compose-embedded-methodology: true\n",
+    )
+    .expect("write compose marker");
+
+    // HEAD before either record commit — the FIRST milestone's base pin, and therefore
+    // the sub-task's. (The second milestone's own base is the first's record commit; the
+    // pin the checkout returns to is this one, and it predates both records.)
+    let base = git(repo.path(), &["rev-parse", "HEAD"]).trim().to_string();
+
+    for title in ["Cache rework", "Ledger rework"] {
+        let created = jigc(repo.path(), home.path(), &["milestone", "create", title]);
+        assert_ok(&created, &format!("`jigc milestone create {title}`"));
+    }
+    let task = "warm-the-read-cache";
+    let added = jigc(
+        repo.path(),
+        home.path(),
+        &[
+            "milestone",
+            "add-task",
+            "cache-rework",
+            "warm the read cache",
+        ],
+    );
+    assert_ok(&added, "`jigc milestone add-task`");
+
+    // Stand in the shared checkout at the sub-task's base pin: both records leave disk and
+    // neither has HEAD history here, while the gitignored baselines survive.
+    git(
+        repo.path(),
+        &["checkout", "-q", "-b", "at-the-base-pin", &base],
+    );
+    for path in [OWN_RECORD, OTHER_RECORD] {
+        assert!(
+            !repo.path().join(path).exists()
+                && git(repo.path(), &["log", "HEAD", "-1", "--", path])
+                    .trim()
+                    .is_empty(),
+            "the base pin predates {path}: absent on disk, no HEAD history",
+        );
+    }
+
+    let (out, findings) = validate_task_json(repo.path(), home.path(), task, "live-record");
+
+    // The control — a record of a milestone this task does NOT belong to is an ordinary
+    // dangling baseline and keeps the shipped advisory byte-for-byte.
+    let other = assert_dangling_advisory(&out, &findings, OTHER_RECORD, "live-record/other");
+    assert_eq!(
+        other["message"]
+            .as_str()
+            .expect("the control has a message"),
+        format!(
+            "tracked managed doc milestone-record:ledger-rework ({OTHER_RECORD}) is missing, \
+             but the path has no history — the checkout moved underneath the file-state \
+             cache, not a deletion"
+        ),
+        "live-record/other: the shipped dangling-baseline message is unchanged",
+    );
+    assert_eq!(
+        other["route"].as_str().expect("the control has a route"),
+        format!(
+            "prune the stale baseline: `jigc unmanage {OTHER_RECORD}`; or restore \
+             {OTHER_RECORD} if it should still exist"
+        ),
+        "live-record/other: the shipped prune route is unchanged",
+    );
+
+    // The subject — the task's OWN milestone record.
+    let own = rename_finding(&findings, OWN_RECORD, "live-record/own");
+    assert_eq!(
+        own["severity"], "advisory",
+        "live-record/own: the live record stays advisory (no new code, no exit flip); \
+         got:\n{own:#?}",
+    );
+    let route = own["route"]
+        .as_str()
+        .expect("the live record carries a route");
+    assert!(
+        !route.contains("jigc unmanage"),
+        "live-record/own: the advisory must not route at `jigc unmanage` over the record the \
+         milestone is run from; got:\n{own:#?}",
+    );
+    assert!(
+        route.contains("do not prune") && route.contains("cache-rework"),
+        "live-record/own: the route says what not to do and names the milestone; \
+         got:\n{own:#?}",
+    );
+    assert!(
+        own["message"]
+            .as_str()
+            .expect("the live record carries a message")
+            .contains("live record of milestone cache-rework"),
+        "live-record/own: the message states what the path is, not that it went missing; \
+         got:\n{own:#?}",
     );
 }

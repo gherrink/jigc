@@ -192,6 +192,16 @@ pub type HistoryPredicate<'a> = dyn Fn(&str) -> bool + 'a;
 /// the shipped prior shapes, the `migrate-<ty>`-bearing doctypes — are pack facts the engine
 /// cannot produce; an empty set leaves this arm byte-identical to its pre-M48 behaviour.
 ///
+/// `live_record` is the CLI-supplied [`LiveRecord`](crate::file_state::LiveRecord) the same
+/// committed-store sweep hands to its dangling-baseline arm (M52 Inc 10 / T6): the committed
+/// record of the work unit the validated task belongs to, if any. A sub-task stands at its
+/// milestone's **base pin**, which by construction predates the record commit, so the record
+/// reads absent-and-history-less there while it is live — and the shipped prune route would
+/// unmanage the state the milestone is run from. The engine cannot know which work unit owns
+/// a task, so the caller that does names the path;
+/// [`LiveRecord::none`](crate::file_state::LiveRecord::none) leaves the arm byte-identical to
+/// its shipped classification.
+///
 /// `repo_root` is the committed-store root, `jigc_root` is the `.jigc/` home (where the
 /// edge index caches), and `head` is the opaque HEAD stamp the committed index is
 /// tagged with (the CLI reads it via `git`, keeping the engine shell-free). These three
@@ -261,6 +271,7 @@ pub fn validate_task(
     base_code_tree_root: &Path,
     conflict: &crate::file_state::ConflictBlock,
     adoption: &AdoptionInputs<'_>,
+    live_record: &crate::file_state::LiveRecord,
 ) -> std::io::Result<ValidationReport> {
     let mut findings = Vec::new();
     for filename in staged_instances(dir)? {
@@ -322,6 +333,7 @@ pub fn validate_task(
         history,
         conflict,
         adoption,
+        live_record,
     ));
 
     // `schema-conformance.ref-resolves` — the cross-doc forward-ref / edge-index
@@ -5183,6 +5195,7 @@ kind: memo
             area.dir(),
             &test_conflict(),
             &AdoptionInputs::inert(),
+            &crate::file_state::LiveRecord::none(),
         )
         .expect("sweep runs");
 
@@ -5223,6 +5236,7 @@ kind: memo
             clean.dir(),
             &test_conflict(),
             &AdoptionInputs::inert(),
+            &crate::file_state::LiveRecord::none(),
         )
         .expect("clean sweep runs");
 
@@ -5333,6 +5347,7 @@ Bursty-but-honest clients see occasional 429s.
             area.dir(),
             &test_conflict(),
             &AdoptionInputs::inert(),
+            &crate::file_state::LiveRecord::none(),
         )
         .expect("sweep runs");
 
@@ -5438,6 +5453,7 @@ Bursty-but-honest clients see occasional 429s.
             area.dir(),
             &test_conflict(),
             &AdoptionInputs::inert(),
+            &crate::file_state::LiveRecord::none(),
         )
         .expect("sweep runs");
 
@@ -5489,6 +5505,7 @@ Bursty-but-honest clients see occasional 429s.
             area.dir(),
             &test_conflict(),
             &AdoptionInputs::inert(),
+            &crate::file_state::LiveRecord::none(),
         )
         .expect("sweep runs");
 
@@ -5542,6 +5559,7 @@ Bursty-but-honest clients see occasional 429s.
             area.dir(),
             &test_conflict(),
             &AdoptionInputs::inert(),
+            &crate::file_state::LiveRecord::none(),
         )
         .expect("sweep runs");
 
@@ -5601,6 +5619,7 @@ Bursty-but-honest clients see occasional 429s.
             area.dir(),
             &test_conflict(),
             &AdoptionInputs::inert(),
+            &crate::file_state::LiveRecord::none(),
         )
         .expect("sweep runs");
 
@@ -5661,6 +5680,7 @@ sections:
             area.dir(),
             &test_conflict(),
             &AdoptionInputs::inert(),
+            &crate::file_state::LiveRecord::none(),
         )
         .expect("sweep runs");
 
@@ -5897,6 +5917,7 @@ A failed node's sessions are re-routed on next request.
             repo.path(),
             &test_conflict(),
             &AdoptionInputs::inert(),
+            &crate::file_state::LiveRecord::none(),
         )
         .expect("sweep runs");
 
@@ -5956,6 +5977,7 @@ A failed node's sessions are re-routed on next request.
             repo.path(),
             &test_conflict(),
             &AdoptionInputs::inert(),
+            &crate::file_state::LiveRecord::none(),
         )
         .expect("sweep runs");
 
@@ -6011,6 +6033,7 @@ A failed node's sessions are re-routed on next request.
             repo.path(),
             &test_conflict(),
             &AdoptionInputs::inert(),
+            &crate::file_state::LiveRecord::none(),
         )
         .expect("sweep runs");
 
@@ -6064,6 +6087,7 @@ A failed node's sessions are re-routed on next request.
             repo.path(),
             &test_conflict(),
             &AdoptionInputs::inert(),
+            &crate::file_state::LiveRecord::none(),
         )
         .expect("sweep runs");
 
@@ -6484,6 +6508,7 @@ The audit landed green.
             repo.path(),
             &test_conflict(),
             &AdoptionInputs::inert(),
+            &crate::file_state::LiveRecord::none(),
         )
         .expect("validate runs");
         assert!(
@@ -8550,6 +8575,7 @@ Effects.
                 base,
                 &test_conflict(),
                 &AdoptionInputs::inert(),
+                &crate::file_state::LiveRecord::none(),
             )
             .expect("sweep runs")
         };
@@ -8620,6 +8646,7 @@ Effects.
             base.path(),
             &test_conflict(),
             &AdoptionInputs::inert(),
+            &crate::file_state::LiveRecord::none(),
         )
         .expect("sweep runs");
         assert!(
@@ -8691,6 +8718,7 @@ Effects.
             base.path(),
             &test_conflict(),
             &AdoptionInputs::inert(),
+            &crate::file_state::LiveRecord::none(),
         )
         .expect("sweep runs");
         assert!(
@@ -8761,6 +8789,7 @@ Effects.
             base.path(),
             &test_conflict(),
             &AdoptionInputs::inert(),
+            &crate::file_state::LiveRecord::none(),
         )
         .expect("sweep runs");
         assert!(
