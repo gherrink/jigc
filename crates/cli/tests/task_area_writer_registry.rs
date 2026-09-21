@@ -136,6 +136,15 @@ const ROW_JOINS: &[(&str, usize, &str)] = &[(
 /// A file may appear here *and* hold guarded sites: `dir` is a name production code gives
 /// to plenty of directories that are not working areas, and the fence deliberately reads
 /// the **name being joined** rather than guessing at the receiver's meaning.
+///
+/// **The name is one row too narrow, and the row that falsifies it says so.** M53 Increment
+/// 2 / T1 drove `try_execute_finalize_plan`'s `msg_tmp_dir` to be `cleanup_dir` at all three
+/// call sites, so its `finalize-message.tmp` *is* joined onto a working area. It belongs in
+/// the remainder all the same, for the reason its row carries: the registry's members are
+/// what a door about to **destroy** an area must not take, and a name that is gone before
+/// that door ever reads the area is not one of them. So the membership rule this table
+/// states is *the joined name is no registry member*, and *the receiver is no working area*
+/// is why that holds for every row but one.
 const NON_AREA_JOINS: &[(&str, usize, &str)] = &[
     (
         "crates/cli/src/adapter.rs",
@@ -211,8 +220,14 @@ const NON_AREA_JOINS: &[(&str, usize, &str)] = &[
     (
         "crates/cli/src/task.rs",
         2,
-        "`.git` (the repo-root probe) and the finalize message temp in a process-unique \
-         temp dir — neither a working area",
+        "`.git` (the repo-root probe) and `try_execute_finalize_plan`'s \
+         `finalize-message.tmp` — the first is no working area, and the second **is** one: \
+         driven at M53 Increment 2 / T1, `msg_tmp_dir` is `cleanup_dir` at all three call \
+         sites, so the transient lands in the very area phase 7 tears down (the reason this \
+         row gave — *a process-unique temp dir* — is struck with that datum). It stays here \
+         rather than joining the registry because it does not outlive the transaction: it is \
+         gone before phase 7 reads the area, which `finalize_area_unwind_controls` drives on \
+         the landed arm — the only arm phase 7 runs on",
     ),
     (
         "crates/engine/src/target_surface.rs",

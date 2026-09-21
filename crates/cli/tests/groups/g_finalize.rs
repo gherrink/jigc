@@ -23,6 +23,8 @@ mod file_state_history_gate;
 mod file_state_merge_hand_off;
 #[path = "../file_state_soundness.rs"]
 mod file_state_soundness;
+#[path = "../finalize_area_unwind_controls.rs"]
+mod finalize_area_unwind_controls;
 #[path = "../finalize_displacement.rs"]
 mod finalize_displacement;
 #[path = "../finalize_dry_run_subject.rs"]

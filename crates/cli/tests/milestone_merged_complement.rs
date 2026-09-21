@@ -646,6 +646,13 @@ fn remaining_files(area: &Path) -> Vec<PathBuf> {
 /// half: a walk that kept one of jigc's own bodies would strand every rejected mint under an
 /// id its identical re-run then refuses (M47 Inc 2, the reason this is not `remove_dir_all`
 /// *and* the reason it must still remove everything jigc wrote).
+///
+/// **It is also M53 Increment 2's §13 control (c)** — *an ordinary post-join milestone area
+/// including `merged/`* (`completions/artifacts/M53/settle-record.md` → §13) — and is named
+/// as such from `finalize_area_unwind_controls::CONTROLS`, which reads this file rather than
+/// trusting the citation. The control set lives there; the fixture lives here, and building
+/// a second real two-sub-task fan-out to assert the identical predicate would be a second
+/// fixture, not a second control.
 #[test]
 fn an_ordinary_post_join_area_unwinds_to_removed() {
     let (repo_dir, _home_dir) = post_join_area("unwind-control");
