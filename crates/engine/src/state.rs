@@ -162,9 +162,22 @@ pub const TASK_DOCS_FILES: &[&str] = &[PROVENANCE_FILE];
 /// **Everything jigc itself writes into a milestone's working area** — [`TASK_AREA_FILES`]'
 /// sibling row, over `.jigc/milestones/<id>/` (`settle-record.md` → D3.1, §6).
 ///
-/// `merged/` is the join's staging tree, materialized by [`crate::milestone`] and left in
-/// place afterwards, so it is a member rather than the complement's first false fire — it
-/// is jigc's wholesale, and nothing inside it is walked.
+/// **The `merged/` member is a tree, not a file** — its own rule is in
+/// [`foreign_area_paths`]' milestone arm: under `merged/`, jigc's set is the `docs/`
+/// directory [`crate::milestone::materialize`] writes, and inside that it is every entry
+/// [`staged_doc_id`] recognises. Nothing else.
+///
+/// It shipped from M52 as *"jigc's wholesale, and nothing inside it is walked"*, which is an
+/// exclusion resting on the predicate **nothing but jigc's bytes are in `merged/`**. That
+/// predicate is false four ways (M53 Increment 1 / T2; `settle-record.md` → D1.2 as amended
+/// by §2): a finalize blocked at exit 3 leaves the area standing with its materialized bodies
+/// in it; a succeeding `pre-commit` hook writes into the area during the commit (the writer
+/// M52 recorded at [`staged_doc_id`]); `materialize` took an editor `.swp` on a finalize that
+/// committed nothing; and the carve-out **defeated the consent gate** at the two doors that
+/// have one — driven, `jigc milestone discard` with no `--force` over `merged/top.txt` and
+/// `merged/docs/deep.txt` exited 0, printed *"workbench removed"* and took both, while the
+/// identical byte at the area **root** refused with `milestone.foreign-bytes`. One state, two
+/// answers, from one carve-out.
 pub const MILESTONE_AREA_FILES: &[&str] = &[
     BASE_PIN_FILE,
     STAGED_SNAPSHOT_FILE,
@@ -242,9 +255,14 @@ pub fn staged_doc_id(file_name: &str) -> Option<&str> {
 /// which is what all five did before M52 Increment 4.
 ///
 /// **A foreign directory is returned whole and never walked**: the entry is the unit a door
-/// names, refuses over or moves, and moving the top of a subtree preserves it. Inside the
-/// `docs/` member, whose own rule is [`TASK_DOCS_FILES`], the walk descends exactly one
-/// level.
+/// names, refuses over or moves, and moving the top of a subtree preserves it. The walk
+/// descends only into the row's **tree** member, and exactly as far as that member's own rule
+/// needs: one level into a task's `docs/`, whose rule is [`TASK_DOCS_FILES`] plus
+/// [`staged_doc_id`]; two into a milestone's `merged/`, where jigc's set is the `docs/`
+/// directory [`crate::milestone::materialize`] writes and, inside it, [`staged_doc_id`]
+/// **alone** — the task branch's wider rule is deliberately not inherited, because
+/// `materialize` writes only `<type>:<slug>.md` bodies, so a `merged/docs/provenance.json` is
+/// a third party's file (`settle-record.md` → §2).
 ///
 /// **Shape is part of membership.** A member's name on the wrong kind of entry — a
 /// *directory* called `base.json`, a plain file called `docs/`, a symlink wearing either —
@@ -282,16 +300,55 @@ pub fn foreign_area_paths(area: &Path, kind: WorkArea) -> std::io::Result<Vec<Pa
             foreign.push(PathBuf::from(name.as_ref()));
             continue;
         }
-        if kind == WorkArea::Task && name == DOCS_DIR {
-            for staged in std::fs::read_dir(entry.path())? {
-                let staged = staged?;
-                let raw = staged.file_name();
-                let name = raw.to_string_lossy();
-                let shape = staged.file_type()?;
-                let mine = shape.is_file()
-                    && (TASK_DOCS_FILES.contains(&name.as_ref()) || staged_doc_id(&name).is_some());
-                if !mine {
-                    foreign.push(Path::new(DOCS_DIR).join(name.as_ref()));
+        if !kind.tree_member(&name) {
+            continue;
+        }
+        match kind {
+            // `docs/` holds the task's staged instances beside whatever else was put there,
+            // so its own rule decides entry by entry ([`TASK_DOCS_FILES`]).
+            WorkArea::Task => {
+                for staged in std::fs::read_dir(entry.path())? {
+                    let staged = staged?;
+                    let raw = staged.file_name();
+                    let name = raw.to_string_lossy();
+                    let shape = staged.file_type()?;
+                    let mine = shape.is_file()
+                        && (TASK_DOCS_FILES.contains(&name.as_ref())
+                            || staged_doc_id(&name).is_some());
+                    if !mine {
+                        foreign.push(Path::new(DOCS_DIR).join(name.as_ref()));
+                    }
+                }
+            }
+            // `merged/` is the join's staging tree, and the only entry
+            // [`crate::milestone::materialize`] writes into it is `docs/` — so that name on a
+            // directory is the one member, and everything else at this level is a third
+            // party's, returned whole.
+            WorkArea::Milestone => {
+                let merged = Path::new(crate::milestone::MERGED_AREA);
+                for child in std::fs::read_dir(entry.path())? {
+                    let child = child?;
+                    let raw = child.file_name();
+                    let name = raw.to_string_lossy();
+                    let shape = child.file_type()?;
+                    if !(shape.is_dir() && name == DOCS_DIR) {
+                        foreign.push(merged.join(name.as_ref()));
+                        continue;
+                    }
+                    for staged in std::fs::read_dir(child.path())? {
+                        let staged = staged?;
+                        let raw = staged.file_name();
+                        let name = raw.to_string_lossy();
+                        let shape = staged.file_type()?;
+                        // **[`staged_doc_id`] alone**, never the task branch's wider rule:
+                        // `materialize` writes only `<type>:<slug>.md` bodies, so inheriting
+                        // [`TASK_DOCS_FILES`] would call a foreign
+                        // `merged/docs/provenance.json` jigc's own and hand it to the doors
+                        // that destroy this set (`settle-record.md` → §2).
+                        if !(shape.is_file() && staged_doc_id(&name).is_some()) {
+                            foreign.push(merged.join(DOCS_DIR).join(name.as_ref()));
+                        }
+                    }
                 }
             }
         }

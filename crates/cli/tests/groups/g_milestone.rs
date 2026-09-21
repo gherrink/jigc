@@ -37,6 +37,8 @@ mod milestone_finalize_base_guard;
 mod milestone_join_collision;
 #[path = "../milestone_landed_attribution.rs"]
 mod milestone_landed_attribution;
+#[path = "../milestone_merged_complement.rs"]
+mod milestone_merged_complement;
 #[path = "../milestone_not_set_up_axis.rs"]
 mod milestone_not_set_up_axis;
 #[path = "../milestone_path_subject.rs"]
