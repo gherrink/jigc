@@ -768,3 +768,213 @@ fn a_placement_destination_relocates_even_when_its_file_name_is_not_a_slug() {
         "the placement instance must land at its one home; got:\n{report}"
     );
 }
+
+// ── the refusal axis (M52 completion audit, fix 5) ──────────────────────────────────
+
+/// The fixture pack for the axis arm: the freeze-exempt `note` doctype plus the two shapes
+/// only a manufactured pack can reach — a **transient** doctype (no `location:`, no
+/// `placement:`), and one whose declared home is a path git **cannot record**.
+///
+/// Both are genuinely unreachable on the shipped packs, which is the whole reason the axis
+/// arm manufactures them: every shipped doctype is manifest-governed, so the freeze-exempt
+/// path refuses them one gate earlier, and no shipped schema declares a home under `.git/`.
+fn write_axis_pack(dir: &Path) {
+    write_note_pack(dir);
+    fs::write(
+        dir.join("schemas").join("memo.yaml"),
+        "type: memo\nid-from: title\nsections:\n  - id: body\n    slot: { hint: \"The memo.\" }\n",
+    )
+    .expect("write the transient memo schema");
+    fs::write(
+        dir.join("schemas").join("vault.yaml"),
+        "type: vault\nlocation: .git/vault/\nid-from: title\nsections:\n  - id: body\n    slot: { hint: \"The vault note.\" }\n",
+    )
+    .expect("write the untrackable-home vault schema");
+}
+
+/// **Every refusal `jigc relocate` raises names itself and routes** — the route floor
+/// (`design/surface-contract.md` → law 2) over this door's whole refusal surface, driven
+/// through the real binary.
+///
+/// The set it iterates is the **code-side registry**
+/// [`cli::relocate::RelocateRefusal::ALL`], not the six the audit's finding reported: at
+/// `c80b3f8f` six of this door's nine states reached the wire as bare `anyhow` strings
+/// (`relocate --from ''`, `--from /`, the frozen doctype, the transient doctype, the
+/// occupied destination, the untrackable destination) while three already carried a code —
+/// and a fix that took the reported six would have left the registry a list of what one
+/// commit touched rather than a statement about the door. The three that were already right
+/// are the arm's **controls**: they are driven here too, so the axis is total and a member
+/// added later has to be driven or the ⇔ fence below reds.
+///
+/// Two surfaces, because the door has two: an argument or doctype refusal is a fact about
+/// the **run** and lands on stderr at exit 1, while a per-document refusal is a fact about
+/// **one candidate** and lands as a `blocked` row inside the report — a triage door
+/// classifies the rest, which is what a sweep is for (`design/validation.md`, the
+/// `ingest.unaddressable-identity` row's exit clause). Both must carry the code and the
+/// route; neither may reach the wire as a bare sentence.
+#[test]
+fn every_relocate_refusal_carries_an_identity_and_a_route() {
+    use cli::relocate::RelocateRefusal as R;
+
+    let repo = TempDir::new("refusal-axis");
+    let home = TempDir::new("home");
+    git_init(repo.path());
+    let pack = repo.path().join(".jigc").join("axis-pack");
+    write_axis_pack(&pack);
+    fs::write(
+        repo.path().join(".jigc").join("config").join("packs.yaml"),
+        format!("packs:\n  - {}\n", pack.display()),
+    )
+    .expect("write packs.yaml naming the axis pack");
+
+    // One stranded `note` at a legacy home — the subject every per-document cell moves.
+    fs::create_dir_all(repo.path().join("legacy")).expect("mk prior home");
+    fs::write(
+        repo.path().join("legacy/stranded.md"),
+        "# Stranded\n\n## Body\n\nprose\n",
+    )
+    .expect("write the stranded note");
+    // …and a committed instance already sitting at the `note` home, baselined, so the
+    // occupied-destination cell meets a **managed** squatter rather than a foreign one.
+    fs::create_dir_all(repo.path().join("docs/notes")).expect("mk note home");
+    fs::write(
+        repo.path().join("docs/notes/stranded.md"),
+        "# Stranded\n\n## Body\n\nother prose\n",
+    )
+    .expect("write the occupying note");
+    git(repo.path(), &["add", "-A"]);
+    git(repo.path(), &["commit", "-q", "-m", "strand a note"]);
+    assert_ok(
+        &jigc(repo.path(), home.path(), &["ingest"]),
+        "`jigc ingest` baselines the occupying instance so the destination reads *managed*",
+    );
+
+    /// Where a refusal lands: `Run` is stderr at exit 1, `Row` is a `blocked` row in the
+    /// report the door prints on stdout.
+    #[derive(Clone, Copy, PartialEq)]
+    enum Surface {
+        Run,
+        Row,
+    }
+
+    let cells: &[(R, Surface, &[&str])] = &[
+        // The three controls — already coded before this fix.
+        (
+            R::UnknownDoctype,
+            Surface::Run,
+            &["relocate", "nosuch", "--from", "legacy"],
+        ),
+        (
+            R::WorkbenchPriorHome,
+            Surface::Run,
+            &["relocate", "note", "--from", ".jigc"],
+        ),
+        (
+            R::InstalledPriorHome,
+            Surface::Run,
+            &["relocate", "note", "--from", ".claude"],
+        ),
+        // The six the finding named.
+        (
+            R::PriorHomeMissing,
+            Surface::Run,
+            &["relocate", "note", "--from", ""],
+        ),
+        (
+            R::PriorHomeUnusable,
+            Surface::Run,
+            &["relocate", "note", "--from", "/"],
+        ),
+        (
+            R::FrozenDoctype,
+            Surface::Run,
+            &["relocate", "adr", "--from", "legacy"],
+        ),
+        (
+            R::TransientDoctype,
+            Surface::Run,
+            &["relocate", "memo", "--from", "legacy"],
+        ),
+        (
+            R::UntrackableDestination,
+            Surface::Row,
+            &["relocate", "vault", "--from", "legacy"],
+        ),
+        (
+            R::OccupiedDestination,
+            Surface::Row,
+            &["relocate", "note", "--from", "legacy"],
+        ),
+        // The tenth, shipped at Increment 8 / T6 and fenced in full by
+        // `an_unaddressable_destination_is_refused_and_the_addressable_sibling_still_moves`
+        // above; driven here for the axis's own two properties (code + route), over a
+        // source whose file name no `<type>:<slug>` address reaches.
+        (
+            R::UnaddressableDestination,
+            Surface::Row,
+            &["relocate", "note", "--from", "unaddressable"],
+        ),
+    ];
+
+    // The unaddressable cell's own subject — a stranded doc whose name is not a doc id.
+    fs::create_dir_all(repo.path().join("unaddressable")).expect("mk unaddressable home");
+    fs::write(
+        repo.path().join("unaddressable/My Note.md"),
+        "# My Note\n\n## Body\n\nprose\n",
+    )
+    .expect("write the unaddressable-named note");
+    git(repo.path(), &["add", "-A"]);
+    git(
+        repo.path(),
+        &["commit", "-q", "-m", "strand an unaddressable note"],
+    );
+
+    for (refusal, surface, argv) in cells {
+        let out = jigc(repo.path(), home.path(), argv);
+        let (channel, text) = match surface {
+            Surface::Run => ("stderr", String::from_utf8_lossy(&out.stderr).into_owned()),
+            Surface::Row => ("stdout", String::from_utf8_lossy(&out.stdout).into_owned()),
+        };
+        let code = refusal.code();
+        assert!(
+            text.contains(&format!("blocking · {code}")),
+            "{argv:?}: the refusal must name itself `blocking · {code}` on {channel}; got:\n{text}",
+        );
+        assert!(
+            text.contains("route: "),
+            "{argv:?} ({code}): every blocking finding carries a route (law 2); got:\n{text}",
+        );
+        if *surface == Surface::Run {
+            assert_eq!(
+                out.status.code(),
+                Some(1),
+                "{argv:?} ({code}): a run-level refusal exits 1; got:\n{text}",
+            );
+            // …and the machine arm carries the same identity: `--format json` may never
+            // answer a refusal with a sentence that has no code in it.
+            let mut json_argv: Vec<&str> = argv.to_vec();
+            json_argv.extend(["--format", "json"]);
+            let json_out = jigc(repo.path(), home.path(), &json_argv);
+            let json = String::from_utf8_lossy(&json_out.stderr).into_owned();
+            assert!(
+                json.contains(code),
+                "{json_argv:?}: the json arm carries the code too; got:\n{json}",
+            );
+        }
+    }
+
+    // **The ⇔ fence**: every registry member is driven above, and every cell names a member.
+    let driven: Vec<R> = cells.iter().map(|(r, _, _)| *r).collect();
+    for member in R::ALL {
+        assert!(
+            driven.contains(member),
+            "{member:?} is a member of `RelocateRefusal::ALL` that no cell drives — a \
+             refusal nothing drives is a route-floor claim nothing checks",
+        );
+    }
+    assert_eq!(
+        driven.len(),
+        R::ALL.len(),
+        "the cell table and the registry are the same set, member for member",
+    );
+}

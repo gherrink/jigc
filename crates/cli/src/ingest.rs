@@ -742,6 +742,12 @@ impl UnaddressableDoor {
     }
 }
 
+/// The identity of the **unaddressable-home** refusal, minted here because this module owns
+/// the condition — so a consumer that names the code (`crate::relocate::RelocateRefusal`)
+/// asks the crate that raises it rather than repeating a literal that a rename could leave
+/// quietly matching nothing (the `crate::render::ENVELOPE_OWED_CODES` rule, one door over).
+pub const UNADDRESSABLE_IDENTITY: &str = "ingest.unaddressable-identity";
+
 /// The refusal for a file that would sit at a managed home under **no managed identity** —
 /// `ingest.unaddressable-identity` (M51 Inc 9 / T4; `design/validation.md` → The M51
 /// registrations — Increment 9).
@@ -877,7 +883,7 @@ pub(crate) fn unaddressable_identity_finding(
     };
     Finding::graded(
         Severity::Blocking,
-        "ingest.unaddressable-identity",
+        UNADDRESSABLE_IDENTITY,
         format!("{}: {cause}", door.lead(ty, rel_path)),
         // The path form, and necessarily so: the whole fault is that this file has no
         // `<type>:<slug>` identity to key at (`design/command-output-contract.md` → the

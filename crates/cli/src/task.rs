@@ -1164,6 +1164,20 @@ enum AdvisoryDoor {
     Finalize,
 }
 
+/// **`jigc task bind` named a role this task's workflow does not declare** (M52 completion
+/// audit, fix 5). The door's own mint — no other verb enforces a `reads:` declaration — on
+/// the `task-discard.*` namespace precedent, the door-verb family a refusal takes when the
+/// state is the door's own. Keyed at the **work unit** (`task:<id>`), the
+/// [command-output-contract](../../../design/command-output-contract.md) target form whose
+/// subject is a task rather than a document: the role is a property of *this* task's
+/// workflow, and the address the caller passed is not the thing that is wrong.
+const UNDECLARED_READ_ROLE: &str = "task-bind.undeclared-role";
+
+/// **The bound address's doctype is not the one the role declares** (M52 completion audit,
+/// fix 5) — step 4 of the bind enforcement, coded with its step-2 sibling above and keyed at
+/// the same work unit for the same reason.
+const ROLE_TYPE_MISMATCH: &str = "task-bind.role-type-mismatch";
+
 /// The **stale-commit-summary** advisory's finding code (M51 Increment 11 / T2;
 /// `design/validation.md` → The M51 registrations — Increment 11; the rc.14 trial's
 /// F-9). One spelling, read by both producers.
@@ -3204,14 +3218,44 @@ impl TaskArea {
         let def = self.workflow_def()?;
 
         // Step 2 — the role must be one the workflow declares as a `reads` role.
+        //
+        // **Coded at the M52 completion audit (fix 5).** The route-floor sweep that closed
+        // `jigc relocate`'s six bare refusals drove this door too, and found the ledger's
+        // count of what was left here wrong in the honest direction: M52 Increment 10 / T7
+        // discharged the **two** refusals `decisions-pending.md`'s axis-6 lead 6a named
+        // (the address grammar fault and the committed-store miss), and this one — which
+        // fires *before* both, on an ordinary wrong role — was in no ledger, brief or
+        // increment. It is the same defect: a `bail!` carries no code, so the route floor
+        // (`design/surface-contract.md` → law 2) cannot reach it at all.
         let Some(reads) = def.reads.iter().find(|r| r.role == role) else {
             let declared: Vec<&str> = def.reads.iter().map(|r| r.role.as_str()).collect();
+            let route = if declared.is_empty() {
+                engine::finding::Route::mechanical(
+                    ["jigc", "start", "--task", &self.id],
+                    " re-composes this task's step text — a workflow that declares no read \
+                     role binds nothing, and the context it reads is composed for you",
+                )
+            } else {
+                engine::finding::Route::human(format!(
+                    "re-run with one of this task's declared read-roles: {}",
+                    declared.join(", "),
+                ))
+            };
             let declared = if declared.is_empty() {
                 "none".to_string()
             } else {
                 declared.join(", ")
             };
-            bail!("role `{role}` is not a declared read-role of this task (declared: {declared})");
+            return Err(crate::render::finding_error(&Finding::graded(
+                Severity::Blocking,
+                UNDECLARED_READ_ROLE,
+                format!(
+                    "role `{role}` is not a declared read-role of this task (declared: \
+                     {declared})"
+                ),
+                Some(Location::addressed(format!("task:{}", self.id), 1, 1)),
+                Some(route),
+            )));
         };
 
         // Parse the address (it must name a `<type>:<slug>`), then ask whether the slug
@@ -3273,13 +3317,25 @@ impl TaskArea {
             )));
         }
 
-        // Step 4 — the target's doctype must equal the role's declared `type`.
+        // Step 4 — the target's doctype must equal the role's declared `type`. Coded with
+        // step 2 above (M52 completion audit, fix 5), and routed **mechanically**: the
+        // declared type is in hand, and `jigc doc list <ty>` names every committed instance
+        // of it, so the reader's next command is the one that answers.
         if address.r#type.as_str() != reads.doc_type {
-            bail!(
-                "doctype mismatch: `{addr}` is a `{}` but role `{role}` declares type `{}`",
-                address.r#type.as_str(),
-                reads.doc_type,
-            );
+            return Err(crate::render::finding_error(&Finding::graded(
+                Severity::Blocking,
+                ROLE_TYPE_MISMATCH,
+                format!(
+                    "doctype mismatch: `{addr}` is a `{}` but role `{role}` declares type `{}`",
+                    address.r#type.as_str(),
+                    reads.doc_type,
+                ),
+                Some(Location::addressed(format!("task:{}", self.id), 1, 1)),
+                Some(engine::finding::Route::mechanical(
+                    ["jigc", "doc", "list", &reads.doc_type],
+                    " names every committed instance of the type this role reads",
+                )),
+            )));
         }
 
         // Step 5 — record the binding (last-write-wins) and persist it.

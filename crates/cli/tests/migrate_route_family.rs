@@ -82,7 +82,13 @@ const MIGRATE_ROUTE_SITES: &[RouteSite] = &[
     RouteSite {
         file: "crates/cli/src/relocate.rs",
         func: "relocate_freeze_exempt",
-        sites: 1,
+        // **Two since the M52 completion audit's fix 5**, one state: the refusal became a
+        // blocking `Finding` on the door's registry
+        // (`cli::relocate::RelocateRefusal::FrozenDoctype`), so the verb is named once in
+        // the message — *what is wrong* — and once in the `Route::mechanical` argv — *what
+        // to run*. Before that the route span rode inside the `bail!`'s own text, which is
+        // one occurrence and, being no finding at all, no route the floor could see.
+        sites: 2,
         state: "`jigc relocate <frozen-ty> --from <prior home>` over a corpus whose frozen \
                 doctype moved home and whose instance is still committed at the prior one — the \
                 freeze-exempt path refuses and hands the act to the version-gated verb",

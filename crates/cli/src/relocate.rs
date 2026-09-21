@@ -30,6 +30,150 @@ use crate::pack;
 use crate::render;
 use crate::task::git_run;
 
+/// **`jigc relocate`'s refusal axis** — every state this door declines, each paired with the
+/// finding code it carries on the printed surface *and* in the invocation log's
+/// `finding_codes` (M52 completion audit, fix 5).
+///
+/// **Why it is an axis and not six repairs.** The door declines **ten** states carrying
+/// **nine** distinct codes (the two malformed `--from` cells share one — the consequence is
+/// one). Driven at `c80b3f8f`, **four** of the ten already carried a code and a route — the
+/// unknown doctype and the two installed-root `--from` values (M52 Increment 8 / T7), and
+/// the destination-identity gate (Increment 8 / T6) — while the other **six** reached the
+/// wire as bare `anyhow` strings: no `blocking · <code>` prefix, no `route:` line, and on
+/// `--format json` an `{"error": "<sentence>"}` a driver cannot key on. A bail carries no
+/// code, so those six sat outside the
+/// [route floor](../../../design/surface-contract.md) **by construction**:
+/// `engine::finding::is_route_exempt` takes a *finding* code and a bail has none. That is the
+/// same defect, in the same shape, that `jigc rename`'s eleven refusals were promoted out of
+/// at M49 ([`crate::rename::RefusalKind`]) — so this door takes the same mold, and takes it
+/// over the **whole** door rather than over the six the audit reported: the four that were
+/// already right are members too, so the registry is a statement about the door's refusal
+/// surface and not a list of what one fix touched.
+///
+/// **Reuse over mint, one fault one code.** Of the nine codes, **five** name a fault some
+/// other door already raises — a transient doctype, an occupied destination, a destination
+/// git cannot record, and the two installed-root prior homes whose sibling is `jigc config
+/// set <root-knob>`. **Two** mint (`relocate.` — the states no other door can be in: only
+/// this verb takes a `--from` prior home, and only this verb is the freeze-exempt path a
+/// frozen doctype must be turned away from). **Two** are raised by the crates that own the
+/// condition (`engine::store`, `crate::ingest`) and are named here so the axis is total.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RelocateRefusal {
+    /// `<ty>` resolves to no doctype in the composed cascade — minted by `engine::store`.
+    UnknownDoctype,
+    /// `--from` was empty or whitespace: no prior home was named at all.
+    PriorHomeMissing,
+    /// `--from` named something that is no home — a value that normalizes away (`/`, `//`).
+    PriorHomeUnusable,
+    /// `--from` named jigc's own workbench (`.jigc/`).
+    WorkbenchPriorHome,
+    /// `--from` named a root `jigc setup` writes (the adapter install).
+    InstalledPriorHome,
+    /// `<ty>` is manifest-governed: it relocates through the version-gated `migrate-corpus`.
+    FrozenDoctype,
+    /// `<ty>` has no home at all (a transient doctype) — there is nothing to relocate.
+    TransientDoctype,
+    /// A **managed** instance already occupies the destination; a move-INTO it is deferred.
+    OccupiedDestination,
+    /// The destination is a path git cannot record — inside `.git/`, inside another
+    /// repository, or outside this one. Raised by the shared move primitive
+    /// ([`move_doc`]), which is why closing it here closes it for that primitive's other
+    /// callers too.
+    UntrackableDestination,
+    /// The destination would sit at a managed home under no `<type>:<slug>` identity —
+    /// minted by [`crate::ingest`] (M52 Increment 8 / T6).
+    UnaddressableDestination,
+}
+
+impl RelocateRefusal {
+    /// Every member, in the order the door can reach them: the argument checks, then the
+    /// doctype checks, then the per-document move.
+    pub const ALL: &'static [RelocateRefusal] = &[
+        RelocateRefusal::UnknownDoctype,
+        RelocateRefusal::PriorHomeMissing,
+        RelocateRefusal::PriorHomeUnusable,
+        RelocateRefusal::WorkbenchPriorHome,
+        RelocateRefusal::InstalledPriorHome,
+        RelocateRefusal::FrozenDoctype,
+        RelocateRefusal::TransientDoctype,
+        RelocateRefusal::OccupiedDestination,
+        RelocateRefusal::UntrackableDestination,
+        RelocateRefusal::UnaddressableDestination,
+    ];
+
+    /// The finding code this refusal carries.
+    pub fn code(self) -> &'static str {
+        match self {
+            RelocateRefusal::UnknownDoctype => engine::store::UNKNOWN_TYPE,
+            RelocateRefusal::PriorHomeMissing | RelocateRefusal::PriorHomeUnusable => {
+                MALFORMED_PRIOR_HOME
+            }
+            RelocateRefusal::WorkbenchPriorHome => "config.workbench-root",
+            RelocateRefusal::InstalledPriorHome => "config.unusable-root",
+            RelocateRefusal::FrozenDoctype => FROZEN_DOCTYPE,
+            RelocateRefusal::TransientDoctype => "store.transient-type",
+            RelocateRefusal::OccupiedDestination => "write.already-present",
+            RelocateRefusal::UntrackableDestination => "write.untrackable-destination",
+            RelocateRefusal::UnaddressableDestination => crate::ingest::UNADDRESSABLE_IDENTITY,
+        }
+    }
+}
+
+/// The `--from` value is no usable prior home — **this door's mint**, because `--from` is a
+/// prior home and no other verb takes one (`jigc config set docs-root` adjudicates the same
+/// *kind* of value but only as a **destination**, which is what its `config.unusable-root`
+/// family is about).
+///
+/// One code for both malformed cells — absent and un-normalizable — because the consequence
+/// is one: the sweep has no prefix to walk. The token the caller typed named nothing, so the
+/// finding carries **no locus**, on the precedent `design/command-output-contract.md` states
+/// for `work-unit.malformed-id` (*the token the caller typed was never a work-unit id, so
+/// there is no `task:<id>` to address it at*) and which this door's two installed-root
+/// siblings already follow.
+pub const MALFORMED_PRIOR_HOME: &str = "relocate.malformed-prior-home";
+
+/// A manifest-governed doctype was handed to the **freeze-exempt** path — this door's second
+/// mint, the reconciliation of the two relocation paths, and a state no other verb is in.
+pub const FROZEN_DOCTYPE: &str = "relocate.frozen-doctype";
+
+/// The one repair every `--from` refusal carries: the door cannot compose the prefix the
+/// caller meant, and `jigc doc list` is the surface that names every committed doc jigc knows
+/// together with the path each one is at. `Human` rather than `Mechanical` because the
+/// directory is the operator's to supply — a mechanical argv may carry only a declared
+/// placeholder (`engine::finding::ROUTE_PLACEHOLDERS`), and a prior home is not one.
+const PRIOR_HOME_ROUTE: &str = "re-run `--from` with the directory this doctype's instances \
+                                actually sat at — `jigc doc list` names every committed doc \
+                                jigc knows and the path each one is at";
+
+/// Refuse with an identity: flatten `refusal`'s [`Finding`] into the `anyhow` channel this
+/// verb returns on, through the shared [`render::finding_error`] carrier — the same shape
+/// [`crate::rename::refuse`] uses, and for the same reason, so the code the surface prints is
+/// the code `finding_codes` records.
+///
+/// **Declared bound, inherited and not introduced:** these refusals reach `--format json`
+/// inside the `{"error": …}` envelope rather than as the structured finding projection. That
+/// is the flattening funnel's shipped posture — the one
+/// `design/command-output-contract.md` → *the complement* declares and accepts for a code it
+/// lists under **no** target form, and the one this door's two installed-root siblings and
+/// `jigc rename`'s whole eleven-member axis already ship. The one member that does project a
+/// key is [`RelocateRefusal::UnknownDoctype`], and it does so because `store.unknown-type` is
+/// an [`render::ENVELOPE_OWED_CODES`](crate::render::ENVELOPE_OWED_CODES) member — the arm is
+/// the **code's** property since the audit's fix 4, so this door does not choose it.
+fn refuse(
+    refusal: RelocateRefusal,
+    at: Option<&str>,
+    message: String,
+    route: impl Into<engine::finding::Route>,
+) -> anyhow::Error {
+    render::finding_error(&Finding::graded(
+        engine::finding::Severity::Blocking,
+        refusal.code(),
+        message,
+        at.map(|at| engine::finding::Location::addressed(at, 1, 1)),
+        Some(route.into()),
+    ))
+}
+
 /// Move a committed managed doc `old_rel` → `new_rel` and re-key its file-state entry.
 ///
 /// Runs `git mv old_rel new_rel` (skipped when `old_rel == new_rel` — a retitle-in-place
@@ -72,8 +216,23 @@ pub fn move_doc(
 ) -> Result<()> {
     if old_rel != new_rel {
         if let Some(reason) = crate::trackable::untrackable_reason(repo_root, new_rel) {
-            return Err(anyhow!(
-                "refusing to move `{old_rel}` to a destination git cannot track: {reason}"
+            // **Coded at the primitive, which is where the check is** (M52 completion audit,
+            // fix 5). `jigc rename` has refused this fault as `write.untrackable-destination`
+            // since M50 and minted that code *for* the primitive's other callers
+            // ([`crate::rename::RefusalKind::code`]: *"the code those doors join when they
+            // are converged"*); the convergence is here, so `jigc relocate`,
+            // `migrate-corpus`'s relocation arm and `finalize`'s promote/retire stop
+            // refusing the identical fault code-less and route-less.
+            return Err(refuse(
+                RelocateRefusal::UntrackableDestination,
+                Some(new_rel),
+                format!("refusing to move `{old_rel}` to a destination git cannot track: {reason}"),
+                engine::finding::Route::human(
+                    "the destination is the doctype's declared home plus the doc's own \
+                     file name — re-point that home at a path git can record (`jigc \
+                     config get docs-root` and `jigc config get placement-root` name \
+                     the two in force) and re-run",
+                ),
             ));
         }
         crate::repo::SeamSubject::live(repo_root).verify(crate::repo::SeamAct::Move)?;
@@ -278,7 +437,14 @@ fn relocate_in_repo(cwd: &Path, ty: &str, from: &str) -> Result<RelocationReport
 /// home naming one of jigc's own installed roots ([`installed_root_refusal`]).
 fn parse_prior_home(from: &str) -> Result<Home> {
     if from.trim().is_empty() {
-        anyhow::bail!("`--from` (the prior home) is required");
+        return Err(refuse(
+            RelocateRefusal::PriorHomeMissing,
+            None,
+            "`--from` (the prior home) is required — a relocation sweeps the committed docs \
+             under one prior home, and no prior home was named"
+                .to_string(),
+            engine::finding::Route::human(PRIOR_HOME_ROUTE),
+        ));
     }
     if let Some(finding) = installed_root_refusal(from) {
         return Err(render::finding_error(&finding));
@@ -286,7 +452,17 @@ fn parse_prior_home(from: &str) -> Result<Home> {
     if from.ends_with(".md") {
         Ok(Home::placement(from))
     } else {
-        Home::location(from).ok_or_else(|| anyhow!("`--from` `{from}` is not a valid prior home"))
+        Home::location(from).ok_or_else(|| {
+            refuse(
+                RelocateRefusal::PriorHomeUnusable,
+                None,
+                format!(
+                    "`--from` `{from}` is not a valid prior home — it normalizes to nothing, \
+                     so it names no directory the sweep could walk"
+                ),
+                engine::finding::Route::human(PRIOR_HOME_ROUTE),
+            )
+        })
     }
 }
 
@@ -381,17 +557,33 @@ pub(crate) fn relocate_freeze_exempt(
     prior: Home,
 ) -> Result<RelocationReport> {
     if pack::frozen_doctype_versions(pack).contains_key(&schema.ty) {
-        anyhow::bail!(
-            "`{}` is a frozen doctype — relocate it through the version-gated \
-             {}, not the freeze-exempt path",
-            schema.ty,
-            engine::finding::Route::mechanical(["jigc", "migrate-corpus"], ""),
-        );
+        return Err(refuse(
+            RelocateRefusal::FrozenDoctype,
+            Some(&schema.ty),
+            format!(
+                "`{}` is a frozen doctype — relocate it through the version-gated \
+                 `jigc migrate-corpus`, not the freeze-exempt path",
+                schema.ty,
+            ),
+            engine::finding::Route::mechanical(
+                ["jigc", "migrate-corpus"],
+                " walks every prior home the doctype's versioned snapshots declare and lands \
+                 the move under the freeze",
+            ),
+        ));
     }
     let current = orphan::home_of(schema).ok_or_else(|| {
-        anyhow!(
-            "`{}` is a transient (home-less) doctype — nothing to relocate",
-            schema.ty
+        refuse(
+            RelocateRefusal::TransientDoctype,
+            Some(&schema.ty),
+            format!(
+                "`{}` is a transient (home-less) doctype — nothing to relocate",
+                schema.ty
+            ),
+            engine::finding::Route::mechanical(
+                ["jigc", "describe"],
+                " names which doctypes persist to a home and which are transient",
+            ),
         )
     })?;
     // `jigc relocate` is not a transaction: it has no second act to fail after the moves, so
@@ -573,10 +765,19 @@ fn displace_foreign_squatter(
     let record = FileStateRecord::load(jigc_root)
         .with_context(|| format!("could not load the file-state record under {jigc_root:?}"))?;
     if record.get(dest_rel).is_some() {
-        anyhow::bail!(
-            "the destination `{dest_rel}` is occupied by a managed instance — a managed \
-             move-INTO the destination is deferred; reconcile it by hand"
-        );
+        return Err(refuse(
+            RelocateRefusal::OccupiedDestination,
+            Some(dest_rel),
+            format!(
+                "the destination `{dest_rel}` is occupied by a managed instance — a managed \
+                 move-INTO the destination is deferred"
+            ),
+            engine::finding::Route::human(format!(
+                "two managed docs claim `{dest_rel}` — decide which one keeps the home, then \
+                 `jigc doc rename` the other onto a free identity or `jigc unmanage` it; \
+                 `jigc doc list` names what is managed there",
+            )),
+        ));
     }
     let name = Path::new(dest_rel)
         .file_name()

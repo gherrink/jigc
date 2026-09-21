@@ -196,6 +196,16 @@ fn task_bind_enforces_the_five_steps_and_records_the_binding() {
         "the undeclared-role rejection must name the bad role and list the declared ones (spec); \
          got:\n{bad_role_err}",
     );
+    // …and it names itself and routes (M52 completion audit, fix 5). This refusal fires
+    // **before** the two `decisions-pending.md`'s axis-6 lead 6a named — the ones M52
+    // Increment 10 / T7 discharged — and was in no ledger: driven at `c96137e4` it answered
+    // a bare sentence with no code and no route, on text and inside `{"error": …}`.
+    assert!(
+        bad_role_err.contains("blocking · task-bind.undeclared-role")
+            && bad_role_err.contains("route: "),
+        "the undeclared-role rejection carries its code and a route (the route floor); \
+         got:\n{bad_role_err}",
+    );
 
     // Rejection 3 — `<addr>` does not resolve in the committed store (no spec
     // committed yet): the blocking `store.not-found` this door raises since M52
@@ -269,6 +279,15 @@ fn task_bind_enforces_the_five_steps_and_records_the_binding() {
         mismatch_err.contains("adr") && mismatch_err.contains("spec"),
         "the doctype-mismatch rejection must name both the target type (adr) and the declared \
          one (spec); got:\n{mismatch_err}",
+    );
+    // The step-2 sibling's other half (M52 completion audit, fix 5): the code, and a
+    // **mechanical** route, because the declared type is in hand and `jigc doc list <ty>`
+    // is the surface that answers *which docs could I have bound?*.
+    assert!(
+        mismatch_err.contains("blocking · task-bind.role-type-mismatch")
+            && mismatch_err.contains("route: `jigc doc list spec`"),
+        "the doctype-mismatch rejection carries its code and the runnable route; \
+         got:\n{mismatch_err}",
     );
 
     // Success — a committed spec at the declared role + matching doctype binds.

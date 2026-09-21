@@ -185,6 +185,14 @@ impl RefusalKind {
     /// `migrate-corpus`'s relocation arm, `finalize`'s promote/retire). Both are the code
     /// those doors join when they are converged (M50 Increment 2, declared bounds vi and
     /// vii: *that* they refuse is in scope, *how they render* is not).
+    ///
+    /// **`write.untrackable-destination`'s convergence happened** (M52 completion audit,
+    /// fix 5): the primitive itself now raises the routed `Finding`
+    /// ([`crate::relocate::RelocateRefusal::UntrackableDestination`]), so the three other
+    /// callers carry the code rather than a bare bail. This door's own gate stays where it
+    /// is and is not made redundant by it — it asks the predicate **before** the
+    /// transaction, which is what lets its refusal name a repo-relative destination the
+    /// backstop is not positioned to compose.
     pub fn code(self) -> &'static str {
         match self {
             RefusalKind::UnknownDoctype => engine::store::UNKNOWN_TYPE,

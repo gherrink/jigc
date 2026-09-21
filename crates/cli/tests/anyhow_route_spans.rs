@@ -646,6 +646,16 @@ fn milestone_discard_wrong_id_names_list_tasks_with_the_declared_placeholder() {
 
 /// A frozen doctype's relocate refusal routes to the version-gated verb, the span
 /// riding the checked constructor.
+///
+/// **The bytes are re-pinned, not loosened (M52 completion audit, fix 5).** This arm was
+/// written over a `Route::mechanical` span *inside* an `anyhow::bail!` — a route with no
+/// finding to carry it, which is exactly what put six of this door's nine refusals outside
+/// the route floor ([validation.md](../../../design/validation.md) → The M52 registrations
+/// — the completion audit). The refusal is now a blocking `Finding` on the door's registry
+/// (`cli::relocate::RelocateRefusal::FrozenDoctype`), so the emitted bytes gain the
+/// `blocking · <code>` lead, the doctype-scoped `at:` locus, and a route sentence that says
+/// what the verb it names will do. The span still rides the checked constructor, which is
+/// what this arm is about and what a span that stopped parsing would still exit 101 over.
 #[test]
 fn frozen_doctype_relocate_routes_to_migrate_corpus() {
     let repo = TempDir::new("relocate-frozen");
@@ -659,8 +669,10 @@ fn frozen_doctype_relocate_routes_to_migrate_corpus() {
     );
     assert_error_bytes(
         &out,
-        "`changelog` is a frozen doctype — relocate it through the version-gated \
-         `jigc migrate-corpus`, not the freeze-exempt path\n",
+        "blocking · relocate.frozen-doctype — `changelog` is a frozen doctype — relocate \
+         it through the version-gated `jigc migrate-corpus`, not the freeze-exempt \
+         path\n  at: changelog\n  route: `jigc migrate-corpus` walks every prior home the \
+         doctype's versioned snapshots declare and lands the move under the freeze\n",
     );
 }
 
