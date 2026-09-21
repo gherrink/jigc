@@ -1728,7 +1728,7 @@ fn no_committed_doc(jigc_home: &Path, address: &Address, canonical: Option<&Path
         .unwrap_or_default();
     Finding::graded(
         Severity::Blocking,
-        "store.not-found",
+        engine::store::NOT_FOUND,
         format!(
             "no committed doc `{typed}` to bind{expected} — a bind resolves in the committed \
              store, and a doc that is only staged in an open task is not bindable"

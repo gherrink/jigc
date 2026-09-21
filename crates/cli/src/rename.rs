@@ -187,9 +187,9 @@ impl RefusalKind {
     /// vii: *that* they refuse is in scope, *how they render* is not).
     pub fn code(self) -> &'static str {
         match self {
-            RefusalKind::UnknownDoctype => "store.unknown-type",
+            RefusalKind::UnknownDoctype => engine::store::UNKNOWN_TYPE,
             RefusalKind::TransientDoctype => "store.transient-type",
-            RefusalKind::NoSuchDoc => "store.not-found",
+            RefusalKind::NoSuchDoc => engine::store::NOT_FOUND,
             RefusalKind::UnslugableTitle => "write.unslugable-title",
             RefusalKind::DirtyTree => "rename.dirty-tree",
             RefusalKind::InFlight => "rename.in-flight",

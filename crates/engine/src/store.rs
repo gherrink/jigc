@@ -37,6 +37,22 @@ use crate::parse::{self, Document, ParsedItem};
 use crate::schema::Schema;
 use crate::write;
 
+/// **`store.not-found`** — the addressed doc is not in the committed store.
+///
+/// Minted as a constant rather than re-spelled at each producer because the CLI's carrier
+/// selects the machine arm on it (`cli::render::ENVELOPE_OWED_CODES`): the contract lists
+/// this code under a declared target form, so every producer owes the findings envelope,
+/// and a registry matching a copied literal would go quietly empty under a rename.
+pub const NOT_FOUND: &str = "store.not-found";
+
+/// **`store.no-such-leaf`** — the address names a leaf the committed node does not carry.
+/// A member of the same owed set as [`NOT_FOUND`], for the same reason.
+pub const NO_SUCH_LEAF: &str = "store.no-such-leaf";
+
+/// **`store.unknown-type`** — the doctype names nothing in the resolved cascade. A member
+/// of the same owed set as [`NOT_FOUND`], keyed at the bare doctype id.
+pub const UNKNOWN_TYPE: &str = "store.unknown-type";
+
 /// The canonical on-disk path a committed `<type>:<slug>` instance lives at, when
 /// its schema declares a persisted home.
 ///
@@ -149,7 +165,7 @@ pub fn read_slice(
         "fix the committed file so it conforms to its schema",
         |err| {
             block(
-                "store.not-found",
+                NOT_FOUND,
                 format!(
                     "could not read `{address_str}` at `{}`: {err}",
                     crate::path::repo_relative(repo_root, &path)
@@ -231,7 +247,7 @@ fn resolve_read_schema<'a>(
     // Resolve the type to its schema.
     let Some(schema) = schemas.get(type_name) else {
         return Err(block(
-            "store.unknown-type",
+            UNKNOWN_TYPE,
             format!("unknown doctype `{type_name}` for `{address_str}`"),
             address_str,
             "list the available doctypes with `jigc describe`".to_string(),
@@ -270,7 +286,7 @@ fn resolve_read_schema<'a>(
         let tail = " — a singleton doctype has one instance at a fixed slug";
         return Err(match staged_in {
             Some(task_id) => block(
-                "store.not-found",
+                NOT_FOUND,
                 format!(
                     "`{address_str}` names no doc staged in task `{task_id}`: `{type_name}` is a singleton, so its only address is `{canonical}`"
                 ),
@@ -281,7 +297,7 @@ fn resolve_read_schema<'a>(
                 ),
             ),
             None => block(
-                "store.not-found",
+                NOT_FOUND,
                 format!(
                     "`{address_str}` names no committed doc: `{type_name}` is a singleton, so its only address is `{canonical}`"
                 ),
@@ -397,7 +413,7 @@ fn not_staged_block(
 /// the caller supplied — there a doc was addressed, so the message says which one.
 pub fn unknown_doctype(type_name: &str) -> Finding {
     block(
-        "store.unknown-type",
+        UNKNOWN_TYPE,
         format!("unknown doctype `{type_name}`"),
         type_name,
         "list the available doctypes with `jigc describe`".to_string(),
@@ -717,7 +733,7 @@ fn resolve_section_leaf(
         .map(|f| f.value.render())
         .ok_or_else(|| {
             block(
-                "store.no-such-leaf",
+                NO_SUCH_LEAF,
                 format!(
                     "`{address}` names no leaf `{leaf}` in section `{}`",
                     section.id
@@ -804,7 +820,7 @@ fn resolve_leaf(
         "name a leaf that exists in the committed item".to_string()
     };
     Err(block(
-        "store.no-such-leaf",
+        NO_SUCH_LEAF,
         format!("`{address}` names no leaf `{leaf}` on item `{}`", item.id),
         address,
         route,

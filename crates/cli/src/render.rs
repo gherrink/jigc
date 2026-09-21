@@ -5358,6 +5358,48 @@ fn scan_version_tokens(text: &str) -> Vec<String> {
         .collect()
 }
 
+/// **The codes the contract lists under a declared target form** — and that therefore owe
+/// the findings envelope at **every** producer, whichever carrier the producing door
+/// reached for.
+///
+/// `design/command-output-contract.md` → *The membership test* pins `(code, target)` as a
+/// finding's stable identity and declares a **target form** for each family it lists. That
+/// listing is a promise to a driver: for these codes the pair *resolves*. A code inside an
+/// `{"error": …}` message is not a key, so flattening is not available to a listed code —
+/// the price the flattened arm charges is one the contract accepts only for the families it
+/// lists under **no** target form ([`finding_error`]'s declared bound).
+///
+/// **Why the choice is the code's and not the door's.** It was the door's until the M52
+/// completion audit, and the audit's own driving is why it no longer is. The contract's
+/// `store.*` sentence asserted these four were keyed everywhere; driven at `c80b3f8f`, five
+/// doors answered `store.unknown-type` flattened and two answered `store.not-found`
+/// flattened — seven `(door, cell)` coordinates, against the three doors and four
+/// coordinates the finding reported. Two of the five had never been counted at all, and
+/// both diverged **inside one function**: `jigc task bind`'s unknown-doctype step flattened
+/// while the `store.fixed-identity` and `store.not-found` guards three lines below it
+/// enveloped. A rule that has to be re-applied at each of sixteen doors is a rule that will
+/// be half-applied, which is the shape *a grep is not a fence*
+/// ([dev-workflow.md](../../../implementation/dev-workflow.md)) names. So the selection
+/// moves to the one place both carriers pass through, keyed on the one thing the contract
+/// keys on.
+///
+/// **This does not widen the envelope to every carried finding.** The rule stated at
+/// `design/command-output-contract.md` → *Which reject arm a run takes, in one rule* is
+/// about a reject that carries a finding *at all*; the membership test is narrower and is
+/// what this set implements. `store.malformed-slug` is the declared exception and stays
+/// off this list with its two measured grounds recorded there, and the `pack.resource-missing`
+/// / `workflow-refs.*` families stay flattened because the contract lists them under no
+/// target form.
+///
+/// Each member is asked of the crate that mints it, never of a copied literal, so a renamed
+/// code cannot leave this registry quietly matching nothing.
+pub const ENVELOPE_OWED_CODES: &[&str] = &[
+    engine::store::NOT_FOUND,
+    engine::store::NO_SUCH_LEAF,
+    engine::store::UNKNOWN_TYPE,
+    crate::task::FIXED_IDENTITY,
+];
+
 /// Flatten a blocking [`Finding`] into an `anyhow::Error` carrying the **whole** finding
 /// surface — `severity · code — message`, the locus, and the route — so a verb whose only
 /// failure channel is the operational funnel ([`operational_error`]) still refuses with an
@@ -5379,11 +5421,37 @@ fn scan_version_tokens(text: &str) -> Vec<String> {
 /// wrong one for a code it lists under one: that listing promises a driver `(code, target)`
 /// resolves, and a code inside a message is not a key. Those refusals take
 /// [`envelope_finding_error`] instead (M51 Increment 6 / T1).
+///
+/// **[Corrected 2026-09-21 (M52 completion audit, fix 4).** *"Those refusals take
+/// `envelope_finding_error` instead"* made the obligation a **choice made at each door**,
+/// and driven at `c80b3f8f` seven `(door, cell)` coordinates had not made it: the
+/// contract's `store.*` sentence claimed four codes were keyed everywhere while
+/// `jigc migrate --as`, `jigc relocate`, `jigc rename`, `jigc task bind` and
+/// `jigc milestone add-from-spec` flattened `store.unknown-type`, and `rename` and
+/// `add-from-spec` flattened `store.not-found` besides — `task bind` diverging *inside one
+/// function*, its unknown-doctype step flattening while the two guards three lines below it
+/// enveloped. So the obligation is no longer discharged by choosing a constructor: this
+/// function routes through [`carrier`], which asks [`ENVELOPE_OWED_CODES`], and a member of
+/// that set reaches the envelope **whichever** constructor a producer reaches for. What the
+/// bound above still describes exactly is every **non**-member, which is the whole of the
+/// flattened surface and stays the default.**]
 pub fn finding_error(finding: &Finding) -> anyhow::Error {
+    carrier(finding, false, Vec::new())
+}
+
+/// The one seam where a refusal's machine arm is settled: the door's own declaration
+/// (`declared`, the constructor it reached for) **or** the code's standing obligation
+/// ([`ENVELOPE_OWED_CODES`]).
+///
+/// The second disjunct is what makes the contract's `store.*` sentence true by the binary
+/// rather than by sixteen doors each remembering. It can only widen — a door that asked for
+/// the envelope always gets it — so no producer loses a key here.
+fn carrier(finding: &Finding, declared: bool, beside: Vec<Finding>) -> anyhow::Error {
+    let envelope = declared || ENVELOPE_OWED_CODES.contains(&finding.code.as_str());
     anyhow::Error::new(BlockedFinding {
         finding: finding.clone(),
-        envelope: false,
-        beside: Vec::new(),
+        envelope,
+        beside,
     })
 }
 
@@ -5404,11 +5472,7 @@ pub fn finding_error(finding: &Finding) -> anyhow::Error {
 /// The printed (agent / human) surface is the house findings render either way; the two
 /// differ only in the machine arm, and the routing footer the envelope render carries.
 pub fn envelope_finding_error(finding: &Finding) -> anyhow::Error {
-    anyhow::Error::new(BlockedFinding {
-        finding: finding.clone(),
-        envelope: true,
-        beside: Vec::new(),
-    })
+    carrier(finding, true, Vec::new())
 }
 
 /// The sibling of [`envelope_finding_error`] for a refusal that **carries other findings the
@@ -5427,11 +5491,7 @@ pub fn envelope_finding_error(finding: &Finding) -> anyhow::Error {
 /// report, so a door with nothing beside it is byte-identical to
 /// [`envelope_finding_error`].
 pub fn envelope_finding_error_beside(finding: &Finding, beside: Vec<Finding>) -> anyhow::Error {
-    anyhow::Error::new(BlockedFinding {
-        finding: finding.clone(),
-        envelope: true,
-        beside,
-    })
+    carrier(finding, true, beside)
 }
 
 /// The [`Finding`] a [`finding_error`] was built from, when `err` is one — the read half
@@ -6674,7 +6734,12 @@ pub const ENVELOPE_ARMS: &[EnvelopeArm] = &[
              flatten its whole frame into this arm's `error` string, and now emits its \
              door's own `*.commit-rejected` identity — plus any rollback conflict — on the \
              findings arm below (the pre-pin reshape rule, `command-output-contract.md` -> \
-             Evolution posture). This arm keeps every bare-`anyhow` reject and is unchanged",
+             Evolution posture). This arm keeps every bare-`anyhow` reject and every \
+             refusal whose code the contract lists under NO target form, which is what the \
+             M52 completion audit's fix 4 left here: it moved seven `(door, cell)` \
+             coordinates off this arm and nothing else, so `store.malformed-slug`, \
+             `pack.resource-missing` and the `workflow-refs.*` flatten path still answer \
+             here by their own recorded decisions",
         ),
         shape: ArmShape::Object(&["error"]),
         status: ArmStatus::Pinned,
@@ -6696,7 +6761,15 @@ pub const ENVELOPE_ARMS: &[EnvelopeArm] = &[
              through the deleted `render::setup_block`); and M52 Increment 9 / T2's \
              `workflow.verb-routed`, whose subject is a pack resource the contract keys \
              under the pack-resource target form, so the flattened arm could not carry it. \
-             With them this arm and the one \
+             And the M52 completion audit's fix 4: the `store.*` codes the contract lists \
+             under a declared target form now reach this arm at EVERY producer, because the \
+             selection moved off the door and onto the code \
+             (`render::ENVELOPE_OWED_CODES`, asked once at `render::carrier`). The seven \
+             coordinates that moved are `jigc migrate --as` / `relocate` / `rename` / \
+             `task bind` / `milestone add-from-spec` on `store.unknown-type` and `rename` / \
+             `milestone add-from-spec` on `store.not-found`; two of those doors had never \
+             been counted, and both were flattening one cell while enveloping the next one \
+             in the same function. With them this arm and the one \
              above are the whole reject surface, which is what makes the two of them a \
              declaration a driver can discriminate on rather than a pair of common cases",
         ),

@@ -745,7 +745,23 @@ const EXPECTATIONS: &[Cell] = &[
         &["ingest"],
         Expect::Answers(Arm::Error, 1),
     ),
-    ("pack-resource-missing", &["migrate"], Expect::Unreached),
+    // **[Corrected 2026-09-21 (M52 completion audit, fix 4).** This cell read
+    // `Expect::Unreached`. It was false when it was written and the column could not see
+    // it: `Unreached` is checked as *fault-run equals control-run, shape for shape*, and
+    // under this fault `jigc migrate FOREIGN.md --as changelog` answers
+    // `store.unknown-type` (the emptied pack lists no schemas, so the doctype resolves to
+    // nothing) while the control answers `migrate.source-untracked`. Two different
+    // refusals about two different things — but both were `{"error": …}`, so the shape
+    // comparison read them as equal and the cell passed on a false declaration. Fix 4
+    // moved `store.unknown-type` onto the findings arm at every producer, which made the
+    // arms differ and the lie visible. The cell is re-declared as what it does; the
+    // *diagnosis* is unchanged and is not this fix's business — a door that blames the
+    // doctype for an emptied pack is a separate finding with a separate argument.**]
+    (
+        "pack-resource-missing",
+        &["migrate"],
+        Expect::Answers(Arm::Findings, 1),
+    ),
     (
         "pack-resource-missing",
         &["migrate-corpus"],

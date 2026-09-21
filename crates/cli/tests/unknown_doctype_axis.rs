@@ -44,6 +44,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use cli::cli::{DOCTYPE_DOORS, DoctypeArg, doctype_arg_ids};
+use cli::render::{ArmOutcome, ArmShape, ENVELOPE_ARMS, ENVELOPE_OWED_CODES};
 use engine::packsource::PackResourceKind;
 
 /// The doctype id no pack ships — the axis's single input.
@@ -490,5 +491,119 @@ fn every_address_headed_door_answers_with_the_store_code() {
                 cell.door.join(" "),
             );
         }
+    }
+}
+
+/// **The arm, over the same derived registry** (M52 completion audit, fix 4).
+///
+/// `design/command-output-contract.md` → *The membership test* lists `store.unknown-type`
+/// under a **declared target form** (the bare doctype id), and that listing is a promise
+/// that a driver's `(code, target)` key resolves. Driven at `c80b3f8f` it did not: five of
+/// the sixteen `store.unknown-type` doors — `jigc migrate --as`, `jigc relocate`,
+/// `jigc rename`, `jigc task bind` and `jigc milestone add-from-spec` — answered
+/// `--format json` with the flattened `{"error": "blocking · store.unknown-type — …"}`,
+/// whose code lives inside a message and is not a key, while the nine `doc` doors answered
+/// the envelope. `task bind` diverged **inside one door**: its unknown-doctype step
+/// flattened while the two steps three lines below it (`store.fixed-identity`,
+/// `store.not-found`) enveloped.
+///
+/// The arm is no longer a per-door judgment: [`ENVELOPE_OWED_CODES`] carries the codes the
+/// contract lists under a target form and the one carrier asks it, so this sweep asserts a
+/// property the *code* now has rather than one sixteen doors each have to remember. The
+/// create-gate cells are out of the class by their own code and are not asserted here.
+#[test]
+fn every_store_code_door_answers_the_findings_envelope() {
+    assert!(
+        ENVELOPE_OWED_CODES.contains(&STORE_CODE),
+        "`{STORE_CODE}` is a member of the carrier's owed set — the sweep below asserts a \
+         property the code has, so a code dropped from that registry must redden here \
+         rather than let the sweep go on asserting it door by door",
+    );
+
+    let fixture = Fixture::new();
+    let declared = reject_findings_keys();
+
+    let mut driven = 0usize;
+    for cell in axis() {
+        if cell.code != STORE_CODE {
+            continue;
+        }
+        let mut argv: Vec<&str> = cell.argv.to_vec();
+        argv.extend(["--format", "json"]);
+        let shown = format!("jigc {} --format json", cell.argv.join(" "));
+
+        let out = fixture.run(&argv);
+        assert!(
+            out.stdout.is_empty(),
+            "{shown}: a reject leaves stdout empty; stdout:\n{}",
+            String::from_utf8_lossy(&out.stdout),
+        );
+        assert_eq!(
+            out.status.code(),
+            Some(1),
+            "{shown}: an unknown doctype rejects at exit 1; stderr:\n{}",
+            String::from_utf8_lossy(&out.stderr),
+        );
+
+        let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+        let value: serde_json::Value = serde_json::from_str(&stderr).unwrap_or_else(|err| {
+            panic!("{shown}: stderr must parse as the reject envelope ({err}); got:\n{stderr}")
+        });
+        let object = value
+            .as_object()
+            .unwrap_or_else(|| panic!("{shown}: the envelope is a JSON object; got:\n{stderr}"));
+        let mut keys: Vec<&str> = object.keys().map(String::as_str).collect();
+        keys.sort_unstable();
+        let mut want = declared.clone();
+        want.sort_unstable();
+        assert_eq!(
+            keys, want,
+            "{shown}: a code the contract lists under a target form answers on the \
+             `Reject::Findings` arm — not the flattened `{{\"error\": …}}`, whose code \
+             lives inside a message and projects no key; got:\n{stderr}",
+        );
+
+        let findings = value["findings"]
+            .as_array()
+            .unwrap_or_else(|| panic!("{shown}: `findings` is an array; got:\n{stderr}"));
+        assert_eq!(
+            findings.len(),
+            1,
+            "{shown}: one unknown doctype is one finding; got:\n{stderr}",
+        );
+        let key = &findings[0]["key"];
+        assert_eq!(
+            key["code"], STORE_CODE,
+            "{shown}: the key carries this axis's code; got:\n{stderr}",
+        );
+        assert!(
+            !key["target"].is_null(),
+            "{shown}: the doctype-scoped target form is the bare doctype id, never null — \
+             a null target is the mis-filing the contract refuses a family over; got:\n{stderr}",
+        );
+        driven += 1;
+    }
+
+    assert!(
+        driven >= 14,
+        "the sweep drove {driven} `{STORE_CODE}` cells — a sweep over a shrunken axis \
+         would pass vacuously",
+    );
+}
+
+/// The `Reject::Findings` row of the production registry — the declaration the sweep above
+/// is asserted against, read rather than restated.
+fn reject_findings_keys() -> Vec<&'static str> {
+    let arm = ENVELOPE_ARMS
+        .iter()
+        .find(|arm| arm.path.is_empty() && arm.arm == "Reject::Findings")
+        .expect("the cross-cutting `Reject::Findings` row is declared");
+    assert!(
+        matches!(arm.outcome, ArmOutcome::Reject),
+        "`Reject::Findings` is a reject arm — stdout empty, the document on stderr",
+    );
+    match arm.shape {
+        ArmShape::Object(keys) => keys.to_vec(),
+        _ => panic!("`Reject::Findings` declares an object key set"),
     }
 }

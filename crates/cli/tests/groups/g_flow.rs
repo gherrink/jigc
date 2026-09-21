@@ -79,6 +79,8 @@ mod rejection_frame_outcome;
 mod release_smoke;
 #[path = "../routing_loop.rs"]
 mod routing_loop;
+#[path = "../store_key_envelope_axis.rs"]
+mod store_key_envelope_axis;
 #[path = "../task_diff_envelope.rs"]
 mod task_diff_envelope;
 #[path = "../text_json_parity_axis.rs"]

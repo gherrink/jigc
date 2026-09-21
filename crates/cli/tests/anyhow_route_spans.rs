@@ -679,6 +679,17 @@ fn frozen_doctype_relocate_routes_to_migrate_corpus() {
 /// already raises for the same fault, and carries the locus — which is what puts the
 /// identity in the invocation log, not only on the surface. The route is unchanged in
 /// substance and still rides the checked constructor, which is why this arm keeps it.
+///
+/// **The missing-doc arm gained the routing footer at the M52 completion audit (fix 4).**
+/// `store.not-found` is a code `design/command-output-contract.md` lists under a declared
+/// target form, so it owes the findings envelope at every producer, and this door was one
+/// of the seven `(door, cell)` coordinates still flattening it. Moving it onto that arm
+/// routes its *text* render through the house findings render, which carries the
+/// orientation footer — the same, declared byte change the 25 work-unit cells took at M51
+/// Increment 6. The bytes below are re-pinned rather than loosened: the footer is a fact
+/// about this surface and an expectation that could not see it would stop being a contract.
+/// The malformed-address arm above is untouched — it is a code-less `anyhow`, which is
+/// exactly what `{error}` is for.
 #[test]
 fn rename_rejects_route_to_describe() {
     let repo = TempDir::new("rename");
@@ -701,7 +712,8 @@ fn rename_rejects_route_to_describe() {
         &missing,
         "blocking · store.not-found — no managed doc `adr:nope` to rename (expected at \
          docs/decisions/nope.md)\n  at: adr:nope\n  route: `jigc describe` lists the \
-         doctype surface — check the id you typed against it\n",
+         doctype surface — check the id you typed against it\n\
+         — jigc · run `jigc start` for orientation; all writes through `jigc`.\n",
     );
 }
 

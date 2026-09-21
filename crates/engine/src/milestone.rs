@@ -594,7 +594,7 @@ fn read_spec_criteria(
 
     let Some(schema) = schemas.get(type_name) else {
         return Err(store_block(
-            "store.unknown-type",
+            crate::store::UNKNOWN_TYPE,
             format!("unknown doctype `{type_name}` for `{spec_addr}`"),
             spec_addr,
             "list the available doctypes with `jigc describe`".to_string(),
@@ -614,7 +614,7 @@ fn read_spec_criteria(
 
     let mut source = std::fs::read_to_string(&path).map_err(|err| {
         store_block(
-            "store.not-found",
+            crate::store::NOT_FOUND,
             format!(
                 "could not read `{spec_addr}` at `{}`: {err}",
                 crate::path::repo_relative(repo_root, &path)

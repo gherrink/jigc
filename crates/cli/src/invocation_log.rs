@@ -368,8 +368,10 @@ impl Outcome {
 /// cannot drift. The flattened arm below is untouched, and stays the default.
 ///
 /// Both arms record the same thing: the finding's `code` in `finding_codes`. Which arm a
-/// refusal takes is declared at the door that raises it (the carrier's `envelope` flag), never
-/// guessed here from the code — and a door that carried findings **beside** its refusal
+/// refusal takes is settled at the **carrier** — the door's own declaration, or, since the
+/// M52 completion audit, the standing obligation of a code the contract lists under a
+/// declared target form (`crate::render::ENVELOPE_OWED_CODES`) — and is read here off the
+/// carrier's `envelope` flag, never guessed here from the code — and a door that carried findings **beside** its refusal
 /// ([`crate::render::envelope_finding_error_beside`]) records every one of them, since the
 /// envelope render reads the whole set rather than the head alone.
 pub fn operational_failure(format: crate::cli::Format, err: &anyhow::Error) -> Outcome {

@@ -6807,14 +6807,23 @@ fn finding_to_err(finding: Finding) -> anyhow::Error {
 ///   *Codes it registers*), and `uninstall`'s member has answered there since it landed; this
 ///   door's two producers flattened it, so one registration shipped two shapes a driver
 ///   cannot discriminate.
-/// - [`crate::task::FIXED_IDENTITY`] (M52 Increment 6 / T3) — T2 landed the code on the
-///   findings arm at the nine `doc` doors' shared funnel; this door is one of the three
-///   sibling producers T3 adds, and a flattened answer here would ship two wire shapes
-///   for one registered code.
+///
+/// **[Corrected 2026-09-21 (M52 completion audit, fix 4).** A third row read: *"
+/// [`crate::task::FIXED_IDENTITY`] (M52 Increment 6 / T3) — T2 landed the code on the
+/// findings arm at the nine `doc` doors' shared funnel; this door is one of the three
+/// sibling producers T3 adds, and a flattened answer here would ship two wire shapes for
+/// one registered code."* The reasoning held and was **under-applied**: it is an argument
+/// about the *code*, taken at one module's funnel, and the audit drove seven `(door, cell)`
+/// coordinates where the same argument had not been taken — this module's own
+/// `add-from-spec` among them, flattening `store.unknown-type` and `store.not-found` while
+/// enveloping `store.fixed-identity` one guard later. The set of codes the contract lists
+/// under a declared target form now lives in one home the **carrier** asks
+/// ([`crate::render::ENVELOPE_OWED_CODES`]), so that row is discharged there rather than
+/// restated here, and this list keeps only what is genuinely this module's: two codes the
+/// contract lists under no `store.*` target form.**]
 const ENVELOPE_ARM_CODES: &[&str] = &[
     engine::milestone::UNKNOWN_MILESTONE_CODE,
     DISCARD_FOREIGN_BYTES_CODE,
-    crate::task::FIXED_IDENTITY,
 ];
 
 #[cfg(test)]
