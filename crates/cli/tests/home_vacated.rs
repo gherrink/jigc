@@ -37,11 +37,20 @@
 //! each. The one verb the route names as *not* an exit — `jigc unmanage`, which drops a
 //! file-state baseline and leaves the home declared — is driven too, so the sentence saying it
 //! does not clear this is a measured fact rather than a claim.
+//!
+//! **Arm 12 iterates a second axis, and it is a code-side registry too** (M52 completion audit,
+//! fix 6): `cli::orphan::Removal::ALL`, the removal states the emptiness leg admits — the leg
+//! reads the **worktree**, so a committed `git rm`, an uncommitted one and a staged one all
+//! satisfy it while what repairs them could not differ more. The cells are ⇔-fenced against
+//! that enum, each is produced by an ordinary human act, and the route each draws is run
+//! verbatim: a query must answer, a repair must repair, and no state's route may carry another
+//! state's advice.
 
 use crate::support;
 
 use std::process::Output;
 
+use cli::orphan::Removal;
 use cli::render::{STORE_EXIT_FLIPS, StoreExitFlip};
 use support::trial_corpus::{State, TrialCorpus};
 
@@ -393,6 +402,17 @@ fn the_members_witness_is_the_producer_and_its_trailer_matches_its_verdict() {
          it untrustworthy would state the whole class as one",
     );
     let trailer = (flip.trailer)();
+    // The closing line is **one** line for a class whose members are in different removal
+    // states, so it may promise nothing that only one of them has. It promised a locator until
+    // the M52 completion audit's fix 6 — *"each finding above carries the locator for where it
+    // went"* — while an uncommitted removal is a member and no commit removed anything for a
+    // locator to name.
+    assert!(
+        !trailer.contains("locator"),
+        "the closing line speaks for every vacated home on the report, and two of the three \
+         removal states have no deleting commit at all — it may hand the reader to each \
+         finding's own repair, never to a locator it cannot promise; got:\n{trailer}",
+    );
     for claim in [
         "could not be trusted",
         "cannot be trusted",
@@ -653,4 +673,158 @@ fn an_adopted_home_emptied_in_the_worktree_alone_still_fires() {
          worktree does not — the home is vacated whether or not the removal was committed; \
          got:\n{text}",
     );
+}
+
+// ---------------------------------------------------------------------------------------
+// The M52 completion audit, fix 6 — the removal's **state**
+// ---------------------------------------------------------------------------------------
+
+/// One member of the removal-state axis: the ordinary human act that puts a declared home in
+/// that state, and what the route it draws has to do when it is run verbatim.
+struct RemovalCell {
+    /// The state token, ⇔-fenced against `cli::orphan::Removal::ALL` below.
+    kind: &'static str,
+    /// The act, on an adopted corpus whose `CHANGELOG.md` is jigc's own committed document.
+    act: fn(&TrialCorpus),
+    /// Whether running every `git …` command the route names, in order, must leave the
+    /// finding **cleared**. False for the committed removal alone: there the git command is a
+    /// locator and the restore is a human act the route describes rather than spells.
+    route_repairs: bool,
+    /// A command no route for this state may name, because it belongs to another state's
+    /// repair — the assertion that the route is a *function of* the state rather than one
+    /// route carrying every state's advice.
+    foreign_command: &'static str,
+}
+
+fn commit_the_removal(corpus: &TrialCorpus) {
+    corpus.git(&["rm", "-q", "CHANGELOG.md"]);
+    corpus.git(&["commit", "-q", "-m", "retire the changelog"]);
+}
+
+fn delete_in_the_worktree(corpus: &TrialCorpus) {
+    std::fs::remove_file(corpus.repo().join("CHANGELOG.md")).expect("empty the home on disk");
+}
+
+fn stage_the_removal(corpus: &TrialCorpus) {
+    corpus.git(&["rm", "-q", "CHANGELOG.md"]);
+}
+
+/// The states a vacated declared home's **removal** can be in — the class the emptiness leg
+/// admits, each produced by an ordinary human act rather than by a manufactured fixture.
+const REMOVAL_CELLS: &[RemovalCell] = &[
+    RemovalCell {
+        kind: "committed",
+        act: commit_the_removal,
+        route_repairs: false,
+        foreign_command: "git checkout",
+    },
+    RemovalCell {
+        kind: "worktree-only",
+        act: delete_in_the_worktree,
+        route_repairs: true,
+        foreign_command: "jigc ingest",
+    },
+    RemovalCell {
+        kind: "staged-removal",
+        act: stage_the_removal,
+        route_repairs: true,
+        foreign_command: "jigc ingest",
+    },
+];
+
+/// **Arm 12 — the route is a function of the removal's state, and no route names a locator
+/// that answers nothing.**
+///
+/// The defect, driven at `b9ab6a70` before a line changed: the route was written for the
+/// committed-removal cell alone, while the emptiness leg reads the **worktree** — so an
+/// uncommitted `rm CHANGELOG.md` drew *"`git log --diff-filter=D -1 -- CHANGELOG.md` names the
+/// commit that removed it"*, which printed nothing at exit 0, and prescribed a restore-and-
+/// commit plus a re-registration the state does not need (`git checkout -- CHANGELOG.md`, the
+/// act that actually repairs it, was named by neither this row nor the
+/// `reconciliation.rename` row beside it).
+///
+/// Every backticked command the route carries is lifted out of the **emitted** bytes and run
+/// verbatim: a query must answer, a repair must repair, and no state's route may carry another
+/// state's advice.
+#[test]
+fn the_route_is_a_function_of_the_removals_state() {
+    // The axis is the producer's own enumeration, not this suite's list of what one fix
+    // reached: a state added to `Removal` reddens here until an act that produces it and the
+    // repair it needs are driven below.
+    let declared: Vec<&str> = cli::orphan::Removal::ALL
+        .iter()
+        .map(Removal::kind)
+        .collect();
+    let driven: Vec<&str> = REMOVAL_CELLS.iter().map(|cell| cell.kind).collect();
+    assert_eq!(
+        declared, driven,
+        "every member of `cli::orphan::Removal` is a removal state a declared home can be \
+         found in, and each one draws its own repair — the cells below must be that set",
+    );
+
+    for cell in REMOVAL_CELLS {
+        let corpus = TrialCorpus::build(State::CommittedSingletons);
+        (cell.act)(&corpus);
+        corpus.fresh_clone_shape();
+
+        let text = printed(&corpus.jigc(&["validate"]));
+        assert!(
+            fires_at(&text, "CHANGELOG.md"),
+            "[{}] the home is empty and its last committed blob is jigc's own stamped \
+             document — the finding must fire; got:\n{text}",
+            cell.kind,
+        );
+
+        let route = emitted_route(&text, "CHANGELOG.md");
+        let commands = backticked(&route);
+        assert!(
+            !route.contains(cell.foreign_command),
+            "[{}] the route names `{}`, which repairs a different removal state — a route \
+             that carries every state's advice leaves the reader to guess which line is \
+             theirs; got: {route}",
+            cell.kind,
+            cell.foreign_command,
+        );
+        assert!(
+            commands.iter().any(|c| c.starts_with("jigc unmanage")),
+            "[{}] every state names `jigc unmanage` as the verb that is *not* an exit — it \
+             is what the `reconciliation.rename` row beside this one offers, and the two \
+             must not leave the reader with two instructions; got: {route}",
+            cell.kind,
+        );
+
+        let git_commands: Vec<&String> =
+            commands.iter().filter(|c| c.starts_with("git ")).collect();
+        assert!(
+            !git_commands.is_empty(),
+            "[{}] the route names no git command at all; got: {route}",
+            cell.kind,
+        );
+        for command in &git_commands {
+            let argv: Vec<&str> = command.split_whitespace().skip(1).collect();
+            let out = corpus.git(&argv);
+            if matches!(argv.first(), Some(&"show") | Some(&"log")) {
+                assert!(
+                    !out.trim().is_empty(),
+                    "[{}] the route's query `{command}` printed nothing — a locator that \
+                     names nothing is worse than no locator",
+                    cell.kind,
+                );
+            }
+        }
+
+        let after = printed(&corpus.jigc(&["validate"]));
+        assert_eq!(
+            !fires_at(&after, "CHANGELOG.md"),
+            cell.route_repairs,
+            "[{}] running every git command the route names, verbatim and in order, must \
+             {} the finding; got:\n{after}",
+            cell.kind,
+            if cell.route_repairs {
+                "clear"
+            } else {
+                "leave standing (its git command is a locator, not the repair)"
+            },
+        );
+    }
 }

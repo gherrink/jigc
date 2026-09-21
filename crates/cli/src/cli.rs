@@ -1563,10 +1563,10 @@ fn validate_store_in_repo(cwd: &Path) -> Result<StoreSweep> {
     //
     // CLI-side like every arm above it: both legs are git questions (the committed census, and
     // `git log HEAD -1 -- <path>`), and the engine ships empty by invariant.
-    for home in crate::orphan::vacated_homes(&jigc_home, &schemas) {
+    for vacated in crate::orphan::vacated_homes(&jigc_home, &schemas) {
         report
             .findings
-            .push(crate::orphan::home_vacated_finding(&home));
+            .push(crate::orphan::home_vacated_finding(&vacated));
     }
 
     // The gate-claim discriminator (M42 Inc 4): which of the committed docs this sweep just

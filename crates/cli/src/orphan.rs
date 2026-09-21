@@ -777,10 +777,29 @@ pub(crate) fn fixed_identity_homes(
 /// census reads the worktree. That is the honest answer to *is the document there* and it is
 /// the same answer every other consumer of the census gets; the uncommitted-deletion case is
 /// additionally adjudicated by the file-state gate, which grades the deletion itself.
+///
+/// **What the emptiness leg therefore admits is a class of removal states, not one**, and each
+/// is paired here with the [`Removal`] it is in — because the repair differs between them and
+/// a route written for one of them is wrong in the others (M52 completion audit, fix 6; the
+/// states, and why an unanswerable git question reads as the committed one, are stated at
+/// [`Removal`] and [`classify_removal`]).
+///
+/// **Both findings speak on the uncommitted cells, and that is the decision rather than an
+/// oversight.** `reconciliation.rename` also fires there (*"tracked managed doc … is
+/// missing"*, blocking, gating at finalize) — but only when a **file-state baseline** exists,
+/// and on a fresh clone it does not: `.jigc/state/` is gitignored, so driven on a clone of an
+/// adopted corpus with `CHANGELOG.md` deleted, this check is the **only** voice, which is the
+/// clone-surviving property it exists for. Deferring to the file-state gate there would
+/// therefore trade a wrong route for silence at exit 0 over a missing managed document, in
+/// exactly the corpus shape this check was built for. What the two rows must not do is leave
+/// the reader with two instructions, and the one place they could — the file-state row offers
+/// `jigc unmanage` as *confirm the deletion*, which is a real exit for **its** baseline and no
+/// exit for **this** declared home — is reconciled in this finding's own route, which names
+/// that verb and says exactly what it drops and what it leaves standing.
 pub(crate) fn vacated_homes(
     repo_root: &Path,
     resolved: &std::collections::BTreeMap<String, Schema>,
-) -> Vec<FixedHome> {
+) -> Vec<VacatedHome> {
     fixed_identity_homes(resolved)
         .into_iter()
         .filter(|home| {
@@ -793,7 +812,97 @@ pub(crate) fn vacated_homes(
                 .any(|(_identity, path)| path == &at_home);
             !occupied && jigc_committed_into(repo_root, &home.path)
         })
+        .map(|home| VacatedHome {
+            removal: classify_removal(repo_root, &home.path),
+            home,
+        })
         .collect()
+}
+
+/// **How the document left the declared home** — the state of the removal, asked of git at the
+/// exact path. It exists because the *repair* is a function of it and of nothing else, and
+/// because a route written for one state is wrong in the others: the emptiness leg reads the
+/// **worktree** ([`engine::index::committed_instances`] asks `path.exists()`), so an
+/// uncommitted `rm` satisfies it exactly as a committed `git rm` does, while what repairs the
+/// two could not differ more (M52 completion audit, fix 6 — driven at `b9ab6a70`, the shipped
+/// route drew *"`git log --diff-filter=D -1 -- CHANGELOG.md` names the commit that removed
+/// it"* over an uncommitted deletion, where that command prints nothing at exit 0, and then
+/// prescribed a restore-and-commit plus a re-registration the state does not need).
+///
+/// **The classification is two git questions at the exact path**, and it is total: `HEAD`
+/// carries the path or it does not, and the index carries it or it does not. What the pair
+/// separates is the only thing the repair turns on — whether the removal is in the
+/// repository's history, or only in this checkout.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Removal {
+    /// `HEAD` holds no document at the path: the removal is **in the repository's history** —
+    /// a committed `git rm`, or the source half of a committed `git mv`. This is the cell the
+    /// shipped route was written for, and the only one in which the store has genuinely lost
+    /// a document: every clone of this repository is missing it too.
+    ///
+    /// `locator` is the deleting commit as [`crate::task::git_deleting_commit`] named it —
+    /// **run before it is printed**, and `None` where it named nothing (a merge-only removal,
+    /// a shallow clone, or a git that could not answer), in which case the route simply omits
+    /// the clause rather than explaining an absence it cannot account for.
+    Committed { locator: Option<String> },
+    /// `HEAD` **and** the index both hold the path, and only the worktree does not — an
+    /// uncommitted `rm`, or the source half of an uncommitted `mv`. Nothing is lost: the
+    /// document is one `git checkout` away, in this checkout and in every other.
+    WorktreeOnly,
+    /// `HEAD` holds the path and the index does not: the deletion is **staged**, uncommitted.
+    /// Nothing is lost either, but the repair has a second half — the staged deletion has to
+    /// come out of the index before the worktree copy can be restored from `HEAD`.
+    StagedRemoval,
+}
+
+impl Removal {
+    /// The states, for a suite that iterates the axis rather than the cells one fix reached.
+    /// `Committed`'s locator is a *rendering* of one state, not a fourth state, so it appears
+    /// here in its locator-less shape and the locator-bearing one is driven beside it.
+    pub const ALL: &'static [Removal] = &[
+        Removal::Committed { locator: None },
+        Removal::WorktreeOnly,
+        Removal::StagedRemoval,
+    ];
+
+    /// The stable token naming this state — what a suite keys its cells on, so the axis fence
+    /// compares tokens rather than re-spelling the enum.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Removal::Committed { .. } => "committed",
+            Removal::WorktreeOnly => "worktree-only",
+            Removal::StagedRemoval => "staged-removal",
+        }
+    }
+}
+
+/// A vacated declared home **and the state its removal is in** — the pair
+/// [`home_vacated_finding`] composes its claim and its route against.
+pub(crate) struct VacatedHome {
+    /// The doctype and the exact declared path its one instance lives at.
+    pub(crate) home: FixedHome,
+    /// How the document left that path.
+    pub(crate) removal: Removal,
+}
+
+/// Classify the removal at `rel` — the two git questions [`Removal`] is defined by.
+///
+/// **An unanswerable question reads as [`Removal::Committed`] without a locator.** That is the
+/// conservative direction here for the reason the emptiness leg's own git failure is: the
+/// committed arm's repair — restore the document at the home and commit it, then re-register
+/// it — is the *superset* act, correct in every state and merely heavier than it needs to be
+/// in two of them, while the two uncommitted arms tell the reader the document is still in
+/// `HEAD`, which is a claim this function would have no evidence for.
+fn classify_removal(repo_root: &Path, rel: &str) -> Removal {
+    let in_head = crate::task::git_rev_tracks_path(repo_root, "HEAD", rel);
+    let in_index = crate::task::git_index_tracks_path(repo_root, rel);
+    match (in_head, in_index) {
+        (Ok(true), Ok(true)) => Removal::WorktreeOnly,
+        (Ok(true), Ok(false)) => Removal::StagedRemoval,
+        _ => Removal::Committed {
+            locator: crate::task::git_deleting_commit(repo_root, rel),
+        },
+    }
 }
 
 /// Whether the repository's history says **jigc committed a document into** the exact declared
@@ -852,10 +961,23 @@ fn jigc_committed_into(repo_root: &Path, rel: &str) -> bool {
 /// no exit that cleared it. [`jigc_committed_into`] is now the leg, and the message says what it
 /// asked; what that leg still cannot tell apart is stated there.
 ///
+/// **The claim and the route are a function of the removal's state** (M52 completion audit,
+/// fix 6), because the emptiness leg admits three of them and the shipped text was written for
+/// one. A **committed** removal is the cell in which the store has genuinely lost a document —
+/// every clone is missing it — so the claim is the original one and the exit is restore-and-
+/// commit, with the deleting commit named **only where the locator actually named it**: the
+/// query is run before it is printed, and where it answers nothing the clause is dropped
+/// rather than handed over as a command that names nothing. A **worktree-only** or **staged**
+/// removal is not a loss at all: `HEAD` still carries the stamped document, so the claim says
+/// *empty in this checkout* and the route is the one command that restores it — `git checkout
+/// --` for the first, `git restore --source=HEAD --staged --worktree --` for the second, each
+/// driven to clear the finding. Nothing about the state is guessed: it is two git questions at
+/// the exact path ([`classify_removal`]).
+///
 /// **The route names one exit, and says plainly what is not one** (M46's PT-1 rule — a route
 /// that, followed exactly, changes nothing is the defect at another door). Restoring the
-/// document at the declared home is the exit, with the locator that finds where it went and the
-/// verb that re-registers it once it is back. `jigc unmanage` is named as a **non**-exit because
+/// document at the declared home is the exit in every state; what differs is the act that
+/// restores it. `jigc unmanage` is named as a **non**-exit because
 /// it is the verb a reader reaches for: it drops a file-state baseline, and this home is
 /// declared by a *schema*, so driven on this state it is a no-op at exit 0 and the finding
 /// stands. Retiring the doctype for good is stated as what it is — taking the pack that declares
@@ -866,24 +988,63 @@ fn jigc_committed_into(repo_root: &Path, rel: &str) -> bool {
 /// `jigc rename` refuses every doctype in this subject set — the set *is* the fixed-identity
 /// set, and a fixed-identity reslug is `store.fixed-identity`, so naming it would route the
 /// reader into a refusal.
-pub(crate) fn home_vacated_finding(home: &FixedHome) -> engine::finding::Finding {
-    let FixedHome { ty, path } = home;
+pub(crate) fn home_vacated_finding(vacated: &VacatedHome) -> engine::finding::Finding {
+    let VacatedHome {
+        home: FixedHome { ty, path },
+        removal,
+    } = vacated;
     let token = crate::task::shell_token(path);
+    let (state, repair) = match removal {
+        Removal::Committed { locator } => (
+            "the last document the repository committed there carried a `schema-version:` \
+             stamp, and nothing is there now — a declared home jigc committed into has been \
+             vacated"
+                .to_string(),
+            match locator {
+                Some(sha) => format!(
+                    "restore the document at `{path}` and commit it — `{sha}` is the commit \
+                     that removed it (`git show {sha} -- {token}`) — then `jigc ingest` to \
+                     re-register it"
+                ),
+                None => format!(
+                    "restore the document at `{path}` and commit it, then `jigc ingest` to \
+                     re-register it"
+                ),
+            },
+        ),
+        Removal::WorktreeOnly => (
+            "`HEAD` still carries the `schema-version:`-stamped document the repository \
+             committed there and the worktree no longer holds it — a declared home jigc \
+             committed into is empty in this checkout"
+                .to_string(),
+            format!(
+                "the removal is not committed — restore it: `git checkout -- {token}`; the \
+                 document is still in `HEAD`, so nothing has to be restored from history and \
+                 nothing has to be re-registered"
+            ),
+        ),
+        Removal::StagedRemoval => (
+            "`HEAD` still carries the `schema-version:`-stamped document the repository \
+             committed there and its deletion is staged but not committed — a declared home \
+             jigc committed into is empty in this checkout"
+                .to_string(),
+            format!(
+                "the deletion is staged and not committed — unstage it and restore it: `git \
+                 restore --source=HEAD --staged --worktree -- {token}`; the document is still \
+                 in `HEAD`, so nothing has to be restored from history and nothing has to be \
+                 re-registered"
+            ),
+        ),
+    };
     engine::finding::Finding::graded(
         engine::finding::Severity::Blocking,
         HOME_VACATED_CODE,
-        format!(
-            "`{ty}` homes its one document at `{path}`, the last document the repository \
-             committed there carried a `schema-version:` stamp, and nothing is there now — a \
-             declared home jigc committed into has been vacated"
-        ),
+        format!("`{ty}` homes its one document at `{path}`, {state}"),
         Some(engine::finding::Location::addressed(path, 1, 1)),
         Some(engine::finding::Route::human(format!(
-            "restore the document at `{path}` and commit it — `git log --diff-filter=D -1 -- \
-             {token}` names the commit that removed it — then `jigc ingest` to re-register it; \
-             retiring `{ty}` for good means taking the pack that declares this home out of the \
-             composition — `jigc unmanage {token}` drops a file-state baseline and leaves the \
-             home declared, so on its own it clears nothing"
+            "{repair}; retiring `{ty}` for good means taking the pack that declares this home \
+             out of the composition — `jigc unmanage {token}` drops a file-state baseline and \
+             leaves the home declared, so on its own it clears nothing"
         ))),
     )
 }
@@ -1474,7 +1635,7 @@ mod tests {
         repo.git(&["commit", "-q", "-m", "retire the ledger"]);
         let vacated: Vec<String> = vacated_homes(repo.path(), &schemas)
             .into_iter()
-            .map(|h| h.path)
+            .map(|v| v.home.path)
             .collect();
         assert_eq!(
             vacated,
@@ -1524,7 +1685,7 @@ mod tests {
 
         let vacated: Vec<String> = vacated_homes(repo.path(), &schemas)
             .into_iter()
-            .map(|h| h.path)
+            .map(|v| v.home.path)
             .collect();
         assert_eq!(
             vacated,
@@ -1546,7 +1707,7 @@ mod tests {
 
         let vacated: Vec<String> = vacated_homes(repo.path(), &schemas)
             .into_iter()
-            .map(|h| h.path)
+            .map(|v| v.home.path)
             .collect();
         assert_eq!(
             vacated,

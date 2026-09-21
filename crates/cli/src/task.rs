@@ -6366,6 +6366,68 @@ pub(crate) fn git_last_committed_blob(repo_root: &Path, path: &str) -> Result<Op
     )
 }
 
+/// Whether the tree at `rev` carries `path` — `git ls-tree -r --name-only <rev> -- <path>`
+/// prints at least one line. The path is passed as a **pathspec** after `--`, never spliced
+/// into a revision spec, so a home carrying a `:` or a leading `-` is still asked about the
+/// file it names.
+///
+/// Used by the vacated-home check to tell a removal the repository **committed** from one it
+/// only holds in the worktree or the index (`crate::orphan::Removal`).
+pub(crate) fn git_rev_tracks_path(repo_root: &Path, rev: &str, path: &str) -> Result<bool> {
+    let out = Command::new("git")
+        .args(["ls-tree", "-r", "--name-only", rev, "--", path])
+        .current_dir(repo_root)
+        .output()
+        .context("could not run `git` (is it on PATH?)")?;
+    if !out.status.success() {
+        bail!(
+            "`git ls-tree -r --name-only {rev} -- {path}` failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    Ok(!String::from_utf8_lossy(&out.stdout).trim().is_empty())
+}
+
+/// Whether the **index** carries `path` — `git ls-files -- <path>` prints at least one line.
+/// The complement of [`git_rev_tracks_path`] at `HEAD`: together they separate a staged
+/// deletion (in `HEAD`, not in the index) from a worktree-only one (in both).
+pub(crate) fn git_index_tracks_path(repo_root: &Path, path: &str) -> Result<bool> {
+    let out = Command::new("git")
+        .args(["ls-files", "--", path])
+        .current_dir(repo_root)
+        .output()
+        .context("could not run `git` (is it on PATH?)")?;
+    if !out.status.success() {
+        bail!(
+            "`git ls-files -- {path}` failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    Ok(!String::from_utf8_lossy(&out.stdout).trim().is_empty())
+}
+
+/// The abbreviated sha of the most recent commit reachable from `HEAD` that **removed**
+/// `path`, or `None` when no such commit is named — `git log --diff-filter=D -1 --format=%h`.
+///
+/// **It is run so that its answer, rather than the command, can be printed.** A route that
+/// hands the reader a locator is claiming the locator names something; on every cell where
+/// the removal is not committed, and on a merge-only removal or a shallow clone where it is,
+/// this query answers nothing — so the caller asks it first and drops the clause when the
+/// answer is empty (M52 completion audit, fix 6). A git failure is `None` for the same
+/// reason: an unanswerable question names no commit either.
+pub(crate) fn git_deleting_commit(repo_root: &Path, path: &str) -> Option<String> {
+    let out = Command::new("git")
+        .args(["log", "--diff-filter=D", "-1", "--format=%h", "--", path])
+        .current_dir(repo_root)
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let sha = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    (!sha.is_empty()).then_some(sha)
+}
+
 /// The canonical git empty-tree SHA — the sentinel base a **zero-commit** (unborn
 /// HEAD) repo pins to so every `creates-task` workflow runs pre-first-commit
 /// (`design/project-setup.md` → Flow 2 hardening — zero-commit;

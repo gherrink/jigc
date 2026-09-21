@@ -1080,9 +1080,12 @@ pub const STORE_EXIT_FLIPS: &[StoreExitFlip] = &[
     // this and the squatter are standing facts about the corpus, so the table's stated ordering
     // rule (what taints the result · what this commit introduced · standing facts) does not
     // separate them; what does is which closing line a reader is handed when both fire — and
-    // this one names a managed document the repository's own history says it *had* and no
-    // longer has, where the squatter names a file jigc was never handed. **Loss outranks
-    // non-adoption**, so this member precedes it. Both findings are on the report either way,
+    // this one names a home the repository's own history says held jigc's document and which
+    // holds nothing now, where the squatter names a file jigc was never handed. **A missing
+    // document outranks non-adoption**, so this member precedes it. (Whether it is a *loss* is
+    // the removal's state to say, and the finding says it per home — committed, and every
+    // clone is missing it; uncommitted, and it is a checkout away. The precedence does not
+    // turn on that, which is why this line no longer asserts it.) Both findings are on the report either way,
     // each with its own route, so the precedence buys only the closing sentence — which is why
     // it is decided on that and driven
     // (`crates/cli/tests/home_vacated.rs` → `a_vacated_home_closes_the_report_ahead_of_a_never_adopted_file`).
@@ -1093,9 +1096,19 @@ pub const STORE_EXIT_FLIPS: &[StoreExitFlip] = &[
         // the production finding is a second place for the code, the target form and the route
         // to drift, and this member's whole claim is that they cannot.
         witness: || {
-            crate::orphan::home_vacated_finding(&crate::orphan::FixedHome {
-                ty: "changelog".to_string(),
-                path: "CHANGELOG.md".to_string(),
+            // The removal state the witness carries is one of three (`crate::orphan::Removal`),
+            // and the committed one is chosen because it is the cell the exit flip is *about*:
+            // a document every clone of the repository is missing. The code, the target form
+            // and the route's shape do not vary with the state — that they cannot is arm 12's
+            // assertion in `crates/cli/tests/home_vacated.rs`, driven over the whole axis.
+            crate::orphan::home_vacated_finding(&crate::orphan::VacatedHome {
+                home: crate::orphan::FixedHome {
+                    ty: "changelog".to_string(),
+                    path: "CHANGELOG.md".to_string(),
+                },
+                removal: crate::orphan::Removal::Committed {
+                    locator: Some("0000000".to_string()),
+                },
             })
         },
         trailer: home_vacated_trailer,
@@ -1682,14 +1695,20 @@ pub(crate) const HOME_VACATED_CAUSE: &str =
 /// **worked** — it read the declared home, the committed census and the repository's history,
 /// and what it refuses is a green over a managed document the store has lost. The repair is
 /// per-home, so the line hands the reader on to each finding's own route rather than naming one
-/// verb: a locator, a restore and a re-register, which `crate::orphan::home_vacated_finding`
-/// composes against the path that actually went.
+/// verb — which `crate::orphan::home_vacated_finding` composes against the path that actually
+/// went **and the state its removal is in**.
+///
+/// **It promised a locator until the M52 completion audit's fix 6, and could not keep it**: the
+/// emptiness leg reads the worktree, so an uncommitted removal is a member of this class and no
+/// commit removed anything for a locator to name. The line now hands the reader to each
+/// finding's own repair rather than to a locator, and says *missing from* rather than *lost*,
+/// because two of the three removal states are a checkout away from whole.
 pub(crate) fn home_vacated_trailer() -> String {
     format!(
         "{HOME_VACATED_CAUSE} — the repository's history says that home held a document and \
          nothing is there now, so the sweep {STORE_EXIT_FLIP_PHRASE} rather than report a green \
-         over a managed document the store has lost; restore it at the declared home (each \
-         finding above carries the locator for where it went), then re-validate.\n"
+         over a home jigc's own document is missing from; each finding above carries the repair \
+         the state of its own home needs, then re-validate.\n"
     )
 }
 
