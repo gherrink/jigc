@@ -1079,19 +1079,29 @@ fn mid_fan_out_marker(jigc_root: &Path) -> Option<FanOutMarker> {
             id: id.clone(),
         });
     }
-    first_dir_name(&jigc_root.join("milestones")).map(|id| FanOutMarker {
+    first_live_milestone(&jigc_root.join("milestones")).map(|id| FanOutMarker {
         unit: "milestone",
         id,
     })
 }
 
-/// The lexicographically-first sub-directory name under `dir`, or `None` when `dir` is
-/// absent or holds no sub-directory (a missing dir is not an error — no fan-out has run).
-fn first_dir_name(dir: &Path) -> Option<String> {
+/// The lexicographically-first **live** milestone id under `dir`, or `None` when `dir` is
+/// absent or holds no live milestone (a missing dir is not an error — no fan-out has run).
+///
+/// *Live* is [`engine::state::carries_base_pin`], the task half's own predicate asked over
+/// [`engine::state::WorkArea::Milestone`] (M53 Increment 3 / T2; `settle-record.md` → D3).
+/// Until then this asked `is_dir()`, so a **terminal** milestone's leftover area — the
+/// record settled, the directory standing because a teardown faulted or a hand left it —
+/// blocked every `jigc rename` in the repository for ever, with a message naming a fan-out
+/// that had finished. The guard's subject is work whose by-task-id join key a rename would
+/// invalidate, and a residual has no join to invalidate.
+fn first_live_milestone(dir: &Path) -> Option<String> {
     let mut names: Vec<String> = match std::fs::read_dir(dir) {
         Ok(entries) => entries
             .filter_map(std::result::Result::ok)
-            .filter(|entry| entry.path().is_dir())
+            .filter(|entry| {
+                engine::state::carries_base_pin(&entry.path(), engine::state::WorkArea::Milestone)
+            })
             .filter_map(|entry| entry.file_name().into_string().ok())
             .collect(),
         Err(_) => Vec::new(),

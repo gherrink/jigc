@@ -38,6 +38,7 @@
 use crate::support;
 
 use serde_json::Value;
+use std::fs;
 use support::trial_corpus::{State, TrialCorpus};
 
 /// Bare `jigc start` in the given format, asserted successful, returning stdout.
@@ -315,6 +316,21 @@ fn a_task_less_project_still_renders_clean_byte_identical() {
         catalog(&quiet_text),
         "the active view's catalog must be the clean view's, byte for byte"
     );
+
+    // And the same byte-identity over a **residual**: a directory under `.jigc/tasks/`
+    // carrying no base pin is not a work unit, so orientation must render the clean view —
+    // not merely omit the id from an otherwise active-shaped one (M53 Increment 3 / T2;
+    // `settle-record.md` → D3). Equality is the assertion, because a residual reaches this
+    // surface through the same enumerator the live set does.
+    let residual = TrialCorpus::build(State::CommittedSingletons);
+    fs::create_dir_all(residual.repo().join(".jigc").join("tasks").join("leftover"))
+        .expect("plant the residual area");
+    assert_eq!(
+        normalize(&orient(&residual, None), &residual),
+        normalize(&quiet_text, &quiet),
+        "a repo holding a pin-less leftover directory renders the clean view unchanged"
+    );
+    assert_eq!(orient_json(&residual)["state"], "clean");
 }
 
 /// The active block, **byte-for-byte** — the compensating pin for the two goldens

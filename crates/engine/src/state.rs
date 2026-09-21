@@ -205,6 +205,18 @@ impl WorkArea {
         }
     }
 
+    /// The row's **base-pin** member — the file whose presence makes a directory a work
+    /// unit ([`carries_base_pin`]).
+    ///
+    /// Read off the registry's member 0 rather than spelled out, so this and
+    /// [`unwind_area`]'s first removal cannot drift: the pin is what the unwind takes
+    /// first, which is what makes a half-unwound area a residual rather than a work unit
+    /// jigc could not tear down. `crates/cli/tests/mint_door_base_pin.rs` and this module's
+    /// own [`tests::both_area_rows_lead_with_the_base_pin`] hold the position.
+    fn base_pin(self) -> &'static str {
+        self.jigc_written()[0]
+    }
+
     /// Whether `name` is the row's **directory** member — the one entry whose shape is a
     /// tree rather than a file, so a plain file wearing that name is not jigc's.
     fn tree_member(self, name: &str) -> bool {
@@ -213,6 +225,41 @@ impl WorkArea {
             WorkArea::Milestone => name == crate::milestone::MERGED_AREA,
         }
     }
+}
+
+/// **Is `area` a work unit at all?** — the residual rule, in one home
+/// (`completions/artifacts/M53/settle-record.md` → D3): a directory under `.jigc/tasks/`
+/// (or `.jigc/milestones/`) is a task, or a milestone, **iff it carries its base pin**.
+/// Everything else living there is a *residual*: a leftover a faulted teardown left, or a
+/// directory somebody made.
+///
+/// Until M53 the question was `is_dir()`, so a bare `mkdir .jigc/tasks/anything` was an
+/// active task at every door that enumerates or resolves one — listed by `jigc task list`,
+/// rendered by `jigc start` as work in progress with a resume route that then failed, and
+/// counted by the mid-fan-out guard that refuses `jigc rename` while work is live.
+///
+/// **Existence, never a parse.** [`mint_task`] writes the pin with a plain `fs::write`, so
+/// a predicate keyed on the pin's *contents* would have a torn-read window the milestone
+/// side (which persists atomically) does not, and would answer *no such task* over a live
+/// one on a bad read. A legitimate area whose pin is torn, corrupt or unreadable therefore
+/// passes this and fails at the read, where the producers that report exactly that still
+/// live — deliberately kept (`settle-record.md` → §9).
+///
+/// **Shape is part of it**, read through `symlink_metadata` so a symlink is not followed:
+/// jigc writes the pin as a regular file, and [`unwind_area`] leaves an entry it did not
+/// write standing — including a *directory* named `base.json`, which an existence-keyed
+/// predicate would call a live task for ever.
+///
+/// **The converse is the load-bearing half**, and it is fenced rather than assumed: every
+/// production mint door writes the pin as its first content write, immediately after
+/// `create_dir_all`, so no legitimate area is pin-less at a moment a door can observe it
+/// (`crates/cli/tests/mint_door_base_pin.rs`, per [`MINT_DOORS`] row). The remaining window
+/// — between those two syscalls — narrows rather than closes, and flickers in the safe
+/// direction: a just-minted area is briefly absent from the roster, never a settled one
+/// briefly present.
+#[must_use]
+pub fn carries_base_pin(area: &Path, kind: WorkArea) -> bool {
+    std::fs::symlink_metadata(area.join(kind.base_pin())).is_ok_and(|shape| shape.is_file())
 }
 
 /// The staged-doc identity a working-area `docs/` entry **name** stands for — the inverse
@@ -1135,18 +1182,26 @@ pub fn mint_task(
     Ok(MintedTask { id, dir, base })
 }
 
-/// Enumerate the **active task ids** under a project's `.jigc/` home — the sorted
-/// directory names of `<jigc_root>/tasks/<id>/`. This is the single enumeration
-/// source of truth the active-task resolution (`jigc doc`), the `jigc task list`
-/// roster, and the ambiguous-task error all read, so they never disagree on which
-/// tasks are live. A missing `tasks/` directory yields an empty list (no task minted
+/// Enumerate the **active task ids** under a project's `.jigc/` home — the sorted ids of
+/// those `<jigc_root>/tasks/<id>/` directories that **carry their base pin**
+/// ([`carries_base_pin`]). This is the single enumeration source of truth the active-task
+/// resolution (`jigc doc`), the `jigc task list` roster, `jigc start`'s orientation and its
+/// `also open:` block, and the ambiguous-task error all read, so they never disagree on
+/// which tasks are live. A missing `tasks/` directory yields an empty list (no task minted
 /// yet), never an error.
+///
+/// **A directory is not a task** (M53 Increment 3 / T2; `settle-record.md` → D3). Until
+/// then the filter was `entry.path().is_dir()`, so a leftover a faulted teardown left — or
+/// a bare `mkdir` — was reported as live work by every surface above, each of them offering
+/// a resume route into a task that does not exist. The pin is what a mint writes first and
+/// what an unwind removes first, so it is the one file whose presence means *a work unit
+/// lives here*.
 pub fn list_active_task_ids(jigc_root: &Path) -> Vec<String> {
     let tasks = jigc_root.join("tasks");
     let mut ids: Vec<String> = match std::fs::read_dir(&tasks) {
         Ok(entries) => entries
             .filter_map(std::result::Result::ok)
-            .filter(|entry| entry.path().is_dir())
+            .filter(|entry| carries_base_pin(&entry.path(), WorkArea::Task))
             .filter_map(|entry| entry.file_name().into_string().ok())
             .collect(),
         Err(_) => Vec::new(),
@@ -2217,6 +2272,32 @@ fn io_finding(id: &str, doing: &str, err: &std::io::Error) -> Finding {
 mod tests {
     use super::*;
     use proptest::prelude::*;
+
+    /// **Both writer-registry rows lead with the base pin, and it is [`BASE_PIN_FILE`]** —
+    /// so [`WorkArea::base_pin`]'s positional read is true rather than remembered, the task
+    /// and milestone halves of the residual rule ask *the same question*, and
+    /// [`unwind_area`]'s first removal is the file [`carries_base_pin`] keys on.
+    ///
+    /// The three-way equality is the point. A reorder of either row would silently move the
+    /// residual predicate onto some other member — `docs/` on the task row, `merged/` on
+    /// the milestone row — and both are entries a real area may legitimately lack, so the
+    /// predicate would start answering *no such task* over live work. This reddens instead.
+    #[test]
+    fn both_area_rows_lead_with_the_base_pin() {
+        assert_eq!(
+            TASK_AREA_FILES[0], BASE_PIN_FILE,
+            "the task row's member 0 is what `carries_base_pin` reads",
+        );
+        assert_eq!(
+            MILESTONE_AREA_FILES[0], BASE_PIN_FILE,
+            "and the milestone row's, so `jigc rename`'s twin asks the task seams' question",
+        );
+        assert_eq!(
+            WorkArea::Task.base_pin(),
+            WorkArea::Milestone.base_pin(),
+            "one predicate over two rows, or it is two predicates",
+        );
+    }
 
     /// The atomic-write temp sibling takes its disambiguator from the **shared**
     /// [`crate::tempname::unique_nanos`] mint, not a counter private to this module.

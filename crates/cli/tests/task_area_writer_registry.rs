@@ -131,6 +131,26 @@ const ROW_JOINS: &[(&str, usize, &str)] = &[(
      jigc did not write survives by construction",
 )];
 
+/// **The registry row, read**: production sites that join **one named member** of
+/// `engine::state::WorkArea::jigc_written()` in order to *ask about* the entry rather than
+/// write, walk or move it, by file and count, with the reason (M53 Increment 3 / T2).
+///
+/// A fifth answer, and it is its own for the reason the other four are: the receiver **is**
+/// a working area, so [`NON_AREA_JOINS`]' reason is false of it; the joined name is a
+/// registry member by construction, so [`COMPLEMENT_JOINS`]' is its inverse; it is no
+/// `docs/` body; and it is not [`ROW_JOINS`]' walk over *every* member before a removal —
+/// nothing here removes, moves or writes anything. Folding it into `ROW_JOINS` would print
+/// *walked* over a site that only stats, and this fence exists so that one word means one
+/// answer.
+const ROW_READ_JOINS: &[(&str, usize, &str)] = &[(
+    "crates/engine/src/state.rs",
+    1,
+    "`carries_base_pin`'s `<area>.join(<row member 0>)` — the residual rule's one predicate, \
+     taking the pin's name off the kind's own row rather than spelling it, so the file it \
+     asks about and the file `unwind_area` removes **first** cannot drift apart; it \
+     `symlink_metadata`s that path and answers a bool, and writes nothing",
+)];
+
 /// Every production `<…dir>.join(<name>)` site whose receiver is **not** a working area,
 /// by file, with the count and the reason — the remainder, stated as a number so that
 /// nothing goes stale silently (`repo_relative_paths.rs` → the unswept remainder is a
@@ -429,8 +449,8 @@ fn every_area_join_name_is_a_registry_member_or_a_counted_remainder() {
 
     // Each file's remainder is the **sum** of its dispositions — the `docs/` bodies the tree
     // rule covers, the receivers that are no working area at all, the complement entries a
-    // door moves rather than writes, and the registry row a sink walks. One table for them
-    // would be one word for four different answers.
+    // door moves rather than writes, the registry row a sink walks, and the one row member a
+    // predicate reads. One table for them would be one word for five different answers.
     let mut expected: BTreeMap<String, (usize, Vec<String>)> = BTreeMap::new();
     for (table, kind) in [
         (DOCS_TREE_JOINS, "a staged `docs/` body (the tree rule)"),
@@ -440,6 +460,7 @@ fn every_area_join_name_is_a_registry_member_or_a_counted_remainder() {
             "a complement entry, moved rather than written",
         ),
         (ROW_JOINS, "the registry row itself, walked"),
+        (ROW_READ_JOINS, "the registry row itself, read"),
     ] {
         for (file, count, reason) in table {
             assert!(!reason.trim().is_empty(), "{file}: carries no reason");

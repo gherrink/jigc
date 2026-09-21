@@ -808,6 +808,26 @@ fn idempotent_retitle_acks_the_no_op_and_never_claims_a_rejection() {
     );
 }
 
+/// Plant a **live** work-unit working area at `area`: the directory **and its base pin**,
+/// which is what makes it a work unit at all (M53 Increment 3 / T2 — `settle-record.md` →
+/// D3). Until that increment a bare directory was one, so these fixtures planted a bare
+/// directory; a pin-less directory is now a *residual*, and a mid-fan-out guard asserted
+/// over one would be asserting the lie D3 retires rather than the guard.
+///
+/// The pin is written with `repo`'s own HEAD, so the planted area is the shape a real mint
+/// leaves rather than a file that merely wears the name — even though the predicate reads
+/// existence and never parses.
+fn plant_live_area(repo: &Path, area: &Path) {
+    fs::create_dir_all(area).expect("mk work-unit area");
+    let sha = git(repo, &["rev-parse", "HEAD"]);
+    let short = git(repo, &["rev-parse", "--short", "HEAD"]);
+    fs::write(
+        area.join("base.json"),
+        format!("{{\n  \"sha\": \"{sha}\",\n  \"short\": \"{short}\"\n}}\n"),
+    )
+    .expect("write the base pin");
+}
+
 /// Mid-fan-out guard (#4): an active task working area blocks the rename. Pairs with the
 /// happy path (no marker → proceeds) to prove the guard is not inert (increment-workflow
 /// #5).
@@ -818,7 +838,7 @@ fn mid_fan_out_active_task_blocks() {
     let before_count = commit_count(repo.path());
 
     // An in-flight task working area — the by-task-id join key the rename would invalidate.
-    fs::create_dir_all(repo.path().join(".jigc/tasks/some-task")).expect("mk task area");
+    plant_live_area(repo.path(), &repo.path().join(".jigc/tasks/some-task"));
 
     let out = jigc(
         repo.path(),
@@ -865,7 +885,10 @@ fn mid_fan_out_in_flight_milestone_blocks() {
     let before_count = commit_count(repo.path());
 
     // An in-flight milestone dir — the second mid-fan-out marker.
-    fs::create_dir_all(repo.path().join(".jigc/milestones/some-milestone")).expect("mk milestone");
+    plant_live_area(
+        repo.path(),
+        &repo.path().join(".jigc/milestones/some-milestone"),
+    );
 
     let out = jigc(
         repo.path(),
@@ -891,6 +914,79 @@ fn mid_fan_out_in_flight_milestone_blocks() {
         before_count,
         "a blocked rename must land no commit",
     );
+}
+
+/// Mid-fan-out guard (#4), the **wedge** D3 opens: a working-area directory carrying **no
+/// base pin** is a residual, not live work, so it does not block the rename
+/// (`settle-record.md` → D3, the predicate's third home, `rename.rs`'s `first_dir_name`).
+///
+/// Both markers are driven, because they take the predicate at different seams: the task
+/// half through `engine::state::list_active_task_ids`, the milestone half through
+/// `rename`'s own first-directory scan over `MILESTONE_AREA_FILES[0]`. The milestone cell
+/// is the one the census relayed rather than drove — a *terminal* milestone whose record is
+/// settled and whose area was left standing — and it is the sharper of the two: until this
+/// increment an empty leftover directory under `.jigc/milestones/` blocked every `jigc
+/// rename` in the repository, for ever, with a message naming a fan-out that had finished.
+///
+/// It is the exact converse of the two guard tests above, whose areas now carry their pins:
+/// live work blocks, a leftover does not, and the difference between them is one file.
+#[test]
+fn a_residual_work_unit_area_does_not_block_the_rename() {
+    for (tag, residual) in [
+        ("residual-task", ".jigc/tasks/some-task"),
+        ("residual-milestone", ".jigc/milestones/some-milestone"),
+    ] {
+        let repo = TempDir::new(tag);
+        seed_store(repo.path());
+        let before_count = commit_count(repo.path());
+
+        // A leftover directory: the shape a faulted teardown leaves, and the shape one
+        // `mkdir` reaches. No base pin — that is the whole of what makes it a residual.
+        let area = repo.path().join(residual);
+        fs::create_dir_all(&area).expect("plant the residual area");
+        assert!(
+            !area.join("base.json").exists(),
+            "[{tag}] the planted area must carry no pin, or this proves nothing",
+        );
+
+        let out = jigc(
+            repo.path(),
+            &[
+                "rename",
+                "adr:single-node-cache",
+                "--to",
+                "Distributed cache",
+            ],
+        );
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            out.status.success(),
+            "[{tag}] a leftover area is not work in flight — the rename must proceed; \
+             stdout:\n{stdout}\nstderr:\n{stderr}",
+        );
+        assert!(
+            !stderr.contains("in flight") && !stdout.contains("in flight"),
+            "[{tag}] and it must not be told a fan-out is running; stdout:\n{stdout}\nstderr:\n{stderr}",
+        );
+        let decisions = repo.path().join("docs/decisions");
+        assert!(
+            decisions.join("distributed-cache.md").is_file()
+                && !decisions.join("single-node-cache.md").exists(),
+            "[{tag}] the rename must land the move it was not blocked from",
+        );
+        assert_eq!(
+            commit_count(repo.path()),
+            before_count + 1,
+            "[{tag}] exactly one commit — the landed rename's",
+        );
+        // The leftover is left exactly as found: this verb adjudicates identity, and
+        // deciding that a directory is not a work unit is not a licence to remove it.
+        assert!(
+            area.is_dir(),
+            "[{tag}] the rename must leave the residual standing",
+        );
+    }
 }
 
 /// An `arch-doc` that **cites** the target through a ref-field *and* mentions the old slug
@@ -1743,15 +1839,14 @@ fn drive_refusal(kind: RefusalKind) -> Vec<Scene> {
                 "axis-inflight-task",
                 vec!["rename", "adr:single-node-cache", "--to", "Distributed"],
                 &|repo: &Path| {
-                    fs::create_dir_all(repo.join(".jigc/tasks/some-task")).expect("mk task area");
+                    plant_live_area(repo, &repo.join(".jigc/tasks/some-task"));
                 },
             ),
             plain(
                 "axis-inflight-milestone",
                 vec!["rename", "adr:single-node-cache", "--to", "Distributed"],
                 &|repo: &Path| {
-                    fs::create_dir_all(repo.join(".jigc/milestones/some-milestone"))
-                        .expect("mk milestone");
+                    plant_live_area(repo, &repo.join(".jigc/milestones/some-milestone"));
                 },
             ),
         ],

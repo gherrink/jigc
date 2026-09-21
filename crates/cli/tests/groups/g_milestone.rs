@@ -93,6 +93,8 @@ mod record_flip_rollback;
 mod record_rollback_conflict;
 #[path = "../repo_relative_paths.rs"]
 mod repo_relative_paths;
+#[path = "../residual_area_roster.rs"]
+mod residual_area_roster;
 #[path = "../spawn_template_executes.rs"]
 mod spawn_template_executes;
 #[path = "../staged_prose_consent_axis.rs"]
