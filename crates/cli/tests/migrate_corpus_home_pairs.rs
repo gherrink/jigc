@@ -256,10 +256,22 @@ fn commit_doc(repo: &Path, path: &str, body: &str) {
 // The axis.
 // ---------------------------------------------------------------------------------------------
 
-/// What `jigc validate` says about the corpus **before** the migration — keyed on whether the
-/// stranded from-home lies inside `orphan::Territory`, which is the whole discriminator
+/// What `jigc validate` said about the corpus **before** the migration, at the commit that
+/// widened the *walk* alone — kept as the record of what the half-fix cost, and no longer an
+/// expectation (M52 completion audit, fix 2). It was keyed on whether the stranded from-home
+/// lies inside `orphan::Territory`, which was the whole discriminator
 /// (`completions/artifacts/M52/baseline-freeze.md` §2.1: *"the amplifier is the home, not the
-/// kind"*).
+/// kind"*): inside the `docs/` tree the doc was **red with the wrong diagnosis**
+/// (`schema-conformance.orphaned-instance` — *no resolved doctype claims this path*, said of a
+/// doctype `jigc describe` still lists); at the repo root **no surface named it at all** and
+/// `jigc validate` printed *"validates clean"* at exit 0 while `migrate-corpus --dry-run` saw
+/// the very same document.
+///
+/// Both halves were one defect: the *migrate* side learned to key the walk on the recorded
+/// `from` home (Increment 7 / T1) and the **store-scope** side did not, so `migrate-corpus` and
+/// `jigc validate` held two opinions about one file. The corrected expectation below is
+/// uniform across all eight cells, which is the point — the home pair amplified the *symptom*
+/// and never the cause.
 #[derive(Clone, Copy, Debug)]
 enum PreState {
     /// Stranded inside the `docs/` tree: red, with the wrong diagnosis.
@@ -413,24 +425,74 @@ fn a_below_version_doc_at_every_prior_home_kind_is_seen_and_landed() {
             let body = (cell.body)(from_version);
             commit_doc(repo.path(), cell.source, &body);
 
-            // The pre-state, keyed on the stranded home (not on the bump).
+            // The pre-state, and it is now the SAME in all eight cells (M52 completion audit,
+            // fix 2). `cell.pre` records what each cell used to say — the two shapes the
+            // half-fix left — and is asserted here only as the thing that must no longer be
+            // true, so a regression to either shape names which one it regressed to.
             let (before, before_ok) = run(repo.path(), home.path(), pack.path(), &["validate"]);
+            assert!(
+                !before_ok,
+                "{tag}: an unmigrated doc at a prior home must flip `validate` non-zero — it is \
+                 below its doctype's current schema-version, whichever home it is stranded at; \
+                 validate said:\n{before}",
+            );
+            assert!(
+                before.contains("schema-conformance.schema-version-current"),
+                "{tag}: …with the diagnosis that is true of it — below-version — and not \
+                 silence; validate said:\n{before}",
+            );
+            assert!(
+                before.contains("jigc migrate-corpus"),
+                "{tag}: …routed at the verb that lands it; validate said:\n{before}",
+            );
+            assert!(
+                !before.contains("schema-conformance.orphaned-instance"),
+                "{tag}: …and never as an orphan: an orphan's doctype left the composition, \
+                 while this doctype resolves and only its home moved — one stranded doc, one \
+                 finding; validate said:\n{before}",
+            );
             match cell.pre {
-                PreState::Orphaned => {
-                    assert!(
-                        !before_ok && before.contains("schema-conformance.orphaned-instance"),
-                        "{tag}: a doc stranded inside the docs tree is red with the wrong \
-                         diagnosis; validate said:\n{before}",
-                    );
-                }
-                PreState::SilentlyClean => {
-                    assert!(
-                        before_ok && before.contains("validates clean"),
-                        "{tag}: a doc stranded at the repo root is named by no surface — that \
-                         silence is what the walk hole costs; validate said:\n{before}",
-                    );
-                }
+                PreState::Orphaned => assert!(
+                    !before.contains("no resolved doctype claims this path"),
+                    "{tag}: the pre-fix wrong diagnosis must be gone; validate said:\n{before}",
+                ),
+                PreState::SilentlyClean => assert!(
+                    !before.contains("validates clean"),
+                    "{tag}: the pre-fix silence must be gone; validate said:\n{before}",
+                ),
             }
+
+            // …and the index read names it too, at the home it is actually stranded at. `doc
+            // list` and the sweep consume one enumerator, so a file one of them narrows away
+            // and the other keeps would be the two-stories-about-one-file defect `doc list`
+            // was founded to end.
+            let (listed, listed_ok) = run(
+                repo.path(),
+                home.path(),
+                pack.path(),
+                &["doc", "list", "--format", "json"],
+            );
+            assert!(listed_ok, "{tag}: `doc list` exits 0; it said:\n{listed}");
+            let index: serde_json::Value =
+                serde_json::from_str(&listed).expect("`doc list --format json` emits JSON");
+            let row = index["docs"]
+                .as_array()
+                .expect("the listing carries a `docs` array")
+                .iter()
+                .find(|row| row["path"] == serde_json::json!(cell.source))
+                .unwrap_or_else(|| {
+                    panic!(
+                        "{tag}: the listing must name `{}`; got:\n{index:#}",
+                        cell.source
+                    )
+                });
+            assert_eq!(
+                row["state"],
+                serde_json::json!("managed"),
+                "{tag}: the doc is jigc's own — its doctype resolves and its stamp is jigc's — \
+                 so the state is `managed`; the row says WHERE it is, and `validate` says it is \
+                 not current; got:\n{index:#}",
+            );
 
             // The walk sees it, and the migration lands it at the current home.
             let (report, ok) = report(

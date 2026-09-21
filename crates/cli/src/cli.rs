@@ -1247,18 +1247,27 @@ fn unbaselined_identities(
     repo_root: &Path,
     schemas: &std::collections::BTreeMap<String, engine::schema::Schema>,
     record: &engine::file_state::FileStateRecord,
+    at_prior_homes: &[crate::orphan::PriorHomeDoc],
 ) -> std::collections::BTreeSet<String> {
     let mut unbaselined = std::collections::BTreeSet::new();
-    for (ty, schema) in schemas {
-        for (identity, path) in engine::index::committed_instances(repo_root, ty, schema) {
-            let key = path
-                .strip_prefix(repo_root)
-                .unwrap_or(&path)
-                .to_string_lossy()
-                .into_owned();
-            if record.get(&key).is_none() {
-                unbaselined.insert(identity);
-            }
+    let census = schemas
+        .iter()
+        .flat_map(|(ty, schema)| engine::index::committed_instances(repo_root, ty, schema));
+    // The prior-home instances ride here for the same reason they ride the fifth family: the
+    // trailer's claim is about the findings the sweep raised, and the sweep now raises them
+    // over these documents too, so leaving them out would have the trailer claim a task-scope
+    // gate exists for a doc that has no baseline at all (M52 completion audit, fix 2).
+    let at_prior_homes = at_prior_homes
+        .iter()
+        .map(|doc| (doc.identity.clone(), doc.path.clone()));
+    for (identity, path) in census.chain(at_prior_homes) {
+        let key = path
+            .strip_prefix(repo_root)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .into_owned();
+        if record.get(&key).is_none() {
+            unbaselined.insert(identity);
         }
     }
     unbaselined
@@ -1320,6 +1329,31 @@ fn validate_store_in_repo(cwd: &Path) -> Result<StoreSweep> {
     // store; a pack that ships none yields the empty map.
     let priors = crate::pack::prior_doctype_schemas(pack, &versions);
 
+    // The committed instances sitting at a **recorded prior home** of their doctype (M52
+    // completion audit, fix 2) — the subject `engine::index::committed_instances` cannot
+    // reach, because it answers *where does this doctype live* in the present tense. The
+    // snapshot store that records every prior home and the two root knobs that resolve them
+    // are the CLI's to read, so the enumeration happens here and is handed to the fifth
+    // family exactly as `versions` and `priors` are. It is also the third claimant on a
+    // committed path, which is why it joins `spoken_for` below.
+    let prior_home_instances = crate::orphan::prior_home_instances(
+        pack,
+        &jigc_home,
+        &schemas,
+        &versions,
+        &priors,
+        crate::start::docs_root_prefix(&resolved),
+        crate::start::placement_root(&resolved),
+    );
+    let at_prior_homes: Vec<engine::validate::PriorHomeInstance> = prior_home_instances
+        .iter()
+        .map(|doc| engine::validate::PriorHomeInstance {
+            ty: doc.ty.clone(),
+            identity: doc.identity.clone(),
+            path: doc.path.clone(),
+        })
+        .collect();
+
     let mut report = engine::validate::validate_store_families(
         &jigc_home,
         &schemas,
@@ -1330,6 +1364,7 @@ fn validate_store_in_repo(cwd: &Path) -> Result<StoreSweep> {
         &record,
         &versions,
         &priors,
+        &at_prior_homes,
     )
     .with_context(|| format!("validating the committed store at {jigc_home:?}"))?;
 
@@ -1392,7 +1427,22 @@ fn validate_store_in_repo(cwd: &Path) -> Result<StoreSweep> {
     // The paths the strand walk speaks for — the other half of M51 Increment 8's partition
     // (below): a strand's doctype RESOLVES, so the orphaned-instance break must not also
     // claim it.
-    let mut spoken_for = std::collections::BTreeSet::new();
+    // Seeded with the recorded-prior-home set (M52 completion audit, fix 2): the fifth family
+    // above has just adjudicated each of those documents under its own doctype, so the
+    // orphaned-instance break — whose claim is that **no** resolved doctype claims the path —
+    // would be a second, contradicting story about a file already spoken for. One stranded
+    // document, one finding. It is the same partition the strand walk's paths ride, reached by
+    // the recorded route rather than the self-discovering one.
+    let mut spoken_for: std::collections::BTreeSet<String> = prior_home_instances
+        .iter()
+        .map(|doc| {
+            doc.path
+                .strip_prefix(&jigc_home)
+                .unwrap_or(&doc.path)
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
     for strand in crate::orphan::orphaned_docs(&jigc_home, &declared, &schemas) {
         let crate::orphan::Strand {
             rel,
@@ -1522,7 +1572,7 @@ fn validate_store_in_repo(cwd: &Path) -> Result<StoreSweep> {
     // The gate-claim discriminator (M42 Inc 4): which of the committed docs this sweep just
     // adjudicated carry no file-state baseline. Derived from the same `record` + `schemas` the
     // families ran against, so the trailer's claim and the sweep's verdicts describe one store.
-    let unbaselined = unbaselined_identities(&jigc_home, &schemas, &record);
+    let unbaselined = unbaselined_identities(&jigc_home, &schemas, &record, &prior_home_instances);
     Ok(StoreSweep {
         report,
         unbaselined,

@@ -882,6 +882,16 @@ fn the_relocate_refusal_routes_to_a_verb_that_acts() {
 /// mints the finding) and one at the prior home the walk now reaches. The finding's **own**
 /// route is lifted from the machine surface, run verbatim, and the promise is read back — the
 /// whole store validates, with neither diagnosis standing.
+///
+/// **What this arm asserted until the M52 completion audit's fix 2, and why the change is the
+/// promise getting stronger rather than weaker.** Increment 7 widened the *walk* and left the
+/// *store sweep* keyed on the resolved home, so the stranded doc was still named by the wrong
+/// finding — `schema-conformance.orphaned-instance`, *no resolved doctype claims this path*,
+/// said of a doctype `jigc describe` still lists — and this arm pinned exactly that as the
+/// pre-state. The sweep now enumerates the same recorded prior homes the walk does, so **both**
+/// instances draw the diagnosis that is true of them, both carry the one route, and
+/// `orphaned-instance` fires on neither. The trailer's *then re-validate* was the half that was
+/// already honest; the half that was not is the report the operator reads **before** running it.
 #[test]
 fn the_store_sweep_repair_line_clears_the_store() {
     let corpus = Corpus::new(
@@ -901,8 +911,8 @@ fn the_store_sweep_repair_line_clears_the_store() {
         &adr_body(corpus.from_version, "Retire the nightly job"),
     );
 
-    // The sweep, on the machine surface: the below-version doc at the current home carries the
-    // repair line, and the doc at the prior home is red under a different diagnosis.
+    // The sweep, on the machine surface: BOTH below-version docs carry the repair line — the
+    // one at the current home and the one at the prior home — and neither is called an orphan.
     let out = corpus.jigc(&["validate", "--format", "json"]);
     assert!(
         !out.status.success(),
@@ -913,16 +923,28 @@ fn the_store_sweep_repair_line_clears_the_store() {
     let findings = report["findings"]
         .as_array()
         .unwrap_or_else(|| panic!("the store report carries findings; got:\n{report:#}"));
+    let named: Vec<&str> = findings
+        .iter()
+        .filter(|f| f["code"] == "schema-conformance.schema-version-current")
+        .filter_map(|f| f["key"]["target"].as_str())
+        .collect();
+    assert_eq!(
+        named,
+        vec!["adr:cache-sessions-in-memory", "adr:retire-the-nightly-job"],
+        "the repair line is a promise about the STORE, so every below-version instance the \
+         routed verb will land must be named by it — the one at the current home and the one \
+         at the prior home the walk reaches; report:\n{report:#}",
+    );
     let currency = findings
         .iter()
         .find(|f| f["code"] == "schema-conformance.schema-version-current")
         .unwrap_or_else(|| panic!("the below-version doc is named; report:\n{report:#}"));
     assert!(
-        findings
+        !findings
             .iter()
             .any(|f| f["code"] == "schema-conformance.orphaned-instance"),
-        "and the doc at the prior home is red under the wrong diagnosis — the state whose \
-         silence made the repair line a false promise; report:\n{report:#}",
+        "and neither is called an orphan: an orphan's doctype left the composition, while \
+         `adr` is composed at this very commit and only its home moved; report:\n{report:#}",
     );
 
     let route = currency["route"]

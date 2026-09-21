@@ -270,6 +270,194 @@ fn at_remainder(rel: &str, remainder: &str) -> bool {
     rel == remainder || rel.ends_with(&format!("/{remainder}"))
 }
 
+/// One committed document found at a **recorded prior home** of its doctype — a home the
+/// versioned snapshot store says that doctype used to declare, which the doctype no longer
+/// declares (M52 completion audit, fix 2).
+///
+/// The **recorded** sibling of [`Strand`]'s self-discovery. [`orphaned_docs`] guesses a prior
+/// home from the *shape* of the path (a `location:` dir basename, a re-rootable `placement:`
+/// remainder) and is therefore blind wherever the shape carries no invariant to key on — a
+/// home declared **at** the repo root (`CHANGELOG.md`) contributes no arm at all, and a
+/// `location:` basename that the bump *renamed* matches nothing. The snapshot store does not
+/// guess: it records what every prior version declared, which is why
+/// `crate::migrate_corpus::candidate_docs` has keyed its walk on it since Increment 7 / T1.
+pub(crate) struct PriorHomeDoc {
+    /// The doctype whose prior home this path is — resolved, and still in the composition.
+    pub(crate) ty: String,
+    /// The `<type>:<slug>` identity the doc carries **at that home**, derived by the one rule
+    /// [`engine::index::committed_instances`] derives every identity with
+    /// ([`engine::index::instance_slug`]) — so a placement prior yields the fixed
+    /// `<type>:<type>` singleton and a located prior the file's own stem, exactly as
+    /// `candidate_docs` keys the identity that has to survive the move.
+    pub(crate) identity: String,
+    /// The absolute path of the committed file.
+    pub(crate) path: std::path::PathBuf,
+}
+
+/// The committed instances sitting at any **recorded prior home** of their doctype — the
+/// store-scope subject the resolved-home census [`engine::index::committed_instances`] cannot
+/// reach, and the close of the M42 false-green class through the axis Increment 7 widened on
+/// the migrate side alone (M52 completion audit, fix 2).
+///
+/// **What it cost to be missing.** After a schema bump that also moved a doctype's home, the
+/// committed document sat at a home no resolved schema names, so the census yielded nothing
+/// and every store-scope consumer of it reported on a corpus that did not contain the
+/// document: `jigc validate` printed *"no findings — the committed store validates clean"* at
+/// exit 0, `jigc doc list` printed *"no committed docs"*, and `jigc migrate-corpus --dry-run`
+/// — walking the same snapshot store this function now reads — reported `1 would migrate`.
+/// Where the stranded home happened to fall inside [`Territory`] the doc was at least red, but
+/// with a diagnosis that is false of it: [`orphaned_instances`] said *no resolved doctype
+/// claims this path* about a doctype `jigc describe` still lists.
+///
+/// **The subject is the *unmigrated* instances at those homes, and only those** — the
+/// narrowing [`is_unmigrated`] states and the reason it exists (a premise that held for the
+/// class and not universally, caught by a shipped suite going red rather than by reasoning).
+/// Over that population one code is the right answer: a document a prior version wrote is
+/// below its doctype's current version, so the sweep's existing
+/// `schema-conformance.schema-version-current` states the one fact that is true of it, routed
+/// at the verb that lands it — rather than a new code for what is not a new condition.
+///
+/// **The subject is narrowed twice, and both narrowings are the partition.** A path already
+/// claimed by *any* resolved doctype's current home is excluded (a doctype whose home never
+/// moved declares the same home at every version, so its instances would otherwise be
+/// enumerated twice); and the caller folds what this returns into `orphaned_instances`'
+/// `spoken_for`, because a document this walk can name a doctype **and a version** for is not
+/// a document no doctype claims. One stranded document, one finding.
+///
+/// **Best-effort over the snapshot store**, the posture [`crate::pack::prior_doctype_schemas`]
+/// takes and for the reason stated there — a snapshot a pack does not ship costs this walk one
+/// prior home, never a wrong one, and `jigc validate`'s exit is not the place to redden an
+/// adopter's repository over a pack's omission. The migration walk fails **closed** over the
+/// same store (`crate::migrate_corpus::PriorHomes`), because its subject is the documents it
+/// is about to rewrite.
+///
+/// `resolved` must carry the cascade-applied homes; `docs_root` / `placement_root` are the
+/// resolved knobs ([`crate::start::docs_root_prefix`], [`crate::start::placement_root`]), which
+/// the prior **declarations** are put back through. Ordered by `(doctype, path)`: `versions`
+/// is a [`BTreeMap`](std::collections::BTreeMap) and each home enumerates slug-sorted.
+pub(crate) fn prior_home_instances(
+    pack: &dyn engine::packsource::PackSource,
+    repo_root: &Path,
+    resolved: &std::collections::BTreeMap<String, Schema>,
+    versions: &std::collections::BTreeMap<String, u32>,
+    priors: &std::collections::BTreeMap<String, Vec<Schema>>,
+    docs_root: &str,
+    placement_root: Option<&str>,
+) -> Vec<PriorHomeDoc> {
+    // Every path a resolved doctype's CURRENT home already accounts for — the first of the two
+    // narrowings. Across all doctypes, not just the one being walked: a prior home of one
+    // doctype can be the current home of another.
+    let claimed: std::collections::BTreeSet<std::path::PathBuf> = resolved
+        .iter()
+        .flat_map(|(ty, schema)| engine::index::committed_instances(repo_root, ty, schema))
+        .map(|(_identity, path)| path)
+        .collect();
+
+    let mut out: Vec<PriorHomeDoc> = Vec::new();
+    for (ty, version) in versions {
+        let Some(schema) = resolved.get(ty) else {
+            continue; // a manifest entry whose doctype the composition no longer resolves.
+        };
+        let homes =
+            crate::migrate_corpus::prior_homes(pack, ty, *version, docs_root, placement_root);
+        // Enumerate each prior home through the SHARED census, by handing it the doctype's own
+        // schema wearing that home — so the identity rule, the `.md` filter and the ordering
+        // are the ones every other consumer gets, never a second walk that could disagree.
+        let at_home = |home: Home| {
+            let mut shape = schema.clone();
+            match home {
+                Home::Location(dir) => {
+                    shape.location = Some(format!("{}/", dir.trim_end_matches('/')));
+                    shape.placement = None;
+                }
+                Home::Placement(file) => {
+                    shape.location = None;
+                    shape.placement = Some(engine::schema::Placement { file });
+                }
+            }
+            engine::index::committed_instances(repo_root, ty, &shape)
+        };
+        let found = homes
+            .locations
+            .into_iter()
+            .flat_map(|dir| at_home(Home::Location(dir)))
+            .chain(
+                homes
+                    .files
+                    .into_iter()
+                    .flat_map(|file| at_home(Home::Placement(file))),
+            );
+        for (identity, path) in found {
+            if claimed.contains(&path) || out.iter().any(|doc| doc.path == path) {
+                continue;
+            }
+            let Ok(bytes) = std::fs::read(&path) else {
+                continue; // read race: the next sweep re-checks.
+            };
+            let source = String::from_utf8_lossy(&bytes);
+            let slug = identity.split_once(':').map_or("", |(_, slug)| slug);
+            if !is_unmigrated(ty, slug, schema, &source, *version, versions, priors) {
+                continue;
+            }
+            out.push(PriorHomeDoc {
+                ty: ty.clone(),
+                identity,
+                path,
+            });
+        }
+    }
+    out.sort_by(|a, b| (&a.ty, &a.path).cmp(&(&b.ty, &b.path)));
+    out
+}
+
+/// Whether a committed file sitting at a doctype's **prior** home is an **unmigrated instance
+/// of that doctype** — the narrowing that keeps [`prior_home_instances`]' subject to the
+/// population its claim is true of, and the correction of a premise that was too broad when
+/// this walk was first written (M52 completion audit, fix 2).
+///
+/// **The premise:** *a document at a home only a prior version declared was written by a prior
+/// version* — a doctype's home is inside its frozen `schema-hash`, so under the freeze a home
+/// cannot move without a `schema-version` bump. It is true of the class this fix closes and it
+/// is **not** true universally, which the shipped suite proved by going red: a pack author may
+/// reshape a home and **re-pin** the hash at the same version (`frozen_pack::reshaped_dev_pack`
+/// — the legal act `unclaimed_file_family.rs` builds its relocated-home cell out of), and the
+/// instance left behind is then **at** the current version. Widening the subject to it would
+/// have taken a file `schema-conformance.orphaned-instance` reports today and made it **silent
+/// at exit 0** — trading this false green for another one, which is the shape this whole fix
+/// exists to stop.
+///
+/// So the three stamp readings are answered separately, and only one of them is this walk's:
+///
+/// - **stamped below the current version** — unmigrated, the class. `migrate-corpus` walks the
+///   same prior home and lands it; the sweep says so with `schema-version-current`.
+/// - **stamped at or above it** — **not** this walk's. At-version is a *strand*: the document
+///   is where it should not be while being what it should be, which is the home-re-point
+///   advisory's subject and, where the strand walk cannot self-discover the home, the
+///   orphaned-instance break's — both untouched, and both of them already answer. Above-version
+///   is a future/foreign stamp no corpus operation repairs.
+/// - **unstamped** — this walk's **iff** the shipped managed-vs-foreign discriminator says the
+///   bytes are jigc's ([`engine::validate::is_unadopted_foreign`], asked with the same three
+///   pack facts the store sweep feeds it). That is the **v0-era** document — written before the
+///   stamp existed, parsing against a shape jigc once shipped — which
+///   `schema-conformance.schema-version-current` has covered at the *current* home since M42
+///   and which is no less unmigrated for sitting at a prior one. A file the discriminator calls
+///   foreign is an **adoption** case at any home, and `jigc ingest` answers it (driven: it
+///   raises `ingest.wrong-location` with a followable route on exactly this shape).
+fn is_unmigrated(
+    ty: &str,
+    slug: &str,
+    schema: &Schema,
+    source: &str,
+    current: u32,
+    versions: &std::collections::BTreeMap<String, u32>,
+    priors: &std::collections::BTreeMap<String, Vec<Schema>>,
+) -> bool {
+    match engine::validate::schema_version_from_front_matter(source) {
+        Some(stamp) => stamp < current,
+        None => !engine::validate::is_unadopted_foreign(ty, slug, schema, source, versions, priors),
+    }
+}
+
 /// **The directory trees jigc has been told are its own** — the subject bound of the
 /// orphaned-instance sweep ([`orphaned_instances`]), and the answer to a question the stamp
 /// itself cannot answer.

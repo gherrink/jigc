@@ -523,6 +523,33 @@ pub const STORE_FAMILIES: &[StoreFamily] = &[
     },
 ];
 
+/// One committed instance the CLI found at a **recorded prior home** of its doctype — a home
+/// the versioned snapshot store says that doctype used to declare (M52 completion audit, fix
+/// 2; `design/validation.md` → Store-scope schema-conformance).
+///
+/// The engine cannot derive these and must not try: the prior homes live in the pack's
+/// snapshot store and resolve through the `docs-root` / `placement-root` cascade knobs, both
+/// of which are the CLI's to read (the determinism boundary — the engine ships empty of
+/// content by invariant). So the CLI enumerates them with
+/// `cli::orphan::prior_home_instances` and hands them in, exactly as it hands in `versions`
+/// and `priors`, and the fifth content family adjudicates them beside the resolved-home
+/// census — same parse, same discriminator, same version-aware route.
+///
+/// The CLI hands in the **unmigrated** ones and only those (`cli::orphan` states the three
+/// stamp readings and why a document *at* version at a prior home is a different family's), so
+/// they need no code of their own — [`SCHEMA_VERSION_CURRENT_CODE`] is already the true
+/// statement about them, and it already routes at `jigc migrate-corpus`, the verb that lands
+/// them at the current home.
+pub struct PriorHomeInstance {
+    /// The doctype — the key the family adjudicates the instance under.
+    pub ty: String,
+    /// The `<type>:<slug>` identity the document carries **at that home**, derived by
+    /// [`crate::index::instance_slug`] against the prior shape.
+    pub identity: String,
+    /// The absolute path of the committed file.
+    pub path: std::path::PathBuf,
+}
+
 /// The store-scope **family sweep** — the [`validate_store`] superset the top-level
 /// `jigc validate` drives, folding every read-only store target into one
 /// [`ValidationReport`] (`validation.md` → Completing the envelope: host the families
@@ -570,6 +597,7 @@ pub fn validate_store_families(
     record: &FileStateRecord,
     versions: &BTreeMap<String, u32>,
     priors: &BTreeMap<String, Vec<Schema>>,
+    prior_home_instances: &[PriorHomeInstance],
 ) -> std::io::Result<ValidationReport> {
     let mut findings = Vec::new();
 
@@ -698,7 +726,12 @@ pub fn validate_store_families(
     // foreign one is an **adoption** case, not an unmigrated corpus, and takes the
     // suppressed-structure advisory arm.
     findings.extend(schema_conformance_store(
-        repo_root, schemas, versions, priors, workflows,
+        repo_root,
+        schemas,
+        versions,
+        priors,
+        workflows,
+        prior_home_instances,
     ));
 
     // The two M40 hollow-and-surplus advisories (`schema-conformance.
@@ -741,6 +774,19 @@ pub fn validate_store_families(
 /// the doc's real home; `schema-conformance.unknown-type` can never fire here (the type comes
 /// from schema iteration, never a filename prefix).
 ///
+/// **And the instances at a doctype's *prior* homes** ([`PriorHomeInstance`], M52 completion
+/// audit, fix 2). The census answers *where does this doctype live*, in the present tense, so
+/// after a bump that also moved a home the committed document sat at a path no resolved schema
+/// names and the sweep reported on a corpus that did not contain it — *"no findings — the
+/// committed store validates clean"*, exit 0, while `jigc migrate-corpus --dry-run` walked the
+/// snapshot store and answered `1 would migrate` about the same file. That is the M42
+/// false-green class reopened through the one axis Increment 7 widened on the migrate side
+/// alone. The CLI enumerates the prior-home set (the snapshot store and the two root knobs are
+/// its to read) and hands it in; this family adjudicates it beside the census, and the
+/// document draws the code that is true of it — below-version, routed at the verb that lands
+/// it — rather than silence, or `schema-conformance.orphaned-instance`'s *no resolved doctype
+/// claims this path* said of a doctype `jigc describe` still lists.
+///
 /// `ref-resolves` is **not** re-emitted — it is the index-based Family 4
 /// ([`ref_resolves_store`](crate::index::ref_resolves_store)), already at store scope. So
 /// this family is the three per-instance presence/value checks; the four-check deliverable
@@ -760,6 +806,7 @@ fn schema_conformance_store(
     versions: &BTreeMap<String, u32>,
     priors: &BTreeMap<String, Vec<Schema>>,
     workflows: &[StoreWorkflow],
+    prior_home_instances: &[PriorHomeInstance],
 ) -> Vec<Finding> {
     let mut findings = Vec::new();
     for (ty, schema) in schemas {
@@ -772,7 +819,21 @@ fn schema_conformance_store(
         // `identity` is the `<type>:<slug>` URI the enumerator already derives (a placement
         // doctype's `<type>:<type>` singleton included) — never re-derived from the path,
         // which does not round-trip for a case-preserved literal home (`CHANGELOG.md`).
-        for (identity, path) in crate::index::committed_instances(repo_root, ty, schema) {
+        // The doctype's committed instances at its **current** home, followed by the ones the
+        // CLI found at a home only a **prior** version declared ([`PriorHomeInstance`]). Both
+        // are this doctype's documents and both are adjudicated by the body below — same
+        // parse, same managed-vs-foreign discriminator, same version-aware route — because a
+        // document's home says where it is, never whose it is. Enumerating only the first set
+        // is what made `jigc validate` report *"the committed store validates clean"* over a
+        // corpus `jigc migrate-corpus` could see and land (M52 completion audit, fix 2).
+        let at_prior_homes = prior_home_instances
+            .iter()
+            .filter(|instance| &instance.ty == ty)
+            .map(|instance| (instance.identity.clone(), instance.path.clone()));
+        for (identity, path) in crate::index::committed_instances(repo_root, ty, schema)
+            .into_iter()
+            .chain(at_prior_homes)
+        {
             let rel_key = path
                 .strip_prefix(repo_root)
                 .unwrap_or(&path)
@@ -6771,6 +6832,7 @@ One sentence.
             &record,
             &BTreeMap::new(),
             &BTreeMap::new(),
+            &[],
         )
         .expect("store sweep runs");
 
@@ -6839,6 +6901,7 @@ One sentence.
             &record,
             &BTreeMap::new(),
             &BTreeMap::new(),
+            &[],
         )
         .expect("store sweep runs");
 
@@ -6913,6 +6976,7 @@ Old notes.
             &record,
             &BTreeMap::new(),
             &BTreeMap::new(),
+            &[],
         )
         .expect("store sweep runs");
 
@@ -7282,6 +7346,7 @@ Effects.
             &record,
             &BTreeMap::new(),
             &BTreeMap::new(),
+            &[],
         )
         .expect("three-family store sweep runs");
 
@@ -7331,6 +7396,7 @@ Effects.
             &record,
             &BTreeMap::new(),
             &BTreeMap::new(),
+            &[],
         )
         .expect("three-family store sweep runs with a crashing probe");
 
@@ -7408,6 +7474,7 @@ Effects.
             &record,
             &BTreeMap::new(),
             &BTreeMap::new(),
+            &[],
         )
         .expect("store sweep runs");
         let ghost: Vec<&Finding> = report
@@ -7443,6 +7510,7 @@ Effects.
             &record,
             &BTreeMap::new(),
             &BTreeMap::new(),
+            &[],
         )
         .expect("store sweep runs");
         assert!(
@@ -7514,6 +7582,7 @@ Slightly higher write latency for resilience.
             &record,
             &BTreeMap::new(),
             &BTreeMap::new(),
+            &[],
         )
         .expect("store sweep runs");
 
@@ -7572,6 +7641,7 @@ Slightly higher write latency for resilience.
             &record,
             &BTreeMap::new(),
             &BTreeMap::new(),
+            &[],
         )
         .expect("store sweep runs");
 
@@ -7639,6 +7709,7 @@ Slightly higher write latency for resilience.
             &record,
             &BTreeMap::new(),
             &BTreeMap::new(),
+            &[],
         )
         .expect("store sweep runs");
 
@@ -7711,6 +7782,7 @@ Slightly higher write latency for resilience.
             &record,
             &BTreeMap::new(),
             &BTreeMap::new(),
+            &[],
         )
         .expect("store sweep runs");
 
@@ -7819,6 +7891,7 @@ sections:
             &record,
             &BTreeMap::new(),
             &BTreeMap::new(),
+            &[],
         )
         .expect("store sweep runs over a conformant store");
         // The family's `schema-conformance.*` output over this store is **accounted for**,
@@ -7860,6 +7933,7 @@ sections:
             &record,
             &BTreeMap::new(),
             &BTreeMap::new(),
+            &[],
         )
         .expect("store sweep runs under the schema shadow");
         let breaks: Vec<&Finding> = report
@@ -8002,6 +8076,7 @@ Effects.
                 &record,
                 &versions,
                 &BTreeMap::new(),
+                &[],
             )
             .expect("store sweep runs")
             .findings
@@ -8046,6 +8121,7 @@ Effects.
             &record,
             &versions_v1,
             &BTreeMap::new(),
+            &[],
         )
         .expect("store sweep runs")
         .findings;
@@ -8102,6 +8178,7 @@ Effects.
                 &record,
                 &versions,
                 &BTreeMap::new(),
+                &[],
             )
             .expect("store sweep runs");
             report
@@ -8181,6 +8258,7 @@ Effects.
                 &record,
                 &versions,
                 &BTreeMap::new(),
+                &[],
             )
             .expect("store sweep runs")
             .findings
@@ -8267,6 +8345,7 @@ Effects.
             &record,
             &versions,
             &BTreeMap::new(),
+            &[],
         )
         .expect("store sweep runs")
         .findings
@@ -8419,6 +8498,7 @@ Effects.
             &record,
             &BTreeMap::new(),
             &BTreeMap::new(),
+            &[],
         )
         .expect("per-workflow-catalog sweep runs");
         assert!(
@@ -8444,6 +8524,7 @@ Effects.
             &record,
             &BTreeMap::new(),
             &BTreeMap::new(),
+            &[],
         )
         .expect("dangling-ref sweep runs");
         assert!(
@@ -9032,8 +9113,14 @@ title: {title}
         std::fs::write(notes.join("alpha.md"), &alpha).expect("commit alpha");
         std::fs::write(notes.join("beta.md"), &beta).expect("commit beta");
 
-        let findings =
-            schema_conformance_store(&root, &schemas(), &BTreeMap::new(), &BTreeMap::new(), &[]);
+        let findings = schema_conformance_store(
+            &root,
+            &schemas(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &[],
+            &[],
+        );
         let _ = std::fs::remove_dir_all(&root);
 
         let breaks: Vec<&Finding> = findings

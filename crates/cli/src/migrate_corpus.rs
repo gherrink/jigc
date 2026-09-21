@@ -2159,6 +2159,79 @@ enum Corpus {
     Head,
 }
 
+/// Every home doctype `ty` declared **below** `version`, read out of the versioned snapshot
+/// store and **re-rooted through the cascade knobs** — the one derivation of *where this
+/// doctype's documents used to live*, and the reason two doors can no longer hold two opinions
+/// about one committed file (M52 completion audit, fix 2).
+///
+/// Both home kinds, every version below the current one, de-duplicated and ordered: a doctype
+/// that relocated at v2 and bumped again at v3 declared **two** prior homes, and consulting
+/// only `version - 1`'s re-opens the hole one version along (the M42 completion audit's
+/// Finding 3, re-derived here rather than re-learned).
+///
+/// **Why the re-rooting happens here and nowhere else.** A snapshot stores its `location:` and
+/// its `placement.file` as the raw **declaration**; a current shape arrives at its consumers
+/// already resolved (`CascadeDefs::all_schemas`' closing `apply_docs_root` +
+/// `apply_placement_root`). So each prior home is put through the same two knobs — the
+/// `docs_root` prefix and [`crate::start::reroot_placement_file`] — and this is the sole
+/// re-application site. It is applied to the declaration and never to an already-resolved
+/// home, which is that primitive's documented trap: under a root a resolved home has no
+/// leading component left, so re-rooting *it* is a silent no-op.
+///
+/// **The error posture is the caller's, deliberately**, which is why a snapshot that will not
+/// load is *reported* rather than raised. [`candidate_docs`] — a **walk** whose subject is the
+/// documents it will rewrite — fails closed on it, because homes it cannot enumerate make its
+/// subject silently narrower than the doctype's history. The read-only store sweep
+/// ([`crate::orphan::prior_home_instances`]) reads the same store **best-effort**, the posture
+/// [`crate::pack::prior_doctype_schemas`] already takes and for the reason stated there: a
+/// missing snapshot is a *pack's* omission, and reddening an adopter's stock repository over
+/// it is not the sweep's to do.
+pub(crate) struct PriorHomes {
+    /// Prior `location:` homes, re-rooted under `docs-root`, each keeping its declared
+    /// trailing slash (`format!("{location}{slug}.md")` is how every consumer joins them).
+    pub(crate) locations: std::collections::BTreeSet<String>,
+    /// Prior `placement:` homes, re-rooted under `placement-root` — exact repo-relative files.
+    pub(crate) files: std::collections::BTreeSet<String>,
+    /// The versions below `version` whose snapshot would not load, ascending. Empty is the
+    /// ordinary case; a caller that cannot tolerate a narrower union refuses on `first()`.
+    pub(crate) unloadable: Vec<u32>,
+}
+
+/// See [`PriorHomes`].
+pub(crate) fn prior_homes(
+    pack: &dyn PackSource,
+    ty: &str,
+    version: u32,
+    docs_root: &str,
+    placement_root: Option<&str>,
+) -> PriorHomes {
+    let mut out = PriorHomes {
+        locations: Default::default(),
+        files: Default::default(),
+        unloadable: Vec::new(),
+    };
+    for k in 1..version {
+        let Ok(prior) = crate::pack::load_prior_schema(pack, ty, k) else {
+            out.unloadable.push(k);
+            continue;
+        };
+        if let Some(raw_home) = prior.location {
+            out.locations.insert(if docs_root.is_empty() {
+                raw_home
+            } else {
+                format!("{docs_root}/{raw_home}")
+            });
+        }
+        if let Some(placement) = prior.placement {
+            out.files.insert(crate::start::reroot_placement_file(
+                &placement.file,
+                placement_root,
+            ));
+        }
+    }
+    out
+}
+
 /// Enumerate one doctype migration job's committed candidate docs as
 /// `(source, destination)` pairs — the **from** home the corpus walk found each committed
 /// instance at, and the path its gated bytes land at (`design/corpus-migration.md` →
@@ -2206,10 +2279,10 @@ enum Corpus {
 /// `location:` and its `placement.file` as the raw **declaration**; the current shape arrives
 /// here already resolved through the cascade (`CascadeDefs::all_schemas`' closing
 /// `apply_docs_root` + `apply_placement_root`). So each prior home is put through the same two
-/// knobs — the `docs_root` prefix and [`crate::start::reroot_placement_file`] — and this is the
-/// sole re-application site. It is applied to the declaration and never to an already-resolved
-/// home, which is that primitive's documented trap: under a root a resolved home has no leading
-/// component left, so re-rooting *it* is a silent no-op.
+/// knobs — and that derivation now lives in [`prior_homes`], which is the sole re-application
+/// site and the **one** answer to *where did this doctype's documents used to live*. It was
+/// inlined here, and the store-scope sweep had no answer at all, which is exactly how the two
+/// doors came to hold two opinions about one committed file (M52 completion audit, fix 2).
 ///
 /// # What each half cost before it existed
 ///
@@ -2264,25 +2337,17 @@ fn candidate_docs(
     // (successive versions usually re-declare one home) and ordered, so the walk is
     // deterministic. A snapshot that fails to load refuses the whole walk (above): the homes
     // it declared cannot be enumerated, so a narrower union would be a silent lie about scope.
-    let mut prior_locations: std::collections::BTreeSet<String> = Default::default();
-    let mut prior_files: std::collections::BTreeSet<String> = Default::default();
-    for k in 1..dt.version {
-        let prior = crate::pack::load_prior_schema(pack, &dt.ty, k)
-            .map_err(|_| enumeration_missing_snapshot_finding(&dt.ty, k, dt.version))?;
-        if let Some(raw_home) = prior.location {
-            prior_locations.insert(if dt.docs_root.is_empty() {
-                raw_home
-            } else {
-                format!("{}/{raw_home}", dt.docs_root)
-            });
-        }
-        if let Some(placement) = prior.placement {
-            prior_files.insert(crate::start::reroot_placement_file(
-                &placement.file,
-                dt.placement_root.as_deref(),
-            ));
-        }
+    let homes = prior_homes(
+        pack,
+        &dt.ty,
+        dt.version,
+        &dt.docs_root,
+        dt.placement_root.as_deref(),
+    );
+    if let Some(&k) = homes.unloadable.first() {
+        return Err(enumeration_missing_snapshot_finding(&dt.ty, k, dt.version));
     }
+    let (prior_locations, prior_files) = (homes.locations, homes.files);
 
     let mut out: Vec<(String, String)> = Vec::new();
     if let Some(location) = &dt.to.location {

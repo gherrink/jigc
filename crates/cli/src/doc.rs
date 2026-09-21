@@ -4201,7 +4201,13 @@ fn run_schema(cwd: &Path, doctype: &str, format: Format) -> Result<(), DocFailur
 ///
 /// **One primitive, two consumers**: the enumeration is [`engine::index::committed_instances`],
 /// the same placement-aware census the store sweep walks (a placement doctype's singleton at
-/// its literal file, a located doctype's `<location>/*.md`, a transient doctype nothing), and
+/// its literal file, a located doctype's `<location>/*.md`, a transient doctype nothing) —
+/// **joined, since the M52 completion audit's fix 2, by the instances at each doctype's
+/// recorded prior homes** ([`crate::orphan::prior_home_instances`]), for the same
+/// one-primitive reason: the census is present-tense, so after a bump that moved a doctype's
+/// home this verb printed *"no committed docs"* over a corpus `jigc migrate-corpus --dry-run`
+/// could see and land. Such a row is `managed` at the home it is actually at — `state` answers
+/// *whose document is this*, never *is it current*, which is `jigc validate`'s to say — and
 /// each row's **registration state** is adjudicated by the one discriminator
 /// [`engine::validate::is_unadopted_foreign`] — `managed` (jigc's own doc, by its committed
 /// stamp/parse) or `unregistered` (a foreign file squatting at a managed home, the brownfield
@@ -4240,14 +4246,41 @@ fn run_list(
     let versions = crate::pack::frozen_doctype_versions(pack.as_ref());
     let priors = crate::pack::prior_doctype_schemas(pack.as_ref(), &versions);
 
+    // The committed instances at a **recorded prior home** of their doctype (M52 completion
+    // audit, fix 2) — the documents the present-tense census cannot see, and which this verb
+    // was founded not to be silent about: after a bump that also moved a home, `jigc doc list`
+    // printed *"no committed docs"* over a corpus holding a managed document that
+    // `migrate-corpus --dry-run` would name in the same breath. The listing and the store
+    // sweep read **one** enumerator for exactly this reason, so it is the sweep's own subject
+    // ([`crate::cli`] → `validate_store_in_repo`), resolved from the same cascade.
+    let at_prior_homes = crate::orphan::prior_home_instances(
+        pack.as_ref(),
+        &jigc_home,
+        &schemas,
+        &versions,
+        &priors,
+        crate::start::docs_root_prefix(&cascade),
+        crate::start::placement_root(&cascade),
+    );
+
     // `schemas` is keyed by doctype (BTreeMap → type-sorted) and the enumerator is
-    // slug-sorted, so the listing is (type, slug)-sorted by construction.
+    // slug-sorted, so the listing is (type, slug)-sorted by construction. A doctype's
+    // prior-home instances follow its current-home ones, in the enumerator's own order: they
+    // are the same doctype's documents, and sorting them by slug among docs at another home
+    // would hide the one thing the row is carrying — **where** the document is.
     let mut docs = Vec::new();
     for (ty, schema) in schemas
         .iter()
         .filter(|(ty, _)| doctype.is_none_or(|want| want == ty.as_str()))
     {
-        for (id, path) in engine::index::committed_instances(&jigc_home, ty, schema) {
+        let stale_homes = at_prior_homes
+            .iter()
+            .filter(|doc| &doc.ty == ty)
+            .map(|doc| (doc.identity.clone(), doc.path.clone()));
+        for (id, path) in engine::index::committed_instances(&jigc_home, ty, schema)
+            .into_iter()
+            .chain(stale_homes)
+        {
             let bytes = std::fs::read(&path)
                 .with_context(|| format!("reading the committed doc at {path:?}"))?;
             let source = String::from_utf8_lossy(&bytes);
@@ -4304,6 +4337,17 @@ fn run_list(
             crate::orphan::orphaned_docs(&jigc_home, &declared, &schemas)
                 .into_iter()
                 .map(|strand| strand.rel)
+                // The recorded-prior-home set joins the partition here for the reason it joins
+                // it at the sweep (M52 completion audit, fix 2): those rows are already in this
+                // listing, named as their doctype's, so also calling them orphans would be two
+                // rows and two stories about one file.
+                .chain(at_prior_homes.iter().map(|doc| {
+                    doc.path
+                        .strip_prefix(&jigc_home)
+                        .unwrap_or(&doc.path)
+                        .to_string_lossy()
+                        .into_owned()
+                }))
                 .collect();
         // The subject bound is the sweep's, resolved from the same cascade for the same
         // reason the strand set is passed: the two consumers read one enumerator, so a file
