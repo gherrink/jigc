@@ -75,6 +75,8 @@ mod milestone_teardown_loss;
 mod milestone_workflow_membership;
 #[path = "../milestone_zero_contribution.rs"]
 mod milestone_zero_contribution;
+#[path = "../mint_door_base_pin.rs"]
+mod mint_door_base_pin;
 #[path = "../mint_doors.rs"]
 mod mint_doors;
 #[path = "../pinned_facts.rs"]
