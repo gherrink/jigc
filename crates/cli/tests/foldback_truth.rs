@@ -1335,3 +1335,95 @@ not before**, with the goldens regenerated). **M51 — the count wave — is com
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// 8. The quickstart's teardown chapter: whose areas, and the byte that stays.
+// ---------------------------------------------------------------------------
+
+/// **The guide batch — one batch, one hash move** (M53 Increment 2 / T5;
+/// [roadmap.md](../../../implementation/roadmap.md) → Milestone 53, *The rule applied to doc
+/// moves*). Both shipped guides are `include_str!`'d into the installed
+/// `.claude/skills/jigc/SKILL.md` (`shipped_guides` above), so **any** guide byte moves
+/// `jigc-body-blake3` and engages M48's refuse-to-clobber path. The pass therefore lands
+/// every guide byte it owes in one commit — Increment 1's sentence and Increment 2's
+/// together — which is why this one fence carries two facts rather than two fences carrying
+/// one each.
+///
+/// **Fact 1 — the milestone door's subject is both kinds of area** (Increment 1). The
+/// chapter said *"`jigc milestone finalize` does the same for each sub-task's area"* and
+/// stopped there, while the boundary also tears down `.jigc/milestones/<id>/` itself,
+/// `merged/` included — so a reader whose analysis file sat in the milestone's own area was
+/// told, in the one paragraph about whose bytes survive, a truth that did not cover them.
+///
+/// **Fact 2 — a byte that cannot be moved is not taken instead** (Increment 2). Before this
+/// pass a failed move was followed by `remove_dir_all` one statement later, so the guide's
+/// promise held only on the happy path. It now holds on every path, and the state it leaves
+/// — area standing, commit landed, exit 0, one `finalize.foreign-bytes` advisory naming what
+/// is still in there — is a state the reader meets on their own machine and can read nowhere
+/// else, `.jigc/` being gitignored.
+///
+/// **The tokens are the facts, not the wording.** The chapter is *every* prose unit naming
+/// `.jigc/displaced/`, so a second paragraph describing the teardown is read too, and the
+/// milestone half is asserted on the unit that names the milestone door — a sentence about
+/// the milestone's own area three paragraphs from the door it belongs to would not be found
+/// by a reader either. The behaviour itself is pinned through the real binary elsewhere
+/// (`crates/cli/tests/finalize_displacement.rs` and
+/// `crates/cli/tests/milestone_boundary_displacement.rs` drive both doors, both areas, and
+/// the fault cells); this arm asserts only that the shipped prose says what those suites
+/// prove.
+#[test]
+fn the_quickstart_teardown_chapter_names_both_areas_and_the_byte_that_stays() {
+    let body = read_doc("QUICKSTART.md");
+    let chapter: Vec<String> = prose_units(&body)
+        .into_iter()
+        .filter(|unit| unit.contains(".jigc/displaced/"))
+        .collect();
+    assert!(
+        !chapter.is_empty(),
+        "QUICKSTART.md must describe what finalize does with the working area; no unit of \
+         it names `.jigc/displaced/`",
+    );
+
+    // Fact 1 — asserted on the unit that names the milestone door.
+    let at_the_door = chapter
+        .iter()
+        .find(|unit| unit.contains("jigc milestone finalize"))
+        .unwrap_or_else(|| {
+            panic!(
+                "the teardown chapter must say what `jigc milestone finalize` tears down; \
+                 chapter reads:\n{}",
+                chapter.join("\n"),
+            )
+        });
+    for owed in [
+        // the areas it answers for — each sub-task's, and its own
+        "sub-task",
+        ".jigc/milestones/<id>/",
+        // the join tree inside its own area, which is where the loss was driven
+        "merged/",
+    ] {
+        assert!(
+            at_the_door.contains(owed),
+            "the milestone door tears down its own area as well as each sub-task's, and the \
+             chapter must name `{owed}`; the unit reads:\n{at_the_door}",
+        );
+    }
+
+    // Fact 2 — the byte that cannot be moved, over the whole chapter.
+    let whole = chapter.join("\n");
+    for owed in [
+        // the identity the run actually prints
+        "finalize.foreign-bytes",
+        // the state it leaves: the area survives around the byte
+        "left standing",
+        // and the commit is not undone by it
+        "landed",
+        "exits 0",
+    ] {
+        assert!(
+            whole.contains(owed),
+            "a byte jigc could not move stays on disk and the run says so — the teardown \
+             chapter must name `{owed}`; chapter reads:\n{whole}",
+        );
+    }
+}

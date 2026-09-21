@@ -220,10 +220,25 @@ anything under there that jigc did not write (a scratch note, an analysis file,
 something you dropped beside the staged docs) is **moved** first to
 `.jigc/displaced/<id>/` at the same relative path, and every `from → to` pair is
 named on stderr and on the landed `--format json` envelope's `committed.displaced`.
-`jigc milestone finalize` does the same for each sub-task's area. Nothing clears
+`jigc milestone finalize` does the same for each sub-task's area **and for the
+milestone's own area**, `.jigc/milestones/<id>/` — the join's `merged/` tree
+included — each area's bytes parked under `.jigc/displaced/` at that area's own
+unit id, the sub-task's or the milestone's. Nothing clears
 `.jigc/displaced/` — those bytes are yours to read and remove with your own `rm` —
 and `jigc uninstall` refuses while it holds anything (`uninstall.foreign-bytes`), so
 they never go out with the workbench.
+
+A byte jigc **cannot** move is not taken instead. If the parking path is occupied
+or unwritable, or a hook wrote into the area while the commit was running, that
+byte stays exactly where it is and the working area is **left standing** around it
+rather than removed. The commit still landed and the run still exits 0 — a kept
+byte is not a failed finalize — and jigc says so with one `finalize.foreign-bytes`
+advisory per area it left standing: it names what is still in there (or says it
+could not read the area to tell you, rather than claiming an absence it did not
+check), plus the reason a move failed where there was one. The advisory rides
+`jigc task finalize`'s `findings`; at `jigc milestone finalize` it is printed on
+stderr. What is in such an area is no more jigc's to judge than what is in
+`.jigc/displaced/`: keep what you need out of it and delete the rest yourself.
 
 To see that set *before* committing, run `jigc task finalize <id> --dry-run`. On a
 task that would otherwise commit cleanly it prints the manifest and stops,
