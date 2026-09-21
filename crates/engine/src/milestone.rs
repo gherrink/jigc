@@ -1851,9 +1851,16 @@ pub(crate) const MERGED_AREA: &str = "merged";
 ///
 /// The written bytes are a **pure function of the area set**: the overlay is id-keyed and
 /// each body is `resolved_body`'s deterministic output, so no enumeration / completion /
-/// `read_dir` order can reach the materialized bytes (the order-invariance M7 proves). The
-/// `merged/docs/` folder is **truncated** before writing (a re-materialize is a clean
-/// rebuild, never a stale-body accretion).
+/// `read_dir` order can reach the materialized bytes (the order-invariance M7 proves).
+///
+/// **The rebuild is clean for what jigc wrote, and only for that** ([`clear_staged_bodies`];
+/// `completions/artifacts/M53/settle-record.md` → D1.3). This opened with an unconditional
+/// `remove_dir_all(merged/docs)` — *"truncated before writing"* — which made it the one
+/// remover standing between a foreign byte under `merged/` and the doors that are meant to
+/// answer for it, and `merged/` is not jigc's alone: a blocked finalize leaves the area
+/// standing at exit 3 and a succeeding `pre-commit` hook writes into it during the commit.
+/// A stale body — one the current area set no longer produces — is still taken, so the
+/// no-accretion property the truncation bought is unchanged.
 pub fn materialize(
     jigc_root: &Path,
     repo_root: &Path,
@@ -1886,12 +1893,10 @@ pub fn materialize(
         committed,
     )?;
 
-    // The parent staging docs/ — a clean rebuild on each materialize.
+    // The parent staging docs/ — a rebuild that is clean for jigc's own bodies, and takes
+    // nothing else. `create_dir_all` stays AFTER the clear: the area may not exist yet.
     let docs_dir = dir.join(MERGED_AREA).join(crate::state::DOCS_DIR);
-    if docs_dir.exists() {
-        std::fs::remove_dir_all(&docs_dir)
-            .map_err(|err| io_finding(milestone_id, "clear the parent staging area", &err))?;
-    }
+    clear_staged_bodies(milestone_id, &docs_dir)?;
     std::fs::create_dir_all(&docs_dir)
         .map_err(|err| io_finding(milestone_id, "open the parent staging area", &err))?;
 
@@ -1921,6 +1926,52 @@ pub fn materialize(
         addresses,
         sources,
     })
+}
+
+/// **Remove the materialized bodies from the join's staging `docs/`, and nothing else** —
+/// the selective half of [`materialize`]'s rebuild.
+///
+/// The subject is jigc's own writer form: every entry whose *name* [`crate::state::staged_doc_id`]
+/// reads as a staged identity (`<type>:<slug>.md` — the exact inverse of
+/// [`crate::state::instance_path`], which is the only way a body gets written here) **and**
+/// whose *shape* is a regular file. Shape is part of membership for the same reason it is at
+/// [`crate::state::foreign_area_paths`]: jigc writes regular files, so a directory or a
+/// symlink wearing a staged identity's name is something else, and this removes bytes.
+///
+/// Everything else under `merged/docs/` is left exactly where it is. `materialize` writes
+/// **only** `<type>:<slug>.md` bodies, so the task branch's wider
+/// [`crate::state::TASK_DOCS_FILES`] rule is deliberately **not** inherited here: it would
+/// call a foreign `provenance.json` jigc's own and destroy it
+/// (`completions/artifacts/M53/settle-record.md` → §2).
+///
+/// **Fail-closed**, like every probe a removing path reads: an absent `docs/` is `Ok(())`
+/// and absence is `NotFound` and nothing else, while a directory that cannot be read, an
+/// entry whose shape cannot be stat'd, and a removal that fails are all findings. Reporting
+/// "nothing to clear" for "I could not look" is how a stale body would survive into a
+/// rebuild that claims to be clean.
+fn clear_staged_bodies(milestone_id: &str, docs_dir: &Path) -> Result<(), Finding> {
+    let doing = "clear the parent staging area";
+    let entries = match std::fs::read_dir(docs_dir) {
+        Ok(entries) => entries,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(err) => return Err(io_finding(milestone_id, doing, &err)),
+    };
+    for entry in entries {
+        let entry = entry.map_err(|err| io_finding(milestone_id, doing, &err))?;
+        let raw = entry.file_name();
+        let name = raw.to_string_lossy();
+        if crate::state::staged_doc_id(&name).is_none() {
+            continue;
+        }
+        let shape = entry
+            .file_type()
+            .map_err(|err| io_finding(milestone_id, doing, &err))?;
+        if !shape.is_file() {
+            continue;
+        }
+        std::fs::remove_file(entry.path()).map_err(|err| io_finding(milestone_id, doing, &err))?;
+    }
+    Ok(())
 }
 
 /// One staged doc gathered from a sub-area before the clash/suffix rules decide its

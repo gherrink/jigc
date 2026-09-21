@@ -15,6 +15,8 @@ mod flow43_acceptance;
 mod leftover_probe_fail_closed;
 #[path = "../malformed_work_unit_id.rs"]
 mod malformed_work_unit_id;
+#[path = "../merged_area_selective_clear.rs"]
+mod merged_area_selective_clear;
 #[path = "../milestone.rs"]
 mod milestone;
 #[path = "../milestone_abort_survives.rs"]

@@ -5852,7 +5852,19 @@ fn milestone_boundary_gate(
         let Some(address) = path.file_stem().and_then(|s| s.to_str()) else {
             continue;
         };
-        let ty = address.split(':').next().unwrap_or(address);
+        // **A staged address, or nothing** — the predicate this loop's two siblings already
+        // ask (`engine::finalize::plan_promotions` and `engine::state::staged_doc_id` both
+        // `split_once(':')` and skip a colon-less stem). This asked `split(':').next()`,
+        // which reads the whole stem as the doctype when there is no `:` — so a foreign
+        // `merged/docs/adr.md` resolved to the doctype `adr`, was copied into the gate
+        // staging area, and blocked this boundary at exit 3 with
+        // `schema-conformance.unknown-type` on a file jigc never wrote, on every re-run
+        // (driven at M53 Increment 1 / T1's spike; `settle-record.md` → §1). Nothing under
+        // `merged/docs/` is walked for membership here: the gate's subject is what this
+        // boundary COMMITS, and a name jigc's own writer cannot emit is not that.
+        let Some((ty, _slug)) = address.split_once(':') else {
+            continue;
+        };
         // Persisted iff the doctype declares a committed home (`location:` or `placement:`)
         // — the transient-sink `commit` type declares neither.
         let persisted = schemas
