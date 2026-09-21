@@ -2249,9 +2249,12 @@ fn guard_record_free(jigc_home: &Path, schema: &Schema, title: &str) -> Result<(
 /// captured pre-image, [`commit_record_transaction`] (which restores both axes when the hook
 /// rejects), and [`baseline_record`] on the landed bytes.
 ///
-/// `msg_dir` is the caller's gitignored scratch for the commit message (the task's own working
-/// area, which is guaranteed to exist at this point and is about to be removed) — never the
-/// milestone area, which a fresh clone may not have.
+/// `area` is the sub-task's **own working area**, in both of the roles this seam needs it for:
+/// the gitignored scratch the commit message is written into (never the milestone area, which
+/// a fresh clone may not have), and the leftover the settled-item refusal names when the
+/// record says this sub-task is already over (M53 Increment 2 / T4). One path, because the two
+/// roles are the same directory at this door — it is guaranteed to exist here, the discard is
+/// about to remove it, and the refusal is about the very bytes the removal would have taken.
 ///
 /// **Inert in the omitting contexts**, and both are ordinary rather than exceptional: a
 /// dev-only project resolves no `milestone-record` doctype, and an ordinary task is named by no
@@ -2271,7 +2274,7 @@ pub(crate) fn settle_discarded_sub_task(
     jigc_home: &Path,
     jigc_root: &Path,
     task_id: &str,
-    msg_dir: &Path,
+    area: &Path,
     conflicts: &mut Vec<Finding>,
 ) -> Result<Option<SettledSubTask>> {
     let schemas = shipped_schemas(jigc_home)?;
@@ -2303,15 +2306,25 @@ pub(crate) fn settle_discarded_sub_task(
     // the pre-settle index entry ([`RecordPreImage`]).
     let mut pre =
         capture_record_pre_image(jigc_home, &record_path, crate::rollback::TASK_DISCARD_DOOR)?;
-    let settled =
-        engine::milestone::discard_sub_task_item(&record_path, schema, &milestone_id, task_id)
-            .map_err(finding_to_err)?;
+    // The settled-item guard lives inside the engine call, so it is asked of the record this
+    // door is about to splice and **after** the reconcile preflight — drift outranks the
+    // terminal (`design/team-ready-state.md` → The terminal is terminal), and a terminal read
+    // off tampered bytes would refuse with a sentence about a state nobody wrote.
+    let settled = engine::milestone::discard_sub_task_item(
+        &record_path,
+        schema,
+        &milestone_id,
+        task_id,
+        area,
+        jigc_home,
+    )
+    .map_err(finding_to_err)?;
     // The engine writes the settled record; the read-back is the door's, one statement after.
     pre.wrote();
     let hook_output = commit_record_transaction(
         jigc_home,
         &record_path,
-        msg_dir,
+        area,
         &format!("chore(milestone): discard task:{task_id} on milestone:{milestone_id}\n"),
         &pre,
         conflicts,

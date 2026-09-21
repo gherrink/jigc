@@ -200,13 +200,19 @@ fn remove_hook(repo: &Path) {
 /// (`jigc doc show milestone-record:<id> --format json`) — never off the raw bytes, so the
 /// assertions bind to what an agent actually reads.
 fn shown_record(repo: &Path, home: &Path) -> serde_json::Value {
+    shown_record_of(repo, home, MILESTONE_ID)
+}
+
+/// [`shown_record`] over a named milestone — the suite's second record (Arm 6's live control
+/// milestone) is read through the identical pinned contract, never off its bytes.
+fn shown_record_of(repo: &Path, home: &Path, milestone_id: &str) -> serde_json::Value {
     let stdout = ok(
         repo,
         home,
         &[
             "doc",
             "show",
-            &format!("milestone-record:{MILESTONE_ID}"),
+            &format!("milestone-record:{milestone_id}"),
             "--format",
             "json",
         ],
@@ -1125,4 +1131,191 @@ fn no_door_reading_the_task_list_enumerates_a_settled_sub_task() {
         milestone_with_two_sub_tasks(repo, home);
         (arm.check)(repo, home);
     }
+}
+
+// ---------------------------------------------------------------------------------------
+// Arm 6 — a SETTLED sub-task's leftover area is not live work.
+// ---------------------------------------------------------------------------------------
+
+/// The control milestone — **live**, with a live sub-task, in the *same repository* as the
+/// settled one, so the refusal and the ordinary landing are read off one binary state rather
+/// than off two fixtures that could drift apart.
+const LIVE_MILESTONE_TITLE: &str = "Index rework";
+const LIVE_MILESTONE_ID: &str = "index-rework";
+const LIVE_INTENT: &str = "Rebuild the index";
+const LIVE_SUB_ID: &str = "rebuild-the-index";
+
+/// Copy a directory tree, entry by entry — the fixture keeps the sub-task's **whole** working
+/// area (its `base.json` pin, its `intent`, its `workflow`), never a hand-built stand-in.
+///
+/// The shape is load-bearing (M53 Increment 2 / T4). Increment 3's residual rule closes the
+/// *pin-less* cell at task resolution, so a fixture built by a bare `mkdir` would go
+/// green-for-the-wrong-reason the moment that lands, while the cell this guard is actually
+/// for — an `unwind_area` I/O fault on the pin, which leaves the area standing **whole**
+/// (`settle-record.md` → §7) — is exactly this shape and stays live.
+fn copy_tree(src: &Path, dst: &Path) {
+    fs::create_dir_all(dst).expect("create the destination");
+    for entry in fs::read_dir(src).expect("read the source tree") {
+        let entry = entry.expect("read the source entry");
+        let to = dst.join(entry.file_name());
+        if entry.file_type().expect("source entry file type").is_dir() {
+            copy_tree(&entry.path(), &to);
+        } else {
+            fs::copy(entry.path(), &to).expect("copy the source entry");
+        }
+    }
+}
+
+/// **Arm 6 — the settled item refuses its own discard.** A sub-task the committed record
+/// reads `joined`, whose working area is standing again (the `unwind_area` I/O-fault cell),
+/// is a **leftover, not live work**: `jigc task discard <sub>` refuses under
+/// `milestone.terminal` at `task:<sub>`, names the area to clear by hand, and writes nothing.
+///
+/// Driven at `d53299d` before the guard: a bare `mkdir .jigc/tasks/<sub>` after a landed
+/// boundary, then `jigc task discard <sub>` — **exit 0**, a record-only commit landed, and the
+/// committed record read `status: joined` in its header over `- status: discarded` on the very
+/// item whose work produced that join. The record lying about work that landed, written by the
+/// door whose whole purpose is to stop the record lying.
+///
+/// The refusal's **producer** is the discriminating half. The shipped
+/// `engine::milestone::terminal_milestone_finding` composes its message and route inside
+/// itself and would say *"milestone `<sub>` is `joined`"* at `milestone:<sub>`, routed at a
+/// `milestone-record:<sub>` that does not exist — so the code is kept and a second producer
+/// mints the sentence a sub-task needs (`settle-record.md` → §8). Both halves are asserted:
+/// the address is the task, and the record-read route of the milestone producer is absent.
+#[test]
+fn a_settled_sub_tasks_leftover_area_refuses_its_discard_instead_of_flipping_the_record() {
+    let (repo, home) = base_repo("settled-leftover");
+    let (repo, home) = (repo.path(), home.path());
+    let keep = TempDir::new("settled-leftover-area");
+    let kept_area = keep.path().join("area");
+
+    // (a) The settled milestone — one sub-task, taken to `joined` through the real boundary.
+    ok(
+        repo,
+        home,
+        &["milestone", "create", MILESTONE_TITLE],
+        "milestone create",
+    );
+    ok(
+        repo,
+        home,
+        &["milestone", "add-task", MILESTONE_ID, DISCARDED_INTENT],
+        "milestone add-task",
+    );
+    copy_tree(&task_area(repo, DISCARDED_SUB_ID), &kept_area);
+    ok(
+        repo,
+        home,
+        &["milestone", "provision", MILESTONE_ID],
+        "milestone provision",
+    );
+    let wt = worktree(repo, DISCARDED_SUB_ID);
+    fs::write(wt.join("feature.txt"), "work\n").expect("write the sub-task's code");
+    git(&wt, &["add", "feature.txt"]);
+    ok(
+        repo,
+        home,
+        &["milestone", "finalize", MILESTONE_ID],
+        "milestone finalize",
+    );
+    assert_eq!(
+        shown_statuses(&shown_record(repo, home)),
+        vec![(DISCARDED_SUB_ID.to_string(), "joined".to_string())],
+        "the boundary settles the sub-task's item to `joined` on the committed record",
+    );
+    assert!(
+        !task_area(repo, DISCARDED_SUB_ID).exists(),
+        "and tears its working area down — which is what makes one standing a LEFTOVER",
+    );
+
+    // (b) The live control, in the same repository: a second milestone with a live sub-task.
+    ok(
+        repo,
+        home,
+        &["milestone", "create", LIVE_MILESTONE_TITLE],
+        "milestone create (the live control)",
+    );
+    ok(
+        repo,
+        home,
+        &["milestone", "add-task", LIVE_MILESTONE_ID, LIVE_INTENT],
+        "milestone add-task (the live control)",
+    );
+
+    // (c) The leftover, back where an `unwind_area` I/O fault on the pin leaves it: WHOLE.
+    let area = task_area(repo, DISCARDED_SUB_ID);
+    copy_tree(&kept_area, &area);
+    assert!(
+        area.join("base.json").is_file(),
+        "the leftover carries its base pin — the shape the residual rule does NOT resolve",
+    );
+
+    let head_before = git(repo, &["rev-parse", "HEAD"]);
+    let refused = jigc(repo, home, &["task", "discard", DISCARDED_SUB_ID]);
+    let stderr = String::from_utf8_lossy(&refused.stderr).into_owned();
+    assert!(
+        !refused.status.success(),
+        "a settled sub-task's discard must refuse; stdout:\n{}\nstderr:\n{stderr}",
+        String::from_utf8_lossy(&refused.stdout),
+    );
+    assert!(
+        stderr.contains("milestone.terminal"),
+        "the shipped terminal code carries it; got:\n{stderr}",
+    );
+    assert!(
+        stderr.contains(&format!("at: task:{DISCARDED_SUB_ID}")),
+        "the subject is the SUB-TASK, not a milestone that does not exist; got:\n{stderr}",
+    );
+    assert!(
+        stderr.contains(&format!("`{DISCARDED_SUB_ID}`"))
+            && stderr.contains(&format!("`{MILESTONE_ID}`")),
+        "the sentence names the sub-task and the milestone whose record settled it; got:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("`joined`"),
+        "and the committed status it reads; got:\n{stderr}",
+    );
+    assert!(
+        stderr.contains(&format!(".jigc/tasks/{DISCARDED_SUB_ID}")),
+        "the route names the leftover area to clear, repo-relative (law 1); got:\n{stderr}",
+    );
+    assert!(
+        !stderr.contains(&format!("milestone-record:{DISCARDED_SUB_ID}")),
+        "never the milestone producer's route, which addresses a record that does not \
+         exist; got:\n{stderr}",
+    );
+
+    // (d) Nothing moved: no commit, the settled item untouched, the leftover still on disk.
+    assert_eq!(
+        git(repo, &["rev-parse", "HEAD"]),
+        head_before,
+        "a refused discard lands no record commit",
+    );
+    assert_eq!(
+        shown_statuses(&shown_record(repo, home)),
+        vec![(DISCARDED_SUB_ID.to_string(), "joined".to_string())],
+        "the committed record still reads `joined` — no false flip",
+    );
+    assert!(
+        area.join("base.json").is_file(),
+        "the refusal runs before any removal, so the leftover is exactly as it was",
+    );
+
+    // (e) The control, same binary state: a LIVE sub-task still discards and still flips.
+    ok(
+        repo,
+        home,
+        &["task", "discard", LIVE_SUB_ID],
+        "task discard <live sub-id>",
+    );
+    assert_eq!(
+        shown_statuses(&shown_record_of(repo, home, LIVE_MILESTONE_ID)),
+        vec![(LIVE_SUB_ID.to_string(), "discarded".to_string())],
+        "the guard is scoped to a SETTLED item — a live one settles exactly as before",
+    );
+    assert!(
+        !task_area(repo, LIVE_SUB_ID).exists(),
+        "and its working area is removed, as it always was",
+    );
 }

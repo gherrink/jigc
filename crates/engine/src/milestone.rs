@@ -1548,11 +1548,28 @@ pub fn discard_record(
 /// work, and (through [`reseed_sub_task_areas`]) an area the next milestone door happily
 /// rebuilt.
 ///
-/// The flip is **unconditional on the item's current value**, unlike [`discard_record`]'s
-/// joined-item carve-out: this arm is reachable only while the sub-task has a live working
-/// area, and a `joined` item's area no longer exists (both terminals are written at
-/// `finalize`, whose teardown removes the workbench, after which the CLI door refuses at task
-/// resolution). A guard here would be code no state can reach.
+/// **The flip is refused over an item the record has already settled** (M53 Increment 2 / T4;
+/// `settle-record.md` → D2.6 as amended by §8). It used to be unconditional on the item's
+/// current value — unlike [`discard_record`]'s joined-item carve-out — on the premise that
+/// *"this arm is reachable only while the sub-task has a live working area, and a `joined`
+/// item's area no longer exists ... a guard here would be code no state can reach."* **That
+/// premise is driven false**, at this pass's planning and with no fix applied: after a landed
+/// `jigc milestone finalize`, a bare `mkdir .jigc/tasks/<sub>` then
+/// `jigc task discard <sub>` exited **0** and committed a record whose header read
+/// `status: joined` over `- status: discarded` on the very item whose work produced that join
+/// (`d53299d`). The reachable state is not the bare `mkdir` alone: `unwind_area` removes the
+/// area's members in registry order and the base pin is member 0, so a fault **on the pin**
+/// leaves the whole area standing with its pin (§7) — a leftover the CLI's task resolution
+/// answers for exactly as it answers for a live one.
+///
+/// So the guard asks the **item's own** committed `status` leaf through
+/// [`settled_sub_task_status`], which is [`item_is_settled`] — the one predicate every other
+/// locus keys on, so the guard and the reseed skip cannot read different leaves — and refuses
+/// with [`settled_sub_task_finding`]. Nothing is read, written or committed past it.
+///
+/// `area` is the sub-task's working area and `repo_root` the repository root, carried for
+/// that refusal's route alone: the leftover is the operator's to clear, and a route naming it
+/// is what makes the refusal an exit rather than a dead end.
 ///
 /// An unknown `task_id`, a record that does not conform, or a vanished `status` leaf surfaces
 /// a routed blocking [`Finding`]; nothing is written unless the splice succeeds.
@@ -1561,9 +1578,20 @@ pub fn discard_sub_task_item(
     schema: &crate::schema::Schema,
     milestone_id: &str,
     task_id: &str,
+    area: &Path,
+    repo_root: &Path,
 ) -> Result<String, Finding> {
     let source = std::fs::read_to_string(record_path)
         .map_err(|err| io_finding(milestone_id, "read the milestone record", &err))?;
+    if let Some(status) = settled_sub_task_status(schema, &source, task_id) {
+        return Err(settled_sub_task_finding(
+            milestone_id,
+            task_id,
+            &status,
+            area,
+            repo_root,
+        ));
+    }
     let settled = crate::write::set_item_field(
         schema,
         &source,
@@ -1697,6 +1725,81 @@ pub fn settled_sub_task_ids(
                 .collect()
         })
         .unwrap_or_default()
+}
+
+/// **One named sub-task's committed `status`, when that item has settled** — the membership
+/// half of [`settled_sub_task_ids`] narrowed to a single id and returning the status it
+/// settled at, so the caller that must refuse can also *say what it read*
+/// (M53 Increment 2 / T4).
+///
+/// It is the same question asked of the same bytes: [`item_is_settled`] over [`item_status`],
+/// the documented single reader of a per-item status. Written as its own function only
+/// because a caller composing a sentence needs the value and a set of ids does not carry it —
+/// `settled_sub_task_status(..).is_some()` and `settled_sub_task_ids(..).contains(..)` are one
+/// predicate by construction, and `tests::the_settled_status_reader_and_the_settled_id_set_are_one_predicate`
+/// holds them to it over every value the leaf takes, the absent leaf included.
+///
+/// Pure over the bytes, like its siblings: a record that does not parse, a record carrying no
+/// `tasks` section, and an id that section does not name all answer `None` — *not settled*,
+/// which is the safe reading for a guard whose other branch is the ordinary write, because the
+/// splice that follows surfaces the real fault instead of this one masking it.
+fn settled_sub_task_status(
+    schema: &crate::schema::Schema,
+    source: &str,
+    task_id: &str,
+) -> Option<String> {
+    let doc = crate::parse::parse_sections(schema, source).ok()?;
+    doc.sections
+        .iter()
+        .find(|s| s.id == RECORD_TASKS_SECTION)?
+        .items
+        .iter()
+        .find(|i| i.id == task_id)
+        .filter(|i| item_is_settled(i))
+        .and_then(item_status)
+}
+
+/// The blocking finding a **settled sub-task's** discard refuses with
+/// ([`discard_sub_task_item`]; `settle-record.md` → D2.6 as amended by §8): the committed
+/// record already reads a terminal for this item, so its working area is a **leftover, not
+/// live work**, and flipping the item would make the record lie about work that landed.
+///
+/// **The code is the shipped [`terminal_milestone_finding`]'s; the producer is not, and that
+/// is the point.** That one composes message *and* route inside itself, addressed at a
+/// milestone: called here it would say *"milestone `<sub-id>` is `joined`"* at
+/// `milestone:<sub-id>`, routed at a `milestone-record:<sub-id>` that does not exist — a
+/// refusal naming the wrong unit and routing at a document nobody can open. One state
+/// answers one way, so the *state's* identity (`milestone.terminal` — a terminal record
+/// refuses the operation) is kept and the *sentence* is the sub-task's own.
+///
+/// The route is [`RouteKind::Human`](crate::finding::RouteKind) and names the area
+/// repo-relative (law 1): no jigc verb resolves this leftover — `task discard` is precisely
+/// the verb being refused — so the exit is the operator's, and a route that did not name the
+/// path would be a dead end rather than a direction.
+fn settled_sub_task_finding(
+    milestone_id: &str,
+    task_id: &str,
+    status: &str,
+    area: &Path,
+    repo_root: &Path,
+) -> Finding {
+    let listed = crate::path::repo_relative(repo_root, area);
+    Finding::graded(
+        Severity::Blocking,
+        "milestone.terminal",
+        format!(
+            "sub-task `{task_id}` of milestone `{milestone_id}` is already `{status}` on the \
+             committed record — its working area is a leftover, not live work, and discarding \
+             it would settle an item the record has already settled"
+        ),
+        Some(Location::addressed(format!("task:{task_id}"), 1, 1)),
+        Some(Route::human(format!(
+            "the record is right and nothing was changed. Keep what you need from `{listed}` \
+             and delete the rest by hand — jigc mints no verb that clears a settled sub-task's \
+             leftover, and the record stays readable with \
+             `jigc doc show milestone-record:{milestone_id}`"
+        ))),
+    )
 }
 
 /// A blocking finding for a `status` splice failure while flipping a milestone record to
@@ -5804,5 +5907,70 @@ schema-version: 1
             "a concurrent reader parsed a half-written base.json: the shared-area write must \
              be temp + rename, never truncate-then-fill",
         );
+    }
+
+    /// **The settled-status reader and the settled-id set are one predicate** (M53 Increment
+    /// 2 / T4). [`discard_sub_task_item`]'s guard reads a *status* where the reseed skip and
+    /// the operating doors' enumeration read a *set of ids* — two call sites, one question —
+    /// and a guard that could answer `settled` where [`settled_sub_task_ids`] answers `live`
+    /// (or the reverse) is exactly the divergence the shared [`item_is_settled`] predicate
+    /// exists to prevent.
+    ///
+    /// So the ⇔ is asserted over **every value the leaf takes**, the absent leaf included: a
+    /// record carrying one item per case, and an id the record does not name at all.
+    #[test]
+    fn the_settled_status_reader_and_the_settled_id_set_are_one_predicate() {
+        let schema = milestone_record_schema();
+        let mut source = record_with_item_statuses(
+            &schema,
+            "cache-rework",
+            &[
+                ("live-one", "Warm the read cache", RECORD_STATUS_ACTIVE),
+                ("joined-one", "Evict cold entries", RECORD_STATUS_JOINED),
+                ("gone-one", "Drop the shard map", RECORD_STATUS_DISCARDED),
+                ("leafless-one", "Rebuild the index", RECORD_STATUS_ACTIVE),
+            ],
+        );
+        // The fourth item loses its `status` leaf entirely — *"a record that never claimed the
+        // sub-task was over cannot be read as claiming it"*, asserted rather than assumed.
+        source = crate::write::unset_item_field(
+            &schema,
+            &source,
+            RECORD_TASKS_SECTION,
+            &["leafless-one"],
+            RECORD_STATUS_FIELD,
+        )
+        .expect("the fixture item's status leaf unsets");
+
+        let ids = settled_sub_task_ids(&schema, &source);
+        assert_eq!(
+            ids,
+            ["gone-one".to_string(), "joined-one".to_string()]
+                .into_iter()
+                .collect::<std::collections::BTreeSet<_>>(),
+            "the two terminals settle; the live one and the leaf-less one do not",
+        );
+
+        for id in [
+            "live-one",
+            "joined-one",
+            "gone-one",
+            "leafless-one",
+            "named-by-no-item",
+        ] {
+            let status = settled_sub_task_status(&schema, &source, id);
+            assert_eq!(
+                status.is_some(),
+                ids.contains(id),
+                "`settled_sub_task_status` and `settled_sub_task_ids` disagree about `{id}` \
+                 ({status:?} vs the settled set {ids:?})",
+            );
+            if let Some(status) = status {
+                assert!(
+                    is_terminal_status(&status),
+                    "a settled item's reported status is the terminal it reads, got `{status}`",
+                );
+            }
+        }
     }
 }
