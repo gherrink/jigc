@@ -298,39 +298,30 @@ fn claude_md_names_m52_and_claims_exactly_what_the_build_reached() {
         .split('\n')
         .next()
         .expect("splitting a str always yields at least one part");
-
     for owed in [
         "implementation/roadmap.md",
         "Milestone 52",
         "flow 53",
         "flow53_acceptance.rs",
+        // Inverted 2026-09-21 at the completion fold-back — the eighth time. The audit
+        // ran, its verdict is persisted, and the claim must now cite it and say what it
+        // found, no more and no less: seven findings, all fixed, none of them clean.
+        "completions/artifacts/M52/VERDICT.md",
+        "built + audited",
     ] {
         assert!(
             span.contains(owed),
             "the M52 project-state claim must name `{owed}`; it reads:\n{span}",
         );
     }
-
-    // INVERTED 2026-09-20, which is this fence doing its job rather than failing at it.
-    // The build landed and the completion workflow has not run, so the bound must be
-    // visible in the prose: an omission cannot say that an audit is still owed.
-    assert!(
-        span.contains("built, not audited"),
-        "M52's completion audit has not run, and the claim must say so in those words:\
-         \n{span}",
-    );
     for forbidden in [
-        // The completed claim, which nobody has reached: no code review, no e2e, no
-        // verdict.
-        "built + audited",
-        // A wave may not pre-announce what its audit will find — the M48 half of this
-        // rule, which is forbidden in BOTH directions and for different reasons: before
-        // the audit because nothing has been found, after it because something was.
+        // The pre-audit bound is now the lie: the audit has run over this build.
+        "built, not audited",
+        // Seven findings were found and fixed; a clean audit is not what the record shows.
         "audited clean",
         "audit is CLEAN",
         "audit ran clean",
-        // The 1.0.0 call is the human's, and M52 was chartered precisely because it was
-        // not taken on `1.0.0-rc.15`.
+        // The 1.0.0 call is the human's and this wave takes it no more than the last one.
         "1.0.0 is called",
         "1.0.0 shipped",
     ] {
@@ -339,22 +330,11 @@ fn claude_md_names_m52_and_claims_exactly_what_the_build_reached() {
             "the M52 claim may not say `{forbidden}`:\n{span}",
         );
     }
-
-    // The mirror of the post-audit direction's filesystem check: a citation of a verdict
-    // that does not exist is the law-1 lie this direction forbids, and the ban is a plain
-    // substring so that no spelling of the citation slips through (the declared bound
-    // above).
-    assert!(
-        !span.contains("VERDICT"),
-        "M52's claim may not cite a verdict — no completion audit has run over this \
-         build:\n{span}",
-    );
     let verdict = repo_root().join("completions/artifacts/M52/VERDICT.md");
     assert!(
-        !verdict.is_file(),
-        "a persisted M52 verdict exists at {} — the audit has landed, so this arm must \
-         invert rather than keep forbidding the citation",
-        verdict.display(),
+        verdict.is_file(),
+        "the M52 claim cites a verdict at {} that must exist",
+        verdict.display()
     );
 }
 
