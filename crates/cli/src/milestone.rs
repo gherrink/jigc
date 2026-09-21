@@ -5875,22 +5875,43 @@ fn milestone_boundary_gate(
     {
         let entry = entry?;
         let path = entry.path();
-        if path.extension().and_then(|x| x.to_str()) != Some("md") {
-            continue;
-        }
-        let Some(address) = path.file_stem().and_then(|s| s.to_str()) else {
-            continue;
-        };
-        // **A staged address, or nothing** — the predicate this loop's two siblings already
-        // ask (`engine::finalize::plan_promotions` and `engine::state::staged_doc_id` both
-        // `split_once(':')` and skip a colon-less stem). This asked `split(':').next()`,
-        // which reads the whole stem as the doctype when there is no `:` — so a foreign
+        let raw = entry.file_name();
+        let name = raw.to_string_lossy();
+        // **A body jigc wrote, or nothing** — [`engine::state::staged_doc_id`] on the name
+        // AND the shape, which is the one membership question every other `merged/docs/`
+        // seam asks: `engine::milestone::clear_staged_bodies` (the rebuild's remover),
+        // `engine::state::foreign_area_paths`' milestone arm (the complement probe) and
+        // `engine::state::unwind_merged` (the teardown) each ask
+        // `shape.is_file() && staged_doc_id(..).is_some()`, and `engine::state`'s own rule
+        // says shape is part of membership: jigc writes regular files and never a directory
+        // or a link wearing a body's name, and the shape is read WITHOUT following symlinks
+        // ([`std::fs::DirEntry::file_type`]).
+        //
+        // The name leg alone read `split(':').next()` until M53 Increment 1 / T1, which
+        // reads the whole stem as the doctype when there is no `:` — so a foreign
         // `merged/docs/adr.md` resolved to the doctype `adr`, was copied into the gate
         // staging area, and blocked this boundary at exit 3 with
         // `schema-conformance.unknown-type` on a file jigc never wrote, on every re-run
-        // (driven at M53 Increment 1 / T1's spike; `settle-record.md` → §1). Nothing under
-        // `merged/docs/` is walked for membership here: the gate's subject is what this
-        // boundary COMMITS, and a name jigc's own writer cannot emit is not that.
+        // (`settle-record.md` → §1). The shape leg was missed in the same motion, and the
+        // selective clear that task landed is what made it reachable: a **directory** named
+        // `adr:x.md` dead-ended the boundary at exit 1 with no finding code, no route and a
+        // host-absolute path, and a **symlink** named `adr:y.md` was copied in and blocked at
+        // exit 3 on a repo path that does not exist — verbatim the §1 defect, surviving one
+        // axis over.
+        //
+        // Nothing under `merged/docs/` is walked for membership here: the gate's subject is
+        // what this boundary COMMITS, and an entry jigc's own writer cannot emit is not that.
+        // A skipped entry is left exactly where it is, for the complement probe and the
+        // boundary's own displacement to answer for.
+        let shape = entry
+            .file_type()
+            .with_context(|| format!("could not read the shape of {path:?}"))?;
+        if !shape.is_file() {
+            continue;
+        }
+        let Some(address) = engine::state::staged_doc_id(&name) else {
+            continue;
+        };
         let Some((ty, _slug)) = address.split_once(':') else {
             continue;
         };

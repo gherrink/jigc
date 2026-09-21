@@ -324,6 +324,7 @@ pub fn plan_owner_artifacts(task_dir: &Path, schemas: &BTreeMap<String, Schema>)
     };
     let mut staged: Vec<PathBuf> = entries
         .flatten()
+        .filter(is_staged_shape)
         .map(|e| e.path())
         .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("md"))
         .collect();
@@ -1094,6 +1095,50 @@ pub fn render_subtask_messages(
     Ok(messages)
 }
 
+/// **Shape is part of membership** — the leg every walk over a staging `docs/` owes, asked
+/// here so the walks that *act on* what they find cannot disagree with the walks that
+/// answer for its complement.
+///
+/// jigc's writers ([`crate::state::instance_path`] + `fs::write`,
+/// [`crate::milestone::materialize`]) emit **regular files**, so a *directory* or a
+/// *symlink* wearing a staged instance's `<type>:<slug>.md` name is a third party's. That is
+/// already the question [`crate::state::foreign_area_paths`] asks when it enumerates an
+/// area's complement, and the question [`crate::state::unwind_docs`],
+/// [`crate::state::unwind_merged`] and [`crate::milestone::clear_staged_bodies`] ask before
+/// removing a byte — all of them reading the shape **without following symlinks**
+/// ([`std::fs::DirEntry::file_type`]), because the question is what jigc wrote here, not
+/// what a link points at.
+///
+/// Both walks asked only the *name*, and at [`plan_promotions`] both shapes were driven at
+/// **both** committing doors — `jigc task finalize` and `jigc milestone finalize` — before
+/// any fix (M53 Increment 1, the T1 follow-up):
+///
+/// * a **directory** named `adr:x.md` dead-ended the door at `finalize.promote-io` —
+///   *"resolve the read fault … (a disk or permissions problem)"*, which no disk problem
+///   caused and no re-run could clear, printed with a host-absolute path;
+/// * a **symlink** named `adr:y.md` was read **through**, and its target's bytes were
+///   promoted into the commit as a managed doc at **exit 0** — foreign prose landing at
+///   `<location>/<slug>.md` under jigc's own name (`promoted docs/decisions/foreign-link.md`,
+///   driven at the task door).
+///
+/// [`plan_owner_artifacts`] is the *same walk over the same directory*, and it takes the
+/// leg for seam-unity rather than on a repro: two walks in one file answering one question
+/// two ways is how the miss above happened. **Declared bound:** its own cell — a linked
+/// `completion-record:x.md` contributing a foreign `owned-location` to the transaction's
+/// staged set and the carryover exemption — is *reasoned, not driven*.
+///
+/// A skipped entry is left exactly where it is, for the door's own complement disposition —
+/// refuse · narrate · displace — to answer for, which is the answer those doors already
+/// give it.
+///
+/// **A shape that cannot be stat'd is skipped**, for the same reason the `flatten()` above
+/// each call drops an unreadable entry: *not acted on* is this walk's conservative answer,
+/// and the complement probe — which propagates its I/O errors rather than swallowing them —
+/// is the seam that answers for a path nothing here can read.
+fn is_staged_shape(entry: &std::fs::DirEntry) -> bool {
+    entry.file_type().is_ok_and(|shape| shape.is_file())
+}
+
 /// The phase-4 promote decision: the staged docs to copy plus their phase-7 hashes.
 struct PromotePlan {
     promotions: Vec<Promotion>,
@@ -1130,6 +1175,7 @@ fn plan_promotions(
 
     let mut staged: Vec<PathBuf> = entries
         .flatten()
+        .filter(is_staged_shape)
         .map(|e| e.path())
         .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("md"))
         .collect();

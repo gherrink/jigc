@@ -15,10 +15,29 @@
 //! `<doctype>.md` reach the boundary gate's copy loop at all; and that loop asked
 //! `split(':').next()`, which resolves the stem `adr` to the doctype `adr`, copies the file
 //! into the gate staging area and blocks the boundary at exit 3 on a file jigc does not own
-//! — on every re-run. Its two siblings — `engine::finalize::plan_promotions` and
-//! `engine::state::staged_doc_id` — both ask `split_once(':')` and skip a colon-less stem;
-//! the loop now asks the same thing. Correcting the loop alone is unobservable through the
-//! binary, because the wholesale clear destroys the plant before the loop can see it.
+//! — on every re-run. The loop now asks `split_once(':')`. Correcting it alone is
+//! unobservable through the binary, because the wholesale clear destroys the plant before
+//! the loop can see it.
+//!
+//! **[Corrected 2026-09-21 (the T1 follow-up):** the paragraph above read *"Its two
+//! siblings — `engine::finalize::plan_promotions` and `engine::state::staged_doc_id` — both
+//! ask `split_once(':')`"*, and cited that as the predicate the loop was being brought into
+//! line with. `staged_doc_id` is a sibling and does ask it. **`plan_promotions` is not, and
+//! the citation was load-bearing:** membership under `merged/docs/` is
+//! `is_file() && staged_doc_id(name).is_some()` — the rule `engine::state` states at
+//! `foreign_area_paths` and the rule `clear_staged_bodies` and `unwind_merged` obey — and
+//! `plan_promotions` asked **neither** leg completely, having no shape leg at all. Falsifying
+//! datum, driven at `6b570fb1`: with the copy loop corrected, a symlink named
+//! `adr:operator-scratch.md` under `merged/docs/` was read **through** by that sweep and its
+//! target's bytes committed as `promoted docs/decisions/operator-scratch.md` at **exit 0**.
+//! Both walks take the shape leg as of this task; see [`SHAPE_PLANTS`].**]**
+//!
+//! **The shape axis is the [`PLANTS`] axis' sibling, and it was the missing one.** [`PLANTS`]
+//! iterates *names* jigc's writer cannot emit; [`SHAPE_PLANTS`] iterates *shapes* it cannot
+//! emit, under names it can. The increment answered the shape question at all three
+//! `merged/` seams that *probe or remove* and at none of the two that *act* — so one state
+//! had two answers three lines apart, and the acting pair's answers were an unrouted exit-1
+//! dead end and a silent foreign-bytes commit.
 //!
 //! **What this suite drives** (the increment's owed spike, per
 //! `completions/artifacts/M53/acceptance-design.md` → *Spikes owed*): a foreign file left
@@ -62,6 +81,50 @@ const PLANTS: &[(&str, &str)] = &[
     ("deep.txt", "FOREIGN-DEEP-PLANT\n"),
     ("provenance.json", "{\"FOREIGN-PROVENANCE-PLANT\": true}\n"),
 ];
+
+/// The **shape** axis — [`PLANTS`]' sibling, and the leg that was missing.
+///
+/// `merged/docs/` membership is `is_file() && staged_doc_id(name).is_some()`; [`PLANTS`]
+/// iterates the *name* leg, and every cell here wears a name `staged_doc_id` **accepts**
+/// on a shape jigc's writer can never produce. `engine::state::foreign_area_paths`,
+/// `engine::state::unwind_merged` and `engine::milestone::clear_staged_bodies` all ask both
+/// legs, and until M53 Increment 1's T1 follow-up the two walks that *act* on what they
+/// find — this boundary's gate copy loop and `engine::finalize::plan_promotions` — asked
+/// only the name. One state, two answers:
+///
+/// * the **directory** cell dead-ended `jigc milestone finalize` at exit **1** with no
+///   finding code, no route and a host-absolute path (`design/surface-contract.md` law 1),
+///   identically on every re-run — a permanent, unrouted dead end;
+/// * the **symlink** cell was copied into the gate staging area and blocked at exit **3**
+///   with `conformance.section-missing` naming `docs/decisions/<slug>.md`, a repo path that
+///   does not exist — verbatim the §1 defect this suite's header quotes as its own
+///   motivation, surviving one axis over. Correcting the copy loop **alone** then moved the
+///   loss rather than closing it: the promote sweep read the link **through** and committed
+///   its target's bytes as a managed doc at exit 0.
+///
+/// Both were made reachable by the selective clear this suite's first test drives: at
+/// `6f333a6e` `materialize`'s unconditional `remove_dir_all(merged/docs)` destroyed them
+/// before any consumer could see them.
+const SHAPE_PLANTS: &[(&str, PlantShape)] = &[
+    ("adr:a-directory.md", PlantShape::Directory),
+    ("adr:a-link.md", PlantShape::Symlink),
+];
+
+/// The two shapes jigc's own writer never emits under a staging `docs/`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PlantShape {
+    Directory,
+    Symlink,
+}
+
+/// The symlink cell's target — a real, readable file **outside** any staging area, so the
+/// defect it pins is reachable rather than vacuous: a dangling link would fail the read and
+/// redden for the wrong reason.
+const LINK_TARGET: &str = "operator-scratch.md";
+
+/// The link target's marker, so the committed tree can be searched for bytes that reached
+/// it only by being read **through** the link.
+const LINK_TARGET_MARKER: &str = "FOREIGN-SYMLINK-TARGET-PLANT";
 
 /// A **stale jigc body** — a name [`engine::state::staged_doc_id`] recognises, left over
 /// from a materialize whose area set has since changed. The selective clear must still take
@@ -223,6 +286,48 @@ fn merged_docs(repo: &Path) -> PathBuf {
         .join("docs")
 }
 
+/// Plant every [`SHAPE_PLANTS`] cell under `docs`, minting the symlink cell's target first.
+///
+/// The target is **non-conformant** for the `adr` schema on purpose: read through the link
+/// it produces `conformance.section-missing` findings naming a `docs/decisions/` path that
+/// does not exist, which is the defect's own signature at the gate, and — once the gate
+/// skips it — it is still the foreign prose the promote sweep must not commit.
+fn plant_shapes(repo: &Path, docs: &Path) {
+    let target = repo.join(LINK_TARGET);
+    fs::write(&target, format!("# Scratch\n\n{LINK_TARGET_MARKER}\n")).expect("write link target");
+    for (name, shape) in SHAPE_PLANTS {
+        let at = docs.join(name);
+        match shape {
+            PlantShape::Directory => {
+                fs::create_dir_all(&at).expect("plant a directory wearing a staged identity")
+            }
+            PlantShape::Symlink => std::os::unix::fs::symlink(&target, &at)
+                .expect("plant a symlink wearing a staged identity"),
+        }
+    }
+}
+
+/// Assert every [`SHAPE_PLANTS`] cell is at `at`, still wearing its own shape — read with
+/// `symlink_metadata`, so a link is witnessed as a link and never as its target.
+fn shape_plants_intact(at: &Path, where_: &str) {
+    for (name, shape) in SHAPE_PLANTS {
+        let path = at.join(name);
+        let meta = fs::symlink_metadata(&path)
+            .unwrap_or_else(|err| panic!("`{name}` must still exist {where_} ({path:?}): {err}"));
+        match shape {
+            PlantShape::Directory => assert!(
+                meta.is_dir(),
+                "`{name}` is still the directory it was planted as, {where_}",
+            ),
+            PlantShape::Symlink => assert!(
+                meta.is_symlink(),
+                "`{name}` is still the symlink it was planted as, {where_} — \
+                 not resolved, not replaced by its target's bytes",
+            ),
+        }
+    }
+}
+
 /// HEAD commit count — the no-commit witness.
 fn head_count(repo: &Path) -> u32 {
     git_ok(repo, &["rev-list", "--count", "HEAD"])
@@ -301,6 +406,7 @@ fn a_blocked_boundary_clears_the_stale_body_and_keeps_every_foreign_plant() {
     for (name, bytes) in PLANTS {
         fs::write(docs.join(name), bytes).expect("write plant");
     }
+    plant_shapes(repo, &docs);
     fs::write(
         docs.join(STALE_BODY),
         format!("---\nstatus: accepted\ndate: 2026-06-04\n---\n\n# {STALE_MARKER}\n"),
@@ -357,6 +463,30 @@ fn a_blocked_boundary_clears_the_stale_body_and_keeps_every_foreign_plant() {
          so nothing resolves the stem `adr` to a schema; got:\n{both}",
     );
 
+    // ---- …and not by a SHAPE cell either. The `.md` copy loop asks `is_file()` before ----
+    // the name, so neither a directory nor a link wearing a staged identity is copied into
+    // the gate staging area, named by a finding, or allowed to end the run at exit 1.
+    assert!(
+        !both.contains("into the gate area"),
+        "a directory named `<type>:<slug>.md` under merged/docs/ is not a body jigc wrote: \
+         the copy loop skips it rather than dying on `fs::copy` with no finding code, no \
+         route and a host-absolute path; got:\n{both}",
+    );
+    assert!(
+        !both.contains("promote-io"),
+        "nor does it reach the promote sweep, whose read fault would blame `a disk or \
+         permissions problem` that no disk caused and no re-run can clear; got:\n{both}",
+    );
+    for (name, _) in SHAPE_PLANTS {
+        let address = name.trim_end_matches(".md");
+        assert!(
+            !both.contains(address),
+            "no finding names `{address}` — the gate's subject is what this boundary \
+             COMMITS, and the complement probe already calls this entry foreign, so the two \
+             may not give one state two answers; got:\n{both}",
+        );
+    }
+
     // ---- The stale jigc body is gone: the rebuild is still clean for what jigc wrote. ----
     assert!(
         !docs.join(STALE_BODY).exists(),
@@ -387,6 +517,9 @@ fn a_blocked_boundary_clears_the_stale_body_and_keeps_every_foreign_plant() {
         );
     }
 
+    // ---- Every SHAPE cell too, still wearing the shape it was planted as. ----
+    shape_plants_intact(&docs, "under merged/docs/ after a blocked finalize");
+
     // ---- The rebuild itself still happened: the area set's own bodies are there. ----
     for body in ["adr:broken-policy.md", "adr:code-policy.md"] {
         assert!(
@@ -403,9 +536,13 @@ fn a_blocked_boundary_clears_the_stale_body_and_keeps_every_foreign_plant() {
 /// committed tree — a **landed** boundary over the identical plants promotes exactly the two
 /// bodies the area set produced, and nothing derived from a name jigc never wrote.
 ///
-/// This arm is a control, not the fix's red: the promote sweep was already correct. It is
-/// here because the spike's claim is about what a surviving foreign file reaches, and a
-/// claim the build rests on becomes a standing test rather than a sentence in a record.
+/// **[Corrected 2026-09-21 (the T1 follow-up):** this read *"This arm is a control, not the
+/// fix's red: the promote sweep was already correct."* It was correct on the [`PLANTS`]
+/// axis and wrong on the shape axis, which is the half that commits: driven, the sweep read
+/// a symlink wearing a staged identity **through** and landed its target's bytes as a
+/// managed doc at exit 0. On the [`SHAPE_PLANTS`] rows this arm is the fix's red, not a
+/// control — it is the only arm where the promote sweep runs at all, the blocked arm's gate
+/// stopping the boundary first.**]**
 #[test]
 fn a_landed_boundary_promotes_only_what_the_area_set_produced() {
     let repo_dir = TempDir::new("landed-repo");
@@ -442,6 +579,7 @@ fn a_landed_boundary_promotes_only_what_the_area_set_produced() {
     for (name, bytes) in PLANTS {
         fs::write(docs.join(name), bytes).expect("write plant");
     }
+    plant_shapes(repo, &docs);
 
     let out = run_milestone(repo, home, &["finalize", MILESTONE]);
     expect_ok(&out, "milestone finalize over a merged area holding plants");
@@ -483,4 +621,32 @@ fn a_landed_boundary_promotes_only_what_the_area_set_produced() {
             String::from_utf8_lossy(&tracked.stdout),
         );
     }
+
+    // ---- The SHAPE axis at the door that actually commits. Read only the NAME, the ----
+    // promote sweep reads a link THROUGH and lands its target's bytes at
+    // `docs/decisions/a-link.md` at exit 0 — foreign prose committed as a managed doc under
+    // jigc's own name. The `promoted` assertion above is the first witness; this is the
+    // second, and it keys on bytes rather than on a path, so a rename cannot hide it.
+    let leaked = Command::new("git")
+        .args(["grep", "-l", LINK_TARGET_MARKER, "HEAD"])
+        .current_dir(repo)
+        .output()
+        .expect("run git grep");
+    assert!(
+        leaked.stdout.is_empty(),
+        "a symlink wearing a staged identity is read WITHOUT following it — its target's \
+         bytes reach no committed path; got:\n{}",
+        String::from_utf8_lossy(&leaked.stdout),
+    );
+
+    // ---- …and both cells were KEPT, not taken. A landed boundary displaces the merged ----
+    // area's complement (M53 Increment 1 / T4), which is the disposition a skipped entry
+    // falls through to: `.jigc/displaced/<milestone>/merged/docs/<name>`, shape intact.
+    let displaced = repo
+        .join(".jigc")
+        .join("displaced")
+        .join(MILESTONE)
+        .join("merged")
+        .join("docs");
+    shape_plants_intact(&displaced, "under .jigc/displaced/ after a landed finalize");
 }
