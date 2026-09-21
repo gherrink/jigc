@@ -73,6 +73,8 @@ mod machine_output;
 mod pre_dispatch_faults;
 #[path = "../reject_document_axis.rs"]
 mod reject_document_axis;
+#[path = "../rejection_frame_outcome.rs"]
+mod rejection_frame_outcome;
 #[path = "../release_smoke.rs"]
 mod release_smoke;
 #[path = "../routing_loop.rs"]

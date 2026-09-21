@@ -5180,6 +5180,18 @@ pub(crate) struct RejectionFrame {
     /// What survived the rejection, as one clause with **no trailing period** (the renderer
     /// adds it). Must be true of *this* door: some doors leave their write staged, some
     /// unwind it entirely.
+    ///
+    /// **It states the rollback's INTENT, and the renderer scopes it to the rollback's
+    /// outcome** (M52 completion audit). This is a constant composed before the transaction
+    /// runs, so it cannot know that the compare-and-swap declined to overwrite a racer
+    /// (`<door>.rollback-conflict`) or that the minted-area unwind declined to remove an area
+    /// holding a third party's file (`<door>.foreign-bytes`) — the two outcomes M52
+    /// Increment 5 minted, and the two in which this sentence is false. Those arrive at
+    /// [`surface_commit_rejection`] as `conflicts`, one finding per path left standing, and
+    /// [`crate::render::commit_rejection_route`] opens the clause with that exception rather
+    /// than letting this absolute stand alone. So a door author writes the clause that is
+    /// true when the rollback completed, and nothing here needs a second string for when it
+    /// did not.
     pub(crate) survived: String,
     /// The state clause for the **non-hook** cell ([`CommitFailed`]), where `survived` is not
     /// true of it — `None` when one clause is true of both (the usual case: every rollback the
@@ -5237,8 +5249,13 @@ pub(crate) fn surface_commit_rejection(
         // routes the operator at it.
         Some(rejected) if rejected.by_hook => Some((
             rejected.cause.as_str(),
-            render::commit_rejected(&rejected.cause, &frame.survived, &frame.rerun),
-            render::commit_rejection_route(&frame.survived, &frame.rerun),
+            render::commit_rejected(
+                &rejected.cause,
+                &frame.survived,
+                &frame.rerun,
+                conflicts.len(),
+            ),
+            render::commit_rejection_route(&frame.survived, &frame.rerun, conflicts.len()),
         )),
         // **git itself** refused it (M52 Increment 3 / T5) — the third cell of the axis. It
         // takes the non-hook *diagnosis* and the **hook cell's state clause**, and that pairing
@@ -5250,14 +5267,28 @@ pub(crate) fn surface_commit_rejection(
         // at the moment an operator is recovering.
         Some(rejected) => Some((
             rejected.cause.as_str(),
-            render::commit_failed(&rejected.cause, &frame.survived, &frame.rerun),
-            render::commit_failure_route(&frame.survived, &frame.rerun),
+            render::commit_failed(
+                &rejected.cause,
+                &frame.survived,
+                &frame.rerun,
+                conflicts.len(),
+            ),
+            render::commit_failure_route(&frame.survived, &frame.rerun, conflicts.len()),
         )),
         None => err.downcast_ref::<CommitFailed>().map(|failed| {
             (
                 failed.0.as_str(),
-                render::commit_failed(&failed.0, frame.non_hook_clause(), &frame.rerun),
-                render::commit_failure_route(frame.non_hook_clause(), &frame.rerun),
+                render::commit_failed(
+                    &failed.0,
+                    frame.non_hook_clause(),
+                    &frame.rerun,
+                    conflicts.len(),
+                ),
+                render::commit_failure_route(
+                    frame.non_hook_clause(),
+                    &frame.rerun,
+                    conflicts.len(),
+                ),
             )
         }),
     };

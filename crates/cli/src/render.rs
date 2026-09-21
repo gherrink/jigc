@@ -2124,8 +2124,11 @@ pub fn carried_over_advisory(carried: &[ManifestEntry]) -> String {
 /// backtick would let a title like ``Cache `rework` now`` truncate the very span a reader
 /// lifts. The fence grows past the longest backtick run inside the command line, so the
 /// delimiter is unambiguous for every prose the door can receive.
-pub fn commit_rejected(rejection: &str, survived: &str, rerun: &str) -> String {
-    format!("{rejection}\n\n{}", commit_rejection_route(survived, rerun))
+pub fn commit_rejected(rejection: &str, survived: &str, rerun: &str, surviving: usize) -> String {
+    format!(
+        "{rejection}\n\n{}",
+        commit_rejection_route(survived, rerun, surviving)
+    )
 }
 
 /// The **recovery half** of the rejection frame, on its own — everything the frame says after
@@ -2137,9 +2140,13 @@ pub fn commit_rejected(rejection: &str, survived: &str, rerun: &str) -> String {
 /// cannot drift. The `--format json` arm puts the cause in a [`Finding`]'s `message` and this
 /// sentence in its `route`, which is the decomposition the driver contract asks for: a route is
 /// data a driver can act on, not prose it has to cut out of an error string.
-pub fn commit_rejection_route(survived: &str, rerun: &str) -> String {
+pub fn commit_rejection_route(survived: &str, rerun: &str, surviving: usize) -> String {
     let fence = code_fence(rerun);
-    format!("{survived}. Fix the hook's complaint, then re-run {fence}{rerun}{fence}.")
+    format!(
+        "{}. Fix the hook's complaint{}re-run {fence}{rerun}{fence}.",
+        clause_scoped_to_the_outcome(survived, surviving),
+        follow_the_surviving_routes(surviving),
+    )
 }
 
 /// Frame a commit-transaction failure that **no hook caused** — [`commit_rejected`]'s sibling
@@ -2165,16 +2172,84 @@ pub fn commit_rejection_route(survived: &str, rerun: &str) -> String {
 ///
 /// The closing `then re-run …` shape is deliberately the rejection frame's, so the one lifter
 /// (`tests/commit_rejected_axis::lift_rerun`) reads the emitted bytes of both cells.
-pub fn commit_failed(cause: &str, survived: &str, rerun: &str) -> String {
-    format!("{cause}\n\n{}", commit_failure_route(survived, rerun))
+pub fn commit_failed(cause: &str, survived: &str, rerun: &str, surviving: usize) -> String {
+    format!(
+        "{cause}\n\n{}",
+        commit_failure_route(survived, rerun, surviving)
+    )
 }
 
 /// [`commit_rejection_route`]'s sibling for the non-hook cell — same split, same reason, and
 /// the one word that differs is the one this cell may not borrow: nothing here blames a hook,
 /// because in this cell none spoke.
-pub fn commit_failure_route(survived: &str, rerun: &str) -> String {
+pub fn commit_failure_route(survived: &str, rerun: &str, surviving: usize) -> String {
     let fence = code_fence(rerun);
-    format!("{survived}. Resolve the cause above, then re-run {fence}{rerun}{fence}.")
+    format!(
+        "{}. Resolve the cause above{}re-run {fence}{rerun}{fence}.",
+        clause_scoped_to_the_outcome(survived, surviving),
+        follow_the_surviving_routes(surviving),
+    )
+}
+
+/// **The state-truth clause as the rollback's OUTCOME makes it** (M52 completion audit, e2e
+/// Finding 2).
+///
+/// `survived` is a per-door **constant**, composed before the door's transaction ran and
+/// therefore before its rollback did. M52 Increment 5 minted the two outcomes in which that
+/// constant is false — `<door>.rollback-conflict`, where the compare-and-swap declined to
+/// overwrite a racer's bytes so jigc's own write survives, and `<door>.foreign-bytes`, where
+/// the minted-area unwind declined to remove an area holding a third party's file so the
+/// area survives — and carried them as findings *beside* the frame. Both print inside one
+/// document, so before this the document contradicted itself: driven at `c80b3f8f`,
+/// `jigc milestone create` said *"nothing of milestone:text-arm-probe survives"* one line
+/// above `milestone.rollback-conflict` naming the record that did.
+///
+/// The repair is **not** a second constant. `surviving` is `conflicts.len()` at the moment
+/// the frame is composed — one finding per path the rollback could not put back
+/// (`cli::rollback::ROLLBACK_POPULATIONS`, whose every row promises exactly that) — so the
+/// clause is a function of what the rollback actually did, at every door, on both cells of
+/// the hook axis and both carriers, from one composition.
+///
+/// **The exception opens the sentence rather than trailing it.** Appending *"…, except at
+/// one path"* leaves the door's absolute standing in the reader's first breath, which is the
+/// law-1 failure this fix is about; stating the scope first makes the door's own clause true
+/// as read. The clause itself is **kept, not replaced** — what the rollback did put back is
+/// still worth saying, and the per-path detail is the findings' job, not a second
+/// enumeration here that could disagree with them.
+///
+/// **The name deliberately carries no restore vocabulary.** This function puts no byte back —
+/// it composes prose — and `crates/cli/tests/rollback_population_registry.rs` scans production
+/// source for units whose name contains `rollback` / `restore` / `unwind`, fail-closed by
+/// design. An earlier spelling (`scoped_to_the_rollback`) was caught by that scan, and the
+/// answer was to name the function after what it does rather than to disposition a renderer
+/// into a registry whose subject is byte restoration.
+fn clause_scoped_to_the_outcome(survived: &str, surviving: usize) -> String {
+    if surviving == 0 {
+        return survived.to_string();
+    }
+    let paths = if surviving == 1 { "path" } else { "paths" };
+    format!(
+        "apart from the {surviving} {paths} named below, which survived the rollback: \
+         {survived}"
+    )
+}
+
+/// The recovery instruction's own outcome-dependent half: with something left standing, the
+/// re-run is prescribed **behind** the survivors' routes rather than bare.
+///
+/// It is not decoration. Driven at `c80b3f8f`, the bare re-run the frame printed was refused
+/// in both shapes — `milestone.record-exists` over the record a `FileCas` swap had left
+/// standing, `task.serial-collision` over the area a `MintedSet` unwind had left standing —
+/// so the frame's third part promised a command the state it had just described forbids.
+/// Each surviving path's own finding already carries the route that clears it
+/// (`settle-record.md` → §2: *"the honest cost rides the route"*), so this sentence names
+/// them rather than restating what they say.
+fn follow_the_surviving_routes(surviving: usize) -> &'static str {
+    if surviving == 0 {
+        ", then "
+    } else {
+        " and follow each surviving path's route below, then "
+    }
 }
 
 /// The **machine arm** of the two frames above: a committing door's refusal as the [`Finding`]
