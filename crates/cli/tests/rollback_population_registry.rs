@@ -284,7 +284,7 @@ const NOT_A_POPULATION: &[(&str, &str, usize, &str)] = &[
     (
         "crates/engine/src/state.rs",
         "unwind_area",
-        3,
+        2,
         "the `MintedSet` sink: it removes the area's own `engine::state::WorkArea` row and \
          then the directory non-recursively, so a third party's file survives by \
          construction. It puts no byte back — the two rows that call it do, and their \
@@ -297,6 +297,17 @@ const NOT_A_POPULATION: &[(&str, &str, usize, &str)] = &[
         "the same sink's `docs/` arm, where the staged instances and the provenance manifest \
          are removed entry by entry under `TASK_DOCS_FILES` + `staged_doc_id` — the one \
          member of a `WorkArea` row whose shape is a tree",
+    ),
+    (
+        "crates/engine/src/state.rs",
+        "unwind_merged",
+        3,
+        "the same sink's `merged/` arm (M53 Increment 1 / T3), the milestone row's tree \
+         member: the materialized bodies `staged_doc_id` recognises are removed entry by \
+         entry, then `merged/docs` and `merged` each non-recursively. It shipped as one \
+         `remove_dir_all` and put no byte back then either — what changed is that a third \
+         party's byte under `merged/` now survives by the same construction as everywhere \
+         else in this sink",
     ),
     (
         "crates/cli/src/task.rs",

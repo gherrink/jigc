@@ -163,8 +163,9 @@ pub const TASK_DOCS_FILES: &[&str] = &[PROVENANCE_FILE];
 /// sibling row, over `.jigc/milestones/<id>/` (`settle-record.md` → D3.1, §6).
 ///
 /// **The `merged/` member is a tree, not a file** — its own rule is in
-/// [`foreign_area_paths`]' milestone arm: under `merged/`, jigc's set is the `docs/`
-/// directory [`crate::milestone::materialize`] writes, and inside that it is every entry
+/// [`foreign_area_paths`]' milestone arm, and [`unwind_merged`] removes by the identical
+/// walk: under `merged/`, jigc's set is the `docs/` directory
+/// [`crate::milestone::materialize`] writes, and inside that it is every entry
 /// [`staged_doc_id`] recognises. Nothing else.
 ///
 /// It shipped from M52 as *"jigc's wholesale, and nothing inside it is walked"*, which is an
@@ -419,7 +420,8 @@ impl std::error::Error for AreaUnwindError {
 /// nothing, and `.jigc/` is gitignored whole, so it had no second copy.
 ///
 /// **The removal is keyed on the registry, never on a hand-list.** The set is the area's own
-/// [`WorkArea::jigc_written`] row plus the `docs/` tree rule — the same membership
+/// [`WorkArea::jigc_written`] row plus its tree member's own rule ([`unwind_docs`] for a
+/// task's `docs/`, [`unwind_merged`] for a milestone's `merged/`) — the same membership
 /// [`foreign_area_paths`] reports the complement of, so the two cannot disagree about a file.
 /// A hand-list of *"what the mint wrote"* drove short at `milestone create`, whose door writes
 /// `staged-snapshot.json` and `record-commit-msg.txt` into the area **after** the mint: every
@@ -466,12 +468,11 @@ pub fn unwind_area(area: &Path, kind: WorkArea) -> Result<AreaUnwind, AreaUnwind
                 // `docs/` holds the task's staged instances next to whatever else was put
                 // there, so its own rule decides entry by entry ([`TASK_DOCS_FILES`]).
                 WorkArea::Task => unwind_docs(&path)?,
-                // `merged/` is jigc's wholesale and nothing inside it is walked — the
-                // registry row's own statement, and the reason this one arm is recursive.
-                WorkArea::Milestone => {
-                    std::fs::remove_dir_all(&path)
-                        .map_err(|err| AreaUnwindError::at(&path, err))?;
-                }
+                // `merged/` is the join's staging tree, and what jigc wrote into it is the
+                // `docs/` directory `materialize` writes and, inside that, the bodies
+                // [`staged_doc_id`] recognises — so it is walked, by the rule
+                // [`foreign_area_paths`] reports the complement of ([`unwind_merged`]).
+                WorkArea::Milestone => unwind_merged(&path)?,
             }
         } else if shape.is_file() {
             std::fs::remove_file(&path).map_err(|err| AreaUnwindError::at(&path, err))?;
@@ -484,6 +485,62 @@ pub fn unwind_area(area: &Path, kind: WorkArea) -> Result<AreaUnwind, AreaUnwind
         // the bytes survive and the caller names the area.
         Err(err) if err.kind() == std::io::ErrorKind::DirectoryNotEmpty => Ok(AreaUnwind::Foreign),
         Err(err) => Err(AreaUnwindError::at(area, err)),
+    }
+}
+
+/// [`unwind_area`]'s `merged/` arm: [`unwind_docs`]' twin, one level deeper — remove the
+/// materialized bodies [`staged_doc_id`] recognises, then `merged/docs`, then `merged`, each
+/// removal non-recursive and each tolerating a directory somebody else still has something in
+/// (M53 Increment 1 / T3; `settle-record.md` → D1.4).
+///
+/// **It shipped as `remove_dir_all(merged/)`**, on the registry row's own statement that
+/// `merged/` is *"jigc's wholesale, and nothing inside it is walked"*. That is an exclusion
+/// resting on the predicate **nothing but jigc's bytes are in `merged/`**, and the predicate
+/// is false four ways — [`MILESTONE_AREA_FILES`] carries the four with their data. The
+/// removal half inherited the exclusion from the probe half, so the two halves of one
+/// membership rule disagreed about a file: [`foreign_area_paths`] now calls
+/// `merged/docs/provenance.json` a third party's, and this arm used to take it anyway.
+///
+/// The membership asked here is [`staged_doc_id`] **alone**, never [`TASK_DOCS_FILES`], for
+/// the reason the probe states: [`crate::milestone::materialize`] writes only
+/// `<type>:<slug>.md` bodies into this tree.
+///
+/// A non-empty `merged/docs` or `merged/` is **not** an error: what is left is somebody
+/// else's, and the area's own `remove_dir` two frames up is where that becomes
+/// [`AreaUnwind::Foreign`] — one file, one answer.
+fn unwind_merged(merged: &Path) -> Result<(), AreaUnwindError> {
+    let docs = merged.join(DOCS_DIR);
+    match std::fs::symlink_metadata(&docs) {
+        // Shape is part of membership here too: a plain file or a symlink wearing `docs`'
+        // name is not the tree `materialize` writes, so nothing under it is jigc's.
+        Ok(shape) if shape.is_dir() => {
+            for entry in std::fs::read_dir(&docs).map_err(|err| AreaUnwindError::at(&docs, err))? {
+                let entry = entry.map_err(|err| AreaUnwindError::at(&docs, err))?;
+                let raw = entry.file_name();
+                let name = raw.to_string_lossy();
+                let shape = entry
+                    .file_type()
+                    .map_err(|err| AreaUnwindError::at(&entry.path(), err))?;
+                if !(shape.is_file() && staged_doc_id(&name).is_some()) {
+                    continue;
+                }
+                let path = entry.path();
+                std::fs::remove_file(&path).map_err(|err| AreaUnwindError::at(&path, err))?;
+            }
+            match std::fs::remove_dir(&docs) {
+                Ok(()) => {}
+                Err(err) if err.kind() == std::io::ErrorKind::DirectoryNotEmpty => {}
+                Err(err) => return Err(AreaUnwindError::at(&docs, err)),
+            }
+        }
+        Ok(_) => {}
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(err) => return Err(AreaUnwindError::at(&docs, err)),
+    }
+    match std::fs::remove_dir(merged) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::DirectoryNotEmpty => Ok(()),
+        Err(err) => Err(AreaUnwindError::at(merged, err)),
     }
 }
 

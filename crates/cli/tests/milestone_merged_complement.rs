@@ -1,8 +1,15 @@
-//! M53 Increment 1 / T2 — **the milestone area's complement includes `merged/`: the probe
-//! walks it, and `staged_doc_id` alone decides inside it**
-//! (`completions/artifacts/M53/settle-record.md` → D1.2 as amended by §2;
+//! M53 Increment 1 / T2 + T3 — **the milestone area's `merged/` membership rule, both
+//! halves**: the probe walks `merged/` and `staged_doc_id` alone decides inside it (T2), and
+//! `engine::state::unwind_area`'s milestone arm honours the identical walk instead of
+//! `remove_dir_all` (T3)
+//! (`completions/artifacts/M53/settle-record.md` → D1.2 as amended by §2, and D1.4;
 //! `design/team-ready-state.md` → The working area's two populations;
 //! `implementation/roadmap.md` → M53 Increment 1).
+//!
+//! **Why one suite.** The probe and the removal are the two halves of one membership rule,
+//! and `foreign_area_paths`' own doc-comment claims they *cannot disagree about a file*. A
+//! claim of that shape is worth only the fixture both halves are asked over, so they are
+//! asked over the same one here.
 //!
 //! `engine::state::MILESTONE_AREA_FILES` carried `merged/` as a **tree member nothing inside
 //! was walked** — *"the join's staging area, jigc's wholesale"* — so every byte under
@@ -570,4 +577,175 @@ fn uninstall_refuses_over_every_merged_plant_and_narrates_under_force() {
         !repo.join(".jigc").exists(),
         "and the consented teardown really took `.jigc/`",
     );
+}
+
+// ---------------------------------------------------------------------------
+// T3 — the removal half: `unwind_area`'s milestone arm honours the same walk
+// ---------------------------------------------------------------------------
+
+/// Copy a tree verbatim. The pristine post-join area is expensive to build — a real
+/// two-sub-task fan-out through the binary — and the unwind under test destroys what it is
+/// handed, so each plant cell gets its own copy of the same area.
+fn copy_tree(from: &Path, to: &Path) {
+    fs::create_dir_all(to).expect("mk copy root");
+    for entry in fs::read_dir(from).expect("read the source tree") {
+        let entry = entry.expect("entry");
+        let shape = entry.file_type().expect("file type");
+        let target = to.join(entry.file_name());
+        if shape.is_dir() {
+            copy_tree(&entry.path(), &target);
+        } else {
+            fs::copy(entry.path(), &target).expect("copy file");
+        }
+    }
+}
+
+/// Plant **one** locus — [`plant_six`]'s single-cell twin, because the unwind's answer has to
+/// be `Foreign` for each cell *on its own*: six plants at once would let any one cell carry
+/// the other five, and the cell that actually matters is whichever one a real hook wrote.
+fn plant_one(area: &Path, cell: &str) {
+    let path = area.join(cell);
+    if cell == "merged/sub" {
+        fs::create_dir_all(&path).expect("plant a foreign directory");
+        fs::write(path.join("nested.txt"), "deep\n").expect("nested");
+        return;
+    }
+    fs::create_dir_all(path.parent().expect("a plant has a parent")).expect("mk plant parent");
+    fs::write(&path, format!("FOREIGN — {cell}\n")).expect("plant");
+}
+
+/// Every regular file still under `area`, relative and sorted — what the unwind left.
+fn remaining_files(area: &Path) -> Vec<PathBuf> {
+    fn walk(root: &Path, at: &Path, out: &mut Vec<PathBuf>) {
+        let Ok(entries) = fs::read_dir(at) else {
+            return;
+        };
+        for entry in entries {
+            let entry = entry.expect("entry");
+            let shape = entry.file_type().expect("file type");
+            if shape.is_dir() {
+                walk(root, &entry.path(), out);
+            } else {
+                out.push(
+                    entry
+                        .path()
+                        .strip_prefix(root)
+                        .expect("under the area")
+                        .to_path_buf(),
+                );
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(area, area, &mut out);
+    out.sort();
+    out
+}
+
+/// **An ordinary post-join area unwinds whole.** The zero-false-fire control of the removal
+/// half: a walk that kept one of jigc's own bodies would strand every rejected mint under an
+/// id its identical re-run then refuses (M47 Inc 2, the reason this is not `remove_dir_all`
+/// *and* the reason it must still remove everything jigc wrote).
+#[test]
+fn an_ordinary_post_join_area_unwinds_to_removed() {
+    let (repo_dir, _home_dir) = post_join_area("unwind-control");
+    let area = milestone_area(repo_dir.path());
+    assert!(
+        area.join("merged").join("docs").is_dir(),
+        "the fixture must really hold the join's staging tree, else this control proves \
+         nothing about the arm that walks it",
+    );
+
+    assert_eq!(
+        engine::state::unwind_area(&area, engine::state::WorkArea::Milestone)
+            .expect("the unwind reports"),
+        engine::state::AreaUnwind::Removed,
+        "an area holding nothing but jigc's own writes unwinds whole, `merged/` included; \
+         what is left: {:?}",
+        remaining_files(&area),
+    );
+    assert!(!area.exists(), "…and the area itself is gone");
+}
+
+/// **Each of the six loci survives the unwind on its own, and the area answers `Foreign`** —
+/// the removal half of T2's membership rule, asked cell by cell over the same fixture.
+///
+/// Three properties ride together, because one without the others is the shape that shipped:
+/// the plant is byte-intact (`remove_dir_all` took it), every `<type>:<slug>.md` body and
+/// every registry-row file is gone (a walk that refuses too much strands the mint), and a
+/// directory survives **iff** the plant is at or below it — one file, one answer, and the
+/// area's own non-recursive `remove_dir` is where that answer is produced.
+///
+/// The `scratch.txt` cell is also done-criterion **(c)**: `merged/` holding only jigc's
+/// bodies is fully removed while a plant at the area *root* still answers `Foreign`.
+#[test]
+fn every_merged_plant_survives_the_unwind_and_leaves_the_area_foreign() {
+    let (repo_dir, _home_dir) = post_join_area("unwind-plants");
+    let pristine = milestone_area(repo_dir.path());
+    let cases = repo_dir.path().join("unwind-cases");
+
+    for (index, (cell, why)) in PLANTS.iter().enumerate() {
+        let area = cases.join(format!("case-{index}"));
+        copy_tree(&pristine, &area);
+        plant_one(&area, cell);
+
+        let verdict = engine::state::unwind_area(&area, engine::state::WorkArea::Milestone)
+            .expect("the unwind reports");
+        let left = remaining_files(&area);
+        assert_eq!(
+            verdict,
+            engine::state::AreaUnwind::Foreign,
+            "`{cell}` ({why}) is a byte jigc did not write — the area survives and the \
+             caller is told; what is left: {left:?}",
+        );
+
+        // (1) the plant is byte-intact, at the path it was planted at.
+        if *cell == "merged/sub" {
+            assert_eq!(
+                fs::read_to_string(area.join(cell).join("nested.txt"))
+                    .expect("the foreign directory's own file survives"),
+                "deep\n",
+                "a foreign directory is the unit a door names — it is never descended and \
+                 never taken",
+            );
+        } else {
+            assert_eq!(
+                fs::read_to_string(area.join(cell)).expect("the plant survives"),
+                format!("FOREIGN — {cell}\n"),
+                "`{cell}` ({why}) must come through the unwind unread and unwritten",
+            );
+        }
+
+        // (2) everything jigc wrote is gone — the bodies and the registry row alike.
+        assert!(
+            !left.iter().any(|p| p.to_string_lossy().contains(':')),
+            "every materialized `<type>:<slug>.md` body is jigc's own and must go; left: \
+             {left:?}",
+        );
+        for member in engine::state::MILESTONE_AREA_FILES {
+            if *member == "merged" {
+                continue;
+            }
+            assert!(
+                !area.join(member).exists(),
+                "`{member}` is a registry member — a mint this unwind refuses to clear is a \
+                 mint whose identical re-run blocks on the id it already took",
+            );
+        }
+
+        // (3) a directory survives iff the plant is at or below it.
+        let under_merged = cell.starts_with("merged/");
+        let under_docs = cell.starts_with("merged/docs/");
+        assert_eq!(
+            area.join("merged").exists(),
+            under_merged,
+            "`merged/` survives iff `{cell}` is inside it — done-criterion (c) is the \
+             `scratch.txt` cell of this same rule; left: {left:?}",
+        );
+        assert_eq!(
+            area.join("merged").join("docs").exists(),
+            under_docs,
+            "`merged/docs/` survives iff `{cell}` is inside it; left: {left:?}",
+        );
+    }
 }
