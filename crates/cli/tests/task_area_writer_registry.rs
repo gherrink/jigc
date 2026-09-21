@@ -102,13 +102,16 @@ const DOCS_TREE_JOINS: &[(&str, usize, &str)] = &[
 /// the impossible in the other direction: these are the names the registry excludes.
 const COMPLEMENT_JOINS: &[(&str, usize, &str)] = &[(
     "crates/cli/src/task.rs",
-    2,
+    3,
     "`displace_foreign_area`'s `<area>.join(<complement entry>)` — the source of the move \
-     that keeps a foreign byte out of the teardown — and `foreign_areas`' own \
+     that keeps a foreign byte out of the teardown — `foreign_areas`' own \
      `<area>.join(<complement entry>)`, which absolutizes the same entries so the three \
      consenting doors can name them and re-read them after the removal (M52 Increment 4 / \
-     T5); both names come from `engine::state::foreign_area_paths`, so they are registry \
-     members' complement by construction",
+     T5), and `kept_area_finding`'s, which re-roots the post-unwind re-read's entries so the \
+     landed advisory prints them repo-relative through `render::repo_relative` rather than \
+     as bare basenames an operator cannot act on (M53 Increment 2 / T3); all three names \
+     come from `engine::state::foreign_area_paths`, so they are registry members' \
+     complement by construction",
 )];
 
 /// **The registry row itself**: production sites that join a name taken from

@@ -1382,8 +1382,15 @@ impl FinalizeSubject {
     }
 }
 
-/// One member of the **`finalize.*` family** — a blocked-finalize finding code, its producing
-/// module, and the target form it keys at.
+/// One member of the **`finalize.*` family** — a finding code the finalize doors mint, its
+/// producing module, and the target form it keys at.
+///
+/// **It read *"a blocked-finalize finding code"* until M53**, and the family gained a member
+/// that is neither blocked nor a refusal: `finalize.foreign-bytes` is an **advisory raised on
+/// the landed arm**, after the commit is truth, over a working area the teardown could not
+/// take apart (M53 Increment 2 / T3; `settle-record.md` → §4). The membership predicate below
+/// is unchanged and is what admits it — it says *mints it as a `Finding` in the `finalize.`
+/// namespace*, and says nothing about the door's verdict.
 ///
 /// **The membership predicate, stated once and derived from nowhere else:** a code is a member
 /// **iff a production (non-`#[cfg(test)]`) constructor mints it as a [`Finding`] whose code lies
@@ -1456,6 +1463,14 @@ pub const FINALIZE_FAMILY: &[FinalizeCode] = &[
         producer: "engine::finalize",
         subject: FinalizeSubject::WorkUnit,
         subject_note: "the work unit, whose staged set produced no diff",
+    },
+    FinalizeCode {
+        code: "finalize.foreign-bytes",
+        producer: "cli::task",
+        subject: FinalizeSubject::WorkUnit,
+        subject_note: "the work unit whose working area a LANDED commit could not tear down \
+                       — one advisory per area left standing, so a boundary that settles its \
+                       own area and N sub-task areas keys them apart",
     },
     FinalizeCode {
         code: "finalize.migration-no-replacement",
@@ -1938,6 +1953,13 @@ pub struct Landed {
     /// area and report their own union on [`MilestoneLanded::displaced`]; which row of
     /// `engine::state::WorkArea` decides membership travels to phase 7 **with** the unit id,
     /// so neither door has to assume the other's subject (M53 Increment 1 / T4).
+    ///
+    /// **This key is the moves that LANDED, and it deliberately does not grow** (M53 Increment
+    /// 2 / T2, T3): an entry whose move failed is not a `{from, to}` pair, and since T3 it is
+    /// not destroyed either — it stays in the area, the teardown leaves the area standing, and
+    /// the run says so through one `finalize.foreign-bytes` advisory on the `findings` array
+    /// beside this object. So *what moved* and *what was kept where it was* are two facts on
+    /// two keys, neither of which has to be inferred from the other.
     pub displaced: Vec<Displaced>,
 }
 

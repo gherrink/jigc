@@ -73,7 +73,7 @@ pub const FOREIGN_VISION_PATH: &str = "docs/direction.md";
 /// The foreign document's bytes — deliberately non-conformant (an H1 the schema
 /// does not name, a free-form `## Principles` section), so `jigc migrate` has real
 /// prose to route through the author step.
-const FOREIGN_VISION: &str = "\
+pub const FOREIGN_VISION: &str = "\
 # Product Direction
 
 We build a deterministic context compiler.
@@ -1005,7 +1005,7 @@ impl Drop for TrialCorpus {
 /// The `doc author` batch payload [`State::Migrated`] rewrites the foreign source
 /// into — the shape the `migrate-vision` step's `{{schema:vision}}` skeleton
 /// solicits, with the literal `<<…>>` slot markers it requires.
-const MIGRATED_VISION_PAYLOAD: &str = "\
+pub const MIGRATED_VISION_PAYLOAD: &str = "\
 title: Vision
 sections:
   - id: thesis

@@ -1592,7 +1592,10 @@ fn the_displacing_doors_keep_every_byte_they_cannot_commit() {
         assert!(
             door.codes.is_empty(),
             "[{}] a displacing member refuses over nothing it destroys — its answer is the \
-             move, so its code set is empty; got {:?}",
+             move, so its code set is empty. Since M53 Increment 2 / T3 both members DO mint \
+             a code, `finalize.foreign-bytes`, and it still does not belong here: `codes` is \
+             *door-scoped blocking codes the door refuses with*, and that one is a landed-arm \
+             advisory over bytes the door KEPT, raised after the commit at exit 0; got {:?}",
             door.verb,
             door.codes,
         );

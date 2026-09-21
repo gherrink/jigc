@@ -2503,7 +2503,7 @@ impl TaskArea {
         // `blocking` with one cascade line actually gates on it (the M6 post-pass runs at
         // the single `ValidationReport::new` construction point, and is idempotent over
         // already-assigned findings).
-        let report = match self.changelog_gate_advisory(id, &schemas, AdvisoryDoor::Finalize)? {
+        let mut report = match self.changelog_gate_advisory(id, &schemas, AdvisoryDoor::Finalize)? {
             None => report,
             Some(finding) => {
                 let mut findings = report.findings.into_vec();
@@ -2845,6 +2845,11 @@ impl TaskArea {
         // Increment 4 / T3) — empty on the ordinary path, and empty on every arm that never
         // reached the teardown, because nothing was removed there either.
         let mut displaced_foreign: Vec<render::Displaced> = Vec::new();
+        // One `finalize.foreign-bytes` advisory per working area phase 7 could not tear down
+        // (M53 Increment 2 / T3). Empty on the ordinary path and on every arm that never
+        // reached the teardown; at THIS door it rides the landed envelope's `findings`, which
+        // the arm below folds it into before rendering.
+        let mut kept_areas: Vec<Finding> = Vec::new();
         match try_execute_finalize_plan(
             &self.repo_root,
             &self.jigc_root,
@@ -2856,7 +2861,12 @@ impl TaskArea {
             stage,
             &mut ignore_ack,
             &mut rollback_conflicts,
-            Some((state::WorkArea::Task, &self.id, &mut displaced_foreign)),
+            Some(AreaTeardown {
+                kind: state::WorkArea::Task,
+                unit_id: &self.id,
+                moved: &mut displaced_foreign,
+                kept: &mut kept_areas,
+            }),
         )? {
             // T1 captures the aggregate hook output; the per-task relay site (T2) consumes it.
             Ok(hook_output) => {
@@ -2911,6 +2921,15 @@ impl TaskArea {
                     // ordinary path, and present either way.
                     displaced: displaced_foreign,
                 };
+                // M53 Increment 2 / T3 — the working area(s) phase 7 could not tear down,
+                // folded into the landed envelope's own `findings` array. `Findings::push`
+                // is the sanctioned post-report append: the uniqueness seam rides the
+                // projection, not the construction, and this code joins no
+                // `engine::result::CHECK_INVENTORY`, so re-running the severity post-pass
+                // over it would change nothing observable.
+                for finding in kept_areas {
+                    report.findings.push(finding);
+                }
                 print!("{}", render::finalize_landed(format, &report, &landed));
                 if format != Format::Json {
                     println!();
@@ -3833,13 +3852,12 @@ impl StagePolicy {
 /// ([`crate::gitignore::emit_ack`]).
 ///
 /// `displace` is phase 7's **keep-what-jigc-did-not-write** arm (M52 Increment 4 / T3; M53
-/// Increment 1 / T4) — the **kind** and id of the work unit whose area `cleanup_dir` is, plus
-/// the sink the moves leave by, so the landed surface can carry them as
-/// `committed.displaced`. The kind travels with the id because `cleanup_dir` is a *task* area
-/// at one door and a *milestone* area at two others, and the two rows of
-/// `engine::state::WorkArea` are what decides membership: passing the id alone left the kind
-/// to be assumed, and the assumption was hard-coded ([`post_commit`]). `None` only where no
-/// area is torn down at all.
+/// Increment 1 / T4; M53 Increment 2 / T3) — an [`AreaTeardown`]: the **kind** and id of the
+/// work unit whose area `cleanup_dir` is, plus the two sinks its outcome leaves by. The kind
+/// travels with the id because `cleanup_dir` is a *task* area at one door and a *milestone*
+/// area at two others, and the two rows of `engine::state::WorkArea` are what decides
+/// membership: passing the id alone left the kind to be assumed, and the assumption was
+/// hard-coded ([`post_commit`]). `None` only where no area is torn down at all.
 // The shared executor threads many distinct, independent facts (repo/jigc/tmp/cleanup
 // roots, the plan, schemas, the post-sweep record, the stage policy, the ignore-amend
 // report it hands back); each is a real input, not incidental coupling, so an allow is
@@ -3856,7 +3874,7 @@ pub(crate) fn try_execute_finalize_plan(
     stage: StagePolicy,
     ignore_ack: &mut Option<crate::gitignore::Ensured>,
     rollback_conflicts: &mut Vec<Finding>,
-    displace: Option<(state::WorkArea, &str, &mut Vec<render::Displaced>)>,
+    displace: Option<AreaTeardown<'_>>,
 ) -> Result<Result<String>> {
     let msg_path = msg_tmp_dir.join("finalize-message.tmp");
     std::fs::write(&msg_path, &plan.message)
@@ -6041,17 +6059,23 @@ pub(crate) fn narrate_displacement(outcome: &Displacement) {
 /// the new HEAD), then remove the `cleanup_dir` working area. Each step self-heals on
 /// failure, so a failure is logged to stderr, never raised (the commit is already truth).
 ///
-/// `displace` is the removal's **keep** arm: the `engine::state::WorkArea` row `cleanup_dir`
-/// belongs to, the unit id whose area it is, and the sink the moves leave by. Given, the
-/// complement is moved aside and narrated **before** `remove_dir_all` runs, so the door
-/// destroys only bytes it wrote.
+/// `displace` is the removal's **keep** arm ([`AreaTeardown`]): given, the complement is moved
+/// aside and narrated **before** the removal runs, and the removal itself is
+/// [`engine::state::unwind_area`] rather than `remove_dir_all`, so the door destroys only
+/// bytes it wrote (M53 Increment 2 / T3).
+///
+/// **`None` keeps `remove_dir_all`, and that is structural rather than a choice.** The unwind
+/// is keyed on the area's own `engine::state::WorkArea` registry row, so without a kind there
+/// is no membership to remove *by*. It is production-dead — all three call sites hand a
+/// subject — and reached only by the unit test that drives the rejection arm, which never
+/// gets to phase 7 at all.
 ///
 /// **The kind is a parameter because this door has two kinds of subject** (M53 Increment 1 /
 /// T4; `completions/artifacts/M53/settle-record.md` → D1.1). It shipped from M52 Increment 4 /
 /// T3 taking the id alone and hard-coding `WorkArea::Task` here, with the two milestone
 /// boundaries passing `None` on the stated ground that *"this door must not answer for a
 /// subject it was not given"*. The subject **was** given: `cleanup_dir` at both milestone call
-/// sites IS the milestone area, and the `remove_dir_all` below is what tears it down. So the
+/// sites IS the milestone area, and the removal below is what tears it down. So the
 /// sentence did not decline a subject — it declined to *look* at one it was already
 /// destroying, and driven at `ee6ef91f` a landed `jigc milestone finalize` took an operator's
 /// `merged/docs/deep.txt` out of a gitignored tree at **exit 0**, with an empty stderr, while
@@ -6063,7 +6087,7 @@ fn post_commit(
     schemas: &BTreeMap<String, Schema>,
     hash_updates: &BTreeMap<String, String>,
     post_sweep: Option<FileStateRecord>,
-    displace: Option<(state::WorkArea, &str, &mut Vec<render::Displaced>)>,
+    displace: Option<AreaTeardown<'_>>,
 ) {
     if let Err(err) = advance_file_state(repo_root, jigc_root, schemas, hash_updates, post_sweep) {
         eprintln!("note: post-commit file-state update failed (self-heals): {err:#}");
@@ -6071,17 +6095,205 @@ fn post_commit(
     if let Err(err) = engine::index::invalidate(jigc_root) {
         eprintln!("note: post-commit edge-index invalidation failed (self-heals): {err:#}");
     }
-    if let Some((kind, unit_id, sink)) = displace {
-        let outcome = displace_foreign_area(repo_root, jigc_root, cleanup_dir, kind, unit_id);
-        narrate_displacement(&outcome);
-        // The sink is the landed envelope's `displaced` key, declared as the moves that
-        // landed — so it takes `moved` alone, while the narration above answers for the
-        // whole complement (M53 Increment 2 / T2).
-        *sink = outcome.moved;
+    let Some(teardown) = displace else {
+        if let Err(err) = std::fs::remove_dir_all(cleanup_dir) {
+            eprintln!("note: post-commit working-area removal failed (self-heals): {err:#}");
+        }
+        return;
+    };
+    let outcome = displace_foreign_area(
+        repo_root,
+        jigc_root,
+        cleanup_dir,
+        teardown.kind,
+        teardown.unit_id,
+    );
+    narrate_displacement(&outcome);
+    // The area's fate is the caller's to report, not this function's to act on: the commit
+    // is truth either way, and an area left standing is named by the advisory the unwind
+    // pushes into `teardown.kept`.
+    let _gone = unwind_settled_area(
+        repo_root,
+        cleanup_dir,
+        teardown.kind,
+        teardown.unit_id,
+        &outcome,
+        teardown.kept,
+    );
+    // The sink is the landed envelope's `displaced` key, declared as the moves that
+    // landed — so it takes `moved` alone, while the narration above answers for the
+    // whole complement (M53 Increment 2 / T2).
+    *teardown.moved = outcome.moved;
+}
+
+/// Everything phase 7 needs to answer for the working area it is about to tear down — the
+/// **subject** and the two sinks its outcome leaves by (M52 Increment 4 / T3; M53 Increment 1 /
+/// T4; M53 Increment 2 / T3).
+///
+/// It is a struct rather than a tuple because it grew a second sink and the two are not
+/// interchangeable: one is the landed envelope's declared `displaced` key, the other is a
+/// findings channel whose disposition differs **by door** — `jigc task finalize` puts its
+/// entries on the landed `findings` array, and `jigc milestone finalize`, whose landed arm is
+/// pinned at `Object(&["committed"])`, narrates them on stderr instead
+/// (`completions/artifacts/M53/settle-record.md` → D2.5).
+pub(crate) struct AreaTeardown<'a> {
+    /// Which registry row `cleanup_dir`'s membership is decided by.
+    pub(crate) kind: state::WorkArea,
+    /// The work unit whose area it is — the advisory's target, and the parking home's name.
+    pub(crate) unit_id: &'a str,
+    /// The moves that landed, for `committed.displaced`.
+    pub(crate) moved: &'a mut Vec<render::Displaced>,
+    /// One `finalize.foreign-bytes` advisory per area this teardown left standing
+    /// ([`kept_area_finding`]).
+    pub(crate) kept: &'a mut Vec<Finding>,
+}
+
+/// **The removal is conditioned on the move** — remove what jigc wrote into `area` and then
+/// the area, and where that leaves the area standing, say so (M53 Increment 2 / T3;
+/// `completions/artifacts/M53/settle-record.md` → D2.3/D2.4 as amended by §6, §7).
+///
+/// This shipped as `remove_dir_all`, which is the one call that makes the displacement above
+/// decorative: an entry whose move failed was taken a statement later by the very teardown the
+/// move existed to spare it from, out of a gitignored tree with no second copy, at exit 0.
+/// [`engine::state::unwind_area`] removes the area's own registry row and then the directory
+/// through a non-recursive `remove_dir`, so a third party's bytes survive **by construction**
+/// rather than by a check — the same discipline M52 Increment 5 already applied one door over
+/// (`design/finalize.md` → Rollback discipline).
+///
+/// **Both non-clean answers raise the advisory**, `Foreign` and `Err` alike: the operator's
+/// subject is one state — *a landed commit, and a working area kept because jigc could not
+/// take it apart* — and the recovery is the same act in both. What differs is what the area
+/// still holds, which is why the message is composed from a **re-read after the unwind**
+/// rather than from the move's failure set (§6): the `Foreign` variant carries no paths, and
+/// the cell that motivates the whole rule reports **zero** move failures — a `pre-commit` hook
+/// that writes into the area during the commit can also leave it unreadable, so the
+/// displacement enumerates nothing at all and the area still survives its own teardown.
+///
+/// Returns whether the area is **gone** — the fact a caller that acks a teardown keys its ack
+/// on, never on having run the loop.
+pub(crate) fn unwind_settled_area(
+    repo_root: &Path,
+    area: &Path,
+    kind: state::WorkArea,
+    unit_id: &str,
+    outcome: &Displacement,
+    kept: &mut Vec<Finding>,
+) -> bool {
+    match state::unwind_area(area, kind) {
+        Ok(state::AreaUnwind::Absent | state::AreaUnwind::Removed) => true,
+        Ok(state::AreaUnwind::Foreign) => {
+            kept.push(kept_area_finding(
+                repo_root, area, kind, unit_id, outcome, None,
+            ));
+            false
+        }
+        Err(err) => {
+            kept.push(kept_area_finding(
+                repo_root,
+                area,
+                kind,
+                unit_id,
+                outcome,
+                Some(&err),
+            ));
+            false
+        }
     }
-    if let Err(err) = std::fs::remove_dir_all(cleanup_dir) {
-        eprintln!("note: post-commit working-area removal failed (self-heals): {err:#}");
+}
+
+/// `finalize.foreign-bytes` — the identity a **landed** committing door raises over a working
+/// area it could not tear down (M53 Increment 2 / T3; `settle-record.md` → D2.4 as amended by
+/// §4, §5). The code is written here as a literal rather than through a const because
+/// `crates/cli/tests/finalize_family_registry.rs` derives the family by scanning production
+/// source for `Finding` constructors and reading their **code string literals**; a member
+/// built from a const is invisible to it, which is that suite's own declared bound (a).
+///
+/// **One code for one state, at both displacing doors.** `crate::milestone`'s sibling rule —
+/// *a second spelling would make one state answer two ways* — keys a code on the state **and
+/// its route**, and the two `Disposition::Displace` doors reach one state through one seam
+/// ([`unwind_settled_area`]) with one route: move the path out by hand. It is emphatically not
+/// the mint-unwind state (`milestone.foreign-bytes` — nothing was committed there, and that
+/// route says so) nor the discard state (a refusal *before* anything is removed).
+///
+/// **Advisory, and the exit stays 0** (`design/command-output-contract.md` → the exit
+/// taxonomy): the commit is truth, the landed arm is exit 0, and a kept byte is not a reason
+/// to tell a driver the run failed. It joins [`crate::render::FINALIZE_FAMILY`] and **not**
+/// `crate::invocation_log::ERROR_CODE_REGISTRY`, which is the committing doors' commit-phase
+/// *outcome* vocabulary — the rule this file already states one family over: a finding carried
+/// beside a door's own result joins neither that registry nor `CHECK_INVENTORY`.
+fn kept_area_finding(
+    repo_root: &Path,
+    area: &Path,
+    kind: state::WorkArea,
+    unit_id: &str,
+    outcome: &Displacement,
+    fault: Option<&state::AreaUnwindError>,
+) -> Finding {
+    let listed = render::repo_relative(repo_root, area);
+    let target = match kind {
+        state::WorkArea::Task => work_unit_ref(unit_id),
+        state::WorkArea::Milestone => format!("milestone:{unit_id}"),
+    };
+    // §6 — the subject is what is in the area NOW. `AreaUnwind::Foreign` carries no paths,
+    // and the move's failure set is empty on the cell that motivates the rule.
+    let mut message = match state::foreign_area_paths(area, kind) {
+        Ok(held) if held.is_empty() => format!(
+            "`{listed}` was left standing after the commit landed, holding nothing but jigc's \
+             own working files — `.jigc/` is gitignored, so nothing else has a copy of what \
+             is there"
+        ),
+        Ok(held) => format!(
+            "`{listed}` holds {} path(s) jigc did not write, so the working area was left \
+             standing rather than removed with them — `.jigc/` is gitignored, so nothing else \
+             has a copy of what is there: {}",
+            held.len(),
+            // `foreign_area_paths` answers **relative to the area**, and law 1's printed-path
+            // rule has one home: re-root each entry and render it through
+            // `render::repo_relative`, which is also the spelling the operator needs — a bare
+            // `notes.txt` names nothing they can act on.
+            held.iter()
+                .map(|path| format!("`{}`", render::repo_relative(repo_root, &area.join(path))))
+                .collect::<Vec<_>>()
+                .join(", "),
+        ),
+        Err(err) => format!(
+            "`{listed}` was left standing after the commit landed and could not be read to \
+             say what is in it ({err}) — `.jigc/` is gitignored, so nothing else has a copy of \
+             what is there"
+        ),
+    };
+    if let Some(err) = fault {
+        message.push_str(&format!(
+            "; the teardown stopped at `{}` ({}), leaving the rest of the area as found",
+            render::repo_relative(repo_root, &err.path),
+            err.source,
+        ));
     }
+    // The failing move's reason, named **where one exists** (§6): the `Foreign` cell reached
+    // by a hook's write reports none, and a sentence asserting one would be false there.
+    if !outcome.unmoved.is_empty() {
+        message.push_str(&format!(
+            "; {} of them could not be moved aside: {}",
+            outcome.unmoved.len(),
+            outcome
+                .unmoved
+                .iter()
+                .map(|entry| format!("`{}` — {}", entry.path, entry.reason))
+                .collect::<Vec<_>>()
+                .join(", "),
+        ));
+    }
+    Finding::graded(
+        Severity::Advisory,
+        "finalize.foreign-bytes",
+        message,
+        Some(Location::addressed(target, 1, 1)),
+        Some(engine::finding::Route::human(format!(
+            "the commit landed and nothing in it is affected. Keep what you need from \
+             `{listed}` and delete the rest — jigc mints no verb that clears it, because what \
+             is in there is not jigc's to judge"
+        ))),
+    )
 }
 
 /// Record the committed working set into the `file-state` record and save it. The plan's

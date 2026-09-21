@@ -31,6 +31,20 @@
 //! sub-task areas hold nothing but jigc's own files carries `displaced: []` — present
 //! always, so a driver never has to guess which of the two it is reading — and says nothing
 //! on stderr at all.
+//!
+//! **M53 Increment 2 / T3 — the removal is conditioned on the move.** Until then the teardown
+//! after the displacement was a `remove_dir_all`, so an entry whose move failed was destroyed
+//! by the very removal the move existed to spare it from. The cells below drive that claim at
+//! this door over the axis `{all · some · none} × {clean · fault on the pin · fault on a later
+//! member}`, at **both** `finalize.fan-out.squash` arms, applying each manufacture to **both**
+//! kinds of area the boundary settles — its own `milestones/<id>/` and every
+//! `tasks/<sub-id>/`. The two kinds ride one run because they are one boundary: separating
+//! them would be a second fan-out fixture asserting the identical predicate, and each cell
+//! asserts them apart (one advisory per area, each keyed at its own work unit). Three named
+//! cells sit beside the axis: **D1×D2** (a foreign byte under `merged/` whose move failed
+//! survives a landed boundary — the cell that makes Increment 1's `unwind_merged` arm
+//! reachable), the **`Take` carve-out** (`milestone discard --force` still takes and still
+//! acks), and §13's post-join control.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -531,6 +545,12 @@ fn a_landed_milestone_boundary_keeps_every_byte_of_its_own_area_it_did_not_write
     }
 }
 
+/// The omitting cell — **and §13's third zero-false-fire control, driven end to end** (M53
+/// Increment 2 / T3): an ordinary post-join milestone area, `merged/` included, unwinds whole
+/// at a landed boundary, mints no advisory and leaves nothing behind. Its sibling controls (an
+/// ordinary task lifecycle, a migrate task) are discharged at the per-task door, in
+/// `crates/cli/tests/finalize_displacement.rs` →
+/// `the_section_13_controls_mint_no_advisory_end_to_end`.
 #[test]
 fn a_landed_boundary_with_no_foreign_byte_carries_an_empty_displaced_key() {
     let repo = TempDir::new("clean");
@@ -564,5 +584,620 @@ fn a_landed_boundary_with_no_foreign_byte_carries_an_empty_displaced_key() {
     assert!(
         !repo.path().join(".jigc").join("displaced").exists(),
         "nothing moved, so the parking home is never created",
+    );
+
+    // §13's control, the half that is this task's: every area the boundary settled unwound
+    // WHOLE and no advisory was minted about any of them. The regression it catches is the
+    // opposite of every cell above — `unwind_area` answering `Foreign` over an ordinary area
+    // would leave every finalized milestone's workbench standing.
+    for path in all_areas(repo.path()) {
+        assert!(
+            !path.exists(),
+            "an area holding nothing but jigc's own writes unwinds whole: `{}` is gone;\n\
+             stderr:\n{stderr}",
+            path.display(),
+        );
+    }
+    assert!(
+        !stderr.contains(KEPT_AREA_CODE),
+        "…and the ordinary boundary mints no `{KEPT_AREA_CODE}` at all;\nstderr:\n{stderr}",
+    );
+}
+
+// ---------------------------------------------------------------------------
+// M53 Increment 2 / T3 — the removal is conditioned on the move
+// ---------------------------------------------------------------------------
+
+/// The marker every T3 plant carries, so survival is claimed by a real `grep` over the whole
+/// repository rather than by looking where the test expects the bytes to be — a before-control
+/// runs the identical scan before the boundary, so a green cannot come from a scan that finds
+/// nothing anywhere.
+const KEEP_MARKER: &str = "JIGC-M53-KEEP";
+
+/// The advisory this pass mints.
+const KEPT_AREA_CODE: &str = "finalize.foreign-bytes";
+
+/// A plant at an area's **root** — the depth every door has reached since M52.
+const ROOT_KEEP: (&str, &str) = ("root-kept.txt", "JIGC-M53-KEEP root\n");
+
+/// A plant one directory down, whose complement **entry** is the directory: it moves whole.
+const NESTED_KEEP: (&str, &str) = ("analysis/perf.txt", "JIGC-M53-KEEP nested\n");
+
+/// A sub-task area's plant inside the registry's one tree member.
+const SUB_DOCS_KEEP: (&str, &str) = ("docs/non-md.txt", "JIGC-M53-KEEP under docs\n");
+
+/// The **milestone** area's twin of [`SUB_DOCS_KEEP`], one level deeper: the join's staging
+/// tree, beside the bodies `materialize` actually writes. This is D1's walk and D2's removal
+/// meeting — cell **D1×D2**.
+const MERGED_KEEP: (&str, &str) = (
+    "merged/docs/deep.txt",
+    "JIGC-M53-KEEP beside a materialized body\n",
+);
+
+/// How much of an area's complement reached `.jigc/displaced/<unit-id>/`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Moves {
+    All,
+    Partial,
+    None,
+}
+
+/// What `engine::state::unwind_area` did with jigc's own members.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Unwind {
+    Clean,
+    /// The removal failed on the registry row's member 0, the base pin — the area stands
+    /// **whole**.
+    FaultOnPin,
+    /// The removal failed on a later member, after the pin was already gone: the task row's
+    /// `docs/`, the milestone row's `merged/`.
+    FaultOnLater,
+}
+
+/// One coordinate of the manufactured axis, and the manufacture it needs, applied to **both**
+/// kinds of area this door settles — its own `milestones/<id>/` and every `tasks/<sub-id>/`.
+///
+/// **Manufactured, and it says so**: the two failure points are decided (the pin is member 0
+/// of each registry row; the tree member is a later one), and the move axis is a property of
+/// the parking home's state, which no registry enumerates.
+struct BoundaryCell {
+    name: &'static str,
+    moves: Moves,
+    unwind: Unwind,
+    /// What is planted in each **sub-task** area.
+    sub_plants: &'static [(&'static str, &'static str)],
+    /// What is planted in the **milestone** area.
+    milestone_plants: &'static [(&'static str, &'static str)],
+    /// When set, every unit's parking home `.jigc/displaced/<unit-id>` is occupied by a
+    /// regular file before the boundary runs, so no entry's parent can be created.
+    block_parking: bool,
+}
+
+/// **The reachable coordinates** — seven of nine; [`UNREACHABLE`] names the other two.
+const BOUNDARY_CELLS: &[BoundaryCell] = &[
+    BoundaryCell {
+        name: "all move × unwind clean",
+        moves: Moves::All,
+        unwind: Unwind::Clean,
+        sub_plants: &[ROOT_KEEP, NESTED_KEEP],
+        milestone_plants: &[ROOT_KEEP, MERGED_KEEP],
+        block_parking: false,
+    },
+    BoundaryCell {
+        name: "some move × unwind clean",
+        moves: Moves::Partial,
+        unwind: Unwind::Clean,
+        sub_plants: &[ROOT_KEEP, SUB_DOCS_KEEP],
+        milestone_plants: &[ROOT_KEEP, MERGED_KEEP],
+        // Manufactured per area by `occupy_partial`: one entry's parking PARENT is a regular
+        // file, so exactly that entry's move cannot land.
+        block_parking: false,
+    },
+    BoundaryCell {
+        name: "none move × unwind clean",
+        moves: Moves::None,
+        unwind: Unwind::Clean,
+        sub_plants: &[ROOT_KEEP, NESTED_KEEP],
+        milestone_plants: &[ROOT_KEEP, MERGED_KEEP],
+        block_parking: true,
+    },
+    BoundaryCell {
+        name: "all move × fault on a later member",
+        moves: Moves::All,
+        unwind: Unwind::FaultOnLater,
+        sub_plants: &[ROOT_KEEP, NESTED_KEEP],
+        milestone_plants: &[ROOT_KEEP],
+        block_parking: false,
+    },
+    BoundaryCell {
+        name: "some move × fault on a later member",
+        moves: Moves::Partial,
+        unwind: Unwind::FaultOnLater,
+        // No parking game: the plant inside the tree member cannot move because the tree
+        // member is the directory the fault is made in, and a rename needs the SOURCE
+        // directory writable.
+        sub_plants: &[ROOT_KEEP, SUB_DOCS_KEEP],
+        milestone_plants: &[ROOT_KEEP, MERGED_KEEP],
+        block_parking: false,
+    },
+    BoundaryCell {
+        name: "none move × fault on a later member",
+        moves: Moves::None,
+        unwind: Unwind::FaultOnLater,
+        sub_plants: &[ROOT_KEEP, NESTED_KEEP],
+        milestone_plants: &[ROOT_KEEP],
+        block_parking: true,
+    },
+    BoundaryCell {
+        name: "none move × fault on the pin",
+        moves: Moves::None,
+        unwind: Unwind::FaultOnPin,
+        // No parking game either: an area that cannot be written to is an area no entry can
+        // be renamed out of, which is the same bit the pin's removal needs.
+        sub_plants: &[ROOT_KEEP, NESTED_KEEP],
+        milestone_plants: &[ROOT_KEEP],
+        block_parking: false,
+    },
+];
+
+/// **The two coordinates no filesystem produces**, named rather than silently absent.
+const UNREACHABLE: &[(&str, &str)] = &[
+    (
+        "all move × fault on the pin",
+        "the pin's `remove_file` and every entry's `fs::rename` out of the area draw on the \
+         SAME bit — write permission on the area — so an area whose pin cannot be removed is \
+         an area no entry can leave",
+    ),
+    (
+        "some move × fault on the pin",
+        "the same bit, for the same reason: with the area writable the pin goes, and without \
+         it no entry moves",
+    ),
+];
+
+/// Every file under `repo` carrying [`KEEP_MARKER`], repo-relative and sorted — the survival
+/// scan, run through the real `grep`.
+fn marker_files(repo: &Path) -> Vec<String> {
+    let out = Command::new("grep")
+        .args(["-rlE", KEEP_MARKER, "."])
+        .current_dir(repo)
+        .output()
+        .expect("run grep");
+    let mut found: Vec<String> = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(|line| line.trim_start_matches("./").to_owned())
+        .filter(|line| !line.is_empty())
+        .collect();
+    found.sort();
+    found
+}
+
+/// Set `path`'s mode, for the permission games the fault cells need.
+///
+/// **Declared bound, the one `leftover_probe_fail_closed.rs` already carries:** run as `root`,
+/// permission bits do not bind and the fault cells would not fault — the assertions below then
+/// fail loudly rather than passing vacuously, because each one names the area it expects to
+/// still be there.
+fn set_mode(path: &Path, mode: u32) {
+    let mut perms = fs::metadata(path)
+        .unwrap_or_else(|err| panic!("stat {}: {err}", path.display()))
+        .permissions();
+    std::os::unix::fs::PermissionsExt::set_mode(&mut perms, mode);
+    fs::set_permissions(path, perms)
+        .unwrap_or_else(|err| panic!("chmod {}: {err}", path.display()));
+}
+
+/// Plant `plants` into `area`.
+fn plant_into(area: &Path, plants: &[(&str, &str)]) {
+    for (rel, body) in plants {
+        let at = area.join(rel);
+        if let Some(parent) = at.parent() {
+            fs::create_dir_all(parent).expect("mkdir plant parent");
+        }
+        fs::write(&at, body).expect("write plant");
+    }
+}
+
+/// Occupy `<repo>/.jigc/displaced/<unit>` with a regular file, so no entry's parking parent
+/// can be created and **nothing** moves.
+fn block_parking_home(repo: &Path, unit: &str) {
+    let home = repo.join(".jigc").join("displaced");
+    fs::create_dir_all(&home).expect("mk parking root");
+    fs::write(home.join(unit), "not a directory\n").expect("occupy the parking home");
+}
+
+/// Occupy one entry's parking **parent** with a regular file, so exactly that entry's move
+/// cannot land while every other entry's can — the `some` value of the move axis.
+fn occupy_partial(repo: &Path, unit: &str, parent_rel: &str) {
+    let at = repo
+        .join(".jigc")
+        .join("displaced")
+        .join(unit)
+        .join(parent_rel);
+    fs::create_dir_all(at.parent().expect("the occupant has a parent")).expect("mk parking home");
+    fs::write(&at, "not a directory\n").expect("occupy the parking parent");
+}
+
+/// Install a `pre-commit` hook that chmods each `target` to 0555 **inside** the transaction —
+/// the only moment at which the fault can be made, since the finalize writes its message temp
+/// file into the milestone area before the commit and a mode set beforehand would fail the run
+/// instead of the teardown.
+fn install_faulting_hook(repo: &Path, targets: &[PathBuf]) {
+    let hooks = repo.join(".git").join("hooks");
+    fs::create_dir_all(&hooks).expect("mk hooks dir");
+    let mut body = String::from("#!/bin/sh\n");
+    for target in targets {
+        body.push_str(&format!("chmod 0555 {} 2>/dev/null\n", target.display()));
+    }
+    body.push_str("exit 0\n");
+    let hook = hooks.join("pre-commit");
+    fs::write(&hook, body).expect("install the faulting hook");
+    set_mode(&hook, 0o755);
+}
+
+/// The tree member whose removal is the later-member fault, per kind.
+fn later_member(area: &Path, milestone: bool) -> PathBuf {
+    if milestone {
+        area.join("merged").join("docs")
+    } else {
+        area.join("docs")
+    }
+}
+
+/// Every area this boundary settles — the milestone's own and each sub-task's.
+fn all_areas(repo: &Path) -> Vec<PathBuf> {
+    let mut areas = vec![milestone_area(repo)];
+    areas.extend(SUBS.iter().map(|sub| area(repo, sub)));
+    areas
+}
+
+/// Drive one cell through a real landed `jigc milestone finalize` at `squash`, and assert it.
+fn assert_boundary_cell(cell: &BoundaryCell, squash: bool) {
+    let label = format!("{} · squash: {squash}", cell.name);
+    let root = TempDir::new("t3");
+    let repo = root.path();
+    init_repo(repo);
+    let home = TempDir::new("home");
+    setup_fanout(repo, home.path(), squash, false);
+
+    for sub in SUBS {
+        plant_into(&area(repo, sub), cell.sub_plants);
+    }
+    plant_into(&milestone_area(repo), cell.milestone_plants);
+
+    if cell.block_parking {
+        block_parking_home(repo, MILESTONE);
+        for sub in SUBS {
+            block_parking_home(repo, sub);
+        }
+    }
+    if cell.moves == Moves::Partial && cell.unwind == Unwind::Clean {
+        for sub in SUBS {
+            occupy_partial(repo, sub, "docs");
+        }
+        occupy_partial(repo, MILESTONE, "merged/docs");
+    }
+
+    let faulted: Vec<PathBuf> = match cell.unwind {
+        Unwind::Clean => Vec::new(),
+        Unwind::FaultOnPin => all_areas(repo),
+        Unwind::FaultOnLater => {
+            let mut targets = vec![later_member(&milestone_area(repo), true)];
+            targets.extend(SUBS.iter().map(|sub| later_member(&area(repo, sub), false)));
+            targets
+        }
+    };
+    if !faulted.is_empty() {
+        install_faulting_hook(repo, &faulted);
+    }
+
+    let planted = cell.sub_plants.len() * SUBS.len() + cell.milestone_plants.len();
+    let before = marker_files(repo);
+    assert_eq!(
+        before.len(),
+        planted,
+        "[{label}] the before-control must FIND the plants — a scan that finds nothing before \
+         proves nothing after; got {before:?}",
+    );
+
+    let finalized = run_milestone(
+        repo,
+        home.path(),
+        &["finalize", MILESTONE, "--format", "json"],
+    );
+    // Hand the write bits back before anything else reads or removes the tree.
+    for target in &faulted {
+        if target.exists() {
+            set_mode(target, 0o755);
+        }
+    }
+    for path in all_areas(repo) {
+        if path.exists() {
+            set_mode(&path, 0o755);
+        }
+    }
+    let stdout = String::from_utf8_lossy(&finalized.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&finalized.stderr).into_owned();
+
+    // (1) The commit is truth and the teardown is best-effort, so the boundary lands at exit 0
+    //     whatever its areas do.
+    assert!(
+        finalized.status.success(),
+        "[{label}] the boundary must land at exit 0;\nstdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+
+    // (2) Every planted byte is still on disk — moved aside or left standing, never taken.
+    let after = marker_files(repo);
+    assert_eq!(
+        after.len(),
+        before.len(),
+        "[{label}] every planted byte survives the landed boundary; before {before:?}, after \
+         {after:?}\nstderr:\n{stderr}",
+    );
+
+    // (3) The cell's own MOVE coordinate, asserted rather than assumed: a manufacture that
+    //     silently stopped working would otherwise let a fault cell pass while testing a
+    //     different coordinate. Each plant is exactly one complement entry here.
+    let expected_moves = match cell.moves {
+        Moves::All => planted,
+        // One root entry per area lands; the one inside each area's tree member does not.
+        Moves::Partial => SUBS.len() + 1,
+        Moves::None => 0,
+    };
+    assert_eq!(
+        envelope_pairs(&stdout).len(),
+        expected_moves,
+        "[{label}] the cell's move coordinate must really be the one it claims;\n\
+         stdout:\n{stdout}",
+    );
+
+    // (4) Exactly one advisory per area left standing, on stderr — this door's landed arm
+    //     carries no `findings` key.
+    let standing: Vec<PathBuf> = all_areas(repo).into_iter().filter(|a| a.exists()).collect();
+    let expected_standing = if cell.moves == Moves::All && cell.unwind == Unwind::Clean {
+        0
+    } else {
+        1 + SUBS.len()
+    };
+    assert_eq!(
+        standing.len(),
+        expected_standing,
+        "[{label}] an area jigc could not empty of a third party's bytes is LEFT, and one it \
+         emptied is gone; standing: {standing:?}\nstderr:\n{stderr}",
+    );
+    assert_eq!(
+        stderr.matches(KEPT_AREA_CODE).count(),
+        expected_standing,
+        "[{label}] exactly one `{KEPT_AREA_CODE}` per area left standing, on stderr;\n\
+         stderr:\n{stderr}",
+    );
+    for path in &standing {
+        let unit = path
+            .file_name()
+            .expect("an area has a name")
+            .to_string_lossy();
+        let target = if path.starts_with(repo.join(".jigc").join("milestones")) {
+            format!("milestone:{unit}")
+        } else {
+            format!("task:{unit}")
+        };
+        assert!(
+            stderr.contains(&target),
+            "[{label}] …each keyed at its OWN work unit (`{target}`), so a boundary that \
+             settles three areas hands a reader three keys;\nstderr:\n{stderr}",
+        );
+    }
+
+    // (5) The pinned landed envelope does not move for the advisory.
+    let envelope: serde_json::Value =
+        serde_json::from_str(&stdout).expect("the landed envelope is one JSON value");
+    let mut keys: Vec<String> = envelope
+        .as_object()
+        .expect("the landed envelope is an object")
+        .keys()
+        .cloned()
+        .collect();
+    keys.sort();
+    assert_eq!(
+        keys,
+        vec!["committed".to_string()],
+        "[{label}] the landed `milestone finalize` envelope stays \
+         `Object(&[\"committed\"])`;\nstdout:\n{stdout}",
+    );
+
+    // (6) The pin's fate is what separates the two fault cells, and it is what a by-id door
+    //     reads: a whole area with its pin, or a residual.
+    for path in &standing {
+        assert_eq!(
+            path.join("base.json").exists(),
+            cell.unwind == Unwind::FaultOnPin,
+            "[{label}] a fault ON the pin leaves `{}` whole; a clean unwind and a fault on a \
+             LATER member both take the pin first",
+            path.display(),
+        );
+    }
+}
+
+/// The axis's gaps are named — the seven driven cells read as seven of nine.
+#[test]
+fn the_boundary_axis_names_its_unreachable_coordinates() {
+    assert_eq!(
+        BOUNDARY_CELLS.len() + UNREACHABLE.len(),
+        9,
+        "the manufactured space is `{{all · partial · none}} × {{clean · fault on the pin · \
+         fault on a later member}}` — nine coordinates, each either driven or declared \
+         unreachable",
+    );
+    for (name, why) in UNREACHABLE {
+        assert!(
+            !why.trim().is_empty(),
+            "`{name}` must carry the reason it cannot be manufactured",
+        );
+        assert!(
+            !BOUNDARY_CELLS.iter().any(|cell| cell.name == *name),
+            "`{name}` is declared unreachable and driven — it is one or the other",
+        );
+    }
+}
+
+/// Drive one cell at **both** `finalize.fan-out.squash` arms — the axis the sink has.
+fn assert_both_arms(cell: &BoundaryCell) {
+    assert_boundary_cell(cell, true);
+    assert_boundary_cell(cell, false);
+}
+
+#[test]
+fn boundary_areas_all_move_unwind_clean() {
+    assert_both_arms(&BOUNDARY_CELLS[0]);
+}
+
+#[test]
+fn boundary_areas_some_move_unwind_clean() {
+    assert_both_arms(&BOUNDARY_CELLS[1]);
+}
+
+#[test]
+fn boundary_areas_none_move_unwind_clean() {
+    assert_both_arms(&BOUNDARY_CELLS[2]);
+}
+
+#[test]
+fn boundary_areas_all_move_fault_on_a_later_member() {
+    assert_both_arms(&BOUNDARY_CELLS[3]);
+}
+
+#[test]
+fn boundary_areas_some_move_fault_on_a_later_member() {
+    assert_both_arms(&BOUNDARY_CELLS[4]);
+}
+
+#[test]
+fn boundary_areas_none_move_fault_on_a_later_member() {
+    assert_both_arms(&BOUNDARY_CELLS[5]);
+}
+
+#[test]
+fn boundary_areas_none_move_fault_on_the_pin() {
+    assert_both_arms(&BOUNDARY_CELLS[6]);
+}
+
+/// **Cell D1×D2** (M53 Increment 2 / T3; `completions/artifacts/M53/settle-record.md` → D1.4,
+/// D2's acceptance axis) — *a foreign byte under `merged/` whose move failed survives a landed
+/// `milestone finalize`*.
+///
+/// This is where Increment 1's widened walk and Increment 2's conditioned removal meet, and
+/// it is the cell that makes Increment 1 / T3's `unwind_merged` arm **reachable**: that arm
+/// was conceded unreachable at HEAD, and true only until this task replaced the boundary's
+/// `remove_dir_all` with the unwind. Before it, a `merged/docs/deep.txt` whose move could not
+/// land was taken by the teardown a statement later, at exit 0, out of a gitignored tree with
+/// no second copy.
+///
+/// The plant is *only* under `merged/`, so nothing at the area root can carry the claim.
+#[test]
+fn a_failed_merged_move_survives_a_landed_boundary() {
+    let root = TempDir::new("d1xd2");
+    let repo = root.path();
+    init_repo(repo);
+    let home = TempDir::new("home");
+    setup_fanout(repo, home.path(), true, false);
+
+    plant_into(&milestone_area(repo), &[MERGED_KEEP]);
+    // The move cannot land: the entry's parking parent is a regular file.
+    occupy_partial(repo, MILESTONE, "merged/docs");
+
+    let before = marker_files(repo);
+    assert_eq!(
+        before,
+        vec![format!(".jigc/milestones/{MILESTONE}/{}", MERGED_KEEP.0)],
+        "the before-control finds the plant exactly where it was planted",
+    );
+
+    let finalized = run_milestone(
+        repo,
+        home.path(),
+        &["finalize", MILESTONE, "--format", "json"],
+    );
+    let stdout = String::from_utf8_lossy(&finalized.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&finalized.stderr).into_owned();
+    assert!(
+        finalized.status.success(),
+        "the boundary lands at exit 0;\nstdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+
+    assert_eq!(
+        marker_files(repo),
+        before,
+        "the byte is still exactly where it was — its move failed, so the teardown left it \
+         rather than taking it;\nstderr:\n{stderr}",
+    );
+    assert!(
+        milestone_area(repo).join(MERGED_KEEP.0).exists(),
+        "…and `merged/` itself survives with it, because `remove_dir` refuses a non-empty \
+         directory;\nstderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains(KEPT_AREA_CODE) && stderr.contains(&format!("milestone:{MILESTONE}")),
+        "one advisory names the milestone's own area;\nstderr:\n{stderr}",
+    );
+    assert!(
+        !milestone_area(repo).join("tasks.json").exists(),
+        "jigc's own members are still removed — the unwind is conditioned on the MOVE, not \
+         skipped wholesale",
+    );
+}
+
+/// **The `Take` carve-out** (`settle-record.md` → §3) — `jigc milestone discard --force` still
+/// removes a sub-task area's foreign byte and still acks *workbench removed*.
+///
+/// `cleanup_subtask_areas` has three callers on two kinds of path, and the disposition is read
+/// off the **call**, never off the function: the two landed boundary arms displace-then-unwind,
+/// and this one takes. Its own doc-comment says why — *"a disposition read off the function
+/// instead of the call would silently re-decide `jigc milestone discard`"* — and `--force` at
+/// that door **is** the consent for exactly these bytes, given after its guard named them.
+/// Unwinding here instead would leave the operator's abandoned workbench standing after they
+/// consented to its removal.
+#[test]
+fn milestone_discard_force_still_takes_a_sub_task_areas_foreign_byte() {
+    let root = TempDir::new("take");
+    let repo = root.path();
+    init_repo(repo);
+    let home = TempDir::new("home");
+    setup_fanout(repo, home.path(), true, false);
+    for sub in SUBS {
+        plant_into(&area(repo, sub), &[ROOT_KEEP]);
+    }
+
+    let before = marker_files(repo);
+    assert_eq!(
+        before.len(),
+        SUBS.len(),
+        "the before-control finds one plant per sub-task area; got {before:?}",
+    );
+
+    let discarded = run_milestone(repo, home.path(), &["discard", MILESTONE, "--force"]);
+    let stdout = String::from_utf8_lossy(&discarded.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&discarded.stderr).into_owned();
+    assert!(
+        discarded.status.success(),
+        "the discard must settle the record;\nstdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+    assert!(
+        stdout.contains("workbench removed"),
+        "…and it still acks the teardown it performed;\nstdout:\n{stdout}",
+    );
+    for sub in SUBS {
+        assert!(
+            !area(repo, sub).exists(),
+            "`{sub}`'s area is gone — this door TAKES the complement under its own consent",
+        );
+    }
+    assert!(
+        marker_files(repo).is_empty(),
+        "the consented bytes are gone, and none was parked: the `Displace` arm's keep is not \
+         this caller's disposition",
+    );
+    assert!(
+        !stderr.contains(KEPT_AREA_CODE),
+        "…and no landed-boundary advisory is minted here at all;\nstderr:\n{stderr}",
     );
 }

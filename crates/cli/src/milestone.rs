@@ -3242,6 +3242,13 @@ pub const TASK_DISCARD_DOOR: DestroyingDoor = DestroyingDoor {
 /// working area. A consent flag would be a new capability rather than a guard, so the
 /// answer is the move — `.jigc/displaced/<task-id>/<relative>`, named on stderr and on the
 /// landed envelope's `displaced` key.
+///
+/// **`codes` stays empty although this door now mints `finalize.foreign-bytes`** (M53
+/// Increment 2 / T3; `settle-record.md` → D2's check scope). This field is *door-scoped
+/// blocking codes the door refuses with*, and that advisory is not a refusal: it is raised
+/// **after** the commit landed, at exit 0, over bytes the door **kept**. A displacing member's
+/// answer is the move, so its code set is empty — the ⇔ `flow53_acceptance` asserts stays
+/// true, and it stays true for a reason rather than by accident.
 pub const TASK_FINALIZE_DOOR: DestroyingDoor = DestroyingDoor {
     verb: "jigc task finalize",
     disposition: Disposition::Displace,
@@ -3260,6 +3267,11 @@ pub const TASK_FINALIZE_DOOR: DestroyingDoor = DestroyingDoor {
 /// working area either, so the same warrant fails at the same seam one door over, and the
 /// row is [`Disposition::Displace`] — the worktrees it still takes are narrated, the
 /// measured `--ignored` bound of M46 unchanged.
+///
+/// **`codes` stays empty for the same reason its sibling's does** (M53 Increment 2 / T3):
+/// `finalize.foreign-bytes` is a landed-arm advisory over kept bytes, not a code this door
+/// refuses with — and here it does not even reach a `findings` key, the landed arm being
+/// pinned at `Object(&["committed"])`, so it goes out on stderr.
 pub const FINALIZE_DOOR: DestroyingDoor = DestroyingDoor {
     verb: "jigc milestone finalize",
     disposition: Disposition::Displace,
@@ -5084,6 +5096,11 @@ fn run_milestone_finalize(
         // with the id and this boundary answers for the bytes it is about to remove. Empty on
         // every arm that never reached the teardown, because nothing was removed there either.
         let mut area_displaced: Vec<render::Displaced> = Vec::new();
+        // One `finalize.foreign-bytes` advisory per area this boundary settles and cannot tear
+        // down — its own, and each sub-task's (M53 Increment 2 / T3). Narrated on stderr
+        // below: this door's landed arm is pinned at `Object(&["committed"])`, and the
+        // additive-key window closed at M48.
+        let mut kept_areas: Vec<Finding> = Vec::new();
         match crate::task::try_execute_finalize_plan(
             &repo_root,
             &jigc_root,
@@ -5098,11 +5115,12 @@ fn run_milestone_finalize(
             },
             &mut ignore_ack,
             &mut rollback_conflicts,
-            Some((
-                engine::state::WorkArea::Milestone,
-                milestone_id,
-                &mut area_displaced,
-            )),
+            Some(crate::task::AreaTeardown {
+                kind: engine::state::WorkArea::Milestone,
+                unit_id: milestone_id,
+                moved: &mut area_displaced,
+                kept: &mut kept_areas,
+            }),
         )? {
             Ok(hook_output) => {
                 // The boundary landed — the flipped record rode the aggregate commit; disarm
@@ -5126,6 +5144,7 @@ fn run_milestone_finalize(
                     SubtaskComplement::Displace {
                         repo_root: &repo_root,
                         moved: &mut displaced,
+                        kept: &mut kept_areas,
                     },
                 );
                 // The key declares *sorted by `from`*, and with two kinds of area in the
@@ -5161,10 +5180,13 @@ fn run_milestone_finalize(
                 // the same string the envelope above carries (one capture, two channels;
                 // `design/finalize.md` → 6. Commit; the hook_output producer axis).
                 crate::task::relay_hook_output(format, &hook_output);
+                // Every area this boundary settled and could not tear down, named once each
+                // (M53 Increment 2 / T3).
+                narrate_kept_areas(&kept_areas);
                 // Tear down the fan-out worktrees the provision verb laid down (the heavier
                 // A2 teardown — a non-blocking warning on a leaked worktree, never a block).
                 remove_worktrees(&repo_root, &jigc_home, &list);
-                Ok(Outcome::success())
+                Ok(Outcome::with_findings(0, &kept_areas))
             }
             // The chain was aborted. The `Err` is untyped, so this arm catches EVERY way the
             // boundary refuses: a per-sub-task hook rejection, the aggregate hook's, and a
@@ -5231,6 +5253,9 @@ fn run_milestone_finalize(
         // The milestone area's own complement, as on the chain arm above — one executor, one
         // `cleanup_dir`, one subject (M53 Increment 1 / T4).
         let mut area_displaced: Vec<render::Displaced> = Vec::new();
+        // As on the chain arm — one advisory per area this boundary could not tear down,
+        // narrated on stderr (M53 Increment 2 / T3).
+        let mut kept_areas: Vec<Finding> = Vec::new();
         match crate::task::try_execute_finalize_plan(
             &repo_root,
             &jigc_root,
@@ -5242,11 +5267,12 @@ fn run_milestone_finalize(
             crate::task::StagePolicy::Combine(worktrees, record_pathspec),
             &mut ignore_ack,
             &mut rollback_conflicts,
-            Some((
-                engine::state::WorkArea::Milestone,
-                milestone_id,
-                &mut area_displaced,
-            )),
+            Some(crate::task::AreaTeardown {
+                kind: engine::state::WorkArea::Milestone,
+                unit_id: milestone_id,
+                moved: &mut area_displaced,
+                kept: &mut kept_areas,
+            }),
         )? {
             // The boundary landed. Clean up the per-sub-task working areas too (the
             // executor only removed the milestone area). A failed/rolled-back finalize
@@ -5266,6 +5292,7 @@ fn run_milestone_finalize(
                     SubtaskComplement::Displace {
                         repo_root: &repo_root,
                         moved: &mut displaced,
+                        kept: &mut kept_areas,
                     },
                 );
                 // The key declares *sorted by `from`*, and with two kinds of area in the
@@ -5296,10 +5323,13 @@ fn run_milestone_finalize(
                 // T3 — relay the landed combine commit's non-blocking hook output (the
                 // dedicated-worktree commit runs the user's hooks — M31 Inc 5).
                 crate::task::relay_hook_output(format, &hook_output);
+                // Every area this boundary settled and could not tear down, named once each
+                // (M53 Increment 2 / T3).
+                narrate_kept_areas(&kept_areas);
                 // Tear down the fan-out worktrees on the landed default-path commit too
                 // (the heavier A2 teardown — a non-blocking warning on a leaked worktree).
                 remove_worktrees(&repo_root, &jigc_home, &list);
-                Ok(Outcome::success())
+                Ok(Outcome::with_findings(0, &kept_areas))
             }
             // The commit-phase rejection: git's stderr stays verbatim-raw and the run names
             // itself in the invocation log — with the `squash: true` combine's OWN identity
@@ -5534,7 +5564,9 @@ fn flip_record_for_finalize<'a>(
 ///
 /// **Returns whether every area it reached is gone** — a caller that acks the teardown keys
 /// that ack on this, never on having run the loop (M52 Increment 4 / T7, D-2). The landed
-/// finalize arms ignore it: their ack names the commit, not the workbench.
+/// finalize arms ignore it: their ack names the commit, not the workbench, and since M53
+/// Increment 2 / T3 an area they left standing is named by its own `finalize.foreign-bytes`
+/// advisory instead — so *not gone* is reported per area rather than as one boolean.
 fn cleanup_subtask_areas(
     jigc_root: &Path,
     list: &engine::milestone::TaskList,
@@ -5547,40 +5579,75 @@ fn cleanup_subtask_areas(
         if !area.exists() {
             continue;
         }
-        if let SubtaskComplement::Displace { repo_root, moved } = &mut complement {
-            // Per **area**, so the narration's subject is one working area — the sentence
-            // [`crate::task::narrate_displacement`] writes — and the boundary's envelope
-            // gets the union. The order the key declares is **not** this loop's to hold:
-            // since M53 Increment 1 / T4 the union also carries the milestone area's own
-            // moves, so each caller sorts the completed union rather than resting on an
-            // ordering two directory names happen to give it.
-            let outcome = crate::task::displace_foreign_area(
+        match &mut complement {
+            SubtaskComplement::Displace {
                 repo_root,
-                jigc_root,
-                &area,
-                engine::state::WorkArea::Task,
-                &sub_id,
-            );
-            crate::task::narrate_displacement(&outcome);
-            // The union is the envelope's `displaced` key — the moves that landed. What
-            // this area would not give up is on the narration above, per area, where the
-            // count is that area's complement and not its move (M53 Increment 2 / T2).
-            moved.extend(outcome.moved);
-        }
-        if let Err(err) = std::fs::remove_dir_all(&area) {
-            eprintln!(
-                "note: post-commit sub-task working-area removal for `{sub_id}` failed (self-heals): {err:#}"
-            );
-            all_gone = false;
+                moved,
+                kept,
+            } => {
+                // Per **area**, so the narration's subject is one working area — the sentence
+                // [`crate::task::narrate_displacement`] writes — and the boundary's envelope
+                // gets the union. The order the key declares is **not** this loop's to hold:
+                // since M53 Increment 1 / T4 the union also carries the milestone area's own
+                // moves, so each caller sorts the completed union rather than resting on an
+                // ordering two directory names happen to give it.
+                let outcome = crate::task::displace_foreign_area(
+                    repo_root,
+                    jigc_root,
+                    &area,
+                    engine::state::WorkArea::Task,
+                    &sub_id,
+                );
+                crate::task::narrate_displacement(&outcome);
+                // **The removal is conditioned on the move** (M53 Increment 2 / T3): what the
+                // displacement above could not park stays where it is, because this arm's
+                // removal is the registry-keyed unwind and not `remove_dir_all`. An area left
+                // standing hands back one `finalize.foreign-bytes` advisory for the caller's
+                // own surface.
+                if !crate::task::unwind_settled_area(
+                    repo_root,
+                    &area,
+                    engine::state::WorkArea::Task,
+                    &sub_id,
+                    &outcome,
+                    kept,
+                ) {
+                    all_gone = false;
+                }
+                // The union is the envelope's `displaced` key — the moves that landed. What
+                // this area would not give up is on the narration above, per area, where the
+                // count is that area's complement and not its move (M53 Increment 2 / T2).
+                moved.extend(outcome.moved);
+            }
+            // **`Take` keeps `remove_dir_all`, and the disposition is read off the CALL.**
+            // This function's own rule, quoted where the branch is: *"A disposition read off
+            // the function instead of the call would silently re-decide `jigc milestone
+            // discard`."* That door's `--force` **is** the consent for these bytes, and its
+            // guard and narration have already run at the door; unwinding here instead would
+            // leave the operator's own abandoned workbench standing after they consented to
+            // its removal (`settle-record.md` → §3).
+            SubtaskComplement::Take => {
+                if let Err(err) = std::fs::remove_dir_all(&area) {
+                    eprintln!(
+                        "note: post-commit sub-task working-area removal for `{sub_id}` failed (self-heals): {err:#}"
+                    );
+                    all_gone = false;
+                }
+            }
         }
     }
     all_gone
 }
 
 /// What a [`cleanup_subtask_areas`] call does with each sub-task area's **complement** —
-/// the bytes jigc did not write there (`engine::state::foreign_area_paths`). The removal
-/// itself is the same at every call; only this differs, and it differs by *door*
-/// (`settle-record.md` → §18).
+/// the bytes jigc did not write there (`engine::state::foreign_area_paths`), and, since M53
+/// Increment 2 / T3, **which removal follows**. It differs by *door* (`settle-record.md` →
+/// §18, §3).
+///
+/// The doc-comment read *"the removal itself is the same at every call; only this differs"*
+/// until T3, and that is now false in the one way that matters: `Displace` removes what jigc
+/// wrote and leaves the rest standing, `Take` still removes the directory whole. The two are
+/// not a detail of the disposition — they **are** it.
 enum SubtaskComplement<'a> {
     /// **Keep them** — move each entry to `.jigc/displaced/<sub-task-id>/<relative>` before
     /// the removal, narrate it, and collect the pairs for the landed envelope's
@@ -5592,6 +5659,11 @@ enum SubtaskComplement<'a> {
     Displace {
         repo_root: &'a Path,
         moved: &'a mut Vec<render::Displaced>,
+        /// One `finalize.foreign-bytes` advisory per sub-task area the teardown left
+        /// standing (M53 Increment 2 / T3). The caller decides where it goes: this door's
+        /// landed arm is pinned at `Object(&["committed"])`, so it narrates them on stderr
+        /// rather than growing a `findings` key.
+        kept: &'a mut Vec<Finding>,
     },
     /// **Take them with the area.** [`run_discard`]'s abandon path, whose guard and
     /// narration live at that door (the staged-prose refusal + `--force`), never here.
@@ -5768,6 +5840,27 @@ fn blocked(jigc_home: &Path, format: Format, findings: Vec<Finding>) -> Result<O
         crate::task::EXIT_VALIDATION_BLOCKED,
         &report.findings,
     ))
+}
+
+/// Name on **stderr** every working area a landed boundary could not tear down — one
+/// [`crate::render::finding_line`] each, the house renderer, head and locus and route in that
+/// order (M53 Increment 2 / T3; `completions/artifacts/M53/settle-record.md` → D2.5).
+///
+/// **Stderr rather than the envelope, and that is a decision with a bound.** The sibling door
+/// (`jigc task finalize`) puts the identical advisory on its landed `findings` array, because
+/// that arm's pinned shape already carries one. This door's landed arm is pinned at
+/// `Object(&["committed"])` (`crate::render::ENVELOPE_ARMS`) and the pre-1.0 additive-key
+/// window closed at M48, so growing a `findings` key here is a 2.0 act. Until then the fact
+/// reaches a driver through the side channel and the invocation log — the door records the
+/// same findings via `Outcome::with_findings`, which moves no stdout byte — and its safety
+/// does not rest on being heard: an area left standing is inert at every door.
+///
+/// Silent when nothing was kept: the omitting context prints no bytes at all.
+fn narrate_kept_areas(kept: &[Finding]) {
+    for finding in kept {
+        // `eprint!`, not `eprintln!`: the house line already ends in `\n`.
+        eprint!("{}", crate::render::finding_line(finding, false));
+    }
 }
 
 /// Resolve the `finalize.fan-out.squash` knob for the project at `repo_root` —

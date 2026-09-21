@@ -311,6 +311,17 @@ const NOT_A_POPULATION: &[(&str, &str, usize, &str)] = &[
     ),
     (
         "crates/cli/src/task.rs",
+        "unwind_settled_area",
+        0,
+        "the same sink's **landed-teardown** caller (M53 Increment 2 / T3), and the one that \
+         is not a rollback at all: phase 7 reaches it after the commit is truth, to remove a \
+         working area whose job is done — not to put a transaction's bytes back. It calls \
+         `engine::state::unwind_area` and turns the two non-clean answers into one advisory \
+         naming the area; it restores nothing, and the `MintedSet` rows that DO roll back \
+         through that sink are counted at their own units",
+    ),
+    (
+        "crates/cli/src/task.rs",
         "rollback_owner_artifact_index",
         0,
         "the index axis: `git update-index --cacheinfo` / `--force-remove` per captured \
