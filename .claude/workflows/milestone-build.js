@@ -37,6 +37,11 @@
 //     (PRECEDENCE — this rule is stated in three places and they must not drift: canonical is
 //     implementation/increment-workflow.md -> Halt and resume; note 7(b) below restates it;
 //     this is its short form. If they ever disagree, increment-workflow.md wins.)
+//     M52 (2026-09-20) datum: a killed run can stay REGISTERED as running — TaskStop reports
+//     it killed but its loop never exits, and every resume is refused ("would run two copies
+//     against the same journal"). Do not wait it out: finish the interrupted increment outside
+//     the harness (executors → validator → fixers, one at a time) and start a FRESH run with
+//     skipThrough (rule 6 below). increment-workflow.md → Halt and resume carries the same note.
 //     So CLASSIFY before acting: (a) does it build, (b) does the halted task's own
 //     done-criterion pass, (c) does the FULL unscoped gate pass (`dev/gate`). All three =>
 //     the work is FINISHED and only the commit is owed — COMMIT IT, and say in the message
