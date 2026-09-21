@@ -1490,7 +1490,11 @@ pub const FINALIZE_FAMILY: &[FinalizeCode] = &[
         code: "finalize.no-task",
         producer: "engine::finalize",
         subject: FinalizeSubject::WorkUnit,
-        subject_note: "the work unit whose task directory is absent",
+        subject_note: "the work unit whose task working area is not there — two \
+                       constructors over one condition since M53 Increment 3 (absent \
+                       directory, and a directory carrying no base pin: a leftover), \
+                       mutually exclusive at the one shared resolve predicate, so one \
+                       instance per call",
     },
     FinalizeCode {
         code: "finalize.nothing-staged",

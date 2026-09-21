@@ -1343,6 +1343,59 @@ pub fn no_such_task_finding(id: &str, route: Route) -> Finding {
     )
 }
 
+/// The **residual** cell of the same absence — a directory under `.jigc/tasks/` that
+/// carries no base pin (M53 Increment 3 / T3;
+/// `completions/artifacts/M53/settle-record.md` → D3 as amended by §9 and §14).
+///
+/// **Same code, same key, a different sentence.** *A task is an area that carries its base
+/// pin* ([`crate::state::carries_base_pin`]), so a pin-less directory is not a task that is
+/// somehow broken — it is **no task**, exactly like a name nothing answers to. That makes
+/// this the second shape of one condition, not a second condition: the code stays
+/// `finalize.no-task` and the key stays `(finalize.no-task, task:<id>)`, which is what lets
+/// a driver keying on the contract's work-unit form see both shapes without learning a
+/// second pair. Only the message and the route differ, because only the **recovery**
+/// differs: an unknown id is recovered by reading the roster, a leftover directory by
+/// clearing a path.
+///
+/// **Why the route is composed here and is not a parameter.** Its sibling
+/// [`no_such_task_finding`] takes its route from the caller because *which roster answers*
+/// is a CLI fact the engine is layering-blind to. This cell has no such split: there is one
+/// recovery at all four resolve seams — take what you need out of the directory and delete
+/// the rest — and jigc mints **no verb** that clears it, so nothing about it is door-shaped.
+/// A parameter here would only create room for four doors to disagree about one act.
+///
+/// **Why it names no count.** The obvious sentence — *"holding N path(s) jigc did not
+/// write"* — is the shipped `finalize.foreign-bytes` mould, and driven over this class's own
+/// three shapes that count is `0 / 1 / 0`: an empty leftover holds none, and a
+/// `docs/<type>:<slug>.md` is a name jigc's own writer produces, so
+/// [`crate::state::foreign_area_paths`] does not claim it either. A number that is zero in
+/// two of three cells would tell the reader *there is nothing in there* about a directory
+/// that may hold their only copy of something. The sentence names the **path**, and lets
+/// them look.
+///
+/// `area` renders through [`crate::path::repo_relative`] against **`jigc_home`** — the main
+/// checkout the `.jigc/` workbench binds to, never the worktree `repo_root` a fanned-out
+/// sub-agent calls from, which would print a host-absolute path for every door reached from
+/// a worktree (`design/surface-contract.md` law 1).
+pub fn residual_task_area_finding(id: &str, jigc_home: &Path, area: &Path) -> Finding {
+    let listed = crate::path::repo_relative(jigc_home, area);
+    Finding::graded(
+        Severity::Blocking,
+        "finalize.no-task",
+        format!(
+            "no task `{id}`: `{listed}` is a directory carrying no base pin, so it is a \
+             leftover and not a work unit — either jigc never minted a task there, or a \
+             teardown stopped partway and left the directory behind"
+        ),
+        Some(Unit::Task(id).location()),
+        Some(Route::human(format!(
+            "nothing was changed. Keep anything you need from `{listed}` and delete the \
+             rest by hand — jigc mints no verb that clears a leftover working area, because \
+             what is in there is not jigc's to judge"
+        ))),
+    )
+}
+
 /// The work unit a `finalize.*` block speaks about — one `code`, two units whose cause and
 /// whose exits are different (M42 T3; `design/write-commands.md` → The
 /// `finalize.base-mismatch` route is unit-aware), and whose **stable key target** is the

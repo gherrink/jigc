@@ -2195,10 +2195,10 @@ pub fn resume_in_repo(start: &Path, id: &str) -> Result<Composition> {
     // (M31 Inc 2 / WF3).
     let jigc_home = jigc_home_or_repo(start)?;
     let jigc_root = jigc_home.join(".jigc");
-    let task_dir = jigc_root.join("tasks").join(id);
-    if !task_dir.is_dir() {
-        return Err(crate::task::no_such_task(id));
-    }
+    // The one predicate all four by-id seams share (M53 Increment 3 / T3): absent is the
+    // converged roster answer, and a directory carrying no base pin is a leftover, not a
+    // task whose pin failed to read.
+    let task_dir = crate::task::require_task_area(&jigc_home, id, crate::task::task_list_route())?;
 
     // The task is pinned to its base, and the pin is tested **exactly** as the commit
     // door of *this task's unit kind* tests it (M47 Inc 8 T1 / N7; `design/storage.md` →
@@ -2322,23 +2322,21 @@ pub fn reenter_in_repo(start: &Path, workflow_id: &str, id: &str) -> Result<Comp
     // `repo_root` — the worktree HEAD == the milestone pin under WF4 (M31 Inc 2 / WF3).
     let jigc_home = jigc_home_or_repo(start)?;
     let jigc_root = jigc_home.join(".jigc");
-    let task_dir = jigc_root.join("tasks").join(id);
-    if !task_dir.is_dir() {
-        // The same cause and the same key as every other unknown-work-unit door
-        // ([`crate::task::no_such_task`]; M51 Increment 6 / T1) — `finalize.no-task` at
-        // `task:<id>`, answered as the findings envelope — with **this** door's roster as
-        // its route: a `jigc workflow <W> --task <id>` re-entry is a milestone sub-agent's,
-        // and its sibling ids are listed by the milestone, not by `jigc task list`.
-        return Err(crate::render::envelope_finding_error(
-            &engine::finalize::no_such_task_finding(
-                id,
-                engine::finding::Route::mechanical(
-                    ["jigc", "milestone", "list-tasks", "<milestone-id>"],
-                    " lists a milestone's sub-tasks",
-                ),
-            ),
-        ));
-    }
+    // The same cause and the same key as every other unknown-work-unit door
+    // ([`crate::task::require_task_area`]; M51 Increment 6 / T1) — `finalize.no-task` at
+    // `task:<id>`, answered as the findings envelope — with **this** door's roster as the
+    // **absent** cell's route: a `jigc workflow <W> --task <id>` re-entry is a milestone
+    // sub-agent's, and its sibling ids are listed by the milestone, not by `jigc task
+    // list`. The **residual** cell's route is the producer's own and is the same at all
+    // four seams: no roster answers a leftover directory (M53 Increment 3 / T3).
+    let task_dir = crate::task::require_task_area(
+        &jigc_home,
+        id,
+        engine::finding::Route::mechanical(
+            ["jigc", "milestone", "list-tasks", "<milestone-id>"],
+            " lists a milestone's sub-tasks",
+        ),
+    )?;
 
     // The task is pinned to its (milestone-shared) base; never operate it off it.
     let pinned = state::read_base_pin(&task_dir)

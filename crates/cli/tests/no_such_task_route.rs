@@ -22,6 +22,17 @@
 //! three doors. The route now rides the finding's own `route:` line, which is where this
 //! suite reads it from; the footer's own `jigc` spans are not routes and are not read.
 //!
+//! **Since M53 Increment 3 / T3 the claim covers two sentences, not one**
+//! (`completions/artifacts/M53/settle-record.md` → D3). A task id names an *absent* work
+//! unit in two shapes — no directory at all, or a directory carrying no base pin — and the
+//! second is a **leftover**, whose recovery is a path to clear rather than a roster to
+//! read. Both are `finalize.no-task` at `task:<id>`, and the convergence claim is the same
+//! claim in both: one set of bytes, at all three doors. So each shape has its own
+//! byte-identity const and its own trio of arms, and the difference between them is
+//! asserted rather than assumed — the absent sentence carries a **runnable** route this
+//! suite executes verbatim, the residual sentence carries a `Human` route that names no
+//! command at all, because jigc mints no verb that clears a leftover.
+//!
 //! Out of scope (a different state, its start-route correct): the **no-active-task**
 //! reject (`no active task — start one with `jigc start``) when no `--task` is given
 //! and no task exists.
@@ -207,4 +218,140 @@ fn doc_verb_with_unknown_explicit_task_routes_to_task_list() {
         ],
     );
     assert_converged_and_route_runs(&out, repo.path(), home.path());
+}
+
+// ─────────────────── the second sentence: the residual (M53 Inc 3 / T3) ──────────────────
+
+/// The one converged **residual** refusal every wrong-id surface emits over a directory
+/// that carries no base pin, byte for byte.
+///
+/// Driven at `766f32ef` the same three doors answered this state three different ways —
+/// `task validate` *"the task validates clean"* at exit **0**, `doc set-field` a
+/// `store.not-staged` block about a task's staged set, `start --task` a code-less
+/// `could not read the base pin for task …` — because each had already accepted the
+/// directory as a task and moved on to a later question about it.
+const CONVERGED_RESIDUAL: &str = "blocking · finalize.no-task — no task `nonexistent`: `.jigc/tasks/nonexistent` is a \
+     directory carrying no base pin, so it is a leftover and not a work unit — either jigc \
+     never minted a task there, or a teardown stopped partway and left the directory \
+     behind\n  at: task:nonexistent\n  route: nothing was changed. Keep anything you need \
+     from `.jigc/tasks/nonexistent` and delete the rest by hand — jigc mints no verb that \
+     clears a leftover working area, because what is in there is not jigc's to judge\n— \
+     jigc · run `jigc start` for orientation; all writes through `jigc`.\n";
+
+/// Plant the leftover the residual arms ask about: a bare `mkdir` at the id the absent
+/// arms use, so the two sentences are driven over the *same* id and the only difference is
+/// whether the directory is there.
+fn plant_residual(repo: &Path) {
+    fs::create_dir_all(repo.join(".jigc").join("tasks").join("nonexistent"))
+        .expect("plant the residual working area");
+}
+
+/// Assert `out` is the converged residual reject — and that its route is **not** a command.
+///
+/// The absent sentence's route is runnable and this suite runs it; the residual's is a
+/// `Human` route by decision, because there is no verb to run. Asserting the *absence* of a
+/// `jigc` span is what keeps a later convergence from quietly handing this cell a
+/// command — which would have to be a command that clears someone else's bytes.
+fn assert_converged_residual(out: &std::process::Output, repo: &Path) {
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "a residual is an absent work unit (exit 1), never a task that validates clean; \
+         stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let stderr = String::from_utf8(out.stderr.clone()).expect("utf-8 stderr");
+    assert_eq!(
+        stderr, CONVERGED_RESIDUAL,
+        "every wrong-task-id surface emits the one converged residual message \
+         (byte-identical across the three — the shared-predicate observable)",
+    );
+
+    // The residual route does **not** open with a backticked span, which is why it is read
+    // off the label alone rather than through `ROUTE_LABEL` (the absent sentence's
+    // extractor, which requires the backtick immediately after the label).
+    let (_, tail) = stderr
+        .split_once("\n  route: ")
+        .unwrap_or_else(|| panic!("no `route:` line in:\n{stderr}"));
+    let route = tail
+        .split_once('\n')
+        .map(|(line, _)| line)
+        .unwrap_or_else(|| panic!("unterminated `route:` line in:\n{stderr}"));
+    let spans: Vec<&str> = route.split('`').skip(1).step_by(2).collect();
+    assert_eq!(
+        spans,
+        vec![".jigc/tasks/nonexistent"],
+        "the residual route's one backticked span is the path to clear, and nothing else",
+    );
+    assert!(
+        !spans
+            .iter()
+            .any(|span| span.split_whitespace().next() == Some("jigc")),
+        "jigc mints no verb that clears a leftover working area, so its route may not \
+         name one; got `{route}`",
+    );
+    assert!(
+        repo.join(".jigc")
+            .join("tasks")
+            .join("nonexistent")
+            .is_dir(),
+        "a refusal destroys nothing — the leftover is still on disk",
+    );
+}
+
+/// `jigc task <verb> <id>` over a residual (`task.rs` → `TaskArea::resolve`).
+#[test]
+fn task_verb_over_a_residual_converges_on_the_leftover_sentence() {
+    let repo = TempDir::new("task-verb-residual");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    plant_residual(repo.path());
+
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &["task", "validate", "nonexistent"],
+    );
+    assert_converged_residual(&out, repo.path());
+}
+
+/// `jigc start --task <id>` over a residual (`start.rs` → `resume_in_repo`).
+#[test]
+fn start_resume_over_a_residual_converges_on_the_leftover_sentence() {
+    let repo = TempDir::new("start-resume-residual");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    plant_residual(repo.path());
+
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &["start", "--task", "nonexistent"],
+    );
+    assert_converged_residual(&out, repo.path());
+}
+
+/// `jigc doc <verb> … --task <id>` over a residual (`doc.rs` → `ActiveTask::resolve`).
+#[test]
+fn doc_verb_over_a_residual_converges_on_the_leftover_sentence() {
+    let repo = TempDir::new("doc-task-residual");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    plant_residual(repo.path());
+
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &[
+            "doc",
+            "set-field",
+            "commit:nope#type",
+            "--value",
+            "feat",
+            "--task",
+            "nonexistent",
+        ],
+    );
+    assert_converged_residual(&out, repo.path());
 }

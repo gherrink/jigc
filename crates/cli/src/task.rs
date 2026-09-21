@@ -1421,32 +1421,94 @@ pub(crate) fn doc_code_invoker(request: &ProbeRequest) -> std::io::Result<ProbeR
     }
 }
 
-/// The one no-such-task rejection every wrong-task-id surface shares — `jigc task
+/// The converged roster route a **top-level** task's absence carries — `jigc task
 /// <verb> <id>` ([`TaskArea::resolve`]), `jigc start --task <id>`
-/// (`crate::start::resume_in_repo`), and `jigc doc <verb> … --task <id>`
-/// (`crate::doc`'s active-task resolution) all converge on the one factual recovery,
-/// `jigc task list` (`DECISIONS.md` 2026-07-16 M43 Settle, cross-cutting: wrong-id
-/// routes converge — the old `start --task` route claimed `jigc start` lists live
+/// (`crate::start::resume_in_repo`) and `jigc doc <verb> … --task <id>`
+/// (`crate::doc`'s active-task resolution) all hand [`require_task_area`] the one factual
+/// recovery, `jigc task list` (`DECISIONS.md` 2026-07-16 M43 Settle, cross-cutting:
+/// wrong-id routes converge — the old `start --task` route claimed `jigc start` lists live
 /// tasks, which it never did). The route span goes through the checked
-/// [`engine::finding::Route::mechanical`] constructor, so the CLI-seam parse fence
-/// asserts it parses against the real CLI.
+/// [`engine::finding::Route::mechanical`] constructor, so the CLI-seam parse fence asserts
+/// it parses against the real CLI.
 ///
-/// The **no-active-task** state (no `--task` given, no task exists) is a different
-/// state with a correct start-route and does not converge here.
+/// The fourth seam, `jigc workflow <W> --task <id>`, is a milestone sub-agent's re-entry
+/// and passes its **own** roster instead; nothing else does.
 ///
-/// **It is a typed [`Finding`], not an `anyhow!` string** (M51 Increment 6 / T1). The
-/// contract lists `finalize.no-task` under the **work-unit** target form — i.e. as a
-/// finding a driver may key on — and until this it projected no key at any of these doors:
-/// `--format json` answered the flattened `{"error": …}`, whose code lives inside a
-/// message. The identity is minted once, in the engine
-/// ([`engine::finalize::no_such_task_finding`] — the producer `cli::render::FINALIZE_FAMILY`
-/// declares for this code), and travels on the envelope-projecting carrier, so every door
-/// that raises it answers the findings envelope through the one funnel.
-pub(crate) fn no_such_task(id: &str) -> anyhow::Error {
-    crate::render::envelope_finding_error(&engine::finalize::no_such_task_finding(
-        id,
-        engine::finding::Route::mechanical(["jigc", "task", "list"], " lists the live tasks"),
-    ))
+/// The **no-active-task** state (no `--task` given, no task exists) is a different state
+/// with a correct start-route and does not converge here.
+///
+/// It is a function rather than a `const` because `Route::mechanical` runs the parse fence
+/// at construction. It was `no_such_task`'s body until M53 Increment 3 / T3 folded that
+/// wrapper into [`require_task_area`], which answers two cells rather than one.
+pub(crate) fn task_list_route() -> engine::finding::Route {
+    engine::finding::Route::mechanical(["jigc", "task", "list"], " lists the live tasks")
+}
+
+/// **Resolve a task working area by id — the one predicate every by-id door asks**
+/// (M53 Increment 3 / T3; `completions/artifacts/M53/settle-record.md` → D3.2 as amended
+/// by §9, the second of the residual rule's three homes).
+///
+/// Four seams used to ask `!dir.is_dir()` in four copies — [`TaskArea::resolve`],
+/// `crate::start::resume_in_repo`, `crate::start::reenter_in_repo` and
+/// `crate::doc::ActiveTask::resolve` — and a directory was therefore a task because it was
+/// a directory. Driven at `766f32ef` over a bare `mkdir .jigc/tasks/leftover`, the four
+/// disagreed four ways: `jigc task validate` reported *"the task validates clean"* at exit
+/// **0**, `jigc task discard` composed `task-discard.foreign-bytes` (a refusal about bytes
+/// *in a task*), `jigc doc show … --task` answered `store.not-staged` (a statement about a
+/// task's *staged set*), and `jigc start --task` fell through to a code-less
+/// `could not read the base pin for task …`. Each door had already accepted the directory
+/// as a work unit and was answering a later question about it.
+///
+/// **Two answers, and the enumerator's own rule decides between them**
+/// ([`engine::state::carries_base_pin`], the predicate `engine::state::list_active_task_ids`
+/// took at T2): a directory that is not there is the shipped absence, whose recovery is the
+/// caller's own roster and therefore arrives as `absent_route`; a directory that is there
+/// but carries no base pin is a **leftover**, whose recovery is one act at every door and is
+/// composed by the producer itself
+/// ([`engine::finalize::residual_task_area_finding`]). The **malformed** id is a third
+/// answer and is refused earlier still, at each door's own
+/// [`reject_malformed_work_unit_id`] call, before any token joins a path (M50 Inc 1 / T1).
+///
+/// **The pin is read for existence, never parsed**, so a *legitimate* area whose pin is
+/// torn, corrupt or unreadable passes this and still fails at its own read — which is why
+/// §9 keeps those three producers rather than deleting them. What this closes is the
+/// residual's path to them, not the window they exist for.
+///
+/// **`jigc task discard` is not an exception.** A residual is a task at no door, so the
+/// teardown door answers exactly as the other sixteen do — and the false-flip path M53
+/// Increment 2's settled-item guard watches at the *record* is thereby closed one layer
+/// earlier, at resolution, before the door ever looks for an item to settle.
+///
+/// **Both answers are typed [`engine::finding::Finding`]s, not `anyhow!` strings** (M51
+/// Increment 6 / T1, carried forward). The contract lists `finalize.no-task` under the
+/// **work-unit** target form — i.e. as a finding a driver may key on — and before M51 it
+/// projected no key at any of these doors: `--format json` answered the flattened
+/// `{"error": …}`, whose code lives inside a message. Both identities are minted in the
+/// engine (the producer `cli::render::FINALIZE_FAMILY` declares for this code) and travel
+/// on the envelope-projecting carrier, so every door that raises either answers the findings
+/// envelope through the one funnel.
+///
+/// Takes **jigc_home** — the main checkout the `.jigc/` workbench binds to — so a door
+/// called from a fanned-out worktree resolves the shared area and renders its path
+/// repo-relative rather than host-absolute (M31 Inc 2 / WF3; `design/surface-contract.md`
+/// law 1).
+pub(crate) fn require_task_area(
+    jigc_home: &Path,
+    id: &str,
+    absent_route: engine::finding::Route,
+) -> Result<PathBuf> {
+    let dir = jigc_home.join(".jigc").join("tasks").join(id);
+    if !dir.is_dir() {
+        return Err(crate::render::envelope_finding_error(
+            &engine::finalize::no_such_task_finding(id, absent_route),
+        ));
+    }
+    if !engine::state::carries_base_pin(&dir, engine::state::WorkArea::Task) {
+        return Err(crate::render::envelope_finding_error(
+            &engine::finalize::residual_task_area_finding(id, jigc_home, &dir),
+        ));
+    }
+    Ok(dir)
 }
 
 /// The **grammar** every work-unit id obeys — the one sentence the three `--slug` doors
@@ -1877,21 +1939,20 @@ impl TaskArea {
     /// `.git` ancestor (the worktree); jigc_home is the main checkout, and the task dir is
     /// `<jigc_home>/.jigc/tasks/<id>/`.
     ///
-    /// **Two answers, in this order** (`design/structural-grammar.md` → Work-units and
+    /// **Three answers, in this order** (`design/structural-grammar.md` → Work-units and
     /// runtime identity, resolution): a **malformed** `id` is not a wrong id but *not an
     /// id*, and is refused by [`reject_malformed_work_unit_id`] before it can become the
-    /// path component below; a **well-formed** id whose area is absent rejects with the
-    /// converged task-list route ([`no_such_task`]).
+    /// path component below; then [`require_task_area`] — the one predicate all four by-id
+    /// seams share — answers a **well-formed but absent** id with the converged task-list
+    /// route, and a directory that carries no base pin as the **leftover** it is (M53
+    /// Increment 3 / T3).
     fn resolve(cwd: &Path, id: &str) -> Result<Self> {
         // Before anything joins `id` onto a path (M50 Inc 1 / T1).
         reject_malformed_work_unit_id(id)?;
         let repo_root = discover_repo_root(cwd).ok_or_else(|| crate::locate::not_in_repo(cwd))?;
         let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
         let jigc_root = jigc_home.join(".jigc");
-        let dir = jigc_root.join("tasks").join(id);
-        if !dir.is_dir() {
-            return Err(no_such_task(id));
-        }
+        let dir = require_task_area(&jigc_home, id, task_list_route())?;
         Ok(Self {
             id: id.to_string(),
             repo_root,

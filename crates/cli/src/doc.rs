@@ -5997,10 +5997,12 @@ impl ActiveTask {
         let tasks = jigc_root.join("tasks");
 
         if let Some(id) = task_id {
-            let dir = tasks.join(id);
-            if !dir.is_dir() {
-                return Err(crate::task::no_such_task(id));
-            }
+            // The one predicate all four by-id seams share (M53 Increment 3 / T3): a
+            // directory carrying no base pin is a leftover, and answering it as a task —
+            // this door reached `store.not-staged`, a statement about a *task's* staged set
+            // — is the lie the predicate retires.
+            let dir =
+                crate::task::require_task_area(&jigc_home, id, crate::task::task_list_route())?;
             return Ok(Self {
                 id: id.to_string(),
                 dir,
