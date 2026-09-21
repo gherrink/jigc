@@ -2856,7 +2856,7 @@ impl TaskArea {
             stage,
             &mut ignore_ack,
             &mut rollback_conflicts,
-            Some((&self.id, &mut displaced_foreign)),
+            Some((state::WorkArea::Task, &self.id, &mut displaced_foreign)),
         )? {
             // T1 captures the aggregate hook output; the per-task relay site (T2) consumes it.
             Ok(hook_output) => {
@@ -3832,11 +3832,14 @@ impl StagePolicy {
 /// envelope, and declaring a key there is not this task's act
 /// ([`crate::gitignore::emit_ack`]).
 ///
-/// `displace` is phase 7's **task-area** arm (M52 Increment 4 / T3) — the task id whose
-/// working area `cleanup_dir` is, and the sink the moves leave by, so the landed surface can
-/// carry them as `committed.displaced`. `None` from the two milestone boundaries, whose
-/// `cleanup_dir` is a *milestone* area: see [`post_commit`] for why that subject is not this
-/// one's.
+/// `displace` is phase 7's **keep-what-jigc-did-not-write** arm (M52 Increment 4 / T3; M53
+/// Increment 1 / T4) — the **kind** and id of the work unit whose area `cleanup_dir` is, plus
+/// the sink the moves leave by, so the landed surface can carry them as
+/// `committed.displaced`. The kind travels with the id because `cleanup_dir` is a *task* area
+/// at one door and a *milestone* area at two others, and the two rows of
+/// `engine::state::WorkArea` are what decides membership: passing the id alone left the kind
+/// to be assumed, and the assumption was hard-coded ([`post_commit`]). `None` only where no
+/// area is torn down at all.
 // The shared executor threads many distinct, independent facts (repo/jigc/tmp/cleanup
 // roots, the plan, schemas, the post-sweep record, the stage policy, the ignore-amend
 // report it hands back); each is a real input, not incidental coupling, so an allow is
@@ -3853,7 +3856,7 @@ pub(crate) fn try_execute_finalize_plan(
     stage: StagePolicy,
     ignore_ack: &mut Option<crate::gitignore::Ensured>,
     rollback_conflicts: &mut Vec<Finding>,
-    displace: Option<(&str, &mut Vec<render::Displaced>)>,
+    displace: Option<(state::WorkArea, &str, &mut Vec<render::Displaced>)>,
 ) -> Result<Result<String>> {
     let msg_path = msg_tmp_dir.join("finalize-message.tmp");
     std::fs::write(&msg_path, &plan.message)
@@ -5947,12 +5950,21 @@ pub(crate) fn narrate_displacement(moved: &[render::Displaced]) {
 /// the new HEAD), then remove the `cleanup_dir` working area. Each step self-heals on
 /// failure, so a failure is logged to stderr, never raised (the commit is already truth).
 ///
-/// `displace` is the **task-area** arm of the removal (M52 Increment 4 / T3): the id whose
-/// area `cleanup_dir` is, and the sink the moves leave by. Given, the complement is moved
-/// aside and narrated **before** `remove_dir_all` runs, so the door destroys only bytes it
-/// wrote. The milestone boundaries pass `None`: `cleanup_dir` is then a *milestone* area, a
-/// different registry row whose own displacement is Increment 4 / T4's act (`settle-record.md`
-/// → §18), and this door must not answer for a subject it was not given.
+/// `displace` is the removal's **keep** arm: the `engine::state::WorkArea` row `cleanup_dir`
+/// belongs to, the unit id whose area it is, and the sink the moves leave by. Given, the
+/// complement is moved aside and narrated **before** `remove_dir_all` runs, so the door
+/// destroys only bytes it wrote.
+///
+/// **The kind is a parameter because this door has two kinds of subject** (M53 Increment 1 /
+/// T4; `completions/artifacts/M53/settle-record.md` → D1.1). It shipped from M52 Increment 4 /
+/// T3 taking the id alone and hard-coding `WorkArea::Task` here, with the two milestone
+/// boundaries passing `None` on the stated ground that *"this door must not answer for a
+/// subject it was not given"*. The subject **was** given: `cleanup_dir` at both milestone call
+/// sites IS the milestone area, and the `remove_dir_all` below is what tears it down. So the
+/// sentence did not decline a subject — it declined to *look* at one it was already
+/// destroying, and driven at `ee6ef91f` a landed `jigc milestone finalize` took an operator's
+/// `merged/docs/deep.txt` out of a gitignored tree at **exit 0**, with an empty stderr, while
+/// printing `"displaced": []` on a 1.0-pinned envelope.
 fn post_commit(
     repo_root: &Path,
     jigc_root: &Path,
@@ -5960,7 +5972,7 @@ fn post_commit(
     schemas: &BTreeMap<String, Schema>,
     hash_updates: &BTreeMap<String, String>,
     post_sweep: Option<FileStateRecord>,
-    displace: Option<(&str, &mut Vec<render::Displaced>)>,
+    displace: Option<(state::WorkArea, &str, &mut Vec<render::Displaced>)>,
 ) {
     if let Err(err) = advance_file_state(repo_root, jigc_root, schemas, hash_updates, post_sweep) {
         eprintln!("note: post-commit file-state update failed (self-heals): {err:#}");
@@ -5968,14 +5980,8 @@ fn post_commit(
     if let Err(err) = engine::index::invalidate(jigc_root) {
         eprintln!("note: post-commit edge-index invalidation failed (self-heals): {err:#}");
     }
-    if let Some((task_id, sink)) = displace {
-        *sink = displace_foreign_area(
-            repo_root,
-            jigc_root,
-            cleanup_dir,
-            state::WorkArea::Task,
-            task_id,
-        );
+    if let Some((kind, unit_id, sink)) = displace {
+        *sink = displace_foreign_area(repo_root, jigc_root, cleanup_dir, kind, unit_id);
         narrate_displacement(sink);
     }
     if let Err(err) = std::fs::remove_dir_all(cleanup_dir) {

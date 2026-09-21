@@ -1933,6 +1933,11 @@ pub struct Landed {
     /// the working area. So it keeps the bytes: [`crate::task::displace_foreign_area`] moves
     /// each entry to `.jigc/displaced/<task-id>/<relative>` before the teardown, and this is
     /// what it moved — the same repo-relative pairs the stderr narration names.
+    ///
+    /// Phase 7 is shared with the two milestone boundaries, which tear down a *milestone*
+    /// area and report their own union on [`MilestoneLanded::displaced`]; which row of
+    /// `engine::state::WorkArea` decides membership travels to phase 7 **with** the unit id,
+    /// so neither door has to assume the other's subject (M53 Increment 1 / T4).
     pub displaced: Vec<Displaced>,
 }
 
@@ -4833,18 +4838,23 @@ pub struct MilestoneLanded {
     /// commits + the aggregate) folded in commit order (the hook_output producer axis —
     /// the envelope must not carry the aggregate's stream alone).
     pub hook_output: String,
-    /// Every byte jigc did **not** write into a **sub-task's** working area, **moved aside**
-    /// rather than destroyed when the landed boundary tore those areas down (M52 Increment 4
-    /// / T4; `settle-record.md` → §18). Same shape and same contract as
-    /// [`Landed::displaced`] — `{from, to}` repo-relative pairs, sorted by `from`, **present
-    /// always** (`[]` on the ordinary boundary) — and the same reason: the boundary commit
-    /// carries the promoted docs, the merged record and the sub-agents' staged code and
-    /// takes nothing at all out of a working area, so the *landed-boundary* warrant that
-    /// lets this door's siblings merely narrate a loss does not hold here either.
+    /// Every byte jigc did **not** write into a working area this boundary tore down,
+    /// **moved aside** rather than destroyed (M52 Increment 4 / T4; M53 Increment 1 / T4).
+    /// Same shape and same contract as [`Landed::displaced`] — `{from, to}` repo-relative
+    /// pairs, sorted by `from`, **present always** (`[]` on the ordinary boundary) — and the
+    /// same reason: the boundary commit carries the promoted docs, the merged record and the
+    /// sub-agents' staged code and takes nothing at all out of a working area, so the
+    /// *landed-boundary* warrant that lets this door's siblings merely narrate a loss does
+    /// not hold here either.
     ///
-    /// The union over **every** sub-task the boundary settled, so one key answers for the
-    /// whole boundary; the stderr narration is per area, which is where the sub-task each
-    /// move came from is already legible in the `from` path.
+    /// **The union over every area the boundary settled** — the milestone's own
+    /// `.jigc/milestones/<id>/` (whose complement runs two levels deep, through the join's
+    /// `merged/` staging tree) *and* each sub-task's `.jigc/tasks/<sub-id>/` — so one key
+    /// answers for the whole boundary. It carried the sub-task half alone until M53
+    /// Increment 1 / T4, which is the shape of the defect: the area the shared executor
+    /// itself removes was the one area nothing answered for
+    /// (`completions/artifacts/M53/settle-record.md` → D1.1). The stderr narration stays
+    /// per area, which is where each move's origin is already legible in the `from` path.
     pub displaced: Vec<Displaced>,
     /// The **shared checkout's** still-staged set, read back from git *after* the boundary
     /// landed — repo-relative, sorted, empty on the ordinary boundary (M52 Increment 10 /

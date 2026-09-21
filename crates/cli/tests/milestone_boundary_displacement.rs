@@ -48,6 +48,45 @@ const PLANTS: &[(&str, &str)] = &[
 /// The two sub-tasks of the fixture fan-out.
 const SUBS: &[&str] = &["area-low", "area-zed"];
 
+/// The milestone the fixture mints.
+const MILESTONE: &str = "cache-rework";
+
+/// The plants in the **milestone's own** working area (M53 Increment 1 / T4;
+/// `completions/artifacts/M53/settle-record.md` → D1.1) — one per shape the area's
+/// complement has, because the milestone row's walk is two levels deep where the task row's
+/// is one:
+///
+/// * the area **root**, the only depth M52 ever reached at the doors that guard this area;
+/// * **`merged/` top**, the join's staging tree — jigc writes exactly one entry there, and
+///   this is not it;
+/// * **`merged/docs/adr.md`**, a `.md` with no `:` in it, so no call of
+///   `engine::state::instance_path` could have produced the name;
+/// * **`merged/docs/provenance.json`**, the *task* row's member deliberately not inherited
+///   here — `materialize` writes no manifest, so this file is a third party's;
+/// * **`merged/docs/deep.txt`**, beside the bodies `materialize` actually writes; and
+/// * **`merged/scratch/perf.txt`**, a directory that must move **whole** with its subtree
+///   preserved by the move itself.
+const MILESTONE_PLANTS: &[(&str, &str)] = &[
+    ("NOTES.md", "the operator's own milestone scratch\n"),
+    ("merged/top.txt", "a third party at the join staging top\n"),
+    ("merged/docs/adr.md", "# not a staged address\n"),
+    ("merged/docs/provenance.json", "{\"docs\": {}}\n"),
+    ("merged/docs/deep.txt", "beside a materialized body\n"),
+    ("merged/scratch/perf.txt", "p99 = 41ms\n"),
+];
+
+/// The complement **entries** [`MILESTONE_PLANTS`] makes — the unit the door names, refuses
+/// over or moves, sorted as `engine::state::foreign_area_paths` returns them. `merged/scratch`
+/// is one entry, never `merged/scratch/perf.txt`: a foreign directory moves whole.
+const MILESTONE_ENTRIES: &[&str] = &[
+    "NOTES.md",
+    "merged/docs/adr.md",
+    "merged/docs/deep.txt",
+    "merged/docs/provenance.json",
+    "merged/scratch",
+    "merged/top.txt",
+];
+
 /// A throwaway directory that removes itself on drop.
 struct TempDir(PathBuf);
 
@@ -186,6 +225,24 @@ fn plant_foreign(repo: &Path, sub: &str) {
             fs::create_dir_all(parent).expect("mkdir plant parent");
         }
         fs::write(&p, body).expect("write plant");
+    }
+}
+
+/// The **milestone's own** working area — the executor's `cleanup_dir` at both boundary arms.
+fn milestone_area(repo: &Path) -> PathBuf {
+    repo.join(".jigc").join("milestones").join(MILESTONE)
+}
+
+/// Plant [`MILESTONE_PLANTS`] in the milestone area. Written **before** the boundary runs,
+/// so each one also has to survive the join's own `merged/docs/` rebuild (M53 Increment 1 /
+/// T1) on its way to the teardown that is this task's subject.
+fn plant_milestone_foreign(repo: &Path) {
+    for (rel, body) in MILESTONE_PLANTS {
+        let p = milestone_area(repo).join(rel);
+        if let Some(parent) = p.parent() {
+            fs::create_dir_all(parent).expect("mkdir milestone plant parent");
+        }
+        fs::write(&p, body).expect("write milestone plant");
     }
 }
 
@@ -347,6 +404,130 @@ fn a_landed_milestone_boundary_keeps_every_sub_task_area_byte_it_did_not_write()
                 "[{label}] jigc's own `docs/` tree must never be displaced",
             );
         }
+    }
+}
+
+/// **M53 Increment 1 / T4 — the boundary answers for its OWN area too**
+/// (`completions/artifacts/M53/settle-record.md` → D1.1).
+///
+/// M52's T4 disposed the sub-task areas and passed `None` for the executor's own
+/// `cleanup_dir` on the stated ground that *"this door must not answer for a subject it was
+/// not given"*. The subject **was** given: `cleanup_dir` at both milestone call sites IS the
+/// milestone area, and phase 7 `remove_dir_all`s it. So the sentence bought a landed boundary
+/// destroying an operator's bytes at exit 0, with an empty stderr, while printing
+/// `"displaced": []` on a 1.0-pinned envelope — the same loss the task door next to it had
+/// just been taught not to commit.
+///
+/// The axes are the two the sink has — the landed-arm axis (`finalize.fan-out.squash`, both
+/// arms reaching the same executor) crossed with the output-surface axis — over the area's
+/// **shape** axis, [`MILESTONE_PLANTS`], which is the one that is genuinely new: the
+/// milestone row's walk descends two levels, so a plant at `merged/docs/` is as reachable as
+/// one at the root and neither was kept.
+///
+/// The **union** is the other half: one boundary settles its own area and N sub-task areas,
+/// and `committed.displaced` is one key over all of them, sorted by `from`.
+#[test]
+fn a_landed_milestone_boundary_keeps_every_byte_of_its_own_area_it_did_not_write() {
+    for (squash, json) in [(true, false), (true, true), (false, false), (false, true)] {
+        let label = format!(
+            "squash: {squash}, format: {}",
+            if json { "json" } else { "agent" }
+        );
+        let repo = TempDir::new(if squash { "own-squash" } else { "own-chain" });
+        init_repo(repo.path());
+        let home = TempDir::new("home");
+        // Both populations planted: the union assertion below is only honest if the
+        // sub-task pairs the boundary already carried are still in it.
+        setup_fanout(repo.path(), home.path(), squash, true);
+        plant_milestone_foreign(repo.path());
+
+        let mut args = vec!["finalize", MILESTONE];
+        if json {
+            args.extend(["--format", "json"]);
+        }
+        let finalized = run_milestone(repo.path(), home.path(), &args);
+        let stdout = String::from_utf8(finalized.stdout).expect("utf-8 stdout");
+        let stderr = String::from_utf8(finalized.stderr).expect("utf-8 stderr");
+
+        // (1) The SUCCESS path: the plants are kept by a boundary that landed, and they did
+        // not block it on their way — a refusal here would prove nothing about the teardown.
+        assert!(
+            finalized.status.success(),
+            "[{label}] the finalize must exit 0; stdout:\n{stdout}\nstderr:\n{stderr}",
+        );
+
+        // (2) The teardown still ran: the milestone area is gone.
+        assert!(
+            !milestone_area(repo.path()).exists(),
+            "[{label}] the milestone area must still be removed",
+        );
+
+        // (3) Every planted byte survives, byte-intact, with its relative path preserved —
+        // `merged/scratch/perf.txt` included, which rides its parent entry's move.
+        let parked = repo.path().join(".jigc").join("displaced").join(MILESTONE);
+        for (rel, body) in MILESTONE_PLANTS {
+            let kept = parked.join(rel);
+            let got = fs::read_to_string(&kept).unwrap_or_else(|err| {
+                panic!("[{label}] `{rel}` must survive at {kept:?}: {err}\nstderr:\n{stderr}")
+            });
+            assert_eq!(&got, body, "[{label}] `{rel}` must survive BYTE-INTACT");
+        }
+
+        // (4) Each move is named on stderr, under both formats — the loss-shaped side
+        // channel, so `--format json`'s document still owns stdout undiluted.
+        for entry in MILESTONE_ENTRIES {
+            let from = format!(".jigc/milestones/{MILESTONE}/{entry}");
+            let to = format!(".jigc/displaced/{MILESTONE}/{entry}");
+            assert!(
+                stderr.contains(&from) && stderr.contains(&to),
+                "[{label}] stderr must name the move `{from}` → `{to}`; got:\n{stderr}",
+            );
+        }
+
+        // (5) The envelope carries the UNION — this area's entries beside every sub-task's,
+        // one key for the whole boundary, sorted by `from`.
+        if json {
+            let mut expected: Vec<(String, String)> = MILESTONE_ENTRIES
+                .iter()
+                .map(|entry| {
+                    (
+                        format!(".jigc/milestones/{MILESTONE}/{entry}"),
+                        format!(".jigc/displaced/{MILESTONE}/{entry}"),
+                    )
+                })
+                .chain(SUBS.iter().flat_map(|sub| {
+                    ["NOTES.md", "analysis"].into_iter().map(move |entry| {
+                        (
+                            format!(".jigc/tasks/{sub}/{entry}"),
+                            format!(".jigc/displaced/{sub}/{entry}"),
+                        )
+                    })
+                }))
+                .collect();
+            expected.sort();
+            assert_eq!(
+                envelope_pairs(&stdout),
+                expected,
+                "[{label}] `committed.displaced` must be the union over the milestone area \
+                 and every sub-task area, sorted by `from`; stdout:\n{stdout}",
+            );
+        }
+
+        // (6) jigc's OWN milestone-area files are never parked — a subject cut one member
+        // too wide would move the join's materialized bodies or the task list out of the
+        // area and call it a rescue.
+        assert!(
+            !parked.join("tasks.json").exists(),
+            "[{label}] the task list is jigc's own and is never parked",
+        );
+        assert!(
+            !parked
+                .join("merged")
+                .join("docs")
+                .join("adr:low-policy.md")
+                .exists(),
+            "[{label}] a materialized body is jigc's own and is never parked",
+        );
     }
 }
 

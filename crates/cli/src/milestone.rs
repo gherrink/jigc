@@ -5078,6 +5078,12 @@ fn run_milestone_finalize(
         // Increment 4 / T3) — this boundary reaches the same two rewrites the per-task door
         // does, through the same executor.
         let mut rollback_conflicts: Vec<Finding> = Vec::new();
+        // What phase 7 moved out of the MILESTONE's own working area before tearing it down
+        // (M53 Increment 1 / T4; `completions/artifacts/M53/settle-record.md` → D1.1). The
+        // executor's `cleanup_dir` here is `dir`, the milestone area — so the kind travels
+        // with the id and this boundary answers for the bytes it is about to remove. Empty on
+        // every arm that never reached the teardown, because nothing was removed there either.
+        let mut area_displaced: Vec<render::Displaced> = Vec::new();
         match crate::task::try_execute_finalize_plan(
             &repo_root,
             &jigc_root,
@@ -5092,10 +5098,11 @@ fn run_milestone_finalize(
             },
             &mut ignore_ack,
             &mut rollback_conflicts,
-            // No displacement subject here: the executor's `cleanup_dir` is the MILESTONE
-            // area, a different registry row, and each sub-task area is removed at this
-            // boundary's own sink (`cleanup_subtask_areas`) — `settle-record.md` → §18.
-            None,
+            Some((
+                engine::state::WorkArea::Milestone,
+                milestone_id,
+                &mut area_displaced,
+            )),
         )? {
             Ok(hook_output) => {
                 // The boundary landed — the flipped record rode the aggregate commit; disarm
@@ -5108,7 +5115,11 @@ fn run_milestone_finalize(
                 // for exactly that reason; the commit is already truth, so a summary that
                 // then fails to render leaves no byte behind it. On a failed/rolled-back
                 // finalize (below) this is never reached and the areas survive for retry.
-                let mut displaced = Vec::new();
+                //
+                // Seeded with what the executor already moved out of the MILESTONE area, so
+                // the key below is the **union** over every area this boundary settled — its
+                // own and each sub-task's (M53 Increment 1 / T4).
+                let mut displaced = area_displaced;
                 cleanup_subtask_areas(
                     &jigc_root,
                     &list,
@@ -5117,6 +5128,12 @@ fn run_milestone_finalize(
                         moved: &mut displaced,
                     },
                 );
+                // The key declares *sorted by `from`*, and with two kinds of area in the
+                // union that is no longer true by construction: `.jigc/milestones/` sorting
+                // before `.jigc/tasks/` is an accident of two directory names, not a rule
+                // anything holds. Sorted here, once, where the union is complete (M53
+                // Increment 1 / T4).
+                displaced.sort_by(|a, b| a.from.cmp(&b.from));
                 // C2 — the landing manifest, on the mold of the per-task landed summary:
                 // `finalized <sha> — <subject>` + the whole boundary's landed-file set
                 // (`git diff <pre-boundary-HEAD>..HEAD`, so the N+1 chain reads as one
@@ -5211,6 +5228,9 @@ fn run_milestone_finalize(
         // Increment 4 / T3) — this boundary reaches the same two rewrites the per-task door
         // does, through the same executor.
         let mut rollback_conflicts: Vec<Finding> = Vec::new();
+        // The milestone area's own complement, as on the chain arm above — one executor, one
+        // `cleanup_dir`, one subject (M53 Increment 1 / T4).
+        let mut area_displaced: Vec<render::Displaced> = Vec::new();
         match crate::task::try_execute_finalize_plan(
             &repo_root,
             &jigc_root,
@@ -5222,10 +5242,11 @@ fn run_milestone_finalize(
             crate::task::StagePolicy::Combine(worktrees, record_pathspec),
             &mut ignore_ack,
             &mut rollback_conflicts,
-            // No displacement subject here: the executor's `cleanup_dir` is the MILESTONE
-            // area, a different registry row, and each sub-task area is removed at this
-            // boundary's own sink (`cleanup_subtask_areas`) — `settle-record.md` → §18.
-            None,
+            Some((
+                engine::state::WorkArea::Milestone,
+                milestone_id,
+                &mut area_displaced,
+            )),
         )? {
             // The boundary landed. Clean up the per-sub-task working areas too (the
             // executor only removed the milestone area). A failed/rolled-back finalize
@@ -5236,8 +5257,9 @@ fn run_milestone_finalize(
                 disarm_record_flip(&mut record_flip);
                 // The per-sub-task areas, cleaned as on the chain arm and with the same
                 // disposition over their complement: keep it (M52 Increment 4 / T4). Before
-                // the summary, which carries the pairs it collects.
-                let mut displaced = Vec::new();
+                // the summary, which carries the pairs it collects — seeded with the
+                // milestone area's own moves, as on the chain arm (M53 Increment 1 / T4).
+                let mut displaced = area_displaced;
                 cleanup_subtask_areas(
                     &jigc_root,
                     &list,
@@ -5246,6 +5268,12 @@ fn run_milestone_finalize(
                         moved: &mut displaced,
                     },
                 );
+                // The key declares *sorted by `from`*, and with two kinds of area in the
+                // union that is no longer true by construction: `.jigc/milestones/` sorting
+                // before `.jigc/tasks/` is an accident of two directory names, not a rule
+                // anything holds. Sorted here, once, where the union is complete (M53
+                // Increment 1 / T4).
+                displaced.sort_by(|a, b| a.from.cmp(&b.from));
                 // C2 — the landing manifest (the per-task landed-summary mold): the
                 // highest-stakes commit boundary must not succeed with empty stdout.
                 let landed = milestone_landed_summary(
@@ -5522,9 +5550,10 @@ fn cleanup_subtask_areas(
         if let SubtaskComplement::Displace { repo_root, moved } = &mut complement {
             // Per **area**, so the narration's subject is one working area — the sentence
             // [`crate::task::narrate_displacement`] writes — and the boundary's envelope
-            // gets the union. That union is **sorted by `from` by construction**, which is
-            // what the key declares: `TaskList::enumerate` is id-sorted, each area's own
-            // moves arrive sorted, and every `from` begins `.jigc/tasks/<sub-id>/`.
+            // gets the union. The order the key declares is **not** this loop's to hold:
+            // since M53 Increment 1 / T4 the union also carries the milestone area's own
+            // moves, so each caller sorts the completed union rather than resting on an
+            // ordering two directory names happen to give it.
             let just_moved = crate::task::displace_foreign_area(
                 repo_root,
                 jigc_root,
