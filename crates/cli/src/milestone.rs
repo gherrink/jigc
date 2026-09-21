@@ -5554,15 +5554,18 @@ fn cleanup_subtask_areas(
             // since M53 Increment 1 / T4 the union also carries the milestone area's own
             // moves, so each caller sorts the completed union rather than resting on an
             // ordering two directory names happen to give it.
-            let just_moved = crate::task::displace_foreign_area(
+            let outcome = crate::task::displace_foreign_area(
                 repo_root,
                 jigc_root,
                 &area,
                 engine::state::WorkArea::Task,
                 &sub_id,
             );
-            crate::task::narrate_displacement(&just_moved);
-            moved.extend(just_moved);
+            crate::task::narrate_displacement(&outcome);
+            // The union is the envelope's `displaced` key — the moves that landed. What
+            // this area would not give up is on the narration above, per area, where the
+            // count is that area's complement and not its move (M53 Increment 2 / T2).
+            moved.extend(outcome.moved);
         }
         if let Err(err) = std::fs::remove_dir_all(&area) {
             eprintln!(

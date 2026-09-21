@@ -19,7 +19,9 @@
 //! skipped — a left-over area makes `jigc task list` report an active task that no longer
 //! exists.
 //!
-//! **Two arms, and the second is the one that catches a subject cut too wide:**
+//! **Three arms. The second catches a subject cut too wide; the third catches a subject
+//! reported too narrow** (M53 Increment 2 / T2 —
+//! `completions/artifacts/M53/settle-record.md` → D2.1/D2.2):
 //!
 //! 1. **the populated cell** — the three plants above, driven through a real landed
 //!    finalize on both surfaces: they survive byte-intact under `.jigc/displaced/<id>/`,
@@ -34,6 +36,15 @@
 //!    text surface says nothing at all. A subject drawn one member too wide — the registry
 //!    missing `renames.json`, say — would show here as jigc moving its own files aside on
 //!    the ordinary path, which is the failure mode the writer registry exists to prevent.
+//! 3. **the partial cell** — the parking home occupied so one entry's move cannot land while
+//!    the other's can. The move axis is `{all · some · none}`, not `{succeeds · fails}`, and
+//!    the middle value is where the narration's count decides whether the door answers for
+//!    the **area** or only for what it managed to do with it.
+//!
+//! **What this suite does not yet assert, said here rather than left to be inferred:** at T2
+//! the entry whose move failed is still taken by the teardown that follows — nothing is kept
+//! that was destroyed before, and an assertion over that outcome would pin the loss as
+//! expected output. T3 conditions the removal on the move and owns those cells.
 
 use std::path::{Path, PathBuf};
 use std::process::Output;
@@ -53,6 +64,14 @@ const PLANTS: &[(&str, &str)] = &[
 /// The complement's **entries**, as a door names them: the nested plant's unit is its
 /// directory, because `engine::state::foreign_area_paths` returns a foreign directory whole.
 const ENTRIES: &[&str] = &["NOTES.md", "analysis", "docs/notes.txt"];
+
+/// **Arm 3's plants** (M53 Increment 2 / T2) — exactly two entries, one at the area root and
+/// one under `docs/`, so the number the narration prints is unambiguous: the area holds 2 and
+/// the move takes 1. Their names say which side of the cell each is on.
+const PARTIAL_PLANTS: &[(&str, &str)] = &[
+    ("root-foreign.txt", "the entry whose move lands\n"),
+    ("docs/non-md.txt", "the entry whose move cannot\n"),
+];
 
 /// A landed finalize with the plants in place, driven at `format`.
 struct Landed {
@@ -82,17 +101,35 @@ impl Landed {
 /// `finalize.empty-commit`, so without it this suite would assert about an arm that never
 /// lands.
 fn landed_finalize(plant: bool, format: &str) -> Landed {
+    landed_finalize_with(if plant { PLANTS } else { &[] }, None, format)
+}
+
+/// [`landed_finalize`]'s core, with the parking home's state as a parameter: `occupy` is a
+/// path under `.jigc/displaced/<task-id>/` to put a **regular file** at before the finalize
+/// runs, which is how the partial cell is manufactured without permission games — the entry
+/// whose parking parent it occupies cannot land, every other entry can.
+fn landed_finalize_with(plants: &[(&str, &str)], occupy: Option<&str>, format: &str) -> Landed {
     let corpus = TrialCorpus::build(State::Fresh);
     let task = corpus.start_workflow("quick-fix", "Cap the retry budget");
     let area = corpus.repo().join(".jigc").join("tasks").join(&task);
 
-    if plant {
-        for (rel, bytes) in PLANTS {
-            let at = area.join(rel);
-            std::fs::create_dir_all(at.parent().expect("a plant has a parent"))
-                .expect("create the plant's parent");
-            std::fs::write(&at, bytes).expect("write the plant");
-        }
+    for (rel, bytes) in plants {
+        let at = area.join(rel);
+        std::fs::create_dir_all(at.parent().expect("a plant has a parent"))
+            .expect("create the plant's parent");
+        std::fs::write(&at, bytes).expect("write the plant");
+    }
+
+    if let Some(rel) = occupy {
+        let at = corpus
+            .repo()
+            .join(".jigc")
+            .join("displaced")
+            .join(&task)
+            .join(rel);
+        std::fs::create_dir_all(at.parent().expect("the occupant has a parent"))
+            .expect("create the parking home");
+        std::fs::write(&at, "not a directory\n").expect("occupy the parking path");
     }
 
     // A real diff for the commit to carry — the index the agent stages, not the area.
@@ -287,5 +324,71 @@ fn a_task_with_no_foreign_byte_displaces_nothing_and_says_nothing() {
     assert!(
         !stderr.contains("displaced") && !stderr.contains("moved"),
         "the ordinary path says nothing about displacement on either surface; stderr:\n{stderr}",
+    );
+}
+
+/// **Arm 3, the partial cell** (M53 Increment 2 / T2;
+/// `completions/artifacts/M53/settle-record.md` → D2.1/D2.2;
+/// `completions/artifacts/M53/baseline-a3-2-failed-displacement.md` §4.1) — the move axis has
+/// a **third** value between *all* and *none*: some entries move and some do not, reachable
+/// with no permission game at all by occupying one entry's parking parent with a regular file.
+///
+/// Driven at `73b6ac0e`, that cell announced itself as *the working area held 1 entry* over an
+/// area that held **two** — the count came from `moved.len()`, so the door under-reported its
+/// own subject by exactly the entry whose move had failed. The narration's count is the
+/// **complement's**, and the entry that did not move is named with the reason it did not,
+/// beside the one that did.
+///
+/// `committed.displaced` is unmoved by this: the key is declared as what was **moved**, so it
+/// still carries that pair alone.
+#[test]
+fn a_partial_move_names_what_it_could_not_move_and_counts_the_whole_area() {
+    let landed = landed_finalize_with(PARTIAL_PLANTS, Some("docs"), "json");
+    let repo = landed.repo();
+    let task = &landed.task;
+    let area = repo.join(".jigc").join("tasks").join(task);
+    let home = repo.join(".jigc").join("displaced").join(task);
+
+    let moved_from = rel(&repo, &area.join("root-foreign.txt"));
+    let moved_to = rel(&repo, &home.join("root-foreign.txt"));
+    let unmoved = rel(&repo, &area.join("docs").join("non-md.txt"));
+
+    // The narration, read as the one block it is: both halves of the area's complement are
+    // inside it, not scattered across notes a reader has to total up.
+    let stderr = landed.stderr();
+    let narration = stderr
+        .find("note: the working area held")
+        .map(|at| stderr[at..].to_owned())
+        .unwrap_or_else(|| {
+            panic!("a partial move still narrates the area it displaced from;\nstderr:\n{stderr}")
+        });
+    assert!(
+        narration.contains("held 2 entries"),
+        "the count is the AREA's complement — it held 2 — never `moved.len()`: a door that \
+         reports one entry over an area that held two under-reports its own subject by the \
+         entry whose move failed;\nstderr:\n{stderr}",
+    );
+    assert!(
+        narration.contains(&moved_from) && narration.contains(&moved_to),
+        "the narration still names the move it made ({moved_from} → {moved_to});\nstderr:\n{stderr}",
+    );
+    assert!(
+        narration.contains(&unmoved),
+        "the narration names the entry it could NOT move ({unmoved}) — the half the count was \
+         hiding;\nstderr:\n{stderr}",
+    );
+    assert!(
+        narration.contains("File exists"),
+        "…with the reason that move failed, so the operator is not left to guess which of the \
+         parking home's two failure points it hit;\nstderr:\n{stderr}",
+    );
+
+    // The envelope is keyed on what MOVED and says so, so it carries the one pair alone.
+    assert_eq!(
+        displaced_key(&landed),
+        vec![(moved_from, moved_to)],
+        "`committed.displaced` is declared as the moves that landed — a failed move is not a \
+         `{{from, to}}` pair, and this key does not change;\nstdout:\n{}",
+        landed.stdout(),
     );
 }

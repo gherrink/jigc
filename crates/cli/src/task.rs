@@ -5839,11 +5839,19 @@ impl PendingForeign {
 /// says where it actually went. Silently replacing it would be this door's own loss cell, one
 /// directory over.
 ///
-/// **Best-effort, and honest about it.** The teardown that follows is *not* skippable — a
-/// left-over working area makes `jigc task list` report an active task that finalized — so a
-/// move that cannot be made is narrated as a `note:` on stderr rather than raised, and the
-/// return carries only what actually moved (the outcome-keyed narration rule
-/// `crate::milestone::PendingLoss` states: name what the act *took*, never what it intended).
+/// **Best-effort, and honest about it — which takes both halves of the outcome** (M53
+/// Increment 2 / T2; `completions/artifacts/M53/settle-record.md` → D2.1). A move that cannot
+/// be made is never raised: the commit is already truth and the teardown after this is what
+/// the caller depends on. Until M53 the return carried *only* what actually moved, and each
+/// failure went out as a lone `note:` of its own — so [`narrate_displacement`]'s count came
+/// from `moved.len()`, and an area that held two entries and moved one announced itself as
+/// *held 1 entry* while the second was destroyed (driven,
+/// `completions/artifacts/M53/baseline-a3-2-failed-displacement.md` §4.1). The return now
+/// carries the entries it could **not** move beside the ones it did, each with the reason its
+/// move failed — `create_dir_all` at the parking home and `fs::rename` are two distinct
+/// failure points and both belong in that set — and the narration is the one place either set
+/// is printed. The outcome-keyed rule `crate::milestone::PendingLoss` states is unchanged:
+/// name what the act *took*, never what it intended.
 ///
 /// **Declared bound:** the complement's entries reach here through `to_string_lossy`
 /// (`engine::state::foreign_area_paths`), so an **undecodable** filename arrives
@@ -5855,7 +5863,7 @@ pub(crate) fn displace_foreign_area(
     area: &Path,
     kind: state::WorkArea,
     unit_id: &str,
-) -> Vec<render::Displaced> {
+) -> Displacement {
     let foreign = match state::foreign_area_paths(area, kind) {
         Ok(paths) => paths,
         Err(err) => {
@@ -5864,39 +5872,80 @@ pub(crate) fn displace_foreign_area(
                  (the removal below takes whatever is in it): {err}",
                 render::repo_relative(repo_root, area),
             );
-            return Vec::new();
+            // Nothing was enumerated, so there is no entry to report on either side — the
+            // note above is the whole answer this call has.
+            return Displacement {
+                moved: Vec::new(),
+                unmoved: Vec::new(),
+            };
         }
     };
     let home = jigc_root
         .join(crate::relocate::WORKBENCH_SUBDIR)
         .join(unit_id);
     let mut moved: Vec<render::Displaced> = Vec::new();
+    let mut unmoved: Vec<Unmoved> = Vec::new();
     for entry in foreign {
         let from = area.join(&entry);
+        let from_line = render::repo_relative(repo_root, &from);
         let to = free_displacement_path(home.join(&entry));
         let parent = to.parent().unwrap_or(&home);
         if let Err(err) = std::fs::create_dir_all(parent) {
-            eprintln!(
-                "note: could not open {} to move {} aside: {err}",
-                render::repo_relative(repo_root, parent),
-                render::repo_relative(repo_root, &from),
-            );
+            unmoved.push(Unmoved {
+                path: from_line,
+                reason: format!(
+                    "could not open {} to park it: {err}",
+                    render::repo_relative(repo_root, parent),
+                ),
+            });
             continue;
         }
+        let to_line = render::repo_relative(repo_root, &to);
         match std::fs::rename(&from, &to) {
             Ok(()) => moved.push(render::Displaced {
-                from: render::repo_relative(repo_root, &from),
-                to: render::repo_relative(repo_root, &to),
+                from: from_line,
+                to: to_line,
             }),
-            Err(err) => eprintln!(
-                "note: could not move {} aside to {}: {err}",
-                render::repo_relative(repo_root, &from),
-                render::repo_relative(repo_root, &to),
-            ),
+            Err(err) => unmoved.push(Unmoved {
+                path: from_line,
+                reason: format!("could not move it to {to_line}: {err}"),
+            }),
         }
     }
     moved.sort_by(|a, b| a.from.cmp(&b.from));
-    moved
+    unmoved.sort_by(|a, b| a.path.cmp(&b.path));
+    Displacement { moved, unmoved }
+}
+
+/// What one [`displace_foreign_area`] call did with a working area's complement — **both**
+/// halves, because either alone lets a surface under-report the area (M53 Increment 2 / T2).
+pub(crate) struct Displacement {
+    /// The entries that reached `.jigc/displaced/<unit-id>/`, sorted by `from` — the pairs
+    /// the landed envelope's `committed.displaced` carries, which is declared as what moved.
+    pub(crate) moved: Vec<render::Displaced>,
+    /// The entries whose move failed — still in the area when this call returns, and whose
+    /// fate from there is the **caller's** teardown, not this function's. Sorted by path.
+    /// Empty on the ordinary path, where the parking home is jigc's own sibling directory
+    /// and every move is a rename between two directories inside `.jigc/`.
+    pub(crate) unmoved: Vec<Unmoved>,
+}
+
+impl Displacement {
+    /// How many entries the area's complement held — `moved` **and** `unmoved`, which is the
+    /// only count a surface may print about the area: `moved.len()` is a count of the act.
+    fn held(&self) -> usize {
+        self.moved.len() + self.unmoved.len()
+    }
+}
+
+/// One complement entry [`displace_foreign_area`] could not move, and why.
+pub(crate) struct Unmoved {
+    /// Where the entry was asked to move **from** — its working-area path, repo-relative
+    /// (law 1: a surface prints no host filesystem).
+    pub(crate) path: String,
+    /// Why the move did not happen, naming the failure point: the parking home could not be
+    /// opened, or the rename itself failed.
+    pub(crate) reason: String,
 }
 
 /// `wanted`, or the first `<wanted>.<n>` (n ≥ 2) nothing occupies — the no-clobber rule
@@ -5916,30 +5965,72 @@ fn free_displacement_path(wanted: PathBuf) -> PathBuf {
     }
 }
 
-/// Name on **stderr** every move [`displace_foreign_area`] made — the side channel, so the
-/// landed document still owns stdout undiluted on every format
-/// (`design/command-output-contract.md` → Stream discipline). Silent when nothing moved: the
-/// omitting context prints no bytes at all.
+/// Name on **stderr** what [`displace_foreign_area`] did with one working area's complement —
+/// the side channel, so the landed document still owns stdout undiluted on every format
+/// (`design/command-output-contract.md` → Stream discipline). Silent when the complement was
+/// empty: the omitting context prints no bytes at all.
 ///
-/// Both displacing doors call it over **one working area's** moves: the milestone boundary
+/// **The count is the area's, never the act's** (M53 Increment 2 / T2;
+/// `completions/artifacts/M53/settle-record.md` → D2.2). It is [`Displacement::held`] — every
+/// entry the complement held — and both sets are named under it: the moves that landed, and
+/// the entries that did not move with the reason each did not. Keyed on `moved.len()` this
+/// sentence read *held 1 entry* over an area that held two and lost the second in silence
+/// (driven, `completions/artifacts/M53/baseline-a3-2-failed-displacement.md` §4.1); a door
+/// that under-reports its own subject is the law-1 half-truth
+/// `crate::milestone::DESTROYING_DOORS` names.
+///
+/// Both displacing doors call it over **one working area's** outcome: the milestone boundary
 /// narrates per sub-task area rather than once for the boundary (M52 Increment 4 / T4), so
 /// the sentence's *"the working area"* stays the true singular it is here.
-pub(crate) fn narrate_displacement(moved: &[render::Displaced]) {
-    if moved.is_empty() {
+pub(crate) fn narrate_displacement(outcome: &Displacement) {
+    let held = outcome.held();
+    if held == 0 {
         return;
     }
-    let listing: Vec<String> = moved
-        .iter()
-        .map(|m| format!("    {} → {}", m.from, m.to))
-        .collect();
-    eprintln!(
-        "note: the working area held {} entr{} jigc did not write, and removing it would \
-         have destroyed bytes no commit has a copy of — they were moved aside, not \
-         taken:\n{}",
-        moved.len(),
-        if moved.len() == 1 { "y" } else { "ies" },
-        listing.join("\n"),
+    let mut message = format!(
+        "note: the working area held {held} entr{} jigc did not write, and removing it would \
+         have destroyed bytes no commit has a copy of",
+        if held == 1 { "y" } else { "ies" },
     );
+    if !outcome.moved.is_empty() {
+        // The whole complement moved ⇒ the plain sentence, unchanged since M52: the count is
+        // already the area's, and *they* is every entry it held.
+        if outcome.unmoved.is_empty() {
+            message.push_str(" — they were moved aside, not taken:\n");
+        } else {
+            message.push_str(&format!(
+                " — {} of them moved aside, not taken:\n",
+                outcome.moved.len(),
+            ));
+        }
+        message.push_str(
+            &outcome
+                .moved
+                .iter()
+                .map(|m| format!("    {} → {}", m.from, m.to))
+                .collect::<Vec<_>>()
+                .join("\n"),
+        );
+    }
+    if !outcome.unmoved.is_empty() {
+        if outcome.moved.is_empty() {
+            message.push_str(" — not one of them could be moved aside:\n");
+        } else {
+            message.push_str(&format!(
+                "\n  and {} could not be moved:\n",
+                outcome.unmoved.len(),
+            ));
+        }
+        message.push_str(
+            &outcome
+                .unmoved
+                .iter()
+                .map(|u| format!("    {} — {}", u.path, u.reason))
+                .collect::<Vec<_>>()
+                .join("\n"),
+        );
+    }
+    eprintln!("{message}");
 }
 
 /// Phase 7 (`design/finalize.md` → 7. Post-commit, best-effort). Three updates, none of
@@ -5981,8 +6072,12 @@ fn post_commit(
         eprintln!("note: post-commit edge-index invalidation failed (self-heals): {err:#}");
     }
     if let Some((kind, unit_id, sink)) = displace {
-        *sink = displace_foreign_area(repo_root, jigc_root, cleanup_dir, kind, unit_id);
-        narrate_displacement(sink);
+        let outcome = displace_foreign_area(repo_root, jigc_root, cleanup_dir, kind, unit_id);
+        narrate_displacement(&outcome);
+        // The sink is the landed envelope's `displaced` key, declared as the moves that
+        // landed — so it takes `moved` alone, while the narration above answers for the
+        // whole complement (M53 Increment 2 / T2).
+        *sink = outcome.moved;
     }
     if let Err(err) = std::fs::remove_dir_all(cleanup_dir) {
         eprintln!("note: post-commit working-area removal failed (self-heals): {err:#}");
