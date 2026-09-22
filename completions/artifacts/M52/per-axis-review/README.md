@@ -252,6 +252,46 @@ the two pull apart the axis's grade is printed rather than overwritten.
 
 ### Tier 1 — exit-0 loss or repository harm through a committing, destroying or moving door (4)
 
+**The conversion ledger — CLOSED for these four rows** (M53 Increment 6 / T2, 2026-09-22). Each entry
+below carries one `pinned-by:` — or a stated `UNPINNED: <why>` — for **the row**, and one more for
+**every widening cell the M53 baseline added to it** ([baseline-ledger.md](../../M53/baseline-ledger.md)
+§2, *Every class came back wider than its row*), so a cell the fix had to sweep cannot ride the row's
+citation. Every citation is **verified by reading what the cited test asserts**, never from its name:
+[pinning.md](../../../../implementation/pinning.md) §3 and its 2026-08-18 addendum refuse a `pinned-by:`
+symbol parser **by name**, so no command checks the reading — three citations that read apt and asserted
+something else are what bought that refusal. **§A's tier-2 and tier-3 rows are not dispositioned here**:
+the charter triaged them, and M53 is a fix pass over these four alone
+([decisions-pending.md](../../../../implementation/decisions-pending.md) → *The rc.17 fix pass (M53)*).
+
+**The closure check, stated and re-runnable.** It fences the *form* — four entries, each with exactly
+one `**the row**` disposition and one labelled `**cell (…)**` line per widening cell — and nothing else:
+
+```
+awk '
+  /^### Tier 1 —/ { t = 1; next }
+  /^### Tier 2 —/ { t = 0 }
+  t && /^\*\*`\(/ { row = ++n; r[n] = 0; c[n] = 0; next }
+  t && /^`(pinned-by|UNPINNED):`/ {
+    if (!row) { printf "STRAY disposition, line %d\n", NR; bad = 1; next }
+    if ($0 ~ /\*\*the row\*\*/) r[row]++
+    else if ($0 ~ /\*\*cell \(/) c[row]++
+    else { printf "UNLABELLED disposition, line %d\n", NR; bad = 1 }
+  }
+  END {
+    if (n != 4) { printf "tier 1 holds %d entries, not 4\n", n; bad = 1 }
+    for (i = 1; i <= n; i++) {
+      if (r[i] != 1) { printf "entry %d: %d row-dispositions (want 1)\n", i, r[i]; bad = 1 }
+      printf "entry %d: the row + %d cells disposed\n", i, c[i]
+    }
+    exit bad ? 1 : 0
+  }' completions/artifacts/M52/per-axis-review/README.md
+```
+
+Driven 2026-09-22, exit **0**: `entry 1: the row + 2 cells disposed` · `entry 2: the row + 3` ·
+`entry 3: the row + 2` · `entry 4: the row + 3` — **fourteen dispositions over four rows and ten
+widening cells, zero `UNPINNED`**. The counts are checked by the command; that they are *the* ten cells
+§2 names is checked by reading §2 beside them, which is the half no command can do.
+
 **`(3, A3-1)` · HIGH · `jigc milestone finalize` destroys the milestone's own working-area complement at
 exit 0, named by nothing.** — [axis-3.md](axis-3.md) §5, §3 R-H
 
@@ -280,6 +320,43 @@ that destroys what it never named is the law-1 half-truth"*. Three of the four d
 for it; the landed boundary does not. **Re-driven by the reconciler**, which also refuted the Codex pass's
 two contradicting claims with this repro.
 
+`pinned-by:` **the row** — `milestone_boundary_displacement::a_landed_milestone_boundary_keeps_every_byte_of_its_own_area_it_did_not_write`
+— **verified by reading**: over `{squash, chain} × {agent, json}` it drives a real fan-out
+`jigc milestone finalize` to exit 0 (the **success** path, so a refusal could not stand in for the
+claim), asserts the milestone area is still removed, and then requires every `MILESTONE_PLANTS` byte to
+be readable at `.jigc/displaced/<milestone>/<rel>` **byte-equal** to what was planted — `merged/scratch/perf.txt`
+included, riding its parent entry's move — each move named on stderr as `from` → `to` under **both**
+formats, `committed.displaced` to equal the sorted **union** over this area and every sub-task area, and
+jigc's own `tasks.json` and a materialized body never to be parked. Assertion (3) is the exact negation
+of this row, and the envelope assertion of the `"displaced": []` the repro quotes.
+
+`pinned-by:` **cell (i) · the `merged/**` region** — `milestone_merged_complement::every_plant_locus_under_merged_is_foreign_and_returned_whole`
++ `milestone_merged_complement::milestone_discard_refuses_over_every_merged_plant_and_narrates_under_force`
++ `milestone_merged_complement::uninstall_refuses_over_every_merged_plant_and_narrates_under_force`
++ `milestone_merged_complement::every_merged_plant_survives_the_unwind_and_leaves_the_area_foreign`
+— **verified by reading**: the first calls `engine::state::foreign_area_paths(area, WorkArea::Milestone)`
+over six planted loci under `merged/` and asserts the returned complement **equals** those six sorted,
+that a foreign *directory* comes back whole (`merged/sub/nested.txt` is asserted **absent** — the parent
+is the unit a door names and moves), that no `MILESTONE_AREA_FILES` member written in the shape jigc
+writes it joins the complement, and that no colon-bearing materialized body does either; the two door
+arms drive the real binary and require the refusal to name **every one** of the six paths under the
+shipped `milestone.foreign-bytes` / `uninstall.foreign-bytes` identities, take nothing, and under
+`--force` narrate every path on stderr before the area goes; the unwind arm copies the pristine area once
+per locus and requires `engine::state::unwind_area` to return `AreaUnwind::Foreign` with that locus
+byte-intact (a foreign directory never descended) **while** every `<type>:<slug>.md` body and every
+registry member jigc wrote is gone — one file, one answer, so a walk that refuses too much would strand
+the mint. The M52 bound —
+*`merged/` is jigc's wholesale, never walked* — is negated by the first test's equality.
+
+`pinned-by:` **cell (ii) · `materialize` clearing `merged/docs/` on a finalize that does *not* land** —
+`merged_area_selective_clear::a_blocked_boundary_clears_the_stale_body_and_keeps_every_foreign_plant`
+— **verified by reading**: it stages an `adr` missing its required `## Decision` so the boundary blocks
+at **exit 3** on the boundary's own `conformance.section` with `head_count` unmoved (a blocked run, which
+is the arm this cell is about and the row's repro never reached), and then asserts the clear is
+*selective*: the stale body whose name `staged_doc_id` recognises is gone **and** its marker is found
+nowhere by the same `command grep` instrument that found it before, while every `PLANTS` and
+`SHAPE_PLANTS` entry under `merged/docs/` is still on disk **byte-intact** and named by no finding.
+
 **`(3, A3-2)` · HIGH · when the displacement fails, both `Displace` doors remove the area anyway, and say
 only that the *move* failed.** — [axis-3.md](axis-3.md) §5, §3 R-I
 
@@ -305,6 +382,54 @@ is *the move failed* and the unprinted half is *and then it was deleted*. **The 
 (when the *source* is unreadable both operations fail on the same `EACCES` and the bytes survive) — by
 accident of a shared cause, not by design, which is why the axis is `{move succeeds, move fails} × {removal
 succeeds, removal fails}` and only three of its four cells are currently safe.
+
+`pinned-by:` **the row** — the seven `finalize_displacement::task_area_*` coordinate tests (through
+`assert_task_cell`) and the seven `milestone_boundary_displacement::boundary_areas_*` ones (through
+`assert_boundary_cell`, each run at **both** `finalize.fan-out.squash` arms) — **verified by reading**:
+each drives a landed finalize, takes a **before-control** by invoking the `grep -rlE` binary directly
+over the planted `JIGC-M53-KEEP` markers and asserting the before-count **is** the plant count (*a scan
+that finds nothing before proves nothing after*), then requires the after-count to **equal** it — *every planted byte is
+still on disk, moved aside or left standing, never taken* — asserts the cell's own move coordinate
+against the length of `committed.displaced` so a manufacture that silently stopped blocking cannot pass
+while testing a different cell, and asserts that an area jigc could **not** empty of a third party's
+bytes is **left standing** while one it emptied is gone. The row is the `Moves::None` column: the move
+fails and the area is now kept, where M52 removed it anyway.
+
+`pinned-by:` **cell (i) · the partial move, the axis's third value** —
+`finalize_displacement::a_partial_move_names_what_it_could_not_move_and_counts_the_whole_area`
+— **verified by reading**: it occupies one entry's parent under the parking home so exactly one of two
+entries can move, then locates the single narration block beginning `note: the working area held` and
+requires **both halves inside that one block** — `held 2 entries`, which is the *complement's* count and
+not `moved.len()`; the move it made, named `from` → `to`; the entry it could **not** move; and
+`File exists`, the reason, so the operator need not guess which of the parking home's two failure points
+it hit. `committed.displaced` is asserted to carry the moved pair **alone**, the key being declared as
+what moved.
+
+`pinned-by:` **cell (ii) · the non-atomic `remove_dir_all` skeleton** — the four `*_fault_on_a_later_member`
+and `*_fault_on_the_pin` coordinates at both doors, plus
+`finalize_displacement::the_unreachable_coordinates_are_named_with_their_reason` and
+`milestone_boundary_displacement::the_boundary_axis_names_its_unreachable_coordinates`
+— **verified by reading**: an in-transaction `pre-commit` hook `chmod 0555`s either the area's `docs/`
+(`merged/docs/` at the milestone) so the removal faults on a **later** registry member, or the area
+directory itself so it faults on member 0, the base pin; the shared cell assertion then requires the area
+to be **left standing** rather than reduced to a skeleton, exactly one `finalize.foreign-bytes` advisory per
+standing area, and `base.json` present **iff** the fault was on the pin — so a clean unwind and a fault
+on a later member both take the pin first, which is what a by-id door reads. The two gap tests assert
+`CELLS + UNREACHABLE == 9` over the manufactured `{all · partial · none} × {clean · fault on the pin ·
+fault on a later member}` space, each unreachable coordinate carrying a non-empty reason and appearing in
+exactly one of the two lists.
+
+`pinned-by:` **cell (iii) · `cleanup_subtask_areas`' ignored `all_gone`** — assertion (4) of
+`milestone_boundary_displacement::assert_boundary_cell` (driven by its seven `boundary_areas_*` tests)
++ `milestone_boundary_displacement::milestone_discard_force_still_takes_a_sub_task_areas_foreign_byte`
+— **verified by reading**: the boundary cells count the standing areas across the milestone area **and
+every sub-task area**, require `stderr.matches("finalize.foreign-bytes").count()` to equal that number,
+and require each advisory to be keyed at its **own** work unit (`task:<id>` / `milestone:<id>`), so a
+boundary settling three areas hands a reader three keys — the return value both landed arms dropped is
+now one finding per area. The third caller is disposed the other way and **driven**: `jigc milestone
+discard --force` still takes a sub-task area's foreign byte, still acks `workbench removed`, parks
+nothing, and mints **no** `finalize.foreign-bytes` — the disposition read off the call, never off the
+function.
 
 **`(2, DEFECT A)` · tier-1 by consequence, graded *the clean-`-n` cell of M51's D3* by the axis · a clean
 `git cherry-pick --no-commit` is a member of no `InProgress::ALL` row, and `jigc task finalize` concludes it
@@ -332,6 +457,45 @@ merge's authored message was destroyed with `SQUASH_MSG`"*. **Bound, stated by t
 about `git cherry-pick -n`'s marker behaviour on the installed git; a git that wrote `CHERRY_PICK_HEAD` on a
 clean `-n` would close it, and none is known.
 
+`pinned-by:` **the row** — `repo_posture::every_git_state_names_its_own_operation_and_a_route_git_accepts`
++ `repo_posture::an_uncommitted_cherry_pick_is_abandoned_by_git_reset_in_every_cell`
+— **verified by reading**: the first iterates `GitState::ALL` and, for every fixture that declares an
+operation, requires exactly one `repo.operation-in-progress` breach whose `operation()` **is** the member
+the fixture declares and whose rendered text names that member's own noun, then **extracts the argv out
+of the rendered route** — never rebuilds it from `abandon()` — runs it verbatim in that repository, and
+requires git to accept it at exit 0 and the probe to answer **no operation** afterwards; it also asserts
+in the other direction that no `InProgress::ALL` member is left unreached by the fixture set. The second
+builds each uncommitted-pick cell, asserts `MERGE_MSG` present with `CHERRY_PICK_HEAD`, `MERGE_HEAD`,
+`REVERT_HEAD`, `SQUASH_MSG`, `rebase-merge` and `rebase-apply` all **absent** (the conjunction that makes
+the state distinguishable, and the reason every marker-keyed member missed it) and the `git ls-files -u`
+count the cell is named for, then runs `git reset` and requires it to be accepted, `MERGE_MSG` gone in
+**that worktree**, the index free of unmerged paths, and the picked bytes still in the working tree.
+
+`pinned-by:` **cell (i) · the three damage shapes (swallow · message-only kill · index contamination)** —
+`flow54_acceptance::arm4_an_uncommitted_pick_is_refused_and_nothing_of_it_is_consumed`
++ `posture_door_axis::every_acting_door_adjudicates_the_posture_family`
+— **verified by reading**: arm 4 crosses the uncommitted-pick cells with the acting rows of
+`BEHALF_DOORS` — **both** `CommitsOnBehalf` and `MovesOnBehalf`, counted off the registry and asserted to
+be 12, so a row added anywhere reddens until someone answers what it acts on — and after **every** such
+invocation asserts the door refused under `repo.operation-in-progress` naming `cherry-pick`, that
+`MERGE_MSG` is **byte-identical** to the bytes read before (closing *swallow* and *message-only kill*
+together, since both are observed as that file changing or vanishing) and that `git ls-files --stage` is
+identical to its pre-image (closing *index contamination*, the mover-only shape). The door-axis test adds
+the complement: a cell that legitimately **proceeds** gets its own repository and is required to raise no
+`PostureMember::ALL` code at all, so the sweep cannot green by refusing everywhere.
+
+`pinned-by:` **cell (ii) · the two byte-identical sibling states (clean multi-commit `-n` range;
+conflicted `-n` after `git add`)** — `flow54_acceptance::uncommitted_pick_states` feeding `arm4_…`, over the cells
+`crates/cli/tests/support/git_state.rs` builds — **verified by reading**: the cell set is **derived**, not
+listed — `GitState::ALL` filtered by `state.in_progress() == Some(InProgress::UncommittedCherryPick)` —
+and the arm asserts it holds exactly **four**: the clean single-commit pick, the multi-commit `-n`
+**range** (built by `git cherry-pick -n <branch>..<branch>`, whose own fixture doc records the driven
+datum that it queues **no `sequencer/`**, which is what makes it a cell rather than a variation), the
+conflicted `-n`, and the conflicted `-n` **after `git add`** (index clean again, `MERGE_MSG` the only
+thing on disk still saying the pick is un-concluded). `is_clean_cell` reads `unmerged == 0` off each
+fixture's own driven expectation rather than deciding it, and the arm additionally forbids the
+conflict-shaped qualifier *once its conflicts are resolved* in exactly the cells that have none.
+
 **`(5, DEFECT 1)` · tier-1 as repository harm (no byte loss) · two minting doors accept a title that slugs to
 nothing and **commit** a record at a fabricated identity at exit 0.** — [axis-5.md](axis-5.md) §11, ledger §B
 
@@ -340,6 +504,53 @@ of it, so `jigc milestone create ""` / `--title "!!!"` mints and commits the deg
 `engine/src/state.rs:2041`'s own doc-comment says the guard exists to prevent (*"left unguarded it mints a
 degenerate `<ty>:<ty>`"*). Both doors are `COMMITTING_DOORS` members. Driven at exit 0 with the record
 committed; re-driven by the reconciler.
+
+`pinned-by:` **the row** — `work_unit_id_axis::every_mint_door_produces_an_id_every_door_accepts`
++ `flow54_acceptance::arm5_no_door_mints_a_work_unit_at_a_fabricated_identity`
+— **verified by reading**: both iterate `MINT_DOORS`, dispatched by the row's `site` with a **hard panic
+for an undriven member**, so a sixth row reddens rather than being skipped. The three rows whose id is
+slugged from caller prose — `start.rs::mint_in_repo`, `milestone.rs::run_create` and
+`engine::milestone::add_task` — are driven over the whole degenerate title set through
+`refuses_before_any_write`, which requires the refusal to carry `write.unslugable-title` **and** the
+class's sentence, and then asserts the refusal **precedes every write**: `git rev-parse HEAD` unmoved
+(*the record commit included*), the working-area name set unchanged, and `git status --porcelain` empty.
+The two rows whose id comes from something that is not a title are `Exempt(reason)` on the registry's own
+mold and **drive** their stated reason instead of asserting it — the migrate row mints exactly one area
+from a `blake3` of the source path whose id satisfies `engine::slug::is_slug`, and the re-seed row
+rebuilds an area from the **committed record** after the gitignored workbench is emptied. The hostile
+half of the same test keeps the other direction true: every id a mint door does produce is one every
+by-id door accepts, so the guard cannot strand a live work unit.
+
+`pinned-by:` **cell (i) · the non-Latin-script and stopword-only titles** — the `UNSLUGABLE_TITLES` /
+`DEGENERATE` constant driven by both tests above — **verified by reading**: the set is
+`["", "   ", "!!!", "日本語", "the of a"]`, so the two shapes the M53 baseline added beyond the row's
+punctuation-only cell are members of the same loop rather than a separate arm, and the assertion is not
+only on the code but on the class's own sentence — *ids are built from ASCII letters and digits, so a
+title in another script, or of stopwords only, yields none* — which is the half that stays true for a
+title in **any** script, the half `work-unit.malformed-id`'s *use lowercase letters, digits, and single
+hyphens* would have got wrong at a door whose convention is free prose.
+
+`pinned-by:` **cell (ii) · the third committing door, `jigc milestone add-from-spec`** —
+`work_unit_id_axis::add_from_spec_refuses_a_criterion_that_yields_no_id` — **verified by reading**: it
+commits a two-criteria spec whose **second** criterion is `日本語` — deliberately second, so the pass has
+already minted one sub-task before it aborts — drives the real door, and asserts the pass refuses under
+`write.unslugable-title` with the class's sentence, `head_sha` **unmoved** (*no record commit — not for
+the degenerate criterion, and not for the ordinary one it had already minted*), the working-area name set
+unchanged (the mid-loop unwind carried the earlier mint out) and the working tree clean. That is the seam
+the row's two-door prescription missed: `add_from_spec` consults the resume skip set **before** calling
+`add_task`, so the fabricated `task` id was skipped at exit 0 and never reached that function's guard.
+
+`pinned-by:` **cell (iii) · `add-task ""` committing a record `jigc validate` itself calls corrupt** —
+`flow54_acceptance::arm5_…` at the `crates/engine/src/milestone.rs::add_task` row (via
+`refuses_before_any_write`) + `work_unit_id_axis::outside_a_repository_the_degenerate_title_still_answers_not_in_repo`
+— **verified by reading**: `""` is the first member of the degenerate set, so the `add-task` row is driven
+with an empty intent and the shared helper requires HEAD **unmoved** — and since the record commit is the
+write the refusal precedes, no `intent`-empty record is ever written, which is what makes the corrupt
+record unreachable rather than merely reported. The companion arm keeps the guard **after**
+`discover_repo_root` and `jigc_home_or_repo`: outside a repository, `jigc milestone create ""` is
+asserted to answer *not inside a git repository* and to **not** contain `write.unslugable-title`, so the
+title guard cannot pre-empt the precondition every door shares with a true sentence about a fact that is
+not the caller's problem.
 
 ### Tier 2 — posture and route dead ends (8)
 
