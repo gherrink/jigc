@@ -3925,8 +3925,8 @@ fn subtask_worktrees(
 /// `squash: true` — so a worktree mid-merge, mid-pick or mid-rebase had its operation's
 /// staged payload committed under jigc's synthesized subject at exit 0 and its authored
 /// message destroyed with the teardown, while `jigc task finalize` run *inside* that same
-/// worktree refused. Driven on `1.0.0-rc.17` over nine of the ten [`crate::repo::InProgress`]
-/// members at both commit models.
+/// worktree refused. Driven on `1.0.0-rc.17` over every [`crate::repo::InProgress`] member a
+/// linked worktree can hold, at both commit models.
 ///
 /// It is **not a second probe**: it asks [`crate::repo::adjudicated_breach`], the one
 /// composition the door guard asks, with `owes` = `true` — this door commits on behalf and

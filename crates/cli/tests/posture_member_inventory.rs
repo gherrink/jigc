@@ -79,7 +79,19 @@ const STRUCK_CLAIM: &str = "three of four";
 /// tenth*. Nothing caught it: [`no_design_doc_counts_the_family_by_its_own_vocabulary`]
 /// scans `design/`, and both prose homes there are **derived** from the enum by arm 1, so
 /// the one place a hand-written count survived was the crate that defines the set.
-const STRUCK_COUNTS: [(&str, &str); 5] = [
+///
+/// **[Extended 2026-09-22 (the independent review of `986d5e0a`, MEDIUM 3).** The M53
+/// post-review fix put *"nine of the ten members"* back into `crates/cli/src/repo.rs` — a
+/// [`COUNT_HOMES`] member — and this arm stayed green, because the doc-comment **wrapped**
+/// between `**nine**` and `of the ten` and interpolated a `` [`InProgress`] `` link before
+/// `members`. A literal `contains` is not a fence against prose; it is a fence against one
+/// spelling of prose. The scan now normalizes first ([`normalized`]) and matches the claim's
+/// words in order with a bounded gap ([`states`]), so the wrap and the link no longer hide
+/// it. The count itself was wrong in a second way worth recording here: its stated reason —
+/// *`Unborn` cannot occur in a linked worktree* — names a `PostureMember`, **not** an
+/// `InProgress` member, so it subtracted nothing; the reviewer drove the tenth member
+/// landing at exit 0 on `1.0.0-rc.17` too.**]**
+const STRUCK_COUNTS: [(&str, &str); 6] = [
     (
         "menu of nine",
         "`InProgress`' own doc-comment, three lines above `ALL`'s `[InProgress; 10]`",
@@ -100,16 +112,119 @@ const STRUCK_COUNTS: [(&str, &str); 5] = [
         "tenth member declaring one",
         "`repo_posture.rs`' composition arm, whose *next* member is no longer the tenth",
     ),
+    (
+        "nine of these cells",
+        "`commit_seam_posture.rs`' git-state axis arm — the axis has fifteen refusing \
+         cells, so the numeral was a count of a third set again",
+    ),
 ];
 
-/// The homes scanned for them: the module that defines the family, and the suite that runs
-/// every member's rendered route out of the emitted bytes.
+/// The homes scanned for them: the module that defines the family, the suite that runs every
+/// member's rendered route out of the emitted bytes, and — since the M53 post-review fix put
+/// a count in each — the milestone boundary that asks the family about a *second* checkout
+/// and the suite that drives it.
 ///
-/// **Enumerated, and `crates/cli/tests/posture_member_inventory.rs` is deliberately not a
-/// member** — this file must carry every struck phrase above as a literal, so a scan of it
-/// would match itself. Its own overtaken ordinal is reworded rather than fenced, which is
-/// stated here rather than left for a reader to notice.
-const COUNT_HOMES: [&str; 2] = ["crates/cli/src/repo.rs", "crates/cli/tests/repo_posture.rs"];
+/// **Widened because the class was, not because the list was short.** The review found the
+/// struck count in **six** homes; four are reachable from a file scan of this crate and the
+/// `design/` part-docs (arm 3 takes the two `design/` ones), and the sixth is `DECISIONS.md`.
+///
+/// **`DECISIONS.md` is deliberately not a member**, for the same reason this file is not: the
+/// dated log's convention is *strike with the datum that falsifies it*, so a corrected entry
+/// **must** carry the false phrase as quoted text, and a scan of it would match the
+/// correction. `design/` docs are corrected in place and are therefore scannable; the record
+/// is not.
+///
+/// **And `crates/cli/tests/posture_member_inventory.rs` is not a member** — this file must
+/// carry every struck phrase above as a literal, so a scan of it would match itself. Its own
+/// overtaken ordinal is reworded rather than fenced, which is stated here rather than left
+/// for a reader to notice.
+///
+/// Each row carries the **token that proves the scan is looking at a home of this family**,
+/// per home rather than one shared literal: the two `repo*` homes and the boundary name the
+/// enum, and `commit_seam_posture.rs` — which drives the family through the real binary and
+/// never names the type — names the finding code instead. A home that stops carrying its
+/// token reddens rather than passing vacuously.
+const COUNT_HOMES: [(&str, &str); 4] = [
+    ("crates/cli/src/repo.rs", "InProgress"),
+    ("crates/cli/tests/repo_posture.rs", "InProgress"),
+    ("crates/cli/src/milestone.rs", "InProgress"),
+    (
+        "crates/cli/tests/commit_seam_posture.rs",
+        "repo.operation-in-progress",
+    ),
+];
+
+/// `body`, as the count fence compares it: doc-comment markers dropped, emphasis / code-span
+/// / doc-link / strikethrough punctuation removed, and **all whitespace collapsed**, so a
+/// claim the source wrapped across two lines is one string again.
+///
+/// The wrap is not hypothetical — it is how the M53 post-review fix put a struck count back
+/// into `crates/cli/src/repo.rs` under a green fence.
+fn normalized(body: &str) -> String {
+    let mut joined = String::with_capacity(body.len());
+    for line in body.lines() {
+        let line = line.trim_start();
+        let line = line
+            .strip_prefix("//!")
+            .or_else(|| line.strip_prefix("///"))
+            .or_else(|| line.strip_prefix("//"))
+            .unwrap_or(line);
+        joined.push_str(line);
+        joined.push(' ');
+    }
+    joined
+        .chars()
+        .filter(|c| !matches!(c, '`' | '*' | '[' | ']' | '_' | '~'))
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// How many words may sit **between** two consecutive words of a struck claim before the scan
+/// stops calling it the same claim.
+///
+/// Two, which is what the evasion cost: `` **nine**\n//! of the ten [`InProgress`] members ``
+/// interpolates exactly one token. A larger window buys nothing and starts matching sentences
+/// that merely share vocabulary; zero is the `contains` this replaces.
+const MAX_GAP: usize = 2;
+
+/// Split into comparison words: lowercased, outer ASCII punctuation trimmed, so `ten,` and
+/// `nine.` compare as the words they are.
+fn words(text: &str) -> Vec<String> {
+    text.split_whitespace()
+        .map(|word| {
+            word.trim_matches(|c: char| c.is_ascii_punctuation())
+                .to_ascii_lowercase()
+        })
+        .filter(|word| !word.is_empty())
+        .collect()
+}
+
+/// Whether `body` states `claim` — the claim's words, in order, each within [`MAX_GAP`] words
+/// of the last. `body` is normalized first, so the caller hands in raw source.
+fn states(body: &str, claim: &str) -> bool {
+    let haystack = words(&normalized(body));
+    let needle = words(claim);
+    if needle.is_empty() || haystack.len() < needle.len() {
+        return false;
+    }
+    (0..haystack.len()).any(|start| {
+        if haystack[start] != needle[0] {
+            return false;
+        }
+        let mut at = start;
+        for want in &needle[1..] {
+            match (at + 1..=(at + 1 + MAX_GAP).min(haystack.len().saturating_sub(1)))
+                .find(|&i| &haystack[i] == want)
+            {
+                Some(found) => at = found,
+                None => return false,
+            }
+        }
+        true
+    })
+}
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -282,8 +397,22 @@ fn no_design_doc_counts_the_family_by_its_own_vocabulary() {
         }
         scanned += 1;
         let body = fs::read_to_string(&path).expect("a design/ doc is readable");
+        // `STRUCK_CLAIM` stays on the **exact** match it shipped with, and the reason is a
+        // measurement: run through [`states`]' bounded gap it fires on four `design/` docs,
+        // because *three*, *of* and *four* are three ordinary words and a gap-tolerant match
+        // over them is a match on vocabulary rather than on a claim. The loose matcher is for
+        // the counts below, whose phrases are specific enough to survive it.
         if body.contains(STRUCK_CLAIM) {
             carriers.push(path.display().to_string());
+        }
+        // …and the counts arm 4 keeps out of the crate. Two of the six homes the M53
+        // post-review review found were `design/` part-docs, so the two arms scan for both
+        // shapes over the surfaces each already walks rather than one of them being the
+        // place a count is allowed to live.
+        for (claim, datum) in STRUCK_COUNTS {
+            if states(&body, claim) {
+                carriers.push(format!("{} states {claim:?} — {datum}", path.display()));
+            }
         }
     }
     assert!(
@@ -292,9 +421,11 @@ fn no_design_doc_counts_the_family_by_its_own_vocabulary() {
     );
     assert!(
         carriers.is_empty(),
-        "no `design/` doc states the posture family's size as {STRUCK_CLAIM:?} — the family \
-         has three members and the failure the bound was about is a count of repository \
-         states, of which the baseline drove eleven. Carried at: {carriers:#?}"
+        "no `design/` doc states the posture family's size — not as {STRUCK_CLAIM:?} (the \
+         family has three members and the failure the bound was about is a count of \
+         repository states, of which the baseline drove eleven), and not as any of the \
+         counts of `InProgress::ALL` struck with it, which the M53 post-review fix put into \
+         two of these docs. Carried at: {carriers:#?}"
     );
 }
 
@@ -316,14 +447,14 @@ fn no_design_doc_counts_the_family_by_its_own_vocabulary() {
 #[test]
 fn no_home_of_the_family_states_a_count_it_can_move() {
     let mut carried = Vec::new();
-    for home in COUNT_HOMES {
+    for (home, token) in COUNT_HOMES {
         let body = read(home);
         assert!(
-            body.contains("InProgress"),
-            "{home} must be a home of the posture family; it never names `InProgress`"
+            body.contains(token),
+            "{home} must be a home of the posture family; it never names `{token}`"
         );
         for (claim, datum) in STRUCK_COUNTS {
-            if body.contains(claim) {
+            if states(&body, claim) {
                 carried.push(format!("{home} states {claim:?} — {datum}"));
             }
         }

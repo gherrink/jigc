@@ -817,8 +817,8 @@ fn fan_out_cell(state: GitState, squash_false: bool) {
 ///
 /// The axis is `GitState::ALL` — iterated, never listed — minus the members a worktree
 /// cannot hold, each excluded by its own `GitState::worktree_refusal` rather than by a
-/// skip written here. Driven on `1.0.0-rc.17` before the fix, **nine** of these cells
-/// landed at exit 0, committed the operation's staged payload under jigc's synthesized
+/// skip written here. Driven on `1.0.0-rc.17` before the fix, **every refusing cell of this
+/// axis** landed at exit 0, committed the operation's staged payload under jigc's synthesized
 /// subject and destroyed its authored message with the worktree teardown.
 #[test]
 fn the_boundary_refuses_every_operation_left_in_a_worktree_it_commits_from() {

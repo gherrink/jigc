@@ -45,8 +45,11 @@
 //! sentence above was true of the *probe* and false of its *consumers*: `Cli::dispatch`'s
 //! guard asked [`posture`] for the process cwd's repository and nothing else, while `jigc
 //! milestone finalize` reads `git diff --cached` out of every provisioned sub-task
-//! worktree's index and applies it. Driven on the installed `1.0.0-rc.17` across **nine**
-//! of the ten [`InProgress`] members — every one buildable inside a linked worktree — the
+//! worktree's index and applies it. Driven on the installed `1.0.0-rc.17` across **every
+//! member of [`InProgress::ALL`] buildable in a linked worktree** — which is all ten, since
+//! the surjectivity fence in `repo_posture.rs` requires each of them to be produced by some
+//! `GitState` and the one state a worktree cannot hold, `Unborn`, names no `InProgress`
+//! member at all — the
 //! boundary landed at exit **0**, committed the user's un-concluded operation under jigc's
 //! own subject, and destroyed that operation's authored message (`MERGE_MSG` /
 //! `SQUASH_MSG`) with the worktree teardown, while the *same* worktree refused its own
