@@ -907,12 +907,15 @@ impl Drop for GitStateRepo {
 /// shape *does* decide, [`cli::repo::PostureMember::HeadDetached`], is the member a
 /// dedicated worktree is exempt from anyway.
 ///
-/// **One worktree per repository at a time.** [`drive`] names its branches from module
-/// constants (`posture-theirs`, `posture-clean`), and git refuses to check one branch out
-/// in two worktrees of the same repository — so a fixture driving two sub-task worktrees
-/// into conflicting states at once would fail at the second. Every consumer today builds
-/// a one-sub-task milestone per cell; a fixture that needs two must parameterize those
-/// names first.
+/// **One worktree per repository at a time — asserted, not only stated** (the independent
+/// review of `986d5e0a`, LOW 3). [`drive`] names its branches from module constants
+/// ([`THEIRS_BRANCH`], [`CLEAN_BRANCH`]), and git refuses to check one branch out in two
+/// worktrees of the same repository — so a fixture driving two sub-task worktrees into
+/// conflicting states at once would fail **at git**, several frames from the cause. The
+/// precondition is now a named refusal at the door: no branch this construction is about to
+/// claim may already be checked out in another worktree of this repository. A fixture that
+/// needs two driven worktrees must parameterize those constants first, and the refusal says
+/// so.
 ///
 /// Returns `Err` for a state that cannot occur in a worktree at all
 /// ([`GitState::worktree_refusal`]), and **panics** on a dirty worktree for the same
@@ -942,10 +945,47 @@ pub fn overlay_worktree(worktree: &Path, home: &Path, state: GitState) -> Result
             .and_then(|n| n.to_str())
             .expect("a fan-out worktree path ends in its sub-task id"),
     );
+    refuse_if_a_construction_branch_is_taken(&driver, worktree, state);
     driver.ok(&["switch", "-q", "-c", &branch]);
     drive(&driver, state);
     assert_state(worktree, home, state);
     Ok(())
+}
+
+/// The one-worktree-per-repository precondition [`overlay_worktree`] documents, as a check.
+///
+/// [`drive`] names its branches from module constants, and the constructions that use them
+/// **create** them ([`diverge`]'s `git checkout -b posture-theirs`, the squash merge's
+/// `posture-clean`). A second fixture worktree driven into a branch-using state in the same
+/// repository therefore dies inside `drive` at *"a branch named 'posture-theirs' already
+/// exists"* — a message about branches, several frames from the fixture that caused it.
+/// Asked here instead, naming the branch and the edit that lifts the bound.
+///
+/// **Existence, not checked-out-ness.** The prose this replaces said git refuses one branch
+/// in two worktrees, and that is true but is not the failure: `diverge` returns to the
+/// branch it started on, so the constant is left *existing and unchecked-out*, and the next
+/// worktree trips on the create rather than on the checkout.
+fn refuse_if_a_construction_branch_is_taken(driver: &Driver, worktree: &Path, state: GitState) {
+    for branch in [THEIRS_BRANCH, CLEAN_BRANCH] {
+        let exists = driver
+            .run(&[
+                "rev-parse",
+                "--verify",
+                "--quiet",
+                &format!("refs/heads/{branch}"),
+            ])
+            .status
+            .success();
+        assert!(
+            !exists,
+            "refusing to drive {worktree:?} into `{}`: this repository already carries the \
+             construction branch `{branch}`, so something here has been driven into a git \
+             state already. `drive` names its branches from module constants, so exactly one \
+             worktree per repository can be driven at a time — parameterize `THEIRS_BRANCH` \
+             and `CLEAN_BRANCH` before a fixture drives two.",
+            state.name(),
+        );
+    }
 }
 
 /// [`overlay_worktree`], **leaving HEAD exactly as jigc provisioned it — detached** (the
@@ -976,7 +1016,9 @@ pub fn overlay_worktree_detached(
     }
     if state != GitState::Bisect {
         return Err(format!(
-            "`{}` cannot be built on a detached HEAD: every construction but `bisect` moves              between branches by name, and on a detached HEAD those land on a commit rather              than on the branch they left",
+            "`{}` cannot be built on a detached HEAD: every construction but `bisect` moves \
+             between branches by name, and on a detached HEAD those land on a commit \
+             rather than on the branch they left",
             state.name(),
         ));
     }
@@ -986,14 +1028,19 @@ pub fn overlay_worktree_detached(
     };
     assert!(
         !driver.run(&["symbolic-ref", "-q", "HEAD"]).status.success(),
-        "refusing to build the detached-HEAD cell in {worktree:?}: its HEAD is ATTACHED, so          the fixture would prove the opposite of what it exists for. jigc provisions every          fan-out worktree `--detach`; pass the worktree as `provision` left it.",
+        "refusing to build the detached-HEAD cell in {worktree:?}: its HEAD is ATTACHED, so \
+         the fixture would prove the opposite of what it exists for. jigc provisions \
+         every fan-out worktree `--detach`; pass the worktree as `provision` left it.",
     );
     let dirty = driver.ok(&["status", "--porcelain"]);
     assert!(
         dirty.is_empty(),
-        "refusing to drive the fan-out worktree {worktree:?} into the `{}` git state over a          DIRTY tree — the state is entered LAST, before the sub-task's own work is staged.          Outstanding:\n{dirty}",
+        "refusing to drive the fan-out worktree {worktree:?} into the `{}` git state over \
+         a DIRTY tree — the state is entered LAST, before the sub-task's own work is \
+         staged. Outstanding:\n{dirty}",
         state.name(),
     );
+    refuse_if_a_construction_branch_is_taken(&driver, worktree, state);
     drive(&driver, state);
     assert_state_with_head(worktree, home, state, Head::Detached);
     Ok(())
