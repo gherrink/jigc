@@ -2,6 +2,50 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-09-22 — M53 Increment 6 / T4: the pass's two empty diffs, driven at the close and recorded as output rather than as a claim
+
+**An empty diff only means something when it is taken after everything that could have moved it, and when the taking is itself destructive.** Both were run at HEAD `1bbf34f1` — Increments 1–5's twenty-two tasks plus this increment's T1–T3 all landed, tree clean — and both printed what the close needs them to print. The outputs are quoted here because the fences are a *record*, not a suite: nothing in `cargo test` re-runs them, so the only place a later reader can see they were taken is this entry.
+
+**(i) The negative fence — zero schema-hash movement, zero `schema-version` bumps, zero corpus migrations.** The four `schema-snapshots/` trees were **enumerated by `find` at run time, never remembered** (`find . -type d -name 'schema-snapshots' -not -path '*/target/*'` → `crates/cli/pack/`, `packs/methodology/`, and the two under `crates/cli/tests/fixtures/` — `corpus-structural/` and `prior-schema-prd/`; four, as the decomposition's read said). Then, over both schema trees, both `config/schema-manifest.yaml` files and all four snapshot trees:
+
+```
+$ git diff 5d9fd714..HEAD --stat -- crates/cli/pack/schemas packs/methodology/schemas \
+    crates/cli/pack/config/schema-manifest.yaml packs/methodology/config/schema-manifest.yaml \
+    crates/cli/pack/schema-snapshots packs/methodology/schema-snapshots \
+    crates/cli/tests/fixtures/corpus-structural/schema-snapshots \
+    crates/cli/tests/fixtures/prior-schema-prd/schema-snapshots
+$ echo "EXIT=$?"
+EXIT=0
+```
+
+No output. `5d9fd714` is the commit the decomposition handed `milestone-build`, so the range is the whole pass. This is the **asserted** half of [settle-record.md](completions/artifacts/M53/settle-record.md) → *The boundary, as it now stands*: the ledger's `0` row for schema-hashes, `schema-version`s and corpora is now a measurement.
+
+**(ii) The golden tree, regenerated from an emptied root — the destructive step is the red step.** `UPDATE_GOLDENS=1` over a *populated* tree proves nothing about orphans: a golden no composition still produces is simply never rewritten and never noticed. So the tree is emptied first, and the regeneration has to reconstruct all 634 files byte-for-byte for `git status` to come back empty:
+
+```
+$ find crates/cli/tests/goldens -name '*.txt' | wc -l      # before
+634
+$ find crates/cli/tests/goldens/compose -mindepth 1 -delete ; echo "DELETE_EXIT=$?"
+DELETE_EXIT=0
+$ find crates/cli/tests/goldens -name '*.txt' | wc -l      # emptied — every golden lives under compose/
+0
+$ git status --porcelain crates/cli/tests/goldens/ | wc -l # one unstaged deletion per golden
+634
+$ UPDATE_GOLDENS=1 cargo test -p cli --test g_compose compose_goldens:: ; echo "REGEN_EXIT=$?"
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 192 filtered out; finished in 20.91s
+REGEN_EXIT=0
+$ git status --porcelain crates/cli/tests/goldens/ | wc -l
+0
+$ find crates/cli/tests/goldens -name '*.txt' | wc -l
+634
+```
+
+**634, unmoved from M50's, M51's and M52's closes** — the no-new-composed-member half of the boundary, for a pass that minted no workflow, doctype or pack. The filter is load-bearing and is written out rather than shortened: the suite is reached as `--test g_compose compose_goldens::`, because since M47's group-target consolidation a bare `cargo test -p cli compose_goldens::` runs 0 tests and exits 0 — a green that means nothing ([pinning.md](implementation/pinning.md) §1).
+
+**The roadmap's escape clause resolves to nothing, and that is driven too.** *Proves* reads *"its diff empty except where the pass moved a surface"*; `git diff --stat 5d9fd714..HEAD -- crates/cli/tests/goldens` prints **nothing**, so M53 moved no composed surface at all and the exception is vacuous rather than unexamined. The one surface batch the pass did land (Increment 2 / T5, the guide batch) lives in `QUICKSTART.md`, which is `include_str!`'d into the installed `SKILL.md` and is not a compose golden.
+
+**Bounds.** These are two commands and a record, not a fence: **no test asserts either**, and nothing stops a later wave from moving a schema without re-running the first one — the mechanical fences that *do* run are the pack-load freeze assert (which every suite loads through) and `compose_goldens::` in check mode, and neither of those sees an orphan or a manifest that moved in lockstep with its hash. The negative fence's subject is the enumerated paths only; a schema-shaped change anywhere else is out of its sight by construction. **Codes registered: none. Files changed by this task: `DECISIONS.md` alone** — the regeneration reproduced the tree it deleted, which is the whole assertion.
+
 ## 2026-09-22 — M53 Increment 6 / T2: the conversion ledger over the four §A tier-1 rows closes, and every widening cell is its own disposed line
 
 **The ledger is the record, so the clause that makes each citation a pin is written on the line that carries it — not twice.** [per-axis-review/README.md](completions/artifacts/M52/per-axis-review/README.md) → §A `### Tier 1` gains a dated preamble, a re-runnable closure check and **fourteen** disposition lines: one `pinned-by:` per row and one per widening cell, each labelled `**the row**` or `**cell (i…iii)**` so the check can see it. Every citation is **verified by reading what the cited test asserts** ([pinning.md](implementation/pinning.md) §3 + its 2026-08-18 addendum, which refuses a `pinned-by:` symbol parser by name); the full verified-by-reading clause lives on the ledger line, and this entry is the index into it rather than a second copy of it. **Zero `UNPINNED`** — no cell's pin would encode a gap or a loss as expected output, which was the one condition under which a stated *why* would have been the honest answer.
