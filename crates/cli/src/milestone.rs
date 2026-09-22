@@ -3968,7 +3968,16 @@ fn fan_out_posture_findings(jigc_home: &Path, worktrees: &[PathBuf]) -> Vec<Find
 /// re-derive its response*).
 ///
 /// It asks the **boundary's own producer** over the one worktree, so the finding, its
-/// route and its site are the door's, byte for byte. `None` when `id` is not a sub-task of
+/// route and its site are the door's, byte for byte — **and it answers on the door's arm**
+/// (the independent review of `986d5e0a`, MEDIUM 2). It did not: the producer was shared
+/// while the carrier was not, so one state answered two ways under `--format json` — the
+/// door printing the pinned findings envelope on stdout at exit 3, the preview printing
+/// `{"error": …}` on stderr at exit 1. `repo.operation-in-progress` projects a key at this
+/// site ([`crate::repo::BreachSite::FanOutWorktree`], the filesystem-path form —
+/// `design/command-output-contract.md`), and a code inside a message is not a key. Both
+/// surfaces reach [`blocked`], which is the door's own carrier.
+///
+/// `None` when `id` is not a sub-task of
 /// a milestone in this workbench, when its worktree path is not a provisioned worktree,
 /// or when that worktree **is** the checkout the command was run in — there the cwd guard
 /// has already answered, at its own site, and a second finding about the same state would
@@ -3995,10 +4004,18 @@ pub(crate) fn sub_task_fan_out_refusal(cwd: &Path, id: &str, format: Format) -> 
     let finding = fan_out_posture_findings(&jigc_home, &[worktree])
         .into_iter()
         .next()?;
-    Some(crate::invocation_log::operational_failure(
-        format,
-        &render::finding_error(&finding),
-    ))
+    match blocked(&jigc_home, format, vec![finding.clone()]) {
+        Ok(outcome) => Some(outcome),
+        // [`blocked`] reads the severity cascade to grade the report. A pack or cascade
+        // that will not load is a different failure, and the honest answer to it is still a
+        // refusal — the one thing this preview must never do is fall through to *the task
+        // validates clean* over a state the door refuses. So the flattened arm is the
+        // degraded fallback, never the ordinary one.
+        Err(_) => Some(crate::invocation_log::operational_failure(
+            format,
+            &render::finding_error(&finding),
+        )),
+    }
 }
 
 fn live_worktrees(subtasks: &[SubtaskWorktree]) -> Vec<PathBuf> {

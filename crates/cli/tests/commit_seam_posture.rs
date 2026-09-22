@@ -1183,3 +1183,104 @@ fn milestone_renders_no_path_against_the_cwd_repo_root() {
             .join("\n"),
     );
 }
+
+// ---------------------------------------------------------------------------
+// (i) One code, one declared arm — the door and its own preview.
+// ---------------------------------------------------------------------------
+
+/// The `findings` array of a pinned envelope on `stdout`, or a panic naming what was there
+/// instead — a refusal that flattened into `{"error": …}` on stderr fails *here*, which is
+/// the divergence this arm is about.
+fn envelope_findings(surface: &str, out: &std::process::Output) -> Vec<serde_json::Value> {
+    let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+    let doc: serde_json::Value = serde_json::from_str(&stdout).unwrap_or_else(|err| {
+        panic!(
+            "`{surface}` must answer on the findings envelope (stdout), not the flattened \
+             `{{\"error\": …}}` arm: {err}\nstdout:\n{stdout}\nstderr:\n{stderr}",
+        )
+    });
+    doc["findings"]
+        .as_array()
+        .unwrap_or_else(|| {
+            panic!("`{surface}`'s envelope carries a `findings` array; got:\n{stdout}")
+        })
+        .clone()
+}
+
+/// (i) **`repo.operation-in-progress` answers on one arm at the door and at the preview the
+/// door owns** (the independent review of `986d5e0a`, MEDIUM 2).
+///
+/// Driven at `986d5e0a`, one state answered two ways: `jigc --format json milestone finalize`
+/// printed the pinned findings envelope on stdout at exit 3, while `jigc --format json task
+/// validate <sub>` — the *forecast of that very door*, sharing its producer — printed
+/// `{"error": "blocking · repo.operation-in-progress — …"}` on stderr at exit 1. A code inside
+/// a message is not a key, so the two surfaces disagreed about whether this finding has one.
+#[test]
+fn the_fan_out_posture_finding_answers_on_one_declared_arm_at_both_surfaces() {
+    let repo = TempDir::new("fanout-envelope-arm");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+    setup_one_sub_task(repo.path(), home.path(), false, Some(GitState::Bisect));
+
+    for (surface, args) in [
+        (
+            "milestone finalize",
+            vec!["--format", "json", "milestone", "finalize", "cache-rework"],
+        ),
+        (
+            "task validate <sub>",
+            vec!["--format", "json", "task", "validate", "area-low"],
+        ),
+    ] {
+        let out = run_from(repo.path(), home.path(), &args);
+        let findings = envelope_findings(surface, &out);
+        assert_eq!(
+            out.status.code(),
+            Some(3),
+            "`{surface}` must refuse with the blocked exit the door uses; stderr:\n{}",
+            String::from_utf8_lossy(&out.stderr),
+        );
+        let keys: Vec<&serde_json::Value> = findings.iter().map(|f| &f["key"]).collect();
+        assert!(
+            keys.iter().any(|key| {
+                key["code"] == "repo.operation-in-progress"
+                    && key["target"] == ".jigc/worktrees/area-low"
+            }),
+            "`{surface}` must project the declared filesystem-path key for the breaching \
+             worktree; got:\n{keys:#?}",
+        );
+    }
+}
+
+/// (i) **The contract names the new member of the filesystem-path form.**
+///
+/// `design/command-output-contract.md`'s closure claim — *every finding that projects a
+/// `key` lands in exactly one of those six forms, or in one of the named exceptions* — was
+/// false at `986d5e0a`: the finding above projects a filesystem-path key and appeared in no
+/// form's Members list, and nothing reddened, because `debug_assert_targets_declared` checks
+/// presence and uniqueness and never form membership.
+///
+/// **This is not the closure fence, and does not claim to be.** Deriving *every code that
+/// can serialize with a location* from the source is not cheap — a finding's address is
+/// stamped by its producer, not declared in a registry — so what is fenced is the one
+/// statement this commit makes: the doc names the code the arm above drives. A general
+/// closure fence stays unbuilt and is named as such here rather than implied by a
+/// narrower one.
+#[test]
+fn the_contract_lists_the_fan_out_posture_code_under_the_filesystem_path_form() {
+    let doc = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../design/command-output-contract.md"
+    ))
+    .expect("read design/command-output-contract.md");
+    let row = doc
+        .lines()
+        .find(|line| line.starts_with("| a **file** with no committed URI identity"))
+        .expect("the filesystem-path form's row");
+    assert!(
+        row.contains("repo.operation-in-progress"),
+        "the filesystem-path form's Members list must name `repo.operation-in-progress` — it \
+         projects a path key at `BreachSite::FanOutWorktree`; row:\n{row}",
+    );
+}

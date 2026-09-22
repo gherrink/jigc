@@ -246,6 +246,18 @@ pub struct FindingKey {
 ///   door bails on the first, and a producer that can emit several at once carries the target
 ///   that tells them apart.
 ///
+/// - every `repo.*` — the repository-posture family, **at its `Here` site only**. The probe
+///   returns the **first** breach of the checkout it is asked about and the asking door bails
+///   on it (`cli::repo::adjudicated_breach`), so at most one instance per invocation reaches
+///   an output — the `setup.*` / `uninstall.*` rationale, applied to a family whose subject is
+///   *the repository the command was typed in* and which therefore has no address to carry.
+///   At the family's **other** site the target exists and is carried: a breach in a fan-out
+///   worktree (`cli::repo::BreachSite::FanOutWorktree`) is located at that worktree's
+///   repo-relative path and lands in the **filesystem-path** form, so two breaching worktrees
+///   are two discriminating keys. The split is by *site*, not by code, and both halves are
+///   named here and at `design/command-output-contract.md` rather than one of them being left
+///   to be discovered (the independent review of `986d5e0a`, MEDIUM 2).
+///
 /// Anything else with no address is the un-swept state of a family nobody has looked at, and
 /// [`debug_assert_targets_declared`] says so at the seam.
 pub fn is_declared_singleton(code: &str) -> bool {
@@ -258,6 +270,7 @@ pub fn is_declared_singleton(code: &str) -> bool {
         || code == "overrides.project-step-missing"
         || code == "task-discard.foreign-bytes"
         || code == "milestone.foreign-bytes"
+        || code.starts_with("repo.")
 }
 
 /// The **route-exempt parse diagnostics** — one row per code, each with its reason, in the
