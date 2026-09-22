@@ -95,9 +95,12 @@ pub fn mint_in_repo(
     // digit"*, which is false of `"日本語"` and gave a driver nothing to key on. The
     // work-unit type token it takes is `task` — this door's subject and, being the target,
     // this refusal's key.
-    if engine::slug::slugify(intent).is_empty() {
-        return Err(finding_to_err(state::unslugable_title_finding("task")));
-    }
+    //
+    // **And the question is asked, not re-spelled** (T3): the three committing mint doors
+    // ask the same thing at their own seams, so the predicate moved beside the producer
+    // ([`state::reject_unslugable_title`]) rather than being copied a fourth time — two
+    // spellings of one condition is how the class acquired two wordings in the first place.
+    state::reject_unslugable_title("task", intent).map_err(finding_to_err)?;
     // The `--slug` override drives the minted id **verbatim** — validate its shape at
     // this CLI boundary (never silently re-slugify a malformed value; `DECISIONS.md`
     // 2026-07-06 M39 planning → Slug (G6)). A value that is not a well-formed slug is

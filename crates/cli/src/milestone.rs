@@ -645,6 +645,22 @@ fn run_create(cwd: &Path, title: &str, conflicts: &mut Vec<Finding>) -> Result<(
     let repo_root = discover_repo_root(cwd).ok_or_else(|| crate::locate::not_in_repo(cwd))?;
     let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
     let jigc_root = jigc_home.join(".jigc");
+
+    // **A title that yields no id is refused before the first write** (M53 Increment 5 / D5
+    // as amended by §12; [`engine::state::reject_unslugable_title`]). The milestone's id is
+    // the frozen slug of this title, and `mint_id`'s empty→type-name fallback would put the
+    // work at `milestone:milestone` — an identity nobody typed, that the next such call
+    // then serial-collides. Driven at `92ed1957~`, `jigc milestone create "日本語"` did
+    // exactly that **and committed the record for it**, at exit 0.
+    //
+    // **Its position is the decision.** It sits after `discover_repo_root` and
+    // `jigc_home_or_repo` — both reads — so a caller standing outside a repository still
+    // gets M49's one converged not-in-repo answer rather than a true sentence about a title
+    // that is not their problem; and ahead of `shipped_schemas`, `guard_record_free` and
+    // `gitignore::ensure`, so **no write precedes it**: no area, no record commit, and no
+    // entry appended to the user's own `.gitignore` on the way out of a run that refused.
+    engine::state::reject_unslugable_title("milestone", title).map_err(finding_to_err)?;
+
     // The record-home split (`design/team-ready-state.md` → The `milestone-record` doctype;
     // The commit model): under a `[dev ▸ methodology]` project the composed cascade resolves
     // the methodology-pack `milestone-record` doctype, so materialize the committed record and

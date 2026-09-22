@@ -1606,6 +1606,29 @@ pub fn unslugable_title_finding(work_unit: &str) -> Finding {
     )
 }
 
+/// The mint class's **guard** — the one question every door whose id is slugged from the
+/// caller's prose asks, at its own seam, before its first write (M53 Increment 5 / T3;
+/// `completions/artifacts/M53/settle-record.md` → **D5** as amended by **§11**, **§12**).
+///
+/// **One predicate, not four**, because the condition is one condition: the caller's title
+/// carries nothing [`crate::slug::slugify`] keeps, so [`mint_id`]'s empty→type-name
+/// fallback would hand the work unit a `task` / `milestone` id nobody typed. Driven at
+/// `92ed1957~`, `jigc milestone create "日本語"` minted `milestone:milestone` and committed
+/// a record for it at exit 0; the sibling door committed `task:task`. Each door asks this
+/// here and raises [`unslugable_title_finding`]'s single sentence for it, so the class
+/// cannot acquire a second wording the way the pre-D5 `jigc start` bail did.
+///
+/// **Where a door asks it is the door's own decision, and it is not "first".** The seam is
+/// *before the first write*, which at `jigc milestone create` is after the two reads that
+/// establish where jigc is standing — otherwise a caller outside a repository is told about
+/// their title instead of getting M49's converged not-in-repo answer (§12).
+pub fn reject_unslugable_title(work_unit: &str, title: &str) -> Result<(), Finding> {
+    if crate::slug::slugify(title).is_empty() {
+        return Err(unslugable_title_finding(work_unit));
+    }
+    Ok(())
+}
+
 /// Render the base-pin file body — the frozen on-disk form (golden-locked).
 fn render_base_pin(base: &BasePin) -> String {
     // Pretty JSON with a trailing newline; field order is the struct order

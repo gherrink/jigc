@@ -496,6 +496,41 @@ const HOSTILE: &str = "  ÄÖÜ Straße —— re-DO the *WHOLE* thing!!  ";
 const HOSTILE_SOURCE_DIR: &str = "Docs Folder";
 const HOSTILE_SOURCE_FILE: &str = "Odd Name (v2).md";
 
+/// The **degenerate** half of the mint axis (M53 Increment 5 / T3): titles that carry
+/// nothing an id can be built from, so `engine::slug::slugify` folds each to the empty
+/// string and the mint's empty→type-name fallback would hand the work unit an identity
+/// nobody typed.
+///
+/// **The cells are ordinary, not adversarial.** Only the first three read as abuse; the
+/// last two are a title in another script and a title of stopwords alone, and both are
+/// things a person types on purpose. That is why the refusal's sentence has to be true of
+/// all five, and why an assertion on it is not decoration.
+const UNSLUGABLE_TITLES: &[&str] = &["", "   ", "!!!", "日本語", "the of a"];
+
+/// The mint class's refusal (`engine::state::unslugable_title_finding`, M53 Increment 5).
+const UNSLUGABLE_CODE: &str = "write.unslugable-title";
+
+/// The half of that refusal's sentence that is **about the caller's title rather than
+/// this door**, and therefore the half a per-door wording would quietly drop.
+const UNSLUGABLE_SENTENCE: &str = "ids are built from ASCII letters and digits, so a \
+     title in another script, or of stopwords only, yields none";
+
+/// Where a [`MINT_DOORS`] row's id comes from — the axis the degenerate cell iterates.
+///
+/// It is **not** a second remembered list: every row is dispatched by `site` below with a
+/// hard panic for an unclassified member, so a new mint door has to answer this question
+/// before it can ship, exactly as it already has to answer `Snapshot`.
+enum IdSource {
+    /// The id is slugged from the caller's prose, so this row owes the degenerate cell:
+    /// the door refuses `write.unslugable-title` **before any write**.
+    Prose,
+    /// The id is derived from something that is not a title, with the reason stated on
+    /// the registry's own `Snapshot::Exempt` mold. There is no degenerate *title* to feed
+    /// such a door; what it owes instead is that its own id still mints, which the cell
+    /// drives rather than asserting.
+    Exempt(&'static str),
+}
+
 /// Every working-area name currently on disk, task areas and milestone areas alike.
 fn area_names(repo: &Path) -> Vec<(String, String)> {
     let mut out = Vec::new();
@@ -517,6 +552,118 @@ fn area_names(repo: &Path) -> Vec<(String, String)> {
     }
     out.sort();
     out
+}
+
+/// Run `git <args>` in `repo`, asserting it succeeded.
+fn git_ok(repo: &Path, args: &[&str]) {
+    let out = Command::new("git")
+        .args(args)
+        .current_dir(repo)
+        .output()
+        .expect("run git");
+    assert!(
+        out.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+}
+
+/// The commit a door that refuses before any write must not have moved.
+fn head_sha(repo: &Path) -> String {
+    let out = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(repo)
+        .output()
+        .expect("run git rev-parse");
+    assert!(out.status.success(), "`git rev-parse HEAD` must succeed");
+    String::from_utf8_lossy(&out.stdout).trim().to_string()
+}
+
+/// `git status --porcelain` — for the degenerate cells, empty *is* the assertion.
+fn porcelain(repo: &Path) -> String {
+    let out = Command::new("git")
+        .args(["status", "--porcelain"])
+        .current_dir(repo)
+        .output()
+        .expect("run git status");
+    assert!(
+        out.status.success(),
+        "`git status --porcelain` must succeed"
+    );
+    String::from_utf8_lossy(&out.stdout).into_owned()
+}
+
+/// A fixture standing on a **clean** tree, so *"the refused door left `git status` clean"*
+/// is a statement about the door rather than about the fixture.
+///
+/// `jigc setup` already writes the `compose-embedded-methodology` marker, so this project
+/// is `[dev ▸ methodology]` and the milestone doors do materialize a committed record and
+/// land record-only commits — without which *"landed no record commit"* would pass because
+/// there is no record home to land in.
+fn clean_fixture(tag: &str) -> Fixture {
+    let fixture = Fixture::new(tag);
+    git_ok(fixture.path(), &["add", "-A"]);
+    git_ok(
+        fixture.path(),
+        &["commit", "-q", "-m", "the fixture's own bytes"],
+    );
+    assert!(
+        porcelain(fixture.path()).is_empty(),
+        "the degenerate cells start from a clean tree",
+    );
+    fixture
+}
+
+/// Drive one prose [`MINT_DOORS`] row over the **whole** degenerate title set and assert
+/// the refusal is *before any write* (M53 Increment 5 / T3, D5 as amended by §12).
+///
+/// Three things are checked per title, and the last two are the ones a guard placed after
+/// the door's first write would fail: the surface carries the class's identity **and** the
+/// half of its sentence that is about the caller's title rather than this door; and HEAD,
+/// the working-area set and the working tree are exactly what they were.
+fn refuses_before_any_write(fixture: &Fixture, site: &str, argv: &dyn Fn(&str) -> Vec<String>) {
+    for title in UNSLUGABLE_TITLES {
+        let before_head = head_sha(fixture.path());
+        let before_areas = area_names(fixture.path());
+        let owned = argv(title);
+        let args: Vec<&str> = owned.iter().map(String::as_str).collect();
+        let out = fixture.run(&args);
+        let surface = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr),
+        );
+        assert!(
+            !out.status.success(),
+            "`{site}` must refuse the title {title:?} — a title that slugs to nothing would \
+             otherwise mint the work unit at a fabricated id\n{surface}",
+        );
+        assert!(
+            surface.contains(UNSLUGABLE_CODE),
+            "`{site}` must refuse {title:?} under `{UNSLUGABLE_CODE}`\n{surface}",
+        );
+        assert!(
+            surface.contains(UNSLUGABLE_SENTENCE),
+            "`{site}` owes the class's sentence, which is true for a title in any script — \
+             a per-door wording is how {title:?} gets told it has no letters\n{surface}",
+        );
+        assert_eq!(
+            head_sha(fixture.path()),
+            before_head,
+            "`{site}` moved HEAD while refusing {title:?} — the refusal must precede every \
+             write, the record commit included\n{surface}",
+        );
+        assert_eq!(
+            area_names(fixture.path()),
+            before_areas,
+            "`{site}` left a working area behind while refusing {title:?}\n{surface}",
+        );
+        assert_eq!(
+            porcelain(fixture.path()),
+            "",
+            "`{site}` left the working tree dirty while refusing {title:?}\n{surface}",
+        );
+    }
 }
 
 /// Plant the foreign source `jigc migrate` adopts, committed so it is not a candidate
@@ -579,6 +726,16 @@ fn hostile_milestone(fixture: &Fixture) -> String {
 /// every area name it leaves on disk is checked **twice**: against
 /// [`engine::slug::is_slug`], and by feeding the id back through a real door and
 /// requiring the answer not to be the grammar refusal.
+///
+/// **The degenerate half** (M53 Increment 5 / T3): the same registry, crossed with the
+/// titles that yield *no* id at all. The hostile half proves a door's id survives the
+/// grammar; this half proves the door never invents one. Driven at `92ed1957~`,
+/// `jigc milestone create "日本語"` minted `milestone:milestone` and **committed a record**
+/// for it at exit 0, and `jigc milestone add-task <m> "日本語"` committed `task:task` — an
+/// identity nobody typed, that the next such call then serial-collides. Each of the three
+/// rows whose id is slugged from prose now refuses `write.unslugable-title` before any
+/// write; the two rows that derive their id from something else are `Exempt(reason)` on
+/// the registry's own mold, and each **drives** its stated reason rather than asserting it.
 #[test]
 fn every_mint_door_produces_an_id_every_door_accepts() {
     for (index, door) in MINT_DOORS.iter().enumerate() {
@@ -646,4 +803,273 @@ fn every_mint_door_produces_an_id_every_door_accepts() {
             );
         }
     }
+
+    // ───────── the degenerate half: a title that yields no id (T3) ─────────
+
+    let mut prose = 0usize;
+    let mut exempt = 0usize;
+    for (index, door) in MINT_DOORS.iter().enumerate() {
+        let source = match door.site {
+            "crates/cli/src/start.rs::mint_in_repo" => {
+                let fixture = clean_fixture(&format!("degen{index}"));
+                refuses_before_any_write(&fixture, door.site, &|title| {
+                    vec![
+                        "start".into(),
+                        "--workflow".into(),
+                        "single-task".into(),
+                        title.into(),
+                    ]
+                });
+                IdSource::Prose
+            }
+            "crates/cli/src/milestone.rs::run_create" => {
+                let fixture = clean_fixture(&format!("degen{index}"));
+                refuses_before_any_write(&fixture, door.site, &|title| {
+                    vec!["milestone".into(), "create".into(), title.into()]
+                });
+                IdSource::Prose
+            }
+            "crates/engine/src/milestone.rs::add_task" => {
+                let fixture = clean_fixture(&format!("degen{index}"));
+                fixture.ok(&["milestone", "create", "Cache rework"]);
+                refuses_before_any_write(&fixture, door.site, &|title| {
+                    vec![
+                        "milestone".into(),
+                        "add-task".into(),
+                        "cache-rework".into(),
+                        title.into(),
+                    ]
+                });
+                IdSource::Prose
+            }
+            "crates/cli/src/start.rs::mint_migration_in_repo" => {
+                // The reason, driven: a source path whose every character slugs away is
+                // exactly the input that would break a title-slugging door, and this door
+                // mints from it anyway — because the id is the path's hash, not its prose
+                // (`start.rs::migration_task_id`, whose `slug_override` bypasses the mint's
+                // re-slugify entirely).
+                let fixture = clean_fixture(&format!("degen{index}"));
+                fs::write(
+                    fixture.path().join("日本語.md"),
+                    "# Change Log\n\n## v1\n\n- did a thing\n",
+                )
+                .expect("write the unslugable source path");
+                git_ok(fixture.path(), &["add", "-A"]);
+                git_ok(fixture.path(), &["commit", "-q", "-m", "foreign source"]);
+                fixture.ok(&["migrate", "日本語.md", "--as", "changelog"]);
+                let minted: Vec<String> = area_names(fixture.path())
+                    .into_iter()
+                    .filter(|(kind, _)| kind == "task")
+                    .map(|(_, id)| id)
+                    .collect();
+                assert_eq!(
+                    minted.len(),
+                    1,
+                    "`{}` must mint exactly one task from an unslugable source path",
+                    door.site,
+                );
+                assert!(
+                    minted[0].starts_with("migrate-changelog-") && is_slug(&minted[0]),
+                    "`{}` minted `{}` — the id is the doctype plus the source path's hash, \
+                     which is why no title guard applies to this row",
+                    door.site,
+                    minted[0],
+                );
+                IdSource::Exempt(
+                    "the id is `migrate-<doctype>-<blake3(source path)>`, fed to the mint \
+                     verbatim as `slug_override` — this door is handed a path, never a \
+                     title, and slugs no prose at all",
+                )
+            }
+            "crates/engine/src/milestone.rs::reseed_sub_task_areas" => {
+                // The reason, driven over the id that makes it load-bearing: the milestone
+                // is seeded with the title `Task`, whose legitimate slug is `task` — the
+                // **exact** id the fallback fabricates, so the record now reads as a
+                // pre-guard corpus does at the leaf this door actually consults. The
+                // workbench is then wiped and a door that re-seeds is run: `task` comes
+                // back, because `reseed_sub_task_areas` hands `mint_task` the record's own
+                // `item.id` as `slug_override` and asks no title at all.
+                //
+                // Driven and not pinned: the *intent*-side twin of this corpus cannot be
+                // manufactured through any door. Hand-editing a committed record's `intent`
+                // leaf and re-running is refused by `reconciliation.conflict-block` — a
+                // machine-maintained record is never merged — so the honest subject here is
+                // the recorded **id**, which is the leaf this door reads.
+                let fixture = clean_fixture(&format!("degen{index}"));
+                fixture.ok(&["milestone", "create", "Cache rework"]);
+                fixture.ok(&["milestone", "add-task", "cache-rework", "Task"]);
+                assert!(
+                    area_names(fixture.path()).contains(&("task".into(), "task".into())),
+                    "the fixture's premise: the recorded sub-task id is `task`, the id the \
+                     fallback would have fabricated",
+                );
+                // The fresh clone: the gitignored workbench is gone, the committed
+                // record remains, and the next operating verb rebuilds the areas from it.
+                fs::remove_dir_all(fixture.path().join(".jigc").join("tasks"))
+                    .expect("drop the task areas");
+                fs::remove_dir_all(fixture.path().join(".jigc").join("milestones"))
+                    .expect("drop the milestone cache");
+                fixture.ok(&["milestone", "add-task", "cache-rework", "a second sub-task"]);
+                assert!(
+                    area_names(fixture.path()).contains(&("task".into(), "task".into())),
+                    "`{}` must rebuild the recorded sub-task area at the recorded id — a \
+                     guard reaching this door would brick every milestone whose record \
+                     already names such a sub-task",
+                    door.site,
+                );
+                IdSource::Exempt(
+                    "the id is read back from the committed record (`item.id`, passed to \
+                     the mint as `slug_override`), so this door slugs no prose and a record \
+                     that already names such a sub-task re-seeds rather than bricking",
+                )
+            }
+            other => panic!(
+                "`MINT_DOORS` member `{other}` ({}) is unclassified on the id-source axis — \
+                 a new mint door owes this fence either the degenerate cell or a stated \
+                 exemption, exactly as it already owes `Snapshot` one",
+                door.door,
+            ),
+        };
+        match source {
+            IdSource::Prose => prose += 1,
+            IdSource::Exempt(reason) => {
+                assert!(
+                    !reason.trim().is_empty(),
+                    "`{}`'s exemption must state its reason",
+                    door.site,
+                );
+                exempt += 1;
+            }
+        }
+    }
+    // Non-vacuity, without a remembered count: every row is classified (the match is
+    // exhaustive or it panics), and **both** kinds were actually observed — a classification
+    // where one side is empty proves nothing about the other.
+    assert_eq!(
+        prose + exempt,
+        MINT_DOORS.len(),
+        "every mint door is classified on the id-source axis",
+    );
+    assert!(
+        prose > 0 && exempt > 0,
+        "both kinds must be observed — {prose} prose, {exempt} exempt",
+    );
+}
+
+/// `jigc milestone add-from-spec` over a spec carrying a **degenerate criterion** refuses,
+/// and commits no record for it (M53 Increment 5 / T3; `settle-record.md` → D5, the third
+/// committing door the charter did not name).
+///
+/// It is its own arm because the seam is its own: `engine::milestone::add_from_spec`
+/// computes `mint_sub_id(intent)` and consults the **resume skip set** *before* it calls
+/// `add_task`, so a degenerate criterion whose fabricated `task` id the milestone already
+/// carries was skipped at exit 0 and never reached `add_task`'s guard at all (driven at
+/// `423d8a58`). The guard therefore sits ahead of the skip check, and this arm drives the
+/// door rather than the function.
+///
+/// The degenerate criterion is deliberately the **second** one: the pass mints the first,
+/// then aborts, and the door's mid-loop unwind must carry that mint out — so *"no record
+/// commit"* here is a statement about the whole call, not about an abort that happened to
+/// come first.
+#[test]
+fn add_from_spec_refuses_a_criterion_that_yields_no_id() {
+    let fixture = clean_fixture("from-spec");
+    let specs = fixture.path().join("docs").join("specs");
+    fs::create_dir_all(&specs).expect("mk docs/specs/");
+    fs::write(
+        specs.join("rate-limit.md"),
+        "# Rate limit\n\n## Goal\n\nBound per-client request volume.\n\n## Context\n\n\
+         Downstream services enforced limits ad hoc.\n\n## Criteria\n\n\
+         ### Rejects the 101st request  {#rejects-burst}\n\n\
+         The gateway rejects the 101st request in a rolling 60s window.\n\n\
+         ### 日本語  {#in-another-script}\n\n\
+         A criterion whose text carries nothing an id can be built from.\n",
+    )
+    .expect("write the spec");
+    git_ok(fixture.path(), &["add", "-A"]);
+    git_ok(
+        fixture.path(),
+        &["commit", "-q", "-m", "a two-criteria spec"],
+    );
+
+    fixture.ok(&["milestone", "create", "Rate limit"]);
+    let before_head = head_sha(fixture.path());
+    let before_areas = area_names(fixture.path());
+
+    let out = fixture.run(&[
+        "milestone",
+        "add-from-spec",
+        "rate-limit",
+        "spec:rate-limit",
+    ]);
+    let surface = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert!(
+        !out.status.success(),
+        "a degenerate criterion must refuse the seeding pass\n{surface}",
+    );
+    assert!(
+        surface.contains(UNSLUGABLE_CODE) && surface.contains(UNSLUGABLE_SENTENCE),
+        "the pass refuses under the mint class's identity and sentence\n{surface}",
+    );
+    assert_eq!(
+        head_sha(fixture.path()),
+        before_head,
+        "the refused pass lands no record commit — not for the degenerate criterion, and \
+         not for the ordinary one it had already minted\n{surface}",
+    );
+    assert_eq!(
+        area_names(fixture.path()),
+        before_areas,
+        "the refused pass leaves no sub-task area — the mid-loop unwind carries out what \
+         it minted before the abort\n{surface}",
+    );
+    assert_eq!(
+        porcelain(fixture.path()),
+        "",
+        "the refused pass leaves the working tree clean\n{surface}",
+    );
+}
+
+/// Outside a repository, `jigc milestone create ""` still answers the **one** not-in-repo
+/// answer (M53 Increment 5 / T3; `settle-record.md` → **§12**).
+///
+/// This is the cell that decides *where* the guard sits. Placed literally at the top of
+/// `run_create` — as D5 first wrote it — a caller standing in the wrong directory would be
+/// told their title has no letters, which is a true sentence about a fact that is not their
+/// problem and buries M49's converged precondition. The guard therefore sits after
+/// `discover_repo_root` and `jigc_home_or_repo` (both reads) and before the first write,
+/// and this arm is what keeps it there.
+#[test]
+fn outside_a_repository_the_degenerate_title_still_answers_not_in_repo() {
+    let outside = TempDir::new("outside");
+    let home = TempDir::new("outside-home");
+    let out = Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(["milestone", "create", ""])
+        .current_dir(outside.path())
+        .env("HOME", home.path())
+        .env_remove("JIGC_PACK_DIR")
+        .output()
+        .expect("spawn the jigc binary");
+    let surface = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert!(
+        !out.status.success(),
+        "outside a repository this refuses\n{surface}"
+    );
+    assert!(
+        surface.contains("not inside a git repository"),
+        "the precondition every door outside a repository shares is the answer\n{surface}",
+    );
+    assert!(
+        !surface.contains(UNSLUGABLE_CODE),
+        "the title guard must not pre-empt the not-in-repo answer — it sits after the two \
+         reads that establish where jigc is standing\n{surface}",
+    );
 }

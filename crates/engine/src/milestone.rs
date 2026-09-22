@@ -376,6 +376,15 @@ pub fn add_task(
     let base = read_base_pin(&dir)
         .map_err(|err| io_finding(milestone_id, "read the shared base pin", &err))?;
 
+    // **An intent that yields no id is refused before the mint** (M53 Increment 5 / D5;
+    // [`crate::state::reject_unslugable_title`]). This is the one site covering both the
+    // `jigc milestone add-task` door and, through [`add_from_spec`]'s per-criterion call,
+    // the spec-seeding door — driven at `92ed1957~`, `add-task <m> "日本語"` appended
+    // `task:task` to the list **and committed it to the record**, at exit 0, where the
+    // second such criterion then collides on an id nobody typed. Ahead of [`mint_sub_id`],
+    // whose empty→`task` fallback is exactly what this keeps out of production.
+    crate::state::reject_unslugable_title(SUB_TASK_TYPE, intent)?;
+
     // The id the sub-task will mint to — checked against *this milestone's* list
     // before the mint, so a within-milestone collision rejects without side effect.
     let sub_id = mint_sub_id(intent);
@@ -487,6 +496,25 @@ pub fn add_from_spec(
     let mut added = Vec::with_capacity(criteria.len());
     let mut already_seeded = Vec::new();
     for intent in &criteria {
+        // **Ahead of the skip check, not inside [`add_task`]** (M53 Increment 5 / T3). The
+        // guard at `add_task` covers the direct door; on this path it is unreachable for the
+        // cell that matters, because the skip is keyed on [`mint_sub_id`]'s *fallback* id:
+        // driven at `423d8a58`, a spec carrying an ordinary criterion whose id is `task`
+        // plus a degenerate one seeded `task` on run 1, and on run 2 the degenerate
+        // criterion minted the same fabricated id, was found in the resume set and was
+        // **skipped at exit 0** — the criterion silently absent from the team-ready record
+        // forever, which is the failure `add_from_spec`'s own skip-set rule exists to
+        // prevent one layer up.
+        //
+        // The abort carries `added` out with it rather than taking `From<Finding>`'s empty
+        // set: this call may already have minted earlier criteria, and the door's mid-loop
+        // unwind is what keeps the workbench naming exactly what the record names.
+        if let Err(finding) = crate::state::reject_unslugable_title(SUB_TASK_TYPE, intent) {
+            return Err(SeedingAborted {
+                finding,
+                minted: added,
+            });
+        }
         let sub_id = mint_sub_id(intent);
         if seeded_at_entry.contains(&sub_id) {
             already_seeded.push(sub_id);
