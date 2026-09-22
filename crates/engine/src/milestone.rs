@@ -982,16 +982,34 @@ pub fn read_task_list(milestone_dir: &Path) -> std::io::Result<TaskList> {
 /// or malformed area is skipped, never an error: a terminal milestone's torn-down
 /// workbench simply no longer claims its sub-tasks (its `.jigc/tasks/<id>/` areas
 /// are gone with it).
+///
+/// **The enumeration is the residual rule's, not `is_dir()`** (M53 completion audit;
+/// `settle-record.md` → D3): a directory under `.jigc/milestones/` is a milestone **iff it
+/// carries its base pin** ([`crate::state::carries_base_pin`]), and a pin-less one is a
+/// milestone at no door — including this one. It shipped asking `entry.file_type().is_dir()`
+/// and then [`read_task_list`], which made *membership* rest on a file the unwind removes
+/// **last** while *milestone-ness* rests on the file it removes **first**. Driven at
+/// `4a8cec2d`: a landed `jigc milestone finalize` whose teardown faulted on a member after
+/// the pin (an unreadable `merged/docs`, the cell [`crate::state::unwind_area`]'s own
+/// doc-comment names) left `.jigc/milestones/<id>/` holding `tasks.json` and no `base.json`
+/// at **exit 0** — and every later task minted at one of the ids that list names was claimed
+/// by the leftover. `jigc task finalize <id>` then refused with `finalize.milestone-sub-task`
+/// and routed at `jigc milestone finalize <leftover>`, which answers
+/// [`residual_milestone_area_finding`]: a **live** task with staged prose and no reachable
+/// commit boundary, whose only exit was `jigc task discard --force`.
+///
+/// Ten production consumers read this answer — the orientation view's `milestone:` row, the
+/// two `jigc start` resume/compose doors and its composed `sub_task_of`, the per-task
+/// finalize refusal and its two siblings, the unreadable-record suspect, `jigc uninstall`'s
+/// staged-prose owners, and `crate::repo`'s dedicated-checkout posture leg — so the predicate
+/// is asked **here**, where membership is decided, rather than at any of them.
 pub fn owning_milestone(jigc_root: &Path, task_id: &str) -> Option<String> {
     let milestones = jigc_root.join("milestones");
     let mut ids: Vec<String> = std::fs::read_dir(&milestones)
         .ok()?
         .filter_map(|entry| {
             let entry = entry.ok()?;
-            entry
-                .file_type()
-                .ok()?
-                .is_dir()
+            crate::state::carries_base_pin(&entry.path(), crate::state::WorkArea::Milestone)
                 .then(|| entry.file_name().to_string_lossy().into_owned())
         })
         .collect();

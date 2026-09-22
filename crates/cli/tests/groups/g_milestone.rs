@@ -97,6 +97,8 @@ mod repo_relative_paths;
 mod residual_area_mint;
 #[path = "../residual_area_roster.rs"]
 mod residual_area_roster;
+#[path = "../residual_milestone_claim.rs"]
+mod residual_milestone_claim;
 #[path = "../spawn_template_executes.rs"]
 mod spawn_template_executes;
 #[path = "../staged_prose_consent_axis.rs"]
