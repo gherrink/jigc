@@ -449,9 +449,20 @@ impl InProgress {
     /// [`conclude`](InProgress::conclude)'s: a literal suffix, its own separator
     /// included, appended after the closing backtick.
     ///
-    /// Empty for every member but one, and that is the honest answer rather than a
-    /// placeholder: each of their commands is named for what it does to the operation and
-    /// the operation is all it touches, so a clause would be restating the verb.
+    /// **[Corrected 2026-09-22 (M53 completion audit, finding 4).** This doc read *"Empty
+    /// for every member but one, and that is the honest answer rather than a placeholder:
+    /// each of their commands is named for what it does to the operation and the operation
+    /// is all it touches, so a clause would be restating the verb."* **Falsifying datum,
+    /// driven on git 2.54.0 through `support::git_state`'s builder**, one unrelated file
+    /// staged in the caller's index before the emitted command ran: `git merge --abort`,
+    /// `git rebase --abort`, `git am --abort`, `git cherry-pick --abort`, `git revert
+    /// --abort` and `git reset --merge` each deleted it from the index **and from the
+    /// working tree**. *The operation is all it touches* is false at six of the members it
+    /// was written about. The two it holds for are `git cherry-pick --quit` and `git
+    /// bisect reset`, which left the staged entry exactly as they found it — their empty
+    /// clause is honest, and it is now checked by
+    /// `repo_posture.rs::every_abandon_commands_effect_on_unrelated_staged_work_is_declared`
+    /// rather than asserted here.**]
     ///
     /// [`InProgress::UncommittedCherryPick`] is the member the qualifier was built for,
     /// and it is why the qualifier is not the mold's: `git reset` abandons the pick while
@@ -459,23 +470,47 @@ impl InProgress {
     /// and a user who cannot tell *abandoned* from *discarded* re-does the work or loses
     /// it (`settle-record.md` → §10). Until this member landed the clause was declared
     /// and printed nowhere.
+    ///
+    /// **Which members carry a clause today is a scope decision, not a measurement.** The
+    /// five conclude-bearing members — `Merge` · `Rebase` · `Am` · `CherryPick` · `Revert`
+    /// — ship their whole rendered route line as a byte literal in
+    /// `repo_posture.rs::SHIPPED_ROUTE_LINES` (DECISIONS.md → 2026-09-05, §10), so giving
+    /// them the clause the datum above earns is a user-facing reword of five shipped lines
+    /// and is left to whoever moves that pin. The fence is written so that doing it later
+    /// passes: a member whose command touches unrelated staged work owes a clause **unless
+    /// it is one of the pinned five**.
     pub fn abandon_qualifier(self) -> &'static str {
         match self {
             // True in both cells, which is what it is worded for: on a clean pick the
             // applied bytes go from staged to unstaged, and on a conflicted one the
-            // conflict markers stay in the file (driven, `tests/repo_posture.rs`).
+            // conflict markers stay in the file (driven, `tests/repo_posture.rs`). The
+            // second clause is the audit's: a MIXED reset unstages the **whole** index,
+            // not the pick's share of it, so a caller who had unrelated work staged when
+            // jigc refused finds that unstaged too — bytes kept, which is why this member
+            // reads `Unstaged` and not `Discarded`.
             InProgress::UncommittedCherryPick => {
-                " (which keeps the picked changes in your working tree, unstaged)"
+                " (which unstages everything — the picked changes and anything else you \
+                 had staged — keeping all of it in your working tree)"
             }
+            // `git reset --merge` resets the index to HEAD and takes the working tree with
+            // it. Driven: an unrelated file staged before the command ran was gone from
+            // both afterwards. An empty clause here reads as *this touches the operation
+            // only*, which is the claim the audit falsified, and neither member is pinned.
+            InProgress::SquashMerge | InProgress::UnmergedIndex => {
+                " (which also discards anything else you had staged, from the index and \
+                 from your working tree)"
+            }
+            // The five whose rendered line is pinned as a byte literal — see the doc above.
+            // They are `Discarded` members carrying no clause **by scope**, and the fence
+            // exempts them by naming the pin rather than by believing the empty string.
             InProgress::Merge
-            | InProgress::SquashMerge
             | InProgress::Rebase
             | InProgress::Am
             | InProgress::CherryPick
-            | InProgress::Revert
-            | InProgress::Sequencer
-            | InProgress::Bisect
-            | InProgress::UnmergedIndex => "",
+            | InProgress::Revert => "",
+            // The two the struck sentence was actually true of: driven, each left the
+            // unrelated staged entry exactly as it found it.
+            InProgress::Sequencer | InProgress::Bisect => "",
         }
     }
 }

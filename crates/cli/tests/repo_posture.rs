@@ -743,6 +743,187 @@ fn every_members_route_line_is_composed_from_its_own_two_qualifiers() {
     );
 }
 
+// ───────── the abandoning command's effect on UNRELATED staged work ─────────
+
+/// What a member's emitted abandoning command does to **unrelated pre-staged work** — a
+/// file the caller had in the index before jigc refused, which the operation never
+/// touched.
+///
+/// Every value here was **driven**, one member at a time, through the fixture builder on
+/// git 2.54.0; none is read off git's documentation. The distinction the three variants
+/// draw is the one a user cares about and no command name carries: *is my other work
+/// still staged, merely unstaged, or gone.*
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum UnrelatedFate {
+    /// Still staged, bytes intact — the command touched the operation and nothing else.
+    Untouched,
+    /// No longer staged; the bytes are still in the working tree.
+    Unstaged,
+    /// Gone from the index **and** from the working tree.
+    Discarded,
+}
+
+/// The fate each member's abandoning command inflicts, matched **exhaustively**, so a
+/// member minted in `cli::repo` cannot compile until someone has driven this question for
+/// it.
+fn unrelated_fate(operation: InProgress) -> UnrelatedFate {
+    match operation {
+        // `git reset` with no mode is a MIXED reset: the whole index goes back to HEAD and
+        // the working tree is left alone. The picked changes survive — and so does the
+        // caller's unrelated work, unstaged beside them.
+        InProgress::UncommittedCherryPick => UnrelatedFate::Unstaged,
+        // `--abort` reconstructs the pre-operation state, which means resetting the index
+        // AND the working tree. An unrelated file staged beforehand is deleted by all five.
+        InProgress::Merge
+        | InProgress::Rebase
+        | InProgress::Am
+        | InProgress::CherryPick
+        | InProgress::Revert => UnrelatedFate::Discarded,
+        // `git reset --merge` resets the index to HEAD and updates the working tree with
+        // it — the same destruction, reached by a different command.
+        InProgress::SquashMerge | InProgress::UnmergedIndex => UnrelatedFate::Discarded,
+        // `--quit` forgets the queue without rewinding anything, and `bisect reset` puts
+        // the original branch back without touching the index. Both left the staged entry
+        // exactly as they found it.
+        InProgress::Sequencer | InProgress::Bisect => UnrelatedFate::Untouched,
+    }
+}
+
+/// The members whose **whole rendered route line** is pinned as a byte literal in
+/// [`SHIPPED_ROUTE_LINES`], and which therefore carry no clause today even though their
+/// command discards unrelated staged work.
+///
+/// This is a **scope** exemption with a named holder, not a verdict about the surface:
+/// giving these five the clause the datum earns is a reword of five shipped user-facing
+/// lines, and the pin above exists to stop exactly that happening as a side effect. The
+/// exemption is derived from the pin rather than written out, so moving the pin — which is
+/// what closing the remainder looks like — makes this arm demand the clause instead.
+fn clause_exempt(operation: InProgress) -> bool {
+    SHIPPED_ROUTE_LINES
+        .iter()
+        .any(|(member, _)| *member == operation)
+}
+
+/// **Every abandoning command's effect on unrelated staged work is declared, driven, and
+/// said out loud where it is not nothing** (M53 completion audit, finding 4).
+///
+/// `InProgress::abandon_qualifier` shipped claiming *"the operation is all it touches"* of
+/// every member but one. Driven, that is false at six of them — and the one member that
+/// did carry a clause under-stated its own command, because a mixed `git reset` unstages
+/// the caller's unrelated work too and the clause spoke only of the picked changes.
+///
+/// Three assertions per member, and they are three different claims:
+///
+///   1. the fate this suite **declares** is the fate git actually inflicts, observed by
+///      planting one unrelated file in the index and running the route's own emitted
+///      bytes;
+///   2. a member whose command leaves unrelated work alone carries an **empty** clause —
+///      a clause there would be noise, and the empty string has to be checked or the
+///      honest members are indistinguishable from the un-adjudicated ones;
+///   3. a member whose command does **not** leave it alone carries a clause naming staged
+///      work, unless it is one of the byte-pinned five ([`clause_exempt`]).
+///
+/// Red before the fix at `SquashMerge`, `UnmergedIndex` (fate `Discarded`, clause empty,
+/// not pinned) — and, on assertion 1, at `UncommittedCherryPick`, whose shipped clause
+/// described a fate the command does not have.
+#[test]
+fn every_abandon_commands_effect_on_unrelated_staged_work_is_declared() {
+    /// The plant: one file the operation never names, staged before the command runs. It
+    /// alone discriminates all three fates — staged+present, unstaged+present, absent.
+    const PLANT: &str = "unrelated-staged.txt";
+
+    let mut reached: BTreeSet<String> = BTreeSet::new();
+    for state in GitState::ALL {
+        let Some(operation) = state.in_progress() else {
+            continue;
+        };
+        let label = state.name();
+        let fixture = GitStateRepo::build(*state);
+        let repo = fixture.repo();
+
+        std::fs::write(repo.join(PLANT), "the caller's own work\n").expect("plant");
+        git(&repo, &["add", "--", PLANT]);
+        let staged_before = std::process::Command::new("git")
+            .args(["diff", "--cached", "--name-only"])
+            .current_dir(&repo)
+            .output()
+            .expect("read the index");
+        assert!(
+            String::from_utf8_lossy(&staged_before.stdout).contains(PLANT),
+            "[{label}] the plant must be staged, or the cell measures nothing",
+        );
+
+        let breaches = posture(&repo);
+        let breach = only(&breaches, PostureMember::OperationInProgress);
+        assert_eq!(breach.operation(), Some(operation));
+        let text = rendered(breach);
+        // The emitted bytes, as always — never rebuilt from `abandon()`.
+        let argv = abandoning_argv(&text, label);
+        let out = std::process::Command::new(&argv[0])
+            .args(&argv[1..])
+            .current_dir(&repo)
+            .env("HOME", fixture.home())
+            .output()
+            .unwrap_or_else(|err| panic!("`{}` (the `{label}` route): {err}", argv.join(" ")));
+        assert!(
+            out.status.success(),
+            "[{label}] `{}` must be a command git accepts:\n{}",
+            argv.join(" "),
+            String::from_utf8_lossy(&out.stderr),
+        );
+
+        let after = std::process::Command::new("git")
+            .args(["diff", "--cached", "--name-only"])
+            .current_dir(&repo)
+            .output()
+            .expect("read the index");
+        let still_staged = String::from_utf8_lossy(&after.stdout).contains(PLANT);
+        let on_disk = repo.join(PLANT).is_file();
+        let observed = match (still_staged, on_disk) {
+            (true, _) => UnrelatedFate::Untouched,
+            (false, true) => UnrelatedFate::Unstaged,
+            (false, false) => UnrelatedFate::Discarded,
+        };
+        assert_eq!(
+            observed,
+            unrelated_fate(operation),
+            "[{label}] `{}` did something to the caller's unrelated staged work that \
+             `unrelated_fate` does not declare — the table is the route's claim about git, \
+             so a mismatch falsifies the table, not the run",
+            argv.join(" "),
+        );
+        reached.insert(format!("{operation:?}"));
+
+        let clause = operation.abandon_qualifier();
+        if observed == UnrelatedFate::Untouched {
+            assert!(
+                clause.is_empty(),
+                "[{label}] `{}` leaves unrelated staged work exactly as it found it, so its \
+                 clause must be empty rather than a sentence about nothing; got {clause:?}",
+                argv.join(" "),
+            );
+        } else if !clause_exempt(operation) {
+            assert!(
+                clause.contains("staged"),
+                "[{label}] `{}` {observed:?} the caller's unrelated staged work and the \
+                 route says nothing about it — law 1: a surface that names a command owes \
+                 what the command does (`design/surface-contract.md`). Got {clause:?}",
+                argv.join(" "),
+            );
+        }
+    }
+
+    let unreached: Vec<String> = InProgress::ALL
+        .iter()
+        .map(|operation| format!("{operation:?}"))
+        .filter(|name| !reached.contains(name))
+        .collect();
+    assert!(
+        unreached.is_empty(),
+        "every member owes this question a DRIVEN answer, not a declared one: {unreached:?}",
+    );
+}
+
 // ───────── the owed spike: `git reset` abandons an uncommitted cherry-pick ─────────
 
 /// **D4's route, driven before anything is built on it** (M53 Increment 4 / T1).
