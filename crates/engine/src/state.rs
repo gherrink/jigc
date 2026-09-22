@@ -262,6 +262,59 @@ pub fn carries_base_pin(area: &Path, kind: WorkArea) -> bool {
     std::fs::symlink_metadata(area.join(kind.base_pin())).is_ok_and(|shape| shape.is_file())
 }
 
+/// **What a residual is**, as the one home every door that names one reads it from
+/// (`settle-record.md` → D3, *What a by-id door answers* + *What the mint answers*).
+///
+/// `listed` is the area, already rendered repo-relative; `unit_noun` is the kind of work
+/// unit the *calling door* was asked about — `task` at the by-id seams and at
+/// [`mint_task`], `milestone` at [`crate::milestone::mint_milestone`]. Only that noun
+/// varies: *leftover and not a work unit* is true of both, and the two causes are the same
+/// two causes.
+///
+/// It is a shared **fragment** rather than a shared finding because the three doors differ
+/// in what they were asked — *there is no task `<id>`* is not *`<id>` cannot be minted* —
+/// while what they found is one thing. Sharing the finding would force one message to
+/// answer two questions; sharing nothing would put three spellings of one condition on the
+/// surface, which is the failure `settle-record.md` → §5 names.
+#[must_use]
+pub fn residual_area_note(listed: &str, unit_noun: &str) -> String {
+    format!(
+        "`{listed}` is a directory carrying no base pin, so it is a leftover and not a \
+         work unit — either jigc never minted a {unit_noun} there, or a teardown stopped \
+         partway and left the directory behind"
+    )
+}
+
+/// **The one recovery a residual has** — byte-identical at every door that names one,
+/// because there is exactly one act, and a second spelling would make one state answer two
+/// ways (`settle-record.md` → §5's rule, applied to this family).
+///
+/// It names a path and **no command**. A mechanical route here would have to be a jigc verb
+/// that deletes a directory jigc did not fill, and D3's standing bound is that no verb
+/// resolves a residual: what is in there is not jigc's to judge. `nothing was changed` is
+/// true at all three doors — the by-id seams refuse before they resolve, and both mints
+/// refuse before `create_dir_all`.
+#[must_use]
+pub fn residual_area_route(listed: &str) -> crate::finding::Route {
+    crate::finding::Route::human(format!(
+        "nothing was changed. Keep anything you need from `{listed}` and delete the \
+         rest by hand — jigc mints no verb that clears a leftover working area, because \
+         what is in there is not jigc's to judge"
+    ))
+}
+
+/// The **repo-relative** spelling of a working area, for a door that holds the `.jigc/`
+/// root rather than the checkout it hangs off.
+///
+/// [`crate::path::repo_relative`] renders against the repository root, and the mints take
+/// `jigc_root` (= `<jigc_home>/.jigc`), so the home is its parent — which is **jigc_home**,
+/// the main checkout, never the worktree a fan-out sub-agent runs in. Taking the worktree
+/// root would print a host-absolute path at every door reached from a fan-out, the law-1
+/// breach T3 closed on the by-id side.
+pub(crate) fn area_repo_path(jigc_root: &Path, area: &Path) -> String {
+    crate::path::repo_relative(jigc_root.parent().unwrap_or(jigc_root), area)
+}
+
 /// The staged-doc identity a working-area `docs/` entry **name** stands for — the inverse
 /// of [`instance_filename`], and the one home that rule has.
 ///
@@ -1157,10 +1210,23 @@ pub fn mint_task(
     };
     let dir = jigc_root.join("tasks").join(&id);
 
-    // Serial collision: an active task dir of that id already exists → reject,
-    // surfacing its status, never silently suffixed or reused.
+    // Serial collision: something of that id already exists at the area path → reject,
+    // never silently suffixed or reused. **Which** refusal splits on the residual rule
+    // ([`carries_base_pin`]): a live task gets its status surfaced and a resume route; a
+    // pin-less *directory* is no task at any door, so claiming it is "already active" would
+    // be a law-1 lie routed at two verbs that both answer `finalize.no-task` over it.
+    //
+    // A **non-directory** squatting the area path keeps today's answer, deliberately: the
+    // residual sentence describes a directory and its two causes, the increment's axis is
+    // three directory shapes, and a regular file there is a different condition owed a
+    // different sentence — carried as a stated bound rather than answered with a sentence
+    // that would be false (`DECISIONS.md` 2026-09-22 → M53 Increment 3 / T4).
     if dir.exists() {
-        return Err(collision_finding(&id));
+        return Err(if dir.is_dir() && !carries_base_pin(&dir, WorkArea::Task) {
+            residual_collision_finding(&id, &area_repo_path(jigc_root, &dir))
+        } else {
+            collision_finding(&id)
+        });
     }
 
     std::fs::create_dir_all(&dir).map_err(|err| io_finding(&id, "open the working area", &err))?;
@@ -1515,6 +1581,27 @@ fn collision_finding(id: &str) -> Finding {
             )
             .into(),
         ),
+    )
+}
+
+/// The serial-collision block over a **residual**: the same code and the same stable key as
+/// [`collision_finding`], because the state is the same state — *the id is taken on disk* —
+/// and a driver keying on `(task.serial-collision, task:<id>)` must not learn a second pair
+/// to see this cell (M53 Increment 3 / T4; `settle-record.md` → D3, *What the mint answers*).
+///
+/// What differs is what is *there*, so what differs is the sentence and the route. The mint
+/// keeps **refusing**: adopting the directory would write jigc's files in beside bytes
+/// nobody has looked at, at a door that could not do that before.
+fn residual_collision_finding(id: &str, listed: &str) -> Finding {
+    Finding::graded(
+        Severity::Blocking,
+        "task.serial-collision",
+        format!(
+            "cannot mint task `{id}`: {}",
+            residual_area_note(listed, "task")
+        ),
+        Some(Location::addressed(format!("task:{id}"), 1, 1)),
+        Some(residual_area_route(listed)),
     )
 }
 
@@ -2271,6 +2358,7 @@ fn io_finding(id: &str, doing: &str, err: &std::io::Error) -> Finding {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::finding::Route;
     use proptest::prelude::*;
 
     /// **Both writer-registry rows lead with the base pin, and it is [`BASE_PIN_FILE`]** —
@@ -2473,6 +2561,224 @@ mod tests {
             .expect("tasks dir")
             .count();
         assert_eq!(before, after, "no second dir created on collision");
+    }
+
+    /// Plant a residual working area at `<root>/tasks/<id>/` in one of the three shapes
+    /// D3's axis names — a directory that carries **no** base pin. Returns the area.
+    ///
+    /// The shapes differ in what else is in there, which is what the *destroying* doors
+    /// key on; the mint keys on the pin alone, so all three must answer identically here.
+    fn plant_residual(root: &Path, id: &str, shape: &str) -> PathBuf {
+        let area = root.join("tasks").join(id);
+        std::fs::create_dir_all(&area).expect("plant the residual area");
+        match shape {
+            "empty dir" => {}
+            "a foreign file" => {
+                std::fs::write(area.join("notes.txt"), "a third party's bytes\n")
+                    .expect("plant the foreign file");
+            }
+            "a foreign docs/<ty>:<slug>.md" => {
+                let docs = area.join(DOCS_DIR);
+                std::fs::create_dir_all(&docs).expect("plant the residual docs/ tree");
+                std::fs::write(docs.join("adr:leftover.md"), "# Leftover\n")
+                    .expect("plant the staged-looking body");
+            }
+            other => panic!("unknown residual shape `{other}`"),
+        }
+        assert!(
+            !carries_base_pin(&area, WorkArea::Task),
+            "a planted residual must carry no base pin, or this test proves nothing",
+        );
+        area
+    }
+
+    /// Every entry under `dir`, sorted — the "nothing was changed" witness.
+    fn entries(dir: &Path) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(dir)
+            .expect("read the area")
+            .filter_map(|entry| entry.ok()?.file_name().into_string().ok())
+            .collect();
+        names.sort();
+        names
+    }
+
+    /// M53 Increment 3 / T4 (`completions/artifacts/M53/settle-record.md` → D3, *What the
+    /// mint answers*) — **the mint names the leftover instead of claiming a live work
+    /// unit.**
+    ///
+    /// Driven at `bde8a643`: a bare `mkdir .jigc/tasks/stray-alpha` made the next
+    /// same-slug mint answer *"task `stray-alpha` is already active"* — a law-1 lie about a
+    /// directory that is no task at any door, routed at `jigc start --task` and
+    /// `jigc task discard --force`, **both of which T3 made answer `finalize.no-task`**. So
+    /// the door stated a falsehood and then sent the agent two hops to find that out.
+    ///
+    /// The code and the key do not move: the state is still *the id is taken on disk*, and a
+    /// driver keying on `(task.serial-collision, task:<id>)` must not learn a second pair to
+    /// see it. What moves is the sentence and the route — one recovery, named once.
+    #[test]
+    fn mint_over_a_residual_area_names_the_leftover_not_a_live_task() {
+        let root = TempRoot::new("residual-mint");
+        let base = BasePin::new("0123456789abcdef0123456789abcdef01234567", "0123456");
+
+        for shape in [
+            "empty dir",
+            "a foreign file",
+            "a foreign docs/<ty>:<slug>.md",
+        ] {
+            let id = "stray-alpha";
+            let area = plant_residual(root.path(), id, shape);
+            let before = entries(&area);
+
+            let err = mint_task(
+                root.path(),
+                "Stray alpha",
+                "commit",
+                "single-task",
+                base.clone(),
+                Some(id),
+            )
+            .expect_err("a mint onto a residual refuses");
+
+            assert_eq!(err.severity, Severity::Blocking, "[{shape}] {err:?}");
+            assert_eq!(
+                err.code, "task.serial-collision",
+                "[{shape}] the code is the state"
+            );
+            assert_eq!(
+                err.location.as_ref().and_then(|l| l.address.clone()),
+                Some(format!("task:{id}")),
+                "[{shape}] the stable key's target is unmoved",
+            );
+            assert!(
+                err.message.contains("carrying no base pin"),
+                "[{shape}] the refusal says what the directory is; got: {}",
+                err.message,
+            );
+            assert!(
+                err.message.contains("tasks/stray-alpha"),
+                "[{shape}] and names the path, repo-relative; got: {}",
+                err.message,
+            );
+            assert!(
+                !err.message.contains("is already active"),
+                "[{shape}] the lie is gone; got: {}",
+                err.message,
+            );
+            let route = err.route.as_ref().expect("a refusal carries a route");
+            assert_eq!(
+                route.as_str(),
+                residual_area_route(&area_repo_path(root.path(), &area)).as_str(),
+                "[{shape}] the residual route comes from the one home, not a third spelling",
+            );
+            // The old routes, asserted gone **by their argv** — a dead end that comes back
+            // wearing new prose would still be a dead end.
+            for dead in [
+                &format!("jigc start --task {id}"),
+                &format!("jigc task discard {id} --force"),
+            ] {
+                assert!(
+                    !route.as_str().contains(dead.as_str()),
+                    "[{shape}] `{dead}` answers `finalize.no-task` over a residual; got: {route}",
+                );
+            }
+            assert_eq!(
+                entries(&area),
+                before,
+                "[{shape}] the refusal precedes every write — nothing was changed",
+            );
+            assert!(
+                !carries_base_pin(&area, WorkArea::Task),
+                "[{shape}] and above all no pin was written into somebody else's directory",
+            );
+
+            std::fs::remove_dir_all(&area).expect("clear the shape before the next");
+        }
+    }
+
+    /// The **over-firing control** for the cell above: a colliding mint over a *live* task
+    /// still answers today's bytes, unchanged.
+    ///
+    /// This is the assertion that makes the new arm a narrowing rather than a rewrite. The
+    /// predicate decides *which* sentence, and it must decide it the same way
+    /// [`carries_base_pin`]'s other homes do — `crates/cli/tests/mint_door_base_pin.rs`
+    /// holds the converse (every legitimate area carries the pin when a door can see it).
+    #[test]
+    fn mint_over_a_live_area_answers_the_shipped_collision_bytes() {
+        let root = TempRoot::new("live-collision");
+        let base = BasePin::new("0123456789abcdef0123456789abcdef01234567", "0123456");
+
+        mint_task(
+            root.path(),
+            "Add rate limiter",
+            "commit",
+            "single-task",
+            base.clone(),
+            None,
+        )
+        .expect("the first mint lands a real area");
+
+        let err = mint_task(
+            root.path(),
+            "Add rate limiter",
+            "commit",
+            "single-task",
+            base,
+            None,
+        )
+        .expect_err("the same slug over a live task still collides");
+
+        assert_eq!(err.code, "task.serial-collision");
+        assert_eq!(
+            err.message, "task `add-rate-limiter` is already active",
+            "the live cell's bytes are untouched",
+        );
+        assert_eq!(
+            err.route.as_ref().map(Route::as_str),
+            Some(
+                "resume with `jigc start --task add-rate-limiter` or abandon with \
+                 `jigc task discard add-rate-limiter --force`"
+            ),
+            "and so is its route — the resume it names really does resume",
+        );
+    }
+
+    /// **One residual route, three doors** — the by-id seams' producer (T3) and the two
+    /// mints (T4) hand the agent the *same bytes*, because there is exactly one recovery
+    /// for a leftover directory and a second spelling would make one state answer two ways
+    /// (`settle-record.md` → §5's rule, applied to this family).
+    #[test]
+    fn every_door_that_names_a_residual_names_the_same_recovery() {
+        let root = TempRoot::new("route-identity");
+        let base = BasePin::new("0123456789abcdef0123456789abcdef01234567", "0123456");
+
+        let area = plant_residual(root.path(), "stray-alpha", "empty dir");
+        let mint = mint_task(
+            root.path(),
+            "Stray alpha",
+            "commit",
+            "single-task",
+            base,
+            Some("stray-alpha"),
+        )
+        .expect_err("the mint refuses");
+
+        // The by-id producer takes **jigc_home** (the checkout `.jigc/` hangs off), which
+        // is what the mint's own [`area_repo_path`] derives from its `.jigc/` root — so
+        // handing it the temp root's parent puts both on the same home and makes the
+        // comparison about the *bytes*, not about two spellings of one path.
+        let home = root.path().parent().expect("the temp root has a parent");
+        let by_id = crate::finalize::residual_task_area_finding("stray-alpha", home, &area);
+
+        assert_eq!(
+            mint.route.as_ref().map(Route::as_str),
+            by_id.route.as_ref().map(Route::as_str),
+            "the mint and the by-id door route to the same act",
+        );
+        assert_eq!(
+            by_id.route.as_ref().map(Route::as_str),
+            Some(residual_area_route(&area_repo_path(root.path(), &area)).as_str()),
+            "and both of them come from the shared home",
+        );
     }
 
     /// M43 T1 (`design/surface-contract.md` → The carryover gate): the staged

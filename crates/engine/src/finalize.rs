@@ -1383,16 +1383,11 @@ pub fn residual_task_area_finding(id: &str, jigc_home: &Path, area: &Path) -> Fi
         Severity::Blocking,
         "finalize.no-task",
         format!(
-            "no task `{id}`: `{listed}` is a directory carrying no base pin, so it is a \
-             leftover and not a work unit — either jigc never minted a task there, or a \
-             teardown stopped partway and left the directory behind"
+            "no task `{id}`: {}",
+            crate::state::residual_area_note(&listed, "task")
         ),
         Some(Unit::Task(id).location()),
-        Some(Route::human(format!(
-            "nothing was changed. Keep anything you need from `{listed}` and delete the \
-             rest by hand — jigc mints no verb that clears a leftover working area, because \
-             what is in there is not jigc's to judge"
-        ))),
+        Some(crate::state::residual_area_route(&listed)),
     )
 }
 

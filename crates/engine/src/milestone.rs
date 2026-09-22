@@ -287,10 +287,24 @@ pub fn mint_milestone(
     let id = mint_id(title);
     let dir = milestone_dir(jigc_root, &id);
 
-    // Serial collision: an active milestone dir of that id already exists →
-    // reject, never silently suffixed or reused (the `-2` suffix is the join's).
+    // Serial collision: something of that id already exists at the area path → reject,
+    // never silently suffixed or reused (the `-2` suffix is the join's). **Which** refusal
+    // splits on the residual rule, the task mint's split one door over
+    // ([`crate::state::mint_task`]): a pin-less *directory* is a milestone at no door, and
+    // today's *"already exists"* routed at `jigc milestone add-task`, which answers
+    // `milestone.area-io` — *"a disk or permissions problem"* — over a state that is
+    // neither. A non-directory squatting the path keeps today's answer, on the bound stated
+    // at the task mint.
     if dir.exists() {
-        return Err(collision_finding(&id));
+        return Err(
+            if dir.is_dir()
+                && !crate::state::carries_base_pin(&dir, crate::state::WorkArea::Milestone)
+            {
+                residual_collision_finding(&id, &crate::state::area_repo_path(jigc_root, &dir))
+            } else {
+                collision_finding(&id)
+            },
+        );
     }
 
     std::fs::create_dir_all(&dir)
@@ -2653,6 +2667,25 @@ fn collision_finding(id: &str) -> Finding {
     )
 }
 
+/// The serial-collision block over a **residual** — the milestone twin of
+/// [`crate::state`]'s, under the same rule: the code and the stable key do not move,
+/// because the state is still *the id is taken on disk*; the sentence and the route do,
+/// because what is there is a leftover and the recovery is the one every door that names a
+/// residual hands out (M53 Increment 3 / T4; `settle-record.md` → D3, *What the mint
+/// answers*).
+fn residual_collision_finding(id: &str, listed: &str) -> Finding {
+    Finding::graded(
+        Severity::Blocking,
+        "milestone.serial-collision",
+        format!(
+            "cannot mint milestone `{id}`: {}",
+            crate::state::residual_area_note(listed, "milestone")
+        ),
+        Some(Location::addressed(format!("milestone:{id}"), 1, 1)),
+        Some(crate::state::residual_area_route(listed)),
+    )
+}
+
 /// A blocking finding for an area I/O failure during minting.
 fn io_finding(id: &str, doing: &str, err: &std::io::Error) -> Finding {
     Finding::graded(
@@ -2784,6 +2817,107 @@ mod tests {
             .expect("milestones dir")
             .count();
         assert_eq!(before, after, "no second dir created on collision");
+    }
+
+    /// M53 Increment 3 / T4 (`completions/artifacts/M53/settle-record.md` → D3, *What the
+    /// mint answers*) — **the milestone twin: the mint names the leftover.**
+    ///
+    /// Driven at `bde8a643` (the debug binary, through `dev/jigc-rig`): over a bare
+    /// `mkdir .jigc/milestones/stray-mile`, `jigc milestone create "Stray mile"` answered
+    /// *"milestone `stray-mile` already exists"* and routed at
+    /// `jigc milestone add-task stray-mile "<intent>"` — which answers
+    /// **`milestone.area-io`**, *"a disk or permissions problem on the `.jigc/` milestone
+    /// area"*, for a state that is neither a disk fault nor a permissions fault. A lie
+    /// whose route dead-ends in a second lie.
+    ///
+    /// The code and the key are unmoved for the same reason the task twin's are: the state
+    /// is still *the id is taken on disk*.
+    #[test]
+    fn mint_over_a_residual_area_names_the_leftover_not_a_live_milestone() {
+        let root = TempRoot::new("residual-milestone");
+        let base = BasePin::new("1111111111111111111111111111111111111111", "1111111");
+        let area = milestone_dir(root.path(), "stray-mile");
+        std::fs::create_dir_all(&area).expect("plant the residual milestone area");
+        std::fs::write(area.join("notes.txt"), "a third party's bytes\n")
+            .expect("plant a foreign byte in it");
+
+        let err = mint_milestone(root.path(), "Stray mile", base)
+            .expect_err("a mint onto a residual refuses");
+
+        assert_eq!(err.severity, Severity::Blocking);
+        assert_eq!(
+            err.code, "milestone.serial-collision",
+            "the code is the state, and the state is unchanged",
+        );
+        assert_eq!(
+            err.location.as_ref().and_then(|l| l.address.clone()),
+            Some("milestone:stray-mile".to_string()),
+            "the stable key's target is unmoved",
+        );
+        assert!(
+            err.message.contains("carrying no base pin"),
+            "the refusal says what the directory is; got: {}",
+            err.message,
+        );
+        assert!(
+            err.message.contains("milestones/stray-mile"),
+            "and names the path, repo-relative; got: {}",
+            err.message,
+        );
+        assert!(
+            !err.message.contains("already exists"),
+            "the lie is gone; got: {}",
+            err.message,
+        );
+        let route = err.route.as_ref().expect("a refusal carries a route");
+        assert_eq!(
+            route.as_str(),
+            crate::state::residual_area_route(&crate::state::area_repo_path(root.path(), &area))
+                .as_str(),
+            "the residual route is the task doors' route, from the one home",
+        );
+        // The old route, asserted gone **by its argv** — following it landed on
+        // `milestone.area-io`, so leaving it in place would keep the dead end alive.
+        assert!(
+            !route
+                .as_str()
+                .contains("jigc milestone add-task stray-mile"),
+            "the dead-end route is gone; got: {route}",
+        );
+        assert!(
+            !area.join(BASE_PIN_FILE).exists() && !area.join(TASKS_FILE).exists(),
+            "the refusal precedes every write — nothing of jigc's landed in that directory",
+        );
+        assert!(
+            area.join("notes.txt").is_file(),
+            "and the third party's byte is untouched",
+        );
+    }
+
+    /// The **over-firing control**: a colliding mint over a *live* milestone still answers
+    /// today's bytes, so the new arm is a narrowing and not a rewrite.
+    #[test]
+    fn mint_over_a_live_milestone_area_answers_the_shipped_collision_bytes() {
+        let root = TempRoot::new("live-milestone-collision");
+        let base = BasePin::new("1111111111111111111111111111111111111111", "1111111");
+        mint_milestone(root.path(), "Cache rework", base.clone()).expect("the first mint lands");
+
+        let err = mint_milestone(root.path(), "Cache rework", base)
+            .expect_err("the same slug over a live milestone still collides");
+
+        assert_eq!(err.code, "milestone.serial-collision");
+        assert_eq!(
+            err.message, "milestone `cache-rework` already exists",
+            "the live cell's bytes are untouched",
+        );
+        assert_eq!(
+            err.route.as_ref().map(Route::as_str),
+            Some(
+                "add tasks with `jigc milestone add-task cache-rework \"<intent>\"` or pick a \
+                 different title"
+            ),
+            "and so is its route — the add-task it names really does work",
+        );
     }
 
     /// The done-criterion for T2 (`design/write-commands.md` → `jigc milestone
