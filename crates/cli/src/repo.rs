@@ -623,10 +623,7 @@ impl BreachSite<'_> {
     fn aim(self, command: &str) -> String {
         match self {
             BreachSite::Here => command.to_string(),
-            BreachSite::FanOutWorktree(path) => match command.strip_prefix("git ") {
-                Some(rest) => format!("git -C {} {rest}", engine::finding::shell_token(path)),
-                None => command.to_string(),
-            },
+            BreachSite::FanOutWorktree(path) => aim_at(path, command),
         }
     }
 
@@ -637,6 +634,27 @@ impl BreachSite<'_> {
             BreachSite::Here => None,
             BreachSite::FanOutWorktree(path) => Some(Location::addressed(path, 1, 1)),
         }
+    }
+}
+
+/// **`command`, aimed at the checkout at repo-relative `at`** — the `-C` redirection, in one
+/// home (M53 post-review-fix review, the HIGH; 2026-09-22).
+///
+/// [`BreachSite::aim`] is one caller; the other is the leftover classifier's refusal listing
+/// (`crate::milestone::hold_line`), which names the command that clears an operation held in a
+/// path the caller is not standing in and must aim it the same way, at a path that is not
+/// necessarily a *fan-out* worktree at all — `jigc milestone provision` reaches an
+/// unregistered one that can belong to a different repository entirely. Sharing the render
+/// rather than the site keeps the two from drifting into two spellings of one redirection.
+///
+/// The path is a [`engine::finding::shell_token`], so a name with a space stays one operand
+/// (M51's route-safety class); a command this family does not own — one that is not a `git`
+/// invocation — is returned unaimed rather than mis-rewritten, which
+/// `repo_posture.rs::every_routed_command_is_a_git_invocation` is the standing fence against.
+pub fn aim_at(at: &str, command: &str) -> String {
+    match command.strip_prefix("git ") {
+        Some(rest) => format!("git -C {} {rest}", engine::finding::shell_token(at)),
+        None => command.to_string(),
     }
 }
 

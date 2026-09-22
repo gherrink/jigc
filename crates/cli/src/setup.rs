@@ -3711,6 +3711,12 @@ fn dirty_worktree_finding(repo_root: &Path, dirty: &[HeldWorktreePath]) -> Findi
         );
     }
     route.push_str("; `jigc uninstall --force` deletes them with the install");
+    // *Get the work out* reaches bytes, and an un-concluded operation is not bytes — nor is
+    // it cleared by the abandon this route offers above (the independent review of
+    // `986d5e0a`, the HIGH). One clause, from the home the two milestone doors print.
+    if dirty.iter().any(|held| held.hold.operation.is_some()) {
+        route.push_str(crate::milestone::OPERATION_CLAUSE);
+    }
     Finding::block(
         "uninstall.dirty-worktree",
         format!(

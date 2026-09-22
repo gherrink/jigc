@@ -3424,6 +3424,37 @@ pub struct LeftoverHold {
     /// one by the failure, because listing an empty set beside either would read as *"it
     /// holds nothing"* (`design/surface-contract.md` → law 1).
     pub entries: Vec<String>,
+    /// The git operation the checkout has left **un-concluded** — the probe's *second* leg,
+    /// and the one that is not a question about bytes (the independent review of `986d5e0a`,
+    /// the HIGH; 2026-09-22).
+    ///
+    /// [`dirty_worktrees`] asks `git status --porcelain`, which is a question about
+    /// **working-tree bytes**, while what a destroying door takes here is **repository state
+    /// git holds**: a paused `rebase -i`, a `git bisect`, a dangling sequencer queue all
+    /// leave a spotless tree, so every one of them cleared the guard and the removal took the
+    /// operation's todo, its authored message, `ORIG_HEAD` and that checkout's reflog with
+    /// it, at exit 0 and in silence. Driven at `986d5e0a` at all three refusing doors.
+    ///
+    /// **Populated only under [`LeftoverVerdict::OwnWorktree`]**, which is the one verdict
+    /// where git can vouch for the path at all. At the other two *any* content already
+    /// refuses, so the leg would change no outcome — and there is no checkout to ask.
+    pub operation: Option<crate::repo::InProgress>,
+}
+
+/// **The operation `worktree` has left un-concluded**, or `None` — [`LeftoverHold::operation`]'s
+/// probe.
+///
+/// It is **not a second probe**: it asks [`crate::repo::adjudicated_breach`], the one
+/// composition the door guard and the milestone boundary's fan-out preflight both ask, narrowed
+/// to the one member this subject is about. [`crate::repo::PostureMember::HeadDetached`] is
+/// deliberately not it — jigc provisions every fan-out worktree `--detach`, so a leg that
+/// answered for it would refuse every ordinary fan-out teardown — and `HeadUnborn` cannot occur
+/// in a checkout git created at a commit.
+fn held_operation(worktree: &Path) -> Option<crate::repo::InProgress> {
+    crate::repo::adjudicated_breach(worktree, |member| {
+        matches!(member, crate::repo::PostureMember::OperationInProgress)
+    })?
+    .operation()
 }
 
 /// One refusal line for a held path: the repo-relative path, then what the door found there.
@@ -3434,9 +3465,36 @@ pub struct LeftoverHold {
 pub(crate) fn hold_line(repo_root: &Path, path: &Path, hold: &LeftoverHold) -> String {
     let at = render::repo_relative(repo_root, path);
     match &hold.shape {
-        LeftoverShape::Directory => format!("{at}: {}", hold.entries.join(", ")),
+        LeftoverShape::Directory => format!("{at}: {}", held_here(&at, hold)),
         LeftoverShape::File => format!("{at}: the file itself"),
         LeftoverShape::Unreadable(err) => format!("{at}: unknown — {err}"),
+    }
+}
+
+/// What a directory-shaped hold actually holds — the entries, the un-concluded operation, or
+/// both, in that order.
+///
+/// **The operation carries the command that clears it, aimed at the checkout holding it**
+/// ([`crate::repo::aim_at`]). The refusal's own route cannot: it is composed once for a set of
+/// paths that may hold different operations, and *"commit or stash what a live worktree
+/// holds"* — the route every one of these doors printed — resolves a bisect or a paused rebase
+/// not at all. So the followable command rides the line it is true of.
+fn held_here(at: &str, hold: &LeftoverHold) -> String {
+    let entries = hold.entries.join(", ");
+    let Some(operation) = hold.operation else {
+        return entries;
+    };
+    // Parenthesised rather than dashed: [`because`]'s own clause is appended after this with
+    // an em-dash, and a second one inside would leave the line with two in a row.
+    let operation = format!(
+        "{} git has left un-concluded (abandon it with `{}`)",
+        operation.noun(),
+        crate::repo::aim_at(at, operation.abandon()),
+    );
+    if entries.is_empty() {
+        operation
+    } else {
+        format!("{entries}; and {operation}")
     }
 }
 
@@ -3449,6 +3507,13 @@ pub(crate) fn because(hold: &LeftoverHold) -> &'static str {
         }
         LeftoverShape::Unreadable(_) => {
             "nothing could be read there, so nothing can say those bytes are disposable"
+        }
+        // The operation leg first, and at every verdict it can be set at: it is the reason
+        // that is NOT about bytes, so a worktree carrying one is refused over the operation
+        // even where its tree is spotless and the sentence below would be false.
+        LeftoverShape::Directory if hold.operation.is_some() => {
+            "it is a live git worktree git has left mid-operation, and the removal takes the \
+             checkout that operation can only be concluded or abandoned from"
         }
         LeftoverShape::Directory => match hold.verdict {
             LeftoverVerdict::OwnWorktree => {
@@ -3532,9 +3597,21 @@ fn leftover_at(path: &Path) -> LeftoverAt {
 }
 
 /// The **fail-closed leftover guard**: `None` when `path` is provably safe to delete (absent,
-/// empty, or a clean worktree of its own), `Some(hold)` when it holds bytes the door must not
-/// take — **including** the case where the probe could not read the path at all, which is a
-/// hold like any other ([`LeftoverShape::Unreadable`]) rather than a failure.
+/// empty, or a clean **and concluded** worktree of its own), `Some(hold)` when it holds
+/// something the door must not take — **including** the case where the probe could not read
+/// the path at all, which is a hold like any other ([`LeftoverShape::Unreadable`]) rather than
+/// a failure.
+///
+/// **"Clean" is two questions, not one** (the independent review of `986d5e0a`, the HIGH;
+/// 2026-09-22). This read *"a clean worktree of its own"* and asked
+/// [`dirty_worktrees`] alone — `git status --porcelain`, a question about **working-tree
+/// bytes** — while what these doors remove is also **repository state git holds**. A worktree
+/// paused mid-`rebase -i`, mid-bisect or over a dangling sequencer queue has a spotless tree,
+/// so it cleared, and the removal took the operation's todo, its authored message, `ORIG_HEAD`
+/// and that checkout's reflog with it at exit 0 and in silence — driven at all three refusing
+/// doors, `jigc milestone provision` included, where the path can belong to a **different
+/// repository** and its foreign checkout was replaced by jigc's own. [`LeftoverHold::operation`]
+/// is the second leg.
 ///
 /// **It cannot fail, and that is the M50 repair** (RC-m50 N9). The unreadable case used to
 /// come back as an `Err` and every door propagated it with `?`, so the *first* unreadable path
@@ -3548,8 +3625,19 @@ fn leftover_at(path: &Path) -> LeftoverAt {
 /// code, because removing on an unverified probe is the defect this guard closes. What changed
 /// is that it blocks *beside* its siblings instead of *instead of* them.
 ///
-/// `pub(crate)` for its sibling doors: [`DESTROYING_DOORS`] all remove worktree-shaped paths
-/// under `.jigc/worktrees/`, and they ask one probe rather than growing three that drift.
+/// `pub(crate)` for its sibling doors, and **the consumer set is three, stated because this
+/// sentence read as four and was derived from** (2026-09-22). It said *"[`DESTROYING_DOORS`]
+/// all remove worktree-shaped paths under `.jigc/worktrees/`"*, which is false of two of its
+/// six members — `jigc task discard` and `jigc task finalize` stand at `.jigc/tasks/<id>/`,
+/// where there is no checkout (driven: a `task discard` leaves a sub-task's worktree and every
+/// marker of it standing) — and it made the review of `986d5e0a` read the *four*
+/// [`WORKTREE_DOORS`] as this probe's callers. They are not: [`FINALIZE_DOOR`] is the
+/// [`Disposition::Displace`] member, whose teardown runs **after** its commit and is guarded a
+/// phase earlier by [`fan_out_posture_findings`]. The callers are the **three refusing**
+/// worktree doors — [`PROVISION_DOOR`] (phase 1), [`DISCARD_DOOR`]
+/// ([`held_subtask_worktrees`]) and [`UNINSTALL_DOOR`] (`crate::setup::dirty_fanout_worktrees`)
+/// — and they ask one probe rather than growing three that drift, which is what made the
+/// second leg above one edit instead of three.
 pub(crate) fn probe_leftover(repo_root: &Path, path: &Path) -> Option<LeftoverHold> {
     match leftover_at(path) {
         LeftoverAt::Absent => return None,
@@ -3562,6 +3650,7 @@ pub(crate) fn probe_leftover(repo_root: &Path, path: &Path) -> Option<LeftoverHo
                 verdict: LeftoverVerdict::Unverifiable,
                 shape: LeftoverShape::File,
                 entries: Vec::new(),
+                operation: None,
             });
         }
         // The stat failed and the failure was not absence, so nothing here has been read at
@@ -3571,14 +3660,22 @@ pub(crate) fn probe_leftover(repo_root: &Path, path: &Path) -> Option<LeftoverHo
                 verdict: LeftoverVerdict::Unverifiable,
                 shape: LeftoverShape::Unreadable(err),
                 entries: Vec::new(),
+                operation: None,
             });
         }
         LeftoverAt::Directory => {}
     }
     let verdict = classify_leftover(path);
+    // The second leg, asked wherever git can vouch for the checkout: a clean tree is not the
+    // same question as a concluded repository, and it was the only one this probe asked.
+    let operation = match verdict {
+        LeftoverVerdict::OwnWorktree => held_operation(path),
+        LeftoverVerdict::Unverifiable | LeftoverVerdict::NoOwnLinkage => None,
+    };
     let read = match verdict {
-        // git can read this worktree's dirt — so ask the shipped probe, and let a clean
-        // worktree clear (the idempotent re-provision every fan-out depends on).
+        // git can read this worktree's dirt — so ask the shipped probe, and let a clean,
+        // concluded worktree clear (the idempotent re-provision every fan-out depends on;
+        // the concluded half is the `operation` leg above, asked at this same verdict).
         LeftoverVerdict::OwnWorktree => dirty_worktrees(&[path.to_path_buf()]).map(|dirty| {
             dirty
                 .into_iter()
@@ -3599,16 +3696,20 @@ pub(crate) fn probe_leftover(repo_root: &Path, path: &Path) -> Option<LeftoverHo
         }
     };
     match read {
-        Ok(entries) if entries.is_empty() => None,
+        // Both legs empty is the only clearance — the clean, concluded worktree the
+        // idempotent re-provision depends on.
+        Ok(entries) if entries.is_empty() && operation.is_none() => None,
         Ok(entries) => Some(LeftoverHold {
             verdict,
             shape: LeftoverShape::Directory,
             entries,
+            operation,
         }),
         Err(err) => Some(LeftoverHold {
             verdict,
             shape: LeftoverShape::Unreadable(format!("{err:#}")),
             entries: Vec::new(),
+            operation,
         }),
     }
 }
@@ -3639,6 +3740,16 @@ fn leftover_finding(
         .map(|(path, hold)| format!("  {} — {}", hold_line(repo_root, path, hold), because(hold),))
         .collect();
     let address = render::repo_relative(repo_root, &held[0].0);
+    let mut tail = String::from(
+        " — but look at what is listed above first and move out anything you need; the removal \
+         is permanent",
+    );
+    if held.iter().any(|(_, hold)| hold.operation.is_some()) {
+        // *Move out anything you need* is inert over an un-concluded operation: there are no
+        // bytes to move, and the consent below would take the checkout the operation lives
+        // in. The command that clears each one is on its own listed line.
+        tail.push_str(OPERATION_CLAUSE);
+    }
     Finding::graded(
         Severity::Blocking,
         PROVISION_CODE,
@@ -3650,14 +3761,21 @@ fn leftover_finding(
             listing.join("\n"),
         ),
         Some(Location::addressed(&address, 1, 1)),
-        Some(provision_route(
-            milestone_id,
-            true,
-            " — but look at what is listed above first and move out anything you need; the \
-             removal is permanent",
-        )),
+        Some(provision_route(milestone_id, true, &tail)),
     )
 }
+
+/// The clause every refusal over an un-concluded operation appends to its route — one home,
+/// because three doors print it and the reason is the same at all three: the door's shipped
+/// route names the moves that get *bytes* out of the way, and none of them reaches a
+/// repository state git is holding (the independent review of `986d5e0a`, the HIGH).
+///
+/// The concrete command per path rides that path's own listed line
+/// ([`held_here`]), since one route stands for a set of paths that may hold different
+/// operations.
+pub(crate) const OPERATION_CLAUSE: &str = ". A path listed above as mid-operation holds no bytes to move: conclude or abandon the \
+     operation in that checkout — the command that abandons it is on its line — and the path \
+     clears";
 
 /// The sorted immediate child names of `path` — the "what would be deleted" listing for the
 /// two verdicts with no git to ask. Sorted, so the refusal text does not vary with readdir
@@ -4430,6 +4548,12 @@ fn unverified_subtask_prose_finding(milestone_id: &str, err: std::io::Error) -> 
 /// `git status --porcelain` entries that make it dirty — the abandon path's WIP probe
 /// (`design/team-ready-state.md` → Abandon refuses on a dirty worktree).
 ///
+/// **It answers about bytes, and that is the whole of what it answers** (the independent
+/// review of `986d5e0a`, the HIGH). A worktree git has left mid-operation over a *spotless*
+/// tree is invisible here by construction, and the second leg that sees it lives at the
+/// caller, beside this one: [`LeftoverHold::operation`]. Widening this probe instead would
+/// have put a repository-state question behind a `git status` name.
+///
 /// **`--porcelain`, not `git diff --cached`.** Its sibling [`worktrees_have_staged_code`] reads
 /// only the *staged* set, because at `finalize` the staged set is what the combine commits — but
 /// what the abandon path destroys is **everything** in the worktree: staged, unstaged, and
@@ -4573,6 +4697,11 @@ fn dirty_worktree_finding(milestone_id: &str, repo_root: &Path, held: &[HeldWork
         })
         .collect();
     let address = render::repo_relative(repo_root, &held[0].path);
+    let operation_clause = if held.iter().any(|w| w.hold.operation.is_some()) {
+        OPERATION_CLAUSE
+    } else {
+        ""
+    };
     Finding::graded(
         Severity::Blocking,
         DISCARD_CODE,
@@ -4594,7 +4723,7 @@ fn dirty_worktree_finding(milestone_id: &str, repo_root: &Path, held: &[HeldWork
              `jigc milestone discard {milestone_id} --force` to abandon the milestone \
              anyway: a registered worktree is removed with everything \
              uncommitted in it, and a path nothing vouches for is left behind on disk for \
-             you to deal with"
+             you to deal with{operation_clause}"
             )
             .into(),
         ),
@@ -6734,16 +6863,35 @@ fn doomed_at(repo_root: &Path, path: &Path) -> Result<Doomed> {
         });
     }
     match classify_leftover(path) {
-        LeftoverVerdict::OwnWorktree => Ok(Doomed {
-            subject: WORKTREE,
-            lines: discarded_work(path)?
+        LeftoverVerdict::OwnWorktree => {
+            let mut lines: Vec<DoomedLine> = discarded_work(path)?
                 .into_iter()
                 .map(|work| DoomedLine {
                     text: format!("{} ({})", work.path, work.state.label()),
                     at: path.join(&work.path),
                 })
-                .collect(),
-        }),
+                .collect();
+            // The un-concluded operation is a doomed item too — and on a clean tree it is the
+            // ONLY one, which is why `--force` past this guard used to print nothing at all
+            // (the independent review of `986d5e0a`, the HIGH). Its `at` is the checkout's own
+            // `.git` entry, so the line is outcome-keyed like every other: the two doors that
+            // remove the checkout report it, and `jigc milestone discard` over a path this
+            // repository never registered — which its teardown leaves on disk — does not.
+            if let Some(operation) = held_operation(path) {
+                lines.push(DoomedLine {
+                    text: format!(
+                        "{} git had left un-concluded — it can only be concluded or abandoned \
+                         from this checkout",
+                        operation.noun(),
+                    ),
+                    at: path.join(".git"),
+                });
+            }
+            Ok(Doomed {
+                subject: WORKTREE,
+                lines,
+            })
+        }
         // Nothing vouches for these bytes, so nothing may be claimed about them beyond their
         // names — the [`child_names`] listing the two fail-closed refusals already print.
         LeftoverVerdict::Unverifiable | LeftoverVerdict::NoOwnLinkage => Ok(Doomed {
