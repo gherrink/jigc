@@ -49,6 +49,15 @@
 //!     review of `986d5e0a`, MEDIUM 1).
 //!   * (h) a stated arm: `cli/src/milestone.rs` renders **no** path against the cwd's repo
 //!     root — the class (g) drives two members of, read off the source.
+//!   * (i) **one code, one declared envelope arm** at the door and at the preview the door
+//!     owns, plus the contract statement that names its target form (the independent review
+//!     of `986d5e0a`, MEDIUM 2).
+//!
+//! (f)'s refusing cells run through `git_state::overlay_worktree`, which **attaches** a
+//! branch first, so each probes a subject with one breach; `jigc milestone provision`
+//! detaches every fan-out worktree, so production presents **two** and probe order decides.
+//! The `Overlay::Detached` cell is the one that runs the production topology (the review's
+//! LOW 2).
 //!
 //! # Why (f) lives here and not in `posture_door_axis.rs`
 //!
@@ -634,7 +643,24 @@ use crate::support::git_state::{self, GitState};
 /// `git_state::overlay_worktree` refuses a dirty tree (a rebase cannot begin over one), and
 /// the sub-task's own staged work is what the boundary would otherwise swallow the
 /// operation alongside.
-fn setup_one_sub_task(repo: &Path, home: &Path, squash_false: bool, state: Option<GitState>) {
+/// **How a cell enters its git state, and what it leaves HEAD as.**
+///
+/// The third variant is the one the independent review of `986d5e0a` (LOW 2) asked for:
+/// `git_state::overlay_worktree` attaches a branch before driving, and every refusing cell
+/// of the axis therefore probes a subject with **one** breach, while a production fan-out
+/// worktree is `--detach`ed and answers with **two** — `OperationInProgress` and
+/// `HeadDetached` — where probe order plus the `Dedicated` exemption decide which the door
+/// refuses with.
+enum Overlay {
+    /// No operation at all — the zero-false-fire control.
+    Nothing,
+    /// A branch attached first, which is what `drive`'s branch-named constructions need.
+    Attached(GitState),
+    /// HEAD left exactly as `jigc milestone provision` created it.
+    Detached(GitState),
+}
+
+fn setup_one_sub_task(repo: &Path, home: &Path, squash_false: bool, overlay: Overlay) {
     crate::support::mint_project_layer(repo);
     if squash_false {
         fs::write(
@@ -669,13 +695,17 @@ fn setup_one_sub_task(repo: &Path, home: &Path, squash_false: bool, state: Optio
         "provision must exit 0; stderr:\n{}",
         String::from_utf8_lossy(&provisioned.stderr),
     );
-    if let Some(state) = state {
-        git_state::overlay_worktree(
-            &repo.join(".jigc").join("worktrees").join("area-low"),
-            home,
-            state,
-        )
-        .expect("the axis skips the states a worktree cannot hold");
+    let worktree = repo.join(".jigc").join("worktrees").join("area-low");
+    match overlay {
+        Overlay::Nothing => {}
+        Overlay::Attached(state) => {
+            git_state::overlay_worktree(&worktree, home, state)
+                .expect("the axis skips the states a worktree cannot hold");
+        }
+        Overlay::Detached(state) => {
+            git_state::overlay_worktree_detached(&worktree, home, state)
+                .expect("the detached cell drives only a state buildable with no branch");
+        }
     }
     stage_worktree_code(repo, "area-low", "src/low.rs", "pub fn low() {}\n");
 }
@@ -733,7 +763,12 @@ fn fan_out_cell(state: GitState, squash_false: bool) {
     let repo = TempDir::new(&tag);
     init_repo(repo.path());
     let home = TempDir::new("home");
-    setup_one_sub_task(repo.path(), home.path(), squash_false, Some(state));
+    setup_one_sub_task(
+        repo.path(),
+        home.path(),
+        squash_false,
+        Overlay::Attached(state),
+    );
 
     let worktree = repo.path().join(".jigc").join("worktrees").join("area-low");
     let git_dir = PathBuf::from(git_stdout(&worktree, &["rev-parse", "--absolute-git-dir"]));
@@ -905,7 +940,7 @@ fn the_sub_task_preview_forecasts_the_boundarys_worktree_refusal() {
         repo.path(),
         home.path(),
         false,
-        Some(GitState::UncommittedPick),
+        Overlay::Attached(GitState::UncommittedPick),
     );
     let worktree = repo.path().join(".jigc").join("worktrees").join("area-low");
 
@@ -975,7 +1010,7 @@ fn a_fan_out_with_no_operation_anywhere_is_untouched() {
         });
         init_repo(repo.path());
         let home = TempDir::new("home");
-        setup_one_sub_task(repo.path(), home.path(), squash_false, None);
+        setup_one_sub_task(repo.path(), home.path(), squash_false, Overlay::Nothing);
 
         let preview = run_task(repo.path(), home.path(), &["validate", "area-low"]);
         let preview_text = String::from_utf8_lossy(&preview.stderr).to_string();
@@ -1242,7 +1277,12 @@ fn the_fan_out_posture_finding_answers_on_one_declared_arm_at_both_surfaces() {
     let repo = TempDir::new("fanout-envelope-arm");
     init_repo(repo.path());
     let home = TempDir::new("home");
-    setup_one_sub_task(repo.path(), home.path(), false, Some(GitState::Bisect));
+    setup_one_sub_task(
+        repo.path(),
+        home.path(),
+        false,
+        Overlay::Attached(GitState::Bisect),
+    );
 
     for (surface, args) in [
         (
@@ -1303,5 +1343,58 @@ fn the_contract_lists_the_fan_out_posture_code_under_the_filesystem_path_form() 
         row.contains("repo.operation-in-progress"),
         "the filesystem-path form's Members list must name `repo.operation-in-progress` — it \
          projects a path key at `BreachSite::FanOutWorktree`; row:\n{row}",
+    );
+}
+
+/// (f) **The refusing subject a production fan-out actually presents: two breaches, not
+/// one** (the independent review of `986d5e0a`, LOW 2).
+///
+/// Every other refusing cell of the axis is driven through `git_state::overlay_worktree`,
+/// which attaches a branch first because `drive`'s constructions move between branches by
+/// name. That adaptation is inert for what the probe *detects* and not for what it
+/// *returns*: `jigc milestone provision` creates every fan-out worktree `--detach`ed, so the
+/// real subject answers `[OperationInProgress, HeadDetached]` and which breach the boundary
+/// refuses with is decided by `InProgress`' probe order plus the `Dedicated` exemption —
+/// neither of which an attached, single-breach fixture exercises.
+///
+/// One cell, over the one state buildable with no branch to move between: a bisect is one
+/// commit and `git bisect start`. It claims exactly the discrimination: the boundary refuses
+/// with the **operation**, names it, and never mentions `repo.head-detached` — which, being
+/// the member a dedicated worktree is exempt from, would mean jigc refusing its own
+/// provisioning.
+#[test]
+fn a_detached_worktree_carrying_an_operation_is_refused_as_the_operation() {
+    let repo = TempDir::new("fanout-detached-bisect");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+    setup_one_sub_task(
+        repo.path(),
+        home.path(),
+        false,
+        Overlay::Detached(GitState::Bisect),
+    );
+
+    let before = all_ref_commit_count(repo.path());
+    let finalized = run_milestone(repo.path(), home.path(), &["finalize", "cache-rework"]);
+    let stderr = String::from_utf8_lossy(&finalized.stderr).to_string();
+    assert!(
+        !finalized.status.success(),
+        "a detached worktree mid-bisect must still refuse; got {:?}\nstderr:\n{stderr}",
+        finalized.status,
+    );
+    assert!(
+        stderr.contains("blocking · repo.operation-in-progress") && stderr.contains("a bisect"),
+        "the refusal must be the OPERATION's, named — probe order decides this, and only a \
+         two-breach subject exercises it; stderr:\n{stderr}",
+    );
+    assert!(
+        !stderr.contains("repo.head-detached"),
+        "a fan-out worktree is exempt from the detached member — refusing on it would refuse \
+         jigc's own provisioning; stderr:\n{stderr}",
+    );
+    assert_eq!(
+        all_ref_commit_count(repo.path()),
+        before,
+        "a refused boundary must land no commit on any ref",
     );
 }

@@ -948,6 +948,57 @@ pub fn overlay_worktree(worktree: &Path, home: &Path, state: GitState) -> Result
     Ok(())
 }
 
+/// [`overlay_worktree`], **leaving HEAD exactly as jigc provisioned it — detached** (the
+/// independent review of `986d5e0a`, LOW 2).
+///
+/// Its sibling attaches a branch first and states that as its one adaptation, on the ground
+/// that HEAD's shape decides no [`cli::repo::InProgress`] member. That is true of what the
+/// probe **detects** and false of what it **returns**: `cli::repo::posture` yields every
+/// breach it finds, so a production fan-out worktree — always `--detach`ed — answers with
+/// **two**, `OperationInProgress` and `HeadDetached`, and which one a door refuses with is
+/// decided by probe order plus the `Dedicated` exemption. An attached fixture probes a
+/// single-breach subject and cannot see that ordering at all, so every refusing cell of the
+/// axis was one breach short of production.
+///
+/// **It accepts only a state `drive` can build with no branch to move between** — today
+/// [`GitState::Bisect`], whose construction is one commit and `git bisect start`; every
+/// other construction moves between branches by name (`seed` reads the current branch back,
+/// `diverge` returns to it), and on a detached HEAD those go to a commit rather than to the
+/// branch they left. The rest return `Err` with that reason rather than being driven into a
+/// fixture that fails at git.
+pub fn overlay_worktree_detached(
+    worktree: &Path,
+    home: &Path,
+    state: GitState,
+) -> Result<(), String> {
+    if let Some(reason) = state.worktree_refusal() {
+        return Err(reason.to_string());
+    }
+    if state != GitState::Bisect {
+        return Err(format!(
+            "`{}` cannot be built on a detached HEAD: every construction but `bisect` moves              between branches by name, and on a detached HEAD those land on a commit rather              than on the branch they left",
+            state.name(),
+        ));
+    }
+    let driver = Driver {
+        repo: worktree.to_path_buf(),
+        home: home.to_path_buf(),
+    };
+    assert!(
+        !driver.run(&["symbolic-ref", "-q", "HEAD"]).status.success(),
+        "refusing to build the detached-HEAD cell in {worktree:?}: its HEAD is ATTACHED, so          the fixture would prove the opposite of what it exists for. jigc provisions every          fan-out worktree `--detach`; pass the worktree as `provision` left it.",
+    );
+    let dirty = driver.ok(&["status", "--porcelain"]);
+    assert!(
+        dirty.is_empty(),
+        "refusing to drive the fan-out worktree {worktree:?} into the `{}` git state over a          DIRTY tree — the state is entered LAST, before the sub-task's own work is staged.          Outstanding:\n{dirty}",
+        state.name(),
+    );
+    drive(&driver, state);
+    assert_state_with_head(worktree, home, state, Head::Detached);
+    Ok(())
+}
+
 pub fn overlay(corpus: &TrialCorpus, state: GitState) -> Result<(), String> {
     if let Some(reason) = state.overlay_refusal() {
         return Err(reason.to_string());
@@ -978,6 +1029,16 @@ pub fn overlay(corpus: &TrialCorpus, state: GitState) -> Result<(), String> {
 /// absent** (which is where each discriminating sibling is checked), HEAD's shape,
 /// and the `git ls-files -u` count.
 pub fn assert_state(repo: &Path, home: &Path, state: GitState) {
+    assert_state_with_head(repo, home, state, expectation(state).head);
+}
+
+/// [`assert_state`], with the HEAD shape supplied rather than read off the state's
+/// [`Expectation`] — the one fact an entry point may legitimately change.
+///
+/// [`overlay_worktree_detached`] is the caller that needs it: its whole subject is a state
+/// built **without** the branch attach its sibling performs, so the marker set is the
+/// state's and the HEAD shape is the entry point's.
+pub fn assert_state_with_head(repo: &Path, home: &Path, state: GitState, head: Head) {
     let driver = Driver {
         repo: repo.to_path_buf(),
         home: home.to_path_buf(),
@@ -1022,9 +1083,8 @@ pub fn assert_state(repo: &Path, home: &Path, state: GitState) {
         ),
     };
     assert_eq!(
-        observed, expectation.head,
-        "the `{label}` fixture must leave HEAD {:?}",
-        expectation.head,
+        observed, head,
+        "the `{label}` fixture must leave HEAD {head:?}",
     );
 
     let unmerged = driver
