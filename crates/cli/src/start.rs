@@ -83,14 +83,20 @@ pub fn mint_in_repo(
     workflow_id: &str,
     slug_override: Option<&str>,
 ) -> Result<MintedTask> {
-    // Reject a user intent with no sluggable content up front, before minting:
-    // `slugify` would otherwise fold an empty/whitespace/punctuation-only intent to
-    // nothing, and `mint_task`'s empty-slug fallback would mint the task under the
-    // `commit` type name — a surprising id that a second such call serial-collides.
-    // The fallback stays correct for legitimate internal callers (migration's empty
-    // intent via `mint_migration_in_repo`); only this user-intent boundary is guarded.
+    // Reject a user intent with no slug-able content up front, before minting: `slugify`
+    // folds a title in another script, one of stopwords alone, and every empty /
+    // whitespace / punctuation-only intent to nothing, and `mint_task`'s empty-slug
+    // fallback would then mint the task under the `commit` type name — an identity nobody
+    // typed, that a second such call serial-collides.
+    //
+    // The refusal is the **mint class's own**, not this door's private wording
+    // ([`state::unslugable_title_finding`], M53 Increment 5 / D5): until then this bailed
+    // with a code-less string saying the intent *"must contain at least one letter or
+    // digit"*, which is false of `"日本語"` and gave a driver nothing to key on. The
+    // work-unit type token it takes is `task` — this door's subject and, being the target,
+    // this refusal's key.
     if engine::slug::slugify(intent).is_empty() {
-        bail!("intent must contain at least one letter or digit (got {intent:?})");
+        return Err(finding_to_err(state::unslugable_title_finding("task")));
     }
     // The `--slug` override drives the minted id **verbatim** — validate its shape at
     // this CLI boundary (never silently re-slugify a malformed value; `DECISIONS.md`
@@ -4387,25 +4393,52 @@ mod tests {
         );
     }
 
-    /// A user intent with no sluggable content (empty, whitespace-only, or
-    /// punctuation-only) is rejected up front with a clear, actionable message and
-    /// mints **nothing** — never silently minted under the `commit` fallback id
-    /// (which would then serial-collide a second such call). The fallback stays
-    /// correct for legitimate internal callers (migration's empty intent); only the
-    /// user's task intent is guarded at the mint boundary.
+    /// A user intent with no slug-able content is rejected up front **under the mint
+    /// class's own identity** — `write.unslugable-title`, the third producer of that code
+    /// (M53 Increment 5 / D5) — and mints **nothing**: never silently minted under
+    /// `state::mint_id`'s empty→type-name fallback, which would put the work at a
+    /// fabricated `commit` id that a second such call serial-collides. The fallback stays
+    /// for legitimate internal callers and as a defensive floor; only the user's task
+    /// intent is guarded at this mint boundary.
+    ///
+    /// **The cells are ordinary, not adversarial**, which is why the printed sentence has
+    /// to be true of all of them: the pre-D5 bail said *"intent must contain at least one
+    /// letter or digit"*, which is plainly false of `"日本語"` — a title carrying three
+    /// letters and no ASCII — and carried no code at all, so a driver keying on
+    /// `(code, target)` read nothing back and the invocation log recorded an anonymous
+    /// exit 1. The emitted bytes are driven at
+    /// `crates/cli/tests/start_compose.rs::a_title_that_slugs_to_nothing_refuses_under_the_mint_class_code`;
+    /// this arm pins the refusal at the mint function itself, over the whole degenerate
+    /// input set.
     #[test]
     fn empty_slug_intent_is_rejected_and_mints_nothing() {
         let repo = TempDir::new("repo");
         init_repo_with_commit(repo.path());
         let tasks = repo.path().join(".jigc").join("tasks");
 
-        for bad in ["", "   ", "!!!"] {
+        for bad in ["", "   ", "!!!", "日本語", "the"] {
             let err = mint_in_repo(repo.path(), bad, "single-task", None)
                 .expect_err("no-sluggable-content intent must reject");
             let msg = err.to_string();
             assert!(
-                msg.contains("intent must contain at least one letter or digit"),
-                "must carry the actionable message; got: {msg}"
+                msg.starts_with("blocking · write.unslugable-title — "),
+                "the refusal must carry the mint class's identity for intent {bad:?}; got: {msg}"
+            );
+            assert!(
+                msg.contains(
+                    "ids are built from ASCII letters and digits, so a title in another \
+                     script, or of stopwords only, yields none"
+                ),
+                "the sentence must be true for a title in any script (intent {bad:?}); \
+                 got: {msg}"
+            );
+            assert!(
+                msg.contains("\n  at: task\n"),
+                "the block keys at the bare work-unit type token; got: {msg}"
+            );
+            assert!(
+                msg.contains("\n  route: "),
+                "a blocking refusal carries a route; got: {msg}"
             );
             // Mint nothing: no task dir appears (not even the `commit` fallback).
             let minted_any = std::fs::read_dir(&tasks)

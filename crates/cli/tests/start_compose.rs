@@ -2449,3 +2449,132 @@ fn the_composed_json_is_unchanged_while_a_task_is_already_open() {
     assert_eq!(router_keys, vec!["task", "text"]);
     assert!(!router_out.contains("also open"), "got:\n{router_out}",);
 }
+
+/// **M53 Increment 5 / T2 — the fourth mint door refuses a title that yields no id, under
+/// the mint class's own identity.**
+///
+/// Driven at `423d8a58`, `jigc --format json start --workflow single-task "日本語"` answered
+/// `{"error": "intent must contain at least one letter or digit (got \"日本語\")"}` and logged
+/// `finding_codes: []` — a sentence that is **false** of the title it names (three letters,
+/// none of them ASCII), with no code for a driver to key on and an anonymous exit 1 in the
+/// invocation log. D5 gives the class one producer and one sentence
+/// (`completions/artifacts/M53/settle-record.md` → **D5**), and this is the arm that drives
+/// the **emitted bytes** rather than the finding value: the document on the wire, the stream
+/// it rides, and the record the run leaves behind.
+///
+/// **The arm this door takes does not move** (M53 Increment 5 / T1, the owed spike): the
+/// refusal is raised through `render::finding_error`, whose `--format json` arm is the
+/// flattened `{"error": …}` — the surface's default, and `write.unslugable-title` joins
+/// neither `ENVELOPE_ARM_CODES` nor `render::ENVELOPE_OWED_CODES`. What the fix buys is the
+/// **identity inside** that document, and the code in the log, which is the half M50's
+/// completion audit installed at the funnel for exactly this reason.
+#[test]
+fn a_title_that_slugs_to_nothing_refuses_under_the_mint_class_code() {
+    let repo = TempDir::new("unslugable-title");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    assert_ok(
+        &run_jigc(
+            repo.path(),
+            home.path(),
+            &["config", "set", "invocation-log", "true"],
+        ),
+        "`jigc config set invocation-log true`",
+    );
+
+    let out = run_jigc(
+        repo.path(),
+        home.path(),
+        &[
+            "--format",
+            "json",
+            "start",
+            "--workflow",
+            "single-task",
+            "日本語",
+        ],
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    let stderr = String::from_utf8(out.stderr).expect("utf-8 stderr");
+    assert!(
+        !out.status.success(),
+        "a title that yields no id must refuse; stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+    assert!(
+        stdout.trim().is_empty(),
+        "the refusal's one document is stderr's (stream discipline); stdout:\n{stdout}",
+    );
+
+    let value: serde_json::Value = serde_json::from_str(&stderr)
+        .unwrap_or_else(|e| panic!("stderr must be one JSON value ({e}); got:\n{stderr}"));
+    let keys: Vec<&str> = value
+        .as_object()
+        .expect("the refusal document is an object")
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(
+        keys,
+        vec!["error"],
+        "this door's reject arm is the flattened one and no arm moves; got:\n{stderr}",
+    );
+    let error = value["error"].as_str().expect("`error` is a string");
+    assert!(
+        error.starts_with("blocking · write.unslugable-title — "),
+        "the flattened document must carry the class's identity; got:\n{stderr}",
+    );
+    assert!(
+        error.contains(
+            "ids are built from ASCII letters and digits, so a title in another script, \
+             or of stopwords only, yields none"
+        ),
+        "the sentence must be true of a title in any script; got:\n{stderr}",
+    );
+    assert!(
+        error.contains("\n  at: task\n"),
+        "the block keys at the bare work-unit type token; got:\n{stderr}",
+    );
+    assert!(
+        error.contains("\n  route: "),
+        "a blocking refusal carries a route; got:\n{stderr}",
+    );
+
+    // Nothing minted: not even the `commit`-fallback id the guard exists to prevent.
+    let tasks = repo.path().join(".jigc").join("tasks");
+    let minted: Vec<String> = fs::read_dir(&tasks)
+        .map(|dir| {
+            dir.filter_map(Result::ok)
+                .map(|e| e.file_name().to_string_lossy().to_string())
+                .collect()
+        })
+        .unwrap_or_default();
+    assert!(
+        minted.is_empty(),
+        "a refused mint leaves `.jigc/tasks/` empty; found {minted:?}",
+    );
+
+    // The identity the surface printed is the identity the run recorded.
+    let log = fs::read_to_string(
+        repo.path()
+            .join(".jigc")
+            .join("logs")
+            .join("invocations.jsonl"),
+    )
+    .expect("the invocation log exists once the knob is on");
+    let record: serde_json::Value = serde_json::from_str(
+        log.lines()
+            .rfind(|line| !line.trim().is_empty())
+            .expect("the refused start appended a record"),
+    )
+    .expect("each log line is valid JSON");
+    let codes: Vec<&str> = record["finding_codes"]
+        .as_array()
+        .expect("`finding_codes` is an array")
+        .iter()
+        .map(|code| code.as_str().expect("a code is a string"))
+        .collect();
+    assert!(
+        codes.contains(&"write.unslugable-title"),
+        "a refusal that names itself on the surface names itself in the log; record:\n{record}",
+    );
+}

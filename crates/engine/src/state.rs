@@ -1556,6 +1556,56 @@ fn mint_id(intent: &str, type_name: &str) -> String {
     }
 }
 
+/// The **mint class's** refusal: the caller's title carries nothing an id can be built
+/// from, so the door refuses before it writes rather than minting the work unit at a
+/// fabricated identity (M53 Increment 5 / D5; `completions/artifacts/M53/settle-record.md`
+/// → **D5**, as amended by **§11**).
+///
+/// **One producer for the class, because the class is one condition.** Every [`MINT_DOORS`]
+/// row but two derives its id from the caller's prose through `mint_id`, whose empty→
+/// type-name fallback would otherwise hand the work a `task` / `milestone` id nobody typed —
+/// an identity a second such call then serial-collides. The exempt pair derives its id from
+/// something other than a title (a path hash, a recorded id) and never asks. `jigc start`'s
+/// mint is the door raising it here; each other door asks the same question at its own seam,
+/// before its first write, and gets this same sentence for it.
+///
+/// **Parameterised on the work-unit type token alone** (`task` / `milestone`) — which is
+/// also the **target**. There is no `milestone:<?>` to address: no unit exists and none is
+/// going to, exactly as for a doctype-scoped `create` block, so the key is the **bare
+/// token**, the form `create.empty-title` takes
+/// ([command-output-contract.md](../../../design/command-output-contract.md) → the form
+/// table, the doctype-scoped-blocks row). A synthesized `<type>:<invented-slug>` would name
+/// a unit a driver could try to read back.
+///
+/// **The code is `write.unslugable-title`**, the class's shipped identity — its third
+/// producer, beside `jigc rename`'s `--to` guard and the item-title write. The charter's
+/// `work-unit.malformed-id` is *inert* here (`mint_id("")` yields a well-formed slug) and
+/// *false* as a repair (an id grammar is no answer to free prose).
+///
+/// **The sentence is true for a title in any script**, which is the half the pre-D5 bail got
+/// wrong: it said *"intent must contain at least one letter or digit"* of `"日本語"`. The
+/// cell is ordinary, not adversarial — every non-Latin title and every stopword-only title
+/// reaches it.
+pub fn unslugable_title_finding(work_unit: &str) -> Finding {
+    Finding::graded(
+        Severity::Blocking,
+        "write.unslugable-title",
+        format!(
+            "cannot mint a {work_unit}: its id is slugged from the title, and this title \
+             slugs to nothing — ids are built from ASCII letters and digits, so a title in \
+             another script, or of stopwords only, yields none"
+        ),
+        Some(Location::addressed(work_unit, 1, 1)),
+        Some(
+            format!(
+                "re-run with a title carrying ASCII letters or digits — the {work_unit} id \
+                 is slugged from it"
+            )
+            .into(),
+        ),
+    )
+}
+
 /// Render the base-pin file body — the frozen on-disk form (golden-locked).
 fn render_base_pin(base: &BasePin) -> String {
     // Pretty JSON with a trailing newline; field order is the struct order
