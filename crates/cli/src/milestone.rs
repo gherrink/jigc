@@ -18,6 +18,31 @@
 //! (`design/storage.md` → repository layout) — a doc-elaboration pin
 //! (`DECISIONS.md` 2026-06-04) — so create ensures `.jigc/.gitignore` lists
 //! `milestones/` via the shared [`crate::gitignore::ensure`] writer.
+//!
+//! # The root a workbench path is spelled against
+//!
+//! **`jigc_home`, never `repo_root`** (the independent review of `986d5e0a`, MEDIUM 1;
+//! 2026-09-22). Every path this module prints is a *workbench* path — a fan-out worktree, a
+//! task or milestone area, the merged staging tree, `.jigc/` itself — or a scratch tree
+//! outside the repository entirely, for which [`crate::render::repo_relative`]'s absolute
+//! fallback is the honest answer whichever root it is handed. The workbench hangs off
+//! `jigc_home`; `repo_root` is the checkout the **command was typed in**, and the two
+//! coincide only while that checkout is not a linked worktree.
+//!
+//! Every door here binds both side by side, which is what let one rule ship in two
+//! spellings: six sites already rendered against `jigc_home` (as `task.rs` does at every one
+//! of its own, passing `task.jigc_home`) while twenty passed `repo_root`. Driven from inside
+//! a sibling sub-task's worktree at `986d5e0a`, `repo.operation-in-progress` and
+//! `milestone.dirty-worktree` each put this machine's absolute path into the message, the
+//! route **and** the pinned `(code, target)` key — law 1 (`design/surface-contract.md`),
+//! whose one home is `render::repo_relative` and whose root is the caller's to get right.
+//! `commit_seam_posture.rs`'s arm (h) reads the rule off this file's source; arm (g) drives
+//! two of its members.
+//!
+//! `crate::setup` is **out of this class**, not unswept: it binds no `jigc_home` at all —
+//! its `repo_root` is the root it joins every `.jigc/` path off — so the two cannot diverge
+//! inside that file. Whether `jigc uninstall` should bind `jigc_home` instead is a different
+//! question about a different door.
 
 use crate::cli::Format;
 use crate::invocation_log::Outcome;
@@ -2845,15 +2870,18 @@ fn provision_worktrees(
     // absolute paths (git resolves symlinks at `add` time) — the reuse comparison below.
     let canonical_home = jigc_home.canonicalize().with_context(|| {
         format!(
+            // The workbench root spelled against itself — `.`, the repo-real spelling of
+            // "here". The alternative, the cwd's checkout, is a different directory from
+            // inside a linked worktree and would print this machine's absolute path.
             "could not canonicalize the jigc home `{}`",
-            render::repo_relative(repo_root, jigc_home),
+            render::repo_relative(jigc_home, jigc_home),
         )
     })?;
     let worktrees_root = canonical_home.join(".jigc").join("worktrees");
     std::fs::create_dir_all(&worktrees_root).with_context(|| {
         format!(
             "could not create `{}`",
-            render::repo_relative(repo_root, &worktrees_root),
+            render::repo_relative(jigc_home, &worktrees_root),
         )
     })?;
 
@@ -2877,7 +2905,7 @@ fn provision_worktrees(
         // `--force` says so): the binary cannot tell `junk.txt` from `precious.txt`.
         if !reuse
             && !force
-            && let Some(hold) = probe_leftover(repo_root, &path)
+            && let Some(hold) = probe_leftover(jigc_home, &path)
         {
             // **Collected, not returned on the spot** (RC-m50 N9): stopping at the first
             // held path names one of the several things the walk would destroy, which is
@@ -2889,7 +2917,7 @@ fn provision_worktrees(
     if !held.is_empty() {
         return Err(finding_to_err(leftover_finding(
             milestone_id,
-            repo_root,
+            jigc_home,
             &held,
         )));
     }
@@ -2905,7 +2933,7 @@ fn provision_worktrees(
             finding_to_err(provision_failed_finding(
                 &ProvisionStop {
                     milestone_id,
-                    repo_root,
+                    jigc_home,
                     sub_id: &id,
                     path: &path,
                     landed,
@@ -2922,14 +2950,14 @@ fn provision_worktrees(
                 // `force`, so reaching here over a non-empty path means the operator
                 // consented — and consent is a reason to proceed, never a reason to destroy
                 // in silence, nor a licence to claim a destruction that then failed.
-                let pending = pending_loss(repo_root, &path);
+                let pending = pending_loss(jigc_home, &path);
                 let cleared = remove_leftover(&path);
-                pending.narrate_taken(repo_root);
+                pending.narrate_taken(jigc_home);
                 cleared
                     .with_context(|| {
                         format!(
                             "could not clear the leftover at `{}`",
-                            render::repo_relative(repo_root, &path),
+                            render::repo_relative(jigc_home, &path),
                         )
                     })
                     .map_err(|err| stopped(err, paths.len()))?;
@@ -2939,7 +2967,7 @@ fn provision_worktrees(
                 .with_context(|| {
                     format!(
                         "worktree path `{}` is not valid UTF-8",
-                        render::repo_relative(repo_root, &path),
+                        render::repo_relative(jigc_home, &path),
                     )
                 })
                 .map_err(|err| stopped(err, paths.len()))?;
@@ -2994,14 +3022,14 @@ fn remove_leftover(path: &Path) -> std::io::Result<()> {
 fn provision_failed_finding(stop: &ProvisionStop<'_>, err: &anyhow::Error) -> Finding {
     let ProvisionStop {
         milestone_id,
-        repo_root,
+        jigc_home,
         sub_id,
         path,
         landed,
         total,
         force,
     } = *stop;
-    let address = render::repo_relative(repo_root, path);
+    let address = render::repo_relative(jigc_home, path);
     Finding::graded(
         Severity::Blocking,
         PROVISION_FAILED_CODE,
@@ -3027,12 +3055,15 @@ fn provision_failed_finding(stop: &ProvisionStop<'_>, err: &anyhow::Error) -> Fi
 ///
 /// A struct rather than seven positional arguments: the block's claim is *"`landed` of
 /// `total` are on disk and `sub_id`'s is not"*, and those counts only mean anything together.
-/// It also keeps the finding's `repo_root` — the block renders its own locus through
+/// It also keeps the finding's `jigc_home` — the block renders its own locus through
 /// [`crate::render::repo_relative`], so the rule that a printed path is repo-real stays a
 /// property of the producer rather than of whichever caller happened to pre-render it.
 struct ProvisionStop<'a> {
     milestone_id: &'a str,
-    repo_root: &'a Path,
+    /// The root the subject is spelled against — a worktree path lives under
+    /// `<jigc_home>/.jigc/`, never under the cwd's own checkout (this module's header,
+    /// *The root a workbench path is spelled against*).
+    jigc_home: &'a Path,
     sub_id: &'a str,
     /// The worktree path the walk stopped at.
     path: &'a Path,
@@ -3462,8 +3493,8 @@ fn held_operation(worktree: &Path) -> Option<crate::repo::InProgress> {
 /// **All three refusing doors list through it**, so one state is described one way whichever
 /// door refused (each appends its own per-path fate after it) — the [`narrate_removal`]
 /// convention, applied to the refusals.
-pub(crate) fn hold_line(repo_root: &Path, path: &Path, hold: &LeftoverHold) -> String {
-    let at = render::repo_relative(repo_root, path);
+pub(crate) fn hold_line(jigc_home: &Path, path: &Path, hold: &LeftoverHold) -> String {
+    let at = render::repo_relative(jigc_home, path);
     match &hold.shape {
         LeftoverShape::Directory => format!("{at}: {}", held_here(&at, hold)),
         LeftoverShape::File => format!("{at}: the file itself"),
@@ -3638,7 +3669,7 @@ fn leftover_at(path: &Path) -> LeftoverAt {
 /// ([`held_subtask_worktrees`]) and [`UNINSTALL_DOOR`] (`crate::setup::dirty_fanout_worktrees`)
 /// — and they ask one probe rather than growing three that drift, which is what made the
 /// second leg above one edit instead of three.
-pub(crate) fn probe_leftover(repo_root: &Path, path: &Path) -> Option<LeftoverHold> {
+pub(crate) fn probe_leftover(jigc_home: &Path, path: &Path) -> Option<LeftoverHold> {
     match leftover_at(path) {
         LeftoverAt::Absent => return None,
         // A leaf leftover *is* the bytes: no linkage to classify (git cannot run inside it)
@@ -3692,7 +3723,7 @@ pub(crate) fn probe_leftover(repo_root: &Path, path: &Path) -> Option<LeftoverHo
         // fan-out success path is full of build output; here git places nothing, so no
         // ignored/tracked distinction exists to scope a refusal with.
         LeftoverVerdict::Unverifiable | LeftoverVerdict::NoOwnLinkage => {
-            child_names(repo_root, path)
+            child_names(jigc_home, path)
         }
     };
     match read {
@@ -3732,14 +3763,14 @@ pub(crate) fn probe_leftover(repo_root: &Path, path: &Path) -> Option<LeftoverHo
 /// of paths to look at.
 fn leftover_finding(
     milestone_id: &str,
-    repo_root: &Path,
+    jigc_home: &Path,
     held: &[(PathBuf, LeftoverHold)],
 ) -> Finding {
     let listing: Vec<String> = held
         .iter()
-        .map(|(path, hold)| format!("  {} — {}", hold_line(repo_root, path, hold), because(hold),))
+        .map(|(path, hold)| format!("  {} — {}", hold_line(jigc_home, path, hold), because(hold),))
         .collect();
-    let address = render::repo_relative(repo_root, &held[0].0);
+    let address = render::repo_relative(jigc_home, &held[0].0);
     let mut tail = String::from(
         " — but look at what is listed above first and move out anything you need; the removal \
          is permanent",
@@ -3780,9 +3811,9 @@ pub(crate) const OPERATION_CLAUSE: &str = ". A path listed above as mid-operatio
 /// The sorted immediate child names of `path` — the "what would be deleted" listing for the
 /// two verdicts with no git to ask. Sorted, so the refusal text does not vary with readdir
 /// order.
-fn child_names(repo_root: &Path, path: &Path) -> Result<Vec<String>> {
+fn child_names(jigc_home: &Path, path: &Path) -> Result<Vec<String>> {
     let mut names = Vec::new();
-    let at = render::repo_relative(repo_root, path);
+    let at = render::repo_relative(jigc_home, path);
     for entry in std::fs::read_dir(path)
         .with_context(|| format!("could not read the leftover directory `{at}`"))?
     {
@@ -3912,12 +3943,12 @@ fn subtask_worktrees(
 /// One finding per breaching worktree rather than one listing them: each carries its own
 /// route, aimed with `git -C <worktree>`, and its own located address — so two breaching
 /// worktrees are two discriminating `(code, target)` keys rather than one.
-fn fan_out_posture_findings(repo_root: &Path, worktrees: &[PathBuf]) -> Vec<Finding> {
+fn fan_out_posture_findings(jigc_home: &Path, worktrees: &[PathBuf]) -> Vec<Finding> {
     worktrees
         .iter()
         .filter_map(|worktree| {
             let breach = crate::repo::adjudicated_breach(worktree, |_| true)?;
-            let at = render::repo_relative(repo_root, worktree);
+            let at = render::repo_relative(jigc_home, worktree);
             Some(breach.finding_at(crate::repo::BreachSite::FanOutWorktree(&at)))
         })
         .collect()
@@ -3961,7 +3992,7 @@ pub(crate) fn sub_task_fan_out_refusal(cwd: &Path, id: &str, format: Format) -> 
     if same {
         return None;
     }
-    let finding = fan_out_posture_findings(&repo_root, &[worktree])
+    let finding = fan_out_posture_findings(&jigc_home, &[worktree])
         .into_iter()
         .next()?;
     Some(crate::invocation_log::operational_failure(
@@ -4050,7 +4081,7 @@ fn partial_worktree_advisories(
                 ),
                 WorktreeState::Live => unreachable!("a live worktree is not missing"),
             };
-            let address = render::repo_relative(repo_root, &sub.path);
+            let address = render::repo_relative(jigc_home, &sub.path);
             Finding::graded(
                 Severity::Advisory,
                 PARTIAL_WORKTREES_CODE,
@@ -4195,7 +4226,7 @@ fn run_discard(
         if !held.is_empty() {
             return Err(finding_to_err(dirty_worktree_finding(
                 milestone_id,
-                &repo_root,
+                &jigc_home,
                 &held,
             )));
         }
@@ -4277,7 +4308,7 @@ fn run_discard(
     let mut workbench_gone = cleanup_subtask_areas(&jigc_root, &list, SubtaskComplement::Take);
     prose.narrate_taken(&jigc_home);
     workbench_gone &= remove_worktrees(&repo_root, &jigc_home, &list);
-    workbench_gone &= remove_milestone_area(&repo_root, &dir);
+    workbench_gone &= remove_milestone_area(&jigc_home, &dir);
     foreign.narrate_taken(&jigc_home);
 
     // The warnings each sink already printed name *what* is left; the ack's job is to stop
@@ -4657,7 +4688,7 @@ fn held_subtask_worktrees(
         // The probe's own failure is a hold like any other now, so it is **collected** with
         // its siblings rather than propagated with `?` — a `?` here answered for the first
         // unreadable path and named none of the rest (RC-m50 N9).
-        if let Some(hold) = probe_leftover(repo_root, &path) {
+        if let Some(hold) = probe_leftover(jigc_home, &path) {
             held.push(HeldWorktree {
                 registered: registered.iter().any(|w| w == &path),
                 path,
@@ -4680,7 +4711,7 @@ fn held_subtask_worktrees(
 /// The route names both honest exits — get the content out, or `--force` to abandon anyway (the
 /// [`crate::combine::detect_code_collision`] finding idiom) — and states what `--force` really
 /// costs on each disposition, since on the orphaning one it costs nothing on disk.
-fn dirty_worktree_finding(milestone_id: &str, repo_root: &Path, held: &[HeldWorktree]) -> Finding {
+fn dirty_worktree_finding(milestone_id: &str, jigc_home: &Path, held: &[HeldWorktree]) -> Finding {
     let listing: Vec<String> = held
         .iter()
         .map(|w| {
@@ -4691,12 +4722,12 @@ fn dirty_worktree_finding(milestone_id: &str, repo_root: &Path, held: &[HeldWork
             };
             format!(
                 "  {} — {}; {fate}",
-                hold_line(repo_root, &w.path, &w.hold),
+                hold_line(jigc_home, &w.path, &w.hold),
                 because(&w.hold),
             )
         })
         .collect();
-    let address = render::repo_relative(repo_root, &held[0].path);
+    let address = render::repo_relative(jigc_home, &held[0].path);
     let operation_clause = if held.iter().any(|w| w.hold.operation.is_some()) {
         OPERATION_CLAUSE
     } else {
@@ -4739,13 +4770,13 @@ fn dirty_worktree_finding(milestone_id: &str, repo_root: &Path, held: &[HeldWork
 ///
 /// **Returns whether the area is gone** — the ack keys on the outcome, never on the attempt
 /// (M52 Increment 4 / T7, D-2).
-fn remove_milestone_area(repo_root: &Path, dir: &Path) -> bool {
+fn remove_milestone_area(jigc_home: &Path, dir: &Path) -> bool {
     if dir.exists()
         && let Err(err) = std::fs::remove_dir_all(dir)
     {
         eprintln!(
             "note: milestone workbench removal at `{}` failed (self-heals): {err:#}",
-            render::repo_relative(repo_root, dir),
+            render::repo_relative(jigc_home, dir),
         );
         return false;
     }
@@ -5120,7 +5151,7 @@ fn run_milestone_finalize(
     // been written yet: `materialize` rebuilds its dir every call and the `RecordFlipGuard`
     // is not armed until below, so a block here truly commits nothing and leaves the
     // milestone finalizable once the user has concluded or abandoned the operation.
-    let breaches = fan_out_posture_findings(&repo_root, &worktrees);
+    let breaches = fan_out_posture_findings(&jigc_home, &worktrees);
     if !breaches.is_empty() {
         return blocked(&jigc_home, format, breaches);
     }
@@ -6011,9 +6042,9 @@ fn remove_worktrees(
         // — nothing lies: a boundary that exits 0 must not have silently destroyed work,
         // and must not claim a destruction that did not happen either), through the
         // emitter every destroying door shares.
-        let pending = pending_loss(repo_root, &path);
+        let pending = pending_loss(jigc_home, &path);
         let removed = git_worktree(repo_root, &["worktree", "remove", "--force", path_str]);
-        pending.narrate_taken(repo_root);
+        pending.narrate_taken(jigc_home);
         if let Err(err) = removed {
             all_gone = false;
             // A2 — pinned non-blocking warning, naming the leaked path + the prune remedy.
@@ -6241,14 +6272,14 @@ fn milestone_boundary_gate(
     std::fs::create_dir_all(&gate_docs).with_context(|| {
         format!(
             "could not open the gate staging area {}",
-            crate::render::repo_relative(repo_root, &gate_docs)
+            crate::render::repo_relative(jigc_home, &gate_docs)
         )
     })?;
     let src_docs = staging_dir.join("docs");
     for entry in std::fs::read_dir(&src_docs).with_context(|| {
         format!(
             "could not read the merged docs dir {}",
-            crate::render::repo_relative(repo_root, &src_docs)
+            crate::render::repo_relative(jigc_home, &src_docs)
         )
     })? {
         let entry = entry?;
@@ -6284,7 +6315,7 @@ fn milestone_boundary_gate(
         let shape = entry.file_type().with_context(|| {
             format!(
                 "could not read the shape of {}",
-                crate::render::repo_relative(repo_root, &path)
+                crate::render::repo_relative(jigc_home, &path)
             )
         })?;
         if !shape.is_file() {
@@ -6305,7 +6336,7 @@ fn milestone_boundary_gate(
             std::fs::copy(&path, gate_docs.join(entry.file_name())).with_context(|| {
                 format!(
                     "could not stage {} into the gate area",
-                    crate::render::repo_relative(repo_root, &path)
+                    crate::render::repo_relative(jigc_home, &path)
                 )
             })?;
         }
@@ -6328,7 +6359,7 @@ fn milestone_boundary_gate(
     let mut record = FileStateRecord::load(jigc_root).with_context(|| {
         format!(
             "could not load the file-state record under {}",
-            crate::render::repo_relative(repo_root, jigc_root)
+            crate::render::repo_relative(jigc_home, jigc_root)
         )
     })?;
     let pack = make_pack()?;
@@ -6399,7 +6430,7 @@ fn milestone_boundary_gate(
     .with_context(|| {
         format!(
             "validating the merged effective state under {}",
-            crate::render::repo_relative(repo_root, staging_dir)
+            crate::render::repo_relative(jigc_home, staging_dir)
         )
     })?;
 
@@ -6824,7 +6855,7 @@ struct DoomedLine {
 /// nothing it may honestly print: an absent path, an empty directory, a worktree whose whole
 /// content is staged — or a path this could not read at all, where the honest claim is that
 /// there is none (see the arm below).
-fn doomed_at(repo_root: &Path, path: &Path) -> Result<Doomed> {
+fn doomed_at(jigc_home: &Path, path: &Path) -> Result<Doomed> {
     const WORKTREE: &str = "fan-out worktree";
     // The shape is [`leftover_at`]'s, the refusal's own — never `exists()`/`is_dir()`, which
     // follow a symlink and had this surface enumerating through one (M51 EC-17).
@@ -6857,7 +6888,7 @@ fn doomed_at(repo_root: &Path, path: &Path) -> Result<Doomed> {
                 text: path
                     .file_name()
                     .map(|name| name.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| render::repo_relative(repo_root, path)),
+                    .unwrap_or_else(|| render::repo_relative(jigc_home, path)),
                 at: path.to_path_buf(),
             }],
         });
@@ -6896,7 +6927,7 @@ fn doomed_at(repo_root: &Path, path: &Path) -> Result<Doomed> {
         // names — the [`child_names`] listing the two fail-closed refusals already print.
         LeftoverVerdict::Unverifiable | LeftoverVerdict::NoOwnLinkage => Ok(Doomed {
             subject: "leftover directory",
-            lines: child_names(repo_root, path)?
+            lines: child_names(jigc_home, path)?
                 .into_iter()
                 .map(|name| DoomedLine {
                     at: path.join(&name),
@@ -6937,10 +6968,10 @@ pub(crate) struct PendingLoss {
 }
 
 /// Read [`PendingLoss`] at `path`. Call it immediately before the removal.
-pub(crate) fn pending_loss(repo_root: &Path, path: &Path) -> PendingLoss {
+pub(crate) fn pending_loss(jigc_home: &Path, path: &Path) -> PendingLoss {
     PendingLoss {
         path: path.to_path_buf(),
-        doomed: doomed_at(repo_root, path).ok(),
+        doomed: doomed_at(jigc_home, path).ok(),
     }
 }
 
@@ -6952,7 +6983,7 @@ impl PendingLoss {
     /// ([`DoomedLine::at`]) are no longer on disk. So a **partial** removal — the case that
     /// would make a plain narrate-on-success silent about a real loss — still names every
     /// line it took, and a removal that failed outright prints nothing at all.
-    pub(crate) fn narrate_taken(&self, repo_root: &Path) {
+    pub(crate) fn narrate_taken(&self, jigc_home: &Path) {
         let Some(before) = &self.doomed else {
             return;
         };
@@ -6965,7 +6996,7 @@ impl PendingLoss {
             .filter(|line| std::fs::symlink_metadata(&line.at).is_err())
             .map(|line| line.text.clone())
             .collect();
-        narrate_removal(repo_root, &self.path, before.subject, &taken);
+        narrate_removal(jigc_home, &self.path, before.subject, &taken);
     }
 }
 
@@ -6985,7 +7016,7 @@ impl PendingLoss {
 /// classifier's answer, not this renderer's guess.
 ///
 /// An empty `taken` prints nothing: the removal took none of what it was aimed at.
-pub(crate) fn narrate_removal(repo_root: &Path, path: &Path, subject: &str, taken: &[String]) {
+pub(crate) fn narrate_removal(jigc_home: &Path, path: &Path, subject: &str, taken: &[String]) {
     if taken.is_empty() {
         return;
     }
@@ -6993,7 +7024,7 @@ pub(crate) fn narrate_removal(repo_root: &Path, path: &Path, subject: &str, take
     eprintln!(
         "warning: removing the {subject} {} discards work that is not in git:\n{}\n  note: the \
          {subject} is the only copy of these bytes — they are not recoverable.",
-        render::repo_relative(repo_root, path),
+        render::repo_relative(jigc_home, path),
         listing.join("\n"),
     );
 }

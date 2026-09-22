@@ -42,6 +42,13 @@
 //!     sub-task worktree, at both commit models, plus the preview surface that forecasts
 //!     the door (M53 post-review fix, 2026-09-22; the M53 per-axis review, axis 2
 //!     `DEFECT 1`).
+//!   * (g) **every path those surfaces print is spelled against the workbench's own root**,
+//!     driven from *inside* a second linked worktree — the checkout the caller stands in is
+//!     not the one `.jigc/` hangs off, and rendering against the former leaks a host path
+//!     into the message, the pinned `(code, target)` key and the route (the independent
+//!     review of `986d5e0a`, MEDIUM 1).
+//!   * (h) a stated arm: `cli/src/milestone.rs` renders **no** path against the cwd's repo
+//!     root — the class (g) drives two members of, read off the source.
 //!
 //! # Why (f) lives here and not in `posture_door_axis.rs`
 //!
@@ -972,4 +979,207 @@ fn a_fan_out_with_no_operation_anywhere_is_untouched() {
             "the sub-task's own code must ride the landed boundary",
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// (g) + (h) The workbench's own root is what a workbench path is spelled against.
+// ---------------------------------------------------------------------------
+
+/// Run `jigc` with an explicit cwd — the half `run_milestone` / `run_task` cannot express,
+/// because both of them stand in the main checkout by construction.
+fn run_from(cwd: &Path, home: &Path, args: &[&str]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(args)
+        .current_dir(cwd)
+        .env("HOME", home)
+        .output()
+        .expect("run the jigc binary")
+}
+
+/// Both spellings of `repo` a leak could carry: the path as the fixture built it, and its
+/// canonical form — the milestone doors join their worktree paths onto
+/// `jigc_home.canonicalize()`, so on macOS the leaked string is the `/private/var/…` one
+/// while the fixture holds `/var/…`.
+fn host_spellings(repo: &Path) -> Vec<String> {
+    let mut spellings = vec![repo.display().to_string()];
+    if let Ok(real) = repo.canonicalize() {
+        let real = real.display().to_string();
+        if !spellings.contains(&real) {
+            spellings.push(real);
+        }
+    }
+    spellings
+}
+
+fn assert_no_host_path(repo: &Path, surface: &str, text: &str) {
+    for host in host_spellings(repo) {
+        assert!(
+            !text.contains(&host),
+            "law 1: `{surface}` printed the host-absolute path `{host}` — the subject is a \
+             workbench path, and the workbench hangs off jigc_home, not off the checkout the \
+             caller happens to stand in; output:\n{text}",
+        );
+    }
+}
+
+/// A two-sub-task milestone with both worktrees provisioned and nothing staged in either —
+/// the shape that gives a caller a *second* linked worktree to stand in.
+fn setup_two_sub_tasks(repo: &Path, home: &Path) {
+    crate::support::mint_project_layer(repo);
+    assert!(
+        run_milestone(repo, home, &["create", "Cache rework"])
+            .status
+            .success(),
+        "create must exit 0",
+    );
+    for intent in ["Area zed", "Area low"] {
+        assert!(
+            run_milestone(repo, home, &["add-task", "cache-rework", intent])
+                .status
+                .success(),
+            "add-task `{intent}` must exit 0",
+        );
+    }
+    for (sub, slug, title) in [
+        ("area-low", "low-policy", "Low policy"),
+        ("area-zed", "zed-policy", "Zed policy"),
+    ] {
+        stage_doc(
+            repo,
+            sub,
+            &format!("adr:{slug}"),
+            &adr_plain(title),
+            "edited-from-base",
+        );
+        stage_subtask_commit(repo, sub, &format!("rework the {sub} cache path"));
+    }
+    let provisioned = run_milestone(repo, home, &["provision", "cache-rework"]);
+    assert!(
+        provisioned.status.success(),
+        "provision must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&provisioned.stderr),
+    );
+}
+
+/// (g) **The boundary's refusal and its preview, typed from inside another sub-task's
+/// worktree.**
+///
+/// `repo_root` is `discover_repo_root(cwd)` — from inside a linked worktree that is the
+/// *worktree*, while every path in the worktree set is rooted at `jigc_home`, so the prefix
+/// strip fails and `render::repo_relative` falls back to the host-absolute spelling. Driven
+/// at `986d5e0a`, all three of the message, the `at:` locus (the pinned `(code, target)` key
+/// the `--format json` `Blocked` arm carries) and the route carried
+/// `/private/var/folders/…/repo/.jigc/worktrees/area-zed`.
+#[test]
+fn the_fan_out_refusal_is_workbench_relative_from_inside_another_worktree() {
+    let repo = TempDir::new("workbench-relative-finalize");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+    setup_two_sub_tasks(repo.path(), home.path());
+
+    let zed = repo.path().join(".jigc").join("worktrees").join("area-zed");
+    let low = repo.path().join(".jigc").join("worktrees").join("area-low");
+    git_state::overlay_worktree(&zed, home.path(), GitState::Bisect)
+        .expect("a worktree can hold a bisect");
+
+    for (surface, args) in [
+        (
+            "milestone finalize",
+            vec!["milestone", "finalize", "cache-rework"],
+        ),
+        ("task validate <sub>", vec!["task", "validate", "area-zed"]),
+    ] {
+        let out = run_from(&low, home.path(), &args);
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr),
+        );
+        assert!(
+            !out.status.success() && text.contains("repo.operation-in-progress"),
+            "`{surface}` must still refuse the bisecting worktree from here; got {:?}\n{text}",
+            out.status,
+        );
+        assert!(
+            text.contains(".jigc/worktrees/area-zed"),
+            "`{surface}` must name the breaching worktree the way every other surface spells \
+             it; output:\n{text}",
+        );
+        assert_no_host_path(repo.path(), surface, &text);
+    }
+}
+
+/// (g) **The pre-existing sibling the same seam feeds** — `milestone.dirty-worktree`, driven
+/// from inside a second worktree at `986d5e0a` and leaking identically (it additionally
+/// rendered the cwd's own worktree as `at: .`).
+#[test]
+fn the_dirty_worktree_refusal_is_workbench_relative_from_inside_another_worktree() {
+    let repo = TempDir::new("workbench-relative-discard");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+    setup_two_sub_tasks(repo.path(), home.path());
+
+    let zed = repo.path().join(".jigc").join("worktrees").join("area-zed");
+    let low = repo.path().join(".jigc").join("worktrees").join("area-low");
+    fs::write(zed.join("scratch.txt"), "work in progress\n").expect("write worktree dirt");
+
+    let out = run_from(&low, home.path(), &["milestone", "discard", "cache-rework"]);
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert!(
+        !out.status.success() && text.contains("milestone.dirty-worktree"),
+        "the abandon must still refuse over the dirty sibling worktree; got {:?}\n{text}",
+        out.status,
+    );
+    assert!(
+        text.contains(".jigc/worktrees/area-zed"),
+        "the refusal must name the held path the way every other surface spells it; \
+         output:\n{text}",
+    );
+    assert_no_host_path(repo.path(), "milestone discard", &text);
+}
+
+/// (h) **`cli/src/milestone.rs` spells no path against the cwd's repo root.**
+///
+/// Every subject that file renders is a *workbench* path — a fan-out worktree, a task or
+/// milestone area, the staging tree, `.jigc/` itself — or a scratch tree outside the
+/// repository entirely, for which `repo_relative`'s absolute fallback is the honest answer
+/// either way. The workbench hangs off `jigc_home`, so `jigc_home` is the root all of them
+/// are spelled against; `repo_root` is the *cwd's* checkout and coincides with it only while
+/// the caller stands outside a linked worktree.
+///
+/// The file already spelled six of its sites that way (and `task.rs` passes
+/// `task.jigc_home` at every one of its own), so this is one rule that had two spellings in
+/// one file rather than a rule nobody had written. Read off the source, because the claim is
+/// about the *arguments* a call is written with and (g) can only reach two members of it.
+///
+/// Out of scope, stated: `setup.rs` binds no `jigc_home` at all — its `repo_root` is the
+/// root it joins every `.jigc/` path off, so the two cannot diverge inside that file, and
+/// whether `jigc uninstall` should bind `jigc_home` instead is a different question about a
+/// different door.
+#[test]
+fn milestone_renders_no_path_against_the_cwd_repo_root() {
+    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/milestone.rs"))
+        .expect("read cli/src/milestone.rs");
+    let offenders: Vec<(usize, String)> = src
+        .lines()
+        .enumerate()
+        .filter(|(_, line)| {
+            line.contains("repo_relative(repo_root") || line.contains("repo_relative(&repo_root")
+        })
+        .map(|(i, line)| (i + 1, line.trim().to_string()))
+        .collect();
+    assert!(
+        offenders.is_empty(),
+        "these sites spell a workbench path against the cwd's checkout, which is a \
+         host-absolute leak from inside a linked worktree — render against `jigc_home`:\n{}",
+        offenders
+            .iter()
+            .map(|(n, line)| format!("  crates/cli/src/milestone.rs:{n}: {line}"))
+            .collect::<Vec<_>>()
+            .join("\n"),
+    );
 }
