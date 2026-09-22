@@ -35,6 +35,12 @@
 //! **The probe reports the operation before the HEAD it detached** (M52 Increment 3):
 //! a stopped rebase is *a rebase*, and calling it a detached HEAD routed the user at a
 //! `git switch` git refuses at exit 128 while the operation that caused it went unnamed.
+//!
+//! **One arm here drives git and not jigc** (M53 Increment 4 / T1, at the foot of the
+//! file): before a member is minted for an uncommitted `git cherry-pick --no-commit`, the
+//! command its route will name is driven in every state that member will answer, plus a
+//! linked worktree — because a route is a claim about git, and a red cell there falsifies
+//! the route rather than the code built on it.
 
 use crate::support::git_state::{GitState, GitStateRepo};
 use cli::render::finding_error;
@@ -566,6 +572,336 @@ fn abandoning_argv(text: &str, label: &str) -> Vec<String> {
          a repository state the user resolves themselves: {command}",
     );
     command.split_whitespace().map(str::to_owned).collect()
+}
+
+// ───────── the owed spike: `git reset` abandons an uncommitted cherry-pick ─────────
+
+/// **D4's route, driven before anything is built on it** (M53 Increment 4 / T1).
+///
+/// `git cherry-pick --no-commit` leaves a state no member of this family answers today:
+/// git writes `MERGE_MSG` (and `AUTO_MERGE`) and **no** `CHERRY_PICK_HEAD`, so the
+/// marker-keyed members miss it, and on the conflicted cell only the unmerged index is
+/// left to notice — which routes the user at `git reset --merge`, the one command that
+/// throws the picked bytes away. D4 mints a member for it whose **abandon** route is
+/// plain `git reset`.
+///
+/// That route is a **claim about git**, not about jigc, and the increment is built on
+/// top of it — so it is driven here first, in the four states D4 names plus a linked
+/// worktree, and a red cell in this arm falsifies the route rather than the code.
+///
+/// Four claims per cell, all of them git-level:
+///
+///   1. the state is the one it claims to be — `MERGE_MSG` present and **every** marker
+///      D4's predicate negates absent, read through `git rev-parse --git-path` so the
+///      worktree cell is asked the same question as the plain ones;
+///   2. `git reset` **exits 0** — the whole route, run verbatim;
+///   3. it leaves `MERGE_MSG` gone **in the worktree it was run in, and only there**, and
+///      `git ls-files -u` empty;
+///   4. **the picked payload is still in the working tree** — unstaged on the clean
+///      cells, conflict markers intact on the conflicted one. This is the leg that
+///      distinguishes the route from `git reset --merge` and from `git cherry-pick
+///      --abort` — which, driven on both the clean and the conflicted cell, answers
+///      *"error: no cherry-pick or revert in progress"* at exit **128**,
+///      `CHERRY_PICK_HEAD` never having been written.
+///
+/// The command is hand-built rather than read out of an emitted route on purpose: the
+/// member that would emit it lands later in this increment, and **that** arm — the
+/// existing `every_git_state_names_its_own_operation_and_a_route_git_accepts` — is where
+/// the emitted bytes are extracted and run. This one pins the git behaviour underneath
+/// it, so a route that renders correctly over a command git does not accept cannot pass
+/// both.
+///
+/// Driven on git 2.54.0, the version the family's existing deferral names.
+#[test]
+fn an_uncommitted_cherry_pick_is_abandoned_by_git_reset_in_every_cell() {
+    for cell in UncommittedPick::ALL {
+        let repo = cell.build();
+        let at = repo.path();
+
+        assert_uncommitted_pick_state(at, cell.label());
+        assert_eq!(
+            unmerged_paths(at),
+            cell.unmerged_before(),
+            "the `{}` fixture's index must carry the unmerged paths the cell is named for \
+             — a conflicted pick that merged cleanly is a different state under the same \
+             label",
+            cell.label(),
+        );
+
+        abandon_with_git_reset(at, cell.label());
+        cell.assert_payload_survived(at);
+    }
+
+    // ── the linked-worktree cell ──
+    //
+    // `MERGE_MSG` is **per worktree** (`.git/worktrees/<name>/MERGE_MSG`), and jigc's own
+    // fan-out runs `milestone finalize` in a linked worktree — which is why the charter's
+    // `rm .git/MERGE_MSG` is false here and `git reset` is the route. Two worktrees are
+    // put into the same conflicted state so that *untouched* has something to be measured
+    // against: a route that reached for the main checkout's path would leave this cell's
+    // own state standing and destroy a sibling's.
+    let main = TempRepo::with_one_commit();
+    git(main.path(), &["checkout", "-q", "-b", "side"]);
+    main.commit("side", "side\n");
+    git(main.path(), &["checkout", "-q", "main"]);
+
+    let mut worktrees = Vec::new();
+    for name in ["wt-a", "wt-b"] {
+        git(main.path(), &["worktree", "add", "-q", "-b", name, name]);
+        let at = main.path().join(name);
+        std::fs::write(at.join("f.txt"), format!("mainline-{name}\n")).expect("diverge");
+        git(&at, &["commit", "-qam", "diverge"]);
+        // The conflict is the state being built: git exits 1 here.
+        let out = git_try(&at, &["cherry-pick", "-n", "side"]);
+        assert!(
+            !out.status.success(),
+            "the `{name}` worktree cell needs a CONFLICTING pick — git accepted it, so the \
+             fixture is a clean pick wearing the conflicted label",
+        );
+        assert_uncommitted_pick_state(&at, name);
+        worktrees.push(at);
+    }
+    assert!(
+        !main.path().join(".git/MERGE_MSG").exists(),
+        "the charter's `rm .git/MERGE_MSG` is false in a linked worktree, and this is the \
+         datum: both worktrees are mid-pick while the main checkout's own path holds \
+         nothing — a route naming that path would remove the wrong file, or none",
+    );
+
+    // The helper asserts `wt-a`'s own MERGE_MSG is gone; what only this cell can say is
+    // that the sibling's is not.
+    abandon_with_git_reset(&worktrees[0], "wt-a");
+    assert!(
+        merge_msg_path(&worktrees[1]).exists(),
+        "`git reset` in `wt-a` must leave the sibling worktree's MERGE_MSG alone — it acts \
+         on the worktree it runs in, which is the property that makes it worktree-correct \
+         where a path literal is not",
+    );
+    assert_eq!(
+        unmerged_paths(&worktrees[1]),
+        3,
+        "the sibling's index is untouched too, not merely its MERGE_MSG",
+    );
+    let text = std::fs::read_to_string(worktrees[0].join("f.txt")).expect("read f.txt");
+    for wanted in ["<<<<<<<", "mainline-wt-a", "side"] {
+        assert!(
+            text.contains(wanted),
+            "the picked bytes must survive the abandon in a worktree exactly as they do in \
+             a plain checkout — `{wanted}` is gone from:\n{text}",
+        );
+    }
+}
+
+/// The four states D4 names for the member, each built by running the command a user
+/// runs — `git cherry-pick --no-commit`, clean or conflicting.
+///
+/// They are spelled here rather than taken from `GitState`: the variants land later in
+/// this increment, and a spike that waited for the fixture builder would be asserting
+/// the builder rather than git.
+#[derive(Clone, Copy, Debug)]
+enum UncommittedPick {
+    /// One commit, applied cleanly — the cell with no conflict anywhere, where a
+    /// conflict-shaped route would be a lie.
+    CleanOne,
+    /// A range, applied cleanly — several commits in one pick, and **no** `sequencer/`,
+    /// so nothing distinguishes it from the single-commit cell on disk.
+    CleanRange,
+    /// A conflicting pick, left as git left it — the cell today's family answers as a
+    /// bare unmerged index.
+    Conflicted,
+    /// …and the same pick after the user resolved it with `git add`: the index is clean
+    /// again while `MERGE_MSG` still stands, so nothing but that file says the pick is
+    /// un-concluded.
+    ConflictedThenAdded,
+}
+
+impl UncommittedPick {
+    const ALL: [UncommittedPick; 4] = [
+        UncommittedPick::CleanOne,
+        UncommittedPick::CleanRange,
+        UncommittedPick::Conflicted,
+        UncommittedPick::ConflictedThenAdded,
+    ];
+
+    fn label(self) -> &'static str {
+        match self {
+            UncommittedPick::CleanOne => "clean one-commit",
+            UncommittedPick::CleanRange => "clean range",
+            UncommittedPick::Conflicted => "conflicted",
+            UncommittedPick::ConflictedThenAdded => "conflicted then added",
+        }
+    }
+
+    /// The unmerged paths the cell's index carries **before** the abandon.
+    fn unmerged_before(self) -> usize {
+        match self {
+            // The three stages git leaves for one conflicting path.
+            UncommittedPick::Conflicted => 3,
+            _ => 0,
+        }
+    }
+
+    fn build(self) -> TempRepo {
+        let repo = TempRepo::empty();
+        let at = repo.path();
+        git(at, &["init", "-q", "-b", "main", "."]);
+        match self {
+            UncommittedPick::CleanOne | UncommittedPick::CleanRange => {
+                repo.commit("base", "a\n");
+                git(at, &["checkout", "-q", "-b", "side"]);
+                repo.commit("side1", "a\nside1\n");
+                repo.commit("side2", "a\nside1\nside2\n");
+                git(at, &["checkout", "-q", "main"]);
+                // Clean picks: git exits 0, so these go through the asserting runner.
+                match self {
+                    UncommittedPick::CleanOne => git(at, &["cherry-pick", "-n", "side~1"]),
+                    _ => git(at, &["cherry-pick", "-n", "main..side"]),
+                }
+            }
+            UncommittedPick::Conflicted | UncommittedPick::ConflictedThenAdded => {
+                repo.commit("base", "base\n");
+                git(at, &["checkout", "-q", "-b", "side"]);
+                repo.commit("side", "side\n");
+                git(at, &["checkout", "-q", "main"]);
+                repo.commit("main2", "mainline\n");
+                // The conflict IS the state being built, so this step is driven through
+                // the non-asserting runner and its failure asserted instead.
+                let out = git_try(at, &["cherry-pick", "-n", "side"]);
+                assert!(
+                    !out.status.success(),
+                    "the `{}` fixture needs a CONFLICTING pick — git accepted it",
+                    self.label(),
+                );
+                if matches!(self, UncommittedPick::ConflictedThenAdded) {
+                    std::fs::write(at.join("f.txt"), "resolved\n").expect("resolve f.txt");
+                    git(at, &["add", "f.txt"]);
+                }
+            }
+        }
+        repo
+    }
+
+    /// **The picked payload is still in the working tree, and unstaged** — the leg that
+    /// makes `git reset` an abandon of the *operation* rather than of the user's work.
+    fn assert_payload_survived(self, at: &Path) {
+        let text = std::fs::read_to_string(at.join("f.txt")).expect("read f.txt");
+        match self {
+            // Exact bytes where the cell has them: the one-commit pick must carry the
+            // first commit's line and NOT the second, or the fixture is the range cell.
+            UncommittedPick::CleanOne => assert_eq!(text, "a\nside1\n", "the picked bytes"),
+            UncommittedPick::CleanRange => {
+                assert_eq!(text, "a\nside1\nside2\n", "both picked commits' bytes")
+            }
+            UncommittedPick::ConflictedThenAdded => {
+                assert_eq!(text, "resolved\n", "the user's own resolution")
+            }
+            // The conflicted cell's bytes carry a short sha, so the markers are asserted
+            // rather than the whole file. Driven, `git reset --merge` — the route today's
+            // family prints at this state, via `UnmergedIndex` — leaves f.txt back at
+            // `mainline` and the tree CLEAN: markers and picked side both gone.
+            UncommittedPick::Conflicted => {
+                for wanted in ["<<<<<<<", "mainline", "side"] {
+                    assert!(
+                        text.contains(wanted),
+                        "the conflict markers must survive the abandon — `{wanted}` is gone \
+                         from:\n{text}",
+                    );
+                }
+            }
+        }
+        assert_eq!(
+            git_stdout(at, &["diff", "--cached", "--name-only"]),
+            "",
+            "…and the surviving bytes are UNSTAGED after the abandon ({})",
+            self.label(),
+        );
+        assert_eq!(
+            git_stdout(at, &["diff", "--name-only"]),
+            "f.txt",
+            "…and they are still a working-tree change ({})",
+            self.label(),
+        );
+    }
+}
+
+/// `git rev-parse --git-path <name>`, absolutized — the **per-worktree** answer.
+///
+/// A linked worktree's `MERGE_MSG` lives under `.git/worktrees/<name>/`, so
+/// `<repo>/.git/MERGE_MSG` answers about the main checkout no matter which worktree is
+/// asking. Every marker in this arm is resolved through git for that reason.
+fn merge_msg_path(at: &Path) -> PathBuf {
+    git_path(at, "MERGE_MSG")
+}
+
+fn git_path(at: &Path, name: &str) -> PathBuf {
+    let raw = PathBuf::from(git_stdout(at, &["rev-parse", "--git-path", name]));
+    if raw.is_absolute() { raw } else { at.join(raw) }
+}
+
+/// Run git in `dir`, asserting success, and return its trimmed stdout.
+fn git_stdout(dir: &Path, args: &[&str]) -> String {
+    let out = git_try(dir, args);
+    assert!(
+        out.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    String::from_utf8_lossy(&out.stdout).trim().to_string()
+}
+
+/// The number of unmerged index entries — `git ls-files -u`, the same question the
+/// shipped probe's `index_has_unmerged_paths` asks.
+fn unmerged_paths(at: &Path) -> usize {
+    git_stdout(at, &["ls-files", "-u"]).lines().count()
+}
+
+/// **The state is the one the cell claims**: `MERGE_MSG` present and every marker D4's
+/// predicate negates absent — the conjunction that makes an uncommitted cherry-pick
+/// distinguishable from the members that already have one.
+fn assert_uncommitted_pick_state(at: &Path, label: &str) {
+    assert!(
+        merge_msg_path(at).exists(),
+        "the `{label}` cell must hold MERGE_MSG — that file is the only thing on disk an \
+         uncommitted cherry-pick leaves that a concluded one does not",
+    );
+    for absent in [
+        "MERGE_HEAD",
+        "CHERRY_PICK_HEAD",
+        "REVERT_HEAD",
+        "SQUASH_MSG",
+        "rebase-merge",
+        "rebase-apply",
+    ] {
+        assert!(
+            !git_path(at, absent).exists(),
+            "the `{label}` cell must carry NO `{absent}` — every one of these is negated by \
+             the member's predicate, and `CHERRY_PICK_HEAD` in particular is the one a \
+             reader expects here and git does not write under `--no-commit`",
+        );
+    }
+}
+
+/// Run the route verbatim and assert git accepts it, then assert what it left behind —
+/// `MERGE_MSG` gone in this worktree, and an index with nothing unmerged.
+fn abandon_with_git_reset(at: &Path, label: &str) {
+    let out = git_try(at, &["reset"]);
+    assert!(
+        out.status.success(),
+        "`git reset` — D4's abandon route — must be accepted in the `{label}` cell; it \
+         exited {}:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert!(
+        !merge_msg_path(at).exists(),
+        "…and must clear MERGE_MSG in the `{label}` cell, or the state it abandons \
+         survives it and the member fires again on the next command",
+    );
+    assert_eq!(
+        unmerged_paths(at),
+        0,
+        "…and must leave no unmerged index entries in the `{label}` cell",
+    );
 }
 
 // ───────── the finding inventory registers exactly this increment's codes ─────────
