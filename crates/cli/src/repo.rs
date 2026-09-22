@@ -156,7 +156,7 @@ impl PostureMember {
 
 /// The git operation an [`PostureMember::OperationInProgress`] breach names — carried on
 /// the breach so the route can name **the command that concludes this operation**, never a
-/// menu of nine.
+/// menu of every operation git can leave un-concluded.
 ///
 /// **The member set is the operations git can leave un-concluded, not the markers it
 /// writes** (M52 Increment 3; `settle-record.md` → D2.1). The M51 shape carried three
@@ -285,9 +285,9 @@ impl InProgress {
     /// **Is this operation in progress in `repo_root`?** — the per-variant predicate
     /// that replaced a shared marker list.
     ///
-    /// Eight members read the **worktree's own** git dir, so a linked worktree answers
-    /// about itself. The ninth asks git, because the state it names leaves nothing on
-    /// disk to read.
+    /// Every member but one reads the **worktree's own** git dir, so a linked worktree
+    /// answers about itself. The remaining member, [`InProgress::UnmergedIndex`], asks
+    /// git, because the state it names leaves nothing on disk to read.
     fn detect(self, git_dir: &Path, repo_root: &Path) -> bool {
         let present = |entry: &str| git_dir.join(entry).exists();
         match self {
@@ -449,7 +449,7 @@ impl InProgress {
     /// [`conclude`](InProgress::conclude)'s: a literal suffix, its own separator
     /// included, appended after the closing backtick.
     ///
-    /// Empty for nine of the ten members, and that is the honest answer rather than a
+    /// Empty for every member but one, and that is the honest answer rather than a
     /// placeholder: each of their commands is named for what it does to the operation and
     /// the operation is all it touches, so a clause would be restating the verb.
     ///

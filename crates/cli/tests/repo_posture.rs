@@ -622,7 +622,7 @@ const SHIPPED_ROUTE_LINES: [(InProgress, &str); 5] = [
 ///
 /// The composition is the axis half of the arm, not its anchor: what it can say that a
 /// byte literal cannot is that **each member's** qualifiers reach the rendered line, so a
-/// tenth member declaring one and never seeing it printed reddens here. The anchor is
+/// new member declaring one and never seeing it printed reddens here. The anchor is
 /// [`SHIPPED_ROUTE_LINES`], which is not composed from anything.
 fn expected_route_line(operation: InProgress) -> String {
     let abandon = format!(

@@ -16,7 +16,7 @@
 //! **The mold is `crates/cli/tests/doctype_map_versions.rs`' — read the registry, assert
 //! the prose.** The subject is **derived, never listed**: the expected inventory is
 //! [`InProgress::ALL`] mapped through the shipped [`InProgress::noun`] and
-//! [`InProgress::abandon`], so a tenth member reddens both homes until both name it, and
+//! [`InProgress::abandon`], so a new member reddens both homes until both name it, and
 //! a row dropped from either home reddens naming the member it dropped. Neither direction
 //! is a spell-check: the route column is the **runnable** half, and
 //! `crates/cli/tests/repo_posture.rs` runs every one of those commands out of the emitted
@@ -64,6 +64,52 @@ const DEFERRAL_TRIGGER: &str =
 /// `design/`: a count of the family's own vocabulary standing in for a count of the
 /// repository states a caller can reach.
 const STRUCK_CLAIM: &str = "three of four";
+
+/// **The counts of [`InProgress::ALL`] struck at M53 Increment 4's fix**, each paired with
+/// the datum that falsified it.
+///
+/// The increment landed the family's tenth member across three commits, and the one that
+/// reworded the family's prose (`f1883722`, *"the posture family's prose homes stop stating
+/// a count"*) **deliberately** left the enum's own doc-comments to the commit that would
+/// move them: *"the enum's own doc-comment, the variant doc and `ALL`'s probe-order doc
+/// stay as they are — they change with the member."* The member landed at `13c621f8` and
+/// they did not, so `cli::repo` shipped *"never a menu of nine"* and *"Eight members read
+/// … The ninth asks git"* around a `pub const ALL: [InProgress; 10]`, and
+/// `repo_posture.rs`' composition arm went on naming the member it was waiting for *the
+/// tenth*. Nothing caught it: [`no_design_doc_counts_the_family_by_its_own_vocabulary`]
+/// scans `design/`, and both prose homes there are **derived** from the enum by arm 1, so
+/// the one place a hand-written count survived was the crate that defines the set.
+const STRUCK_COUNTS: [(&str, &str); 5] = [
+    (
+        "menu of nine",
+        "`InProgress`' own doc-comment, three lines above `ALL`'s `[InProgress; 10]`",
+    ),
+    (
+        "Eight members read",
+        "`InProgress::detect`'s doc-comment — nine members read the worktree's git dir",
+    ),
+    (
+        "The ninth asks git",
+        "that doc-comment's other half — `UnmergedIndex` is the tenth, not the ninth",
+    ),
+    (
+        "nine of the ten members",
+        "`abandon_qualifier`'s doc — true the day it was written and one member from false",
+    ),
+    (
+        "tenth member declaring one",
+        "`repo_posture.rs`' composition arm, whose *next* member is no longer the tenth",
+    ),
+];
+
+/// The homes scanned for them: the module that defines the family, and the suite that runs
+/// every member's rendered route out of the emitted bytes.
+///
+/// **Enumerated, and `crates/cli/tests/posture_member_inventory.rs` is deliberately not a
+/// member** — this file must carry every struck phrase above as a literal, so a scan of it
+/// would match itself. Its own overtaken ordinal is reworded rather than fenced, which is
+/// stated here rather than left for a reader to notice.
+const COUNT_HOMES: [&str; 2] = ["crates/cli/src/repo.rs", "crates/cli/tests/repo_posture.rs"];
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -249,5 +295,46 @@ fn no_design_doc_counts_the_family_by_its_own_vocabulary() {
         "no `design/` doc states the posture family's size as {STRUCK_CLAIM:?} — the family \
          has three members and the failure the bound was about is a count of repository \
          states, of which the baseline drove eleven. Carried at: {carriers:#?}"
+    );
+}
+
+/// **Arm 4 — no home of the family states a count of it.**
+///
+/// The sibling of arm 3, one layer in: arm 3 keeps a struck claim out of `design/`, where
+/// the inventory is fenced by derivation and a numeral beside it would be the only
+/// hand-written statement of the set's size. This arm keeps the same shape out of the two
+/// homes the enum's **own crate** carries, which is where M53 Increment 4's tenth member
+/// left the last hand-written ones standing (see [`STRUCK_COUNTS`]).
+///
+/// **The predicate is the phrase, not the numeral.** A blanket ban on spelled numerals in
+/// `crates/cli/src/repo.rs` would fire on accurate prose about three other sets this
+/// family's size does not move — [`cli::repo::PostureMember`]'s three, the six markers
+/// [`InProgress::UncommittedCherryPick`]'s predicate negates, and the members that name no
+/// concluding command — and an ordinal naming **one** member is not a statement of the
+/// set's size at all (`crates/cli/tests/count_fences.rs`' own rule), which is why
+/// [`InProgress::conclude`]'s *"this family's tenth member"* stays.
+#[test]
+fn no_home_of_the_family_states_a_count_it_can_move() {
+    let mut carried = Vec::new();
+    for home in COUNT_HOMES {
+        let body = read(home);
+        assert!(
+            body.contains("InProgress"),
+            "{home} must be a home of the posture family; it never names `InProgress`"
+        );
+        for (claim, datum) in STRUCK_COUNTS {
+            if body.contains(claim) {
+                carried.push(format!("{home} states {claim:?} — {datum}"));
+            }
+        }
+    }
+    assert!(
+        carried.is_empty(),
+        "no prose home of the posture family states a count of `cli::repo::InProgress::ALL` \
+         — the inventory is fenced by derivation (arm 1) and a numeral beside it is a \
+         sentence one member away from being false, which is what the seven prose homes \
+         reworded at `f1883722` were reworded for. The family carries {} members today. \
+         Carried at: {carried:#?}",
+        InProgress::ALL.len()
     );
 }
