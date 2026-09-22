@@ -761,6 +761,20 @@ const SUB_TASK_TYPE: &str = "task";
 /// the *same* result [`crate::state::mint_task`] computes, recomputed here only to
 /// key the within-milestone collision check before the mint (no separate
 /// minting discipline).
+///
+/// **The fallback is production-dead since M53 Increment 5, and it stays — a decision,
+/// not an oversight** (`completions/artifacts/M53/settle-record.md` → **D5** as amended
+/// by **§11**). Both call sites sit behind [`crate::state::reject_unslugable_title`]:
+/// [`add_task`] asks it immediately above, and [`add_from_spec`] asks it per criterion
+/// ahead of its resume skip, which is the cell `add_task`'s own guard cannot reach. So
+/// an intent whose slug is empty never arrives here, and `task` is never minted as an id.
+///
+/// **It stays because its contract is parity, and parity is the point.** This function
+/// exists to compute *the same* id [`crate::state::mint_task`] will, so that the
+/// collision check keys the path the mint writes; `state::mint_id` keeps its own
+/// fallback for its own reason (see it), so dropping this one would make the two
+/// derivations disagree on exactly the input the guards exclude — a live divergence
+/// traded for a dead branch.
 fn mint_sub_id(intent: &str) -> String {
     let slug = crate::slug::slugify(intent);
     if slug.is_empty() {
@@ -2742,6 +2756,19 @@ fn isolation_finding(milestone_id: &str, sub_id: &str, address: &str) -> Finding
 /// `pub` for the CLI's pre-mint id-is-taken guard, which must resolve the record home of the
 /// **exact id this mint will produce** — deriving the slug a second way would guard a different
 /// path than the mint writes (`design/team-ready-state.md` → The lifecycle).
+///
+/// **This fallback is *not* production-dead, unlike its two siblings** — the statement on
+/// `state::mint_id` and [`mint_sub_id`] does not extend here, and a reader who
+/// generalizes it will be wrong. The datum: `MilestoneCommand::rejection_frame`
+/// (`cli/milestone.rs`) is built **before dispatch**, on the raw title, and its `Create` arm
+/// formats `mint_id(title)` — so on `jigc milestone create "!!!"` this returns `milestone`
+/// while `run_create`'s [`crate::state::reject_unslugable_title`] is still one call away.
+/// What is true is narrower and is the reason the frame is harmless: that value is
+/// **discarded** on the refused path, because `surface_commit_rejection` renders a frame only
+/// for a typed `CommitRejected` / `CommitFailed`, and the guard refuses before any commit
+/// exists for either to describe. The other two callers — [`mint_milestone`] and the CLI's
+/// `guard_record_free` — both run *after* the guard, so the fabricated id reaches no surface
+/// and no path.
 pub fn mint_id(title: &str) -> String {
     let slug = crate::slug::slugify(title);
     if slug.is_empty() {

@@ -1547,6 +1547,24 @@ pub fn read_staged_snapshot(dir: &Path) -> std::io::Result<Option<StagedSnapshot
 /// The pure normalization is [`crate::slug::slugify`]; the fallback is the mint
 /// site's concern (only the caller knows the type name), per the slug rule
 /// (`DECISIONS.md` 2026-05-31 → Slug / minting normalization).
+///
+/// **The fallback is production-dead since M53 Increment 5, and it stays — a decision,
+/// not an oversight** (`completions/artifacts/M53/settle-record.md` → **D5** as amended
+/// by **§11**). Both call sites are guarded ahead of it, so no production path reaches
+/// the empty branch: [`mint_task`] is called by `jigc start`'s mint and by
+/// [`crate::milestone::add_task`], each of which asks [`reject_unslugable_title`] first
+/// — that second site covering `jigc milestone add-task` and `add-from-spec` alike — and
+/// by the two [`MINT_DOORS`] rows that pass a `slug_override` (the migrate mint's path
+/// hash, the re-seed's recorded id), which never ask this at all; [`mint_instance`]
+/// refuses its own empty-slugging title one branch earlier, under `create.empty-title`.
+///
+/// **It stays because removing it costs a contract and buys no behaviour.** `mint_id`
+/// is *total* — every `&str` yields an id — and that totality is what its two tests pin,
+/// in halves: `whitespace_intent_falls_back_to_type_name` the empty input, the
+/// `mint_id_is_slugify_for_non_empty` proptest every other. Dropping the branch makes the
+/// function partial and pushes an `Option` into two call sites that, behind the guards,
+/// can no longer be handed the input it would report. A defensive floor under a guarded
+/// door is the cheaper shape.
 fn mint_id(intent: &str, type_name: &str) -> String {
     let slug = crate::slug::slugify(intent);
     if slug.is_empty() {
