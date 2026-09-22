@@ -2,6 +2,10 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-09-22 — The exit rule's outside-new-code case, decided on its first firing: a post-review fix under the milestone, not a milestone
+
+The M53 partial re-review closed all four of M52's tier-1 rows and found one new one, outside M53's own ledger (the milestone boundary never asked a provisioned worktree's posture). The rule as written named only *a finding inside the fix pass's own new code → another fix pass*. **The human's call:** the outside case is a **post-review fix under the same milestone** — one fixer deriving the class, an independent `milestone-code-reviewer` over the diff standing in for the completion audit, the record, a second stamp, and the affected axes re-driven — **no new milestone**, because a milestone would be the whole apparatus for one condition on a guard that exists. Why it was right: the fixer's class was ten of ten members where two were reported; the reviewer's HIGH was a bound the fixer had carried on a warrant driven false (a destroying door's consent never asked in the clean-tree cell), and its largest cell — `milestone provision` deleting a second repository's worktree mid-bisect at exit 0 — was in no finding. Seven review findings, seven fixed; the human overturned the carry. Written into [decisions-pending.md](implementation/decisions-pending.md) → the exit rule.
+
 ## 2026-09-22 — M53 post-review fix, the review's residue: the six non-HIGH findings, fixed
 
 **The independent review of `986d5e0a` returned HOLDS WITH FINDINGS.** Its HIGH landed at `90110d59` (the entry below); the remaining **three MEDIUM and three LOW** are fixed here, one commit each, each briefed with the finding and never with its boundary — so each commit says whether the class is larger than the row that reported it. `2ddcc003` · `64b63bd5` · `312680b1` · `d101ca9d` · `49371315` · `217515bb`.

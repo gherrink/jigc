@@ -112,3 +112,54 @@ The bump to `1.0.0-rc.17` + install, the ten version-bearing goldens regenerated
 to carry nothing but the version string, then the **partial** per-axis review (axes 2 · 3 · 5) on the
 installed binary with M52's instrument re-pointed, persisted under `per-axis-review/`, compared row by
 row against M52's §A — and then stop. The 1.0.0 call is the human's.
+
+---
+
+## Addendum (2026-09-22) — the post-review fix, and the second stamp
+
+**The partial re-review ran** ([per-axis-review/](per-axis-review/README.md), `3c6ec648`): all four of M52's
+tier-1 rows **CLOSED**, each driven twice — and **one new tier-1 row**, `(2, DEFECT 1)`: `jigc milestone
+finalize` committed a provisioned sub-task worktree's un-concluded git operation at exit 0, destroying its
+authored message, while every door run *inside* that worktree refused. **Outside M53's ledger** (§14): the
+boundary asked `repo::posture()` for the main checkout's git dir only; the worktrees it commits from were
+never a posture subject. Re-driven by the orchestrator on the installed rc.17. **The exit rule as written
+named only the inside-new-code case; the human decided the outside case the same day: a post-review fix
+under the milestone, no new milestone** — fix → independent review of the diff → records → the stamp →
+the affected axes re-driven.
+
+**The fix (`986d5e0a`)** — one seam, `repo::adjudicated_breach`: the shipped probe asked over a widened
+subject (the main checkout *and* every provisioned worktree the boundary commits from), the main-checkout
+path rewired onto it byte-identically, a worktree refusal naming which one and re-aiming its route as
+`git -C <worktree> …`. **The class was ten of ten `InProgress` members, not the two reported**
+(`SquashMerge` the sharpest: payload committed, `SQUASH_MSG` destroyed); `squash: false`, which the review
+could not land, was worse — the operation landed *inside the sub-task's own commit*, signed as its work.
+`task validate <sub>` from the main checkout now forecasts it. No new code, registry or route shape.
+
+**The independent review** ([audit/post-review-fix-code-review.md](audit/post-review-fix-code-review.md)):
+**HOLDS WITH FINDINGS — 1 HIGH · 3 MEDIUM · 3 LOW**, every one driven, all seven fixed in seven commits
+(`90110d59` · `2ddcc003` · `64b63bd5` · `312680b1` · `d101ca9d` · `49371315` · `35870a04`), re-verified
+**3918 / 0**. **The HIGH was a carried bound the human overturned**: `milestone discard` tore down a
+worktree whose git dir held a live operation (a `rebase -i` at a `break`, tree clean) at exit 0 with no
+consent and no narration — the fixer had carried it as *a destroying door whose `--force` is its consent*,
+and the reviewer drove that warrant false: the guard asks `git status --porcelain`, bytes, so in the
+clean-tree cell **no guard fires and the consent is never asked**. Fixed at the leftover classifier
+(`LeftoverHold.operation`, through the same shared probe): **three doors, not the review's four**
+(`FINALIZE_DOOR` is `Displace`, guarded a phase earlier) — and the largest cell was in no finding:
+`milestone provision` over an unregistered path **deleted a second repository's linked worktree
+mid-bisect at exit 0**. The MEDIUMs were the fix's own residue: a host-absolute path in the new finding's
+pinned key when run from inside a worktree — the class was the **render root**, total in `milestone.rs`
+(20 sites moved to `jigc_home`); `repo.operation-in-progress` projecting a filesystem-path target
+registered in no declared form, the door and its preview on different arms — one code, two sites, one
+declared form each, the preview moved onto the door's arm; and *"nine of the ten members"* in six homes,
+wrong twice, past a fence a line-wrap had evaded — struck, and the fence made whitespace-blind, proven red
+both ways.
+
+**`1.0.0-rc.18` is the second stamp**, after these fixes, not before. **Declared bounds added:** no
+general closure fence over *every code that serializes a location is in a declared form* (an address is
+stamped by its producer, declared in no registry — the commit's own statement is fenced, the class is
+not) · `repo.*` stays off `ENVELOPE_OWED_CODES` (moving the 12 acting doors' `Here` arm days from the pin
+is the divergence one axis over) · a clean *and concluded* foreign worktree at an unregistered sub-task
+path is still cleared by `provision` without consent (the shipped policy, stated in `team-ready-state.md`)
+· the `--force` narration over a jigc-provisioned operation-bearing worktree is driven by hand, not a
+standing assertion. **Then axes 2 and 3 re-driven on rc.18 — axis 3 because the HIGH changed a destroying
+door — and then the 1.0.0 call, which is the human's.**
