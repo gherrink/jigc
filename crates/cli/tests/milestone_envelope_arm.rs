@@ -29,11 +29,22 @@
 //! **Non-vacuity is asserted, not assumed.** A derived expectation is worthless if every
 //! driven door lands on the same side of it, so [`every_render_milestone_door_emits_the_arm_its_verb_kind_selects`]
 //! additionally requires that **both** kinds were observed on real bytes.
+//!
+//! **The second fence is about the other half of the surface** — the arm a *refusal* takes
+//! (M53 Increment 5 / T1, the spike D5 owes):
+//! [`a_milestone_refusal_takes_the_flattened_arm_unless_its_code_is_declared`] drives one
+//! door on each side of the membership test and reads both declarations, so the relation it
+//! states — *flattened is the default here, and the two lists are its exception set* —
+//! moves with them rather than being restated. It lives beside the success-envelope fence
+//! because both answer one question about one surface: which document a driver reads back.
 
 use crate::support;
 
 use cli::cli::{VERB_KINDS, VerbKind, verb_kind};
-use cli::task::EXIT_SUCCESS;
+use cli::milestone::ENVELOPE_ARM_CODES;
+use cli::render::ENVELOPE_OWED_CODES;
+use cli::task::{EXIT_ERROR, EXIT_SUCCESS};
+use engine::milestone::UNKNOWN_MILESTONE_CODE;
 use serde_json::Value;
 use std::collections::BTreeSet;
 use std::process::Output;
@@ -359,4 +370,145 @@ fn the_door_table_bijects_the_milestone_leaves_of_verb_kinds() {
             );
         }
     }
+}
+
+// ──────────── the reject arm (M53 Increment 5 / T1 — the owed spike) ────────────
+
+/// **The spike D5 owes** (`completions/artifacts/M53/acceptance-design.md` → *Spikes owed*,
+/// row 5; [settle-record.md](../../../completions/artifacts/M53/settle-record.md) → D5,
+/// *"which reject arm it rides … relayed both ways"*).
+///
+/// D5 mints a third `write.unslugable-title` producer at this module's mint doors and
+/// requires that **no arm moves** — the new finding rides whichever arm a finding at these
+/// doors rides today. Planning relayed both answers (the auditor observed the flattened
+/// `{"error": …}`; M52 Increment 1 moved finding-carrying rejects onto the findings arm), so
+/// which it is, is a fact about the binary and is driven here before anything is built on it.
+///
+/// **The relation this fences, stated once:** at this surface's doors the flattened
+/// `{"error": …}` is the **default**, and the envelope is taken only by a code some
+/// declaration names — [`ENVELOPE_ARM_CODES`] (this module's own list) or
+/// [`ENVELOPE_OWED_CODES`] (the standing obligation `render::carrier` asks). Both lists are
+/// **read**, never restated, so a code that joins either one moves this expectation with it.
+///
+/// **Non-vacuity is asserted, not assumed:** one door on each side of the membership test is
+/// driven to a real refusal through the real binary, and the two key sets must differ.
+///
+/// If this ever reds because the *outside* door answers the envelope, the default arm has
+/// moved and D5's *"no arm moves"* is unsatisfiable as written — that is a halt to the
+/// human, not a test to update.
+#[test]
+fn a_milestone_refusal_takes_the_flattened_arm_unless_its_code_is_declared() {
+    let base = TrialCorpus::build(State::Fresh);
+
+    // ── outside the declared set: `milestone.record-exists` at `jigc milestone create` ──
+    let outside = base.copy_state();
+    outside.jigc_ok(&["milestone", "create", "Cache rework"]);
+    let out = json(&outside, &["milestone", "create", "Cache rework"]);
+    let flat = refusal_envelope("jigc milestone create (record exists)", out);
+    let flat_keys = keys_of(&flat);
+    assert_eq!(
+        flat_keys,
+        vec!["error"],
+        "a re-`create` over a live record must refuse on the FLATTENED arm — got {flat:#}",
+    );
+    // The code is read off the emitted bytes rather than written down, so a renamed producer
+    // cannot leave the membership legs below quietly matching nothing.
+    let flat_text = flat["error"].as_str().expect("`error` is a string");
+    let outside_code = rendered_code(flat_text);
+    assert!(
+        !ENVELOPE_ARM_CODES.contains(&outside_code) && !ENVELOPE_OWED_CODES.contains(&outside_code),
+        "`{outside_code}` is named by neither declaration, so it must land on the default \
+         arm — if it has since joined one, this door's arm moved with it",
+    );
+
+    // ── inside it: `milestone.unknown` at `jigc milestone add-task` ──
+    let inside = base.copy_state();
+    let out = json(
+        &inside,
+        &[
+            "milestone",
+            "add-task",
+            "no-such-milestone",
+            "Warm the read cache",
+        ],
+    );
+    let enveloped = refusal_envelope("jigc milestone add-task (unknown milestone)", out);
+    assert!(
+        ENVELOPE_ARM_CODES.contains(&UNKNOWN_MILESTONE_CODE),
+        "`{UNKNOWN_MILESTONE_CODE}` is this module's declared exception; without that \
+         membership the cell below proves nothing about the relation",
+    );
+    assert_eq!(
+        keys_of(&enveloped),
+        vec!["findings", "schema_version"],
+        "a declared code must refuse on the FINDINGS arm — got {enveloped:#}",
+    );
+    let finding = &enveloped["findings"][0];
+    assert_eq!(
+        finding["code"].as_str(),
+        Some(UNKNOWN_MILESTONE_CODE),
+        "the enveloped refusal projects the declared code — got {enveloped:#}",
+    );
+    assert_eq!(
+        finding["key"]["target"].as_str(),
+        Some("milestone:no-such-milestone"),
+        "…under the work-unit target form the contract lists it at — got {enveloped:#}",
+    );
+
+    // Non-vacuity: the two arms must be different documents, or the membership test above
+    // predicted nothing.
+    assert_ne!(
+        flat_keys,
+        keys_of(&enveloped),
+        "both doors answered the same key set, so the relation is untested",
+    );
+}
+
+/// Drive a refusal and hand back its `--format json` document: exit 1 (the operational
+/// funnel's code), and the document on **stderr** with stdout empty — the reject arms'
+/// stream discipline (`design/command-output-contract.md` → Stream discipline), asserted
+/// here because a document read off the wrong stream would make the key-set legs above
+/// vacuous.
+fn refusal_envelope(label: &str, out: Output) -> Value {
+    assert_eq!(
+        out.status.code(),
+        Some(i32::from(EXIT_ERROR)),
+        "`{label}` must refuse at the operational exit; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    assert!(
+        stdout.is_empty(),
+        "`{label}` refuses, so its document is stderr's and nothing else is written; \
+         stdout carried:\n{stdout}",
+    );
+    let stderr = String::from_utf8(out.stderr).expect("utf-8 stderr");
+    serde_json::from_str(&stderr).unwrap_or_else(|err| {
+        panic!("`{label}`'s refusal is one JSON document ({err}); got:\n{stderr}")
+    })
+}
+
+/// The sorted key set of a JSON object envelope.
+fn keys_of(value: &Value) -> Vec<&str> {
+    let mut keys: Vec<&str> = value
+        .as_object()
+        .unwrap_or_else(|| panic!("the envelope is a JSON object; got:\n{value:#}"))
+        .keys()
+        .map(String::as_str)
+        .collect();
+    keys.sort_unstable();
+    keys
+}
+
+/// The `code` token of a house findings line (`severity · code — message`), read off the
+/// flattened arm's own bytes.
+fn rendered_code(line: &str) -> &str {
+    let (_, after_severity) = line.split_once('·').unwrap_or_else(|| {
+        panic!("a flattened refusal carries the house findings line; got:\n{line}")
+    });
+    let (code, _) = after_severity
+        .split_once('—')
+        .unwrap_or_else(|| panic!("the findings line separates code from message; got:\n{line}"));
+    code.trim()
 }

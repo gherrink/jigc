@@ -6985,6 +6985,11 @@ fn finding_to_err(finding: Finding) -> anyhow::Error {
 /// choice is made for every [`finding_to_err`] caller, so two producers of one code cannot
 /// ship two wire shapes.
 ///
+/// It is `pub` so `crates/cli/tests/milestone_envelope_arm.rs` can fence the relation it
+/// declares — *flattened is this surface's default, and this list is its exception set* —
+/// by **reading** the list rather than restating it (M53 Increment 5 / T1, the owed spike),
+/// the posture [`crate::render::ENVELOPE_OWED_CODES`] already ships.
+///
 /// - `UNKNOWN_MILESTONE_CODE` (M51 Increment 6 / T2) — the contract lists it under the
 ///   **work-unit** target form, and its sibling doors ([`no_such_milestone`]) answer the
 ///   envelope.
@@ -7007,7 +7012,7 @@ fn finding_to_err(finding: Finding) -> anyhow::Error {
 /// ([`crate::render::ENVELOPE_OWED_CODES`]), so that row is discharged there rather than
 /// restated here, and this list keeps only what is genuinely this module's: two codes the
 /// contract lists under no `store.*` target form.**]
-const ENVELOPE_ARM_CODES: &[&str] = &[
+pub const ENVELOPE_ARM_CODES: &[&str] = &[
     engine::milestone::UNKNOWN_MILESTONE_CODE,
     DISCARD_FOREIGN_BYTES_CODE,
 ];
