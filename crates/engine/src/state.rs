@@ -1645,7 +1645,16 @@ fn mint_id(intent: &str, type_name: &str) -> String {
 /// wrong: it said *"intent must contain at least one letter or digit"* of `"日本語"`. The
 /// cell is ordinary, not adversarial — every non-Latin title and every stopword-only title
 /// reaches it.
-pub fn unslugable_title_finding(work_unit: &str) -> Finding {
+///
+/// **Private, and that is the one-producer rule expressed in the type system** (M53
+/// completion audit, finding 6). It shipped `pub` while its only caller anywhere in the
+/// workspace was [`reject_unslugable_title`], one screen below — measured, not assumed: of
+/// the 31 `pub fn` this module declares, it is the **only** one with no code reference
+/// outside `state.rs`. A `pub` constructor beside a `pub` guard advertises a second way to
+/// raise this code that does not ask the condition, which is exactly the shape D5 exists to
+/// prevent; the guard stays `pub` because `cli` calls it, and the identity it raises is now
+/// unreachable except through it.
+fn unslugable_title_finding(work_unit: &str) -> Finding {
     Finding::graded(
         Severity::Blocking,
         "write.unslugable-title",
@@ -1674,8 +1683,11 @@ pub fn unslugable_title_finding(work_unit: &str) -> Finding {
 /// fallback would hand the work unit a `task` / `milestone` id nobody typed. Driven at
 /// `92ed1957~`, `jigc milestone create "日本語"` minted `milestone:milestone` and committed
 /// a record for it at exit 0; the sibling door committed `task:task`. Each door asks this
-/// here and raises [`unslugable_title_finding`]'s single sentence for it, so the class
-/// cannot acquire a second wording the way the pre-D5 `jigc start` bail did.
+/// here and raises `unslugable_title_finding`'s single sentence for it, so the class
+/// cannot acquire a second wording the way the pre-D5 `jigc start` bail did. That producer
+/// is **private to this module** — a plain code span above rather than an intra-doc link,
+/// because it is deliberately not part of the crate's surface — so this guard is the only
+/// way the identity can be raised at all.
 ///
 /// **Where a door asks it is the door's own decision, and it is not "first".** The seam is
 /// *before the first write*, which at `jigc milestone create` is after the two reads that

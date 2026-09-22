@@ -90,7 +90,8 @@ pub fn mint_in_repo(
     // typed, that a second such call serial-collides.
     //
     // The refusal is the **mint class's own**, not this door's private wording
-    // ([`state::unslugable_title_finding`], M53 Increment 5 / D5): until then this bailed
+    // (raised by `state::reject_unslugable_title` from the one producer private to
+    // `engine::state`, M53 Increment 5 / D5): until then this bailed
     // with a code-less string saying the intent *"must contain at least one letter or
     // digit"*, which is false of `"日本語"` and gave a driver nothing to key on. The
     // work-unit type token it takes is `task` — this door's subject and, being the target,

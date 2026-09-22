@@ -507,7 +507,8 @@ const HOSTILE_SOURCE_FILE: &str = "Odd Name (v2).md";
 /// all five, and why an assertion on it is not decoration.
 const UNSLUGABLE_TITLES: &[&str] = &["", "   ", "!!!", "日本語", "the of a"];
 
-/// The mint class's refusal (`engine::state::unslugable_title_finding`, M53 Increment 5).
+/// The mint class's refusal, raised through `engine::state::reject_unslugable_title` from
+/// the one producer private to that module (M53 Increment 5).
 const UNSLUGABLE_CODE: &str = "write.unslugable-title";
 
 /// The half of that refusal's sentence that is **about the caller's title rather than
