@@ -76,6 +76,10 @@
 #   cherry-pick     a conflicting one-commit pick       CHERRY_PICK_HEAD + MERGE_MSG
 #   sequencer       a conflicting MULTI-commit pick     the same, plus sequencer/todo
 #   dangling-sequencer  the same, first pick concluded  sequencer/ ALONE, attached
+#   uncommitted-pick    a CLEAN `cherry-pick -n`        MERGE_MSG ALONE, no pick head
+#   uncommitted-pick-range  the same over a range       the same, and no sequencer/
+#   uncommitted-pick-conflicted  a conflicting `-n` pick  MERGE_MSG ALONE, 3 unmerged
+#   uncommitted-pick-resolved    the same, `git add`ed    MERGE_MSG ALONE, 0 unmerged
 #   revert          a conflicting `git revert`          REVERT_HEAD + MERGE_MSG
 #   unmerged-index  a conflicted `git stash pop`        NO marker at all, 3 unmerged
 #   bisect          `git bisect start`                  BISECT_LOG + BISECT_START
@@ -184,6 +188,10 @@ GIT_STATES=(
     cherry-pick
     sequencer
     dangling-sequencer
+    uncommitted-pick
+    uncommitted-pick-range
+    uncommitted-pick-conflicted
+    uncommitted-pick-resolved
     revert
     unmerged-index
     bisect
@@ -209,6 +217,14 @@ git_state_expect() {
         cherry-pick)    printf 'CHERRY_PICK_HEAD MERGE_MSG|attached|3' ;;
         sequencer)      printf 'CHERRY_PICK_HEAD MERGE_MSG sequencer sequencer/todo|attached|3' ;;
         dangling-sequencer) printf 'sequencer sequencer/todo|attached|0' ;;
+        # `cherry-pick -n` writes NO CHERRY_PICK_HEAD — MERGE_MSG is the whole of git's
+        # record, which the complement over the marker universe is what asserts.
+        # AUTO_MERGE is written too and is deliberately outside that universe: a clean
+        # `git stash apply` and a concluded rebase leave it as well.
+        uncommitted-pick) printf 'MERGE_MSG|attached|0' ;;
+        uncommitted-pick-range) printf 'MERGE_MSG|attached|0' ;;
+        uncommitted-pick-conflicted) printf 'MERGE_MSG|attached|3' ;;
+        uncommitted-pick-resolved) printf 'MERGE_MSG|attached|0' ;;
         revert)         printf 'REVERT_HEAD MERGE_MSG|attached|3' ;;
         unmerged-index) printf '|attached|3' ;;
         bisect)         printf 'BISECT_LOG BISECT_START|attached|0' ;;
@@ -804,6 +820,54 @@ gen_git_state_dangling_sequencer() {
     cat <<'EOF'
 printf 'resolved\n' > posture-shared.txt
 gs_commit posture-shared.txt 'posture fixture: the pick, concluded by hand'
+EOF
+}
+
+# The four uncommitted-pick cells. `cherry-pick --no-commit` writes no
+# CHERRY_PICK_HEAD, so every marker-keyed member of the posture family misses the
+# state and MERGE_MSG is all that says the pick is un-concluded.
+gen_git_state_uncommitted_pick() {
+    cat <<'EOF'
+gs_seed
+git checkout -q -b posture-clean
+printf 'other\n' > posture-other.txt
+gs_commit posture-other.txt 'posture fixture: the picked commit'
+git checkout -q "$GS_BRANCH"
+# Clean by construction: the picked commit touches a file nothing here has.
+git cherry-pick -n posture-clean
+EOF
+}
+
+gen_git_state_uncommitted_pick_range() {
+    cat <<'EOF'
+gs_seed
+git checkout -q -b posture-clean
+printf 'other\n' > posture-other.txt
+gs_commit posture-other.txt 'posture fixture: the first picked commit'
+printf 'second\n' > posture-second.txt
+gs_commit posture-second.txt 'posture fixture: the second picked commit'
+git checkout -q "$GS_BRANCH"
+# Two commits in one pick — and, driven, NO sequencer/: a range is applied in one go
+# rather than queued, so nothing on disk distinguishes this from the cell above.
+git cherry-pick -n "$GS_BRANCH..posture-clean"
+EOF
+}
+
+gen_git_state_uncommitted_pick_conflicted() {
+    cat <<'EOF'
+gs_seed
+gs_diverge
+gs_must_conflict cherry-pick -n posture-theirs
+EOF
+}
+
+# The same conflicting pick after the user staged their resolution and stopped: git
+# clears the index and leaves MERGE_MSG, so that file alone says the pick is live.
+gen_git_state_uncommitted_pick_resolved() {
+    gen_git_state_uncommitted_pick_conflicted
+    cat <<'EOF'
+printf 'resolved\n' > posture-shared.txt
+git add -- posture-shared.txt
 EOF
 }
 

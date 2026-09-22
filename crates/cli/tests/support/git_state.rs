@@ -68,6 +68,14 @@ use super::trial_corpus::{TrialCorpus, unique_root};
 /// marker set, the same HEAD shape and the same index are one member here, not two
 /// (which is why the detached-bisect cell is stated in [`GitState::Bisect`]'s
 /// documentation rather than built).
+///
+/// **One deliberate exception, stated rather than left to be noticed** (M53 Increment
+/// 4): [`GitState::UncommittedPick`] and [`GitState::UncommittedPickRange`] leave the
+/// *identical* marker set, HEAD shape and index, and are two members anyway. What the
+/// range cell carries is a claim about the **construction** rather than about the disk
+/// — a multi-commit `cherry-pick --no-commit` queues **no `sequencer/`** — and the only
+/// way that fact stays true is to build the range and assert the absence. Collapsing it
+/// into the one-commit cell would delete an assertion, not deduplicate a fixture.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GitState {
     /// A conflicting `git merge` — `MERGE_HEAD` + `MERGE_MSG`, HEAD attached.
@@ -106,7 +114,34 @@ pub enum GitState {
     /// answers at all: while `CHERRY_PICK_HEAD` or `REVERT_HEAD` is still there the
     /// pick or the revert is the operation, and the queue is one of its properties.
     DanglingSequencer,
+    /// A **clean** one-commit `git cherry-pick --no-commit` — `MERGE_MSG` and nothing
+    /// else, HEAD attached, the index clean of conflicts.
+    ///
+    /// The cell with no conflict anywhere, so a conflict-shaped route would be a lie in
+    /// it; `--no-commit` writes **no `CHERRY_PICK_HEAD`**, which is why every
+    /// marker-keyed member of the family misses the state (M53 Increment 4).
+    UncommittedPick,
+    /// The same pick over a **range** — several commits applied in one `--no-commit`
+    /// pick, and **no `sequencer/`**: nothing on disk distinguishes it from the
+    /// single-commit cell, which is the datum that makes it a cell rather than a
+    /// variation (driven).
+    UncommittedPickRange,
+    /// A **conflicting** `git cherry-pick --no-commit`, left as git left it —
+    /// `MERGE_MSG` with three unmerged index entries and still no `CHERRY_PICK_HEAD`.
+    ///
+    /// The cell the family answered as a bare [`cli::repo::InProgress::UnmergedIndex`]
+    /// before the tenth member existed, and routed at `git reset --merge` — the one
+    /// command that throws the picked bytes away.
+    UncommittedPickConflicted,
+    /// …and the same pick after the user resolved it with `git add`: the index is clean
+    /// again while `MERGE_MSG` still stands, so **nothing but that file** says the pick
+    /// is un-concluded — the cell no index probe can reach.
+    UncommittedPickResolved,
     /// A conflicting `git revert` — `REVERT_HEAD` + `MERGE_MSG`.
+    ///
+    /// Driven on git 2.54.0: a `git revert --no-commit` writes `REVERT_HEAD` **clean or
+    /// conflicting**, unlike `cherry-pick --no-commit`, so an uncommitted revert is this
+    /// member and never the uncommitted-pick one above.
     Revert,
     /// A conflicted `git stash pop`: **unmerged index entries and no marker at all**.
     /// The state no marker-set widening can ever reach, and therefore the control
@@ -141,6 +176,10 @@ impl GitState {
         GitState::CherryPick,
         GitState::Sequencer,
         GitState::DanglingSequencer,
+        GitState::UncommittedPick,
+        GitState::UncommittedPickRange,
+        GitState::UncommittedPickConflicted,
+        GitState::UncommittedPickResolved,
         GitState::Revert,
         GitState::UnmergedIndex,
         GitState::Bisect,
@@ -159,6 +198,10 @@ impl GitState {
             GitState::CherryPick => "cherry-pick",
             GitState::Sequencer => "sequencer",
             GitState::DanglingSequencer => "dangling-sequencer",
+            GitState::UncommittedPick => "uncommitted-pick",
+            GitState::UncommittedPickRange => "uncommitted-pick-range",
+            GitState::UncommittedPickConflicted => "uncommitted-pick-conflicted",
+            GitState::UncommittedPickResolved => "uncommitted-pick-resolved",
             GitState::Revert => "revert",
             GitState::UnmergedIndex => "unmerged-index",
             GitState::Bisect => "bisect",
@@ -189,6 +232,14 @@ impl GitState {
     ///     its own operation rather than `UnmergedIndex`: that member is the probe's
     ///     last question, asked only where no operation marker answered — the
     ///     conflicted `git stash pop` no marker-set widening can reach.
+    ///   * the **four** uncommitted-pick cells answer one member
+    ///     ([`cli::repo::InProgress::UncommittedCherryPick`]) and are four states
+    ///     rather than one because what a route *claims* differs across them, not
+    ///     because the disk does: a clean pick has no conflicts to resolve, so the
+    ///     shared *"once its conflicts are resolved"* would be false there, and the
+    ///     conflicted one must not be told `git reset --merge`, which is where it fell
+    ///     before the member existed. Two of the four differ on disk only in the `git
+    ///     ls-files -u` count, and two not at all — see the enum's stated exception.
     pub fn in_progress(self) -> Option<InProgress> {
         match self {
             GitState::Merge => Some(InProgress::Merge),
@@ -197,6 +248,10 @@ impl GitState {
             GitState::Am => Some(InProgress::Am),
             GitState::CherryPick | GitState::Sequencer => Some(InProgress::CherryPick),
             GitState::DanglingSequencer => Some(InProgress::Sequencer),
+            GitState::UncommittedPick
+            | GitState::UncommittedPickRange
+            | GitState::UncommittedPickConflicted
+            | GitState::UncommittedPickResolved => Some(InProgress::UncommittedCherryPick),
             GitState::Revert => Some(InProgress::Revert),
             GitState::UnmergedIndex => Some(InProgress::UnmergedIndex),
             GitState::Bisect => Some(InProgress::Bisect),
@@ -274,7 +329,7 @@ pub struct Expectation {
 /// The driven expectation for every state — one row per [`GitState::ALL`] member.
 ///
 /// A table rather than a `match` **on purpose**: the lookup ([`expectation`]) panics
-/// for a member with no row, so a thirteenth state added to [`GitState::ALL`] and not
+/// for a member with no row, so a state added to [`GitState::ALL`] and not
 /// to this table fails loudly at the one place that could otherwise have skipped it.
 /// A `match` would be compiler-checked but would also make *"a member carrying no
 /// expectation"* unrepresentable — and the failure mode this guards is a member added
@@ -356,6 +411,49 @@ pub const EXPECTATIONS: &[(GitState, Expectation)] = &[
         // `InProgress::Sequencer` answers anything at all.
         Expectation {
             markers: &["sequencer", "sequencer/todo"],
+            head: Head::Attached,
+            unmerged: 0,
+        },
+    ),
+    // The four uncommitted-pick cells. `--no-commit` leaves `MERGE_MSG` and nothing
+    // else this module looks for: `CHERRY_PICK_HEAD` is **not** written, which is the
+    // fact the tenth member exists for, and it is asserted here by the complement over
+    // `MARKER_UNIVERSE` rather than by a "must not" list. `AUTO_MERGE` is written too
+    // and is deliberately outside that universe — a clean `git stash apply` and a
+    // concluded rebase leave it as well, so it discriminates nothing.
+    (
+        GitState::UncommittedPick,
+        Expectation {
+            markers: &["MERGE_MSG"],
+            head: Head::Attached,
+            unmerged: 0,
+        },
+    ),
+    (
+        GitState::UncommittedPickRange,
+        // Driven: a multi-commit `--no-commit` pick writes **no `sequencer/`** — git
+        // applies the range in one go and has no queue to park, so this cell is
+        // byte-indistinguishable on disk from the one above.
+        Expectation {
+            markers: &["MERGE_MSG"],
+            head: Head::Attached,
+            unmerged: 0,
+        },
+    ),
+    (
+        GitState::UncommittedPickConflicted,
+        Expectation {
+            markers: &["MERGE_MSG"],
+            head: Head::Attached,
+            unmerged: 3,
+        },
+    ),
+    (
+        GitState::UncommittedPickResolved,
+        // The user's `git add` clears the index and leaves `MERGE_MSG` standing: the
+        // cell where the only evidence of an un-concluded pick is that one file.
+        Expectation {
+            markers: &["MERGE_MSG"],
             head: Head::Attached,
             unmerged: 0,
         },
@@ -615,6 +713,43 @@ fn drive(driver: &Driver, state: GitState) {
             // the recovery `git status` then advertises destroys jigc's commit.
             driver.write(SHARED, "resolved\n");
             driver.commit(&[SHARED], "posture fixture: the pick, concluded by hand");
+        }
+        // The two clean cells pick a commit that touches a file nothing on this branch
+        // has, so `git cherry-pick -n` exits 0 and goes through the asserting runner.
+        GitState::UncommittedPick => {
+            let branch = seed(driver);
+            driver.ok(&["checkout", "-q", "-b", CLEAN_BRANCH]);
+            driver.write(OTHER, "other\n");
+            driver.commit(&[OTHER], "posture fixture: the picked commit");
+            driver.ok(&["checkout", "-q", &branch]);
+            driver.ok(&["cherry-pick", "-n", CLEAN_BRANCH]);
+        }
+        GitState::UncommittedPickRange => {
+            let branch = seed(driver);
+            driver.ok(&["checkout", "-q", "-b", CLEAN_BRANCH]);
+            driver.write(OTHER, "other\n");
+            driver.commit(&[OTHER], "posture fixture: the first picked commit");
+            driver.write(SECOND, "second\n");
+            driver.commit(&[SECOND], "posture fixture: the second picked commit");
+            driver.ok(&["checkout", "-q", &branch]);
+            // Two commits in one pick — and, driven, no `sequencer/`: the range is
+            // applied in one go rather than queued.
+            driver.ok(&["cherry-pick", "-n", &format!("{branch}..{CLEAN_BRANCH}")]);
+        }
+        GitState::UncommittedPickConflicted => {
+            let branch = seed(driver);
+            diverge(driver, &branch);
+            driver.must_conflict(&["cherry-pick", "-n", THEIRS_BRANCH]);
+        }
+        GitState::UncommittedPickResolved => {
+            let branch = seed(driver);
+            diverge(driver, &branch);
+            driver.must_conflict(&["cherry-pick", "-n", THEIRS_BRANCH]);
+            // The user resolves the conflict and stages it — and stops there. git
+            // clears the index and leaves `MERGE_MSG`, so the pick is still
+            // un-concluded with nothing but that file to say so.
+            driver.write(SHARED, "resolved\n");
+            driver.ok(&["add", "--", SHARED]);
         }
         GitState::Revert => {
             seed(driver);

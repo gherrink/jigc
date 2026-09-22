@@ -41,11 +41,12 @@
 //! that proceeds may write, commit or move (`jigc setup` on an unborn HEAD does all
 //! three), and the state it left behind is not the state the next cell means to drive.
 //!
-//! The cost is why it matters: at the registry as it stands — 12 acting rows × 13
-//! states = **156 cells** — the sweep runs in **~63 s** through the real binary
-//! (measured warm, this test alone, macOS / git 2.54.0) over **18** built fixtures: 13
-//! shared, plus one per proceeding cell. A fixture per cell would be 156 of them, and
-//! the bound the increment declares is that a cell is never dropped to buy time.
+//! The cost is why it matters: at the registry as it stands — 12 acting rows × 17
+//! states = **204 cells** — the sweep runs in **~24 s** through the real binary
+//! (re-measured warm at M53 Increment 4, this test alone, macOS / git 2.54.0) over
+//! **22** built fixtures: 17 shared, plus one per proceeding cell. A fixture per cell
+//! would be 204 of them, and the bound the increment declares is that a cell is never
+//! dropped to buy time.
 //!
 //! # The route is run, once per state, from the door's own emitted bytes
 //!
@@ -195,11 +196,11 @@ fn runnable_argv(acts: &ActsOnBehalf) -> Option<Vec<String>> {
 
 /// **Every acting row of the on-behalf registry, in every state of the git-state axis.**
 ///
-/// Today that is 12 acting rows (10 commit-on-behalf + 2 move-on-behalf) × the 13
-/// [`GitState::ALL`] members — but neither factor is a number this suite depends on: the
+/// The acting rows of the registry (commit-on-behalf **and** move-on-behalf) × every
+/// [`GitState::ALL`] member — but neither factor is a number this suite depends on: the
 /// rows are counted off the registry, the states iterated off the enum, and the cell
-/// total is asserted against their product. A verb classified as acting, or a thirteenth
-/// git state, joins the sweep with no edit here.
+/// total is asserted against their product. A verb classified as acting, or a new git
+/// state, joins the sweep with no edit here.
 #[test]
 fn every_acting_door_adjudicates_the_posture_family() {
     let mut commit_rows = 0usize;

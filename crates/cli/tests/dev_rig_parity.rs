@@ -221,7 +221,7 @@ fn the_rig_builds_exactly_the_git_states_the_fixture_builder_declares() {
     // `GitState::in_progress` is the map — so the three properties are asked of it.
     //
     // **Totality** is the compiler's: `in_progress` is an exhaustive match over
-    // `GitState`, so a thirteenth member cannot compile until someone decides which side
+    // `GitState`, so a new member cannot compile until someone decides which side
     // of the line it is on — which is exactly what the retired list was fencing by hand.
     let operations: BTreeSet<&str> = GitState::ALL
         .iter()
@@ -641,7 +641,7 @@ fn no_emitted_construction_carries_a_recursive_removal_or_escapes_its_root() {
 /// construction and is spelled into the script text — so it is validated against the
 /// closed member set **before any script text exists**, and this arm is what says so.
 /// Unlike the pack targets there is no grammar to satisfy: anything but one of the
-/// twelve names is refused, which makes `mergE` and `merge; rm -rf /` the same refusal
+/// declared names is refused, which makes `mergE` and `merge; rm -rf /` the same refusal
 /// and is exactly the property being asserted.
 const ADVERSARIAL_GIT_STATES: &[(&str, &str)] = &[
     ("mergE", "the member set is closed AND case-sensitive"),
@@ -739,7 +739,7 @@ fn the_rig_refuses_unborn_over_a_corpus_state_and_names_the_form_that_works() {
 /// leaves a merge. This builds one — `merge` over `fresh`, so the construction commits
 /// through jigc's own installed `pre-commit` hook — and reads `MERGE_HEAD` off the disk.
 ///
-/// **It is a sample, not a proof over twelve.** The twelve are driven in
+/// **It is a sample, not a proof over the set.** Every member is driven in
 /// `git_state_fixtures.rs` against the Rust builder; construction parity between the two
 /// homes stays the declared bound this file already carries for corpus states (the fence
 /// compares sets, not construction).

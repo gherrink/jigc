@@ -169,6 +169,17 @@ impl PostureMember {
 /// ([baseline-posture.md](../../../completions/artifacts/M52/baseline-posture.md) §1.1,
 /// §2.2, §2.6). Each variant therefore owns its own [`detect`](InProgress::detect), its
 /// own noun and its own concluding and abandoning commands.
+///
+/// **M53 Increment 4 adds the member that could only be named this way.** A `git
+/// cherry-pick --no-commit` writes **no marker of its own** — `MERGE_MSG` and nothing
+/// else — so it is not reachable by *adding* a marker to any list: it is named by what
+/// git left **minus** what every marker-keyed member owns
+/// ([`InProgress::UncommittedCherryPick`]), which is a predicate a marker list has no
+/// shape for. Driven at this wave's base, `jigc task finalize` concluded that pick at
+/// exit 0, committing the picked payload under jigc's own subject and destroying the
+/// picked commit's authored message with `MERGE_MSG`
+/// ([baseline-a2-cherry-pick-posture.md](../../../completions/artifacts/M53/baseline-a2-cherry-pick-posture.md)
+/// — three damage shapes across the acting doors, of which that is the *swallow*).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InProgress {
     /// A `git merge` the user has not concluded — `MERGE_HEAD`.
@@ -210,6 +221,28 @@ pub enum InProgress {
     Sequencer,
     /// A `git bisect` the user has not reset — `BISECT_LOG`.
     Bisect,
+    /// A `git cherry-pick --no-commit` the user has applied and not committed —
+    /// `MERGE_MSG` with **none** of the markers every member above keys on.
+    ///
+    /// git writes **no `CHERRY_PICK_HEAD`** under `--no-commit`, which is why every
+    /// marker-keyed member misses this state: the picked payload is in the index, the
+    /// picked commit's own message is in `MERGE_MSG`, and on a clean pick that file is
+    /// the whole of git's record. (`AUTO_MERGE` is written here too and discriminates
+    /// nothing — a clean `git stash apply` and a concluded rebase leave it as well —
+    /// which is why the predicate does not read it.)
+    ///
+    /// It is probed **after every marker-keyed member and before**
+    /// [`InProgress::UnmergedIndex`], and both belts matter: the predicate negates the
+    /// six markers, so a paused `rebase-merge` — which leaves `MERGE_MSG` too — is still
+    /// a rebase, and the position keeps the conflicted cell from falling through to *a
+    /// conflict*, whose route is `git reset --merge` and throws the picked bytes away
+    /// (M53 Increment 4; `settle-record.md` → D4).
+    ///
+    /// **The noun names the pick and only the pick**, which is a driven fact rather than
+    /// a hope: `git revert --no-commit` writes `REVERT_HEAD` **clean or conflicting**
+    /// (driven on git 2.54.0), so an uncommitted revert is answered by
+    /// [`InProgress::Revert`] and never lands here.
+    UncommittedCherryPick,
     /// **Unmerged paths in the index with no operation marker at all** — a conflicted
     /// `git stash pop`, or a conflicted `git merge --squash`.
     ///
@@ -226,12 +259,17 @@ impl InProgress {
     /// Every operation, **in probe order** — the order [`posture`] asks them in and the
     /// order a consumer taking the first answer inherits.
     ///
-    /// Three of the orderings are load-bearing and each is driven:
+    /// Four of the orderings are load-bearing and each is driven:
     /// [`InProgress::Am`] and [`InProgress::Rebase`] are disjoint by predicate rather
     /// than by position; [`InProgress::CherryPick`] and [`InProgress::Revert`] come
-    /// **before** [`InProgress::Sequencer`]; and [`InProgress::UnmergedIndex`] is
-    /// **last**, so the shell-out it needs is reached only where no marker answered.
-    pub const ALL: [InProgress; 9] = [
+    /// **before** [`InProgress::Sequencer`];
+    /// [`InProgress::UncommittedCherryPick`] comes after **every marker-keyed member**,
+    /// because each of them can leave `MERGE_MSG` beside its own marker, and **before**
+    /// [`InProgress::UnmergedIndex`], because its conflicted cell would otherwise fall
+    /// through to *a conflict* and be routed at a command that discards the picked
+    /// bytes; and [`InProgress::UnmergedIndex`] is **last**, so the shell-out it needs
+    /// is reached only where no marker answered.
+    pub const ALL: [InProgress; 10] = [
         InProgress::Merge,
         InProgress::SquashMerge,
         InProgress::Rebase,
@@ -240,6 +278,7 @@ impl InProgress {
         InProgress::Revert,
         InProgress::Sequencer,
         InProgress::Bisect,
+        InProgress::UncommittedCherryPick,
         InProgress::UnmergedIndex,
     ];
 
@@ -269,6 +308,19 @@ impl InProgress {
             InProgress::Revert => present("REVERT_HEAD"),
             InProgress::Sequencer => present("sequencer"),
             InProgress::Bisect => present("BISECT_LOG"),
+            // `--no-commit` writes no marker of its own, so the state is named by what
+            // git left MINUS what every marker-keyed member owns. The negated conjuncts
+            // are the predicate's own belt: `rebase-merge` and a conflicting merge,
+            // pick or revert all leave `MERGE_MSG` beside their own marker.
+            InProgress::UncommittedCherryPick => {
+                present("MERGE_MSG")
+                    && !(present("MERGE_HEAD")
+                        || present("CHERRY_PICK_HEAD")
+                        || present("REVERT_HEAD")
+                        || present("SQUASH_MSG")
+                        || present("rebase-merge")
+                        || present("rebase-apply"))
+            }
             InProgress::UnmergedIndex => index_has_unmerged_paths(repo_root),
         }
     }
@@ -285,6 +337,7 @@ impl InProgress {
             InProgress::Revert => "a revert",
             InProgress::Sequencer => "a cherry-pick or revert",
             InProgress::Bisect => "a bisect",
+            InProgress::UncommittedCherryPick => "an uncommitted cherry-pick",
             InProgress::UnmergedIndex => "a conflict",
         }
     }
@@ -319,10 +372,18 @@ impl InProgress {
     /// whose clause is a sentence of its own can punctuate it rather than being forced
     /// into one joining word.
     ///
-    /// `None` for the four members with no such command: a squash merge is concluded by
-    /// the user's own `git commit`, a dangling `sequencer/` has no current commit to
-    /// continue, a bisect ends rather than concludes, and an unmerged index is resolved
-    /// rather than continued.
+    /// `None` for the four members with no such command — three of them for a reason
+    /// that distinguishes them, and one whose reason this family's tenth member
+    /// falsified. A dangling `sequencer/` has no current commit to continue, a bisect
+    /// ends rather than concludes, and an unmerged index is resolved rather than
+    /// continued. The squash merge's stated reason was *"it is concluded by the user's
+    /// own `git commit`"*, and that is **struck**: so is
+    /// [`InProgress::UncommittedCherryPick`], which names the command — so the clause
+    /// says nothing about why one member spells `git commit` and the other withholds it
+    /// (M53 Increment 4). The row is kept rather than changed here, because naming it
+    /// at the squash merge would reword a shipped route this task did not set out to
+    /// touch; the question is carried as a deferral with a trigger
+    /// (`implementation/decisions-pending.md`).
     pub fn conclude(self) -> Option<(&'static str, &'static str)> {
         // The five that stop the user where they stand all share the one qualifier — it
         // is shared here, where a member can decline it, rather than in the renderer,
@@ -334,6 +395,15 @@ impl InProgress {
             InProgress::Am => Some(("git am --continue", stopped)),
             InProgress::CherryPick => Some(("git cherry-pick --continue", stopped)),
             InProgress::Revert => Some(("git revert --continue", stopped)),
+            // The one member whose concluding command is not a `--continue`, and the
+            // reason the qualifier had to leave the mold: git parked the picked
+            // commit's message in `MERGE_MSG`, so a bare `git commit` finishes the
+            // pick the user started — and *"once its conflicts are resolved"* would be
+            // false on the clean cells, which have none.
+            InProgress::UncommittedCherryPick => Some((
+                "git commit",
+                " (which uses the pick's own message, once any conflicts are resolved)",
+            )),
             InProgress::SquashMerge
             | InProgress::Sequencer
             | InProgress::Bisect
@@ -363,6 +433,13 @@ impl InProgress {
             // jigc's) — the baseline's L5 is exactly the loss `--abort` causes.
             InProgress::Sequencer => "git cherry-pick --quit",
             InProgress::Bisect => "git bisect reset",
+            // Plain `git reset`, driven in all four cells plus a linked worktree
+            // (`tests/repo_posture.rs`): it clears `MERGE_MSG` and empties the unmerged
+            // index while leaving the picked bytes in the working tree. `git
+            // cherry-pick --abort` exits 128 here — `CHERRY_PICK_HEAD` was never
+            // written — and `git reset --merge`, the route this state fell through to
+            // before the member existed, throws the picked bytes away.
+            InProgress::UncommittedCherryPick => "git reset",
             InProgress::UnmergedIndex => "git reset --merge",
         }
     }
@@ -372,15 +449,24 @@ impl InProgress {
     /// [`conclude`](InProgress::conclude)'s: a literal suffix, its own separator
     /// included, appended after the closing backtick.
     ///
-    /// Empty for every shipped member, and that is the honest answer rather than a
+    /// Empty for nine of the ten members, and that is the honest answer rather than a
     /// placeholder: each of their commands is named for what it does to the operation and
-    /// the operation is all it touches, so a clause would be restating the verb. The
-    /// qualifier exists because that is not universal — a command that abandons an
-    /// operation while **keeping** the work it applied makes a claim no bare command name
-    /// carries, and a user who cannot tell *abandoned* from *discarded* re-does the work
-    /// or loses it (`settle-record.md` → §10).
+    /// the operation is all it touches, so a clause would be restating the verb.
+    ///
+    /// [`InProgress::UncommittedCherryPick`] is the member the qualifier was built for,
+    /// and it is why the qualifier is not the mold's: `git reset` abandons the pick while
+    /// **keeping** the bytes it applied, which is a claim no bare command name carries,
+    /// and a user who cannot tell *abandoned* from *discarded* re-does the work or loses
+    /// it (`settle-record.md` → §10). Until this member landed the clause was declared
+    /// and printed nowhere.
     pub fn abandon_qualifier(self) -> &'static str {
         match self {
+            // True in both cells, which is what it is worded for: on a clean pick the
+            // applied bytes go from staged to unstaged, and on a conflicted one the
+            // conflict markers stay in the file (driven, `tests/repo_posture.rs`).
+            InProgress::UncommittedCherryPick => {
+                " (which keeps the picked changes in your working tree, unstaged)"
+            }
             InProgress::Merge
             | InProgress::SquashMerge
             | InProgress::Rebase

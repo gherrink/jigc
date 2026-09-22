@@ -15,7 +15,7 @@
 //!   (2) **From scratch** — the entry point that carries a hand-made `.jigc/config/`
 //!       project-layer marker and no `jigc setup`, which is the only shape
 //!       [`GitState::Unborn`] can take.
-//!   (3) **Overlaid on a built [`TrialCorpus`]** — the same twelve constructions over
+//!   (3) **Overlaid on a built [`TrialCorpus`]** — the same constructions over
 //!       a corpus carrying jigc's own installed `pre-commit` hook, with
 //!       [`GitState::Unborn`] **refusing** and saying why. Every fixture commit here
 //!       runs that hook, so the arm also answers whether jigc's own backstop tolerates
@@ -83,8 +83,8 @@ fn every_git_state_carries_a_driven_expectation() {
     );
 }
 
-/// (2) The from-scratch entry point builds each of the twelve, and each one really is
-/// the state it names.
+/// (2) The from-scratch entry point builds every declared member, and each one really
+/// is the state it names.
 ///
 /// It also asserts what the entry point is *for*: a project-layer marker that exists
 /// without `jigc setup` having run — the only shape `unborn` can take, since driven,

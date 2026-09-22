@@ -373,6 +373,10 @@ awk '
 ' implementation/decisions-pending.md
 ```
 
+### Deferred during the M53 build — each with a written trigger
+
+- **(D) Whether `InProgress::SquashMerge` should name `git commit` as its concluding command.** M53 Increment 4 minted `InProgress::UncommittedCherryPick`, whose route **names `git commit`** as the way to conclude the pick (git prefills the message from `MERGE_MSG`). That falsified the stated reason the squash merge names **no** concluding command — *"a squash merge is concluded by the user's own `git commit`"* — which, from the moment a sibling member spells that command, explains nothing about why one row spells it and the other withholds it. The clause is **struck** where it was written ([finalize.md](../design/finalize.md) → 1. Preflight; `cli::repo::InProgress::conclude`'s doc-comment), and the **row is kept as shipped**: `git merge --squash`'s route is a shipped user-facing line, and rewording one is a behaviour change D4 did not decide — the increment's own acceptance pins the five conclude-bearing members' bytes for exactly that reason. *What is owed:* decide whether the squash merge names `git commit` with a qualifier of its own (git prefills from `SQUASH_MSG`, so the same claim is available) or keeps its silence for a reason that actually distinguishes it. *Trigger:* **the next task that changes any member's route text** — the qualifiers now live per member, so that task is already re-reading this exact table and is the cheapest place to settle it; failing that, the next posture-family wave.
+
 ### The rc.14 trial's findings — owed dispositions
 
 *(2026-09-10: F-5, F-9, F-11 are absorbed into M51 — see the M51 section; F-3, F-8, F-10, F-13 stay on their triggers.)*
