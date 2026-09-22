@@ -10,10 +10,10 @@
 //! other two as live damage at exit 0.
 //!
 //! **The third member is a set of operations, not a set of markers** (M52 Increment 3).
-//! `cli::repo::InProgress` names every operation git can leave un-concluded — nine of
-//! them — because two of those states (a `git merge --squash` and a conflicted index with
-//! no operation) write no marker any widening could have reached, and one marker
-//! (`rebase-apply/`) is written by **two** operations git itself discriminates.
+//! `cli::repo::InProgress` names every operation git can leave un-concluded — one
+//! variant each — because two of those states (a `git merge --squash` and a conflicted
+//! index with no operation) write no marker any widening could have reached, and one
+//! marker (`rebase-apply/`) is written by **two** operations git itself discriminates.
 //!
 //! **What this suite drives.** A real `git` repository is driven into **every member of
 //! the fixture builder's `GitState`** — the operation axis, one construction per state,
@@ -434,7 +434,7 @@ fn the_git_dir_redirect_is_declared_out_of_this_probe() {
 ///      rebase*, and a dangling `sequencer/` is not a cherry-pick that has already
 ///      been concluded;
 ///   2. the rendered finding **names that operation's noun** — the message is where a
-///      user learns which of nine things they are in the middle of;
+///      user learns which operation they are in the middle of;
 ///   3. it prints **exactly one** route (`validation.md`'s *never a menu of three*);
 ///   4. **the abandoning command in that route, extracted from the emitted bytes and
 ///      run verbatim in that repository, is accepted by git** (exit 0) and leaves no
@@ -488,7 +488,7 @@ fn every_git_state_names_its_own_operation_and_a_route_git_accepts() {
         assert!(
             text.contains(expected.noun()),
             "the `{label}` finding must NAME the operation (`{}`) — a user in the middle \
-             of one of nine things learns which one here or nowhere:\n{text}",
+             of one of these operations learns which one here or nowhere:\n{text}",
             expected.noun(),
         );
         assert_identity_and_route(breach, "repo.operation-in-progress", expected.abandon());

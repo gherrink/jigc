@@ -9,9 +9,9 @@
 //! **`SQUASH_MSG` and nothing else**, a conflicted `git stash pop` writes **no marker at
 //! all**, and `rebase-apply/` is written by **two** operations — so the three-marker list
 //! named `git am` *a rebase* and routed it at `git rebase --abort`, which git refuses at
-//! exit 128. [`InProgress::ALL`] now carries nine members with a per-variant `detect`,
-//! noun and abandoning command, and this suite is the fence that keeps both prose homes
-//! equal to it.
+//! exit 128. [`InProgress::ALL`] now carries a member per operation with a per-variant
+//! `detect`, noun and abandoning command, and this suite is the fence that keeps both
+//! prose homes equal to it.
 //!
 //! **The mold is `crates/cli/tests/doctype_map_versions.rs`' — read the registry, assert
 //! the prose.** The subject is **derived, never listed**: the expected inventory is

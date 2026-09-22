@@ -912,7 +912,7 @@ fn every_operation_refuses_at_every_acting_door_and_its_route_concludes_it() {
             assert!(
                 text.contains(operation.noun()),
                 "`jigc {shown}` under `{label}` must NAME the operation (`{}`) — a user in \
-                 the middle of one of nine things learns which one here or nowhere; \
+                 the middle of one of these operations learns which one here or nowhere; \
                  output:\n{text}",
                 operation.noun(),
             );

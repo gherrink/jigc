@@ -107,7 +107,7 @@
 #                         after the edits, then assert the pack loads clean
 #                         (implies a pack copy)
 #   --git-state <member>  drive the repo into the named git state, last of all
-#                         (`--list-git-states` prints the twelve). The member selects a
+#                         (`--list-git-states` prints them all). The member selects a
 #                         construction AND is spelled into the generated script, so it
 #                         is checked against the closed set before any script text
 #                         exists — the same fence `--schema`/`--workflow` carry.

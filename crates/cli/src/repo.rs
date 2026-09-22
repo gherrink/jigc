@@ -274,7 +274,7 @@ impl InProgress {
     }
 
     /// How the message names it — **this** operation, so a user in the middle of one of
-    /// nine things learns which one.
+    /// the family's operations learns which one.
     pub fn noun(self) -> &'static str {
         match self {
             InProgress::Merge => "a merge",

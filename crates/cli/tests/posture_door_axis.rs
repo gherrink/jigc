@@ -270,8 +270,8 @@ fn every_acting_door_adjudicates_the_posture_family() {
                 assert!(
                     text.contains(operation.noun()),
                     "`jigc {shown}` under `{label}` must NAME the operation (`{}`) — a \
-                     user in the middle of one of nine things learns which one here or \
-                     nowhere; output:\n{text}",
+                     user in the middle of one of these operations learns which one here \
+                     or nowhere; output:\n{text}",
                     operation.noun(),
                 );
             }
