@@ -2257,8 +2257,17 @@ const DEGENERATE: &[&str] = &["", "   ", "!!!", "日本語", "the of a"];
 /// The identity the mint class refuses with.
 const UNSLUGABLE: &str = "write.unslugable-title";
 
-/// A spec whose one criterion is titled in a script the slug rule yields nothing from — the
-/// input `milestone add-from-spec` turns into a sub-task title.
+/// A spec whose **second** criterion is titled in a script the slug rule yields nothing from —
+/// the input `milestone add-from-spec` turns into a sub-task title.
+///
+/// **The degenerate criterion is deliberately not first** (M53 completion audit, finding 3).
+/// Until then this fixture carried exactly one criterion and it was the degenerate one, so the
+/// guard fired on iteration 1 with `SeedingAborted::minted` empty and the mid-loop unwind
+/// `crates/engine/src/milestone.rs`'s own comment claims — *"An abort mid-loop carries this
+/// call's mints out with the finding, so the door unwinds them and the workbench never names
+/// what the record does not"* — was reached by no test at all. A legit criterion **before** the
+/// degenerate one makes `minted` non-empty, and one **after** it proves the loop stops rather
+/// than skipping on.
 const DEGENERATE_SPEC: &str = "\
 # Rate limit
 
@@ -2272,10 +2281,35 @@ Downstream services enforced limits ad hoc.
 
 ## Criteria
 
+### Warm the cache  {#warm-the-cache}
+
+The criterion minted before the degenerate one — the mid-loop unwind's whole subject.
+
 ### 日本語  {#degenerate-criterion}
 
 The criterion whose title yields no id.
+
+### Shard the index  {#shard-the-index}
+
+The criterion after it, which the abort must never reach.
 ";
+
+/// The sub-task ids `DEGENERATE_SPEC`'s two **legit** criteria slug to — the one the abort has
+/// to unwind, and the one it must never mint. Spelled here rather than read off an ack because
+/// neither door ever acks them: the call refuses.
+const SEEDED_BEFORE: &str = "warm-the-cache";
+const NEVER_SEEDED: &str = "shard-the-index";
+
+/// What `.jigc/milestones/<id>/tasks.json` names, as raw bytes — the demoted cache the unwind
+/// has to return to its pre-append state alongside the areas it removes.
+fn task_list_bytes(repo: &Path, milestone: &str) -> String {
+    let path = repo
+        .join(".jigc")
+        .join("milestones")
+        .join(milestone)
+        .join("tasks.json");
+    fs::read_to_string(&path).unwrap_or_else(|err| panic!("read {path:?}: {err}"))
+}
 
 /// A fixture repo that is set up and standing on a clean tree, so *"the refused door left
 /// `git status` clean"* is a statement about the door rather than about the fixture.
@@ -2527,7 +2561,14 @@ fn arm5_no_door_mints_a_work_unit_at_a_fabricated_identity() {
     );
 
     let head = git(repo.path(), &["rev-parse", "HEAD"]);
+    let log = git(repo.path(), &["log", "--oneline"]);
     let areas = area_names(repo.path());
+    let task_list = task_list_bytes(repo.path(), "rate-limit");
+    assert!(
+        !task_list.contains(SEEDED_BEFORE),
+        "the cell starts with neither legit criterion seeded, or the unwind below proves \
+         nothing; got: {task_list}",
+    );
     let refused = jigc(
         repo.path(),
         home.path(),
@@ -2553,9 +2594,33 @@ fn arm5_no_door_mints_a_work_unit_at_a_fabricated_identity() {
         "…before any record commit;\n{text}",
     );
     assert_eq!(
+        git(repo.path(), &["log", "--oneline"]),
+        log,
+        "…and with no record commit for the criterion it HAD already minted;\n{text}",
+    );
+    // **The mid-loop unwind, driven.** The guard fires on criterion 2, so criterion 1 is
+    // already minted when the abort happens: the door has to carry `minted` out and remove it.
+    // Both halves are asserted, because the unwind does two things — it removes the working
+    // area AND drops the id from the demoted `tasks.json` cache — and either half alone leaves
+    // the workbench naming what the record does not.
+    assert_eq!(
         area_names(repo.path()),
         areas,
-        "…and with no sub-task area left behind;\n{text}",
+        "…and with no sub-task area left behind — `{SEEDED_BEFORE}` was minted before the \
+         degenerate criterion was reached and must have been unwound;\n{text}",
+    );
+    let after = task_list_bytes(repo.path(), "rate-limit");
+    assert_eq!(
+        after, task_list,
+        "…and the demoted task-list cache is back at its pre-append bytes;\n{text}",
+    );
+    assert!(
+        !after.contains(NEVER_SEEDED),
+        "…and the criterion AFTER the degenerate one was never reached at all;\n{text}",
+    );
+    assert!(
+        !task_area(repo.path(), NEVER_SEEDED).exists(),
+        "…nor did it get a working area;\n{text}",
     );
 
     // ── §12's boundary cell: outside a repository, the not-in-repo answer still wins ──
