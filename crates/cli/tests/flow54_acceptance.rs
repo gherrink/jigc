@@ -1361,6 +1361,133 @@ fn arm2_a_hook_write_during_the_commit_survives_the_teardown_that_could_not_enum
     );
 }
 
+/// **Arm 2's named cell — an area jigc could not tear down holds no file JIGC wrote**
+/// (M53 completion audit, fix 1).
+///
+/// Every other cell of this arm asserts what happens to a *third party's* bytes. None of them
+/// asks the complementary question, and that is the gap this one closes: the complement is
+/// what the surface names and what every later destroying door refuses over, so a file jigc
+/// itself wrote that is not on its own registry row is a lie on one surface and a dead end at
+/// three doors.
+///
+/// Driven at `45427083`, before the fix: `jigc task finalize` landed at exit 0 printing
+/// `finalize.foreign-bytes` over `.jigc/tasks/<id>/finalize-message.tmp` — jigc's own commit
+/// message transient, named as *a path jigc did not write* — and `jigc task discard <id>`
+/// then refused at **exit 1** over it, demanding `--force` to remove jigc's own file. The
+/// racer is Increment 2's own: a `pre-commit` hook that `chmod 0555`s the area inside the
+/// transaction, which is the one moment at which the fault can be made — it defeats the
+/// best-effort `remove_file` of the transient *and* the teardown, in one bit.
+#[test]
+fn arm2_an_area_left_standing_holds_no_file_jigc_wrote() {
+    let corpus = TrialCorpus::build(State::Fresh);
+    let task = corpus.start_workflow("quick-fix", "Cap the retry budget");
+    let repo = corpus.repo();
+    let area = task_area(&repo, &task);
+
+    let hook = repo.join(".git").join("hooks").join("pre-commit");
+    fs::create_dir_all(hook.parent().expect("hooks dir")).expect("mk hooks dir");
+    fs::write(
+        &hook,
+        format!("#!/bin/sh\nchmod 0555 {}\nexit 0\n", area.display()),
+    )
+    .expect("install the area-freezing hook");
+    set_mode(&hook, 0o755);
+
+    fs::write(repo.join("README.md"), "hello\nretry cap = 3\n").expect("edit the tracked file");
+    corpus.git(&["add", "README.md"]);
+    for (field, value) in [("type", "fix"), ("scope", "cli")] {
+        corpus.jigc_ok(&[
+            "doc",
+            "set-field",
+            &format!("commit:{task}#{field}"),
+            "--value",
+            value,
+            "--task",
+            &task,
+        ]);
+    }
+    corpus.set_slot(&format!("commit:{task}#summary"), &task, "cap the retries");
+    corpus.set_slot(&format!("commit:{task}#body"), &task, "Driven by flow 54.");
+
+    let out = corpus.jigc(&["task", "finalize", &task, "--format", "json"]);
+    // Hand the write bit back before anything else reads or removes the tree, and take the
+    // hook out so the follow-up door below is not re-frozen by it.
+    set_mode(&area, 0o755);
+    fs::remove_file(&hook).expect("remove the hook");
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    assert!(
+        out.status.success(),
+        "the commit is truth and the teardown is best-effort, so the finalize lands;\n\
+         stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+
+    // (1) The cell's own manufacture, asserted rather than assumed: the area really did
+    //     survive its teardown, else there is no complement to ask about.
+    assert!(
+        area.is_dir(),
+        "the 0555 racer must really leave the area standing — a removed area makes every \
+         assertion below vacuous;\nstdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+
+    // (2) The claim: the complement of an area left standing holds NOTHING jigc wrote.
+    let complement = engine::state::foreign_area_paths(&area, engine::state::WorkArea::Task)
+        .expect("the standing area enumerates");
+    assert_eq!(
+        complement,
+        Vec::<PathBuf>::new(),
+        "an area jigc could not tear down holds only jigc's own files here — nothing was \
+         planted — so its complement is empty; a name in it is a file jigc wrote that its own \
+         registry row does not know about;\nstdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+
+    // (3) …so the advisory, if the door raises one, says the area holds nothing but jigc's
+    //     own working files, and names no path as foreign.
+    let advisories: Vec<String> = json(&stdout)["findings"]
+        .as_array()
+        .expect("the landed envelope carries `findings`")
+        .iter()
+        .filter(|f| f["code"].as_str() == Some(KEPT_CODE))
+        .map(|f| f["message"].as_str().unwrap_or_default().to_owned())
+        .collect();
+    for message in &advisories {
+        assert!(
+            !message.contains(engine::state::FINALIZE_MESSAGE_FILE),
+            "…and no surface names jigc's own commit-message transient as a path jigc did \
+             not write;\nadvisory:\n{message}",
+        );
+        assert!(
+            message.contains("nothing but jigc's own working files"),
+            "…the advisory over an area holding only jigc's files says exactly that;\n\
+             advisory:\n{message}",
+        );
+    }
+
+    // (4) …and no later destroying door refuses over jigc's own file. This is the symptom an
+    //     operator actually meets: the area outlives the commit, and `task discard` is the
+    //     verb the advisory's route sends them to.
+    //
+    //     The assertion is *not* exit 0, and the reason is a driven one: this door's
+    //     staged-prose guard is asked next and refuses over the staged `commit:<id>.md` the
+    //     failed teardown left behind — a different, shipped condition about **authored
+    //     prose**, with its own code and its own runnable route. What must be gone is the
+    //     refusal over jigc's own transient, which at `45427083` was
+    //     `task-discard.foreign-bytes` naming `finalize-message.tmp`.
+    let discard = corpus.jigc(&["task", "discard", &task]);
+    let refusal = surface(&discard);
+    assert!(
+        !refusal.contains("task-discard.foreign-bytes"),
+        "`jigc task discard {task}` must not answer *foreign bytes* over an area holding \
+         nothing but jigc's own files — that refusal demands `--force` to remove a file jigc \
+         wrote;\nsurface:\n{refusal}",
+    );
+    assert!(
+        !refusal.contains(engine::state::FINALIZE_MESSAGE_FILE),
+        "…and no destroying door names jigc's own commit-message transient at all;\n\
+         surface:\n{refusal}",
+    );
+}
+
 /// **Arm 2's named cell — the `Take` carve-out.** `jigc milestone discard --force` still
 /// removes a sub-task area's foreign byte and still acks `workbench removed`: the consenting
 /// door's arm is untouched by the `Displace` doors' change.

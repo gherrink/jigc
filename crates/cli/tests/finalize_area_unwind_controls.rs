@@ -23,20 +23,28 @@
 //! control that drives an area jigc's *own doors* never finalize proves nothing about the
 //! area a finalize hands to phase 7: `try_execute_finalize_plan` writes
 //! `<msg_tmp_dir>/finalize-message.tmp`, and at all three of its call sites `msg_tmp_dir`
-//! **is** `cleanup_dir` — the very working area phase 7 tears down. The name is a member of
-//! neither `engine::state::TASK_AREA_FILES` nor `MILESTONE_AREA_FILES`, so if it were still
-//! there at phase 7 the complement would be non-empty on **every** landed finalize. The
-//! census below is therefore driven rather than read: a `post-commit` hook copies the area
-//! at the latest moment inside the transaction, and the production predicate
+//! **is** `cleanup_dir` — the very working area phase 7 tears down. The census below is
+//! therefore driven rather than read: a `post-commit` hook copies the area at the latest
+//! moment inside the transaction, and the production predicate
 //! (`engine::state::foreign_area_paths`) is asked over that copy.
 //!
+//! **[Corrected 2026-09-22 (M53 completion audit, fix 1).** This arm shipped asserting the
+//! census was *exactly* `["finalize-message.tmp"]` — one non-member — with the removal
+//! statement offered as the reason that was safe. **Falsifying datum, driven on the debug
+//! binary at `45427083`:** that removal is `let _ = std::fs::remove_file(…)`, and a
+//! `pre-commit` hook that `chmod 0555`s the area makes it fail. `jigc task finalize` then
+//! landed at exit 0 printing `finalize.foreign-bytes` over
+//! `.jigc/tasks/<id>/finalize-message.tmp` — jigc's own transient, named as *a path jigc did
+//! not write* — and `jigc task discard <id>` refused at **exit 1** over it, demanding
+//! `--force`. A test that pins the defect as expected output is why the sweep stopped there,
+//! so the census now asserts the complement is **empty**: every path the transaction writes
+//! into the cleanup dir is a `WorkArea::jigc_written` member
+//! (`engine::state::FINALIZE_MESSAGE_FILE` joined both rows), which is the only form of the
+//! claim that does not depend on a best-effort statement running.**]
+//!
 //! **Declared bound on that arm.** The snapshot is taken inside `git commit`, so it sees
-//! every write phases 1–6 made into the area. The only production statement between the
-//! commit returning and phase 7 is the shared best-effort `remove_file(&msg_path)`
-//! (`crates/cli/src/task.rs`, read, not driven) — and what turns that read into a fact here
-//! is the *landed* observable: had the transient survived to phase 7 it would have been
-//! displaced to `.jigc/displaced/<task-id>/finalize-message.tmp` and narrated on stderr, so
-//! the absence of both is the removal, observed from outside.
+//! every write phases 1–6 made into the area; what happens *after* the commit returns is the
+//! fault cell's subject and is driven in `flow54_acceptance`.
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -228,16 +236,19 @@ fn a_migrate_task_area_unwinds_to_removed() {
 // The transient the finalize transaction writes into the area it unwinds
 // ---------------------------------------------------------------------------
 
-/// **The whole census, driven: the transaction writes exactly one non-member into the area,
-/// and it is gone before phase 7 moves anything aside.**
+/// **The whole census, driven: the transaction writes NO non-member into the area it is about
+/// to unwind.**
 ///
 /// The enumeration is taken by a `post-commit` hook — the latest moment inside the
 /// transaction — and classified by the production predicate, so the set is the area's own
 /// rather than a source reading of it. Then the landed run answers the second half: nothing
-/// was displaced and nothing was narrated, which is only true if `finalize-message.tmp` was
-/// already gone when phase 7 read the area.
+/// was displaced and nothing was narrated.
+///
+/// The empty census is the assertion, and it is deliberately stronger than the one this test
+/// shipped with (see the module note): a census of *one non-member, removed a statement
+/// later* is only safe while that statement runs, and it is best-effort.
 #[test]
-fn the_finalize_transaction_writes_one_non_member_and_removes_it_before_phase_7() {
+fn the_finalize_transaction_writes_no_non_member_into_the_area_it_unwinds() {
     let corpus = TrialCorpus::build(State::Fresh);
     let task = corpus.start_workflow("quick-fix", "Cap the retry budget");
     let area = task_area(&corpus, &task);
@@ -310,19 +321,31 @@ fn the_finalize_transaction_writes_one_non_member_and_removes_it_before_phase_7(
         entry_names(&snapshot),
     );
 
-    // (2) the census: exactly one path production writes there is not a registry member.
+    // (1b) …and over an area that really holds the transient, so the census below is a
+    //      statement about a populated set rather than a vacuous one.
+    assert!(
+        snapshot
+            .join(engine::state::FINALIZE_MESSAGE_FILE)
+            .is_file(),
+        "the snapshot must catch the commit-message transient IN the area — without it this \
+         census proves nothing about the name that motivated it; the copy holds {:?}",
+        entry_names(&snapshot),
+    );
+
+    // (2) the census: EVERY path production writes into the cleanup dir is a registry member.
     assert_eq!(
         engine::state::foreign_area_paths(&snapshot, engine::state::WorkArea::Task)
             .expect("the copied area enumerates"),
-        vec![PathBuf::from("finalize-message.tmp")],
+        Vec::<PathBuf>::new(),
         "every path the transaction writes into the cleanup dir must be a \
-         `WorkArea::jigc_written` member but for the commit-message transient; the area \
+         `WorkArea::jigc_written` member — a non-member here is reported as a path jigc did \
+         not write and refuses every later destroying door over jigc's own file; the area \
          held {:?} at the last moment inside the transaction",
         entry_names(&snapshot),
     );
 
-    // (3) …and that one is gone before phase 7 reads the area. Were it still there, the
-    //     shipped displacement would have moved it aside and said so.
+    // (3) …and the transient is gone before phase 7 reads the area on the ordinary arm too.
+    //     Were it still there, the shipped displacement would have moved it aside and said so.
     assert!(
         !corpus.repo().join(".jigc").join("displaced").exists(),
         "an ordinary landed finalize displaces nothing — `.jigc/displaced/` exists, so \

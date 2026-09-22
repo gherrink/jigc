@@ -86,6 +86,35 @@ pub const SLUG_OVERRIDE_FILE: &str = "slug-override";
 /// is a registry one crate can be wrong about (M52 Increment 4 / T2).
 pub const SOURCE_FILE: &str = "source";
 
+/// The working-area file the finalize transaction renders the commit message into before
+/// handing it to `git commit -F` (`design/finalize.md` → 6. Commit). Written at the top of
+/// `cli::task::try_execute_finalize_plan` and removed one statement after the commit returns,
+/// so on every ordinary path it is gone before the teardown ever reads the area.
+///
+/// **It is a member of BOTH rows, and it is on them because *ordinary* is not the axis
+/// membership is decided on** (M53 completion audit, fix 1). `msg_tmp_dir` **is**
+/// `cleanup_dir` at all three of that executor's call sites — the task door's own area, and
+/// the milestone area at both boundary arms — and its removal is best-effort
+/// (`let _ = std::fs::remove_file(…)`). One in-transaction fault defeats it: a `pre-commit`
+/// hook that `chmod 0555`s the area (M53 Increment 2's own racer) makes the removal *and* the
+/// teardown fail, and the transient then sits in the complement. Driven at `45427083`, that
+/// made `jigc task finalize` land at exit 0 printing a `finalize.foreign-bytes` advisory that
+/// named jigc's own transient as *a path jigc did not write*, and made every later
+/// `jigc task discard` / `jigc uninstall` refuse at **exit 1** over it, demanding `--force`.
+///
+/// That is G-13's failure mode a second time, and for the reason [`TASK_AREA_FILES`] already
+/// records it the first (`record-commit-msg.txt`): a name whose *ordinary* lifetime ends
+/// inside the transaction still outlives it on the arm where the transaction faults, and the
+/// registry is read by doors that run **after** that arm. M53 planning disposed this name on
+/// the removal statement (`DECISIONS.md` → 2026-09-16, and this row's own struck reason in
+/// `crates/cli/tests/task_area_writer_registry.rs` → `NON_AREA_JOINS`); the fault model
+/// falsifies the disposition, not the statement.
+///
+/// It is declared here rather than beside the CLI verb that writes it for [`SOURCE_FILE`]'s
+/// reason — a registry whose members are declared in two crates is a registry one crate can
+/// be wrong about.
+pub const FINALIZE_MESSAGE_FILE: &str = "finalize-message.tmp";
+
 /// The working-area sub-directory holding a task's staged doc instances
 /// (`DECISIONS.md` 2026-05-31 → Task working-area on-disk layout: a staged instance
 /// lives at `.jigc/tasks/<id>/docs/<type>:<slug>.md`).
@@ -126,9 +155,15 @@ fn instance_filename(type_name: &str, slug: &str) -> String {
 /// driving (`flow47_acceptance::every_committing_door_leaves_the_repo_recoverable`) rather
 /// than by the source fence, which counts names against the **union** of the two rows and so
 /// cannot see a member on the wrong one.
+///
+/// **`finalize-message.tmp` is on BOTH rows too** (M53 completion audit, fix 1), and for the
+/// same shape of reason one layer over: it is jigc's own transient, it is *ordinarily* gone
+/// before any door reads the area, and the arm where it is not is exactly the arm a door then
+/// answers for. [`FINALIZE_MESSAGE_FILE`] carries the driven cell.
 pub const TASK_AREA_FILES: &[&str] = &[
     BASE_PIN_FILE,
     DOCS_DIR,
+    FINALIZE_MESSAGE_FILE,
     INTENT_FILE,
     RENAMES_FILE,
     ROLES_FILE,
@@ -179,8 +214,14 @@ pub const TASK_DOCS_FILES: &[&str] = &[PROVENANCE_FILE];
 /// `merged/docs/deep.txt` exited 0, printed *"workbench removed"* and took both, while the
 /// identical byte at the area **root** refused with `milestone.foreign-bytes`. One state, two
 /// answers, from one carve-out.
+///
+/// **`finalize-message.tmp` is on this row for the same reason it is on the task row**: the
+/// shared finalize executor's `msg_tmp_dir` is the *milestone* area at both boundary arms, so
+/// the transient lands here too and survives here too on the arm where the transaction faults
+/// ([`FINALIZE_MESSAGE_FILE`]).
 pub const MILESTONE_AREA_FILES: &[&str] = &[
     BASE_PIN_FILE,
+    FINALIZE_MESSAGE_FILE,
     STAGED_SNAPSHOT_FILE,
     crate::milestone::MERGED_AREA,
     crate::milestone::RECORD_COMMIT_MSG_FILE,

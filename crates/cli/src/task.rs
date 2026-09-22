@@ -3956,9 +3956,21 @@ pub(crate) fn try_execute_finalize_plan(
     rollback_conflicts: &mut Vec<Finding>,
     displace: Option<AreaTeardown<'_>>,
 ) -> Result<Result<String>> {
-    let msg_path = msg_tmp_dir.join("finalize-message.tmp");
-    std::fs::write(&msg_path, &plan.message)
-        .with_context(|| format!("could not write the commit message to {msg_path:?}"))?;
+    // A registry member of **both** rows (`engine::state::FINALIZE_MESSAGE_FILE`), never a
+    // literal: `msg_tmp_dir` is `cleanup_dir` at all three call sites, so this transient lands
+    // in the very area phase 7 tears down, and the `remove_file` below is best-effort. On the
+    // arm where that removal faults — a `pre-commit` hook that `chmod 0555`s the area — a
+    // non-member here is reported as a path jigc did not write and then refuses every later
+    // destroying door over jigc's own file (M53 completion audit, fix 1).
+    let msg_path = msg_tmp_dir.join(state::FINALIZE_MESSAGE_FILE);
+    std::fs::write(&msg_path, &plan.message).with_context(|| {
+        // Law 1's printed-path rule, through its one home: this fault reaches the operator,
+        // and `{msg_path:?}` spelled the host path of the machine jigc ran on.
+        format!(
+            "could not write the commit message to `{}`",
+            render::repo_relative(repo_root, &msg_path),
+        )
+    })?;
     // The promote and retire **worktree** axes, on the shared compare-and-swap entry (M52
     // Increment 5 / T3; `crate::rollback::ROLLBACK_POPULATIONS` → `promote-destination` and
     // `retired-original`, both `Discipline::FileCas`). One family, because the two

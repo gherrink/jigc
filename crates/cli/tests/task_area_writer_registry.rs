@@ -160,14 +160,25 @@ const ROW_READ_JOINS: &[(&str, usize, &str)] = &[(
 /// to plenty of directories that are not working areas, and the fence deliberately reads
 /// the **name being joined** rather than guessing at the receiver's meaning.
 ///
-/// **The name is one row too narrow, and the row that falsifies it says so.** M53 Increment
-/// 2 / T1 drove `try_execute_finalize_plan`'s `msg_tmp_dir` to be `cleanup_dir` at all three
-/// call sites, so its `finalize-message.tmp` *is* joined onto a working area. It belongs in
-/// the remainder all the same, for the reason its row carries: the registry's members are
-/// what a door about to **destroy** an area must not take, and a name that is gone before
-/// that door ever reads the area is not one of them. So the membership rule this table
-/// states is *the joined name is no registry member*, and *the receiver is no working area*
-/// is why that holds for every row but one.
+/// **[Corrected 2026-09-22 (M53 completion audit, fix 1).** This note read: *"The name is one
+/// row too narrow, and the row that falsifies it says so. M53 Increment 2 / T1 drove
+/// `try_execute_finalize_plan`'s `msg_tmp_dir` to be `cleanup_dir` at all three call sites, so
+/// its `finalize-message.tmp` is joined onto a working area. It belongs in the remainder all
+/// the same, for the reason its row carries: the registry's members are what a door about to
+/// **destroy** an area must not take, and a name that is gone before that door ever reads the
+/// area is not one of them."* **Falsifying datum, driven on the debug binary at `45427083`:** a
+/// `pre-commit` hook that `chmod 0555`s the task area makes the best-effort
+/// `remove_file(&msg_path)` fail, so the transient is **not** gone before the door reads the
+/// area — `jigc task finalize` landed at exit 0 naming `.jigc/tasks/<id>/finalize-message.tmp`
+/// as *a path jigc did not write*, and `jigc task discard <id>` then refused at exit 1 over
+/// jigc's own file. *Gone before the door reads it* is a claim about the ordinary arm, and
+/// membership is decided on the faulting one. `engine::state::FINALIZE_MESSAGE_FILE` is now a
+/// member of **both** rows, so this table's name is exact again and the row below counts one
+/// site, not two.**]
+///
+/// So the membership rule this table states is *the joined name is no registry member*, and —
+/// with the correction above — *the receiver is no working area* is why that holds for every
+/// row in it.
 const NON_AREA_JOINS: &[(&str, usize, &str)] = &[
     (
         "crates/cli/src/adapter.rs",
@@ -242,15 +253,17 @@ const NON_AREA_JOINS: &[(&str, usize, &str)] = &[
     ),
     (
         "crates/cli/src/task.rs",
-        2,
-        "`.git` (the repo-root probe) and `try_execute_finalize_plan`'s \
-         `finalize-message.tmp` — the first is no working area, and the second **is** one: \
-         driven at M53 Increment 2 / T1, `msg_tmp_dir` is `cleanup_dir` at all three call \
-         sites, so the transient lands in the very area phase 7 tears down (the reason this \
-         row gave — *a process-unique temp dir* — is struck with that datum). It stays here \
-         rather than joining the registry because it does not outlive the transaction: it is \
-         gone before phase 7 reads the area, which `finalize_area_unwind_controls` drives on \
-         the landed arm — the only arm phase 7 runs on",
+        1,
+        "**[Corrected 2026-09-22 (M53 completion audit, fix 1).** This row read `2` and \
+         counted `try_execute_finalize_plan`'s `finalize-message.tmp` beside the `.git` \
+         probe, on the ground that *it does not outlive the transaction: it is gone before \
+         phase 7 reads the area*. **Falsifying datum, driven at `45427083`:** the removal is \
+         `let _ = std::fs::remove_file(…)`, and a `pre-commit` hook that `chmod 0555`s the \
+         area makes it fail — the transient survived into the complement, `task finalize` \
+         named it as *a path jigc did not write* at exit 0, and `task discard` then refused \
+         at exit 1 over it. The name is now `engine::state::FINALIZE_MESSAGE_FILE` on both \
+         registry rows, so the site is a guarded member rather than a remainder.**] \
+         One: `.git` — the repo-root probe, whose receiver is an ancestor walk",
     ),
     (
         "crates/engine/src/target_surface.rs",

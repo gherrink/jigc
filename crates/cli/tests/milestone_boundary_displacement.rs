@@ -772,6 +772,48 @@ fn marker_files(repo: &Path) -> Vec<String> {
     found
 }
 
+/// Whether `path` — a file, or a directory that moved whole — carries [`KEEP_MARKER`]
+/// somewhere under it. Every plant does; nothing jigc writes does.
+fn holds_marker(path: &Path) -> bool {
+    Command::new("grep")
+        .args(["-rqE", KEEP_MARKER])
+        .arg(path)
+        .output()
+        .expect("run grep")
+        .status
+        .success()
+}
+
+/// **Every complement entry of a standing area is a third party's byte** — the assertion the
+/// arm was missing, and the one that would have caught the M53 completion audit's fix 1.
+///
+/// The cells above all ask what happens to a *plant*. The complement is also what the
+/// advisory **names** and what every later destroying door **refuses over**, so a file jigc
+/// itself wrote that is absent from its own registry row is a lie on one surface and a dead
+/// end at three doors. Driven at `45427083`, the `fault on the pin` cell left
+/// `finalize-message.tmp` — the shared finalize executor's commit-message transient, whose
+/// `msg_tmp_dir` **is** this very area — in the complement of all three standing areas, at
+/// exit 0, named as *a path jigc did not write*.
+///
+/// The predicate is the marker rather than a per-cell expected set: the plants carry it and
+/// jigc's own writes never do, so this stays exact as the cells' plant lists change.
+fn assert_complement_is_all_planted(area: &Path, kind: engine::state::WorkArea, label: &str) {
+    let complement =
+        engine::state::foreign_area_paths(area, kind).expect("a standing area enumerates");
+    let intruders: Vec<String> = complement
+        .iter()
+        .filter(|rel| !holds_marker(&area.join(rel)))
+        .map(|rel| rel.display().to_string())
+        .collect();
+    assert!(
+        intruders.is_empty(),
+        "[{label}] the complement of `{}` holds {intruders:?}, which carry no plant marker — \
+         a file jigc wrote that is on neither registry row is named on the advisory as a path \
+         jigc did not write, and refuses every later destroying door over jigc's own bytes",
+        area.display(),
+    );
+}
+
 /// Set `path`'s mode, for the permission games the fault cells need.
 ///
 /// **Declared bound, the one `leftover_probe_fail_closed.rs` already carries:** run as `root`,
@@ -1015,6 +1057,17 @@ fn assert_boundary_cell(cell: &BoundaryCell, squash: bool) {
              LATER member both take the pin first",
             path.display(),
         );
+    }
+
+    // (7) …and nothing JIGC wrote is in the complement of an area left standing
+    //     (M53 completion audit, fix 1 — see `assert_complement_is_all_planted`).
+    for path in &standing {
+        let kind = if path.starts_with(repo.join(".jigc").join("milestones")) {
+            engine::state::WorkArea::Milestone
+        } else {
+            engine::state::WorkArea::Task
+        };
+        assert_complement_is_all_planted(path, kind, &label);
     }
 }
 
