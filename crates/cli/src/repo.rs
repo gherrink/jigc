@@ -39,6 +39,22 @@
 //! committed milestone record). The probe is the family's one home so the doors that read
 //! it cannot each hand-enumerate a different three.
 //!
+//! **The probe's subject is a path, and a door owes it for every checkout it commits
+//! from — not only for the one the command was typed in** (M53 post-review fix,
+//! 2026-09-22; the M53 per-axis review, axis 2 `DEFECT 1`). Through `1.0.0-rc.17` the
+//! sentence above was true of the *probe* and false of its *consumers*: `Cli::dispatch`'s
+//! guard asked [`posture`] for the process cwd's repository and nothing else, while `jigc
+//! milestone finalize` reads `git diff --cached` out of every provisioned sub-task
+//! worktree's index and applies it. Driven on the installed `1.0.0-rc.17` across **nine**
+//! of the ten [`InProgress`] members — every one buildable inside a linked worktree — the
+//! boundary landed at exit **0**, committed the user's un-concluded operation under jigc's
+//! own subject, and destroyed that operation's authored message (`MERGE_MSG` /
+//! `SQUASH_MSG`) with the worktree teardown, while the *same* worktree refused its own
+//! `jigc task finalize` one command earlier. The subject set is therefore the boundary's
+//! own: [`adjudicated_breach`] is the one composition both the door guard and the
+//! boundary's fan-out preflight ask, and [`BreachSite`] is how the answer says *which*
+//! checkout it is about.
+//!
 //! **A probe that cannot answer reads as NO breach** — a `git` that cannot be spawned, a
 //! path that is not a work tree, any exit code outside the two a discriminator names. The
 //! shipped precedents are [`crate::task::nothing_staged`] (a git that cannot be spawned
@@ -60,7 +76,7 @@
 //! identical asymmetry — so closing the cell needs a repository-**identity** check the
 //! fixtures above can survive, and it reopens the moment one exists.
 
-use engine::finding::{Finding, Route};
+use engine::finding::{Finding, Location, Route, Severity};
 use std::path::{Path, PathBuf};
 
 /// Resolve **jigc_home** — the dir `.jigc/` state and the committed doc-store bind to.
@@ -549,6 +565,81 @@ pub struct PostureBreach {
     operation: Option<InProgress>,
 }
 
+/// **Whose checkout a breach is being reported about, as the reader must read it** — the
+/// subject of the message and the checkout every command in the route has to run in
+/// (M53 post-review fix, 2026-09-22).
+///
+/// The family's probe has always answered about *a path*, and until this existed every
+/// producer rendered the answer as though that path were the one the user typed the
+/// command in. The milestone boundary broke that: it commits from each provisioned
+/// sub-task worktree's **index**, so a breach it must refuse on lives in a checkout the
+/// caller is not standing in, and a route reading *"conclude it with `git merge
+/// --continue`, then re-run this command"* would be run in the wrong repository. The site
+/// travels with the render rather than being patched into the text afterwards, so the two
+/// arms cannot drift.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BreachSite<'a> {
+    /// The checkout the command was run in — the door guard's subject, and the bytes
+    /// every shipped posture refusal has printed since M51.
+    Here,
+    /// A fan-out worktree **jigc** provisioned for one milestone sub-task, named by its
+    /// repo-relative path (`crate::render::repo_relative`, law 1). The milestone boundary
+    /// commits that worktree's index, so the user has to conclude or abandon the
+    /// operation *there*.
+    FanOutWorktree(&'a str),
+}
+
+impl BreachSite<'_> {
+    /// What the message says after naming the breach — empty for [`BreachSite::Here`], so
+    /// that arm's bytes are the ones M51 shipped.
+    fn subject(self) -> String {
+        match self {
+            BreachSite::Here => String::new(),
+            BreachSite::FanOutWorktree(path) => {
+                format!(" in the fan-out worktree `{path}`")
+            }
+        }
+    }
+
+    /// The clause that says why the breach matters *here* — the half that cannot be shared,
+    /// because at a fan-out worktree the repository the caller is standing in may be
+    /// perfectly committable and the one being committed *from* is not.
+    fn tail(self) -> &'static str {
+        match self {
+            BreachSite::Here => "the repository is not in a committable state",
+            BreachSite::FanOutWorktree(_) => {
+                "the milestone boundary commits that worktree's index, and it is not in a \
+                 committable state"
+            }
+        }
+    }
+
+    /// `command`, aimed at this site — unchanged here, `-C <worktree>` there.
+    ///
+    /// Every command this family routes at is a `git` invocation, which is what makes the
+    /// redirection one insertion after the program name rather than a per-member rewrite;
+    /// `repo_posture.rs::every_routed_command_is_a_git_invocation` is the fence, so a
+    /// member added with a non-`git` command reddens instead of being printed un-aimed.
+    fn aim(self, command: &str) -> String {
+        match self {
+            BreachSite::Here => command.to_string(),
+            BreachSite::FanOutWorktree(path) => match command.strip_prefix("git ") {
+                Some(rest) => format!("git -C {} {rest}", engine::finding::shell_token(path)),
+                None => command.to_string(),
+            },
+        }
+    }
+
+    /// The finding's own located address — the worktree path, so two breaching worktrees
+    /// carry two discriminating `(code, target)` keys rather than one.
+    fn location(self) -> Option<Location> {
+        match self {
+            BreachSite::Here => None,
+            BreachSite::FanOutWorktree(path) => Some(Location::addressed(path, 1, 1)),
+        }
+    }
+}
+
 impl PostureBreach {
     /// Which member of the family this breach is — the handle the two door classes filter
     /// on (a mover refuses only [`PostureMember::OperationInProgress`]).
@@ -561,25 +652,45 @@ impl PostureBreach {
         self.operation
     }
 
+    /// The blocking [`Finding`] this breach refuses with, **about the checkout the command
+    /// was run in** — [`finding_at`](PostureBreach::finding_at) at [`BreachSite::Here`],
+    /// which is every shipped producer's site and the bytes `repo_posture.rs`'s
+    /// `SHIPPED_ROUTE_LINES` pins.
+    pub fn finding(&self) -> Finding {
+        self.finding_at(BreachSite::Here)
+    }
+
     /// The blocking [`Finding`] this breach refuses with — §10's mold: a code, a
     /// [`Route::human`] naming **the git command that resolves the state**, and no
     /// override. A posture is a repository state the user can resolve, not bytes only
     /// they can value, so the family carries no consent flag.
-    pub fn finding(&self) -> Finding {
+    ///
+    /// `site` says *whose* checkout, and nothing else: the member, the noun, the
+    /// predicate and both qualifiers are the same values at both sites, so the two arms
+    /// cannot say different things about the same state.
+    pub fn finding_at(&self, site: BreachSite<'_>) -> Finding {
+        let subject = site.subject();
         let (message, route) = match (self.member, self.operation) {
             (PostureMember::HeadDetached, _) => (
-                "HEAD is detached — a commit made here would belong to no branch, and the \
-                 next checkout would leave it unreachable"
-                    .to_string(),
-                "re-attach HEAD with `git switch <branch>`, then re-run this command".to_string(),
+                format!(
+                    "HEAD is detached{subject} — a commit made here would belong to no \
+                     branch, and the next checkout would leave it unreachable"
+                ),
+                format!(
+                    "re-attach HEAD with `{}`, then re-run this command",
+                    site.aim("git switch <branch>"),
+                ),
             ),
             (PostureMember::HeadUnborn, _) => (
-                "HEAD is unborn — this repository has no commits yet, so there is no base \
-                 for jigc to commit against"
-                    .to_string(),
-                "land the repository's first commit with `git commit`, then re-run this \
-                 command"
-                    .to_string(),
+                format!(
+                    "HEAD is unborn{subject} — this repository has no commits yet, so \
+                     there is no base for jigc to commit against"
+                ),
+                format!(
+                    "land the repository's first commit with `{}`, then re-run this \
+                     command",
+                    site.aim("git commit"),
+                ),
             ),
             (PostureMember::OperationInProgress, operation) => {
                 // `posture` never builds this member without an operation; the fallback
@@ -589,28 +700,58 @@ impl PostureBreach {
                 // about naming it — the mold carries the sentence, never the clause.
                 let abandon = format!(
                     "abandon it with `{}`{}",
-                    operation.abandon(),
+                    site.aim(operation.abandon()),
                     operation.abandon_qualifier(),
                 );
                 let route = match operation.conclude() {
-                    Some((conclude, qualifier)) => format!(
-                        "conclude it with `{conclude}`{qualifier}, or {abandon}, then \
-                         re-run this command"
-                    ),
+                    Some((conclude, qualifier)) => {
+                        let conclude = site.aim(conclude);
+                        format!(
+                            "conclude it with `{conclude}`{qualifier}, or {abandon}, then \
+                             re-run this command"
+                        )
+                    }
                     None => format!("conclude it, or {abandon}, then re-run this command"),
                 };
                 (
                     format!(
-                        "{} {} — the repository is not in a committable state",
+                        "{} {}{subject} — {}",
                         operation.noun(),
                         operation.predicate(),
+                        site.tail(),
                     ),
                     route,
                 )
             }
         };
-        Finding::block(self.member.code(), message, Route::human(route))
+        Finding::graded(
+            Severity::Blocking,
+            self.member.code(),
+            message,
+            site.location(),
+            Some(Route::human(route)),
+        )
     }
+}
+
+/// **The breach `repo_root` owes an answer for** — resolve the subject, probe the family,
+/// and take the first breach *both* the subject and the asking door adjudicate.
+///
+/// The family's one composition home (M53 post-review fix, 2026-09-22). Two doors ask it:
+/// [`crate::cli::posture_refusal_in`], whose `owes` is its [`crate::cli::BEHALF_DOORS`]
+/// row (a mover's one member, minus the row's stated exemptions), and the milestone
+/// boundary's fan-out preflight, whose `owes` is `true` — it commits, and it carries no
+/// exemption row. Splitting the composition would let the door guard and the boundary
+/// classify the same checkout differently, which is exactly the defect this fix closes
+/// one level down.
+pub fn adjudicated_breach(
+    repo_root: &Path,
+    owes: impl Fn(PostureMember) -> bool,
+) -> Option<PostureBreach> {
+    let subject = posture_subject(repo_root);
+    posture(repo_root)
+        .into_iter()
+        .find(|breach| subject.adjudicates(breach.member()) && owes(breach.member()))
 }
 
 /// **Whose checkout a posture verdict is about** — the subject the posture family is
@@ -655,6 +796,17 @@ impl PostureSubject {
             (&self.0, member),
             (Checkout::Dedicated, PostureMember::HeadDetached)
         )
+    }
+
+    /// Whether this is a fan-out worktree jigc provisioned — [`posture_subject`]'s three
+    /// legs, read back rather than re-derived.
+    ///
+    /// One caller: the sub-task posture preview, which needs to know whether the path it
+    /// built from [`engine::milestone::worktree_path`] is a live provisioned worktree
+    /// before it asks that worktree anything. Re-spelling the legs there is the shape
+    /// M50's completion audit condemned, so the classifier answers instead.
+    pub fn is_dedicated(&self) -> bool {
+        matches!(self.0, Checkout::Dedicated)
     }
 }
 

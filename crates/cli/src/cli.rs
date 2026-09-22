@@ -598,21 +598,17 @@ fn refuse_on_posture(command: &Command, format: Format) -> Option<Outcome> {
 /// forecasts it cannot answer differently.
 fn posture_refusal_in(cwd: &Path, acts: &ActsOnBehalf, format: Format) -> Option<Outcome> {
     let repo_root = crate::repo::discover_repo_root(cwd)?;
-    let subject = crate::repo::posture_subject(&repo_root);
-    let breach = crate::repo::posture(&repo_root)
-        .into_iter()
-        .find(|breach| {
-            subject.adjudicates(breach.member())
-                && match acts {
-                    ActsOnBehalf::CommitsOnBehalf { exempt, .. } => {
-                        !exempt.iter().any(|row| row.member == breach.member())
-                    }
-                    ActsOnBehalf::MovesOnBehalf { .. } => {
-                        breach.member() == PostureMember::OperationInProgress
-                    }
-                    ActsOnBehalf::Neither => false,
-                }
-        })?;
+    // The family's one composition ([`crate::repo::adjudicated_breach`]): resolve the
+    // subject, probe, take the first breach both the subject and this door owe. The
+    // milestone boundary's fan-out preflight asks the identical function with `owes` =
+    // `true`, so the two cannot classify one checkout differently (M53 post-review fix).
+    let breach = crate::repo::adjudicated_breach(&repo_root, |member| match acts {
+        ActsOnBehalf::CommitsOnBehalf { exempt, .. } => {
+            !exempt.iter().any(|row| row.member == member)
+        }
+        ActsOnBehalf::MovesOnBehalf { .. } => member == PostureMember::OperationInProgress,
+        ActsOnBehalf::Neither => false,
+    })?;
     Some(crate::invocation_log::operational_failure(
         format,
         &render::finding_error(&breach.finding()),

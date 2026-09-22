@@ -259,6 +259,21 @@ impl GitState {
         }
     }
 
+    /// Why this state cannot be built inside a **provisioned fan-out worktree**, when it
+    /// cannot — [`overlay_worktree`]'s refusal, stated per member rather than left as a
+    /// silent skip.
+    pub fn worktree_refusal(self) -> Option<&'static str> {
+        match self {
+            GitState::Unborn => Some(
+                "`unborn` cannot occur in a fan-out worktree: `git worktree add --detach \
+                 <base>` creates the checkout AT a commit, so its HEAD resolves from the \
+                 moment it exists. `cli::repo::PostureSubject::adjudicates` states the \
+                 same fact on the production side.",
+            ),
+            _ => None,
+        }
+    }
+
     /// Why this state cannot be overlaid on a built [`TrialCorpus`], when it cannot —
     /// the refusal's one home, so the suite asserts the *reason* rather than the fact
     /// that something went wrong.
@@ -870,6 +885,69 @@ impl Drop for GitStateRepo {
 /// reason), and it **panics** on a dirty worktree, which is a builder error rather
 /// than a state: `git rebase` refuses to start over one, and `git stash push` would
 /// swallow the caller's uncommitted work.
+/// Drive a **provisioned fan-out worktree** into `state` — the third entry point onto the
+/// one construction (M53 post-review fix, 2026-09-22; the M53 per-axis review, axis 2
+/// `DEFECT 1`).
+///
+/// The posture family's subject is a path, and `jigc milestone finalize` commits from a
+/// path the caller is not standing in: each sub-task's `.jigc/worktrees/<id>` checkout,
+/// whose index the boundary reads with `git diff --cached`. Proving the door refuses there
+/// needs the states built **inside** that checkout, which neither existing entry point can
+/// do — [`GitStateRepo::build`] makes its own repository and [`overlay`] drives a
+/// [`TrialCorpus`]'s main checkout.
+///
+/// **It attaches HEAD first, and that is the one adaptation.** `git worktree add --detach`
+/// leaves HEAD on a commit, and every construction in [`drive`] moves between branches by
+/// name (`seed` reads the current branch back and `diverge` returns to it), so a detached
+/// start would send them to a commit rather than to the branch they left. The attach is
+/// inert with respect to what is under test: [`cli::repo::InProgress`] is decided by what
+/// git wrote into the worktree's own git dir and by `git ls-files -u`, neither of which
+/// reads HEAD's shape, and `cli::repo::posture_subject` classifies a worktree by its
+/// `.git` file, its path and the sub-task registry — never by HEAD. The one member HEAD's
+/// shape *does* decide, [`cli::repo::PostureMember::HeadDetached`], is the member a
+/// dedicated worktree is exempt from anyway.
+///
+/// **One worktree per repository at a time.** [`drive`] names its branches from module
+/// constants (`posture-theirs`, `posture-clean`), and git refuses to check one branch out
+/// in two worktrees of the same repository — so a fixture driving two sub-task worktrees
+/// into conflicting states at once would fail at the second. Every consumer today builds
+/// a one-sub-task milestone per cell; a fixture that needs two must parameterize those
+/// names first.
+///
+/// Returns `Err` for a state that cannot occur in a worktree at all
+/// ([`GitState::worktree_refusal`]), and **panics** on a dirty worktree for the same
+/// reason [`overlay`] does.
+pub fn overlay_worktree(worktree: &Path, home: &Path, state: GitState) -> Result<(), String> {
+    if let Some(reason) = state.worktree_refusal() {
+        return Err(reason.to_string());
+    }
+    let driver = Driver {
+        repo: worktree.to_path_buf(),
+        home: home.to_path_buf(),
+    };
+    let dirty = driver.ok(&["status", "--porcelain"]);
+    assert!(
+        dirty.is_empty(),
+        "refusing to drive the fan-out worktree {worktree:?} into the `{}` git state over \
+         a DIRTY tree — the state is entered LAST, before the sub-task's own work is \
+         staged. Outstanding:\n{dirty}",
+        state.name(),
+    );
+    // A branch of this worktree's own, named after it so two worktrees of one repository
+    // never ask git to check the same branch out twice.
+    let branch = format!(
+        "posture-wt-{}",
+        worktree
+            .file_name()
+            .and_then(|n| n.to_str())
+            .expect("a fan-out worktree path ends in its sub-task id"),
+    );
+    driver.ok(&["switch", "-q", "-c", &branch]);
+    drive(&driver, state);
+    assert_state(worktree, home, state);
+    Ok(())
+}
+
 pub fn overlay(corpus: &TrialCorpus, state: GitState) -> Result<(), String> {
     if let Some(reason) = state.overlay_refusal() {
         return Err(reason.to_string());

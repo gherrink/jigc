@@ -1429,3 +1429,101 @@ fn the_finding_inventory_registers_exactly_this_increments_codes() {
          carrying two meanings (settle-record.md → Review amendments §3 / S3)",
     );
 }
+
+/// **Every command this family routes at is a `git` invocation** — the fence behind
+/// `cli::repo::BreachSite::aim`'s one-insertion redirection (M53 post-review fix,
+/// 2026-09-22).
+///
+/// The milestone boundary refuses over a checkout the caller is not standing in, so its
+/// route has to be runnable from where the caller *is*: `git -C <worktree> <rest>`.
+/// `BreachSite::aim` builds that by inserting `-C <path>` after the program name, which is
+/// correct exactly while every member's concluding and abandoning command begins `git ` —
+/// a property of the ten members that nothing but this assertion holds. A member routed at
+/// something else would be printed un-aimed, and un-aimed it names the wrong repository:
+/// the failure mode is a route that runs cleanly and does the right thing **in the wrong
+/// place**, which no exit code reports.
+///
+/// It iterates [`InProgress::ALL`], so an eleventh member is fenced by construction.
+#[test]
+fn every_routed_command_is_a_git_invocation() {
+    for operation in InProgress::ALL {
+        assert!(
+            operation.abandon().starts_with("git "),
+            "`{:?}`'s abandoning command must be a `git` invocation so a route can be \
+             aimed at another checkout with `-C`; got `{}`",
+            operation,
+            operation.abandon(),
+        );
+        if let Some((conclude, _)) = operation.conclude() {
+            assert!(
+                conclude.starts_with("git "),
+                "`{:?}`'s concluding command must be a `git` invocation so a route can be \
+                 aimed at another checkout with `-C`; got `{conclude}`",
+                operation,
+            );
+        }
+    }
+}
+
+/// **The site is the only thing that moves** — `BreachSite::FanOutWorktree` re-aims every
+/// command and names the worktree, and changes nothing else about the verdict.
+///
+/// The two arms are rendered from one breach, so what is compared is a *difference*: the
+/// code is identical, the operation's noun survives, each shipped command reappears with
+/// `-C <worktree>` inserted and nothing else altered, and the worktree arm carries a
+/// located address the `Here` arm does not. A second composition of the message would
+/// drift from the first; this is what says there is only one.
+#[test]
+fn the_fan_out_site_re_aims_the_route_and_changes_nothing_else() {
+    let repo = GitStateRepo::build(GitState::Merge);
+    let breach = &posture(&repo.repo())[0];
+    let here = breach.finding();
+    let there = breach.finding_at(cli::repo::BreachSite::FanOutWorktree(
+        ".jigc/worktrees/area-low",
+    ));
+
+    assert_eq!(
+        here.code, there.code,
+        "the site must not change the identity"
+    );
+    assert!(
+        there.message.contains("a merge") && there.message.contains(".jigc/worktrees/area-low"),
+        "the worktree arm must keep the operation's noun and add the worktree; got:\n{}",
+        there.message,
+    );
+    assert!(
+        here.location.is_none(),
+        "the `Here` arm carries no located address — that is the shipped shape, and the \
+         `(code, target)` key of every producer that has ever emitted it",
+    );
+    assert_eq!(
+        there
+            .location
+            .as_ref()
+            .and_then(|l| l.address.as_deref())
+            .unwrap_or_default(),
+        ".jigc/worktrees/area-low",
+        "the worktree arm's address is the worktree, so two breaching worktrees are two \
+         discriminating keys",
+    );
+
+    let here_route = here.route.as_ref().expect("the Here arm routes").as_str();
+    let there_route = there
+        .route
+        .as_ref()
+        .expect("the worktree arm routes")
+        .as_str();
+    for command in ["git merge --continue", "git merge --abort"] {
+        assert!(
+            here_route.contains(command),
+            "the shipped route names `{command}`; got: {here_route}",
+        );
+        assert!(
+            there_route.contains(&format!(
+                "git -C .jigc/worktrees/area-low {}",
+                command.strip_prefix("git ").expect("a git invocation"),
+            )),
+            "the worktree route must be the same command, aimed — got: {there_route}",
+        );
+    }
+}

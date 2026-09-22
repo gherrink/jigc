@@ -3764,6 +3764,94 @@ fn subtask_worktrees(
 /// never-provisioned (docs-only) milestone yields an empty list, so the `squash: true`
 /// combine degrades to a docs-only commit; a path git cannot vouch for is excluded, so
 /// nothing is ever read out of it.
+/// **The posture breaches the boundary owes for the worktrees it commits *from*** — one
+/// blocking finding per provisioned sub-task worktree git has left an operation
+/// un-concluded in, each sited at that worktree (M53 post-review fix, 2026-09-22; the M53
+/// per-axis review, axis 2 `DEFECT 1`).
+///
+/// `Cli::dispatch`'s guard adjudicates the posture of the checkout the command was **run
+/// in**, and for this door that is the main checkout. It is not the checkout the bytes
+/// come from: both commit models read `git diff --cached` out of each provisioned
+/// worktree's own index — [`code_carrying_worktrees`] for `squash: false`, the combine for
+/// `squash: true` — so a worktree mid-merge, mid-pick or mid-rebase had its operation's
+/// staged payload committed under jigc's synthesized subject at exit 0 and its authored
+/// message destroyed with the teardown, while `jigc task finalize` run *inside* that same
+/// worktree refused. Driven on `1.0.0-rc.17` over nine of the ten [`crate::repo::InProgress`]
+/// members at both commit models.
+///
+/// It is **not a second probe**: it asks [`crate::repo::adjudicated_breach`], the one
+/// composition the door guard asks, with `owes` = `true` — this door commits on behalf and
+/// carries no exemption row — so the fan-out worktree's `HeadDetached` exemption arrives
+/// from [`crate::repo::posture_subject`] rather than from a rule restated here (jigc
+/// detached those worktrees itself, and refusing there would refuse its own provisioning).
+///
+/// **The subject is `worktrees`**, the same value both commit channels are handed, so the
+/// set that is refused and the set that is committed cannot diverge — the
+/// [`code_carrying_worktrees`] discipline, one phase earlier. A worktree with nothing
+/// staged is still asked: whether it contributes is decided *after* this, and a boundary
+/// that concluded an operation in it would be the same act either way.
+///
+/// One finding per breaching worktree rather than one listing them: each carries its own
+/// route, aimed with `git -C <worktree>`, and its own located address — so two breaching
+/// worktrees are two discriminating `(code, target)` keys rather than one.
+fn fan_out_posture_findings(repo_root: &Path, worktrees: &[PathBuf]) -> Vec<Finding> {
+    worktrees
+        .iter()
+        .filter_map(|worktree| {
+            let breach = crate::repo::adjudicated_breach(worktree, |_| true)?;
+            let at = render::repo_relative(repo_root, worktree);
+            Some(breach.finding_at(crate::repo::BreachSite::FanOutWorktree(&at)))
+        })
+        .collect()
+}
+
+/// **The posture refusal `jigc milestone finalize` would make over sub-task `id`'s own
+/// worktree** — the preview half of [`fan_out_posture_findings`] (M53 post-review fix,
+/// 2026-09-22).
+///
+/// `jigc task validate <id>` already previews the posture of the checkout it is run in
+/// ([`crate::cli::finalize_posture_refusal`], M52 Increment 3 / T6). For a milestone
+/// sub-task that is only half the answer: an orchestrator runs `task validate <sub>` from
+/// the **main** checkout, where the posture is clean, while the boundary that actually
+/// commits that sub-task reads the sub-task's *worktree* index. Without this the preview
+/// answers *"the task validates clean"* for a state the door now refuses — the law-1 lie
+/// the fix itself would have created (`dev-workflow.md` → *widen a guard's trigger,
+/// re-derive its response*).
+///
+/// It asks the **boundary's own producer** over the one worktree, so the finding, its
+/// route and its site are the door's, byte for byte. `None` when `id` is not a sub-task of
+/// a milestone in this workbench, when its worktree path is not a provisioned worktree,
+/// or when that worktree **is** the checkout the command was run in — there the cwd guard
+/// has already answered, at its own site, and a second finding about the same state would
+/// be two answers to one question.
+pub(crate) fn sub_task_fan_out_refusal(cwd: &Path, id: &str, format: Format) -> Option<Outcome> {
+    let repo_root = discover_repo_root(cwd)?;
+    let jigc_home = crate::start::jigc_home_or_repo(cwd).ok()?;
+    let jigc_root = jigc_home.join(".jigc");
+    engine::milestone::owning_milestone(&jigc_root, id)?;
+    let worktree = jigc_home.join(engine::milestone::worktree_path(id));
+    if !crate::repo::posture_subject(&worktree).is_dedicated() {
+        return None;
+    }
+    // Canonicalized, because the worktree path is built from `jigc_home` while `repo_root`
+    // came from the cwd walk-up: on macOS one of the two carries `/private` and a raw
+    // comparison would answer *different checkout* about one directory.
+    let same = match (worktree.canonicalize(), repo_root.canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => worktree == repo_root,
+    };
+    if same {
+        return None;
+    }
+    let finding = fan_out_posture_findings(&repo_root, &[worktree])
+        .into_iter()
+        .next()?;
+    Some(crate::invocation_log::operational_failure(
+        format,
+        &render::finding_error(&finding),
+    ))
+}
+
 fn live_worktrees(subtasks: &[SubtaskWorktree]) -> Vec<PathBuf> {
     subtasks
         .iter()
@@ -4894,6 +4982,20 @@ fn run_milestone_finalize(
     // the combine channel and the manifest's contribution facts below.
     let subtasks = subtask_worktrees(&repo_root, &jigc_home, &live);
     let worktrees = live_worktrees(&subtasks);
+
+    // The repository posture of every checkout this boundary commits **from** (M53
+    // post-review fix; [`fan_out_posture_findings`]). The door guard answered for the main
+    // checkout before dispatch; these worktrees are the other subjects, and until this
+    // landed nothing asked them at all. Placed here — as soon as the worktree set exists,
+    // beside the boundary gate whose position rule it shares — because nothing durable has
+    // been written yet: `materialize` rebuilds its dir every call and the `RecordFlipGuard`
+    // is not armed until below, so a block here truly commits nothing and leaves the
+    // milestone finalizable once the user has concluded or abandoned the operation.
+    let breaches = fan_out_posture_findings(&repo_root, &worktrees);
+    if !breaches.is_empty() {
+        return blocked(&jigc_home, format, breaches);
+    }
+
     let staging_dir = materialized
         .docs_dir
         .parent()

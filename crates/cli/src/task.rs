@@ -487,6 +487,15 @@ fn run_validate(cwd: &Path, id: &str, format: Format, carry_staged: bool) -> Out
     if let Some(refusal) = crate::cli::finalize_posture_refusal(cwd, format) {
         return refusal;
     }
+    // …and, for a milestone sub-task, the posture of the checkout ITS boundary commits
+    // from (M53 post-review fix). `jigc milestone finalize` reads the sub-task's own
+    // worktree index, so a preview that asked only about the cwd answered *validates
+    // clean* from the main checkout for a state that door refuses. Inert for every task
+    // that is not a sub-task, and for a sub-task validated from inside its own worktree,
+    // where the call above has already answered.
+    if let Some(refusal) = crate::milestone::sub_task_fan_out_refusal(cwd, id, format) {
+        return refusal;
+    }
     let task = match TaskArea::resolve(cwd, id) {
         Ok(task) => task,
         Err(err) => {

@@ -37,6 +37,19 @@
 //!     that fires only inside the combine worktree and moves the main checkout's HEAD.
 //!   * (e) a stated arm: no public constructor of the dedicated variant takes a path or a
 //!     boolean.
+//!   * (f) **the boundary asks every worktree it commits FROM, not only the checkout the
+//!     command was run in** — the whole `GitState` axis built *inside* a provisioned
+//!     sub-task worktree, at both commit models, plus the preview surface that forecasts
+//!     the door (M53 post-review fix, 2026-09-22; the M53 per-axis review, axis 2
+//!     `DEFECT 1`).
+//!
+//! # Why (f) lives here and not in `posture_door_axis.rs`
+//!
+//! That suite crosses `BEHALF_DOORS` × `GitState::ALL` over the checkout each door is
+//! *run in* — 204 cells sharing one cheap fixture per state. (f)'s subject is a different
+//! checkout: the fan-out worktree the milestone boundary commits **from**, which needs a
+//! provisioned milestone per cell and exists at exactly one door. Folding it in would make
+//! every one of those 204 cells pay for a fixture 203 of them cannot use.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -591,6 +604,372 @@ fn no_public_constructor_of_the_dedicated_variant_takes_a_path_or_a_boolean() {
             !signature.contains("&Path") && !signature.contains("bool"),
             "a seam constructor of the dedicated variant must take neither a path nor a \
              boolean — both are forgeable inside this crate; got `{signature}`",
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// (f) The worktrees the boundary commits FROM.
+// ---------------------------------------------------------------------------
+
+use crate::support::git_state::{self, GitState};
+
+/// A one-sub-task fan-out, provisioned and (optionally) driven into a git state **before**
+/// the sub-task's own code is staged.
+///
+/// Leaner than [`setup_fan_out`] on purpose: this arm builds a fixture **per cell** over
+/// the whole `GitState` axis at both commit models, and the two-sub-task shape would pay
+/// for a second worktree no cell reads. The staged doc + commit doc are kept, because the
+/// `squash: false` model renders each code-carrying sub-task's authored `commit:<sub>` doc
+/// and refuses the boundary without one.
+///
+/// The state is entered **after** `provision` and **before** the code is staged:
+/// `git_state::overlay_worktree` refuses a dirty tree (a rebase cannot begin over one), and
+/// the sub-task's own staged work is what the boundary would otherwise swallow the
+/// operation alongside.
+fn setup_one_sub_task(repo: &Path, home: &Path, squash_false: bool, state: Option<GitState>) {
+    crate::support::mint_project_layer(repo);
+    if squash_false {
+        fs::write(
+            repo.join(".jigc").join("config").join("manifest.yaml"),
+            "scalar:\n  finalize.fan-out.squash: false\n",
+        )
+        .expect("write manifest");
+    }
+    assert!(
+        run_milestone(repo, home, &["create", "Cache rework"])
+            .status
+            .success(),
+        "create must exit 0",
+    );
+    assert!(
+        run_milestone(repo, home, &["add-task", "cache-rework", "Area low"])
+            .status
+            .success(),
+        "add-task must exit 0",
+    );
+    stage_doc(
+        repo,
+        "area-low",
+        "adr:low-policy",
+        &adr_plain("Low policy"),
+        "edited-from-base",
+    );
+    stage_subtask_commit(repo, "area-low", "rework the area-low cache path");
+    let provisioned = run_milestone(repo, home, &["provision", "cache-rework"]);
+    assert!(
+        provisioned.status.success(),
+        "provision must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&provisioned.stderr),
+    );
+    if let Some(state) = state {
+        git_state::overlay_worktree(
+            &repo.join(".jigc").join("worktrees").join("area-low"),
+            home,
+            state,
+        )
+        .expect("the axis skips the states a worktree cannot hold");
+    }
+    stage_worktree_code(repo, "area-low", "src/low.rs", "pub fn low() {}\n");
+}
+
+/// Every marker the git-state builder knows about that is present in `git_dir`, paired
+/// with its bytes where it is a file — the *whole* of what an un-concluded operation left
+/// behind, read back so a cell can compare it across the door.
+///
+/// The bytes matter and their presence does not: the M52 baseline's squash-merge loss was
+/// an authored message **destroyed**, and a cell that only checked `SQUASH_MSG` existed
+/// would pass over a truncated one.
+fn operation_residue(git_dir: &Path) -> Vec<(String, Option<Vec<u8>>)> {
+    git_state::MARKER_UNIVERSE
+        .iter()
+        .filter(|marker| git_dir.join(marker).exists())
+        .map(|marker| ((*marker).to_string(), fs::read(git_dir.join(marker)).ok()))
+        .collect()
+}
+
+/// Every commit this repository holds, over **all** refs — so a boundary that landed on a
+/// branch nobody looked at still moves this number.
+fn all_ref_commit_count(repo: &Path) -> String {
+    git_stdout(repo, &["rev-list", "--all", "--count"])
+}
+
+fn run_task(repo: &Path, home: &Path, args: &[&str]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .arg("task")
+        .args(args)
+        .current_dir(repo)
+        .env("HOME", home)
+        .output()
+        .expect("run the jigc binary")
+}
+
+/// One cell of (f): `state`, built inside the provisioned sub-task worktree, at one commit
+/// model.
+///
+/// A **refusing** cell — every state whose `GitState::in_progress` names an operation —
+/// claims five things: a non-zero exit, `repo.operation-in-progress` naming *that*
+/// operation's own noun, a route aimed at the worktree with `git -C`, the operation's
+/// residue **byte-identical** across the door, and nothing landed (HEAD, the all-ref commit
+/// count and the worktree itself unmoved).
+///
+/// A **proceeding** cell is `GitState::Detached`, and it is the control that keeps the fix
+/// from being *refuse whenever a worktree looks unusual*: jigc provisions every fan-out
+/// worktree `--detach`, so a boundary that refused there would refuse its own provisioning.
+/// It must still land.
+fn fan_out_cell(state: GitState, squash_false: bool) {
+    let tag = format!(
+        "fanout-{}-{}",
+        state.name(),
+        if squash_false { "chain" } else { "squash" },
+    );
+    let repo = TempDir::new(&tag);
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+    setup_one_sub_task(repo.path(), home.path(), squash_false, Some(state));
+
+    let worktree = repo.path().join(".jigc").join("worktrees").join("area-low");
+    let git_dir = PathBuf::from(git_stdout(&worktree, &["rev-parse", "--absolute-git-dir"]));
+    let residue = operation_residue(&git_dir);
+    let head = git_stdout(repo.path(), &["rev-parse", "HEAD"]);
+    let commits = all_ref_commit_count(repo.path());
+
+    let finalized = run_milestone(repo.path(), home.path(), &["finalize", "cache-rework"]);
+    let stderr = String::from_utf8_lossy(&finalized.stderr).to_string();
+
+    let Some(operation) = state.in_progress() else {
+        assert!(
+            finalized.status.success(),
+            "`{}` is the posture a fan-out worktree is provisioned IN — the boundary must \
+             still land over it, or the fix refuses jigc's own provisioning; got {:?}\n\
+             stderr:\n{stderr}",
+            state.name(),
+            finalized.status,
+        );
+        return;
+    };
+
+    assert!(
+        !finalized.status.success(),
+        "the boundary commits `{}`'s index, so an un-concluded `{}` there must refuse — it \
+         landed at {:?} instead\nstderr:\n{stderr}",
+        worktree.display(),
+        state.name(),
+        finalized.status,
+    );
+    assert!(
+        stderr.contains("blocking · repo.operation-in-progress"),
+        "the refusal must carry the family's shipped identity; stderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains(operation.noun()),
+        "the refusal must name THIS operation (`{}`); stderr:\n{stderr}",
+        operation.noun(),
+    );
+    assert!(
+        stderr.contains(".jigc/worktrees/area-low"),
+        "the refusal must name WHICH worktree — the caller is not standing in it; \
+         stderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains(&format!(
+            "git -C .jigc/worktrees/area-low {}",
+            operation
+                .abandon()
+                .strip_prefix("git ")
+                .expect("every routed command is a git invocation"),
+        )),
+        "the route must be runnable from where the caller IS — `git -C <worktree> …`; \
+         stderr:\n{stderr}",
+    );
+    assert_eq!(
+        operation_residue(&git_dir),
+        residue,
+        "a refused boundary must leave the operation exactly as git left it — every marker \
+         present and every byte of its authored message intact",
+    );
+    assert_eq!(
+        git_stdout(repo.path(), &["rev-parse", "HEAD"]),
+        head,
+        "a refused boundary must not move HEAD",
+    );
+    assert_eq!(
+        all_ref_commit_count(repo.path()),
+        commits,
+        "a refused boundary must land no commit on any ref",
+    );
+    assert!(
+        worktree.join(".git").is_file(),
+        "a refused boundary must leave the fan-out worktree standing — the teardown is what \
+         destroys the operation's markers",
+    );
+}
+
+/// (f) **The whole git-state axis, inside the worktree the boundary commits from, at the
+/// default commit model.**
+///
+/// The axis is `GitState::ALL` — iterated, never listed — minus the members a worktree
+/// cannot hold, each excluded by its own `GitState::worktree_refusal` rather than by a
+/// skip written here. Driven on `1.0.0-rc.17` before the fix, **nine** of these cells
+/// landed at exit 0, committed the operation's staged payload under jigc's synthesized
+/// subject and destroyed its authored message with the worktree teardown.
+#[test]
+fn the_boundary_refuses_every_operation_left_in_a_worktree_it_commits_from() {
+    let mut refused = 0;
+    let mut excluded = 0;
+    for state in GitState::ALL {
+        if state.worktree_refusal().is_some() {
+            excluded += 1;
+            continue;
+        }
+        fan_out_cell(*state, false);
+        if state.in_progress().is_some() {
+            refused += 1;
+        }
+    }
+    assert_eq!(
+        refused + excluded + 1,
+        GitState::ALL.len(),
+        "every member of the axis is a refusing cell, an excluded one with a stated \
+         reason, or the one proceeding posture (`detached`) — {refused} refused, \
+         {excluded} excluded, out of {}",
+        GitState::ALL.len(),
+    );
+}
+
+/// (f) **…and at the honest-rework commit model**, where the same bytes land inside the
+/// sub-task's **own** commit under the sub-agent's **authored** message — the user's
+/// un-concluded operation dressed as work someone signed for.
+///
+/// Driven on `1.0.0-rc.17`: `git cherry-pick -n` in the worktree, `finalize.fan-out.squash:
+/// false`, and the picked payload landed in `feat(cache): rework the cache path` at exit 0.
+/// The M53 per-axis review could not reach this model — it stopped twice at
+/// `finalize.render-io` for want of the sub-task's authored commit doc, which
+/// `setup_one_sub_task` stages.
+#[test]
+fn the_chain_commit_model_refuses_the_same_operations() {
+    for state in GitState::ALL {
+        if state.worktree_refusal().is_some() {
+            continue;
+        }
+        fan_out_cell(*state, true);
+    }
+}
+
+/// (f) **The preview says what the door does** — `jigc task validate <sub>` run from the
+/// **main** checkout, where the cwd's own posture is spotless.
+///
+/// This is the surface an orchestrator reads before calling the boundary, and `jigc
+/// milestone finalize` has no `--dry-run` at all, so it is the only forecast there is.
+/// Before the fix it answered *"no findings — the task validates clean"* over a state the
+/// boundary swallowed; leaving it that way after the fix would have made it answer *clean*
+/// over a state the boundary now refuses, which is the law-1 lie the fix itself would have
+/// created (`dev-workflow.md` → *widen a guard's trigger, re-derive its response*).
+///
+/// The sibling half is the one-answer rule: run **inside** the worktree, the cwd guard has
+/// already answered, and the preview must not add a second finding about the same state.
+#[test]
+fn the_sub_task_preview_forecasts_the_boundarys_worktree_refusal() {
+    let repo = TempDir::new("fanout-preview");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+    setup_one_sub_task(
+        repo.path(),
+        home.path(),
+        false,
+        Some(GitState::UncommittedPick),
+    );
+    let worktree = repo.path().join(".jigc").join("worktrees").join("area-low");
+
+    // The main checkout's own posture is spotless — so anything the preview says about
+    // posture is said about the worktree. It is the MARKER set that is asserted, not `git
+    // status`: the fixture's workbench is untracked by construction, and untracked files
+    // are not a posture.
+    assert!(
+        operation_residue(&repo.path().join(".git")).is_empty(),
+        "the main checkout must hold no operation of its own, or this arm proves nothing \
+         about the worktree",
+    );
+
+    let outside = run_task(repo.path(), home.path(), &["validate", "area-low"]);
+    let text = String::from_utf8_lossy(&outside.stderr).to_string();
+    assert!(
+        !outside.status.success(),
+        "the preview must forecast the refusal it previews; got {:?}\nstderr:\n{text}",
+        outside.status,
+    );
+    assert!(
+        text.contains("blocking · repo.operation-in-progress")
+            && text.contains(".jigc/worktrees/area-low")
+            && text.contains("git -C .jigc/worktrees/area-low reset"),
+        "the preview must render the boundary's own finding, route included; \
+         stderr:\n{text}",
+    );
+
+    // Inside the worktree the door guard answers first, at its own site — one answer, and
+    // it is the one the sub-agent's own `task finalize` would print.
+    let inside = Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(["task", "validate", "area-low"])
+        .current_dir(&worktree)
+        .env("HOME", home.path())
+        .output()
+        .expect("run the jigc binary");
+    let inside_text = String::from_utf8_lossy(&inside.stderr).to_string();
+    assert!(
+        !inside.status.success() && inside_text.contains("blocking · repo.operation-in-progress"),
+        "inside the worktree the cwd guard must still refuse; stderr:\n{inside_text}",
+    );
+    assert_eq!(
+        inside_text.matches("repo.operation-in-progress").count(),
+        1,
+        "one state, one answer — the preview must not add a second finding about the \
+         posture the cwd guard already reported; stderr:\n{inside_text}",
+    );
+    assert!(
+        !inside_text.contains("in the fan-out worktree"),
+        "asked from inside the worktree, the answer is about the checkout the caller IS \
+         in — the `BreachSite::Here` bytes; stderr:\n{inside_text}",
+    );
+}
+
+/// (f) **The zero-false-fire control**: no operation anywhere, and both commit models land.
+///
+/// `fan_out_cell`'s `detached` cell already carries the *exempt-member* half; this is the
+/// plain one — a fan-out with nothing un-concluded in it must be untouched by the new
+/// preflight, and the preview must say nothing about posture.
+#[test]
+fn a_fan_out_with_no_operation_anywhere_is_untouched() {
+    for squash_false in [false, true] {
+        let repo = TempDir::new(if squash_false {
+            "fanout-control-chain"
+        } else {
+            "fanout-control-squash"
+        });
+        init_repo(repo.path());
+        let home = TempDir::new("home");
+        setup_one_sub_task(repo.path(), home.path(), squash_false, None);
+
+        let preview = run_task(repo.path(), home.path(), &["validate", "area-low"]);
+        let preview_text = String::from_utf8_lossy(&preview.stderr).to_string();
+        assert!(
+            !preview_text.contains("repo.operation-in-progress")
+                && !preview_text.contains("repo.head-detached"),
+            "a clean fan-out must draw no posture finding from the preview; \
+             stderr:\n{preview_text}",
+        );
+
+        let before = commit_count(repo.path());
+        let finalized = run_milestone(repo.path(), home.path(), &["finalize", "cache-rework"]);
+        let stderr = String::from_utf8_lossy(&finalized.stderr).to_string();
+        assert!(
+            finalized.status.success() && commit_count(repo.path()) > before,
+            "the control boundary must land; got {:?}\nstderr:\n{stderr}",
+            finalized.status,
+        );
+        assert!(
+            git_stdout(repo.path(), &["ls-tree", "-r", "--name-only", "HEAD"])
+                .contains("src/low.rs"),
+            "the sub-task's own code must ride the landed boundary",
         );
     }
 }
