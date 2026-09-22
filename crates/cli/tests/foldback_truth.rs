@@ -310,6 +310,11 @@ fn claude_md_names_m53_and_claims_exactly_what_the_build_reached() {
         "Milestone 53",
         "flow 54",
         "flow54_acceptance.rs",
+        // Inverted 2026-09-22 at the completion fold-back — the ninth time. The audit
+        // ran, its verdict is persisted, and the claim must now cite it and say what it
+        // found, no more and no less: seven findings, all fixed, none of them clean.
+        "completions/artifacts/M53/VERDICT.md",
+        "built + audited",
     ] {
         assert!(
             span.contains(owed),
@@ -317,27 +322,15 @@ fn claude_md_names_m53_and_claims_exactly_what_the_build_reached() {
         );
     }
 
-    // INVERTED 2026-09-22, which is this fence doing its job rather than failing at it.
-    // The build landed and the completion workflow has not run, so the bound must be
-    // visible in the prose: an omission cannot say that an audit is still owed.
-    assert!(
-        span.contains("built, not audited"),
-        "M53's completion audit has not run, and the claim must say so in those words:\
-         \n{span}",
-    );
     for forbidden in [
-        // The completed claim, which nobody has reached: no code review, no e2e, no
-        // verdict.
-        "built + audited",
-        // A pass may not pre-announce what its audit will find — the M48 half of this
-        // rule, which is forbidden in BOTH directions and for different reasons: before
-        // the audit because nothing has been found, after it because something was.
+        // The pre-audit bound is now the lie: the audit has run over this build.
+        "built, not audited",
+        // Seven findings were found and fixed; a clean audit is not what the record shows.
         "audited clean",
         "audit is CLEAN",
         "audit ran clean",
-        // The 1.0.0 call is the human's. M53 exists to make it reachable — the exit rule
-        // is *a partial re-review of the fix pass's affected axes finds no tier-1 row* —
-        // and a build that has not been audited or re-reviewed has reached neither leg.
+        // The 1.0.0 call is the human's, and a fix pass takes it no more than a wave does:
+        // the exit rule's leg is the partial re-review, which this fold-back precedes.
         "1.0.0 is called",
         "1.0.0 shipped",
     ] {
@@ -347,21 +340,11 @@ fn claude_md_names_m53_and_claims_exactly_what_the_build_reached() {
         );
     }
 
-    // The mirror of the post-audit direction's filesystem check: a citation of a verdict
-    // that does not exist is the law-1 lie this direction forbids, and the ban is a plain
-    // substring so that no spelling of the citation slips through (the declared bound
-    // above).
-    assert!(
-        !span.contains("VERDICT"),
-        "M53's claim may not cite a verdict — no completion audit has run over this \
-         build:\n{span}",
-    );
     let verdict = repo_root().join("completions/artifacts/M53/VERDICT.md");
     assert!(
-        !verdict.is_file(),
-        "a persisted M53 verdict exists at {} — the audit has landed, so this arm must \
-         invert rather than keep forbidding the citation",
-        verdict.display(),
+        verdict.is_file(),
+        "the M53 claim cites a verdict at {} that must exist",
+        verdict.display()
     );
 }
 
