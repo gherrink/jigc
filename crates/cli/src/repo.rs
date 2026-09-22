@@ -471,16 +471,40 @@ impl InProgress {
     /// it (`settle-record.md` → §10). Until this member landed the clause was declared
     /// and printed nowhere.
     ///
-    /// **Which members carry a clause today is a scope decision, not a measurement.** The
-    /// five conclude-bearing members — `Merge` · `Rebase` · `Am` · `CherryPick` · `Revert`
-    /// — ship their whole rendered route line as a byte literal in
-    /// `repo_posture.rs::SHIPPED_ROUTE_LINES` (DECISIONS.md → 2026-09-05, §10), so giving
-    /// them the clause the datum above earns is a user-facing reword of five shipped lines
-    /// and is left to whoever moves that pin. The fence is written so that doing it later
-    /// passes: a member whose command touches unrelated staged work owes a clause **unless
-    /// it is one of the pinned five**.
+    /// **The clause is one sentence per *fate*, not one per member** (M53 completion audit,
+    /// finding 7 — the human's call, 2026-09-22). The datum above sorts the family into
+    /// three fates and nothing finer, so the arms below are those three: every member whose
+    /// command **discards** unrelated staged work shares one clause verbatim, reached by two
+    /// different commands (`--abort` and `git reset --merge`); the one that **unstages** it
+    /// carries its own; the ones that leave it alone carry none. A reader
+    /// who meets the sentence at a merge has already read the one they will meet at a
+    /// rebase.
+    ///
+    /// Finding 4 left the five conclude-bearing members — `Merge` · `Rebase` · `Am` ·
+    /// `CherryPick` · `Revert` — silent, because their whole rendered route line ships as a
+    /// byte literal in `repo_posture.rs::SHIPPED_ROUTE_LINES` (DECISIONS.md → 2026-09-05,
+    /// §10) and rewording five shipped user-facing lines is not a side effect any fix gets
+    /// to have. That was a **scope** hold with a named holder, and the holder — the human —
+    /// took it: the pin is re-blessed to the new bytes deliberately, and the fence's
+    /// pin-derived exemption is **gone**, so every member whose command touches unrelated
+    /// staged work now owes its clause with no exemption left to hide behind.
     pub fn abandon_qualifier(self) -> &'static str {
         match self {
+            // `--abort` reconstructs the pre-operation state, which resets the index AND
+            // the working tree; `git reset --merge` resets the index to HEAD and takes the
+            // working tree with it. Driven, one unrelated file staged beforehand: every
+            // member below deleted it from both. An empty clause here reads as *this
+            // touches the operation only*, which is exactly the claim the audit falsified.
+            InProgress::Merge
+            | InProgress::Rebase
+            | InProgress::Am
+            | InProgress::CherryPick
+            | InProgress::Revert
+            | InProgress::SquashMerge
+            | InProgress::UnmergedIndex => {
+                " (which also discards anything else you had staged, from the index and \
+                 from your working tree)"
+            }
             // True in both cells, which is what it is worded for: on a clean pick the
             // applied bytes go from staged to unstaged, and on a conflicted one the
             // conflict markers stay in the file (driven, `tests/repo_posture.rs`). The
@@ -492,22 +516,6 @@ impl InProgress {
                 " (which unstages everything — the picked changes and anything else you \
                  had staged — keeping all of it in your working tree)"
             }
-            // `git reset --merge` resets the index to HEAD and takes the working tree with
-            // it. Driven: an unrelated file staged before the command ran was gone from
-            // both afterwards. An empty clause here reads as *this touches the operation
-            // only*, which is the claim the audit falsified, and neither member is pinned.
-            InProgress::SquashMerge | InProgress::UnmergedIndex => {
-                " (which also discards anything else you had staged, from the index and \
-                 from your working tree)"
-            }
-            // The five whose rendered line is pinned as a byte literal — see the doc above.
-            // They are `Discarded` members carrying no clause **by scope**, and the fence
-            // exempts them by naming the pin rather than by believing the empty string.
-            InProgress::Merge
-            | InProgress::Rebase
-            | InProgress::Am
-            | InProgress::CherryPick
-            | InProgress::Revert => "",
             // The two the struck sentence was actually true of: driven, each left the
             // unrelated staged entry exactly as it found it.
             InProgress::Sequencer | InProgress::Bisect => "",

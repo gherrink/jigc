@@ -579,12 +579,21 @@ fn abandoning_argv(text: &str, label: &str) -> Vec<String> {
 /// The **rendered** route line of every member that supplies a concluding command, as
 /// bytes (M53 Increment 4 / T3).
 ///
-/// These five are the shipped set, and this table is here to assert that giving the
+/// These five are the shipped set, and this table was written to assert that giving the
 /// qualifiers a per-member home **changed none of them**: the clause
 /// *"once its conflicts are resolved"* was one hard-coded `format!` shared by the mold,
 /// and every one of the five is detected only in a state the user has stopped in, so the
-/// clause is true of each and its bytes must survive the move unaltered
+/// clause is true of each and its bytes had to survive that move unaltered
 /// (`settle-record.md` → §10).
+///
+/// **[Re-blessed 2026-09-22 (M53 completion audit, finding 7) — the human's call.** Each
+/// of the five now carries the abandoning clause its own command earns, driven: `git merge
+/// --abort` and its four siblings **discard unrelated staged work**, from the index and
+/// from the working tree, and finding 4 left them silent about it only because these bytes
+/// were pinned (see `InProgress::abandon_qualifier`). The pin is not a promise that the
+/// line never changes — it is a promise that it never changes **as a side effect**, and a
+/// deliberate re-blessing under a named decision is the mechanism working, not a breach of
+/// it. What the pin still stops is the next move nobody decided.**]
 ///
 /// Pinned as whole lines rather than as the qualifier alone on purpose: a qualifier that
 /// arrived correct but landed on the wrong side of a backtick, or a separator that grew
@@ -593,27 +602,32 @@ const SHIPPED_ROUTE_LINES: [(InProgress, &str); 5] = [
     (
         InProgress::Merge,
         "conclude it with `git merge --continue` once its conflicts are resolved, or \
-         abandon it with `git merge --abort`, then re-run this command",
+         abandon it with `git merge --abort` (which also discards anything else you had \
+         staged, from the index and from your working tree), then re-run this command",
     ),
     (
         InProgress::Rebase,
         "conclude it with `git rebase --continue` once its conflicts are resolved, or \
-         abandon it with `git rebase --abort`, then re-run this command",
+         abandon it with `git rebase --abort` (which also discards anything else you had \
+         staged, from the index and from your working tree), then re-run this command",
     ),
     (
         InProgress::Am,
         "conclude it with `git am --continue` once its conflicts are resolved, or abandon \
-         it with `git am --abort`, then re-run this command",
+         it with `git am --abort` (which also discards anything else you had staged, from \
+         the index and from your working tree), then re-run this command",
     ),
     (
         InProgress::CherryPick,
         "conclude it with `git cherry-pick --continue` once its conflicts are resolved, or \
-         abandon it with `git cherry-pick --abort`, then re-run this command",
+         abandon it with `git cherry-pick --abort` (which also discards anything else you \
+         had staged, from the index and from your working tree), then re-run this command",
     ),
     (
         InProgress::Revert,
         "conclude it with `git revert --continue` once its conflicts are resolved, or \
-         abandon it with `git revert --abort`, then re-run this command",
+         abandon it with `git revert --abort` (which also discards anything else you had \
+         staged, from the index and from your working tree), then re-run this command",
     ),
 ];
 
@@ -789,21 +803,6 @@ fn unrelated_fate(operation: InProgress) -> UnrelatedFate {
     }
 }
 
-/// The members whose **whole rendered route line** is pinned as a byte literal in
-/// [`SHIPPED_ROUTE_LINES`], and which therefore carry no clause today even though their
-/// command discards unrelated staged work.
-///
-/// This is a **scope** exemption with a named holder, not a verdict about the surface:
-/// giving these five the clause the datum earns is a reword of five shipped user-facing
-/// lines, and the pin above exists to stop exactly that happening as a side effect. The
-/// exemption is derived from the pin rather than written out, so moving the pin — which is
-/// what closing the remainder looks like — makes this arm demand the clause instead.
-fn clause_exempt(operation: InProgress) -> bool {
-    SHIPPED_ROUTE_LINES
-        .iter()
-        .any(|(member, _)| *member == operation)
-}
-
 /// **Every abandoning command's effect on unrelated staged work is declared, driven, and
 /// said out loud where it is not nothing** (M53 completion audit, finding 4).
 ///
@@ -821,11 +820,20 @@ fn clause_exempt(operation: InProgress) -> bool {
 ///      a clause there would be noise, and the empty string has to be checked or the
 ///      honest members are indistinguishable from the un-adjudicated ones;
 ///   3. a member whose command does **not** leave it alone carries a clause naming staged
-///      work, unless it is one of the byte-pinned five ([`clause_exempt`]).
+///      work — **with no exemption**.
 ///
 /// Red before the fix at `SquashMerge`, `UnmergedIndex` (fate `Discarded`, clause empty,
 /// not pinned) — and, on assertion 1, at `UncommittedCherryPick`, whose shipped clause
 /// described a fate the command does not have.
+///
+/// **[Made total 2026-09-22 (M53 completion audit, finding 7) — the human's call.**
+/// Assertion 3 shipped with a `clause_exempt` escape derived from [`SHIPPED_ROUTE_LINES`],
+/// so the five byte-pinned members were the one part of the family this arm measured and
+/// then excused. The exemption is **deleted**, the five carry the clause, and the pin is
+/// re-blessed to the new bytes: an arm that exempts the members it is hardest to fix is
+/// not a fence over the family, it is a fence over the members nobody was going to break.
+/// Red on the way in, with the exemption gone and the lines unchanged: `Merge` · `Rebase` ·
+/// `Am` · `CherryPick` · `Revert`, and nothing else.**]
 #[test]
 fn every_abandon_commands_effect_on_unrelated_staged_work_is_declared() {
     /// The plant: one file the operation never names, staged before the command runs. It
@@ -902,7 +910,7 @@ fn every_abandon_commands_effect_on_unrelated_staged_work_is_declared() {
                  clause must be empty rather than a sentence about nothing; got {clause:?}",
                 argv.join(" "),
             );
-        } else if !clause_exempt(operation) {
+        } else {
             assert!(
                 clause.contains("staged"),
                 "[{label}] `{}` {observed:?} the caller's unrelated staged work and the \

@@ -3480,7 +3480,8 @@ $ jigc task finalize <id>          # …and every acting door, in ONE mid-merge 
 > blocking · repo.operation-in-progress — a merge is in progress — the repository is not
 >   in a committable state
 >   route: conclude it with `git merge --continue` once its conflicts are resolved, or
->   abandon it with `git merge --abort`, then re-run this command
+>   abandon it with `git merge --abort` (which also discards anything else you had
+>   staged, from the index and from your working tree), then re-run this command
 #   THEN: MERGE_HEAD still present · HEAD unmoved · the conflicted bytes untouched
 $ jigc setup            # on an unborn HEAD — the registry's one stated Exempt(reason)
 > install commit → e3ecb61      # the QUICKSTART on-ramp, intact
@@ -3604,7 +3605,8 @@ $ jigc setup --format json                             # the DoorGuard row: the 
 $ jigc rename adr:x --to "Y"            # …and every acting door, in ONE mid-revert repo
 > blocking · repo.operation-in-progress — a revert is in progress …
 >   route: conclude it with `git revert --continue` … or abandon it with
->   `git revert --abort`, then re-run this command
+>   `git revert --abort` (which also discards anything else you had staged …), then
+>   re-run this command
 #   every acting door prints the SAME route · the markers are untouched afterwards
 $ git revert --abort                    # the emitted route, split by a real shell, RUN
 > …                                     # git accepts it, and no operation remains
