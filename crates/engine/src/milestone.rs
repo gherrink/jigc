@@ -365,15 +365,11 @@ pub fn add_task(
     intent: &str,
     workflow_id: &str,
 ) -> Result<AddedTask, Finding> {
-    let dir = milestone_dir(jigc_root, milestone_id);
-
-    // Unknown milestone → reject before anything is minted.
-    if !dir.is_dir() {
-        return Err(unknown_milestone_finding(
-            milestone_id,
-            create_milestone_route(),
-        ));
-    }
+    // Unknown milestone → reject before anything is minted; a pin-less **residual**
+    // directory is the same absence, and rejects here too rather than below at the pin read,
+    // which answered `milestone.area-io` — *"a disk or permissions problem"* — over a state
+    // that is neither ([`require_milestone_area`]).
+    let dir = require_milestone_area(jigc_root, milestone_id, create_milestone_route())?;
 
     // The single shared base every sub-task inherits — read back from the
     // milestone area, never a fresh HEAD.
@@ -458,12 +454,11 @@ pub fn add_from_spec(
     workflow_id: &str,
     recorded: Option<&[String]>,
 ) -> Result<SeededFromSpec, SeedingAborted> {
-    let dir = milestone_dir(jigc_root, milestone_id);
-
-    // Unknown milestone → reject before any spec read or mint.
-    if !dir.is_dir() {
-        return Err(unknown_milestone_finding(milestone_id, create_milestone_route()).into());
-    }
+    // Unknown milestone → reject before any spec read or mint. A pin-less **residual**
+    // directory rejects here too: it used to pass `is_dir()` and take this door all the way
+    // past milestone resolution, answering `store.not-found` about the *spec*
+    // ([`require_milestone_area`]).
+    let dir = require_milestone_area(jigc_root, milestone_id, create_milestone_route())?;
 
     // Read the committed spec and enumerate its `criteria` items (parse-items path).
     let criteria = read_spec_criteria(repo_root, schemas, spec_addr)?;
@@ -797,6 +792,94 @@ pub fn unknown_milestone_finding(milestone_id: &str, route: Route) -> Finding {
         )),
         Some(route),
     )
+}
+
+/// The **residual** cell of the same absence, one family over from
+/// [`crate::finalize::residual_task_area_finding`] (M53 Increment 3; `settle-record.md` →
+/// D3, whose deliverable is *"a directory under `.jigc/tasks/` **or
+/// `.jigc/milestones/`** that holds no base pin"*).
+///
+/// **Same code, same key, a different sentence and route** — the discipline the task family
+/// already ships: a pin-less directory is not a milestone that is somehow broken, it is *no
+/// milestone*, so the identity a driver keys on does not move and only the **recovery**
+/// does. An unknown id is recovered by reading the roster or minting; a leftover directory
+/// by clearing a path, which is why the route is [`crate::state::residual_area_route`]'s and
+/// is **not** a parameter — there is one such act, byte-identical at every door.
+///
+/// **The record is what tells the two apart, and it is asked before this.** A milestone's
+/// identity lives in its committed record and `.jigc/milestones/<id>/` is a rebuildable
+/// cache of it (`design/team-ready-state.md` → The lifecycle), so a pin-less area the record
+/// still names is a *cache to rebuild*, not a leftover: the CLI's fresh-clone re-seed refills
+/// the pin above every operating door's call to [`require_milestone_area`], and
+/// `list-tasks` answers from the record itself. This finding is therefore only ever reached
+/// when no record owns the id — the state a bare `mkdir` produces.
+///
+/// `area` renders through **`jigc_root`'s parent** — jigc_home, the main checkout the
+/// `.jigc/` workbench binds to — never the worktree a fanned-out sub-agent calls from, which
+/// would print a host-absolute path (`design/surface-contract.md` law 1).
+pub fn residual_milestone_area_finding(
+    milestone_id: &str,
+    jigc_root: &Path,
+    area: &Path,
+) -> Finding {
+    let listed = crate::state::area_repo_path(jigc_root, area);
+    Finding::graded(
+        Severity::Blocking,
+        UNKNOWN_MILESTONE_CODE,
+        format!(
+            "milestone `{milestone_id}` does not exist: {}",
+            crate::state::residual_area_note(&listed, "milestone")
+        ),
+        Some(Location::addressed(
+            format!("milestone:{milestone_id}"),
+            1,
+            1,
+        )),
+        Some(crate::state::residual_area_route(&listed)),
+    )
+}
+
+/// **The milestone family's resolve seam** — the one predicate every by-id milestone door
+/// asks before it asks anything else, and the twin of `cli::task::require_task_area`
+/// (M53 Increment 3; `settle-record.md` → D3).
+///
+/// Eight doors asked whether the area *exists* — seven `!dir.is_dir()` guards (four in
+/// `cli::milestone`, three here) plus `list-tasks`' `dir.is_dir()` cache-branch selector —
+/// and each then went on to a *later* question about a milestone that does not exist.
+/// Driven at `3f22150b` over a bare
+/// `mkdir .jigc/milestones/stray-mile`, one `mkdir` converted the family's keyed, routed
+/// `(milestone.unknown, milestone:<id>)` into eight non-answers: five code-less flattened
+/// `{"error": "could not read the task list … (os error 2)"}`, two **false**
+/// `milestone.area-io` refusals (*"a disk or permissions problem"*, over a directory with
+/// neither), and one — `add-from-spec` — past milestone resolution entirely, answering about
+/// the spec.
+///
+/// So the two answers converge here, exactly as the task family's do: a directory that is
+/// **not there** is [`unknown_milestone_finding`] carrying the door's own route (the recovery
+/// is the door's: seven mint, `discard` checks the roster), and a directory that is there
+/// **carrying no base pin** is [`residual_milestone_area_finding`], whose recovery is the
+/// one act every door that names a residual hands out.
+///
+/// **The pin is read for existence, never parsed** ([`crate::state::carries_base_pin`]), so a
+/// *legitimate* area whose pin is torn or unreadable passes this and still fails at its own
+/// read — the producers §9 keeps. What this closes is the residual's path to them.
+pub fn require_milestone_area(
+    jigc_root: &Path,
+    milestone_id: &str,
+    absent_route: Route,
+) -> Result<PathBuf, Finding> {
+    let dir = milestone_dir(jigc_root, milestone_id);
+    if !dir.is_dir() {
+        return Err(unknown_milestone_finding(milestone_id, absent_route));
+    }
+    if !crate::state::carries_base_pin(&dir, crate::state::WorkArea::Milestone) {
+        return Err(residual_milestone_area_finding(
+            milestone_id,
+            jigc_root,
+            &dir,
+        ));
+    }
+    Ok(dir)
 }
 
 /// The **stale-base block**: a blocking finding for a milestone whose recorded
@@ -1902,15 +1985,11 @@ pub fn join(
     schemas: &std::collections::BTreeMap<String, crate::schema::Schema>,
     committed: &crate::index::EdgeIndex,
 ) -> Result<JoinOutcome, Finding> {
-    let dir = milestone_dir(jigc_root, milestone_id);
-
-    // Unknown milestone → reject before any sub-area is read.
-    if !dir.is_dir() {
-        return Err(unknown_milestone_finding(
-            milestone_id,
-            create_milestone_route(),
-        ));
-    }
+    // Unknown milestone → reject before any sub-area is read; a pin-less **residual**
+    // directory is the same absence, and no longer falls through to the task-list read,
+    // which answered `milestone.area-io` over a directory with neither a disk nor a
+    // permissions problem ([`require_milestone_area`]).
+    let dir = require_milestone_area(jigc_root, milestone_id, create_milestone_route())?;
 
     let list =
         read_task_list(&dir).map_err(|err| io_finding(milestone_id, "read the task list", &err))?;

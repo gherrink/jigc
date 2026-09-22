@@ -36,14 +36,15 @@
 //! read off shipped registries (`VERB_KINDS`, `engine::state::MINT_DOORS`) rather than a
 //! remembered list of acceptable strings.
 //!
-//! The **fifth** is the task family's alone (M53 Increment 3 / T3): a well-formed id whose
-//! `.jigc/tasks/<id>/` is a **residual** — a directory carrying no base pin. It is the same
-//! absence as the fourth and carries the same code, and it is here rather than only in
-//! `work_unit_unknown_envelope.rs`'s named cells because it is the cell most likely to be
-//! lost to the *other* guard: a leftover id is well-formed, so a grammar refusal over it
-//! would be the same law-1 misdirection one state along. A milestone door resolves from its
-//! committed record rather than from a working area, so it owes no fifth cell — stated on
-//! [`Expect::Residual`] with what those doors actually answer.
+//! The **fifth** is a well-formed id whose working area — `.jigc/tasks/<id>/` or
+//! `.jigc/milestones/<id>/` — is a **residual**, a directory carrying no base pin (M53
+//! Increment 3). It is the same absence as the fourth and carries the same code **of its
+//! own family**, and it is here rather than only in `work_unit_unknown_envelope.rs`'s named
+//! cells because it is the cell most likely to be lost to the *other* guard: a leftover id
+//! is well-formed, so a grammar refusal over it would be the same law-1 misdirection one
+//! state along. It ran task-family-only for one commit, on the premise that a milestone id
+//! resolves from its committed record and not from a working area — driven false by one
+//! `mkdir`, with the datum on [`Expect::Residual`].
 //!
 //! **A row with no cell is a hard panic, never a skip**: the cells are generated for
 //! every registered row from its own family, the driven set is compared back to the
@@ -69,6 +70,7 @@ use cli::cli::{
     work_unit_id_arg_ids,
 };
 use cli::render::ROUTING_FOOTER;
+use engine::milestone::UNKNOWN_MILESTONE_CODE;
 use engine::slug::is_slug;
 use engine::state::MINT_DOORS;
 
@@ -82,9 +84,14 @@ const UNKNOWN_ID: &str = "no-such-work-unit";
 /// present-but-pin-less (`cli::render::FINALIZE_FAMILY`'s `finalize.no-task`).
 const NO_TASK_CODE: &str = "finalize.no-task";
 
-/// The well-formed id whose `.jigc/tasks/` directory is a **residual** — the fifth cell's
-/// token, planted as a bare `mkdir` by the sweep.
+/// The well-formed id whose `.jigc/tasks/` directory is a **residual** — the task family's
+/// fifth-cell token, planted as a bare `mkdir` by the sweep.
 const RESIDUAL_TASK: &str = "leftover-area";
+
+/// The same, one family over: the id whose `.jigc/milestones/` directory is a residual that
+/// **no committed record names**, which is what makes it a leftover rather than a cache the
+/// fresh-clone re-seed would rebuild.
+const RESIDUAL_MILESTONE: &str = "leftover-mile";
 
 /// The fixture's one open task, so no cell depends on active-task resolution.
 const LIVE_TASK: &str = "axis";
@@ -196,13 +203,17 @@ enum Expect {
     /// and therefore the same code and key — with the leftover's own sentence, and a route
     /// that names a **path**, because jigc mints no verb that clears one.
     ///
-    /// **Task family only.** A milestone door resolves its unit from the *committed
-    /// record*, not from a working area, so a bare `.jigc/milestones/<id>` is not a cell of
-    /// this predicate at all; the milestone-area twin lives at `jigc rename`'s
-    /// `first_live_milestone` and is fenced by `flow37_rename.rs` (T2). Driven at
-    /// `766f32ef`, those doors answer a record-less milestone area with a code-less
-    /// `could not read the task list for milestone …` — a pre-existing gap this cell
-    /// neither closes nor pins.
+    /// **Both families**, each under its own code — `finalize.no-task` at a task door,
+    /// `milestone.unknown` at a milestone door. The first pass held the milestone rows out
+    /// of this cell on the written premise that *"a milestone door resolves its unit from
+    /// the committed record, not from a working area"*; the premise is false and one
+    /// `mkdir` falsifies it. Driven at `3f22150b`, a bare `mkdir .jigc/milestones/<id>`
+    /// turned the family's keyed `(milestone.unknown, milestone:<id>)` into five code-less
+    /// `could not read the task list …` errors, two **false** `milestone.area-io` refusals
+    /// and one answer about a spec — while the identical id with *no* directory answered
+    /// correctly at all eight. What is genuinely record-shaped is the opposite case: a
+    /// pin-less area a record **does** name is a cache the fresh-clone re-seed rebuilds, and
+    /// that control lives in `work_unit_unknown_envelope.rs`.
     Residual,
 }
 
@@ -281,11 +292,10 @@ fn mint_leaf_verbs() -> BTreeSet<Vec<String>> {
 /// is re-asserted, because at `caa137e~` the *text* of one of these cells was already
 /// correct over a repository that had just been deleted.
 ///
-/// **The fifth cell is the task family's alone** ([`Expect::Residual`], M53 Increment 3 /
-/// T3): a *well-formed id whose working area is a leftover directory*. The cell space is
-/// therefore built per row from its family rather than shared, and the per-row length
-/// assert reads the family's own expected width — so a row cannot silently run four cells
-/// where five are owed, or five where four are.
+/// **The fifth cell is every row's** ([`Expect::Residual`], M53 Increment 3): a *well-formed
+/// id whose working area is a leftover directory*. Its **token** is built per row from the
+/// row's family — each family has its own area root and its own planted leftover — and the
+/// per-row length is asserted, so a row cannot silently run four cells where five are owed.
 #[test]
 fn every_work_unit_id_door_answers_the_whole_token_axis() {
     let fixture = Fixture::new("axis");
@@ -297,16 +307,12 @@ fn every_work_unit_id_door_answers_the_whole_token_axis() {
         "--slug",
         LIVE_TASK,
     ]);
-    // The leftover the fifth cell asks about: a bare `mkdir` under `.jigc/tasks/`, the
-    // state one command reaches on the shipped binary.
-    fs::create_dir_all(
-        fixture
-            .path()
-            .join(".jigc")
-            .join("tasks")
-            .join(RESIDUAL_TASK),
-    )
-    .expect("plant the residual working area");
+    // The leftovers the fifth cell asks about: a bare `mkdir` under each family's area
+    // root, the state one command reaches on the shipped binary.
+    for (area, id) in [("tasks", RESIDUAL_TASK), ("milestones", RESIDUAL_MILESTONE)] {
+        fs::create_dir_all(fixture.path().join(".jigc").join(area).join(id))
+            .expect("plant the residual working area");
+    }
     let absolute = fixture.path().to_string_lossy().into_owned();
     let mints = mint_leaf_verbs();
 
@@ -321,15 +327,16 @@ fn every_work_unit_id_door_answers_the_whole_token_axis() {
     for row in WORK_UNIT_ID_DOORS {
         let family = family_of(row.arg);
         let mut cells = shared.clone();
-        if family == Family::Task {
-            cells.push((RESIDUAL_TASK.to_string(), Expect::Residual));
-        }
+        cells.push((
+            match family {
+                Family::Task => RESIDUAL_TASK.to_string(),
+                Family::Milestone => RESIDUAL_MILESTONE.to_string(),
+            },
+            Expect::Residual,
+        ));
         assert_eq!(
             cells.len(),
-            match family {
-                Family::Task => 5,
-                Family::Milestone => 4,
-            },
+            5,
             "`jigc {}`: every row is driven over its family's whole cell space",
             row.door.join(" "),
         );
@@ -404,18 +411,22 @@ fn every_work_unit_id_door_answers_the_whole_token_axis() {
                     );
                 }
                 Expect::Residual => {
+                    let (code, area) = match family {
+                        Family::Task => (NO_TASK_CODE, "tasks"),
+                        Family::Milestone => (UNKNOWN_MILESTONE_CODE, "milestones"),
+                    };
                     assert!(
                         !stderr.contains(MALFORMED_CODE),
                         "{shown}: a leftover directory's id is a well-formed id — the \
                          grammar refusal here is a law-1 misdirection\n{stderr}",
                     );
                     assert!(
-                        stderr.contains(&format!("· {NO_TASK_CODE} — ")),
+                        stderr.contains(&format!("· {code} — ")),
                         "{shown}: a residual is the same absence as an unknown id, so it \
                          carries the same code\n{stderr}",
                     );
                     assert!(
-                        stderr.contains(&format!("`.jigc/tasks/{token}`")),
+                        stderr.contains(&format!("`.jigc/{area}/{token}`")),
                         "{shown}: the leftover's sentence names the repo-relative \
                          directory the operator has to clear\n{stderr}",
                     );
@@ -431,12 +442,7 @@ fn every_work_unit_id_door_answers_the_whole_token_axis() {
                          would be a command that deletes someone else's bytes\n{stderr}",
                     );
                     assert!(
-                        fixture
-                            .path()
-                            .join(".jigc")
-                            .join("tasks")
-                            .join(token)
-                            .is_dir(),
+                        fixture.path().join(".jigc").join(area).join(token).is_dir(),
                         "{shown}: a refusal destroys nothing — the leftover is still on \
                          disk",
                     );

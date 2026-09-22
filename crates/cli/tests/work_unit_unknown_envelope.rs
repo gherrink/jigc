@@ -66,16 +66,35 @@
 //! So the absence the sweep above drives has a **second shape**, and T3 gives it the same
 //! identity: the shipped `finalize.no-task`, key unchanged at `(finalize.no-task,
 //! task:<id>)`, with the residual's own sentence and a `Human` route naming the
-//! repo-relative path to clear by hand. The subject is the same registry, filtered to its
-//! **task family** — the milestone rows resolve a milestone from its *committed record*,
-//! not from a working area, so the milestone-area twin of this predicate is `jigc rename`'s
-//! (T2) and not a cell of these doors.
+//! repo-relative path to clear by hand.
+//!
+//! **Both families, because the deliverable is both** — *a directory under `.jigc/tasks/`
+//! (or `.jigc/milestones/`) that holds no base pin is a task at **no** door*. The first
+//! pass built the seventeen task rows and excluded the eight milestone rows on the written
+//! premise that *"a milestone id resolves from its committed record, not from a working
+//! area, so a record-less `.jigc/milestones/<id>` is not a cell of it"*. That premise is
+//! false, and one `mkdir` falsifies it: driven at `3f22150b` over a bare
+//! `mkdir .jigc/milestones/stray-mile`, `list-tasks` / `provision` / `execute` / `finalize`
+//! / `discard` answered the code-less flattened `{"error": "could not read the task list …
+//! (os error 2)"}`, `join` and `add-task` answered a **false** `milestone.area-io` (*"a disk
+//! or permissions problem"*, over a directory with neither), and `add-from-spec` got past
+//! milestone resolution entirely to `store.not-found` on the spec — while the same eight
+//! doors over the *same* id with **no** directory all answered the keyed, routed
+//! `(milestone.unknown, milestone:<id>)`. One `mkdir` converted the family's shipped answer
+//! into eight non-answers, so the milestone rows carry the residual cell too, under
+//! **their** family's key — `(milestone.unknown, milestone:<id>)`, unchanged, for the same
+//! reason the task family's key is unchanged: the residual is the same absence.
 //!
 //! **The axis, one named test per cell** — `{empty dir · a foreign file · a foreign
 //! docs/<ty>:<slug>.md} × {a plain id · a sub-task of an open milestone · a sub-task of a
-//! joined milestone}` — each driven over every task-family row of the registry, in both the
-//! printed and the machine arm, with the fixture's own host root asserted **absent** from
-//! every emitted byte (`design/surface-contract.md` law 1).
+//! joined milestone}` for the task family, and `{empty dir · a foreign file · a foreign
+//! merged/docs/<ty>:<slug>.md}` for the milestone family (whose second factor is not
+//! milestone membership but the **committed record**, and a record-bearing area is not a
+//! residual at all — the re-seed refills its pin, which
+//! [`a_record_bearing_pin_less_area_is_reseeded_not_refused`] holds) — each driven over
+//! every row of its family, in both the printed and the machine arm, with the fixture's own
+//! host root asserted **absent** from every emitted byte
+//! (`design/surface-contract.md` law 1).
 //!
 //! **`jigc task discard` is not an exception**, and that is the point of
 //! [`the_discard_door_over_a_joined_milestones_residual_commits_nothing`]: a residual is a
@@ -104,7 +123,7 @@ const REJECT_ARM: &str = "Reject::Findings";
 /// Which **family** a [`WORK_UNIT_ID_DOORS`] row's id belongs to — read off the clap
 /// argument the id arrives through, never off the verb path, so a milestone verb that
 /// grew a `--task` scope would be classified by what it actually takes.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Family {
     /// The id names a task working area — `.jigc/tasks/<id>/`.
     Task,
@@ -124,18 +143,51 @@ fn family_of(arg: &str) -> Family {
 }
 
 impl Family {
+    /// The code this family's absence carries, read off the crate that mints it.
+    fn code(self) -> &'static str {
+        match self {
+            Family::Task => NO_TASK_CODE,
+            Family::Milestone => engine::milestone::UNKNOWN_MILESTONE_CODE,
+        }
+    }
+
     /// The stable `(code, target)` pair an absent work unit of this family projects — the
     /// **work-unit target form** `design/command-output-contract.md` declares, with the
     /// code taken from the crate that mints it rather than re-spelled here.
     fn key(self, id: &str) -> serde_json::Value {
-        let (code, target) = match self {
-            Family::Task => (NO_TASK_CODE, format!("task:{id}")),
-            Family::Milestone => (
-                engine::milestone::UNKNOWN_MILESTONE_CODE,
-                format!("milestone:{id}"),
-            ),
+        let target = match self {
+            Family::Task => format!("task:{id}"),
+            Family::Milestone => format!("milestone:{id}"),
         };
-        serde_json::json!({ "code": code, "target": target })
+        serde_json::json!({ "code": self.code(), "target": target })
+    }
+
+    /// The `.jigc/` sub-tree this family's working areas live in — the path segment the
+    /// residual's sentence and route name, repo-relative.
+    fn area_dir(self) -> &'static str {
+        match self {
+            Family::Task => "tasks",
+            Family::Milestone => "milestones",
+        }
+    }
+
+    /// The area of `id`, repo-relative — what a residual refusal must name.
+    fn listed(self, id: &str) -> String {
+        format!(".jigc/{}/{id}", self.area_dir())
+    }
+
+    /// The area of `id` inside `repo`.
+    fn area(self, repo: &Path, id: &str) -> PathBuf {
+        repo.join(".jigc").join(self.area_dir()).join(id)
+    }
+
+    /// The **rows of this family** — read off [`family_of`], never off the verb path, so a
+    /// milestone verb that grew a `--task` scope would be classified by what it takes.
+    fn rows(self) -> Vec<&'static cli::cli::WorkUnitIdDoor> {
+        WORK_UNIT_ID_DOORS
+            .iter()
+            .filter(|row| family_of(row.arg) == self)
+            .collect()
     }
 }
 
@@ -435,10 +487,11 @@ enum Shape {
     /// what took `jigc task discard` to `task-discard.foreign-bytes` — a refusal composed
     /// *about a task*, over a directory that is not one.
     ForeignFile,
-    /// One file under `docs/` wearing a **staged-instance name** (`<type>:<slug>.md`): the
-    /// only shape here that jigc's own writer could have produced, so
+    /// One file under the area's own **tree member** wearing a **staged-instance name**
+    /// (`docs/<type>:<slug>.md` for a task, `merged/docs/<type>:<slug>.md` for a milestone):
+    /// the only shape here that jigc's own writer could have produced, so
     /// `engine::state::foreign_area_paths` does not claim it and the pin is the only thing
-    /// that tells it from a live task's staged area.
+    /// that tells it from a live area's staged set.
     ForeignStagedName,
 }
 
@@ -456,16 +509,16 @@ impl Shape {
         match self {
             Shape::EmptyDir => "empty dir",
             Shape::ForeignFile => "a foreign file",
-            Shape::ForeignStagedName => "a foreign docs/<ty>:<slug>.md",
+            Shape::ForeignStagedName => "a foreign <tree>/<ty>:<slug>.md",
         }
     }
 
-    /// Plant this shape at `.jigc/tasks/<id>/`, replacing whatever is there.
+    /// Plant this shape at `family`'s area for `id`, replacing whatever is there.
     ///
-    /// The area is **removed first**, so a placement that mints a real sub-task area and
-    /// then residualizes it cannot leave the pin behind and pass by accident.
-    fn plant(self, repo: &Path, id: &str) {
-        let area = repo.join(".jigc").join("tasks").join(id);
+    /// The area is **removed first**, so a placement that mints a real area and then
+    /// residualizes it cannot leave the pin behind and pass by accident.
+    fn plant(self, repo: &Path, family: Family, id: &str) {
+        let area = family.area(repo, id);
         let _ = fs::remove_dir_all(&area);
         fs::create_dir_all(&area).expect("plant the residual area");
         match self {
@@ -475,7 +528,13 @@ impl Shape {
                     .expect("plant the foreign file");
             }
             Shape::ForeignStagedName => {
-                let docs = area.join("docs");
+                // The area's own staged tree — `docs/` for a task, the join's `merged/docs/`
+                // for a milestone — so the planted name is one jigc's writer produces in
+                // *this* family's area, not a task-shaped name in a milestone's.
+                let docs = match family {
+                    Family::Task => area.join("docs"),
+                    Family::Milestone => area.join("merged").join("docs"),
+                };
                 fs::create_dir_all(&docs).expect("plant the residual docs/ tree");
                 fs::write(docs.join("adr:leftover.md"), "# Leftover\n")
                     .expect("plant the staged-looking body");
@@ -563,7 +622,7 @@ impl Placement {
                 settled
             }
         };
-        shape.plant(fixture.repo.path(), &id);
+        shape.plant(fixture.repo.path(), Family::Task, &id);
         (fixture, id)
     }
 }
@@ -606,25 +665,14 @@ fn stage_a_promotable_adr(fixture: &Fixture, sub_id: &str) {
     .expect("stage the provenance bit");
 }
 
-/// The **task-family** rows of the registry — the doors whose id names a task working
-/// area, and therefore the doors the shared resolve predicate moves.
-///
-/// Read off [`family_of`], never off the verb path, so a milestone verb that grew a
-/// `--task` scope would join this sweep by being what it is.
-fn task_family_rows() -> Vec<&'static cli::cli::WorkUnitIdDoor> {
-    WORK_UNIT_ID_DOORS
-        .iter()
-        .filter(|row| matches!(family_of(row.arg), Family::Task))
-        .collect()
-}
-
-/// Every task-family door, asked about `id` whose area is a residual, must answer the one
-/// identity: the findings envelope carrying exactly one finding keyed
-/// `(finalize.no-task, task:<id>)`, exactly one route, the residual's own sentence naming
-/// the repo-relative area — and **no host-absolute path** on any stream, in either arm.
-fn assert_every_task_door_answers_the_residual(fixture: &Fixture, id: &str, cell: &str) {
+/// Every door **of `family`**, asked about `id` whose area is a residual, must answer the
+/// one identity: the findings envelope carrying exactly one finding keyed at the family's
+/// own pair (`(finalize.no-task, task:<id>)` / `(milestone.unknown, milestone:<id>)`),
+/// exactly one route, the residual's own sentence naming the repo-relative area — and **no
+/// host-absolute path** on any stream, in either arm.
+fn assert_every_door_answers_the_residual(fixture: &Fixture, family: Family, id: &str, cell: &str) {
     let declared = reject_findings_keys();
-    let listed = format!(".jigc/tasks/{id}");
+    let listed = family.listed(id);
     // Both spellings of the fixture's own root: the cwd the binary was handed, and what it
     // canonicalizes to (on macOS `/var/folders/…` → `/private/var/folders/…`). Law 1's rule
     // is that neither reaches a surface.
@@ -641,10 +689,10 @@ fn assert_every_task_door_answers_the_residual(fixture: &Fixture, id: &str, cell
     };
 
     let mut driven: BTreeSet<Vec<&str>> = BTreeSet::new();
-    let rows = task_family_rows();
+    let rows = family.rows();
     assert!(
         !rows.is_empty(),
-        "the task family of `WORK_UNIT_ID_DOORS` is non-empty — a sweep over none of it \
+        "the {family:?} family of `WORK_UNIT_ID_DOORS` is non-empty — a sweep over none of it \
          would pass vacuously",
     );
 
@@ -670,7 +718,7 @@ fn assert_every_task_door_answers_the_residual(fixture: &Fixture, id: &str, cell
              validates clean; got:\n{printed}",
         );
         assert!(
-            printed.contains("· finalize.no-task — "),
+            printed.contains(&format!("· {} — ", family.code())),
             "{shown}: the printed refusal carries the shipped absent-work-unit code; \
              got:\n{printed}",
         );
@@ -740,7 +788,7 @@ fn assert_every_task_door_answers_the_residual(fixture: &Fixture, id: &str, cell
         let finding = &findings[0];
         assert_eq!(
             finding["key"],
-            Family::Task.key(id),
+            family.key(id),
             "{shown}: the key is unchanged — the residual is the same absence, so it \
              carries the same stable pair; got:\n{stderr}",
         );
@@ -773,16 +821,16 @@ fn assert_every_task_door_answers_the_residual(fixture: &Fixture, id: &str, cell
     let registered: BTreeSet<Vec<&str>> = rows.iter().map(|row| row.door.to_vec()).collect();
     assert_eq!(
         driven, registered,
-        "[{cell}] every task-family row is driven exactly once — a row with no cell is a \
-         failure, never a skip",
+        "[{cell}] every {family:?}-family row is driven exactly once — a row with no cell is \
+         a failure, never a skip",
     );
 }
 
-/// Drive one `(shape, placement)` cell of the residual axis.
+/// Drive one `(shape, placement)` cell of the **task** residual axis.
 fn drive_cell(shape: Shape, placement: Placement, tag: &str) {
     let (fixture, id) = placement.build(shape, tag);
     let cell = format!("{} · {}", placement.label(), shape.label());
-    assert_every_task_door_answers_the_residual(&fixture, &id, &cell);
+    assert_every_door_answers_the_residual(&fixture, Family::Task, &id, &cell);
     assert!(
         task_area(&fixture, &id).is_dir(),
         "[{cell}] a refusal destroys nothing — the leftover is still on disk",
@@ -923,5 +971,127 @@ fn the_discard_door_over_a_joined_milestones_residual_commits_nothing() {
     assert!(
         task_area(&fixture, &id).is_dir(),
         "and the leftover is still on disk — the operator clears it, jigc does not",
+    );
+}
+
+// ───────────── the residual cell, milestone family (M53 Increment 3, the fix) ────────────
+
+/// The plain milestone id the cells below plant at — well-formed, named by no record.
+const PLAIN_MILESTONE_RESIDUAL_ID: &str = "stray-mile";
+
+/// Drive one shape of the **milestone** residual axis: a pin-less directory at
+/// `.jigc/milestones/<id>` that **no committed record names**.
+///
+/// *No record* is what makes it a residual rather than a workbench jigc can rebuild: the
+/// fresh-clone re-seed refills a pin from the record whenever one exists, which is the
+/// control [`a_record_bearing_pin_less_area_is_reseeded_not_refused`] holds. With no record
+/// there is nothing to rebuild from, and the directory is a leftover.
+fn drive_milestone_cell(shape: Shape, tag: &str) {
+    let fixture = Fixture::new(tag);
+    shape.plant(
+        fixture.repo.path(),
+        Family::Milestone,
+        PLAIN_MILESTONE_RESIDUAL_ID,
+    );
+    let cell = format!("a plain milestone id · {}", shape.label());
+    assert_every_door_answers_the_residual(
+        &fixture,
+        Family::Milestone,
+        PLAIN_MILESTONE_RESIDUAL_ID,
+        &cell,
+    );
+    assert!(
+        Family::Milestone
+            .area(fixture.repo.path(), PLAIN_MILESTONE_RESIDUAL_ID)
+            .is_dir(),
+        "[{cell}] a refusal destroys nothing — the leftover is still on disk",
+    );
+}
+
+/// **The three named milestone cells, and the registry they generate** — the task family's
+/// discipline one family over, with [`MILESTONE_AXIS`] built from the test list itself.
+macro_rules! milestone_residual_cells {
+    ($($name:ident => ($shape:expr, $tag:literal);)+) => {
+        $(
+            #[test]
+            fn $name() {
+                drive_milestone_cell($shape, $tag);
+            }
+        )+
+
+        /// The shapes the named tests above drive — generated from that list.
+        const MILESTONE_AXIS: &[Shape] = &[$($shape),+];
+    };
+}
+
+milestone_residual_cells! {
+    an_empty_residual_at_a_plain_milestone_id_is_a_milestone_at_no_by_id_door
+        => (Shape::EmptyDir, "mres-empty");
+    a_foreign_file_residual_at_a_plain_milestone_id_is_a_milestone_at_no_by_id_door
+        => (Shape::ForeignFile, "mres-foreign");
+    a_staged_named_residual_at_a_plain_milestone_id_is_a_milestone_at_no_by_id_door
+        => (Shape::ForeignStagedName, "mres-staged");
+}
+
+/// **The milestone axis is the whole shape space** — every [`Shape`] has a named milestone
+/// cell, so a fourth residual shape reddens here until it has one in *both* families.
+#[test]
+fn the_named_milestone_cells_are_the_whole_shape_space() {
+    let named: BTreeSet<&str> = MILESTONE_AXIS.iter().map(|shape| shape.label()).collect();
+    let space: BTreeSet<&str> = Shape::ALL.iter().map(|shape| shape.label()).collect();
+    assert_eq!(
+        named, space,
+        "every shape has a named milestone cell, and every named milestone cell names a \
+         shape",
+    );
+    assert_eq!(
+        MILESTONE_AXIS.len(),
+        Shape::ALL.len(),
+        "the set equality would also pass with a shape driven twice and another missing — \
+         the count is what rules that out",
+    );
+}
+
+/// **The control the milestone family needs and the task family does not**: a pin-less area
+/// whose **committed record** still names the milestone is not a residual, and must not be
+/// refused as one.
+///
+/// A milestone's identity lives in its committed record, and `.jigc/milestones/<id>/` is a
+/// rebuildable cache of it (`design/team-ready-state.md` → The lifecycle) — so the very
+/// state this fix refuses over is *also* the state a fresh clone is in the instant before
+/// the re-seed runs. What separates them is the record: with one, the re-seed refills the
+/// pin and the door proceeds; with none, there is nothing to rebuild from. Without this
+/// arm, a predicate that refused on the pin alone would brick fresh-clone resume — the
+/// behaviour M39 T5 built — and every arm above would still be green.
+#[test]
+fn a_record_bearing_pin_less_area_is_reseeded_not_refused() {
+    let fixture = Fixture::new("mres-record");
+    fixture.ok(&["milestone", "create", MILESTONE_TITLE]);
+    let pin = Family::Milestone
+        .area(fixture.repo.path(), MILESTONE_ID)
+        .join("base.json");
+    fs::remove_file(&pin).expect("residualize the area the record still names");
+
+    // The read verb answers off the record without materializing anything …
+    let listed = fixture.ok(&["milestone", "list-tasks", MILESTONE_ID]);
+    assert!(
+        listed.contains(&format!("milestone:{MILESTONE_ID}")),
+        "a record-bearing area answers from its record; got:\n{listed}",
+    );
+    assert!(
+        !pin.exists(),
+        "`list-tasks` is a `VerbKind::Read` leaf — it answers from the record and \
+         materializes no cache",
+    );
+
+    // … and the next operating door re-seeds the cache it is allowed to rebuild.
+    let ack = fixture.ok(&["milestone", "add-task", MILESTONE_ID, "Shard the index"]);
+    assert!(
+        ack.contains("added task:"),
+        "the re-seed refills the pin and the mint proceeds; got:\n{ack}",
+    );
+    assert!(
+        pin.is_file(),
+        "and the pin is back on disk — the area was a cache to rebuild, never a leftover",
     );
 }

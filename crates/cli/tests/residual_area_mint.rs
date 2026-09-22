@@ -12,9 +12,12 @@
 //!   then sent the agent two hops to discover it.
 //! - `jigc milestone create "Stray mile"` over `.jigc/milestones/stray-mile/` answered
 //!   *"milestone `stray-mile` already exists"* and routed at
-//!   `jigc milestone add-task stray-mile "<intent>"`, which answers **`milestone.area-io`**
+//!   `jigc milestone add-task stray-mile "<intent>"`, which answered **`milestone.area-io`**
 //!   — *"a disk or permissions problem"* — for a state that is neither. A lie whose route
-//!   dead-ends in a second lie.
+//!   dead-ended in a second lie. (The route's end is closed too, one commit later: the eight
+//!   milestone by-id doors resolve through `engine::milestone::require_milestone_area`, so
+//!   `add-task` now answers the residual with `milestone.unknown` and the leftover's own
+//!   route — `work_unit_unknown_envelope.rs`' milestone cells.)
 //!
 //! **What does not move, and why it is asserted rather than assumed.** The code and the
 //! stable `(code, target)` key stay put at both doors: the state really is *the id is taken

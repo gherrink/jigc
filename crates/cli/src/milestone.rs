@@ -587,30 +587,43 @@ fn workflow_flag(workflow: &str) -> String {
     }
 }
 
-/// The one does-not-exist rejection the milestone verbs share (`list-tasks` /
-/// `provision` / `execute` / `finalize` — each rejecting an absent
-/// `.jigc/milestones/<id>/` workbench; M43 T7, `design/surface-contract.md`
-/// → The route fence, closing paragraph). The quoted-title span rides the checked
-/// [`engine::finding::Route::mechanical`] constructor inside
-/// [`engine::milestone::create_milestone_route`], so the CLI-seam parse fence asserts it
-/// parses against the real CLI. `discard` keeps its own route (check the id, don't mint —
-/// a discard should never route to *creating* the milestone).
+/// The **resolve seam** the CLI-owned milestone verbs share (`list-tasks` / `provision` /
+/// `execute` / `finalize` — each rejecting an absent `.jigc/milestones/<id>/` workbench;
+/// M43 T7, `design/surface-contract.md` → The route fence, closing paragraph). The
+/// quoted-title span rides the checked [`engine::finding::Route::mechanical`] constructor
+/// inside [`engine::milestone::create_milestone_route`], so the CLI-seam parse fence asserts
+/// it parses against the real CLI. `discard` calls the engine seam directly with its own
+/// route (check the id, don't mint — a discard should never route to *creating* the
+/// milestone).
 ///
-/// **It is the engine's own [`engine::milestone::unknown_milestone_finding`], not a
-/// composed string** (M51 Increment 6 / T2). `design/command-output-contract.md` declares
-/// a **work-unit** target form — `task:<id>` / `milestone:<id>` — and this condition's
-/// finding has carried `milestone:<id>` at the three engine-raising doors since its first
-/// commit, which
-/// is a promise that `(code, target)` resolves. At these four doors it resolved at none:
-/// the refusal was an `anyhow!` string, so `--format json` answered the flattened
-/// `{"error": …}` with no code at all, and one condition shipped **two** wire shapes. The
-/// identity is now minted once, by the crate that owns the condition, and travels on the
-/// envelope-projecting carrier ([`crate::render::envelope_finding_error`]).
-fn no_such_milestone(milestone_id: &str) -> anyhow::Error {
-    crate::render::envelope_finding_error(&engine::milestone::unknown_milestone_finding(
+/// **The identity is the engine's own, not a composed string** (M51 Increment 6 / T2).
+/// `design/command-output-contract.md` declares a **work-unit** target form — `task:<id>` /
+/// `milestone:<id>` — and this condition's finding has carried `milestone:<id>` at the
+/// engine-raising doors since its first commit, which is a promise that `(code, target)`
+/// resolves. At these four doors it resolved at none: the refusal was an `anyhow!` string,
+/// so `--format json` answered the flattened `{"error": …}` with no code at all, and one
+/// condition shipped **two** wire shapes. The identity is minted once, by the crate that
+/// owns the condition, and travels on the envelope-projecting carrier.
+///
+/// **And the question is the base pin, not `is_dir()`** (M53 Increment 3). Each of this
+/// crate's milestone doors carried its own existence check — four `!dir.is_dir()` guards
+/// plus `list-tasks`' `dir.is_dir()` cache-branch selector — which asked whether the area
+/// *exists*, so a bare `mkdir .jigc/milestones/<id>` passed and the door then faulted on a
+/// later read of a milestone that does not exist.
+/// [`engine::milestone::require_milestone_area`] is the one home of both answers; this
+/// wrapper only supplies the family's shared mint route, which is why the two doors with
+/// answers of their own — `discard`'s route and `list-tasks`' record fall-through — call
+/// that seam directly instead of through here. It sits
+/// **after** [`reseed_cache`] at every call site, so the fresh-clone rebuild has already
+/// refilled the pin of any area a committed record still names: what reaches the residual
+/// arm is a directory no record owns.
+fn require_milestone_area(jigc_root: &Path, milestone_id: &str) -> Result<PathBuf> {
+    engine::milestone::require_milestone_area(
+        jigc_root,
         milestone_id,
         engine::milestone::create_milestone_route(),
-    ))
+    )
+    .map_err(finding_to_err)
 }
 
 /// `jigc milestone create "<title>"` — read HEAD, then mint the milestone area
@@ -2649,22 +2662,34 @@ fn run_list_tasks(cwd: &Path, milestone_id: &str) -> Result<String> {
             engine::milestone::terminal_milestone_finding(milestone_id, &status),
         ));
     }
-    let dir = milestone_dir(&jigc_root, milestone_id);
     // Enumeration is id-sorted on both paths — the order the join reads, not the recorded
     // insertion order.
-    let ids = if dir.is_dir() {
-        read_task_list(&dir)
+    //
+    // **The cache branch is taken through the resolve seam, not on `is_dir()`** (M53
+    // Increment 3). A *task list* is what this door reads, and a directory carrying neither
+    // the pin nor the list is not a cache: asking `is_dir()` took a bare `mkdir` down this
+    // branch and answered the code-less `could not read the task list … (os error 2)`. The
+    // seam separates the three states instead — a cache answers from the cache; a
+    // record-without-a-cache answers from the **record**, which is the fresh-clone read this
+    // door serves without re-seeding, being a `VerbKind::Read` leaf; and a directory no
+    // record names is the seam's residual, one key and one route with the absence it is.
+    let ids = match engine::milestone::require_milestone_area(
+        &jigc_root,
+        milestone_id,
+        engine::milestone::create_milestone_route(),
+    ) {
+        Ok(dir) => read_task_list(&dir)
             .with_context(|| {
                 format!("could not read the task list for milestone `{milestone_id}`")
             })?
-            .enumerate()
-    } else if let Some((schema, source)) = &recorded {
-        engine::milestone::read_back_record(schema, source)
-            .map_err(finding_to_err)?
-            .1
-            .enumerate()
-    } else {
-        return Err(no_such_milestone(milestone_id));
+            .enumerate(),
+        Err(absence) => match &recorded {
+            Some((schema, source)) => engine::milestone::read_back_record(schema, source)
+                .map_err(finding_to_err)?
+                .1
+                .enumerate(),
+            None => return Err(finding_to_err(absence)),
+        },
     };
     // The **live** set on both branches: a sub-task the record has settled is not one of the
     // milestone's live sub-tasks, and this listing is the route every milestone dead end
@@ -2698,15 +2723,12 @@ fn run_provision(cwd: &Path, milestone_id: &str, force: bool) -> Result<String> 
     let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
     let jigc_root = jigc_home.join(".jigc");
     // Fresh-clone resume (M39 T5): re-derive the demoted cache from the committed record before
-    // the `dir.is_dir()` guard + base-pin/task-list reads, so `provision` on a fresh clone
+    // the resolve seam + base-pin/task-list reads, so `provision` on a fresh clone
     // re-derives the milestone shape (`design/team-ready-state.md` → Engine capability 2).
     let schemas = shipped_schemas(&jigc_home)?;
     reseed_cache(&jigc_home, &jigc_root, &schemas, milestone_id)?;
 
-    let dir = milestone_dir(&jigc_root, milestone_id);
-    if !dir.is_dir() {
-        return Err(no_such_milestone(milestone_id));
-    }
+    let dir = require_milestone_area(&jigc_root, milestone_id)?;
     // The single shared base pin every sub-task inherited — the commit the worktrees
     // detach at, never a fresh HEAD.
     let base = read_base_pin(&dir).with_context(|| {
@@ -3910,32 +3932,31 @@ fn run_discard(
     }
 
     // Fresh-clone resume (M39 T5): re-derive the demoted cache from the committed record before
-    // the `dir.is_dir()` guard + task-list read, so a teammate on a fresh clone can abandon a
+    // the resolve seam + task-list read, so a teammate on a fresh clone can abandon a
     // milestone whose workbench they never had (`design/team-ready-state.md` → Engine capability 2).
     // An **already-settled** record refuses here (the terminal guard): a milestone that is over is
     // not abandoned twice, and re-running the settle would land an empty record-only commit.
     reseed_cache(&jigc_home, &jigc_root, &schemas, milestone_id)?;
 
-    let dir = milestone_dir(&jigc_root, milestone_id);
-    if !dir.is_dir() {
-        // `<milestone-id>` is the declared dummy-table placeholder (the old `<id>` was
-        // undeclared and ambiguous against the task-id sites).
-        let list_tasks = engine::finding::Route::mechanical(
-            ["jigc", "milestone", "list-tasks", "<milestone-id>"],
-            "",
-        );
-        // The family's shared identity ([`no_such_milestone`]) with **this** door's route:
-        // a teardown that answered a wrong id with *"create it first"* would point the
-        // operator at the one act they did not ask for (M51 Increment 6 / T2).
-        return Err(crate::render::envelope_finding_error(
-            &engine::milestone::unknown_milestone_finding(
-                milestone_id,
-                engine::finding::Route::human(format!(
-                    "check the milestone id ({list_tasks} names a live milestone's sub-tasks); nothing was discarded"
-                )),
-            ),
-        ));
-    }
+    // `<milestone-id>` is the declared dummy-table placeholder (the old `<id>` was
+    // undeclared and ambiguous against the task-id sites).
+    let list_tasks = engine::finding::Route::mechanical(
+        ["jigc", "milestone", "list-tasks", "<milestone-id>"],
+        "",
+    );
+    // The family's shared identity ([`no_such_milestone`]) with **this** door's route:
+    // a teardown that answered a wrong id with *"create it first"* would point the
+    // operator at the one act they did not ask for (M51 Increment 6 / T2). The **residual**
+    // arm of the same seam keeps the family's one residual route, which is already a
+    // teardown's — it says nothing was changed and names the path to clear (M53 Increment 3).
+    let dir = engine::milestone::require_milestone_area(
+        &jigc_root,
+        milestone_id,
+        engine::finding::Route::human(format!(
+            "check the milestone id ({list_tasks} names a live milestone's sub-tasks); nothing was discarded"
+        )),
+    )
+    .map_err(finding_to_err)?;
     let list = read_task_list(&dir)
         .with_context(|| format!("could not read the task list for milestone `{milestone_id}`"))?;
 
@@ -4554,14 +4575,11 @@ fn run_execute(
     let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
     let jigc_root = jigc_home.join(".jigc");
     // Fresh-clone resume (M39 T5): re-derive the demoted cache from the committed record before
-    // the `dir.is_dir()` guard + task-list read, so `execute` on a fresh clone re-derives the
+    // the resolve seam + task-list read, so `execute` on a fresh clone re-derives the
     // milestone shape and composes the fan-out (`design/team-ready-state.md` → Engine capability 2).
     let schemas = shipped_schemas(&jigc_home)?;
     reseed_cache(&jigc_home, &jigc_root, &schemas, milestone_id)?;
-    let dir = milestone_dir(&jigc_root, milestone_id);
-    if !dir.is_dir() {
-        return Err(no_such_milestone(milestone_id));
-    }
+    let dir = require_milestone_area(&jigc_root, milestone_id)?;
     let list = read_task_list(&dir)
         .with_context(|| format!("could not read the task list for milestone `{milestone_id}`"))?;
     // Enumeration is id-sorted — the order the fan-out emits its `Spawn:` directives — and it
@@ -4811,17 +4829,14 @@ fn run_milestone_finalize(
     }
 
     // Fresh-clone resume (M39 T5): re-derive the demoted cache from the committed record before
-    // the `dir.is_dir()` guard + base-pin/task-list reads + the engine `materialize`'s internal
+    // the resolve seam + base-pin/task-list reads + the engine `materialize`'s internal
     // cache reads, so `finalize` on a fresh clone re-derives the milestone shape and joins the
     // recorded sub-tasks (`design/team-ready-state.md` → Engine capability 2 (read-back)). A
     // **settled** record refuses here (the terminal guard): a landed milestone is not re-joined,
     // and an abandoned one is not finalized.
     reseed_cache(&jigc_home, &jigc_root, &schemas, milestone_id)?;
 
-    let dir = milestone_dir(&jigc_root, milestone_id);
-    if !dir.is_dir() {
-        return Err(no_such_milestone(milestone_id));
-    }
+    let dir = require_milestone_area(&jigc_root, milestone_id)?;
 
     // The committed edge index is keyed to the milestone's shared base (the commit every
     // sub-task inherited) — the cross-area ref walk inside the join resolves against the
