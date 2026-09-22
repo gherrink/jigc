@@ -301,21 +301,39 @@ impl InProgress {
         }
     }
 
-    /// The git command that **concludes** it, where git has one — named with the
-    /// qualifier that makes it true, since a conflicted operation concludes only after
-    /// the user has resolved it.
+    /// The git command that **concludes** it, where git has one, **with the clause that
+    /// makes naming it true** — `(command, qualifier)`.
+    ///
+    /// **The qualifier is the member's own, not the mold's** (M53 Increment 4 / T3;
+    /// `settle-record.md` → §10). *"once its conflicts are resolved"* was one hard-coded
+    /// phrase in [`PostureBreach::finding`]'s `format!`, and it is true only of a member
+    /// git detects in a state the user is **stopped** in — which every member carrying a
+    /// concluding command today is. A member git can also leave behind with nothing
+    /// conflicted cannot say it, so the clause travels with the command instead of with
+    /// the sentence that prints it, and a member that has no command carries no clause by
+    /// construction.
+    ///
+    /// Both qualifiers in this family are **literal suffixes, their own separator
+    /// included** (the sibling is [`abandon_qualifier`](InProgress::abandon_qualifier)):
+    /// the renderer appends them after the closing backtick and adds nothing, so a member
+    /// whose clause is a sentence of its own can punctuate it rather than being forced
+    /// into one joining word.
     ///
     /// `None` for the four members with no such command: a squash merge is concluded by
     /// the user's own `git commit`, a dangling `sequencer/` has no current commit to
     /// continue, a bisect ends rather than concludes, and an unmerged index is resolved
     /// rather than continued.
-    fn conclude_command(self) -> Option<&'static str> {
+    pub fn conclude(self) -> Option<(&'static str, &'static str)> {
+        // The five that stop the user where they stand all share the one qualifier — it
+        // is shared here, where a member can decline it, rather than in the renderer,
+        // where it could not.
+        let stopped = " once its conflicts are resolved";
         match self {
-            InProgress::Merge => Some("git merge --continue"),
-            InProgress::Rebase => Some("git rebase --continue"),
-            InProgress::Am => Some("git am --continue"),
-            InProgress::CherryPick => Some("git cherry-pick --continue"),
-            InProgress::Revert => Some("git revert --continue"),
+            InProgress::Merge => Some(("git merge --continue", stopped)),
+            InProgress::Rebase => Some(("git rebase --continue", stopped)),
+            InProgress::Am => Some(("git am --continue", stopped)),
+            InProgress::CherryPick => Some(("git cherry-pick --continue", stopped)),
+            InProgress::Revert => Some(("git revert --continue", stopped)),
             InProgress::SquashMerge
             | InProgress::Sequencer
             | InProgress::Bisect
@@ -346,6 +364,32 @@ impl InProgress {
             InProgress::Sequencer => "git cherry-pick --quit",
             InProgress::Bisect => "git bisect reset",
             InProgress::UnmergedIndex => "git reset --merge",
+        }
+    }
+
+    /// What abandoning it **leaves behind**, where the command's name does not say —
+    /// [`abandon`](InProgress::abandon)'s qualifier, on the same rule as
+    /// [`conclude`](InProgress::conclude)'s: a literal suffix, its own separator
+    /// included, appended after the closing backtick.
+    ///
+    /// Empty for every shipped member, and that is the honest answer rather than a
+    /// placeholder: each of their commands is named for what it does to the operation and
+    /// the operation is all it touches, so a clause would be restating the verb. The
+    /// qualifier exists because that is not universal — a command that abandons an
+    /// operation while **keeping** the work it applied makes a claim no bare command name
+    /// carries, and a user who cannot tell *abandoned* from *discarded* re-does the work
+    /// or loses it (`settle-record.md` → §10).
+    pub fn abandon_qualifier(self) -> &'static str {
+        match self {
+            InProgress::Merge
+            | InProgress::SquashMerge
+            | InProgress::Rebase
+            | InProgress::Am
+            | InProgress::CherryPick
+            | InProgress::Revert
+            | InProgress::Sequencer
+            | InProgress::Bisect
+            | InProgress::UnmergedIndex => "",
         }
     }
 }
@@ -412,16 +456,19 @@ impl PostureBreach {
                 // `posture` never builds this member without an operation; the fallback
                 // keeps the renderer total rather than panicking on a shape it owns.
                 let operation = operation.unwrap_or(InProgress::Merge);
-                let route = match operation.conclude_command() {
-                    Some(conclude) => format!(
-                        "conclude it with `{conclude}` once its conflicts are resolved, or \
-                         abandon it with `{}`, then re-run this command",
-                        operation.abandon(),
+                // Both halves name a command and then say what the member itself says
+                // about naming it — the mold carries the sentence, never the clause.
+                let abandon = format!(
+                    "abandon it with `{}`{}",
+                    operation.abandon(),
+                    operation.abandon_qualifier(),
+                );
+                let route = match operation.conclude() {
+                    Some((conclude, qualifier)) => format!(
+                        "conclude it with `{conclude}`{qualifier}, or {abandon}, then \
+                         re-run this command"
                     ),
-                    None => format!(
-                        "conclude it, or abandon it with `{}`, then re-run this command",
-                        operation.abandon(),
-                    ),
+                    None => format!("conclude it, or {abandon}, then re-run this command"),
                 };
                 (
                     format!(

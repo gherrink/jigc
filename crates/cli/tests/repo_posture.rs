@@ -574,6 +574,175 @@ fn abandoning_argv(text: &str, label: &str) -> Vec<String> {
     command.split_whitespace().map(str::to_owned).collect()
 }
 
+// ───────── the route's two qualifiers are the member's own ─────────
+
+/// The **rendered** route line of every member that supplies a concluding command, as
+/// bytes (M53 Increment 4 / T3).
+///
+/// These five are the shipped set, and this table is here to assert that giving the
+/// qualifiers a per-member home **changed none of them**: the clause
+/// *"once its conflicts are resolved"* was one hard-coded `format!` shared by the mold,
+/// and every one of the five is detected only in a state the user has stopped in, so the
+/// clause is true of each and its bytes must survive the move unaltered
+/// (`settle-record.md` → §10).
+///
+/// Pinned as whole lines rather than as the qualifier alone on purpose: a qualifier that
+/// arrived correct but landed on the wrong side of a backtick, or a separator that grew
+/// a space, is exactly the breakage a substring check reads as fine.
+const SHIPPED_ROUTE_LINES: [(InProgress, &str); 5] = [
+    (
+        InProgress::Merge,
+        "conclude it with `git merge --continue` once its conflicts are resolved, or \
+         abandon it with `git merge --abort`, then re-run this command",
+    ),
+    (
+        InProgress::Rebase,
+        "conclude it with `git rebase --continue` once its conflicts are resolved, or \
+         abandon it with `git rebase --abort`, then re-run this command",
+    ),
+    (
+        InProgress::Am,
+        "conclude it with `git am --continue` once its conflicts are resolved, or abandon \
+         it with `git am --abort`, then re-run this command",
+    ),
+    (
+        InProgress::CherryPick,
+        "conclude it with `git cherry-pick --continue` once its conflicts are resolved, or \
+         abandon it with `git cherry-pick --abort`, then re-run this command",
+    ),
+    (
+        InProgress::Revert,
+        "conclude it with `git revert --continue` once its conflicts are resolved, or \
+         abandon it with `git revert --abort`, then re-run this command",
+    ),
+];
+
+/// The route line the mold owes **this** member — composed from that member's own two
+/// qualifiers, which is the whole of what this task moved.
+///
+/// The composition is the axis half of the arm, not its anchor: what it can say that a
+/// byte literal cannot is that **each member's** qualifiers reach the rendered line, so a
+/// tenth member declaring one and never seeing it printed reddens here. The anchor is
+/// [`SHIPPED_ROUTE_LINES`], which is not composed from anything.
+fn expected_route_line(operation: InProgress) -> String {
+    let abandon = format!(
+        "abandon it with `{}`{}",
+        operation.abandon(),
+        operation.abandon_qualifier(),
+    );
+    match operation.conclude() {
+        Some((conclude, qualifier)) => format!(
+            "conclude it with `{conclude}`{qualifier}, or {abandon}, then re-run this \
+             command"
+        ),
+        None => format!("conclude it, or {abandon}, then re-run this command"),
+    }
+}
+
+/// The `route:` line of a rendered finding, without the house prefix.
+fn route_line(text: &str, label: &str) -> String {
+    text.lines()
+        .find_map(|line| line.trim_start().strip_prefix("route: "))
+        .unwrap_or_else(|| panic!("the `{label}` finding must print a route:\n{text}"))
+        .to_string()
+}
+
+/// **The route's two qualifiers are the member's own, and the shipped five are unmoved**
+/// (M53 Increment 4 / T3).
+///
+/// The mold hard-coded *"once its conflicts are resolved"* after the concluding command
+/// and nothing at all after the abandoning one. The first half is true of every member
+/// git detects only in a **stopped** state — which is all five that carry a concluding
+/// command today — and false of a member git can also leave behind with nothing
+/// conflicted; the second half is a claim a bare command name cannot make, and D4's
+/// abandoning command needs one (*it keeps the picked changes, it does not discard
+/// them*). So the clause that makes naming a command true is carried **per member**
+/// beside the command itself (`settle-record.md` → §10).
+///
+/// Two assertions per member, and they are not the same assertion:
+///
+///   1. the **rendered** route line equals the line composed from that member's own
+///      [`InProgress::conclude`] qualifier and [`InProgress::abandon_qualifier`] — the
+///      axis, over `InProgress::ALL`, so a member whose declared qualifier never reaches
+///      the printed bytes reddens;
+///   2. for the five members that carry a concluding command, the rendered line equals a
+///      **byte literal** written out in full — the anchor, so this task's own move cannot
+///      change a shipped user-facing line while both sides of a composition agree.
+///
+/// Every line asserted here is read out of a breach `posture` built in a repository the
+/// fixture drove into that state with real git, rendered through the shipped
+/// `finding_error` carrier — never a hand-built `Finding`.
+///
+/// **Declared bound, measured rather than assumed.** A renderer that dropped the
+/// **abandoning** qualifier reddens nothing here today, and cannot: every shipped member
+/// declares it empty, so the mutation changes no byte (driven — the conclude qualifier's
+/// two mutations, a reword and a drop, each redden). The half that closes it is the
+/// member whose abandoning command keeps the work it applied, and it is the composed
+/// assertion above that will do the closing.
+///
+/// Red at this task's start: `InProgress::conclude` and `InProgress::abandon_qualifier`
+/// do not exist, the qualifier being a literal inside the renderer's `format!`.
+#[test]
+fn every_members_route_line_is_composed_from_its_own_two_qualifiers() {
+    let mut reached: BTreeSet<String> = BTreeSet::new();
+    for state in GitState::ALL {
+        let Some(expected) = state.in_progress() else {
+            continue;
+        };
+        let label = state.name();
+        let fixture = GitStateRepo::build(*state);
+        let breaches = posture(&fixture.repo());
+        let breach = only(&breaches, PostureMember::OperationInProgress);
+        assert_eq!(
+            breach.operation(),
+            Some(expected),
+            "the `{label}` fixture must be answered as `{expected:?}`",
+        );
+        reached.insert(format!("{expected:?}"));
+
+        let line = route_line(&rendered(breach), label);
+        assert_eq!(
+            line,
+            expected_route_line(expected),
+            "the `{label}` route must be the line `{expected:?}`'s OWN qualifiers compose \
+             — a qualifier declared on the member and dropped by the mold is a phrase \
+             nobody reads",
+        );
+        if let Some((_, pinned)) = SHIPPED_ROUTE_LINES
+            .iter()
+            .find(|(member, _)| *member == expected)
+        {
+            assert_eq!(
+                line, *pinned,
+                "`{expected:?}` shipped this line before the qualifiers had a per-member \
+                 home, and moving them was not licence to reword it",
+            );
+        }
+    }
+
+    let unreached: Vec<String> = InProgress::ALL
+        .iter()
+        .map(|operation| format!("{operation:?}"))
+        .filter(|name| !reached.contains(name))
+        .collect();
+    assert!(
+        unreached.is_empty(),
+        "every member of `InProgress::ALL` must have its route line composed and compared \
+         here, or its qualifiers are declared and asserted by nothing: {unreached:?}",
+    );
+
+    let unpinned: Vec<String> = SHIPPED_ROUTE_LINES
+        .iter()
+        .map(|(member, _)| format!("{member:?}"))
+        .filter(|name| !reached.contains(name))
+        .collect();
+    assert!(
+        unpinned.is_empty(),
+        "…and every byte literal must have been compared against a rendered line, or the \
+         pin is a string this suite reads and never checks: {unpinned:?}",
+    );
+}
+
 // ───────── the owed spike: `git reset` abandons an uncommitted cherry-pick ─────────
 
 /// **D4's route, driven before anything is built on it** (M53 Increment 4 / T1).
