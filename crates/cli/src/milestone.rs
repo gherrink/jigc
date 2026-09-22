@@ -6007,12 +6007,19 @@ fn milestone_boundary_gate(
     };
     let gate_staging = crate::task::ScratchTree::new();
     let gate_docs = gate_staging.path().join("docs");
-    std::fs::create_dir_all(&gate_docs)
-        .with_context(|| format!("could not open the gate staging area {gate_docs:?}"))?;
+    std::fs::create_dir_all(&gate_docs).with_context(|| {
+        format!(
+            "could not open the gate staging area {}",
+            crate::render::repo_relative(repo_root, &gate_docs)
+        )
+    })?;
     let src_docs = staging_dir.join("docs");
-    for entry in std::fs::read_dir(&src_docs)
-        .with_context(|| format!("could not read the merged docs dir {src_docs:?}"))?
-    {
+    for entry in std::fs::read_dir(&src_docs).with_context(|| {
+        format!(
+            "could not read the merged docs dir {}",
+            crate::render::repo_relative(repo_root, &src_docs)
+        )
+    })? {
         let entry = entry?;
         let path = entry.path();
         let raw = entry.file_name();
@@ -6043,9 +6050,12 @@ fn milestone_boundary_gate(
         // what this boundary COMMITS, and an entry jigc's own writer cannot emit is not that.
         // A skipped entry is left exactly where it is, for the complement probe and the
         // boundary's own displacement to answer for.
-        let shape = entry
-            .file_type()
-            .with_context(|| format!("could not read the shape of {path:?}"))?;
+        let shape = entry.file_type().with_context(|| {
+            format!(
+                "could not read the shape of {}",
+                crate::render::repo_relative(repo_root, &path)
+            )
+        })?;
         if !shape.is_file() {
             continue;
         }
@@ -6061,8 +6071,12 @@ fn milestone_boundary_gate(
             .get(ty)
             .is_some_and(|s| s.location.is_some() || s.placement.is_some());
         if persisted || rendered.contains(address) {
-            std::fs::copy(&path, gate_docs.join(entry.file_name()))
-                .with_context(|| format!("could not stage {path:?} into the gate area"))?;
+            std::fs::copy(&path, gate_docs.join(entry.file_name())).with_context(|| {
+                format!(
+                    "could not stage {} into the gate area",
+                    crate::render::repo_relative(repo_root, &path)
+                )
+            })?;
         }
     }
 
@@ -6080,8 +6094,12 @@ fn milestone_boundary_gate(
     // The read-only determinism-boundary feeds the shared `validate_task` entry needs — the
     // record is loaded but never persisted, and the severity cascade + tracked-status
     // predicate + `doc-code` invoker are byte-identical to the per-task gate.
-    let mut record = FileStateRecord::load(jigc_root)
-        .with_context(|| format!("could not load the file-state record under {jigc_root:?}"))?;
+    let mut record = FileStateRecord::load(jigc_root).with_context(|| {
+        format!(
+            "could not load the file-state record under {}",
+            crate::render::repo_relative(repo_root, jigc_root)
+        )
+    })?;
     let pack = make_pack()?;
     let cascade = crate::start::resolve_severity_cascade(
         pack.as_ref(),
@@ -6147,7 +6165,12 @@ fn milestone_boundary_gate(
         // carries.
         &engine::file_state::LiveRecord::none(),
     )
-    .with_context(|| format!("validating the merged effective state under {staging_dir:?}"))?;
+    .with_context(|| {
+        format!(
+            "validating the merged effective state under {}",
+            crate::render::repo_relative(repo_root, staging_dir)
+        )
+    })?;
 
     if report.has_blocking() {
         // `blocked()` re-applies the cascade (idempotent) and renders the pinned envelope —

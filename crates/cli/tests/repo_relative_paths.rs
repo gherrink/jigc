@@ -805,6 +805,22 @@ const PATH_TEXT_SITES: &[(&str, &str, Disposition, &str)] = &[
         "earned by the derivation: the teardown's self-heal note, a stderr line no report row \
          reached",
     ),
+    // --- `jigc milestone finalize`'s conformance gate (M53 completion audit, finding 5) ---
+    (
+        "crates/cli/src/milestone.rs",
+        "milestone_boundary_gate",
+        Disposition::Relative,
+        "M53 Increment 1 / T1 added a `{path:?}` render here — the `Debug` spelling of a \
+         `PathBuf`, in a module this suite lists as SWEPT — and nothing reddened, because the \
+         standing fence read `.display()` only and arm 3 reads the functions this table names. \
+         Driven, that context prints the host path of the machine the boundary ran on. All six \
+         of the function's renders now reach the shared home: the gate staging area, the \
+         merged docs dir, the entry it reads the shape of, the entry it stages, the file-state \
+         record's root and the merged effective state's own directory. Two of the six leave \
+         the repository (`ScratchTree` mints under the system temp dir), and the helper's \
+         declared fallback renders those absolute, which is its honest answer rather than a \
+         miss",
+    ),
     // --- `jigc uninstall` --------------------------------------------------------------
     (
         "crates/cli/src/setup.rs",
@@ -1162,17 +1178,139 @@ fn the_unswept_remainder_is_counted_not_described() {
     );
 }
 
-/// The `{…:?}` render shapes a `Relative` site may not carry inside a message it composes —
-/// listed by binding name, because Rust's inline captures are the shape these sites used.
-/// (`.display()`, the other half, is checked over the site's *code* rather than its literals.)
-const RAW_DEBUG_RENDERS: &[&str] = &[
-    "{path:?}",
-    "{dir:?}",
-    "{wt:?}",
-    "{worktree:?}",
-    "{jigc_home:?}",
-    "{worktrees_root:?}",
-    "{area:?}",
+/// **[Widened 2026-09-22 (M53 completion audit, finding 5).** This was a hand-written list of
+/// seven `{…:?}` shapes — `{path:?}`, `{dir:?}`, `{wt:?}`, `{worktree:?}`, `{jigc_home:?}`,
+/// `{worktrees_root:?}`, `{area:?}` — consulted by arm 3 alone, over the functions
+/// [`PATH_TEXT_SITES`] happens to name. Falsifying datum: M53 Increment 1 / T1 added
+/// `format!("could not read the shape of {path:?}")` to `milestone_boundary_gate` in
+/// `crates/cli/src/milestone.rs` — a **guarded** module — and nothing reddened. The shape was
+/// on the list; the *function* was on no list, and the standing fence read `.display()` only.
+/// The declared bound at the foot of this file said exactly that would happen, so the bound
+/// bit rather than the rule.**]
+///
+/// The predicate is now **derived from the binding's name** and applied to every production
+/// literal in every guarded module (arm 4) as well as to each `Relative` row (arm 3).
+///
+/// **The judgment leg, named rather than hidden:** no static reader can type-check a format
+/// argument, so membership is decided on what the binding is *called*. That is a judgment,
+/// and it is the same judgment the seven-shape list encoded — only applied to the whole
+/// module instead of to the functions someone remembered. It is deliberately **not** a ban on
+/// every `{…:?}`: `crates/cli/src/milestone.rs` Debug-renders an `Option<i32>` exit code as
+/// `{other:?}` and `crates/cli/src/trackable.rs` a subprocess argv as `{args:?}`, neither of
+/// which is a path, and a blanket ban would make the fence lie about those.
+///
+/// **The other two render shapes were measured, not assumed.** `to_string_lossy()` reaches no
+/// whole path in any guarded module — every production use there is on an `OsString` from
+/// `file_name()` or on an already-relativized tail — and `as_os_str()` appears in none of
+/// them. So the class is `.display()` ∪ this predicate, and that is a measurement rather than
+/// a hope.
+fn is_path_named(binding: &str) -> bool {
+    const EXACT: &[&str] = &[
+        "path", "parent", "dir", "root", "home", "area", "wt", "worktree", "file",
+    ];
+    const SUFFIXES: &[&str] = &[
+        "_path",
+        "_dir",
+        "_root",
+        "_home",
+        "_area",
+        "_docs",
+        "_file",
+        "_wt",
+        "_worktree",
+    ];
+    EXACT.contains(&binding) || SUFFIXES.iter().any(|suffix| binding.ends_with(suffix))
+}
+
+/// Every production `{<path-named>:?}` render in `file`, as `(line, enclosing fn, shape)`.
+///
+/// The scan reads **literal values**, because that is where an inline capture lives, and
+/// resolves the owner over the blanked code, because that is where a `fn` keyword lives —
+/// the same two-view split [`SiteSource`] draws, for the same reason.
+fn production_debug_path_renders(file: &str) -> Vec<(usize, String, String)> {
+    let path = workspace_root().join(file);
+    let body = fs::read_to_string(&path).unwrap_or_else(|_| panic!("read {file}"));
+    let code = rust_source::code_only(&body);
+    let regions = rust_source::cfg_test_regions(&code);
+    let mut out = Vec::new();
+    for lit in rust_source::string_literals(&body) {
+        if rust_source::is_test_domain(&path, &regions, lit.offset) {
+            continue;
+        }
+        let mut rest = lit.value.as_str();
+        while let Some(at) = rest.find(":?}") {
+            let head = &rest[..at];
+            let open = head.rfind('{');
+            if let Some(open) = open {
+                let binding = &head[open + 1..];
+                if !binding.is_empty()
+                    && binding
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '_')
+                    && is_path_named(binding)
+                {
+                    out.push((
+                        body[..lit.offset].lines().count(),
+                        rust_source::enclosing_fn(&code, lit.offset)
+                            .unwrap_or("<top level>")
+                            .to_owned(),
+                        format!("{{{binding}:?}}"),
+                    ));
+                }
+            }
+            rest = &rest[at + 3..];
+        }
+    }
+    out
+}
+
+/// **The `{…:?}` renders a guarded module still carries, counted per function** — the
+/// remainder arm 4 does not demand a fix for, with the reason it stays.
+///
+/// **Why there is a remainder at all, stated rather than implied.** Arm 4's `.display()` rule
+/// is module-wide inside `GUARDED_SRC` with no channel exemption, and applying the widened
+/// predicate at the same strictness measures, for the first time, that
+/// `crates/cli/src/milestone.rs` carries **21** production `{…:?}` path renders outside the
+/// function this audit fixed. Every one of them is a `with_context` on `anyhow` — an I/O
+/// fault wrapped for the top-level error funnel, never a `Finding` a surface composes — which
+/// is the same boundary [`UNSWEPT_PRODUCERS`] already draws for `start.rs`, `config.rs` and
+/// `setup.rs`, cited here rather than invented. Closing them means threading a repo root into
+/// fourteen functions, which is an increment and not a triage fix.
+///
+/// **The count is the point.** Each row is checked against the source below, so closing one
+/// reddens this test and whoever closed it either moves the row or deletes it — the
+/// `UNSWEPT_PRODUCERS` contract, applied one module in.
+const DEBUG_REMAINDER: &[(&str, &str, usize)] = &[
+    (
+        "crates/cli/src/milestone.rs",
+        "materialize_and_commit_record",
+        2,
+    ),
+    ("crates/cli/src/milestone.rs", "commit_record_only", 1),
+    ("crates/cli/src/milestone.rs", "record_pathspec", 1),
+    ("crates/cli/src/milestone.rs", "capture_record_pre_image", 1),
+    (
+        "crates/cli/src/milestone.rs",
+        "reconcile_record_preflight",
+        2,
+    ),
+    ("crates/cli/src/milestone.rs", "append_and_commit_record", 2),
+    ("crates/cli/src/milestone.rs", "recorded_sub_tasks", 1),
+    ("crates/cli/src/milestone.rs", "read_record", 1),
+    (
+        "crates/cli/src/milestone.rs",
+        "worktrees_have_staged_code",
+        1,
+    ),
+    ("crates/cli/src/milestone.rs", "flip_record_for_finalize", 3),
+    ("crates/cli/src/milestone.rs", "worktree_staged_patch", 1),
+    (
+        "crates/cli/src/milestone.rs",
+        "worktree_staged_file_count",
+        1,
+    ),
+    ("crates/cli/src/milestone.rs", "discarded_work", 1),
+    ("crates/cli/src/milestone.rs", "shared_checkout_staged", 1),
 ];
 
 /// The cargo workspace root — the table's `file` column is workspace-relative, because the
@@ -1204,16 +1342,20 @@ fn enclosing_fn_span(code: &str, at: usize) -> (usize, usize) {
     (open, code.len() - open)
 }
 
-/// A production function read two ways, because the two halves of the rule live in opposite
-/// places: `.display()` and the call to the shared home are **code**, and the `{…:?}` shapes
-/// are **string literal values**. Reading one view for both would be wrong in both directions
-/// — a doc comment naming `repo_relative` would satisfy the first, and blanked literals would
-/// hide the second.
+/// A production function's **code**, with comments and string literals blanked
+/// (`rust_source::code_only`) — the view `.display()` and the call to the shared home live
+/// in.
+///
+/// **[Narrowed 2026-09-22 (M53 completion audit, finding 5).** This carried a second view,
+/// the decoded values of the function's string literals, for arm 3's hand-written
+/// `RAW_DEBUG_RENDERS` check. That check now runs off
+/// [`production_debug_path_renders`], which scans a whole **module** rather than one
+/// function, so the per-site literal view has no reader left. A doc-comment naming
+/// `repo_relative` would satisfy the code view, which is why the literals were read
+/// separately in the first place; that reason still holds and is why `code_only` is kept
+/// rather than the raw body.**]
 struct SiteSource {
-    /// The body with comments and literals blanked (`rust_source::code_only`).
     code: String,
-    /// The decoded values of every string literal inside the body.
-    literals: Vec<String>,
 }
 
 impl SiteSource {
@@ -1229,19 +1371,9 @@ impl SiteSource {
             .find(|(at, _)| !rust_source::is_test_domain(&path, &regions, *at))
             .map(|(at, _)| at)?;
         let (start, len) = enclosing_fn_span(&code, at + 3);
-        let literals = rust_source::string_literals(&body)
-            .into_iter()
-            .filter(|lit| lit.offset >= start && lit.offset < start + len)
-            .map(|lit| lit.value)
-            .collect();
         Some(SiteSource {
             code: code[start..start + len].to_owned(),
-            literals,
         })
-    }
-
-    fn literals_contain(&self, needle: &str) -> bool {
-        self.literals.iter().any(|value| value.contains(needle))
     }
 }
 
@@ -1289,11 +1421,11 @@ fn every_path_a_door_prints_carries_a_disposition_the_source_backs() {
                          path with `.display()`"
                     ));
                 }
-                for shape in RAW_DEBUG_RENDERS {
-                    if site.literals_contain(shape) {
+                for (line, owner, shape) in production_debug_path_renders(file) {
+                    if owner == *name {
                         offenders.push(format!(
-                            "  {file}: `{name}` is declared `Relative` but still composes a \
-                             host path into its text with `{shape}`"
+                            "  {file}:{line}: `{name}` is declared `Relative` but still \
+                             composes a host path into its text with `{shape}`"
                         ));
                     }
                 }
@@ -1338,10 +1470,19 @@ fn every_path_a_door_prints_carries_a_disposition_the_source_backs() {
 /// module joins `GUARDED_SRC` when its path text is swept; what is not swept is counted in
 /// `UNSWEPT_PRODUCERS`.
 ///
-/// **Declared bound:** the fence reads `.display()` only. The `{…:?}` half is checked per-row
-/// in arm 3 (over `RAW_DEBUG_RENDERS`) and end-to-end in arms 1 and 2; a `{…:?}` render
-/// introduced in a function this class does not name is caught by those only if a door prints
-/// it.
+/// **[Struck 2026-09-22 (M53 completion audit, finding 5).** The declared bound here read
+/// *"the fence reads `.display()` only. The `{…:?}` half is checked per-row in arm 3 (over
+/// `RAW_DEBUG_RENDERS`) and end-to-end in arms 1 and 2; a `{…:?}` render introduced in a
+/// function this class does not name is caught by those only if a door prints it."* It is
+/// struck because it **bit**: M53 Increment 1 / T1 introduced exactly that render in
+/// `milestone_boundary_gate`, a function this class did not name, in a guarded module, and no
+/// arm saw it. The fence now reads both shapes — see [`is_path_named`] for the widened
+/// predicate and what it deliberately does not cover.**]
+///
+/// **Declared bound, replacing it:** the `{…:?}` half is decided on the **binding's name**,
+/// because a static reader cannot type-check a format argument. A path held in a
+/// non-path-named binding still slips, and `crates/cli/src/milestone.rs` carries a **counted**
+/// remainder of pre-existing renders ([`DEBUG_REMAINDER`]) rather than a silence.
 #[test]
 fn a_guarded_module_renders_no_host_path_outside_a_declared_absolute() {
     let mut offenders: Vec<String> = Vec::new();
@@ -1371,13 +1512,73 @@ fn a_guarded_module_renders_no_host_path_outside_a_declared_absolute() {
                 body[..at].lines().count(),
             ));
         }
+
+        // …and the half the struck bound left open: the `Debug` render of a path-named
+        // binding, which is the shape the audit's own finding took.
+        for (line, owner, shape) in production_debug_path_renders(src) {
+            if declared.contains(&owner.as_str()) {
+                continue;
+            }
+            if DEBUG_REMAINDER
+                .iter()
+                .any(|(file, name, _)| file == src && *name == owner)
+            {
+                continue;
+            }
+            offenders.push(format!(
+                "  {src}:{line}: `{owner}` renders a path with `{shape}`",
+            ));
+        }
     }
 
     assert!(
         offenders.is_empty(),
-        "`.display()` on a path is how every one of these modules' host-path leaks reached a \
-         surface — render through the shared `engine::path::repo_relative`, or declare the \
-         site absolute in `PATH_TEXT_SITES` with the reason it stays:\n{}",
+        "`.display()` on a path, and the `Debug` render of a path-named binding, are how every \
+         one of these modules' host-path leaks reached a surface — render through the shared \
+         `engine::path::repo_relative`, declare the site absolute in `PATH_TEXT_SITES` with the \
+         reason it stays, or count it in `DEBUG_REMAINDER`:\n{}",
+        offenders.join("\n"),
+    );
+}
+
+/// **The `{…:?}` remainder is a count, not a sentence** — [`the_unswept_remainder_is_counted_not_described`]'s
+/// sibling, one module in.
+///
+/// A guarded module's remaining `Debug` path renders are exempted by *function*, so a row that
+/// silently grew a second render would widen its own exemption. Each row's count is therefore
+/// measured against the source, in both directions: a function that lost a render reddens too,
+/// because an exemption for something that is gone is an exemption nobody re-read.
+#[test]
+fn the_guarded_debug_remainder_is_counted_not_described() {
+    let mut offenders: Vec<String> = Vec::new();
+
+    for (file, name, count) in DEBUG_REMAINDER {
+        assert!(
+            GUARDED_SRC.contains(file),
+            "{file} is not guarded — a remainder row there exempts nothing",
+        );
+        let sites: Vec<(usize, String, String)> = production_debug_path_renders(file)
+            .into_iter()
+            .filter(|(_, owner, _)| owner == name)
+            .collect();
+        if sites.len() != *count {
+            offenders.push(format!(
+                "  {file}: `{name}` is counted at {count} `{{…:?}}` path render(s), the source \
+                 has {}:\n      {}",
+                sites.len(),
+                sites
+                    .iter()
+                    .map(|(line, _, shape)| format!("{file}:{line}: {shape}"))
+                    .collect::<Vec<_>>()
+                    .join("\n      "),
+            ));
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "a bound nothing measures is a sentence — update the row, or delete it once the \
+         function renders through the shared home:\n{}",
         offenders.join("\n"),
     );
 }
