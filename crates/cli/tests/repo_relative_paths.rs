@@ -515,6 +515,203 @@ fn no_read_or_config_door_prints_the_host_path_of_the_machine_it_ran_on() {
 }
 
 // ---------------------------------------------------------------------------------
+// Arm 2b — the kept pin-read producers (M53 Increment 3 / T5)
+// ---------------------------------------------------------------------------------
+
+/// How a **legitimate** task's base pin is broken — and therefore which producer the cell
+/// reaches.
+///
+/// M53 Increment 3 / D3 made *carrying a base pin* the predicate every roster and every by-id
+/// door asks, so a directory without one is a leftover at all of them. That **narrowed**
+/// `cli::task::TaskArea::base`'s two fault arms; it did not delete them
+/// (`completions/artifacts/M53/settle-record.md` → §9). The predicate is **existence, never a
+/// parse**, so a legitimate area whose pin is torn, corrupt or unreadable passes the door and
+/// still fails the read — and both of those arms named the pin with the host path of the
+/// machine they ran on, driven on the debug binary at `b8ae481c`:
+///
+/// ```text
+/// malformed base pin at "/private/var/folders/nj/…/repo/.jigc/tasks/probe-the-pin/base.json"
+/// ```
+///
+/// The third cell is the **control that makes the narrowing itself checkable**: a removed pin
+/// reaches no pin-read producer at all any more, because `require_task_area` answers
+/// `finalize.no-task` with the residual sentence first. Dropping it would leave §9's "narrowed,
+/// nothing deleted" as a sentence nothing drives.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum PinFault {
+    /// Truncated to invalid JSON. The pin is still a file, so the existence predicate passes
+    /// and the **parse** arm answers.
+    Torn,
+    /// Present and unreadable (`chmod 000`). The existence predicate passes and the **read**
+    /// arm answers — the sibling site, which the torn cell never reaches.
+    Unreadable,
+    /// Removed. The control: `require_task_area` answers before either arm is reached.
+    Removed,
+}
+
+impl PinFault {
+    /// The cells this platform can drive. [`PinFault::Unreadable`] needs unix permission
+    /// semantics to make a file that exists and cannot be read, so it is the one cell that is
+    /// gated rather than the whole arm — the other two hold everywhere.
+    fn cells() -> Vec<PinFault> {
+        let mut out = vec![PinFault::Torn];
+        #[cfg(unix)]
+        out.push(PinFault::Unreadable);
+        out.push(PinFault::Removed);
+        out
+    }
+
+    /// The repo-relative spelling the emitted bytes must carry. The two pin-read arms name the
+    /// **pin**; the residual control names the **area**, because that is the path an operator
+    /// clears by hand.
+    fn must_name(self, id: &str) -> String {
+        match self {
+            PinFault::Torn | PinFault::Unreadable => format!(".jigc/tasks/{id}/base.json"),
+            PinFault::Removed => format!(".jigc/tasks/{id}"),
+        }
+    }
+}
+
+/// `<root>/repo-<tag>` + `<root>/home-<tag>`: a git repo carrying **one legitimate task minted
+/// through the real binary**, whose base pin is then broken as `fault` says.
+///
+/// The task is minted rather than planted on purpose: the claim is about the window a *real*
+/// working area can be in, and a hand-built directory would prove nothing about it. The id
+/// comes off the mint's own `task minted: <id>` line — never reconstructed from the intent,
+/// because the slug rule is the binary's.
+fn pin_fixture(root: &Path, tag: &str, fault: PinFault) -> (PathBuf, PathBuf, String) {
+    let repo = root.join(format!("repo-{tag}"));
+    let home = root.join(format!("home-{tag}"));
+    fs::create_dir_all(&repo).expect("mk repo");
+    fs::create_dir_all(&home).expect("mk home");
+    init_repo(&repo);
+
+    let out = run_jigc(
+        &repo,
+        &home,
+        &["start", "--workflow", "single-task", "pin the base"],
+    );
+    assert!(
+        out.status.success(),
+        "the mint must exit 0, or the arm has no legitimate area to break: {}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    let id = stdout
+        .lines()
+        .find_map(|line| line.strip_prefix("task minted: "))
+        .unwrap_or_else(|| panic!("a mint must print `task minted: <id>`; got:\n{stdout}"))
+        .trim()
+        .to_string();
+
+    let pin = repo.join(".jigc").join("tasks").join(&id).join("base.json");
+    assert!(
+        pin.is_file(),
+        "the mint must have written the pin this arm breaks",
+    );
+    match fault {
+        PinFault::Torn => fs::write(&pin, "{\"sha\": ").expect("tear the pin"),
+        PinFault::Unreadable => {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                fs::set_permissions(&pin, fs::Permissions::from_mode(0o000))
+                    .expect("make the pin unreadable");
+                assert!(
+                    fs::read(&pin).is_err(),
+                    "this cell needs a pin that exists and cannot be read — `chmod 000` did \
+                     not deny the read, which is what happens when the suite runs as root",
+                );
+            }
+            #[cfg(not(unix))]
+            unreachable!("the unreadable cell is unix-only — see `PinFault::cells`");
+        }
+        PinFault::Removed => fs::remove_file(&pin).expect("remove the pin"),
+    }
+    (repo, home, id)
+}
+
+/// The two by-id doors that read the pin, each driven in **both** surfaces — the agent text and
+/// the `--format json` envelope. Four runs per cell, so a fix that reaches one stream and not
+/// the other cannot pass.
+const PIN_DOORS: &[&[&str]] = &[&["task", "diff"], &["task", "finalize"]];
+
+/// §9's producers, driven: a legitimate task whose pin is broken names that pin **repo-relative**
+/// on every stream, and the machine's own temp root reaches none of them.
+///
+/// `design/surface-contract.md` → law 1: *every printed path is repo-real or a typed identity*.
+/// A locus is the address a driver keys and a reader pastes, and an absolute one is not portable
+/// across the two checkouts of the same repo a fan-out is made of — which is exactly the shape
+/// these two arms carried, one line away from a `require_task_area` refusal that already spelled
+/// the same area `.jigc/tasks/<id>`.
+#[test]
+fn the_kept_pin_read_producers_name_the_pin_repo_relative() {
+    let root = MkTemp::new();
+    let prefixes = host_prefixes(root.path());
+    let mut offenders: Vec<String> = Vec::new();
+
+    for (i, fault) in PinFault::cells().into_iter().enumerate() {
+        let (repo, home, id) = pin_fixture(root.path(), &format!("p{i}"), fault);
+        let expected = fault.must_name(&id);
+
+        for door in PIN_DOORS {
+            for json in [false, true] {
+                let mut argv: Vec<&str> = door.to_vec();
+                argv.push(&id);
+                if json {
+                    argv.extend_from_slice(&["--format", "json"]);
+                }
+                let out = run_jigc(&repo, &home, &argv);
+                let mut text = String::from_utf8_lossy(&out.stdout).into_owned();
+                text.push_str(&String::from_utf8_lossy(&out.stderr));
+
+                // The cell has to reach a refusal, or it proves nothing.
+                assert!(
+                    !out.status.success(),
+                    "`jigc {}` over a {fault:?} pin must refuse — the cell reached no refusal \
+                     to check:\n{text}",
+                    argv.join(" "),
+                );
+                assert!(
+                    !text.trim().is_empty(),
+                    "`jigc {}` over a {fault:?} pin printed nothing — the cell reached no \
+                     surface to check",
+                    argv.join(" "),
+                );
+
+                for line in text.lines() {
+                    if let Some(prefix) = prefixes.iter().find(|p| line.contains(p.as_str())) {
+                        offenders.push(format!(
+                            "  `jigc {}` [{fault:?}] printed the host path `{prefix}`:\n      \
+                             {line}",
+                            argv.join(" "),
+                        ));
+                    }
+                }
+                if !text.contains(&expected) {
+                    offenders.push(format!(
+                        "  `jigc {}` [{fault:?}] never named `{expected}` — the repo-relative \
+                         spelling is what law 1 asks for, and a surface that names the subject \
+                         some other way has not been fixed:\n      {}",
+                        argv.join(" "),
+                        text.trim(),
+                    ));
+                }
+            }
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "law 1 binds the pin-read arms D3 narrowed but kept \
+         (`completions/artifacts/M53/settle-record.md` → §9): a legitimate area whose pin is \
+         torn or unreadable still fails the read, and that failure may not print the host \
+         filesystem:\n{}",
+        offenders.join("\n"),
+    );
+}
+
+// ---------------------------------------------------------------------------------
 // Arm 3 — the disposition table
 // ---------------------------------------------------------------------------------
 
@@ -639,6 +836,22 @@ const PATH_TEXT_SITES: &[(&str, &str, Disposition, &str)] = &[
          `!file_type().is_file()`, which `engine::state::foreign_area_paths` calls foreign. \
          Law 1 binds the surface whether or not a door currently reaches it, so the site is \
          fixed and held here by disposition and by the standing fence",
+    ),
+    // --- the pin-read producers D3 narrowed and kept (M53 Increment 3 / T5) -----------
+    (
+        "crates/cli/src/task.rs",
+        "base",
+        Disposition::Relative,
+        "the two fault arms `jigc task diff` and `jigc task finalize` reach when a \
+         **legitimate** working area's base pin is torn, corrupt or unreadable. D3's own \
+         predicate is *existence, never a parse*, so a residual no longer reaches them but \
+         this window still does (`completions/artifacts/M53/settle-record.md` → §9) — and \
+         both arms spelled the pin `{path:?}`, the host path of the machine they ran on, one \
+         line away from a `require_task_area` refusal that already renders the same area \
+         repo-relative. The subject is under `<jigc_home>/.jigc/tasks/` by construction, and \
+         **jigc_home is the root it is rendered against**, not `repo_root`: the `.jigc/` \
+         workbench binds to the main checkout, so a door called from a fanned-out worktree \
+         would fall back to the absolute against the worktree's own root",
     ),
     // --- the shared trackability predicate (M50 audit, finding 3) ---------------------
     (

@@ -1983,11 +1983,30 @@ impl TaskArea {
     }
 
     /// Read the task's pinned base commit.
+    ///
+    /// **Both fault arms name the pin repo-relative** (M53 Increment 3 / T5;
+    /// `completions/artifacts/M53/settle-record.md` → §9; `design/surface-contract.md` →
+    /// law 1: *every printed path is repo-real or a typed identity*). They spelled it
+    /// `{path:?}` — the host path of the machine the door ran on — one line away from
+    /// [`require_task_area`], which already renders the same area repo-relative.
+    ///
+    /// **The arms are kept, not deleted, and D3 is why they still matter.** The predicate
+    /// every roster and every by-id door now asks is *existence, never a parse*
+    /// ([`engine::state::carries_base_pin`]), so a **residual** no longer reaches here at
+    /// all — but a *legitimate* area whose pin is torn, corrupt or unreadable passes that
+    /// door and still fails this read, which is the exact window D3 argues exists.
+    ///
+    /// **The root is `jigc_home`, not `repo_root`.** The `.jigc/` workbench binds to the
+    /// main checkout (M31 Inc 2 / WF3), so a door called from a fanned-out worktree would
+    /// find no repo-relative spelling against the worktree's own root and fall back to the
+    /// absolute — the very thing this renders away. It is also the root
+    /// [`require_task_area`] renders the residual against, so one area is spelled one way.
     fn base(&self) -> Result<BasePin> {
         let path = self.dir.join("base.json");
+        let named = crate::render::repo_relative(&self.jigc_home, &path);
         let bytes = std::fs::read(&path)
-            .with_context(|| format!("could not read the base pin at {path:?}"))?;
-        serde_json::from_slice(&bytes).with_context(|| format!("malformed base pin at {path:?}"))
+            .with_context(|| format!("could not read the base pin at `{named}`"))?;
+        serde_json::from_slice(&bytes).with_context(|| format!("malformed base pin at `{named}`"))
     }
 
     /// Every **cascade-resolved** schema, keyed by doctype — the set the conformance
