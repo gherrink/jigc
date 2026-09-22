@@ -778,6 +778,27 @@ fn fan_out_cell(state: GitState, squash_false: bool) {
         "the refusal must name WHICH worktree — the caller is not standing in it; \
          stderr:\n{stderr}",
     );
+    // The site clause **leads** (the independent review of `986d5e0a`, LOW 1). Appended, it
+    // landed after a predicate that may already end in a prepositional phrase of its own —
+    // `UnmergedIndex`'s *"left unmerged paths in the index"*, `Sequencer`'s *"left a queue of
+    // commits in `sequencer/`"* — and read as a place inside a place. Asserted here, over the
+    // whole axis, rather than at the two members that read badly: the rule is one shape for
+    // every member, and a per-member rendering choice is what the next member forgets.
+    let identity_at = stderr
+        .find("blocking · repo.operation-in-progress")
+        .expect("the refusal carries the family's identity");
+    let message = &stderr[identity_at..];
+    let site_at = message
+        .find("in the fan-out worktree `.jigc/worktrees/area-low`, ")
+        .unwrap_or_else(|| panic!("the message leads with the site clause; stderr:\n{stderr}"));
+    let noun_at = message
+        .find(operation.noun())
+        .expect("the message names the operation");
+    assert!(
+        site_at < noun_at,
+        "the site clause must come BEFORE the breach it is about, not after a predicate that \
+         may already end in a preposition; stderr:\n{stderr}",
+    );
     assert!(
         stderr.contains(&format!(
             "git -C .jigc/worktrees/area-low {}",

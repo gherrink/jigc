@@ -593,13 +593,25 @@ pub enum BreachSite<'a> {
 }
 
 impl BreachSite<'_> {
-    /// What the message says after naming the breach — empty for [`BreachSite::Here`], so
-    /// that arm's bytes are the ones M51 shipped.
-    fn subject(self) -> String {
+    /// **What the message says *before* naming the breach** — empty for [`BreachSite::Here`],
+    /// so that arm's bytes are the ones M51 shipped.
+    ///
+    /// It leads rather than trails, and that is the whole of the fix (the independent review
+    /// of `986d5e0a`, LOW 1). Appended, the clause landed after a predicate that may already
+    /// end in a prepositional phrase of its own — [`InProgress::predicate`] gives
+    /// [`InProgress::UnmergedIndex`] *"left unmerged paths in the index"* and
+    /// [`InProgress::Sequencer`] *"left a queue of commits in `sequencer/`"* — so those two
+    /// read *"… in the index **in the fan-out worktree `X`**"*, a place inside a place.
+    ///
+    /// **Led for every member, not for the two that read badly.** A per-member choice would
+    /// put a rendering rule inside the member table, where the next member added has to
+    /// remember it; leading unconditionally is one shape, and the site is the first thing a
+    /// reader standing in a different checkout needs anyway.
+    fn lead(self) -> String {
         match self {
             BreachSite::Here => String::new(),
             BreachSite::FanOutWorktree(path) => {
-                format!(" in the fan-out worktree `{path}`")
+                format!("in the fan-out worktree `{path}`, ")
             }
         }
     }
@@ -690,11 +702,11 @@ impl PostureBreach {
     /// predicate and both qualifiers are the same values at both sites, so the two arms
     /// cannot say different things about the same state.
     pub fn finding_at(&self, site: BreachSite<'_>) -> Finding {
-        let subject = site.subject();
+        let lead = site.lead();
         let (message, route) = match (self.member, self.operation) {
             (PostureMember::HeadDetached, _) => (
                 format!(
-                    "HEAD is detached{subject} — a commit made here would belong to no \
+                    "{lead}HEAD is detached — a commit made here would belong to no \
                      branch, and the next checkout would leave it unreachable"
                 ),
                 format!(
@@ -704,7 +716,7 @@ impl PostureBreach {
             ),
             (PostureMember::HeadUnborn, _) => (
                 format!(
-                    "HEAD is unborn{subject} — this repository has no commits yet, so \
+                    "{lead}HEAD is unborn — this repository has no commits yet, so \
                      there is no base for jigc to commit against"
                 ),
                 format!(
@@ -736,7 +748,7 @@ impl PostureBreach {
                 };
                 (
                     format!(
-                        "{} {}{subject} — {}",
+                        "{lead}{} {} — {}",
                         operation.noun(),
                         operation.predicate(),
                         site.tail(),
