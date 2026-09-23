@@ -3,7 +3,7 @@ exit: 0
 {
   "state": "clean",
   "schema_version": 3,
-  "header": "Pack: dev/1.0.0-rc.18 | methodology/1.0.0-rc.18 · Project config: <REPO>/.jigc/config",
+  "header": "Pack: dev/1.0.0-rc.19 | methodology/1.0.0-rc.19 · Project config: <REPO>/.jigc/config",
   "workflows": [
     {
       "id": "architecture-documentation",

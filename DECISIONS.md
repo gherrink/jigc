@@ -2,6 +2,10 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-09-23 — 1.0.0-rc.19: the third M53 stamp, after the cwd-dependence arc
+
+Bumped after the cwd arc's 41 commits — the verb class (`057b5642`…`eb39096b`), the route class (`34584687`, `b433875b`), the review's eleven fixes (`ccdfb3d2`…`7bf05636`, incl. `setup`/`uninstall` binding `jigc_home` on the human's call) and the confirmation pass's seven (`f353a3c7`…`1cc5da8d`) — not before. Gate **3947 / 0**, the negative fence still empty, the ten version-bearing goldens moved by the version token only. **Axes 2 · 3 · 5 · 6** are re-driven on this binary (5 for `task diff`'s pinned envelope and the `PATH_ARG_OCCURRENCES` bases, 6 for the spawn line), then the 1.0.0 call, which is the human's.
+
 ## 2026-09-23 — the confirmation pass: seven findings fixed
 
 The confirmation review of the cwd-fix range (HEAD `7bf05636`) held with seven findings — 2 MEDIUM, 5 LOW — and **both MEDIUMs were statements rather than mechanisms**, which is the shape a review-and-fix cycle exists to catch. All seven are fixed, and three were a **larger class than reported**.
