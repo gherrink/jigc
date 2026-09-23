@@ -573,7 +573,7 @@ impl std::error::Error for ProfileError {
 /// read its signals, and how to consume its machine output — not routing rules.
 pub fn bootstrap_file() -> String {
     format!(
-        "{BOOTSTRAP_SENTENCE}\n\n{BOOTSTRAP_READ_RULE}\n\n{BOOTSTRAP_FRAMING}\n\n{BOOTSTRAP_OUTPUT_CONTRACT}\n\n{BOOTSTRAP_MACHINE_OUTPUT}\n"
+        "{BOOTSTRAP_SENTENCE}\n\n{BOOTSTRAP_READ_RULE}\n\n{BOOTSTRAP_FRAMING}\n\n{BOOTSTRAP_PATHS_AND_CWD}\n\n{BOOTSTRAP_OUTPUT_CONTRACT}\n\n{BOOTSTRAP_MACHINE_OUTPUT}\n"
     )
 }
 
@@ -1225,6 +1225,27 @@ const BOOTSTRAP_FRAMING: &str = "`jigc` is a context compiler: it assembles the 
 /// clause quietly shrink to the member its author had in mind.
 const BOOTSTRAP_OUTPUT_CONTRACT: &str = "Read every command's output; a non-zero exit means stop and follow what the output says — never retry blindly. Exit codes: 1 error · 2 usage · 3 blocking findings at a task-scope gate · 4 migration review hold. A store-scope `jigc validate` is report-only — it exits 0 even when it surfaces findings — unless one of a few conditions flips that exit, such as a doc stamped above this build's schema-version: then it exits non-zero and its closing line names the condition and why.";
 
+/// **Where the paths jigc prints are rooted, and where jigc may be run** — the paragraph
+/// M53's cwd census found missing (`completions/artifacts/M53/cwd-census.md` → C3-03, the
+/// census's own *"cheapest single fix in the whole census"*).
+///
+/// The preload told the agent which files are jigc's and never said what the paths naming
+/// them are **relative to**. Every `at:` locus, every `jigc doc list` row and every path a
+/// finding names is repo-relative by law 1 (`design/surface-contract.md` → The printed-path
+/// fence) — a rule stated to the implementer and to nobody else. An agent reading
+/// `docs/spec/x.md` from a subdirectory or a fan-out worktree resolves nothing, and the
+/// census's ranked list puts this one sentence upstream of four other rows.
+///
+/// It says both halves, because either alone is a trap: the paths are rooted at the
+/// repository, **and** the binary may be run from anywhere inside it — so an agent that is
+/// not at the root neither has to `cd` before invoking jigc nor may assume a printed path
+/// resolves where it stands. The one exception is the emitted `cd` of a fan-out `Spawn:`
+/// line, which is absolute for exactly that reason and needs no rule here.
+///
+/// It names no verb and no path, so it cannot rot; it is fenced by the whole-body golden
+/// like its five siblings.
+const BOOTSTRAP_PATHS_AND_CWD: &str = "Every path jigc prints — an `at:` locus, a `jigc doc list` row, a path inside a finding or a route — is relative to the **repository root**, not to your current directory. You may run `jigc` from any directory inside the repository, including a fan-out worktree; it finds the project itself. So resolve a printed path against the repository root, and pass your own file arguments the way you would to any other command — relative to where you are.";
+
 /// The machine-output contract stated as the fifth paragraph (M44 Inc 4,
 /// change 1 — RC rc.7 discoverability rerun, 2026-07-20): the preload tier now
 /// carries the two facts a driver otherwise reverse-engineers by scraping text.
@@ -1687,10 +1708,11 @@ mod tests {
     /// Golden over [`bootstrap_file`]: the canonical routing sentence
     /// (`design/bootstrap.md` → The sentence, verbatim), the read rule (with the
     /// M44 Inc 4 binary-derived-behavior amendment), the context-compiler
-    /// framing, the output contract, and the machine-output contract (M44 Inc 4)
-    /// as the managed file body — five paragraphs, with a single trailing
-    /// newline. This is the exact content `jigc setup` writes into
-    /// `.jigc/AGENT.md` (rewritten whole each run — no markers).
+    /// framing, **the paths-and-cwd paragraph** (M53 — the cwd census, C3-03), the
+    /// output contract, and the machine-output contract (M44 Inc 4) as the managed
+    /// file body — six paragraphs, with a single trailing newline. This is the
+    /// exact content `jigc setup` writes into `.jigc/AGENT.md` (rewritten whole
+    /// each run — no markers).
     #[test]
     fn bootstrap_file_is_the_sentence_body() {
         insta::assert_snapshot!(bootstrap_file(), @r###"
@@ -1699,6 +1721,8 @@ mod tests {
         Managed docs are exactly the `jigc doc list` set — the committed set; read one with `jigc doc show <doc>`. A doc staged in your open task is read with `jigc doc show <doc> --task <id>`, not from the file; drop --task to read the committed copy. An `unregistered` row is not yet managed — readable directly until adopted. Everything else — source, tests, any file not in that set — you read freely. That freedom is for *project* source; to learn how `jigc` itself behaves, ask the installed binary (`jigc --help`, `jigc describe`, `jigc doc schema`), never a checked-out jigc or pack source tree — it need not match the binary you run.
 
         `jigc` is a context compiler: it assembles the workflow steps for your task plus the doc slices that workflow declares (a quick fix may declare none), and owns every structural write — placement, cross-references, commits. You author only the prose.
+
+        Every path jigc prints — an `at:` locus, a `jigc doc list` row, a path inside a finding or a route — is relative to the **repository root**, not to your current directory. You may run `jigc` from any directory inside the repository, including a fan-out worktree; it finds the project itself. So resolve a printed path against the repository root, and pass your own file arguments the way you would to any other command — relative to where you are.
 
         Read every command's output; a non-zero exit means stop and follow what the output says — never retry blindly. Exit codes: 1 error · 2 usage · 3 blocking findings at a task-scope gate · 4 migration review hold. A store-scope `jigc validate` is report-only — it exits 0 even when it surfaces findings — unless one of a few conditions flips that exit, such as a doc stamped above this build's schema-version: then it exits non-zero and its closing line names the condition and why.
 

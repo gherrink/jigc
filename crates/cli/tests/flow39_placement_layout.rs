@@ -534,12 +534,15 @@ fn rc_trial_layout_places_vision_and_changelog_at_root() {
             "the {kind} managed doc `{path}` ingests as adopted (not unmanaged / needs-reconcile); row:\n{row}",
         );
     }
-    // The sibling root files stay unmanaged — collapsed into the root `./` per-directory
-    // count (V9); never itemized as an adopted / needs-reconcile (managed) row.
+    // The sibling root files stay unmanaged — collapsed into the root per-directory count
+    // (V9); never itemized as an adopted / needs-reconcile (managed) row. The root's label
+    // says it is the root since M53 (the cwd census, C2-13): rendered bare, `./` read as
+    // *the directory I am in* from anywhere but the root, while every other label on the
+    // line is a repo-relative directory.
     let census = ok_stdout(jigc(repo, home, &["ingest"], None), "jigc ingest");
     assert!(
-        census.contains("unmanaged ./ —"),
-        "the sibling root files collapse into an unmanaged `./` count (a literal placement home owns one path, not a dir-glob); got:\n{census}",
+        census.contains("unmanaged . (the repository root) —"),
+        "the sibling root files collapse into an unmanaged root count, labelled as the root (a literal placement home owns one path, not a dir-glob); got:\n{census}",
     );
     for path in ["README.md", "CLAUDE.md"] {
         assert!(
@@ -587,11 +590,12 @@ fn rc_trial_layout_places_vision_and_changelog_at_root() {
         );
     }
     // The unmanaged siblings are still unmanaged (a drifted managed doc's re-route does not
-    // sweep an unrelated root `.md` into management) — still collapsed into the `./` count.
+    // sweep an unrelated root `.md` into management) — still collapsed into the root count,
+    // labelled as the root since M53 (the cwd census, C2-13).
     let census = ok_stdout(jigc(repo, home, &["ingest"], None), "jigc ingest");
     assert!(
-        census.contains("unmanaged ./ —"),
-        "the sibling root files stay collapsed into an unmanaged `./` count after the OOB drift; got:\n{census}",
+        census.contains("unmanaged . (the repository root) —"),
+        "the sibling root files stay collapsed into an unmanaged root count after the OOB drift; got:\n{census}",
     );
     for path in ["README.md", "CLAUDE.md"] {
         assert!(

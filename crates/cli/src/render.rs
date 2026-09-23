@@ -4052,7 +4052,17 @@ pub fn ingest(format: Format, report: &IngestReport) -> String {
             // bullet).
             for (dir, count) in &unmanaged_by_dir {
                 out.push_str("unmanaged ");
-                out.push_str(dir);
+                // **The root says it is the root** (M53 — the cwd census, C2-13). The key
+                // stays `./` so the sort is unchanged, but rendered bare it reads as *the
+                // directory I am in* to anyone standing anywhere but the root — and every
+                // other label on this line is a repo-relative directory, so the one that
+                // means the repository root is the one that has to say so. Law 1 spells the
+                // root `.`; the parenthetical is what stops `.` being read as a cwd.
+                out.push_str(if dir == "./" {
+                    ". (the repository root)"
+                } else {
+                    dir
+                });
                 out.push_str(&format!(
                     " — {count} file(s) parse against no schema (left untouched — fine to stay plain)\n"
                 ));
