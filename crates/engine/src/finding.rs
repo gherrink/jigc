@@ -1259,12 +1259,22 @@ pub fn shell_safe(token: &str) -> bool {
 /// dummy-substitution seam accepts them; everything else must be [`shell_safe`].
 fn unsafe_command_token(text: &str) -> Option<String> {
     for span in backticked_spans(text) {
-        let mut tokens = command_tokens(span);
-        let Some(head) = tokens.next() else { continue };
-        if head != "git" && head != "jigc" {
+        // **A composite span is a command span when ANY of its parts is one** (M53
+        // post-review-fix review, LOW 8's sibling one fence over). This read only the span's
+        // FIRST token, so `mkdir -p <abs> && git -C <abs> mv <a> <b>` — the shipped
+        // `ingest::repair_prefix` shape — was skipped whole: neither its `mkdir` half nor its
+        // `git` half was ever checked for quoting, on a line built from two filesystem paths.
+        // The `&&` is what proves the backticks hold a command line rather than a file name,
+        // which is the distinction the `git`/`jigc` head test exists to make, so once a part
+        // establishes that, every part's tokens are judged.
+        let parts = split_shell_sequence(span);
+        if !parts.iter().any(|part| {
+            part.first()
+                .is_some_and(|head| head == "git" || head == "jigc")
+        }) {
             continue;
         }
-        for token in tokens {
+        for token in parts.into_iter().flatten().skip(1) {
             // Everything the reader supplies — a `<…>` group, an elision — is removed
             // before the token is judged, so what is checked is the bytes actually emitted:
             // a token that is *nothing but* placeholder (`<task-id>`) or elision (`…`)
@@ -1920,6 +1930,15 @@ mod tests {
         for unsafe_text in [
             "stage it with `git add -- it's an odd name.md`",
             "run `jigc migrate *.md --as changelog`",
+            // A COMPOSITE whose head is neither `git` nor `jigc` (M53 post-review-fix
+            // review, LOW 8's sibling). The shipped `ingest::repair_prefix` emits exactly
+            // this shape over two filesystem paths, and the fence skipped the whole span
+            // because it only read the first token — so NEITHER half was checked for
+            // quoting on a line built from paths the operator's disk supplied. (A path with
+            // a SPACE in it is two inert tokens, not one bad one, and stays the subject
+            // fence's at `Finding::graded`; this one carries a metachar a shell would act
+            // on, which is this fence's own subject.)
+            "move it — `mkdir -p /repo/docs/new && git -C /repo mv it's.md docs/new/x.md`",
             "re-run `jigc doc rename adr:x --to \"Cache $HOME rework\"`",
         ] {
             assert!(
@@ -1929,6 +1948,9 @@ mod tests {
         }
         for ok in [
             "stage it with `git add -- 'it'\\''s an odd name.md'`",
+            // the same composite with every operand rendered through `shell_operand` —
+            // including the spaced home the shipped producer hands `git_at`
+            "move it — `mkdir -p '/a repo/docs/new' && git -C '/a repo' mv 'it'\\''s.md' docs/new/x.md`",
             "run `jigc migrate <path> --as <doctype>`",
             "adopt it: `jigc rename adr:x --to \"<New Title>\"`",
             "pass `--carry-staged`, or restore `docs/decisions/x.md`",
