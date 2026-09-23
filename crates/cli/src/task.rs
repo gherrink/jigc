@@ -3160,7 +3160,7 @@ impl TaskArea {
                 if let Some(stage) = err.downcast_ref::<StageGitFailure>() {
                     let findings = fold_rollback_conflicts(
                         format,
-                        vec![stage_failed_finding(id, &stage.0)],
+                        vec![stage_failed_finding(id, &stage.0, approve, carry_staged)],
                         &rollback_conflicts,
                     );
                     return Ok(carry_rollback_conflicts(
@@ -5708,7 +5708,53 @@ pub(crate) fn work_unit_ref(task_id: &str) -> String {
 /// executor's shared `Err` arm). Code executor-chosen in the `finalize.*` family (the
 /// design names no code; `DECISIONS.md` 2026-07-10 M40 Inc 1 T3). [Keys at the
 /// task](work_unit_location) — the second CLI-resident member of the family.
-fn stage_failed_finding(task_id: &str, git_error: &str) -> Finding {
+///
+/// **The route is a [`Route::mechanical`]** (M53 — the pre-v1 usability batch, row 5 / the
+/// M52 per-axis review's `(4, DEFECT 1)`). M47 swept the survivable frame over the
+/// committing axis with, in the roadmap's words, *a shell-safe copy-runnable re-run argv*
+/// per door, and M51's route floor widened to blocking findings so that a blocked finalize
+/// names its recovery. Driven, this one named `jigc task finalize` with **no `<ID>`**: the
+/// task id was in hand — this function takes it and spends it on the locus — while the
+/// route was a bare `&'static str`, so pasting it exited **2** with a clap usage error,
+/// one step from the sibling frame below that prints `re-run
+/// `jigc task finalize <id>``. `Route::mechanical` is what makes that structural: its
+/// debug-build fence parses the argv against the real CLI, so a route that stops running
+/// stops compiling the test suite, and `Route::human` cannot be reached by accident.
+///
+/// The argv leads and the condition trails, because that is the order the reader acts in:
+/// the command is the thing to copy, and *once the git failure is resolved* is when to run
+/// it. The **message** keeps git's own stderr verbatim, absolute path and all
+/// (`design/surface-contract.md` — the *quoting an invocation* case); only the route moved.
+///
+/// The door is always `jigc task finalize`: this finding's one producer is
+/// [`TaskArea::run_finalize`]'s `StageGitFailure` arm, and a sub-task — whose boundary is
+/// the milestone door — is refused by that door long before a stage phase runs.
+///
+/// **And it echoes the run's own flags**, exactly as the [`RejectionFrame`] one match arm
+/// away does and for the same reason: *the same re-run* means the same invocation. Driven,
+/// the argv without them is copy-runnable and still does not land — on a migration hold
+/// `jigc task finalize <id>` exits **4** at the review gate the original run had passed
+/// with `--approve`. A route that parses but does not do what its own sentence says is the
+/// half-fix, so the two flags a repeat run genuinely needs ride it
+/// (`design/finalize.md`; `crates/cli/tests/migrate_rollback.rs` runs the emitted argv).
+fn stage_failed_finding(
+    task_id: &str,
+    git_error: &str,
+    approve: bool,
+    carry_staged: bool,
+) -> Finding {
+    let mut argv = vec![
+        "jigc".to_string(),
+        "task".to_string(),
+        "finalize".to_string(),
+        task_id.to_string(),
+    ];
+    if approve {
+        argv.push("--approve".to_string());
+    }
+    if carry_staged {
+        argv.push("--carry-staged".to_string());
+    }
     Finding::graded(
         Severity::Blocking,
         "finalize.stage-failed",
@@ -5717,11 +5763,12 @@ fn stage_failed_finding(task_id: &str, git_error: &str) -> Finding {
              promotions were rolled back: {git_error}"
         ),
         Some(work_unit_location(task_id)),
-        Some(
-            "resolve the embedded git failure (e.g. remove a stale `.git/index.lock`), \
-             then re-run `jigc task finalize`"
-                .into(),
-        ),
+        Some(engine::finding::Route::mechanical(
+            argv,
+            " once the embedded git failure is resolved (e.g. remove a stale \
+             `.git/index.lock`) — the task survives intact, so the same re-run lands the \
+             commit",
+        )),
     )
 }
 

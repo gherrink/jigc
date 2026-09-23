@@ -723,6 +723,47 @@ fn stage_phase_git_failure_yields_a_routed_finding_and_rolls_back() {
         FOREIGN,
         "the foreign original must be restored byte-intact",
     );
+
+    // **The route is copy-runnable** (M53 — the pre-v1 usability batch, row 5 / the M52
+    // per-axis review's `(4, DEFECT 1)`). The shipped route named `jigc task finalize`
+    // with no `<ID>`; pasted, it exited 2 with a clap usage error — while the task id was
+    // in hand and spent on the locus, and the sibling hook-rejection frame one step away
+    // printed the id. Asserted on the **emitted bytes**, lifted out of the finding's own
+    // `route:` line and executed, never on a reconstruction.
+    let route = stderr
+        .lines()
+        .find(|line| line.trim_start().starts_with("route:"))
+        .unwrap_or_else(|| panic!("the finding renders a `route:` line; stderr:\n{stderr}"));
+    let emitted = route
+        .split('`')
+        .nth(1)
+        .unwrap_or_else(|| panic!("the route leads with a backticked command; got: {route}"));
+    let argv: Vec<&str> = emitted.split_whitespace().collect();
+    assert_eq!(
+        argv,
+        ["jigc", "task", "finalize", TASK, "--approve"],
+        "the emitted command names the task it is about AND echoes the run's own flags — \
+         *the same re-run* means the same invocation, and without `--approve` this one \
+         parses and then stops at the review gate the blocked run had passed; got: \
+         {emitted}",
+    );
+
+    // Resolve the seeded failure exactly as the route says to, then run the emitted argv
+    // verbatim: it must land the commit the blocked run did not.
+    fs::remove_file(repo.path().join(".git").join("index.lock")).expect("clear the seeded lock");
+    let rerun = run_jigc(repo.path(), home.path(), &pack, &argv[1..]);
+    assert_eq!(
+        rerun.status.code(),
+        Some(0),
+        "the emitted route, run verbatim, must land; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&rerun.stdout),
+        String::from_utf8_lossy(&rerun.stderr),
+    );
+    assert_ne!(
+        git(repo.path(), &["rev-parse", "HEAD"]),
+        head_before,
+        "and the commit the stage failure lost must now be there",
+    );
 }
 
 /// Review F3: a foreign original **absent from `HEAD`** + a seeded commit failure must
