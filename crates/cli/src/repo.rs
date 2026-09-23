@@ -1179,7 +1179,7 @@ fn head_is_detached(repo_root: &Path) -> Option<bool> {
 /// [`head_is_detached`] is the attached/detached projection of this; [`SeamSubject`]
 /// records the **value**, because a seam that only asked *is HEAD attached?* would let a
 /// commit land on a branch nobody asked for.
-fn head_ref(repo_root: &Path) -> Option<Option<String>> {
+pub(crate) fn head_ref(repo_root: &Path) -> Option<Option<String>> {
     let out = std::process::Command::new("git")
         .args(["symbolic-ref", "-q", "HEAD"])
         .current_dir(repo_root)

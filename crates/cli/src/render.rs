@@ -1904,6 +1904,40 @@ fn validation_scoped(
     }
 }
 
+/// **Which checkout a `task finalize` commits in, when that is not the one jigc's
+/// workbench binds to** — `None` on the ordinary path, where they are the same directory
+/// (M53 — the cwd census, row C2-09).
+///
+/// The `.jigc/` workbench binds to **jigc_home**, the main checkout, so every linked
+/// worktree of one project shares one task roster (M31 Inc 2 / WF3). The commit does not:
+/// `jigc task finalize` stages and commits in the checkout the command was typed in,
+/// because that is where the task's code is — a plain task's edits live in whatever
+/// working tree the agent is editing, and committing them anywhere else would commit
+/// nothing, or the wrong tree. Driven from an ordinary branch-attached linked worktree,
+/// that is exactly what happened and **no surface said so**: the task was minted and its
+/// roster read from the main checkout, the ack named a sha, and the commit had advanced
+/// the *worktree's* branch while `main` stayed where it was.
+///
+/// So the targeting is kept and stated. This is the whole statement: a **text-only** line
+/// on the landed ack and on the `--dry-run` forecast. The `committed` object and the
+/// dry-run envelope are 1.0-pinned and the additive-key window closed at M48
+/// (`design/command-output-contract.md`), so the field is `#[serde(skip)]` and a
+/// `--format json` driver still reads the commit target from git. That is a **declared
+/// bound**, not an oversight: giving the machine surface this fact is a key addition, and
+/// a key addition is a 2.0 act.
+pub struct CommitSite {
+    /// The checkout the commit lands in. A linked worktree usually sits outside the
+    /// repository's own tree, which is law 1's *honest absolute* case
+    /// (`design/surface-contract.md` → The printed-path fence), so this is whatever
+    /// [`repo_relative`] makes of it against jigc_home — repo-relative when the worktree
+    /// happens to live inside, absolute when it does not.
+    pub checkout: String,
+    /// The branch this commit advances, or `None` when HEAD is detached. Detached is
+    /// unreachable at this door — the posture guard refuses `repo.head-detached` before it
+    /// — but the probe can also simply fail to answer, and *unknown* is not *none*.
+    pub branch: Option<String>,
+}
+
 /// The landed-commit facts a successful `task finalize` confirms back to the user
 /// (M26 post-completion shakedown): the short commit `hash` + its `subject`, each
 /// persisted doc `promoted` to its canonical repo location, and the `files` count of
@@ -1965,6 +1999,11 @@ pub struct Landed {
     /// beside this object. So *what moved* and *what was kept where it was* are two facts on
     /// two keys, neither of which has to be inferred from the other.
     pub displaced: Vec<Displaced>,
+    /// **Where this commit landed, when that is not the checkout jigc's workbench binds
+    /// to** — `None` on the ordinary path. See [`CommitSite`] for the rule and for why
+    /// this is `#[serde(skip)]` rather than a key.
+    #[serde(skip)]
+    pub site: Option<CommitSite>,
 }
 
 /// One entry a displacing door **moved aside** instead of destroying, both halves
@@ -2387,6 +2426,7 @@ pub fn finalize_manifest(
     included: &[ManifestEntry],
     left_out: &[ManifestEntry],
     findings: &Findings,
+    site: Option<&CommitSite>,
 ) -> String {
     match format {
         Format::Json => json(&serde_json::json!({
@@ -2401,6 +2441,11 @@ pub fn finalize_manifest(
                 "finalize --dry-run — pre-commit manifest (nothing committed)".to_string(),
                 format!("would commit — {subject}"),
             ];
+            // Where it would land, when that is not the checkout the workbench binds to
+            // (M53 — the cwd census, C2-09). Forecast and ack say the same sentence in the
+            // same tense, so the reader is not told after the fact what the preview could
+            // have told them.
+            lines.extend(site.map(|site| commit_site_line("would commit", site)));
             lines.extend(included.iter().map(manifest_line));
             lines.extend(left_out_lines(left_out));
             with_carried_findings(lines.join("\n"), findings)
@@ -2470,6 +2515,26 @@ pub fn finalize_landed(format: Format, report: &ValidationReport, landed: &Lande
 /// [`left_out_lines`] residual section naming the unstaged/untracked WIP the index commit
 /// left behind (M30 G3 — rendered identically to the dry-run forecast). Ends without a
 /// trailing newline — the caller's `println!` closes the line, symmetric with [`validation`].
+/// The one sentence a finalize says about **where it committed**, in the caller's tense —
+/// `committed` on the landed ack, `would commit` on the `--dry-run` forecast (M53 — the cwd
+/// census, C2-09). One producer, so the forecast and the ack cannot describe one act two
+/// ways.
+///
+/// It is emitted **only** when the commit site is not the checkout jigc's workbench binds to
+/// ([`CommitSite`]), which is why the ordinary finalize's bytes do not move: naming the main
+/// checkout on every run would be a line that is always true and never news.
+fn commit_site_line(tense: &str, site: &CommitSite) -> String {
+    let branch = match &site.branch {
+        Some(branch) => format!(" on branch `{branch}`"),
+        None => String::new(),
+    };
+    format!(
+        "  {tense} in the linked worktree at `{}`{branch} — not in the main checkout jigc's \
+         workbench binds to",
+        site.checkout,
+    )
+}
+
 fn landed_summary(landed: &Landed) -> String {
     let mut out = format!("finalized {} — {}\n", landed.hash, landed.subject);
     for entry in &landed.manifest {
@@ -2478,6 +2543,10 @@ fn landed_summary(landed: &Landed) -> String {
     }
     let noun = if landed.files == 1 { "file" } else { "files" };
     out.push_str(&format!("  {} {noun} committed", landed.files));
+    if let Some(site) = &landed.site {
+        out.push('\n');
+        out.push_str(&commit_site_line("committed", site));
+    }
     for line in left_out_lines(&landed.left_out) {
         out.push('\n');
         out.push_str(&line);
@@ -9708,7 +9777,14 @@ mod tests {
         let subject = "feat(cache): forecast the subject";
         let findings = forecast_finding();
 
-        let agent = finalize_manifest(Format::Agent, subject, &included, &left_out, &findings);
+        let agent = finalize_manifest(
+            Format::Agent,
+            subject,
+            &included,
+            &left_out,
+            &findings,
+            None,
+        );
         insta::assert_snapshot!(agent, @r"
         finalize --dry-run — pre-commit manifest (nothing committed)
         would commit — feat(cache): forecast the subject
@@ -9723,7 +9799,14 @@ mod tests {
             "no trailing newline — the caller closes it"
         );
         assert_eq!(
-            finalize_manifest(Format::Human, subject, &included, &left_out, &findings),
+            finalize_manifest(
+                Format::Human,
+                subject,
+                &included,
+                &left_out,
+                &findings,
+                None
+            ),
             agent
         );
         // M52 Increment 10 / T3 replaced the M51 rider's bound (*"`findings` is a JSON-only
@@ -9736,7 +9819,8 @@ mod tests {
                 subject,
                 &included,
                 &left_out,
-                &Findings::default()
+                &Findings::default(),
+                None,
             ),
             "finalize --dry-run — pre-commit manifest (nothing committed)\n\
              would commit — feat(cache): forecast the subject\n\
@@ -9746,7 +9830,8 @@ mod tests {
             "a findings-free forecast renders exactly the block it always did",
         );
 
-        let json_out = finalize_manifest(Format::Json, subject, &included, &left_out, &findings);
+        let json_out =
+            finalize_manifest(Format::Json, subject, &included, &left_out, &findings, None);
         let value: serde_json::Value = serde_json::from_str(&json_out).expect("valid JSON");
         assert_eq!(value["dry_run"], serde_json::Value::Bool(true));
         assert_eq!(
@@ -9766,7 +9851,8 @@ mod tests {
                 subject,
                 &included,
                 &left_out,
-                &Findings::default()
+                &Findings::default(),
+                None,
             ))
             .expect("valid JSON")["findings"],
             serde_json::json!([]),
@@ -9797,6 +9883,7 @@ mod tests {
             &included,
             &[],
             &Findings::default(),
+            None,
         );
         assert!(
             agent.contains("  added src/feature.rs"),
@@ -9813,6 +9900,7 @@ mod tests {
             &included,
             &[],
             &Findings::default(),
+            None,
         );
         let value: serde_json::Value = serde_json::from_str(&json_out).expect("valid JSON");
         assert_eq!(value["manifest"][0]["kind"], "added");
@@ -9836,6 +9924,7 @@ mod tests {
             &carried,
             &[],
             &Findings::default(),
+            None,
         );
         assert!(
             agent.contains("  carried-over foreign-a.txt"),
@@ -9847,6 +9936,7 @@ mod tests {
             &carried,
             &[],
             &Findings::default(),
+            None,
         );
         let value: serde_json::Value = serde_json::from_str(&json_out).expect("valid JSON");
         assert_eq!(value["manifest"][0]["kind"], "carried-over");
@@ -9873,6 +9963,7 @@ mod tests {
         let resolved = crate::cascade_util::no_delta_resolved().expect("resolves");
         let report = ValidationReport::new(Vec::new(), &resolved);
         let landed = Landed {
+            site: None,
             hash: "abc1234".to_string(),
             subject: "feat: surface the manifest".to_string(),
             promoted: vec!["docs/decisions/x.md".to_string()],

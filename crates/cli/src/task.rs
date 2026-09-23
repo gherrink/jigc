@@ -2012,6 +2012,28 @@ impl TaskArea {
         }
     }
 
+    /// **Where this door's commit will land, when that is not the checkout the `.jigc/`
+    /// workbench binds to** — `None` on the ordinary path (M53 — the cwd census, row C2-09;
+    /// [`crate::render::CommitSite`] carries the rule and the declared bound).
+    ///
+    /// Both paths are canonicalized before they are compared, because one of the two can
+    /// carry macOS's `/private` prefix and the other not — the same reason
+    /// [`crate::milestone::sub_task_fan_out_refusal`] canonicalizes its own pair. A path
+    /// that cannot be canonicalized falls back to the raw comparison, which errs toward
+    /// *different* and therefore toward saying something rather than staying silent.
+    fn commit_site(&self) -> Option<crate::render::CommitSite> {
+        let real = |path: &Path| path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        if real(&self.repo_root) == real(&self.jigc_home) {
+            return None;
+        }
+        Some(crate::render::CommitSite {
+            checkout: crate::render::repo_relative(&self.jigc_home, &self.repo_root),
+            branch: crate::repo::head_ref(&self.repo_root)
+                .flatten()
+                .map(|head| head.trim_start_matches("refs/heads/").to_string()),
+        })
+    }
+
     /// The project cascade layer's config dir (`<repo>/.jigc/config`) — the override
     /// surface `task validate` / `finalize` resolve to feed the engine's severity
     /// post-pass (`design/validation.md` → Every finding-emitting entry point must
@@ -2845,6 +2867,7 @@ impl TaskArea {
                     &included,
                     &left_out,
                     &forecast.findings,
+                    self.commit_site().as_ref(),
                 )
             );
             if format != Format::Json {
@@ -3049,6 +3072,9 @@ impl TaskArea {
                     // same repo-relative pairs it already named on stderr. Empty on the
                     // ordinary path, and present either way.
                     displaced: displaced_foreign,
+                    // M53 — the cwd census, C2-09: the checkout this commit landed in, when
+                    // it is not the one the workbench binds to. Text-only by declared bound.
+                    site: self.commit_site(),
                 };
                 // M53 Increment 2 / T3 — the working area(s) phase 7 could not tear down,
                 // folded into the landed envelope's own `findings` array. `Findings::push`

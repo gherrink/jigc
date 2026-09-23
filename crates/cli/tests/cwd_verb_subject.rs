@@ -402,3 +402,164 @@ fn task_diff_of_a_sub_task_reads_its_worktree_from_every_cwd() {
         "the pinned `task-diff` envelope's key set must not move",
     );
 }
+
+// ---------------------------------------------------------------------------------------
+// C2-09 — `jigc task finalize` from an ordinary linked worktree SAYS where it committed.
+// ---------------------------------------------------------------------------------------
+
+/// The decision this pins is *keep it, say it* (M53 — the cwd census, row C2-09;
+/// `crate::render::CommitSite`). A plain task's code lives in the working tree the agent is
+/// editing, so the commit target is the checkout the command was typed in — and the whole
+/// rest of the door already agrees with that: the base pin, the posture guard, the carryover
+/// snapshot and `task diff`'s plain-task subject are all the standing checkout. Committing
+/// to the main checkout instead would commit nothing, or the wrong tree.
+///
+/// What was wrong was that **nothing said so**: the task was minted and its roster read from
+/// the main checkout, the ack named a sha, and the worktree's branch had moved while `main`
+/// had not. So the target is named on both surfaces, and named in the same sentence.
+#[test]
+fn task_finalize_names_the_checkout_it_commits_in_when_that_is_not_the_workbench_home() {
+    let root = TempDir::new("c209");
+    let repo = root.path().join("repo");
+    fs::create_dir_all(&repo).expect("mk repo dir");
+    init_repo(&repo);
+    let home = TempDir::new("c209-home");
+    let linked = root.path().join("feat");
+
+    git(
+        &repo,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "feat",
+            linked.to_str().expect("worktree path is UTF-8"),
+        ],
+    );
+
+    // One plain task per checkout, authored and finalized from that checkout.
+    for (tag, cwd, task, elsewhere) in [
+        ("linked worktree", linked.clone(), "do-a-thing", true),
+        ("main checkout", repo.clone(), "second-thing", false),
+    ] {
+        let intent = if elsewhere {
+            "do a thing"
+        } else {
+            "second thing"
+        };
+        assert_ok(
+            &jigc_in(
+                &cwd,
+                home.path(),
+                &["start", intent, "--workflow", "quick-fix"],
+            ),
+            "`jigc start --workflow quick-fix`",
+        );
+        fs::write(cwd.join(format!("{task}.txt")), "change\n").expect("write code");
+        git(&cwd, &["add", &format!("{task}.txt")]);
+        for (address, value) in [
+            (format!("commit:{task}#type"), "fix"),
+            (format!("commit:{task}#scope"), "core"),
+        ] {
+            assert_ok(
+                &jigc_in(
+                    &cwd,
+                    home.path(),
+                    &[
+                        "doc",
+                        "set-field",
+                        &address,
+                        "--value",
+                        value,
+                        "--task",
+                        task,
+                    ],
+                ),
+                "`jigc doc set-field`",
+            );
+        }
+        for (slot, value) in [("summary", "do the thing"), ("body", "Body prose.")] {
+            let payload = home.path().join(format!("{task}-{slot}.txt"));
+            fs::write(&payload, format!("{value}\n")).expect("write the slot payload");
+            assert_ok(
+                &jigc_in(
+                    &cwd,
+                    home.path(),
+                    &[
+                        "doc",
+                        "set-slot",
+                        &format!("commit:{task}#{slot}"),
+                        "--from-file",
+                        payload.to_str().expect("payload path is UTF-8"),
+                        "--task",
+                        task,
+                    ],
+                ),
+                "`jigc doc set-slot`",
+            );
+        }
+
+        let forecast = jigc_in(&cwd, home.path(), &["task", "finalize", task, "--dry-run"]);
+        assert_ok(&forecast, "`jigc task finalize --dry-run`");
+        // The pinned forecast envelope does NOT grow a key for the commit site — the
+        // additive-key window closed at M48, so this is a text-only statement by declared
+        // bound (`crate::render::CommitSite`). Asserted on the arm that HAS a site to name.
+        let envelope = jigc_in(
+            &cwd,
+            home.path(),
+            &["task", "finalize", task, "--dry-run", "--format", "json"],
+        );
+        assert_ok(&envelope, "`jigc task finalize --dry-run --format json`");
+        let value: serde_json::Value =
+            serde_json::from_str(&stdout(&envelope)).expect("the forecast envelope parses");
+        let mut keys: Vec<&str> = value
+            .as_object()
+            .expect("the forecast envelope is an object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            ["dry_run", "findings", "left_out", "manifest", "subject"],
+            "the pinned `finalize --dry-run` envelope's key set must not move, run from \
+             the {tag}",
+        );
+        let landed = jigc_in(&cwd, home.path(), &["task", "finalize", task]);
+        assert_ok(&landed, "`jigc task finalize`");
+
+        for (surface, seen, tense) in [
+            (
+                "--dry-run",
+                stdout(&forecast),
+                "would commit in the linked worktree at",
+            ),
+            (
+                "the landed ack",
+                stdout(&landed),
+                "committed in the linked worktree at",
+            ),
+        ] {
+            assert_eq!(
+                seen.contains(tense),
+                elsewhere,
+                "{surface}, run from the {tag}, must {} name the commit site; got:\n{seen}",
+                if elsewhere { "" } else { "not" },
+            );
+            if elsewhere {
+                assert!(
+                    seen.contains("on branch `feat`"),
+                    "{surface} must name the branch it advances; got:\n{seen}",
+                );
+            }
+        }
+    }
+
+    // The behaviour itself is unchanged and that is the decision: each commit landed on the
+    // branch of the checkout it was typed in.
+    assert!(
+        git(&linked, &["log", "-1", "--pretty=format:%s"]).contains("do the thing"),
+        "the linked worktree's own branch carries its commit",
+    );
+}

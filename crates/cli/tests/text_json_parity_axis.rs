@@ -1730,9 +1730,16 @@ fn finalize_dry_run_subject_close() {
     // it is not a parity subject: the fence runs text → envelope, and the agent surface
     // prints no finding here.
     let findings = engine::finding::Findings::default();
-    let text = finalize_manifest(Format::Agent, subject, &included, &left_out, &findings);
+    let text = finalize_manifest(
+        Format::Agent,
+        subject,
+        &included,
+        &left_out,
+        &findings,
+        None,
+    );
     let doc = envelope(
-        &finalize_manifest(Format::Json, subject, &included, &left_out, &findings),
+        &finalize_manifest(Format::Json, subject, &included, &left_out, &findings, None),
         "jigc task finalize --dry-run",
     );
     text_prints(&text, subject, "jigc task finalize --dry-run", "subject");
