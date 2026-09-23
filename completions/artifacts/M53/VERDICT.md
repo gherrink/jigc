@@ -163,3 +163,61 @@ path is still cleared by `provision` without consent (the shipped policy, stated
 · the `--force` narration over a jigc-provisioned operation-bearing worktree is driven by hand, not a
 standing assertion. **Then axes 2 and 3 re-driven on rc.18 — axis 3 because the HIGH changed a destroying
 door — and then the 1.0.0 call, which is the human's.**
+
+---
+
+## Addendum 2 (2026-09-23) — the cwd-dependence arc, and the third stamp
+
+**The rc.18 re-review found zero tier-1 rows** ([per-axis-review-rc18/](per-axis-review-rc18/README.md)) — by
+the exit rule the call was takeable. **The human read the two tier-2 rows first** and asked a wider
+question: `(2, F-1)`'s route ran only from the repository root, and *agents swap directories* — what
+else does cwd break? **Answered by a driven census, not a guess** ([cwd-census.md](cwd-census.md): every
+path-bearing route and every verb from the root, a subdirectory, a fan-out worktree and a linked
+worktree). The answer was two classes on one root cause, and one of them was worse than F-1:
+
+- **Verbs.** Six — in fact **seven** — private copies of a bare `discover_repo_root` walk-up beside
+  `repo::jigc_home` (git-common-dir), so inside a worktree a *store* door resolved the worktree: `jigc
+  milestone finalize` **failed from inside any worktree** with a raw git error, on the cwd its own spawn
+  line creates; the base-mismatch gate compared against the standing checkout's HEAD and **did not fire
+  from a worktree**; `task diff <sub>` diffed whatever checkout you stood in; the seventh copy, inlined in
+  the pack loader, made **the whole project pack-set vanish** inside a worktree. `migrate <PATH>`
+  resolved against the root while `--from-file` resolved against the cwd. `AGENT.md` never said where
+  printed paths are rooted.
+- **Routes.** 18 `git` spans from 13 producers carried a root-relative operand git resolves against the
+  cwd. `Route::mechanical` (107 sites, `jigc`-leading) was cwd-robust by construction — the fragile set
+  was `Route::human` and remedy prose.
+
+**The human chose both classes, before 1.0.0, no new capability:** store doors resolve through
+`jigc_home`; every operator-facing `git` span renders `git -C <absolute> … -- <repo-relative>` with the
+message, `at:` and `(code, target)` staying repo-relative — the *pasteable shell bytes* disposition
+`surface-contract.md` already wrote and applied to two remedies; the spawn `cd` absolute; `migrate
+<PATH>` cwd-based like every path argument; and, on the review's finding, **`setup` and `uninstall` bind
+`jigc_home` too** (from a worktree, `uninstall` had removed the repository-wide hook and left the install
+standing while *all four* of its WIP guards ran inert).
+
+**Two fixers, 9 commits (`057b5642`…`b433875b`); one independent review** ([audit/cwd-fix-code-review.md](audit/cwd-fix-code-review.md)) —
+**HOLDS WITH FINDINGS: 2 HIGH · 2 MEDIUM · 7 LOW**, whose diagnosis is the arc's lesson: *the range
+moved paths from relative to absolute and did not re-ask the two questions an absolute raises — does it
+survive a shell, and does everything that consumes it still parse it.* The unquoted `Spawn:` `cd` broke
+on a spaced repo path; the pre-commit hook's awk assumed `git -C <home>` is one field and the
+out-of-band-rename guard **failed open** on a spaced path; five producers still printed a root-relative
+path into the now cwd-based `jigc migrate`; `milestone create`'s base pin was left on the standing
+checkout while the boundary moved. **All eleven fixed** (`ccdfb3d2`…`7bf05636`, 16 commits; two widened —
+the span fence's head-only blindness had a twin in the quoting fence), then a **confirmation pass**
+([audit/cwd-fix-code-review-2.md](audit/cwd-fix-code-review-2.md)) confirmed every closure by driving,
+nine of eleven on spaced and `'`/`#`-bearing roots, and found **2 MEDIUM · 5 LOW** — a declared-open
+hook axis one `config set docs-root "my docs"` away, the uninstall site line asserting the opposite of
+what it did in the fan-out cell — fixed before the stamp.
+
+**Counts and bounds.** Gate at the last fix: see the stamp entry in DECISIONS. The negative fence stayed
+empty across the whole arc; 6 goldens moved twice, both times the AGENT.md paragraph and nothing else.
+**Carried:** the `jigc migrate` half of a route echoes the token as typed (runs from the cwd it was
+typed in — nothing short of an absolute makes a `jigc <path>` span cwd-free, out of scope); a
+worktree-local `.jigc/` a *previous* buggy `setup` left is read by nothing and cleaned by nothing; the
+hook's `--`-less operand axis is closed or restated per the last fixer's report; a fixer's mis-eval'd rig
+committed into this repo once and was dropped by rebase before any push — the rig's own two-step-eval
+warning is exactly that failure, now stated in every fixer brief.
+
+**`1.0.0-rc.19` is the third stamp**, after the confirmation pass's fixes, not before. **Then axes 2 · 3 ·
+5 · 6 re-driven on rc.19** — 5 for `task diff`'s pinned envelope and the `PATH_ARG_OCCURRENCES` base
+rows, 6 for the spawn line — **and then the 1.0.0 call, which is the human's.**
