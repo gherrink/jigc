@@ -832,8 +832,10 @@ fn run_describe(format: Format, kinds: describe::Kinds) -> Outcome {
     }
 }
 
-/// Run `jigc setup` (the adapter install) against the current working directory:
-/// locate the repo root, install the Claude Code adapter (bootstrap reference +
+/// Run `jigc setup` (the adapter install) from the current working directory:
+/// locate **jigc_home** (the main checkout, which from a linked or fan-out worktree is not
+/// the checkout you are standing in — [`crate::setup`]'s module header carries the rule and
+/// the driven datum), install the Claude Code adapter (bootstrap reference +
 /// project-layer init + `Bash(jigc:*)` allowlist), render the outcome through the
 /// selected `format`, and map
 /// it to the exit code. Success prints a summary on stdout and exits 0; a write
@@ -868,8 +870,9 @@ fn run_setup(format: Format, force: bool) -> Outcome {
     }
 }
 
-/// Run `jigc uninstall` (the repo-local teardown) against the current working
-/// directory: locate the repo root, reverse the enumerated repo-local install
+/// Run `jigc uninstall` (the repo-local teardown) from the current working
+/// directory: locate **jigc_home**, the same root `setup` installs at ([`run_setup`]),
+/// and reverse the enumerated repo-local install
 /// (remove `.jigc/`, unwire the `CLAUDE.md` reference, drop the `Bash(jigc:*)` allowlist
 /// permit — never the machine-global `doc-code` probe), render the outcome through the
 /// selected `format`, and map it to the exit code. Success prints a summary on stdout
