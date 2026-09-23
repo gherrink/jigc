@@ -192,11 +192,6 @@ const NON_AREA_JOINS: &[(&str, usize, &str)] = &[
          `fills/<id>.md`, one `steps/<step_id>.yaml`; a config dir is no working area",
     ),
     (
-        "crates/cli/src/ingest.rs",
-        1,
-        "`.git` — the repo-root probe, whose receiver is an ancestor walk",
-    ),
-    (
         "crates/cli/src/invocation_log.rs",
         1,
         "the invocation log's own file under `.jigc/logs/`, which is no working area",
@@ -205,16 +200,6 @@ const NON_AREA_JOINS: &[(&str, usize, &str)] = &[
         "crates/cli/src/invoke.rs",
         1,
         "the `doc-code` probe binary under the pack's bin dir",
-    ),
-    (
-        "crates/cli/src/locate.rs",
-        1,
-        "`.git` — the repo-root probe",
-    ),
-    (
-        "crates/cli/src/milestone.rs",
-        1,
-        "`.git` — the repo-root probe",
     ),
     (
         "crates/cli/src/pack.rs",
@@ -242,7 +227,6 @@ const NON_AREA_JOINS: &[(&str, usize, &str)] = &[
          `.jigc/<tasks|milestones>` and `.jigc/displaced`, which are the directories that \
          *hold* working areas (and the parking home) rather than working areas themselves",
     ),
-    ("crates/cli/src/start.rs", 1, "`.git` — the repo-root probe"),
     (
         "crates/cli/src/rollback.rs",
         1,
@@ -253,7 +237,7 @@ const NON_AREA_JOINS: &[(&str, usize, &str)] = &[
     ),
     (
         "crates/cli/src/task.rs",
-        1,
+        0,
         "**[Corrected 2026-09-22 (M53 completion audit, fix 1).** This row read `2` and \
          counted `try_execute_finalize_plan`'s `finalize-message.tmp` beside the `.git` \
          probe, on the ground that *it does not outlive the transaction: it is gone before \
@@ -263,7 +247,12 @@ const NON_AREA_JOINS: &[(&str, usize, &str)] = &[
          named it as *a path jigc did not write* at exit 0, and `task discard` then refused \
          at exit 1 over it. The name is now `engine::state::FINALIZE_MESSAGE_FILE` on both \
          registry rows, so the site is a guarded member rather than a remainder.**] \
-         One: `.git` — the repo-root probe, whose receiver is an ancestor walk",
+         **[Corrected 2026-09-23 (M53 — the cwd census, the verb class).** The row then \
+         read `1`, for *`.git` — the repo-root probe, whose receiver is an ancestor \
+         walk*. That probe was one of five byte-identical private copies of \
+         `crate::repo::discover_repo_root`; the copies are collapsed onto the one \
+         function in `repo.rs`, whose own row already counts its `.git` join, so this \
+         file now carries no unregistered site at all.**]",
     ),
     (
         "crates/engine/src/target_surface.rs",

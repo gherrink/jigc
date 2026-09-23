@@ -10,6 +10,7 @@
 //! file bytes and resolves no deltas — that is the engine's job (feed-layers-in /
 //! assert-results-out).
 
+use crate::repo::discover_repo_root;
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
@@ -213,15 +214,6 @@ fn locate_from(start: &Path, home: &Path) -> Result<RunContext> {
         project_config,
         team_config,
     })
-}
-
-/// Walk up from `start` until a directory containing a `.git` entry is found,
-/// returning that directory (the repo root).
-fn discover_repo_root(start: &Path) -> Option<PathBuf> {
-    start
-        .ancestors()
-        .find(|dir| dir.join(".git").exists())
-        .map(PathBuf::from)
 }
 
 #[cfg(test)]

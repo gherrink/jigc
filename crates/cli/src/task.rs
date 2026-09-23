@@ -31,6 +31,7 @@ use crate::cli::Format;
 use crate::invocation_log::{self, Outcome};
 use crate::pack::make_pack;
 use crate::render;
+use crate::repo::discover_repo_root;
 use crate::repo::{SeamAct, SeamSubject};
 use anyhow::{Context, Result, bail};
 use engine::address::Address;
@@ -7714,15 +7715,6 @@ impl Drop for ScratchTree {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.0);
     }
-}
-
-/// Walk up from `start` to the directory holding `.git` (the repo root) — the same
-/// discovery `crate::start` / `crate::doc` do.
-fn discover_repo_root(start: &Path) -> Option<PathBuf> {
-    start
-        .ancestors()
-        .find(|dir| dir.join(".git").exists())
-        .map(PathBuf::from)
 }
 
 #[cfg(test)]

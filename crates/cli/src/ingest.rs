@@ -42,6 +42,7 @@ use engine::schema::Schema;
 use engine::validate::{repeatable_populated, schema_conformance, surplus_sections_absent};
 
 use crate::pack::make_pack;
+use crate::repo::discover_repo_root;
 use crate::task::git_head;
 use engine::packsource::PackResourceKind;
 
@@ -992,14 +993,6 @@ pub(crate) fn require_project_layer(cwd: &Path) -> Result<PathBuf> {
         return Err(crate::locate::not_set_up(&project_config));
     }
     Ok(jigc_home)
-}
-
-/// Walk up from `start` to the directory holding `.git` (the repo root).
-fn discover_repo_root(start: &Path) -> Option<PathBuf> {
-    start
-        .ancestors()
-        .find(|dir| dir.join(".git").exists())
-        .map(PathBuf::from)
 }
 
 #[cfg(test)]

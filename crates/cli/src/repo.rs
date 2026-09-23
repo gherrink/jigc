@@ -102,9 +102,19 @@ pub fn jigc_home(start: &Path) -> Option<PathBuf> {
 }
 
 /// Walk up from `start` until a directory containing a `.git` entry is found,
-/// returning that directory (the worktree root). The same walk-up every command module
-/// owns; co-located here so [`jigc_home`] can layer over it — and reached by
-/// [`crate::cli`]'s posture guard, which runs before any door has resolved a repo.
+/// returning that directory (the worktree root) — co-located here so [`jigc_home`] can
+/// layer over it, and reached by [`crate::cli`]'s posture guard, which runs before any
+/// door has resolved a repo.
+///
+/// **This is the only copy** (M53 — the cwd census, the verb class). The doc-comment said
+/// *"the same walk-up every command module owns"*, and it was literally true: `start.rs`,
+/// `locate.rs`, `ingest.rs`, `task.rs` and `milestone.rs` each carried a byte-identical
+/// private `discover_repo_root`, six in all. Six copies of one function is its own defect —
+/// a fix to the walk-up reaches one of them, and the census found the *callers* of those
+/// copies split on a question the copies cannot express: whether the door's subject is the
+/// **standing checkout** (what this returns) or the **milestone/task store**, which binds
+/// to [`jigc_home`] and inside a linked worktree is a different directory. Collapsing them
+/// puts that choice at every call site, where it is visible.
 pub fn discover_repo_root(start: &Path) -> Option<PathBuf> {
     start
         .ancestors()

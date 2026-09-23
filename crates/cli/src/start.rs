@@ -19,6 +19,7 @@
 //! resolved cascade in → same workflow out).
 
 use crate::pack::make_pack;
+use crate::repo::discover_repo_root;
 use anyhow::{Context, Result, anyhow, bail};
 use engine::address::Address;
 use engine::cascade::{
@@ -4126,16 +4127,6 @@ fn git_rev_parse(repo_root: &Path, args: &[&str]) -> Result<String> {
         .trim()
         .to_string();
     Ok(line)
-}
-
-/// Walk up from `start` to the directory holding `.git` (the repo root) — the
-/// same discovery [`crate::locate`] does, kept local so minting needs no
-/// `RunContext`.
-fn discover_repo_root(start: &Path) -> Option<std::path::PathBuf> {
-    start
-        .ancestors()
-        .find(|dir| dir.join(".git").exists())
-        .map(std::path::PathBuf::from)
 }
 
 #[cfg(test)]

@@ -48,6 +48,7 @@ use crate::cli::Format;
 use crate::invocation_log::Outcome;
 use crate::pack::make_pack;
 use crate::render;
+use crate::repo::discover_repo_root;
 use crate::task::git_head;
 use anyhow::{Context, Result, bail};
 use engine::data_value::SubTask;
@@ -7278,15 +7279,6 @@ fn git_rev_parse(repo_root: &Path, args: &[&str]) -> Result<String> {
     String::from_utf8(out.stdout)
         .context("`git` produced non-UTF-8 output")
         .map(|s| s.trim().to_string())
-}
-
-/// Walk up from `start` to the directory holding `.git` (the repo root) — the same
-/// discovery `crate::start` / `crate::task` do.
-fn discover_repo_root(start: &Path) -> Option<PathBuf> {
-    start
-        .ancestors()
-        .find(|dir| dir.join(".git").exists())
-        .map(PathBuf::from)
 }
 
 /// Map an engine [`Finding`] to an `anyhow` error carrying its **key** + message +
