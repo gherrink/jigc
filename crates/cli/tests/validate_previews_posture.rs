@@ -50,6 +50,16 @@
 //! which asserts the preview's `repo.head-unborn` refusal there rather than leaving the
 //! member to a loop that cannot build it.
 //!
+//! # The second preview surface (M53)
+//!
+//! `jigc start`'s orientation now **reports** the same posture, on the same axis, at exit
+//! **0** — the M52 per-axis review's `(6, D-1)`: a repository mid-merge read
+//! `findings: none` on its live task and the agent learned at `finalize`, after authoring.
+//! It is the same producer asked with the same `task finalize` row, so the arm below
+//! checks the cross-door identity per cell rather than restating the message here, and the
+//! file's subject widens from *the preview* to *every surface that forecasts the posture
+//! the commit boundary refuses under*.
+//!
 //! # And the refusal acts on nothing
 //!
 //! Each cell re-asserts the fixture's own git state after all three doors have run
@@ -215,6 +225,137 @@ fn the_refusal_envelope_is_identical_at_the_three_doors() {
     }
 }
 
+/// **The second preview surface: orientation reports the posture it does not refuse on**
+/// (M53 — the pre-v1 usability batch, row 2 / the M52 per-axis review's `(6, D-1)`).
+///
+/// `jigc start` acts on nobody's behalf, so the door guard deliberately never fires for
+/// it — and through rc.19 that meant an agent opening a session over a repository
+/// mid-merge, mid-bisect or holding a conflicted cherry-pick read `findings: none` on its
+/// live task and learned the truth at `finalize`, after authoring. The whole point of the
+/// orientation door is that it runs at every `SessionStart`.
+///
+/// **What it is NOT:** a refusal. The exit stays **0**, stdout still carries the whole
+/// orientation, and nothing is concluded — asserted per cell, exactly as the three doors
+/// above are. What changes is that the row's own `findings` array leads with the posture,
+/// on the text render **and** on the versioned envelope, under the key that array already
+/// had: no new key, no `SCHEMA_VERSION` move.
+///
+/// **The axis is the same one**, for the same reason: one state is an instance, and a
+/// report that named the merge and stayed silent about the bisect would be the incomplete
+/// sweep this file's sibling arm exists to stop. Each cell also checks the cross-door
+/// identity — orientation's code is the refusal's code and its route text appears verbatim
+/// inside the refusal — so the surface that reports and the door that refuses cannot come
+/// to say different things about one checkout.
+#[test]
+fn orientation_reports_every_posture_finalize_refuses_without_refusing() {
+    let built = TrialCorpus::build(State::RefsPostHoc);
+    let task = built
+        .live_task()
+        .expect("`refs-post-hoc` leaves a live task")
+        .to_string();
+
+    let mut covered = 0usize;
+    for state in GitState::ALL {
+        if state.overlay_refusal().is_some() {
+            continue; // Unborn — see the sibling arm's comment.
+        }
+        let corpus = built.copy_state();
+        git_state::overlay(&corpus, *state).expect("overlay a reachable git state");
+
+        // The refusing door, for the identity this cell asserts against.
+        let refusal = printed(&corpus.jigc(&["task", "validate", &task])).2;
+
+        let (code, stdout, stderr) = printed(&corpus.jigc(&["start"]));
+        assert_eq!(
+            code,
+            0,
+            "orientation REPORTS a posture, it does not refuse on one, in the `{}` \
+             state; stdout:\n{stdout}\nstderr:\n{stderr}",
+            state.name(),
+        );
+        assert!(
+            stdout.contains(&format!("Active task: {task}")),
+            "the whole orientation still renders in the `{}` state; got:\n{stdout}",
+            state.name(),
+        );
+
+        let (code, envelope, _) = printed(&corpus.jigc(&["--format", "json", "start"]));
+        assert_eq!(code, 0, "the machine arm exits 0 too");
+        let parsed: serde_json::Value = serde_json::from_str(&envelope)
+            .unwrap_or_else(|err| panic!("a JSON envelope ({err}); got:\n{envelope}"));
+        assert_eq!(
+            parsed["state"], "active-task",
+            "the posture does not change which variant orientation is",
+        );
+        assert_eq!(
+            parsed["schema_version"], 3,
+            "the posture rides the `findings` array the row already had — no key was \
+             added, so no version moved",
+        );
+        let mut keys: Vec<&str> = parsed
+            .as_object()
+            .expect("an object envelope")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            [
+                "header",
+                "next_steps",
+                "schema_version",
+                "state",
+                "tasks",
+                "workflows"
+            ],
+            "the declared top-level key set of the `active-task` arm is unchanged",
+        );
+
+        let row = &parsed["tasks"][0];
+        let posture = row["findings"][0]
+            .as_object()
+            .unwrap_or_else(|| panic!("the row's findings lead with the posture; got:\n{row:#}"));
+        let code = posture["code"].as_str().unwrap_or_default();
+        let route = posture["route"].as_str().unwrap_or_default();
+        assert!(
+            code.starts_with("repo."),
+            "the leading finding is the posture family's in the `{}` state; got `{code}`",
+            state.name(),
+        );
+        assert_eq!(posture["severity"], "blocking");
+        assert!(
+            refusal.contains(code),
+            "orientation's posture code is the refusing door's, in the `{}` state; \
+             refusal:\n{refusal}",
+            state.name(),
+        );
+        assert!(
+            !route.is_empty() && refusal.contains(route),
+            "and its route is the refusing door's, verbatim, in the `{}` state; \
+             route `{route}` against refusal:\n{refusal}",
+            state.name(),
+        );
+        assert!(
+            stdout.contains(code) && stdout.contains(route),
+            "both reach the TEXT render too, in the `{}` state; got:\n{stdout}",
+            state.name(),
+        );
+
+        // Reporting concludes nothing, exactly as previewing does not.
+        git_state::assert_state(&corpus.repo(), &corpus.home(), *state);
+        covered += 1;
+    }
+    assert_eq!(
+        covered,
+        GitState::ALL
+            .iter()
+            .filter(|state| state.overlay_refusal().is_none())
+            .count(),
+        "every overlayable git state is a cell here too",
+    );
+}
+
 /// **The omitting context.** Over the same corpus with **no** operation left
 /// un-concluded, the preview is untouched: it renders its validation report on stdout
 /// and exits on the report's own verdict, never on a posture.
@@ -237,5 +378,14 @@ fn a_committable_posture_leaves_the_preview_exactly_as_it_was() {
     assert!(
         !stdout.is_empty(),
         "the preview still renders its report on stdout",
+    );
+
+    // And orientation's own omitting context: no posture code reaches either arm.
+    let (code, oriented, _) = printed(&corpus.jigc(&["start"]));
+    assert_eq!(code, 0, "orientation over a clean checkout exits 0");
+    assert!(
+        !oriented.contains("repo.operation-in-progress")
+            && !oriented.contains("repo.head-detached"),
+        "no posture member is reported over a clean checkout; got:\n{oriented}",
     );
 }

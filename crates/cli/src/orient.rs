@@ -155,15 +155,34 @@ fn orient_with(ctx: &RunContext, pack: &dyn PackSource) -> Result<OrientationVie
 /// unreadable base pin to [`None`], a sweep that cannot run to `findings: null` plus the
 /// reason. A task that exists is always named: a task you cannot see is worse than a pin
 /// you cannot read, and this door runs at every `SessionStart`.
+///
+/// **The repository posture joins each row's findings** (M53 — the pre-v1 usability batch,
+/// row 2 / the M52 review's `(6, D-1)`). A repository mid-merge, mid-bisect or holding a
+/// conflicted cherry-pick read `findings: none` here while `jigc task finalize` was
+/// already committed to refusing it — the agent learned at the boundary, after authoring.
+/// The breach comes from [`crate::cli::finalize_posture_breach`], which asks the
+/// **`task finalize` row's own** exemptions through the same producer the refusal uses, so
+/// the report and the refusal are the same bytes under the same `(code, target)` key.
+///
+/// It rides the existing `findings` array — no new key, no `SCHEMA_VERSION` move — and it
+/// is **prepended**, because it is the one finding no amount of authoring clears. The
+/// posture is a fact about the repository, so every live row carries it; each row is its
+/// own [`Findings`](engine::finding::Findings) collection, so one repository fact in N rows
+/// is N keys in N slices, never a duplicate within one.
+///
+/// **Declared bound:** when the task-scope sweep itself could not run, the row keeps
+/// `findings: null` plus its reason and the posture is not spliced in — *unknown* is not
+/// rendered as *a list of one*, which is the same rule the sweep's own arm obeys.
 fn active_tasks(ctx: &RunContext) -> Vec<ActiveTask> {
     let jigc_root = ctx.jigc_home.join(".jigc");
+    let posture = crate::cli::finalize_posture_breach(&ctx.repo_root);
     engine::state::list_active_task_ids(&jigc_root)
         .into_iter()
         .map(|id| {
             let dir = jigc_root.join("tasks").join(&id);
             let (findings, findings_unavailable) =
                 match crate::task::sweep_for_orientation(&ctx.repo_root, &id) {
-                    Ok(findings) => (Some(findings), None),
+                    Ok(swept) => (Some(prepend_posture(posture.as_ref(), swept)), None),
                     Err(reason) => (None, Some(reason)),
                 };
             ActiveTask {
@@ -183,6 +202,20 @@ fn active_tasks(ctx: &RunContext) -> Vec<ActiveTask> {
             }
         })
         .collect()
+}
+
+/// Put the repository-posture breach (when there is one) at the head of a task row's
+/// swept findings — see [`active_tasks`] for why it is there and why it leads.
+fn prepend_posture(
+    posture: Option<&crate::repo::PostureBreach>,
+    swept: engine::finding::Findings,
+) -> engine::finding::Findings {
+    let Some(breach) = posture else {
+        return swept;
+    };
+    std::iter::once(breach.finding())
+        .chain(swept)
+        .collect::<engine::finding::Findings>()
 }
 
 /// Render the orientation provenance header with the **composed-set** `Pack:`

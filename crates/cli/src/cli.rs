@@ -599,22 +599,35 @@ fn refuse_on_posture(command: &Command, format: Format) -> Option<Outcome> {
 /// ([`finalize_posture_refusal`]): one producer, so the door and the surface that
 /// forecasts it cannot answer differently.
 fn posture_refusal_in(cwd: &Path, acts: &ActsOnBehalf, format: Format) -> Option<Outcome> {
+    let breach = posture_breach_in(cwd, acts)?;
+    Some(crate::invocation_log::operational_failure(
+        format,
+        &render::finding_error(&breach.finding()),
+    ))
+}
+
+/// **The breach itself**, split out of [`posture_refusal_in`] so a surface that *reports*
+/// a posture can ask the identical question as the door that *refuses* on it.
+///
+/// [`posture_refusal_in`] turns a breach into a refusal — an exit code and a logged
+/// operational failure. Orientation ([`crate::orient`]) needs the [`Finding`] and nothing
+/// else: it reports at exit 0 and blocks nothing. Both go through this one function, so
+/// the reported finding and the refusing one are the same bytes under the same
+/// `(code, target)` key, and an exemption added to a `BEHALF_DOORS` row reaches the report
+/// with no edit anywhere else.
+fn posture_breach_in(cwd: &Path, acts: &ActsOnBehalf) -> Option<crate::repo::PostureBreach> {
     let repo_root = crate::repo::discover_repo_root(cwd)?;
     // The family's one composition ([`crate::repo::adjudicated_breach`]): resolve the
     // subject, probe, take the first breach both the subject and this door owe. The
     // milestone boundary's fan-out preflight asks the identical function with `owes` =
     // `true`, so the two cannot classify one checkout differently (M53 post-review fix).
-    let breach = crate::repo::adjudicated_breach(&repo_root, |member| match acts {
+    crate::repo::adjudicated_breach(&repo_root, |member| match acts {
         ActsOnBehalf::CommitsOnBehalf { exempt, .. } => {
             !exempt.iter().any(|row| row.member == member)
         }
         ActsOnBehalf::MovesOnBehalf { .. } => member == PostureMember::OperationInProgress,
         ActsOnBehalf::Neither => false,
-    })?;
-    Some(crate::invocation_log::operational_failure(
-        format,
-        &render::finding_error(&breach.finding()),
-    ))
+    })
 }
 
 /// **The refusal `jigc task finalize` would make in `cwd`'s repository** — the posture
@@ -639,11 +652,33 @@ fn posture_refusal_in(cwd: &Path, acts: &ActsOnBehalf, format: Format) -> Option
 /// `None` — the miss arm — keeps a table hole a missing guard rather than an exit-101 on
 /// top of the user's command, exactly as [`refuse_on_posture`] does.
 pub(crate) fn finalize_posture_refusal(cwd: &Path, format: Format) -> Option<Outcome> {
-    let acts = &BEHALF_DOORS
+    posture_refusal_in(cwd, finalize_acts()?, format)
+}
+
+/// **The breach `jigc task finalize` would refuse on in `cwd`'s repository**, for a surface
+/// that reports rather than refuses — orientation's half of
+/// [`finalize_posture_refusal`]'s question (M53 — the pre-v1 usability batch, row 2 / the
+/// M52 review's `(6, D-1)`).
+///
+/// `jigc start` acts on nobody's behalf ([`ActsOnBehalf::Neither`]), so the door guard
+/// deliberately never fires for it and orientation reported `findings: none` over a
+/// repository in the middle of a merge, a bisect or a conflicted cherry-pick — the agent
+/// learned at `finalize`, after authoring. This asks the **`task finalize` row's own**
+/// exemptions through the same producer, so what orientation reports and what the boundary
+/// refuses on cannot diverge.
+pub(crate) fn finalize_posture_breach(cwd: &Path) -> Option<crate::repo::PostureBreach> {
+    posture_breach_in(cwd, finalize_acts()?)
+}
+
+/// The `task finalize` row's [`ActsOnBehalf`] — one lookup, so its two askers (the
+/// refusal and the report) cannot read different rows. `None` keeps a table hole a missing
+/// guard rather than an exit-101 on top of the user's command, exactly as
+/// [`refuse_on_posture`] does.
+fn finalize_acts() -> Option<&'static ActsOnBehalf> {
+    BEHALF_DOORS
         .iter()
-        .find(|row| row.door == ["task", "finalize"])?
-        .acts;
-    posture_refusal_in(cwd, acts, format)
+        .find(|row| row.door == ["task", "finalize"])
+        .map(|row| &row.acts)
 }
 
 impl Cli {
