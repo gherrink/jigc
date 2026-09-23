@@ -65,6 +65,17 @@ fn the_predicate_admits_aimed_operandless_and_declared_non_path_spans_only() {
         // not a git span at all
         "`jigc doc show adr:pick-a-db`",
         "`--force` consents past it",
+        // --- M53 post-review-fix review, LOW 8 ---
+        // A COMPOSITE whose `git` half is aimed: the shipped `repair_prefix` shape. Before
+        // the fix the fence skipped this span entirely (its head is `mkdir`), so it was
+        // admitted for the wrong reason — unchecked rather than checked and correct.
+        "`mkdir -p /repo/docs/new && git -C /repo mv docs/old/a.md docs/new/a.md`",
+        // The three commands declared non-path at the same review. None ships today; each
+        // would have been called a defect, and a fence that panics over a correct span is a
+        // fence producers route around.
+        "`git commit -m \"docs/x.md\"`",
+        "`git log a..b`",
+        "`git show 0000000`",
     ] {
         assert_eq!(
             unaimed_git_span(ok),
@@ -86,6 +97,12 @@ fn the_predicate_admits_aimed_operandless_and_declared_non_path_spans_only() {
         "abandon it with `git -C .jigc/worktrees/x bisect reset`",
         // a declared non-path command turned into a path one by git's own `--`
         "restore it: `git checkout -- <path>`",
+        // LOW 8: the composite's `git` half UNAIMED — the cell the shipped fence could not
+        // reach, because it only ever looked at a span's first token.
+        "`mkdir -p /repo/docs/new && git mv docs/old/a.md docs/new/a.md`",
+        // and the same three verbs turned into path commands by `--`
+        "`git log -- docs/x.md`",
+        "`git show 0000000 -- CHANGELOG.md`",
     ] {
         assert!(
             unaimed_git_span(bad).is_some(),

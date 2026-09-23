@@ -1010,6 +1010,28 @@ const GIT_NON_PATH_COMMANDS: &[(&str, &str)] = &[
         "its operands are a configuration key and its value — `git config user.email \
          \"you@example.com\"`, which names no file",
     ),
+    // The three below joined at the M53 post-review-fix review's LOW 8. No production site
+    // emits one today; they are declared because the predicate would have called each of
+    // them a defect, and a fence that panics the debug binary over a correct span is a fence
+    // producers learn to route around.
+    (
+        "commit",
+        "its operands are a message and its flags' values — `git commit -m \"...\"`. The \
+         value of `-m` is prose, and prose naming a file (`git commit -m \"docs/x.md\"`) is \
+         still prose: the command writes the index, whatever the sentence says",
+    ),
+    (
+        "log",
+        "its operands are revisions and revision ranges — `git log a..b`, `git log -1` — \
+         which name commits, not files. A `git log -- <path>` carries the `--` separator and \
+         is not exempt",
+    ),
+    (
+        "show",
+        "its operand is a revision — `git show <sha>` prints that commit. A \
+         `git show <sha> -- <path>` carries the `--` and is not exempt, which is the form \
+         every shipped producer of this verb actually emits",
+    ),
 ];
 
 /// Git porcelain whose **second** word is part of the command name rather than an operand,
@@ -1040,68 +1062,111 @@ const GIT_COMMAND_GROUPS: &[&str] = &["worktree", "stash", "submodule", "remote"
 /// command that failed quotes the invocation jigc ran, and relativizing or aiming one half of
 /// a quotation misquotes it (the *quoting an invocation* disposition, same section).
 ///
+/// **It reads every `git` command in a span, not only the one at the head** (M53
+/// post-review-fix review, LOW 8). A span may be a **composite** — `crate::…::repair_prefix`
+/// emits `` `mkdir -p <abs> && git -C <abs> mv <a> <b>` `` — and the shipped loop skipped any
+/// span whose first token was not `git`, so the `git` half of the one composite in the
+/// codebase was never checked at all. That producer is correct; the fence was structurally
+/// unable to say so, which is the same thing as not having a fence over that shape. Spans are
+/// therefore split at the shell's own sequencing operators (`&&`, `||`, `;`, `|`) and each
+/// part asked separately.
 pub fn unaimed_git_span(text: &str) -> Option<String> {
     for span in backticked_spans(text) {
-        let tokens: Vec<String> = command_tokens(span).collect();
-        let Some(head) = tokens.first() else { continue };
-        if head != "git" {
-            continue;
+        for part in split_shell_sequence(span) {
+            if let Some(found) = unaimed_git_command(&part, span) {
+                return Some(found);
+            }
         }
-        let rest = &tokens[1..];
-        // 1 — already aimed. `-C` is git's own redirection, and the value must be absolute:
-        // a relative `-C` is the census's C1-06, which exits 128 from every cwd but one.
-        if rest.first().map(String::as_str) == Some("-C") {
-            let dir = rest.get(1).map(String::as_str).unwrap_or("");
-            let bare = dir.trim_matches('\'');
-            if bare.starts_with('/') || bare.starts_with('<') {
-                continue;
-            }
-            return Some(span.to_owned());
-        }
-        // The command words: the first non-flag token, plus a second where the first opens a
-        // porcelain group. Anything after them, and anything after a `--`, is an operand.
-        let mut command = String::new();
-        let mut want_group_word = false;
-        let mut operand = None;
-        let mut saw_separator = false;
-        for token in rest {
-            if token == "--" {
-                saw_separator = true;
-                continue;
-            }
-            if token.starts_with('-') {
-                continue;
-            }
-            if !saw_separator && command.is_empty() {
-                command.push_str(token);
-                want_group_word = GIT_COMMAND_GROUPS.contains(&token.as_str());
-                continue;
-            }
-            if !saw_separator && want_group_word {
-                command.push(' ');
-                command.push_str(token);
-                want_group_word = false;
-                continue;
-            }
-            operand = Some(token.clone());
-            break;
-        }
-        // 2 — no operand at all.
-        if operand.is_none() {
-            continue;
-        }
-        // 3 — a declared non-path command, and no `--` to say otherwise.
-        let head_word = command.split(' ').next().unwrap_or("");
-        if !saw_separator
-            && GIT_NON_PATH_COMMANDS
-                .iter()
-                .any(|(name, _)| *name == head_word)
-        {
-            continue;
+    }
+    None
+}
+
+/// One `&&`/`||`/`;`/`|`-separated part of a backticked span, asked the aim question. Returns
+/// the **whole span** when the part offends, because the span is what a reader pastes and what
+/// a panic should print.
+fn unaimed_git_command(tokens: &[String], span: &str) -> Option<String> {
+    let head = tokens.first()?;
+    if head != "git" {
+        return None;
+    }
+    let rest = &tokens[1..];
+    // 1 — already aimed. `-C` is git's own redirection, and the value must be absolute:
+    // a relative `-C` is the census's C1-06, which exits 128 from every cwd but one.
+    if rest.first().map(String::as_str) == Some("-C") {
+        let dir = rest.get(1).map(String::as_str).unwrap_or("");
+        let bare = dir.trim_matches('\'');
+        if bare.starts_with('/') || bare.starts_with('<') {
+            return None;
         }
         return Some(span.to_owned());
     }
-    None
+    // The command words: the first non-flag token, plus a second where the first opens a
+    // porcelain group. Anything after them, and anything after a `--`, is an operand.
+    let mut command = String::new();
+    let mut want_group_word = false;
+    let mut operand = None;
+    // `--` is git's own announcement that a pathspec follows, and it is read from the WHOLE
+    // command rather than from the tokens before the operand (M53 post-review-fix review,
+    // LOW 8). Scanned in-loop it was invisible whenever a rev preceded it — `git show <sha>
+    // -- <path>` stops at `<sha>`, so the separator after it was never seen — which would
+    // have let the three verbs declared at that review exempt their own path forms.
+    let saw_separator = rest.iter().any(|token| token == "--");
+    for token in rest {
+        if token == "--" {
+            continue;
+        }
+        if token.starts_with('-') {
+            continue;
+        }
+        if command.is_empty() {
+            command.push_str(token);
+            want_group_word = GIT_COMMAND_GROUPS.contains(&token.as_str());
+            continue;
+        }
+        if want_group_word {
+            command.push(' ');
+            command.push_str(token);
+            want_group_word = false;
+            continue;
+        }
+        operand = Some(token.clone());
+        break;
+    }
+    // 2 — no operand at all.
+    operand.as_ref()?;
+    // 3 — a declared non-path command, and no `--` to say otherwise.
+    let head_word = command.split(' ').next().unwrap_or("");
+    if !saw_separator
+        && GIT_NON_PATH_COMMANDS
+            .iter()
+            .any(|(name, _)| *name == head_word)
+    {
+        return None;
+    }
+    Some(span.to_owned())
+}
+
+/// A backticked span's `&&`/`||`/`;`/`|`-separated parts, each as its own token list.
+///
+/// The shell's sequencing operators are the boundary because that is what they are to the
+/// reader pasting the span: `mkdir -p <abs> && git -C <abs> mv <a> <b>` is two commands on one
+/// line, and the fence's question is asked of commands. Splitting on them is lexical and needs
+/// no shell knowledge beyond the four tokens themselves — a span carrying something more
+/// elaborate than a sequence is not a shape any producer here emits, and the parts it does
+/// yield are still each asked the aim question, so an unsplit exotic span fails safe (it is
+/// checked as one command, which is what the shipped loop did for every span).
+fn split_shell_sequence(span: &str) -> Vec<Vec<String>> {
+    let mut parts: Vec<Vec<String>> = Vec::new();
+    let mut current: Vec<String> = Vec::new();
+    for token in command_tokens(span) {
+        if matches!(token.as_str(), "&&" | "||" | ";" | "|") {
+            parts.push(std::mem::take(&mut current));
+            continue;
+        }
+        current.push(token);
+    }
+    parts.push(current);
+    parts
 }
 
 /// **The base fence for `jigc migrate`**: the first backticked `jigc migrate …` span in `text`
