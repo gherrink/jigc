@@ -489,25 +489,31 @@ const MIGRATE_SPAN_SITES: &[(&str, &str, Aim, &str)] = &[
         "crates/engine/src/validate.rs",
         "adoption_route",
         Aim::Aimed,
-        "`schema-conformance.unadopted-instance`'s adoption route — reached by the store          sweep AND by `jigc doc show`'s reroute of an unregistered instance, so one home          keeps the two doors telling one story. The row the review drove broken",
+        "`schema-conformance.unadopted-instance`'s adoption route — reached by the store \
+         sweep AND by `jigc doc show`'s reroute of an unregistered instance, so one home \
+         keeps the two doors telling one story. The row the review drove broken",
     ),
     (
         "crates/cli/src/orphan.rs",
         "unregistered_route",
         Aim::Aimed,
-        "the unregistered tier of the two-tier orphan advisory. Its operand was interpolated          RAW — not even shell-quoted — so a store key with a space in it emitted two tokens          as well as the wrong base",
+        "the unregistered tier of the two-tier orphan advisory. Its operand was interpolated \
+         RAW — not even shell-quoted — so a store key with a space in it emitted two tokens \
+         as well as the wrong base",
     ),
     (
         "crates/engine/src/finalize.rs",
         "clobber_finding",
         Aim::Aimed,
-        "`finalize.promote-clobber`'s two arms — the recorded migration source, and the          occupied promote destination a foreign file is invited to be adopted at",
+        "`finalize.promote-clobber`'s two arms — the recorded migration source, and the \
+         occupied promote destination a foreign file is invited to be adopted at",
     ),
     (
         "crates/cli/src/ingest.rs",
         "near_miss_route",
         Aim::Aimed,
-        "the near-miss adoption argv — THE PRODUCER IN NO REPORTED LIST, earned by walking          both spellings of the verb rather than the one a command-line grep can see",
+        "the near-miss adoption argv — THE PRODUCER IN NO REPORTED LIST, earned by walking \
+         both spellings of the verb rather than the one a command-line grep can see",
     ),
     (
         "crates/cli/src/migrate.rs",
@@ -533,10 +539,13 @@ fn every_based_migrate_site_routes_through_the_one_home_and_every_row_states_why
         let reaches = callers.iter().any(|owner| owner == function);
         match aim {
             Aim::Aimed if !reaches => offenders.push(format!(
-                "  {file}::{function}: disposed `Aimed`, but no production                  {MIGRATE_OPERAND_HOME:?} call sits in it — the callers in that file are:                  {callers:?}"
+                "  {file}::{function}: disposed `Aimed`, but no production \
+                 {MIGRATE_OPERAND_HOME:?} call sits in it — the callers in that file are: \
+                 {callers:?}"
             )),
             Aim::DeclaredOut if reaches => offenders.push(format!(
-                "  {file}::{function}: disposed `DeclaredOut`, but it calls one of                  {MIGRATE_OPERAND_HOME:?}"
+                "  {file}::{function}: disposed `DeclaredOut`, but it calls one of \
+                 {MIGRATE_OPERAND_HOME:?}"
             )),
             _ => {}
         }
