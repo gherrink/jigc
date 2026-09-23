@@ -1153,6 +1153,36 @@ fn uninstall_removes_the_workbench_home_install_from_every_cwd() {
                 "{cell}: the fixture must actually have taken the standing worktree — \
                  otherwise the sentence under test would be the false one",
             );
+            // **And git's admin goes with it** (the confirmation pass, LOW 7). The fan-out
+            // worktrees lived below the removed tree, so their `.git/worktrees/` records
+            // pointed at nothing: `git worktree list` named each one `prunable` and the
+            // stale name could collide with a later `git worktree add`. The sibling doors
+            // that take a worktree directory already prune; this one was the member of that
+            // rule not following it.
+            let listed = git(&bare.repo, &["worktree", "list"]);
+            assert!(
+                !listed.contains("prunable") && !listed.contains(".jigc/worktrees"),
+                "{cell}: git's worktree admin must be clean after the teardown; got:\n{listed}",
+            );
+            assert!(
+                !bare
+                    .repo
+                    .join(".git")
+                    .join("worktrees")
+                    .join("area-one")
+                    .exists(),
+                "{cell}: …and the stale registration directory must be gone",
+            );
+            // The still-live linked worktree is untouched — pruning drops records whose
+            // directory is gone, never a worktree that is still there.
+            assert!(
+                listed.contains("feat") && bare.linked.is_dir(),
+                "{cell}: the live linked worktree must survive the prune; got:\n{listed}",
+            );
+            assert!(
+                seen.contains("pruned git's worktree registrations"),
+                "{cell}: …and the door must say it pruned them; got:\n{seen}",
+            );
         }
     }
 }

@@ -729,6 +729,7 @@ fn uninstall_success_parity() {
         findings: Vec::new().into(),
         // `setup`'s sibling, same decision, same reason — see that arm.
         site: None,
+        pruned_worktrees: false,
     };
     let kept = UninstallSummary {
         line_file: "CLAUDE.md".to_owned(),
@@ -739,21 +740,23 @@ fn uninstall_success_parity() {
         },
         findings: vec![cli::setup::guide_kept_finding(guide)].into(),
         site: None,
+        pruned_worktrees: false,
     };
 
     for summary in [&torn_down, &kept] {
-        // Exhaustive — no `..`: a sixth field fails to compile here.
+        // Exhaustive — no `..`: a seventh field fails to compile here.
         let UninstallSummary {
             line_file,
             allowlist_file,
             removed,
             findings,
             site,
+            pruned_worktrees,
         } = summary;
         assert!(
-            site.is_none(),
-            "both witnesses are the ordinary shape; the `Some` half is asserted after the \
-             loop, as `setup`'s arm does",
+            site.is_none() && !*pruned_worktrees,
+            "both witnesses are the ordinary shape; the `Some`/`true` halves are asserted \
+             after the loop, as `setup`'s arm does",
         );
         let RemovedArtifacts {
             jigc_dir,
@@ -834,6 +837,31 @@ fn uninstall_success_parity() {
         "`jigc uninstall`'s envelope is 1.0-pinned at four keys — `site` is text-only by \
          decision (`render::InstallSite`), so neither the key nor its value may appear on \
          the wire:\n{doc:#}",
+    );
+
+    // The `true` half of `pruned_worktrees` — the second declared text-only field, asserted
+    // in both directions for the same reason `site` is (the confirmation pass, LOW 7). It is
+    // not a `removed` flag either, so the object's seven members must not grow an eighth.
+    let pruned = UninstallSummary {
+        pruned_worktrees: true,
+        site: None,
+        ..elsewhere
+    };
+    let text = uninstall_success(Format::Agent, &pruned);
+    text_prints(
+        &text,
+        "pruned git's worktree registrations",
+        "jigc uninstall",
+        "pruned_worktrees",
+    );
+    let doc = envelope(&uninstall_success(Format::Json, &pruned), "jigc uninstall");
+    assert!(
+        doc.get("pruned_worktrees").is_none()
+            && doc["removed"].get("pruned_worktrees").is_none()
+            && !doc.to_string().contains("prune"),
+        "`jigc uninstall`'s envelope is 1.0-pinned at four keys and `removed` at seven \
+         flags — `pruned_worktrees` is text-only by decision \
+         (`setup::UninstallSummary::pruned_worktrees`), so it may appear on neither:\n{doc:#}",
     );
 }
 

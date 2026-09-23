@@ -2717,6 +2717,22 @@ pub struct UninstallSummary {
     /// one to compare it to. See [`crate::render::InstallSite`] for the rule and for why
     /// this is text-only rather than a fifth envelope key.
     pub site: Option<crate::render::InstallSite>,
+    /// **Whether this teardown pruned git's stale worktree admin** (the confirmation pass,
+    /// LOW 7) — `true` iff removing `.jigc/` took at least one *registered* fan-out worktree
+    /// with it and `git worktree prune` therefore dropped a record from `.git/worktrees/`.
+    ///
+    /// `milestone provision` and the join's leaked-worktree recovery both prune after taking
+    /// a worktree directory; this door removes the whole tree those worktrees live under and
+    /// did not, so afterwards `git worktree list` named every one of them `prunable` and
+    /// `.git/worktrees/<id>` stood. Pre-existing, and the one member of that rule's class
+    /// that was not following it.
+    ///
+    /// **Text-only**, the same declared bound [`Self::site`] carries and for the same reason:
+    /// `ENVELOPE_ARMS` pins this door's four keys and `removed`'s seven flags, the additive
+    /// window closed at M48, and a key addition is a 2.0 act. It is not a `RemovedArtifacts`
+    /// flag either — those are the repo-local *artifacts* the install wrote, and git's admin
+    /// record is neither jigc's artifact nor part of `removed.is_empty()`'s no-op question.
+    pub pruned_worktrees: bool,
 }
 
 /// The per-artifact removal ledger [`uninstall`] fills — one flag per repo-local
@@ -2920,6 +2936,7 @@ fn uninstall(
     //    layer, the compose marker, and the transient index/state working area, all at
     //    once. An already-absent tree is a clean no-op.
     let mut removed = RemovedArtifacts::default();
+    let mut pruned_worktrees = false;
 
     let jigc_dir = jigc_home.join(".jigc");
     if jigc_dir.exists() {
@@ -2939,6 +2956,14 @@ fn uninstall(
             )
         })?;
         removed.jigc_dir = true;
+        // The fan-out worktrees lived *below* the tree just removed, so git's admin records
+        // in `.git/worktrees/` now point at nothing — `git worktree list` calls each one
+        // `prunable` and a later `git worktree add` can collide with the stale name. Both
+        // sibling doors that take a worktree directory prune after it
+        // (`crate::milestone::provision_worktrees`, the join's leaked-worktree recovery);
+        // this one did not. Best-effort, exactly as they are: git's admin is bookkeeping,
+        // and a prune that cannot run is not a reason to fail a completed teardown.
+        pruned_worktrees = prune_worktree_admin(jigc_home);
     }
 
     // 2. Unwire the `CLAUDE.md` bootstrap reference — strip jigc's appended
@@ -3058,6 +3083,23 @@ fn uninstall(
         findings: findings.into(),
         // [`run_uninstall`]'s to fill, for the reason [`install`]'s sibling states.
         site: None,
+        pruned_worktrees,
+    })
+}
+
+/// Drop git's admin records for worktrees whose directories no longer exist, returning
+/// whether any record was actually dropped (the confirmation pass, LOW 7).
+///
+/// `--verbose` is what makes the answer *measured* rather than assumed: git prints one line
+/// per record it removes and **nothing at all** when there is nothing to prune, so a
+/// repository with no fan-out worktrees does not gain an ack line claiming work jigc did not
+/// do. Driven on git 2.x to settle which stream carries it, because reading the wrong one
+/// reads every prune as a no-op: the report goes to **stderr**
+/// (`Removing worktrees/<id>: gitdir file points to non-existent location`), stdout stays
+/// empty in both cases, and a second prune over the same repository is silent on both.
+fn prune_worktree_admin(jigc_home: &Path) -> bool {
+    git_output(jigc_home, ["worktree", "prune", "--verbose"]).is_some_and(|out| {
+        out.status.success() && !(out.stdout.is_empty() && out.stderr.is_empty())
     })
 }
 

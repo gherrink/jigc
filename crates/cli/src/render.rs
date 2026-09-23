@@ -4022,6 +4022,17 @@ pub fn uninstall_success(format: Format, summary: &UninstallSummary) -> String {
                 if removed.jigc_dir {
                     out.push_str("  - removed .jigc/\n");
                 }
+                // The tail of that same removal: the fan-out worktrees lived below the tree
+                // just taken, so git's `.git/worktrees/` records pointed at nothing and
+                // `git worktree list` called each one `prunable`. Said, not silent — a
+                // destroying door narrates what it changed in the repository
+                // (`UninstallSummary::pruned_worktrees`, text-only by the same decision
+                // `site` carries).
+                if summary.pruned_worktrees {
+                    out.push_str(
+                        "  - pruned git's worktree registrations for the fan-out worktrees `.jigc/` held\n",
+                    );
+                }
                 if removed.reference {
                     out.push_str("  - unwired bootstrap reference ← ");
                     out.push_str(&summary.line_file);
