@@ -3876,12 +3876,8 @@ struct SubtaskWorktree {
 ///
 /// Best-effort on the `git worktree list` read (an unreadable list yields no registrations —
 /// the teardown then removes nothing, never a spurious block).
-fn subtask_worktrees(
-    repo_root: &Path,
-    jigc_home: &Path,
-    list: &engine::milestone::TaskList,
-) -> Vec<SubtaskWorktree> {
-    let registered = registered_worktrees(repo_root).unwrap_or_default();
+fn subtask_worktrees(jigc_home: &Path, list: &engine::milestone::TaskList) -> Vec<SubtaskWorktree> {
+    let registered = registered_worktrees(jigc_home).unwrap_or_default();
     // Match `provision_worktrees`' canonical-path convention (git stores canonical paths at
     // `add` time); fall back to the raw path if canonicalization fails (then nothing
     // matches the registered set, which is the fail-closed side).
@@ -4029,12 +4025,8 @@ fn live_worktrees(subtasks: &[SubtaskWorktree]) -> Vec<PathBuf> {
 
 /// [`live_worktrees`] over a freshly classified task list — the single-use form for the
 /// `join` channel, which needs the paths and none of the other facts.
-fn provisioned_worktrees(
-    repo_root: &Path,
-    jigc_home: &Path,
-    list: &engine::milestone::TaskList,
-) -> Vec<PathBuf> {
-    live_worktrees(&subtask_worktrees(repo_root, jigc_home, list))
+fn provisioned_worktrees(jigc_home: &Path, list: &engine::milestone::TaskList) -> Vec<PathBuf> {
+    live_worktrees(&subtask_worktrees(jigc_home, list))
 }
 
 /// The advisories `jigc milestone execute` carries when the milestone is **partially**
@@ -4065,7 +4057,6 @@ fn provisioned_worktrees(
 /// leftover refusal rather than a fresh `git worktree add`, and a route that promised
 /// otherwise would be a law-1 lie one command deep.
 fn partial_worktree_advisories(
-    repo_root: &Path,
     jigc_home: &Path,
     milestone_id: &str,
     live_ids: &[String],
@@ -4073,7 +4064,7 @@ fn partial_worktree_advisories(
     let list = engine::milestone::TaskList {
         tasks: live_ids.to_vec(),
     };
-    let subtasks = subtask_worktrees(repo_root, jigc_home, &list);
+    let subtasks = subtask_worktrees(jigc_home, &list);
     let missing: Vec<&SubtaskWorktree> = subtasks
         .iter()
         .filter(|sub| sub.state != WorktreeState::Live)
@@ -4189,7 +4180,9 @@ fn run_discard(
     force: bool,
     conflicts: &mut Vec<Finding>,
 ) -> Result<(String, String)> {
-    let repo_root = discover_repo_root(cwd).ok_or_else(|| crate::locate::not_in_repo(cwd))?;
+    // The subject is the milestone's own store, so it is `jigc_home` throughout — including
+    // the `git worktree` teardown, which acts on the shared admin records and must not be run
+    // from a checkout it is about to remove (M53 — the cwd census, the verb class).
     let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
     let jigc_root = jigc_home.join(".jigc");
     let schemas = shipped_schemas(&jigc_home)?;
@@ -4240,7 +4233,7 @@ fn run_discard(
     // the human's explicit consent — on the one path whose premise is "throw this away", that
     // intent is exactly what must be confirmed rather than assumed.
     if !force {
-        let held = held_subtask_worktrees(&repo_root, &jigc_home, &list);
+        let held = held_subtask_worktrees(&jigc_home, &list);
         if !held.is_empty() {
             return Err(finding_to_err(dirty_worktree_finding(
                 milestone_id,
@@ -4325,7 +4318,7 @@ fn run_discard(
     // sibling `milestone finalize` ack was driven on the identical failure and is honest.
     let mut workbench_gone = cleanup_subtask_areas(&jigc_root, &list, SubtaskComplement::Take);
     prose.narrate_taken(&jigc_home);
-    workbench_gone &= remove_worktrees(&repo_root, &jigc_home, &list);
+    workbench_gone &= remove_worktrees(&jigc_home, &list);
     workbench_gone &= remove_milestone_area(&jigc_home, &dir);
     foreign.narrate_taken(&jigc_home);
 
@@ -4689,11 +4682,10 @@ struct HeldWorktree {
 /// which is also why this **returns the set rather than a `Result`**: with the probe unable to
 /// fail, an `Ok`-only signature would advertise an error path the door no longer has.
 fn held_subtask_worktrees(
-    repo_root: &Path,
     jigc_home: &Path,
     list: &engine::milestone::TaskList,
 ) -> Vec<HeldWorktree> {
-    let registered = registered_worktrees(repo_root).unwrap_or_default();
+    let registered = registered_worktrees(jigc_home).unwrap_or_default();
     // Match `provision_worktrees`' canonical-path convention (git stores canonical paths at
     // `add` time); fall back to the raw path if canonicalization fails — the probe still runs,
     // and nothing matches the registered set, which is the fail-closed side.
@@ -4852,8 +4844,7 @@ fn run_execute(
     milestone_id: &str,
 ) -> Result<(crate::start::Composition, Vec<Finding>)> {
     // The `.jigc/` area binds to jigc_home (the main checkout); the compose feed resolves
-    // the same split internally (it derives jigc_home from the worktree `repo_root`).
-    let repo_root = discover_repo_root(cwd).ok_or_else(|| crate::locate::not_in_repo(cwd))?;
+    // the same split internally.
     let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
     let jigc_root = jigc_home.join(".jigc");
     // Fresh-clone resume (M39 T5): re-derive the demoted cache from the committed record before
@@ -4870,12 +4861,16 @@ fn run_execute(
     let ids = live_sub_task_ids(&jigc_home, &schemas, milestone_id, list.enumerate())?;
     // The provisioning state the fan-out is about to be told to run in — read before the
     // compose so the ids are the same live set the `Spawn:` lines are emitted over.
-    let advisories = partial_worktree_advisories(&repo_root, &jigc_home, milestone_id, &ids);
+    let advisories = partial_worktree_advisories(&jigc_home, milestone_id, &ids);
     // Each id paired with its own recorded minting workflow, so the emitted `Spawn:` line names
     // the workflow the re-entry door will accept ([`recorded_workflows`]).
     let tasks = recorded_workflows(&jigc_root, ids)?;
+    // The compose door takes a **start path** and does its own walk-up + jigc_home split, so
+    // it is handed the caller's cwd rather than a root resolved here: a compose's base pin is
+    // deliberately the standing checkout's HEAD (M31 Inc 2 / WF3), and `cwd` and the walk-up
+    // root it replaces resolve to the same checkout from every directory inside it.
     let view = crate::start::execute_milestone_in_repo(
-        &repo_root,
+        cwd,
         MILESTONE_EXECUTION_WORKFLOW,
         crate::start::MilestoneFeed::bound(milestone_id, &tasks),
     )?;
@@ -4964,9 +4959,10 @@ fn run_join(
     // The engine `join` itself performs no git I/O (the base is the milestone's *stored*
     // pin), but the CLI around it does: the stale-base guard shells to git, and the
     // cross-worktree collision read (below) reads each provisioned worktree's staged set.
-    // The committed doc-store + `.jigc/` index bind to jigc_home (the main checkout); the
-    // fan-out worktrees + their registration bind to the worktree repo_root (M31 Inc 2).
-    let repo_root = discover_repo_root(cwd).ok_or_else(|| crate::locate::not_in_repo(cwd))?;
+    // The committed doc-store, the `.jigc/` index, the fan-out worktrees and their
+    // registration all bind to jigc_home (the main checkout): `git worktree list` answers for
+    // the whole repository from any of its checkouts, and the paths it is compared against are
+    // built from jigc_home (M53 — the cwd census, the verb class).
     let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
     let jigc_root = jigc_home.join(".jigc");
     let schemas = shipped_schemas(&jigc_home)?;
@@ -5013,7 +5009,7 @@ fn run_join(
     // staging the SAME path in their isolated fan-out worktrees is a clash the combine
     // never text-merges (`design/storage.md` → the join's never-blind-merge discipline).
     // A never-provisioned (docs-only) milestone yields no worktrees, so the read is inert.
-    let worktrees = provisioned_worktrees(&repo_root, &jigc_home, &list);
+    let worktrees = provisioned_worktrees(&jigc_home, &list);
     if let Some(finding) = crate::combine::detect_code_collision(&worktrees)? {
         outcome.findings.push(finding);
     }
@@ -5093,11 +5089,30 @@ fn run_milestone_finalize(
     milestone_id: &str,
     carry_staged: bool,
 ) -> Result<Outcome> {
-    // The committed doc-store + `.jigc/` bind to jigc_home (the main checkout); HEAD + the
-    // git commit/stage stay on the worktree `repo_root` (M31 Inc 2 / WF3). The promote
-    // transaction (`try_execute_finalize_plan` / `execute_finalize_plan`) is kept on
-    // `repo_root` — the worktree-finalize promote placement is the deferred WF4/WF5 concern.
-    let repo_root = discover_repo_root(cwd).ok_or_else(|| crate::locate::not_in_repo(cwd))?;
+    // **The whole boundary's subject is `jigc_home`, the main checkout — the cwd decides
+    // nothing here** (M53 — the cwd census, rows C2-06 and C2-11). The comment this replaces
+    // said HEAD and the commit/stage stay on the walk-up `repo_root`, and called the worktree
+    // case *the deferred WF4/WF5 concern*; driven, that deferral was a hard fault and a
+    // silent gate hole at once. From inside any provisioned fan-out worktree — the one cwd
+    // jigc's own `milestone execute` spawn line puts a sub-agent in — the boundary composed a
+    // mixed pathspec list (`.jigc/config`, `.jigc/.gitignore`, and the milestone record's
+    // path, which could not be stripped against the worktree and came out ABSOLUTE) and ran
+    // it with `current_dir` = that worktree: ``git add -- … failed: '…/<id>.md' is outside
+    // repository at '…/.jigc/worktrees/<sub>'``, a raw git error carrying no code, no route
+    // and no `at:`. Behind it, the commit seam's own subject was
+    // `SeamSubject::live(<the worktree>)`, which refuses `repo.head-detached` because jigc
+    // provisions every fan-out worktree `--detach`. And behind *that*, the base-mismatch gate
+    // read the standing checkout's HEAD — a fan-out worktree is pinned to the base by
+    // construction, so from inside one the gate could not fire at all, and only the git fault
+    // above stopped the run, by accident rather than by guard.
+    //
+    // There was never a second subject to choose. Every read and write below is about the
+    // milestone: the record lives under `jigc_home`'s docs-root, the carryover snapshot was
+    // taken in `jigc_home`'s index by `milestone create`, the promote destination is
+    // `jigc_home`'s store, the combine's dedicated worktree belongs under `jigc_home`'s
+    // `.jigc/worktrees/`, and the commit this boundary lands is the main checkout's. Outside
+    // a worktree the two paths are byte-identical by construction (`crate::repo::jigc_home`),
+    // so nothing moves for the ordinary caller.
     let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
     let jigc_root = jigc_home.join(".jigc");
     let schemas = shipped_schemas(&jigc_home)?;
@@ -5130,7 +5145,7 @@ fn run_milestone_finalize(
     // against the missing commit (the worktree-combine base, the base-guard `merge-base`) —
     // so nothing is materialized, flipped, or committed against a base that no longer exists
     // (`design/team-ready-state.md` → Stale-base edge).
-    guard_base_live(&repo_root, milestone_id, &base)?;
+    guard_base_live(&jigc_home, milestone_id, &base)?;
     let committed = load_committed(&jigc_home, &jigc_root, &schemas, &base.sha);
 
     // Step 1 — materialize the join's suffix-resolved bodies. A blocking join finding (a
@@ -5158,7 +5173,7 @@ fn run_milestone_finalize(
     };
     // The subject is the **path**, classified once (M46 Inc 2 T1) and shared by the gate,
     // the combine channel and the manifest's contribution facts below.
-    let subtasks = subtask_worktrees(&repo_root, &jigc_home, &live);
+    let subtasks = subtask_worktrees(&jigc_home, &live);
     let worktrees = live_worktrees(&subtasks);
 
     // The repository posture of every checkout this boundary commits **from** (M53
@@ -5208,7 +5223,7 @@ fn run_milestone_finalize(
     // nothing. A same-path collision (no single merged tree) is NOT the gate's concern — it
     // falls through to the knob branch's own collision handling below.
     if let Some(outcome) = milestone_boundary_gate(
-        &repo_root,
+        &jigc_home,
         &jigc_home,
         &jigc_root,
         &schemas,
@@ -5236,7 +5251,6 @@ fn run_milestone_finalize(
     // both `squash` arms' refusal paths can drain it ([`drain_record_flip`]).
     let record_flip_sink: std::cell::RefCell<Vec<Finding>> = std::cell::RefCell::new(Vec::new());
     let mut record_flip = flip_record_for_finalize(
-        &repo_root,
         &jigc_root,
         &jigc_home,
         &schemas,
@@ -5254,7 +5268,7 @@ fn run_milestone_finalize(
     // any worktree's staged code (Σ `git diff --cached`). The main checkout no longer holds
     // the fan-out's code — it lives in the isolated worktrees — so a main-checkout
     // diff/untracked scan would both miss the real code and false-count unrelated WIP.
-    let head = git_head(&repo_root)?;
+    let head = git_head(&jigc_home)?;
     // `record_changed` folds the milestone record's `join` status-flip into the diff signal
     // (M39 T4 — "has_diff gated on the record change"): a docs-only milestone whose only change
     // is the record flip is NOT an empty commit. This stays the *planner's* empty-commit input;
@@ -5281,7 +5295,7 @@ fn run_milestone_finalize(
     // keeps the base-mismatch block, preserving the M31 worktree-combine guarantee. Only computed
     // when the base actually trails HEAD.
     let record_only_advance =
-        base.sha != head && record_only_range(&repo_root, &schemas, &base.sha, &head)?;
+        base.sha != head && record_only_range(&jigc_home, &schemas, &base.sha, &head)?;
 
     // Step 3 — the thin sibling planner over the materialized staging area (`staging_dir`,
     // the parent of `merged/docs/`, hoisted with the gate above): shared preflight +
@@ -5357,7 +5371,7 @@ fn run_milestone_finalize(
         })?;
         let carried = engine::finalize::decide_carryover(
             snapshot.as_ref(),
-            &crate::task::git_staged_snapshot(&repo_root)?,
+            &crate::task::git_staged_snapshot(&jigc_home)?,
             None,
             // No owner-artifact exemption at the milestone boundary — it applies only at
             // `CarryoverBoundary::Task` (M45 Inc 8; the milestone owner-artifact exemption
@@ -5426,7 +5440,7 @@ fn run_milestone_finalize(
         // additive-key window closed at M48.
         let mut kept_areas: Vec<Finding> = Vec::new();
         match crate::task::try_execute_finalize_plan(
-            &repo_root,
+            &jigc_home,
             &jigc_root,
             &dir,
             &plan,
@@ -5466,7 +5480,7 @@ fn run_milestone_finalize(
                     &jigc_root,
                     &list,
                     SubtaskComplement::Displace {
-                        repo_root: &repo_root,
+                        repo_root: &jigc_home,
                         moved: &mut displaced,
                         kept: &mut kept_areas,
                     },
@@ -5482,7 +5496,7 @@ fn run_milestone_finalize(
                 // (`git diff <pre-boundary-HEAD>..HEAD`, so the N+1 chain reads as one
                 // set) + the per-sub-task contribution line.
                 let landed = milestone_landed_summary(
-                    &repo_root,
+                    &jigc_home,
                     &head,
                     &plan,
                     contributions,
@@ -5509,7 +5523,7 @@ fn run_milestone_finalize(
                 narrate_kept_areas(&kept_areas);
                 // Tear down the fan-out worktrees the provision verb laid down (the heavier
                 // A2 teardown — a non-blocking warning on a leaked worktree, never a block).
-                remove_worktrees(&repo_root, &jigc_home, &list);
+                remove_worktrees(&jigc_home, &list);
                 Ok(Outcome::with_findings(0, &kept_areas))
             }
             // The chain was aborted. The `Err` is untyped, so this arm catches EVERY way the
@@ -5581,7 +5595,7 @@ fn run_milestone_finalize(
         // narrated on stderr (M53 Increment 2 / T3).
         let mut kept_areas: Vec<Finding> = Vec::new();
         match crate::task::try_execute_finalize_plan(
-            &repo_root,
+            &jigc_home,
             &jigc_root,
             &dir,
             &plan,
@@ -5614,7 +5628,7 @@ fn run_milestone_finalize(
                     &jigc_root,
                     &list,
                     SubtaskComplement::Displace {
-                        repo_root: &repo_root,
+                        repo_root: &jigc_home,
                         moved: &mut displaced,
                         kept: &mut kept_areas,
                     },
@@ -5628,7 +5642,7 @@ fn run_milestone_finalize(
                 // C2 — the landing manifest (the per-task landed-summary mold): the
                 // highest-stakes commit boundary must not succeed with empty stdout.
                 let landed = milestone_landed_summary(
-                    &repo_root,
+                    &jigc_home,
                     &head,
                     &plan,
                     contributions,
@@ -5652,7 +5666,7 @@ fn run_milestone_finalize(
                 narrate_kept_areas(&kept_areas);
                 // Tear down the fan-out worktrees on the landed default-path commit too
                 // (the heavier A2 teardown — a non-blocking warning on a leaked worktree).
-                remove_worktrees(&repo_root, &jigc_home, &list);
+                remove_worktrees(&jigc_home, &list);
                 Ok(Outcome::with_findings(0, &kept_areas))
             }
             // The commit-phase rejection: git's stderr stays verbatim-raw and the run names
@@ -5802,9 +5816,12 @@ fn drain_record_flip(
 /// in-place item-leaf + header `status` splice, active → joined), and returns an **armed**
 /// [`RecordFlipGuard`] carrying the pre-flip bytes (for a transactional restore on a
 /// blocked/failed finalize), the change signal (fed into `has_diff`), and the repo-relative
-/// pathspec the finalize commit path-adds. The record home is under `jigc_home`'s docs-root; the
-/// pathspec is stripped against the git-commit `repo_root` (they coincide outside a worktree,
-/// and milestone-finalize-in-a-worktree is the deferred WF4/WF5 concern).
+/// pathspec the finalize commit path-adds. **Both the record home and the pathspec base are
+/// `jigc_home`** (M53 — the cwd census, C2-06): they were split, the home under `jigc_home`'s
+/// docs-root and the strip against the walk-up `repo_root`, on the stated ground that the two
+/// coincide outside a worktree. Inside one they do not, `strip_prefix` fell through to its
+/// `unwrap_or`, and the pathspec the boundary then `git add`ed was an **absolute host path**
+/// against an index that had never heard of it.
 ///
 /// The pre-flip bytes are carried as a [`crate::rollback::PreImage`] captured **before**
 /// `join_record` writes and read back **one statement after** it — at rollback time the
@@ -5812,7 +5829,6 @@ fn drain_record_flip(
 /// compare-and-swap. `sink` is where the guard's destructor puts the conflicts a raced restore
 /// raises ([`drain_record_flip`]).
 fn flip_record_for_finalize<'a>(
-    repo_root: &Path,
     jigc_root: &Path,
     jigc_home: &Path,
     schemas: &BTreeMap<String, Schema>,
@@ -5824,9 +5840,8 @@ fn flip_record_for_finalize<'a>(
     };
     // Reconcile preflight (T6): the status-flip is a `set: on-transition` overwrite, so
     // conflict-block if the committed record drifted out-of-band before we flip it — leaving
-    // the record untouched (`design/team-ready-state.md` → F3). `repo_root` and `jigc_home`
-    // coincide outside a worktree (milestone-finalize-in-a-worktree is the deferred WF4/WF5
-    // concern), so the `.jigc/` baseline home is `jigc_home/.jigc`.
+    // the record untouched (`design/team-ready-state.md` → F3). The `.jigc/` baseline home is
+    // `jigc_home/.jigc`, which is also what every git call this guard makes now acts in.
     reconcile_record_preflight(jigc_home, &jigc_home.join(".jigc"), schema, milestone_id)?;
 
     let record_path = engine::store::canonical_path(jigc_home, schema, milestone_id)
@@ -5834,7 +5849,7 @@ fn flip_record_for_finalize<'a>(
     let before = std::fs::read_to_string(&record_path)
         .with_context(|| format!("could not read the milestone record {record_path:?}"))?;
     let pathspec = record_path
-        .strip_prefix(repo_root)
+        .strip_prefix(jigc_home)
         .unwrap_or(&record_path)
         .to_str()
         .with_context(|| format!("record path {record_path:?} is not valid UTF-8"))?
@@ -5856,7 +5871,7 @@ fn flip_record_for_finalize<'a>(
         changed: joined != before,
         worktree,
         pathspec,
-        repo_root: repo_root.to_path_buf(),
+        repo_root: jigc_home.to_path_buf(),
         jigc_root: jigc_root.to_path_buf(),
         armed: true,
         sink,
@@ -6024,11 +6039,7 @@ enum SubtaskComplement<'a> {
 /// **Returns whether every registered worktree it reached is gone** — the warnings say *what*
 /// is left, and this is what stops a caller's ack from claiming otherwise (M52 Increment 4 /
 /// T7, D-2).
-fn remove_worktrees(
-    repo_root: &Path,
-    jigc_home: &Path,
-    list: &engine::milestone::TaskList,
-) -> bool {
+fn remove_worktrees(jigc_home: &Path, list: &engine::milestone::TaskList) -> bool {
     let mut all_gone = true;
     // **This function's two warnings name the host path, deliberately** (M50 Increment 12 /
     // T1). The second carries a `git worktree remove --force <path>` the operator pastes, and
@@ -6038,7 +6049,7 @@ fn remove_worktrees(
     // break this pass closes, not a fix for it. Disposed as `DeclaredAbsolute` in
     // `crates/cli/tests/repo_relative_paths.rs`; the loss narration these warnings sit beside
     // goes through [`narrate_removal`], which is repo-relative like every other surface.
-    let registered = registered_worktrees(repo_root).unwrap_or_default();
+    let registered = registered_worktrees(jigc_home).unwrap_or_default();
     // Match `provision_worktrees`' canonical-path convention (git stores canonical paths at
     // `add` time); fall back to the raw path if canonicalization fails (then nothing matches
     // and the worktree is left registered — surfaced by the prune-only no-op below).
@@ -6061,7 +6072,7 @@ fn remove_worktrees(
         // and must not claim a destruction that did not happen either), through the
         // emitter every destroying door shares.
         let pending = pending_loss(jigc_home, &path);
-        let removed = git_worktree(repo_root, &["worktree", "remove", "--force", path_str]);
+        let removed = git_worktree(jigc_home, &["worktree", "remove", "--force", path_str]);
         pending.narrate_taken(jigc_home);
         if let Err(err) = removed {
             all_gone = false;
@@ -6076,7 +6087,7 @@ fn remove_worktrees(
     }
     // Drop admin records for any worktree dir removed out-of-band (the provision prune
     // inverse) — best-effort; a prune failure is itself non-fatal to a landed commit.
-    let _ = git_worktree(repo_root, &["worktree", "prune"]);
+    let _ = git_worktree(jigc_home, &["worktree", "prune"]);
     all_gone
 }
 

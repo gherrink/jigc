@@ -5,6 +5,8 @@
 #[path = "../support/mod.rs"]
 mod support;
 
+#[path = "../cwd_verb_subject.rs"]
+mod cwd_verb_subject;
 #[path = "../destroying_door_sibling_surfaces.rs"]
 mod destroying_door_sibling_surfaces;
 #[path = "../flow42_acceptance.rs"]

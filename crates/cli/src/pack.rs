@@ -2017,15 +2017,27 @@ pub fn make_pack() -> anyhow::Result<Box<dyn PackSource>> {
     Ok(pack)
 }
 
-/// CWD-discover the project's `.jigc/config/` layer: walk up from the process CWD to
-/// the repo root (the dir holding `.git`) and return `<root>/.jigc/config` when it is
-/// a directory. No repo / no `.jigc/config/` is `None` — the cold-start floor, never an
-/// error. The **single** walk behind [`make_pack`]'s three project-layer reads (the
-/// `packs:` list, the compose marker, and the freeze gate's project arm).
+/// CWD-discover the project's `.jigc/config/` layer: resolve **jigc_home** from the
+/// process CWD and return `<jigc_home>/.jigc/config` when it is a directory. No repo /
+/// no `.jigc/config/` is `None` — the cold-start floor, never an error. The **single**
+/// walk behind [`make_pack`]'s three project-layer reads (the `packs:` list, the compose
+/// marker, and the freeze gate's project arm).
+///
+/// **It resolves jigc_home, not the bare walk-up** (M53 — the cwd census, the verb class).
+/// This was a seventh, inlined copy of `crate::repo::discover_repo_root`, and it is the one
+/// copy whose caller's subject was never the standing checkout: `.jigc/config/` is the
+/// project layer, which binds to the main checkout like every other `.jigc/` read (M31 Inc
+/// 2 / WF3). Inside a fan-out worktree the walk-up found the worktree, which carries no
+/// `.jigc/config/` — the layer is untracked in the main checkout, so `git worktree add`
+/// copies none of it — and the whole project pack-set silently vanished: the
+/// `compose-embedded-methodology` marker read `false`, the `packs:` list read empty, and
+/// the freeze gate's project arm had nothing to check. Driven, that is how a milestone
+/// finalized from the root and refused `finalize.base-mismatch` from a worktree over the
+/// same history: with no methodology pack composed there is no `milestone-record` schema,
+/// so the record-only-advance carve-out could not classify its own bookkeeping commits.
 fn discover_project_config() -> Option<PathBuf> {
     let cwd = std::env::current_dir().ok()?;
-    let repo_root = cwd.ancestors().find(|dir| dir.join(".git").exists())?;
-    let project_config = repo_root.join(".jigc").join("config");
+    let project_config = crate::repo::jigc_home(&cwd)?.join(".jigc").join("config");
     project_config.is_dir().then_some(project_config)
 }
 

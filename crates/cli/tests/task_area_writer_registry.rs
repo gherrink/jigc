@@ -203,8 +203,14 @@ const NON_AREA_JOINS: &[(&str, usize, &str)] = &[
     ),
     (
         "crates/cli/src/pack.rs",
-        3,
-        "two `packs.yaml` reads off the project config dir, and one `.git` repo-root probe",
+        2,
+        "two `packs.yaml` reads off the project config dir. **[Corrected 2026-09-23 (M53 — \
+         the cwd census, the verb class).** This row read `3` and counted a third site, \
+         *one `.git` repo-root probe*. That probe was a seventh, inlined copy of \
+         `crate::repo::discover_repo_root`, and it decided the project pack-set from the \
+         **standing checkout** — so inside a fan-out worktree, which carries no \
+         `.jigc/config/`, the whole project layer vanished. `discover_project_config` now \
+         resolves `crate::repo::jigc_home`, which joins `.jigc` rather than `.git`.**]",
     ),
     (
         "crates/cli/src/relocate.rs",

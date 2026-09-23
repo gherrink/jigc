@@ -426,11 +426,20 @@ fn run_list(cwd: &Path, format: Format) -> Result<()> {
 /// streams at exit 0**. Both halves close through [`render::task_diff`]: JSON emits the
 /// settled `task-diff` envelope, whose present-always `code_diff` / `staged_docs` keys
 /// make the empty state non-empty; agent-text is byte-unchanged.
+///
+/// **The diff's subject is the checkout that holds the task's code, not the one the
+/// caller stands in** ([`TaskArea::code_checkout`]; M53 — the cwd census, row C2-02). It
+/// read `repo_root` — the bare walk-up — so an orchestrator at the repository root asking
+/// what a fan-out sub-task had changed was answered about the *main* checkout: the
+/// milestone-record commits came back as the sub-task's work and the file the sub-task had
+/// actually staged in its worktree was **omitted**, at exit 0, on a verb whose
+/// `--format json` shape is 1.0-pinned. The envelope's keys do not move here; the values
+/// become true.
 fn run_diff(cwd: &Path, id: &str, format: Format) -> Result<()> {
     let task = TaskArea::resolve(cwd, id)?;
     let base = task.base()?;
 
-    let code_diff = git_diff(&task.repo_root, &base.sha)?;
+    let code_diff = git_diff(&task.code_checkout(), &base.sha)?;
     // The working area's `docs/<type>:<slug>.md` set, stripped to the `<type>:<slug>`
     // identity exactly as `dropped_staged_docs` derives the `task-discard` ack's list —
     // and that identity *is* the address `jigc doc show <id> --task <id>` takes, which
@@ -1971,6 +1980,36 @@ impl TaskArea {
             dir,
             pack: make_pack()?,
         })
+    }
+
+    /// **The checkout that holds this task's code** — the subject of a read about what the
+    /// task changed, which is not always the checkout the caller stands in (M53 — the cwd
+    /// census, row C2-02).
+    ///
+    /// The rule has two cases and no third:
+    ///
+    /// * a **milestone sub-task** with a provisioned fan-out worktree — its code lives in
+    ///   that worktree and nowhere else (M31 Inc 4/5: since the isolation split, the
+    ///   provisioned worktree is the *sole* copy of a sub-agent's staged code), so the
+    ///   worktree is the subject from every cwd, the repository root included;
+    /// * **a plain task** — its code is authored in whatever checkout the agent is working
+    ///   in, and [`crate::task::run_finalize`] commits it *there*, so `repo_root` is both
+    ///   the honest subject and the one that agrees with the commit door.
+    ///
+    /// The sub-task leg is [`crate::repo::posture_subject`]'s discriminator, unchanged and
+    /// unrestated: `.git` is a file, the path is `<jigc_home>/.jigc/worktrees/<id>`, and
+    /// `<id>` is a sub-task of a milestone in this workbench. Asking it rather than
+    /// re-deriving it is what keeps this read and the fan-out doors from classifying one
+    /// directory two ways.
+    fn code_checkout(&self) -> PathBuf {
+        let worktree = self
+            .jigc_home
+            .join(engine::milestone::worktree_path(&self.id));
+        if crate::repo::posture_subject(&worktree).is_dedicated() {
+            worktree
+        } else {
+            self.repo_root.clone()
+        }
     }
 
     /// The project cascade layer's config dir (`<repo>/.jigc/config`) — the override
