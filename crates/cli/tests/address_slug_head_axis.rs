@@ -458,8 +458,20 @@ fn no_surface_calls_an_unaddressable_identity_managed() {
             "`{path}` must draw the shipped adoption advisory\n{text}",
         );
     }
+    // **A repair that runs from where the reader is standing** (M53 post-review-fix review,
+    // HIGH 2): `jigc migrate <PATH>` roots its argument at the caller's cwd, so the operand
+    // is absolute. Composed from the corpus's own root, not pinned.
+    let expected_migrate = format!(
+        "jigc migrate {} --as research",
+        corpus
+            .repo()
+            .canonicalize()
+            .unwrap_or_else(|_| corpus.repo().to_path_buf())
+            .join("docs/research/OddName.md")
+            .display(),
+    );
     assert!(
-        text.contains("jigc migrate docs/research/OddName.md --as research"),
-        "the adoption route must name a repair that runs\n{text}",
+        text.contains(&expected_migrate),
+        "the adoption route must name a repair that runs — expected `{expected_migrate}`\n{text}",
     );
 }

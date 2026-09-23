@@ -628,9 +628,21 @@ fn a_stock_brownfield_changelog_routes_to_ingest_on_all_three_surfaces() {
         "the squatter is exactly one fact — the adoption advisory; got:\n{report:#}",
     );
     let route = unadopted[0]["route"].as_str().expect("the advisory routes");
+    // The doctype-directed verb's operand is ABSOLUTE (M53 post-review-fix review, HIGH 2):
+    // `jigc migrate <PATH>` roots its argument at the caller's cwd, so a repo-relative
+    // spelling is a route that runs from the repository root and nowhere else.
+    let expected_migrate = format!(
+        "jigc migrate {} --as changelog",
+        repo.path()
+            .canonicalize()
+            .unwrap_or_else(|_| repo.path().to_path_buf())
+            .join("CHANGELOG.md")
+            .display(),
+    );
     assert!(
-        route.contains("jigc ingest") && route.contains("jigc migrate CHANGELOG.md --as changelog"),
-        "the route names the adoption front door + the doctype-directed verb; got: {route}",
+        route.contains("jigc ingest") && route.contains(&expected_migrate),
+        "the route names the adoption front door + the doctype-directed verb (expected \
+         `{expected_migrate}`); got: {route}",
     );
     assert!(
         !route.contains("migrate-corpus"),

@@ -453,10 +453,21 @@ fn a_foreign_file_answers_one_code_and_one_route_at_every_door() {
         store_route.contains("jigc ingest"),
         "the adoption route names the always-applicable front door; got:\n{store_route}",
     );
+    // The path substituted in is the ABSOLUTE one (M53 post-review-fix review, HIGH 2):
+    // `jigc migrate <PATH>` roots its argument at the caller's cwd.
+    let expected_migrate = format!(
+        "jigc migrate {} --as adr",
+        repo.path()
+            .canonicalize()
+            .unwrap_or_else(|_| repo.path().to_path_buf())
+            .join(NOTES)
+            .display(),
+    );
     assert!(
-        store_route.contains(&format!("jigc migrate {NOTES} --as adr")),
+        store_route.contains(&expected_migrate),
         "and — since `migrate-adr` ships — the doctype-directed verb with the path \
-         substituted in (the M40 two-verb tier); got:\n{store_route}",
+         substituted in (the M40 two-verb tier); expected `{expected_migrate}`; \
+         got:\n{store_route}",
     );
 
     // ── the `task validate` door: the same pair, the same bytes ──────────────────────

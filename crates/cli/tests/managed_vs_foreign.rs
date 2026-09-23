@@ -491,9 +491,21 @@ fn a_foreign_changelog_at_the_placement_home_is_an_adoption_case_not_an_unmigrat
         route.contains("jigc ingest"),
         "the route names the adoption front door; got: {route}",
     );
+    // The operand is ABSOLUTE (M53 post-review-fix review, HIGH 2) — `jigc migrate <PATH>`
+    // roots its argument at the CALLER's cwd, so a repo-relative spelling runs from the
+    // repository root and nowhere else. Composed from the fixture's own root, never pinned.
+    let expected_migrate = format!(
+        "jigc migrate {} --as changelog",
+        repo.path()
+            .canonicalize()
+            .unwrap_or_else(|_| repo.path().to_path_buf())
+            .join("CHANGELOG.md")
+            .display(),
+    );
     assert!(
-        route.contains("jigc migrate CHANGELOG.md --as changelog"),
-        "the route names the doctype-directed adoption verb, verbatim; got: {route}",
+        route.contains(&expected_migrate),
+        "the route names the doctype-directed adoption verb, verbatim — expected \
+         `{expected_migrate}`; got: {route}",
     );
     assert!(
         !route.contains("migrate-corpus"),
@@ -1279,10 +1291,20 @@ fn doc_show_over_a_foreign_squatter_routes_at_adoption_and_the_surfaces_tell_one
             stderr.contains("jigc ingest"),
             "the route names the adoption front door; got ({format:?}):\n{stderr}",
         );
+        // Absolute, so "runs it as emitted" is true from any cwd (M53 post-review-fix
+        // review, HIGH 2).
+        let expected_migrate = format!(
+            "jigc migrate {} --as changelog",
+            repo.path()
+                .canonicalize()
+                .unwrap_or_else(|_| repo.path().to_path_buf())
+                .join("CHANGELOG.md")
+                .display(),
+        );
         assert!(
-            stderr.contains("jigc migrate CHANGELOG.md --as changelog"),
+            stderr.contains(&expected_migrate),
             "and the doctype-directed adoption verb, verbatim — the file's own path, so the agent \
-             runs it as emitted; got ({format:?}):\n{stderr}",
+             runs it as emitted; expected `{expected_migrate}`; got ({format:?}):\n{stderr}",
         );
         assert!(
             !stderr.contains("fix the committed file so it conforms to its schema"),
