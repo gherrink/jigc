@@ -136,14 +136,56 @@ struct FanOut {
 
 impl FanOut {
     fn new(tag: &str) -> Self {
+        Self::new_created_in(tag, false)
+    }
+
+    /// The same fixture, with `milestone create` typed **in a linked worktree** whose HEAD
+    /// differs from the main checkout's — the cell of the M53 post-review-fix review's
+    /// MEDIUM 4. Everything after the create is byte-identical to `new`, so the arm that
+    /// uses it compares a milestone born away against the one every other arm drives.
+    ///
+    /// Main is advanced by a real (non-record) commit first: cut from main's own HEAD the two
+    /// checkouts answer the same sha, which is the shape under which the defect is invisible
+    /// — and is why it shipped.
+    fn new_created_in(tag: &str, born_away: bool) -> Self {
         let root = TempDir::new(tag);
         let repo = root.path().join("repo");
         fs::create_dir_all(&repo).expect("mk repo dir");
         init_repo(&repo);
         let home = TempDir::new(&format!("{tag}-home"));
 
+        let linked = root.path().join("feat");
+        let create_in = if born_away {
+            git(
+                &repo,
+                &[
+                    "worktree",
+                    "add",
+                    "-q",
+                    "-b",
+                    "feat",
+                    linked.to_str().expect("worktree path is UTF-8"),
+                ],
+            );
+            fs::write(repo.join("main-only.txt"), "main moved\n").expect("write main-only");
+            git(&repo, &["add", "main-only.txt"]);
+            git(&repo, &["commit", "-q", "-m", "advance main"]);
+            assert_ne!(
+                git(&repo, &["rev-parse", "HEAD"]),
+                git(&linked, &["rev-parse", "HEAD"]),
+                "the fixture must put the two checkouts on different commits",
+            );
+            linked.clone()
+        } else {
+            repo.clone()
+        };
+
         assert_ok(
-            &jigc_in(&repo, home.path(), &["milestone", "create", "Cache rework"]),
+            &jigc_in(
+                &create_in,
+                home.path(),
+                &["milestone", "create", "Cache rework"],
+            ),
             "`jigc milestone create`",
         );
         for intent in ["Area one", "Area two"] {
@@ -401,6 +443,64 @@ fn task_diff_of_a_sub_task_reads_its_worktree_from_every_cwd() {
         ["base", "code_diff", "findings", "op", "staged_docs", "task"],
         "the pinned `task-diff` envelope's key set must not move",
     );
+}
+
+// ---------------------------------------------------------------------------------------
+// The door that SETS what the boundary gates on binds the same root the boundary reads.
+// ---------------------------------------------------------------------------------------
+
+/// **A milestone created from a linked worktree must be finalizable** (M53 post-review-fix
+/// review, MEDIUM 4).
+///
+/// `31921e57` moved `jigc milestone finalize`'s subject to `jigc_home` — it reads HEAD with
+/// `git_head(&jigc_home)` and probes the index with `git_staged_snapshot(&jigc_home)` — and
+/// left `milestone create` reading the **standing** checkout for both. Driven on
+/// `committed-singletons` with a branch-attached worktree `feat` and main advanced by a
+/// real commit: `create` pinned `feat`'s HEAD, landed its record commit on **main**, and the
+/// milestone's **first** `milestone finalize` refused `finalize.base-mismatch` at exit 3
+/// from every cwd, with a route asking the operator to rewind the main checkout's HEAD onto
+/// another branch's commit. The milestone was born un-finalizable.
+///
+/// This arm is the pair, not either half: it creates from the linked worktree and finalizes,
+/// and the assertion is that the gate the create fed does not refuse it. The cwd axis is the
+/// set — create from the worktree, finalize from the root — which is the same axis every
+/// other arm in this suite iterates.
+#[test]
+fn a_milestone_created_in_a_linked_worktree_finalizes() {
+    let fan = FanOut::new_created_in("born-away", true);
+    let linked = fan
+        .repo
+        .parent()
+        .expect("the repo has a parent")
+        .join("feat");
+
+    // The pin the boundary will gate on is `jigc_home`'s HEAD, not the checkout the create
+    // was typed in. Before the fix it was the latter, and the first finalize refused
+    // `finalize.base-mismatch` at exit 3 from every cwd.
+    let pin = fs::read_to_string(
+        fan.repo
+            .join(".jigc")
+            .join("milestones")
+            .join("cache-rework")
+            .join("base.json"),
+    )
+    .expect("the milestone's base pin is readable");
+    assert!(
+        !pin.contains(&git(&linked, &["rev-parse", "HEAD"])),
+        "the base pin must not be the STANDING checkout's HEAD; pin was:\n{pin}",
+    );
+
+    let landed = jigc_in(
+        &fan.repo,
+        fan.home.path(),
+        &["milestone", "finalize", "cache-rework"],
+    );
+    let seen = both_streams(&landed);
+    assert!(
+        !seen.contains("finalize.base-mismatch"),
+        "a milestone created in a linked worktree must not be born un-finalizable; got:\n{seen}",
+    );
+    assert_ok(&landed, "`jigc milestone finalize`");
 }
 
 // ---------------------------------------------------------------------------------------

@@ -666,9 +666,21 @@ fn require_milestone_area(jigc_root: &Path, milestone_id: &str) -> Result<PathBu
 /// landed. So `create` refuses **first** when a record already owns the slug
 /// ([`guard_record_free`]), before HEAD is read or any area is minted.
 fn run_create(cwd: &Path, title: &str, conflicts: &mut Vec<Finding>) -> Result<(String, String)> {
-    // The base pin is the *worktree* HEAD; the `.jigc/` area binds to jigc_home (the main
-    // checkout), so all worktrees share one `.jigc/` (M31 Inc 2 / WF3).
-    let repo_root = discover_repo_root(cwd).ok_or_else(|| crate::locate::not_in_repo(cwd))?;
+    // **The base pin and the staged snapshot are jigc_home's, not the standing checkout's**
+    // (M53 post-review-fix review, MEDIUM 4). This comment read *"the base pin is the
+    // worktree HEAD"* and the code obeyed it, while `31921e57` moved the **boundary** that
+    // gates on both to `jigc_home` — so a milestone created from a linked worktree was born
+    // un-finalizable. Driven on `committed-singletons` with a branch-attached worktree
+    // `feat` at `9e7adc4` and main advanced: `milestone create` pinned `feat`'s HEAD, landed
+    // its record commit on **main**, and the first `milestone finalize` refused
+    // `finalize.base-mismatch` at exit 3 from every cwd, with a route asking the operator to
+    // rewind the main checkout onto another branch's commit.
+    //
+    // `31921e57`'s own reasoning — *"there was never a second subject to choose; every read
+    // and write below is about the milestone"* — is the reasoning for the door that **sets**
+    // what the gate compares, and this is that door. There is no `repo_root` binding left
+    // here at all, which is the point: the two roots cannot diverge in a function that binds
+    // one. `jigc_home_or_repo` carries the same not-in-repo refusal the walk-up did.
     let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
     let jigc_root = jigc_home.join(".jigc");
 
@@ -679,8 +691,8 @@ fn run_create(cwd: &Path, title: &str, conflicts: &mut Vec<Finding>) -> Result<(
     // then serial-collides. Driven at `92ed1957~`, `jigc milestone create "日本語"` did
     // exactly that **and committed the record for it**, at exit 0.
     //
-    // **Its position is the decision.** It sits after `discover_repo_root` and
-    // `jigc_home_or_repo` — both reads — so a caller standing outside a repository still
+    // **Its position is the decision.** It sits after `jigc_home_or_repo` — a read — so a
+    // caller standing outside a repository still
     // gets M49's one converged not-in-repo answer rather than a true sentence about a title
     // that is not their problem; and ahead of `shipped_schemas`, `guard_record_free` and
     // `gitignore::ensure`, so **no write precedes it**: no area, no record commit, and no
@@ -711,7 +723,8 @@ fn run_create(cwd: &Path, title: &str, conflicts: &mut Vec<Finding>) -> Result<(
     // into the user's own file on the way out of a run that changed nothing else.
     let ignore = crate::gitignore::ensure(&jigc_root)?;
 
-    let base = read_head(&repo_root)?;
+    // `jigc_home` — the checkout `milestone finalize` reads HEAD from (`git_head(&jigc_home)`).
+    let base = read_head(&jigc_home)?;
     // The carryover gate's door half (M43 T1, `design/surface-contract.md` → The
     // carryover gate): `milestone create` is the shared checkout's aggregate-index
     // door — snapshot the pre-milestone staged state into the milestone area,
@@ -722,7 +735,11 @@ fn run_create(cwd: &Path, title: &str, conflicts: &mut Vec<Finding>) -> Result<(
     // used to carry a second, weaker reason for it ("worktrees are provisioned clean
     // and a missing snapshot fails open"), which is the fail-open bound, not the
     // premise (M49 Increment 12 / T1).
-    let staged = crate::task::git_staged_snapshot(&repo_root)?;
+    //
+    // And it is `jigc_home`'s index, for the same reason the base pin is: the boundary's own
+    // probe is `git_staged_snapshot(&jigc_home)`, and a snapshot of a different index is a
+    // carryover verdict about a checkout nobody is gating.
+    let staged = crate::task::git_staged_snapshot(&jigc_home)?;
     let minted = mint_milestone(&jigc_root, title, base).map_err(finding_to_err)?;
     engine::state::write_staged_snapshot(&minted.dir, &staged).with_context(|| {
         format!(
@@ -1460,7 +1477,7 @@ fn reconcile_record_preflight(
         &bytes,
         /* task_touched = */ true,
         &record_conflict_block(jigc_home, &key),
-        &engine::validate::AdoptionInputs::new(&versions, &priors, &migratable),
+        &engine::validate::AdoptionInputs::new(&versions, &priors, &migratable, jigc_home),
     );
     if let Some(blocking) = findings.iter().find(|f| f.severity == Severity::Blocking) {
         // Drift on a machine-owned record → conflict-block, the record untouched, routed.
@@ -6483,7 +6500,7 @@ fn milestone_boundary_gate(
                  the external edit on disk, then re-run the join",
             ),
         ),
-        &engine::validate::AdoptionInputs::new(&versions, &priors, &migratable),
+        &engine::validate::AdoptionInputs::new(&versions, &priors, &migratable, jigc_home),
         // No live-record carve-out at the join (M52 Inc 10 / T6). The carve-out names the
         // record of the work unit whose TASK is being swept, and this door sweeps no task:
         // the merged gate area belongs to none, which is why the `ConflictBlock` above cannot
