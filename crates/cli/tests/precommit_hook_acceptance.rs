@@ -692,6 +692,187 @@ fn commit_blocks_on_this_commit_oob_rename_under_a_repository_path_with_a_space(
     );
 }
 
+/// **(g3) The same block, over a managed doc whose own store key carries a space** (the
+/// confirmation pass, MEDIUM 1).
+///
+/// (g2) closed the **home** axis — the `-C <home>` operand the route gained at `34584687`.
+/// The two *move operands* are rendered through `shell_token` too, and the bound shipped
+/// beside (g2) called that cell *"a managed doc whose own path contains a space"*, which
+/// reads as something an operator would have to contrive: `jigc ingest` refuses such a file
+/// with `ingest.unaddressable-identity`, and no jigc writer mints one.
+///
+/// **It is one supported command away.** The store key is `<docs-root>/<…>/<slug>.md` and
+/// the root is a knob: `jigc config set docs-root 'my docs'` lands at exit 0, after which
+/// *every* location-doctype key carries the space (and `placement-root` does the same for
+/// every placement doc). Driven before the fix, on exactly this fixture: the route read
+/// `git -C <home> mv 'my docs/decisions/new-cache.md' 'my docs/decisions/old-cache.md'`, the
+/// field-indexed awk saw `'my` where it wanted a staged path, no rule fired, and `git commit`
+/// **landed the out-of-band rename at exit 0** while printing *"not staged in this commit;
+/// commit not blocked"* — a sentence that was false about the commit it was printed for.
+///
+/// The hook now reads the route's tail as **shell words** rather than as awk fields, so the
+/// operands are unquoted before they are looked up in the staged set.
+#[test]
+fn commit_blocks_on_this_commit_oob_rename_under_a_docs_root_with_a_space() {
+    let repo = TempDir::new("oob-rename-spaced-root");
+    init_repo(repo.path());
+
+    fs::create_dir_all(repo.path().join("my docs/decisions")).expect("mk spaced decisions");
+    fs::write(
+        repo.path().join("my docs/decisions/old-cache.md"),
+        plain_adr("Old cache"),
+    )
+    .expect("write adr");
+    git(repo.path(), &["add", "."]);
+    git(repo.path(), &["commit", "-q", "-m", "seed managed doc"]);
+    mark_set_up(repo.path());
+
+    let setup = jigc(repo.path(), &["setup"]);
+    assert!(
+        setup.status.success(),
+        "`jigc setup` must succeed; stderr:\n{}",
+        String::from_utf8_lossy(&setup.stderr),
+    );
+
+    // The one supported command that puts a space in every location-doctype store key.
+    let knob = jigc(repo.path(), &["config", "set", "docs-root", "my docs"]);
+    assert!(
+        knob.status.success(),
+        "`jigc config set docs-root 'my docs'` must succeed; stderr:\n{}",
+        String::from_utf8_lossy(&knob.stderr),
+    );
+
+    baseline_file_state(repo.path(), &["my docs/decisions/old-cache.md"]);
+
+    git(
+        repo.path(),
+        &[
+            "mv",
+            "my docs/decisions/old-cache.md",
+            "my docs/decisions/new-cache.md",
+        ],
+    );
+
+    // The precondition, pinned through the real binary: the sweep raises the rename event
+    // whose route the hook parses, and that route's two operands are shell-quoted — which
+    // is the input shape the field-indexed awk could not read. An arm that stopped
+    // producing either must fail loudly rather than pass vacuously.
+    let envelope = store_envelope(repo.path());
+    let rename_route = envelope["findings"]
+        .as_array()
+        .expect("findings array")
+        .iter()
+        .find(|f| f["code"] == "reconciliation.rename")
+        .map(|f| f["route"].as_str().unwrap_or_default().to_owned())
+        .unwrap_or_else(|| {
+            panic!(
+                "the sweep must raise `reconciliation.rename` for the spaced store key; \
+                 json:\n{envelope}"
+            )
+        });
+    assert!(
+        rename_route.contains(
+            "mv 'my docs/decisions/new-cache.md' \
+                               'my docs/decisions/old-cache.md'"
+        ),
+        "the route's operands must be shell-quoted (the input shape under test); \
+         route:\n{rename_route}",
+    );
+
+    let out = git_commit(
+        repo.path(),
+        "bare git mv of a managed doc under a spaced docs-root",
+    );
+    let merged = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert!(
+        !out.status.success(),
+        "a this-commit OOB rename must BLOCK when the store key carries a space; \
+         output:\n{merged}",
+    );
+    assert!(
+        merged.contains(RENAME_BLOCK),
+        "the rename-block message must appear on stderr; output:\n{merged}",
+    );
+    assert!(
+        !merged.contains(RENAME_WARN),
+        "the hook must not claim the rename is `not staged in this commit` when it is; \
+         output:\n{merged}",
+    );
+}
+
+/// **(g4) The operand axis itself, over every shape `shell_token` quotes for** (the
+/// confirmation pass, MEDIUM 1 — the class, not the reported cell).
+///
+/// (g3) drives one instance end to end: a spaced `docs-root`. The *class* is every byte
+/// `shell_token` quotes, reached through either root knob — `docs-root` for every
+/// location-doctype key, `placement-root` for every placement doc — and the tokenizer's
+/// question is about the quoting, not about which knob produced it. So this drives the
+/// **shipped** awk program, lifted out of the rendered hook body, over the shapes: a space
+/// in the home, a space in both operands, an embedded `'` written `'\''`, the plain
+/// unquoted form that always worked, and the masking trap (one side staged) which must
+/// still NOT block.
+#[test]
+fn the_rename_block_reads_its_operands_as_shell_words_whatever_shell_token_quoted() {
+    let body = cli::setup::precommit_hook_body(Path::new("/usr/local/bin/jigc"));
+    let line = body
+        .lines()
+        .find(|l| l.contains("| awk '"))
+        .expect("the rename block renders one awk pipeline");
+    let start = line.find("| awk '").expect("awk opener") + "| awk '".len();
+    let end = line.rfind("'; then").expect("awk closer");
+    let program = &line[start..end];
+
+    // `(staged lines, route line, must_block)`.
+    let cells: &[(&[&str], &str, bool)] = &[
+        (
+            &["docs/decisions/a.md", "docs/decisions/b.md"],
+            "git -C /repo mv docs/decisions/b.md docs/decisions/a.md",
+            true,
+        ),
+        (
+            &["my docs/decisions/a.md", "my docs/decisions/b.md"],
+            "git -C '/a repo' mv 'my docs/decisions/b.md' 'my docs/decisions/a.md'",
+            true,
+        ),
+        (
+            &["my root/roadmap.md", "my root/roadmap-new.md"],
+            "git -C /repo mv 'my root/roadmap-new.md' 'my root/roadmap.md'",
+            true,
+        ),
+        (
+            &["it's docs/a.md", "it's docs/b.md"],
+            "git -C /repo mv 'it'\\''s docs/b.md' 'it'\\''s docs/a.md'",
+            true,
+        ),
+        // The masking trap survives the widening: only the new side is staged.
+        (
+            &["my docs/decisions/b.md"],
+            "git -C /repo mv 'my docs/decisions/b.md' 'my docs/decisions/a.md'",
+            false,
+        ),
+    ];
+
+    for (staged, route, must_block) in cells {
+        let script = format!(
+            "{{ printf '%s\\n' \"$1\"; echo '---'; printf '%s\\n' \"$2\"; }} | awk '{program}'"
+        );
+        let out = Command::new("sh")
+            .args(["-c", &script, "sh", &staged.join("\n"), route])
+            .output()
+            .expect("run the shipped awk program");
+        assert_eq!(
+            out.status.success(),
+            *must_block,
+            "the rename block must {} for route `{route}` over staged {staged:?}",
+            if *must_block { "fire" } else { "stay silent" },
+        );
+    }
+}
+
 /// (h) The masking-trap regression: an **unrelated** commit (staging some other file) made
 /// while a pre-existing OOB-moved managed doc already sits committed in the tree must NOT
 /// block (exit 0, warn only). The store sweep still flags the prior move as a

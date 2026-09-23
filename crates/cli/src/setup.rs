@@ -563,12 +563,28 @@ pub fn precommit_hook_body(jigc_path: &Path) -> String {
 /// direction. Nothing in a hook's output says a guard did not fire, and no fixture had a
 /// space in it.
 ///
-/// **A declared bound, pre-existing and left open:** the two *operands* are rendered through
-/// `shell_token` (M51), so a managed doc whose own path contains a space emits
-/// `'docs/my notes.md'` — which field-splits too, and neither half is in the staged set. The
-/// block has been blind to that cell since the quoting landed, independently of this range;
-/// closing it needs a shell-word tokenizer inside the awk program, which is a different
-/// change from this one. The home axis — the one this range opened — is closed.
+/// **The two *operands* are read as shell words, not as awk fields** (the confirmation pass,
+/// MEDIUM 1). They are rendered through `shell_token` (M51) too, so a managed doc whose store
+/// key contains a space emits `'my docs/decisions/x.md'` — two awk fields, neither of which
+/// is in the staged set. That cell shipped as a declared bound reading *"a managed doc whose
+/// own path contains a space"*, which characterised it as something an operator would have to
+/// contrive. **It is one supported command away, and the bound is struck with that datum:**
+/// the store key is `<docs-root>/<…>/<slug>.md`, and `jigc config set docs-root 'my docs'`
+/// lands at exit 0 — as does `placement-root` for every placement doc. So the class is *every
+/// location-doctype key under a spaced `docs-root` and every placement doc under a spaced
+/// `placement-root`*, not one hand-named file, and driven it failed **open**: `git commit`
+/// landed the out-of-band rename at exit 0 while printing *"not staged in this commit; commit
+/// not blocked"*, a sentence that was false about the commit it was printed for.
+///
+/// The awk therefore carries a `shwords` function — POSIX single-quote and backslash
+/// unquoting — and looks the **unquoted** operands up in the staged set. It covers every byte
+/// `shell_token` quotes for, not only the space. **Two residuals, stated:** a path git itself
+/// C-quotes in `--name-status` (a `"`, a backslash or a control byte in the name, and
+/// non-ASCII under the default `core.quotePath`) arrives quoted on the *staged* side, and a
+/// backslash in a path is JSON-escaped in the report the route is grepped out of. Both are
+/// the other input's encoding, not this predicate's, and neither is reachable through a jigc
+/// writer: `jigc ingest` refuses such a name with `ingest.unaddressable-identity`, and the
+/// two root knobs refuse a name the OS ceiling rejects.
 ///
 /// But a move landed in a **prior**
 /// commit must **not** block an unrelated later commit (the **masking trap**) — so the block
@@ -592,7 +608,11 @@ if [ -n \"$moves\" ]; then\n\
 \t# under --find-renames; a delete+add as `D old` / `A new`. One path per line.\n\
 \tstaged=\"$(git diff --cached --name-status --find-renames 2>/dev/null | cut -f2- | tr '\\t' '\\n')\"\n\
 \t# Block iff some `git -C <repo> mv <new> <old>` route has BOTH its paths staged.\n\
-\tif { printf '%s\\n' \"$staged\"; echo '---'; printf '%s\\n' \"$moves\"; } | awk '$0 == \"---\" { seen = 1; next } seen == 0 { S[$0] = 1; next } { for (i = 1; i <= NF - 2; i++) if ($i == \"mv\" && ($(i + 1) in S) && ($(i + 2) in S)) hit = 1 } END { exit hit ? 0 : 1 }'; then\n\
+\t# The route line is read as SHELL WORDS, never as awk fields: jigc renders the home\n\
+\t# AND both operands through `shell_token`, so a store key under a spaced `docs-root`\n\
+\t# arrives as 'my docs/decisions/x.md' — several fields, none of them a staged path.\n\
+\t# `shwords` unquotes (POSIX single quotes + backslash) into W[1..n] first.\n\
+\tif { printf '%s\\n' \"$staged\"; echo '---'; printf '%s\\n' \"$moves\"; } | awk 'function shwords(s,   i, c, n, w, inq, started) { n = 0; w = \"\"; inq = 0; started = 0; delete W; for (i = 1; i <= length(s); i++) { c = substr(s, i, 1); if (!inq && c == \"\\\\\") { i = i + 1; w = w substr(s, i, 1); started = 1; continue } if (c == SQ) { inq = !inq; started = 1; continue } if (!inq && (c == \" \" || c == \"\\t\")) { if (started) { W[++n] = w; w = \"\"; started = 0 } continue } w = w c; started = 1 } if (started) W[++n] = w; return n } BEGIN { SQ = sprintf(\"%c\", 39) } $0 == \"---\" { seen = 1; next } seen == 0 { S[$0] = 1; next } { n = shwords($0); for (i = 1; i <= n - 2; i++) if (W[i] == \"mv\" && (W[i + 1] in S) && (W[i + 2] in S)) hit = 1 } END { exit hit ? 0 : 1 }'; then\n\
 \t\techo 'jigc: out-of-band managed-doc rename staged in this commit — a bare `git mv` bypasses jigc identity tracking; use `jigc rename` instead (commit blocked).' >&2\n\
 \t\texit 1\n\
 \tfi\n\
