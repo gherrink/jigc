@@ -2130,10 +2130,19 @@ pub(crate) fn selectable_workflows(
 ///   commits already sit ahead of, and `jigc task discard <sub>` exits 0 while the committed
 ///   record still reads `status: active` and `milestone list-tasks` still lists the sub-task
 ///   — a route contradicting the record it leaves standing (`surface-contract.md` → law 1).
-///   The provision span is idempotent over both states this refusal is reachable in: it adds
-///   a worktree that is missing and leaves one that exists untouched, so one line fits the
-///   unprovisioned state (the trial's) and the provisioned one M48's leftover classifier
-///   guards.
+///
+///   **The route is split on whether the worktree is actually there** (M53 — the cwd
+///   census, C2-08). One line had covered both states on the ground that the provision span
+///   *"adds a worktree that is missing and leaves one that exists untouched"* — idempotent,
+///   and therefore honest. Driven, the provisioned state is the ordinary one: an agent
+///   handed a `Spawn:` line, or resuming a sub-task from the shared checkout, meets this
+///   refusal with the worktree already cut, and is told to run a command that does nothing
+///   before the step that actually moves them. *Idempotent* is not *useful*: a route whose
+///   first clause is a no-op in the state the reader is in teaches that jigc's routes are
+///   approximate. So the provisioned arm names only the act that resolves it, and both arms
+///   end on an absolute, pasteable `cd` (`design/surface-contract.md` → the printed-path
+///   fence, the *pasteable shell bytes* disposition) — the same absolute the `Spawn:` line
+///   emits, because this refusal and that line are two ways of reaching one cwd.
 /// - A **top-level task** (`None`) can only reach this refusal at the re-entry door
 ///   ([`reenter_in_repo`], which takes no membership decision), and there both offered
 ///   routes are right — no record names it and its own discard is the real teardown — so
@@ -2143,6 +2152,7 @@ fn blanket_base_pin_refusal(
     milestone: Option<&str>,
     pinned: &BasePin,
     head: &BasePin,
+    jigc_home: &Path,
 ) -> anyhow::Error {
     let pinned_to = format!(
         "task `{id}` is pinned to base {} but you're on {}",
@@ -2155,14 +2165,39 @@ fn blanket_base_pin_refusal(
             engine::finding::Route::mechanical(["jigc", "task", "discard", id, "--force"], ""),
         );
     };
+    // The absolute the reader can paste from wherever they are standing — the same path
+    // the `Spawn:` line emits, canonicalized the same way, so the two never name one
+    // directory two ways.
+    let worktree = jigc_home.join(engine::milestone::worktree_path(id));
+    // **Provisioned is a verdict git gives, never a directory shape.** `posture_subject` is
+    // the shipped discriminator — `.git` is a file, the path is
+    // `<jigc_home>/.jigc/worktrees/<id>`, and `<id>` is a sub-task of a milestone in this
+    // workbench — and asking it is what keeps this refusal and the fan-out doors from
+    // classifying one directory two ways. A bare `is_dir()` here would re-enact the M50
+    // completion audit's `fanout_worktree_paths` finding: a claim about *shape* where the
+    // question is about what git can vouch for.
+    let provisioned = crate::repo::posture_subject(&worktree).is_dedicated();
+    let worktree = worktree.canonicalize().unwrap_or(worktree);
+    let cd = crate::task::shell_token(&worktree.display().to_string());
+    let here = "a sub-task's work happens in its own worktree, cut from that base rather \
+                than in this checkout";
+    if provisioned {
+        // The worktree is already there: naming the provisioning door first would put a
+        // no-op ahead of the only act that changes anything.
+        return anyhow!(
+            "{pinned_to} — this is a sub-task of milestone `{milestone_id}`, and {here}: run \
+             this from that worktree — `cd {cd}`, then re-run this command",
+        );
+    }
     anyhow!(
-        "{pinned_to} — this is a sub-task of milestone `{milestone_id}`, and a sub-task's work \
-         happens in its own worktree at .jigc/worktrees/{id}, cut from that base rather than in \
-         this checkout: run {}",
+        "{pinned_to} — this is a sub-task of milestone `{milestone_id}`, and {here}: run {}",
         engine::finding::Route::mechanical(
             ["jigc", "milestone", "provision", milestone_id],
-            " — it adds a worktree that is missing and leaves one that exists untouched — then \
-             re-run this from that worktree",
+            format!(
+                " — it cuts the worktree this sub-task is missing — then `cd {cd}` and re-run \
+                 this command there"
+            )
+            .as_str(),
         ),
     )
 }
@@ -2239,6 +2274,7 @@ pub fn resume_in_repo(start: &Path, id: &str) -> Result<Composition> {
                 Some(&milestone_id),
                 &pinned,
                 &head,
+                &jigc_home,
             ));
         }
         // The schema set the promote-destination half of the footprint needs — loaded
@@ -2364,6 +2400,7 @@ pub fn reenter_in_repo(start: &Path, workflow_id: &str, id: &str) -> Result<Comp
             milestone_id.as_deref(),
             &pinned,
             &head,
+            &jigc_home,
         ));
     }
 

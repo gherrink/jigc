@@ -659,10 +659,23 @@ fn both_sub_task_doors_refuse_and_route_at_the_worktree(repo: &Path, home: &Path
         );
 
         // The emitted bytes are the contract: lift each span and run it as printed.
+        //
+        // **What the refusal must offer is a followable act, and which act depends on
+        // the state** (M53 — the cwd census, C2-08). Until then one route covered both
+        // provisioning states, on the ground that `jigc milestone provision` is idempotent;
+        // driven, that meant an agent whose worktree was already cut was told to run a
+        // command that does nothing before the step that moves it. So the provisioned arm
+        // offers the `cd` alone and carries no `jigc` span at all — and this loop is itself
+        // the demonstration: the FIRST argv's refusal names the provisioning door, the
+        // helper runs it verbatim as it must, and by the second argv the worktree exists,
+        // so the second refusal is the provisioned one. Both arms end on the absolute `cd`,
+        // which is what the `.jigc/worktrees/do-the-thing` assertion above reads.
         let spans = jigc_spans(&err);
         assert!(
-            !spans.is_empty(),
-            "the refusal must offer a runnable `jigc` span ({state}); got:\n{err}",
+            !spans.is_empty() || err.contains("`cd /"),
+            "the refusal must offer a followable act — a runnable `jigc` span where \
+             provisioning is what resolves it, or an absolute `cd` where the worktree is \
+             already cut ({state}); got:\n{err}",
         );
         for span in &spans {
             let span_argv: Vec<&str> = span.split_whitespace().skip(1).collect();

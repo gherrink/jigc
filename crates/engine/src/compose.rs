@@ -1768,11 +1768,19 @@ fn emit_fan_out_spawns(
             // OWN recorded workflow, which is what the re-entry guard compares against.
             let id = &task.id;
             let workflow = task.workflow.as_deref().unwrap_or(fallback);
-            let worktree = crate::milestone::worktree_path(id);
-            let cmd = format!(
-                "cd {} && jigc workflow {workflow} --task {id}",
-                worktree.display()
-            );
+            // **The absolute path when the caller fed one** (M53 — the cwd census, C2-08 /
+            // C3-01). This is the one `cd` jigc emits and the orchestrator is told to
+            // copy-run it, so its operand goes into a shell of unknown cwd — the
+            // *pasteable shell bytes* disposition `design/surface-contract.md`'s law-1
+            // fence already carries. Spelled repo-relative, the line ran from the
+            // repository root and nowhere else. The fallback keeps the old convention for
+            // a caller that cannot resolve a repository (the engine does no I/O, so it
+            // never can).
+            let worktree = match &task.worktree {
+                Some(absolute) => absolute.clone(),
+                None => crate::milestone::worktree_path(id).display().to_string(),
+            };
+            let cmd = format!("cd {worktree} && jigc workflow {workflow} --task {id}");
             format!("Spawn: `{cmd}`")
         })
         .collect();

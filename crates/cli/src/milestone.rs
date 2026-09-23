@@ -2625,13 +2625,29 @@ fn live_sub_task_ids(
 /// that sub-task — the pre-bump case [`DEFAULT_SUB_TASK_WORKFLOW`] has covered since Increment 9.
 /// The CLI does this read because the resolver does **no** work-unit I/O (the determinism
 /// boundary): it is fed pairs.
-fn recorded_workflows(jigc_root: &Path, ids: Vec<String>) -> Result<Vec<SubTask>> {
+fn recorded_workflows(
+    jigc_home: &Path,
+    jigc_root: &Path,
+    ids: Vec<String>,
+) -> Result<Vec<SubTask>> {
     ids.into_iter()
         .map(|id| {
             let dir = jigc_root.join("tasks").join(&id);
             let workflow = engine::state::read_workflow_id(&dir)
                 .with_context(|| format!("could not read the recorded workflow for `{id}`"))?;
-            Ok(SubTask::new(id, workflow))
+            // The absolute worktree the emitted `Spawn:` line `cd`s into (M53 — the cwd
+            // census, C2-08 / C3-01). Built from `jigc_home`, which is where
+            // `provision_worktrees` cuts them, and canonicalized so the pasted `cd` names
+            // the same directory `git worktree list` does — a raw path is kept when
+            // canonicalization fails, which is the honest degradation.
+            let worktree = jigc_home.join(engine::milestone::worktree_path(&id));
+            let worktree = worktree.canonicalize().unwrap_or(worktree);
+            Ok(match worktree.to_str() {
+                Some(path) => SubTask::in_worktree(id, workflow, path),
+                // A non-UTF-8 worktree path cannot ride a composed line at all; the
+                // repo-relative convention is what the emit falls back to.
+                None => SubTask::new(id, workflow),
+            })
         })
         .collect()
 }
@@ -4864,7 +4880,7 @@ fn run_execute(
     let advisories = partial_worktree_advisories(&jigc_home, milestone_id, &ids);
     // Each id paired with its own recorded minting workflow, so the emitted `Spawn:` line names
     // the workflow the re-entry door will accept ([`recorded_workflows`]).
-    let tasks = recorded_workflows(&jigc_root, ids)?;
+    let tasks = recorded_workflows(&jigc_home, &jigc_root, ids)?;
     // The compose door takes a **start path** and does its own walk-up + jigc_home split, so
     // it is handed the caller's cwd rather than a root resolved here: a compose's base pin is
     // deliberately the standing checkout's HEAD (M31 Inc 2 / WF3), and `cwd` and the walk-up

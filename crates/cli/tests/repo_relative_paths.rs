@@ -1016,7 +1016,7 @@ const UNSWEPT_PRODUCERS: &[(&str, usize, &str)] = &[
     ),
     (
         "crates/cli/src/start.rs",
-        22,
+        23,
         "**[Corrected 2026-09-20 (M52 Increment 10, T10).** This row read *\"The other 20 \
          are `anyhow` load faults over cascade homes and delta manifests\"*. Falsifying \
          datum, read at HEAD: `start.rs:3113`, in `load_project_layer`, is \
@@ -1028,7 +1028,16 @@ const UNSWEPT_PRODUCERS: &[(&str, usize, &str)] = &[
          layer's step file (under `.jigc/config/`, so a repo-relative spelling exists) in \
          message and route. NINETEEN are `anyhow` load faults over cascade homes and delta \
          manifests — an error channel, not a finding surface. The twentieth is the header \
-         stamp above, absolute for `orient.rs`'s reason and not for this row's",
+         stamp above, absolute for `orient.rs`'s reason and not for this row's. **The \
+         twenty-third joined 2026-09-23 (M53 — the cwd census, C2-08) and is a DECLARED \
+         absolute, not a remainder**: `blanket_base_pin_refusal` ends on a `cd <worktree>` \
+         the reader pastes into a shell of unknown cwd — `design/surface-contract.md`'s own \
+         *pasteable shell bytes* disposition, the same one `remove_worktrees` and \
+         `assert_project_schema_shadows` take above — and it is the same absolute the \
+         `Spawn:` line emits, because the refusal and that line are two ways of reaching \
+         one cwd. It is counted here rather than disposed in `PATH_TEXT_SITES` because \
+         `start.rs` is not in `GUARDED_SRC`: the disposition arm governs swept modules \
+         only, and this file is not swept",
     ),
     (
         "crates/cli/src/config.rs",

@@ -209,15 +209,48 @@ pub struct SubTask {
     pub id: String,
     /// The workflow the sub-task was minted against, when one is recorded.
     pub workflow: Option<String>,
+    /// **The absolute path of the worktree the spawn line `cd`s into**, when the caller
+    /// knows it — `None` falls back to the repo-relative
+    /// [`crate::milestone::worktree_path`] convention (M53 — the cwd census, rows C2-08 /
+    /// C3-01).
+    ///
+    /// The emitted `` Spawn: `cd <worktree> && jigc workflow <W> --task <id>` `` line is
+    /// the **only** `cd` jigc emits, and the orchestrator is told to copy-run it. Spelled
+    /// repo-relative it ran from the repository root and nowhere else: from an ordinary
+    /// subdirectory and from a *sibling* sub-task's worktree it failed at `cd: no such file
+    /// or directory` — and the line's whole job is to put an agent in the one cwd the
+    /// re-entry door requires. It is `design/surface-contract.md`'s own *pasteable shell
+    /// bytes* case, the disposition the law-1 fence already writes down: the operand goes
+    /// into a shell of unknown cwd, so it is absolute while every **display** path stays
+    /// repo-relative.
+    ///
+    /// The **engine does no I/O and resolves no repository**, so it cannot compute this —
+    /// the CLI feeds it, exactly as it feeds `catalog`, `store` and the sub-task list.
+    pub worktree: Option<String>,
 }
 
 impl SubTask {
     /// Build a sub-task from its id and its recorded minting workflow (`None` when the
-    /// record carries no value for it).
+    /// record carries no value for it), with **no** absolute worktree fed — the spawn line
+    /// then falls back to the repo-relative convention.
     pub fn new(id: impl Into<String>, workflow: Option<String>) -> Self {
         Self {
             id: id.into(),
             workflow,
+            worktree: None,
+        }
+    }
+
+    /// [`new`](Self::new) with the absolute worktree the spawn line should `cd` into — the
+    /// production form, since the CLI is the only party that can resolve it.
+    pub fn in_worktree(
+        id: impl Into<String>,
+        workflow: Option<String>,
+        worktree: impl Into<String>,
+    ) -> Self {
+        Self {
+            worktree: Some(worktree.into()),
+            ..Self::new(id, workflow)
         }
     }
 }

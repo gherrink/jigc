@@ -563,3 +563,153 @@ fn task_finalize_names_the_checkout_it_commits_in_when_that_is_not_the_workbench
         "the linked worktree's own branch carries its commit",
     );
 }
+
+// ---------------------------------------------------------------------------------------
+// C2-08 + C3-01 — the one `cd` jigc emits runs from anywhere, and the refusal that sends an
+// agent to that same cwd names it the same way.
+// ---------------------------------------------------------------------------------------
+
+/// The `Spawn:` line is the highest-leverage line in the product — the orchestrator is told
+/// to copy-run it, and it is the entry to the only composed authoring path that *requires*
+/// the worktree cwd. Spelled `cd .jigc/worktrees/<id>` it ran from the repository root and
+/// nowhere else (`completions/artifacts/M53/cwd-census.md` → C1-14 / C3-01, driven: `cd: no
+/// such file or directory` from an ordinary subdirectory **and** from a sibling sub-task's
+/// worktree).
+///
+/// The arm runs the **emitted bytes verbatim** through a real shell rather than a
+/// reconstruction (`implementation/increment-workflow.md` → Validation hardening).
+#[test]
+fn the_spawn_line_runs_verbatim_from_every_cwd() {
+    let fan = FanOut::new("spawn");
+    let deep = fan.repo.join("docs").join("deep");
+    fs::create_dir_all(&deep).expect("mk docs/deep");
+
+    let mut seen: Vec<String> = Vec::new();
+    for (tag, cwd) in [
+        ("root", fan.repo.clone()),
+        ("subdir", deep.clone()),
+        ("sibling-worktree", fan.worktree("area-two")),
+    ] {
+        let out = fan.jigc(&cwd, &["milestone", "execute", "cache-rework"]);
+        assert_ok(&out, "`jigc milestone execute`");
+        let spawn = stdout(&out)
+            .lines()
+            .find(|line| line.starts_with("Spawn:") && line.contains("--task area-one"))
+            .unwrap_or_else(|| panic!("no `Spawn:` line for area-one, run from {tag}"))
+            .to_string();
+        seen.push(spawn.clone());
+
+        // The emitted bytes, run as an agent would paste them — split by a real shell.
+        let command = spawn
+            .trim_start_matches("Spawn:")
+            .trim()
+            .trim_matches('`')
+            .to_string();
+        let argv = crate::support::shell_words(&command, &cwd, fan.home.path());
+        let ran = Command::new("sh")
+            .arg("-c")
+            .arg(&command)
+            .current_dir(&cwd)
+            .env("HOME", fan.home.path())
+            .env("PATH", {
+                let bin = Path::new(env!("CARGO_BIN_EXE_jigc"))
+                    .parent()
+                    .expect("the test binary has a parent dir");
+                format!(
+                    "{}:{}",
+                    bin.display(),
+                    std::env::var("PATH").unwrap_or_default()
+                )
+            })
+            .env_remove("JIGC_PACK_DIR")
+            .output()
+            .expect("run the emitted spawn line");
+        assert!(
+            ran.status.success(),
+            "the emitted `Spawn:` line must run verbatim from {tag}; argv was {argv:?}\n\
+             stdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&ran.stdout),
+            String::from_utf8_lossy(&ran.stderr),
+        );
+    }
+
+    // One line, not three: the directive does not depend on where `execute` was run.
+    assert!(
+        seen.windows(2).all(|pair| pair[0] == pair[1]),
+        "the `Spawn:` line must be byte-identical from every cwd; got:\n{}",
+        seen.join("\n"),
+    );
+    assert!(
+        seen[0].contains(&format!(
+            "cd {}",
+            fan.worktree("area-one")
+                .canonicalize()
+                .expect("the worktree canonicalizes")
+                .display()
+        )),
+        "the `cd` operand must be the absolute worktree path; got:\n{}",
+        seen[0],
+    );
+}
+
+/// The refusal an agent meets when it runs a sub-task's door from the shared checkout is the
+/// other half of the same fact: it sends the reader to the worktree, so it names the same
+/// absolute the `Spawn:` line does — and, while the worktree is already there, it does not
+/// lead with `jigc milestone provision`, which in that state changes nothing
+/// (`completions/artifacts/M53/cwd-census.md` → C2-08).
+#[test]
+fn the_requires_worktree_refusal_names_the_cd_and_drops_the_no_op_clause() {
+    let fan = FanOut::new("requires");
+    let deep = fan.repo.join("docs").join("deep");
+    fs::create_dir_all(&deep).expect("mk docs/deep");
+    let absolute = fan
+        .worktree("area-one")
+        .canonicalize()
+        .expect("the worktree canonicalizes")
+        .display()
+        .to_string();
+
+    // (a) provisioned — the ordinary state an agent meets this refusal in.
+    for (tag, cwd) in [("root", fan.repo.clone()), ("subdir", deep.clone())] {
+        for argv in [
+            vec!["start", "--task", "area-one"],
+            vec!["workflow", "sub-task", "--task", "area-one"],
+        ] {
+            let out = fan.jigc(&cwd, &argv);
+            let seen = both_streams(&out);
+            assert!(
+                !out.status.success(),
+                "{argv:?} from {tag} must refuse\n{seen}"
+            );
+            assert!(
+                seen.contains(&format!("cd {absolute}")),
+                "{argv:?} from {tag} must name the absolute `cd`; got:\n{seen}",
+            );
+            assert!(
+                !seen.contains("milestone provision"),
+                "{argv:?} from {tag} must not lead with a provision that would do nothing \
+                 — the worktree is already there; got:\n{seen}",
+            );
+        }
+    }
+
+    // (b) un-provisioned — the state where provisioning IS the act that resolves it.
+    git(
+        &fan.repo,
+        &["worktree", "remove", "--force", ".jigc/worktrees/area-one"],
+    );
+    let out = fan.jigc(&fan.repo, &["start", "--task", "area-one"]);
+    let seen = both_streams(&out);
+    assert!(
+        !out.status.success(),
+        "the un-provisioned arm must refuse\n{seen}"
+    );
+    assert!(
+        seen.contains("jigc milestone provision cache-rework"),
+        "with no worktree, the route must name the door that cuts one; got:\n{seen}",
+    );
+    assert!(
+        seen.contains(&format!("cd {absolute}")),
+        "and it must still end on the absolute `cd`; got:\n{seen}",
+    );
+}
