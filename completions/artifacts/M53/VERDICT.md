@@ -209,12 +209,12 @@ nine of eleven on spaced and `'`/`#`-bearing roots, and found **2 MEDIUM · 5 LO
 hook axis one `config set docs-root "my docs"` away, the uninstall site line asserting the opposite of
 what it did in the fan-out cell — fixed before the stamp.
 
-**Counts and bounds.** Gate at the last fix: see the stamp entry in DECISIONS. The negative fence stayed
+**Counts and bounds.** Gate at the last fix (`1cc5da8d`): **3947 / 0**. The negative fence stayed
 empty across the whole arc; 6 goldens moved twice, both times the AGENT.md paragraph and nothing else.
 **Carried:** the `jigc migrate` half of a route echoes the token as typed (runs from the cwd it was
 typed in — nothing short of an absolute makes a `jigc <path>` span cwd-free, out of scope); a
 worktree-local `.jigc/` a *previous* buggy `setup` left is read by nothing and cleaned by nothing; the
-hook's `--`-less operand axis is closed or restated per the last fixer's report; a fixer's mis-eval'd rig
+hook's spaced-operand axis is **closed** (a shell-word tokenizer, driven under `docs-root "my docs"` and an apostrophe root; two encoding residuals unreachable through any jigc writer are stated on the constant) — and that pass found a **fourth** head-only span predicate, the subject-quoting fence, swept with its three siblings; a fixer's mis-eval'd rig
 committed into this repo once and was dropped by rebase before any push — the rig's own two-step-eval
 warning is exactly that failure, now stated in every fixer brief.
 
