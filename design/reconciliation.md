@@ -104,7 +104,7 @@ So rename detection is a separate classifier, running at the same trigger points
       adopt it as a CLI-owned rename (re-points every referrer atomically):
         $ jigc rename adr:rate-limit --to "Gateway rate limit"
       or revert the out-of-band move:
-        $ git mv decisions/gateway-rate-limit.md decisions/rate-limit.md
+        $ git -C /abs/path/to/repo mv decisions/gateway-rate-limit.md decisions/rate-limit.md
   ```
 - **Weak signal — tracked path missing, no content-matching new file.** The tracked file is simply gone (deleted, accidentally removed). The CLI surfaces a conformance error: *"tracked managed doc adr:rate-limit (decisions/rate-limit.md) is missing — restore the file, or run `jigc delete adr:rate-limit` to confirm deletion (post-MVP)."* Routes to restore.
 

@@ -2343,7 +2343,7 @@ jigc rename adr:distributed-cache --to "Distributed cache v2"
 git mv docs/decisions/distributed-cache.md docs/decisions/dist-cache.md && git commit -am "rename"
 #   pre-commit: blocked — adr:distributed-cache appears renamed via a bare `git mv`
 #     adopt it:  jigc rename adr:distributed-cache --to "<New Title>"
-#     or revert: git mv docs/decisions/dist-cache.md docs/decisions/distributed-cache.md
+#     or revert: git -C <repo> mv docs/decisions/dist-cache.md docs/decisions/distributed-cache.md
 ```
 
 ### What it asserts (the M35 acceptance bar)
@@ -3659,7 +3659,7 @@ $ <the Route span fence, in the posture it is enforced in>
 > Route::human | Route::informational | Route::mechanical  — all three panic on a token
 >   a shell would not re-lex; the subject fence catches the word boundary they cannot
 $ jigc migrate 'my notes.md' --as adr    # …and the DRIVEN half: the emitted bytes run
-> route: … `git add -- 'my notes.md'`    #   one word through a real shell, git accepts
+> route: … `git -C <repo> add -- 'my notes.md'`  # one word through a real shell, git accepts
 
 # ── Arm 7 · a workflow its own door binds, composed by name. ──
 #     (a DERIVATION off both packs' `suppressed:` blocks × the two compose doors)
