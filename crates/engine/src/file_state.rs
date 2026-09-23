@@ -1172,12 +1172,38 @@ fn untracked_committed(
         // (no recorded hash) `placement.file` present on disk is a rename candidate,
         // enumerated by exact literal path — never a root dir-glob, so a sibling root
         // `README.md` is not swept in (`storage.md` → Placement census: `untracked_committed`).
+        //
+        // **Unless the declared home is EMPTY** (M53 — the pre-v1 usability batch, row 1 /
+        // the rc.19 review's `(2, N-2)`). A bare `git mv` of a placement singleton lands the
+        // file at a path that is, by definition, **not** the declared one — so the
+        // literal-path-only census could never produce a candidate for it, `detect_rename`
+        // could only ever reach its **weak** arm, and the whole placement family
+        // (`VISION.md`, `CHANGELOG.md`, `docs/roadmap.md`, `docs/decisions-log.md` — every
+        // managed singleton a stock corpus has) was told *"is missing"* and routed to
+        // `jigc unmanage`, the one act that would drop the identity of a doc sitting right
+        // there under a new name. The installed pre-commit hook's blocking backstop keys on
+        // the strong arm's `mv` pair, so it was structurally inert over that whole family.
+        //
+        // The widen is conditioned on the declared home being absent — the one state in
+        // which a rename of this singleton is possible at all — so in the ordinary case the
+        // census is byte-identical to before and no sibling is read. What a widened
+        // candidate can *become* is still gated by an exact recorded-content-hash match, so
+        // an unrelated sibling `README.md` contributes a candidate and never a finding.
         if let Some(placement) = &schema.placement {
-            if !recorded_at_entry.contains(&placement.file)
-                && let Ok(bytes) = std::fs::read(repo_root.join(&placement.file))
-            {
-                out.push((placement.file.clone(), hash_bytes(&bytes)));
+            let declared = repo_root.join(&placement.file);
+            if declared.exists() {
+                if !recorded_at_entry.contains(&placement.file)
+                    && let Ok(bytes) = std::fs::read(&declared)
+                {
+                    out.push((placement.file.clone(), hash_bytes(&bytes)));
+                }
+                continue;
             }
+            out.extend(placement_home_siblings(
+                &placement.file,
+                recorded_at_entry,
+                repo_root,
+            ));
             continue;
         }
         let Some(location) = schema.location.as_deref() else {
@@ -1205,6 +1231,56 @@ fn untracked_committed(
         }
     }
     out.sort();
+    out.dedup();
+    out
+}
+
+/// The untracked `.md` siblings of a placement doctype's **vacated** declared home — the
+/// rename candidates for a singleton whose one literal path is gone
+/// (`untracked_committed`'s placement arm; M53 — the pre-v1 usability batch, row 1).
+///
+/// The home's own directory is the search space, and it is derived from the declared file
+/// itself rather than named: a root-declared home (`VISION.md`) searches the repository
+/// root, a directory-declared one (`docs/roadmap.md`) searches that directory — the two
+/// shapes a `placement.file` can take. Keys are rebuilt with the home's own directory
+/// prefix, so a candidate is addressed exactly as a recorded path is.
+///
+/// Recorded paths are excluded (they are tracked, not candidates). Nothing else is: the
+/// *content-hash match* in [`detect_rename`] is what turns a candidate into a finding, and
+/// narrowing here by name or by doctype would only re-introduce the assumption this
+/// function exists to drop — that a renamed file is still findable at its declared path.
+fn placement_home_siblings(
+    declared_file: &str,
+    recorded_at_entry: &std::collections::BTreeSet<String>,
+    repo_root: &Path,
+) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let (dir, prefix) = match Path::new(declared_file).parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => (
+            repo_root.join(parent),
+            format!("{}/", parent.to_string_lossy()),
+        ),
+        _ => (repo_root.to_path_buf(), String::new()),
+    };
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return out;
+    };
+    for path in entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("md"))
+    {
+        let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        let key = format!("{prefix}{name}");
+        if recorded_at_entry.contains(&key) {
+            continue; // tracked at entry, not an untracked candidate.
+        }
+        if let Ok(bytes) = std::fs::read(&path) {
+            out.push((key, hash_bytes(&bytes)));
+        }
+    }
     out
 }
 
@@ -3297,6 +3373,90 @@ sections: []
             untracked.iter().all(|(p, _)| p != "README.md"),
             "an undeclared sibling root .md is not an untracked candidate: {untracked:?}"
         );
+    }
+
+    /// (M53 — the pre-v1 usability batch, row 1 / the rc.19 review's `(2, N-2)`) An
+    /// out-of-band `git mv` of a **placement** singleton reaches
+    /// [`detect_rename`]'s **strong** arm — the arm that names the pair and emits the
+    /// `git -C <home> mv <new> <old>` revert route the installed pre-commit hook's blocking
+    /// backstop keys on.
+    ///
+    /// **The class this iterates is the two shapes a `placement.file` can take**, not the
+    /// shipped doctype ids: a **root-declared** home (`VISION.md`, `CHANGELOG.md`) and a
+    /// **directory-declared** one (`docs/roadmap.md`, `docs/decisions-log.md`). Every
+    /// shipped placement doctype is one shape or the other, and the census arm under test
+    /// branches on exactly that — `Path::parent()` — so a per-doctype list would have
+    /// iterated one axis five times.
+    ///
+    /// Before the fix both cells produced **no candidate at all**: the census enumerated
+    /// the declared literal path only, which is precisely the path a rename vacates. The
+    /// negative control rides in the same cells — an unrelated sibling of different content
+    /// is a candidate and contributes **no** finding, because the strong arm is gated on an
+    /// exact recorded-content-hash match.
+    #[test]
+    fn a_renamed_placement_singleton_reaches_the_strong_rename_arm_at_both_home_shapes() {
+        for (declared, moved_to, unrelated) in [
+            ("FOO.md", "FOO-OOB.md", "README.md"),
+            ("docs/FOO.md", "docs/FOO-OOB.md", "docs/NOTES.md"),
+        ] {
+            let mut schemas: BTreeMap<String, Schema> = BTreeMap::new();
+            schemas.insert("foo".to_string(), adr_placement_schema(declared));
+
+            let root = TempRoot::new("placement-renamed");
+            let bytes = ADR_B_BASE.as_bytes();
+            for rel in [moved_to, unrelated] {
+                let abs = root.path().join(rel);
+                if let Some(parent) = abs.parent() {
+                    std::fs::create_dir_all(parent).expect("mk home dir");
+                }
+                std::fs::write(&abs, if rel == moved_to { bytes } else { b"# other\n" })
+                    .expect("write sibling");
+            }
+
+            // The declared home is vacated; the bytes sit beside it under a new name.
+            let recorded: std::collections::BTreeSet<String> =
+                std::iter::once(declared.to_string()).collect();
+            let untracked = untracked_committed(&recorded, &schemas, root.path());
+            assert!(
+                untracked
+                    .iter()
+                    .any(|(p, h)| p == moved_to && h == &hash_bytes(bytes)),
+                "[{declared}] the vacated home's sibling is a rename candidate: {untracked:?}"
+            );
+
+            let untracked_refs: Vec<(&str, String)> = untracked
+                .iter()
+                .map(|(p, h)| (p.as_str(), h.clone()))
+                .collect();
+            let findings = detect_rename(
+                declared,
+                "foo:foo",
+                &hash_bytes(bytes),
+                &untracked_refs,
+                &|_| true,
+                &LiveRecord::none(),
+                root.path(),
+            );
+            let rename = findings
+                .iter()
+                .find(|f| f.code == "reconciliation.rename")
+                .unwrap_or_else(|| panic!("[{declared}] a rename finding is emitted"));
+            assert_eq!(rename.severity, Severity::Blocking);
+            assert!(
+                rename.message.contains(moved_to) && rename.message.contains("same content hash"),
+                "[{declared}] the strong arm names the suspect: {rename:?}"
+            );
+            let route = rename.route.as_deref().unwrap_or_default();
+            assert!(
+                route.contains(&format!("mv {moved_to} {declared}")),
+                "[{declared}] the revert route carries the `mv` pair the hook's backstop \
+                 keys on: {route}"
+            );
+            assert!(
+                !route.contains(unrelated) && !rename.message.contains(unrelated),
+                "[{declared}] the content-unmatched sibling reaches no finding: {rename:?}"
+            );
+        }
     }
 
     /// (M38 inc-2 T2) The finalize post-commit baseline-adopt gate

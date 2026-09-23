@@ -815,6 +815,13 @@ fn commit_blocks_on_this_commit_oob_rename_under_a_docs_root_with_a_space() {
 /// in the home, a space in both operands, an embedded `'` written `'\''`, the plain
 /// unquoted form that always worked, and the masking trap (one side staged) which must
 /// still NOT block.
+///
+/// **M53 — the verdict axis joins the operand axis** (the pre-v1 usability batch, row 1 /
+/// the rc.19 review's `(2, N-1)`). The program is now the hook's **single** decision point
+/// and answers three ways — `0` block · `1` warn · `2` silent — so the two printed branches
+/// cannot disagree about what a move is. The last two cells are the ones that were
+/// unreachable before: an aimed span that is **not** a move (`show`, `checkout`, `restore`
+/// — every route the cwd arc gave a `git -C ` prefix) must reach `2`, not `1`.
 #[test]
 fn the_rename_block_reads_its_operands_as_shell_words_whatever_shell_token_quoted() {
     let body = cli::setup::precommit_hook_body(Path::new("/usr/local/bin/jigc"));
@@ -823,40 +830,62 @@ fn the_rename_block_reads_its_operands_as_shell_words_whatever_shell_token_quote
         .find(|l| l.contains("| awk '"))
         .expect("the rename block renders one awk pipeline");
     let start = line.find("| awk '").expect("awk opener") + "| awk '".len();
-    let end = line.rfind("'; then").expect("awk closer");
+    let end = line.rfind('\'').expect("awk closer");
     let program = &line[start..end];
 
-    // `(staged lines, route line, must_block)`.
-    let cells: &[(&[&str], &str, bool)] = &[
+    /// `0` block · `1` warn (a move exists, this commit does not stage it) · `2` silent
+    /// (no move route in the report at all).
+    const BLOCK: i32 = 0;
+    const WARN: i32 = 1;
+    const SILENT: i32 = 2;
+
+    // `(staged lines, route line, verdict)`.
+    let cells: &[(&[&str], &str, i32)] = &[
         (
             &["docs/decisions/a.md", "docs/decisions/b.md"],
             "git -C /repo mv docs/decisions/b.md docs/decisions/a.md",
-            true,
+            BLOCK,
         ),
         (
             &["my docs/decisions/a.md", "my docs/decisions/b.md"],
             "git -C '/a repo' mv 'my docs/decisions/b.md' 'my docs/decisions/a.md'",
-            true,
+            BLOCK,
         ),
         (
             &["my root/roadmap.md", "my root/roadmap-new.md"],
             "git -C /repo mv 'my root/roadmap-new.md' 'my root/roadmap.md'",
-            true,
+            BLOCK,
         ),
         (
             &["it's docs/a.md", "it's docs/b.md"],
             "git -C /repo mv 'it'\\''s docs/b.md' 'it'\\''s docs/a.md'",
-            true,
+            BLOCK,
         ),
         // The masking trap survives the widening: only the new side is staged.
         (
             &["my docs/decisions/b.md"],
             "git -C /repo mv 'my docs/decisions/b.md' 'my docs/decisions/a.md'",
-            false,
+            WARN,
+        ),
+        // The N-1 class at the tokenizer: aimed spans the arc created that are NOT moves.
+        (
+            &["VISION.md"],
+            "git -C /repo show 4fafc23 -- VISION.md",
+            SILENT,
+        ),
+        (
+            &["CHANGELOG.md"],
+            "git -C '/a repo' checkout -- 'my root/CHANGELOG.md'",
+            SILENT,
+        ),
+        (
+            &["docs/decisions/a.md"],
+            "git -C /repo restore --source=HEAD --staged --worktree -- docs/decisions/a.md",
+            SILENT,
         ),
     ];
 
-    for (staged, route, must_block) in cells {
+    for (staged, route, verdict) in cells {
         let script = format!(
             "{{ printf '%s\\n' \"$1\"; echo '---'; printf '%s\\n' \"$2\"; }} | awk '{program}'"
         );
@@ -865,10 +894,9 @@ fn the_rename_block_reads_its_operands_as_shell_words_whatever_shell_token_quote
             .output()
             .expect("run the shipped awk program");
         assert_eq!(
-            out.status.success(),
-            *must_block,
-            "the rename block must {} for route `{route}` over staged {staged:?}",
-            if *must_block { "fire" } else { "stay silent" },
+            out.status.code(),
+            Some(*verdict),
+            "the rename block must answer {verdict} for route `{route}` over staged {staged:?}",
         );
     }
 }
@@ -944,6 +972,170 @@ fn commit_does_not_block_when_oob_rename_is_pre_existing() {
     assert!(
         String::from_utf8_lossy(&head.stdout).contains("unrelated change"),
         "the unrelated commit must land (warn-only); log:\n{}",
+        String::from_utf8_lossy(&head.stdout),
+    );
+}
+
+/// A committed, baselined `changelog` — the dev pack's **placement** doctype, whose home is
+/// the literal repo-root `CHANGELOG.md`. The two arms below need a managed singleton whose
+/// home is a fixed path (not a `location:` directory), because that is the family the
+/// rc.19 review's `(2, N-1)`/`(2, N-2)` are about.
+const PLACEMENT_CHANGELOG: &str = "---\n\
+                                   schema-version: 2\n\
+                                   ---\n\
+                                   \n\
+                                   # Changelog\n\
+                                   \n\
+                                   ## Unreleased Changes\n\
+                                   \n\
+                                   ### changed  {#changed}\n\
+                                   \n\
+                                   - the backstop learned the placement family\n\
+                                   \n\
+                                   ## Releases\n";
+
+/// Seed + commit the placement singleton, mark the project set up, baseline it, and install
+/// the hook. Returns with `CHANGELOG.md` committed and tracked by the file-state record.
+fn seed_placement_singleton(repo: &Path) {
+    fs::write(repo.join("CHANGELOG.md"), PLACEMENT_CHANGELOG).expect("write CHANGELOG.md");
+    git(repo, &["add", "."]);
+    git(
+        repo,
+        &["commit", "-q", "-m", "seed the placement singleton"],
+    );
+    mark_set_up(repo);
+    baseline_file_state(repo, &["CHANGELOG.md"]);
+    let setup = jigc(repo, &["setup"]);
+    assert!(
+        setup.status.success(),
+        "`jigc setup` must succeed; stderr:\n{}",
+        String::from_utf8_lossy(&setup.stderr),
+    );
+}
+
+/// **(i) M53 — the hook says nothing about a rename on a commit that contains none**
+/// (the rc.19 review's `(2, N-1)`, a finding inside the cwd arc's own new code).
+///
+/// The arc (`34584687`) made every operator-facing git span `git -C <absolute> …`, and the
+/// hook's extraction grep is `git -C `. So a report carrying any aimed span at all — here
+/// `schema-conformance.home-vacated`'s `git -C <abs> checkout -- CHANGELOG.md` — filled
+/// `$moves`, and the warn branch, which keyed on nothing but that non-emptiness, announced
+/// *"an out-of-band managed-doc rename exists … (not staged in this commit)"* over a
+/// **staged deletion**. Both clauses were false of the state they were printed for.
+///
+/// The precondition is asserted, not assumed: the arm fails loudly if its fixture stops
+/// putting an aimed, non-`mv` span in the report — otherwise it would pass vacuously the
+/// day the route text changes.
+#[test]
+fn commit_deleting_a_managed_placement_doc_announces_no_rename() {
+    let repo = TempDir::new("oob-delete-no-rename");
+    init_repo(repo.path());
+    seed_placement_singleton(repo.path());
+
+    // A control on the very same repo + hook: an ordinary commit prints nothing.
+    fs::write(repo.path().join("ordinary.txt"), "work\n").expect("write ordinary file");
+    git(repo.path(), &["add", "ordinary.txt"]);
+    let control = git_commit(repo.path(), "ordinary change");
+    let control_merged = format!(
+        "{}{}",
+        String::from_utf8_lossy(&control.stdout),
+        String::from_utf8_lossy(&control.stderr),
+    );
+    assert!(
+        control.status.success() && !control_merged.contains(RENAME_WARN),
+        "the before-control must be silent about renames; output:\n{control_merged}",
+    );
+
+    // Stage a DELETION of the managed singleton — no rename anywhere.
+    git(repo.path(), &["rm", "-q", "CHANGELOG.md"]);
+
+    // Precondition: the report the hook greps carries an aimed `git -C ` span, and NOT one
+    // that is a move. Without this the arm could pass because nothing matched at all.
+    let routes: Vec<String> = store_envelope(repo.path())["findings"]
+        .as_array()
+        .map(|rows| {
+            rows.iter()
+                .filter_map(|f| f["route"].as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    assert!(
+        routes.iter().any(|r| r.contains("git -C ")),
+        "the fixture must put an aimed git span in the report the hook greps: {routes:?}",
+    );
+    assert!(
+        routes.iter().all(|r| !r.contains(" mv ")),
+        "the fixture must carry NO move route — the arm is about a commit with no rename: \
+         {routes:?}",
+    );
+
+    let out = git_commit(
+        repo.path(),
+        "delete a managed singleton, no rename anywhere",
+    );
+    let merged = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert!(
+        out.status.success(),
+        "a deletion must not be blocked; output:\n{merged}",
+    );
+    assert!(
+        !merged.contains(RENAME_WARN) && !merged.contains(RENAME_BLOCK),
+        "the hook must say NOTHING about a rename on a commit that contains none; \
+         output:\n{merged}",
+    );
+}
+
+/// **(j) M53 — the blocking backstop reaches the placement family** (the rc.19 review's
+/// `(2, N-2)`).
+///
+/// A bare `git mv` of a placement singleton lands the file at a path that is by definition
+/// **not** its declared home, so the rename census — which enumerated the declared literal
+/// path and nothing else — could never produce a candidate for it. `detect_rename` reached
+/// only its **weak** arm (*"is missing"*, routed to `jigc unmanage`, the one act that drops
+/// the identity of a doc sitting right there under a new name), the strong arm's `mv` pair
+/// was never emitted, and the hook's backstop was structurally inert over **every managed
+/// singleton a stock corpus has**. Driven before the fix: exit 0, the move landed.
+///
+/// The `location:` twin of this exact state has blocked since M35 —
+/// `commit_blocks_on_this_commit_oob_rename` above is that arm, and the pair is the
+/// assertion: one class, two home kinds, one answer.
+#[test]
+fn commit_blocks_on_this_commit_oob_rename_of_a_placement_doc() {
+    let repo = TempDir::new("oob-rename-placement");
+    init_repo(repo.path());
+    seed_placement_singleton(repo.path());
+
+    // Bare `git mv` of the managed singleton, staged for THIS commit (no `jigc rename`).
+    git(repo.path(), &["mv", "CHANGELOG.md", "CHANGELOG-OOB.md"]);
+
+    let out = git_commit(repo.path(), "bare git mv of a managed singleton");
+    let merged = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert!(
+        !out.status.success(),
+        "a this-commit OOB rename of a PLACEMENT doc must BLOCK the commit; output:\n{merged}",
+    );
+    assert!(
+        merged.contains(RENAME_BLOCK),
+        "the rename-block message must appear on stderr; output:\n{merged}",
+    );
+    let head = Command::new("git")
+        .args(["log", "--oneline", "-1"])
+        .current_dir(repo.path())
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_SYSTEM", "/dev/null")
+        .output()
+        .expect("git log");
+    assert!(
+        !String::from_utf8_lossy(&head.stdout).contains("bare git mv of a managed singleton"),
+        "the blocked commit must NOT have landed; log:\n{}",
         String::from_utf8_lossy(&head.stdout),
     );
 }

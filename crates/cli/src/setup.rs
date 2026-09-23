@@ -601,6 +601,22 @@ pub fn precommit_hook_body(jigc_path: &Path) -> String {
 /// writer: `jigc ingest` refuses such a name with `ingest.unaddressable-identity`, and the
 /// two root knobs refuse a name the OS ceiling rejects.
 ///
+/// **The `mv` token decides BOTH branches, not only the block** (M53 — the pre-v1 usability
+/// batch, row 1 / the rc.19 review's `(2, N-1)`). The extraction grep is `git -C `, and the
+/// cwd arc (`34584687`) made *every* operator-facing git span carry that prefix —
+/// `home-vacated`'s `git -C <abs> show <sha> -- <path>`, the weak rename's `git -C <abs>
+/// restore …`, and so on. A non-empty `$moves` therefore stopped meaning *a rename route
+/// exists*, and the warn branch, which keyed on nothing but that emptiness, announced a
+/// rename on commits that contained none — driven, `git rm VISION.md` printed *"an
+/// out-of-band managed-doc rename exists … (not staged in this commit)"* over a **staged
+/// deletion**, both clauses false of the state. The `awk` below is now the **single**
+/// decision point and returns a three-way verdict — `0` block · `1` warn · `2` silent — so
+/// the two branches cannot disagree about what a move is: only a span whose shell words
+/// carry an `mv` token with two operands after it is a move at all. Narrowing the *grep*
+/// instead was refused: the operands are shell-quoted (a spaced `docs-root` is several
+/// fields), which is exactly the class that broke the fixed-index predicate, and only the
+/// `shwords` parser below reads them correctly.
+///
 /// But a move landed in a **prior**
 /// commit must **not** block an unrelated later commit (the **masking trap**) — so the block
 /// fires **iff** BOTH the finding's old and new paths are in **this commit's** staged set
@@ -622,16 +638,23 @@ if [ -n \"$moves\" ]; then\n\
 \t# Every path THIS commit stages, rename-aware: a staged `git mv` shows as `R old new`\n\
 \t# under --find-renames; a delete+add as `D old` / `A new`. One path per line.\n\
 \tstaged=\"$(git diff --cached --name-status --find-renames 2>/dev/null | cut -f2- | tr '\\t' '\\n')\"\n\
-\t# Block iff some `git -C <repo> mv <new> <old>` route has BOTH its paths staged.\n\
+\t# One decision point, three answers: 0 = a `git -C <repo> mv <new> <old>` route has\n\
+\t# BOTH its paths staged (block) · 1 = a move route exists but this commit does not\n\
+\t# stage it (warn) · 2 = no move route at all (silent). The `git -C ` grep above\n\
+\t# matches EVERY aimed route since M53 (`show`, `checkout`, `restore`, …), so only the\n\
+\t# `mv` token decides what a move is — and it decides for both printed branches.\n\
 \t# The route line is read as SHELL WORDS, never as awk fields: jigc renders the home\n\
 \t# AND both operands through `shell_token`, so a store key under a spaced `docs-root`\n\
 \t# arrives as 'my docs/decisions/x.md' — several fields, none of them a staged path.\n\
 \t# `shwords` unquotes (POSIX single quotes + backslash) into W[1..n] first.\n\
-\tif { printf '%s\\n' \"$staged\"; echo '---'; printf '%s\\n' \"$moves\"; } | awk 'function shwords(s,   i, c, n, w, inq, started) { n = 0; w = \"\"; inq = 0; started = 0; delete W; for (i = 1; i <= length(s); i++) { c = substr(s, i, 1); if (!inq && c == \"\\\\\") { i = i + 1; w = w substr(s, i, 1); started = 1; continue } if (c == SQ) { inq = !inq; started = 1; continue } if (!inq && (c == \" \" || c == \"\\t\")) { if (started) { W[++n] = w; w = \"\"; started = 0 } continue } w = w c; started = 1 } if (started) W[++n] = w; return n } BEGIN { SQ = sprintf(\"%c\", 39) } $0 == \"---\" { seen = 1; next } seen == 0 { S[$0] = 1; next } { n = shwords($0); for (i = 1; i <= n - 2; i++) if (W[i] == \"mv\" && (W[i + 1] in S) && (W[i + 2] in S)) hit = 1 } END { exit hit ? 0 : 1 }'; then\n\
+\t{ printf '%s\\n' \"$staged\"; echo '---'; printf '%s\\n' \"$moves\"; } | awk 'function shwords(s,   i, c, n, w, inq, started) { n = 0; w = \"\"; inq = 0; started = 0; delete W; for (i = 1; i <= length(s); i++) { c = substr(s, i, 1); if (!inq && c == \"\\\\\") { i = i + 1; w = w substr(s, i, 1); started = 1; continue } if (c == SQ) { inq = !inq; started = 1; continue } if (!inq && (c == \" \" || c == \"\\t\")) { if (started) { W[++n] = w; w = \"\"; started = 0 } continue } w = w c; started = 1 } if (started) W[++n] = w; return n } BEGIN { SQ = sprintf(\"%c\", 39) } $0 == \"---\" { seen = 1; next } seen == 0 { S[$0] = 1; next } { n = shwords($0); for (i = 1; i <= n - 2; i++) if (W[i] == \"mv\") { move = 1; if ((W[i + 1] in S) && (W[i + 2] in S)) hit = 1 } } END { exit hit ? 0 : (move ? 1 : 2) }'\n\
+\tverdict=$?\n\
+\tif [ \"$verdict\" -eq 0 ]; then\n\
 \t\techo 'jigc: out-of-band managed-doc rename staged in this commit — a bare `git mv` bypasses jigc identity tracking; use `jigc rename` instead (commit blocked).' >&2\n\
 \t\texit 1\n\
+\telif [ \"$verdict\" -eq 1 ]; then\n\
+\t\techo 'jigc: an out-of-band managed-doc rename exists in the committed tree — run `jigc validate` for details (not staged in this commit; commit not blocked).' >&2\n\
 \tfi\n\
-\techo 'jigc: an out-of-band managed-doc rename exists in the committed tree — run `jigc validate` for details (not staged in this commit; commit not blocked).' >&2\n\
 fi\n";
 
 /// The sentinel that closes the jigc-managed block when it is **wrapped** around a
@@ -4435,18 +4458,25 @@ mod tests {
              \t# under --find-renames; a delete+add as `D old` / `A new`. One path per line.\n\
              \tstaged=\"$(git diff --cached --name-status --find-renames 2>/dev/null | cut -f2- | tr '\\t' '\\n\
              ')\"\n\
-             \t# Block iff some `git -C <repo> mv <new> <old>` route has BOTH its paths staged.\n\
+             \t# One decision point, three answers: 0 = a `git -C <repo> mv <new> <old>` route has\n\
+             \t# BOTH its paths staged (block) · 1 = a move route exists but this commit does not\n\
+             \t# stage it (warn) · 2 = no move route at all (silent). The `git -C ` grep above\n\
+             \t# matches EVERY aimed route since M53 (`show`, `checkout`, `restore`, …), so only the\n\
+             \t# `mv` token decides what a move is — and it decides for both printed branches.\n\
              \t# The route line is read as SHELL WORDS, never as awk fields: jigc renders the home\n\
              \t# AND both operands through `shell_token`, so a store key under a spaced `docs-root`\n\
              \t# arrives as 'my docs/decisions/x.md' — several fields, none of them a staged path.\n\
              \t# `shwords` unquotes (POSIX single quotes + backslash) into W[1..n] first.\n\
-             \tif { printf '%s\\n\
+             \t{ printf '%s\\n\
              ' \"$staged\"; echo '---'; printf '%s\\n\
-             ' \"$moves\"; } | awk 'function shwords(s,   i, c, n, w, inq, started) { n = 0; w = \"\"; inq = 0; started = 0; delete W; for (i = 1; i <= length(s); i++) { c = substr(s, i, 1); if (!inq && c == \"\\\\\") { i = i + 1; w = w substr(s, i, 1); started = 1; continue } if (c == SQ) { inq = !inq; started = 1; continue } if (!inq && (c == \" \" || c == \"\\t\")) { if (started) { W[++n] = w; w = \"\"; started = 0 } continue } w = w c; started = 1 } if (started) W[++n] = w; return n } BEGIN { SQ = sprintf(\"%c\", 39) } $0 == \"---\" { seen = 1; next } seen == 0 { S[$0] = 1; next } { n = shwords($0); for (i = 1; i <= n - 2; i++) if (W[i] == \"mv\" && (W[i + 1] in S) && (W[i + 2] in S)) hit = 1 } END { exit hit ? 0 : 1 }'; then\n\
+             ' \"$moves\"; } | awk 'function shwords(s,   i, c, n, w, inq, started) { n = 0; w = \"\"; inq = 0; started = 0; delete W; for (i = 1; i <= length(s); i++) { c = substr(s, i, 1); if (!inq && c == \"\\\\\") { i = i + 1; w = w substr(s, i, 1); started = 1; continue } if (c == SQ) { inq = !inq; started = 1; continue } if (!inq && (c == \" \" || c == \"\\t\")) { if (started) { W[++n] = w; w = \"\"; started = 0 } continue } w = w c; started = 1 } if (started) W[++n] = w; return n } BEGIN { SQ = sprintf(\"%c\", 39) } $0 == \"---\" { seen = 1; next } seen == 0 { S[$0] = 1; next } { n = shwords($0); for (i = 1; i <= n - 2; i++) if (W[i] == \"mv\") { move = 1; if ((W[i + 1] in S) && (W[i + 2] in S)) hit = 1 } } END { exit hit ? 0 : (move ? 1 : 2) }'\n\
+             \tverdict=$?\n\
+             \tif [ \"$verdict\" -eq 0 ]; then\n\
              \t\techo 'jigc: out-of-band managed-doc rename staged in this commit — a bare `git mv` bypasses jigc identity tracking; use `jigc rename` instead (commit blocked).' >&2\n\
              \t\texit 1\n\
+             \telif [ \"$verdict\" -eq 1 ]; then\n\
+             \t\techo 'jigc: an out-of-band managed-doc rename exists in the committed tree — run `jigc validate` for details (not staged in this commit; commit not blocked).' >&2\n\
              \tfi\n\
-             \techo 'jigc: an out-of-band managed-doc rename exists in the committed tree — run `jigc validate` for details (not staged in this commit; commit not blocked).' >&2\n\
              fi\n\
              \n\
              exit 0\n",
