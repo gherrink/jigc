@@ -218,11 +218,19 @@ fn each_spawn_span_names_and_runs_the_sub_tasks_recorded_workflow() {
 
     // The emitted bytes themselves — one span per sub-task, each naming its OWN recorded
     // workflow, in the canonical id-sorted order the collection resolves in.
+    // The `cd` operand is the ABSOLUTE worktree path since M53 (the cwd census, C1-14 /
+    // C3-01): the line is bytes an orchestrator pastes into a shell of unknown cwd. What
+    // this suite asserts — each span naming its own sub-task's recorded workflow — is
+    // untouched by the root it is rooted at.
+    let root = std::fs::canonicalize(repo.path())
+        .unwrap_or_else(|_| repo.path().to_path_buf())
+        .display()
+        .to_string();
     let mut expected = vec![
         format!(
-            "cd .jigc/worktrees/{overridden} && jigc workflow decided-task --task {overridden}"
+            "cd {root}/.jigc/worktrees/{overridden} && jigc workflow decided-task --task {overridden}"
         ),
-        format!("cd .jigc/worktrees/{plain} && jigc workflow sub-task --task {plain}"),
+        format!("cd {root}/.jigc/worktrees/{plain} && jigc workflow sub-task --task {plain}"),
     ];
     expected.sort();
     assert_eq!(

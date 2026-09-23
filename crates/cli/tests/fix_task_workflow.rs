@@ -194,10 +194,15 @@ fn a_confirmed_finding_fans_out_as_a_fix_task_sub_task() {
         String::from_utf8_lossy(&out.stderr),
     );
     let spawns = spawn_lines(&view);
+    // The `cd` operand is the ABSOLUTE worktree path since M53 (the cwd census, C1-14 /
+    // C3-01): the line is bytes an orchestrator pastes into a shell of unknown cwd.
     assert_eq!(
         spawns,
         vec![format!(
-            "cd .jigc/worktrees/{SUB_TASK} && jigc workflow fix-task --task {SUB_TASK}"
+            "cd {}/.jigc/worktrees/{SUB_TASK} && jigc workflow fix-task --task {SUB_TASK}",
+            std::fs::canonicalize(root)
+                .unwrap_or_else(|_| root.to_path_buf())
+                .display(),
         )],
         "the fan-out must emit the sub-task's `Spawn:` line on its recorded `fix-task` \
          workflow; got:\n{view}",

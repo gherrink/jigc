@@ -299,12 +299,17 @@ fn the_emitted_add_task_line_runs_verbatim_against_a_real_milestone() {
 
     // It minted a sub-task on the workflow the line names, so `execute` can fan it out.
     let view = ok(root, home, &["milestone", "execute", ROUND_ID]);
+    // The `cd` operand is the ABSOLUTE worktree path since M53 (the cwd census, C1-14 /
+    // C3-01) — the line is bytes an orchestrator pastes into a shell of unknown cwd — so
+    // the assertion is on the tail, which is what this suite is about.
     assert_eq!(
         spawn_lines(&view),
-        vec![
-            "cd .jigc/worktrees/leaf-boundary-truncates-slot && jigc workflow fix-task --task leaf-boundary-truncates-slot"
-                .to_string()
-        ],
+        vec![format!(
+            "cd {}/.jigc/worktrees/leaf-boundary-truncates-slot && jigc workflow fix-task --task leaf-boundary-truncates-slot",
+            std::fs::canonicalize(root)
+                .unwrap_or_else(|_| root.to_path_buf())
+                .display(),
+        )],
         "the minted sub-task must fan out on `fix-task`; got:\n{view}",
     );
 }

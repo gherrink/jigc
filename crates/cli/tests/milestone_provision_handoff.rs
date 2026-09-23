@@ -231,9 +231,12 @@ fn execute_speaks_only_in_the_partial_state() {
         "the advisory must carry the idempotent re-run route; got:\n{partial_out}",
     );
     // Still the read it was: the composed walk is intact underneath the advisory.
+    // The `cd` operand is the ABSOLUTE worktree path since M53 (the cwd census, C1-14 /
+    // C3-01) — bytes an orchestrator pastes into a shell of unknown cwd — so the suffix is
+    // what identifies each line.
     for id in ["alpha-fix", "zebra-fix"] {
         assert!(
-            partial_out.contains(&format!("Spawn: `cd .jigc/worktrees/{id} &&")),
+            partial_out.contains(&format!("/.jigc/worktrees/{id} &&")),
             "the composed walk must still emit every sub-task's `Spawn:` line; got:\n{partial_out}",
         );
     }

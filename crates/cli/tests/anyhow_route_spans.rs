@@ -771,10 +771,15 @@ fn pinned_base_mismatch_routes_by_unit_kind() {
         &sub_out,
         &[
             &format!("task `{sub}` is pinned to base "),
-            &format!(
-                " — this is a sub-task of milestone `rework`, and a sub-task's work happens in its own worktree at .jigc/worktrees/{sub}, "
-            ),
-            "run `jigc milestone provision rework` — it adds a worktree that is missing and leaves one that exists untouched — then re-run this from that worktree\n",
+            " — this is a sub-task of milestone `rework`, and a sub-task's work happens in \
+             its own worktree, cut from that base rather than in this checkout: ",
+            // M53 — the cwd census, C2-08: the un-provisioned arm names the door that cuts
+            // the worktree (this fixture never provisioned one) and then the **absolute**
+            // `cd`, which is the same path the `Spawn:` line emits and the only spelling an
+            // operator can paste from wherever they are standing.
+            "run `jigc milestone provision rework` — it cuts the worktree this sub-task is \
+             missing — then `cd ",
+            &format!("/.jigc/worktrees/{sub}` and re-run this command there\n"),
         ],
     );
     assert!(

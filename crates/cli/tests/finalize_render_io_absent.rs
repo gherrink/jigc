@@ -483,9 +483,11 @@ fn a_sub_task_render_tells_a_never_entered_sub_task_from_a_read_fault() {
                     &first_command_span(&route),
                     label,
                 );
+                // The `cd` operand is the ABSOLUTE worktree path since M53 (the cwd
+                // census, C1-14 / C3-01), so the suffix is what identifies the line.
                 assert!(
                     printed.contains(&format!(
-                        "Spawn: `cd .jigc/worktrees/{sub} && jigc workflow sub-task --task {sub}`"
+                        "/.jigc/worktrees/{sub} && jigc workflow sub-task --task {sub}`"
                     )),
                     "[{label}] the route claims it prints the launch line; got:\n{printed}",
                 );

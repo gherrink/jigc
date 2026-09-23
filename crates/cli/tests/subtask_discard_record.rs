@@ -990,11 +990,17 @@ fn execute_omits_the_settled_sub_task(repo: &Path, home: &Path) {
         &["milestone", "execute", MILESTONE_ID],
         "milestone execute",
     );
+    // The `cd` operand is the ABSOLUTE worktree path since M53 (the cwd census, C1-14 /
+    // C3-01); the claim here is *exactly one span, for the live sub-task*.
+    let root = std::fs::canonicalize(repo)
+        .unwrap_or_else(|_| repo.to_path_buf())
+        .display()
+        .to_string();
     let spans = spawn_spans(&view);
     assert_eq!(
         spans,
         vec![format!(
-            "cd .jigc/worktrees/{SIBLING_SUB_ID} && jigc workflow sub-task --task {SIBLING_SUB_ID}"
+            "cd {root}/.jigc/worktrees/{SIBLING_SUB_ID} && jigc workflow sub-task --task {SIBLING_SUB_ID}"
         )],
         "exactly one `Spawn:` line, for the live sub-task; the composed view was:\n{view}",
     );

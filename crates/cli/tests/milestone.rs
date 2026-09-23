@@ -1786,12 +1786,24 @@ fn milestone_execute_composes_the_real_fanout_join_finalize_workflow() {
 
     // The fan-out emits EXACTLY N (=2) `Spawn:` directives, one per sub-task, read
     // straight off the composed bytes the agent runs — never a hand-built equivalent.
+    // The `cd` operand is the ABSOLUTE worktree path since M53 (the cwd census, C1-14 /
+    // C3-01): the line is the one `cd` jigc emits, an orchestrator pastes it into a shell of
+    // unknown cwd, and spelled repo-relative it ran from the repository root and nowhere
+    // else. The id-ordering this asserts is untouched by the root it is rooted at.
+    let root = std::fs::canonicalize(repo.path())
+        .unwrap_or_else(|_| repo.path().to_path_buf())
+        .display()
+        .to_string();
     let spawns = spawn_lines(&stdout);
     assert_eq!(
         spawns,
         vec![
-            "cd .jigc/worktrees/alpha-fix && jigc workflow sub-task --task alpha-fix".to_owned(),
-            "cd .jigc/worktrees/zebra-fix && jigc workflow sub-task --task zebra-fix".to_owned(),
+            format!(
+                "cd {root}/.jigc/worktrees/alpha-fix && jigc workflow sub-task --task alpha-fix"
+            ),
+            format!(
+                "cd {root}/.jigc/worktrees/zebra-fix && jigc workflow sub-task --task zebra-fix"
+            ),
         ],
         "the real `milestone-execution` workflow must emit one id-sorted `Spawn:` directive \
          per sub-task, each `cd`-ing into its own worktree (alpha before zebra, not add order); \
@@ -1804,8 +1816,10 @@ fn milestone_execute_composes_the_real_fanout_join_finalize_workflow() {
     // line, never static text posing as a state report (the corpus's strongest
     // misreading: an agent believed the fan-out had already run and went straight to
     // finalize).
+    // Absolute `cd` operand since M53 (the cwd census, C1-14 / C3-01) — the marker is the
+    // directive prefix, and what this probe is about is the **order**.
     let last_spawn_at = stdout
-        .rfind("Spawn: `cd .jigc/worktrees/")
+        .rfind("Spawn: `cd /")
         .expect("at least one Spawn directive");
     let join_prose_at = stdout
         .find("Once every spawned sub-task reports complete")
@@ -1889,8 +1903,10 @@ fn milestone_execute_emits_the_provision_run_before_the_first_spawn() {
     let provision_at = stdout
         .find("Run: `jigc milestone provision cache-rework`")
         .expect("the provision step must resolve a `Run:` line into the composed view");
+    // The `cd` operand is absolute since M53 (the cwd census, C1-14 / C3-01), so the marker
+    // is the directive prefix; what this probe is about is the **order**.
     let first_spawn_at = stdout
-        .find("Spawn: `cd .jigc/worktrees/")
+        .find("Spawn: `cd /")
         .expect("the fan-out emits at least one `Spawn:` directive");
     assert!(
         provision_at < first_spawn_at,
@@ -1953,14 +1969,30 @@ fn milestone_execute_spawn_emit_is_byte_identical_across_divergent_add_orders() 
         &["Zebra fix", "Mid fix", "Alpha fix"],
     );
 
-    let fwd_spawns = spawn_lines(&fwd_stdout);
-    let rev_spawns = spawn_lines(&rev_stdout);
+    // Each arm is its own throwaway repository, and the `cd` operand is absolute since M53
+    // (the cwd census, C1-14 / C3-01) — so each arm's own root is normalized to a
+    // placeholder before comparison. The claim is the **order** and its invariance across
+    // add orders, which no path can change.
+    let normalize = |stdout: &str, repo: &Path| -> Vec<String> {
+        let root = std::fs::canonicalize(repo)
+            .unwrap_or_else(|_| repo.to_path_buf())
+            .display()
+            .to_string();
+        spawn_lines(stdout)
+            .into_iter()
+            .map(|line| line.replace(&root, "<ROOT>"))
+            .collect()
+    };
+    let fwd_spawns = normalize(&fwd_stdout, forward.path());
+    let rev_spawns = normalize(&rev_stdout, reverse.path());
     assert_eq!(
         fwd_spawns,
         vec![
-            "cd .jigc/worktrees/alpha-fix && jigc workflow sub-task --task alpha-fix".to_owned(),
-            "cd .jigc/worktrees/mid-fix && jigc workflow sub-task --task mid-fix".to_owned(),
-            "cd .jigc/worktrees/zebra-fix && jigc workflow sub-task --task zebra-fix".to_owned(),
+            "cd <ROOT>/.jigc/worktrees/alpha-fix && jigc workflow sub-task --task alpha-fix"
+                .to_owned(),
+            "cd <ROOT>/.jigc/worktrees/mid-fix && jigc workflow sub-task --task mid-fix".to_owned(),
+            "cd <ROOT>/.jigc/worktrees/zebra-fix && jigc workflow sub-task --task zebra-fix"
+                .to_owned(),
         ],
         "the forward add order must emit id-sorted Spawn directives",
     );
