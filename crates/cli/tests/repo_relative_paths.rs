@@ -322,6 +322,13 @@ fn no_door_prints_the_host_path_of_the_machine_it_ran_on() {
         let out = run_jigc(&repo, &home, door.argv);
         let mut text = String::from_utf8_lossy(&out.stdout).into_owned();
         text.push_str(&String::from_utf8_lossy(&out.stderr));
+        // The one declared exception, and it is a REGION rather than a weakening of the scan:
+        // a backticked `git -C <absolute> …` span is bytes the reader RUNS (M53 — the cwd
+        // census, the route class; the reason lives in
+        // `crates/cli/tests/support/route_spans.rs`, the disposition in `PATH_TEXT_SITES`
+        // below). Every other byte of every door's output is still scanned, an absolute in a
+        // `git` span that is NOT aimed included.
+        let text = crate::support::route_spans::redact_aimed_git_spans(&text);
 
         for line in text.lines() {
             if let Some(prefix) = prefixes.iter().find(|p| line.contains(p.as_str())) {
@@ -479,6 +486,13 @@ fn no_read_or_config_door_prints_the_host_path_of_the_machine_it_ran_on() {
         let out = run_jigc(&repo, &home, door.argv);
         let mut text = String::from_utf8_lossy(&out.stdout).into_owned();
         text.push_str(&String::from_utf8_lossy(&out.stderr));
+        // The one declared exception, and it is a REGION rather than a weakening of the scan:
+        // a backticked `git -C <absolute> …` span is bytes the reader RUNS (M53 — the cwd
+        // census, the route class; the reason lives in
+        // `crates/cli/tests/support/route_spans.rs`, the disposition in `PATH_TEXT_SITES`
+        // below). Every other byte of every door's output is still scanned, an absolute in a
+        // `git` span that is NOT aimed included.
+        let text = crate::support::route_spans::redact_aimed_git_spans(&text);
 
         for line in text.lines() {
             if let Some(prefix) = prefixes.iter().find(|p| line.contains(p.as_str())) {
@@ -906,6 +920,22 @@ const PATH_TEXT_SITES: &[(&str, &str, Disposition, &str)] = &[
          the SAME two `store.*` blocks in the same shape from its own copy, so a fix at the \
          reported site alone would have left the class open one file over",
     ),
+    // --- the route-span class (M53 — the cwd census, the route class) ------------------
+    (
+        "crates/cli/src/repo.rs",
+        "aim_at",
+        Disposition::DeclaredAbsolute,
+        "the `-C` redirection every posture refusal and every leftover hold line routes \
+         through — reached from inside this class at `milestone::held_here`. `-C` takes a \
+         DIRECTORY, not a pathspec, so the repo-relative spelling it shipped with exited 128 \
+         from every cwd but the repository root, driven; *pasteable shell bytes*, law 1's \
+         third admitted reason. The message and the `at:` locus beside it keep the \
+         repo-relative spelling — they are read and keyed, not run — which is the one place \
+         this class deliberately DOES name one path two ways, because the two halves are two \
+         different acts. The converted producers are enumerated in \
+         `crates/cli/tests/git_span_aim.rs` → `GIT_SPAN_SITES`, and the driven scans above \
+         carve out exactly the aimed span",
+    ),
     // --- the five that stay absolute, each saying why ---------------------------------
     (
         "crates/cli/src/milestone.rs",
@@ -924,7 +954,12 @@ const PATH_TEXT_SITES: &[(&str, &str, Disposition, &str)] = &[
          and git resolves a worktree path against the CALLER's cwd, so the remedy must be \
          pasteable from anywhere; the warning one line above names the same path the same \
          way, because one screen naming one path two ways is the law-1 break this task \
-         closes, not a fix for it",
+         closes, not a fix for it. **[Corrected 2026-09-23 (M53 — the cwd census, C1-08).** \
+         The census predicted this site shipped a repo-RELATIVE operand; driven, it did not — \
+         `path` is `canonical_home.join(…)` and the operand has always been absolute. What \
+         was cwd-fragile is the `git worktree prune` beside it, a repository operation that \
+         exits 128 pasted from outside the repository. Both spans now go through \
+         `engine::finding::git_at`.**]",
     ),
     (
         "crates/cli/src/pack.rs",

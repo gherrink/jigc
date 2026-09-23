@@ -638,7 +638,7 @@ pub(crate) fn relocate_stranded(
             continue; // already at the destination (is_stranded guards this — defensive).
         }
         if let Some(schema) = schema
-            && let Some(finding) = unaddressable_destination(&rel, &dest, schema)
+            && let Some(finding) = unaddressable_destination(repo_root, &rel, &dest, schema)
         {
             report
                 .blocked
@@ -852,7 +852,12 @@ fn displace_foreign_squatter(
 /// was already baselined, that hand move leaves the record keyed at the old path — the
 /// pre-existing, already-routed `file-state.orphaned-doc` state, not a dead end this gate
 /// introduces.
-fn unaddressable_destination(rel: &str, dest: &str, schema: &Schema) -> Option<Finding> {
+fn unaddressable_destination(
+    repo_root: &Path,
+    rel: &str,
+    dest: &str,
+    schema: &Schema,
+) -> Option<Finding> {
     crate::ingest::home_identity(dest, schema)
         .is_none()
         .then(|| {
@@ -861,6 +866,7 @@ fn unaddressable_destination(rel: &str, dest: &str, schema: &Schema) -> Option<F
             // the rule forbids. The identity fault is the same either way: a `Location` move
             // keeps the filename, so the stem the gate measured at `dest` is `rel`'s own.
             crate::ingest::unaddressable_identity_finding(
+                repo_root,
                 rel,
                 schema,
                 crate::ingest::UnaddressableDoor::Relocate,

@@ -2680,9 +2680,13 @@ fn milestone_finalize_warns_on_a_leaked_worktree_but_still_succeeds() {
         stderr.contains("area-low"),
         "the teardown warning must name the leaked worktree path; got:\n{stderr}",
     );
+    // Both spans of the remedy are aimed since M53 (the cwd census, C1-08): `prune` is a
+    // repository operation that exits 128 pasted from outside the repository, and `remove`
+    // resolves its operand against the caller's cwd.
     assert!(
-        stderr.contains("git worktree prune"),
-        "the teardown warning must name the `git worktree prune` remedy; got:\n{stderr}",
+        stderr.contains(" worktree prune") && stderr.contains("git -C /"),
+        "the teardown warning must name the `git worktree prune` remedy, aimed at the \
+         checkout it runs in; got:\n{stderr}",
     );
 
     // The unlocked sibling was still torn down (best-effort proceeds past the failure).

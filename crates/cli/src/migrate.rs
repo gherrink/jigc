@@ -275,7 +275,12 @@ fn adjudicate_source_path(
 /// legs share one fix — *name a different source* — and this one's is the opposite: *keep this
 /// source, and stage it*. A different act is a different identity (`settle-record.md` → §10's
 /// table, which lists the two separately).
-fn adjudicate_source_tracked(repo_root: &Path, recorded: &str, doctype: &str) -> Result<()> {
+fn adjudicate_source_tracked(
+    repo_root: &Path,
+    recorded: &str,
+    typed: &str,
+    doctype: &str,
+) -> Result<()> {
     if crate::task::path_in_index(repo_root, recorded)
         || crate::task::path_at_head(repo_root, recorded)
     {
@@ -292,10 +297,19 @@ fn adjudicate_source_tracked(repo_root: &Path, recorded: &str, doctype: &str) ->
         ),
         Some(Location::addressed(recorded, 1, 1)),
         Some(Route::human(format!(
-            "stage it with `git add -- {token}`, then re-run \
-             `jigc migrate {token} --as {doctype}` — the index is enough, the source \
-             need not be committed first",
-            token = crate::task::shell_token(recorded),
+            "stage it with `{stage}`, then re-run `jigc migrate {typed_token} --as \
+             {doctype}` — the index is enough, the source need not be committed first",
+            // Two spans, two bases, and each is the one its own command uses (M53 — the cwd
+            // census, C1-03). The `git` half names the checkout it stages into and keeps the
+            // adjudicated repo-relative spelling as its pathspec; the `jigc` half echoes the
+            // token the operator typed, because since `7cd03c59` `jigc migrate <PATH>`
+            // resolves against the caller's cwd — driven from `docs/deep`, the shipped line's
+            // `git` half exited **128** and its `jigc` half could not read the file it named.
+            stage = engine::finding::git_at(
+                repo_root,
+                &format!("add -- {}", crate::task::shell_token(recorded)),
+            ),
+            typed_token = crate::task::shell_token(typed),
         ))),
     )))
 }
@@ -392,7 +406,7 @@ fn migrate_in_repo(
     // with a `git add` that cannot match it, in place of the read fault that names the real
     // problem. It is still before the mint, which is the property that matters — a refusal
     // strands no task dir.
-    adjudicate_source_tracked(&repo_root, &recorded, doctype)?;
+    adjudicate_source_tracked(&repo_root, &recorded, path, doctype)?;
 
     // The byte-floor triviality advisory (S2), computed off the just-read foreign bytes —
     // presentation-only, surfaced by `run` beside (never inside) the pinned composed

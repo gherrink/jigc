@@ -596,10 +596,23 @@ pub enum BreachSite<'a> {
     /// every shipped posture refusal has printed since M51.
     Here,
     /// A fan-out worktree **jigc** provisioned for one milestone sub-task, named by its
-    /// repo-relative path (`crate::render::repo_relative`, law 1). The milestone boundary
-    /// commits that worktree's index, so the user has to conclude or abandon the
-    /// operation *there*.
-    FanOutWorktree(&'a str),
+    /// repo-relative path (`crate::render::repo_relative`, law 1) and carrying the absolute
+    /// path of the same directory. The milestone boundary commits that worktree's index, so
+    /// the user has to conclude or abandon the operation *there*.
+    ///
+    /// **Two spellings of one path, and each is load-bearing** (M53 — the cwd census, the
+    /// route class). The repo-relative half is what the message says and what the `at:` locus
+    /// and the `(code, target)` key carry — portable across the two checkouts a fan-out is
+    /// made of, which an absolute is not. The absolute half is the `-C` operand of the route,
+    /// which git resolves against the *caller's* cwd: driven, `git -C
+    /// .jigc/worktrees/<id> bisect reset` exits **128** from every directory but the
+    /// repository root, and `-C` takes a directory, so no pathspec spelling reaches it.
+    FanOutWorktree {
+        /// The repo-relative spelling — the message, the locus and the key.
+        at: &'a str,
+        /// The same directory, absolute — the route's `-C` operand.
+        abs: &'a std::path::Path,
+    },
 }
 
 impl BreachSite<'_> {
@@ -620,8 +633,8 @@ impl BreachSite<'_> {
     fn lead(self) -> String {
         match self {
             BreachSite::Here => String::new(),
-            BreachSite::FanOutWorktree(path) => {
-                format!("in the fan-out worktree `{path}`, ")
+            BreachSite::FanOutWorktree { at, .. } => {
+                format!("in the fan-out worktree `{at}`, ")
             }
         }
     }
@@ -632,7 +645,7 @@ impl BreachSite<'_> {
     fn tail(self) -> &'static str {
         match self {
             BreachSite::Here => "the repository is not in a committable state",
-            BreachSite::FanOutWorktree(_) => {
+            BreachSite::FanOutWorktree { .. } => {
                 "the milestone boundary commits that worktree's index, and it is not in a \
                  committable state"
             }
@@ -648,7 +661,7 @@ impl BreachSite<'_> {
     fn aim(self, command: &str) -> String {
         match self {
             BreachSite::Here => command.to_string(),
-            BreachSite::FanOutWorktree(path) => aim_at(path, command),
+            BreachSite::FanOutWorktree { abs, .. } => aim_at(abs, command),
         }
     }
 
@@ -657,7 +670,7 @@ impl BreachSite<'_> {
     fn location(self) -> Option<Location> {
         match self {
             BreachSite::Here => None,
-            BreachSite::FanOutWorktree(path) => Some(Location::addressed(path, 1, 1)),
+            BreachSite::FanOutWorktree { at, .. } => Some(Location::addressed(at, 1, 1)),
         }
     }
 }
@@ -672,13 +685,22 @@ impl BreachSite<'_> {
 /// unregistered one that can belong to a different repository entirely. Sharing the render
 /// rather than the site keeps the two from drifting into two spellings of one redirection.
 ///
-/// The path is a [`engine::finding::shell_token`], so a name with a space stays one operand
+/// **The directory is the absolute one** (M53 — the cwd census, C1-06). It shipped as the
+/// repo-relative spelling, and `-C` takes a *directory*, not a pathspec: driven from
+/// `docs/deep` and from a sibling fan-out worktree, `git -C .jigc/worktrees/<id> bisect reset`
+/// exits **128** (`fatal: cannot change to …`), and `git -C ':/…'` exits 128 too — there is no
+/// relative spelling that works from more than one cwd. This is the row that opened the
+/// census, and it is the *pasteable shell bytes* disposition `design/surface-contract.md`
+/// already writes down. The message and the `at:` locus beside it keep the repo-relative
+/// spelling: they are read and keyed, not run.
+///
+/// The path is a [`engine::finding::shell_operand`], so a name with a space stays one operand
 /// (M51's route-safety class); a command this family does not own — one that is not a `git`
 /// invocation — is returned unaimed rather than mis-rewritten, which
 /// `repo_posture.rs::every_routed_command_is_a_git_invocation` is the standing fence against.
-pub fn aim_at(at: &str, command: &str) -> String {
+pub fn aim_at(at: &Path, command: &str) -> String {
     match command.strip_prefix("git ") {
-        Some(rest) => format!("git -C {} {rest}", engine::finding::shell_token(at)),
+        Some(rest) => engine::finding::git_at(at, rest),
         None => command.to_string(),
     }
 }

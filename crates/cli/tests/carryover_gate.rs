@@ -238,8 +238,14 @@ fn assert_carried(finding: &serde_json::Value, path: &str) {
         .as_str()
         .unwrap_or_else(|| panic!("the refusal carries a route; got: {finding}"));
     assert!(
-        route.contains("--carry-staged") && route.contains("git restore --staged"),
-        "the route names both exits (unstage, or `--carry-staged`); got: {route}"
+        route.contains("--carry-staged")
+            && route.contains(&format!(" restore --staged -- {path}"))
+            // Aimed at the index the refusal is about since M53 (the cwd census, C1-01):
+            // git resolves a pathspec against the caller's cwd, so the unstage runs from a
+            // subdirectory or another checkout only if the span names the checkout.
+            && route.contains("git -C /"),
+        "the route names both exits (unstage, or `--carry-staged`), the unstage aimed at the \
+         index it is about; got: {route}"
     );
 }
 
@@ -1214,6 +1220,20 @@ fn carryover_findings_and_manifest_are_byte_identical_across_staging_orders() {
         // hash (the two repos' index histories differ, so the hashes differ by
         // design — everything else must match to the byte).
         envelope["committed"]["hash"] = serde_json::Value::Null;
+        // …and the other legitimately repo-specific range: since M53 the unstage route names
+        // the checkout it runs in (the cwd census, C1-01), and the two arms are two different
+        // throwaway repositories. Normalizing the root to a placeholder keeps everything else
+        // compared byte for byte, which is what this arm is about — the ORDER, which no path
+        // can change (the `flow10_acceptance` precedent, same wave).
+        let blocked_stdout = blocked_stdout.replace(
+            &repo
+                .path()
+                .canonicalize()
+                .unwrap_or_else(|_| repo.path().to_path_buf())
+                .display()
+                .to_string(),
+            "<ROOT>",
+        );
         (blocked_stdout, envelope)
     }
 

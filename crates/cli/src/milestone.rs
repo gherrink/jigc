@@ -1381,16 +1381,18 @@ fn baseline_record(jigc_root: &Path, schema: &Schema, milestone_id: &str, bytes:
 /// human judgment over git, not a `jigc` verb (the record is machine-maintained, so the
 /// edit is never merged and never clobbered; `design/team-ready-state.md` → the
 /// No-silent-overwrite discipline).
-fn record_conflict_block(key: &str) -> engine::file_state::ConflictBlock {
+fn record_conflict_block(jigc_home: &Path, key: &str) -> engine::file_state::ConflictBlock {
     engine::file_state::ConflictBlock::new(
         "the milestone record is machine-maintained and was edited out of band since jigc \
          last wrote it",
         engine::finding::Route::human(format!(
-            "restore `{key}` to what jigc last wrote (`git checkout -- {token}` for an \
-             uncommitted edit, else revert the commit that changed it) and re-run this \
-             command — an external edit to a machine-maintained record is never merged and \
-             never clobbered",
-            token = crate::task::shell_token(key),
+            "restore `{key}` to what jigc last wrote (`{restore}` for an uncommitted edit, \
+             else revert the commit that changed it) and re-run this command — an external \
+             edit to a machine-maintained record is never merged and never clobbered",
+            restore = engine::finding::git_at(
+                jigc_home,
+                &format!("checkout -- {}", crate::task::shell_token(key)),
+            ),
         )),
     )
 }
@@ -1457,7 +1459,7 @@ fn reconcile_record_preflight(
         &from,
         &bytes,
         /* task_touched = */ true,
-        &record_conflict_block(&key),
+        &record_conflict_block(jigc_home, &key),
         &engine::validate::AdoptionInputs::new(&versions, &priors, &migratable),
     );
     if let Some(blocking) = findings.iter().find(|f| f.severity == Severity::Blocking) {
@@ -3513,7 +3515,7 @@ fn held_operation(worktree: &Path) -> Option<crate::repo::InProgress> {
 pub(crate) fn hold_line(jigc_home: &Path, path: &Path, hold: &LeftoverHold) -> String {
     let at = render::repo_relative(jigc_home, path);
     match &hold.shape {
-        LeftoverShape::Directory => format!("{at}: {}", held_here(&at, hold)),
+        LeftoverShape::Directory => format!("{at}: {}", held_here(path, hold)),
         LeftoverShape::File => format!("{at}: the file itself"),
         LeftoverShape::Unreadable(err) => format!("{at}: unknown — {err}"),
     }
@@ -3527,7 +3529,7 @@ pub(crate) fn hold_line(jigc_home: &Path, path: &Path, hold: &LeftoverHold) -> S
 /// paths that may hold different operations, and *"commit or stash what a live worktree
 /// holds"* — the route every one of these doors printed — resolves a bisect or a paused rebase
 /// not at all. So the followable command rides the line it is true of.
-fn held_here(at: &str, hold: &LeftoverHold) -> String {
+fn held_here(abs: &Path, hold: &LeftoverHold) -> String {
     let entries = hold.entries.join(", ");
     let Some(operation) = hold.operation else {
         return entries;
@@ -3537,7 +3539,7 @@ fn held_here(at: &str, hold: &LeftoverHold) -> String {
     let operation = format!(
         "{} git has left un-concluded (abandon it with `{}`)",
         operation.noun(),
-        crate::repo::aim_at(at, operation.abandon()),
+        crate::repo::aim_at(abs, operation.abandon()),
     );
     if entries.is_empty() {
         operation
@@ -3962,7 +3964,10 @@ fn fan_out_posture_findings(jigc_home: &Path, worktrees: &[PathBuf]) -> Vec<Find
         .filter_map(|worktree| {
             let breach = crate::repo::adjudicated_breach(worktree, |_| true)?;
             let at = render::repo_relative(jigc_home, worktree);
-            Some(breach.finding_at(crate::repo::BreachSite::FanOutWorktree(&at)))
+            Some(breach.finding_at(crate::repo::BreachSite::FanOutWorktree {
+                at: &at,
+                abs: worktree,
+            }))
         })
         .collect()
 }
@@ -5394,6 +5399,7 @@ fn run_milestone_finalize(
             // is a separate, deferred concern).
             &[],
             engine::finalize::CarryoverBoundary::Milestone,
+            &jigc_home,
         );
         if !carried.is_empty() {
             return blocked(&jigc_home, format, carried);
@@ -6065,6 +6071,14 @@ fn remove_worktrees(jigc_home: &Path, list: &engine::milestone::TaskList) -> boo
     // break this pass closes, not a fix for it. Disposed as `DeclaredAbsolute` in
     // `crates/cli/tests/repo_relative_paths.rs`; the loss narration these warnings sit beside
     // goes through [`narrate_removal`], which is repo-relative like every other surface.
+    //
+    // **Both spans in that remedy now also name the checkout** (M53 — the cwd census, C1-08).
+    // The census predicted this site shipped a repo-relative operand; driven, it did not —
+    // `path` is `canonical_home.join(…)` and the operand has always been absolute. What was
+    // cwd-fragile is its neighbour: `git worktree prune` is a repository operation, so pasted
+    // from outside the repository it exits 128 while the `remove` beside it would have
+    // worked. Both go through `engine::finding::git_at`, which is also what keeps this
+    // non-`Finding` surface inside the one rule the route fence enforces everywhere else.
     let registered = registered_worktrees(jigc_home).unwrap_or_default();
     // Match `provision_worktrees`' canonical-path convention (git stores canonical paths at
     // `add` time); fall back to the raw path if canonicalization fails (then nothing matches
@@ -6095,9 +6109,15 @@ fn remove_worktrees(jigc_home: &Path, list: &engine::milestone::TaskList) -> boo
             // A2 — pinned non-blocking warning, naming the leaked path + the prune remedy.
             eprintln!(
                 "warning: could not remove the fan-out worktree {path_str}: {err:#}\n  \
-                 remedy: run `git worktree prune`, then \
-                 `git worktree remove --force {token}`",
-                token = crate::task::shell_token(path_str)
+                 remedy: run `{prune}`, then `{remove}`",
+                prune = engine::finding::git_at(jigc_home, "worktree prune"),
+                remove = engine::finding::git_at(
+                    jigc_home,
+                    &format!(
+                        "worktree remove --force {}",
+                        crate::task::shell_token(path_str)
+                    ),
+                )
             );
         }
     }

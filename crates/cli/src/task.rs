@@ -2373,6 +2373,7 @@ impl TaskArea {
                 retire_exempt.as_ref().map(state::MigrationSource::recorded),
                 &engine::finalize::plan_owner_artifacts(&self.dir, schemas),
                 CarryoverBoundary::TaskPreview,
+                &self.repo_root,
             ));
         }
         // `&|_| true` is load-bearing, not a shortcut: it is what keeps cause 7 (untracked)
@@ -2795,6 +2796,7 @@ impl TaskArea {
                 // foreign carry-over (M45 Inc 8; `design/finalize.md` → 5. Stage).
                 &plan.owner_artifacts,
                 CarryoverBoundary::Task,
+                &self.repo_root,
             )
         };
         // The carried path set the manifest labels `carried-over` (labeling changes no

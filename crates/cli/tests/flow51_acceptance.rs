@@ -1316,7 +1316,9 @@ fn neither_root_knob_lies_and_the_teardown_answers_per_kind_of_byte() {
         "a recoverable file is narrated, not refused:\n{removed_text}",
     );
     assert!(
-        removed_text.contains(".jigc/notes.md") && removed_text.contains("git checkout"),
+        removed_text.contains(".jigc/notes.md")
+            && removed_text.contains(" checkout -- <path>")
+            && removed_text.contains("git -C /"),
         "what the guards let through, the teardown names — with the command that brings \
          it back:\n{removed_text}",
     );

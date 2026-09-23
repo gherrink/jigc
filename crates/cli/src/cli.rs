@@ -1564,7 +1564,7 @@ fn validate_store_in_repo(cwd: &Path) -> Result<StoreSweep> {
     for vacated in crate::orphan::vacated_homes(&jigc_home, &schemas) {
         report
             .findings
-            .push(crate::orphan::home_vacated_finding(&vacated));
+            .push(crate::orphan::home_vacated_finding(&jigc_home, &vacated));
     }
 
     // The gate-claim discriminator (M42 Inc 4): which of the committed docs this sweep just

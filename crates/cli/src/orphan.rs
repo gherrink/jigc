@@ -988,12 +988,20 @@ fn jigc_committed_into(repo_root: &Path, rel: &str) -> bool {
 /// `jigc rename` refuses every doctype in this subject set — the set *is* the fixed-identity
 /// set, and a fixed-identity reslug is `store.fixed-identity`, so naming it would route the
 /// reader into a refusal.
-pub(crate) fn home_vacated_finding(vacated: &VacatedHome) -> engine::finding::Finding {
+pub(crate) fn home_vacated_finding(
+    repo_root: &Path,
+    vacated: &VacatedHome,
+) -> engine::finding::Finding {
     let VacatedHome {
         home: FixedHome { ty, path },
         removal,
     } = vacated;
     let token = crate::task::shell_token(path);
+    // Every one of the three repairs is a git command over a repository path, so each names
+    // the checkout it runs in; the message, the `at:` locus and the `(code, target)` key stay
+    // repo-relative (M53 — the cwd census, C1-04). Driven from `docs/deep`, the shipped
+    // `git checkout -- docs/decisions-log.md` exited **1**.
+    let git = |rest: String| engine::finding::git_at(repo_root, &rest);
     let (state, repair) = match removal {
         Removal::Committed { locator } => (
             "the last document the repository committed there carried a `schema-version:` \
@@ -1003,8 +1011,8 @@ pub(crate) fn home_vacated_finding(vacated: &VacatedHome) -> engine::finding::Fi
             match locator {
                 Some(sha) => format!(
                     "restore the document at `{path}` and commit it — `{sha}` is the commit \
-                     that removed it (`git show {sha} -- {token}`) — then `jigc ingest` to \
-                     re-register it"
+                     that removed it (`{show}`) — then `jigc ingest` to re-register it",
+                    show = git(format!("show {sha} -- {token}")),
                 ),
                 None => format!(
                     "restore the document at `{path}` and commit it, then `jigc ingest` to \
@@ -1018,9 +1026,10 @@ pub(crate) fn home_vacated_finding(vacated: &VacatedHome) -> engine::finding::Fi
              committed into is empty in this checkout"
                 .to_string(),
             format!(
-                "the removal is not committed — restore it: `git checkout -- {token}`; the \
-                 document is still in `HEAD`, so nothing has to be restored from history and \
-                 nothing has to be re-registered"
+                "the removal is not committed — restore it: `{restore}`; the document is \
+                 still in `HEAD`, so nothing has to be restored from history and nothing has \
+                 to be re-registered",
+                restore = git(format!("checkout -- {token}")),
             ),
         ),
         Removal::StagedRemoval => (
@@ -1029,10 +1038,12 @@ pub(crate) fn home_vacated_finding(vacated: &VacatedHome) -> engine::finding::Fi
              jigc committed into is empty in this checkout"
                 .to_string(),
             format!(
-                "the deletion is staged and not committed — unstage it and restore it: `git \
-                 restore --source=HEAD --staged --worktree -- {token}`; the document is still \
-                 in `HEAD`, so nothing has to be restored from history and nothing has to be \
-                 re-registered"
+                "the deletion is staged and not committed — unstage it and restore it: \
+                 `{restore}`; the document is still in `HEAD`, so nothing has to be restored \
+                 from history and nothing has to be re-registered",
+                restore = git(format!(
+                    "restore --source=HEAD --staged --worktree -- {token}"
+                )),
             ),
         ),
     };

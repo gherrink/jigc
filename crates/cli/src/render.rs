@@ -1101,15 +1101,23 @@ pub const STORE_EXIT_FLIPS: &[StoreExitFlip] = &[
             // a document every clone of the repository is missing. The code, the target form
             // and the route's shape do not vary with the state — that they cannot is arm 12's
             // assertion in `crates/cli/tests/home_vacated.rs`, driven over the whole axis.
-            crate::orphan::home_vacated_finding(&crate::orphan::VacatedHome {
-                home: crate::orphan::FixedHome {
-                    ty: "changelog".to_string(),
-                    path: "CHANGELOG.md".to_string(),
+            // The witness has no repository: it is constructed to exhibit the code, the
+            // target form and the route's SHAPE, and the route's `-C` operand is the one part
+            // of that shape that is a fact about the machine rather than about the finding.
+            // A fixed placeholder root keeps the witness deterministic; arm 12 of
+            // `crates/cli/tests/home_vacated.rs` is what drives the real one.
+            crate::orphan::home_vacated_finding(
+                std::path::Path::new("/repo"),
+                &crate::orphan::VacatedHome {
+                    home: crate::orphan::FixedHome {
+                        ty: "changelog".to_string(),
+                        path: "CHANGELOG.md".to_string(),
+                    },
+                    removal: crate::orphan::Removal::Committed {
+                        locator: Some("0000000".to_string()),
+                    },
                 },
-                removal: crate::orphan::Removal::Committed {
-                    locator: Some("0000000".to_string()),
-                },
-            })
+            )
         },
         trailer: home_vacated_trailer,
         cause: HOME_VACATED_CAUSE,

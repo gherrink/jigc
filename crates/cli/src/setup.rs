@@ -516,7 +516,9 @@ pub fn precommit_hook_body(jigc_path: &Path) -> String {
 ///
 /// The store-scope sweep (already captured in `$report`) flags every recorded-but-missing
 /// managed doc as a `reconciliation.rename` finding whose **strong-signal route** names the
-/// pair as `git mv <new> <old>` (the revert direction). But a move landed in a **prior**
+/// pair as `git -C <repo> mv <new> <old>` (the revert direction, aimed at the checkout it
+/// runs in since M53 — the cwd census, C1-09 — which is why the extraction greps `git -C `
+/// and the awk reads the two paths as fields 5 and 6). But a move landed in a **prior**
 /// commit must **not** block an unrelated later commit (the **masking trap**) — so the block
 /// fires **iff** BOTH the finding's old and new paths are in **this commit's** staged set
 /// (`git diff --cached --name-status --find-renames`, which carries both whether git records
@@ -528,17 +530,17 @@ const PRECOMMIT_RENAME_BLOCK: &str = "\n\
 # M35 — block this commit IFF it ITSELF stages an out-of-band managed-doc rename (a\n\
 # bare `git mv` committed without `jigc rename`). The sweep above flags every\n\
 # recorded-but-missing managed doc as a `reconciliation.rename` finding whose route\n\
-# names the pair as `git mv <new> <old>` (the revert direction). A move landed in a\n\
+# names the pair as `git -C <repo> mv <new> <old>` (the revert direction; aimed at the checkout it runs in since M53, so the two paths are awk fields 5 and 6). A move landed in a\n\
 # PRIOR commit must NOT block an unrelated later commit (the masking trap), so block\n\
 # ONLY when BOTH the old and new paths are staged in THIS commit. Keys on the finding\n\
 # plus the staged set, never on jigc's exit code.\n\
-moves=\"$(printf '%s' \"$report\" | grep -o 'git mv [^`]*')\"\n\
+moves=\"$(printf '%s' \"$report\" | grep -o 'git -C [^`]*')\"\n\
 if [ -n \"$moves\" ]; then\n\
 \t# Every path THIS commit stages, rename-aware: a staged `git mv` shows as `R old new`\n\
 \t# under --find-renames; a delete+add as `D old` / `A new`. One path per line.\n\
 \tstaged=\"$(git diff --cached --name-status --find-renames 2>/dev/null | cut -f2- | tr '\\t' '\\n')\"\n\
-\t# Block iff some `git mv <new> <old>` route has BOTH its paths in the staged set.\n\
-\tif { printf '%s\\n' \"$staged\"; echo '---'; printf '%s\\n' \"$moves\"; } | awk '$0 == \"---\" { seen = 1; next } seen == 0 { S[$0] = 1; next } NF >= 4 && ($3 in S) && ($4 in S) { hit = 1 } END { exit hit ? 0 : 1 }'; then\n\
+\t# Block iff some `git -C <repo> mv <new> <old>` route has BOTH its paths staged.\n\
+\tif { printf '%s\\n' \"$staged\"; echo '---'; printf '%s\\n' \"$moves\"; } | awk '$0 == \"---\" { seen = 1; next } seen == 0 { S[$0] = 1; next } NF >= 6 && $4 == \"mv\" && ($5 in S) && ($6 in S) { hit = 1 } END { exit hit ? 0 : 1 }'; then\n\
 \t\techo 'jigc: out-of-band managed-doc rename staged in this commit — a bare `git mv` bypasses jigc identity tracking; use `jigc rename` instead (commit blocked).' >&2\n\
 \t\texit 1\n\
 \tfi\n\
@@ -1231,7 +1233,7 @@ fn install(
             let forced =
                 dirty_install_refusals(repo_root, &candidates, before, guide_file.as_deref());
             if !forced.is_empty() {
-                findings.push(forced_install_path_finding(&forced));
+                findings.push(forced_install_path_finding(repo_root, &forced));
             }
         }
         InstallSubject::Unknown => {}
@@ -1737,7 +1739,7 @@ fn install_candidate_paths(
 /// the consent from reading like an ordinary install (surface-contract law 1). Advisory and
 /// **un-keyed** (no `CHECK_INVENTORY` row), so the severity post-pass leaves it advisory —
 /// the consent was given, so this reports, it does not gate.
-fn forced_install_path_finding(paths: &[String]) -> Finding {
+fn forced_install_path_finding(repo_root: &Path, paths: &[String]) -> Finding {
     let listing: Vec<String> = paths.iter().map(|path| format!("  `{path}`")).collect();
     Finding::graded(
         Severity::Advisory,
@@ -1752,11 +1754,13 @@ fn forced_install_path_finding(paths: &[String]) -> Finding {
         ),
         None,
         Some(
-            "check each path — `git show HEAD -- <path>` where the install commit carries \
-             it; where jigc regenerated the path, git never held a copy of what was there, \
-             so recovery is your own backup or nothing"
-                .to_string()
-                .into(),
+            format!(
+                "check each path — `{show}` where the install commit carries it; where jigc \
+                 regenerated the path, git never held a copy of what was there, so recovery \
+                 is your own backup or nothing",
+                show = engine::finding::git_at(repo_root, "show HEAD -- <path>"),
+            )
+            .into(),
         ),
     )
 }
@@ -2765,7 +2769,7 @@ fn uninstall(
         // owns the sole copy.
         let untracked = untracked_workbench_files(repo_root)?;
         if !untracked.is_empty() {
-            return Err(untracked_workbench_finding(&untracked));
+            return Err(untracked_workbench_finding(repo_root, &untracked));
         }
     }
 
@@ -3362,7 +3366,7 @@ fn unverified_foreign_finding(err: std::io::Error) -> Finding {
 /// may not want in history; deleting what they do not need is the other exit, and
 /// `--force` is the consent that proceeds anyway, the single consent every destroying
 /// door takes.
-fn untracked_workbench_finding(untracked: &[String]) -> Finding {
+fn untracked_workbench_finding(repo_root: &Path, untracked: &[String]) -> Finding {
     let listing: Vec<String> = untracked.iter().map(|path| format!("  {path}")).collect();
     Finding::block(
         "uninstall.untracked-workbench-file",
@@ -3372,9 +3376,13 @@ fn untracked_workbench_finding(untracked: &[String]) -> Finding {
             untracked.len(),
             listing.join("\n"),
         ),
-        "put them where they can be recovered (`git add <path>` is enough — the index keeps a \
-         copy `git checkout -- <path>` restores) or delete the ones you do not need, then \
-         re-run `jigc uninstall`; `jigc uninstall --force` deletes them with the install",
+        format!(
+            "put them where they can be recovered (`{add}` is enough — the index keeps a copy \
+             `{restore}` restores) or delete the ones you do not need, then re-run `jigc \
+             uninstall`; `jigc uninstall --force` deletes them with the install",
+            add = engine::finding::git_at(repo_root, "add -- <path>"),
+            restore = engine::finding::git_at(repo_root, "checkout -- <path>"),
+        ),
     )
 }
 
@@ -3505,13 +3513,14 @@ fn narrate_workbench_files(repo_root: &Path, workbench: &(Vec<String>, Vec<Strin
     if !tracked.is_empty() {
         eprintln!(
             "warning: removing `.jigc/` also removes {} tracked file(s) under it:\n{}\n  \
-             note: each is in the index, so `git checkout -- <path>` brings it back.",
+             note: each is in the index, so `{restore}` brings it back.",
             tracked.len(),
             tracked
                 .iter()
                 .map(|path| format!("    {path}"))
                 .collect::<Vec<_>>()
                 .join("\n"),
+            restore = engine::finding::git_at(repo_root, "checkout -- <path>"),
         );
     }
 }
@@ -4214,20 +4223,20 @@ mod tests {
              # M35 — block this commit IFF it ITSELF stages an out-of-band managed-doc rename (a\n\
              # bare `git mv` committed without `jigc rename`). The sweep above flags every\n\
              # recorded-but-missing managed doc as a `reconciliation.rename` finding whose route\n\
-             # names the pair as `git mv <new> <old>` (the revert direction). A move landed in a\n\
+             # names the pair as `git -C <repo> mv <new> <old>` (the revert direction; aimed at the checkout it runs in since M53, so the two paths are awk fields 5 and 6). A move landed in a\n\
              # PRIOR commit must NOT block an unrelated later commit (the masking trap), so block\n\
              # ONLY when BOTH the old and new paths are staged in THIS commit. Keys on the finding\n\
              # plus the staged set, never on jigc's exit code.\n\
-             moves=\"$(printf '%s' \"$report\" | grep -o 'git mv [^`]*')\"\n\
+             moves=\"$(printf '%s' \"$report\" | grep -o 'git -C [^`]*')\"\n\
              if [ -n \"$moves\" ]; then\n\
              \t# Every path THIS commit stages, rename-aware: a staged `git mv` shows as `R old new`\n\
              \t# under --find-renames; a delete+add as `D old` / `A new`. One path per line.\n\
              \tstaged=\"$(git diff --cached --name-status --find-renames 2>/dev/null | cut -f2- | tr '\\t' '\\n\
              ')\"\n\
-             \t# Block iff some `git mv <new> <old>` route has BOTH its paths in the staged set.\n\
+             \t# Block iff some `git -C <repo> mv <new> <old>` route has BOTH its paths staged.\n\
              \tif { printf '%s\\n\
              ' \"$staged\"; echo '---'; printf '%s\\n\
-             ' \"$moves\"; } | awk '$0 == \"---\" { seen = 1; next } seen == 0 { S[$0] = 1; next } NF >= 4 && ($3 in S) && ($4 in S) { hit = 1 } END { exit hit ? 0 : 1 }'; then\n\
+             ' \"$moves\"; } | awk '$0 == \"---\" { seen = 1; next } seen == 0 { S[$0] = 1; next } NF >= 6 && $4 == \"mv\" && ($5 in S) && ($6 in S) { hit = 1 } END { exit hit ? 0 : 1 }'; then\n\
              \t\techo 'jigc: out-of-band managed-doc rename staged in this commit — a bare `git mv` bypasses jigc identity tracking; use `jigc rename` instead (commit blocked).' >&2\n\
              \t\texit 1\n\
              \tfi\n\

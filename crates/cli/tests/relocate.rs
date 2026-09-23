@@ -541,8 +541,18 @@ fn an_unaddressable_destination_is_refused_and_the_addressable_sibling_still_mov
         "one refusal per refused doc; got:\n{report}"
     );
     assert!(
-        report.contains("git mv"),
-        "the route must name the act that resolves the state; got:\n{report}"
+        report.contains(&format!(
+            "git -C {} mv",
+            // The door canonicalizes its root, and on macOS the fixture's `/var/…` is a
+            // symlink to `/private/var/…` — so the comparison canonicalizes too rather than
+            // asserting the spelling the test happens to hold.
+            repo.path()
+                .canonicalize()
+                .unwrap_or_else(|_| repo.path().to_path_buf())
+                .display()
+        )),
+        "the route must name the act that resolves the state, aimed at the checkout it runs \
+         in; got:\n{report}"
     );
 
     // (2) The addressable sibling in the SAME run still moves.
@@ -637,7 +647,10 @@ fn an_unaddressable_destination_is_refused_and_the_addressable_sibling_still_mov
 fn backticked_move_route(report: &str) -> Option<String> {
     report
         .split('`')
-        .find(|span| span.contains("git mv "))
+        // The span is aimed since M53 (the cwd census, C1-10): `mkdir -p <abs dir> && git -C
+        // <abs> mv <rel> <rel>`. Both halves name an absolute, because `mkdir` has no `-C`
+        // and the pair has to run from one cwd or the other, not one each.
+        .find(|span| span.contains(" mv "))
         .map(str::to_string)
 }
 

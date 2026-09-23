@@ -836,7 +836,16 @@ fn fan_out_cell(state: GitState, squash_false: bool) {
     );
     assert!(
         stderr.contains(&format!(
-            "git -C .jigc/worktrees/area-low {}",
+            "git -C {} {}",
+            // The `-C` operand is the ABSOLUTE worktree since M53 (the cwd census, C1-06):
+            // `-C` takes a directory, and driven, the repo-relative spelling exited 128 from
+            // every cwd but the repository root — including from a sibling fan-out worktree,
+            // which is where the boundary's own spawn line puts an agent.
+            repo.path()
+                .canonicalize()
+                .unwrap_or_else(|_| repo.path().to_path_buf())
+                .join(".jigc/worktrees/area-low")
+                .display(),
             operation
                 .abandon()
                 .strip_prefix("git ")
@@ -964,7 +973,14 @@ fn the_sub_task_preview_forecasts_the_boundarys_worktree_refusal() {
     assert!(
         text.contains("blocking · repo.operation-in-progress")
             && text.contains(".jigc/worktrees/area-low")
-            && text.contains("git -C .jigc/worktrees/area-low reset"),
+            && text.contains(&format!(
+                "git -C {} reset",
+                repo.path()
+                    .canonicalize()
+                    .unwrap_or_else(|_| repo.path().to_path_buf())
+                    .join(".jigc/worktrees/area-low")
+                    .display(),
+            )),
         "the preview must render the boundary's own finding, route included; \
          stderr:\n{text}",
     );
@@ -1068,6 +1084,13 @@ fn host_spellings(repo: &Path) -> Vec<String> {
 }
 
 fn assert_no_host_path(repo: &Path, surface: &str, text: &str) {
+    // The one declared exception, and it is a region rather than a weakening: a backticked
+    // `git -C <absolute> …` span is bytes the reader RUNS, and git resolves a pathspec against
+    // the caller's cwd (M53 — the cwd census, the route class;
+    // `crates/cli/tests/support/route_spans.rs` carries the whole reason). Everything else on
+    // the surface — the message the span sits in, the `at:` locus, the key, every other span —
+    // is still scanned, and an absolute in a git span that is NOT aimed still fails here.
+    let text = &crate::support::route_spans::redact_aimed_git_spans(text);
     for host in host_spellings(repo) {
         assert!(
             !text.contains(&host),

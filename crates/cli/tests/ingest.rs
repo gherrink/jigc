@@ -880,8 +880,10 @@ fn ingest_refuses_a_conformant_doc_whose_name_is_not_a_doc_id() {
         "the row must carry the identity refusal by code:\n{report}"
     );
     assert!(
-        report.contains("git mv 'docs/decisions/My Decision.md' docs/decisions/my-decision.md"),
-        "the route must name the shell-safe `git mv` that repairs the identity:\n{report}"
+        report.contains(" mv 'docs/decisions/My Decision.md' docs/decisions/my-decision.md")
+            && report.contains("git -C /"),
+        "the route must name the shell-safe `git mv` that repairs the identity, aimed at the \
+         checkout it runs in (M53 — the cwd census, C1-10):\n{report}"
     );
     assert!(
         !report.contains("adopted — indexed + baselined"),
@@ -1001,8 +1003,10 @@ fn ingest_refuses_a_conformant_doc_nested_below_its_flat_home() {
         "the nested candidate must carry the identity refusal by code:\n{report}"
     );
     assert!(
-        report.contains("git mv docs/decisions/sub/nested-one.md docs/decisions/nested-one.md"),
-        "the route must name the `git mv` onto the flat home:\n{report}"
+        report.contains(" mv docs/decisions/sub/nested-one.md docs/decisions/nested-one.md")
+            && report.contains("git -C /"),
+        "the route must name the `git mv` onto the flat home, aimed at the checkout it runs \
+         in (M53 — the cwd census, C1-10):\n{report}"
     );
     assert!(
         !report.contains("adopted — indexed + baselined"),

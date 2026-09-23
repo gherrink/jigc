@@ -530,7 +530,9 @@ fn setup_and_uninstall_reject_on_the_declared_findings_arm() {
     assert!(
         hit["route"]
             .as_str()
-            .is_some_and(|r| r.contains("git add <path>")),
+            // Aimed since M53 (the cwd census, C1-11): the recovery runs in the checkout
+            // the workbench belongs to, from whatever directory the reader is standing in.
+            .is_some_and(|r| r.contains(" add -- <path>") && r.contains("git -C /")),
         "[uninstall] the recovery move is data on the route, not prose in an error string; \
          got:\n{hit:#}",
     );

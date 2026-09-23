@@ -438,20 +438,29 @@ fn an_untracked_in_repo_source_is_refused_and_the_printed_git_add_makes_it_admis
     // claim: the operator copies the line out of the terminal.
     let command = printed_git_command(&stderr);
     assert!(
-        command.starts_with("git add "),
+        command.starts_with("git -C /") && command.contains(" add -- "),
         "the trackedness leg routes at `git add`, the one act that resolves the state \
-         (M45's owner-artifact precedent); got: {command}",
+         (M45's owner-artifact precedent) — aimed at the checkout it stages into since M53 \
+         (the cwd census, C1-03), because git resolves a pathspec against the CALLER's cwd \
+         and this route is read from wherever the agent is standing; got: {command}",
     );
+    // …and run from a SUBDIRECTORY, not from the root. A route is read from wherever the
+    // agent is standing, and at HEAD~ these exact bytes exited **128** from `docs/deep`
+    // (`warning: could not open directory 'docs/deep/docs/deep/'` + `fatal: pathspec …`),
+    // which is the defect the aim closes (M53 — the cwd census, C1-03).
+    let elsewhere = corpus.repo().join("docs").join("deep");
+    fs::create_dir_all(&elsewhere).expect("a subdirectory to stand in");
     let ran = std::process::Command::new("sh")
         .arg("-c")
         .arg(&command)
-        .current_dir(corpus.repo())
+        .current_dir(&elsewhere)
         .env("HOME", corpus.home())
         .output()
         .expect("run the printed git command");
     assert!(
         ran.status.success(),
-        "the printed `{command}` must run as printed; got {}:\n{}",
+        "the printed `{command}` must run as printed, from any directory in the repository; \
+         got {} standing in `docs/deep`:\n{}",
         ran.status,
         String::from_utf8_lossy(&ran.stderr),
     );

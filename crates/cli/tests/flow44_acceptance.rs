@@ -525,8 +525,11 @@ fn a_pre_mint_staged_file_refuses_and_carry_staged_lands_labeled() {
         );
         let route = finding["route"].as_str().expect("the refusal routes");
         assert!(
-            route.contains("--carry-staged") && route.contains("git restore --staged"),
-            "the route names both exits; got: {route}",
+            route.contains("--carry-staged")
+                && route.contains(" restore --staged -- ")
+                && route.contains("git -C /"),
+            "the route names both exits, the unstage aimed at the index it is about \
+             (M53 — the cwd census, C1-01); got: {route}",
         );
     }
     assert!(

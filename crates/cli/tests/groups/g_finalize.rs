@@ -55,6 +55,8 @@ mod flow26_marquee;
 mod flow37_rename;
 #[path = "../freeze_enforcement.rs"]
 mod freeze_enforcement;
+#[path = "../git_span_aim.rs"]
+mod git_span_aim;
 #[path = "../ledger_entry_seven_discharged.rs"]
 mod ledger_entry_seven_discharged;
 #[path = "../ledger_record_truth.rs"]

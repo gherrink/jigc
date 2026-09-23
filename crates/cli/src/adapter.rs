@@ -1239,12 +1239,18 @@ const BOOTSTRAP_OUTPUT_CONTRACT: &str = "Read every command's output; a non-zero
 /// It says both halves, because either alone is a trap: the paths are rooted at the
 /// repository, **and** the binary may be run from anywhere inside it — so an agent that is
 /// not at the root neither has to `cd` before invoking jigc nor may assume a printed path
-/// resolves where it stands. The one exception is the emitted `cd` of a fan-out `Spawn:`
-/// line, which is absolute for exactly that reason and needs no rule here.
+/// resolves where it stands. **Two** spellings are absolute and say so: the emitted `cd` of
+/// a fan-out `Spawn:` line, and — since M53's route class — any backticked `git` command a
+/// finding prints for the reader to run, which leads with `git -C <absolute checkout>`
+/// because git resolves a pathspec against the *caller's* cwd
+/// (`design/surface-contract.md` → The printed-path fence, the *pasteable shell bytes* rule).
+/// The paragraph names the second because it is the one a reader meets on an ordinary gate
+/// refusal; leaving it unsaid would make the sentence above it false, which is the law-1
+/// defect this paragraph exists to close.
 ///
 /// It names no verb and no path, so it cannot rot; it is fenced by the whole-body golden
 /// like its five siblings.
-const BOOTSTRAP_PATHS_AND_CWD: &str = "Every path jigc prints — an `at:` locus, a `jigc doc list` row, a path inside a finding or a route — is relative to the **repository root**, not to your current directory. You may run `jigc` from any directory inside the repository, including a fan-out worktree; it finds the project itself. So resolve a printed path against the repository root, and pass your own file arguments the way you would to any other command — relative to where you are.";
+const BOOTSTRAP_PATHS_AND_CWD: &str = "Every path jigc prints — an `at:` locus, a `jigc doc list` row, a path inside a finding's message — is relative to the **repository root**, not to your current directory. A `git` command jigc prints for you to run is the one exception, and it is one on purpose: it leads with `git -C <the repository's absolute path>`, so you can paste it from wherever you are standing and it acts on the checkout the finding is about. You may run `jigc` from any directory inside the repository, including a fan-out worktree; it finds the project itself. So resolve a printed path against the repository root, and pass your own file arguments the way you would to any other command — relative to where you are.";
 
 /// The machine-output contract stated as the fifth paragraph (M44 Inc 4,
 /// change 1 — RC rc.7 discoverability rerun, 2026-07-20): the preload tier now
@@ -1722,7 +1728,7 @@ mod tests {
 
         `jigc` is a context compiler: it assembles the workflow steps for your task plus the doc slices that workflow declares (a quick fix may declare none), and owns every structural write — placement, cross-references, commits. You author only the prose.
 
-        Every path jigc prints — an `at:` locus, a `jigc doc list` row, a path inside a finding or a route — is relative to the **repository root**, not to your current directory. You may run `jigc` from any directory inside the repository, including a fan-out worktree; it finds the project itself. So resolve a printed path against the repository root, and pass your own file arguments the way you would to any other command — relative to where you are.
+        Every path jigc prints — an `at:` locus, a `jigc doc list` row, a path inside a finding's message — is relative to the **repository root**, not to your current directory. A `git` command jigc prints for you to run is the one exception, and it is one on purpose: it leads with `git -C <the repository's absolute path>`, so you can paste it from wherever you are standing and it acts on the checkout the finding is about. You may run `jigc` from any directory inside the repository, including a fan-out worktree; it finds the project itself. So resolve a printed path against the repository root, and pass your own file arguments the way you would to any other command — relative to where you are.
 
         Read every command's output; a non-zero exit means stop and follow what the output says — never retry blindly. Exit codes: 1 error · 2 usage · 3 blocking findings at a task-scope gate · 4 migration review hold. A store-scope `jigc validate` is report-only — it exits 0 even when it surfaces findings — unless one of a few conditions flips that exit, such as a doc stamped above this build's schema-version: then it exits non-zero and its closing line names the condition and why.
 

@@ -768,12 +768,20 @@ impl CarryoverBoundary {
 /// A separate decision fn rather than a planner phase, so the CLI can keep the refuse
 /// on the **committing** path only — a planner-internal refuse would also block the
 /// `--dry-run` forecast, which consumes the plan.
+///
+/// `home` is the **absolute root of the checkout whose index this decision is about** — the
+/// caller's own repo root, which at `jigc task finalize` is the standing checkout (the
+/// checkout the door commits in, `crates/cli/src/render.rs` → the commit-site line) and at
+/// the milestone boundary is the workbench's. The route's `git restore --staged` names it, so
+/// the unstage reaches the index the refusal is about from any directory
+/// ([`crate::finding::git_at`]).
 pub fn decide_carryover(
     snapshot: Option<&StagedSnapshot>,
     current: &StagedSnapshot,
     retire_exempt: Option<&str>,
     owner_exempt: &[String],
     boundary: CarryoverBoundary,
+    home: &Path,
 ) -> Vec<Finding> {
     // Missing snapshot ⇒ fail-open: a task minted before the gate existed finalizes
     // as today (the declared bound).
@@ -813,7 +821,7 @@ pub fn decide_carryover(
     carried
         .into_iter()
         .filter(|(path, _)| !exempt.contains(Path::new(path)))
-        .map(|(path, is_deletion)| carried_staged_finding(path, is_deletion, boundary))
+        .map(|(path, is_deletion)| carried_staged_finding(path, is_deletion, boundary, home))
         .collect()
 }
 
@@ -830,13 +838,24 @@ pub fn decide_carryover(
 /// whole-index commit would silently absorb the entry; a milestone's aggregate cannot
 /// carry it — the entry stays staged across the boundary either way; and the `task
 /// validate` preview names the finalize that *will* refuse rather than claiming one did.
-fn carried_staged_finding(path: &str, is_deletion: bool, boundary: CarryoverBoundary) -> Finding {
+fn carried_staged_finding(
+    path: &str,
+    is_deletion: bool,
+    boundary: CarryoverBoundary,
+    home: &Path,
+) -> Finding {
     let what = if is_deletion {
         "staged for deletion"
     } else {
         "staged"
     };
     let kind = if is_deletion { "deletion" } else { "change" };
+    // The unstage names the index it acts on; the message, the `at:` locus and the
+    // `(code, target)` key stay repo-relative (M53 — the cwd census, the route class).
+    let unstage = crate::finding::git_at(
+        home,
+        &format!("restore --staged -- {}", crate::finding::shell_token(path)),
+    );
     let (message, route) = match boundary {
         CarryoverBoundary::Task => (
             format!(
@@ -844,10 +863,8 @@ fn carried_staged_finding(path: &str, is_deletion: bool, boundary: CarryoverBoun
                  pre-task staged {kind} silently ride this task's commit"
             ),
             format!(
-                "unstage it (`git restore --staged -- {token}`) if it is not this task's \
-                 work, or re-run the finalize with `--carry-staged` to declare the \
-                 carry-over deliberate",
-                token = crate::finding::shell_token(path),
+                "unstage it (`{unstage}`) if it is not this task's work, or re-run the \
+                 finalize with `--carry-staged` to declare the carry-over deliberate"
             ),
         ),
         // The preview door (M47 Inc 4): nothing has been refused, so the message says
@@ -859,10 +876,9 @@ fn carried_staged_finding(path: &str, is_deletion: bool, boundary: CarryoverBoun
                  will refuse to let a pre-task staged {kind} silently ride this task's commit"
             ),
             format!(
-                "unstage it (`git restore --staged -- {token}`) if it is not this task's \
-                 work, or pass `--carry-staged` — accepted here and at the finalize — to \
-                 declare the carry-over deliberate",
-                token = crate::finding::shell_token(path),
+                "unstage it (`{unstage}`) if it is not this task's work, or pass \
+                 `--carry-staged` — accepted here and at the finalize — to declare the \
+                 carry-over deliberate"
             ),
         ),
         // The `Setup` door is not a per-path door: its refusal is ONE finding over the
@@ -881,10 +897,8 @@ fn carried_staged_finding(path: &str, is_deletion: bool, boundary: CarryoverBoun
                  {kind} stays staged, undeclared, across this boundary"
             ),
             format!(
-                "unstage it (`git restore --staged -- {token}`) if it is stale, or re-run \
-                 the finalize with `--carry-staged` to declare it deliberate (it stays \
-                 staged either way)",
-                token = crate::finding::shell_token(path),
+                "unstage it (`{unstage}`) if it is stale, or re-run the finalize with \
+                 `--carry-staged` to declare it deliberate (it stays staged either way)"
             ),
         ),
     };
@@ -3782,6 +3796,7 @@ sections:
             None,
             &[],
             CarryoverBoundary::Task,
+            std::path::Path::new("/repo"),
         );
         assert_eq!(findings.len(), 1, "one finding per carried path — only one");
         let finding = &findings[0];
@@ -3803,8 +3818,9 @@ sections:
             "the route names the declare-it-deliberate override: {route:?}"
         );
         assert!(
-            route.contains("git restore --staged"),
-            "the route names the unstage exit: {route:?}"
+            route.contains("git -C /repo restore --staged"),
+            "the route names the unstage exit, aimed at the index it is about (M53 — the \
+             cwd census, C1-01): {route:?}"
         );
         // Through the serialization seam: the route floor + declared-target asserts hold.
         serde_json::to_string(&crate::finding::Findings::from(findings))
@@ -3828,7 +3844,8 @@ sections:
                 &current,
                 None,
                 &[],
-                CarryoverBoundary::Task
+                CarryoverBoundary::Task,
+                std::path::Path::new("/repo"),
             ),
             Vec::new(),
             "a restaged / cleared / restored path is not a carryover",
@@ -3847,6 +3864,7 @@ sections:
             None,
             &[],
             CarryoverBoundary::Task,
+            std::path::Path::new("/repo"),
         );
         assert_eq!(findings.len(), 1, "the staged deletion is carried");
         assert_eq!(findings[0].code, "finalize.carried-staged");
@@ -3871,6 +3889,7 @@ sections:
             Some("./legacy/CHANGES.md"),
             &[],
             CarryoverBoundary::Task,
+            std::path::Path::new("/repo"),
         );
         assert_eq!(
             findings.len(),
@@ -3908,7 +3927,14 @@ sections:
 
         // Every task-boundary door: the owner-artifact is exempt; the foreign entry blocks.
         for boundary in [CarryoverBoundary::Task, CarryoverBoundary::TaskPreview] {
-            let task = decide_carryover(Some(&snapshot), &current, None, &owner_exempt, boundary);
+            let task = decide_carryover(
+                Some(&snapshot),
+                &current,
+                None,
+                &owner_exempt,
+                boundary,
+                std::path::Path::new("/repo"),
+            );
             assert_eq!(
                 task.len(),
                 1,
@@ -3925,6 +3951,7 @@ sections:
             None,
             &owner_exempt,
             CarryoverBoundary::Milestone,
+            std::path::Path::new("/repo"),
         );
         assert_eq!(
             milestone.len(),
@@ -3940,7 +3967,14 @@ sections:
     fn carryover_missing_snapshot_fails_open_empty_snapshot_carries_nothing() {
         let current = staged(&[("src/foreign.rs", "aaaa1111")], &["legacy/OLD.md"]);
         assert_eq!(
-            decide_carryover(None, &current, None, &[], CarryoverBoundary::Task),
+            decide_carryover(
+                None,
+                &current,
+                None,
+                &[],
+                CarryoverBoundary::Task,
+                std::path::Path::new("/repo"),
+            ),
             Vec::new(),
             "no snapshot (pre-M43 mint) ⇒ fail-open, no findings",
         );
@@ -3950,7 +3984,8 @@ sections:
                 &current,
                 None,
                 &[],
-                CarryoverBoundary::Task
+                CarryoverBoundary::Task,
+                std::path::Path::new("/repo"),
             ),
             Vec::new(),
             "an empty snapshot (clean index at mint) carries nothing",
@@ -3973,6 +4008,7 @@ sections:
             None,
             &[],
             CarryoverBoundary::Task,
+            std::path::Path::new("/repo"),
         );
         let targets: Vec<Option<String>> = findings.iter().map(|f| f.key().target).collect();
         assert_eq!(
@@ -3996,7 +4032,8 @@ sections:
                 &current_rev,
                 None,
                 &[],
-                CarryoverBoundary::Task
+                CarryoverBoundary::Task,
+                std::path::Path::new("/repo"),
             ),
             "the decision is a function of the sets — identical across build orders",
         );
@@ -4018,6 +4055,7 @@ sections:
             None,
             &[],
             CarryoverBoundary::Milestone,
+            std::path::Path::new("/repo"),
         );
         assert_eq!(findings.len(), 2, "both halves still carry — same decision");
         for finding in &findings {
@@ -4035,8 +4073,9 @@ sections:
                 finding.message
             );
             assert!(
-                route.contains("--carry-staged") && route.contains("git restore --staged"),
-                "the route names both exits: {route:?}"
+                route.contains("--carry-staged") && route.contains("git -C /repo restore --staged"),
+                "the route names both exits, the unstage aimed at the index it is about: \
+                 {route:?}"
             );
         }
     }
@@ -4058,6 +4097,7 @@ sections:
             None,
             &[],
             CarryoverBoundary::TaskPreview,
+            std::path::Path::new("/repo"),
         );
         let committing = decide_carryover(
             Some(&snapshot),
@@ -4065,6 +4105,7 @@ sections:
             None,
             &[],
             CarryoverBoundary::Task,
+            std::path::Path::new("/repo"),
         );
         assert_eq!(preview.len(), 2, "the same decision, both halves");
         assert_eq!(
@@ -4094,8 +4135,9 @@ sections:
                 finding.message
             );
             assert!(
-                route.contains("--carry-staged") && route.contains("git restore --staged"),
-                "the route names both exits: {route:?}"
+                route.contains("--carry-staged") && route.contains("git -C /repo restore --staged"),
+                "the route names both exits, the unstage aimed at the index it is about: \
+                 {route:?}"
             );
         }
         // The committing door is untouched by the preview existing.

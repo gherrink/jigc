@@ -21,6 +21,7 @@ pub mod frozen_pack;
 pub mod git_state;
 pub mod goldens;
 pub mod leaf_argv;
+pub mod route_spans;
 pub mod rust_source;
 pub mod shape_space;
 pub mod trial_corpus;

@@ -879,6 +879,165 @@ pub fn shell_operand(value: &str) -> String {
     }
 }
 
+/// **The runnable spelling of a git command over a repository path** — `git -C <absolute
+/// checkout> <rest>`, the one home of the rule every operator-facing `git` span obeys
+/// (M53 — the cwd census, the route class; `design/surface-contract.md` → The printed-path
+/// fence, the *pasteable shell bytes* disposition).
+///
+/// Law 1 renders every printed path **repo-relative**, and that is right for a message, an
+/// `at:` locus and a `(code, target)` key — the three surfaces a reader reads and a driver
+/// keys on, which must mean the same thing in every clone and in both checkouts a fan-out is
+/// made of. It is wrong for the one span that is not read but **run**: git resolves a
+/// pathspec against the *caller's* cwd, so a route whose operand is repo-relative runs only
+/// from the repository root. Driven from `docs/deep`, `git restore --staged --
+/// docs/deep/carried.txt` exits **1** (`pathspec … did not match`) and `git add --
+/// docs/deep/untracked.md` exits **128**; from a linked worktree the same bytes reach the
+/// wrong index entirely, which no relative spelling can fix, because `:/` means *that*
+/// worktree's top.
+///
+/// So the command names the checkout it must run in, and its operands stay repo-relative
+/// **to that checkout** — one insertion after the program name, which is why it is a render
+/// rather than a per-producer rewrite. `home` is the absolute path of the checkout whose
+/// index or worktree the command acts on: the door's own resolved repository root, never a
+/// discovery of this function's — the engine ships filesystem-free by invariant and is handed
+/// the value (`crates/cli/src/repo.rs` → `discover_repo_root` / `jigc_home`, whichever the
+/// door's subject is).
+///
+/// It sits beside [`shell_token`] because the engine mints these spans too
+/// (`finalize`'s `git restore --staged`, `validate`'s owner-artifact `git add`,
+/// `file_state`'s `git mv`), and the home is rendered through [`shell_operand`], so a
+/// checkout under a directory with a space stays one operand.
+///
+/// [`unaimed_git_span`] is the standing fence: a span this render does not produce, carrying
+/// an operand, is a route that runs from one directory only.
+pub fn git_at(home: &std::path::Path, rest: &str) -> String {
+    format!("git -C {} {rest}", shell_operand(&home.to_string_lossy()),)
+}
+
+/// The git (sub)commands whose operands are **not repository paths**, each with the reason
+/// it needs no `-C` — the declared complement of [`git_at`]'s domain
+/// (`design/surface-contract.md` → The printed-path fence).
+///
+/// A command here is exempt **only while the span carries no `--` separator**: `--` is git's
+/// own announcement that what follows is a pathspec, so `git checkout <rev>` is a ref
+/// operation and `git checkout -- <path>` is a path one, spelled with the same verb.
+const GIT_NON_PATH_COMMANDS: &[(&str, &str)] = &[
+    (
+        "init",
+        "its subject IS the caller's directory — `git init` creates a repository where you \
+         are standing, so aiming it at an existing checkout would name the wrong act",
+    ),
+    (
+        "switch",
+        "its operand is a branch name, and the branch it switches is the one belonging to \
+         the checkout the reader is standing in — which is the checkout the posture refusal \
+         that prints it is about (`crate::finding` → the `repo.head-detached` family). Where \
+         that is NOT the standing checkout the producer aims it anyway, through \
+         `crate::repo::aim_at`",
+    ),
+    (
+        "checkout",
+        "its operand is a revision (a base-pin short sha, a branch) — a ref, not a path. A \
+         `git checkout -- <path>` carries the `--` separator and is not exempt",
+    ),
+    (
+        "config",
+        "its operands are a configuration key and its value — `git config user.email \
+         \"you@example.com\"`, which names no file",
+    ),
+];
+
+/// Git porcelain whose **second** word is part of the command name rather than an operand,
+/// so `git worktree prune` reads as operand-less and `git worktree remove --force <path>`
+/// does not. Declared rather than derived: git's verb tree is not ours to infer, and the set
+/// this codebase's spans actually reach is small enough to name.
+const GIT_COMMAND_GROUPS: &[&str] = &["worktree", "stash", "submodule", "remote", "bisect"];
+
+/// **The aim fence**: the first backticked `git …` span in `text` that carries an operand and
+/// does not name the checkout it runs in, if any.
+///
+/// The question it asks is *"would these bytes do the same thing from any directory in the
+/// repository?"* — and the answer is yes in exactly three shapes:
+///
+/// 1. the span leads with `-C <absolute>` ([`git_at`]'s render, or a producer aiming at a
+///    different checkout through `crate::repo::aim_at`);
+/// 2. it carries **no operand** — every token after the command words is a flag, so the span
+///    names a command (`git add`, `git worktree prune`, `git stash -u`) without saying which
+///    file, and there is nothing for a cwd to resolve;
+/// 3. its command is declared in [`GIT_NON_PATH_COMMANDS`] and the span carries no `--`.
+///
+/// Everything else is a path operand a shell resolves against wherever the reader happens to
+/// be, which is the defect this fence exists for. An operand that is **nothing but** a
+/// `<placeholder>` still counts as an operand: the reader fills it with a path, and a
+/// placeholder is exactly where the base is least obvious.
+///
+/// It is deliberately **not** applied to prose outside a route: a line whose subject is the
+/// command that failed quotes the invocation jigc ran, and relativizing or aiming one half of
+/// a quotation misquotes it (the *quoting an invocation* disposition, same section).
+pub fn unaimed_git_span(text: &str) -> Option<String> {
+    for span in backticked_spans(text) {
+        let tokens: Vec<String> = command_tokens(span).collect();
+        let Some(head) = tokens.first() else { continue };
+        if head != "git" {
+            continue;
+        }
+        let rest = &tokens[1..];
+        // 1 — already aimed. `-C` is git's own redirection, and the value must be absolute:
+        // a relative `-C` is the census's C1-06, which exits 128 from every cwd but one.
+        if rest.first().map(String::as_str) == Some("-C") {
+            let dir = rest.get(1).map(String::as_str).unwrap_or("");
+            let bare = dir.trim_matches('\'');
+            if bare.starts_with('/') || bare.starts_with('<') {
+                continue;
+            }
+            return Some(span.to_owned());
+        }
+        // The command words: the first non-flag token, plus a second where the first opens a
+        // porcelain group. Anything after them, and anything after a `--`, is an operand.
+        let mut command = String::new();
+        let mut want_group_word = false;
+        let mut operand = None;
+        let mut saw_separator = false;
+        for token in rest {
+            if token == "--" {
+                saw_separator = true;
+                continue;
+            }
+            if token.starts_with('-') {
+                continue;
+            }
+            if !saw_separator && command.is_empty() {
+                command.push_str(token);
+                want_group_word = GIT_COMMAND_GROUPS.contains(&token.as_str());
+                continue;
+            }
+            if !saw_separator && want_group_word {
+                command.push(' ');
+                command.push_str(token);
+                want_group_word = false;
+                continue;
+            }
+            operand = Some(token.clone());
+            break;
+        }
+        // 2 — no operand at all.
+        if operand.is_none() {
+            continue;
+        }
+        // 3 — a declared non-path command, and no `--` to say otherwise.
+        let head_word = command.split(' ').next().unwrap_or("");
+        if !saw_separator
+            && GIT_NON_PATH_COMMANDS
+                .iter()
+                .any(|(name, _)| *name == head_word)
+        {
+            continue;
+        }
+        return Some(span.to_owned());
+    }
+    None
+}
+
 /// Whether one emitted command-line token survives a real shell as **exactly itself** — the
 /// predicate [`shell_token`] satisfies, and the quoting half of the M43 route fence.
 ///
@@ -1089,6 +1248,21 @@ fn fence_command_spans(text: &str) {
              an emitted command line must be rendered through \
              `engine::finding::shell_token` (route text: {text:?}; \
              design/surface-contract.md \u{2192} The route fence)"
+        );
+    }
+    // The **aim** half (M53 — the cwd census, the route class): copy-runnable is not enough
+    // if the bytes only run from one directory. A `git` span carrying a path operand must
+    // name the checkout it runs in, because git resolves a pathspec against the caller's cwd
+    // and a route is read from wherever the agent happens to be standing.
+    #[cfg(debug_assertions)]
+    if let Some(span) = unaimed_git_span(text) {
+        panic!(
+            "a route's `git` span must name the checkout it runs in: `{span}` carries a path \
+             operand and does not lead with `-C <absolute>`, so it resolves that operand \
+             against the reader's cwd — run from a subdirectory or from a fan-out worktree it \
+             addresses the wrong file or the wrong index. Render it through \
+             `engine::finding::git_at(<the door's absolute repo root>, …)` (route text: \
+             {text:?}; design/surface-contract.md \u{2192} The printed-path fence)"
         );
     }
     #[cfg(not(debug_assertions))]
@@ -1582,12 +1756,17 @@ mod tests {
     /// An unquoted path holding a space is two inert tokens, so `` `git add -- my notes.md` ``
     /// passes [`command_spans_are_shell_safe`] and exits 128 when run; the finding's own
     /// located address is the word boundary that says so, and [`Finding::graded`] asserts it.
+    ///
+    /// The span is **aimed** (`git -C /repo …`) so that the sibling aim fence, which fires
+    /// first at the `Route` constructor, is not what this test measures: the two halves are
+    /// independent, and a route can be aimed and still name its subject unquoted.
     #[test]
     #[should_panic(expected = "which a shell does not re-lex as itself")]
     fn a_route_naming_its_own_unsafe_subject_unquoted_fires_the_subject_fence() {
         let path = "my notes.md";
+        let home = std::path::Path::new("/repo");
         assert!(
-            command_spans_are_shell_safe(&format!("`git add -- {path}`")),
+            command_spans_are_shell_safe(&git_at(home, &format!("add -- {path}"))),
             "the token check is blind here — that blindness is what this fence covers"
         );
         let _ = Finding::graded(
@@ -1595,7 +1774,10 @@ mod tests {
             "migrate.source-untracked",
             "untracked",
             Some(Location::addressed(path, 1, 1)),
-            Some(Route::human(format!("stage it with `git add -- {path}`"))),
+            Some(Route::human(format!(
+                "stage it with `{}`",
+                git_at(home, &format!("add -- {path}"))
+            ))),
         );
     }
 
@@ -1610,13 +1792,16 @@ mod tests {
             "untracked",
             Some(Location::addressed(path, 1, 1)),
             Some(Route::human(format!(
-                "stage it with `git add -- {}`",
-                shell_token(path)
+                "stage it with `{}`",
+                git_at(
+                    std::path::Path::new("/repo"),
+                    &format!("add -- {}", shell_token(path))
+                )
             ))),
         );
         assert_eq!(
             finding.route.expect("routed").as_str(),
-            "stage it with `git add -- 'my notes.md'`"
+            "stage it with `git -C /repo add -- 'my notes.md'`"
         );
     }
 

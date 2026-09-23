@@ -2410,8 +2410,11 @@ fn owner_artifact_present(
                         location,
                         Some(Route::human(format!(
                             "the artifact is present but not staged — stage it with \
-                             `git add {}` so it is durably committed with this task",
-                            crate::finding::shell_token(path.trim())
+                             `{}` so it is durably committed with this task",
+                            crate::finding::git_at(
+                                repo_root,
+                                &format!("add -- {}", crate::finding::shell_token(path.trim())),
+                            )
                         ))),
                     )
                 } else {
@@ -6406,10 +6409,13 @@ The audit landed green.
             route.kind()
         );
         assert!(
-            route
-                .as_str()
-                .contains("git add completions/artifacts/M16/audit.md"),
-            "the untracked route names `git add <path>`, got: {}",
+            route.as_str().contains(&format!(
+                "git -C {} add -- completions/artifacts/M16/audit.md",
+                repo.path().display()
+            )),
+            "the untracked route names `git add -- <path>`, aimed at the checkout the task \
+             commits in (M53 — the cwd census, C1-05; the `--` is git's own \
+             option-parsing guard, which this span had been missing): got: {}",
             route.as_str()
         );
 

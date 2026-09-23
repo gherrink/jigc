@@ -233,6 +233,7 @@ pub(crate) fn run(cwd: &Path) -> Result<IngestReport> {
             mut row,
             identity: minted,
         } = classify_row(
+            &jigc_home,
             &rel_path,
             &source,
             &schemas,
@@ -366,6 +367,7 @@ impl Classified {
 /// compute its adopt-time annotations ([`adopt_annotations`]); `exempt` is the
 /// resolved `…repeatable-populated.exempt` knob value.
 fn classify_row(
+    repo_root: &Path,
     rel_path: &str,
     source: &str,
     schemas: &[Schema],
@@ -391,6 +393,7 @@ fn classify_row(
                     best_match: Some(home.ty.clone()),
                     verdict: "needs-reconcile",
                     finding: Some(unaddressable_identity_finding(
+                        repo_root,
                         rel_path,
                         home,
                         UnaddressableDoor::Ingest,
@@ -713,14 +716,23 @@ impl UnaddressableDoor {
     ///   no-op over a home some addressable sibling of the same sweep already created, and a
     ///   route whose text depends on which rows happened to precede it is a route no suite
     ///   can pin.
-    fn repair_prefix(self, destination: &str) -> String {
+    fn repair_prefix(self, repo_root: &Path, destination: &str) -> String {
         match self {
             UnaddressableDoor::Ingest => String::new(),
             UnaddressableDoor::Relocate => Path::new(destination)
                 .parent()
-                .map(|dir| dir.to_string_lossy().into_owned())
-                .filter(|dir| !dir.is_empty())
-                .map(|dir| format!("mkdir -p {} && ", crate::task::shell_token(&dir)))
+                .filter(|dir| !dir.as_os_str().is_empty())
+                // **Absolute, like the `git -C` it precedes** (M53 — the cwd census, C1-10).
+                // `mkdir` has no `-C`, so the only way this half runs where the `git mv` half
+                // does is to name the directory outright; a repo-relative `mkdir -p
+                // docs/new` pasted from a subdirectory creates a second `docs/new` under the
+                // caller and the `git mv` beside it still dies at 128.
+                .map(|dir| {
+                    format!(
+                        "mkdir -p {} && ",
+                        engine::finding::shell_operand(&repo_root.join(dir).to_string_lossy())
+                    )
+                })
                 .unwrap_or_default(),
         }
     }
@@ -800,6 +812,7 @@ pub const UNADDRESSABLE_IDENTITY: &str = "ingest.unaddressable-identity";
 /// never creates its destination directory, and at the relocate door that directory is the
 /// new home nothing has moved into yet.
 pub(crate) fn unaddressable_identity_finding(
+    repo_root: &Path,
     rel_path: &str,
     schema: &Schema,
     door: UnaddressableDoor,
@@ -864,14 +877,23 @@ pub(crate) fn unaddressable_identity_finding(
     };
     let repair = match &destination {
         Some(destination) => format!(
-            "{act} — `{}git mv {} {}` — {}",
+            "{act} — `{}{}` — {}",
             // The destination's home is created by the emitted line itself where the door
             // has not created it ([`UnaddressableDoor::repair_prefix`]) — a `git mv` into a
             // directory that does not exist is a route that, followed exactly, changes
             // nothing.
-            door.repair_prefix(destination),
-            crate::task::shell_token(rel_path),
-            crate::task::shell_token(destination),
+            door.repair_prefix(repo_root, destination),
+            // `git mv` takes paths and refuses a pathspec outright, so the move names the
+            // checkout it runs in and keeps both operands repo-relative to it (M53 — the cwd
+            // census, C1-10).
+            engine::finding::git_at(
+                repo_root,
+                &format!(
+                    "mv {} {}",
+                    crate::task::shell_token(rel_path),
+                    crate::task::shell_token(destination),
+                ),
+            ),
             door.follow_up(),
         ),
         // No destination can be minted (the name normalizes to nothing), so the route

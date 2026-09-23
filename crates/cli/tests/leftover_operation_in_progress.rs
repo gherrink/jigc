@@ -244,6 +244,7 @@ fn assert_named_the_operation(
     cell: &str,
     code: &str,
     printed: &str,
+    aimed_at: &Path,
     operation: cli::repo::InProgress,
 ) {
     assert!(
@@ -261,8 +262,17 @@ fn assert_named_the_operation(
         stderr.contains(printed),
         "{cell}: the refusal must name WHICH path holds it; stderr:\n{stderr}",
     );
+    // **The route's `-C` operand is the ABSOLUTE worktree** (M53 — the cwd census, C1-06):
+    // `-C` takes a directory a shell resolves against the reader's cwd, and driven, the
+    // repo-relative spelling exited 128 from every directory but the repository root. The
+    // `printed` assertion above is unmoved — the message still names the path repo-relative,
+    // because that half is read rather than run.
     let aimed = format!(
-        "git -C {printed} {}",
+        "git -C {} {}",
+        aimed_at
+            .canonicalize()
+            .unwrap_or_else(|_| aimed_at.to_path_buf())
+            .display(),
         operation
             .abandon()
             .strip_prefix("git ")
@@ -324,6 +334,7 @@ fn discard_cell(state: GitState) -> bool {
         &cell,
         "milestone.dirty-worktree",
         &fx.printed(),
+        &worktree,
         operation,
     );
     assert!(
@@ -462,6 +473,7 @@ fn every_refusing_worktree_door_refuses_a_live_operation_and_takes_it_only_on_co
                 &cell,
                 code,
                 &fx.printed(),
+                &fx.worktree(),
                 cli::repo::InProgress::Bisect,
             );
             assert_eq!(

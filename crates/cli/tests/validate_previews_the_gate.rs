@@ -289,7 +289,8 @@ fn a_pre_staged_before_mint_plant_is_reported_at_validate() {
             "the preview never claims a finalize refused (law 1); got: {message}"
         );
         assert!(
-            route.contains(&format!("git restore --staged -- {path}"))
+            route.contains(&format!(" restore --staged -- {path}"))
+                && route.contains("git -C /")
                 && route.contains("--carry-staged"),
             "the route names both exits (unstage, or declare); got: {route}"
         );
@@ -423,9 +424,19 @@ fn the_finalize_door_is_byte_identical() {
         assert_eq!(
             finding["route"],
             format!(
-                "unstage it (`git restore --staged -- {path}`) if it is not this task's work, \
-                 or re-run the finalize with `--carry-staged` to declare the carry-over \
-                 deliberate"
+                "unstage it (`git -C {home} restore --staged -- {path}`) if it is not this \
+                 task's work, or re-run the finalize with `--carry-staged` to declare the \
+                 carry-over deliberate",
+                // The one part of the pinned bytes that is a fact about the machine: the
+                // checkout the unstage runs in (M53 — the cwd census, C1-01). Everything
+                // else is still compared byte for byte, which is what this arm is for.
+                // Canonicalized, because the door resolves its root from `current_dir()` and
+                // on macOS the fixture's `/var/…` is a symlink to `/private/var/…`.
+                home = repo
+                    .path()
+                    .canonicalize()
+                    .unwrap_or_else(|_| repo.path().to_path_buf())
+                    .display(),
             ),
             "the committing door's route is unchanged"
         );

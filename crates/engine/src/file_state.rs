@@ -794,6 +794,7 @@ pub fn reconcile_committed_store(
                 &untracked_refs,
                 history,
                 live,
+                repo_root,
             ));
         }
     }
@@ -994,6 +995,7 @@ pub fn detect_committed_store_renames(
             &untracked_refs,
             &|_| true,
             &LiveRecord::none(),
+            repo_root,
         );
         if !detected.is_empty() {
             renamed.insert(from);
@@ -1304,9 +1306,10 @@ pub fn detect_rename(
     untracked: &[(&str, String)],
     history: &crate::validate::HistoryPredicate<'_>,
     live: &LiveRecord,
+    home: &Path,
 ) -> Vec<Finding> {
     match untracked.iter().find(|(_, hash)| hash == recorded_hash) {
-        Some((suspect, _)) => vec![rename_strong_finding(path, from, suspect)],
+        Some((suspect, _)) => vec![rename_strong_finding(path, from, suspect, home)],
         // History-gate the weak signal (M45, Decision 7). `history(path)` is `git log HEAD
         // -1 -- <path>` non-empty: present → a genuine deletion keeps blocking; empty → a
         // dangling baseline the checkout moved underneath the cache, downgraded to advisory.
@@ -1333,7 +1336,18 @@ pub fn detect_rename(
 /// every referrer atomically) or revert the suspected `git mv`. The detector itself
 /// leaves referrer refs untouched — it hands the identity change to the owned op or the
 /// human.
-fn rename_strong_finding(path: &str, from: &str, suspect: &str) -> Finding {
+fn rename_strong_finding(path: &str, from: &str, suspect: &str, home: &Path) -> Finding {
+    // `git mv` takes paths, not pathspecs — `:/`-prefixing is refused outright
+    // (`fatal: bad source`) — so the revert names the checkout it runs in and keeps both
+    // operands repo-relative to it (M53 — the cwd census, C1-09).
+    let revert = crate::finding::git_at(
+        home,
+        &format!(
+            "mv {suspect_token} {path_token}",
+            suspect_token = crate::finding::shell_token(suspect),
+            path_token = crate::finding::shell_token(path)
+        ),
+    );
     Finding::graded(
         Severity::Blocking,
         "reconciliation.rename",
@@ -1342,9 +1356,7 @@ fn rename_strong_finding(path: &str, from: &str, suspect: &str) -> Finding {
         ),
         Some(Location::addressed(path, 1, 1)),
         Some(format!(
-            "adopt it as a CLI-owned rename (re-points every referrer atomically): `jigc rename {from} --to \"<New Title>\"`; or revert the move: `git mv {suspect_token} {path_token}`",
-            suspect_token = crate::finding::shell_token(suspect),
-            path_token = crate::finding::shell_token(path)
+            "adopt it as a CLI-owned rename (re-points every referrer atomically): `jigc rename {from} --to \"<New Title>\"`; or revert the move: `{revert}`"
         ).into()),
     )
 }
@@ -2298,6 +2310,7 @@ Referrers must point at the new decision.
             &untracked,
             &|_| true,
             &LiveRecord::none(),
+            std::path::Path::new("/repo"),
         );
 
         assert_eq!(findings.len(), 1, "strong signal emits exactly one finding");
@@ -2313,8 +2326,11 @@ Referrers must point at the new decision.
             .as_deref()
             .expect("strong signal carries a revert route");
         assert!(
-            route.contains("git mv") && route.contains(MOVED) && route.contains(TRACKED),
-            "the route directs a `git mv … revert` of the moved file back to the tracked path: {route:?}"
+            route.contains("git -C /repo mv") && route.contains(MOVED) && route.contains(TRACKED),
+            "the route directs a `git mv … revert` of the moved file back to the tracked \
+             path, aimed at the checkout it runs in (M53 — the cwd census, C1-09; `git mv` \
+             refuses a pathspec, so `-C` is the only spelling that runs from anywhere): \
+             {route:?}"
         );
         assert!(
             route.contains("jigc rename") && !route.contains("jigc doc rename"),
@@ -2346,6 +2362,7 @@ Referrers must point at the new decision.
             &untracked,
             &|_| true,
             &LiveRecord::none(),
+            std::path::Path::new("/repo"),
         );
 
         assert_eq!(findings.len(), 1, "weak signal emits exactly one finding");
@@ -2393,6 +2410,7 @@ Referrers must point at the new decision.
             &untracked,
             &|_| false,
             &LiveRecord::none(),
+            std::path::Path::new("/repo"),
         );
 
         assert_eq!(

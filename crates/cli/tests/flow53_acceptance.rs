@@ -2720,6 +2720,12 @@ fn the_route_span_fence_is_live_on_all_three_constructors() {
     // …and the SUBJECT half, which is the commonest spelling of the defect: an unquoted
     // path with a space is not one bad token but two inert ones, so the word boundary comes
     // from the finding's own located address rather than from the text.
+    //
+    // **Both spans are aimed** (M53 — the cwd census, the route class), because the AIM fence
+    // fires first at the `Route` constructor and would otherwise be what this arm measured.
+    // The two halves are independent: a route can name the checkout it runs in and still name
+    // its subject unquoted, which is exactly the cell below.
+    let home = std::path::Path::new("/repo");
     let spaced_unquoted = std::panic::catch_unwind(|| {
         let _ = Finding::graded(
             Severity::Blocking,
@@ -2727,7 +2733,8 @@ fn the_route_span_fence_is_live_on_all_three_constructors() {
             "an untracked managed file",
             Some(Location::addressed(SPACED_PATH, 1, 1)),
             Some(Route::human(format!(
-                "stage it with `git add -- {SPACED_PATH}`"
+                "stage it with `{}`",
+                engine::finding::git_at(home, &format!("add -- {SPACED_PATH}")),
             ))),
         );
     });
@@ -2738,8 +2745,8 @@ fn the_route_span_fence_is_live_on_all_three_constructors() {
             "an untracked managed file",
             Some(Location::addressed(SPACED_PATH, 1, 1)),
             Some(Route::human(format!(
-                "stage it with `git add -- {}`",
-                shell_token(SPACED_PATH),
+                "stage it with `{}`",
+                engine::finding::git_at(home, &format!("add -- {}", shell_token(SPACED_PATH))),
             ))),
         );
     });

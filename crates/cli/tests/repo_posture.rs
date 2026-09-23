@@ -1478,9 +1478,15 @@ fn the_fan_out_site_re_aims_the_route_and_changes_nothing_else() {
     let repo = GitStateRepo::build(GitState::Merge);
     let breach = &posture(&repo.repo())[0];
     let here = breach.finding();
-    let there = breach.finding_at(cli::repo::BreachSite::FanOutWorktree(
-        ".jigc/worktrees/area-low",
-    ));
+    // Two spellings of one directory, and the arm carries both on purpose (M53 — the cwd
+    // census, C1-06): the repo-relative half is the message, the `at:` locus and the key; the
+    // absolute half is the route's `-C` operand, because `-C` takes a directory a shell
+    // resolves against the reader's cwd and no relative spelling survives that.
+    let abs = repo.repo().join(".jigc/worktrees/area-low");
+    let there = breach.finding_at(cli::repo::BreachSite::FanOutWorktree {
+        at: ".jigc/worktrees/area-low",
+        abs: &abs,
+    });
 
     assert_eq!(
         here.code, there.code,
@@ -1520,7 +1526,8 @@ fn the_fan_out_site_re_aims_the_route_and_changes_nothing_else() {
         );
         assert!(
             there_route.contains(&format!(
-                "git -C .jigc/worktrees/area-low {}",
+                "git -C {} {}",
+                abs.display(),
                 command.strip_prefix("git ").expect("a git invocation"),
             )),
             "the worktree route must be the same command, aimed — got: {there_route}",
