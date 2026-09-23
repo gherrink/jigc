@@ -1038,8 +1038,14 @@ const GUARDED_SRC: &[&str] = &[
 /// that falsifies it (`start.rs`, `config.rs`, `setup.rs`), joining the two struck at
 /// Increments 1 and 4 (`pack.rs`, `task.rs`). The five that hold — `finalize.rs` (its eleven
 /// sites are exactly the five named helpers, and none of them is handed a repo root),
-/// `locate.rs`, `doc.rs`, `adapter.rs` and `orient.rs` — stand as written, and this sentence
+/// `locate.rs`, `doc.rs` and `orient.rs` — stand as written, and this sentence
 /// is the record that they were checked rather than assumed.
+///
+/// **[Struck 2026-09-23 (M53 post-review-fix review, LOW 9).** The sixth row, `adapter.rs`'s
+/// *"the `{{worktree}}` substitution in a spawn template"*, is gone because its site is: the
+/// `#[allow(dead_code)]` `render_spawn` it described was deleted rather than corrected, its
+/// spelling being the repo-relative one `efe16554` had declared broken. The count fence caught
+/// the row the moment the site went — which is the whole point of counting it.**]
 const UNSWEPT_PRODUCERS: &[(&str, usize, &str)] = &[
     (
         "crates/engine/src/finalize.rs",
@@ -1148,12 +1154,6 @@ const UNSWEPT_PRODUCERS: &[(&str, usize, &str)] = &[
         2,
         "one hand-written `strip_prefix` that already relativizes, and one `with_context` \
          persist fault",
-    ),
-    (
-        "crates/cli/src/adapter.rs",
-        1,
-        "the `{{worktree}}` substitution in a spawn template — bytes the sub-agent `cd`s to \
-         from an unknown cwd (the `remove_worktrees` precedent)",
     ),
     (
         "crates/cli/src/orient.rs",

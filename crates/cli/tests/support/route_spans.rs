@@ -16,22 +16,33 @@
 //! from a linked worktree the same bytes reach the wrong index, which no relative spelling can
 //! fix. The absolute in those spans is the fix, not the defect.
 //!
-//! So the scan keeps its subject and loses exactly one region: a backticked span whose first
-//! token is `git` and whose second is `-C`. **Everything else still carries the whole rule** —
-//! the message the span sits in, the locus, the key, every other backticked span, and any
-//! absolute in a `git` span that is *not* aimed (which is the defect this wave closed and must
-//! stay visible). A prefix appearing anywhere outside such a span still fails the suite that
-//! calls this.
+//! **The same disposition reaches one other verb** (M53 post-review-fix review, HIGH 2):
+//! `jigc migrate <PATH>` resolves its argument against the caller's cwd too, and takes no
+//! `-C`, so the only spelling that names the same file from every directory is an absolute
+//! one — `engine::finding::migrate_at`'s render. Driven from `docs/deep` on a `fresh` corpus,
+//! the store sweep's own adoption advisory emitted `jigc migrate CHANGELOG.md --as changelog`
+//! and running it verbatim answered *"could not read the foreign `changelog` source"*. Those
+//! bytes are run, not read, exactly as the `git` span's are.
+//!
+//! So the scan keeps its subject and loses exactly two regions: a backticked span whose first
+//! two tokens are `git -C`, and one whose first two are `jigc migrate` followed by an
+//! **absolute** operand. **Everything else still carries the whole rule** — the message the
+//! span sits in, the locus, the key, every other backticked span, any absolute in a `git`
+//! span that is *not* aimed, and a `jigc migrate` span whose operand is relative (both of
+//! which are the defects this wave closed and must stay visible). A prefix appearing anywhere
+//! outside such a span still fails the suite that calls this.
 //!
 //! The span's bytes are replaced by a marker of the same shape rather than deleted, so a
 //! failure message still reads as the surface it came from.
 
-/// `text` with every backticked aimed-`git` span replaced by `` `git -C <aimed> …` ``.
+/// `text` with every backticked **based** route span replaced by a marker of the same shape:
+/// an aimed `git` span by `` `git -C <aimed> …` ``, a based `jigc migrate` span by
+/// `` `jigc migrate <based> …` ``.
 ///
 /// Only the span's *inside* is redacted; the backticks stay, so a caller asserting on the
-/// surrounding prose is unaffected. A span that is not a `git … -C …` command line — a bare
-/// `` `--force` ``, a `` `jigc …` `` line, an unaimed `` `git add` `` — is returned verbatim,
-/// which is what keeps this a carve-out rather than a hole.
+/// surrounding prose is unaffected. A span that is neither — a bare `` `--force` ``, any other
+/// `` `jigc …` `` line, an unaimed `` `git add` ``, a `jigc migrate` whose operand is
+/// relative — is returned verbatim, which is what keeps this a carve-out rather than a hole.
 pub fn redact_aimed_git_spans(text: &str) -> String {
     let pieces: Vec<&str> = text.split('`').collect();
     // An odd-indexed piece lies between a pair of backticks. An even number of pieces means
@@ -48,11 +59,25 @@ pub fn redact_aimed_git_spans(text: &str) -> String {
             out.push('`');
         }
         let mut words = piece.split_whitespace();
-        let aimed = words.next() == Some("git") && words.next() == Some("-C");
-        if i % 2 == 1 && i < spans_end && aimed {
-            out.push_str("git -C <aimed> \u{2026}");
+        let (first, second) = (words.next(), words.next());
+        let aimed = first == Some("git") && second == Some("-C");
+        // A based `jigc migrate`: the operand must actually be absolute, so an un-swept
+        // producer's relative one stays visible to the scan.
+        let based_migrate = first == Some("jigc")
+            && second == Some("migrate")
+            && words
+                .next()
+                .is_some_and(|operand| operand.trim_matches('\'').starts_with('/'));
+        let marker = if aimed {
+            Some("git -C <aimed> \u{2026}")
+        } else if based_migrate {
+            Some("jigc migrate <based> \u{2026}")
         } else {
-            out.push_str(piece);
+            None
+        };
+        match marker.filter(|_| i % 2 == 1 && i < spans_end) {
+            Some(marker) => out.push_str(marker),
+            None => out.push_str(piece),
         }
     }
     out

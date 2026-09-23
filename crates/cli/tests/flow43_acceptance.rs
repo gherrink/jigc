@@ -645,7 +645,8 @@ fn a_stock_brownfield_changelog_routes_to_ingest_on_all_three_surfaces() {
          `{expected_migrate}`); got: {route}",
     );
     assert!(
-        !route.contains("migrate-corpus"),
+        // The VERB, not the substring — the route now carries an absolute host path.
+        !route.contains("jigc migrate-corpus"),
         "a foreign file is NOT an unmigrated corpus; got: {route}",
     );
 
@@ -675,7 +676,7 @@ fn a_stock_brownfield_changelog_routes_to_ingest_on_all_three_surfaces() {
     );
     let shown = streams_of(&show);
     assert!(
-        shown.contains("jigc ingest") && !shown.contains("migrate-corpus"),
+        shown.contains("jigc ingest") && !shown.contains("jigc migrate-corpus"),
         "the read surface routes the SAME adoption fix the sweep did; got:\n{shown}",
     );
 }

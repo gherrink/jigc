@@ -508,7 +508,8 @@ fn a_foreign_changelog_at_the_placement_home_is_an_adoption_case_not_an_unmigrat
          `{expected_migrate}`; got: {route}",
     );
     assert!(
-        !route.contains("migrate-corpus"),
+        // The VERB, not the substring — the route now carries an absolute host path.
+        !route.contains("jigc migrate-corpus"),
         "a foreign file is NOT an unmigrated corpus — the route must not name `migrate-corpus`; got: {route}",
     );
 
@@ -968,7 +969,8 @@ fn a_current_corpus_on_a_divergent_binary_keeps_the_plain_re_stamp_route() {
         .as_str()
         .expect("the advisory carries a route (the advisory-route floor)");
     assert!(
-        !route.contains("migrate-corpus"),
+        // The VERB, not the substring — the route now carries an absolute host path.
+        !route.contains("jigc migrate-corpus"),
         "a CURRENT corpus is not a migration case — the route must not name `migrate-corpus`; \
          got: {route}",
     );
@@ -1312,7 +1314,8 @@ fn doc_show_over_a_foreign_squatter_routes_at_adoption_and_the_surfaces_tell_one
              {stderr}",
         );
         assert!(
-            !stderr.contains("migrate-corpus"),
+            // The VERB, not the substring — the route now carries an absolute host path.
+            !stderr.contains("jigc migrate-corpus"),
             "a foreign file is not an unmigrated corpus — that verb does nothing for it; got \
              ({format:?}):\n{stderr}",
         );

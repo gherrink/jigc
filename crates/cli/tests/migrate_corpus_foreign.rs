@@ -544,7 +544,11 @@ fn every_axis_cell_reports_the_foreign_file_as_the_store_doors_advisory_and_bloc
             cell.doctype,
         );
         assert!(
-            !route.contains("migrate-corpus"),
+            // The check names the VERB, not the substring: since the adoption route's
+            // operand became absolute (M53 post-review-fix review, HIGH 2), a fixture whose
+            // own temp directory is named `…migrate-corpus-foreign…` matched a bare
+            // `contains("migrate-corpus")` through the host path.
+            !route.contains("jigc migrate-corpus"),
             "{path}: the route may not name the verb that just declined to act on it; got: \
              {route}",
         );
