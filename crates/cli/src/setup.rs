@@ -1198,7 +1198,28 @@ fn install_site(ctx: &locate::RunContext) -> Option<crate::render::InstallSite> 
     }
     Some(crate::render::InstallSite {
         home: crate::render::repo_relative(&ctx.repo_root, &ctx.jigc_home),
+        // The install door removes nothing; only [`run_uninstall`] can set this.
+        standing_removed: false,
     })
+}
+
+/// Whether the checkout the command was typed in sits **inside** `<jigc_home>/.jigc` — the
+/// one shape that does is a **fan-out worktree**, which `milestone provision` cuts below the
+/// workbench (the confirmation pass, MEDIUM 2).
+///
+/// Probed **before** the teardown runs, because `.jigc/` is gone by the time the summary
+/// exists and a removed directory cannot be canonicalized. Canonicalized on both sides for
+/// the reason [`install_site`] states, and an unanswerable probe reads as *not inside*: the
+/// fail-quiet direction, so a probe that cannot answer never manufactures the stronger
+/// sentence.
+fn standing_under_workbench(ctx: &locate::RunContext) -> bool {
+    let (Ok(workbench), Ok(here)) = (
+        std::fs::canonicalize(ctx.jigc_home.join(".jigc")),
+        std::fs::canonicalize(&ctx.repo_root),
+    ) else {
+        return false;
+    };
+    here.starts_with(&workbench)
 }
 
 /// Run both injections against `jigc_home` with `profile`, mapping an IO failure
@@ -2825,8 +2846,14 @@ pub fn run_uninstall(start: &Path, force: bool) -> Result<UninstallSummary, Find
 
     // **jigc_home, not the standing checkout** — the same binding `setup` takes, so the
     // teardown's subject is the install the install door wrote (this module's header).
+    // Probed before the teardown: the workbench is gone afterwards (MEDIUM 2).
+    let standing_inside = standing_under_workbench(&ctx);
     let mut summary = uninstall(&ctx.jigc_home, &profile, force)?;
-    summary.site = install_site(&ctx);
+    let standing_removed = standing_inside && summary.removed.jigc_dir;
+    summary.site = install_site(&ctx).map(|site| crate::render::InstallSite {
+        standing_removed,
+        ..site
+    });
     Ok(summary)
 }
 

@@ -1124,11 +1124,36 @@ fn uninstall_removes_the_workbench_home_install_from_every_cwd() {
         let seen = stdout(&out);
         let elsewhere = cell == "linked worktree" || cell == "fan-out worktree";
         assert_eq!(
-            seen.contains("not the worktree you are standing in"),
+            seen.contains("the main checkout this repository's jigc install and `.jigc/`"),
             elsewhere,
             "{cell}: the site line is printed iff jigc_home is not the standing checkout; \
              got:\n{seen}",
         );
+        // **The tail branches on whether the standing checkout survived** (the confirmation
+        // pass, MEDIUM 2). A linked worktree sits outside `.jigc/` and is genuinely not the
+        // subject; a fan-out worktree sits *below* it and went with the workbench, so the
+        // one sentence that mentions the standing worktree must not assert the opposite of
+        // what just happened.
+        let standing_removed = cell == "fan-out worktree";
+        assert_eq!(
+            seen.contains("which this removed"),
+            standing_removed,
+            "{cell}: the ack must name the standing worktree as removed iff it was; \
+             got:\n{seen}",
+        );
+        assert_eq!(
+            seen.contains("not the worktree you are standing in"),
+            elsewhere && !standing_removed,
+            "{cell}: the untouched-worktree clause is for the cell where it is true; \
+             got:\n{seen}",
+        );
+        if standing_removed {
+            assert!(
+                !cwd.exists(),
+                "{cell}: the fixture must actually have taken the standing worktree — \
+                 otherwise the sentence under test would be the false one",
+            );
+        }
     }
 }
 

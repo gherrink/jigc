@@ -688,6 +688,7 @@ fn setup_success_parity() {
     let elsewhere = SetupSummary {
         site: Some(cli::render::InstallSite {
             home: "/main/checkout".to_owned(),
+            standing_removed: false,
         }),
         ..installed
     };
@@ -818,6 +819,7 @@ fn uninstall_success_parity() {
     let elsewhere = UninstallSummary {
         site: Some(cli::render::InstallSite {
             home: "/main/checkout".to_owned(),
+            standing_removed: false,
         }),
         ..torn_down
     };

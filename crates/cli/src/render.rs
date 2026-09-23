@@ -1978,6 +1978,18 @@ pub struct InstallSite {
     /// the point: the reader is standing somewhere else, and the sentence exists to say
     /// where the install actually is.
     pub home: String,
+    /// **Whether the tree this run removed contained the checkout the reader is standing
+    /// in** (the confirmation pass, MEDIUM 2). `false` at `jigc setup`, which removes
+    /// nothing, and on every teardown run from outside the workbench.
+    ///
+    /// The one cell that sets it is a **fan-out worktree**, which lives *below* `.jigc/` —
+    /// so `jigc uninstall` from inside one takes the standing worktree along with the
+    /// workbench. Driven, the ack's only mention of that worktree read *"not the worktree
+    /// you are standing in"*, asserting the opposite of what had just happened, while the
+    /// removal list did not name it and the shell was left in a deleted directory
+    /// unnarrated. The removal itself is the declared behaviour; the sentence was the
+    /// defect.
+    pub standing_removed: bool,
 }
 
 /// The one sentence `jigc setup` / `jigc uninstall` says about the checkout it acted on, in
@@ -1987,10 +1999,19 @@ pub struct InstallSite {
 /// Emitted **only** when jigc_home is not the checkout the command was typed in
 /// ([`InstallSite`]), which is why the ordinary install's and teardown's bytes do not move:
 /// naming the main checkout on every run would be a line that is always true and never news.
+///
+/// **One branch, on whether the standing checkout survived the run**
+/// ([`InstallSite::standing_removed`]) — because from a fan-out worktree the honest tail is
+/// the opposite of the ordinary one.
 fn install_site_line(tense: &str, site: &InstallSite) -> String {
+    let tail = if site.standing_removed {
+        "and that workbench held the worktree you are standing in, which this removed"
+    } else {
+        "not the worktree you are standing in"
+    };
     format!(
         "  {tense} at `{}` — the main checkout this repository's jigc install and `.jigc/` \
-         workbench bind to, not the worktree you are standing in",
+         workbench bind to, {tail}",
         site.home,
     )
 }
