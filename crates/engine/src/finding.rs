@@ -1192,25 +1192,45 @@ fn split_shell_sequence(span: &str) -> Vec<Vec<String>> {
 /// typed — `crate::…::adjudicate_source_tracked`'s *"then re-run `jigc migrate <what you
 /// typed> --as <doctype>`"* — is bytes-indistinguishable from a store key jigc computed, and
 /// only the producer knows which it is. Such a producer declares it at the constructor
-/// ([`Route::human_echoing_caller_token`]); nothing in the text says so, and this predicate
-/// asked about that span alone would name it.
-pub fn unbased_migrate_span(text: &str) -> Option<String> {
+/// ([`Route::human_echoing_caller_token`]), which passes the token here as `caller_echo`.
+///
+/// **The carve-out is asked of one OPERAND, and the predicate keeps looking** (the
+/// confirmation pass, LOW 3). It used to live at the call site as `span.contains(echo)` over
+/// this function's **first** offender, which made it two things it should not be: a
+/// whole-*text* exemption — one echoing span suppressed the check for every other span,
+/// including a second one carrying a path jigc computed — and a *substring* test, so a
+/// computed `docs/note.md` swallowed an echo of `note.md`. Here the echo is compared against
+/// the offending part's own operand token, byte for byte (the producer emits
+/// `shell_token(typed)` and this reads that same token back), and a span that is not the
+/// echo is still returned. The answer is therefore *the first offender that is not the
+/// caller's own echo*, which is the question the fence asks.
+///
+/// **A composite span is read part by part** (the confirmation pass, LOW 4): this scanned
+/// only a span's first token, so `` `cd <abs> && jigc migrate rel.md --as adr` `` was skipped
+/// whole — the identical blindness [`unaimed_git_span`] and [`unsafe_command_token`] were
+/// swept for in this range, in the one sibling that was minted a commit earlier and missed.
+pub fn unbased_migrate_span(text: &str, caller_echo: Option<&str>) -> Option<String> {
     for span in backticked_spans(text) {
-        let tokens: Vec<String> = command_tokens(span).collect();
-        if tokens.first().map(String::as_str) != Some("jigc")
-            || tokens.get(1).map(String::as_str) != Some("migrate")
-        {
-            continue;
+        for tokens in split_shell_sequence(span) {
+            if tokens.first().map(String::as_str) != Some("jigc")
+                || tokens.get(1).map(String::as_str) != Some("migrate")
+            {
+                continue;
+            }
+            // The first non-flag token after the verb is the `<PATH>` positional.
+            let Some(operand) = tokens[2..].iter().find(|t| !t.starts_with('-')) else {
+                continue; // no operand at all — nothing for a cwd to resolve.
+            };
+            let bare = operand.trim_matches('\'');
+            if bare.starts_with('/') || bare.starts_with('<') {
+                continue;
+            }
+            // The declared carve-out, asked of THIS operand: the token the operator typed.
+            if caller_echo.is_some_and(|echo| operand.as_str() == echo) {
+                continue;
+            }
+            return Some(span.to_owned());
         }
-        // The first non-flag token after the verb is the `<PATH>` positional.
-        let Some(operand) = tokens[2..].iter().find(|t| !t.starts_with('-')) else {
-            continue; // no operand at all — nothing for a cwd to resolve.
-        };
-        let bare = operand.trim_matches('\'');
-        if bare.starts_with('/') || bare.starts_with('<') {
-            continue;
-        }
-        return Some(span.to_owned());
     }
     None
 }
@@ -1465,9 +1485,7 @@ fn fence_command_spans_echoing(text: &str, caller_echo: Option<&str>) {
     // The same half, one verb over: `jigc migrate <PATH>` resolves against the caller's cwd
     // and takes no `-C`, so a path jigc itself computed must be spelled absolute.
     #[cfg(debug_assertions)]
-    if let Some(span) = unbased_migrate_span(text)
-        && !caller_echo.is_some_and(|echo| span.contains(echo))
-    {
+    if let Some(span) = unbased_migrate_span(text, caller_echo) {
         panic!(
             "a route's `jigc migrate` span must name a path that resolves from anywhere: \
              `{span}` carries a relative operand, and the verb roots it at the READER's cwd \
@@ -1859,9 +1877,16 @@ fn fence_addressed_token_is_quoted(location: Option<&Location>, route: Option<&R
         }
         let quoted = shell_token(address);
         for span in backticked_spans(route) {
-            let mut tokens = command_tokens(span);
-            let Some(head) = tokens.next() else { continue };
-            if (head != "git" && head != "jigc") || !span.contains(address) {
+            // **A composite span is a command span when ANY of its parts is one** — the
+            // fourth and last member of the head-only class the confirmation pass named in
+            // one sibling (LOW 4). This read the span's first token alone, so
+            // `` `cd <abs> && git -C <abs> add -- my notes.md` `` was skipped whole and the
+            // subject's quoting was never asked of it, on exactly the span shape that
+            // carries two paths.
+            let is_command = split_shell_sequence(span)
+                .iter()
+                .any(|part| part.first().is_some_and(|h| h == "git" || h == "jigc"));
+            if !is_command || !span.contains(address) {
                 continue;
             }
             assert!(

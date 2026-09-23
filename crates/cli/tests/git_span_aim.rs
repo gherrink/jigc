@@ -432,7 +432,7 @@ fn the_migrate_predicate_admits_an_absolute_or_a_reader_supplied_operand_only() 
         "`jigc migrate --help`",
     ] {
         assert_eq!(
-            engine::finding::unbased_migrate_span(ok),
+            engine::finding::unbased_migrate_span(ok, None),
             None,
             "the fence must admit: {ok}"
         );
@@ -442,12 +442,61 @@ fn the_migrate_predicate_admits_an_absolute_or_a_reader_supplied_operand_only() 
         "adopt it with `jigc migrate CHANGELOG.md --as changelog`",
         "adopt it with `jigc migrate docs/deep/x.md --as adr`",
         "re-mint with `jigc migrate 'decisions/my notes.md' --as adr`",
+        // **A composite span is read part by part** (the confirmation pass, LOW 4). This
+        // read only the span's FIRST token, so a `jigc migrate` half behind any sequencing
+        // operator was skipped whole — the same blindness its two siblings in this range
+        // were swept for one commit later.
+        "from the repo: `cd /repo && jigc migrate rel.md --as adr`",
+        "`mkdir -p /repo/docs && jigc migrate docs/x.md --as adr`",
     ] {
         assert!(
-            engine::finding::unbased_migrate_span(bad).is_some(),
+            engine::finding::unbased_migrate_span(bad, None).is_some(),
             "the fence must refuse: {bad}\n(the verb roots that operand at the READER's cwd)"
         );
     }
+}
+
+/// **The carve-out exempts one OPERAND, not the whole text** (the confirmation pass, LOW 3).
+///
+/// The shipped exemption asked `span.contains(echo)` of the predicate's **first** offender
+/// and, on a hit, skipped the panic for every other span in the text. So a producer emitting
+/// the operator's own token *and* a second span carrying a path jigc computed was never
+/// checked on the second span — and `contains` is a substring test, so a computed
+/// `docs/note.md` swallowed an echo of `note.md` too.
+#[test]
+fn the_caller_echo_exempts_its_own_operand_and_nothing_else() {
+    // The echoing span alone — exempt.
+    let echo_only = "stage it, then re-run `jigc migrate note.md --as adr`";
+    assert_eq!(
+        engine::finding::unbased_migrate_span(echo_only, Some("note.md")),
+        None,
+        "the operator's own token is the declared carve-out"
+    );
+    // The echoing span PLUS a computed relative one — the second is still an offender.
+    let echo_plus_computed = "stage it, then re-run `jigc migrate note.md --as adr`; the \
+                              sibling is `jigc migrate docs/other.md --as adr`";
+    assert_eq!(
+        engine::finding::unbased_migrate_span(echo_plus_computed, Some("note.md")).as_deref(),
+        Some("jigc migrate docs/other.md --as adr"),
+        "the carve-out must not exempt a span it does not name"
+    );
+    // Substring is not identity: a computed `docs/note.md` merely CONTAINS the echo.
+    let superstring = "re-run `jigc migrate docs/note.md --as adr`";
+    assert!(
+        engine::finding::unbased_migrate_span(superstring, Some("note.md")).is_some(),
+        "the carve-out is operand identity, not a substring of the span"
+    );
+}
+
+/// The per-operand carve-out is live on the constructor, not only in the predicate.
+#[test]
+#[should_panic(expected = "must name a path that resolves from anywhere")]
+fn a_second_computed_span_beside_the_caller_echo_fires_the_fence() {
+    let _ = Route::human_echoing_caller_token(
+        "note.md",
+        "stage it, then re-run `jigc migrate note.md --as adr`; the sibling is \
+         `jigc migrate docs/other.md --as adr`",
+    );
 }
 
 /// The fence is live on the constructor, exactly like its `git` sibling.
@@ -464,9 +513,33 @@ fn an_unbased_migrate_span_fires_the_fence() {
 #[test]
 fn the_caller_echo_carve_out_is_declared_at_the_constructor() {
     let text = "stage it, then re-run `jigc migrate note.md --as adr`";
-    assert!(engine::finding::unbased_migrate_span(text).is_some());
+    assert!(engine::finding::unbased_migrate_span(text, None).is_some());
     let route = Route::human_echoing_caller_token("note.md", text);
     assert_eq!(route.as_str(), text);
+}
+
+/// **The head-only read had a fourth member, and the finding named one** (the confirmation
+/// pass, LOW 4 — the class, not the reported site).
+///
+/// `unaimed_git_span` and `unsafe_command_token` were widened to `split_shell_sequence` in
+/// this range; the review swept `unbased_migrate_span` with them. The subject-quoting fence
+/// (`fence_addressed_token_is_quoted`, the one that asserts a finding's own unsafe address is
+/// rendered through `shell_token` wherever a command span names it) read the span's first
+/// token too — so the one span shape that carries two paths, `cd <abs> && git …`, was skipped
+/// whole. All four now ask the same question of a composite span.
+#[test]
+#[should_panic(expected = "names this finding's own subject")]
+fn a_composite_span_is_still_asked_the_subject_quoting_question() {
+    use engine::finding::{Finding, Location, Severity};
+    let _ = Finding::graded(
+        Severity::Advisory,
+        "probe.subject-quoting",
+        "the subject is named unquoted inside a composite span".to_owned(),
+        Some(Location::addressed("my notes.md", 1, 1)),
+        Some(Route::human(
+            "run `cd /repo && git -C /repo add -- my notes.md`",
+        )),
+    );
 }
 
 /// What a production site does with the `jigc migrate` path operand it emits — the sibling of
