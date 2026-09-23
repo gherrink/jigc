@@ -2843,7 +2843,7 @@ fn run_provision(cwd: &Path, milestone_id: &str, force: bool) -> Result<String> 
     // to the re-run that follows the repair, which amends here.
     let ignore = crate::gitignore::ensure(&jigc_root)?;
 
-    let paths = provision_worktrees(&repo_root, &jigc_home, milestone_id, &base.sha, &ids, force)?;
+    let paths = provision_worktrees(&jigc_home, milestone_id, &base.sha, &ids, force)?;
     let mut out = format!(
         "provisioned {} worktree(s) for milestone:{milestone_id} at base {} ({})",
         paths.len(),
@@ -2895,7 +2895,6 @@ fn run_provision(cwd: &Path, milestone_id: &str, force: bool) -> Result<String> 
 /// context: it mutates nothing, so its failures leave no half-provisioned state to explain
 /// and no partial set for `jigc milestone execute` to report.
 fn provision_worktrees(
-    repo_root: &Path,
     jigc_home: &Path,
     milestone_id: &str,
     base_sha: &str,
@@ -2923,8 +2922,17 @@ fn provision_worktrees(
 
     // Drop admin records for any worktree dir deleted out from under git by a crashed
     // run, so a later `add` at that path is not rejected as a stale registration.
-    git_worktree(repo_root, &["worktree", "prune"])?;
-    let registered = registered_worktrees(repo_root)?;
+    //
+    // **From `jigc_home`, like every other worktree-set helper** (M53 post-review-fix
+    // review, LOW 11). This was the one member of the five left on the walk-up while
+    // `subtask_worktrees`, `held_subtask_worktrees`, `provisioned_worktrees`,
+    // `partial_worktree_advisories` and `remove_worktrees` all moved. **Behaviourally
+    // equivalent** — `git worktree list/prune/add` answer for the whole repository from any
+    // checkout, and the paths compared below are already built from `canonical_home` — so
+    // this closes a split in a set the commit message said was made uniform, and buys
+    // nothing else.
+    git_worktree(jigc_home, &["worktree", "prune"])?;
+    let registered = registered_worktrees(jigc_home)?;
 
     // Phase 1 — probe every path, mutate none. A path already registered as a worktree here
     // is reused untouched (idempotent), so it is neither probed nor cleared; every other one
@@ -3008,7 +3016,7 @@ fn provision_worktrees(
                 })
                 .map_err(|err| stopped(err, paths.len()))?;
             git_worktree(
-                repo_root,
+                jigc_home,
                 &["worktree", "add", "--detach", path_str, base_sha],
             )
             .map_err(|err| stopped(err, paths.len()))?;

@@ -294,26 +294,22 @@ pub struct SpawnTarget {
     pub template: String,
 }
 
-/// Render the spawn launch line: a lexical three-token substitution of the
-/// `{{worktree}}`, `{{workflow}}`, and `{{task_id}}` placeholders in `template`,
-/// leaving every other byte verbatim. `{{worktree}}` resolves to the sub-task's
-/// deterministic worktree path (`.jigc/worktrees/<task_id>`, the shared
-/// [`engine::milestone::worktree_path`] convention the fan-out emit also uses) so
-/// the launched sub-agent `cd`s into its own detached checkout (M31 WF4).
-///
-/// Plain string replacement, **not** the engine `{{…}}` data-value grammar — the
-/// spawn template's tokens are launch-line placeholders the adapter fills, never
-/// data-value refs (`design/assistant-adapter.md` → Bind the spawn mechanism). So
-/// it does not route through `data_value`/`compose`. Consumed by the launch path
-/// (this increment's later tasks).
-#[allow(dead_code)]
-pub fn render_spawn(template: &str, workflow: &str, task_id: &str) -> String {
-    let worktree = engine::milestone::worktree_path(task_id);
-    template
-        .replace("{{worktree}}", &worktree.display().to_string())
-        .replace("{{workflow}}", workflow)
-        .replace("{{task_id}}", task_id)
-}
+// **There is no `render_spawn` here any more** (M53 post-review-fix review, LOW 9).
+//
+// It was a `#[allow(dead_code)]` second renderer of the launch line, substituting
+// `{{worktree}}` with the repo-relative `.jigc/worktrees/<task_id>` — the exact spelling
+// `efe16554` declared broken, because that line is pasted into a shell of unknown cwd. Its
+// doc-comment said *"consumed by the launch path (this increment's later tasks)"*, and no
+// such consumer ever arrived: the launch line the product emits is composed by
+// `engine::compose::emit_fan_out_spawns`, which owns the rule (the absolute worktree the
+// caller resolved, rendered through `engine::finding::shell_operand`).
+//
+// Deleted rather than corrected, because correcting it would keep two renderers of one line
+// — which is the defect HIGH 1 of the same review is: the `Spawn:` line and the refusal that
+// sends an agent to the same directory had drifted into two spellings, and nothing noticed
+// until a path with a space in it made them disagree out loud. The `spawn.template` profile
+// key and its `{{worktree}}` placeholder stay; a future launch path that fills it takes its
+// value from `emit_fan_out_spawns`' rule, not from a helper that predates it.
 
 /// Which clause of the decidable spawn-template rule a template violated —
 /// the typed pointer the install error surfaces.
@@ -1239,18 +1235,27 @@ const BOOTSTRAP_OUTPUT_CONTRACT: &str = "Read every command's output; a non-zero
 /// It says both halves, because either alone is a trap: the paths are rooted at the
 /// repository, **and** the binary may be run from anywhere inside it — so an agent that is
 /// not at the root neither has to `cd` before invoking jigc nor may assume a printed path
-/// resolves where it stands. **Two** spellings are absolute and say so: the emitted `cd` of
-/// a fan-out `Spawn:` line, and — since M53's route class — any backticked `git` command a
-/// finding prints for the reader to run, which leads with `git -C <absolute checkout>`
-/// because git resolves a pathspec against the *caller's* cwd
-/// (`design/surface-contract.md` → The printed-path fence, the *pasteable shell bytes* rule).
-/// The paragraph names the second because it is the one a reader meets on an ordinary gate
-/// refusal; leaving it unsaid would make the sentence above it false, which is the law-1
-/// defect this paragraph exists to close.
+/// resolves where it stands.
+///
+/// **The exception is stated as a rule, not as a count** (M53 post-review-fix review,
+/// LOW 6). It shipped saying *"a `git` command … is the one exception"*, and jigc prints at
+/// least three other absolutes: the `cd` of a fan-out `Spawn:` line (which this file's own
+/// doc-comment already named, so preload and code contradicted each other in the same
+/// commit), the `jigc migrate <absolute source>` operand of every adoption route since the
+/// same review's HIGH 2, and the line naming which linked worktree a `finalize` committed in
+/// (`crate::render` → `commit_site_line`). A count goes stale the next time a producer joins
+/// the class; the two rules behind it do not — **bytes jigc prints for you to run** carry
+/// absolutes wherever a relative one would resolve against your directory instead of the
+/// repository's (`design/surface-contract.md` → The printed-path fence, the *pasteable shell
+/// bytes* rule), and a path naming **a checkout that is not the repository root** is absolute
+/// because no repo-relative spelling reaches it.
+///
+/// The paragraph still names `git` concretely, because that is the one a reader meets on an
+/// ordinary gate refusal; the others are covered by the rule rather than enumerated.
 ///
 /// It names no verb and no path, so it cannot rot; it is fenced by the whole-body golden
 /// like its five siblings.
-const BOOTSTRAP_PATHS_AND_CWD: &str = "Every path jigc prints — an `at:` locus, a `jigc doc list` row, a path inside a finding's message — is relative to the **repository root**, not to your current directory. A `git` command jigc prints for you to run is the one exception, and it is one on purpose: it leads with `git -C <the repository's absolute path>`, so you can paste it from wherever you are standing and it acts on the checkout the finding is about. You may run `jigc` from any directory inside the repository, including a fan-out worktree; it finds the project itself. So resolve a printed path against the repository root, and pass your own file arguments the way you would to any other command — relative to where you are.";
+const BOOTSTRAP_PATHS_AND_CWD: &str = "Every path jigc prints — an `at:` locus, a `jigc doc list` row, a path inside a finding's message — is relative to the **repository root**, not to your current directory. Two kinds of printed path are absolute instead, and both are on purpose. First, bytes jigc prints for you to **run**: a backticked command carries absolute paths wherever a relative one would resolve against your directory rather than the repository's — a `git` command leads with `git -C <the repository's absolute path>`, and the `cd` of a fan-out `Spawn:` line names the worktree outright — so you can paste it from wherever you are standing and it acts on what the finding is about. Second, a path naming a checkout that is not the repository root, such as the linked worktree a commit landed in: nothing repo-relative reaches it. You may run `jigc` from any directory inside the repository, including a fan-out worktree; it finds the project itself. So resolve a printed path against the repository root, and pass your own file arguments the way you would to any other command — relative to where you are.";
 
 /// The machine-output contract stated as the fifth paragraph (M44 Inc 4,
 /// change 1 — RC rc.7 discoverability rerun, 2026-07-20): the preload tier now
@@ -1681,36 +1686,6 @@ mod tests {
         );
     }
 
-    /// [`render_spawn`] is a lexical three-token substitution: it replaces
-    /// `{{worktree}}`, `{{workflow}}`, and `{{task_id}}` with the given values,
-    /// leaving the rest of the template (the wrapping prose and the backticks)
-    /// verbatim. The rendered launch line carries the backticked
-    /// `cd .jigc/worktrees/<id> && jigc workflow … --task …` invocation with no
-    /// residual placeholder tokens, and the rendered span passes the install rule.
-    #[test]
-    fn render_spawn_substitutes_all_tokens() {
-        let template = "Use your Task tool to run: `cd {{worktree}} && jigc workflow {{workflow}} --task {{task_id}}`";
-        let rendered = render_spawn(template, "sub-task", "alpha-fix");
-
-        assert_eq!(
-            rendered,
-            "Use your Task tool to run: `cd .jigc/worktrees/alpha-fix && jigc workflow sub-task --task alpha-fix`",
-            "all three tokens are substituted, wrapping prose preserved",
-        );
-        assert!(
-            rendered.contains(
-                "`cd .jigc/worktrees/alpha-fix && jigc workflow sub-task --task alpha-fix`"
-            ),
-            "the backticked worktree-`cd` invocation is present, got:\n{rendered}",
-        );
-        assert!(
-            !rendered.contains("{{worktree}}")
-                && !rendered.contains("{{workflow}}")
-                && !rendered.contains("{{task_id}}"),
-            "no residual placeholder tokens, got:\n{rendered}",
-        );
-    }
-
     /// Golden over [`bootstrap_file`]: the canonical routing sentence
     /// (`design/bootstrap.md` → The sentence, verbatim), the read rule (with the
     /// M44 Inc 4 binary-derived-behavior amendment), the context-compiler
@@ -1728,7 +1703,7 @@ mod tests {
 
         `jigc` is a context compiler: it assembles the workflow steps for your task plus the doc slices that workflow declares (a quick fix may declare none), and owns every structural write — placement, cross-references, commits. You author only the prose.
 
-        Every path jigc prints — an `at:` locus, a `jigc doc list` row, a path inside a finding's message — is relative to the **repository root**, not to your current directory. A `git` command jigc prints for you to run is the one exception, and it is one on purpose: it leads with `git -C <the repository's absolute path>`, so you can paste it from wherever you are standing and it acts on the checkout the finding is about. You may run `jigc` from any directory inside the repository, including a fan-out worktree; it finds the project itself. So resolve a printed path against the repository root, and pass your own file arguments the way you would to any other command — relative to where you are.
+        Every path jigc prints — an `at:` locus, a `jigc doc list` row, a path inside a finding's message — is relative to the **repository root**, not to your current directory. Two kinds of printed path are absolute instead, and both are on purpose. First, bytes jigc prints for you to **run**: a backticked command carries absolute paths wherever a relative one would resolve against your directory rather than the repository's — a `git` command leads with `git -C <the repository's absolute path>`, and the `cd` of a fan-out `Spawn:` line names the worktree outright — so you can paste it from wherever you are standing and it acts on what the finding is about. Second, a path naming a checkout that is not the repository root, such as the linked worktree a commit landed in: nothing repo-relative reaches it. You may run `jigc` from any directory inside the repository, including a fan-out worktree; it finds the project itself. So resolve a printed path against the repository root, and pass your own file arguments the way you would to any other command — relative to where you are.
 
         Read every command's output; a non-zero exit means stop and follow what the output says — never retry blindly. Exit codes: 1 error · 2 usage · 3 blocking findings at a task-scope gate · 4 migration review hold. A store-scope `jigc validate` is report-only — it exits 0 even when it surfaces findings — unless one of a few conditions flips that exit, such as a doc stamped above this build's schema-version: then it exits non-zero and its closing line names the condition and why.
 

@@ -482,8 +482,13 @@ mod tests {
     ///
     /// **The cwd is the root here**, the one arrangement under which these spellings still
     /// mean what the case names say (M53 — the cwd census, C2-03). What the base *does* is
-    /// driven from real subdirectories in `crates/cli/tests/cwd_verb_subject.rs`; this unit
-    /// pins the normalization, which is a different claim and stays exactly as it was.
+    /// driven from a real subdirectory by
+    /// `crates/cli/tests/path_arg_occurrence_axis.rs::every_path_arg_occurrence_resolves_its_token_against_the_base_it_states`,
+    /// which iterates `PATH_ARG_OCCURRENCES` and runs this door's `path` arm with a bare
+    /// basename that exists only beside the caller; this unit pins the normalization, which is
+    /// a different claim and stays exactly as it was. (The citation read
+    /// `crates/cli/tests/cwd_verb_subject.rs` until the M53 post-review-fix review's LOW 7 —
+    /// that suite has six tests and none of them invokes `migrate`.)
     #[test]
     fn records_a_clean_repo_relative_source_path() {
         let repo_root = Path::new("/abs/repo");
