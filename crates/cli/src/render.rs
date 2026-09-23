@@ -1950,6 +1950,51 @@ pub struct CommitSite {
     pub branch: Option<String>,
 }
 
+/// **Which checkout a `jigc setup` / `jigc uninstall` acted on, when that is not the one
+/// the command was typed in** — `None` on the ordinary path, where they are the same
+/// directory (M53 — the cwd fixes' review, LOW 5 / LOW 10).
+///
+/// The mirror of [`CommitSite`], and it resolves the *opposite* way for the opposite
+/// reason. A plain task's code lives in the checkout you are standing in, so `task
+/// finalize` commits there and says so. A repository's jigc **install** is one per
+/// repository — the pack loader reads `<jigc_home>/.jigc/config`, `jigc config set` writes
+/// there, the workbench hangs off it, and the `pre-commit` hook is the common dir's single
+/// copy — so both doors act at jigc_home from every cwd and say so when the reader is
+/// standing elsewhere.
+///
+/// **Text-only**, the same declared bound [`CommitSite`] carries and for the same reason:
+/// `ENVELOPE_ARMS` pins `jigc setup`'s seven keys and `jigc uninstall`'s four, the
+/// additive-key window closed at M48 (`design/command-output-contract.md` → Evolution
+/// posture), and a key addition is a 2.0 act. A `--format json` driver that needs the home
+/// reads it from git (`git rev-parse --path-format=absolute --git-common-dir`), which is
+/// the same answer [`crate::repo::jigc_home`] computes.
+#[derive(Debug)]
+pub struct InstallSite {
+    /// **jigc_home** — the checkout the install belongs to — spelled against the checkout
+    /// the command was typed in, so [`repo_relative`] resolves it the way law 1 resolves
+    /// every printed path. A linked worktree sits outside the main checkout and a fan-out
+    /// worktree sits *below* it, so in both reachable cells this comes out as law 1's
+    /// *honest absolute* (`design/surface-contract.md` → The printed-path fence) — which is
+    /// the point: the reader is standing somewhere else, and the sentence exists to say
+    /// where the install actually is.
+    pub home: String,
+}
+
+/// The one sentence `jigc setup` / `jigc uninstall` says about the checkout it acted on, in
+/// the caller's tense — `installed` / `removed`. One producer, so the two doors cannot
+/// describe one subject two ways ([`commit_site_line`]'s discipline).
+///
+/// Emitted **only** when jigc_home is not the checkout the command was typed in
+/// ([`InstallSite`]), which is why the ordinary install's and teardown's bytes do not move:
+/// naming the main checkout on every run would be a line that is always true and never news.
+fn install_site_line(tense: &str, site: &InstallSite) -> String {
+    format!(
+        "  {tense} at `{}` — the main checkout this repository's jigc install and `.jigc/` \
+         workbench bind to, not the worktree you are standing in",
+        site.home,
+    )
+}
+
 /// The landed-commit facts a successful `task finalize` confirms back to the user
 /// (M26 post-completion shakedown): the short commit `hash` + its `subject`, each
 /// persisted doc `promoted` to its canonical repo location, and the `files` count of
@@ -3871,6 +3916,13 @@ pub fn setup_success(format: Format, summary: &SetupSummary) -> String {
             // `route:` line) through the house [`finding_line`]. This block *was* the shape
             // [`run_findings`] is named after; it is the same bytes, from one home since M52
             // Increment 8 / T3 gave it a second and third producer.
+            // Which checkout the install landed in, when the reader is standing in another
+            // one ([`InstallSite`]) — before the findings, because it is a fact about what
+            // this run did, not an advisory about what it declined to do.
+            if let Some(site) = &summary.site {
+                out.push_str(&install_site_line("installed", site));
+                out.push('\n');
+            }
             out.push_str(&run_findings(&summary.findings));
             out.push_str(ROUTING_FOOTER);
             out
@@ -3975,6 +4027,14 @@ pub fn uninstall_success(format: Format, summary: &UninstallSummary) -> String {
                 if removed.guide {
                     out.push_str("  - removed jigc guide artifact\n");
                 }
+            }
+            // Which install this teardown removed, when the reader is standing in another
+            // checkout ([`InstallSite`]) — the line the LOW 10 cell was missing, where the
+            // door printed *"repo-local install removed"* about an install it had left
+            // entirely standing.
+            if let Some(site) = &summary.site {
+                out.push_str(&install_site_line("removed", site));
+                out.push('\n');
             }
             // What the teardown declined to remove, and why (M48 Increment 10 / T3) — a
             // file left standing is *said*, never silently skipped, and it reads exactly
@@ -8856,6 +8916,7 @@ mod tests {
             guide_file: Some(".claude/skills/jigc/SKILL.md".to_string()),
             findings: Vec::new().into(),
             install_commit: InstallCommit::Skipped,
+            site: None,
         };
 
         let agent = setup_success(Format::Agent, &summary);
@@ -8907,6 +8968,7 @@ mod tests {
             guide_file: None,
             findings: Vec::new().into(),
             install_commit: InstallCommit::Committed("a1b2c3d".to_string()),
+            site: None,
         };
 
         let agent = setup_success(Format::Agent, &summary);

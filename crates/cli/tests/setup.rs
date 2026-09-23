@@ -905,22 +905,31 @@ fn printed_hook_path(stdout: &str) -> &str {
     rest.split_once("   (").map_or(rest, |(path, _)| path)
 }
 
-/// Resolve a printed path the way its reader would: absolute as-is, relative against
-/// the directory they ran `jigc setup` in.
-fn resolve_printed(cwd: &Path, printed: &str) -> PathBuf {
+/// Resolve a printed path the way its reader would: absolute as-is, relative against the
+/// **root the install was made at**.
+///
+/// That root is the parameter, and since M53 (the cwd fixes' review, LOW 5) it is not
+/// always the directory `jigc setup` was typed in: the door binds `repo::jigc_home`, so
+/// from a linked worktree it installs at the main checkout and every relative path it
+/// prints is spelled against *that* root — law 1's own rule (`render::repo_relative`,
+/// relative inside the root, absolute outside it), applied to the root the install
+/// actually used. What makes that resolvable for a reader standing elsewhere is the ack's
+/// own site line, which names the root (`render::InstallSite`).
+fn resolve_printed(root: &Path, printed: &str) -> PathBuf {
     let path = Path::new(printed);
     if path.is_absolute() {
         path.to_path_buf()
     } else {
-        cwd.join(path)
+        root.join(path)
     }
 }
 
 /// Assert the summary's hook line names **the file the install actually wrote** — the
 /// D4 / P1-7 contract: `jigc setup` names the hooks dir git resolved, not the assumed
-/// `.git/hooks` literal. `expected` is where the hook really landed.
-fn assert_names_installed_hook(stdout: &str, cwd: &Path, expected: &Path) {
-    assert_named_hook_is_installed(printed_hook_path(stdout), cwd, expected);
+/// `.git/hooks` literal. `expected` is where the hook really landed, and `root` is the
+/// install's own root ([`resolve_printed`]).
+fn assert_names_installed_hook(stdout: &str, root: &Path, expected: &Path) {
+    assert_named_hook_is_installed(printed_hook_path(stdout), root, expected);
 }
 
 /// The shared half of the hook-path contract, over whichever surface emitted `named`:
@@ -1013,7 +1022,15 @@ fn setup_names_the_worktree_common_hooks_dir() {
         !linked.join(".git/hooks/pre-commit").exists(),
         "the worktree has no `.git/hooks` — the literal names nothing",
     );
-    assert_names_installed_hook(&stdout, &linked, &installed);
+    // Resolved against the **main checkout**, which is where the install landed and which
+    // the ack names on its own site line (M53, LOW 5). The printed spelling moved with the
+    // root — absolute while the door was pointed at the worktree, now `.git/hooks/pre-commit`
+    // against jigc_home — and both spellings name the same file, which is the contract.
+    assert_names_installed_hook(&stdout, main.path(), &installed);
+    assert!(
+        stdout.contains("not the worktree you are standing in"),
+        "…and the ack must name the root that spelling is relative to; got:\n{stdout}",
+    );
 }
 
 /// Run the built `jigc setup` under the machine surface — `--format json`, `cwd = repo`,
@@ -1244,6 +1261,14 @@ fn setup_commits_the_pre_commit_hook_iff_it_is_a_working_tree_file() {
 
         // Wire the shape, then name where the hook must land, whether that path is under
         // the tree `jigc setup` commits in at all, and whether it is committable there.
+        //
+        // **The cwd is the axis; the committing tree is always `repo.path()`** (M53 — the
+        // cwd fixes' review, LOW 5). `jigc setup` binds `repo::jigc_home`, so the install
+        // and its commit land at the main checkout from every cwd — including
+        // `LinkedWorktree`, whose cwd is a worktree that was *not* the install's subject.
+        // Reading `git show HEAD` there, as this arm did, asked the wrong checkout: it came
+        // back empty, which under the old binding was correct and is now the defect.
+        let commit_root = repo.path().to_path_buf();
         let (cwd, hook, under_root, committable) = match shape {
             HooksDirShape::Default => (
                 repo.path().to_path_buf(),
@@ -1290,11 +1315,14 @@ fn setup_commits_the_pre_commit_hook_iff_it_is_a_working_tree_file() {
                     ],
                 );
                 // The hook resolves to the COMMON hooks dir — the main checkout's
-                // `.git/hooks`, outside the linked worktree entirely.
+                // `.git/hooks`. That is outside the linked worktree the command is *typed*
+                // in, and inside the tree the install commits in, which since M53 is
+                // jigc_home: under the root, and not committable, because it is inside
+                // git's own control dir.
                 (
                     linked,
                     repo.path().join(".git/hooks/pre-commit"),
-                    false,
+                    true,
                     false,
                 )
             }
@@ -1423,7 +1451,7 @@ fn setup_commits_the_pre_commit_hook_iff_it_is_a_working_tree_file() {
         // The install commit's actual footprint.
         let committed: Vec<String> = {
             let mut lines: Vec<String> =
-                git_capture(&cwd, &["show", "--name-only", "--format=", "HEAD"])
+                git_capture(&commit_root, &["show", "--name-only", "--format=", "HEAD"])
                     .lines()
                     .filter(|line| !line.trim().is_empty())
                     .map(str::to_string)
@@ -1440,15 +1468,16 @@ fn setup_commits_the_pre_commit_hook_iff_it_is_a_working_tree_file() {
             "{shape:?}: nothing inside `.git/` may be committed; got:\n{committed:#?}",
         );
 
-        // Membership == committability, over the resolved hook path.
-        let relative_hook = repo_relative(&cwd, &hook);
+        // Membership == committability, over the resolved hook path — spelled against the
+        // tree the install commits in, never against the cwd it was typed from.
+        let relative_hook = repo_relative(&commit_root, &hook);
         assert_eq!(
             relative_hook.is_some(),
             under_root,
             "{shape:?}: the fixture's own premise about where the hook landed is wrong \
-             (hook `{}`, cwd `{}`)",
+             (hook `{}`, committing tree `{}`)",
             hook.display(),
-            cwd.display(),
+            commit_root.display(),
         );
         if let Some(relative) = relative_hook.as_deref() {
             assert_eq!(

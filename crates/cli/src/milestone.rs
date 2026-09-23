@@ -39,10 +39,19 @@
 //! `commit_seam_posture.rs`'s arm (h) reads the rule off this file's source; arm (g) drives
 //! two of its members.
 //!
-//! `crate::setup` is **out of this class**, not unswept: it binds no `jigc_home` at all —
+//! ~~`crate::setup` is **out of this class**, not unswept: it binds no `jigc_home` at all —
 //! its `repo_root` is the root it joins every `.jigc/` path off — so the two cannot diverge
 //! inside that file. Whether `jigc uninstall` should bind `jigc_home` instead is a different
-//! question about a different door.
+//! question about a different door.~~ **Struck 2026-09-23** (the cwd fixes' review, LOW 5 /
+//! LOW 10). The first clause described the source correctly and disposed of it wrongly: a
+//! file that binds *only* the standing checkout cannot diverge from itself, and is exactly
+//! the file that acts on the wrong repository from a worktree. Falsifying datum, driven:
+//! `jigc setup` from a linked worktree installed a worktree-local `.jigc/` nothing reads,
+//! and `jigc uninstall` from a fan-out worktree removed the repository-wide `pre-commit`
+//! hook at exit 0 while printing *"repo-local install removed"* over a main-checkout
+//! install it left whole — with all four of its WIP guards inert, because they were handed
+//! a checkout whose `.jigc/worktrees/` and `.jigc/tasks/` do not exist. Both doors now bind
+//! [`crate::repo::jigc_home`] (`crate::setup`'s module header).
 
 use crate::cli::Format;
 use crate::invocation_log::Outcome;
@@ -3324,10 +3333,18 @@ pub const DISCARD_DOOR: DestroyingDoor = DestroyingDoor {
     ],
 };
 
-/// `jigc uninstall`'s door — `remove_dir_all(<repo>/.jigc)` takes the worktrees, every
+/// `jigc uninstall`'s door — `remove_dir_all(<jigc_home>/.jigc)` takes the worktrees, every
 /// working area and the whole gitignored workbench with it, which is why it stands over
 /// more destroyable subjects than any other member ([`crate::setup`]'s four refusals, all
 /// over that one removal).
+///
+/// **The root is jigc_home, not the standing checkout** (M53 — the cwd fixes' review, LOW
+/// 10), which is what makes all four of those refusals reachable from inside a fan-out
+/// worktree: pointed at the caller's checkout they were handed a tree with no
+/// `.jigc/worktrees/` and no `.jigc/tasks/` at all, so every one of them short-circuited
+/// empty while the removal went ahead. The disposition is unchanged — `Refuse` with
+/// `--force` the single consent — because binding the right subject changes *what* the door
+/// stands over, never who consents to losing it.
 pub const UNINSTALL_DOOR: DestroyingDoor = DestroyingDoor {
     verb: "jigc uninstall",
     disposition: Disposition::Refuse {

@@ -907,3 +907,297 @@ fn the_requires_worktree_refusal_names_the_cd_and_drops_the_no_op_clause() {
         "and it must still end on the absolute `cd`; got:\n{seen}",
     );
 }
+
+// ---------------------------------------------------------------------------------------
+// LOW 5 / LOW 10 — the two install doors act on jigc_home from every cwd.
+// ---------------------------------------------------------------------------------------
+
+/// A git repository with **no jigc install at all** plus a linked worktree `feat` — the
+/// only state `jigc setup` can be probed from (`dev/jigc-rig`'s `bare`), and the one
+/// `init_repo` cannot give, since it mints the project layer directly.
+struct Bare {
+    _root: TempDir,
+    home: TempDir,
+    repo: PathBuf,
+    linked: PathBuf,
+}
+
+impl Bare {
+    fn new(tag: &str) -> Self {
+        let root = TempDir::new(tag);
+        let repo = root.path().join("repo");
+        fs::create_dir_all(&repo).expect("mk repo dir");
+        git(&repo, &["init", "-q"]);
+        git(&repo, &["config", "user.email", "test@example.com"]);
+        git(&repo, &["config", "user.name", "Test"]);
+        git(&repo, &["config", "commit.gpgsign", "false"]);
+        fs::create_dir_all(repo.join("docs").join("deep")).expect("mk docs/deep");
+        fs::write(repo.join("docs").join("deep").join("a.txt"), "x\n").expect("write a.txt");
+        git(&repo, &["add", "."]);
+        git(&repo, &["commit", "-q", "-m", "initial"]);
+        let linked = root.path().join("feat");
+        git(
+            &repo,
+            &[
+                "worktree",
+                "add",
+                "-q",
+                "-b",
+                "feat",
+                linked.to_str().expect("worktree path is UTF-8"),
+            ],
+        );
+        let home = TempDir::new(&format!("{tag}-home"));
+        Bare {
+            _root: root,
+            home,
+            repo,
+            linked,
+        }
+    }
+
+    fn jigc(&self, cwd: &Path, args: &[&str]) -> std::process::Output {
+        jigc_in(cwd, self.home.path(), args)
+    }
+
+    /// `jigc setup` at the root, then a milestone with one sub-task, provisioned — the
+    /// fan-out cell's fixture. Returns that worktree's path.
+    fn with_fan_out(&self) -> PathBuf {
+        assert_ok(&self.jigc(&self.repo, &["setup"]), "`jigc setup`");
+        assert_ok(
+            &self.jigc(&self.repo, &["milestone", "create", "Cache rework"]),
+            "`jigc milestone create`",
+        );
+        assert_ok(
+            &self.jigc(
+                &self.repo,
+                &["milestone", "add-task", "cache-rework", "Area one"],
+            ),
+            "`jigc milestone add-task`",
+        );
+        assert_ok(
+            &self.jigc(&self.repo, &["milestone", "provision", "cache-rework"]),
+            "`jigc milestone provision`",
+        );
+        self.repo.join(".jigc").join("worktrees").join("area-one")
+    }
+}
+
+/// The **discriminator** for *which checkout an install landed in*: `.jigc/state/` is
+/// gitignored, so no checkout ever receives it from git — only the door that wrote it has
+/// one. `.jigc/config/` and `.jigc/AGENT.md` are tracked and therefore check out into every
+/// worktree, which is exactly why they cannot answer this question.
+fn wrote_an_install(checkout: &Path) -> bool {
+    checkout.join(".jigc").join("state").is_dir()
+}
+
+/// **LOW 5** — `jigc setup` installs at jigc_home from every cwd.
+///
+/// The cwd axis, as every arm in this suite iterates it: the root, an ordinary
+/// subdirectory, a linked worktree, and a fan-out worktree. Driven red at `36a96758`: from
+/// the linked worktree the door exited 0 and wrote a worktree-local
+/// `.jigc/{AGENT.md,config,state,version}` **that nothing reads** — the pack loader moved
+/// to jigc_home at `31921e57` and `jigc config set` writes there — leaving the main
+/// checkout with no install at all.
+///
+/// The first three cells share one fixture: `setup` is idempotent, and the assertion is
+/// about *where* it writes, not about being the first install. The fan-out cell needs a
+/// provisioned worktree, so it brings its own.
+#[test]
+fn setup_installs_at_the_workbench_home_from_every_cwd() {
+    let bare = Bare::new("setup-home");
+    let deep = bare.repo.join("docs").join("deep");
+
+    for (tag, cwd) in [
+        ("root", bare.repo.clone()),
+        ("subdir", deep.clone()),
+        ("linked worktree", bare.linked.clone()),
+    ] {
+        let out = bare.jigc(&cwd, &["setup"]);
+        assert_ok(&out, &format!("`jigc setup` from the {tag}"));
+        assert!(
+            wrote_an_install(&bare.repo),
+            "`jigc setup` from the {tag} must install at jigc_home",
+        );
+        assert!(
+            !wrote_an_install(&bare.linked),
+            "`jigc setup` from the {tag} must write no install into the linked worktree \
+             (LOW 5 — the layer nothing reads)",
+        );
+    }
+
+    // …and from a linked worktree it SAYS where, because the reader is standing elsewhere.
+    let seen = stdout(&bare.jigc(&bare.linked, &["setup"]));
+    let home = bare
+        .repo
+        .canonicalize()
+        .expect("the repo canonicalizes")
+        .display()
+        .to_string();
+    assert!(
+        seen.contains(&home) && seen.contains("not the worktree you are standing in"),
+        "from a linked worktree the ack must name the main checkout it installed at; \
+         got:\n{seen}",
+    );
+    // The ordinary cell says nothing — a line always true is never news.
+    let at_root = stdout(&bare.jigc(&bare.repo, &["setup"]));
+    assert!(
+        !at_root.contains("not the worktree you are standing in"),
+        "the same-checkout cell must not print the site line; got:\n{at_root}",
+    );
+
+    // The fan-out cell: a sub-agent re-running `setup` inside its own worktree.
+    let fan = Bare::new("setup-home-fanout");
+    let worktree = fan.with_fan_out();
+    let out = fan.jigc(&worktree, &["setup"]);
+    assert_ok(&out, "`jigc setup` from a fan-out worktree");
+    assert!(
+        wrote_an_install(&fan.repo) && !wrote_an_install(&worktree),
+        "`jigc setup` from a fan-out worktree must install at jigc_home, not below it",
+    );
+    assert!(
+        stdout(&out).contains("not the worktree you are standing in"),
+        "and it must say so; got:\n{}",
+        stdout(&out),
+    );
+}
+
+/// **LOW 10 / C2-07** — `jigc uninstall` removes jigc_home's install from every cwd.
+///
+/// Driven red at `36a96758` from a fan-out worktree: exit 0, *"repo-local install
+/// removed"*, seven removal lines — and the repository-wide `.git/hooks/pre-commit` (the
+/// **only** copy, shared by every checkout) gone, while the main checkout's `.jigc/`, its
+/// `.claude/skills/jigc/SKILL.md` and its `CLAUDE.md` preload line all stood. A destroying
+/// door reporting a completion it did not perform.
+///
+/// One fixture per cell: a teardown is terminal.
+#[test]
+fn uninstall_removes_the_workbench_home_install_from_every_cwd() {
+    for cell in ["root", "subdir", "linked worktree", "fan-out worktree"] {
+        let bare = Bare::new(&format!("uninstall-home-{}", cell.replace(' ', "-")));
+        let worktree = if cell == "fan-out worktree" {
+            Some(bare.with_fan_out())
+        } else {
+            assert_ok(&bare.jigc(&bare.repo, &["setup"]), "`jigc setup`");
+            None
+        };
+        let cwd = match cell {
+            "root" => bare.repo.clone(),
+            "subdir" => bare.repo.join("docs").join("deep"),
+            "linked worktree" => bare.linked.clone(),
+            _ => worktree.expect("the fan-out cell built one"),
+        };
+
+        // The install is really there before the teardown — otherwise a green assertion
+        // below would be a fixture fact, not a behaviour.
+        assert!(
+            wrote_an_install(&bare.repo),
+            "{cell}: fixture must be set up"
+        );
+        let guide = bare.repo.join(".claude").join("skills").join("jigc");
+        let hook = bare.repo.join(".git").join("hooks").join("pre-commit");
+        assert!(guide.join("SKILL.md").is_file() && hook.is_file(), "{cell}");
+
+        let out = bare.jigc(&cwd, &["uninstall"]);
+        assert_ok(&out, &format!("`jigc uninstall` from the {cell}"));
+        assert!(
+            !bare.repo.join(".jigc").exists(),
+            "{cell}: the teardown must remove jigc_home's `.jigc/`",
+        );
+        assert!(
+            !guide.join("SKILL.md").exists(),
+            "{cell}: …and jigc_home's guide artifact",
+        );
+        assert!(
+            !hook.exists(),
+            "{cell}: …and the repository-wide pre-commit hook it installed",
+        );
+        // …and jigc_home's preload line — the third artifact the LOW 10 cell left standing.
+        // An empty `CLAUDE.md` setup itself created goes with it, so *absent* is a pass.
+        assert!(
+            !fs::read_to_string(bare.repo.join("CLAUDE.md"))
+                .unwrap_or_default()
+                .contains("@.jigc/AGENT.md"),
+            "{cell}: …and jigc_home's preload line",
+        );
+        // And when the reader is standing somewhere else, it says which install it took.
+        let seen = stdout(&out);
+        let elsewhere = cell == "linked worktree" || cell == "fan-out worktree";
+        assert_eq!(
+            seen.contains("not the worktree you are standing in"),
+            elsewhere,
+            "{cell}: the site line is printed iff jigc_home is not the standing checkout; \
+             got:\n{seen}",
+        );
+    }
+}
+
+/// The other half of binding jigc_home at `uninstall`: the four WIP guards now probe **the
+/// home's** areas, including the fan-out worktree the caller is standing in.
+///
+/// Before the binding they were handed the standing checkout, where `.jigc/worktrees/` and
+/// `.jigc/tasks/` do not exist at all — so from any worktree every one of them was inert.
+/// That is the half of LOW 10 the review did not report: the door was not merely removing
+/// the wrong install, it was removing it with no guard running.
+///
+/// Three refusals, one fixture: each removes nothing, so the state carries forward.
+#[test]
+fn uninstall_from_inside_a_worktree_refuses_over_what_the_removal_would_take() {
+    let bare = Bare::new("uninstall-guards");
+    let worktree = bare.with_fan_out();
+
+    // (a) the standing worktree holds uncommitted work.
+    fs::write(worktree.join("wip.txt"), "unsaved\n").expect("write wip");
+    let out = bare.jigc(&worktree, &["uninstall"]);
+    let seen = both_streams(&out);
+    assert!(!out.status.success(), "(a) must refuse; got:\n{seen}");
+    assert!(
+        seen.contains("uninstall.dirty-worktree")
+            && seen.contains(".jigc/worktrees/area-one")
+            && seen.contains("wip.txt"),
+        "(a) must name the standing worktree and what it holds; got:\n{seen}",
+    );
+    assert!(bare.repo.join(".jigc").is_dir(), "(a) must remove nothing");
+    fs::remove_file(worktree.join("wip.txt")).expect("clear wip");
+
+    // (b) the standing worktree is clean, but git has left an operation un-concluded — the
+    // M53 post-review-fix leg (`probe_leftover`'s `OwnWorktree` arm), reached here through
+    // the home's worktrees set rather than the standing checkout's absent one.
+    let out = Command::new("git")
+        .args(["bisect", "start"])
+        .current_dir(&worktree)
+        .output()
+        .expect("run git bisect start");
+    assert!(out.status.success(), "fixture: git bisect start");
+    let out = Command::new("git")
+        .args(["bisect", "bad"])
+        .current_dir(&worktree)
+        .output()
+        .expect("run git bisect bad");
+    assert!(out.status.success(), "fixture: git bisect bad");
+    let out = bare.jigc(&worktree, &["uninstall"]);
+    let seen = both_streams(&out);
+    assert!(!out.status.success(), "(b) must refuse; got:\n{seen}");
+    assert!(
+        seen.contains("uninstall.dirty-worktree") && seen.contains("bisect"),
+        "(b) must name the un-concluded operation; got:\n{seen}",
+    );
+    assert!(bare.repo.join(".jigc").is_dir(), "(b) must remove nothing");
+    git(&worktree, &["bisect", "reset"]);
+
+    // (c) a file under the home's `.jigc/` that no index has a copy of.
+    fs::write(
+        bare.repo.join(".jigc").join("config").join("local.yaml"),
+        "unsaved: yes\n",
+    )
+    .expect("write the untracked workbench file");
+    let out = bare.jigc(&worktree, &["uninstall"]);
+    let seen = both_streams(&out);
+    assert!(!out.status.success(), "(c) must refuse; got:\n{seen}");
+    assert!(
+        seen.contains("uninstall.untracked-workbench-file")
+            && seen.contains(".jigc/config/local.yaml"),
+        "(c) must name the unsaved file at the home; got:\n{seen}",
+    );
+    assert!(bare.repo.join(".jigc").is_dir(), "(c) must remove nothing");
+}

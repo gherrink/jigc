@@ -1235,10 +1235,16 @@ fn the_dirty_worktree_refusal_is_workbench_relative_from_inside_another_worktree
 /// one file rather than a rule nobody had written. Read off the source, because the claim is
 /// about the *arguments* a call is written with and (g) can only reach two members of it.
 ///
-/// Out of scope, stated: `setup.rs` binds no `jigc_home` at all — its `repo_root` is the
+/// ~~Out of scope, stated: `setup.rs` binds no `jigc_home` at all — its `repo_root` is the
 /// root it joins every `.jigc/` path off, so the two cannot diverge inside that file, and
 /// whether `jigc uninstall` should bind `jigc_home` instead is a different question about a
-/// different door.
+/// different door.~~ **Struck 2026-09-23** (the cwd fixes' review, LOW 5 / LOW 10): binding
+/// only the standing checkout is not an exemption from the question, it is the answer
+/// *wrong*. Falsifying datum, driven — `jigc uninstall` from a fan-out worktree removed the
+/// repository-wide `pre-commit` hook at exit 0 while printing *"repo-local install removed"*
+/// over a main-checkout install it left entirely standing. Both doors bind
+/// `repo::jigc_home` since; `cwd_verb_subject.rs`'s three `setup`/`uninstall` arms drive the
+/// cwd axis, and `setup.rs`'s module header carries the rule.
 #[test]
 fn milestone_renders_no_path_against_the_cwd_repo_root() {
     let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/milestone.rs"))

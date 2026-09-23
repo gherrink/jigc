@@ -590,6 +590,11 @@ fn setup_success_parity() {
         guide_file: Some(guide.to_owned()),
         findings: Vec::new().into(),
         install_commit: InstallCommit::Committed("a1b2c3d".to_owned()),
+        // The ordinary shape: jigc_home IS the checkout the command was typed in, so the
+        // site line is not printed at all. The `Some` half is asserted below, apart from
+        // the loop, because it is the one field on this struct that is deliberately
+        // text-only and therefore has no key for `carries` to look for.
+        site: None,
     };
     let refused = SetupSummary {
         line_file: "CLAUDE.md".to_owned(),
@@ -599,10 +604,11 @@ fn setup_success_parity() {
         guide_file: None,
         findings: vec![cli::setup::guide_modified_finding(guide)].into(),
         install_commit: InstallCommit::Committed("a1b2c3d".to_owned()),
+        site: None,
     };
 
     for summary in [&installed, &refused] {
-        // Exhaustive — no `..`: an eighth field fails to compile here.
+        // Exhaustive — no `..`: a ninth field fails to compile here.
         let SetupSummary {
             line_file,
             allowlist_file,
@@ -611,7 +617,20 @@ fn setup_success_parity() {
             guide_file,
             findings,
             install_commit,
+            site,
         } = summary;
+        // **The one declared text-only field** (M53 — the cwd fixes' review, LOW 5). It is
+        // not a parity gap: `ENVELOPE_ARMS` pins this verb's seven keys, the additive-key
+        // window closed at M48, and a key addition is a 2.0 act — so the fence's obligation
+        // here is that the *text* says it and the wire does not grow a key, which is the
+        // `#[serde(skip)]` discipline `render::CommitSite` already ships for its own axis.
+        // Both witnesses are the ordinary same-checkout shape, and the `Some` half is
+        // asserted after the loop.
+        assert!(
+            site.is_none(),
+            "both witnesses are the ordinary shape, where jigc_home is the checkout the \
+             command was typed in",
+        );
 
         let text = setup_success(Format::Agent, summary);
         let doc = envelope(&setup_success(Format::Json, summary), "jigc setup");
@@ -662,6 +681,25 @@ fn setup_success_parity() {
         text_prints(&text, sha, "jigc setup", "install_commit");
         carries(&doc, "install_commit", sha, "jigc setup", "install_commit");
     }
+
+    // The `Some` half of `site`: the text names the home, and the envelope's key set does
+    // not move. Asserted in both directions, because a field that is text-only by decision
+    // has to be checked for the decision, not merely omitted from the loop.
+    let elsewhere = SetupSummary {
+        site: Some(cli::render::InstallSite {
+            home: "/main/checkout".to_owned(),
+        }),
+        ..installed
+    };
+    let text = setup_success(Format::Agent, &elsewhere);
+    text_prints(&text, "/main/checkout", "jigc setup", "site");
+    let doc = envelope(&setup_success(Format::Json, &elsewhere), "jigc setup");
+    assert!(
+        doc.get("site").is_none() && !doc.to_string().contains("/main/checkout"),
+        "`jigc setup`'s envelope is 1.0-pinned at seven keys — `site` is text-only by \
+         decision (`render::InstallSite`), so neither the key nor its value may appear on \
+         the wire:\n{doc:#}",
+    );
 }
 
 /// `jigc uninstall` — the teardown summary. The **seven**-flag removal ledger rides the wire
@@ -688,6 +726,8 @@ fn uninstall_success_parity() {
             guide: true,
         },
         findings: Vec::new().into(),
+        // `setup`'s sibling, same decision, same reason — see that arm.
+        site: None,
     };
     let kept = UninstallSummary {
         line_file: "CLAUDE.md".to_owned(),
@@ -697,16 +737,23 @@ fn uninstall_success_parity() {
             ..torn_down.removed
         },
         findings: vec![cli::setup::guide_kept_finding(guide)].into(),
+        site: None,
     };
 
     for summary in [&torn_down, &kept] {
-        // Exhaustive — no `..`: a fourth field fails to compile here.
+        // Exhaustive — no `..`: a sixth field fails to compile here.
         let UninstallSummary {
             line_file,
             allowlist_file,
             removed,
             findings,
+            site,
         } = summary;
+        assert!(
+            site.is_none(),
+            "both witnesses are the ordinary shape; the `Some` half is asserted after the \
+             loop, as `setup`'s arm does",
+        );
         let RemovedArtifacts {
             jigc_dir,
             reference,
@@ -764,6 +811,28 @@ fn uninstall_success_parity() {
         }
         carries(&doc, "findings", findings, "jigc uninstall", "findings");
     }
+
+    // The `Some` half of `site` — `setup`'s assertion, on the door where it matters most:
+    // this is the line whose absence let a teardown print *"repo-local install removed"*
+    // from a fan-out worktree over an install it had left entirely standing (LOW 10).
+    let elsewhere = UninstallSummary {
+        site: Some(cli::render::InstallSite {
+            home: "/main/checkout".to_owned(),
+        }),
+        ..torn_down
+    };
+    let text = uninstall_success(Format::Agent, &elsewhere);
+    text_prints(&text, "/main/checkout", "jigc uninstall", "site");
+    let doc = envelope(
+        &uninstall_success(Format::Json, &elsewhere),
+        "jigc uninstall",
+    );
+    assert!(
+        doc.get("site").is_none() && !doc.to_string().contains("/main/checkout"),
+        "`jigc uninstall`'s envelope is 1.0-pinned at four keys — `site` is text-only by \
+         decision (`render::InstallSite`), so neither the key nor its value may appear on \
+         the wire:\n{doc:#}",
+    );
 }
 
 /// The real `file-state.absorbed` finding, from the one producer both doors ask (M52

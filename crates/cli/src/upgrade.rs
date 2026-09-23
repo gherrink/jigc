@@ -128,7 +128,12 @@ pub(crate) fn adapter_guide_reading(
     let Some(guide) = profile.guide() else {
         return (None, None);
     };
-    match crate::setup::guide_ownership(&ctx.repo_root, guide) {
+    // **jigc_home**, the root `setup` wrote the artifact at and `uninstall` takes it back
+    // from (M53 — the cwd fixes' review, LOW 5). The reading door and the two writing doors
+    // must ask about one file: read against the standing checkout, this sweep reported
+    // *Absent* from a linked worktree over an installed artifact, and *Owned* over the
+    // worktree's own checked-out copy rather than the one `jigc setup` would replace.
+    match crate::setup::guide_ownership(&ctx.jigc_home, guide) {
         crate::setup::GuideOwnership::Absent => (None, None),
         crate::setup::GuideOwnership::Owned => (Some(guide.file.clone()), None),
         crate::setup::GuideOwnership::UserModified => (

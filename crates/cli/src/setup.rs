@@ -2,8 +2,7 @@
 //!
 //! Orchestrates the MVP adapter install (`design/assistant-adapter.md` →
 //! Generated, minimal, regenerated; `DECISIONS.md` 2026-05-31 → adapter install
-//! reworked) against the located repo root, using the embedded Claude Code
-//! profile:
+//! reworked) against **jigc_home**, using the embedded Claude Code profile:
 //!   1. write the canonical bootstrap sentence to the managed `.jigc/AGENT.md`
 //!      and inject a bare `@.jigc/AGENT.md` import into `CLAUDE.md` (the
 //!      reference floor — no marker-fenced block);
@@ -23,6 +22,35 @@
 //! (`crate::orient` → `OrientationView::unset_project`; `design/bootstrap.md` →
 //! Orientation output examples). The `Resume` hook + the fan-out spawn binding are
 //! post-MVP and out of scope here.
+//!
+//! # The subject is jigc_home, at both doors (M53 — the cwd fixes' review, LOW 5 / LOW 10)
+//!
+//! Every path this module writes or removes is an **install** path — `.jigc/` itself, the
+//! `CLAUDE.md` preload line, the adapter's settings file, the owned guide artifact, the
+//! install commit's pathspec — and the install is one per *repository*, not one per
+//! checkout: the pack loader reads `<jigc_home>/.jigc/config` ([`crate::pack`]), `jigc
+//! config set` writes there, the workbench hangs off it, and the `pre-commit` hook lives in
+//! the repository-wide common hooks dir whichever checkout installed it. So
+//! [`crate::repo::jigc_home`] is the root every function below joins off, and both doors
+//! bind it from [`crate::locate::RunContext::jigc_home`].
+//!
+//! **This file used to be a declared exclusion from that class, and the exclusion was
+//! wrong.** `crates/cli/src/milestone.rs`'s module header and
+//! `crates/cli/tests/commit_seam_posture.rs`'s arm (h) both recorded it as *"out of this
+//! class, not unswept: it binds no `jigc_home` at all"* — true as a description of the
+//! source and false as a disposition. Falsifying datum, driven on the debug binary at
+//! `36a96758`: `jigc setup` from a linked worktree exits 0 and installs a worktree-local
+//! `.jigc/{AGENT.md,config,state,version}` **that nothing reads** (the loader had already
+//! moved to `jigc_home` at `31921e57`), leaving the main checkout un-set-up; and `jigc
+//! uninstall` from a fan-out worktree exits 0 printing *"repo-local install removed"* while
+//! removing the repository-wide `pre-commit` hook — the one copy every checkout shares —
+//! and leaving the main checkout's `.jigc/`, its `.claude/skills/jigc/SKILL.md` and its
+//! `CLAUDE.md` preload line all standing. A destroying door reporting a completion it did
+//! not perform.
+//!
+//! When jigc_home is not the checkout the command was typed in, the two acks **say so**
+//! ([`crate::render::InstallSite`]) — text-only, because both envelopes are 1.0-pinned and
+//! a key addition is a 2.0 act (`design/command-output-contract.md`).
 //!
 //! Outcome is reported through the settled **finding** envelope (`DECISIONS.md`
 //! 2026-05-31 → block-payload = a blocking-severity finding carrying a route):
@@ -204,19 +232,19 @@ pub enum GuideOwnership {
     UserModified,
 }
 
-/// The [`GuideOwnership`] of the artifact at `<repo_root>/<guide.file>`.
+/// The [`GuideOwnership`] of the artifact at `<jigc_home>/<guide.file>`.
 ///
 /// A read-only probe: it opens the file and computes a hash, and writes nothing — which is
 /// what lets the read-only `jigc upgrade` door consult it (`design/overrides.md` → The
 /// `jigc upgrade` command: report-and-route only).
-pub fn guide_ownership(repo_root: &Path, guide: &adapter::GuideTarget) -> GuideOwnership {
+pub fn guide_ownership(jigc_home: &Path, guide: &adapter::GuideTarget) -> GuideOwnership {
     // **Only a genuine `NotFound` is `Absent`** — every other outcome is the user's.
     // `Absent` is one of the two verdicts the write gate treats as "overwrite it", so
     // folding a *present but unreadable* file into it fails **open**: an ordinary readable
     // file whose bytes are not UTF-8 (a hand-written skill saved Latin-1) would be read as
     // absent and silently clobbered at exit 0. The check is the inverse of the generator's
     // assembly and fails **closed**: anything it cannot prove is jigc's own is the user's.
-    let bytes = match std::fs::read(repo_root.join(&guide.file)) {
+    let bytes = match std::fs::read(jigc_home.join(&guide.file)) {
         Ok(bytes) => bytes,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => return GuideOwnership::Absent,
         // Present but unreadable (permissions, a directory at the path, an I/O fault): jigc
@@ -320,7 +348,7 @@ pub fn guide_kept_finding(path: &str) -> Finding {
     )
 }
 
-/// Write the guide artifact to `<repo_root>/<guide.file>`, creating its parent dirs.
+/// Write the guide artifact to `<jigc_home>/<guide.file>`, creating its parent dirs.
 ///
 /// Rewritten **whole** on every `setup`, on the `.jigc/AGENT.md` mold: the file is wholly
 /// CLI-owned, so it needs no in-file idempotency markers and a re-run over the same binary
@@ -328,30 +356,37 @@ pub fn guide_kept_finding(path: &str) -> Finding {
 /// what "regenerated on upgrade" means for an artifact only `setup` writes
 /// (`design/assistant-adapter.md` → Generated, minimal, regenerated). The caller gates this
 /// on [`guide_ownership`]: only [`GuideOwnership::Owned`] and `Absent` reach here.
-fn write_guide_artifact(repo_root: &Path, guide: &adapter::GuideTarget) -> std::io::Result<()> {
-    let target = repo_root.join(&guide.file);
+fn write_guide_artifact(jigc_home: &Path, guide: &adapter::GuideTarget) -> std::io::Result<()> {
+    let target = jigc_home.join(&guide.file);
     if let Some(parent) = target.parent() {
         std::fs::create_dir_all(parent)?;
     }
     std::fs::write(&target, guide_artifact(guide))
 }
 
-/// Write the binary-provenance stamp under `<repo_root>/.jigc/version` (creating `.jigc/`
-/// if absent). `jigc setup` writes it and store-writing ops (`finalize`) refresh it — a
+/// Write the binary-provenance stamp under `<root>/.jigc/version` (creating `.jigc/` if
+/// absent). `jigc setup` writes it and store-writing ops (`finalize`) refresh it — a
 /// same-build refresh writes identical bytes, so it is a no-op in the commit.
-pub fn write_version_stamp(repo_root: &Path) -> std::io::Result<()> {
-    let path = repo_root.join(VERSION_STAMP_PATH);
+///
+/// **The one function in this module whose root is not always jigc_home**, and the caller
+/// decides: `setup` hands it jigc_home like everything else here, while
+/// [`crate::task::refresh_version_stamp`] hands it the **standing checkout**, because the
+/// stamp is a tracked file that rides that door's own commit and `jigc task finalize`
+/// commits where you stand (`DECISIONS.md` 2026-09-23 → the verb class, C2-09). The
+/// parameter is therefore named for what it is — a root — rather than for either answer.
+pub fn write_version_stamp(root: &Path) -> std::io::Result<()> {
+    let path = root.join(VERSION_STAMP_PATH);
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
     std::fs::write(path, version_stamp_body())
 }
 
-/// Read the recorded stamp version from `<repo_root>/.jigc/version`, or `None` when the
+/// Read the recorded stamp version from `<jigc_home>/.jigc/version`, or `None` when the
 /// file is **absent** (a pre-M36 store — never false-flagged) or carries no parseable
 /// `jigc-version:` line.
-fn read_version_stamp(repo_root: &Path) -> Option<String> {
-    let text = std::fs::read_to_string(repo_root.join(VERSION_STAMP_PATH)).ok()?;
+fn read_version_stamp(jigc_home: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(jigc_home.join(VERSION_STAMP_PATH)).ok()?;
     text.lines()
         .find_map(|line| line.trim().strip_prefix(VERSION_STAMP_KEY))
         .map(|rest| rest.trim().to_string())
@@ -573,7 +608,7 @@ fi\n";
 const PRECOMMIT_SENTINEL_END: &str = "# jigc-managed pre-commit hook — end";
 
 /// Install the assistant-neutral warn-only `pre-commit` hook for the repo at
-/// `repo_root`, pointing it at the absolute `jigc_path` (`design/assistant-adapter.md`
+/// `jigc_home`, pointing it at the absolute `jigc_path` (`design/assistant-adapter.md`
 /// → neutral install: sentinel-marked, idempotent, non-destructive; honor
 /// `core.hooksPath` + worktrees; regenerated each `setup`).
 ///
@@ -598,8 +633,8 @@ const PRECOMMIT_SENTINEL_END: &str = "# jigc-managed pre-commit hook — end";
 /// wrote instead of the assumed `.git/hooks/pre-commit` literal (D4 — the literal lies
 /// under `core.hooksPath` and in a linked worktree, the two cases this resolution
 /// exists for).
-pub fn install_precommit_hook(repo_root: &Path, jigc_path: &Path) -> std::io::Result<PathBuf> {
-    let hooks_dir = resolve_hooks_dir(repo_root)?;
+pub fn install_precommit_hook(jigc_home: &Path, jigc_path: &Path) -> std::io::Result<PathBuf> {
+    let hooks_dir = resolve_hooks_dir(jigc_home)?;
     std::fs::create_dir_all(&hooks_dir)?;
     let hook = hooks_dir.join("pre-commit");
 
@@ -650,9 +685,9 @@ pub fn install_precommit_hook(repo_root: &Path, jigc_path: &Path) -> std::io::Re
 /// the repo, or the **common** hooks dir a linked worktree resolves to, neither of
 /// which any repo-relative path can name. Both sides are canonicalized before the
 /// strip so a symlinked repo root (macOS `/var` → `/private/var`) still reads relative.
-fn display_hook_path(repo_root: &Path, hook: &Path) -> String {
+fn display_hook_path(jigc_home: &Path, hook: &Path) -> String {
     let (root, real) = match (
-        std::fs::canonicalize(repo_root),
+        std::fs::canonicalize(jigc_home),
         std::fs::canonicalize(hook),
     ) {
         (Ok(root), Ok(real)) => (root, real),
@@ -789,7 +824,7 @@ fn classify_precommit_for_teardown(content: &str) -> PrecommitTeardown {
 }
 
 /// Idempotently **remove** the jigc-managed `pre-commit` hook from the repo at
-/// `repo_root` — the inverse of [`install_precommit_hook`] for `jigc uninstall`
+/// `jigc_home` — the inverse of [`install_precommit_hook`] for `jigc uninstall`
 /// (`design/project-setup.md` → Flow 2 hardening → Teardown, the M36 symmetry fix:
 /// "both hooks must come out"). Resolves the **real** hooks dir the same way install
 /// does (honoring `core.hooksPath` + worktrees).
@@ -803,8 +838,8 @@ fn classify_precommit_for_teardown(content: &str) -> PrecommitTeardown {
 /// Returns `Ok(true)` when a jigc-managed hook was actually removed or unwrapped,
 /// `Ok(false)` on the no-op (absent or purely foreign hook) — the honest signal the
 /// teardown summary reports on.
-pub fn remove_precommit_hook(repo_root: &Path) -> std::io::Result<bool> {
-    let hooks_dir = resolve_hooks_dir(repo_root)?;
+pub fn remove_precommit_hook(jigc_home: &Path) -> std::io::Result<bool> {
+    let hooks_dir = resolve_hooks_dir(jigc_home)?;
     let hook = hooks_dir.join("pre-commit");
 
     let existing = match std::fs::read_to_string(&hook) {
@@ -827,18 +862,18 @@ pub fn remove_precommit_hook(repo_root: &Path) -> std::io::Result<bool> {
 
 /// Resolve the repo's **real** hooks directory through git, honoring
 /// `core.hooksPath`, the worktree `.git`-is-a-file case, and the common hooks dir for
-/// linked worktrees. A single `git -C <repo_root> rev-parse --path-format=absolute
+/// linked worktrees. A single `git -C <jigc_home> rev-parse --path-format=absolute
 /// --git-path hooks` subprocess — never the naive `.git/hooks` join.
-fn resolve_hooks_dir(repo_root: &Path) -> std::io::Result<PathBuf> {
+fn resolve_hooks_dir(jigc_home: &Path) -> std::io::Result<PathBuf> {
     let out = std::process::Command::new("git")
         .arg("-C")
-        .arg(repo_root)
+        .arg(jigc_home)
         .args(["rev-parse", "--path-format=absolute", "--git-path", "hooks"])
         .output()?;
     if !out.status.success() {
         return Err(std::io::Error::other(format!(
             "git could not resolve the hooks dir for `{}`: {}",
-            repo_root.display(),
+            jigc_home.display(),
             String::from_utf8_lossy(&out.stderr).trim(),
         )));
     }
@@ -928,7 +963,7 @@ credentials
 .npmrc
 ";
 
-/// Whether `repo_root` is a **fresh** (zero-commit) git repo — the discriminator that
+/// Whether `jigc_home` is a **fresh** (zero-commit) git repo — the discriminator that
 /// gates the secrets-floor `.gitignore` seed to greenfield repos only
 /// (`design/project-setup.md` → The secrets-floor `.gitignore`: "seed iff the repo has
 /// zero commits"). **Conservative on every unclear signal:** not a git work tree, git
@@ -942,12 +977,12 @@ credentials
 /// HEAD == 0`: `rev-list --count HEAD` *errors* on the very unborn case we must seed, so
 /// it can't be read as "0". The work-tree check runs first so a `rev-parse --verify`
 /// failure is unambiguously "unborn HEAD," never "not a repo."
-fn is_fresh_repo(repo_root: &Path) -> bool {
-    match git_output(repo_root, ["rev-parse", "--is-inside-work-tree"]) {
+fn is_fresh_repo(jigc_home: &Path) -> bool {
+    match git_output(jigc_home, ["rev-parse", "--is-inside-work-tree"]) {
         Some(out) if out.status.success() => {}
         _ => return false,
     }
-    match git_output(repo_root, ["rev-parse", "--verify", "--quiet", "HEAD"]) {
+    match git_output(jigc_home, ["rev-parse", "--verify", "--quiet", "HEAD"]) {
         Some(out) => !out.status.success(),
         None => false,
     }
@@ -964,11 +999,11 @@ fn is_fresh_repo(repo_root: &Path) -> bool {
 /// **without** the sentinel → append the block under it, preserving the human's lines
 /// verbatim; present **with** the sentinel → byte-stable no-op. So a re-run is
 /// byte-identical.
-fn seed_secrets_gitignore(repo_root: &Path) -> std::io::Result<bool> {
-    if !is_fresh_repo(repo_root) {
+fn seed_secrets_gitignore(jigc_home: &Path) -> std::io::Result<bool> {
+    if !is_fresh_repo(jigc_home) {
         return Ok(false);
     }
-    let path = repo_root.join(".gitignore");
+    let path = jigc_home.join(".gitignore");
     match std::fs::read_to_string(&path) {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             std::fs::write(&path, SECRETS_GITIGNORE_BLOCK)?;
@@ -1039,6 +1074,12 @@ pub struct SetupSummary {
     /// The outcome of committing setup's own install files as a dedicated commit
     /// (M26 shakedown — see [`commit_install`]).
     pub install_commit: InstallCommit,
+    /// **Where this install landed, when that is not the checkout the command was typed
+    /// in** — `None` on the ordinary path. Set by [`run`] from the located context, never
+    /// by [`install`], which is handed one root and has no second one to compare it to.
+    /// See [`crate::render::InstallSite`] for the rule and for why this is text-only
+    /// rather than an eighth envelope key.
+    pub site: Option<crate::render::InstallSite>,
 }
 
 /// The conventional message for the dedicated commit `jigc setup` makes of its own
@@ -1112,14 +1153,39 @@ pub fn run(
         )
     })?;
 
-    install(&ctx.repo_root, &profile, force)
+    // **jigc_home, not the standing checkout** — the install is one per repository, and
+    // this door's own module header carries the driven datum that says so.
+    let (mut summary, ensured) = install(&ctx.jigc_home, &profile, force)?;
+    summary.site = install_site(&ctx);
+    Ok((summary, ensured))
 }
 
-/// Run both injections against `repo_root` with `profile`, mapping an IO failure
+/// The [`crate::render::InstallSite`] a door acted at, or `None` when jigc_home **is** the
+/// checkout the command was typed in — the ordinary single-checkout case, where a line
+/// naming it would be always true and never news ([`crate::render::InstallSite`]).
+///
+/// The comparison is over **canonicalized** paths, because a linked worktree's registration
+/// and a `$TMPDIR` on macOS both reach the same directory by two spellings, and a line that
+/// fires on `/var` vs `/private/var` would be noise on every run. A `canonicalize` that
+/// cannot answer for either path reads as *the same directory*: an unanswerable probe must
+/// not manufacture a sentence claiming the two differ (the fail-quiet direction this module's
+/// probes already take, [`crate::repo`]'s *a probe that cannot answer reads as NO breach*).
+fn install_site(ctx: &locate::RunContext) -> Option<crate::render::InstallSite> {
+    let here = std::fs::canonicalize(&ctx.repo_root).ok();
+    let home = std::fs::canonicalize(&ctx.jigc_home).ok();
+    if here == home {
+        return None;
+    }
+    Some(crate::render::InstallSite {
+        home: crate::render::repo_relative(&ctx.repo_root, &ctx.jigc_home),
+    })
+}
+
+/// Run both injections against `jigc_home` with `profile`, mapping an IO failure
 /// to a blocking `setup.*` finding with a route. The testable core of [`run`]
 /// (no location step).
 fn install(
-    repo_root: &Path,
+    jigc_home: &Path,
     profile: &AdapterProfile,
     force: bool,
 ) -> Result<(SetupSummary, crate::gitignore::Ensured), Finding> {
@@ -1179,7 +1245,7 @@ fn install(
     //     subtraction that makes the across-invocations half true is recorded where the
     //     bytes are left ([`record_install_footprint`]) and re-verified where the question
     //     is asked ([`own_uncommitted_footprint`]).
-    let subject = InstallSubject::probe(repo_root, force);
+    let subject = InstallSubject::probe(jigc_home, force);
 
     let reference = profile.reference().ok_or_else(|| {
         Finding::block(
@@ -1205,7 +1271,7 @@ fn install(
     let mut findings: Vec<Finding> = Vec::new();
     let declared_guide = profile.guide();
     let guide_file = match declared_guide {
-        Some(guide) if guide_ownership(repo_root, guide) == GuideOwnership::UserModified => {
+        Some(guide) if guide_ownership(jigc_home, guide) == GuideOwnership::UserModified => {
             findings.push(guide_modified_finding(&guide.file));
             None
         }
@@ -1226,13 +1292,13 @@ fn install(
     match &subject {
         InstallSubject::Dirty(before) => {
             let candidates = install_candidate_paths(
-                repo_root,
+                jigc_home,
                 &line_file,
                 &allowlist_file,
                 guide_file.as_deref(),
             );
             let refusals =
-                dirty_install_refusals(repo_root, &candidates, before, guide_file.as_deref());
+                dirty_install_refusals(jigc_home, &candidates, before, guide_file.as_deref());
             if !refusals.is_empty() {
                 return Err(engine::finalize::setup_dirty_install_finding(
                     &refusals, false,
@@ -1242,15 +1308,15 @@ fn install(
         // The consent is given, so nothing refuses — but what it was spent on is said.
         InstallSubject::Consented(before) => {
             let candidates = install_candidate_paths(
-                repo_root,
+                jigc_home,
                 &line_file,
                 &allowlist_file,
                 guide_file.as_deref(),
             );
             let forced =
-                dirty_install_refusals(repo_root, &candidates, before, guide_file.as_deref());
+                dirty_install_refusals(jigc_home, &candidates, before, guide_file.as_deref());
             if !forced.is_empty() {
-                findings.push(forced_install_path_finding(repo_root, &forced));
+                findings.push(forced_install_path_finding(jigc_home, &forced));
             }
         }
         InstallSubject::Unknown => {}
@@ -1258,14 +1324,14 @@ fn install(
 
     // 1. Reference floor: write the managed bootstrap file, then point the
     //    always-loaded file at it with a bare import line.
-    adapter::write_bootstrap_file(repo_root).map_err(|err| {
+    adapter::write_bootstrap_file(jigc_home).map_err(|err| {
         Finding::block(
             "setup.write-bootstrap",
             format!("cannot write the managed bootstrap file `{bootstrap_file}`: {err}"),
             format!("ensure `{bootstrap_file}` is writable, then re-run `jigc setup`"),
         )
     })?;
-    adapter::inject_reference(repo_root).map_err(|err| {
+    adapter::inject_reference(jigc_home).map_err(|err| {
         Finding::block(
             "setup.inject-reference",
             format!("cannot inject the bootstrap reference into `{line_file}`: {err}"),
@@ -1278,7 +1344,7 @@ fn install(
     // a file the user legitimately co-owns and then COMMITS it, so an entry appended to an
     // older build's committed set has to be named rather than landed in silence (M51
     // Increment 4 / T2; `crate::gitignore::IGNORE_DOORS`).
-    let ignore = adapter::init_project_layer(repo_root).map_err(|err| {
+    let ignore = adapter::init_project_layer(jigc_home).map_err(|err| {
         Finding::block(
             "setup.init-project-layer",
             format!("cannot initialize the project layer under `.jigc/`: {err}"),
@@ -1296,7 +1362,7 @@ fn install(
     //     that list — entries, order and content — and gets the marker alongside it: the
     //     loader composes `[listed… ▸ dev ▸ methodology]` (M49 Inc 6, see
     //     [`write_compose_marker`]).
-    write_compose_marker(repo_root).map_err(|err| {
+    write_compose_marker(jigc_home).map_err(|err| {
         Finding::block(
             "setup.compose-marker",
             format!(
@@ -1311,7 +1377,7 @@ fn install(
     //     store, so an adopter on a divergent binary gets a `store-version.binary-mismatch`
     //     advisory (never a gate). Committed via `install_tracked_paths` so it travels with
     //     the repo; refreshed by store-writing ops (`finalize`).
-    write_version_stamp(repo_root).map_err(|err| {
+    write_version_stamp(jigc_home).map_err(|err| {
         Finding::block(
             "setup.version-stamp",
             format!("cannot write the binary-provenance stamp `{VERSION_STAMP_PATH}`: {err}"),
@@ -1324,7 +1390,7 @@ fn install(
     //     `.gitignore`). On an established repo (>=1 commit) or an unclear signal it is a
     //     clean no-op, so an existing project's `.gitignore` is never touched. When it
     //     seeds, the file is tracked in the install commit ([`install_tracked_paths`]).
-    let seeded_gitignore = seed_secrets_gitignore(repo_root).map_err(|err| {
+    let seeded_gitignore = seed_secrets_gitignore(jigc_home).map_err(|err| {
         Finding::block(
             "setup.secrets-gitignore",
             format!("cannot seed the secrets-floor root `.gitignore`: {err}"),
@@ -1333,7 +1399,7 @@ fn install(
     })?;
 
     // 3. Allowlist `jigc` so the agent runs it without friction.
-    adapter::inject_allowlist(repo_root, profile).map_err(|err| {
+    adapter::inject_allowlist(jigc_home, profile).map_err(|err| {
         Finding::block(
             "setup.inject-allowlist",
             format!("cannot merge the allowlist into `{allowlist_file}`: {err}"),
@@ -1343,7 +1409,7 @@ fn install(
 
     // 4. Install the SessionStart hook (the primary bootstrap injection) into the
     //    same settings file. A no-op for a profile that declares no hook.
-    adapter::inject_hook(repo_root, profile).map_err(|err| {
+    adapter::inject_hook(jigc_home, profile).map_err(|err| {
         Finding::block(
             "setup.inject-hook",
             format!("cannot install the session hook into `{allowlist_file}`: {err}"),
@@ -1357,7 +1423,7 @@ fn install(
     //     structure-aware twin of the allowlist merge (`design/assistant-adapter.md` → the
     //     `deny` safety floor). Idempotent; a re-run is byte-stable; a profile with no
     //     floor is inert.
-    adapter::inject_deny(repo_root, profile).map_err(|err| {
+    adapter::inject_deny(jigc_home, profile).map_err(|err| {
         Finding::block(
             "setup.inject-deny",
             format!("cannot merge the deny safety floor into `{allowlist_file}`: {err}"),
@@ -1386,7 +1452,7 @@ fn install(
     //     The **ownership decision** is made above (step 0d), before any write, because the
     //     pre-write gate needs it; this is the write it gates.
     if let Some(guide) = declared_guide.filter(|_| guide_file.is_some()) {
-        write_guide_artifact(repo_root, guide).map_err(|err| {
+        write_guide_artifact(jigc_home, guide).map_err(|err| {
             Finding::block(
                 "setup.write-guide",
                 format!(
@@ -1417,14 +1483,14 @@ fn install(
     // The **resolved** hook path is carried on (not just its display form): the install
     // commit's pathspec is derived from where the hook actually landed
     // ([`install_tracked_paths`]), which the printed value cannot answer.
-    let hook_path = install_precommit_hook(repo_root, &jigc_path).map_err(|err| {
+    let hook_path = install_precommit_hook(jigc_home, &jigc_path).map_err(|err| {
         Finding::block(
             "setup.install-hook",
             format!("cannot install the `pre-commit` hook into the repo's hooks dir: {err}"),
             "ensure the repo's git hooks directory is writable, then re-run `jigc setup`",
         )
     })?;
-    let hook_file = display_hook_path(repo_root, &hook_path);
+    let hook_file = display_hook_path(jigc_home, &hook_path);
 
     // 6. Extract the embedded `doc-code` probe beside the installed `jigc` (the
     //    production resolution path `<jigc-bin-dir>/doc-code`), so a `cargo
@@ -1464,7 +1530,7 @@ fn install(
         commit: install_commit,
         hook_committed,
     } = commit_install(
-        repo_root,
+        jigc_home,
         &line_file,
         &allowlist_file,
         seeded_gitignore,
@@ -1497,6 +1563,9 @@ fn install(
             guide_file,
             findings: findings.into(),
             install_commit,
+            // The location step is [`run`]'s, not this core's: it is handed one root and
+            // has no second one to compare it against ([`install_site`]).
+            site: None,
         },
         ignore,
     ))
@@ -1670,12 +1739,12 @@ pub fn install_path_dispositions(
         .collect()
 }
 
-/// Whether `<repo_root>/.jigc/version` currently holds **jigc's own** provenance stamp:
+/// Whether `<jigc_home>/.jigc/version` currently holds **jigc's own** provenance stamp:
 /// exactly one non-blank line, and that line a non-empty `jigc-version:` record — the
 /// shape [`version_stamp_body`] writes and nothing else. Fails **closed** (unreadable,
 /// non-UTF-8, extra lines ⇒ `false`), so anything that could be a human's prose refuses.
-fn version_stamp_is_jigcs(repo_root: &Path) -> bool {
-    let Ok(text) = std::fs::read_to_string(repo_root.join(VERSION_STAMP_PATH)) else {
+fn version_stamp_is_jigcs(jigc_home: &Path) -> bool {
+    let Ok(text) = std::fs::read_to_string(jigc_home.join(VERSION_STAMP_PATH)) else {
         return false;
     };
     let mut lines = text.lines().filter(|line| !line.trim().is_empty());
@@ -1691,11 +1760,11 @@ fn version_stamp_is_jigcs(repo_root: &Path) -> bool {
 
 /// Whether the bytes currently at `path` are jigc's own — the **one** thing that exempts a
 /// dirty install path from the refusal ([`InstallPathDisposition`]).
-fn jigc_owned_at(repo_root: &Path, path: &str, guide_file: Option<&str>) -> bool {
+fn jigc_owned_at(jigc_home: &Path, path: &str, guide_file: Option<&str>) -> bool {
     match install_path_disposition(path, guide_file) {
         InstallPathDisposition::Refuses => false,
         InstallPathDisposition::ExemptWhenJigcOwned => {
-            path != VERSION_STAMP_PATH || version_stamp_is_jigcs(repo_root)
+            path != VERSION_STAMP_PATH || version_stamp_is_jigcs(jigc_home)
         }
     }
 }
@@ -1705,7 +1774,7 @@ fn jigc_owned_at(repo_root: &Path, path: &str, guide_file: Option<&str>) -> bool
 /// pre-write gate over the candidate set, and [`commit_install`]'s backstop over the
 /// settled pathspec.
 fn dirty_install_refusals(
-    repo_root: &Path,
+    jigc_home: &Path,
     paths: &[String],
     before: &BTreeSet<String>,
     guide_file: Option<&str>,
@@ -1713,7 +1782,7 @@ fn dirty_install_refusals(
     paths
         .iter()
         .filter(|path| before.contains(*path))
-        .filter(|path| !jigc_owned_at(repo_root, path, guide_file))
+        .filter(|path| !jigc_owned_at(jigc_home, path, guide_file))
         .cloned()
         .collect()
 }
@@ -1729,7 +1798,7 @@ fn dirty_install_refusals(
 /// **verbatim**, so its bytes are never the ones a pre-write refusal would be saving —
 /// [`commit_install`]'s backstop asks about it with the resolved path in hand.
 fn install_candidate_paths(
-    repo_root: &Path,
+    jigc_home: &Path,
     line_file: &str,
     allowlist_file: &str,
     guide_file: Option<&str>,
@@ -1737,13 +1806,13 @@ fn install_candidate_paths(
     install_tracked_paths(
         line_file,
         allowlist_file,
-        is_fresh_repo(repo_root),
+        is_fresh_repo(jigc_home),
         None,
         guide_file,
     )
     .into_iter()
-    .filter(|path| repo_root.join(path).exists())
-    .filter(|path| !git_path_ignored(repo_root, path))
+    .filter(|path| jigc_home.join(path).exists())
+    .filter(|path| !git_path_ignored(jigc_home, path))
     .collect()
 }
 
@@ -1756,7 +1825,7 @@ fn install_candidate_paths(
 /// the consent from reading like an ordinary install (surface-contract law 1). Advisory and
 /// **un-keyed** (no `CHECK_INVENTORY` row), so the severity post-pass leaves it advisory —
 /// the consent was given, so this reports, it does not gate.
-fn forced_install_path_finding(repo_root: &Path, paths: &[String]) -> Finding {
+fn forced_install_path_finding(jigc_home: &Path, paths: &[String]) -> Finding {
     let listing: Vec<String> = paths.iter().map(|path| format!("  `{path}`")).collect();
     Finding::graded(
         Severity::Advisory,
@@ -1775,7 +1844,7 @@ fn forced_install_path_finding(repo_root: &Path, paths: &[String]) -> Finding {
                 "check each path — `{show}` where the install commit carries it; where jigc \
                  regenerated the path, git never held a copy of what was there, so recovery \
                  is your own backup or nothing",
-                show = engine::finding::git_at(repo_root, "show HEAD -- <path>"),
+                show = engine::finding::git_at(jigc_home, "show HEAD -- <path>"),
             )
             .into(),
         ),
@@ -1808,11 +1877,11 @@ fn forced_install_path_finding(repo_root: &Path, paths: &[String]) -> Finding {
 /// default `.git/hooks/pre-commit` **relative** (it strips the canonicalized repo root,
 /// and `.git/` is under it), so "the printed path is relative" is not a committability
 /// test. Conservative on failure — a hook that does not canonicalize is not added.
-fn committable_hook_path(repo_root: &Path, hook_file: &Path) -> Option<String> {
-    let root = std::fs::canonicalize(repo_root).ok()?;
+fn committable_hook_path(jigc_home: &Path, hook_file: &Path) -> Option<String> {
+    let root = std::fs::canonicalize(jigc_home).ok()?;
     let hook = std::fs::canonicalize(hook_file).ok()?;
     let relative = hook.strip_prefix(&root).ok()?.to_str()?.to_string();
-    crate::trackable::untrackable_reason(repo_root, &relative)
+    crate::trackable::untrackable_reason(jigc_home, &relative)
         .is_none()
         .then_some(relative)
 }
@@ -1902,8 +1971,8 @@ impl InstallSubject {
     /// naming them as *work `jigc setup` did not write*, and every route the first run
     /// printed — stash, commit, set your git identity — leads back to the same refusal
     /// with the set one path larger.
-    fn probe(repo_root: &Path, force: bool) -> Self {
-        let Some(mut dirty) = dirty_against_head(repo_root, &[]) else {
+    fn probe(jigc_home: &Path, force: bool) -> Self {
+        let Some(mut dirty) = dirty_against_head(jigc_home, &[]) else {
             // `--force` still installs when git cannot answer — the consent short-circuits
             // the verdict, and the empty set is what keeps the ack from claiming a subject
             // it never measured.
@@ -1913,7 +1982,7 @@ impl InstallSubject {
                 Self::Unknown
             };
         };
-        for own in own_uncommitted_footprint(repo_root) {
+        for own in own_uncommitted_footprint(jigc_home) {
             dirty.remove(&own);
         }
         if force {
@@ -1947,8 +2016,8 @@ const INSTALL_FOOTPRINT_PATH: &str = ".jigc/state/setup-install-footprint";
 /// something else at — one of these paths after the refusal re-arms the guard on the leg
 /// their bytes are on. Fails closed at every step: an unreadable record, an unreadable
 /// file, a git that cannot answer, all exempt nothing.
-fn own_uncommitted_footprint(repo_root: &Path) -> BTreeSet<String> {
-    let Ok(text) = std::fs::read_to_string(repo_root.join(INSTALL_FOOTPRINT_PATH)) else {
+fn own_uncommitted_footprint(jigc_home: &Path) -> BTreeSet<String> {
+    let Ok(text) = std::fs::read_to_string(jigc_home.join(INSTALL_FOOTPRINT_PATH)) else {
         return BTreeSet::new();
     };
     // The worktree leg: of the recorded paths, the ones whose bytes the record still
@@ -1957,7 +2026,7 @@ fn own_uncommitted_footprint(repo_root: &Path) -> BTreeSet<String> {
         .lines()
         .filter_map(|line| line.split_once(' '))
         .filter(|(hash, path)| {
-            std::fs::read(repo_root.join(path))
+            std::fs::read(jigc_home.join(path))
                 .is_ok_and(|bytes| engine::file_state::hash_bytes(&bytes) == *hash)
         })
         .map(|(_, path)| path.to_string())
@@ -1970,7 +2039,7 @@ fn own_uncommitted_footprint(repo_root: &Path) -> BTreeSet<String> {
     // the pathspec commit replace it (cell (3) of `setup_install_pathspec_guard.rs`).
     let mut args: Vec<&str> = vec!["diff", "--name-only", "-z", "--"];
     args.extend(unchanged.iter().map(String::as_str));
-    let Some(out) = git_output(repo_root, args) else {
+    let Some(out) = git_output(jigc_home, args) else {
         return BTreeSet::new();
     };
     if !out.status.success() {
@@ -1991,19 +2060,19 @@ fn own_uncommitted_footprint(repo_root: &Path) -> BTreeSet<String> {
 ///
 /// A path carrying a newline is skipped rather than written — the record is line-shaped,
 /// and a member it cannot express must not become a member it mis-reads.
-fn record_install_footprint(repo_root: &Path, paths: &[String]) {
+fn record_install_footprint(jigc_home: &Path, paths: &[String]) {
     let mut body = String::new();
     for path in paths.iter().filter(|path| !path.contains('\n')) {
-        if let Ok(bytes) = std::fs::read(repo_root.join(path)) {
+        if let Ok(bytes) = std::fs::read(jigc_home.join(path)) {
             body.push_str(&engine::file_state::hash_bytes(&bytes));
             body.push(' ');
             body.push_str(path);
             body.push('\n');
         }
     }
-    let file = repo_root.join(INSTALL_FOOTPRINT_PATH);
+    let file = jigc_home.join(INSTALL_FOOTPRINT_PATH);
     if body.is_empty() {
-        clear_install_footprint(repo_root);
+        clear_install_footprint(jigc_home);
         return;
     }
     if let Some(parent) = file.parent()
@@ -2016,8 +2085,8 @@ fn record_install_footprint(repo_root: &Path, paths: &[String]) {
 
 /// Drop the record — the install footprint is in a commit now (or was already), so there
 /// is nothing left uncommitted for a later run to mistake for the adopter's work.
-fn clear_install_footprint(repo_root: &Path) {
-    let _ = std::fs::remove_file(repo_root.join(INSTALL_FOOTPRINT_PATH));
+fn clear_install_footprint(jigc_home: &Path) {
+    let _ = std::fs::remove_file(jigc_home.join(INSTALL_FOOTPRINT_PATH));
 }
 
 /// Every repo-relative path under `pathspec` (or in the whole repository, when it is
@@ -2054,8 +2123,8 @@ fn clear_install_footprint(repo_root: &Path) {
 /// `--no-renames` keeps the `-z` record shape to one field per entry; a rename then reports
 /// as its delete + add halves, both of which are differences from `HEAD` and both of which
 /// this door wants named.
-fn dirty_against_head(repo_root: &Path, pathspec: &[String]) -> Option<BTreeSet<String>> {
-    let untracked = if is_fresh_repo(repo_root) {
+fn dirty_against_head(jigc_home: &Path, pathspec: &[String]) -> Option<BTreeSet<String>> {
+    let untracked = if is_fresh_repo(jigc_home) {
         "--untracked-files=no"
     } else {
         "--untracked-files=all"
@@ -2065,7 +2134,7 @@ fn dirty_against_head(repo_root: &Path, pathspec: &[String]) -> Option<BTreeSet<
         args.push("--");
         args.extend(pathspec.iter().map(String::as_str));
     }
-    let out = git_output(repo_root, args)?;
+    let out = git_output(jigc_home, args)?;
     if !out.status.success() {
         return None;
     }
@@ -2224,7 +2293,7 @@ fn is_git_identity_rejection(git_err: &str) -> bool {
 /// never-`--no-verify` commit of managed work, where the user's hooks *are* policy — which
 /// is the scope the two shipped guides' universal takes, in Increment 9's batch.)
 fn commit_install(
-    repo_root: &Path,
+    jigc_home: &Path,
     line_file: &str,
     allowlist_file: &str,
     seeded_gitignore: bool,
@@ -2241,13 +2310,13 @@ fn commit_install(
     // `git add`/`git commit -- <paths>` below mint the repo's first commit (the staged
     // diff is taken against the empty tree). Skip only when there is no git work tree /
     // git is unavailable — the writes still succeeded; the commit is a convenience there.
-    match git_output(repo_root, ["rev-parse", "--is-inside-work-tree"]) {
+    match git_output(jigc_home, ["rev-parse", "--is-inside-work-tree"]) {
         Some(out) if out.status.success() => {}
         _ => return Ok(InstallCommitOutcome::uncommitted(InstallCommit::Skipped)),
     }
 
     // Only the files setup itself wrote, and only those present + not gitignored.
-    let hook = committable_hook_path(repo_root, hook_file);
+    let hook = committable_hook_path(jigc_home, hook_file);
     let mut paths: Vec<String> = install_tracked_paths(
         line_file,
         allowlist_file,
@@ -2256,8 +2325,8 @@ fn commit_install(
         guide_file,
     )
     .into_iter()
-    .filter(|p| repo_root.join(p).exists())
-    .filter(|p| !git_path_ignored(repo_root, p))
+    .filter(|p| jigc_home.join(p).exists())
+    .filter(|p| !git_path_ignored(jigc_home, p))
     .collect();
     if paths.is_empty() {
         return Ok(InstallCommitOutcome::uncommitted(InstallCommit::Skipped));
@@ -2298,7 +2367,7 @@ fn commit_install(
             return Ok(InstallCommitOutcome::uncommitted(InstallCommit::Skipped));
         }
         InstallSubject::Dirty(before) => {
-            dirty_install_refusals(repo_root, &paths, before, guide_file)
+            dirty_install_refusals(jigc_home, &paths, before, guide_file)
         }
     };
     // **The paths this run owns**: the settled pathspec minus what it refuses over. Every
@@ -2324,7 +2393,7 @@ fn commit_install(
     // as such; `Unknown` never reaches here. A missing record refuses, which is the safe
     // direction.
     if matches!(subject, InstallSubject::Dirty(_)) {
-        record_install_footprint(repo_root, &own);
+        record_install_footprint(jigc_home, &own);
     }
     if !dirty.is_empty() {
         // **The door does not stage a path it has just decided not to commit.** Staging the
@@ -2338,13 +2407,13 @@ fn commit_install(
             // A staging refusal here is not the message: the door already has a blocking
             // finding, and two would be the ambiguity the route floor forbids. The re-run
             // stages again from a resolved state.
-            let _ = stage_paths(repo_root, &own);
+            let _ = stage_paths(jigc_home, &own);
         }
         return Err(InstallCommitRejection::DirtyInstallPath(dirty));
     }
 
     // Stage exactly those paths — never a blanket `git add -A`.
-    match stage_paths(repo_root, &paths) {
+    match stage_paths(jigc_home, &paths) {
         StageOutcome::Staged => {}
         // git could not be spawned at all — benign skip (the writes still succeeded).
         StageOutcome::GitUnavailable => {
@@ -2363,7 +2432,7 @@ fn commit_install(
             if paths.is_empty() {
                 return Ok(InstallCommitOutcome::uncommitted(InstallCommit::Skipped));
             }
-            match stage_paths(repo_root, &paths) {
+            match stage_paths(jigc_home, &paths) {
                 StageOutcome::Staged => {}
                 StageOutcome::GitUnavailable => {
                     return Ok(InstallCommitOutcome::uncommitted(InstallCommit::Skipped));
@@ -2412,7 +2481,7 @@ fn commit_install(
         .as_deref()
         .is_some_and(|h| paths.iter().any(|p| p == h));
 
-    if git_output(repo_root, diff)
+    if git_output(jigc_home, diff)
         .map(|o| o.status.success())
         .unwrap_or(false)
     {
@@ -2420,7 +2489,7 @@ fn commit_install(
         // the install commit is the one an earlier run gave it — the pathspec still says
         // where it stands, which is what the summary reports. Everything in the pathspec is
         // committed, so the record keeps only what is not in it.
-        record_install_footprint(repo_root, &left_uncommitted);
+        record_install_footprint(jigc_home, &left_uncommitted);
         return Ok(InstallCommitOutcome {
             commit: InstallCommit::Nothing,
             hook_committed,
@@ -2435,7 +2504,7 @@ fn commit_install(
     // comment above; detached and operation-in-progress still refuse here, and the files
     // are already staged, so a re-run commits them once the user resolves the state.
     if let Err(err) =
-        crate::repo::SeamSubject::live_exempt(repo_root, &[crate::repo::PostureMember::HeadUnborn])
+        crate::repo::SeamSubject::live_exempt(jigc_home, &[crate::repo::PostureMember::HeadUnborn])
             .verify(crate::repo::SeamAct::Commit)
     {
         return Err(InstallCommitRejection::Posture(
@@ -2459,7 +2528,7 @@ fn commit_install(
     // leaves the user's other staged changes uncommitted and untouched.
     let mut commit: Vec<&str> = vec!["commit", "--no-verify", "-m", INSTALL_COMMIT_MESSAGE, "--"];
     commit.extend(paths.iter().map(String::as_str));
-    match git_output(repo_root, commit) {
+    match git_output(jigc_home, commit) {
         Some(out) if out.status.success() => {}
         // git ran and REJECTED the commit (e.g. no `user.email`/`user.name`). The files
         // are now staged-but-uncommitted — unlike the benign skips above, this must not
@@ -2471,10 +2540,10 @@ fn commit_install(
     }
     // The pathspec is in a commit — so the record keeps exactly what that commit could not
     // carry, and nothing a later run could mistake for the adopter's work.
-    record_install_footprint(repo_root, &left_uncommitted);
+    record_install_footprint(jigc_home, &left_uncommitted);
 
     // Resolve the short sha of the commit just made, for the success surface.
-    let commit = match git_output(repo_root, ["rev-parse", "--short", "HEAD"]) {
+    let commit = match git_output(jigc_home, ["rev-parse", "--short", "HEAD"]) {
         Some(out) if out.status.success() => {
             let sha = String::from_utf8_lossy(&out.stdout).trim().to_string();
             if sha.is_empty() {
@@ -2537,10 +2606,10 @@ enum StageOutcome {
 
 /// Stage exactly `paths` — never a blanket `git add -A`. Its own function because
 /// [`commit_install`] runs it **twice** on the refusal path (the soft-member retry).
-fn stage_paths(repo_root: &Path, paths: &[String]) -> StageOutcome {
+fn stage_paths(jigc_home: &Path, paths: &[String]) -> StageOutcome {
     let mut add: Vec<&str> = vec!["add", "--"];
     add.extend(paths.iter().map(String::as_str));
-    match git_output(repo_root, add) {
+    match git_output(jigc_home, add) {
         Some(out) if out.status.success() => StageOutcome::Staged,
         Some(out) => StageOutcome::Refused(git_said(&out)),
         None => StageOutcome::GitUnavailable,
@@ -2555,28 +2624,28 @@ fn git_said(out: &std::process::Output) -> String {
     format!("{}{}", stdout.trim(), stderr.trim())
 }
 
-/// Whether `path` (repo-relative) is gitignored in `repo_root` (`git check-ignore -q`):
+/// Whether `path` (repo-relative) is gitignored in `jigc_home` (`git check-ignore -q`):
 /// honors the requirement that the install commit never stage a gitignored path.
-fn git_path_ignored(repo_root: &Path, path: &str) -> bool {
-    git_output(repo_root, ["check-ignore", "-q", "--", path])
+fn git_path_ignored(jigc_home: &Path, path: &str) -> bool {
+    git_output(jigc_home, ["check-ignore", "-q", "--", path])
         .map(|o| o.status.success())
         .unwrap_or(false)
 }
 
-/// Run `git -C <repo_root> <args>`, returning the captured output if git ran (whatever
+/// Run `git -C <jigc_home> <args>`, returning the captured output if git ran (whatever
 /// its exit), or `None` if git could not be spawned. The install-commit path is
 /// best-effort: a git hiccup degrades to [`InstallCommit::Skipped`], never a setup
 /// failure. (Distinct from `task.rs`'s finalize git helpers, which commit the whole
 /// index via `-F <msg>` and `bail!` on any failure — the wrong shape for a best-effort,
 /// pathspec-limited install commit.)
-fn git_output<I, S>(repo_root: &Path, args: I) -> Option<std::process::Output>
+fn git_output<I, S>(jigc_home: &Path, args: I) -> Option<std::process::Output>
 where
     I: IntoIterator<Item = S>,
     S: AsRef<std::ffi::OsStr>,
 {
     std::process::Command::new("git")
         .arg("-C")
-        .arg(repo_root)
+        .arg(jigc_home)
         .args(args)
         .output()
         .ok()
@@ -2601,6 +2670,12 @@ pub struct UninstallSummary {
     /// teardown. A blocking outcome is not here: it is [`uninstall`]'s `Err` arm, which
     /// removes nothing at all (M48 Increment 10 / T3).
     pub findings: engine::finding::Findings,
+    /// **Which install this teardown removed, when that is not the checkout the command
+    /// was typed in** — `None` on the ordinary path. Set by [`run_uninstall`] from the
+    /// located context, never by [`uninstall`], which is handed one root and has no second
+    /// one to compare it to. See [`crate::render::InstallSite`] for the rule and for why
+    /// this is text-only rather than a fifth envelope key.
+    pub site: Option<crate::render::InstallSite>,
 }
 
 /// The per-artifact removal ledger [`uninstall`] fills — one flag per repo-local
@@ -2728,10 +2803,14 @@ pub fn run_uninstall(start: &Path, force: bool) -> Result<UninstallSummary, Find
         )
     })?;
 
-    uninstall(&ctx.repo_root, &profile, force)
+    // **jigc_home, not the standing checkout** — the same binding `setup` takes, so the
+    // teardown's subject is the install the install door wrote (this module's header).
+    let mut summary = uninstall(&ctx.jigc_home, &profile, force)?;
+    summary.site = install_site(&ctx);
+    Ok(summary)
 }
 
-/// Reverse the repo-local install against `repo_root` with `profile`, mapping an IO
+/// Reverse the repo-local install against `jigc_home` with `profile`, mapping an IO
 /// failure to a blocking `uninstall.*` finding with a route. The testable core of
 /// [`run_uninstall`] (no location step). Each step is independently idempotent, so the
 /// whole teardown is a clean no-op on a re-run — but unless `force`, it removes nothing at
@@ -2741,30 +2820,30 @@ pub fn run_uninstall(start: &Path, force: bool) -> Result<UninstallSummary, Find
 /// ([`untracked_workbench_files`]), or a byte jigc did not write inside a working area or
 /// under `.jigc/displaced/` ([`workbench_foreign_subject`]) — all four probed in step 0.
 fn uninstall(
-    repo_root: &Path,
+    jigc_home: &Path,
     profile: &AdapterProfile,
     force: bool,
 ) -> Result<UninstallSummary, Finding> {
     // 0. The WIP guards, BEFORE anything is removed — everything below is `remove_dir_all`
     //    on a tree that holds the sole copy of four kinds of work.
     if !force {
-        let dirty = dirty_fanout_worktrees(repo_root)?;
+        let dirty = dirty_fanout_worktrees(jigc_home)?;
         if !dirty.is_empty() {
-            return Err(dirty_worktree_finding(repo_root, &dirty));
+            return Err(dirty_worktree_finding(jigc_home, &dirty));
         }
         // The foreign population of every working area under `.jigc/`, and of the parking
         // home nothing else owns ([`workbench_foreign_subject`], M52 Increment 4 / T5).
         // Ahead of the staged-prose guard for the reason `crate::task`'s sibling states: an
         // open task stages `commit:<id>.md`, so asked second this guard would be inert on
         // the dominant cell.
-        let foreign = crate::task::foreign_areas(repo_root, &workbench_foreign_subject(repo_root)?)
+        let foreign = crate::task::foreign_areas(jigc_home, &workbench_foreign_subject(jigc_home)?)
             .map_err(unverified_foreign_finding)?;
         let foreign = crate::task::foreign_lines(&foreign);
         if !foreign.is_empty() {
             return Err(foreign_bytes_finding(&foreign));
         }
         let staged = crate::task::staged_task_prose(
-            repo_root,
+            jigc_home,
             None,
             &crate::task::unverified_prose_finding,
         )?;
@@ -2772,7 +2851,7 @@ fn uninstall(
             // The sub-task discriminator, per listed task, asked where the finding is
             // constructed (M52 Increment 4 / T7, D-1): a sub-task's landing exit is its
             // milestone's boundary, never `jigc task finalize <id>`, which refuses it.
-            let jigc_root = repo_root.join(".jigc");
+            let jigc_root = jigc_home.join(".jigc");
             let owners: Vec<Option<String>> = staged
                 .iter()
                 .map(|(task, _)| engine::milestone::owning_milestone(&jigc_root, task))
@@ -2784,9 +2863,9 @@ fn uninstall(
         // ([`workbench_paths`]). It runs LAST so a corpus holding both a sole-copy
         // worktree and an uncommitted config delta is still answered by the door that
         // owns the sole copy.
-        let untracked = untracked_workbench_files(repo_root)?;
+        let untracked = untracked_workbench_files(jigc_home)?;
         if !untracked.is_empty() {
-            return Err(untracked_workbench_finding(repo_root, &untracked));
+            return Err(untracked_workbench_finding(jigc_home, &untracked));
         }
     }
 
@@ -2795,16 +2874,16 @@ fn uninstall(
     //    once. An already-absent tree is a clean no-op.
     let mut removed = RemovedArtifacts::default();
 
-    let jigc_dir = repo_root.join(".jigc");
+    let jigc_dir = jigc_home.join(".jigc");
     if jigc_dir.exists() {
         // Read the loss BEFORE the removal and name what it actually TOOK after it
         // ([`pending_teardown`], law 1) — the guards above either cleared this tree or
         // `force` consented past them, and neither is a reason to destroy bytes in silence;
         // nor is either a reason to report bytes as gone that a failed `remove_dir_all` left
         // exactly where they were (`crate::milestone::PendingLoss`).
-        let pending = pending_teardown(repo_root);
+        let pending = pending_teardown(jigc_home);
         let outcome = std::fs::remove_dir_all(&jigc_dir);
-        pending.narrate_taken(repo_root);
+        pending.narrate_taken(jigc_home);
         outcome.map_err(|err| {
             Finding::block(
                 "uninstall.remove-jigc",
@@ -2821,7 +2900,7 @@ fn uninstall(
         .reference()
         .map(|r| r.file.clone())
         .unwrap_or_else(|| "CLAUDE.md".to_string());
-    removed.reference = adapter::unwire_reference(repo_root).map_err(|err| {
+    removed.reference = adapter::unwire_reference(jigc_home).map_err(|err| {
         Finding::block(
             "uninstall.unwire-reference",
             format!("cannot unwire the bootstrap reference from `{line_file}`: {err}"),
@@ -2832,7 +2911,7 @@ fn uninstall(
     // 3. Remove the `Bash(jigc:*)` permit from the allowlist — leaving unrelated permits and
     //    keys intact and the file valid JSON.
     let allowlist_file = profile.allowlist.file.clone();
-    removed.allowlist = adapter::remove_allowlist(repo_root, profile).map_err(|err| {
+    removed.allowlist = adapter::remove_allowlist(jigc_home, profile).map_err(|err| {
         Finding::block(
             "uninstall.remove-allowlist",
             format!("cannot remove the allowlist permit from `{allowlist_file}`: {err}"),
@@ -2843,7 +2922,7 @@ fn uninstall(
     // 4. Remove the `SessionStart` hook from the same settings file — surgically, so a
     //    foreign hook sharing the `hooks` object survives (the M36 symmetry fix: both
     //    hooks must come out, or they fire against a removed install).
-    removed.hook = adapter::remove_hook(repo_root, profile).map_err(|err| {
+    removed.hook = adapter::remove_hook(jigc_home, profile).map_err(|err| {
         Finding::block(
             "uninstall.remove-hook",
             format!("cannot remove the session hook from `{allowlist_file}`: {err}"),
@@ -2853,7 +2932,7 @@ fn uninstall(
 
     // 5. Remove the `deny` safety floor from the same settings file — dropping only the
     //    profile's floor patterns, preserving any user `deny` entry.
-    removed.deny = adapter::remove_deny(repo_root, profile).map_err(|err| {
+    removed.deny = adapter::remove_deny(jigc_home, profile).map_err(|err| {
         Finding::block(
             "uninstall.remove-deny",
             format!("cannot remove the deny safety floor from `{allowlist_file}`: {err}"),
@@ -2863,7 +2942,7 @@ fn uninstall(
 
     // 6. Remove the `pre-commit` hook — a standalone jigc hook is deleted; a foreign
     //    hook setup wrapped is restored (only the jigc block is pruned).
-    removed.precommit = remove_precommit_hook(repo_root).map_err(|err| {
+    removed.precommit = remove_precommit_hook(jigc_home).map_err(|err| {
         Finding::block(
             "uninstall.remove-precommit",
             format!("cannot remove the `pre-commit` hook from the repo's hooks dir: {err}"),
@@ -2890,9 +2969,9 @@ fn uninstall(
         .guide()
         .filter(|guide| adapter::validate_guide_target(guide).is_ok())
     {
-        let target = repo_root.join(&guide.file);
+        let target = jigc_home.join(&guide.file);
         if target.is_file() {
-            if force || guide_ownership(repo_root, guide) == GuideOwnership::Owned {
+            if force || guide_ownership(jigc_home, guide) == GuideOwnership::Owned {
                 std::fs::remove_file(&target).map_err(|err| {
                     Finding::block(
                         "uninstall.remove-guide",
@@ -2911,9 +2990,9 @@ fn uninstall(
                 // settings file this teardown just edited *surgically*).
                 let keep: Vec<PathBuf> = [line_file.as_str(), allowlist_file.as_str()]
                     .iter()
-                    .filter_map(|file| repo_root.join(file).parent().map(Path::to_path_buf))
+                    .filter_map(|file| jigc_home.join(file).parent().map(Path::to_path_buf))
                     .collect();
-                prune_empty_dirs(repo_root, &target, &keep);
+                prune_empty_dirs(jigc_home, &target, &keep);
                 removed.guide = true;
             } else {
                 findings.push(guide_kept_finding(&guide.file));
@@ -2930,6 +3009,8 @@ fn uninstall(
         allowlist_file,
         removed,
         findings: findings.into(),
+        // [`run_uninstall`]'s to fill, for the reason [`install`]'s sibling states.
+        site: None,
     })
 }
 
@@ -2944,11 +3025,11 @@ fn uninstall(
 /// directory that resists removal is residue, not a failed teardown, so a stubborn `rmdir`
 /// ends the walk instead of failing the verb (and instead of a finding: an empty directory
 /// is not a fact a user needs routed).
-fn prune_empty_dirs(repo_root: &Path, artifact: &Path, keep: &[PathBuf]) {
+fn prune_empty_dirs(jigc_home: &Path, artifact: &Path, keep: &[PathBuf]) {
     let mut dir = artifact.parent();
     while let Some(current) = dir {
-        if current == repo_root
-            || !current.starts_with(repo_root)
+        if current == jigc_home
+            || !current.starts_with(jigc_home)
             || keep.iter().any(|kept| kept == current)
         {
             return;
@@ -2961,7 +3042,7 @@ fn prune_empty_dirs(repo_root: &Path, artifact: &Path, keep: &[PathBuf]) {
     }
 }
 
-/// The worktree-shaped paths under `<repo_root>/.jigc/worktrees/` that hold content the
+/// The worktree-shaped paths under `<jigc_home>/.jigc/worktrees/` that hold content the
 /// teardown must not take, each paired with what would be destroyed — [`uninstall`]'s
 /// fan-out WIP guard, over the same [`crate::milestone::probe_leftover`] classifier
 /// `jigc milestone provision` and `jigc milestone discard` ask (`design/team-ready-state.md`
@@ -3010,13 +3091,13 @@ fn prune_empty_dirs(repo_root: &Path, artifact: &Path, keep: &[PathBuf]) {
 /// abandon arm the route used to name unconditionally sends the operator through an
 /// irreversible, committed `discard --force` that clears nothing. Only the registered set can
 /// tell the two apart, so it is read here and answered in [`dirty_worktree_finding`].
-fn dirty_fanout_worktrees(repo_root: &Path) -> Result<Vec<HeldWorktreePath>, Finding> {
-    let paths = fanout_worktree_paths(repo_root)
+fn dirty_fanout_worktrees(jigc_home: &Path) -> Result<Vec<HeldWorktreePath>, Finding> {
+    let paths = fanout_worktree_paths(jigc_home)
         .map_err(|err| unverified_worktrees_finding(anyhow::Error::new(err)))?;
 
     let mut holds: Vec<HeldWorktreePath> = Vec::new();
     for path in paths {
-        if let Some(hold) = crate::milestone::probe_leftover(repo_root, &path) {
+        if let Some(hold) = crate::milestone::probe_leftover(jigc_home, &path) {
             holds.push(HeldWorktreePath {
                 path,
                 hold,
@@ -3030,7 +3111,7 @@ fn dirty_fanout_worktrees(repo_root: &Path) -> Result<Vec<HeldWorktreePath>, Fin
     }
     // git stores canonical paths at `worktree add` time, so both sides canonicalize (the
     // `held_subtask_worktrees` convention: on macOS `/tmp/…` lists as `/private/tmp/…`).
-    if let Ok(registered) = crate::milestone::registered_worktrees(repo_root) {
+    if let Ok(registered) = crate::milestone::registered_worktrees(jigc_home) {
         let registered: Vec<PathBuf> = registered
             .into_iter()
             .map(|w| w.canonicalize().unwrap_or(w))
@@ -3062,8 +3143,8 @@ fn dirty_fanout_worktrees(repo_root: &Path) -> Result<Vec<HeldWorktreePath>, Fin
 /// `jigc uninstall` destroyed it at **exit 0**, and the narration never named it either. The
 /// path's shape is [`crate::milestone::probe_leftover`]'s question to answer (fail-closed: a
 /// path it cannot read refuses), never a reason to drop it from the set.
-fn fanout_worktree_paths(repo_root: &Path) -> std::io::Result<Vec<PathBuf>> {
-    let worktrees_root = repo_root.join(".jigc").join("worktrees");
+fn fanout_worktree_paths(jigc_home: &Path) -> std::io::Result<Vec<PathBuf>> {
+    let worktrees_root = jigc_home.join(".jigc").join("worktrees");
     if !worktrees_root.is_dir() {
         return Ok(Vec::new());
     }
@@ -3120,8 +3201,8 @@ fn fanout_worktree_paths(repo_root: &Path) -> std::io::Result<Vec<PathBuf>> {
 /// [`crate::task::staged_task_prose`] both open with `if !<root>.is_dir()`). Driven at
 /// `ffb4064c` on a fresh install, six files planted at `ENTRIES` names were destroyed at
 /// **exit 0**, named by nothing, refused by nothing.
-fn workbench_paths(repo_root: &Path) -> std::io::Result<Vec<String>> {
-    let jigc_dir = repo_root.join(".jigc");
+fn workbench_paths(jigc_home: &Path) -> std::io::Result<Vec<String>> {
+    let jigc_dir = jigc_home.join(".jigc");
     if !jigc_dir.is_dir() {
         return Ok(Vec::new());
     }
@@ -3160,7 +3241,7 @@ fn workbench_paths(repo_root: &Path) -> std::io::Result<Vec<String>> {
             }
             continue;
         }
-        paths.push(crate::render::repo_relative(repo_root, &path));
+        paths.push(crate::render::repo_relative(jigc_home, &path));
     }
     paths.sort();
     Ok(paths)
@@ -3203,13 +3284,13 @@ fn workbench_paths(repo_root: &Path) -> std::io::Result<Vec<String>> {
 ///
 /// Two `git` calls for the whole tree — the clean teardown of a repo with no `.jigc/`
 /// short-circuits in [`workbench_paths`] before either.
-fn classify_workbench_paths(repo_root: &Path) -> anyhow::Result<(Vec<String>, Vec<String>)> {
-    let paths = workbench_paths(repo_root)?;
+fn classify_workbench_paths(jigc_home: &Path) -> anyhow::Result<(Vec<String>, Vec<String>)> {
+    let paths = workbench_paths(jigc_home)?;
     if paths.is_empty() {
         return Ok((Vec::new(), Vec::new()));
     }
     let listed = crate::task::git_capture(
-        repo_root,
+        jigc_home,
         &["ls-files", "-z", "--cached", "--full-name", "--", ".jigc"],
     )?;
     let cached: Vec<&str> = listed.split('\0').filter(|s| !s.is_empty()).collect();
@@ -3217,7 +3298,7 @@ fn classify_workbench_paths(repo_root: &Path) -> anyhow::Result<(Vec<String>, Ve
     // carry. Porcelain v1 `-z` records are `XY <path>\0`; the worktree column is `Y`, and
     // `--no-renames` keeps every record to one path so the offset is fixed.
     let status = git_capture_untrimmed(
-        repo_root,
+        jigc_home,
         &[
             "--no-optional-locks",
             "status",
@@ -3239,7 +3320,7 @@ fn classify_workbench_paths(repo_root: &Path) -> anyhow::Result<(Vec<String>, Ve
     Ok((untracked, tracked))
 }
 
-/// Run `git <args>` in `repo_root` and return stdout **verbatim**, bailing on a spawn
+/// Run `git <args>` in `jigc_home` and return stdout **verbatim**, bailing on a spawn
 /// failure or a non-zero exit — [`crate::task::git_capture`]'s fail-closed shape without
 /// its `trim()`.
 ///
@@ -3247,11 +3328,11 @@ fn classify_workbench_paths(repo_root: &Path) -> anyhow::Result<(Vec<String>, Ve
 /// `X` is a **space** for the ordinary unstaged edit — so trimming the capture eats the
 /// first record's index column and shifts every offset in it by one, silently reading the
 /// path as one byte short. Positional parsing and a trimming capture cannot both be right.
-fn git_capture_untrimmed(repo_root: &Path, args: &[&str]) -> anyhow::Result<String> {
+fn git_capture_untrimmed(jigc_home: &Path, args: &[&str]) -> anyhow::Result<String> {
     use anyhow::Context;
     let out = std::process::Command::new("git")
         .args(args)
-        .current_dir(repo_root)
+        .current_dir(jigc_home)
         .output()
         .context("could not run `git` (is it on PATH?)")?;
     if !out.status.success() {
@@ -3273,8 +3354,8 @@ fn git_capture_untrimmed(repo_root: &Path, args: &[&str]) -> anyhow::Result<Stri
 /// **Fails closed**, under the same code: an unreadable workbench or an unrunnable `git`
 /// leaves the recoverability of those bytes *unknown*, and removing on an unverified
 /// probe is the defect this guard closes.
-fn untracked_workbench_files(repo_root: &Path) -> Result<Vec<String>, Finding> {
-    classify_workbench_paths(repo_root)
+fn untracked_workbench_files(jigc_home: &Path) -> Result<Vec<String>, Finding> {
+    classify_workbench_paths(jigc_home)
         .map(|(untracked, _)| untracked)
         .map_err(unverified_workbench_finding)
 }
@@ -3297,17 +3378,17 @@ fn untracked_workbench_files(repo_root: &Path) -> Result<Vec<String>, Finding> {
 /// answered through git, and two classifiers over one path is two doors answering one
 /// question differently.
 fn workbench_foreign_subject(
-    repo_root: &Path,
+    jigc_home: &Path,
 ) -> Result<Vec<(PathBuf, crate::task::AreaKind)>, Finding> {
-    workbench_foreign_areas(repo_root).map_err(unverified_foreign_finding)
+    workbench_foreign_areas(jigc_home).map_err(unverified_foreign_finding)
 }
 
 /// [`workbench_foreign_subject`]'s IO half — separated so the fail-closed finding is minted
 /// in exactly one place.
 fn workbench_foreign_areas(
-    repo_root: &Path,
+    jigc_home: &Path,
 ) -> std::io::Result<Vec<(PathBuf, crate::task::AreaKind)>> {
-    let jigc_dir = repo_root.join(".jigc");
+    let jigc_dir = jigc_home.join(".jigc");
     let mut areas: Vec<(PathBuf, crate::task::AreaKind)> = Vec::new();
     for (sub, kind) in [
         ("tasks", crate::task::AreaKind::Task),
@@ -3383,7 +3464,7 @@ fn unverified_foreign_finding(err: std::io::Error) -> Finding {
 /// may not want in history; deleting what they do not need is the other exit, and
 /// `--force` is the consent that proceeds anyway, the single consent every destroying
 /// door takes.
-fn untracked_workbench_finding(repo_root: &Path, untracked: &[String]) -> Finding {
+fn untracked_workbench_finding(jigc_home: &Path, untracked: &[String]) -> Finding {
     let listing: Vec<String> = untracked.iter().map(|path| format!("  {path}")).collect();
     Finding::block(
         "uninstall.untracked-workbench-file",
@@ -3397,8 +3478,8 @@ fn untracked_workbench_finding(repo_root: &Path, untracked: &[String]) -> Findin
             "put them where they can be recovered (`{add}` is enough — the index keeps a copy \
              `{restore}` restores) or delete the ones you do not need, then re-run `jigc \
              uninstall`; `jigc uninstall --force` deletes them with the install",
-            add = engine::finding::git_at(repo_root, "add -- <path>"),
-            restore = engine::finding::git_at(repo_root, "checkout -- <path>"),
+            add = engine::finding::git_at(jigc_home, "add -- <path>"),
+            restore = engine::finding::git_at(jigc_home, "checkout -- <path>"),
         ),
     )
 }
@@ -3438,32 +3519,32 @@ fn unverified_workbench_finding(err: anyhow::Error) -> Finding {
 ///
 /// Best-effort throughout: an unreadable workbench yields no warning rather than failing a
 /// teardown that has already been cleared to run.
-fn pending_teardown(repo_root: &Path) -> PendingTeardown {
+fn pending_teardown(jigc_home: &Path) -> PendingTeardown {
     PendingTeardown {
-        worktrees: fanout_worktree_paths(repo_root)
+        worktrees: fanout_worktree_paths(jigc_home)
             .unwrap_or_default()
             .iter()
-            .map(|path| crate::milestone::pending_loss(repo_root, path))
+            .map(|path| crate::milestone::pending_loss(jigc_home, path))
             .collect(),
         // The foreign population of every working area and of `.jigc/displaced/` — the
         // subject the guard above refuses on, named here when `--force` consented past it
         // (M52 Increment 4 / T5). Best-effort like its siblings.
         foreign: crate::task::pending_foreign(
-            repo_root,
-            &workbench_foreign_subject(repo_root).unwrap_or_default(),
+            jigc_home,
+            &workbench_foreign_subject(jigc_home).unwrap_or_default(),
         ),
         // The second subject, which no worktree probe can see: `.jigc/tasks/<id>/docs/*.md` is
         // in no object DB at all. A door that names only half of what it takes is a law-1
         // half-truth, so the set [`crate::task::staged_task_prose`] refuses on is the set
         // named here.
-        prose: pending_staged_prose(repo_root, "removing `.jigc/`", None),
+        prose: pending_staged_prose(jigc_home, "removing `.jigc/`", None),
         // The third subject ([`workbench_paths`]), in both of its halves — because both are
         // removed. The untracked half reaches here only under `--force` (the guard refuses on
         // it otherwise), and is the half that is gone for good; the tracked half is what the
         // guard deliberately lets through, and law 1 owes it a name too — a teardown that took
         // a file in silence is a half-truth whether or not the file is recoverable. Each line
         // says which of the two it is, so the reader is not left to guess.
-        workbench: classify_workbench_paths(repo_root).unwrap_or_default(),
+        workbench: classify_workbench_paths(jigc_home).unwrap_or_default(),
     }
 }
 
@@ -3484,13 +3565,13 @@ struct PendingTeardown {
 
 impl PendingTeardown {
     /// Name what the teardown actually took, in the order the four subjects were read.
-    fn narrate_taken(&self, repo_root: &Path) {
+    fn narrate_taken(&self, jigc_home: &Path) {
         for worktree in &self.worktrees {
-            worktree.narrate_taken(repo_root);
+            worktree.narrate_taken(jigc_home);
         }
-        self.foreign.narrate_taken(repo_root);
-        self.prose.narrate_taken(repo_root);
-        narrate_workbench_files(repo_root, &self.workbench);
+        self.foreign.narrate_taken(jigc_home);
+        self.prose.narrate_taken(jigc_home);
+        narrate_workbench_files(jigc_home, &self.workbench);
     }
 }
 
@@ -3509,10 +3590,10 @@ impl PendingTeardown {
 ///
 /// Best-effort, like every narration: an unreadable workbench or an unrunnable `git`
 /// yields no warning rather than failing a teardown the guards already cleared.
-fn narrate_workbench_files(repo_root: &Path, workbench: &(Vec<String>, Vec<String>)) {
+fn narrate_workbench_files(jigc_home: &Path, workbench: &(Vec<String>, Vec<String>)) {
     // `symlink_metadata`, not `exists()`: a dangling symlink the teardown left behind reads
     // as absent through `exists()`, and the door would report bytes it did not take.
-    let gone = |path: &&String| std::fs::symlink_metadata(repo_root.join(path.as_str())).is_err();
+    let gone = |path: &&String| std::fs::symlink_metadata(jigc_home.join(path.as_str())).is_err();
     let untracked: Vec<String> = workbench.0.iter().filter(gone).cloned().collect();
     let tracked: Vec<String> = workbench.1.iter().filter(gone).cloned().collect();
     if !untracked.is_empty() {
@@ -3537,7 +3618,7 @@ fn narrate_workbench_files(repo_root: &Path, workbench: &(Vec<String>, Vec<Strin
                 .map(|path| format!("    {path}"))
                 .collect::<Vec<_>>()
                 .join("\n"),
-            restore = engine::finding::git_at(repo_root, "checkout -- <path>"),
+            restore = engine::finding::git_at(jigc_home, "checkout -- <path>"),
         );
     }
 }
@@ -3570,14 +3651,14 @@ fn narrate_workbench_files(repo_root: &Path, workbench: &(Vec<String>, Vec<Strin
 /// rather than failing a teardown the guards already cleared. It is surface over a removal,
 /// never itself a gate — the declared bound stays *visible, not prevented*.
 pub(crate) fn pending_staged_prose(
-    repo_root: &Path,
+    jigc_home: &Path,
     action: &str,
     only: Option<&[String]>,
 ) -> PendingProse {
     PendingProse {
         action: action.to_owned(),
         staged: crate::task::staged_task_prose(
-            repo_root,
+            jigc_home,
             only,
             &crate::task::unverified_prose_finding,
         )
@@ -3600,8 +3681,8 @@ impl PendingProse {
     /// failed (`cleanup_subtask_areas` is best-effort; `remove_dir_all(.jigc)` can hit a
     /// read-only path) narrates no loss it did not cause. The outcome-keyed rule
     /// `crate::milestone::PendingLoss` states, at the prose-shaped subject.
-    pub(crate) fn narrate_taken(&self, repo_root: &Path) {
-        let tasks_root = repo_root.join(".jigc").join("tasks");
+    pub(crate) fn narrate_taken(&self, jigc_home: &Path) {
+        let tasks_root = jigc_home.join(".jigc").join("tasks");
         let taken: Vec<(&String, Vec<&String>)> = self
             .staged
             .iter()
@@ -3684,7 +3765,7 @@ struct HeldWorktreePath {
 /// appears only when some listed path is registered here, says what it leaves behind when
 /// only some are, and is replaced by the plain statement that no abandon reaches them when
 /// none is. Unknown registrations (`git worktree list` unreadable) promise neither.
-fn dirty_worktree_finding(repo_root: &Path, dirty: &[HeldWorktreePath]) -> Finding {
+fn dirty_worktree_finding(jigc_home: &Path, dirty: &[HeldWorktreePath]) -> Finding {
     let listing: Vec<String> = dirty
         .iter()
         .map(|held| {
@@ -3695,7 +3776,7 @@ fn dirty_worktree_finding(repo_root: &Path, dirty: &[HeldWorktreePath]) -> Findi
             };
             format!(
                 "  {} — {}{fate}",
-                crate::milestone::hold_line(repo_root, &held.path, &held.hold),
+                crate::milestone::hold_line(jigc_home, &held.path, &held.hold),
                 crate::milestone::because(&held.hold),
             )
         })
@@ -3866,7 +3947,7 @@ fn staged_prose_finding(staged: &[(String, Vec<String>)], owners: &[Option<Strin
 const COMPOSE_MARKER_KEY: &str = "compose-embedded-methodology";
 
 /// Write the `compose-embedded-methodology: true` marker into the project layer's
-/// `<repo_root>/.jigc/config/packs.yaml` (step 2b of [`install`]).
+/// `<jigc_home>/.jigc/config/packs.yaml` (step 2b of [`install`]).
 ///
 /// **A `packs:` list is no longer a veto** (M49 Inc 6). The marker composes the two
 /// *in-binary* packs, and since T1 the loader composes that pair *with* the listed
@@ -3888,10 +3969,10 @@ const COMPOSE_MARKER_KEY: &str = "compose-embedded-methodology";
 /// **Idempotent:** the serialized bytes are written only when they differ from what
 /// is on disk, so a second `setup` over an already-marked file is a byte-identical
 /// no-op (`serde_yaml_ng` serialization of a stable mapping is deterministic).
-fn write_compose_marker(repo_root: &Path) -> std::io::Result<()> {
+fn write_compose_marker(jigc_home: &Path) -> std::io::Result<()> {
     use serde_yaml_ng::{Mapping, Value};
 
-    let config_dir = repo_root.join(".jigc").join("config");
+    let config_dir = jigc_home.join(".jigc").join("config");
     std::fs::create_dir_all(&config_dir)?;
     let path = config_dir.join("packs.yaml");
 
