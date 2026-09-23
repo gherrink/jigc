@@ -5544,7 +5544,7 @@ fn run_milestone_finalize(
                     &jigc_root,
                     &list,
                     SubtaskComplement::Displace {
-                        repo_root: &jigc_home,
+                        jigc_home: &jigc_home,
                         moved: &mut displaced,
                         kept: &mut kept_areas,
                     },
@@ -5692,7 +5692,7 @@ fn run_milestone_finalize(
                     &jigc_root,
                     &list,
                     SubtaskComplement::Displace {
-                        repo_root: &jigc_home,
+                        jigc_home: &jigc_home,
                         moved: &mut displaced,
                         kept: &mut kept_areas,
                     },
@@ -5984,7 +5984,7 @@ fn cleanup_subtask_areas(
         }
         match &mut complement {
             SubtaskComplement::Displace {
-                repo_root,
+                jigc_home,
                 moved,
                 kept,
             } => {
@@ -5995,7 +5995,6 @@ fn cleanup_subtask_areas(
                 // moves, so each caller sorts the completed union rather than resting on an
                 // ordering two directory names happen to give it.
                 let outcome = crate::task::displace_foreign_area(
-                    repo_root,
                     jigc_root,
                     &area,
                     engine::state::WorkArea::Task,
@@ -6008,7 +6007,7 @@ fn cleanup_subtask_areas(
                 // standing hands back one `finalize.foreign-bytes` advisory for the caller's
                 // own surface.
                 if !crate::task::unwind_settled_area(
-                    repo_root,
+                    jigc_home,
                     &area,
                     engine::state::WorkArea::Task,
                     &sub_id,
@@ -6060,7 +6059,12 @@ enum SubtaskComplement<'a> {
     /// a working area, so the landed-boundary warrant that lets a sibling door merely
     /// narrate a loss is unavailable, and this door has no consent flag to offer instead.
     Displace {
-        repo_root: &'a Path,
+        /// The root every path this arm prints is spelled against — the **main checkout**
+        /// (`crate::task::workbench_home`), never the standing one. Named for what it is
+        /// since M53 (row 6): it was spelled `repo_root`, both callers already passed
+        /// `jigc_home`, and the sibling door that read the same field name literally printed
+        /// host-absolute paths from a linked worktree.
+        jigc_home: &'a Path,
         moved: &'a mut Vec<render::Displaced>,
         /// One `finalize.foreign-bytes` advisory per sub-task area the teardown left
         /// standing (M53 Increment 2 / T3). The caller decides where it goes: this door's

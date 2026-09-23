@@ -1230,10 +1230,23 @@ fn the_dirty_worktree_refusal_is_workbench_relative_from_inside_another_worktree
 /// are spelled against; `repo_root` is the *cwd's* checkout and coincides with it only while
 /// the caller stands outside a linked worktree.
 ///
-/// The file already spelled six of its sites that way (and `task.rs` passes
-/// `task.jigc_home` at every one of its own), so this is one rule that had two spellings in
-/// one file rather than a rule nobody had written. Read off the source, because the claim is
-/// about the *arguments* a call is written with and (g) can only reach two members of it.
+/// The file already spelled six of its sites that way, so this is one rule that had two
+/// spellings in one file rather than a rule nobody had written. Read off the source, because
+/// the claim is about the *arguments* a call is written with and (g) can only reach two
+/// members of it.
+///
+/// ~~(and `task.rs` passes `task.jigc_home` at every one of its own)~~ **Struck 2026-09-23**
+/// (M53 — the pre-v1 usability batch, row 6). That parenthesis was false when it was
+/// written, and it is why this scan was scoped to one file while the sibling door shipped
+/// the identical leak: the rc.19 per-axis review's `(3, F-A)` drove `jigc task finalize`
+/// from a branch-attached linked worktree and got
+/// `"from": "/private/var/folders/…/repo/.jigc/tasks/…"` on the **1.0-pinned**
+/// `committed.displaced` key, plus the same absolutes in the stderr note and inside
+/// `finalize.foreign-bytes`' message and route. Eight sites in `task.rs` rendered against
+/// `repo_root`; four more were behaviourally right with the parameter *named* `repo_root`,
+/// which is the same hazard one step from firing. **The scan now covers both files**, and
+/// `task.rs` grew `workbench_home(jigc_root)` so the correct root is derivable at every
+/// workbench function rather than passed in and trusted.
 ///
 /// ~~Out of scope, stated: `setup.rs` binds no `jigc_home` at all — its `repo_root` is the
 /// root it joins every `.jigc/` path off, so the two cannot diverge inside that file, and
@@ -1247,25 +1260,34 @@ fn the_dirty_worktree_refusal_is_workbench_relative_from_inside_another_worktree
 /// cwd axis, and `setup.rs`'s module header carries the rule.
 #[test]
 fn milestone_renders_no_path_against_the_cwd_repo_root() {
-    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/milestone.rs"))
-        .expect("read cli/src/milestone.rs");
-    let offenders: Vec<(usize, String)> = src
-        .lines()
-        .enumerate()
-        .filter(|(_, line)| {
-            line.contains("repo_relative(repo_root") || line.contains("repo_relative(&repo_root")
+    // Both doors that tear a working area down, since M53 (row 6): the rule is one rule, and
+    // scoping the scan to one of its two files is how the second shipped the same leak.
+    let files = [
+        (
+            "crates/cli/src/milestone.rs",
+            include_str!("../src/milestone.rs"),
+        ),
+        ("crates/cli/src/task.rs", include_str!("../src/task.rs")),
+    ];
+    let offenders: Vec<String> = files
+        .iter()
+        .flat_map(|(name, src)| {
+            src.lines()
+                .enumerate()
+                .filter(|(_, line)| {
+                    line.contains("repo_relative(repo_root")
+                        || line.contains("repo_relative(&repo_root")
+                })
+                .map(move |(i, line)| format!("  {name}:{}: {}", i + 1, line.trim()))
         })
-        .map(|(i, line)| (i + 1, line.trim().to_string()))
         .collect();
     assert!(
         offenders.is_empty(),
         "these sites spell a workbench path against the cwd's checkout, which is a \
-         host-absolute leak from inside a linked worktree — render against `jigc_home`:\n{}",
-        offenders
-            .iter()
-            .map(|(n, line)| format!("  crates/cli/src/milestone.rs:{n}: {line}"))
-            .collect::<Vec<_>>()
-            .join("\n"),
+         host-absolute leak from inside a linked worktree — render against `jigc_home` \
+         (`cli::task::workbench_home` derives it from the `jigc_root` these functions \
+         already carry):\n{}",
+        offenders.join("\n"),
     );
 }
 

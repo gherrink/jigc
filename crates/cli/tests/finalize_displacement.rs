@@ -409,6 +409,168 @@ fn a_partial_move_names_what_it_could_not_move_and_counts_the_whole_area() {
 }
 
 // ---------------------------------------------------------------------------
+// M53 — the pre-v1 usability batch, row 6: the cwd is not the root these paths
+// are spelled against
+// ---------------------------------------------------------------------------
+
+/// **Arm 4 — every Displace surface stays repo-relative from a branch-attached linked
+/// worktree** (the rc.19 per-axis review's `(3, F-A)`).
+///
+/// `render::repo_relative` falls back to the honest absolute when its strip fails, so a
+/// workbench path spelled against the *standing* checkout does not error — it silently
+/// prints the host filesystem. Driven at `834772b6`, running the identical populated cell
+/// from a linked worktree gave `"from": "/private/var/folders/…/repo/.jigc/tasks/…"` on the
+/// **1.0-pinned** `committed.displaced` key, the same absolutes in the stderr note, and the
+/// same again inside `finalize.foreign-bytes`' message and route. `milestone finalize` was
+/// clean in the identical cell — the rc.18 post-review MEDIUM 1 swept that door and this one
+/// was left — which is why the class here is *the arguments the calls are written with* and
+/// the source scan in `commit_seam_posture.rs` is its other half.
+///
+/// The worktree is **branch-attached** on purpose: a provisioned fan-out worktree is
+/// detached by construction and the door refuses `repo.head-detached` before any
+/// displacement runs, so that cwd cannot reach this surface at all.
+///
+/// Both cells are driven, because they are two different renderers over the same paths: the
+/// all-move cell owns the envelope key and the *moved aside* note, the none-move cell owns
+/// `finalize.foreign-bytes`' message **and** its route. The control is the same fixture from
+/// the repository root, asserted in the same run — so a green here cannot come from a
+/// scan that would pass anywhere.
+#[test]
+fn every_displace_surface_is_repo_relative_from_a_linked_worktree() {
+    for occupy in [None, Some("")] {
+        let corpus = TrialCorpus::build(State::Fresh);
+        let task = corpus.start_workflow("quick-fix", "Cap the retry budget");
+        let area = corpus.repo().join(".jigc").join("tasks").join(&task);
+        std::fs::write(area.join("notes.txt"), "planted\n").expect("write the plant");
+
+        // `Some("")` occupies `.jigc/displaced/<task>` itself with a regular file, so the
+        // parking home cannot be created and NOTHING moves — the arm that raises
+        // `finalize.foreign-bytes` and leaves the area standing.
+        if occupy.is_some() {
+            let displaced = corpus.repo().join(".jigc").join("displaced");
+            std::fs::create_dir_all(&displaced).expect("the displaced root");
+            std::fs::write(displaced.join(&task), "not a directory\n").expect("occupy");
+        }
+
+        corpus.jigc_ok(&[
+            "doc",
+            "set-field",
+            &format!("commit:{task}#type"),
+            "--value",
+            "fix",
+            "--task",
+            &task,
+        ]);
+        corpus.set_slot(&format!("commit:{task}#summary"), &task, "cap the retries");
+
+        // A branch-attached linked worktree, with the commit's own diff staged in ITS index
+        // (a linked worktree carries its own index — staging in the main checkout would
+        // leave this finalize with nothing to commit).
+        let linked = corpus.repo().join("..").join("linked");
+        corpus.git(&[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "feat",
+            linked.to_str().expect("utf-8 worktree path"),
+        ]);
+        std::fs::write(linked.join("work.txt"), "y\n").expect("write the staged change");
+        std::process::Command::new("git")
+            .args(["add", "work.txt"])
+            .current_dir(&linked)
+            .env("HOME", corpus.home())
+            .output()
+            .expect("stage in the linked worktree");
+
+        let out = corpus.jigc_stdin_from(
+            &linked,
+            &["--format", "json", "task", "finalize", &task],
+            "",
+        );
+        let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+        assert!(
+            out.status.success(),
+            "the finalize must LAND from the linked worktree;\nstdout:\n{stdout}\n\
+             stderr:\n{stderr}",
+        );
+
+        // The host prefix this corpus lives under — the string that must appear on NO
+        // surface. Asserted as a before-control: if the fixture's own root were not in
+        // either stream to begin with, the scan below would be vacuous.
+        let host = corpus
+            .repo()
+            .canonicalize()
+            .expect("canonicalize the repo")
+            .to_string_lossy()
+            .to_string();
+        assert!(
+            !host.is_empty() && host.starts_with('/'),
+            "the control needs a real absolute prefix; got `{host}`",
+        );
+
+        for (surface, printed) in [("the envelope", &stdout), ("the narration", &stderr)] {
+            assert!(
+                !printed.contains(&host),
+                "`{surface}` spells a workbench path against the cwd's checkout — the \
+                 host-absolute leak `(3, F-A)` names (occupy: {occupy:?});\n{printed}",
+            );
+        }
+        assert!(
+            stderr.contains(".jigc/tasks/") && stderr.contains("notes.txt"),
+            "…and it still NAMES the entry, repo-relative (occupy: {occupy:?});\n{stderr}",
+        );
+
+        let value: serde_json::Value =
+            serde_json::from_str(&stdout).expect("the landed document is one JSON value");
+        match occupy {
+            None => {
+                let rows = value["committed"]["displaced"]
+                    .as_array()
+                    .expect("`committed.displaced` is always present")
+                    .clone();
+                assert_eq!(rows.len(), 1, "the one plant moved;\n{stdout}");
+                for key in ["from", "to"] {
+                    let path = rows[0][key].as_str().expect("a string");
+                    assert!(
+                        path.starts_with(".jigc/"),
+                        "`committed.displaced[].{key}` is repo-relative on the 1.0-pinned \
+                         envelope; got `{path}`",
+                    );
+                }
+            }
+            Some(_) => {
+                let finding = value["findings"]
+                    .as_array()
+                    .and_then(|rows| {
+                        rows.iter()
+                            .find(|f| f["code"] == "finalize.foreign-bytes")
+                            .cloned()
+                    })
+                    .unwrap_or_else(|| {
+                        panic!("the none-move cell raises `finalize.foreign-bytes`;\n{stdout}")
+                    });
+                for key in ["message", "route"] {
+                    let text = finding[key].as_str().unwrap_or_default();
+                    assert!(
+                        !text.contains(&host),
+                        "`finalize.foreign-bytes`'s `{key}` carries a host path;\n{text}",
+                    );
+                }
+                assert!(
+                    finding["message"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .contains(".jigc/tasks/"),
+                    "…and still names the area, repo-relative;\n{finding:#}",
+                );
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // M53 Increment 2 / T3 — the removal is conditioned on the move
 // ---------------------------------------------------------------------------
 

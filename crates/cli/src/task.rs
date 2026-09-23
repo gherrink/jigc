@@ -784,11 +784,11 @@ pub(crate) fn staged_doc_ids(docs_dir: &Path) -> std::io::Result<Vec<String>> {
 /// rather than reporting an empty set, because "enumerated nothing" and "there is nothing"
 /// are the same bytes to the caller and only one of them is safe.
 pub(crate) fn staged_task_prose(
-    repo_root: &Path,
+    jigc_home: &Path,
     only: Option<&[String]>,
     unverified: &dyn Fn(std::io::Error) -> Finding,
 ) -> Result<Vec<(String, Vec<String>)>, Finding> {
-    let tasks_root = repo_root.join(".jigc").join("tasks");
+    let tasks_root = jigc_home.join(".jigc").join("tasks");
     if !tasks_root.is_dir() {
         return Ok(Vec::new());
     }
@@ -812,7 +812,7 @@ pub(crate) fn staged_task_prose(
             // `<repo>/.jigc/tasks/`, so a repo-relative spelling exists by construction.
             unverified(std::io::Error::other(format!(
                 "{}: {err}",
-                crate::render::repo_relative(repo_root, &path.join("docs"))
+                crate::render::repo_relative(jigc_home, &path.join("docs"))
             )))
         })?;
         if !docs.is_empty() {
@@ -4053,7 +4053,9 @@ pub(crate) fn try_execute_finalize_plan(
         // and `{msg_path:?}` spelled the host path of the machine jigc ran on.
         format!(
             "could not write the commit message to `{}`",
-            render::repo_relative(repo_root, &msg_path),
+            // The transient lands in `cleanup_dir`, which is a workbench area at all three
+            // call sites — so it is spelled against the workbench root (M53, row 6).
+            render::repo_relative(workbench_home(jigc_root), &msg_path),
         )
     })?;
     // The promote and retire **worktree** axes, on the shared compare-and-swap entry (M52
@@ -5694,6 +5696,27 @@ fn work_unit_location(task_id: &str) -> Location {
     Location::addressed(work_unit_ref(task_id), 1, 1)
 }
 
+/// **The root a workbench path is spelled against** — `jigc_home`, never `repo_root`
+/// (M53 — the pre-v1 usability batch, row 6 / the rc.19 per-axis review's `(3, F-A)`; the
+/// rule `crate::milestone`'s module header states, and `2ddcc003` applied there).
+///
+/// Everything under `.jigc/` — a working area, a displaced entry, the transient
+/// `COMMIT_MSG` — belongs to the **main checkout**, which is what `jigc_root`'s parent is by
+/// construction. `repo_root` is a different thing with the same shape: *the checkout the
+/// command was typed in*, which from a branch-attached linked worktree is another directory
+/// entirely. `render::repo_relative` falls back to the honest absolute when its strip fails,
+/// so handing it `repo_root` does not error — it silently prints the host filesystem, on the
+/// stderr note, on the 1.0-pinned `committed.displaced` keys and inside
+/// `finalize.foreign-bytes`' message and route.
+///
+/// Taking `jigc_root` (rather than `jigc_home`) is deliberate: it is the argument the
+/// workbench functions already carry, so the correct root is derivable at every one of them
+/// without a caller being trusted to pass it. The fallback is the degenerate root-directory
+/// case and is unreachable for a real `<home>/.jigc`.
+pub(crate) fn workbench_home(jigc_root: &Path) -> &Path {
+    jigc_root.parent().unwrap_or(jigc_root)
+}
+
 /// The **work-unit ref** itself — `task:<id>`, the contract's declared target form — so the
 /// two consumers that need it as a string (the located family above, and the committing
 /// door's [`RejectionFrame::target`]) spell it once (M52 Increment 1 / T1).
@@ -5962,7 +5985,7 @@ pub(crate) struct ForeignArea {
 ///
 /// Areas whose complement is empty are dropped, so the ordinary corpus carries no rows at all.
 pub(crate) fn foreign_areas(
-    repo_root: &Path,
+    jigc_home: &Path,
     areas: &[(PathBuf, AreaKind)],
 ) -> std::io::Result<Vec<ForeignArea>> {
     let mut found = Vec::new();
@@ -5988,7 +6011,7 @@ pub(crate) fn foreign_areas(
                 .into_iter()
                 .map(|rel| {
                     let abs = dir.join(&rel);
-                    let line = render::repo_relative(repo_root, &abs);
+                    let line = render::repo_relative(jigc_home, &abs);
                     (abs, line)
                 })
                 .collect(),
@@ -6039,14 +6062,14 @@ pub(crate) fn foreign_lines(areas: &[ForeignArea]) -> Vec<String> {
 pub(crate) struct PendingForeign(Vec<ForeignArea>);
 
 /// Read [`PendingForeign`] over `areas`. Call it immediately before the removal.
-pub(crate) fn pending_foreign(repo_root: &Path, areas: &[(PathBuf, AreaKind)]) -> PendingForeign {
-    PendingForeign(foreign_areas(repo_root, areas).unwrap_or_default())
+pub(crate) fn pending_foreign(jigc_home: &Path, areas: &[(PathBuf, AreaKind)]) -> PendingForeign {
+    PendingForeign(foreign_areas(jigc_home, areas).unwrap_or_default())
 }
 
 impl PendingForeign {
     /// Name what the removal actually took, per area and per path. Call it immediately after
     /// the removal, on **both** its outcomes.
-    pub(crate) fn narrate_taken(&self, repo_root: &Path) {
+    pub(crate) fn narrate_taken(&self, jigc_home: &Path) {
         for area in &self.0 {
             // `symlink_metadata`, not `exists()`: a dangling symlink the removal left behind
             // reads as absent through `exists()`, and the door would report bytes still in
@@ -6057,7 +6080,7 @@ impl PendingForeign {
                 .filter(|(abs, _)| std::fs::symlink_metadata(abs).is_err())
                 .map(|(_, line)| line.clone())
                 .collect();
-            crate::milestone::narrate_removal(repo_root, &area.dir, area.subject, &taken);
+            crate::milestone::narrate_removal(jigc_home, &area.dir, area.subject, &taken);
         }
     }
 }
@@ -6105,19 +6128,27 @@ impl PendingForeign {
 /// U+FFFD-substituted and its rename fails — the move is then narrated as a failure and the
 /// teardown takes the byte. Visible, not kept; the repair belongs where the name is lost.
 pub(crate) fn displace_foreign_area(
-    repo_root: &Path,
     jigc_root: &Path,
     area: &Path,
     kind: state::WorkArea,
     unit_id: &str,
 ) -> Displacement {
+    // Every path this function prints lives under `.jigc/`, so it spells them against the
+    // workbench root, which it derives from the one argument that *is* that root (M53 — the
+    // pre-v1 usability batch, row 6). It used to take a `repo_root` beside it and render
+    // against that: at the milestone door the caller passed `jigc_home` and the surfaces were
+    // clean, at the task door it passed the standing checkout and, from a branch-attached
+    // linked worktree, every one of them went host-absolute — the stderr note, the 1.0-pinned
+    // `committed.displaced[].from`/`.to`, and each park-failure reason. Dropping the parameter
+    // is the fix: there is now no argument a caller could get wrong.
+    let jigc_home = workbench_home(jigc_root);
     let foreign = match state::foreign_area_paths(area, kind) {
         Ok(paths) => paths,
         Err(err) => {
             eprintln!(
                 "note: could not read {} to move aside what jigc did not write there \
                  (the removal below takes whatever is in it): {err}",
-                render::repo_relative(repo_root, area),
+                render::repo_relative(jigc_home, area),
             );
             // Nothing was enumerated, so there is no entry to report on either side — the
             // note above is the whole answer this call has.
@@ -6134,7 +6165,7 @@ pub(crate) fn displace_foreign_area(
     let mut unmoved: Vec<Unmoved> = Vec::new();
     for entry in foreign {
         let from = area.join(&entry);
-        let from_line = render::repo_relative(repo_root, &from);
+        let from_line = render::repo_relative(jigc_home, &from);
         let to = free_displacement_path(home.join(&entry));
         let parent = to.parent().unwrap_or(&home);
         if let Err(err) = std::fs::create_dir_all(parent) {
@@ -6142,12 +6173,12 @@ pub(crate) fn displace_foreign_area(
                 path: from_line,
                 reason: format!(
                     "could not open {} to park it: {err}",
-                    render::repo_relative(repo_root, parent),
+                    render::repo_relative(jigc_home, parent),
                 ),
             });
             continue;
         }
-        let to_line = render::repo_relative(repo_root, &to);
+        let to_line = render::repo_relative(jigc_home, &to);
         match std::fs::rename(&from, &to) {
             Ok(()) => moved.push(render::Displaced {
                 from: from_line,
@@ -6330,19 +6361,13 @@ fn post_commit(
         }
         return;
     };
-    let outcome = displace_foreign_area(
-        repo_root,
-        jigc_root,
-        cleanup_dir,
-        teardown.kind,
-        teardown.unit_id,
-    );
+    let outcome = displace_foreign_area(jigc_root, cleanup_dir, teardown.kind, teardown.unit_id);
     narrate_displacement(&outcome);
     // The area's fate is the caller's to report, not this function's to act on: the commit
     // is truth either way, and an area left standing is named by the advisory the unwind
     // pushes into `teardown.kept`.
     let _gone = unwind_settled_area(
-        repo_root,
+        workbench_home(jigc_root),
         cleanup_dir,
         teardown.kind,
         teardown.unit_id,
@@ -6401,7 +6426,7 @@ pub(crate) struct AreaTeardown<'a> {
 /// Returns whether the area is **gone** — the fact a caller that acks a teardown keys its ack
 /// on, never on having run the loop.
 pub(crate) fn unwind_settled_area(
-    repo_root: &Path,
+    jigc_home: &Path,
     area: &Path,
     kind: state::WorkArea,
     unit_id: &str,
@@ -6412,13 +6437,13 @@ pub(crate) fn unwind_settled_area(
         Ok(state::AreaUnwind::Absent | state::AreaUnwind::Removed) => true,
         Ok(state::AreaUnwind::Foreign) => {
             kept.push(kept_area_finding(
-                repo_root, area, kind, unit_id, outcome, None,
+                jigc_home, area, kind, unit_id, outcome, None,
             ));
             false
         }
         Err(err) => {
             kept.push(kept_area_finding(
-                repo_root,
+                jigc_home,
                 area,
                 kind,
                 unit_id,
@@ -6451,14 +6476,14 @@ pub(crate) fn unwind_settled_area(
 /// *outcome* vocabulary — the rule this file already states one family over: a finding carried
 /// beside a door's own result joins neither that registry nor `CHECK_INVENTORY`.
 fn kept_area_finding(
-    repo_root: &Path,
+    jigc_home: &Path,
     area: &Path,
     kind: state::WorkArea,
     unit_id: &str,
     outcome: &Displacement,
     fault: Option<&state::AreaUnwindError>,
 ) -> Finding {
-    let listed = render::repo_relative(repo_root, area);
+    let listed = render::repo_relative(jigc_home, area);
     let target = match kind {
         state::WorkArea::Task => work_unit_ref(unit_id),
         state::WorkArea::Milestone => format!("milestone:{unit_id}"),
@@ -6481,7 +6506,7 @@ fn kept_area_finding(
             // `render::repo_relative`, which is also the spelling the operator needs — a bare
             // `notes.txt` names nothing they can act on.
             held.iter()
-                .map(|path| format!("`{}`", render::repo_relative(repo_root, &area.join(path))))
+                .map(|path| format!("`{}`", render::repo_relative(jigc_home, &area.join(path))))
                 .collect::<Vec<_>>()
                 .join(", "),
         ),
@@ -6494,7 +6519,7 @@ fn kept_area_finding(
     if let Some(err) = fault {
         message.push_str(&format!(
             "; the teardown stopped at `{}` ({}), leaving the rest of the area as found",
-            render::repo_relative(repo_root, &err.path),
+            render::repo_relative(jigc_home, &err.path),
             err.source,
         ));
     }
