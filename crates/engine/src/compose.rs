@@ -1780,7 +1780,21 @@ fn emit_fan_out_spawns(
                 Some(absolute) => absolute.clone(),
                 None => crate::milestone::worktree_path(id).display().to_string(),
             };
-            let cmd = format!("cd {worktree} && jigc workflow {workflow} --task {id}");
+            // **And quoted, because absolute means arbitrary** (M53 post-review-fix review,
+            // HIGH 1). Repo-relative the operand was `.jigc/worktrees/<slug>` — every byte
+            // shell-inert by construction, so the raw interpolation above was safe by accident
+            // of the value, not by rule. An absolute carries the *caller's* filesystem, and a
+            // repository under `/Users/me/my repos/app` split the emitted line into `cd
+            // /Users/me/my` (driven: `sh: cd: … No such file or directory`, rc=1) — the
+            // sub-agent could not enter its worktree at all. [`shell_operand`] renders the
+            // path bare when a shell re-lexes it as itself, so the ordinary spelling is
+            // unmoved, and it is the same render `crate::finding::git_at` gives a checkout
+            // path and `crate::start::blanket_base_pin_refusal` gives this very directory —
+            // one directory, one spelling, on both surfaces that name it.
+            let cmd = format!(
+                "cd {} && jigc workflow {workflow} --task {id}",
+                crate::finding::shell_operand(&worktree),
+            );
             format!("Spawn: `{cmd}`")
         })
         .collect();

@@ -2166,8 +2166,11 @@ fn blanket_base_pin_refusal(
         );
     };
     // The absolute the reader can paste from wherever they are standing — the same path
-    // the `Spawn:` line emits, canonicalized the same way, so the two never name one
-    // directory two ways.
+    // the `Spawn:` line emits, canonicalized the same way **and rendered by the same
+    // predicate** ([`engine::finding::shell_operand`], below), so the two never name one
+    // directory two ways. Until the M53 post-review fix they could: this site quoted through
+    // `shell_token` and the `Spawn:` line interpolated raw, so on a repository path with a
+    // space the refusal was runnable and the line it says it matches was not.
     let worktree = jigc_home.join(engine::milestone::worktree_path(id));
     // **Provisioned is a verdict git gives, never a directory shape.** `posture_subject` is
     // the shipped discriminator — `.git` is a file, the path is
@@ -2178,7 +2181,7 @@ fn blanket_base_pin_refusal(
     // question is about what git can vouch for.
     let provisioned = crate::repo::posture_subject(&worktree).is_dedicated();
     let worktree = worktree.canonicalize().unwrap_or(worktree);
-    let cd = crate::task::shell_token(&worktree.display().to_string());
+    let cd = engine::finding::shell_operand(&worktree.display().to_string());
     let here = "a sub-task's work happens in its own worktree, cut from that base rather \
                 than in this checkout";
     if provisioned {

@@ -652,6 +652,100 @@ fn the_spawn_line_runs_verbatim_from_every_cwd() {
     );
 }
 
+/// **The second question an absolute raises: does it survive a shell?** (M53
+/// post-review-fix review, HIGH 1.) Repo-relative, the `cd` operand was
+/// `.jigc/worktrees/<slug>` — shell-inert by construction, so no fixture ever needed a
+/// hostile path. Absolute, the operand is the *caller's* filesystem, and `std::env::temp_dir()`
+/// has no space in it, so the only cell the arm above drives is the canonical one.
+///
+/// This arm is that arm's input axis: one repository whose path contains a space, the emitted
+/// bytes run verbatim through a real shell, and the `cd` operand asserted to be a **single**
+/// shell word. Driven before the fix, the line split at the space and the sub-agent could not
+/// enter its worktree at all (`sh: cd: /…/jigc: No such file or directory`, rc=1).
+///
+/// It also pins the pairing `efe16554`'s commit message claims and no test held: the refusal
+/// that sends an agent to that directory (`crate::blanket_base_pin_refusal`) and the `Spawn:`
+/// line must render **the same bytes** for it. They did not — one quoted, one did not — and
+/// the disagreement was invisible on every unspaced root.
+#[test]
+fn the_spawn_line_and_its_refusal_survive_a_repository_path_with_a_space() {
+    // The space is in the fixture's own directory name, so every path below inherits it.
+    let fan = FanOut::new("spawn under a space");
+    assert!(
+        fan.repo.to_string_lossy().contains(' '),
+        "the fixture must actually carry a space; got {:?}",
+        fan.repo,
+    );
+    let deep = fan.repo.join("docs").join("deep");
+    fs::create_dir_all(&deep).expect("mk docs/deep");
+    let absolute = fan
+        .worktree("area-one")
+        .canonicalize()
+        .expect("the worktree canonicalizes")
+        .display()
+        .to_string();
+
+    let out = fan.jigc(&fan.repo, &["milestone", "execute", "cache-rework"]);
+    assert_ok(&out, "`jigc milestone execute`");
+    let spawn = stdout(&out)
+        .lines()
+        .find(|line| line.starts_with("Spawn:") && line.contains("--task area-one"))
+        .expect("a `Spawn:` line for area-one")
+        .to_string();
+    let command = spawn
+        .trim_start_matches("Spawn:")
+        .trim()
+        .trim_matches('`')
+        .to_string();
+
+    // The operand is ONE word to a real shell — the assertion the unspaced arm cannot make,
+    // because there every emitted spelling is one word.
+    let argv = crate::support::shell_words(&command, &fan.repo, fan.home.path());
+    assert_eq!(
+        argv.get(1).map(String::as_str),
+        Some(absolute.as_str()),
+        "the `cd` operand must survive the shell as one word; argv was {argv:?}\nline: {spawn}",
+    );
+
+    let ran = Command::new("sh")
+        .arg("-c")
+        .arg(&command)
+        .current_dir(&fan.repo)
+        .env("HOME", fan.home.path())
+        .env("PATH", {
+            let bin = Path::new(env!("CARGO_BIN_EXE_jigc"))
+                .parent()
+                .expect("the test binary has a parent dir");
+            format!(
+                "{}:{}",
+                bin.display(),
+                std::env::var("PATH").unwrap_or_default()
+            )
+        })
+        .env_remove("JIGC_PACK_DIR")
+        .output()
+        .expect("run the emitted spawn line");
+    assert!(
+        ran.status.success(),
+        "the emitted `Spawn:` line must run verbatim under a spaced repository path; argv was \
+         {argv:?}\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&ran.stdout),
+        String::from_utf8_lossy(&ran.stderr),
+    );
+
+    // One directory, one spelling: the refusal names the `cd` exactly as the spawn line does.
+    let cd_fragment = command
+        .split(" && ")
+        .next()
+        .expect("the spawn line leads with its `cd`")
+        .to_string();
+    let refusal = both_streams(&fan.jigc(&fan.repo, &["start", "--task", "area-one"]));
+    assert!(
+        refusal.contains(&cd_fragment),
+        "the refusal must name the identical `{cd_fragment}`; got:\n{refusal}",
+    );
+}
+
 /// The refusal an agent meets when it runs a sub-task's door from the shared checkout is the
 /// other half of the same fact: it sends the reader to the worktree, so it names the same
 /// absolute the `Spawn:` line does — and, while the worktree is already there, it does not
