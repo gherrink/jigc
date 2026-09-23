@@ -517,8 +517,25 @@ pub fn precommit_hook_body(jigc_path: &Path) -> String {
 /// The store-scope sweep (already captured in `$report`) flags every recorded-but-missing
 /// managed doc as a `reconciliation.rename` finding whose **strong-signal route** names the
 /// pair as `git -C <repo> mv <new> <old>` (the revert direction, aimed at the checkout it
-/// runs in since M53 — the cwd census, C1-09 — which is why the extraction greps `git -C `
-/// and the awk reads the two paths as fields 5 and 6). But a move landed in a **prior**
+/// runs in since M53 — the cwd census, C1-09 — which is why the extraction greps `git -C `).
+///
+/// **The awk scans for the `mv` token rather than indexing at a fixed field** (M53
+/// post-review-fix review, MEDIUM 3). `34584687` inserted `-C <home>` into that route, and
+/// `git_at` renders the home through `shell_operand` — so a checkout under a path with a
+/// space becomes `git -C '/a repo' mv <new> <old>`, **two** awk fields for the home, and the
+/// shipped fixed-index predicate stopped matching. Driven at the shell against the shipped
+/// hook text: the plain path blocked, the spaced one did not, silently, in the fail-**open**
+/// direction. Nothing in a hook's output says a guard did not fire, and no fixture had a
+/// space in it.
+///
+/// **A declared bound, pre-existing and left open:** the two *operands* are rendered through
+/// `shell_token` (M51), so a managed doc whose own path contains a space emits
+/// `'docs/my notes.md'` — which field-splits too, and neither half is in the staged set. The
+/// block has been blind to that cell since the quoting landed, independently of this range;
+/// closing it needs a shell-word tokenizer inside the awk program, which is a different
+/// change from this one. The home axis — the one this range opened — is closed.
+///
+/// But a move landed in a **prior**
 /// commit must **not** block an unrelated later commit (the **masking trap**) — so the block
 /// fires **iff** BOTH the finding's old and new paths are in **this commit's** staged set
 /// (`git diff --cached --name-status --find-renames`, which carries both whether git records
@@ -530,7 +547,7 @@ const PRECOMMIT_RENAME_BLOCK: &str = "\n\
 # M35 — block this commit IFF it ITSELF stages an out-of-band managed-doc rename (a\n\
 # bare `git mv` committed without `jigc rename`). The sweep above flags every\n\
 # recorded-but-missing managed doc as a `reconciliation.rename` finding whose route\n\
-# names the pair as `git -C <repo> mv <new> <old>` (the revert direction; aimed at the checkout it runs in since M53, so the two paths are awk fields 5 and 6). A move landed in a\n\
+# names the pair as `git -C <repo> mv <new> <old>` (the revert direction; aimed at the checkout it runs in since M53, so the awk SCANS for the `mv` token rather than indexing at a fixed field: a quoted home with a space in it is two fields, and a fixed index silently stops matching). A move landed in a\n\
 # PRIOR commit must NOT block an unrelated later commit (the masking trap), so block\n\
 # ONLY when BOTH the old and new paths are staged in THIS commit. Keys on the finding\n\
 # plus the staged set, never on jigc's exit code.\n\
@@ -540,7 +557,7 @@ if [ -n \"$moves\" ]; then\n\
 \t# under --find-renames; a delete+add as `D old` / `A new`. One path per line.\n\
 \tstaged=\"$(git diff --cached --name-status --find-renames 2>/dev/null | cut -f2- | tr '\\t' '\\n')\"\n\
 \t# Block iff some `git -C <repo> mv <new> <old>` route has BOTH its paths staged.\n\
-\tif { printf '%s\\n' \"$staged\"; echo '---'; printf '%s\\n' \"$moves\"; } | awk '$0 == \"---\" { seen = 1; next } seen == 0 { S[$0] = 1; next } NF >= 6 && $4 == \"mv\" && ($5 in S) && ($6 in S) { hit = 1 } END { exit hit ? 0 : 1 }'; then\n\
+\tif { printf '%s\\n' \"$staged\"; echo '---'; printf '%s\\n' \"$moves\"; } | awk '$0 == \"---\" { seen = 1; next } seen == 0 { S[$0] = 1; next } { for (i = 1; i <= NF - 2; i++) if ($i == \"mv\" && ($(i + 1) in S) && ($(i + 2) in S)) hit = 1 } END { exit hit ? 0 : 1 }'; then\n\
 \t\techo 'jigc: out-of-band managed-doc rename staged in this commit — a bare `git mv` bypasses jigc identity tracking; use `jigc rename` instead (commit blocked).' >&2\n\
 \t\texit 1\n\
 \tfi\n\
@@ -4223,7 +4240,7 @@ mod tests {
              # M35 — block this commit IFF it ITSELF stages an out-of-band managed-doc rename (a\n\
              # bare `git mv` committed without `jigc rename`). The sweep above flags every\n\
              # recorded-but-missing managed doc as a `reconciliation.rename` finding whose route\n\
-             # names the pair as `git -C <repo> mv <new> <old>` (the revert direction; aimed at the checkout it runs in since M53, so the two paths are awk fields 5 and 6). A move landed in a\n\
+             # names the pair as `git -C <repo> mv <new> <old>` (the revert direction; aimed at the checkout it runs in since M53, so the awk SCANS for the `mv` token rather than indexing at a fixed field: a quoted home with a space in it is two fields, and a fixed index silently stops matching). A move landed in a\n\
              # PRIOR commit must NOT block an unrelated later commit (the masking trap), so block\n\
              # ONLY when BOTH the old and new paths are staged in THIS commit. Keys on the finding\n\
              # plus the staged set, never on jigc's exit code.\n\
@@ -4236,7 +4253,7 @@ mod tests {
              \t# Block iff some `git -C <repo> mv <new> <old>` route has BOTH its paths staged.\n\
              \tif { printf '%s\\n\
              ' \"$staged\"; echo '---'; printf '%s\\n\
-             ' \"$moves\"; } | awk '$0 == \"---\" { seen = 1; next } seen == 0 { S[$0] = 1; next } NF >= 6 && $4 == \"mv\" && ($5 in S) && ($6 in S) { hit = 1 } END { exit hit ? 0 : 1 }'; then\n\
+             ' \"$moves\"; } | awk '$0 == \"---\" { seen = 1; next } seen == 0 { S[$0] = 1; next } { for (i = 1; i <= NF - 2; i++) if ($i == \"mv\" && ($(i + 1) in S) && ($(i + 2) in S)) hit = 1 } END { exit hit ? 0 : 1 }'; then\n\
              \t\techo 'jigc: out-of-band managed-doc rename staged in this commit — a bare `git mv` bypasses jigc identity tracking; use `jigc rename` instead (commit blocked).' >&2\n\
              \t\texit 1\n\
              \tfi\n\

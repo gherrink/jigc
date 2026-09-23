@@ -624,6 +624,74 @@ fn commit_blocks_on_this_commit_oob_rename() {
     );
 }
 
+/// **(g2) The same block, from a repository whose path contains a space** (M53
+/// post-review-fix review, MEDIUM 3).
+///
+/// `34584687` inserted `-C <home>` into the `reconciliation.rename` route the hook parses,
+/// and `git_at` renders the home through `shell_operand` — so a spaced checkout emits
+/// `git -C '/a repo' mv <new> <old>`, which is **two** awk fields for the home. The shipped
+/// `NF >= 6 && $4 == "mv"` stopped matching, the guard disappeared with no message, and it
+/// disappeared in the fail-**open** direction: `git commit` landed the out-of-band rename at
+/// exit 0. (g) above stayed green throughout, because `std::env::temp_dir()` has no space in
+/// it — the whole class was invisible to its own acceptance.
+///
+/// The space is in the fixture's own directory name, so the repository path, the installed
+/// hook's `jigc` path and the route's `-C` operand all carry it. Driven at the shell against
+/// the shipped hook text before the fix: plain path BLOCKS, spaced path does not.
+#[test]
+fn commit_blocks_on_this_commit_oob_rename_under_a_repository_path_with_a_space() {
+    let repo = TempDir::new("oob rename under a space");
+    assert!(
+        repo.path().to_string_lossy().contains(' '),
+        "the fixture must actually carry a space; got {:?}",
+        repo.path(),
+    );
+    init_repo(repo.path());
+
+    fs::create_dir_all(repo.path().join("docs/decisions")).expect("mk decisions");
+    fs::write(
+        repo.path().join("docs/decisions/old-cache.md"),
+        plain_adr("Old cache"),
+    )
+    .expect("write adr");
+    git(repo.path(), &["add", "."]);
+    git(repo.path(), &["commit", "-q", "-m", "seed managed doc"]);
+    mark_set_up(repo.path());
+    baseline_file_state(repo.path(), &["docs/decisions/old-cache.md"]);
+
+    let setup = jigc(repo.path(), &["setup"]);
+    assert!(
+        setup.status.success(),
+        "`jigc setup` must succeed; stderr:\n{}",
+        String::from_utf8_lossy(&setup.stderr),
+    );
+
+    git(
+        repo.path(),
+        &[
+            "mv",
+            "docs/decisions/old-cache.md",
+            "docs/decisions/new-cache.md",
+        ],
+    );
+
+    let out = git_commit(repo.path(), "bare git mv of a managed doc");
+    let merged = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert!(
+        !out.status.success(),
+        "a this-commit OOB rename must BLOCK the commit from a spaced repository path too; \
+         output:\n{merged}",
+    );
+    assert!(
+        merged.contains(RENAME_BLOCK),
+        "the rename-block message must appear on stderr; output:\n{merged}",
+    );
+}
+
 /// (h) The masking-trap regression: an **unrelated** commit (staging some other file) made
 /// while a pre-existing OOB-moved managed doc already sits committed in the tree must NOT
 /// block (exit 0, warn only). The store sweep still flags the prior move as a
