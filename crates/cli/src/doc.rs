@@ -4115,6 +4115,19 @@ fn reroute_unadopted(
     let DocFailure::Block(mut finding) = failure else {
         return failure;
     };
+    // The **relocated** arm (M53 — the pre-v1 usability batch, row 4 / the M52 per-axis
+    // review's `(7, A7-F3)`): the doc is committed, on disk and `doc list`-visible, and it
+    // is simply not at the home this cascade resolves. `read_slice` cannot know that — it
+    // has one path and an `ENOENT` — so it offers *create it / fix the reference / read it
+    // with `--task`*, three exits none of which is the one `jigc validate` names one
+    // command later. Same seam, same rule as the unadopted arm below: the verb's route,
+    // asked at the verb boundary, of the walks that already own the answer.
+    if finding.code == engine::store::NOT_FOUND {
+        if let Some(route) = relocated_route(pack, jigc_home, schemas, address) {
+            finding.route = Some(route.into());
+        }
+        return DocFailure::Block(finding);
+    }
     // Only the unparseable block can name a foreign file: `is_unadopted_foreign` is `Foreign`
     // exactly when the committed bytes parse against no known version of the schema, so a doc
     // that reads clean (or is missing, or names a transient type) is never this case.
@@ -4160,6 +4173,101 @@ fn reroute_unadopted(
     // HIGH 2).
     finding.route = Some(engine::validate::adoption_route(jigc_home, ty, &rel, migratable).into());
     DocFailure::Block(finding)
+}
+
+/// **Where the addressed doc actually is, and the repair the store sweep gives for it** —
+/// `store.not-found`'s route when the doc is committed at a home this cascade no longer
+/// resolves (M53 — the pre-v1 usability batch, row 4 / the M52 per-axis review's
+/// `(7, A7-F3)`, CONFIRMED on **both** home kinds).
+///
+/// `None` — the doc is genuinely absent — leaves the shipped route exactly as it was, which
+/// is the honest answer for the case it was written for.
+///
+/// **It asks the two walks `jigc validate` asks, in the order `jigc validate` asks them**,
+/// rather than inventing a third opinion about where a document lives:
+///
+/// 1. [`crate::orphan::prior_home_instances`] — the doc sits at a **recorded prior home**
+///    its doctype's versioned snapshots declare, i.e. a schema bump moved the home and the
+///    corpus has not been migrated. The sweep's own answer there is
+///    `schema-conformance.schema-version-current`, whose route is `jigc migrate-corpus`.
+/// 2. [`crate::orphan::orphaned_docs`] — the doc is a **self-discovered strand**, left
+///    behind by a `docs-root` / `placement-root` re-point. The sweep's answer is
+///    `file-state.orphaned-doc`, whose route is move-it / re-point-the-knob / `jigc
+///    unmanage`.
+///
+/// The identity is matched, never just the doctype: both walks carry the `<type>:<slug>`
+/// each path yields under [`engine::index::instance_slug`]'s one rule, so a *different*
+/// doc of the same doctype stranded elsewhere cannot answer for this address. The strand
+/// walk carries no identity of its own, so it is derived here by that same rule — the
+/// fixed `<ty>:<ty>` for a placement doctype, the file stem for a located one.
+///
+/// The route **names the path and hands the reader the sweep**, because the two repairs
+/// are not interchangeable and the sweep is the surface that owns which one applies: a
+/// read verb that picked one and was wrong would trade a useless route for a misleading
+/// one, which is the worse of the two.
+fn relocated_route(
+    pack: &dyn PackSource,
+    jigc_home: &Path,
+    schemas: &BTreeMap<String, Schema>,
+    address: &engine::address::Address,
+) -> Option<String> {
+    let wanted = format!("{}:{}", address.r#type.as_str(), address.slug.as_str());
+    let project_config = jigc_home.join(".jigc").join("config");
+    let resolved = crate::start::resolve_severity_cascade(pack, &project_config).ok()?;
+
+    // (1) A recorded prior home — the migration's subject.
+    let versions = crate::pack::frozen_doctype_versions(pack);
+    let priors = crate::pack::prior_doctype_schemas(pack, &versions);
+    let prior = crate::orphan::prior_home_instances(
+        pack,
+        jigc_home,
+        schemas,
+        &versions,
+        &priors,
+        crate::start::docs_root_prefix(&resolved),
+        crate::start::placement_root(&resolved),
+    )
+    .into_iter()
+    .find(|doc| doc.identity == wanted);
+    if let Some(doc) = prior {
+        let rel = crate::render::repo_relative(jigc_home, &doc.path);
+        return Some(format!(
+            "`{wanted}` is committed at `{rel}`, a prior home of `{ty}` — the schema's \
+             home moved and this corpus has not been migrated; run `jigc migrate-corpus` \
+             to land it at the home this read resolves, then read it again",
+            ty = doc.ty,
+        ));
+    }
+
+    // (2) A self-discovered strand — a root knob's re-point, not a schema bump.
+    let defs = crate::start::CascadeDefs::new(&resolved, &project_config);
+    let declared = defs.declared_schemas(pack).ok()?;
+    let strand = crate::orphan::orphaned_docs(jigc_home, &declared, schemas)
+        .into_iter()
+        .find(|strand| strand_identity(strand, schemas).as_deref() == Some(wanted.as_str()))?;
+    Some(format!(
+        "`{wanted}` is committed at `{rel}`, outside the home this read resolves — a \
+         `docs-root` / `placement-root` re-point stranded it; `jigc validate` names the \
+         repair for this store (move it to the resolved home, re-point the knob to cover \
+         where it sits, or drop it with `jigc unmanage {token}`)",
+        rel = strand.rel,
+        token = crate::task::shell_token(&strand.rel),
+    ))
+}
+
+/// The `<type>:<slug>` a stranded path carries, by [`engine::index::instance_slug`]'s one
+/// rule: a fixed-identity (placement) doctype's instance is the singleton `<ty>:<ty>`
+/// wherever it sits; a located one's is its own file stem.
+fn strand_identity(
+    strand: &crate::orphan::Strand,
+    schemas: &BTreeMap<String, Schema>,
+) -> Option<String> {
+    let ty = &strand.doctype;
+    if schemas.get(ty).is_some_and(|s| s.placement.is_some()) {
+        return Some(format!("{ty}:{ty}"));
+    }
+    let slug = Path::new(&strand.rel).file_stem()?.to_str()?;
+    Some(format!("{ty}:{slug}"))
 }
 
 /// The cascade-resolved schema set keyed by doctype the committed-store read resolves

@@ -46,6 +46,8 @@ mod doc_show;
 mod doc_show_item_leaf;
 #[path = "../doc_show_nested.rs"]
 mod doc_show_nested;
+#[path = "../doc_show_relocated.rs"]
+mod doc_show_relocated;
 #[path = "../doc_show_staged.rs"]
 mod doc_show_staged;
 #[path = "../doc_task_scope.rs"]
