@@ -374,6 +374,21 @@ fn write_guide_artifact(jigc_home: &Path, guide: &adapter::GuideTarget) -> std::
 /// stamp is a tracked file that rides that door's own commit and `jigc task finalize`
 /// commits where you stand (`DECISIONS.md` 2026-09-23 → the verb class, C2-09). The
 /// parameter is therefore named for what it is — a root — rather than for either answer.
+///
+/// **What the split produces, stated rather than left to be rediscovered** (the confirmation
+/// pass, LOW 6): the *reader* is home-bound. [`binary_mismatch_finding`] is asked at
+/// `<jigc_home>/.jigc/version` from every cwd (`crate::cli`'s store sweep), so a
+/// `jigc task finalize` run in a **linked worktree** refreshes that checkout's copy and
+/// leaves the home's lagging — and `jigc validate` then says *"store last written by jigc
+/// <old>"* at **both** roots, immediately after a store write at the new one, including from
+/// the worktree whose own checked-out stamp reads the new version. Driven on a `fresh` corpus
+/// with the home's stamp downgraded to `0.9.0`: advisory, exit 0, and its route
+/// (`jigc setup`) clears it.
+///
+/// **Behaviourally accepted, not a gap to close.** The stamp is a *tracked* file, so the two
+/// copies converge the moment the worktree's branch merges — and the alternative, writing the
+/// home's copy from a door that commits somewhere else, would stage a file into a commit the
+/// door is not making. The consequence belongs in the record, which is why it is here.
 pub fn write_version_stamp(root: &Path) -> std::io::Result<()> {
     let path = root.join(VERSION_STAMP_PATH);
     if let Some(parent) = path.parent() {
@@ -4421,9 +4436,13 @@ mod tests {
              \tstaged=\"$(git diff --cached --name-status --find-renames 2>/dev/null | cut -f2- | tr '\\t' '\\n\
              ')\"\n\
              \t# Block iff some `git -C <repo> mv <new> <old>` route has BOTH its paths staged.\n\
+             \t# The route line is read as SHELL WORDS, never as awk fields: jigc renders the home\n\
+             \t# AND both operands through `shell_token`, so a store key under a spaced `docs-root`\n\
+             \t# arrives as 'my docs/decisions/x.md' — several fields, none of them a staged path.\n\
+             \t# `shwords` unquotes (POSIX single quotes + backslash) into W[1..n] first.\n\
              \tif { printf '%s\\n\
              ' \"$staged\"; echo '---'; printf '%s\\n\
-             ' \"$moves\"; } | awk '$0 == \"---\" { seen = 1; next } seen == 0 { S[$0] = 1; next } { for (i = 1; i <= NF - 2; i++) if ($i == \"mv\" && ($(i + 1) in S) && ($(i + 2) in S)) hit = 1 } END { exit hit ? 0 : 1 }'; then\n\
+             ' \"$moves\"; } | awk 'function shwords(s,   i, c, n, w, inq, started) { n = 0; w = \"\"; inq = 0; started = 0; delete W; for (i = 1; i <= length(s); i++) { c = substr(s, i, 1); if (!inq && c == \"\\\\\") { i = i + 1; w = w substr(s, i, 1); started = 1; continue } if (c == SQ) { inq = !inq; started = 1; continue } if (!inq && (c == \" \" || c == \"\\t\")) { if (started) { W[++n] = w; w = \"\"; started = 0 } continue } w = w c; started = 1 } if (started) W[++n] = w; return n } BEGIN { SQ = sprintf(\"%c\", 39) } $0 == \"---\" { seen = 1; next } seen == 0 { S[$0] = 1; next } { n = shwords($0); for (i = 1; i <= n - 2; i++) if (W[i] == \"mv\" && (W[i + 1] in S) && (W[i + 2] in S)) hit = 1 } END { exit hit ? 0 : 1 }'; then\n\
              \t\techo 'jigc: out-of-band managed-doc rename staged in this commit — a bare `git mv` bypasses jigc identity tracking; use `jigc rename` instead (commit blocked).' >&2\n\
              \t\texit 1\n\
              \tfi\n\
