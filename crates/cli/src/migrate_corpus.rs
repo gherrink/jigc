@@ -670,7 +670,8 @@ pub(crate) fn migrate_committed_corpus(
     let versions = pack::frozen_doctype_versions(pack);
     let priors = pack::prior_doctype_schemas(pack, &versions);
     let migratable = pack::migratable_doctypes(pack);
-    let adoption = engine::validate::AdoptionInputs::new(&versions, &priors, &migratable);
+    let adoption =
+        engine::validate::AdoptionInputs::new(&versions, &priors, &migratable, repo_root);
 
     // Prepare every candidate doc across the corpus (heterogeneous: each carries its own
     // schema pair + per-doc change list), collected and path-sorted so the fold — which

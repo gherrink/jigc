@@ -490,6 +490,7 @@ fn plan_clobber_guard(
         }
         if repo_root.join(&promotion.destination).is_file() {
             clobbers.push(clobber_finding(
+                repo_root,
                 &promotion.destination,
                 source.as_ref().map(crate::state::MigrationSource::recorded),
             ));
@@ -522,7 +523,7 @@ fn plan_clobber_guard(
 ///   `--approve` (the sole destructive gate, which also retires the recorded source).
 /// - **`None`** — an ordinary create collision; the route repairs through jigc verbs
 ///   only (retitle / an explicit `--slug` / adopt the occupant via `jigc migrate`).
-fn clobber_finding(destination: &str, migration_source: Option<&str>) -> Finding {
+fn clobber_finding(repo_root: &Path, destination: &str, migration_source: Option<&str>) -> Finding {
     let (message, route) = match migration_source {
         Some(source) => (
             format!(
@@ -535,12 +536,15 @@ fn clobber_finding(destination: &str, migration_source: Option<&str>) -> Finding
                  source is the different file `{source}`: if the occupant is another \
                  managed doc, land this migration under a different id — re-author with a \
                  title that slugs differently, or `jigc task discard <id> --force` and re-mint \
-                 with `jigc migrate {source_token} --as <doctype> --slug <different-slug>`; if \
+                 with `{source_migrate} --as <doctype> --slug <different-slug>`; if \
                  the occupant is itself foreign, adopt it through its own `jigc migrate` \
                  task first; then re-run `jigc task finalize <id>` to review the fidelity \
                  diff and `jigc task finalize <id> --approve` to land it (`--approve` also \
                  retires the recorded source)",
-                source_token = crate::finding::shell_token(source),
+                // **Absolute** (M53 post-review-fix review, HIGH 2): `source` is the recorded
+                // repo-relative migration source, and `jigc migrate <PATH>` roots its argument
+                // at the caller's cwd.
+                source_migrate = crate::finding::migrate_at(repo_root, source),
             ),
         ),
         None => (
@@ -553,9 +557,9 @@ fn clobber_finding(destination: &str, migration_source: Option<&str>) -> Finding
                  retitle this task's doc so it slugs differently, or re-create it with an \
                  explicit `--slug` (`jigc doc create <doctype> --title <title> --slug \
                  <slug> --task <id>`); if it is a hand-authored/foreign file, bring it \
-                 under management with `jigc migrate {destination_token} --as <doctype>` in \
+                 under management with `{destination_migrate} --as <doctype>` in \
                  its own task; then re-run `jigc task finalize`",
-                destination_token = crate::finding::shell_token(destination),
+                destination_migrate = crate::finding::migrate_at(repo_root, destination),
             ),
         ),
     };

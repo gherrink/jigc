@@ -296,21 +296,29 @@ fn adjudicate_source_tracked(
              and no deletion in the commit to say so"
         ),
         Some(Location::addressed(recorded, 1, 1)),
-        Some(Route::human(format!(
-            "stage it with `{stage}`, then re-run `jigc migrate {typed_token} --as \
+        // **The one declared caller-echo** (M53 post-review-fix review, HIGH 2). Every other
+        // `jigc migrate` span jigc emits carries a path jigc itself computed and is spelled
+        // absolute through `engine::finding::migrate_at`; this one re-prints the operator's
+        // own token so that "re-run" means re-run *that*, and the fence is told so at the
+        // constructor rather than given a lexical hole it could not tell the two apart with.
+        Some(Route::human_echoing_caller_token(
+            &crate::task::shell_token(typed),
+            format!(
+                "stage it with `{stage}`, then re-run `jigc migrate {typed_token} --as \
              {doctype}` — the index is enough, the source need not be committed first",
-            // Two spans, two bases, and each is the one its own command uses (M53 — the cwd
-            // census, C1-03). The `git` half names the checkout it stages into and keeps the
-            // adjudicated repo-relative spelling as its pathspec; the `jigc` half echoes the
-            // token the operator typed, because since `7cd03c59` `jigc migrate <PATH>`
-            // resolves against the caller's cwd — driven from `docs/deep`, the shipped line's
-            // `git` half exited **128** and its `jigc` half could not read the file it named.
-            stage = engine::finding::git_at(
-                repo_root,
-                &format!("add -- {}", crate::task::shell_token(recorded)),
+                // Two spans, two bases, and each is the one its own command uses (M53 — the cwd
+                // census, C1-03). The `git` half names the checkout it stages into and keeps the
+                // adjudicated repo-relative spelling as its pathspec; the `jigc` half echoes the
+                // token the operator typed, because since `7cd03c59` `jigc migrate <PATH>`
+                // resolves against the caller's cwd — driven from `docs/deep`, the shipped line's
+                // `git` half exited **128** and its `jigc` half could not read the file it named.
+                stage = engine::finding::git_at(
+                    repo_root,
+                    &format!("add -- {}", crate::task::shell_token(recorded)),
+                ),
+                typed_token = crate::task::shell_token(typed),
             ),
-            typed_token = crate::task::shell_token(typed),
-        ))),
+        )),
     )))
 }
 

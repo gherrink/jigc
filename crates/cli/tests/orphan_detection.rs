@@ -326,10 +326,23 @@ fn validate_routes_never_adopted_basename_coincidence_to_migrate_or_ignore() {
         "a never-adopted basename coincidence must fire the looks-managed-but-unregistered \
          advisory naming the path; stdout:\n{stdout}",
     );
+    // **The operand is absolute** (M53 post-review-fix review, HIGH 2): `jigc migrate <PATH>`
+    // roots its argument at the caller's cwd, so a repo-relative spelling here is a route
+    // that runs from the repository root and nowhere else. The path is the fixture's own
+    // repository, so the assertion composes it rather than pinning a machine path.
+    let expected_migrate = format!(
+        "`jigc migrate {} --as research`",
+        repo.path()
+            .canonicalize()
+            .unwrap_or_else(|_| repo.path().to_path_buf())
+            .join("old/research/notes.md")
+            .display(),
+    );
     assert!(
-        stdout.contains("`jigc migrate old/research/notes.md --as research`"),
-        "with `migrate-research` shipped, the route must name the real adoption verb \
-         on the flagged path; stdout:\n{stdout}",
+        stdout.contains(&expected_migrate),
+        "with `migrate-research` shipped, the route must name the real adoption verb on the \
+         flagged path, spelled so it resolves from any cwd — expected {expected_migrate}; \
+         stdout:\n{stdout}",
     );
     assert!(
         !stdout.contains("route it to a human"),

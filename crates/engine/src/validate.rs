@@ -860,7 +860,9 @@ fn schema_conformance_store(
             // home).
             let slug = identity.split_once(':').map_or("", |(_, slug)| slug);
             if let Some(cause) = unadopted_cause(ty, slug, schema, &source, versions, priors) {
-                findings.push(unadopted_instance(ty, &rel_key, migratable, cause));
+                findings.push(unadopted_instance(
+                    repo_root, ty, &rel_key, migratable, cause,
+                ));
                 continue;
             }
             // Parse once so the version-aware route can read the doc's stamp from the same
@@ -1167,7 +1169,13 @@ fn classify_provenance(schema: &Schema, source: &str, priors: &[Schema]) -> Prov
 /// forms), and a synthesized URI would name a doc that does not exist.
 ///
 /// Its route is [`adoption_route`]'s — the one the read verb also serves (below).
-fn unadopted_instance(ty: &str, rel_key: &str, migratable: bool, cause: UnadoptedCause) -> Finding {
+fn unadopted_instance(
+    repo_root: &Path,
+    ty: &str,
+    rel_key: &str,
+    migratable: bool,
+    cause: UnadoptedCause,
+) -> Finding {
     // The tail names the fault the discriminator actually found. One code, one route, two
     // causes — stating the byte cause over an identity fault would be a law-1 lie about a
     // file that is stamped and parses clean.
@@ -1189,7 +1197,7 @@ fn unadopted_instance(ty: &str, rel_key: &str, migratable: bool, cause: Unadopte
         "schema-conformance.unadopted-instance",
         message,
         Some(Location::addressed(rel_key, 1, 1)),
-        Some(adoption_route(ty, rel_key, migratable).into()),
+        Some(adoption_route(repo_root, ty, rel_key, migratable).into()),
     )
 }
 
@@ -1206,13 +1214,19 @@ fn unadopted_instance(ty: &str, rel_key: &str, migratable: bool, cause: Unadopte
 /// the `migrate-<ty>` workflow it composes (`migratable`); `jigc ingest`, the adoption front
 /// door, always applies. It deliberately does **not** name `jigc migrate-corpus` — that verb
 /// upgrades the *managed* corpus and would report this file `blocked`, doing nothing.
-pub fn adoption_route(ty: &str, rel_key: &str, migratable: bool) -> String {
+pub fn adoption_route(repo_root: &Path, ty: &str, rel_key: &str, migratable: bool) -> String {
     if migratable {
         format!(
-            "adopt — run `jigc ingest` to route it, or `jigc migrate {token} --as {ty}` to \
+            // **The operand is absolute** (M53 post-review-fix review, HIGH 2). `rel_key` is a
+            // repo-relative store key and `jigc migrate <PATH>` roots its argument at the
+            // *caller's* cwd, so the repo-relative spelling ran from the repository root and
+            // nowhere else — driven from `docs/deep`, the emitted line answered *"could not
+            // read the foreign `changelog` source at `CHANGELOG.md`"*. The message and the
+            // `at:` locus above keep the repo-relative spelling: they are read, not run.
+            "adopt — run `jigc ingest` to route it, or `{migrate} --as {ty}` to \
              rewrite it into the managed `{ty}` shape; it is a foreign file, not an unmigrated \
              managed doc",
-            token = crate::finding::shell_token(rel_key),
+            migrate = crate::finding::migrate_at(repo_root, rel_key),
         )
     } else {
         "adopt — run `jigc ingest` to route it; it is a foreign file, not an unmigrated \
@@ -1254,6 +1268,12 @@ pub struct AdoptionInputs<'a> {
     /// The doctypes whose `migrate-<ty>` workflow ships — the M40 two-tier route's condition
     /// (never command a verb that hard-errors).
     migratable: &'a BTreeSet<String>,
+    /// The door's own resolved repository root — the base the adoption route's `jigc migrate`
+    /// operand is spelled against (M53 post-review-fix review, HIGH 2). A fourth CLI-supplied
+    /// input for the same reason as the other three: the engine resolves no repository, and
+    /// the route the two doors must tell one story with is now a *based* route, so the base
+    /// has to travel with the bundle rather than be re-derived at each seam.
+    repo_root: &'a Path,
 }
 
 impl<'a> AdoptionInputs<'a> {
@@ -1262,11 +1282,13 @@ impl<'a> AdoptionInputs<'a> {
         versions: &'a BTreeMap<String, u32>,
         priors: &'a BTreeMap<String, Vec<Schema>>,
         migratable: &'a BTreeSet<String>,
+        repo_root: &'a Path,
     ) -> Self {
         Self {
             versions,
             priors,
             migratable,
+            repo_root,
         }
     }
 
@@ -1294,8 +1316,15 @@ impl<'a> AdoptionInputs<'a> {
         source: &str,
         rel_key: &str,
     ) -> Option<Finding> {
-        unadopted_cause(ty, slug, schema, source, self.versions, self.priors)
-            .map(|cause| unadopted_instance(ty, rel_key, self.migratable.contains(ty), cause))
+        unadopted_cause(ty, slug, schema, source, self.versions, self.priors).map(|cause| {
+            unadopted_instance(
+                self.repo_root,
+                ty,
+                rel_key,
+                self.migratable.contains(ty),
+                cause,
+            )
+        })
     }
 
     /// The doctype's **manifest schema-version**, or `None` for an **unversioned** doctype
@@ -1329,6 +1358,10 @@ impl AdoptionInputs<'static> {
             versions: VERSIONS.get_or_init(BTreeMap::new),
             priors: PRIORS.get_or_init(BTreeMap::new),
             migratable: MIGRATABLE.get_or_init(BTreeSet::new),
+            // Unreachable by construction: an empty `versions` map makes the discriminator
+            // answer `false` for every doctype, so no adoption route is ever composed from
+            // this bundle and the root is never read.
+            repo_root: Path::new("/"),
         }
     }
 }

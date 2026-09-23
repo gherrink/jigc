@@ -2232,7 +2232,15 @@ impl TaskArea {
                     .as_ref()
                     .map(state::MigrationSource::recorded),
             ),
-            &engine::validate::AdoptionInputs::new(&versions, &priors, &migratable),
+            &engine::validate::AdoptionInputs::new(
+                &versions,
+                &priors,
+                &migratable,
+                // The adoption route's base: the committed store binds to `jigc_home`, so the
+                // `jigc migrate` operand it emits is spelled against the same checkout the
+                // `rel_key` beside it is relative to (M53 post-review-fix review, HIGH 2).
+                &self.jigc_home,
+            ),
             // The live-record carve-out is this caller's too (M52 Inc 10 / T6): only a task
             // door knows which milestone owns the task it is sweeping.
             &self.live_milestone_record(&schemas),

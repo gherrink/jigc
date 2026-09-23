@@ -1067,11 +1067,22 @@ pub(crate) fn home_vacated_finding(
 /// `migrate-<doctype>` workflow ships (`migratable`), the route names the real adoption
 /// verb; when it does not, it falls back to ignore-or-human — never a command that
 /// hard-errors.
-pub(crate) fn unregistered_route(rel: &str, doctype: &str, migratable: bool) -> String {
+pub(crate) fn unregistered_route(
+    repo_root: &Path,
+    rel: &str,
+    doctype: &str,
+    migratable: bool,
+) -> String {
     if migratable {
         format!(
-            "adopt it with `jigc migrate {rel} --as {doctype}`, or ignore it if it is not \
-             meant to be managed"
+            // **Absolute, and quoted** (M53 post-review-fix review, HIGH 2). `rel` is a
+            // repo-relative store key interpolated raw into a verb that roots its argument at
+            // the *caller's* cwd — so the route ran from the repository root and nowhere else,
+            // and a store key with a space in it emitted two tokens.
+            // [`engine::finding::migrate_at`] answers both.
+            "adopt it with `{migrate} --as {doctype}`, or ignore it if it is not \
+             meant to be managed",
+            migrate = engine::finding::migrate_at(repo_root, rel),
         )
     } else {
         format!(
@@ -1294,9 +1305,9 @@ mod tests {
     /// with ignore as the alternative.
     #[test]
     fn unregistered_route_names_the_migrate_verb_when_the_workflow_ships() {
-        let route = unregistered_route("old/decisions/cache.md", "adr", true);
+        let route = unregistered_route(Path::new("/repo"), "old/decisions/cache.md", "adr", true);
         assert!(
-            route.contains("`jigc migrate old/decisions/cache.md --as adr`"),
+            route.contains("`jigc migrate /repo/old/decisions/cache.md --as adr`"),
             "the migratable route must carry the verbatim migrate invocation; got: {route}",
         );
         assert!(
@@ -1309,7 +1320,12 @@ mod tests {
     /// to ignore-or-human — it must never command a verb that hard-errors.
     #[test]
     fn unregistered_route_falls_back_to_ignore_or_human_without_a_migrate_workflow() {
-        let route = unregistered_route("old/research/notes.md", "research", false);
+        let route = unregistered_route(
+            Path::new("/repo"),
+            "old/research/notes.md",
+            "research",
+            false,
+        );
         assert!(
             route.contains("route it to a human"),
             "the fallback route offers the human hand-off; got: {route}",

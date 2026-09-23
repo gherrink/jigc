@@ -4151,7 +4151,10 @@ fn reroute_unadopted(
         .list(engine::packsource::PackResourceKind::Workflows)
         .iter()
         .any(|id| *id == engine::packsource::ResourceId::from(format!("migrate-{ty}").as_str()));
-    finding.route = Some(engine::validate::adoption_route(ty, &rel, migratable).into());
+    // The base the operand is spelled against: `rel` was stripped from `jigc_home`, so the
+    // emitted `jigc migrate` names the same file from any cwd (M53 post-review-fix review,
+    // HIGH 2).
+    finding.route = Some(engine::validate::adoption_route(jigc_home, ty, &rel, migratable).into());
     DocFailure::Block(finding)
 }
 

@@ -431,7 +431,8 @@ fn classify_row(
             // reduction does: a near-miss sits under a schema's location dir; a
             // wrong-location doc conforms to a schema it does not live under.
             if let Some(home) = schemas.iter().find(|s| under_location(rel_path, s)) {
-                let finding = near_miss_finding(rel_path, source, home, migratable, registered);
+                let finding =
+                    near_miss_finding(repo_root, rel_path, source, home, migratable, registered);
                 Classified::unidentified(TriageRow {
                     file: rel_path.to_string(),
                     best_match: Some(home.ty.clone()),
@@ -498,6 +499,7 @@ fn adopt_annotations(schema: &Schema, source: &str, exempt: &str) -> Vec<String>
 /// the home schema's parse/conformance produces — its located message names the exact
 /// failure — and route it to reconcile the candidate against its claimed type.
 fn near_miss_finding(
+    repo_root: &Path,
     rel_path: &str,
     source: &str,
     home: &Schema,
@@ -508,7 +510,7 @@ fn near_miss_finding(
         Err(findings) => findings.into_iter().next(),
         Ok(doc) => schema_conformance(home, source, &doc).into_iter().next(),
     };
-    let route = near_miss_route(rel_path, &home.ty, migratable, registered);
+    let route = near_miss_route(repo_root, rel_path, &home.ty, migratable, registered);
     match detail {
         Some(finding) => {
             // The re-derived finding keeps the **code** the parse/conformance sweep raised, so
@@ -577,6 +579,7 @@ fn near_miss_finding(
 /// one). Each other arm is a human direction that says which of the two it is: a route that
 /// cannot be run, or one that repairs the wrong thing, is the defect one level down.
 fn near_miss_route(
+    repo_root: &Path,
     rel_path: &str,
     ty: &str,
     migratable: &std::collections::BTreeSet<String>,
@@ -593,7 +596,12 @@ fn near_miss_route(
             [
                 "jigc",
                 "migrate",
-                &crate::task::shell_token(rel_path),
+                // **The absolute** (M53 post-review-fix review, HIGH 2). This producer was
+                // invisible to the review's own `grep 'jigc migrate '`: it spells the verb as
+                // separate argv tokens, so no line of it reads `jigc migrate <something>`. It
+                // carries the identical defect — a repo-relative store key handed to a verb
+                // that roots its argument at the caller's cwd.
+                &engine::finding::migrate_operand(repo_root, rel_path),
                 "--as",
                 ty,
             ],
@@ -1073,6 +1081,7 @@ Sessions must survive a restart.
         let migratable = ["adr".to_string()].into_iter().collect();
 
         let finding = near_miss_finding(
+            Path::new("/repo"),
             "decisions/auth-choice.md",
             NEAR_MISS_ADR,
             &adr_schema(),
@@ -1088,7 +1097,7 @@ Sessions must survive a restart.
             "the reshaped route is a copy-runnable command: {route:?}",
         );
         assert!(
-            route.starts_with("`jigc migrate decisions/auth-choice.md --as adr`"),
+            route.starts_with("`jigc migrate /repo/decisions/auth-choice.md --as adr`"),
             "it leads with the same adoption argv the store sweep's sibling emits: {route}",
         );
     }
@@ -1110,6 +1119,7 @@ Sessions must survive a restart.
         let migratable = ["adr".to_string()].into_iter().collect();
 
         let finding = near_miss_finding(
+            Path::new("/repo"),
             "decisions/my notes.md",
             NEAR_MISS_ADR,
             &adr_schema(),
@@ -1121,7 +1131,7 @@ Sessions must survive a restart.
             .route
             .expect("a needs-reconcile row carries a route");
         assert!(
-            route.starts_with("`jigc migrate 'decisions/my notes.md' --as adr`"),
+            route.starts_with("`jigc migrate '/repo/decisions/my notes.md' --as adr`"),
             "the operand is the bytes a shell re-lexes as the path: {route}",
         );
         assert!(
@@ -1141,6 +1151,7 @@ Sessions must survive a restart.
         let migratable = std::collections::BTreeSet::new();
 
         let finding = near_miss_finding(
+            Path::new("/repo"),
             "decisions/auth-choice.md",
             NEAR_MISS_ADR,
             &adr_schema(),
@@ -1172,6 +1183,7 @@ Sessions must survive a restart.
         let migratable = ["adr".to_string()].into_iter().collect();
 
         let finding = near_miss_finding(
+            Path::new("/repo"),
             "decisions/auth-choice.md",
             NEAR_MISS_ADR,
             &adr_schema(),
@@ -1187,7 +1199,7 @@ Sessions must survive a restart.
             "an adopted doc is not re-adopted: {route:?}",
         );
         assert!(
-            !route.contains("jigc migrate decisions/auth-choice.md"),
+            !route.contains("jigc migrate /repo/decisions/auth-choice.md"),
             "the adoption argv is never offered for a managed doc: {route}",
         );
         assert!(

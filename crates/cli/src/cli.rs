@@ -1487,7 +1487,7 @@ fn validate_store_in_repo(cwd: &Path) -> Result<StoreSweep> {
                 .list(engine::packsource::PackResourceKind::Workflows)
                 .iter()
                 .any(|id| *id == engine::packsource::ResourceId::from(migrate_workflow.as_str()));
-            let route = crate::orphan::unregistered_route(&rel, &doctype, migratable);
+            let route = crate::orphan::unregistered_route(&jigc_home, &rel, &doctype, migratable);
             let looks_like = match &current {
                 crate::orphan::Home::Location(_) => {
                     format!("it sits under a `{doctype}`-style directory")

@@ -803,6 +803,28 @@ impl Route {
         }
     }
 
+    /// A human-judgment direction one of whose command spans re-prints `caller_token` — a
+    /// token the **operator themselves** typed on the command line of the very invocation
+    /// that is printing this route, so that "re-run it" means re-run *that*.
+    ///
+    /// It exists for the one carve-out of the [`unbased_migrate_span`] fence, and it is a
+    /// constructor rather than a lexical exemption for a stated reason: a relative operand the
+    /// operator typed and a relative operand jigc read out of the store are the same bytes,
+    /// and the producer is the only thing that knows the difference. Declaring it here makes
+    /// the exemption **one call site wide** and greppable, instead of a hole in a predicate.
+    ///
+    /// A caller-typed token is already rooted where the reader is standing — which is exactly
+    /// where `jigc migrate <PATH>` roots it (`7cd03c59`) — so re-spelling it absolute would
+    /// not make it more runnable, only stop it being a re-run of what they ran.
+    pub fn human_echoing_caller_token(caller_token: &str, text: impl Into<String>) -> Self {
+        let text = text.into();
+        fence_command_spans_echoing(&text, Some(caller_token));
+        Self {
+            text,
+            kind: RouteKind::Human,
+        }
+    }
+
     /// A "no action needed" notice — the flat text verbatim.
     pub fn informational(text: impl Into<String>) -> Self {
         let text = text.into();
@@ -914,6 +936,49 @@ pub fn git_at(home: &std::path::Path, rest: &str) -> String {
     format!("git -C {} {rest}", shell_operand(&home.to_string_lossy()),)
 }
 
+/// **The runnable spelling of `jigc migrate` over a path jigc itself names** — `jigc migrate
+/// <absolute source>`, the one home of the rule every emitted adoption route obeys
+/// (M53 post-review-fix review, HIGH 2; `design/surface-contract.md` → The printed-path
+/// fence, the *pasteable shell bytes* disposition).
+///
+/// It is [`git_at`]'s sibling and exists for the same reason, one verb over. `7cd03c59`
+/// moved `jigc migrate <PATH>`'s base from the repository root to the **caller's cwd**, which
+/// is right for a path the caller types. It is wrong for the five producers that print a path
+/// **jigc computed** — a repo-relative store key, a promote destination, a recorded migration
+/// source — into that verb: those were correct while the verb was root-based and became
+/// dead ends the moment it was not. Driven from `docs/deep` on a `fresh` corpus with a foreign
+/// `CHANGELOG.md`, the store sweep's own advisory printed `jigc migrate CHANGELOG.md --as
+/// changelog`, and running it verbatim answered *"could not read the foreign `changelog`
+/// source at `CHANGELOG.md`"* — the route jigc's own census had called *"already correct — the
+/// model for the fix"*.
+///
+/// So the operand is rendered absolute from the door's own resolved `repo_root`, through
+/// [`shell_operand`], and the `--as <doctype>` tail is the caller's to append. The message and
+/// the `at:` locus beside it keep the repo-relative spelling: they are read and keyed, not run
+/// (law 1).
+///
+/// **What it deliberately does not cover**, and the reason the fence below carries the same
+/// carve-out: a span echoing the token the *operator* typed
+/// (`crate::…::adjudicate_source_tracked`'s *"then re-run `jigc migrate <what you typed>`"*).
+/// That operand is already rooted where the reader is standing, and re-spelling it would stop
+/// it being a re-run.
+pub fn migrate_at(repo_root: &std::path::Path, rel: &str) -> String {
+    format!("jigc migrate {}", migrate_operand(repo_root, rel))
+}
+
+/// The `<PATH>` operand half of [`migrate_at`], alone — the one home of the rendering rule,
+/// for the producer that cannot use the whole command string.
+///
+/// `crate::…::near_miss_route` composes its route through `Route::mechanical`, whose argv is a
+/// **list of tokens** rather than a command line, so it needs the operand and not the verb.
+/// It is the same producer the M53 post-review-fix review's own
+/// `grep -rn 'jigc migrate '` could not see, for exactly that reason — the words `jigc` and
+/// `migrate` are separate string literals there — which is why the operand has a name of its
+/// own that a source-level fence can count.
+pub fn migrate_operand(repo_root: &std::path::Path, rel: &str) -> String {
+    shell_operand(&repo_root.join(rel).to_string_lossy())
+}
+
 /// The git (sub)commands whose operands are **not repository paths**, each with the reason
 /// it needs no `-C` — the declared complement of [`git_at`]'s domain
 /// (`design/surface-contract.md` → The printed-path fence).
@@ -974,6 +1039,7 @@ const GIT_COMMAND_GROUPS: &[&str] = &["worktree", "stash", "submodule", "remote"
 /// It is deliberately **not** applied to prose outside a route: a line whose subject is the
 /// command that failed quotes the invocation jigc ran, and relativizing or aiming one half of
 /// a quotation misquotes it (the *quoting an invocation* disposition, same section).
+///
 pub fn unaimed_git_span(text: &str) -> Option<String> {
     for span in backticked_spans(text) {
         let tokens: Vec<String> = command_tokens(span).collect();
@@ -1031,6 +1097,52 @@ pub fn unaimed_git_span(text: &str) -> Option<String> {
                 .iter()
                 .any(|(name, _)| *name == head_word)
         {
+            continue;
+        }
+        return Some(span.to_owned());
+    }
+    None
+}
+
+/// **The base fence for `jigc migrate`**: the first backticked `jigc migrate …` span in `text`
+/// whose path operand is neither absolute nor reader-supplied, if any —
+/// [`unaimed_git_span`]'s sibling, one verb over (M53 post-review-fix review, HIGH 2).
+///
+/// `git` resolves a pathspec against the caller's cwd and answers the question by taking `-C`.
+/// `jigc migrate` resolves its `<PATH>` against the caller's cwd too (since `7cd03c59`) and
+/// takes no `-C`, so the only spelling that means the same file from every directory is an
+/// absolute one. The question this asks is therefore the same question, minus the redirection:
+/// *would these bytes name the same file from any directory?* — and the answer is yes in
+/// exactly two shapes:
+///
+/// 1. the operand is **absolute**, which is [`migrate_at`]'s render; or
+/// 2. the operand is **reader-supplied** — a `<placeholder>` the reader fills with a path of
+///    their own, which is rooted wherever they are standing, exactly where the verb roots it.
+///    This is the leg where the two fences differ, and they differ because the verbs do: a
+///    `git` span's placeholder is filled with a pathspec git resolves against a cwd the route
+///    never named, while a `jigc migrate` placeholder is filled with a path the reader typed
+///    from where they stand.
+///
+/// **The bound, stated rather than hidden:** a span echoing a token the *operator themselves*
+/// typed — `crate::…::adjudicate_source_tracked`'s *"then re-run `jigc migrate <what you
+/// typed> --as <doctype>`"* — is bytes-indistinguishable from a store key jigc computed, and
+/// only the producer knows which it is. Such a producer declares it at the constructor
+/// ([`Route::human_echoing_caller_token`]); nothing in the text says so, and this predicate
+/// asked about that span alone would name it.
+pub fn unbased_migrate_span(text: &str) -> Option<String> {
+    for span in backticked_spans(text) {
+        let tokens: Vec<String> = command_tokens(span).collect();
+        if tokens.first().map(String::as_str) != Some("jigc")
+            || tokens.get(1).map(String::as_str) != Some("migrate")
+        {
+            continue;
+        }
+        // The first non-flag token after the verb is the `<PATH>` positional.
+        let Some(operand) = tokens[2..].iter().find(|t| !t.starts_with('-')) else {
+            continue; // no operand at all — nothing for a cwd to resolve.
+        };
+        let bare = operand.trim_matches('\'');
+        if bare.starts_with('/') || bare.starts_with('<') {
             continue;
         }
         return Some(span.to_owned());
@@ -1239,7 +1351,17 @@ fn command_tokens(span: &str) -> impl Iterator<Item = String> + '_ {
 /// dead ends were a `human` route and a `mechanical` route's raw argv token, and a
 /// mechanical route's prose **tail** can name a second command line the argv check never
 /// sees.
+///
+/// `caller_echo` is the one declared carve-out of the `jigc migrate` base half: a token the
+/// **operator themselves** typed, which the producer is re-printing so the reader can re-run
+/// their own invocation (see [`Route::human_echoing_caller_token`]). It is a parameter rather
+/// than a lexical exemption because the bytes of such an operand are indistinguishable from
+/// the bytes of a store key jigc computed, and only the producer knows which it is.
 fn fence_command_spans(text: &str) {
+    fence_command_spans_echoing(text, None)
+}
+
+fn fence_command_spans_echoing(text: &str, caller_echo: Option<&str>) {
     #[cfg(debug_assertions)]
     if let Some(token) = unsafe_command_token(text) {
         panic!(
@@ -1265,8 +1387,24 @@ fn fence_command_spans(text: &str) {
              {text:?}; design/surface-contract.md \u{2192} The printed-path fence)"
         );
     }
+    // The same half, one verb over: `jigc migrate <PATH>` resolves against the caller's cwd
+    // and takes no `-C`, so a path jigc itself computed must be spelled absolute.
+    #[cfg(debug_assertions)]
+    if let Some(span) = unbased_migrate_span(text)
+        && !caller_echo.is_some_and(|echo| span.contains(echo))
+    {
+        panic!(
+            "a route's `jigc migrate` span must name a path that resolves from anywhere: \
+             `{span}` carries a relative operand, and the verb roots it at the READER's cwd \
+             — run from a subdirectory the file it names does not exist. Render it through \
+             `engine::finding::migrate_at(<the door's absolute repo root>, <the repo-relative \
+             key>)`, or, when the operand is the token the operator typed, construct through \
+             `Route::human_echoing_caller_token` (route text: {text:?}; \
+             design/surface-contract.md \u{2192} The printed-path fence)"
+        );
+    }
     #[cfg(not(debug_assertions))]
-    let _ = text;
+    let _ = (text, caller_echo);
 }
 
 /// The span fence, asked as a **question** rather than as an assertion — `true` iff every

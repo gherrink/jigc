@@ -1142,6 +1142,10 @@ pub const STORE_EXIT_FLIPS: &[StoreExitFlip] = &[
                 // no managed identity to claim (`engine::validate::unadopted_instance`).
                 Some(engine::finding::Location::addressed("CHANGELOG.md", 1, 1)),
                 Some(Route::human(engine::validate::adoption_route(
+                    // A witness, not a production value: the root is a representative
+                    // absolute, because what this row asserts is the finding's CODE, not its
+                    // route text.
+                    std::path::Path::new("/repo"),
                     "changelog",
                     "CHANGELOG.md",
                     true,
@@ -4159,8 +4163,13 @@ const VERDICT_LEGEND: &[(&str, &str)] = &[
         "parses as the named type but conflicts — in its content, its location, or its name; fix it per the row's route, then re-run `jigc ingest`.",
     ),
     (
+        // The `<path>` here is the READER's to supply, so it is not one of the operands
+        // `engine::finding::migrate_at` spells absolute (M53 post-review-fix review, HIGH 2)
+        // — but the rows above it are repo-relative, and pasting one of those from a
+        // subdirectory is exactly the dead end that review drove. So the legend states the
+        // two bases rather than leaving the reader to discover they differ.
         "unmanaged",
-        "matches no managed schema; staying a plain file is a legitimate end-state — no action needed. To bring one under management: `jigc migrate <path> --as <doctype>`.",
+        "matches no managed schema; staying a plain file is a legitimate end-state — no action needed. To bring one under management: `jigc migrate <path> --as <doctype>` — the rows above are repo-relative, while `<path>` resolves against your current directory.",
     ),
 ];
 
@@ -8507,7 +8516,7 @@ mod tests {
         What the verdicts above mean, and what to do next:
           adoptable — conformant at its managed location; adopted register-only (indexed + baselined, the file stays in place).
           needs-reconcile — parses as the named type but conflicts — in its content, its location, or its name; fix it per the row's route, then re-run `jigc ingest`.
-          unmanaged — matches no managed schema; staying a plain file is a legitimate end-state — no action needed. To bring one under management: `jigc migrate <path> --as <doctype>`.
+          unmanaged — matches no managed schema; staying a plain file is a legitimate end-state — no action needed. To bring one under management: `jigc migrate <path> --as <doctype>` — the rows above are repo-relative, while `<path>` resolves against your current directory.
         — jigc · run `jigc start` for orientation; all writes through `jigc`.
         ");
         assert!(agent.ends_with(ROUTING_FOOTER));
@@ -8683,7 +8692,7 @@ mod tests {
 
         What the verdicts above mean, and what to do next:
           adoptable — conformant at its managed location; adopted register-only (indexed + baselined, the file stays in place).
-          unmanaged — matches no managed schema; staying a plain file is a legitimate end-state — no action needed. To bring one under management: `jigc migrate <path> --as <doctype>`.
+          unmanaged — matches no managed schema; staying a plain file is a legitimate end-state — no action needed. To bring one under management: `jigc migrate <path> --as <doctype>` — the rows above are repo-relative, while `<path>` resolves against your current directory.
         — jigc · run `jigc start` for orientation; all writes through `jigc`.
         ");
         // No per-file unmanaged line survives in the text arm (the blow-up we fixed).

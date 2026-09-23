@@ -272,14 +272,26 @@ const GIT_SPAN_SITES: &[(&str, &str, Aim, &str)] = &[
 
 /// The enclosing function of every production `git_at(` call in `file`.
 fn aim_home_callers(file: &str) -> Vec<String> {
+    home_callers(file, &[AIM_HOME])
+}
+
+/// The enclosing function of every production call of `home` in `file` — shared by this
+/// suite's two homes (`git_at` for the `git` class, `migrate_operand` for the `jigc migrate`
+/// one), because both classes ask the identical source question.
+fn home_callers(file: &str, homes: &[&str]) -> Vec<String> {
     let path = workspace_root().join(file);
     let body = std::fs::read_to_string(&path).unwrap_or_else(|_| panic!("read {file}"));
     let code = rust_source::code_only(&body);
     let regions = rust_source::cfg_test_regions(&code);
-    code.match_indices(AIM_HOME)
-        .filter(|(at, _)| !rust_source::is_test_domain(&path, &regions, *at))
-        .filter_map(|(at, _)| rust_source::enclosing_fn(&code, at).map(str::to_string))
-        .collect()
+    let mut owners: Vec<String> = Vec::new();
+    for home in homes {
+        owners.extend(
+            code.match_indices(home)
+                .filter(|(at, _)| !rust_source::is_test_domain(&path, &regions, *at))
+                .filter_map(|(at, _)| rust_source::enclosing_fn(&code, at).map(str::to_string)),
+        );
+    }
+    owners
 }
 
 fn workspace_root() -> PathBuf {
@@ -366,6 +378,189 @@ fn every_production_caller_of_the_one_home_is_a_row() {
         unlisted.is_empty(),
         "these production sites render the runnable spelling and are in no row of \
          `GIT_SPAN_SITES` — add them (the files the table currently names: {files:?}):\n{}",
+        unlisted.join("\n"),
+    );
+}
+
+// ---------------------------------------------------------------------------------
+// Arm 3b — the same class, one verb over: `jigc migrate <PATH>`
+// ---------------------------------------------------------------------------------
+
+/// **`jigc migrate` is the second verb in this class, and it was swept at one producer of
+/// six** (M53 post-review-fix review, HIGH 2).
+///
+/// `7cd03c59` moved `jigc migrate <PATH>`'s base from the repository root to the caller's
+/// cwd. That is right for a path the caller types and wrong for a path **jigc** prints into
+/// the verb: a repo-relative store key, a promote destination, a recorded migration source.
+/// Driven from `$REPO/docs/deep` on a `fresh` corpus with a foreign `CHANGELOG.md`, the store
+/// sweep's own advisory emitted `` `jigc migrate CHANGELOG.md --as changelog` `` and running
+/// it verbatim answered *"could not read the foreign `changelog` source at `CHANGELOG.md`"* —
+/// the row the census had called *"already correct — the model for the fix"*.
+///
+/// The verb takes no `-C`, so there is no redirection to add: the operand itself is spelled
+/// absolute, through `engine::finding::migrate_operand`.
+#[test]
+fn the_migrate_predicate_admits_an_absolute_or_a_reader_supplied_operand_only() {
+    for ok in [
+        // absolute — `migrate_at`'s render, bare and quoted
+        "adopt it with `jigc migrate /repo/CHANGELOG.md --as changelog`",
+        "adopt it with `jigc migrate '/a repo/CHANGELOG.md' --as changelog`",
+        // reader-supplied: the reader fills it with a path rooted where they stand, which is
+        // exactly where the verb roots it
+        "bring it under management: `jigc migrate <path> --as <doctype>`",
+        // not a migrate span at all
+        "`jigc migrate-corpus`",
+        "`jigc ingest` routes it",
+        // no operand
+        "`jigc migrate --help`",
+    ] {
+        assert_eq!(
+            engine::finding::unbased_migrate_span(ok),
+            None,
+            "the fence must admit: {ok}"
+        );
+    }
+
+    for bad in [
+        "adopt it with `jigc migrate CHANGELOG.md --as changelog`",
+        "adopt it with `jigc migrate docs/deep/x.md --as adr`",
+        "re-mint with `jigc migrate 'decisions/my notes.md' --as adr`",
+    ] {
+        assert!(
+            engine::finding::unbased_migrate_span(bad).is_some(),
+            "the fence must refuse: {bad}\n(the verb roots that operand at the READER's cwd)"
+        );
+    }
+}
+
+/// The fence is live on the constructor, exactly like its `git` sibling.
+#[test]
+#[should_panic(expected = "must name a path that resolves from anywhere")]
+fn an_unbased_migrate_span_fires_the_fence() {
+    let _ = Route::human("adopt it with `jigc migrate CHANGELOG.md --as changelog`");
+}
+
+/// **The one declared carve-out, and it is a constructor rather than a hole.** A span
+/// re-printing the token the *operator* typed is bytes-indistinguishable from a store key
+/// jigc computed; only the producer knows which, so the producer says so
+/// (`Route::human_echoing_caller_token`) and the exemption is one call site wide.
+#[test]
+fn the_caller_echo_carve_out_is_declared_at_the_constructor() {
+    let text = "stage it, then re-run `jigc migrate note.md --as adr`";
+    assert!(engine::finding::unbased_migrate_span(text).is_some());
+    let route = Route::human_echoing_caller_token("note.md", text);
+    assert_eq!(route.as_str(), text);
+}
+
+/// What a production site does with the `jigc migrate` path operand it emits — the sibling of
+/// [`GIT_SPAN_SITES`], over the sibling home. Two spellings of one home: `migrate_at` renders
+/// the whole command, `migrate_operand` the `<PATH>` alone for the producer whose route is an
+/// argv list rather than a command line.
+const MIGRATE_OPERAND_HOME: &[&str] = &["migrate_at", "migrate_operand"];
+
+/// `(file, fn, based, reason)`.
+///
+/// **Derived, not taken from the review.** The review reported *"6 production sites, 1
+/// correct"* from `command grep -rn 'jigc migrate [^-c]'`. That grep reads command lines, and
+/// `crates/cli/src/ingest.rs::near_miss_route` spells the verb as **separate argv tokens** to
+/// `Route::mechanical`, so no line of it matches — it was invisible to the derivation that
+/// found it a problem everywhere else. Re-walked at HEAD over both spellings, the class is
+/// **five producers that print a path jigc computed** (the four the review named minus the
+/// legend, plus `near_miss_route`) and **three that print a `<path>` the reader fills**.
+const MIGRATE_SPAN_SITES: &[(&str, &str, Aim, &str)] = &[
+    (
+        "crates/engine/src/validate.rs",
+        "adoption_route",
+        Aim::Aimed,
+        "`schema-conformance.unadopted-instance`'s adoption route — reached by the store          sweep AND by `jigc doc show`'s reroute of an unregistered instance, so one home          keeps the two doors telling one story. The row the review drove broken",
+    ),
+    (
+        "crates/cli/src/orphan.rs",
+        "unregistered_route",
+        Aim::Aimed,
+        "the unregistered tier of the two-tier orphan advisory. Its operand was interpolated          RAW — not even shell-quoted — so a store key with a space in it emitted two tokens          as well as the wrong base",
+    ),
+    (
+        "crates/engine/src/finalize.rs",
+        "clobber_finding",
+        Aim::Aimed,
+        "`finalize.promote-clobber`'s two arms — the recorded migration source, and the          occupied promote destination a foreign file is invited to be adopted at",
+    ),
+    (
+        "crates/cli/src/ingest.rs",
+        "near_miss_route",
+        Aim::Aimed,
+        "the near-miss adoption argv — THE PRODUCER IN NO REPORTED LIST, earned by walking          both spellings of the verb rather than the one a command-line grep can see",
+    ),
+    (
+        "crates/cli/src/migrate.rs",
+        "adjudicate_source_tracked",
+        Aim::DeclaredOut,
+        "`migrate.source-untracked` re-prints the token the OPERATOR typed, so that a re-run \
+         means re-running theirs. It is declared at the constructor \
+         (`Route::human_echoing_caller_token`), not exempted by a predicate that cannot tell \
+         that operand from a store key",
+    ),
+];
+
+/// Every `Aimed` row reaches the one home; every `DeclaredOut` row states why it does not.
+#[test]
+fn every_based_migrate_site_routes_through_the_one_home_and_every_row_states_why() {
+    let mut offenders: Vec<String> = Vec::new();
+    for (file, function, aim, reason) in MIGRATE_SPAN_SITES {
+        assert!(
+            !reason.trim().is_empty(),
+            "{file}::{function} carries no reason"
+        );
+        let callers = home_callers(file, MIGRATE_OPERAND_HOME);
+        let reaches = callers.iter().any(|owner| owner == function);
+        match aim {
+            Aim::Aimed if !reaches => offenders.push(format!(
+                "  {file}::{function}: disposed `Aimed`, but no production                  {MIGRATE_OPERAND_HOME:?} call sits in it — the callers in that file are:                  {callers:?}"
+            )),
+            Aim::DeclaredOut if reaches => offenders.push(format!(
+                "  {file}::{function}: disposed `DeclaredOut`, but it calls one of                  {MIGRATE_OPERAND_HOME:?}"
+            )),
+            _ => {}
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "a disposition nothing checks is a sentence, not a disposition:\n{}",
+        offenders.join("\n"),
+    );
+}
+
+/// The table is the class: a producer converted later without joining it reddens.
+#[test]
+fn every_production_caller_of_the_migrate_operand_home_is_a_row() {
+    let mut unlisted: Vec<String> = Vec::new();
+    for dir in ["crates/cli/src", "crates/engine/src"] {
+        for entry in std::fs::read_dir(workspace_root().join(dir)).expect("read the crate src") {
+            let path = entry.expect("a dir entry").path();
+            if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+                continue;
+            }
+            let rel = format!("{dir}/{}", path.file_name().unwrap().to_string_lossy());
+            if rel == "crates/engine/src/finding.rs" {
+                continue; // the home's own definition
+            }
+            for owner in home_callers(&rel, MIGRATE_OPERAND_HOME) {
+                if !MIGRATE_SPAN_SITES
+                    .iter()
+                    .any(|(file, function, ..)| *file == rel && *function == owner)
+                {
+                    unlisted.push(format!("  {rel}::{owner}"));
+                }
+            }
+        }
+    }
+    unlisted.sort();
+    unlisted.dedup();
+    assert!(
+        unlisted.is_empty(),
+        "these production sites render the based `jigc migrate` operand and are in no row of \
+         `MIGRATE_SPAN_SITES`:\n{}",
         unlisted.join("\n"),
     );
 }
