@@ -1104,9 +1104,24 @@ fn the_unregistered_tier_routes_adoption_and_a_root_declared_home_is_never_a_str
         "a never-baselined file at a re-rootable placement doctype's prior home is the \
          unregistered tier, not a tracked strand; got:\n{report}",
     );
+    // The operand is ABSOLUTE (M53 post-review-fix review, HIGH 2): `jigc migrate <PATH>`
+    // roots its argument at the caller's cwd, so a repo-relative spelling here runs from the
+    // repository root and nowhere else. Composed from the fixture's own root rather than
+    // pinned, so the assertion says the rule and not a machine path.
+    let expected_migrate = format!(
+        "jigc migrate {} --as roadmap",
+        corpus
+            .repo
+            .path()
+            .canonicalize()
+            .unwrap_or_else(|_| corpus.repo.path().to_path_buf())
+            .join(DECLARED_HOME)
+            .display(),
+    );
     assert!(
-        report.contains("jigc migrate docs/roadmap.md --as roadmap"),
-        "the unregistered tier routes at the adoption verb; got:\n{report}",
+        report.contains(&expected_migrate),
+        "the unregistered tier routes at the adoption verb, spelled so it resolves from any \
+         cwd — expected `{expected_migrate}`; got:\n{report}",
     );
     // The claim is about the STRAND arms, and it is asserted as that claim rather than as
     // "the path is unmentioned" — M51 Increment 8 gave the sweep a second, correct speaker for
