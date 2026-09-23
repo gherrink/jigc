@@ -97,7 +97,8 @@ pub enum ConfigCommand {
         /// with `--after`; exactly one anchor is required).
         #[arg(long)]
         before: Option<String>,
-        /// The source step file; its basename becomes the native step id.
+        /// The source step file, resolved against your current directory; its basename
+        /// becomes the native step id.
         file: PathBuf,
     },
 
@@ -110,7 +111,8 @@ pub enum ConfigCommand {
     ReplaceStep {
         /// The `workflow:<id>#<step-id>` entry to replace.
         target: String,
-        /// The source step file; its basename becomes the native step id.
+        /// The source step file, resolved against your current directory; its basename
+        /// becomes the native step id.
         file: PathBuf,
     },
 
@@ -135,7 +137,8 @@ pub enum ConfigCommand {
     Fill {
         /// The `step:<id>#<fill-id>` extension point to fill.
         target: String,
-        /// The content source: a path, or `-` for stdin (prose never inline).
+        /// The content source: a path resolved against your current directory, or `-`
+        /// for stdin (prose never inline).
         #[arg(long)]
         from_file: String,
     },

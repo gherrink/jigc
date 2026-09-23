@@ -288,7 +288,11 @@ pub(crate) fn wildmatch_magic_reason(token: &str) -> Option<String> {
 /// caller asks for `:(literal)`, so any of these in a token makes it a pattern.
 const WILDMATCH_METACHARS: &[char] = &['*', '?', '[', '\\'];
 
-pub(crate) fn resolve_source_token(repo_root: &Path, token: &str) -> Result<String, String> {
+pub(crate) fn resolve_source_token(
+    repo_root: &Path,
+    base: &Path,
+    token: &str,
+) -> Result<String, String> {
     // 0 — pathspec magic, before anything touches the filesystem, because a token git reads
     // as a pattern is not a path to resolve at all: both callers hand this value to git as a
     // pathspec (the door's trackedness leg `git ls-files`, the sink's `git add`), where a
@@ -301,7 +305,7 @@ pub(crate) fn resolve_source_token(repo_root: &Path, token: &str) -> Result<Stri
              and the retirement would delete bytes no index holds a copy of"
         ));
     }
-    let relative = place_inside(repo_root, token).ok_or_else(|| {
+    let relative = place_inside(repo_root, base, token).ok_or_else(|| {
         format!(
             "`{token}` resolves outside the repository — `jigc migrate` reads its source and, \
              on `--approve`, retires it, so a source outside the tree would be deleted with no \
@@ -503,6 +507,19 @@ fn git_dirs(cwd: &Path) -> Vec<PathBuf> {
 /// Place `token` inside `repo_root`, answering with its clean repo-relative spelling — `None`
 /// when it lands anywhere else.
 ///
+/// **A relative token joins `base`, and `base` is the caller's cwd at the door that reads a
+/// file the operator typed** (M53 — the cwd census, rows C2-03 / C2-04). It joined
+/// `repo_root` unconditionally, and that made `jigc migrate` the one verb on the binary whose
+/// path argument was **not** what every shell tool means by a path: from `docs/deep`,
+/// `jigc migrate note.md` could not find the `note.md` sitting next to the caller, and
+/// `jigc migrate ../../rootnote.md` was refused as *"resolves outside the repository"* about
+/// a file that is plainly inside it — the `..` was folded against the root instead of against
+/// where the caller stood, so the message was **false**. Containment is still judged against
+/// `repo_root`; only the join moved. A door whose token is a **lookup key** or a **declared
+/// home** (`jigc unmanage`, the two root knobs, a `code-anchor` value) passes `repo_root` as
+/// the base, because there the token is not a filesystem path the caller typed but an
+/// identity the store is keyed by.
+///
 /// **Canonicalization-safe on both sides, and asymmetric on purpose.** The repository root and
 /// the token's *directory* chain are both canonicalized, because a repo legitimately sits under
 /// a symlinked ancestor (every macOS temp corpus lives under `/var` → `/private/var`) and a
@@ -515,12 +532,13 @@ fn git_dirs(cwd: &Path) -> Vec<PathBuf> {
 /// implementation. An ancestor link is only a *route* to the bytes — resolving it records the
 /// same file under a spelling git can record — while the leaf **is** the subject: recording a
 /// link there would retire the link and leave the bytes, which is why step 4 refuses it.
-fn place_inside(repo_root: &Path, token: &str) -> Option<String> {
+fn place_inside(repo_root: &Path, base: &Path, token: &str) -> Option<String> {
     let root = std::fs::canonicalize(repo_root).unwrap_or_else(|_| repo_root.to_path_buf());
+    let base = std::fs::canonicalize(base).unwrap_or_else(|_| base.to_path_buf());
     let joined = if Path::new(token).is_absolute() {
         PathBuf::from(token)
     } else {
-        root.join(token)
+        base.join(token)
     };
     let folded = fold_lexically(&joined)?;
     let placed = match (folded.parent(), folded.file_name()) {

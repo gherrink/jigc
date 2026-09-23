@@ -105,7 +105,7 @@ use std::path::Path;
 use std::process::Output;
 
 use cli::cli::{
-    ArmToken, PATH_ARG_OCCURRENCES, PATH_ARG_SLOT, PathArgArm, PathArgDisposition,
+    ArmToken, PATH_ARG_OCCURRENCES, PATH_ARG_SLOT, PathArgArm, PathArgBase, PathArgDisposition,
     PathArgOccurrence, PathArgSubject,
 };
 
@@ -888,4 +888,139 @@ fn relocate_refuses_every_root_jigcs_own_install_writes_into() {
             "{shown}: the refusal moved something",
         );
     }
+}
+
+// ---------------------------------------------------------------------------------------
+// The cwd axis (M53 — the cwd census, rows C2-03 / C2-04).
+// ---------------------------------------------------------------------------------------
+
+/// **Every occurrence's stated base, driven from a subdirectory.**
+///
+/// The escape axis above asks *what a door decides about a token*. This asks the question
+/// one step earlier and never asked before: **what the token is resolved against**. The
+/// census drove all fourteen occurrences from `docs/deep` and found two opposite bases on
+/// one binary with no surface stating either — `--from-file ./pay.txt` worked while
+/// `jigc migrate note.md` did not, and `jigc migrate ../../rootnote.md` was refused as
+/// *"resolves outside the repository"* about a file inside it.
+///
+/// The set iterated is [`PATH_ARG_OCCURRENCES`] — the same registry, the same ⇔ fence — so a
+/// fifteenth occurrence cannot ship without stating a base, and a stated base cannot ship
+/// without being driven. Each arm is run **from a subdirectory** with the spelling its own
+/// base claims will work:
+///
+/// * [`PathArgBase::Cwd`] — a bare basename naming a file that exists **only** beside the
+///   caller. A root-based door cannot find it.
+/// * [`PathArgBase::RepoRoot`] — a repo-relative spelling of a file that exists only at the
+///   root. A cwd-based door cannot find it.
+/// * [`PathArgBase::NotAPath`] — skipped, and the skip is the claim: the arm has no base,
+///   which the type already says and no drive could add to.
+///
+/// The predicate is deliberately narrow — **the door must not complain about resolving the
+/// token** — because the base is the only thing under test. Every door here has its own
+/// downstream verdicts (a doctype it will not migrate, a step id it will not replace), and
+/// asserting those would be asserting the fixture.
+#[test]
+fn every_path_arg_occurrence_resolves_its_token_against_the_base_it_states() {
+    let base = TrialCorpus::build(State::CommittedSingletons);
+    let in_task = base.copy_state();
+    in_task.jigc_ok(&["start", "--workflow", "single-task", "probe"]);
+    in_task.jigc_ok(&[
+        "doc", "create", "adr", "--title", "Probe", "--task", "probe",
+    ]);
+    let pack = FixturePack::from_dev_pack("path-arg-cwd");
+    let exempt = TrialCorpus::build_with_pack(State::Fresh, &pack);
+
+    /// What a door says when it could not resolve the token — the only failure this arm is
+    /// about. Anything else is the door's own downstream verdict.
+    const UNRESOLVED: &[&str] = &[
+        "could not read",
+        "No such file",
+        "no such file",
+        "resolves outside the repository",
+    ];
+
+    let mut driven = 0usize;
+    let mut skipped = 0usize;
+    for occurrence in PATH_ARG_OCCURRENCES {
+        let door = occurrence.door.join(" ");
+        for arm in occurrence.arms {
+            let (spelling, why) = match arm.base {
+                PathArgBase::NotAPath { .. } => {
+                    skipped += 1;
+                    continue;
+                }
+                // Beside the caller, and nowhere else.
+                PathArgBase::Cwd => ("cwd-probe.yaml".to_owned(), "the caller's cwd"),
+                // At the root, and nowhere else.
+                PathArgBase::RepoRoot { .. } => {
+                    ("root-probe.yaml".to_owned(), "the repository root")
+                }
+            };
+            let source = match (door.as_str(), occurrence.arg) {
+                ("relocate", "from") => &exempt,
+                ("doc set-slot" | "doc author" | "doc set-field", _) => &in_task,
+                _ => &base,
+            };
+            let corpus = source.copy_state();
+            let deep = corpus.repo().join("docs").join("deep");
+            fs::create_dir_all(&deep).expect("create the subdirectory the caller stands in");
+            // One file beside the caller and one at the root, each named so that only a door
+            // resolving against the matching base can reach it.
+            fs::write(deep.join("cwd-probe.yaml"), "probe: beside the caller\n")
+                .expect("plant the cwd probe");
+            fs::write(
+                corpus.repo().join("root-probe.yaml"),
+                "probe: at the root\n",
+            )
+            .expect("plant the root probe");
+            // Tracked, so a trackedness leg is not the thing that answers.
+            corpus.git(&["add", "docs/deep/cwd-probe.yaml", "root-probe.yaml"]);
+            corpus.git(&["commit", "-q", "-m", "plant the base probes"]);
+
+            // The `AddressTail` and `Home` subjects take the same spelling in their own
+            // shape; the `Home` arms name a directory, so the probe is its parent.
+            let token = match arm.subject {
+                PathArgSubject::AddressTail(head) => format!("{head}{spelling}"),
+                PathArgSubject::Home => match arm.base {
+                    PathArgBase::Cwd => "docs/deep".to_owned(),
+                    _ => "docs".to_owned(),
+                },
+                _ => spelling.clone(),
+            };
+            let argv: Vec<String> = arm
+                .argv
+                .iter()
+                .map(|part| {
+                    if *part == PATH_ARG_SLOT {
+                        token.clone()
+                    } else {
+                        (*part).to_owned()
+                    }
+                })
+                .collect();
+            let argv: Vec<&str> = argv.iter().map(String::as_str).collect();
+            let out = corpus.jigc_stdin_from(&deep, &argv, CANARY);
+            let seen = format!(
+                "{}{}",
+                String::from_utf8_lossy(&out.stdout),
+                String::from_utf8_lossy(&out.stderr),
+            );
+            for complaint in UNRESOLVED {
+                assert!(
+                    !seen.contains(complaint),
+                    "`jigc {door}`'s `{}` [{}] states its base is {why}, so `{token}` typed \
+                     from `docs/deep` must resolve — the door answered `{complaint}`:\n{seen}",
+                    occurrence.arg,
+                    arm.when,
+                );
+            }
+            driven += 1;
+        }
+    }
+
+    assert!(
+        driven >= 10 && skipped >= 5,
+        "the cwd axis must reach most of the registry and skip only the based-on-nothing \
+         arms; drove {driven}, skipped {skipped}",
+    );
 }

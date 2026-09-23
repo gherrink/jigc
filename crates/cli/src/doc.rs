@@ -372,7 +372,8 @@ pub enum DocCommand {
     SetSlot {
         /// The slot address — `<type>:<slug>#<slot>`.
         addr: String,
-        /// The prose source: a path, or `-` for stdin (prose never inline).
+        /// The prose source: a path resolved against your current directory, or `-` for
+        /// stdin (prose never inline).
         #[arg(long)]
         from_file: String,
         /// The active task to scope the write to. Optional: explicit wins; else the
@@ -439,8 +440,9 @@ pub enum DocCommand {
     Author {
         /// The doctype to author (e.g. `changelog`) — minted through the create-gate.
         doctype: String,
-        /// The payload source: a path, or `-` for stdin (the whole-doc payload is
-        /// large, so it arrives the same way slot prose does — never inline).
+        /// The payload source: a path resolved against your current directory, or `-`
+        /// for stdin (the whole-doc payload is large, so it arrives the same way slot
+        /// prose does — never inline).
         #[arg(long = "from-file")]
         from_file: String,
         /// The active task to scope the write to. Optional: explicit wins; else the

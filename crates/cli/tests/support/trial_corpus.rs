@@ -494,10 +494,18 @@ impl TrialCorpus {
     /// shape a suite needs when the invocation is *expected* to be refused (a
     /// gated slot write), where [`Self::jigc_stdin_ok`]'s assert would fire first.
     pub fn jigc_stdin(&self, args: &[&str], stdin: &str) -> Output {
+        self.jigc_stdin_from(&self.repo(), args, stdin)
+    }
+
+    /// [`Self::jigc_stdin`] from a **named working directory** inside the corpus — the shape
+    /// a suite needs when the cwd is the axis (M53 — the cwd census). Every other runner
+    /// defaults to the repository root, which is exactly the assumption a cwd axis has to
+    /// stop making.
+    pub fn jigc_stdin_from(&self, cwd: &std::path::Path, args: &[&str], stdin: &str) -> Output {
         let mut command = Command::new(env!("CARGO_BIN_EXE_jigc"));
         command
             .args(args)
-            .current_dir(self.repo())
+            .current_dir(cwd)
             .env("HOME", self.home())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

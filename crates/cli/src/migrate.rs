@@ -201,7 +201,14 @@ fn ensure_migratable(pack: &dyn PackSource, doctype: &str) -> Result<()> {
 /// Two jobs in one answer, and that is the point. The *normalization* half is review F2's: a
 /// `./`-prefixed or absolute spelling collapses to the canonical `changelog/changelog.md`, so
 /// the finalize retire's in-location-squatter guard compares like with like whatever the
-/// caller typed. The *adjudication* half is this increment's, and it is the half that was
+/// caller typed — **and since M53 (the cwd census, C2-03) a relative token is resolved
+/// against the caller's `cwd`, which is what every shell tool means by a path**. It was
+/// joined to the repository root, so from `docs/deep` this door could not find the `note.md`
+/// beside the caller, and answered `jigc migrate ../../rootnote.md` with
+/// `migrate.source-untrackable` — *"resolves outside the repository"* about a file plainly
+/// inside it, because the `..` was folded against the root instead of against where the
+/// caller stood. The recorded value stays the clean repo-relative spelling; only the base of
+/// the join moved. The *adjudication* half is this increment's, and it is the half that was
 /// missing: the recorded value is the path `jigc task finalize --approve` **deletes**, and
 /// until now the door normalized any token at all into it — an absolute path outside the
 /// repository stayed absolute, and a `../` one above it was folded **lexically** into a
@@ -213,8 +220,13 @@ fn ensure_migratable(pack: &dyn PackSource, doctype: &str) -> Result<()> {
 /// operator's fix is the same whichever leg answered — and a **`Human`** route, because no
 /// argv resolves this state: only naming a different source does
 /// (`settle-record.md` → §10, the destroying-door mold).
-fn adjudicate_source_path(repo_root: &Path, path: &str, doctype: &str) -> Result<String> {
-    crate::trackable::resolve_source_token(repo_root, path).map_err(|reason| {
+fn adjudicate_source_path(
+    repo_root: &Path,
+    cwd: &Path,
+    path: &str,
+    doctype: &str,
+) -> Result<String> {
+    crate::trackable::resolve_source_token(repo_root, cwd, path).map_err(|reason| {
         render::finding_error(&Finding::block(
             "migrate.source-untrackable",
             format!("`{path}` cannot be migrated as a `{doctype}` source: {reason}"),
@@ -341,20 +353,25 @@ fn migrate_in_repo(
     // reason: the value this returns is the one `finalize --approve` deletes, so a token the
     // door has not adjudicated must never reach the working area at all, and a refusal must
     // strand no task dir to resume from.
-    let recorded = adjudicate_source_path(&repo_root, path, doctype)?;
+    let recorded = adjudicate_source_path(&repo_root, cwd, path, doctype)?;
 
     // Read the foreign file's bytes (the source the seam carries). Resolve the path
     // against the repo root so a repo-relative `CHANGELOG.md` reaches the root file.
     //
-    // The **caller's own spelling** is what is joined, not the adjudicated one: the
-    // adjudication has already proved the two name the same file (a token that resolved
-    // anywhere else was refused above), and a read fault is the one refusal whose subject is
-    // the string the operator typed and can edit — so that same spelling, and not the
-    // resolved `foreign_path`, is what the refusal below quotes. Until the M51 completion
-    // audit (LOW 3) this comment stood over a message rendering `foreign_path.display()`: an
-    // operator who typed `adir` was answered with `/private/var/…/repo/adir`, a host path on
-    // a surface law 1 binds, and one they could not paste back into the route it prints.
-    let foreign_path = repo_root.join(path);
+    // A read fault is the one refusal whose subject is the string the operator typed and can
+    // edit, so that spelling — and not the resolved `foreign_path` — is what the refusal
+    // below quotes. Until the M51 completion audit (LOW 3) this comment stood over a message
+    // rendering `foreign_path.display()`: an operator who typed `adir` was answered with
+    // `/private/var/…/repo/adir`, a host path on a surface law 1 binds, and one they could
+    // not paste back into the route it prints.
+    // **The ADJUDICATED spelling is what is joined** (M53 — the cwd census, C2-03). It was
+    // the caller's own token, on the warrant that the adjudication had proved the two name
+    // the same file — true while a relative token was joined to the root, and false the
+    // moment it is joined to the cwd: `note.md` typed from `docs/deep` names
+    // `docs/deep/note.md`, and joining the raw token to the root would read the wrong file
+    // or none at all. The refusal below still quotes `path`, the operator's own token, for
+    // the reason the comment below it gives.
+    let foreign_path = repo_root.join(&recorded);
     // A route-carrying error, not a `with_context` over the raw I/O error: the latter
     // chains the `os error 2` tail into `{err:#}` — a dead end for the agent. Name the
     // path and route back to the verb with a readable source (M36 Inc-4, errors-with-
@@ -440,6 +457,11 @@ mod tests {
     /// canonicalization the door added is a *best effort* over the real filesystem and never a
     /// precondition — an unresolvable root falls back to the raw comparison rather than
     /// refusing every source under it.
+    ///
+    /// **The cwd is the root here**, the one arrangement under which these spellings still
+    /// mean what the case names say (M53 — the cwd census, C2-03). What the base *does* is
+    /// driven from real subdirectories in `crates/cli/tests/cwd_verb_subject.rs`; this unit
+    /// pins the normalization, which is a different claim and stays exactly as it was.
     #[test]
     fn records_a_clean_repo_relative_source_path() {
         let repo_root = Path::new("/abs/repo");
@@ -453,7 +475,7 @@ mod tests {
             ),
         ] {
             assert_eq!(
-                adjudicate_source_path(repo_root, typed, "changelog")
+                adjudicate_source_path(repo_root, repo_root, typed, "changelog")
                     .unwrap_or_else(|err| panic!("`{typed}` must be admitted: {err:#}")),
                 recorded,
             );
@@ -474,7 +496,7 @@ mod tests {
     fn a_source_outside_the_repository_is_refused_rather_than_folded_back_in() {
         let repo_root = Path::new("/abs/repo");
         for typed in ["../outside.md", "/elsewhere/keepme.md", "../../keepme.md"] {
-            let err = adjudicate_source_path(repo_root, typed, "changelog")
+            let err = adjudicate_source_path(repo_root, repo_root, typed, "changelog")
                 .expect_err("a source that lands outside the repository is refused");
             assert!(
                 format!("{err:#}").contains("migrate.source-untrackable"),

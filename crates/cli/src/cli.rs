@@ -340,8 +340,10 @@ pub enum Command {
     /// — see the error message for the live set. An already-conformant file needs no
     /// rewrite: adopt it with `jigc ingest` instead.
     Migrate {
-        /// The repo-relative path of the foreign document to migrate (e.g.
-        /// `CHANGELOG.md`).
+        /// The path of the foreign document to migrate (e.g. `CHANGELOG.md`).
+        /// Resolved **against your current directory**, like any other command's file
+        /// argument, and recorded repo-relative; it may be absolute, and must land inside
+        /// the repository.
         path: String,
 
         /// The target managed doctype the foreign document is rewritten into — any
@@ -3050,6 +3052,31 @@ pub enum PathArgDisposition {
     },
 }
 
+/// **What a relative token is resolved against** — the third thing a path-bearing argument
+/// owes a reader, beside its shape and its rule (M53 — the cwd census, rows C2-03 / C2-04).
+///
+/// The census drove all fourteen occurrences from a subdirectory and found **two opposite
+/// bases on one binary, with no surface stating either**: `jigc migrate <PATH>` resolved
+/// against the repository root while `--from-file <PATH>` resolved against the cwd, so
+/// `--from-file ./pay.txt` worked from `docs/deep` and `jigc migrate note.md` did not — and
+/// `jigc migrate ../../rootnote.md` was refused as *"resolves outside the repository"* about
+/// a file inside it. `migrate` is fixed; the rest are correct as they stand, and what was
+/// missing from them is that nothing said so. This field is that statement, typed, so a row
+/// cannot carry a base nobody decided.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PathArgBase {
+    /// **The caller's working directory** — what every shell tool means by a path, and the
+    /// base every door that reads a file the operator typed uses.
+    Cwd,
+    /// **The repository root**, with the reason the token is not a path the caller typed but
+    /// an identity the store is keyed by — a lookup key, a declared home, a value whose own
+    /// grammar says repo-relative.
+    RepoRoot { why: &'static str },
+    /// **Nothing** — the token never becomes a path component, so it has no base. The reason
+    /// is the row, exactly as it is for [`PathArgDisposition::NoRule`].
+    NotAPath { why: &'static str },
+}
+
 /// **One arm of one occurrence** — the condition it answers under, the tokens it answers
 /// for, a runnable argv, and its disposition.
 pub struct PathArgArm {
@@ -3061,6 +3088,8 @@ pub struct PathArgArm {
     pub token: ArmToken,
     /// What shape the token takes here.
     pub subject: PathArgSubject,
+    /// What a **relative** token is resolved against here.
+    pub base: PathArgBase,
     /// A **runnable** argv for this arm with [`PATH_ARG_SLOT`] standing in for the caller
     /// token — every other argument present and well-formed, so the token is the only
     /// thing the door can fault on.
@@ -3113,6 +3142,7 @@ pub const PATH_ARG_OCCURRENCES: &[PathArgOccurrence] = &[
                    `jigc task finalize --approve` retires",
             token: ArmToken::Caller,
             subject: PathArgSubject::SourceFile,
+            base: PathArgBase::Cwd,
             argv: &["migrate", PATH_ARG_SLOT, "--as", "changelog"],
             disposition: PathArgDisposition::Adjudicated {
                 predicate: "crate::trackable::resolve_source_token (git pathspec magic — \
@@ -3130,6 +3160,12 @@ pub const PATH_ARG_OCCURRENCES: &[PathArgOccurrence] = &[
             when: "always",
             token: ArmToken::Caller,
             subject: PathArgSubject::SourceFile,
+            base: PathArgBase::RepoRoot {
+                why: "the token is a LOOKUP KEY into the committed store, not a file the \
+                      caller opens — it is the same repo-relative identity `jigc doc list` \
+                      prints and the file-state baseline is keyed by, so resolving it \
+                      against a cwd would ask the store about a key it does not hold",
+            },
             argv: &["unmanage", PATH_ARG_SLOT],
             disposition: PathArgDisposition::NoRule {
                 why: "the token is a LOOKUP KEY, matched against the spellings the store \
@@ -3155,6 +3191,11 @@ pub const PATH_ARG_OCCURRENCES: &[PathArgOccurrence] = &[
                    from_dev_pack` corpus, which ships no freeze manifest",
             token: ArmToken::Caller,
             subject: PathArgSubject::Home,
+            base: PathArgBase::RepoRoot {
+                why: "the token is a doctype's DECLARED HOME — the `location:`/`placement:` a \
+                      schema states, which is repo-relative by definition and identical in \
+                      every clone, so it is not a path the caller typed at all",
+            },
             argv: &["relocate", "adr", "--from", PATH_ARG_SLOT],
             disposition: PathArgDisposition::Adjudicated {
                 predicate: "crate::relocate::installed_root_refusal — \
@@ -3184,6 +3225,7 @@ pub const PATH_ARG_OCCURRENCES: &[PathArgOccurrence] = &[
             when: "always — `-` is read as a file name here, not as stdin",
             token: ArmToken::Caller,
             subject: PathArgSubject::SourceFile,
+            base: PathArgBase::Cwd,
             argv: &[
                 "config",
                 "insert-step",
@@ -3208,6 +3250,7 @@ pub const PATH_ARG_OCCURRENCES: &[PathArgOccurrence] = &[
             when: "always — `-` is read as a file name here, not as stdin",
             token: ArmToken::Caller,
             subject: PathArgSubject::SourceFile,
+            base: PathArgBase::Cwd,
             argv: &[
                 "config",
                 "replace-step",
@@ -3231,6 +3274,9 @@ pub const PATH_ARG_OCCURRENCES: &[PathArgOccurrence] = &[
                 when: "the value is `-`",
                 token: ArmToken::Literal("-"),
                 subject: PathArgSubject::SourceFile,
+                base: PathArgBase::NotAPath {
+                    why: "`-` is the stdin sentinel — it names no file, so it has no base",
+                },
                 argv: &[
                     "config",
                     "fill",
@@ -3247,6 +3293,7 @@ pub const PATH_ARG_OCCURRENCES: &[PathArgOccurrence] = &[
                 when: "the value is a path",
                 token: ArmToken::Caller,
                 subject: PathArgSubject::SourceFile,
+                base: PathArgBase::Cwd,
                 argv: &[
                     "config",
                     "fill",
@@ -3273,6 +3320,9 @@ pub const PATH_ARG_OCCURRENCES: &[PathArgOccurrence] = &[
                 when: "the value is `-`",
                 token: ArmToken::Literal("-"),
                 subject: PathArgSubject::SourceFile,
+                base: PathArgBase::NotAPath {
+                    why: "`-` is the stdin sentinel — it names no file, so it has no base",
+                },
                 argv: &[
                     "doc",
                     "set-slot",
@@ -3289,6 +3339,7 @@ pub const PATH_ARG_OCCURRENCES: &[PathArgOccurrence] = &[
                 when: "the value is a path",
                 token: ArmToken::Caller,
                 subject: PathArgSubject::SourceFile,
+                base: PathArgBase::Cwd,
                 argv: &[
                     "doc",
                     "set-slot",
@@ -3313,6 +3364,9 @@ pub const PATH_ARG_OCCURRENCES: &[PathArgOccurrence] = &[
                 when: "the value is `-`",
                 token: ArmToken::Literal("-"),
                 subject: PathArgSubject::SourceFile,
+                base: PathArgBase::NotAPath {
+                    why: "`-` is the stdin sentinel — it names no file, so it has no base",
+                },
                 argv: &["doc", "author", "adr", "--from-file", PATH_ARG_SLOT],
                 disposition: PathArgDisposition::NoRule {
                     why: "the declared stdin sentinel is not a path — the payload arrives on \
@@ -3323,6 +3377,7 @@ pub const PATH_ARG_OCCURRENCES: &[PathArgOccurrence] = &[
                 when: "the value is a path",
                 token: ArmToken::Caller,
                 subject: PathArgSubject::SourceFile,
+                base: PathArgBase::Cwd,
                 argv: &["doc", "author", "adr", "--from-file", PATH_ARG_SLOT],
                 disposition: PathArgDisposition::NoRule {
                     why: "stated once, in full, at `crate::doc::read_handoff` — the bytes are \
@@ -3340,6 +3395,10 @@ pub const PATH_ARG_OCCURRENCES: &[PathArgOccurrence] = &[
             when: "always",
             token: ArmToken::Caller,
             subject: PathArgSubject::AddressTail("workflow:single-task#"),
+            base: PathArgBase::NotAPath {
+                why: "the token is a cascade ADDRESS TAIL — a definition id, never a \
+                      filesystem path",
+            },
             argv: &[
                 "config",
                 "replace-step",
@@ -3361,6 +3420,10 @@ pub const PATH_ARG_OCCURRENCES: &[PathArgOccurrence] = &[
             when: "always",
             token: ArmToken::Caller,
             subject: PathArgSubject::AddressTail("workflow:single-task#"),
+            base: PathArgBase::NotAPath {
+                why: "the token is a cascade ADDRESS TAIL — a definition id, never a \
+                      filesystem path",
+            },
             argv: &["config", "remove-step", PATH_ARG_SLOT],
             disposition: PathArgDisposition::NoRule {
                 why: "the verb writes no native file at all — there is nothing to add — so the \
@@ -3377,6 +3440,10 @@ pub const PATH_ARG_OCCURRENCES: &[PathArgOccurrence] = &[
             when: "always",
             token: ArmToken::Caller,
             subject: PathArgSubject::AddressTail("step:implement#"),
+            base: PathArgBase::NotAPath {
+                why: "the token is a cascade ADDRESS TAIL — a definition id, never a \
+                      filesystem path",
+            },
             argv: &["config", "fill", PATH_ARG_SLOT, "--from-file", "-"],
             disposition: PathArgDisposition::NoRule {
                 why: "the `#<fill-id>` tail DOES name `.jigc/config/fills/<fill-id>.md` — but \
@@ -3395,6 +3462,10 @@ pub const PATH_ARG_OCCURRENCES: &[PathArgOccurrence] = &[
             when: "always",
             token: ArmToken::Caller,
             subject: PathArgSubject::AddressTail("workflow:single-task#"),
+            base: PathArgBase::NotAPath {
+                why: "the token is a cascade ADDRESS TAIL — a definition id, never a \
+                      filesystem path",
+            },
             argv: &["config", "fork", PATH_ARG_SLOT],
             disposition: PathArgDisposition::NoRule {
                 why: "the `#<step-id>` tail DOES name `.jigc/config/steps/<step-id>.yaml` — but \
@@ -3414,6 +3485,12 @@ pub const PATH_ARG_OCCURRENCES: &[PathArgOccurrence] = &[
                 when: "`key ∈ ROOT_KNOBS` — the value is resolved as a HOME",
                 token: ArmToken::Caller,
                 subject: PathArgSubject::Home,
+                base: PathArgBase::RepoRoot {
+                    why: "a root knob DECLARES a home, and `knobs.yaml` states it \
+                          repo-relative: the same value has to mean the same directory in \
+                          every clone and from every cwd, which a cwd-relative one could \
+                          not",
+                },
                 argv: &["config", "set", "docs-root", PATH_ARG_SLOT],
                 disposition: PathArgDisposition::Adjudicated {
                     predicate: "crate::trackable::untrackable_reason · \
@@ -3433,6 +3510,9 @@ pub const PATH_ARG_OCCURRENCES: &[PathArgOccurrence] = &[
                 when: "`key ∉ ROOT_KNOBS`",
                 token: ArmToken::Caller,
                 subject: PathArgSubject::FieldValue,
+                base: PathArgBase::NotAPath {
+                    why: "an ordinary cascade scalar — the token becomes no path component",
+                },
                 argv: &["config", "set", "default-workflow", PATH_ARG_SLOT],
                 disposition: PathArgDisposition::NoRule {
                     why: "a non-root knob's value is a SCALAR, adjudicated against the knob's \
@@ -3451,6 +3531,13 @@ pub const PATH_ARG_OCCURRENCES: &[PathArgOccurrence] = &[
             when: "always",
             token: ArmToken::Caller,
             subject: PathArgSubject::FieldValue,
+            base: PathArgBase::RepoRoot {
+                why: "a `code-anchor` value's own declared grammar names a path relative \
+                      to the repository root (the grammar is stated at its declared sites, \
+                      not restated here) — the doc records an anchor every clone resolves \
+                      identically, so the grammar fixes the base and the caller's cwd \
+                      cannot",
+            },
             argv: &[
                 "doc",
                 "set-field",

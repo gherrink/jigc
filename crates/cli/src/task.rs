@@ -4493,7 +4493,12 @@ impl ValidatedRetirement {
     ///      green cell.
     fn adjudicate(repo_root: &Path, recorded: &Path, state: StateTruth) -> Result<Self, Finding> {
         let recorded = recorded.to_string_lossy();
-        let path = crate::trackable::resolve_source_token(repo_root, &recorded)
+        // **The base is `repo_root`, not a cwd** (M53 — the cwd census, C2-03). The value
+        // adjudicated here is the one the migrate door already *recorded*, and what it
+        // recorded is the clean repo-relative spelling — an identity, never the operator's
+        // typed token. Re-joining it against a cwd would resolve a stored identity as if it
+        // were a fresh argument, and the sink would then unlink a path nobody named.
+        let path = crate::trackable::resolve_source_token(repo_root, repo_root, &recorded)
             .map_err(|reason| retire_untrackable_finding(&recorded, state, reason))?;
         Ok(Self {
             path,

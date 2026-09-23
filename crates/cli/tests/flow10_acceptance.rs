@@ -140,7 +140,19 @@ fn execute_stdout_for_add_order(tag: &str, intents: &[&str]) -> String {
         &["milestone", "execute", "cache-hardening"],
     );
     expect_ok(&executed, "milestone execute");
-    String::from_utf8(executed.stdout).expect("utf-8 execute stdout")
+    let stdout = String::from_utf8(executed.stdout).expect("utf-8 execute stdout");
+    // **Normalize the repository's own location out** (M53 — the cwd census, C1-14 /
+    // C3-01). The emitted `Spawn:` line's `cd` operand is absolute, because it is bytes an
+    // orchestrator pastes into a shell of unknown cwd; each arm below is built in its own
+    // throwaway repository, so the two would differ on the temp path alone. The claim this
+    // suite makes is about the **order** of the directives and their id-sorted invariance
+    // across add orders — a fact the repository's location cannot touch — so the root is
+    // replaced by a placeholder and everything else is compared byte for byte.
+    let root = std::fs::canonicalize(repo.path())
+        .unwrap_or_else(|_| repo.path().to_path_buf())
+        .display()
+        .to_string();
+    stdout.replace(&root, "<ROOT>")
 }
 
 /// **Half-A step 1, the determinism headline (hardening #7).** `jigc milestone
@@ -156,8 +168,14 @@ fn milestone_execute_emits_n_id_sorted_spawns_byte_identical_across_add_orders()
     let id_alpha = "alpha-rework";
     let id_middle = "middle-rework";
     let id_zebra = "zebra-rework";
+    // **The `cd` operand is the ABSOLUTE worktree path since M53** (the cwd census, rows
+    // C1-14 / C3-01): the line is the one `cd` jigc emits, the orchestrator copy-runs it,
+    // and spelled repo-relative it ran from the repository root and nowhere else. So the
+    // spawn text each arm is matched against is normalized back to a placeholder root
+    // before comparison — what this test is about is the **order**, and the order is the
+    // thing the repository's own location cannot change.
     let spawn = |id: &str| {
-        format!("Spawn: `cd .jigc/worktrees/{id} && jigc workflow sub-task --task {id}`")
+        format!("Spawn: `cd <ROOT>/.jigc/worktrees/{id} && jigc workflow sub-task --task {id}`")
     };
 
     // Add order #1: zebra, alpha, middle (scrambled, not id-sorted).
@@ -168,7 +186,9 @@ fn milestone_execute_emits_n_id_sorted_spawns_byte_identical_across_add_orders()
 
     // Exactly N=3 Spawn directives, one per sub-task, naming the real re-entry verb.
     assert_eq!(
-        scrambled.matches("Spawn: `cd .jigc/worktrees/").count(),
+        scrambled
+            .matches("Spawn: `cd <ROOT>/.jigc/worktrees/")
+            .count(),
         3,
         "exactly one Spawn per sub-task (no extras/dupes); got:\n{scrambled}",
     );
