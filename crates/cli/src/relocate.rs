@@ -773,8 +773,17 @@ fn displace_foreign_squatter(
                  move-INTO the destination is deferred"
             ),
             engine::finding::Route::human(format!(
+                // Both claimants are in the file-state record, i.e. **committed**, and
+                // `jigc relocate` is a task-less store op — so the verb that moves one of
+                // them is `jigc rename`, not its in-task sibling. Driven at `834772b6`,
+                // the shipped route dead-ended: `jigc doc rename vision --to X` over a
+                // committed doc with no task open exits 1 with *no active task — start one
+                // with `jigc start`*, and with a task open it refuses the re-slug of a
+                // committed identity and routes back at `jigc rename` (M53 — the pre-v1
+                // usability batch, row 3; the sibling-confusion class the rc.14 trial's
+                // F-4 reports at the two `--help`s, shipped here as a route).
                 "two managed docs claim `{dest_rel}` — decide which one keeps the home, then \
-                 `jigc doc rename` the other onto a free identity or `jigc unmanage` it; \
+                 `jigc rename` the other onto a free identity or `jigc unmanage` it; \
                  `jigc doc list` names what is managed there",
             )),
         ));

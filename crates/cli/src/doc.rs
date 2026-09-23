@@ -203,7 +203,11 @@ document is its own task.";
 /// (`design/surface-contract.md` → The stated-at fence, seam-generated tier).
 fn rename_long_about() -> String {
     format!(
-        "Retitle a staged doc — and re-slug it while its identity is uncommitted.\n\n\
+        "Retitle a doc THIS TASK has staged — `jigc rename` is the committed-store sibling.\n\n\
+         It re-slugs the doc too while its identity is still uncommitted. The \
+         committed-store op is task-less and self-committing and refuses while any task is \
+         in flight; this one takes `--task <task-id>` and touches nothing outside the task \
+         area. \
          The doc is addressed `<type>:<slug>` (whole-doc only — retitle a repeatable \
          item with `jigc doc retitle-item`). When this task MINTED the doc, `--to` \
          rewrites its `# H1` and re-slugs it, moving the staged file and every \
@@ -309,7 +313,7 @@ pub enum DocCommand {
         #[arg(long)]
         task: Option<String>,
     },
-    /// Retitle a staged doc — and re-slug it while its identity is uncommitted.
+    /// Retitle a doc THIS TASK has staged — `jigc rename` is the committed-store sibling.
     ///
     /// The in-task sibling of the top-level `jigc rename` (which is task-less and
     /// self-committing, and refuses outright while any task is in flight). It splits

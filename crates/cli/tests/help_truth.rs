@@ -163,6 +163,61 @@ fn doc_subcommand_table_carries_one_line_leads_and_no_design_paths() {
     }
 }
 
+/// **The two rename verbs name each other, in their leads** (M53 — the pre-v1 usability
+/// batch, row 3 / the rc.14 trial's F-4: *`jigc doc rename` vs `jigc rename` costs every
+/// worker 2–3 help reads*).
+///
+/// They are one decision with two answers — *is the identity committed?* — and each help
+/// used to describe only its own half: the top-level verb's lead named the in-task sibling
+/// nowhere at all, and the `doc` verb's lead named the committed-store one only three
+/// sentences into its long help. A worker who opened the wrong one had to read both, and
+/// the trial measured the cost.
+///
+/// The fence is the **pair**, not two independent strings: each lead must name the other
+/// verb *and* the state that selects it, and both must still be one-line leads. Stating it
+/// as one test is the point — a lead edited to drop its cross-reference reddens here even
+/// if the other half still carries its own.
+#[test]
+fn the_two_rename_verbs_name_each_other_and_the_state_that_selects_them() {
+    // (verb path, the lead's own row, the sibling it must name, the state word it must
+    // carry). The state word is what makes the cross-reference actionable: naming the
+    // sibling without naming the discriminator sends the reader to a second help.
+    let cells: &[(&[&str], &[&str], &str, &str)] = &[
+        (&["--help"], &["rename"], "jigc doc rename", "committed"),
+        (
+            &["doc", "--help"],
+            &["rename"],
+            "jigc rename",
+            "committed-store",
+        ),
+    ];
+
+    for (path, row, sibling, state) in cells {
+        let help = help_stdout_raw(path);
+        let (_, desc) = commands_table(&help)
+            .into_iter()
+            .find(|(v, _)| v == row[0])
+            .unwrap_or_else(|| {
+                panic!("`jigc {}` lists `{}`; got:\n{help}", path.join(" "), row[0])
+            });
+        assert!(
+            desc.contains(sibling),
+            "the `{}` table line for `{}` must name its sibling `{sibling}`; got: {desc}",
+            path.join(" "),
+            row[0],
+        );
+        assert!(
+            desc.contains(state),
+            "and the state that selects between them (`{state}`); got: {desc}",
+        );
+        assert!(
+            desc.chars().count() <= LEAD_CAP,
+            "and must still be a one-line lead; got {} chars: {desc}",
+            desc.chars().count(),
+        );
+    }
+}
+
 #[test]
 fn doc_long_help_retains_contract_detail_below_the_fold() {
     // The table drops the contract walls; the verb's own long help keeps them —

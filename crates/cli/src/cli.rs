@@ -384,11 +384,17 @@ pub enum Command {
         path: String,
     },
 
-    /// Rename a managed doc — `jigc rename <type>:<slug> --to "<New Title>"` is the
-    /// CLI-owned identity refactor: it derives the new slug from the title, repoints
+    /// Rename a committed doc — `jigc doc rename` is the in-task sibling.
+    ///
+    /// `jigc rename <type>:<slug> --to "<New Title>"` is the CLI-owned identity refactor
+    /// for a doc the store already holds: it derives the new slug from the title, repoints
     /// every persisted referrer old→new, rewrites the moved doc's H1, `git mv`s it, and
-    /// commits as one atomic transaction (rolling back cleanly on any failure). `--to` is
-    /// required; `--slug` (only valid alongside `--to`) overrides the derived slug.
+    /// commits as one atomic transaction (rolling back cleanly on any failure). It is
+    /// task-less and self-committing, and refuses while any task is in flight — so to
+    /// retitle a doc **your task has staged**, use `jigc doc rename <address> --to
+    /// "<New Title>" --task <task-id>`, which re-slugs it too while its identity is still
+    /// uncommitted. `--to` is required; `--slug` (only valid alongside `--to`) overrides
+    /// the derived slug.
     Rename {
         /// The `<type>:<slug>` address of the doc to rename (e.g.
         /// `adr:single-node-cache`).
