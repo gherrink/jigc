@@ -2128,7 +2128,15 @@ fn every_filled_fixed_identity_home_that_is_vacated_turns_the_store_red() {
     for (ty, path) in filled {
         let corpus = base.copy_state();
         corpus.git(&["mv", path, &format!("MOVED-{ty}.md")]);
+        // Still *one ordinary human act* — and since M53 (the pre-v1 usability batch, row 1)
+        // jigc's own installed `pre-commit` backstop refuses it for the placement family,
+        // which is every home in this loop. That refusal is the M35 claim, not this arm's:
+        // here the subject is what `jigc validate` says about a vacated home in a fresh
+        // clone, which presupposes the move *landed*. So the hook is stepped over to reach
+        // the state under test, and its firing is the evidence that fix holds.
         corpus.git(&[
+            "-c",
+            "core.hooksPath=/dev/null",
             "commit",
             "-q",
             "-m",

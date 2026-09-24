@@ -126,6 +126,26 @@ const MIGRATE_ROUTE_SITES: &[RouteSite] = &[
         ),
     },
     RouteSite {
+        file: "crates/cli/src/doc.rs",
+        func: "relocated_route",
+        sites: 1,
+        state: "`jigc doc show <addr>` over a doc committed at a **recorded prior home** of its \
+                doctype — the read resolves the current home, gets `ENOENT`, and the reroute \
+                asks the same two walks the store sweep asks, in the same order, so the read \
+                names the repair the sweep names instead of *create the referenced doc* \
+                (M53 — the pre-v1 usability batch, row 4 / the M52 per-axis review's \
+                `(7, A7-F3)`)",
+        disposition: Disposition::Answered(
+            "the route is emitted only when `cli::orphan::prior_home_instances` — the store \
+             sweep's own enumerator — carries this exact identity, which is the driven \
+             store-sweep row's state reached through a read door; the verb clears it \
+             identically, and the read adds no corpus condition of its own. A doc stranded by \
+             a root-knob re-point takes the other arm and names no migration at all, which is \
+             why `doc_show_relocated::a_located_doc_stranded_by_a_docs_root_repoint_…` asserts \
+             the verb is absent there",
+        ),
+    },
+    RouteSite {
         file: "crates/cli/src/ingest.rs",
         func: "near_miss_route",
         sites: 1,

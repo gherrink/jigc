@@ -130,7 +130,18 @@ fn backticked(route: &str) -> Vec<String> {
 fn vacated_changelog() -> TrialCorpus {
     let corpus = TrialCorpus::build(State::CommittedSingletons);
     corpus.git(&["mv", "CHANGELOG.md", "HISTORY.md"]);
-    corpus.git(&["commit", "-q", "-m", "rename the changelog"]);
+    // The installed `pre-commit` backstop is stepped over, not defeated: since M53 (the
+    // pre-v1 usability batch, row 1) its M35 blocking arm reaches the **placement** family,
+    // so this bare `git mv` is exactly what it refuses. That is a different claim than this
+    // fixture's, whose subject presupposes the move landed.
+    corpus.git(&[
+        "-c",
+        "core.hooksPath=/dev/null",
+        "commit",
+        "-q",
+        "-m",
+        "rename the changelog",
+    ]);
     corpus.fresh_clone_shape();
     corpus
 }
@@ -291,7 +302,16 @@ fn the_emitted_routes_named_exits_each_clear_the_finding() {
 
     // The restore the route names, then the jigc verb it names, each driven.
     corpus.git(&["mv", "HISTORY.md", "CHANGELOG.md"]);
-    corpus.git(&["commit", "-q", "-m", "restore the changelog"]);
+    // Same step-over, same reason (M53, row 1): the restore is itself a bare `git mv` of a
+    // placement singleton, and the claim under test is the sweep's, not the hook's.
+    corpus.git(&[
+        "-c",
+        "core.hooksPath=/dev/null",
+        "commit",
+        "-q",
+        "-m",
+        "restore the changelog",
+    ]);
     let restored = printed(&corpus.jigc(&["validate"]));
     assert!(
         !fires_at(&restored, "CHANGELOG.md"),

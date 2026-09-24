@@ -294,7 +294,18 @@ fn a_stamped_strand_is_never_listed_as_an_orphaned_row() {
     let corpus = TrialCorpus::build(State::CommittedSingletons);
     std::fs::create_dir_all(corpus.repo().join("notes")).expect("create the out-of-band dir");
     corpus.git(&["mv", "docs/roadmap.md", "notes/roadmap.md"]);
-    corpus.git(&["commit", "-q", "-m", "move the roadmap out of band"]);
+    // The installed `pre-commit` backstop is stepped over, not defeated: since M53 (the
+    // pre-v1 usability batch, row 1) its M35 blocking arm reaches the **placement** family,
+    // and `roadmap` is one. The claim under test is the sweep's partition, which
+    // presupposes the move landed.
+    corpus.git(&[
+        "-c",
+        "core.hooksPath=/dev/null",
+        "commit",
+        "-q",
+        "-m",
+        "move the roadmap out of band",
+    ]);
 
     let out = corpus.jigc(&["doc", "list", "--format", "json"]);
     let json = String::from_utf8_lossy(&out.stdout);
@@ -315,7 +326,18 @@ fn a_stamped_strand_is_reported_as_a_strand_and_never_as_an_orphaned_instance() 
     let corpus = TrialCorpus::build(State::CommittedSingletons);
     std::fs::create_dir_all(corpus.repo().join("notes")).expect("create the out-of-band dir");
     corpus.git(&["mv", "docs/roadmap.md", "notes/roadmap.md"]);
-    corpus.git(&["commit", "-q", "-m", "move the roadmap out of band"]);
+    // The installed `pre-commit` backstop is stepped over, not defeated: since M53 (the
+    // pre-v1 usability batch, row 1) its M35 blocking arm reaches the **placement** family,
+    // and `roadmap` is one. The claim under test is the sweep's partition, which
+    // presupposes the move landed.
+    corpus.git(&[
+        "-c",
+        "core.hooksPath=/dev/null",
+        "commit",
+        "-q",
+        "-m",
+        "move the roadmap out of band",
+    ]);
 
     let out = corpus.jigc(&["validate"]);
     let text = printed(&out);

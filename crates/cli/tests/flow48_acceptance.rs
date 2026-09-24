@@ -2154,7 +2154,21 @@ fn corpus_foreign_squatter() -> TrialCorpus {
 fn corpus_home_vacated() -> TrialCorpus {
     let corpus = TrialCorpus::build(State::CommittedSingletons);
     corpus.git(&["mv", "CHANGELOG.md", "HISTORY.md"]);
-    corpus.git(&["commit", "-q", "-m", "rename the changelog"]);
+    // The installed `pre-commit` backstop is stepped over, not defeated: since M53 (the
+    // pre-v1 usability batch, row 1) its M35 blocking arm **reaches the placement family**,
+    // so this bare `git mv` of a placement singleton is exactly what it refuses. That
+    // refusal is a different claim than this fixture's — the subject here is what the store
+    // sweep says about a rename that *landed* — and reaching that state at all now requires
+    // getting past the door built to stop it. A fixture that went on landing this commit by
+    // accident would be evidence the backstop had gone inert again.
+    corpus.git(&[
+        "-c",
+        "core.hooksPath=/dev/null",
+        "commit",
+        "-q",
+        "-m",
+        "rename the changelog",
+    ]);
     corpus.fresh_clone_shape();
     corpus
 }
