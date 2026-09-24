@@ -251,6 +251,20 @@ fn entry_names(area: &Path) -> Vec<String> {
 type Minted = Vec<(PathBuf, engine::state::WorkArea)>;
 
 /// **Cell — `jigc start "<intent>"`** (`crates/cli/src/start.rs::mint_in_repo`).
+/// `jigc task amend` — the amend task's own area. Its pin is load-bearing twice over: it is
+/// the residual predicate's subject like every other area's, **and** it is what the finalize
+/// arm compares HEAD against before it rewrites a commit (`finalize.base-mismatch`).
+fn cell_amend(workdir: &Path, home: &Path) -> Minted {
+    let repo = init_repo(workdir);
+    jigc_ok(&repo, home, &["setup"]);
+    let id = minted_task(&jigc_ok(
+        &repo,
+        home,
+        &["task", "amend", "carry the base pin"],
+    ));
+    vec![(task_area(&repo, &id), engine::state::WorkArea::Task)]
+}
+
 fn cell_start(workdir: &Path, home: &Path) -> Minted {
     let repo = init_repo(workdir);
     jigc_ok(&repo, home, &["setup"]);
@@ -377,6 +391,7 @@ type Cell = fn(&Path, &Path) -> Minted;
 fn cell_for(site: &str, door: &str) -> Cell {
     match site {
         "crates/cli/src/start.rs::mint_in_repo" => cell_start,
+        "crates/cli/src/start.rs::mint_amend_in_repo" => cell_amend,
         "crates/cli/src/start.rs::mint_migration_in_repo" => cell_migrate,
         "crates/cli/src/milestone.rs::run_create" => cell_milestone_create,
         "crates/engine/src/milestone.rs::add_task" => cell_add_task,
@@ -394,6 +409,7 @@ fn cell_for(site: &str, door: &str) -> Cell {
 const DRIVEN_SITES: &[&str] = &[
     "crates/cli/src/start.rs::mint_in_repo",
     "crates/cli/src/start.rs::mint_migration_in_repo",
+    "crates/cli/src/start.rs::mint_amend_in_repo",
     "crates/cli/src/milestone.rs::run_create",
     "crates/engine/src/milestone.rs::add_task",
     "crates/engine/src/milestone.rs::reseed_sub_task_areas",
@@ -438,11 +454,17 @@ fn the_migrate_door_mints_an_area_carrying_its_base_pin() {
     drive(DRIVEN_SITES[1]);
 }
 
+/// `jigc task amend ["<intent>"]` — the amend task's area.
+#[test]
+fn the_amend_door_mints_an_area_carrying_its_base_pin() {
+    drive(DRIVEN_SITES[2]);
+}
+
 /// `jigc milestone create "<title>"` — the milestone area, whose pin is what
 /// `jigc rename`'s `first_dir_name` twin will key on.
 #[test]
 fn the_milestone_create_door_mints_an_area_carrying_its_base_pin() {
-    drive(DRIVEN_SITES[2]);
+    drive(DRIVEN_SITES[3]);
 }
 
 /// `jigc milestone add-task` — a `Snapshot::Exempt` row. The exemption is from the
@@ -450,14 +472,14 @@ fn the_milestone_create_door_mints_an_area_carrying_its_base_pin() {
 /// answered *no such task* by its own `jigc start --task`.
 #[test]
 fn the_add_task_door_mints_an_area_carrying_its_base_pin() {
-    drive(DRIVEN_SITES[3]);
+    drive(DRIVEN_SITES[4]);
 }
 
 /// The record-driven re-seed on a **real** fresh clone — the second `Snapshot::Exempt` row,
 /// and the only mint whose areas nobody typed a command for.
 #[test]
 fn the_fresh_clone_reseed_rebuilds_areas_carrying_their_base_pin() {
-    drive(DRIVEN_SITES[4]);
+    drive(DRIVEN_SITES[5]);
 }
 
 /// **The set is the registry's** — no undriven member, no cell for a door that is gone.

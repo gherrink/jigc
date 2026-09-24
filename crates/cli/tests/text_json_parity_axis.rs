@@ -311,6 +311,24 @@ const REGISTRY: &[(&[&str], Tier)] = &[
             ),
         ),
     ),
+    (
+        &["task", "amend"],
+        Tier::Judgment(
+            "the composed-workflow surface — prose, pinned as {task, text}, led by the \
+             `amending:` block naming the commit at HEAD",
+            Disposition::DeclaredOut(
+                "the same pinned `{task, text}` projection as `start`'s composing arm, and the \
+                 same declaration governs what the text adds over it: the mint announcement, \
+                 the task-state affordances and the already-open block are presentation that \
+                 adds no key. The `amending:` block is one more of those, and deliberately so \
+                 — the short sha and subject line it prints are facts about the REPOSITORY, \
+                 readable by any driver from `git log -1 HEAD` without jigc's help, not facts \
+                 about the composition the envelope is the contract for. The one fact that is \
+                 jigc's own — that this task will rewrite that commit rather than add one — \
+                 the driver already has, because it typed the verb",
+            ),
+        ),
+    ),
     (&["task", "discard"], Tier::Fenced("task_ack")),
     (
         &["task", "finalize"],

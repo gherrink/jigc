@@ -540,6 +540,10 @@ const MINT_DOOR_CELLS: &[(&str, &str)] = &[
         "crates/cli/src/start.rs::mint_migration_in_repo",
         "mint_doors.rs",
     ),
+    (
+        "crates/cli/src/start.rs::mint_amend_in_repo",
+        "mint_doors.rs",
+    ),
     ("crates/cli/src/milestone.rs::run_create", "mint_doors.rs"),
     ("crates/engine/src/milestone.rs::add_task", "mint_doors.rs"),
     (

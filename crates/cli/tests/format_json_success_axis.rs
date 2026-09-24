@@ -877,6 +877,14 @@ fn recipes() -> Vec<Recipe> {
             },
         },
         Recipe {
+            path: &["task", "amend"],
+            arm: "Composed",
+            base: Base::Fresh,
+            // The fresh base's HEAD is `setup`'s install commit — a single-parent commit, so
+            // the door's own head-shape gate passes and it composes.
+            drive: |c| json(c, &["task", "amend", "repair the install commit message"]),
+        },
+        Recipe {
             path: &["task", "discard"],
             arm: "TaskAck::Discarded",
             base: Base::Fresh,

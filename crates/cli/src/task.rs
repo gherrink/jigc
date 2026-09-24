@@ -213,6 +213,45 @@ fn finalize_long_about() -> String {
     )
 }
 
+/// The `jigc task amend` long help.
+///
+/// **This door commits nothing, and says so** — the surface-contract's law 1 read the other
+/// way round: `jigc task amend` is `BEHALF_DOORS`' `Neither`, so a help text implying it
+/// rewrites HEAD would be as much a lie as a committing door that stayed silent. What it
+/// does is mint; `jigc task finalize <id>` is what rewrites the commit, and the help names it.
+///
+/// It also states the two facts an agent cannot discover from the door's own output: that
+/// the tree is not the subject (so a wrong *change* is a new task, not an amend), and that
+/// amending a commit which has been pushed rewrites shared history. The second is **advice,
+/// never a fence** — the baseline drove `git branch -r --contains HEAD` empty for a
+/// never-fetched remote as well as a never-pushed commit, so a guard here would be a
+/// heuristic wearing a fence's clothes.
+fn amend_long_about() -> String {
+    format!(
+        "Start a task that re-authors the commit message at HEAD — the tree is untouched.\n\n\
+         This mints a task with an empty `commit` doc pinned to HEAD and composes the \
+         `amend` workflow; it commits nothing itself. Author the doc through the ordinary \
+         `jigc doc` verbs, then `jigc task finalize <id>` renders it and rewrites the \
+         commit with `git commit --amend`, leaving every byte of the committed tree as it \
+         is — so a wrong *change* needs a new task, not an amend.\n\n\
+         HEAD's message is not read back into the doc: you author the new message from \
+         scratch. {ADVISORY_PUSHED_HISTORY}\n\n\
+         The amend refuses over a non-empty index (`git commit --amend` would otherwise \
+         fold the whole of it into the rewritten commit) and there is no flag that \
+         declares that carry-over deliberate.",
+    )
+}
+
+/// The pushed-history sentence — the `jigc task amend` mint ack's advisory tail, and the
+/// same words in the door's long help.
+///
+/// One home for both, because they are one statement: an ack that warned and a help that
+/// did not (or that worded it as a refusal) is the drift law 1 fences. It carries **no
+/// finding code and no route** — it is not a `Finding`, because a finding claims jigc
+/// checked something, and jigc cannot check this.
+pub(crate) const ADVISORY_PUSHED_HISTORY: &str = "If this commit has already been pushed, amending it rewrites shared history — jigc \
+     cannot tell whether it has.";
+
 /// The `jigc task discard` long help — **the door says that it commits** (M52 Increment 10 /
 /// T2, D-2). Its two "commit" hits were both inside `--force`'s *"no commit has a copy of"*,
 /// so a literal scan read as truthful while the door never said it moves `HEAD`: a sub-task's
@@ -255,6 +294,14 @@ pub enum TaskCommand {
         /// as the declared finalize omits them. Inert when nothing is carried.
         #[arg(long)]
         carry_staged: bool,
+    },
+    /// Start a task that re-authors the commit message at HEAD — the tree is untouched.
+    #[command(long_about = amend_long_about())]
+    Amend {
+        /// What this repair is for, in your own words — the line the task id slugs from
+        /// and `{{task.intent}}` composes with. Omitted, the task is named after the
+        /// commit it rewrites (`amend-<sha7>`).
+        intent: Option<String>,
     },
     /// Abandon the task — remove its working area `.jigc/tasks/<id>/`.
     #[command(long_about = discard_long_about())]
@@ -362,6 +409,7 @@ impl TaskCommand {
             } => {
                 return run_finalize(cwd, &id, format, approve, dry_run, carry_staged);
             }
+            TaskCommand::Amend { intent } => run_amend(cwd, intent.as_deref(), format),
             TaskCommand::Bind { role, addr, id } => run_bind(cwd, &role, &addr, &id, format),
         };
         match result {
@@ -410,6 +458,22 @@ fn run_list(cwd: &Path, format: Format) -> Result<()> {
         });
     }
     println!("{}", render::task_list(format, &rows));
+    Ok(())
+}
+
+/// `jigc task amend ["<intent>"]` — mint a task that re-authors the commit message at HEAD
+/// and print its composed workflow (F-10).
+///
+/// It prints on **stdout** at exit 0 and renders through [`render::composed`] like every
+/// other composing door, so the pinned `{task, text}` envelope is byte-identical in shape to
+/// `jigc start`'s — the commit it pins is named on the presentation block, not on a new key
+/// (`design/command-output-contract.md` §1).
+///
+/// A refused HEAD shape, a repository with no project layer, and an unslugable intent all
+/// surface through the ordinary operational funnel with their routes, having minted nothing.
+fn run_amend(cwd: &Path, intent: Option<&str>, format: Format) -> Result<()> {
+    let composition = crate::start::amend_in_repo(cwd, intent)?;
+    println!("{}", render::composed(format, &composition));
     Ok(())
 }
 

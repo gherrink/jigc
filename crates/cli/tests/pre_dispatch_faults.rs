@@ -384,6 +384,12 @@ const EXPECTATIONS: &[Cell] = &[
         &["task", "validate"],
         Expect::Answers(Arm::Error, 1),
     ),
+    // `task amend` names no task, so nothing resolves ahead of the cwd read.
+    (
+        "cwd-unreadable",
+        &["task", "amend"],
+        Expect::Answers(Arm::Error, 1),
+    ),
     (
         "cwd-unreadable",
         &["task", "discard"],
@@ -620,6 +626,13 @@ const EXPECTATIONS: &[Cell] = &[
         "packs-yaml-malformed",
         &["task", "validate"],
         Expect::Unreached,
+    ),
+    // `task amend` loads the pack BEFORE it mints (`start::amend_in_repo`), so unlike its
+    // id-taking siblings it reaches every pack fault rather than refusing on a lookup first.
+    (
+        "packs-yaml-malformed",
+        &["task", "amend"],
+        Expect::Answers(Arm::Error, 1),
     ),
     (
         "packs-yaml-malformed",
@@ -861,6 +874,12 @@ const EXPECTATIONS: &[Cell] = &[
         "pack-resource-missing",
         &["task", "validate"],
         Expect::Unreached,
+    ),
+    // Reached for `packs-yaml-malformed`'s reason: the pack load precedes the mint.
+    (
+        "pack-resource-missing",
+        &["task", "amend"],
+        Expect::Answers(Arm::Error, 1),
     ),
     (
         "pack-resource-missing",

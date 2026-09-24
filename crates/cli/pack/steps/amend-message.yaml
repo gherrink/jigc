@@ -1,0 +1,72 @@
+---
+states-constraints: [read.staged-read-back, finalize.amend-index-dirty]
+---
+The commit at HEAD keeps every byte of its tree; only its message is replaced.
+Nothing is re-run, nothing is re-staged, and no file changes — so a wrong *change*
+is not repaired here, it is a new task.
+
+You are re-authoring the message from scratch, not editing the old one: jigc does
+not read HEAD's message back into this doc, because the render that produced it is
+lossy (a body paragraph shaped like `Key: value` is indistinguishable from a
+trailer). Say what the commit does, from the change itself.
+
+Three shapes at HEAD are not yours to re-author, and jigc cannot tell them apart
+from an ordinary task commit — read HEAD's subject line in the ack above and stop
+if it is one of them: a milestone boundary's structural message (jigc composes it
+from the sub-tasks), a record-only bookkeeping commit jigc wrote for itself, and a
+commit jigc did not make at all.
+
+Set the required Conventional-Commits type — your editorial call on what the
+commit at HEAD does. The subject renders as `<type>(<scope>): <summary>`, so write
+the summary without a type or scope prefix of its own — the `type` field already
+carries it. Inside slot prose, the reserved heading depths are schema-relative to
+the address you write — the CLI owns the section, item, and sub-label heading
+levels there, so your headings sit below them; Setext headings are rejected at
+every depth, and a rejected write names the shallowest depth free at that address.
+
+Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
+directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which
+jigc itself accepts but an agent harness that statically analyses shell commands
+can refuse to run:
+
+jigc doc set-slot commit:{{task.id}}#summary --from-file - --task {{task.id}} <<'EOF'
+<one line saying what the commit at HEAD does>
+EOF
+
+Set the type, then stage the summary prose:
+
+{{ cli.set-commit-type }}
+{{ cli.set-commit-summary }}
+<<author: {{ task.commit#summary }}>>
+
+The `commit` schema is the authority on what you write into it — its required
+slots and fields, each field's enum members, and every address a write can take:
+
+jigc doc schema commit
+
+The `scope` and `body` are optional: add a `scope` to name the area touched, or
+author a `body` to explain the motivation, only when they earn their place —
+
+jigc doc set-field commit:{{task.id}}#scope --value <area> --task {{task.id}}
+jigc doc set-slot commit:{{task.id}}#body --from-file - --task {{task.id}}
+
+Trailers are re-authored too — the amended message carries only the trailer items
+you add here, so re-add any the old message had that still apply:
+
+jigc doc add-item commit:{{task.id}}#trailers --title Co-Authored-By --task {{task.id}}
+jigc doc set-field commit:{{task.id}}#trailers/<id>/value --value "Name <email>" --task {{task.id}}
+
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show commit:{{task.id}} --task {{task.id}}
+
+Then land it. Finalize rewrites the commit at HEAD with the rendered message and
+commits nothing else: `git commit --amend` would fold the whole index into the
+rewritten commit, so an amend refuses over a non-empty index
+(`finalize.amend-index-dirty`, one blocking finding naming the staged paths) —
+unstage that work first; there is no flag that declares it deliberate here.
+It also refuses if HEAD has moved since this task was minted.
+
+{{ cli.finalize-task }}

@@ -2658,8 +2658,8 @@ mod tests {
         let workflows = pack.list(PackResourceKind::Workflows);
         assert_eq!(
             workflows.len(),
-            17,
-            "the shipped pack must carry all 17 workflows; got {workflows:?}",
+            18,
+            "the shipped pack must carry all 18 workflows; got {workflows:?}",
         );
         for id in &workflows {
             let bytes = pack
@@ -2850,7 +2850,10 @@ mod tests {
     /// `implemented-by` code anchor, plus the bracketed in-store `cites` edge), plus
     /// `migration-finalize` (the M43 migration-finalize solicit — the
     /// `--approve`/clobber/retire contract stated above its `step:finalize` include,
-    /// `states-constraints`-declared for the stated-at fence).
+    /// `states-constraints`-declared for the stated-at fence), plus `amend-message` (F-10's
+    /// single `amend`-workflow step — it solicits the commit doc for a message-only
+    /// `git commit --amend`, declares `read.staged-read-back`, and states the dirty-index
+    /// contract the finalize arm refuses on).
     #[test]
     fn embedded_pack_lists_the_mvp_steps() {
         let pack = EmbeddedPack::new();
@@ -2858,6 +2861,7 @@ mod tests {
         assert_eq!(
             steps,
             vec![
+                ResourceId::from("amend-message"),
                 ResourceId::from("author-adr"),
                 ResourceId::from("author-arch-doc"),
                 ResourceId::from("author-change"),

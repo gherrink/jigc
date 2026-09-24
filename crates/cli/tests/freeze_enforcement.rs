@@ -739,6 +739,15 @@ const FREEZE_DOORS: &[FreezeDoor] = &[
         check: NO_SUCH_TASK,
         clean: CleanExit::Needs(NO_SUCH_TASK_CLEAN),
     },
+    // `jigc task amend` takes no task id — it MINTS one — so it has no precondition to
+    // refuse on ahead of the pack, and its own provisioning resolves the `commit` schema.
+    // It therefore blocks naming the drift, which is the answer the freeze owes a door that
+    // would otherwise open an authoring area against a corpus jigc cannot adjudicate.
+    FreezeDoor {
+        argv: &["task", "amend", "repair the freeze probe"],
+        check: FreezeCheck::Named,
+        clean: CleanExit::Zero,
+    },
     FreezeDoor {
         argv: &["task", "discard", "freeze-probe"],
         check: NO_SUCH_TASK,

@@ -338,8 +338,10 @@ pub fn composed(format: Format, view: &Composition) -> String {
             let state = task_state_lines(view);
             let gates = create_gates_line(&view.gates);
             let also_open = also_open_block(&view.also_open);
+            let amending = amending_block(view);
             let mut out = String::with_capacity(
                 header.len()
+                    + amending.len()
                     + text.len()
                     + state.len()
                     + gates.len()
@@ -348,6 +350,7 @@ pub fn composed(format: Format, view: &Composition) -> String {
                     + 1,
             );
             out.push_str(&header);
+            out.push_str(&amending);
             out.push_str(text);
             if !text.ends_with('\n') {
                 out.push('\n');
@@ -574,6 +577,47 @@ fn create_gates_line(gates: &[String]) -> String {
     format!(
         "create-gates: {}   — the doc-types this task is allowed to create; any other type is refused\n",
         gates.join(", ")
+    )
+}
+
+/// The `amending:` block a `jigc task amend` mint leads its composed body with (F-10) — the
+/// **one** surface that names the commit the task is about to replace.
+///
+/// It is at the top, above the step text, deliberately: the settle's headline cell is that
+/// **jigc cannot tell which door made HEAD** — a milestone boundary's structural message, a
+/// record-only bookkeeping commit and a foreign commit are indistinguishable from an
+/// ordinary task's, with no trailer, no persisted sha and no id→commit record to ask. So the
+/// door cannot refuse those three shapes, and what it can do instead is show the reader the
+/// subject line before the instructions rather than after them. A block printed below the
+/// step text would be law 3's ambush in miniature: the agent would have read *how to
+/// re-author* before learning *what it is re-authoring*.
+///
+/// The pushed-history sentence rides here for the same reason and with the same status —
+/// advice, not a fence ([`crate::task::ADVISORY_PUSHED_HISTORY`], one home shared with the
+/// door's long help, so the two cannot drift).
+///
+/// An **empty** `amend` renders no bytes at all — every non-amend compose, inert by
+/// omission, the [`also_open_block`] mold.
+fn amending_block(view: &Composition) -> String {
+    let Some(target) = view.amend.as_ref() else {
+        return String::new();
+    };
+    let subject = if target.subject.is_empty() {
+        String::from("(no subject line)")
+    } else {
+        format!("{:?}", target.subject)
+    };
+    let door = match view.view.task.as_deref() {
+        Some(id) => format!("`jigc task finalize {id}`"),
+        None => String::from("finalize"),
+    };
+    format!(
+        "amending: {} {subject}\n  \
+         {door} replaces that message and leaves the commit's tree exactly as it is — so \
+         this repairs the message, never the change.\n  \
+         {}\n\n",
+        target.short,
+        crate::task::ADVISORY_PUSHED_HISTORY,
     )
 }
 
@@ -6697,6 +6741,20 @@ pub const ENVELOPE_ARMS: &[EnvelopeArm] = &[
         outcome: ArmOutcome::Success,
         root: ArmRoot::ResultContract("engine::result::ValidationReport"),
     },
+    // F-10. The composed `{task, text}` contract verbatim, the same shape `jigc start` and
+    // `jigc workflow` project — and **no new key**: the commit the amend pins is named on the
+    // `amending:` presentation block, which reaches agent/human text only. A key would have
+    // been the easy answer and the wrong one; §1 is 1.0-pinned, and the fact it carries is a
+    // fact about the *repository*, not about the composition.
+    EnvelopeArm {
+        path: &["task", "amend"],
+        arm: "Composed",
+        origin: ArmOrigin::Sole,
+        shape: ArmShape::Object(&["task", "text"]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::AdHoc("cli::start::Composition, via `render::composed`"),
+    },
     EnvelopeArm {
         path: &["task", "discard"],
         arm: "TaskAck::Discarded",
@@ -7413,6 +7471,7 @@ mod tests {
             minted: true,
             sub_task_of: None,
             also_open: Vec::new(),
+            amend: None,
         };
 
         let agent = composed(Format::Agent, &granting);
@@ -7436,6 +7495,7 @@ mod tests {
             minted: true,
             sub_task_of: None,
             also_open: Vec::new(),
+            amend: None,
         };
         let bare = composed(Format::Agent, &gateless);
         assert!(!bare.contains("create-gates"), "got:\n{bare}");
@@ -7504,6 +7564,7 @@ mod tests {
             minted: true,
             sub_task_of: None,
             also_open: Vec::new(),
+            amend: None,
         };
 
         let agent = composed(Format::Agent, &minted);
@@ -7524,6 +7585,7 @@ mod tests {
             minted: false,
             sub_task_of: None,
             also_open: Vec::new(),
+            amend: None,
         };
         let re = composed(Format::Agent, &resumed);
         assert!(!re.contains("task minted"), "got:\n{re}");
@@ -7536,6 +7598,7 @@ mod tests {
             minted: false,
             sub_task_of: None,
             also_open: Vec::new(),
+            amend: None,
         };
         let routed = composed(Format::Agent, &router);
         assert!(!routed.contains("task minted"), "got:\n{routed}");
@@ -7566,6 +7629,7 @@ mod tests {
             minted: true,
             sub_task_of: None,
             also_open: Vec::new(),
+            amend: None,
         };
 
         let agent = composed(Format::Agent, &minted);
@@ -7631,6 +7695,7 @@ mod tests {
             minted: false,
             sub_task_of: None,
             also_open: Vec::new(),
+            amend: None,
         };
         let re = composed(Format::Agent, &resumed);
         assert!(!re.contains("task minted"), "got:\n{re}");
@@ -7657,6 +7722,7 @@ mod tests {
                 posture: crate::start::SubTaskPosture::ElsewhereInProject,
             }),
             also_open: Vec::new(),
+            amend: None,
         };
         let sub_agent = composed(Format::Agent, &sub);
         let sub_scope = sub_agent
@@ -7751,6 +7817,7 @@ mod tests {
             minted: false,
             sub_task_of: None,
             also_open: Vec::new(),
+            amend: None,
         };
         let routed = composed(Format::Agent, &router);
         for needle in ["resume:", "what's-left:", "task scope:"] {
@@ -7790,6 +7857,7 @@ mod tests {
             minted: true,
             sub_task_of: None,
             also_open: Vec::new(),
+            amend: None,
         };
         let agent = composed(Format::Agent, &minted);
         let line = agent
@@ -7834,6 +7902,7 @@ mod tests {
             minted: false,
             sub_task_of: None,
             also_open: Vec::new(),
+            amend: None,
         };
         let routed = composed(Format::Agent, &router);
         assert!(!routed.contains("what's-left:"), "got:\n{routed}");

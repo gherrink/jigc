@@ -509,6 +509,7 @@ impl Command {
                 TaskCommand::List => &["task", "list"],
                 TaskCommand::Diff { .. } => &["task", "diff"],
                 TaskCommand::Validate { .. } => &["task", "validate"],
+                TaskCommand::Amend { .. } => &["task", "amend"],
                 TaskCommand::Discard { .. } => &["task", "discard"],
                 TaskCommand::Finalize { .. } => &["task", "finalize"],
                 TaskCommand::Bind { .. } => &["task", "bind"],
@@ -1904,6 +1905,7 @@ pub const VERB_KINDS: &[(&[&str], VerbKind)] = &[
     (&["task", "list"], VerbKind::Read),
     (&["task", "diff"], VerbKind::Read),
     (&["task", "validate"], VerbKind::Read),
+    (&["task", "amend"], VerbKind::Write),
     (&["task", "discard"], VerbKind::Write),
     (&["task", "finalize"], VerbKind::Write),
     (&["task", "bind"], VerbKind::Write),
@@ -2175,7 +2177,7 @@ pub const BEHALF_DOORS: &[BehalfDoor] = &[
         door: &["doc", "list"],
         acts: ActsOnBehalf::Neither,
     },
-    // `jigc task` — the lifecycle. Two of the six land a commit.
+    // `jigc task` — the lifecycle. Two of the seven land a commit.
     BehalfDoor {
         door: &["task", "list"],
         acts: ActsOnBehalf::Neither,
@@ -2186,6 +2188,14 @@ pub const BEHALF_DOORS: &[BehalfDoor] = &[
     },
     BehalfDoor {
         door: &["task", "validate"],
+        acts: ActsOnBehalf::Neither,
+    },
+    // `jigc task amend` mints a task area under the gitignored `.jigc/` workbench and
+    // composes text — `jigc start`'s class exactly, and for its reason: the commit the amend
+    // rewrites is landed by `jigc task finalize`, whose row below carries it. The door that
+    // *names* an act is not the door that performs it.
+    BehalfDoor {
+        door: &["task", "amend"],
         acts: ActsOnBehalf::Neither,
     },
     // A milestone sub-task's discard lands a record-only settle commit before it removes
@@ -4918,6 +4928,7 @@ mod cli_parse {
         &["task", "list"],
         &["task", "diff", "axis-unit"],
         &["task", "validate", "axis-unit"],
+        &["task", "amend", "axis intent"],
         &["task", "discard", "axis-unit"],
         &["task", "finalize", "axis-unit"],
         &["task", "bind", "decision", "adr:keeper", "axis-unit"],

@@ -2436,6 +2436,18 @@ fn arm5_no_door_mints_a_work_unit_at_a_fabricated_identity() {
                     vec!["milestone".into(), "create".into(), title.to_owned()]
                 });
             }
+            // `jigc task amend`'s intent is optional, and that is precisely why it belongs on
+            // the prose side rather than the exempt one: the fallback id is keyed on the
+            // intent being **absent**, so a caller who typed a degenerate title is owed the
+            // same refusal every other prose door gives. Driven at this arm: keyed on
+            // emptiness instead, `jigc task amend "   "` minted `amend-<sha7>` at exit 0.
+            "crates/cli/src/start.rs::mint_amend_in_repo" => {
+                prose += 1;
+                let (repo, home) = mint_fixture("amend");
+                refuses_before_any_write(repo.path(), home.path(), door.door, &|title| {
+                    vec!["task".into(), "amend".into(), title.to_owned()]
+                });
+            }
             "crates/engine/src/milestone.rs::add_task" => {
                 prose += 1;
                 let (repo, home) = mint_fixture("add-task");
@@ -2534,7 +2546,7 @@ fn arm5_no_door_mints_a_work_unit_at_a_fabricated_identity() {
             ),
         }
     }
-    assert_eq!(prose, 3, "three prose-titled mint doors");
+    assert_eq!(prose, 4, "four prose-titled mint doors");
     assert_eq!(exempt, 2, "two rows derive their id from something else");
     assert_eq!(
         prose + exempt,

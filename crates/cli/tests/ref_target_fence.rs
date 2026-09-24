@@ -391,6 +391,12 @@ const REF_FENCE_DOORS: &[RefFenceDoor] = &[
         argv: &["task", "validate", TASK_PROBE_ID],
         reach: NO_SUCH_TASK,
     },
+    // `jigc task amend` names no task — it mints one — so it has no lookup to refuse on
+    // ahead of the pack, and it loads the pack before it mints.
+    RefFenceDoor {
+        argv: &["task", "amend", "repair the ref probe"],
+        reach: Reach::PackLoad,
+    },
     RefFenceDoor {
         argv: &["task", "discard", TASK_PROBE_ID],
         reach: NO_SUCH_TASK,

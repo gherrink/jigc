@@ -196,7 +196,7 @@ pub(crate) fn require_project_config(start: &Path) -> Result<PathBuf> {
 /// survives to keep the id stable and collision-free for every path.
 ///
 /// The `jigc migrate` verb owns this mint so composition never double-mints; it stages
-/// the foreign source separately and then composes via [`compose_migrate_in_repo`].
+/// the foreign source separately and then composes via [`compose_minted_in_repo`].
 pub(crate) fn mint_migration_in_repo(
     repo_root: &Path,
     doctype: &str,
@@ -241,6 +241,211 @@ pub(crate) fn mint_migration_in_repo(
         doctype,
     )?;
     Ok(minted)
+}
+
+/// Open the working area of a `jigc task amend` task and mark it as one — [`amend_in_repo`]'s
+/// mint half, and the [`state::MINT_DOORS`] site the source fence keys on.
+///
+/// It is its own function for the reason the registry's `site` field exists: the fence
+/// matches the **enclosing** function of every production `mint_task` call, so a mint buried
+/// inside a door that also composes would declare a site naming the whole door. Here the
+/// three writes that make an area an amend area — the pin, the marker, the snapshot — sit in
+/// one function that does nothing else, the shape [`mint_in_repo`] and
+/// [`mint_migration_in_repo`] already take.
+///
+/// The area binds to **jigc_home** (the main checkout) while `base` was read from the
+/// caller's worktree, exactly as at `jigc start`: one `.jigc/` per project, and the commit
+/// the amend rewrites is the one the caller is standing on.
+fn mint_amend_in_repo(
+    start: &Path,
+    repo_root: &Path,
+    intent: &str,
+    slug_override: Option<&str>,
+    base: &BasePin,
+) -> Result<MintedTask> {
+    let jigc_root = jigc_home_or_repo(start)?.join(".jigc");
+    // One `Written` member of [`state::MINT_DOORS`] — the pre-task staged state, snapshotted
+    // before anything is written, on `mint_in_repo`'s mold. The amend arm does not *gate* on
+    // it (its own dirty-index refusal is stricter and unconditional), but the snapshot is
+    // what every other consumer of a task area reads, so an area without one would be the
+    // odd member rather than the exempt one.
+    let staged = crate::task::git_staged_snapshot(repo_root)?;
+    let minted = state::mint_task(
+        &jigc_root,
+        intent,
+        FALLBACK_TYPE,
+        AMEND_WORKFLOW,
+        base.clone(),
+        slug_override,
+    )
+    .map_err(finding_to_err)?;
+    // The marker is written **immediately**, before anything else about the area is true, so
+    // no window exists in which it reads as an ordinary task `jigc task finalize` would
+    // commit normally.
+    state::write_amend_pin(&minted.dir, &base.sha)
+        .with_context(|| format!("could not mark `{}` as an amend task", minted.id))?;
+    state::write_staged_snapshot(&minted.dir, &staged)
+        .with_context(|| format!("could not write the staged snapshot for `{}`", minted.id))?;
+    Ok(minted)
+}
+
+/// The workflow a `jigc task amend` task is minted from — the dev pack's `amend`
+/// (F-10). It is **verb-routed** (`suppressed.door: jigc task amend`), so `jigc start
+/// --workflow amend` refuses it and this is the only door that composes it.
+pub(crate) const AMEND_WORKFLOW: &str = "amend";
+
+/// The commit at HEAD is not one an amend can rewrite — `amend.head-shape`, refused at
+/// `jigc task amend` **before anything mints** (F-10; `design/finalize.md` → The amend arm).
+///
+/// The axis is *what shape is HEAD*, and it has four answers, not two: **unborn** (there is
+/// no commit), **root** (no parent), **merge** (two or more), and the ordinary single-parent
+/// commit that passes. The first three are refused here rather than at finalize, because a
+/// mint that cannot land is a task the agent must then discard — and the shape of HEAD is
+/// knowable at the mint, unlike the index state finalize gates on.
+///
+/// **Root is refused although `git commit --amend` would accept it.** A root commit is the
+/// repository's first, and the settle's call is that jigc does not rewrite it on an agent's
+/// behalf — the route hands the act back with the command that performs it, which is what a
+/// `Human` route is for. A merge commit gets no such hand-back: its message is git's own
+/// merge narration, and re-authoring it as a Conventional-Commits subject would replace a
+/// structural message with a prose one, the same class the composed step names.
+fn head_shape_refusal(repo_root: &Path, id_hint: &str) -> Option<Finding> {
+    let (shape, route) = if crate::task::head_is_unborn(repo_root).unwrap_or(false) {
+        (
+            String::from("unborn — this repository has no commit yet"),
+            engine::finding::Route::human(
+                "there is no commit to repair; make one first — `jigc start \"<intent>\"` \
+                 composes the ordinary task that lands it",
+            ),
+        )
+    } else {
+        // `--parents` prints `<sha> <parent>…`, so the parent count is the token count less
+        // the commit's own sha. Asked of HEAD alone (`-n 1`), never of a walk.
+        let line = git_rev_parse(repo_root, &["rev-list", "--parents", "-n", "1", "HEAD"]).ok()?;
+        match line.split_whitespace().count().saturating_sub(1) {
+            0 => (
+                String::from("a root commit — it has no parent"),
+                engine::finding::Route::human(
+                    "a repository's first commit is not rewritten on your behalf; amend it \
+                     yourself with `git commit --amend` if that is what you want",
+                ),
+            ),
+            1 => return None,
+            n => (
+                format!("a merge commit — it has {n} parents"),
+                engine::finding::Route::human(
+                    "a merge commit's message is git's own narration of the merge, not a \
+                     Conventional-Commits subject; leave it, or redo the merge with the \
+                     message you want",
+                ),
+            ),
+        }
+    };
+    Some(Finding::graded(
+        Severity::Blocking,
+        "amend.head-shape",
+        format!(
+            "`jigc task amend` rewrites a single-parent commit, and HEAD is {shape} — nothing \
+             was minted"
+        ),
+        Some(engine::finding::Location::addressed(
+            format!("work-unit:{id_hint}"),
+            1,
+            1,
+        )),
+        Some(route),
+    ))
+}
+
+/// HEAD's current subject line, for the `amending:` block — read **once, at the mint**, and
+/// carried on the [`Composition`] ([`AmendTarget`]). An empty string when the commit's
+/// message has no subject at all, which the block renders as such rather than as empty quotes.
+fn head_subject(repo_root: &Path) -> Result<String> {
+    git_rev_parse(repo_root, &["log", "-1", "--format=%s", "HEAD"])
+}
+
+/// Mint a `jigc task amend` task in `start`'s repository and compose the `amend` workflow
+/// over it (F-10) — the whole door, `Neither` on [`crate::cli::BEHALF_DOORS`]: it writes the
+/// working area and composes text, and every byte it moves in git is
+/// `jigc task finalize <id>`'s.
+///
+/// **The order, and why it is this one.** The pack loads first, then HEAD's shape is
+/// adjudicated ([`head_shape_refusal`]), then the mint. Both gates precede the mint so a
+/// refused amend strands no task directory — the discipline `compose_named_in_repo` states
+/// for its own verb-routed rejection. And the pack precedes the shape probe so this door
+/// answers the way every other door answers over a corpus jigc cannot adjudicate: the freeze
+/// and ref-target fences block *everywhere*, and a door that reported a local fact about
+/// HEAD instead would be the one place an operator learned something other than what is
+/// actually wrong. Driven by `ref_target_fence` and `freeze_enforcement`, whose fixtures
+/// disagree on HEAD's shape and would otherwise disagree on this door's answer.
+///
+/// The task id comes from the caller's `intent` when there is one (slugged like every other
+/// task's) and otherwise from the commit itself — `amend-<sha7>`, fed as `mint_task`'s
+/// `slug_override` so it is used verbatim. That fallback is what makes the intent optional:
+/// an amend's *subject* is a commit, so the door can always name the task after it, where
+/// `jigc start` has nothing to fall back to and must reject an unslugable intent.
+///
+/// The area is an ordinary task area plus one file — the [`state::AMEND_PIN_FILE`] marker,
+/// written **immediately** after the mint, so no window exists in which the area reads as an
+/// ordinary task that `jigc task finalize` would commit normally.
+pub(crate) fn amend_in_repo(start: &Path, intent: Option<&str>) -> Result<Composition> {
+    let repo_root = discover_repo_root(start).ok_or_else(|| crate::locate::not_in_repo(start))?;
+    let project_config = require_project_config(start)?;
+
+    // **The pack loads before anything else this door decides.** Driven: with provisioning as
+    // the first pack read, a corpus whose freeze had drifted got its task area minted and
+    // *then* the refusal — a door that blocks and leaves a working area behind, which
+    // `freeze_enforcement`'s own claim about a blocked door ("it refuses and acts on
+    // nothing") is false of.
+    let pack = make_pack()?;
+    let resolved = resolve_severity_cascade(pack.as_ref(), &project_config)?;
+    let defs = CascadeDefs::new(&resolved, &project_config);
+
+    // The base pin and the marker name the same commit, and both are read before the shape
+    // gate so the refusal can key its target on the id the mint *would* have taken.
+    let base = read_head(&repo_root)?;
+    let fallback_id = format!("amend-{}", base.short);
+    if let Some(finding) = head_shape_refusal(&repo_root, &fallback_id) {
+        return Err(finding_to_err(finding));
+    }
+    let subject = head_subject(&repo_root)?;
+
+    // **The fallback covers the ABSENT intent, never a present one that says nothing.** The
+    // branch is on `Option`, not on emptiness, and the difference is the whole degenerate-id
+    // class: keyed on `trim().is_empty()`, `jigc task amend "   "` minted `amend-<sha7>` at
+    // exit 0 — a caller who typed something and got a task named after something else. A
+    // present intent goes to the mint class's own producer, exactly as at `jigc start`, so
+    // `"   "`, `"日本語"` and `"the"` are each answered *unusable* rather than silently
+    // renamed (`flow54_acceptance`'s arm 5, which is where this was driven).
+    let (intent, slug_override) = match intent {
+        None => ("", Some(fallback_id)),
+        Some(text) => {
+            state::reject_unslugable_title("task", text).map_err(finding_to_err)?;
+            (text, None)
+        }
+    };
+
+    let minted = mint_amend_in_repo(start, &repo_root, intent, slug_override.as_deref(), &base)?;
+    provision_commit_doc(pack.as_ref(), &defs, &minted.dir, &minted.id)?;
+    drop(pack);
+
+    let composed = compose_minted_in_repo(
+        &repo_root,
+        &project_config,
+        &minted.dir,
+        &minted.id,
+        AMEND_WORKFLOW,
+        intent,
+        None,
+    )?;
+    let composed = with_also_open(composed, start)?;
+    Ok(Composition {
+        amend: Some(AmendTarget {
+            short: base.short,
+            subject,
+        }),
+        ..composed
+    })
 }
 
 /// Derive the **per-file** migration task **id** from `(doctype, source_path)` — a pure,
@@ -672,6 +877,29 @@ pub struct Composition {
     /// parallel"* into every task, so refusing the second mint here would contradict the
     /// same binary's own surface (Settle B8).
     pub also_open: Vec<OpenTask>,
+    /// The commit an **amend** task was minted against — the `amending:` presentation block
+    /// (F-10). `None` for every other compose, which renders no bytes at all: the omitting
+    /// context stays inert, the [`also_open`](Composition::also_open) mold.
+    ///
+    /// It rides here rather than on the engine's composed view for that field's reason — the
+    /// composed-output JSON is pinned at exactly `{task, text}`
+    /// (`design/command-output-contract.md` §1), so the mint ack's facts are presentation and
+    /// add no key to the contract.
+    pub amend: Option<AmendTarget>,
+}
+
+/// The commit a `jigc task amend` mint pinned — what the `amending:` block names.
+///
+/// **The subject is read at the mint and carried, never re-read at the render**: it is the
+/// one fact the ack exists to show (*this is the message you are about to replace*), and a
+/// second `git log` a moment later would answer about whatever HEAD is by then.
+#[derive(Debug)]
+pub struct AmendTarget {
+    /// The abbreviated sha of the commit the amend rewrites — the human handle.
+    pub short: String,
+    /// That commit's current subject line, verbatim. Empty when the commit's message has
+    /// no subject at all, which the block then says rather than printing empty quotes.
+    pub subject: String,
 }
 
 /// One row of [`Composition::also_open`] — a task that was live before this call.
@@ -1179,27 +1407,31 @@ pub fn execute_milestone_in_repo(
     )
 }
 
-/// Compose an **already-minted** off-router migration task's workflow over the staged
-/// foreign bytes — the read/compose half the `jigc migrate` verb drives after it has
-/// minted the task + staged the source (`auto-migration.md` → The `jigc migrate` verb
-/// / The source seam). The verb owns the mint (a stable doctype-derived id) + the
-/// source staging; this composes `workflow_id` over the minted `task_id` with the
-/// foreign bytes **fed into [`ComposeContext::source`]**, so the composed workflow's
-/// `{{source}}` placeholder surfaces them verbatim. Mints nothing (the verb already
-/// did) — so the off-router task is not re-minted and never double-provisioned.
+/// Compose an **already-minted** off-router task's workflow — the read/compose half every
+/// verb-routed minting door drives after it has minted the area itself. Mints nothing, so
+/// the off-router task is not re-minted and never double-provisioned.
+///
+/// Two doors reach it, and the parameters are exactly what they differ on:
+///
+///  - **`jigc migrate <path> --as <doctype>`** (`auto-migration.md` → The `jigc migrate`
+///    verb / The source seam) passes an empty `intent` and `Some(foreign)` — the staged
+///    foreign bytes **fed into [`ComposeContext::source`]**, so the composed workflow's
+///    `{{source}}` placeholder surfaces them verbatim.
+///  - **`jigc task amend`** (F-10) passes the caller's intent and `None`: its workflow
+///    reads no seam, and its `{{task.intent}}` is a real authoring intent.
 ///
 /// Composition feeds the seam off the in-memory bytes the verb just staged; the engine
 /// resolver does **no** file I/O for the seam (the determinism boundary — the CLI owns
 /// the read). The committed store + edge overlay are wired exactly as a resume, so a
-/// `{{@…}}` deref in the migration workflow would resolve, though the staged-only
-/// migration workflow needs only the seam.
-pub(crate) fn compose_migrate_in_repo(
+/// `{{@…}}` deref in either workflow would resolve.
+pub(crate) fn compose_minted_in_repo(
     repo_root: &Path,
     project_config: &Path,
     task_dir: &Path,
     task_id: &str,
     workflow_id: &str,
-    foreign: &str,
+    intent: &str,
+    seam: Option<&str>,
 ) -> Result<Composition> {
     let pack = make_pack()?;
     let pack = pack.as_ref();
@@ -1214,20 +1446,12 @@ pub(crate) fn compose_migrate_in_repo(
     let schemas = defs.all_schemas(pack)?;
     let store_feed = committed_store(repo_root, &schemas);
 
-    // The migration task's intent is not a real authoring intent; the seam carries the
-    // foreign content. The bound roles are read from the just-minted task (empty until
-    // the agent creates the changelog through the create-gate).
+    // The bound roles are read from the just-minted task (empty until the agent creates a
+    // doc through a create-gate).
     let bound = RolesRecord::load(task_dir)
         .with_context(|| format!("could not read roles for `{task_id}`"))?;
     let ctx = build_context(
-        task_id,
-        "",
-        &def,
-        &bound,
-        selectable,
-        store_feed,
-        Some(foreign),
-        schemas,
+        task_id, intent, &def, &bound, selectable, store_feed, seam, schemas,
     );
 
     let stepsource = CascadeStepSource::new(pack, &resolved, project_config);
@@ -1260,23 +1484,27 @@ pub(crate) fn compose_migrate_in_repo(
         return Err(finding_to_err(located));
     }
     // The verb already minted the off-router task, so its id is the in-hand handle
-    // surfaced in `--format json` (`command-output-contract.md` §1). The migration
-    // workflow's own create-gate (the doctype it migrates *into*) rides alongside as the
-    // `create-gates:` presentation line.
+    // surfaced in `--format json` (`command-output-contract.md` §1). The workflow's own
+    // create-gates ride alongside as the `create-gates:` presentation line — the migration
+    // workflow's is the doctype it migrates *into*; `amend` declares none, so that line
+    // renders no bytes.
     result.map(|composed| Composition {
         view: ComposedWorkflow {
             task: Some(task_id.to_string()),
             ..composed
         },
         gates: create_gates(&def),
-        // The `jigc migrate` verb minted this task in *this* invocation (just above the
-        // compose), so the announcement is true here exactly as on the front door.
+        // The calling verb minted this task in *this* invocation (just above the compose),
+        // so the announcement is true here exactly as on the front door.
         minted: true,
         // A just-minted task belongs to no milestone (membership is `add-task`'s alone).
         sub_task_of: None,
-        // `jigc migrate` is not one of the two work-starting `start` forms — the omitting
-        // context renders no `also open:` bytes.
+        // Left empty here and filled by the door that wants it: `jigc migrate` is not a
+        // work-starting form and renders no `also open:` bytes, while `jigc task amend` is
+        // one and wraps this in [`with_also_open`].
         also_open: Vec::new(),
+        // Likewise the amend target: the door that knows the commit attaches it.
+        amend: None,
     })
 }
 
@@ -1607,6 +1835,7 @@ fn compose_core(
         // forms attach the already-open set on the way out ([`with_also_open`]), so a
         // `--preview`, a no-intent compose and the milestone feed all stay inert.
         also_open: Vec::new(),
+        amend: None,
     })
 }
 
@@ -2678,6 +2907,7 @@ fn compose_task_workflow(
         // A re-compose door (resume / sub-agent re-entry) already names its task: the
         // reader is *in* the work, not looking for it.
         also_open: Vec::new(),
+        amend: None,
     })
 }
 

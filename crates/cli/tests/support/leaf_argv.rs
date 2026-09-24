@@ -80,6 +80,8 @@ pub const MINIMAL_ARGV: &[Arm] = &[
     (&["task", "list"], &[]),
     (&["task", "diff"], &["a-task"]),
     (&["task", "validate"], &["a-task"]),
+    // `task amend` takes no id — it mints one — so its minimal argv is the bare leaf.
+    (&["task", "amend"], &[]),
     (&["task", "discard"], &["a-task"]),
     (&["task", "finalize"], &["a-task"]),
     (&["task", "bind"], &["spec", "spec:a-spec", "a-task"]),

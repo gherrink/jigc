@@ -59,6 +59,24 @@ const INTENT_FILE: &str = "intent";
 /// `intent` (read back byte-for-byte).
 const WORKFLOW_FILE: &str = "workflow";
 
+/// The working-area file that makes a task an **amend** task (`jigc task amend`, F-10) —
+/// the marker `finalize` reads to take its second commit model, `git commit --amend` with
+/// the committed tree untouched, instead of the ordinary stage-and-commit
+/// (`design/finalize.md` → The amend arm).
+///
+/// It holds the **full sha of the commit the amend was minted against**, which is also what
+/// `base.json` pins. The duplication is deliberate and it is not redundancy: `base.json`'s
+/// pin answers *what has this task been working from*, and every task has one, so a
+/// marker keyed on the pin's presence would make every task an amend. The marker's own
+/// content is what the finalize arm re-reads to name the superseded sha in its ack and its
+/// `amended` envelope key after `git commit --amend` has already moved HEAD — by which
+/// point neither HEAD nor git carries it anywhere an ack can reach without a reflog parse.
+///
+/// Absent on every other task, so the ordinary commit model is the default and no existing
+/// task's behaviour moves. Public so the CLI `task amend` verb writes it under the same
+/// name the engine-side reader ([`read_amend_pin`]) takes.
+pub const AMEND_PIN_FILE: &str = "amend";
+
 /// The working-area file recording a migration task's repo-relative foreign source
 /// path (`jigc migrate <path>`), read back at finalize to retire the foreign original
 /// (`design/auto-migration.md` → Retire-the-foreign-original). Absent on every
@@ -160,8 +178,14 @@ fn instance_filename(type_name: &str, slug: &str) -> String {
 /// same shape of reason one layer over: it is jigc's own transient, it is *ordinarily* gone
 /// before any door reads the area, and the arm where it is not is exactly the arm a door then
 /// answers for. [`FINALIZE_MESSAGE_FILE`] carries the driven cell.
+/// **`base.json` stays at index 0** ([`WorkArea::base_pin`] reads the row's first member),
+/// so the rest of the row is alphabetical by constant name and [`AMEND_PIN_FILE`] sits
+/// second rather than first. The order is a lookup convenience everywhere else; only member
+/// 0 is load-bearing, and its own rule is fenced by
+/// [`tests::both_area_rows_lead_with_the_base_pin`].
 pub const TASK_AREA_FILES: &[&str] = &[
     BASE_PIN_FILE,
+    AMEND_PIN_FILE,
     DOCS_DIR,
     FINALIZE_MESSAGE_FILE,
     INTENT_FILE,
@@ -1420,6 +1444,32 @@ pub fn read_slug_override(task_dir: &Path) -> std::io::Result<Option<String>> {
     }
 }
 
+/// Mark a freshly minted task as an **amend** task, recording the full sha of the commit
+/// its `git commit --amend` will rewrite ([`AMEND_PIN_FILE`]).
+///
+/// Written by `jigc task amend` immediately after the mint, so an area either carries the
+/// marker from the moment it exists or never does — there is no window in which a
+/// half-minted amend area reads as an ordinary task that `jigc task finalize` would commit
+/// normally.
+pub fn write_amend_pin(task_dir: &Path, sha: &str) -> std::io::Result<()> {
+    std::fs::write(task_dir.join(AMEND_PIN_FILE), sha)
+}
+
+/// Read a task's **amend marker** — the sha of the commit `finalize`'s amend arm rewrites,
+/// or [`None`] for every ordinary task ([`AMEND_PIN_FILE`]).
+///
+/// The single source of truth for *is this an amend task?*: `finalize` branches on it, and
+/// so does the carryover gate's exemption. A **blank** recording yields `None` on
+/// [`read_migration_source`]'s precedent — an empty marker names no commit, and reading it
+/// as "amend, of nothing" would take the amend arm with no sha to compare HEAD against.
+pub fn read_amend_pin(task_dir: &Path) -> std::io::Result<Option<String>> {
+    match std::fs::read_to_string(task_dir.join(AMEND_PIN_FILE)) {
+        Ok(sha) => Ok(Some(sha.trim().to_string()).filter(|sha| !sha.is_empty())),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(err),
+    }
+}
+
 /// Read the persisted [`BasePin`] of a task from its working area
 /// (`<task_dir>/base.json`) — the companion of [`mint_task`]'s pin write, read
 /// back on resume to compare against the current checkout. A missing or malformed
@@ -1517,6 +1567,12 @@ pub const MINT_DOORS: &[MintDoor] = &[
     MintDoor {
         door: "jigc migrate <path> --as <doctype>",
         site: "crates/cli/src/start.rs::mint_migration_in_repo",
+        mint: "mint_task",
+        snapshot: Snapshot::Written,
+    },
+    MintDoor {
+        door: "jigc task amend [\"<intent>\"]",
+        site: "crates/cli/src/start.rs::mint_amend_in_repo",
         mint: "mint_task",
         snapshot: Snapshot::Written,
     },

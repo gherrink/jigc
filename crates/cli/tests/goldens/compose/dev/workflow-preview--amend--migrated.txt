@@ -1,0 +1,7 @@
+exit: 1
+--- stdout ---
+--- stderr ---
+blocking · workflow.verb-routed — workflow `amend` is not composed by name: verb-routed — reached only through `jigc task amend`, which pins the commit at HEAD and provisions the empty commit doc the amend renders; a router pick would compose with no pinned commit and finalize would have nothing to rewrite
+  at: workflow:amend
+  route: `jigc task amend`
+— jigc · run `jigc start` for orientation; all writes through `jigc`.

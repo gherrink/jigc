@@ -353,6 +353,10 @@ fn a_manifest_less_pack_is_unchecked() {
 /// direction and the shape: no workflow gains a `door` without being named here,
 /// and every named door is a command line the real CLI accepts.
 const VERB_ROUTED_DOORS: &[(&str, &str)] = &[
+    // F-10. Its door binds what the step reads the same way every `migrate-*` door does —
+    // the commit at HEAD, pinned at the mint — so a router pick would compose over no
+    // pinned commit and its finalize would have nothing to rewrite.
+    ("amend", "jigc task amend"),
     ("migrate-adr", "jigc migrate <path> --as adr"),
     ("migrate-arch-doc", "jigc migrate <path> --as arch-doc"),
     ("migrate-changelog", "jigc migrate <path> --as changelog"),

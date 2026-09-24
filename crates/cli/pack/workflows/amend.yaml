@@ -1,0 +1,13 @@
+---
+when: repair the message of the commit at HEAD — the message is wrong, the code that landed is right
+description: Re-author the commit message at HEAD — author a fresh commit doc and land it with `git commit --amend`, leaving the committed tree untouched.
+usage: a commit has already landed and its message is wrong. The tree is not touched, so this repairs the message alone — a wrong change needs a new task, not an amend.
+creates-task: true
+selectable: false
+suppressed:
+  reason: verb-routed — reached only through `jigc task amend`, which pins the commit at HEAD and provisions the empty commit doc the amend renders; a router pick would compose with no pinned commit and finalize would have nothing to rewrite
+  expires: never
+  door: jigc task amend
+allows-create: []
+---
+{{ include: step:amend-message }}

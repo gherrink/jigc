@@ -493,6 +493,32 @@ fn cell_start(repo: &Path, home: &Path) -> bool {
     carries_a_snapshot(&area)
 }
 
+/// **Cell — `jigc task amend ["<intent>"]`** (`Written`): the amend task's area carries the
+/// snapshot, and the snapshot names the pre-mint plant.
+///
+/// **It does not drive the carryover refusal, and that is the cell's point.** The amend arm
+/// is the one `Written` door whose finalize is *exempt* from the carryover gate — it stages
+/// nothing, and its own `finalize.amend-index-dirty` refusal is stricter (it refuses the
+/// whole index, declared or not, with no `--carry-staged` to wave it through). So what this
+/// proves is exactly what `Snapshot::Written` claims — the snapshot is on disk and names the
+/// plant — while the refusal over that same plant is driven where it lives, on the finalize
+/// arm's own axis (`crates/cli/tests/task_amend.rs`).
+fn cell_amend(repo: &Path, home: &Path) -> bool {
+    init_repo(repo);
+    ok(repo, home, &["setup"], "jigc setup");
+    plant_foreign(repo);
+
+    ok(
+        repo,
+        home,
+        &["task", "amend", "repair the mint-door commit message"],
+        "jigc task amend",
+    );
+    let area = task_area(repo, "repair-the-mint-door-commit");
+    assert_snapshot_names_the_plant(&area);
+    carries_a_snapshot(&area)
+}
+
 /// **Cell — `jigc migrate <path> --as <doctype>`** (`Written`): the migration task's own
 /// area carries the snapshot, and its finalize refuses the carryover independently of
 /// the fidelity `--approve`.
@@ -703,6 +729,7 @@ fn every_mint_door_is_driven_over_a_pre_staged_foreign_file() {
             "crates/cli/src/start.rs::mint_migration_in_repo" => {
                 cell_migrate(repo.path(), home.path())
             }
+            "crates/cli/src/start.rs::mint_amend_in_repo" => cell_amend(repo.path(), home.path()),
             "crates/cli/src/milestone.rs::run_create" => {
                 cell_milestone_create(repo.path(), home.path())
             }

@@ -749,6 +749,14 @@ fn every_mint_door_produces_an_id_every_door_accepts() {
                 let source = plant_hostile_source(&fixture);
                 fixture.ok(&["migrate", &source, "--as", "changelog"]);
             }
+            // `jigc task amend`'s intent is optional, so its id has **two** sources and the
+            // hostile half has to reach the one the grammar can break: a present intent
+            // slugs like every other prose door's, and an absent one takes the
+            // `amend-<sha7>` fallback, which is jigc's own bytes and cannot be hostile.
+            // Driven on the prose source, which is the cell this fence exists for.
+            "crates/cli/src/start.rs::mint_amend_in_repo" => {
+                fixture.ok(&["task", "amend", HOSTILE]);
+            }
             "crates/cli/src/milestone.rs::run_create" => {
                 fixture.ok(&["milestone", "create", HOSTILE]);
             }
@@ -840,6 +848,21 @@ fn every_mint_door_produces_an_id_every_door_accepts() {
                         "cache-rework".into(),
                         title.into(),
                     ]
+                });
+                IdSource::Prose
+            }
+            // `jigc task amend` is **prose**, and the reason it is not exempt is the whole
+            // point of the cell: its intent is *optional*, so it looks like a door that
+            // always has a fallback id to fall back on. It does not. The fallback is keyed
+            // on the intent being **absent**, which is what keeps a caller who typed a
+            // degenerate title from silently getting a task named after the commit instead.
+            // Driven at this fence's sibling (`flow54_acceptance`'s arm 5) with the branch
+            // keyed on emptiness rather than `Option`: `jigc task amend "   "` minted
+            // `amend-<sha7>` at exit 0.
+            "crates/cli/src/start.rs::mint_amend_in_repo" => {
+                let fixture = clean_fixture(&format!("degen{index}"));
+                refuses_before_any_write(&fixture, door.site, &|title| {
+                    vec!["task".into(), "amend".into(), title.into()]
                 });
                 IdSource::Prose
             }

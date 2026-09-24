@@ -453,13 +453,16 @@ fn migrate_in_repo(
 
     // Compose the migration workflow over the minted task with the foreign bytes fed
     // into the source seam — the composed view's `{{source}}` surfaces them verbatim.
-    let composition = start::compose_migrate_in_repo(
+    let composition = start::compose_minted_in_repo(
         &repo_root,
         &project_config,
         &minted.dir,
         &minted.id,
         &workflow_id,
-        &foreign,
+        // A migration task's intent is not a real authoring intent — the seam carries the
+        // foreign content, so `{{task.intent}}` threads nothing.
+        "",
+        Some(&foreign),
     )?;
     Ok((composition, advisory))
 }
