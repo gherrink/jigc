@@ -2301,6 +2301,27 @@ fn the_owe_set_is_derived_and_a_withdrawn_declarer_reddens_every_door() {
                     row.code,
                 );
             }
+            // The third disposition (the F-10 review's MEDIUM-4): held out of the owe-set
+            // because only one pack's composition can reach the door, and **declared
+            // anyway** by that pack — so the owe-set does not carry it while the named-fact
+            // tier binds at the declarer. `Owed` was driven to redden pack-load for the
+            // methodology pack; `Exempt` would have meant *stated nowhere*, which is the
+            // opposite of this cell.
+            AmbushDisposition::DeclaredWhereReachable { reason, declarer } => {
+                assert!(
+                    !owed.contains(row.code),
+                    "`{}` is owed by no pack — {reason} — so the derivation must not pick \
+                     it up",
+                    row.code,
+                );
+                assert!(
+                    cli::pack::fenced_contract_codes().contains(row.code),
+                    "…but its declaration must buy its facts: `{}` is stated in `{declarer}`, \
+                     and a stated contract that no token map covers is the receipt-for-nothing \
+                     MEDIUM-4 found",
+                    row.code,
+                );
+            }
         }
     }
     assert_eq!(

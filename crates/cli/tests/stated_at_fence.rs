@@ -681,21 +681,50 @@ fn owed_triples(pack: &Path) -> Vec<(String, String, String)> {
     out
 }
 
+/// The fenced codes **no pack owes a declarer for** — stated where they can bind and nowhere
+/// else (`cli::pack::AmbushDisposition::DeclaredWhereReachable`; the F-10 review's MEDIUM-4).
+///
+/// Read off the registry rather than named here, so a fourth such row joins this partition
+/// with no edit — and so the partition cannot silently disagree with the one
+/// `cli::pack::fenced_contract_codes` computes.
+fn declared_where_reachable() -> BTreeSet<&'static str> {
+    cli::pack::AMBUSH_CONTRACTS
+        .iter()
+        .filter_map(|row| match row.disposition {
+            cli::pack::AmbushDisposition::DeclaredWhereReachable { .. } => Some(row.code),
+            _ => None,
+        })
+        .collect()
+}
+
 /// Drive the whole axis through the real binary: delete each owed token in turn
 /// from `pack`, assert the load blocks naming step + code + token, then restore
-/// the step before the next triple. The covered code set must equal the map's, so
-/// a pack that silently stopped declaring a fenced code cannot pass by having
-/// nothing to sweep.
-fn drive_named_fact_axis(pack: &Path, run: &dyn Fn() -> std::process::Output) {
+/// the step before the next triple. Returns the code set this pack's own steps covered.
+///
+/// **The floor is the universally-owed codes, not the whole map** (the F-10 review's
+/// MEDIUM-4): a code stated only where it can bind is declared by the one pack whose
+/// composition reaches its door, and demanding it here would demand a declarer in a pack that
+/// cannot reach the arm — the very lie its disposition exists to avoid. The whole-map sweep is
+/// still asserted, at the call site of the pack that does declare every one of them.
+fn drive_named_fact_axis(
+    pack: &Path,
+    run: &dyn Fn() -> std::process::Output,
+) -> BTreeSet<&'static str> {
     let triples = owed_triples(pack);
-    let covered: BTreeSet<&str> = triples.iter().map(|(_, code, _)| code.as_str()).collect();
-    let fenced: BTreeSet<&str> = cli::pack::CONSTRAINT_REQUIRED_TOKENS
+    let covered: BTreeSet<&str> = cli::pack::CONSTRAINT_REQUIRED_TOKENS
         .iter()
         .map(|(code, _)| *code)
+        .filter(|code| triples.iter().any(|(_, declared, _)| declared == code))
         .collect();
-    assert_eq!(
-        covered, fenced,
-        "this pack must declare every fenced constraint code for the axis to sweep them",
+    let universal: BTreeSet<&str> = cli::pack::fenced_contract_codes()
+        .into_iter()
+        .filter(|code| !declared_where_reachable().contains(code))
+        .collect();
+    assert!(
+        covered.is_superset(&universal),
+        "this pack must declare every universally-owed fenced code for the axis to sweep \
+         them; missing {:?}",
+        universal.difference(&covered).collect::<Vec<_>>(),
     );
 
     for (step, code, token) in triples {
@@ -725,10 +754,17 @@ fn drive_named_fact_axis(pack: &Path, run: &dyn Fn() -> std::process::Output) {
             "stderr must name the missing \"{token}\" fact; got:\n{stderr}",
         );
     }
+    covered
 }
 
 /// The dev-pack seam: every named fact the shipped dev tree owes, deleted one at a
 /// time from a `JIGC_PACK_DIR` copy, blocks `jigc start` at pack load.
+///
+/// **And this is where the whole map is swept** (the F-10 review's MEDIUM-4): the dev pack
+/// declares every fenced code — the universally-owed ones and the two the amend arm states
+/// where it can bind — so the equality that used to sit inside the shared helper belongs
+/// here, at the one pack it is true of. The methodology pack cannot reach the amend arm and
+/// declares neither; demanding it there is the lie the third disposition exists to avoid.
 #[test]
 fn every_named_fact_the_dev_pack_owes_is_bought_at_pack_load() {
     let repo = TempDir::new("nf-repo");
@@ -736,9 +772,52 @@ fn every_named_fact_the_dev_pack_owes_is_bought_at_pack_load() {
     let pack = pack_copy("nf-dev", &embedded_pack_tree());
     init_repo(repo.path());
 
-    drive_named_fact_axis(pack.path(), &|| {
+    let covered = drive_named_fact_axis(pack.path(), &|| {
         run_with_pack(repo.path(), home.path(), pack.path(), START)
     });
+    assert_eq!(
+        covered,
+        cli::pack::fenced_contract_codes(),
+        "the dev pack declares every fenced constraint code, so the axis above swept the \
+         whole map — a code the map fences and no shipped step declares would buy nothing \
+         anywhere, which is the receipt-for-nothing MEDIUM-4 found",
+    );
+}
+
+/// **Every `DeclaredWhereReachable` row's claim is true of the shipped pack** (the F-10
+/// review's MEDIUM-4): the row says *no pack owes this, and **that** step declares it*, and
+/// the second half is a claim about bytes. Unchecked, the disposition would be a place to
+/// park a code nobody states — which is the `Exempt` cell wearing a different name.
+#[test]
+fn every_declared_where_reachable_row_is_declared_by_the_step_it_names() {
+    let root = workspace_root();
+    for row in cli::pack::AMBUSH_CONTRACTS {
+        let cli::pack::AmbushDisposition::DeclaredWhereReachable { declarer, .. } = row.disposition
+        else {
+            continue;
+        };
+        let path = root.join(declarer);
+        let bytes = fs::read(&path).unwrap_or_else(|err| {
+            panic!(
+                "`{}` names the declarer `{declarer}`, unreadable: {err}",
+                row.code,
+            )
+        });
+        let id = path
+            .file_stem()
+            .expect("the declarer is a file")
+            .to_string_lossy()
+            .into_owned();
+        let def = engine::compose::load_step_def(&id, &bytes)
+            .expect("the named declarer's front-matter parses");
+        assert!(
+            def.states_constraints.iter().any(|code| code == row.code),
+            "`{}` claims `{declarer}` declares it; that step's `states-constraints:` carries \
+             {:?}",
+            row.code,
+            def.states_constraints,
+        );
+    }
 }
 
 /// The methodology seam: the same axis over the on-disk methodology tree, reached

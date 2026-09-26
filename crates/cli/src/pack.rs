@@ -908,6 +908,38 @@ pub enum AmbushDisposition {
     /// The code satisfies the source-set rule and is nonetheless **held out**,
     /// carrying the reason the fence's own route has no home to name for it.
     Exempt(&'static str),
+    /// The code satisfies the source-set rule, is held out of the **universal** owe-set
+    /// for the carried reason, and is **declared anyway** by the pack whose composition
+    /// can reach the door (the F-10 review's MEDIUM-4).
+    ///
+    /// **Why a third answer was owed.** [`Owed`](Self::Owed) means *every step-shipping
+    /// pack, checked alone, declares it* — and for the `jigc task amend` arm that is
+    /// unsatisfiable without a lie: the door composes the **dev** pack's verb-routed
+    /// `amend` workflow, so in a methodology-alone composition the arm cannot be reached
+    /// at all, and a declarer there would state a contract that binds on nothing (driven:
+    /// flipping either amend row to `Owed` reddens pack-load for the methodology pack and
+    /// every composition containing it). [`Exempt`](Self::Exempt) is equally wrong: its
+    /// recorded meaning is *no legal declarer anywhere*, and the reason its row also says
+    /// the code "would additionally have to buy tokens" is that nothing states it — while
+    /// here a step does, and the whole point of MEDIUM-4 is that the statement must buy
+    /// its facts. So the two dispositions the registry shipped could express *owed
+    /// everywhere* and *stated nowhere*, and not *stated where it binds* — which is what
+    /// the amend arm's contracts are, and the gap a hand-list would have hidden as an
+    /// omission.
+    ///
+    /// A row here is **outside** [`ambush_class_codes`] (no pack owes a declarer) and
+    /// **inside** [`fenced_contract_codes`] (the token map covers it), so
+    /// [`assert_named_facts_stated`] binds at the declarer named below — deleting the
+    /// stated contract from that step's prose reddens pack-load, which is exactly what
+    /// MEDIUM-4 found was not true.
+    DeclaredWhereReachable {
+        /// Why no pack *owes* a declarer — the reason a reader needs to accept the row.
+        reason: &'static str,
+        /// The step that does declare it, `<pack-relative path>` — checked against the
+        /// shipped pack's bytes by `crates/cli/tests/stated_at_fence.rs`, so the claim
+        /// cannot become false silently.
+        declarer: &'static str,
+    },
 }
 
 /// One **blocking contract minted by a commit-on-behalf door** — the row the
@@ -974,6 +1006,42 @@ pub const AMBUSH_CONTRACTS: &[AmbushContract] = &[
         site: "crates/engine/src/finalize.rs::carried_staged_finding",
         disposition: AmbushDisposition::Owed,
     },
+    // The amend arm's two contracts (the F-10 review's MEDIUM-4). Both satisfy the
+    // source-set rule — blocking, minted at the named production function, reached
+    // through `jigc task finalize`, which `BEHALF_DOORS` classifies `CommitsOnBehalf` —
+    // and both were off this table entirely, which is the state D10 was decided to end:
+    // *nothing reddened when a new ambush-class contract stayed off one*. The consequence
+    // was exactly the one the registry predicts — `amend-message.yaml`'s voluntary
+    // `states-constraints:` bought nothing, so deleting its dirty-index paragraph reddened
+    // no fence (driven).
+    //
+    // `finalize.amend-staged-doc` is raised at **two** positions — the finalize arm and
+    // the `jigc doc` write seam, which is not a commit-on-behalf door. The row's rule is
+    // satisfied by the finalize occurrence and says nothing about the other, exactly as it
+    // would for any code with a second producer.
+    AmbushContract {
+        code: "finalize.amend-index-dirty",
+        door: &["task", "finalize"],
+        site: "crates/cli/src/task.rs::amend_index_dirty_finding",
+        disposition: AmbushDisposition::DeclaredWhereReachable {
+            reason: "the arm is reached only through `jigc task amend`, which composes the \
+                     DEV pack's verb-routed `amend` workflow — so in a methodology-alone \
+                     composition the door cannot mint at all and a declarer there would \
+                     state a contract that binds on nothing (driven: `Owed` reddens \
+                     pack-load for the methodology pack and every composition holding it)",
+            declarer: "crates/cli/pack/steps/amend-message.yaml",
+        },
+    },
+    AmbushContract {
+        code: "finalize.amend-staged-doc",
+        door: &["task", "finalize"],
+        site: "crates/cli/src/task.rs::amend_staged_doc_finding",
+        disposition: AmbushDisposition::DeclaredWhereReachable {
+            reason: "its sibling's reason, unchanged: the same arm, reached only through the \
+                     same dev-pack workflow",
+            declarer: "crates/cli/pack/steps/amend-message.yaml",
+        },
+    },
     // The first exempt row (M51 Increment 3), and the cell a hand-list could not
     // express: it satisfies the source-set rule exactly — a blocking code minted by
     // `jigc setup`, which `BEHALF_DOORS` classifies `CommitsOnBehalf` — and a
@@ -1034,6 +1102,39 @@ pub fn ambush_class_codes() -> std::collections::BTreeSet<&'static str> {
         .filter(|row| matches!(row.disposition, AmbushDisposition::Owed))
         .map(|row| row.code)
         .chain(DECLARED_CONTRACT_IDENTIFIERS.iter().map(|(code, _)| *code))
+        .collect()
+}
+
+/// **The codes whose stated prose jigc fences** — [`ambush_class_codes`]' wider sibling, and
+/// the subject [`CONSTRAINT_REQUIRED_TOKENS`] bijects against (the F-10 review's MEDIUM-4).
+///
+/// The two sets answer different questions, and conflating them is what left the amend arm's
+/// contracts buying nothing. The owe-set answers *which codes must every pack declare* — a
+/// question about **membership**, enforced by [`assert_stated_at`]. This one answers *which
+/// codes, when a step declares them, must be backed by their named facts* — a question about
+/// the **declaration**, enforced by [`assert_named_facts_stated`], which reads a declaring
+/// step's own `states-constraints:` and never the owe-set.
+///
+/// Every `Owed` code is in both (a code every pack must declare must also mean something where
+/// it is declared). An [`AmbushDisposition::Exempt`] code is in **neither**: nothing declares
+/// it, so a token requirement would be a demand on prose that does not exist — its own row
+/// says so. An [`AmbushDisposition::DeclaredWhereReachable`] code is in **this one only**: no
+/// pack owes it, and the pack that does declare it must state it.
+///
+/// The two non-mint tiers ([`SINGLETON_COPY_IN_CODE`], [`STAGED_READ_BACK_CODE`]) join here
+/// because they are fenced the same way — their own asserts demand the declaration, this map
+/// demands the prose behind it.
+pub fn fenced_contract_codes() -> std::collections::BTreeSet<&'static str> {
+    AMBUSH_CONTRACTS
+        .iter()
+        .filter_map(|row| match row.disposition {
+            AmbushDisposition::Owed | AmbushDisposition::DeclaredWhereReachable { .. } => {
+                Some(row.code)
+            }
+            AmbushDisposition::Exempt(_) => None,
+        })
+        .chain(DECLARED_CONTRACT_IDENTIFIERS.iter().map(|(code, _)| *code))
+        .chain([SINGLETON_COPY_IN_CODE, STAGED_READ_BACK_CODE])
         .collect()
 }
 
@@ -1554,7 +1655,7 @@ pub const STAGED_READ_BACK_CODE: &str = "read.staged-read-back";
 /// pack-authored code outside it carries no token requirement, and the map is
 /// bijected against the two code-side consts by
 /// `constraint_token_map_bijects_with_the_fenced_codes`.
-pub const CONSTRAINT_REQUIRED_TOKENS: [(&str, &[&str]); 6] = [
+pub const CONSTRAINT_REQUIRED_TOKENS: [(&str, &[&str]); 8] = [
     (
         "finalize.promote-clobber",
         &["--approve", "retire", "fidelity diff"],
@@ -1564,6 +1665,23 @@ pub const CONSTRAINT_REQUIRED_TOKENS: [(&str, &[&str]); 6] = [
     (
         "finalize.carried-staged",
         &["--carry-staged", "this task was minted"],
+    ),
+    // The amend arm's two (the F-10 review's MEDIUM-4). Each token is a **fact of the
+    // contract**, not a phrase from its prose: that the whole index is folded in, that the
+    // refusal is over a non-empty index, and that no flag waves it through — delete any one of
+    // those three sentences from `amend-message.yaml` and pack-load reddens, which before this
+    // row it did not.
+    (
+        "finalize.amend-index-dirty",
+        &["fold the whole index", "non-empty index", "no flag"],
+    ),
+    // And its sibling's two: that the task carries exactly one doc, and that a managed doc
+    // which PROMOTES belongs in an ordinary task instead. `promotes` is the axis the gate is
+    // keyed on (`engine::finalize::promote_destination`), so a statement that never says it is
+    // describing a doctype list rather than the rule.
+    (
+        "finalize.amend-staged-doc",
+        &["exactly one doc", "promotes", "ordinary task"],
     ),
     (
         SINGLETON_COPY_IN_CODE,
@@ -2997,13 +3115,56 @@ mod tests {
             "each row names its own code; a duplicate would let one disposition stand \
              for two different decisions",
         );
+        // Every row held out of the owe-set states **why**, whichever way it is held out —
+        // the exclusion rule's whole content (`Snapshot`'s mold), and since the F-10 review's
+        // MEDIUM-4 there are two ways to be held out rather than one.
         for row in AMBUSH_CONTRACTS {
-            if let AmbushDisposition::Exempt(reason) = row.disposition {
-                assert!(
-                    !reason.trim().is_empty(),
-                    "`{}` is held out of the owe-set with no stated reason",
+            let (held_out, reason) = match row.disposition {
+                AmbushDisposition::Owed => continue,
+                AmbushDisposition::Exempt(reason) => ("exempt", reason),
+                AmbushDisposition::DeclaredWhereReachable { reason, declarer } => {
+                    assert!(
+                        !declarer.trim().is_empty(),
+                        "`{}` claims a declarer and names none",
+                        row.code,
+                    );
+                    ("declared-where-reachable", reason)
+                }
+            };
+            assert!(
+                !owed.contains(row.code),
+                "`{}` is {held_out}, so the owe-set must not carry it",
+                row.code,
+            );
+            assert!(
+                !reason.trim().is_empty(),
+                "`{}` is held out of the owe-set with no stated reason",
+                row.code,
+            );
+        }
+
+        // And the two sets are genuinely different sets: a `DeclaredWhereReachable` code is
+        // fenced for its *facts* while owed by no pack, which is the distinction MEDIUM-4
+        // turned on (a statement that bought nothing).
+        let fenced = fenced_contract_codes();
+        for row in AMBUSH_CONTRACTS {
+            match row.disposition {
+                AmbushDisposition::DeclaredWhereReachable { .. } => assert!(
+                    fenced.contains(row.code) && !owed.contains(row.code),
+                    "`{}` is fenced for its facts and owed by no pack",
                     row.code,
-                );
+                ),
+                AmbushDisposition::Exempt(_) => assert!(
+                    !fenced.contains(row.code),
+                    "`{}` is stated nowhere, so a token requirement would demand prose that \
+                     does not exist — its own row says so",
+                    row.code,
+                ),
+                AmbushDisposition::Owed => assert!(
+                    fenced.contains(row.code) && owed.contains(row.code),
+                    "`{}` is owed everywhere, so it is fenced everywhere it is stated",
+                    row.code,
+                ),
             }
         }
     }
@@ -3103,16 +3264,21 @@ mod tests {
     /// [`DECLARED_CONTRACT_IDENTIFIERS`] union's reverse fence: drop its one row
     /// and `finalize.left-out` leaves the fenced set while the map still buys its
     /// three tokens, so this assertion — not a later grep — is what reddens.
+    ///
+    /// (F-10 review, MEDIUM-4) The subject is [`fenced_contract_codes`] and no longer
+    /// `ambush_class_codes` + the two non-mint tiers, because the two sets answer different
+    /// questions: *which codes every pack owes a declarer* and *which declarations must be
+    /// backed by their facts*. A code stated only where it can bind
+    /// ([`AmbushDisposition::DeclaredWhereReachable`]) is in the second and not the first,
+    /// and under the old subject it could not be in the map at all — which is precisely how
+    /// the amend arm's contracts came to buy nothing.
     #[test]
     fn constraint_token_map_bijects_with_the_fenced_codes() {
         let mapped: std::collections::BTreeSet<&str> = CONSTRAINT_REQUIRED_TOKENS
             .iter()
             .map(|(code, _)| *code)
             .collect();
-        let fenced: std::collections::BTreeSet<&str> = ambush_class_codes()
-            .into_iter()
-            .chain([SINGLETON_COPY_IN_CODE, STAGED_READ_BACK_CODE])
-            .collect();
+        let fenced = fenced_contract_codes();
         assert_eq!(mapped, fenced);
         assert_eq!(
             mapped.len(),

@@ -1,5 +1,6 @@
 ---
-states-constraints: [read.staged-read-back, finalize.amend-index-dirty]
+states-constraints:
+  [read.staged-read-back, finalize.amend-index-dirty, finalize.amend-staged-doc]
 ---
 The commit at HEAD keeps every byte of its tree, and its author; what the rewrite
 replaces is the message, and it also resets the committer identity and date to
@@ -62,6 +63,12 @@ task's staged copy, the write you just made, which the committed store does not
 carry yet:
 
 jigc doc show commit:{{task.id}} --task {{task.id}}
+
+This task carries exactly one doc — the `commit` doc above. A managed doc that
+promotes to a file in the repository cannot ride an amend, because the amend
+changes no tree: writing one here is refused (`finalize.amend-staged-doc`), and
+that change belongs in an ordinary task (`jigc start "<intent>"`) while this task
+repairs the message.
 
 Then land it. Finalize rewrites the commit at HEAD with the rendered message and
 commits nothing else: `git commit --amend` would fold the whole index into the
