@@ -263,6 +263,14 @@ pub fn seed_task(repo: &Path, home: &Path, intent: &str) -> String {
         "`jigc start`",
     );
     let task = intent.replace(' ', "-");
+    fill_commit_doc(repo, home, &task);
+    task
+}
+
+/// Author a task's provisioned `commit` doc to the point its finalize reaches the commit
+/// phase — the two required leaves plus the two optional ones. Shared by [`seed_task`] and
+/// the amend cell, which mints through a different door and needs the identical fill.
+pub fn fill_commit_doc(repo: &Path, home: &Path, task: &str) {
     for (addr, value) in [
         (format!("commit:{task}#type"), "feat"),
         (format!("commit:{task}#scope"), "cache"),
@@ -290,7 +298,6 @@ pub fn seed_task(repo: &Path, home: &Path, intent: &str) -> String {
             String::from_utf8_lossy(&out.stderr),
         );
     }
-    task
 }
 
 /// The parsed JSONL invocation-log records at `.jigc/logs/invocations.jsonl`.
@@ -429,6 +436,29 @@ pub fn drive(verb: &str) -> DoorCase {
                 survived: format!("task {task} is intact"),
                 expected_rerun: owned(&["jigc", "task", "finalize", &task]),
                 driven,
+                repo,
+                home,
+            }
+        }
+        // The amend arm (F-10): the same leaf, minted through `jigc task amend` so the task
+        // carries the marker that selects the second commit model. Nothing is `git add`-ed —
+        // this arm refuses over a non-empty index, so a staged file here would reach the
+        // dirty-index gate instead of the hook.
+        "jigc task finalize (amend)" => {
+            let (repo, home) = base_repo("task-finalize-amend", None);
+            jigc_ok(
+                repo.path(),
+                home.path(),
+                &["task", "amend", "repair the install message"],
+                "`jigc task amend`",
+            );
+            let task = "repair-the-install-message";
+            fill_commit_doc(repo.path(), home.path(), task);
+            install_rejecting_hook(repo.path());
+            DoorCase {
+                survived: "`HEAD` is unchanged".to_string(),
+                expected_rerun: owned(&["jigc", "task", "finalize", task]),
+                driven: owned(&["task", "finalize", task]),
                 repo,
                 home,
             }

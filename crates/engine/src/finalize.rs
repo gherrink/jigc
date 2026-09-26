@@ -1518,6 +1518,35 @@ fn base_mismatch_finding(unit: Unit, base: &BasePin, head_sha: &str) -> Finding 
     )
 }
 
+/// **The amend arm's moved-HEAD refusal** (F-10) — the third constructor of the one
+/// `finalize.base-mismatch` code, mutually exclusive with the two above, and here rather
+/// than in the CLI because the registry keys a code to **one** producer module.
+///
+/// The pin form's message says *"the task was started at base `<A>` but HEAD is now `<B>`"*
+/// and routes at switching back or discarding. Both halves are wrong for an amend in the
+/// same way: an ordinary task's base is the history its work sits **on**, so switching back
+/// is a real exit; an amend's pin is the commit it **rewrites**, so once `HEAD` has moved
+/// the commit whose subject line the agent read and re-authored against is no longer the one
+/// `--amend` would rewrite, and *"switch back"* would silently mean a different repository
+/// state.
+pub fn amend_base_mismatch_finding(id: &str, pinned: &str, head: &str) -> Finding {
+    Finding::graded(
+        Severity::Blocking,
+        "finalize.base-mismatch",
+        format!(
+            "`HEAD` is no longer the commit this amend was minted against — it pinned \
+             `{pinned}` and `HEAD` is now `{head}`, so the message this task authored would \
+             rewrite a different commit"
+        ),
+        Some(Unit::Task(id).location()),
+        Some(crate::finding::Route::human(format!(
+            "start the repair again against the commit that is there now (`jigc task discard \
+             {} --force`, then `jigc task amend`), or return `HEAD` to `{pinned}` first",
+            crate::finding::shell_token(id),
+        ))),
+    )
+}
+
 /// The overlap form of the phase-1 base-divergence block (`finalize.md` → Parallel
 /// hand-editing, the 2026-06-12 amendment): HEAD moved on history that **touches the
 /// task's work**, so no auto-re-pin — the finding names the overlapping paths and

@@ -208,8 +208,52 @@ fn finalize_long_about() -> String {
     format!(
         "The commit boundary — validate, render, stage, `git commit`, post-commit.\n\n\
          `jigc task validate <id>` {}. Those later-phase gates are decided here, at the \
-         real finalize — so a clean preview is not a promise the commit lands.",
+         real finalize — so a clean preview is not a promise the commit lands.\n\n\
+         On a task minted by `jigc task amend` it takes its **second commit model**: it {} \
+         rather than adding one. That arm stages nothing and refuses over a non-empty index \
+         (`git commit --amend` rewrites `HEAD` from the index, so anything staged would be \
+         folded into a commit that never carried it); there is no flag that declares that \
+         carry-over deliberate.",
         crate::gate_coverage::whats_left_coverage(),
+        crate::invocation_log::TASK_FINALIZE_AMEND_COMMITS,
+    )
+}
+
+/// **The amend arm's index gate** (F-10) — `git commit --amend` rewrites `HEAD` from the
+/// index, so anything staged when it runs is folded into the rewritten commit, silently, at
+/// exit 0. Driven on the baseline: `HEAD` held one file, an unrelated `unrelated.txt` was
+/// staged, `git commit --amend -F <msg>` exited 0, and the amended commit carried two.
+///
+/// That is [`finalize.carried-staged`](engine::finalize) re-enacted **on a commit that
+/// already landed**, which is why this refusal is stricter than its sibling rather than a
+/// copy of it: the carryover gate compares against a pre-task snapshot and `--carry-staged`
+/// declares the carry deliberate, while here *every* staged path is wrong by construction —
+/// the arm's whole contract is that the committed tree does not move — so the subject is the
+/// index itself and the door offers no flag that waves it through.
+///
+/// One finding per staged path, keyed at that path (the file form, since the subject carries
+/// no `<type>:<slug>` identity), so a driver reading `findings[].key` gets the set rather
+/// than a count. The route unstages exactly the path it names, aimed through
+/// [`engine::finding::git_at`] so it runs from any cwd.
+fn amend_index_dirty_finding(path: &str, repo_root: &Path) -> Finding {
+    let unstage = engine::finding::git_at(
+        repo_root,
+        &format!("restore --staged -- {}", engine::finding::shell_token(path)),
+    );
+    Finding::graded(
+        Severity::Blocking,
+        "finalize.amend-index-dirty",
+        format!(
+            "`{path}` is staged, and an amend rewrites `HEAD` from the index — finalizing now \
+             would fold it into the commit whose message this task is repairing, a change \
+             that commit never carried"
+        ),
+        Some(Location::addressed(path.to_string(), 1, 1)),
+        Some(engine::finding::Route::human(format!(
+            "unstage it (`{unstage}`) and re-run the finalize — this arm takes no \
+             `--carry-staged`, because an amend that carried anything would change a tree it \
+             promised not to touch"
+        ))),
     )
 }
 
@@ -2680,6 +2724,12 @@ impl TaskArea {
         let head = git_head(&self.repo_root)?;
         let schemas = self.schemas()?;
 
+        // **The commit model this task takes** (F-10) — the `amend` marker `jigc task amend`
+        // wrote, holding the sha of the commit it pins. `None` on every other task, which is
+        // what keeps the ordinary model the default and moves no existing task's behaviour.
+        let amend = state::read_amend_pin(&self.dir)
+            .with_context(|| format!("could not read the amend marker for task `{id}`"))?;
+
         // Phase 1 (amended) — the moved-base re-pin decision runs BEFORE anything
         // else reads the pin: `has_diff` must diff against the *effective* base,
         // else a no-work task reads disjoint moved history as its own diff and
@@ -2695,6 +2745,12 @@ impl TaskArea {
             &git_dirty_paths(&self.repo_root)?,
             &schemas,
         ) {
+            // **The amend arm never re-pins** (F-10). `Repin` exists so a task whose history
+            // moved disjointly can still land its own work on the new HEAD; an amend's whole
+            // subject IS the commit it pinned, so silently re-pinning would rewrite a
+            // different commit than the one the agent read the subject line of. Its own
+            // mismatch refusal is below, keyed on the marker rather than on this decision.
+            _ if amend.is_some() => base,
             Ok(RepinDecision::NoDivergence) => base,
             // Disjoint moved history: the effective pin is HEAD — in-memory ONLY.
             // `base.json` is never rewritten: a landed finalize deletes the working
@@ -2708,6 +2764,57 @@ impl TaskArea {
             // overlapping paths and carries the resolve-or-discard route.
             Err(findings) => return self.blocked(findings, format),
         };
+
+        // **The amend arm's own two gates** (F-10), ahead of everything the ordinary model
+        // runs. They sit here, before `plan_finalize`, and the position is forced rather than
+        // chosen: the engine raises its OWN `finalize.base-mismatch` inside that call, worded
+        // for an ordinary task (*"switch back to `<A>`"* — a real exit when `<A>` is the
+        // history your work sits on, and a different repository state when it is the commit
+        // you are rewriting), so a re-worded refusal placed after it would be unreachable.
+        // Driven: it was, and the arm printed the ordinary task's message.
+        //
+        // Ahead of the conformance gate too, which is the safer order on the one cell where
+        // both apply: the dirty index is the data-loss cell, and it is the one an agent can
+        // act on without first re-authoring anything.
+        //
+        // 1. `finalize.amend-index-dirty` — `git commit --amend` rewrites HEAD from the
+        //    INDEX, so anything staged when it runs is folded into the rewritten commit,
+        //    silently, at exit 0 (driven on the baseline: HEAD held one file, an unrelated
+        //    path was staged, the amended commit carried two). This is
+        //    `finalize.carried-staged` re-enacted on a commit that already landed.
+        // 2. `finalize.base-mismatch` — HEAD is no longer the commit the marker pinned, so
+        //    the subject line the agent read and re-authored against belongs to a different
+        //    commit. The shipped code, re-worded for this arm.
+        //
+        // **The carryover gate is exempt here, and this is the reason stated at its row**
+        // (`design/finalize.md` → The amend arm): an amend stages nothing, so the gate has
+        // nothing to decide, and gate 1 above is its stricter replacement — it refuses the
+        // WHOLE index, declared or not, where `--carry-staged` would wave a subset through.
+        if amend.is_some() {
+            let staged = git_capture(
+                &self.repo_root,
+                &["diff", "--cached", "--name-only", "HEAD"],
+            )?;
+            let dirty: Vec<Finding> = staged
+                .lines()
+                .map(str::trim)
+                .filter(|path| !path.is_empty())
+                .map(|path| amend_index_dirty_finding(path, &self.repo_root))
+                .collect();
+            if !dirty.is_empty() {
+                return self.blocked(dirty, format);
+            }
+        }
+        if let Some(pinned) = amend.as_deref()
+            && pinned != head
+        {
+            return self.blocked(
+                vec![engine::finalize::amend_base_mismatch_finding(
+                    id, pinned, &head,
+                )],
+                format,
+            );
+        }
 
         // The validate report the planner gates on — one engine, two entry points
         // (`design/finalize.md` → 2. Validate: no private check path). The post-sweep
@@ -2763,7 +2870,16 @@ impl TaskArea {
         // reads empty), and the git-tracked config layer a first finalize must land;
         // unstaged/untracked WIP is excluded. A migration task keeps the original
         // whole-tree probe (`MigrationFixed` stages its own fixed set regardless).
-        let has_diff = if staged_migration {
+        // **The amend arm's change is the message, which no diff probe can see** (F-10). Every
+        // branch below asks *"is there anything to commit?"* of the TREE, and the honest
+        // answer for an amend is always yes: the commit doc the agent authored is what
+        // changes, and it is a transient that promotes nowhere. Left to the probes, a
+        // message-only amend trips `finalize.empty-commit` — the one guard whose premise
+        // ("git refuses a commit recording no change") is simply false of `--amend`, which
+        // mints a new sha every time, driven, even with nothing staged.
+        let has_diff = if amend.is_some() {
+            true
+        } else if staged_migration {
             !git_diff(&self.repo_root, &base.sha)?.trim().is_empty()
                 || !self.staged_docs()?.is_empty()
                 || !git_untracked(&self.repo_root)?.trim().is_empty()
@@ -3055,7 +3171,9 @@ impl TaskArea {
         // landed commit.
         // M30 G1 — the per-task stage policy: a migration keeps its proven fixed-pathspec
         // stage; every other per-task finalize honors the agent's existing index.
-        let stage = if staged_migration {
+        let stage = if amend.is_some() {
+            StagePolicy::Amend
+        } else if staged_migration {
             StagePolicy::MigrationFixed
         } else {
             StagePolicy::IndexHonoring
@@ -3118,11 +3236,21 @@ impl TaskArea {
                     .iter()
                     .map(|promotion| promotion.destination.clone())
                     .collect();
-                let (mut manifest, left_out) = classify_landed_manifest(
-                    git_commit_name_status(&self.repo_root)?,
-                    git_status_entries(&self.repo_root)?,
-                    &promoted_dests,
-                );
+                // **The manifest is what THIS RUN committed** — the commit's own delta on
+                // the ordinary arm. On the amend arm that delta is the superseded commit's
+                // file list, unchanged by this run, so reporting it would answer a question
+                // nobody asked with a set that reads as *what I just committed*. The amend
+                // arm's honest manifest is empty, and its text says the tree is unchanged
+                // instead of counting files into it (F-10).
+                let (mut manifest, left_out) = if amend.is_some() {
+                    (Vec::new(), Vec::new())
+                } else {
+                    classify_landed_manifest(
+                        git_commit_name_status(&self.repo_root)?,
+                        git_status_entries(&self.repo_root)?,
+                        &promoted_dests,
+                    )
+                };
                 // M43 — label the landed carried entries from the PRE-commit-computed
                 // set (the working area holding the snapshot is already gone here).
                 relabel_carried(&mut manifest, &carried_paths);
@@ -3146,6 +3274,10 @@ impl TaskArea {
                     // same repo-relative pairs it already named on stderr. Empty on the
                     // ordinary path, and present either way.
                     displaced: displaced_foreign,
+                    // F-10 — the superseded sha, present only on the amend arm, which is its
+                    // own `ENVELOPE_ARMS` row. `--amend` has already moved `HEAD` by here, so
+                    // the marker jigc wrote at the mint is the only place this still is.
+                    amended: amend.clone(),
                     // M53 — the cwd census, C2-09: the checkout this commit landed in, when
                     // it is not the one the workbench binds to. Text-only by declared bound.
                     site: self.commit_site(),
@@ -3280,17 +3412,36 @@ impl TaskArea {
                 if carry_staged {
                     rerun.push_str(" --carry-staged");
                 }
-                Ok(surface_commit_rejection(
-                    format,
-                    &err,
-                    &RejectionFrame {
-                        code: invocation_log::ERROR_COMMIT_REJECTED,
-                        target: work_unit_ref(id),
-                        survived: format!(
+                // F-10 — the amend arm's own identity and its own state-truth clause. It is
+                // the cheapest clause in the registry, and driven: `git commit --amend` is
+                // atomic w.r.t. `HEAD`, so a rejected amend leaves the commit byte-identical
+                // — there is no rollback to scope it against, because nothing was promoted,
+                // nothing was staged, and `HEAD` never moved.
+                let (code, survived) = match amend.as_deref() {
+                    Some(_) => (
+                        invocation_log::ERROR_AMEND_REJECTED,
+                        format!(
+                            "`HEAD` is unchanged — the commit this task is repairing still \
+                             carries the message it had, and task {id}'s authored commit doc \
+                             is still in `.jigc/tasks/{id}/docs/`"
+                        ),
+                    ),
+                    None => (
+                        invocation_log::ERROR_COMMIT_REJECTED,
+                        format!(
                             "task {id} is intact — nothing was committed, your task's \
                              staged docs are still in `.jigc/tasks/{id}/docs/`, and \
                              anything you had `git add`-ed is still in git's index"
                         ),
+                    ),
+                };
+                Ok(surface_commit_rejection(
+                    format,
+                    &err,
+                    &RejectionFrame {
+                        code,
+                        target: work_unit_ref(id),
+                        survived,
                         survived_non_hook: None,
                         rerun,
                     },
@@ -3979,6 +4130,15 @@ pub(crate) enum StagePolicy {
     /// only jigc's promoted-doc destinations + the first-commit config layer
     /// ([`stage_index_honoring`]); unstaged/untracked WIP stays uncommitted.
     IndexHonoring,
+    /// The **amend** arm (F-10) — stage nothing at all, and commit through
+    /// [`git_commit_amend`]. It is the one policy whose staging step is the *empty* act
+    /// rather than a narrowed one, and that is the arm's contract rather than an
+    /// optimization: its own gate has already refused a non-empty index, so there is nothing
+    /// left that could be staged, and adding jigc's promoted destinations (which the two
+    /// per-task policies do) would put a file into a commit whose tree this arm exists to
+    /// leave alone. An amend task promotes nothing anyway — the only doc it stages is the
+    /// transient `commit`, which never promotes.
+    Amend,
     /// The `squash: true` fan-out boundary (M31 Inc 4) — the id-ordered list of the
     /// milestone's still-provisioned worktree paths, plus the optional repo-relative
     /// `milestone-record` pathspec to path-add into the same commit (M39 T4: the `join`
@@ -4036,7 +4196,9 @@ impl StagePolicy {
     fn live_index_record_pathspecs(&self) -> Vec<String> {
         match self {
             // The per-task stages touch no milestone record.
-            StagePolicy::MigrationFixed | StagePolicy::IndexHonoring => Vec::new(),
+            StagePolicy::MigrationFixed | StagePolicy::IndexHonoring | StagePolicy::Amend => {
+                Vec::new()
+            }
             StagePolicy::Combine(_, record) | StagePolicy::ChainPerSubtask { record, .. } => {
                 record.iter().cloned().collect()
             }
@@ -4297,6 +4459,11 @@ pub(crate) fn try_execute_finalize_plan(
                 gate_owner_artifacts_post_stage(repo_root, cleanup_dir, schemas, plan)?;
                 git_commit(&live, &msg_path)
             }
+            // The amend arm (F-10): stage nothing, and rewrite `HEAD` from the index the
+            // gate has already required to be empty. No `gate_owner_artifacts_post_stage`
+            // either — that gate adjudicates what a stage put in the commit, and this arm
+            // stages nothing.
+            StagePolicy::Amend => git_commit_amend(&live, &msg_path),
             // The `squash: true` fan-out boundary (M31 Inc 4 / Inc 5): fold the N
             // worktree-staged code-sets onto the base tree off-line, overlay the promoted docs
             // + config, and commit the combined tree with the user's hooks running from a
@@ -7147,6 +7314,27 @@ pub fn git_commit(subject: &SeamSubject, message_file: &Path) -> Result<String> 
     git_commit_capture(
         subject,
         &[std::ffi::OsStr::new("-F"), message_file.as_os_str()],
+    )
+}
+
+/// `git commit --amend -F <message-file>` (F-10; `design/finalize.md` → The amend arm) —
+/// [`git_commit`]'s second commit model, through the identical hook-capable seam, so the
+/// posture re-probe, the captured hook stream and the rejection typing are the same on both.
+///
+/// **The tree is not a parameter and cannot be.** `git commit --amend` rewrites `HEAD` from
+/// **the index**, and this arm reaches here having staged nothing ([`StagePolicy::Amend`])
+/// over an index its own gate already refused to let be non-empty
+/// (`finalize.amend-index-dirty`). That gate is what makes this a message-only rewrite:
+/// without it git folds the whole index in silently at exit 0, which is the driven hazard
+/// the arm exists to close rather than a corner of it.
+pub fn git_commit_amend(subject: &SeamSubject, message_file: &Path) -> Result<String> {
+    git_commit_capture(
+        subject,
+        &[
+            std::ffi::OsStr::new("--amend"),
+            std::ffi::OsStr::new("-F"),
+            message_file.as_os_str(),
+        ],
     )
 }
 

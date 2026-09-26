@@ -249,6 +249,7 @@ fn conflict_capable_doors() -> BTreeSet<&'static str> {
     COMMITTING_DOORS
         .iter()
         .map(|door| door.verb)
+        .filter(|verb| !ARMS_WITHOUT_POPULATIONS.contains(verb))
         .filter(|verb| {
             standing
                 .iter()
@@ -256,6 +257,27 @@ fn conflict_capable_doors() -> BTreeSet<&'static str> {
         })
         .collect()
 }
+
+/// **Commit-model arms whose leaf has conflict-capable populations and which reach none of
+/// them** — each with the reason, on the registry's own `Exempt(reason)` mold.
+///
+/// The derivation above matches a `ROLLBACK_POPULATIONS` row's **leaf** against the door's
+/// verb by prefix, because that is the only key the registry carries: a row's `doors` are
+/// clap leaf paths, and it has no way to say *this leaf's second commit model*. Where a leaf
+/// has two arms with different rollback profiles, the prefix therefore over-collects, and the
+/// honest answer is to say which arm and why rather than to manufacture a cell for a conflict
+/// that cannot occur — a driven cell asserting an unreachable outcome is the vacuous pass
+/// this suite exists to refuse.
+const ARMS_WITHOUT_POPULATIONS: &[&str] = &[
+    // F-10. `jigc task finalize`'s amend arm reaches no rollback population at all: it
+    // promotes nothing, stages nothing, and therefore never populates the
+    // `config-layer-worktree` pre-image family that makes the ordinary arm conflict-capable
+    // (`StagePolicy::Amend` calls neither stage fn, and the config-layer amend is the stage's
+    // act). The commit is its whole transaction, and `git commit --amend` is atomic w.r.t.
+    // `HEAD` — so its state-truth clause is an absolute with nothing to qualify, which is
+    // the one shape this suite has no assertion for.
+    "jigc task finalize (amend)",
+];
 
 /// This door's own route-exempt error identity, as the registry declares it — the code the
 /// `--format json` reject document keys its framed refusal under.
@@ -278,16 +300,20 @@ fn the_cells_are_the_conflict_capable_doors() {
          cell here, and this table may claim no door the derivation does not give — a class \
          nobody enumerates is a class a fix is cut short of",
     );
-    // …and the member that is deliberately out is out *by the derivation*, not by being
-    // forgotten: `jigc migrate-corpus` runs no rollback, which is why its own frame passes
-    // an empty conflict slice.
+    // …and every member that is out is out for a *written* reason, never by being forgotten.
+    // Two are, and they are out for different reasons, which is why they are listed rather
+    // than counted: `jigc migrate-corpus` runs no rollback at all (its own frame passes an
+    // empty conflict slice), and `jigc task finalize (amend)` is a commit-model arm whose
+    // leaf is conflict-capable while the arm reaches none of that leaf's populations
+    // ([`ARMS_WITHOUT_POPULATIONS`], which carries the reason).
     let all: BTreeSet<&str> = COMMITTING_DOORS.iter().map(|d| d.verb).collect();
     let excluded: Vec<&str> = all.difference(&derived).copied().collect();
     assert_eq!(
         excluded,
-        vec!["jigc migrate-corpus"],
-        "the only committing door outside the rollback family is `jigc migrate-corpus`; a \
-         second exclusion is a population nobody wrote down",
+        vec!["jigc migrate-corpus", "jigc task finalize (amend)"],
+        "every committing door outside the rollback family is listed here with its reason \
+         stated where the exclusion is made; a third exclusion is a population nobody \
+         wrote down",
     );
 }
 

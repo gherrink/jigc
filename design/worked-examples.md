@@ -3002,7 +3002,7 @@ The M47 rc.10 wave answers the final unseeded trial's verified findings ([comple
 
 ```text
 # ── Arm 1 · a rejecting hook leaves the repo recoverable at EVERY committing door. ──
-#     (the axis: the code-side COMMITTING_DOORS table — 10 doors, 10 distinct identities)
+#     (the axis: the code-side COMMITTING_DOORS table — 11 doors, 11 distinct identities)
 $ jigc milestone create Cache-rework          # under a `pre-commit` that refuses everything
 > `git commit` was rejected (no commit was made): …
 > nothing of milestone:cache-rework survives. Fix the hook's complaint, then re-run

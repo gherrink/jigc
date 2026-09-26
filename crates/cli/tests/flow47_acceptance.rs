@@ -15,10 +15,10 @@
 //!
 //!   (1) **A rejecting `pre-commit` hook leaves the repo recoverable at every
 //!       committing door** — the axis is the code-side
-//!       [`cli::invocation_log::COMMITTING_DOORS`] table (10 doors since M49 Inc 2 T3
+//!       [`cli::invocation_log::COMMITTING_DOORS`] table (11 doors since F-10
 //!       joined `jigc task discard` to it): each door exits
 //!       non-zero, leaves `HEAD` where it found it, logs **its own** error code (all
-//!       ten pairwise distinct), and the re-run it printed — **lifted verbatim out of
+//!       eleven pairwise distinct), and the re-run it printed — **lifted verbatim out of
 //!       its own frame** — lands at exit 0 once the hook is gone (Inc 2 + 3).
 //!
 //!   (2) **`jigc task validate` previews the gate rows `finalize` enforces, and scopes
@@ -457,6 +457,17 @@ fn door_case(base: &TrialCorpus, verb: &str) -> DoorCase {
             corpus.git(&["add", "code.txt"]);
             owned(&["task", "finalize", &task])
         }
+        // The amend arm (F-10): the same leaf, minted through `jigc task amend` so the task
+        // carries the marker that selects `git commit --amend`. Nothing is staged — the arm
+        // refuses over a non-empty index, so a `git add` here would reach the dirty-index
+        // gate rather than the hook this flow plants.
+        "jigc task finalize (amend)" => {
+            project_scalars(&corpus, None);
+            corpus.jigc_ok(&["task", "amend", "repair-the-message"]);
+            let task = "repair-the-message";
+            fill_commit(&corpus, task, "cache");
+            owned(&["task", "finalize", task])
+        }
         "jigc milestone finalize (squash: true)" | "jigc milestone finalize (squash: false)" => {
             let squash = if verb.ends_with("true)") {
                 "true"
@@ -559,7 +570,7 @@ fn door_case(base: &TrialCorpus, verb: &str) -> DoorCase {
 fn every_committing_door_leaves_the_repo_recoverable() {
     assert_eq!(
         COMMITTING_DOORS.len(),
-        10,
+        11,
         "the axis is the code-side committing-door table (`jigc setup`'s install commit \
          is excluded by its recorded `--no-verify` reason)",
     );

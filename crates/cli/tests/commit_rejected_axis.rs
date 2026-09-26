@@ -152,8 +152,8 @@ use cli::invocation_log::COMMITTING_DOORS;
 // identical setup. One home for the axis's fixtures; each suite keeps its own assertions.
 use crate::support::committing_doors::{
     HOOK_MARKER, TWO_CRITERIA_SPEC, TempDir, adr_body, base_repo, commit_adr, commit_count, drive,
-    git, install_counting_hook, install_rejecting_hook, jigc, jigc_ok, lift_rerun, log_records,
-    owned, record_for, remove_hook, seed_task, shell_split, stage_subtask_doc,
+    fill_commit_doc, git, install_counting_hook, install_rejecting_hook, jigc, jigc_ok, lift_rerun,
+    log_records, owned, record_for, remove_hook, seed_task, shell_split, stage_subtask_doc,
 };
 
 /// The axis sweep: every code-side committing door, driven through the real binary under a
@@ -162,8 +162,8 @@ use crate::support::committing_doors::{
 fn every_committing_door_frames_its_rejection_names_itself_and_recovers() {
     assert_eq!(
         COMMITTING_DOORS.len(),
-        10,
-        "the axis is 10 doors + `jigc setup` excluded by its recorded `--no-verify` reason",
+        11,
+        "the axis is 11 doors + `jigc setup` excluded by its recorded `--no-verify` reason",
     );
 
     for door in COMMITTING_DOORS {
@@ -696,6 +696,32 @@ fn drive_empty(verb: &str) -> EmptyCase {
                 home,
             }
         }
+        // **The amend arm has no empty commit, and that is the cell** (F-10). `git commit
+        // --amend` mints a new sha every time — driven on the baseline with `--no-edit` and
+        // nothing staged — so the "records nothing" state this sweep looks for is
+        // unreachable here by construction, and `has_diff` is unconditionally true on the
+        // arm for exactly that reason. What IS reachable is the door stopping short of the
+        // boundary for its own reason: an amend task whose commit doc was never authored
+        // blocks at the conformance gate, states that, and dresses nothing as a rejection —
+        // which is the property every cell of this sweep asserts.
+        "jigc task finalize (amend)" => {
+            let (repo, home) = base_repo("empty-task-finalize-amend", None);
+            commit_everything(repo.path(), "settle the fixture");
+            jigc_ok(
+                repo.path(),
+                home.path(),
+                &["task", "amend", "author nothing at all"],
+                "`jigc task amend`",
+            );
+            EmptyCase {
+                driven: owned(&["task", "finalize", "author-nothing-at-all"]),
+                exit: 3,
+                diagnosis: "schema-conformance".to_string(),
+                finding: None,
+                repo,
+                home,
+            }
+        }
         // A milestone with a sub-task that contributed neither a merged doc nor staged code:
         // the boundary would commit only jigc's own bookkeeping, and the zero-work refusal
         // stops it — the same seam for both commit models, above the `squash` branch.
@@ -921,8 +947,8 @@ fn drive_empty(verb: &str) -> EmptyCase {
 fn no_committing_door_dresses_an_empty_commit_as_a_rejection() {
     assert_eq!(
         COMMITTING_DOORS.len(),
-        10,
-        "the axis is 10 doors + `jigc setup` excluded by its recorded `--no-verify` reason",
+        11,
+        "the axis is 11 doors + `jigc setup` excluded by its recorded `--no-verify` reason",
     );
 
     for door in COMMITTING_DOORS {
@@ -1162,6 +1188,39 @@ fn drive_non_hook(verb: &str) -> NonHookCase {
                     assert!(
                         area.join("docs").join("adr:eviction-policy.md").is_file(),
                         "the task's staged ADR must still be in its working area",
+                    );
+                }),
+                repo,
+                home,
+            }
+        }
+        // **The amend arm's only non-hook failure is git's own**, and that is a property of
+        // the arm rather than a gap in the fixture (F-10): it promotes nothing and stages
+        // nothing, so there is no phase-4/5 act left to fault — the commit is the whole
+        // transaction. A refused signature is therefore the one cell that exists, driven
+        // with no hook anywhere.
+        "jigc task finalize (amend)" => {
+            let (repo, home) = base_repo("nonhook-task-finalize-amend", None);
+            jigc_ok(
+                repo.path(),
+                home.path(),
+                &["task", "amend", "repair the install message"],
+                "`jigc task amend`",
+            );
+            let task = "repair-the-install-message";
+            fill_commit_doc(repo.path(), home.path(), task);
+            plant_signing_refusal(repo.path());
+            let area = repo.path().join(".jigc").join("tasks").join(task);
+            NonHookCase {
+                survived: "`HEAD` is unchanged".to_string(),
+                expected_rerun: owned(&["jigc", "task", "finalize", task]),
+                driven: owned(&["task", "finalize", task]),
+                verify: Box::new(move |_repo| {
+                    assert!(
+                        area.join("docs")
+                            .join(format!("commit:{task}.md"))
+                            .is_file(),
+                        "the amend task's authored commit doc must still be in its area",
                     );
                 }),
                 repo,
@@ -1478,8 +1537,8 @@ fn drive_non_hook(verb: &str) -> NonHookCase {
 fn every_committing_door_keeps_its_frame_when_no_hook_spoke() {
     assert_eq!(
         COMMITTING_DOORS.len(),
-        10,
-        "the axis is 10 doors + `jigc setup` excluded by its recorded `--no-verify` reason",
+        11,
+        "the axis is 11 doors + `jigc setup` excluded by its recorded `--no-verify` reason",
     );
 
     for door in COMMITTING_DOORS {
@@ -1621,8 +1680,8 @@ const GIT_OWN_REFUSAL_PROSE: &str = "fatal: failed to write commit object";
 fn no_committing_door_calls_gits_own_refusal_a_hooks_complaint() {
     assert_eq!(
         COMMITTING_DOORS.len(),
-        10,
-        "the axis is 10 doors + `jigc setup` excluded by its recorded `--no-verify` reason",
+        11,
+        "the axis is 11 doors + `jigc setup` excluded by its recorded `--no-verify` reason",
     );
 
     for door in COMMITTING_DOORS {

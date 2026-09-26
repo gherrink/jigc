@@ -163,7 +163,7 @@ fn reject_json(case: &DoorCase) -> (Vec<u8>, String) {
 fn every_committing_door_rejects_as_one_findings_document() {
     assert_eq!(
         COMMITTING_DOORS.len(),
-        10,
+        11,
         "the axis is the registry, not a hand list — `jigc setup` stays excluded by its \
          recorded `--no-verify` reason",
     );

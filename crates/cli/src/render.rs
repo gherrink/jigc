@@ -1494,11 +1494,26 @@ pub struct FinalizeCode {
 /// diff over it reads as a membership change rather than a reshuffle).
 pub const FINALIZE_FAMILY: &[FinalizeCode] = &[
     FinalizeCode {
+        code: "finalize.amend-index-dirty",
+        producer: "cli::task",
+        subject: FinalizeSubject::FilePath,
+        subject_note: "the staged file `git commit --amend` would fold into the commit whose \
+                       message the amend arm is rewriting — one finding per staged path",
+    },
+    FinalizeCode {
+        code: "finalize.amend-rejected",
+        producer: "cli::render",
+        subject: FinalizeSubject::WorkUnit,
+        subject_note: "the amend task whose `git commit --amend` a hook — or git itself — \
+                       refused; one refusal per run, so the work-unit ref alone keys it",
+    },
+    FinalizeCode {
         code: "finalize.base-mismatch",
         producer: "engine::finalize",
         subject: FinalizeSubject::WorkUnit,
-        subject_note: "the work unit's base pin — two constructors (pin diverged, overlap), \
-                       mutually exclusive, so one instance per finalize",
+        subject_note: "the work unit's base pin — three constructors (pin diverged, overlap, \
+                       and the amend arm's moved-HEAD refusal), mutually exclusive, so one \
+                       instance per finalize",
     },
     FinalizeCode {
         code: "finalize.carried-staged",
@@ -2121,6 +2136,20 @@ pub struct Landed {
     /// beside this object. So *what moved* and *what was kept where it was* are two facts on
     /// two keys, neither of which has to be inferred from the other.
     pub displaced: Vec<Displaced>,
+    /// **The commit this run superseded** — the sha `git commit --amend` rewrote, present
+    /// only on the amend arm (F-10; `design/finalize.md` → The amend arm).
+    ///
+    /// It is the one fact the amend arm's ack cannot get from anywhere else once the commit
+    /// has landed: `--amend` has already moved `HEAD`, and the superseded sha survives only
+    /// in the reflog. [`hash`](Landed::hash) is the new commit; this is what it replaced.
+    ///
+    /// **Skipped when absent, and the two arms are two `ENVELOPE_ARMS` rows** rather than one
+    /// row with a nullable key. The registry's rule is that an arm is a top-level key *set*,
+    /// so a key that appears on one commit model and not the other is a second arm by
+    /// definition — and declaring it that way is what makes the driven key set equal the
+    /// declared one at both (`format_json_success_axis`'s fourth proof).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub amended: Option<String>,
     /// **Where this commit landed, when that is not the checkout jigc's workbench binds
     /// to** — `None` on the ordinary path. See [`CommitSite`] for the rule and for why
     /// this is `#[serde(skip)]` rather than a key.
@@ -2658,13 +2687,32 @@ fn commit_site_line(tense: &str, site: &CommitSite) -> String {
 }
 
 fn landed_summary(landed: &Landed) -> String {
-    let mut out = format!("finalized {} — {}\n", landed.hash, landed.subject);
+    // The amend arm says what it did, not what the ordinary arm does (F-10). `finalized
+    // <sha>` would be a law-1 lie here twice over: nothing new landed, and the file count
+    // below would describe a tree this run did not touch — so the arm names both shas and
+    // states the tree's status instead of counting files into it.
+    let mut out = match landed.amended.as_deref() {
+        Some(superseded) => format!(
+            "amended {superseded} → {} — {}\n  the commit's tree is unchanged; only its \
+             message was rewritten\n  the superseded commit stays reachable in the reflog\n",
+            landed.hash, landed.subject,
+        ),
+        None => format!("finalized {} — {}\n", landed.hash, landed.subject),
+    };
+    // The manifest and its count are what THIS RUN committed. On the amend arm that is the
+    // empty set by construction, and the caller supplies it as such — so this loop and the
+    // count render nothing there, and the trailing newline the amend lead already carries is
+    // trimmed back so the site/left-out lines below attach the same way on both arms.
     for entry in &landed.manifest {
         out.push_str(&manifest_line(entry));
         out.push('\n');
     }
-    let noun = if landed.files == 1 { "file" } else { "files" };
-    out.push_str(&format!("  {} {noun} committed", landed.files));
+    if landed.amended.is_none() {
+        let noun = if landed.files == 1 { "file" } else { "files" };
+        out.push_str(&format!("  {} {noun} committed", landed.files));
+    } else {
+        out.truncate(out.trim_end_matches('\n').len());
+    }
     if let Some(site) = &landed.site {
         out.push('\n');
         out.push_str(&commit_site_line("committed", site));
@@ -6786,6 +6834,23 @@ pub const ENVELOPE_ARMS: &[EnvelopeArm] = &[
         outcome: ArmOutcome::Success,
         root: ArmRoot::ResultContract("engine::result::ValidationReport"),
     },
+    // The amend arm's landed shape (F-10) — the ordinary `Landed` key set plus `amended`,
+    // and therefore its own row: the registry's unit is a top-level key SET, so a key that
+    // rides one commit model and not the other is a second arm by definition. Declaring it
+    // that way is what keeps the driven key set equal to the declared one at both.
+    EnvelopeArm {
+        path: &["task", "finalize"],
+        arm: "LandedAmend",
+        origin: ArmOrigin::Dispatch(
+            "the same `render::finalize_landed` call as `Landed`, over a `Landed` whose \
+             `amended` is `Some` — the commit model is chosen by the task's `amend` marker, \
+             not by a result enum",
+        ),
+        shape: ArmShape::Object(&["committed", "findings", "schema_version"]),
+        status: ArmStatus::Pinned,
+        outcome: ArmOutcome::Success,
+        root: ArmRoot::ResultContract("engine::result::ValidationReport"),
+    },
     EnvelopeArm {
         path: &["task", "finalize"],
         arm: "Forecast",
@@ -10154,6 +10219,7 @@ mod tests {
         let report = ValidationReport::new(Vec::new(), &resolved);
         let landed = Landed {
             site: None,
+            amended: None,
             hash: "abc1234".to_string(),
             subject: "feat: surface the manifest".to_string(),
             promoted: vec!["docs/decisions/x.md".to_string()],

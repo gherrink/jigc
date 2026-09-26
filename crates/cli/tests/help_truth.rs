@@ -904,7 +904,7 @@ mod committing_doors_say_so {
     fn every_committing_door_help_states_the_commit_it_lands() {
         assert_eq!(
             COMMITTING_DOORS.len(),
-            10,
+            11,
             "the axis is the code-side `COMMITTING_DOORS` table, so a door added there \
              owes its help clause here",
         );

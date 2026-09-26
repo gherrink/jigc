@@ -57,6 +57,16 @@ pub struct Outcome {
 /// name their own doors.
 pub const ERROR_COMMIT_REJECTED: &str = "finalize.commit-rejected";
 
+/// The **amend arm** of `jigc task finalize` (F-10) — its `git commit --amend` was rejected,
+/// so the commit at `HEAD` still carries the message it had.
+///
+/// Its own identity rather than [`ERROR_COMMIT_REJECTED`]'s, on the `milestone finalize`
+/// two-arm precedent: the two commit models are two commit constructions with two different
+/// state-truth clauses (one leaves a task's work uncommitted, the other leaves an existing
+/// commit unrewritten), and a log that spelled them the same could not tell a rejected
+/// *addition* from a rejected *rewrite*.
+pub const ERROR_AMEND_REJECTED: &str = "finalize.amend-rejected";
+
 /// The **`jigc milestone finalize`** boundary's rejection under `finalize.fan-out.squash: true`
 /// (the single combine commit).
 pub const ERROR_MILESTONE_FINALIZE_REJECTED: &str = "milestone-finalize.commit-rejected";
@@ -120,6 +130,13 @@ pub struct CommittingDoor {
     pub commits: &'static str,
 }
 
+/// [`jigc task finalize`](COMMITTING_DOORS)'s **amend-arm** commit clause (F-10) — rendered
+/// into the door's one long help by `crate::task::finalize_long_about`, beside the ordinary
+/// arm's. One leaf, one `--help`, two clauses: the door runs whichever commit model the
+/// task's marker selects, and a reader cannot see the marker.
+pub const TASK_FINALIZE_AMEND_COMMITS: &str =
+    "rewrites the commit at `HEAD` with `git commit --amend`, leaving its tree untouched";
+
 /// [`jigc milestone create`](COMMITTING_DOORS)'s commit clause — rendered into its long
 /// help by `crate::milestone::create_long_about`.
 pub const MILESTONE_CREATE_COMMITS: &str =
@@ -173,6 +190,14 @@ pub const COMMITTING_DOORS: &[CommittingDoor] = &[
         verb: "jigc task finalize",
         error_code: ERROR_COMMIT_REJECTED,
         commits: "validate, render, stage, `git commit`, post-commit",
+    },
+    // The amend arm (F-10). Same leaf, same `--help`, its own commit construction and its own
+    // identity — the `milestone finalize` two-arm precedent, applied to the second door that
+    // grew a second commit model.
+    CommittingDoor {
+        verb: "jigc task finalize (amend)",
+        error_code: ERROR_AMEND_REJECTED,
+        commits: TASK_FINALIZE_AMEND_COMMITS,
     },
     CommittingDoor {
         verb: "jigc milestone finalize (squash: true)",
@@ -241,6 +266,7 @@ pub const COMMITTING_DOORS: &[CommittingDoor] = &[
 /// still an identity the log could not otherwise distinguish.
 pub const ERROR_CODE_REGISTRY: &[&str] = &[
     ERROR_COMMIT_REJECTED,
+    ERROR_AMEND_REJECTED,
     ERROR_MILESTONE_FINALIZE_REJECTED,
     ERROR_MILESTONE_CHAIN_REJECTED,
     ERROR_RENAME_REJECTED,
@@ -609,8 +635,8 @@ mod tests {
         );
         assert_eq!(
             declared.len(),
-            11,
-            "the declared vocabulary is the 10 committing doors + the review hold; a change \
+            12,
+            "the declared vocabulary is the 11 committing doors + the review hold; a change \
              here revises design/surface-contract.md's mirror in the same commit",
         );
 

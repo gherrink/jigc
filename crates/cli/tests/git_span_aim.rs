@@ -215,6 +215,15 @@ const GIT_SPAN_SITES: &[(&str, &str, Aim, &str)] = &[
          `git checkout --`, `git restore --source=HEAD --staged --worktree --`",
     ),
     (
+        "crates/cli/src/task.rs",
+        "amend_index_dirty_finding",
+        Aim::Aimed,
+        "`finalize.amend-index-dirty`'s unstage route (F-10) — `git restore --staged -- \
+         <path>`, one per staged path the amend would otherwise fold into the commit it is \
+         rewriting. Aimed because the operand is a repo-relative pathspec git resolves \
+         against the repository, not against the caller's cwd",
+    ),
+    (
         "crates/cli/src/migrate.rs",
         "adjudicate_source_tracked",
         Aim::Aimed,

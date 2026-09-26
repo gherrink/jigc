@@ -2578,6 +2578,21 @@ fn empty_case(verb: &str) -> EmptyCase {
                 "finalize.empty-commit",
             )
         }
+        // **The amend arm has no empty commit** (F-10): `git commit --amend` mints a new sha
+        // every time — driven with `--no-edit` and nothing staged — so the "records nothing"
+        // state is unreachable on it by construction. What this cell drives instead is the
+        // arm stopping short of the boundary for its own reason (an unauthored commit doc)
+        // and dressing nothing as a rejection, which is the property every cell here asserts.
+        "jigc task finalize (amend)" => {
+            logging_project(repo.path(), None);
+            settle_tree(repo.path());
+            jigc(&["task", "amend", "author-nothing"], "`jigc task amend`");
+            (
+                owned(&["task", "finalize", "author-nothing"]),
+                false,
+                "schema-conformance",
+            )
+        }
         // A milestone whose sub-task contributed neither a merged doc nor staged code.
         "jigc milestone finalize (squash: true)" | "jigc milestone finalize (squash: false)" => {
             let squash = if verb.ends_with("true)") {

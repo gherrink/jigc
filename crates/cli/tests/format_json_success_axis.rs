@@ -906,6 +906,26 @@ fn recipes() -> Vec<Recipe> {
         },
         Recipe {
             path: &["task", "finalize"],
+            arm: "LandedAmend",
+            base: Base::Fresh,
+            // The amend commit model: mint through `jigc task amend`, author the same commit
+            // doc, and land it. The task id comes off the EMITTED compose envelope rather
+            // than being rebuilt from the slug rule in test code.
+            drive: |c| {
+                let composed = json(c, &["task", "amend", "repair the install message"]);
+                let stdout = String::from_utf8(composed.stdout).expect("utf-8 stdout");
+                let value: Value = serde_json::from_str(&stdout)
+                    .expect("the amend compose envelope is one json document");
+                let task = value["task"]
+                    .as_str()
+                    .expect("the composed envelope names the minted task")
+                    .to_owned();
+                author_commit_doc(c, &task, "cache", "harden the cache");
+                json(c, &["task", "finalize", &task])
+            },
+        },
+        Recipe {
+            path: &["task", "finalize"],
             arm: "Forecast",
             base: Base::Fresh,
             drive: |c| {

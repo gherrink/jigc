@@ -145,7 +145,7 @@ This is a *decision/discussion* backlog, not a *task* backlog — tasks are stil
 
 **The tiers, by id** (each item's axis is copied from the ledger in the charter, not re-derived):
 
-- **Tier 0 — blocks the 1.0.0 call:** **EC-1** (the path-taking argument family — `ArgToken::Plain`'s exemption set × {read, record, retire/delete} × {absolute, `../`, symlink, `.git/`}, **incl. re-validation at the destructive sink**) · **EC-2** (HEAD posture × the ten `COMMITTING_DOORS`).
+- **Tier 0 — blocks the 1.0.0 call:** **EC-1** (the path-taking argument family — `ArgToken::Plain`'s exemption set × {read, record, retire/delete} × {absolute, `../`, symlink, `.git/`}, **incl. re-validation at the destructive sink**) · **EC-2** (HEAD posture × the eleven `COMMITTING_DOORS`).
 - **Tier 1 — cheap now, expensive after the pin:** **EC-3 · EC-4 · EC-5 · EC-6 · EC-7 · EC-8 · EC-9 · EC-10**, plus **F-5** and **F-11** (a code and a route inside the flattened `{"error"}` string — the envelope shape is priced as fork 5), **N15** (the `--task` miss on the pinned read surface), **N20** (the boundary's non-hook refusal frame — **knob-independent per EC-37**, correcting its recorded scope), **N23** (false-green `validate` on doctype retirement — **re-driven and confirmed by EC-38**).
 - **Tier 2 — the law-1 surface batch:** **EC-11 … EC-25**, plus **F-9** (`doc rename` tells the staged commit doc). **EC-16 and EC-17 are narration lies** at a relocating and two destroying doors, which is why they head the batch.
 - **Tier 3 — capability cells the check found:** **EC-26 · EC-27 · EC-28 · EC-29 · EC-30**. EC-30's milestone arm is undriven — **drive it first; if refuted, it is recorded as refuted and nothing is built.**
