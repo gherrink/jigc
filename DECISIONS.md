@@ -2,6 +2,10 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-09-27 — 1.0.0-rc.20: the fourth M53 stamp, after the usability batch and F-10's review fixes
+
+Bumped after the six surface rows (`1b45707c`…`136a0878`), F-10's four build commits (`3c4f4c7a` · `e346efa9` recovered · `d76f80f6` · `48d1d529`) and the eight review fixes (`4214804b`…`e87835ea`) — not before. Gate **3978 / 0**, the negative fence empty, the golden fixed point measured at **646** and accounted ([pinning.md](implementation/pinning.md)), the ten version-bearing goldens moved by the version token only; `dev/clean-litter` run first (23 GB of `target/` reset — the full gate had grown to ~2 h). **Axes 2 · 3 · 5** are re-driven on this binary (a new committing arm and two new `finalize` codes), then the 1.0.0 call, which is the human's.
+
 ## 2026-09-26 — F-10 review residue: seven findings fixed
 
 **MEDIUM-2 through LOW-8, each confirmed against the code before any change and each fixed over its class's axis.** Four of the seven were a different class than reported, in both directions.
