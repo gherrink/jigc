@@ -1101,6 +1101,87 @@ fn the_forecast_names_the_commit_it_would_rewrite() {
     );
 }
 
+// ───────── every composing door names the commit (F-10 review, MEDIUM-2) ─────────
+
+/// **Every door that composes an amend task carries the `amending:` block** — the mint and
+/// both re-compose doors (the F-10 review's MEDIUM-2).
+///
+/// **The set it iterates is the composing axis, not a site list.** A `Composition` is built
+/// at three seams and the review named two of them; driving found the third to be a different
+/// class. `cli::start::compose_core` mints a *fresh* task and can therefore never hold an
+/// amend marker (`jigc start --workflow amend` and `jigc workflow amend --preview` are both
+/// refused `workflow.verb-routed`), so the live set is *the doors that compose an **existing**
+/// area* — one spine, [`compose_task_workflow`], reached by `jigc start --task <id>` and by
+/// `jigc workflow <W> --task <id>` — plus the mint door itself. All three are driven here.
+///
+/// **Why it is not cosmetic.** The block is the settle's *only* mitigation for the cell it
+/// deliberately refuses to refuse: jigc cannot tell whether `HEAD` is a milestone boundary, a
+/// record-only bookkeeping commit or a foreign commit, so instead of a discriminator it shows
+/// the subject line before the instructions. Driven at `48d1d529`, the resume path — the one
+/// five consecutive trials show an agent taking when context is lost — dropped it while the
+/// composed step still said *"read HEAD's subject line in the ack above"*.
+#[test]
+fn every_composing_door_names_the_commit_the_amend_repairs() {
+    let corpus = TrialCorpus::build(State::Fresh);
+    let short = corpus.git(&["rev-parse", "--short", "HEAD"]);
+    let subject = corpus.git(&["log", "-1", "--format=%s"]);
+    let expected = format!("amending: {short} {subject:?}");
+
+    // The mint, on its text arm — the id read off the header the binary prints.
+    let minted = corpus.jigc_ok(&["task", "amend", "repair the install message"]);
+    let task = minted
+        .lines()
+        .find_map(|line| line.strip_prefix("task minted: "))
+        .expect("the mint ack names the task it minted")
+        .trim()
+        .to_owned();
+
+    for (door, argv) in [
+        ("jigc task amend", None),
+        (
+            "jigc start --task <id>",
+            Some(vec!["start", "--task", task.as_str()]),
+        ),
+        (
+            "jigc workflow amend --task <id>",
+            Some(vec!["workflow", "amend", "--task", task.as_str()]),
+        ),
+    ] {
+        let text = match argv {
+            None => minted.clone(),
+            Some(argv) => corpus.jigc_ok(&argv),
+        };
+        assert!(
+            text.contains(&expected),
+            "[{door}] names the commit it is repairing and the subject it is about to \
+             replace — `{expected}`:\n{text}",
+        );
+        assert!(
+            text.contains("already been pushed"),
+            "[{door}] carries the pushed-history advisory, which rides the same block:\n{text}",
+        );
+        // And the step's own pointer is to a command, never to an ack this surface may not
+        // have: the `--format json` arm carries the step text and no block at all (declared
+        // out — `tests/text_json_parity_axis.rs`, the `jigc task amend` census row).
+        assert!(
+            !text.contains("in the ack above"),
+            "[{door}] the composed step points at a command a reader can run, not at a \
+             surface that may not be there:\n{text}",
+        );
+    }
+
+    let json = corpus.jigc_ok(&["start", "--task", &task, "--format", "json"]);
+    let doc: Value = serde_json::from_str(&json).expect("the composed envelope is one document");
+    assert!(
+        !doc["text"]
+            .as_str()
+            .expect("the pinned `{task, text}` arm carries the composed text")
+            .contains("in the ack above"),
+        "the pinned envelope's `text` points at no ack either — the block is presentation \
+         and declared out of this arm:\n{doc:#}",
+    );
+}
+
 // ───────── the write doors: an amend task carries one doc (F-10 review, HIGH-1) ─────────
 
 /// The committed **non-singleton** [`State::Vendored`] carries, and its canonical home.

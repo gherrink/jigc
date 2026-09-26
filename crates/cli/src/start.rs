@@ -357,13 +357,6 @@ fn head_shape_refusal(repo_root: &Path, id_hint: &str) -> Option<Finding> {
     ))
 }
 
-/// HEAD's current subject line, for the `amending:` block — read **once, at the mint**, and
-/// carried on the [`Composition`] ([`AmendTarget`]). An empty string when the commit's
-/// message has no subject at all, which the block renders as such rather than as empty quotes.
-fn head_subject(repo_root: &Path) -> Result<String> {
-    git_rev_parse(repo_root, &["log", "-1", "--format=%s", "HEAD"])
-}
-
 /// Mint a `jigc task amend` task in `start`'s repository and compose the `amend` workflow
 /// over it (F-10) — the whole door, `Neither` on [`crate::cli::BEHALF_DOORS`]: it writes the
 /// working area and composes text, and every byte it moves in git is
@@ -408,7 +401,6 @@ pub(crate) fn amend_in_repo(start: &Path, intent: Option<&str>) -> Result<Compos
     if let Some(finding) = head_shape_refusal(&repo_root, &fallback_id) {
         return Err(finding_to_err(finding));
     }
-    let subject = head_subject(&repo_root)?;
 
     // **The fallback covers the ABSENT intent, never a present one that says nothing.** The
     // branch is on `Option`, not on emptiness, and the difference is the whole degenerate-id
@@ -440,10 +432,12 @@ pub(crate) fn amend_in_repo(start: &Path, intent: Option<&str>) -> Result<Compos
     )?;
     let composed = with_also_open(composed, start)?;
     Ok(Composition {
-        amend: Some(AmendTarget {
-            short: base.short,
-            subject,
-        }),
+        // Read through the **same** producer the two re-compose doors read it through
+        // ([`amend_target_of`], off the marker this mint just wrote), so the mint ack and
+        // every later re-compose cannot describe one commit two ways (the F-10 review's
+        // MEDIUM-2). The marker holds the sha `base` pinned, so this is the same commit
+        // `head_shape_refusal` adjudicated one statement above.
+        amend: amend_target_of(&repo_root, &minted.dir)?,
         ..composed
     })
 }
@@ -890,9 +884,15 @@ pub struct Composition {
 
 /// The commit a `jigc task amend` mint pinned — what the `amending:` block names.
 ///
-/// **The subject is read at the mint and carried, never re-read at the render**: it is the
-/// one fact the ack exists to show (*this is the message you are about to replace*), and a
-/// second `git log` a moment later would answer about whatever HEAD is by then.
+/// **The subject is read once per compose and carried, never re-read at the render**: it is
+/// the one fact the ack exists to show (*this is the message you are about to replace*), and
+/// a second `git log` a moment later would answer about whatever HEAD is by then.
+///
+/// **Every compose of an amend task carries it, not only the mint** (the F-10 review's
+/// MEDIUM-2). The mint reads it from `HEAD`; a **re-compose** ([`amend_target_of`], reached
+/// by `jigc start --task <id>` and by `jigc workflow amend --task <id>`) reads it from the
+/// area's own `amend` marker, which holds the pinned sha — the authority on *which commit
+/// this task is repairing*, where `HEAD` is only where the repository happens to stand.
 #[derive(Debug)]
 pub struct AmendTarget {
     /// The abbreviated sha of the commit the amend rewrites — the human handle.
@@ -900,6 +900,40 @@ pub struct AmendTarget {
     /// That commit's current subject line, verbatim. Empty when the commit's message has
     /// no subject at all, which the block then says rather than printing empty quotes.
     pub subject: String,
+}
+
+/// The [`AmendTarget`] a **re-compose** of `task_dir` carries — `None` for every ordinary
+/// task, which renders no `amending:` block at all (the F-10 review's MEDIUM-2).
+///
+/// Driven at `48d1d529`: `jigc start --task <amend-id>` and `jigc workflow amend --task
+/// <amend-id>` both composed the `amend` step body — whose own prose pointed at *"HEAD's
+/// subject line in the ack above"* — with no ack above it, on the one path five consecutive
+/// trials show an agent taking when context is lost. The block is the settle's **only**
+/// mitigation for the cell it deliberately refuses to refuse (*jigc cannot tell which door
+/// made `HEAD`*), so a surface that drops it drops the whole mitigation.
+///
+/// **The subject is read from the pinned sha, never from `HEAD`.** They are the same commit
+/// on every composable state — a moved `HEAD` is `finalize.base-mismatch` at the commit arm
+/// — and where they differ the pin is the honest answer: it is the commit this task will
+/// rewrite or die refusing to.
+///
+/// **A pin git cannot describe renders no block**, rather than a fabricated short sha: the
+/// commit was `HEAD` at the mint and stays reachable through the reflog, so this is the
+/// gc'd-and-expired cell, and in it the finalize arm refuses anyway. Naming a commit that is
+/// not there would be exactly the law-1 lie the block exists to prevent.
+fn amend_target_of(repo_root: &Path, task_dir: &Path) -> Result<Option<AmendTarget>> {
+    let Some(sha) = state::read_amend_pin(task_dir)
+        .with_context(|| format!("could not read the amend marker at {task_dir:?}"))?
+    else {
+        return Ok(None);
+    };
+    let Ok(short) = git_rev_parse(repo_root, &["rev-parse", "--short", &sha]) else {
+        return Ok(None);
+    };
+    // Reached only once `rev-parse` has answered for this object, so an empty string here is
+    // the genuine no-subject-line commit the block renders as such.
+    let subject = git_rev_parse(repo_root, &["log", "-1", "--format=%s", &sha]).unwrap_or_default();
+    Ok(Some(AmendTarget { short, subject }))
 }
 
 /// One row of [`Composition::also_open`] — a task that was live before this call.
@@ -2907,7 +2941,11 @@ fn compose_task_workflow(
         // A re-compose door (resume / sub-agent re-entry) already names its task: the
         // reader is *in* the work, not looking for it.
         also_open: Vec::new(),
-        amend: None,
+        // **But the amend target it does carry** (the F-10 review's MEDIUM-2), read from the
+        // area's own marker at the one shared re-compose spine — so both doors that re-compose
+        // a task (`jigc start --task`, `jigc workflow <W> --task`) name the commit being
+        // repaired, exactly as the mint does, and neither can drift from the other.
+        amend: amend_target_of(repo_root, task_dir)?,
     })
 }
 

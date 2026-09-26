@@ -11,10 +11,10 @@ lossy (a body paragraph shaped like `Key: value` is indistinguishable from a
 trailer). Say what the commit does, from the change itself.
 
 Three shapes at HEAD are not yours to re-author, and jigc cannot tell them apart
-from an ordinary task commit — read HEAD's subject line in the ack above and stop
-if it is one of them: a milestone boundary's structural message (jigc composes it
-from the sub-tasks), a record-only bookkeeping commit jigc wrote for itself, and a
-commit jigc did not make at all.
+from an ordinary task commit — check the subject line of the commit this task
+pinned (`git log -1 --format=%s`) and stop if it is one of them: a milestone
+boundary's structural message (jigc composes it from the sub-tasks), a record-only
+bookkeeping commit jigc wrote for itself, and a commit jigc did not make at all.
 
 Set the required Conventional-Commits type — your editorial call on what the
 commit at HEAD does. The subject renders as `<type>(<scope>): <summary>`, so write
