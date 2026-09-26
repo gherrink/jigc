@@ -221,3 +221,60 @@ warning is exactly that failure, now stated in every fixer brief.
 **`1.0.0-rc.19` is the third stamp**, after the confirmation pass's fixes, not before. **Then axes 2 · 3 ·
 5 · 6 re-driven on rc.19** — 5 for `task diff`'s pinned envelope and the `PATH_ARG_OCCURRENCES` base
 rows, 6 for the spawn line — **and then the 1.0.0 call, which is the human's.**
+
+---
+
+## Addendum 3 (2026-09-27) — the pre-v1 usability batch, F-10, and the fourth stamp
+
+**The rc.19 re-review found zero tier-1 rows on all four axes** ([per-axis-review-rc19/](per-axis-review-rc19/README.md)).
+**The human then asked a different question** — not *is there a tier-1 row* but *is anything left that
+makes jigc unusable by an agent* — and answered it from the 1.x ledger rather than the defect lens:
+**six surface rows** (the hook crying wolf on commits with no rename · orientation silent on posture ·
+the two rename verbs costing every worker 2–3 help reads · `doc show` over a relocated doc routing
+nowhere · `finalize.stage-failed`'s route not copy-runnable · `task finalize`'s displacement printing
+host paths from a linked worktree), landed `1b45707c`…`136a0878` (the hook's inert backstop for the
+placement family was a *census* bug, not a filter; the displacement class was 8 sites, not 3) — and
+**F-10, the one capability the human chose to build before 1.0.0, bending the no-new-capability rule
+once**: the rc.14 trial's only adapter bypass was a worker who finalized with a wrong summary, found no
+jigc path, and rewrote the commit with raw git.
+
+**F-10 was settled before it was built** ([f10-amend-baseline.md](f10-amend-baseline.md), every fact
+driven; [f10-amend-settle.md](f10-amend-settle.md), the design of record). The baseline refused three of
+five shapes on driven facts — nothing persists a link from HEAD to a task id, task ids are re-mintable,
+and **the rendered message cannot be parsed back into a commit doc** (a body paragraph re-classifies as a
+trailer; `implements` is projected nowhere; under `squash: true` there is no doc behind the message at
+all) — and the human chose **(D) re-author, never parse**: `jigc task amend` mints a transient area
+pinned to HEAD with an *empty* commit doc the agent authors through the ordinary verbs; `task finalize`
+takes a second commit model, `git commit --amend -F` with the tree untouched. `git commit --amend` folds
+the whole index in silently (driven), so the arm refuses a non-empty index; a hook-rejected amend leaves
+HEAD byte-identical, so the frame's clause is the cheapest in the registry.
+
+**Built in four tasks** (`3c4f4c7a` · `e346efa9` · `d76f80f6` · `48d1d529`) — **task 2 recovered, not
+authored**: its executor was killed by the weekly API limit between green and commit; classified per the
+harness rule (gate 3958/0 bare, the arm driven end to end) and committed as recovered, then audited row by
+row by its successor, which closed three gaps (the preview lied over a dirty index; `--dry-run` said
+*would commit* on an arm that adds nothing; `amended` was declared nowhere). Registries: `VERB_KINDS` /
+`BEHALF_DOORS` 47→48 · `MINT_DOORS` 5→6 · `TASK_AREA_FILES` 14→15 · `COMMITTING_DOORS` 10→11 ·
+`ERROR_CODE_REGISTRY` 11→12 · `ENVELOPE_ARMS` 64→66 · dev workflows 17→18 · goldens 634→**646**.
+
+**The independent review** ([audit/f10-code-review.md](audit/f10-code-review.md)) — **HOLDS WITH FINDINGS:
+1 HIGH · 3 MEDIUM · 4 LOW**, all fixed (`4214804b`…`e87835ea`), gate **3978 / 0**, 646 goldens unmoved
+through every fix. **The HIGH was the class that blocked the call after RC-m50**, inside the new
+capability: an amend task that staged a *managed* doc had it **promoted into the worktree while nothing
+was committed**, then baselined — `HEAD:VISION.md` old, `doc show` serving the uncommitted bytes,
+`jigc validate` **exit 0**. Closed at the write seam (the only caller of `copy_in`, before the copy —
+the *re-promoted at finalize* ack was a lie the instant it printed) and at the finalize arm as a
+backstop, keyed on the promote predicate extracted to one home; driving the eight-leaf class found a cell
+the review's three had not reached — the *already-refused* re-slug `rename` staged the doc before
+refusing. The MEDIUMs: the `amending:` block dropped on resume while the step said *the ack above*;
+the left-out advisory instructing `git add` on an arm that then refuses it; two new contracts off the
+ambush registry — whose declarer model turned out to be the finding one layer down (a third disposition
+minted, the set split into the two questions it was answering, and two fences that had read the set by
+format and by count).
+
+**Bounds carried:** `amend-message.yaml`'s step body is pinned by no golden (the harness composes
+workflows through the two doors that refuse it); orientation's per-task coverage line keeps the ordinary
+spelling on an amend task (a pinned envelope; one predicate, one authority); `--carry-staged` is inert on
+the amend arm and says so rather than refusing; `git commit --amend` resets the committer identity, now
+said on the ack. **`1.0.0-rc.20` is the fourth stamp**, after these fixes. **Then axes 2 · 3 · 5
+re-driven on rc.20 — a new committing arm — and then the 1.0.0 call, which is the human's.**
