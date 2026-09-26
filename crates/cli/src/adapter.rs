@@ -1171,7 +1171,19 @@ const BOOTSTRAP_READ_RULE: &str = "Managed docs are exactly the `jigc doc list` 
 /// lacon trial B2, 2026-07-17): a workflow pulls the slices *it declares*, and
 /// a quick fix legitimately declares none — the unscoped "exactly the … slices
 /// your task needs" read as broken on the zero-slice tier.
-const BOOTSTRAP_FRAMING: &str = "`jigc` is a context compiler: it assembles the workflow steps for your task plus the doc slices that workflow declares (a quick fix may declare none), and owns every structural write — placement, cross-references, commits. You author only the prose.";
+///
+/// **The `commits` claim is made true rather than softened (F-10).** *"owns every
+/// structural write — … commits"* was false at exactly one point: a commit that
+/// had already landed with a wrong message. The rc.14 trial's **only** adapter
+/// bypass was a worker who hit that point, found no jigc path, and reached for
+/// raw `git commit --amend` — typing `<type>(<scope>): <summary>` by hand, the
+/// one structural operation this sentence promises jigc owns. So the clause names
+/// the door rather than qualifying the claim, and it names it *here* — six trials
+/// running, the verified lens is that the model is reliable at push and
+/// unreliable at pull, so a capability no preloaded surface names is a capability
+/// nobody finds. It is one clause on the paragraph that already makes the claim,
+/// not a seventh paragraph: the floor is short on purpose.
+const BOOTSTRAP_FRAMING: &str = "`jigc` is a context compiler: it assembles the workflow steps for your task plus the doc slices that workflow declares (a quick fix may declare none), and owns every structural write — placement, cross-references, commits. You author only the prose. That includes a commit that has already landed: repair a wrong commit message with `jigc task amend`, which re-authors it as a commit doc jigc renders — never with `git commit --amend` by hand.";
 
 /// The output contract stated beneath the framing (M36, narrowed 2026-07-06 —
 /// RC greenfield trial A4): the behavioral core — stop on non-zero, follow the
@@ -1701,7 +1713,7 @@ mod tests {
 
         Managed docs are exactly the `jigc doc list` set — the committed set; read one with `jigc doc show <doc>`. A doc staged in your open task is read with `jigc doc show <doc> --task <id>`, not from the file; drop --task to read the committed copy. An `unregistered` row is not yet managed — readable directly until adopted. Everything else — source, tests, any file not in that set — you read freely. That freedom is for *project* source; to learn how `jigc` itself behaves, ask the installed binary (`jigc --help`, `jigc describe`, `jigc doc schema`), never a checked-out jigc or pack source tree — it need not match the binary you run.
 
-        `jigc` is a context compiler: it assembles the workflow steps for your task plus the doc slices that workflow declares (a quick fix may declare none), and owns every structural write — placement, cross-references, commits. You author only the prose.
+        `jigc` is a context compiler: it assembles the workflow steps for your task plus the doc slices that workflow declares (a quick fix may declare none), and owns every structural write — placement, cross-references, commits. You author only the prose. That includes a commit that has already landed: repair a wrong commit message with `jigc task amend`, which re-authors it as a commit doc jigc renders — never with `git commit --amend` by hand.
 
         Every path jigc prints — an `at:` locus, a `jigc doc list` row, a path inside a finding's message — is relative to the **repository root**, not to your current directory. Two kinds of printed path are absolute instead, and both are on purpose. First, bytes jigc prints for you to **run**: a backticked command carries absolute paths wherever a relative one would resolve against your directory rather than the repository's — a `git` command leads with `git -C <the repository's absolute path>`, and the `cd` of a fan-out `Spawn:` line names the worktree outright — so you can paste it from wherever you are standing and it acts on what the finding is about. Second, a path naming a checkout that is not the repository root, such as the linked worktree a commit landed in: nothing repo-relative reaches it. You may run `jigc` from any directory inside the repository, including a fan-out worktree; it finds the project itself. So resolve a printed path against the repository root, and pass your own file arguments the way you would to any other command — relative to where you are.
 

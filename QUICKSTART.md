@@ -248,6 +248,26 @@ those blocking findings instead of a manifest and takes the refusing exit, so a
 manifest coming back from `--dry-run` is itself the news that nothing this side of
 the commit blocks.
 
+**Landed it with a wrong message? `jigc task amend`.** It mints a task pinned to the
+commit at `HEAD` and provisions an empty `commit` doc, which you author through the
+same `jigc doc` verbs as any other — then `jigc task finalize <id>` renders it and
+rewrites that commit's message with `git commit --amend`, leaving every byte of the
+committed **tree** as it is. So it repairs the *message*, never the *change*: a wrong
+change is a new task. You re-author the message from scratch rather than editing the
+old one — jigc does not read the landed message back into the doc, because a body
+paragraph shaped `Refs: <value>` is indistinguishable from a trailer on the way back,
+and guessing wrong there would corrupt the one thing this verb exists to repair. Two
+things to know before you run it: **the index must be empty**, because
+`git commit --amend` rewrites the commit *from* the index and would otherwise fold
+your staged work into a commit that never carried it (the amend refuses instead — one
+blocking `finalize.amend-index-dirty` per staged path, and there is no flag that
+declares that carry deliberate); and jigc **cannot tell which commit it is** — it
+amends `HEAD`, whatever `HEAD` is — so the mint prints `HEAD`'s current subject line
+before the instructions, and if that subject is a milestone boundary, a bookkeeping
+commit jigc wrote for itself, or a commit jigc did not make, stop. If the commit has
+already been pushed, amending it rewrites shared history; jigc has no reliable way to
+know whether it has, so that is your call, not a gate.
+
 A change staged *before* the task existed refuses to ride the commit — one blocking
 `finalize.carried-staged` per carried path — unless you declare it with
 `--carry-staged`. That is the narrower of two members of one rule: **a door
