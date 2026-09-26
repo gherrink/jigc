@@ -187,6 +187,19 @@ pub const GATE_COVERAGE: &[GateCoverage] = &[
         token: "content findings",
     },
     GateCoverage {
+        // **The member is the *index* gate, and which check answers for it depends on the
+        // commit model** (F-10). On the ordinary model it is `finalize.carried-staged` over
+        // the pre-task snapshot, with `--carry-staged` the declaration; on the amend model
+        // (`jigc task amend`, `cli::task::TaskArea::amend_index_findings`) it is
+        // `finalize.amend-index-dirty` over the **whole** index, with no flag that waves it
+        // through, because `git commit --amend` rewrites `HEAD` *from* the index and this
+        // arm's contract is that the committed tree does not move.
+        //
+        // That is why the amend arm costs this table no new member and every enumerating
+        // surface no new clause: both doors preview *the index gate* at the same severity
+        // and the same exit code, which is the whole of what [`Door::Previewed`] promises
+        // and the whole of what those surfaces claim. A second member would put an
+        // amend-only clause in the composed line of every ordinary task.
         id: "carryover",
         door: Door::Previewed(Invocation::PreviewGates),
         tiers: &[Tier::Previewed],

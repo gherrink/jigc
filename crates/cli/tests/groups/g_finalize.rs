@@ -91,6 +91,8 @@ mod rollback_population_registry;
 mod severity_tuning;
 #[path = "../store_version_stamp.rs"]
 mod store_version_stamp;
+#[path = "../task_amend.rs"]
+mod task_amend;
 #[path = "../temp_mint_fence.rs"]
 mod temp_mint_fence;
 #[path = "../unreadable_project_layer.rs"]

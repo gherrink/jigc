@@ -1,0 +1,1088 @@
+//! **`jigc task amend` — the amend commit model, over the settle's refusal table as a set**
+//! (F-10; `completions/artifacts/M53/f10-amend-settle.md`, shape **(D)**: *re-author, never
+//! parse*).
+//!
+//! # The claim this suite is the acceptance of
+//!
+//! *An agent that landed a finalize with a wrong commit message repairs it through jigc,
+//! authoring the new message as a commit doc jigc renders — never by typing
+//! `<type>(<scope>): <summary>` itself — and the repair cannot fold unrelated staged work
+//! into the rewritten commit.*
+//!
+//! # The set it iterates, and why the set is written down here
+//!
+//! [`AMEND_TABLE`] is the settle's **Refusals** table, row for row, each row carrying the
+//! code it answers with, the exit it takes, which of the two `--format json` arms it rides,
+//! and a closure that builds its own fixture and drives the door. The sweep is
+//! `rows × {agent text, --format json}`.
+//!
+//! **It is a manufactured set and says so.** No code-side registry enumerates *the ways an
+//! amend can be refused*: three of the rows are `GitState` members (a registry), one is a
+//! shape of `HEAD` (a property of a commit), one is a property of the index, one of a hook's
+//! exit code and one of a caller's typing. A registry that spanned them would be a registry
+//! of *this feature's refusals*, which is this table — so the honest form is the table, said
+//! to be manufactured, rather than a derivation dressed up as one
+//! (`implementation/pinning.md` §4; the M49 flow-50 arm-1 precedent).
+//!
+//! What **is** read from the code rather than restated: each row's `--format json` arm is
+//! cross-checked against [`cli::render::ENVELOPE_OWED_CODES`], so a row cannot *declare*
+//! the flattened arm for a code the contract obliges to the findings envelope — the
+//! classification is the binary's, and the row only says which one it expects to see.
+//!
+//! # And the refusals act on nothing
+//!
+//! Every refusing row asserts, after both surfaces have answered, that `HEAD` is the commit
+//! it was and that `HEAD`'s **tree** is the tree it was. The driven hazard the arm exists to
+//! close is `git commit --amend` folding the index in silently at exit 0, so a cell that
+//! only checked the exit code would pass over exactly the damage.
+
+use std::path::Path;
+use std::process::Output;
+
+use crate::support::git_state::{self, GitState, GitStateRepo};
+use crate::support::trial_corpus::{State, TrialCorpus};
+
+use cli::render::ENVELOPE_OWED_CODES;
+use serde_json::Value;
+
+// ───────────────────────────── the table ─────────────────────────────
+
+/// Which `--format json` arm a row's refusal rides.
+///
+/// The two are the shapes `design/command-output-contract.md` → *The two reject arms*
+/// declares, and which one a door takes is not this suite's choice: a code the contract
+/// lists under a target form is obliged to the envelope through
+/// [`ENVELOPE_OWED_CODES`], and every non-member is flattened. The row states its
+/// expectation and [`arm_matches_the_registry`] checks the expectation against that set.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Arm {
+    /// The findings envelope — `{"findings": [{…, "key": {"code", "target"}}]}`.
+    Envelope,
+    /// The flattened `{"error": "<the whole finding rendering>"}`.
+    Flattened,
+}
+
+/// The door a row is adjudicated at — the settle's two.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Door {
+    /// `jigc task amend` — the mint door. `BEHALF_DOORS`' `Neither`: it commits nothing.
+    Mint,
+    /// `jigc task finalize <id>` over an amend task — the second commit model.
+    Finalize,
+}
+
+impl Door {
+    fn label(self) -> &'static str {
+        match self {
+            Door::Mint => "jigc task amend",
+            Door::Finalize => "jigc task finalize (amend arm)",
+        }
+    }
+}
+
+/// Where a row's **identity** is readable on the agent-text surface.
+///
+/// The distinction is shipped, not incidental, and a sweep that assumed the first shape
+/// everywhere would report the second as a defect.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum TextIdentity {
+    /// The house finding line — `blocking · <code> — <message>`, then the locus and route.
+    Named,
+    /// The **survivable hook-rejection frame**: git's own stderr verbatim, this door's
+    /// state-truth clause, and the exact line to re-run. The frame deliberately prints no
+    /// dotted code — a reader whose commit a hook just refused needs the hook's complaint
+    /// and the way back, not jigc's log vocabulary — so the identity is readable on the
+    /// `--format json` finding and in the invocation log, which is where
+    /// `crates/cli/tests/commit_rejected_axis.rs` reads it per `COMMITTING_DOORS` row
+    /// (`design/surface-contract.md` → The mirror is enforced: that log read is load-bearing
+    /// because `Outcome::error`'s membership check is a `debug_assert!`).
+    Framed,
+}
+
+/// One row of the settle's refusal table.
+struct Row {
+    /// The settle row, as its table names it.
+    id: &'static str,
+    door: Door,
+    /// The finding code the row's answer carries.
+    code: &'static str,
+    /// The exit the row's answer takes.
+    exit: i32,
+    arm: Arm,
+    /// Where the code is readable on the text surface.
+    text: TextIdentity,
+    /// A fragment **only this row's producer emits** — the discriminator, and the field this
+    /// table would be worthless without.
+    ///
+    /// Driven while writing this suite: with the amend arm's moved-`HEAD` guard disabled the
+    /// `finalize.base-mismatch` row went **green**, because the engine's *ordinary* base-pin
+    /// constructor answers on the same code at the same exit — so the row proved the code
+    /// existed and nothing about which producer raised it, the masking shape this repo's
+    /// dev-workflow names. Every row now carries the words its own producer chose, so a
+    /// sibling constructor cannot satisfy it.
+    says: &'static str,
+    /// Build this row's fixture and drive its door on **both** surfaces, then assert the
+    /// refusal moved nothing. One fixture per row rather than one per surface: a refusal
+    /// that mutates nothing can be asked twice, and a row whose first surface *did* mutate
+    /// reddens on its own no-movement assertion.
+    answer: fn() -> Answered,
+}
+
+/// What one row's door said, on both surfaces.
+struct Answered {
+    text: Driven,
+    json: Driven,
+}
+
+/// One invocation's exit and streams, as a refusal is judged on them.
+struct Driven {
+    exit: i32,
+    stdout: String,
+    stderr: String,
+}
+
+impl Driven {
+    /// Both streams, for a `contains` assertion: a refusal's rendering rides **stderr** and
+    /// its envelope rides **stdout**, and which one a row uses is not what these rows are
+    /// about (`design/command-output-contract.md` → Stream discipline has its own suite).
+    fn both(&self) -> String {
+        format!("{}{}", self.stdout, self.stderr)
+    }
+}
+
+/// **The settle's Refusals table.** Order is the settle's.
+const AMEND_TABLE: &[Row] = &[
+    // | repository posture (any `InProgress` member, detached, unborn) | transfers unchanged
+    // at both doors | — driven at the door that acts: `jigc task amend` is `Neither` and
+    // mints under every posture exactly as `jigc start` does, while the finalize arm is
+    // commit-on-behalf and refuses. Four `GitState` members, chosen to span the family's
+    // three detection shapes (a marker file · a marker directory · a detached HEAD) rather
+    // than to re-run `posture_door_axis`, which sweeps all seventeen against every acting
+    // door and now includes this arm through `BEHALF_DOORS`.
+    Row {
+        id: "posture / merge",
+        door: Door::Finalize,
+        code: "repo.operation-in-progress",
+        exit: 1,
+        arm: Arm::Flattened,
+        text: TextIdentity::Named,
+        says: "a merge is in progress",
+        answer: || posture_at_finalize(GitState::Merge),
+    },
+    Row {
+        id: "posture / bisect",
+        door: Door::Finalize,
+        code: "repo.operation-in-progress",
+        exit: 1,
+        arm: Arm::Flattened,
+        text: TextIdentity::Named,
+        says: "a bisect is in progress",
+        answer: || posture_at_finalize(GitState::Bisect),
+    },
+    Row {
+        id: "posture / uncommitted-pick",
+        door: Door::Finalize,
+        code: "repo.operation-in-progress",
+        exit: 1,
+        arm: Arm::Flattened,
+        text: TextIdentity::Named,
+        says: "an uncommitted cherry-pick is in progress",
+        answer: || posture_at_finalize(GitState::UncommittedPick),
+    },
+    Row {
+        id: "posture / detached",
+        door: Door::Finalize,
+        code: "repo.head-detached",
+        exit: 1,
+        arm: Arm::Flattened,
+        text: TextIdentity::Named,
+        says: "HEAD is detached",
+        answer: || posture_at_finalize(GitState::Detached),
+    },
+    // | HEAD is a **root** commit or a **merge** commit | refuse at `task amend`:
+    // `amend.head-shape` | — plus the unborn cell, which the shipped guard answers on the
+    // same code because `--amend` needs a commit to rewrite before it needs a single parent.
+    Row {
+        id: "amend.head-shape / root",
+        door: Door::Mint,
+        code: "amend.head-shape",
+        exit: 1,
+        arm: Arm::Flattened,
+        text: TextIdentity::Named,
+        says: "a root commit — it has no parent",
+        answer: root_head_at_mint,
+    },
+    Row {
+        id: "amend.head-shape / merge",
+        door: Door::Mint,
+        code: "amend.head-shape",
+        exit: 1,
+        arm: Arm::Flattened,
+        text: TextIdentity::Named,
+        says: "a merge commit — it has 2 parents",
+        answer: merge_head_at_mint,
+    },
+    Row {
+        id: "amend.head-shape / unborn",
+        door: Door::Mint,
+        code: "amend.head-shape",
+        exit: 1,
+        arm: Arm::Flattened,
+        text: TextIdentity::Named,
+        says: "this repository has no commit yet",
+        answer: unborn_head_at_mint,
+    },
+    // | **a non-empty index at finalize** | refuse, blocking: `finalize.amend-index-dirty` |
+    // — the data-loss cell. Its own test below asserts the tree of the commit it was about
+    // to rewrite, and that `jigc task validate` previews it.
+    Row {
+        id: "finalize.amend-index-dirty",
+        door: Door::Finalize,
+        code: "finalize.amend-index-dirty",
+        exit: 3,
+        arm: Arm::Envelope,
+        text: TextIdentity::Named,
+        says: "an amend rewrites `HEAD` from the index",
+        answer: dirty_index_at_finalize,
+    },
+    // | **HEAD moved between `amend` and `finalize`** | refuse: `finalize.base-mismatch` |
+    Row {
+        id: "finalize.base-mismatch",
+        door: Door::Finalize,
+        code: "finalize.base-mismatch",
+        exit: 3,
+        arm: Arm::Envelope,
+        text: TextIdentity::Named,
+        says: "no longer the commit this amend was minted against",
+        answer: moved_head_at_finalize,
+    },
+    // The survivable hook-rejection frame's own identity for this arm. `HEAD` byte-identical
+    // is the frame's state-truth clause here, and the no-movement assertion every row makes
+    // is exactly that claim — which is why this arm has the cheapest clause in the registry.
+    Row {
+        id: "finalize.amend-rejected",
+        door: Door::Finalize,
+        code: "finalize.amend-rejected",
+        exit: 1,
+        arm: Arm::Envelope,
+        text: TextIdentity::Framed,
+        says: "`HEAD` is unchanged",
+        answer: rejecting_hook_at_finalize,
+    },
+    // Not a settle row, and here because the settle's shape (D) hands this door a *prose*
+    // intent: the id slugs from what the caller typed, so a title that slugs to nothing has
+    // to refuse rather than fall back to `amend-<sha7>` and name the task after something
+    // else (the degenerate-title axis; `3c4f4c7a`'s third fix).
+    Row {
+        id: "write.unslugable-title",
+        door: Door::Mint,
+        code: "write.unslugable-title",
+        exit: 1,
+        arm: Arm::Flattened,
+        text: TextIdentity::Named,
+        says: "this title slugs to nothing",
+        answer: unslugable_intent_at_mint,
+    },
+];
+
+// ───────────────────────────── the sweep ─────────────────────────────
+
+/// **The fence.** Every row of the settle's refusal table answers with its own code, at its
+/// own exit, on both surfaces — and moves nothing.
+#[test]
+fn every_refusal_row_answers_with_its_code_on_both_surfaces() {
+    for row in AMEND_TABLE {
+        let door = row.door.label();
+        let answered = (row.answer)();
+        for (label, driven) in [
+            ("agent text", &answered.text),
+            ("--format json", &answered.json),
+        ] {
+            assert_eq!(
+                driven.exit, row.exit,
+                "[{}] `{door}` on {label} must exit {}; got {}\n--- stdout ---\n{}\n\
+                 --- stderr ---\n{}",
+                row.id, row.exit, driven.exit, driven.stdout, driven.stderr,
+            );
+        }
+        // The identity: always on the `--format json` arm, and on the text arm only where
+        // the row's rendering is the house finding line rather than the survivable frame.
+        assert!(
+            answered.json.both().contains(row.code),
+            "[{}] `{door}` on --format json must name `{}`\n--- stdout ---\n{}\n\
+             --- stderr ---\n{}",
+            row.id,
+            row.code,
+            answered.json.stdout,
+            answered.json.stderr,
+        );
+        // The discriminator: the words this row's own producer chose, on both surfaces.
+        // Without it a row keyed on `(code, exit)` alone is satisfied by any sibling
+        // constructor of the same code — driven, and the reason this field exists.
+        let printed = answered.text.both();
+        for (label, said) in [
+            ("agent text", &printed),
+            ("--format json", &answered.json.both()),
+        ] {
+            assert!(
+                said.contains(row.says),
+                "[{}] `{door}` on {label} must carry this row's OWN producer's words \
+                 (`{}`) — the code alone does not tell one constructor from another:\n{said}",
+                row.id,
+                row.says,
+            );
+        }
+        match row.text {
+            TextIdentity::Named => assert!(
+                printed.contains(row.code),
+                "[{}] `{door}` on agent text must name `{}`:\n{printed}",
+                row.id,
+                row.code,
+            ),
+            TextIdentity::Framed => assert!(
+                !printed.contains(row.code),
+                "[{}] `{door}`'s text surface is the survivable frame, which states the \
+                 hook's complaint and the way back and leaves the log vocabulary to the log \
+                 — a dotted code appearing here means the frame stopped being the rendering \
+                 and this row's disposition needs re-deciding, not relaxing:\n{printed}",
+                row.id,
+            ),
+        }
+        assert_arm(row, &answered.json);
+    }
+}
+
+/// **A mint-door refusal takes the operational exit, never the gate's.** `jigc task amend`
+/// adjudicates before anything is authored, so there is no validation report for it to gate
+/// — exit **3** from that door would promise a driver a report it never emitted. The gate's
+/// exit belongs to the finalize arm, where a report exists.
+#[test]
+fn a_mint_door_refusal_takes_the_operational_exit() {
+    for row in AMEND_TABLE {
+        if row.door == Door::Mint {
+            assert_eq!(
+                row.exit,
+                1,
+                "[{}] `{}` refuses before it mints, so it has no report to gate on",
+                row.id,
+                row.door.label(),
+            );
+        }
+    }
+}
+
+/// The `--format json` arm a row declares must be the one the code's own obligation gives
+/// it: a member of [`ENVELOPE_OWED_CODES`] rides the findings envelope wherever it is
+/// raised, and every non-member is flattened. So a row cannot declare its way out of the
+/// contract's `(code, target)` promise, and this suite cannot pin a flattening the contract
+/// forbids.
+#[test]
+fn arm_matches_the_registry() {
+    for row in AMEND_TABLE {
+        if ENVELOPE_OWED_CODES.contains(&row.code) {
+            assert_eq!(
+                row.arm,
+                Arm::Envelope,
+                "[{}] `{}` is an `ENVELOPE_OWED_CODES` member, so its refusal is obliged to \
+                 the findings envelope whichever constructor the door reached for",
+                row.id,
+                row.code,
+            );
+        }
+    }
+}
+
+/// The one JSON document a refusal emitted, from whichever stream carries it.
+///
+/// **Which stream is the refusal's kind, not the row's**, and the suite asks rather than
+/// assumes: a *blocked* door renders its validation report on **stdout** (it is the verb's
+/// answer), while a *reject* — the door acted and git refused — rides **stderr**, the
+/// envelope beside the agent-text frame (`design/command-output-contract.md` → Stream
+/// discipline, whose own suite pins the rule). What this asserts is that exactly one of the
+/// two carries exactly one document.
+fn one_document(row: &Row, json: &Driven) -> Value {
+    let stream = if json.stdout.trim().is_empty() {
+        &json.stderr
+    } else {
+        &json.stdout
+    };
+    serde_json::from_str(stream.trim()).unwrap_or_else(|err| {
+        panic!(
+            "[{}] the `--format json` arm must emit exactly one json document ({err})\n\
+             --- stdout ---\n{}\n--- stderr ---\n{}",
+            row.id, json.stdout, json.stderr,
+        )
+    })
+}
+
+/// Assert a row's `--format json` shape, per its declared arm.
+fn assert_arm(row: &Row, json: &Driven) {
+    let doc = one_document(row, json);
+    match row.arm {
+        Arm::Envelope => {
+            let findings = doc["findings"].as_array().unwrap_or_else(|| {
+                panic!("[{}] the envelope carries `findings`:\n{doc:#}", row.id)
+            });
+            assert!(
+                findings.iter().any(|finding| {
+                    finding["key"]["code"] == row.code && !finding["key"]["target"].is_null()
+                }),
+                "[{}] one finding must carry the row's code on a NON-NULL `(code, target)` \
+                 key — a key that cannot discriminate is what the contract's sweep closed:\n{doc:#}",
+                row.id,
+            );
+        }
+        Arm::Flattened => {
+            let error = doc["error"].as_str().unwrap_or_else(|| {
+                panic!("[{}] the flattened arm carries `error`:\n{doc:#}", row.id)
+            });
+            assert!(
+                error.contains(row.code),
+                "[{}] the flattened `error` string must carry the code and its route — that \
+                 is the whole of what a driver gets here:\n{error}",
+                row.id,
+            );
+        }
+    }
+}
+
+// ───────────────────────── the rows' fixtures ─────────────────────────
+
+/// `jigc` against a corpus, on both surfaces, over one fixture.
+fn both_formats(run: impl Fn(&[&str]) -> Output) -> Answered {
+    Answered {
+        text: driven(run(&[])),
+        json: driven(run(&["--format", "json"])),
+    }
+}
+
+fn driven(out: Output) -> Driven {
+    Driven {
+        exit: out.status.code().unwrap_or(-1),
+        stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+    }
+}
+
+/// The commit at `HEAD` and the tree it carries — the pair every refusing row asserts is
+/// unmoved. The **tree** is the load-bearing half: the hazard is `git commit --amend`
+/// folding the index in, which moves the tree at exit 0.
+fn head_of(corpus: &TrialCorpus) -> (String, String) {
+    (
+        corpus.git(&["rev-parse", "HEAD"]),
+        corpus.git(&["rev-parse", "HEAD^{tree}"]),
+    )
+}
+
+fn assert_unmoved(corpus: &TrialCorpus, before: &(String, String), row: &str) {
+    let after = head_of(corpus);
+    assert_eq!(
+        &after, before,
+        "[{row}] the refusal must leave `HEAD` and its TREE exactly as they were",
+    );
+}
+
+/// Mint an amend task and return the id **the binary printed**, read off the composed
+/// `--format json` envelope rather than re-slugged in test code.
+fn mint_amend(corpus: &TrialCorpus, intent: &str) -> String {
+    let stdout = corpus.jigc_ok(&["task", "amend", intent, "--format", "json"]);
+    let doc: Value = serde_json::from_str(&stdout).expect("the compose envelope is one document");
+    doc["task"]
+        .as_str()
+        .expect("the composed envelope names the minted task")
+        .to_owned()
+}
+
+/// Author the provisioned `commit` doc to the point its finalize reaches the commit phase.
+fn author_message(corpus: &TrialCorpus, task: &str, summary: &str) {
+    corpus.set_field(&format!("commit:{task}#type"), task, "chore");
+    corpus.set_slot(&format!("commit:{task}#summary"), task, summary);
+}
+
+/// A fresh corpus with an amend task minted and its message authored — the shape four rows
+/// and every control below share.
+fn amend_ready(intent: &str, summary: &str) -> (TrialCorpus, String) {
+    let corpus = TrialCorpus::build(State::Fresh);
+    let task = mint_amend(&corpus, intent);
+    author_message(&corpus, &task, summary);
+    (corpus, task)
+}
+
+/// **Posture at the finalize arm.** The amend is minted and authored *first*, on a clean
+/// repository — the posture is entered last, which is the overlay's own rule (it refuses a
+/// dirty worktree, and a door that has stopped answering cannot be built against).
+///
+/// The mint is asserted to have **succeeded** under no posture and then the state entered:
+/// `jigc task amend` is `BEHALF_DOORS`' `Neither`, so it adjudicates no member of the family
+/// — the settle's *"transfers unchanged at both doors"*, which for a mint door means the
+/// shipped rule that a non-acting door does not refuse a repository posture.
+fn posture_at_finalize(state: GitState) -> Answered {
+    let (corpus, task) = amend_ready("repair the install message", "the authored subject");
+    git_state::overlay(&corpus, state).expect("the posture overlay enters last, over a clean tree");
+    let before = head_of(&corpus);
+    let answered = both_formats(|format| {
+        let mut argv = vec!["task", "finalize", task.as_str()];
+        argv.extend_from_slice(format);
+        corpus.jigc(&argv)
+    });
+    assert_unmoved(&corpus, &before, state.name());
+    // The refusal concluded nothing: the markers git wrote are still the ones it wrote.
+    git_state::assert_state(&corpus.repo(), &corpus.home(), state);
+    answered
+}
+
+/// **A root commit at the mint door.** `jigc setup` *births* `HEAD` on an unborn
+/// repository, so a repo that has never been committed to and is then set up has exactly
+/// one commit — and that commit is the root. It is refused although `git commit --amend`
+/// would take it: the route hands the act back with the command that performs it.
+fn root_head_at_mint() -> Answered {
+    let fixture = GitStateRepo::build(GitState::Unborn);
+    let repo = fixture.repo();
+    let home = fixture.home();
+    let setup = run_jigc(&repo, &home, &["setup"]);
+    assert!(
+        setup.status.success(),
+        "`jigc setup` births HEAD on an unborn repository:\n{}",
+        String::from_utf8_lossy(&setup.stderr),
+    );
+    assert_eq!(
+        git(&repo, &["rev-list", "--count", "HEAD"]),
+        "1",
+        "the fixture's whole point is that HEAD is the root commit",
+    );
+    both_formats(|format| {
+        let mut argv = vec!["task", "amend", "repair the first commit"];
+        argv.extend_from_slice(format);
+        run_jigc(&repo, &home, &argv)
+    })
+}
+
+/// **A merge commit at the mint door.** Built by driving a real `git merge --no-ff`, so the
+/// two-parent `HEAD` is git's, not a fixture's belief about one.
+fn merge_head_at_mint() -> Answered {
+    let corpus = TrialCorpus::build(State::Fresh);
+    let trunk = corpus.git(&["rev-parse", "--abbrev-ref", "HEAD"]);
+    corpus.git(&["checkout", "-b", "side"]);
+    std::fs::write(corpus.repo().join("side.txt"), "side\n").expect("write the side file");
+    corpus.git(&["add", "side.txt"]);
+    corpus.git(&["commit", "--no-verify", "-m", "the side commit"]);
+    corpus.git(&["checkout", &trunk]);
+    std::fs::write(corpus.repo().join("trunk.txt"), "trunk\n").expect("write the trunk file");
+    corpus.git(&["add", "trunk.txt"]);
+    corpus.git(&["commit", "--no-verify", "-m", "the trunk commit"]);
+    corpus.git(&[
+        "merge",
+        "--no-ff",
+        "--no-verify",
+        "-m",
+        "a merge commit",
+        "side",
+    ]);
+    assert_eq!(
+        corpus
+            .git(&["rev-list", "--parents", "-1", "HEAD"])
+            .split_whitespace()
+            .count(),
+        3,
+        "the fixture's whole point is a two-parent HEAD (the sha plus its two parents)",
+    );
+    let before = head_of(&corpus);
+    let answered = both_formats(|format| {
+        let mut argv = vec!["task", "amend", "repair the merge message"];
+        argv.extend_from_slice(format);
+        corpus.jigc(&argv)
+    });
+    assert_unmoved(&corpus, &before, "amend.head-shape / merge");
+    assert!(
+        !corpus
+            .repo()
+            .join(".jigc/tasks")
+            .join("repair-the-merge-message")
+            .exists(),
+        "the shape guard is adjudicated BEFORE anything mints — a refused amend strands no \
+         task directory",
+    );
+    answered
+}
+
+/// **An unborn `HEAD` at the mint door.** The only shape it can take is a repository that
+/// has never been set up, because setup itself births `HEAD` — so the fixture carries a
+/// hand-made project cascade layer and no install.
+fn unborn_head_at_mint() -> Answered {
+    let fixture = GitStateRepo::build(GitState::Unborn);
+    let repo = fixture.repo();
+    let home = fixture.home();
+    both_formats(|format| {
+        let mut argv = vec!["task", "amend", "repair a commit that does not exist"];
+        argv.extend_from_slice(format);
+        run_jigc(&repo, &home, &argv)
+    })
+}
+
+/// **A non-empty index at the finalize arm** — the data-loss cell. Driven on the baseline:
+/// `git commit --amend` folds the whole index into the rewritten commit, silently, at exit 0.
+fn dirty_index_at_finalize() -> Answered {
+    let (corpus, task) = amend_ready("repair the install message", "the authored subject");
+    std::fs::write(
+        corpus.repo().join("unrelated.txt"),
+        "not this commit's work\n",
+    )
+    .expect("plant the unrelated file");
+    corpus.git(&["add", "unrelated.txt"]);
+    let before = head_of(&corpus);
+    let answered = both_formats(|format| {
+        let mut argv = vec!["task", "finalize", task.as_str()];
+        argv.extend_from_slice(format);
+        corpus.jigc(&argv)
+    });
+    assert_unmoved(&corpus, &before, "finalize.amend-index-dirty");
+    assert!(
+        answered.text.both().contains("unrelated.txt"),
+        "the refusal names the staged path it is about — one finding per path, keyed at the \
+         path:\n{}",
+        answered.text.both(),
+    );
+    answered
+}
+
+/// **`HEAD` moved between the mint and the finalize.** An ordinary task's base is the
+/// history its work sits *on*; an amend's pin is the commit it *rewrites*, so once `HEAD`
+/// has moved the message would land on a different commit than the one whose subject line
+/// the agent read.
+fn moved_head_at_finalize() -> Answered {
+    let (corpus, task) = amend_ready("repair the install message", "the authored subject");
+    std::fs::write(
+        corpus.repo().join("later.txt"),
+        "a commit that landed after\n",
+    )
+    .expect("write the later file");
+    corpus.git(&["add", "later.txt"]);
+    corpus.git(&["commit", "--no-verify", "-m", "an unrelated commit"]);
+    let before = head_of(&corpus);
+    let answered = both_formats(|format| {
+        let mut argv = vec!["task", "finalize", task.as_str()];
+        argv.extend_from_slice(format);
+        corpus.jigc(&argv)
+    });
+    assert_unmoved(&corpus, &before, "finalize.base-mismatch");
+    answered
+}
+
+/// **A rejecting `pre-commit` hook at the finalize arm.** The frame's state-truth clause
+/// here is *`HEAD` is unchanged*, and it is the cheapest in the registry because
+/// `git commit --amend` is atomic with respect to `HEAD`: nothing was promoted, nothing was
+/// staged, and the commit is byte-identical after the refusal.
+fn rejecting_hook_at_finalize() -> Answered {
+    let (corpus, task) = amend_ready("repair the install message", "the authored subject");
+    install_rejecting_hook(&corpus.repo());
+    let before = head_of(&corpus);
+    let answered = both_formats(|format| {
+        let mut argv = vec!["task", "finalize", task.as_str()];
+        argv.extend_from_slice(format);
+        corpus.jigc(&argv)
+    });
+    assert_unmoved(&corpus, &before, "finalize.amend-rejected");
+    let text = answered.text.both();
+    assert!(
+        text.contains("`HEAD` is unchanged"),
+        "the frame states THIS arm's truth, not the ordinary arm's:\n{text}",
+    );
+    assert!(
+        text.contains(&format!("jigc task finalize {task}")),
+        "the frame carries the re-run line, verbatim:\n{text}",
+    );
+    answered
+}
+
+/// **A title that slugs to nothing.** The id is slugged from the caller's own words, so a
+/// title carrying no ASCII letter or digit cannot name a task — and must not quietly become
+/// `amend-<sha7>`, which would name it after something the caller never typed.
+fn unslugable_intent_at_mint() -> Answered {
+    let corpus = TrialCorpus::build(State::Fresh);
+    let before = head_of(&corpus);
+    let answered = both_formats(|format| {
+        let mut argv = vec!["task", "amend", "日本語のみ"];
+        argv.extend_from_slice(format);
+        corpus.jigc(&argv)
+    });
+    assert_unmoved(&corpus, &before, "write.unslugable-title");
+    answered
+}
+
+// ───────────────────────── the happy path ─────────────────────────
+
+/// **The claim's positive half.** The amend lands: a new sha, the superseded one on
+/// `committed.amended`, the tree byte-identical, the message **rendered from the doc** —
+/// trailer item included — and the working area gone.
+#[test]
+fn the_amend_lands_a_new_message_over_an_untouched_tree() {
+    let corpus = TrialCorpus::build(State::Fresh);
+    let task = mint_amend(&corpus, "repair the install commit message");
+    let (superseded, tree) = head_of(&corpus);
+    let short = corpus.git(&["rev-parse", "--short", &superseded]);
+
+    author_message(&corpus, &task, "install the jigc workspace configuration");
+    corpus.set_field(&format!("commit:{task}#scope"), &task, "jigc");
+    // A trailer item, so the landed message is proven to be the DOC's render and not git's
+    // own `--amend --no-edit` carry-over of the message that was there.
+    let item = corpus.add_item(&format!("commit:{task}#trailers"), "Refs", &task);
+    corpus.set_field(&format!("{item}/value"), &task, "F-10");
+
+    let landed = corpus.jigc_ok(&["task", "finalize", &task, "--format", "json"]);
+    let doc: Value = serde_json::from_str(&landed).expect("the landed envelope is one document");
+    let committed = &doc["committed"];
+
+    let (new_sha, new_tree) = head_of(&corpus);
+    assert_ne!(
+        new_sha, superseded,
+        "`git commit --amend` mints a new sha every time — driven even with nothing staged",
+    );
+    assert_eq!(
+        new_tree, tree,
+        "the arm's whole contract: the committed TREE does not move",
+    );
+    assert_eq!(
+        committed["amended"].as_str(),
+        Some(short.as_str()),
+        "`committed.amended` is the superseded commit, abbreviated to the same length \
+         `hash` carries — two shas in one object, one spelling:\n{doc:#}",
+    );
+    assert_eq!(
+        committed["hash"].as_str(),
+        Some(corpus.git(&["rev-parse", "--short", "HEAD"]).as_str()),
+        "`committed.hash` is the commit that now stands:\n{doc:#}",
+    );
+
+    let message = corpus.git(&["log", "-1", "--pretty=format:%B"]);
+    assert!(
+        message.starts_with("chore(jigc): install the jigc workspace configuration"),
+        "the subject is the DOC's render — `<type>(<scope>): <summary>`, composed by the \
+         CLI and never typed by the agent:\n{message}",
+    );
+    assert!(
+        message.contains("Refs: F-10"),
+        "the trailer item the doc carries reaches the message:\n{message}",
+    );
+
+    // The area goes, as every task's does — so a second repair is a fresh mint against the
+    // commit that now stands, never a resumption of this one.
+    assert!(
+        !corpus.repo().join(".jigc/tasks").join(&task).exists(),
+        "the amend task's working area is torn down at its finalize",
+    );
+    let list = corpus.jigc_ok(&["task", "list"]);
+    assert!(
+        list.contains("no active tasks"),
+        "nothing of the amend task survives its landing:\n{list}",
+    );
+}
+
+/// **Amend twice.** Each amend is a fresh mint against the `HEAD` that now stands, and the
+/// commit count never moves: the second rewrite replaces the first's message, it does not
+/// stack a commit on it.
+#[test]
+fn amending_twice_rewrites_the_new_head_and_adds_no_commit() {
+    let corpus = TrialCorpus::build(State::Fresh);
+    let commits = corpus.git(&["rev-list", "--count", "HEAD"]);
+
+    let first = mint_amend(&corpus, "the first repair");
+    author_message(&corpus, &first, "the first re-authoring");
+    corpus.jigc_ok(&["task", "finalize", &first]);
+    let after_first = corpus.git(&["rev-parse", "HEAD"]);
+
+    let second = mint_amend(&corpus, "the second repair");
+    assert_ne!(first, second, "each amend is its own task");
+    author_message(&corpus, &second, "the second re-authoring");
+    let landed = corpus.jigc_ok(&["task", "finalize", &second, "--format", "json"]);
+    let doc: Value = serde_json::from_str(&landed).expect("one document");
+
+    assert_eq!(
+        doc["committed"]["amended"].as_str(),
+        Some(corpus.git(&["rev-parse", "--short", &after_first]).as_str()),
+        "the second amend pins the commit the FIRST one left, not the one before it:\n{doc:#}",
+    );
+    assert_eq!(
+        corpus.git(&["log", "-1", "--pretty=format:%s"]),
+        "chore: the second re-authoring",
+    );
+    assert_eq!(
+        corpus.git(&["rev-list", "--count", "HEAD"]),
+        commits,
+        "a rewrite is not an addition",
+    );
+}
+
+// ───────────────────────────── the controls ─────────────────────────────
+
+/// **The promoted-doc control.** A managed doc committed in `HEAD`'s tree stays valid across
+/// an amend, because the tree is untouched and jigc's file-state baseline is
+/// **content**-keyed: a message-only rewrite is genuinely invisible to it.
+///
+/// This is the control for the settle's *"content amend is not built"* row: the reason a
+/// message-only amend is safe over a promoted doc is exactly the reason a *content* amend
+/// would not be, so the row is a fact about this arm and not a convenience.
+#[test]
+fn an_amend_over_a_promoted_doc_leaves_the_store_valid() {
+    let corpus = TrialCorpus::build(State::CommittedSingletons);
+    let baseline = std::fs::read_to_string(corpus.repo().join(".jigc/state/file-state.json"))
+        .expect("the corpus has a file-state baseline");
+    let before_validate = corpus.jigc(&["validate"]);
+    let tree = corpus.git(&["rev-parse", "HEAD^{tree}"]);
+
+    let task = mint_amend(&corpus, "repair the release message");
+    author_message(&corpus, &task, "record the decision properly");
+    corpus.jigc_ok(&["task", "finalize", &task]);
+
+    assert_eq!(
+        corpus.git(&["rev-parse", "HEAD^{tree}"]),
+        tree,
+        "the committed tree — every promoted doc in it — is byte-identical",
+    );
+    assert_eq!(
+        std::fs::read_to_string(corpus.repo().join(".jigc/state/file-state.json")).ok(),
+        Some(baseline),
+        "the content-keyed baseline cannot see a message-only rewrite, so it does not move",
+    );
+    let after_validate = corpus.jigc(&["validate"]);
+    assert_eq!(
+        after_validate.status.code(),
+        before_validate.status.code(),
+        "the store's verdict is the verdict it had:\n{}",
+        String::from_utf8_lossy(&after_validate.stderr),
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&after_validate.stdout),
+        String::from_utf8_lossy(&before_validate.stdout),
+        "and it says the same thing about the same store",
+    );
+}
+
+/// **The fan-out-worktree control.** A sub-task worktree's `HEAD` is detached at the
+/// milestone base, and the commit arm refuses a detached `HEAD` — so the amend model cannot
+/// land a rewrite into a commit that would belong to no branch. Driven in a **real linked
+/// worktree**, because that is the shape the fan-out produces and `git switch --detach` in
+/// the main checkout is a different repository layout (the `posture / detached` row above
+/// covers that one).
+#[test]
+fn an_amend_inside_a_detached_linked_worktree_refuses_at_the_commit_arm() {
+    let corpus = TrialCorpus::build(State::Fresh);
+    let worktree = corpus.repo().join(".jigc/worktrees/probe");
+    corpus.git(&[
+        "worktree",
+        "add",
+        "--detach",
+        worktree.to_str().expect("utf-8 worktree path"),
+        "HEAD",
+    ]);
+    let head = git(&worktree, &["rev-parse", "HEAD"]);
+    assert_eq!(
+        git(&worktree, &["symbolic-ref", "--quiet", "HEAD"]),
+        "",
+        "the fan-out's worktree HEAD is detached",
+    );
+
+    // The mint is `Neither`, so it composes here — and the pin it writes is the HEAD the
+    // caller is standing on (the C2-09 rule: `task finalize` commits where you stand).
+    let minted = run_jigc_in(
+        &worktree,
+        &corpus.home(),
+        &["task", "amend", "repair it here", "--format", "json"],
+    );
+    assert!(
+        minted.status.success(),
+        "the mint door commits nothing, so it adjudicates no posture:\n{}",
+        String::from_utf8_lossy(&minted.stderr),
+    );
+    let composed: Value = serde_json::from_slice(&minted.stdout).expect("one document");
+    let task = composed["task"]
+        .as_str()
+        .expect("the envelope names the task");
+
+    // **Nothing is authored, deliberately.** The posture family is asked *at the door*,
+    // before the task's content is read at all (`cli::gate_coverage::Invocation`), so this
+    // cell reaches the refusal it is about without first driving a slot write through a
+    // second working directory — and a cell that had to author first could not tell a
+    // posture refusal from a conformance one.
+    let refused = run_jigc_in(&worktree, &corpus.home(), &["task", "finalize", task]);
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&refused.stdout),
+        String::from_utf8_lossy(&refused.stderr),
+    );
+    assert_eq!(refused.status.code(), Some(1), "the posture exit:\n{text}");
+    assert!(
+        text.contains("repo.head-detached"),
+        "the commit arm refuses a detached HEAD:\n{text}",
+    );
+    assert_eq!(
+        git(&worktree, &["rev-parse", "HEAD"]),
+        head,
+        "and it rewrote nothing",
+    );
+}
+
+// ─────────────────── the two gates the arm owes its preview ───────────────────
+
+/// **`jigc task validate` previews the index gate the amend arm's `finalize` enforces** —
+/// the `carryover` member of [`cli::gate_coverage::Tier::Previewed`], whose *check* is the
+/// commit model's: `finalize.carried-staged` on the ordinary one,
+/// `finalize.amend-index-dirty` on the amend model.
+///
+/// Same check, same severity, same exit at all three doors, which is the whole of what
+/// `Door::Previewed` promises — and until F-10's acceptance the preview read **clean** over
+/// a state its own committing door refuses at exit 3, the class M52 Increment 3 closed for
+/// the posture member.
+#[test]
+fn task_validate_previews_the_amend_index_gate_at_the_finalize_exit() {
+    let (corpus, task) = amend_ready("repair the install message", "the authored subject");
+    std::fs::write(
+        corpus.repo().join("unrelated.txt"),
+        "not this commit's work\n",
+    )
+    .expect("plant the unrelated file");
+    corpus.git(&["add", "unrelated.txt"]);
+
+    for (label, argv) in [
+        (
+            "jigc task validate",
+            vec!["task", "validate", task.as_str()],
+        ),
+        (
+            "jigc task finalize --dry-run",
+            vec!["task", "finalize", task.as_str(), "--dry-run"],
+        ),
+        (
+            "jigc task finalize",
+            vec!["task", "finalize", task.as_str()],
+        ),
+    ] {
+        let out = corpus.jigc(&argv);
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr),
+        );
+        assert_eq!(
+            out.status.code(),
+            Some(3),
+            "`{label}` must take the finalize gate's own exit:\n{text}",
+        );
+        assert!(
+            text.contains("finalize.amend-index-dirty"),
+            "`{label}` must raise the arm's index gate:\n{text}",
+        );
+    }
+}
+
+/// **The contrast cell.** An *ordinary* task still previews `finalize.carried-staged` — the
+/// same member, the other check. Without this the fix above could have replaced the
+/// carryover preview rather than discriminated on the commit model, and the sweep of the
+/// amend rows would have been green over it.
+#[test]
+fn an_ordinary_task_still_previews_the_carryover_gate() {
+    let corpus = TrialCorpus::build(State::Fresh);
+    std::fs::write(
+        corpus.repo().join("carried.txt"),
+        "staged before the task existed\n",
+    )
+    .expect("plant the carried file");
+    corpus.git(&["add", "carried.txt"]);
+    let task = corpus.start_workflow("single-task", "an ordinary task");
+    let out = corpus.jigc(&["task", "validate", &task]);
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert!(
+        text.contains("finalize.carried-staged"),
+        "the ordinary commit model's index gate is unchanged:\n{text}",
+    );
+}
+
+/// **The forecast says what the amend would do to the commit graph.** `would commit` is a
+/// law-1 lie on an arm that adds nothing, and the fact a reader needs — *which* commit loses
+/// its message — was on no surface. The assertion runs over the **emitted** line.
+#[test]
+fn the_forecast_names_the_commit_it_would_rewrite() {
+    let corpus = TrialCorpus::build(State::Fresh);
+    let before = corpus.git(&["log", "-1", "--pretty=format:%s"]);
+    let short = corpus.git(&["rev-parse", "--short", "HEAD"]);
+    let task = mint_amend(&corpus, "repair the install message");
+    author_message(&corpus, &task, "the subject it would carry");
+
+    let text = corpus.jigc_ok(&["task", "finalize", &task, "--dry-run"]);
+    assert!(
+        text.contains(&format!(
+            "would rewrite {short} \"{before}\" → \"chore: the subject it would carry\""
+        )),
+        "the forecast names the commit, the message it carries now, and the message it \
+         would carry:\n{text}",
+    );
+    assert!(
+        !text.contains("would commit"),
+        "nothing is added on this arm, so the ordinary headline must not appear:\n{text}",
+    );
+    assert!(
+        text.contains("the commit's tree is unchanged"),
+        "and the forecast states the fact the empty manifest below it would otherwise \
+         leave a reader to infer:\n{text}",
+    );
+
+    // The envelope's `subject` is the message jigc will hand git — one shape across both
+    // commit models, which is why the arm needs no second `ENVELOPE_ARMS` row.
+    let json = corpus.jigc_ok(&["task", "finalize", &task, "--dry-run", "--format", "json"]);
+    let doc: Value = serde_json::from_str(&json).expect("one document");
+    assert_eq!(
+        doc["subject"].as_str(),
+        Some("chore: the subject it would carry"),
+        "the forecast's envelope key is the NEW subject on both models:\n{doc:#}",
+    );
+    assert_eq!(
+        corpus.git(&["log", "-1", "--pretty=format:%s"]),
+        before,
+        "a forecast commits nothing",
+    );
+}
+
+// ───────────────────────────── plumbing ─────────────────────────────
+
+/// A `pre-commit` hook that refuses everything, with its own words on stderr.
+fn install_rejecting_hook(repo: &Path) {
+    let hook = repo.join(".git/hooks/pre-commit");
+    std::fs::create_dir_all(hook.parent().expect("the hooks dir")).expect("mk the hooks dir");
+    std::fs::write(&hook, "#!/bin/sh\necho 'the hook refuses' >&2\nexit 1\n")
+        .expect("write the rejecting hook");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755))
+            .expect("make the hook executable");
+    }
+}
+
+/// `jigc` in a repository this suite built outside a [`TrialCorpus`].
+fn run_jigc(repo: &Path, home: &Path, args: &[&str]) -> Output {
+    run_jigc_in(repo, home, args)
+}
+
+/// `jigc` with an explicit cwd — the worktree control's shape.
+fn run_jigc_in(cwd: &Path, home: &Path, args: &[&str]) -> Output {
+    std::process::Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(args)
+        .current_dir(cwd)
+        .env("HOME", home)
+        .env_remove("JIGC_PACK_DIR")
+        .output()
+        .expect("run jigc")
+}
+
+/// `git` in a directory this suite built outside a [`TrialCorpus`], trimmed.
+fn git(repo: &Path, args: &[&str]) -> String {
+    let out = std::process::Command::new("git")
+        .args(args)
+        .current_dir(repo)
+        .output()
+        .expect("run git");
+    String::from_utf8_lossy(&out.stdout).trim().to_string()
+}

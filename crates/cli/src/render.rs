@@ -2141,13 +2141,20 @@ pub struct Landed {
     ///
     /// It is the one fact the amend arm's ack cannot get from anywhere else once the commit
     /// has landed: `--amend` has already moved `HEAD`, and the superseded sha survives only
-    /// in the reflog. [`hash`](Landed::hash) is the new commit; this is what it replaced.
+    /// in the reflog. [`hash`](Landed::hash) is the new commit; this is what it replaced —
+    /// **abbreviated to `hash`'s own length**, by `git rev-parse --short` over the full sha
+    /// the marker holds, so the two shas in one object read as two shas and not as two
+    /// kinds of thing (F-10; the mint ack already spells this commit `amending: <sha7>`).
     ///
-    /// **Skipped when absent, and the two arms are two `ENVELOPE_ARMS` rows** rather than one
-    /// row with a nullable key. The registry's rule is that an arm is a top-level key *set*,
-    /// so a key that appears on one commit model and not the other is a second arm by
-    /// definition — and declaring it that way is what makes the driven key set equal the
-    /// declared one at both (`format_json_success_axis`'s fourth proof).
+    /// **Skipped when absent, and the two commit models are two `ENVELOPE_ARMS` rows**
+    /// rather than one row with a nullable key. It is worth being exact about *why*, because
+    /// the obvious reason is wrong: this key is **not** top-level — it rides the `committed`
+    /// object, so the two rows declare the identical top-level `ArmShape`, and no shape a
+    /// row can express distinguishes them. What the second row buys is that the amend model
+    /// is **driven** in its own right by `format_json_success_axis`' recipe set, so the
+    /// fourth proof (*driven key set == declared key set*) is taken over a real amend rather
+    /// than inferred from the ordinary arm — which is exactly the gap a nullable key on one
+    /// row would leave.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub amended: Option<String>,
     /// **Where this commit landed, when that is not the checkout jigc's workbench binds
@@ -2571,9 +2578,64 @@ fn code_fence(content: &str) -> String {
 /// finding through the house [`finding_line`] ([`with_carried_findings`]) — the class, not
 /// the one code the review reported — and `jigc task validate` is still the fuller preview,
 /// with its clean line and its routing footer.
+/// **What the `--dry-run` forecast says this finalize would do to the commit graph** —
+/// which is a different sentence per commit model, and one string cannot carry both (F-10).
+///
+/// The ordinary model **adds** a commit; the amend model **rewrites** the one at `HEAD`. A
+/// forecast that said `would commit — <subject>` on the amend arm would be a law-1 lie at
+/// the one door whose whole job is *"tell me what this finalize will do"*: nothing is added,
+/// and the commit the reader is about to lose its message from is not named.
+///
+/// Both variants project the **same** `subject` onto the envelope — the message jigc will
+/// hand git, [`engine::finalize::FinalizePlan::subject`] — so the JSON shape is one shape
+/// across both models and needs no second `ENVELOPE_ARMS` row. The superseded sha and its
+/// current subject are **text-only, declared** (`crates/cli/tests/text_json_parity_axis.rs`
+/// → the `task finalize` census): at forecast time nothing has moved yet, so `HEAD` *is* the
+/// commit being rewritten and any driver reads both facts with `git log -1 HEAD` — the same
+/// reason `jigc task amend`'s own composed arm declares its `amending:` block out. On the
+/// **landed** arm the sha is no longer readable that way, which is exactly why it is a key
+/// there ([`Landed::amended`]).
+#[derive(Clone, Copy)]
+pub enum ForecastSubject<'a> {
+    /// The ordinary commit model — the subject of the commit this finalize would add.
+    Adds(&'a str),
+    /// The amend model — the abbreviated sha of the commit at `HEAD`, the subject it carries
+    /// now, and the subject it would carry after.
+    Rewrites {
+        sha: &'a str,
+        from: &'a str,
+        to: &'a str,
+    },
+}
+
+impl<'a> ForecastSubject<'a> {
+    /// The subject jigc will hand git — the envelope's `subject`, identical in meaning on
+    /// both models.
+    fn rendered(&self) -> &'a str {
+        match self {
+            ForecastSubject::Adds(subject) => subject,
+            ForecastSubject::Rewrites { to, .. } => to,
+        }
+    }
+
+    /// The forecast's headline, as the agent/human lines it occupies. The amend arm takes a
+    /// second line for the same reason its landed ack does: the fact a reader most needs
+    /// there is that the **tree** does not move, and the manifest below is empty by
+    /// construction rather than because there is nothing to commit.
+    fn forecast_lines(&self) -> Vec<String> {
+        match self {
+            ForecastSubject::Adds(subject) => vec![format!("would commit — {subject}")],
+            ForecastSubject::Rewrites { sha, from, to } => vec![
+                format!("would rewrite {sha} \"{from}\" → \"{to}\""),
+                "  the commit's tree is unchanged; only its message is replaced".to_string(),
+            ],
+        }
+    }
+}
+
 pub fn finalize_manifest(
     format: Format,
-    subject: &str,
+    subject: ForecastSubject<'_>,
     included: &[ManifestEntry],
     left_out: &[ManifestEntry],
     findings: &Findings,
@@ -2582,16 +2644,15 @@ pub fn finalize_manifest(
     match format {
         Format::Json => json(&serde_json::json!({
             "dry_run": true,
-            "subject": subject,
+            "subject": subject.rendered(),
             "manifest": included,
             "left_out": left_out,
             "findings": findings,
         })),
         Format::Agent | Format::Human => {
-            let mut lines = vec![
-                "finalize --dry-run — pre-commit manifest (nothing committed)".to_string(),
-                format!("would commit — {subject}"),
-            ];
+            let mut lines =
+                vec!["finalize --dry-run — pre-commit manifest (nothing committed)".to_string()];
+            lines.extend(subject.forecast_lines());
             // Where it would land, when that is not the checkout the workbench binds to
             // (M53 — the cwd census, C2-09). Forecast and ack say the same sentence in the
             // same tense, so the reader is not told after the fact what the preview could
@@ -6834,10 +6895,12 @@ pub const ENVELOPE_ARMS: &[EnvelopeArm] = &[
         outcome: ArmOutcome::Success,
         root: ArmRoot::ResultContract("engine::result::ValidationReport"),
     },
-    // The amend arm's landed shape (F-10) — the ordinary `Landed` key set plus `amended`,
-    // and therefore its own row: the registry's unit is a top-level key SET, so a key that
-    // rides one commit model and not the other is a second arm by definition. Declaring it
-    // that way is what keeps the driven key set equal to the declared one at both.
+    // The amend arm's landed shape (F-10) — the ordinary `Landed` value carrying one extra
+    // member, `amended`, **inside** the `committed` object. So this row's top-level
+    // `ArmShape` is byte-identical to `Landed`'s above, deliberately: what it declares is
+    // not a different key set but a second **driven** commit model, so the fourth proof
+    // (driven key set == declared key set) is taken over a real `git commit --amend` rather
+    // than inferred from the ordinary arm. See [`Landed::amended`].
     EnvelopeArm {
         path: &["task", "finalize"],
         arm: "LandedAmend",
@@ -10034,7 +10097,7 @@ mod tests {
 
         let agent = finalize_manifest(
             Format::Agent,
-            subject,
+            ForecastSubject::Adds(subject),
             &included,
             &left_out,
             &findings,
@@ -10056,7 +10119,7 @@ mod tests {
         assert_eq!(
             finalize_manifest(
                 Format::Human,
-                subject,
+                ForecastSubject::Adds(subject),
                 &included,
                 &left_out,
                 &findings,
@@ -10071,7 +10134,7 @@ mod tests {
         assert_eq!(
             finalize_manifest(
                 Format::Agent,
-                subject,
+                ForecastSubject::Adds(subject),
                 &included,
                 &left_out,
                 &Findings::default(),
@@ -10085,8 +10148,14 @@ mod tests {
             "a findings-free forecast renders exactly the block it always did",
         );
 
-        let json_out =
-            finalize_manifest(Format::Json, subject, &included, &left_out, &findings, None);
+        let json_out = finalize_manifest(
+            Format::Json,
+            ForecastSubject::Adds(subject),
+            &included,
+            &left_out,
+            &findings,
+            None,
+        );
         let value: serde_json::Value = serde_json::from_str(&json_out).expect("valid JSON");
         assert_eq!(value["dry_run"], serde_json::Value::Bool(true));
         assert_eq!(
@@ -10103,7 +10172,7 @@ mod tests {
         assert_eq!(
             serde_json::from_str::<serde_json::Value>(&finalize_manifest(
                 Format::Json,
-                subject,
+                ForecastSubject::Adds(subject),
                 &included,
                 &left_out,
                 &Findings::default(),
@@ -10134,7 +10203,7 @@ mod tests {
 
         let agent = finalize_manifest(
             Format::Agent,
-            "feat: add it",
+            ForecastSubject::Adds("feat: add it"),
             &included,
             &[],
             &Findings::default(),
@@ -10151,7 +10220,7 @@ mod tests {
 
         let json_out = finalize_manifest(
             Format::Json,
-            "feat: add it",
+            ForecastSubject::Adds("feat: add it"),
             &included,
             &[],
             &Findings::default(),
@@ -10175,7 +10244,7 @@ mod tests {
 
         let agent = finalize_manifest(
             Format::Agent,
-            "feat: carry it",
+            ForecastSubject::Adds("feat: carry it"),
             &carried,
             &[],
             &Findings::default(),
@@ -10187,7 +10256,7 @@ mod tests {
         );
         let json_out = finalize_manifest(
             Format::Json,
-            "feat: carry it",
+            ForecastSubject::Adds("feat: carry it"),
             &carried,
             &[],
             &Findings::default(),

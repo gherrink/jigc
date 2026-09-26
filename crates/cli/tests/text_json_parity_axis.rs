@@ -68,11 +68,11 @@ use cli::relocate::RelocationReport;
 use cli::rename::RenameReport;
 use cli::render::{
     AckTarget, ConfigAck, DiscardState, DiscardedWork, Displaced, DocAck, DroppedStaged,
-    KnobReading, LandedCommit, ManifestEntry, ManifestKind, MilestoneLanded, RejectedSet,
-    StagedDoc, SubTaskContribution, TaskAck, TaskDiffView, config_ack, config_get, config_list,
-    describe, doc_ack, finalize_manifest, freeze_exempt_relocation, ingest, milestone_finalized,
-    milestone_join, rename, setup_success, task_ack, task_diff, task_list, uninstall_success,
-    unmanage, validation_upgrade,
+    ForecastSubject, KnobReading, LandedCommit, ManifestEntry, ManifestKind, MilestoneLanded,
+    RejectedSet, StagedDoc, SubTaskContribution, TaskAck, TaskDiffView, config_ack, config_get,
+    config_list, describe, doc_ack, finalize_manifest, freeze_exempt_relocation, ingest,
+    milestone_finalized, milestone_join, rename, setup_success, task_ack, task_diff, task_list,
+    uninstall_success, unmanage, validation_upgrade,
 };
 use cli::setup::{InstallCommit, RemovedArtifacts, SetupSummary, UninstallSummary};
 use cli::task::TaskListRow;
@@ -345,7 +345,16 @@ const REGISTRY: &[(&[&str], Tier)] = &[
              than destroyed (M52 Inc 4 / T3): printed on both formats, carried on the \
              envelope, withheld nowhere); the \
              `--dry-run` FORECAST is a manifest block, and that arm is where the census found \
-             the gap",
+             the gap. SINCE F-10 the forecast has two headlines, one per commit model — \
+             `would commit — <subject>` on the ordinary one, `would rewrite <sha7> \"<old \
+             subject>\" → \"<new subject>\"` on the amend arm — and both hand the envelope the \
+             SAME `subject`, the message jigc will give git. The amend headline's two extra \
+             facts are text-only and DECLARED OUT on `jigc task amend`'s own reason: at \
+             forecast time nothing has moved, so `HEAD` IS the commit being rewritten and \
+             both the sha and its current subject are `git log -1 HEAD` away for any driver. \
+             On the LANDED arm that is no longer true — `--amend` has moved `HEAD` — which is \
+             precisely why the superseded sha is a key there (`committed.amended`) and not \
+             here",
             // The forecast arm's gap, closed here (M50 Inc 12 / F-7): phase 3 renders the
             // commit message BEFORE the `--dry-run` branch returns, and the branch printed
             // the file manifest alone — a value computed and discarded, the parity rule's own
@@ -1847,26 +1856,47 @@ fn finalize_dry_run_subject_close() {
     // it is not a parity subject: the fence runs text → envelope, and the agent surface
     // prints no finding here.
     let findings = engine::finding::Findings::default();
-    let text = finalize_manifest(
-        Format::Agent,
-        subject,
-        &included,
-        &left_out,
-        &findings,
-        None,
-    );
-    let doc = envelope(
-        &finalize_manifest(Format::Json, subject, &included, &left_out, &findings, None),
-        "jigc task finalize --dry-run",
-    );
-    text_prints(&text, subject, "jigc task finalize --dry-run", "subject");
-    carries(
-        &doc,
-        "subject",
-        &subject,
-        "jigc task finalize --dry-run",
-        "subject",
-    );
+    // **Both commit models, because the forecast's headline is per-model and the key is
+    // not** (F-10). The amend arm says `would rewrite <sha7> "<old>" → "<new>"`, so the
+    // value under test — the subject jigc hands git — is on both surfaces there too, and a
+    // close taken over the ordinary model alone would pass while the arm that actually
+    // shipped a second sentence went unchecked.
+    for subject_arm in [
+        ForecastSubject::Adds(subject),
+        ForecastSubject::Rewrites {
+            sha: "3566c7c",
+            from: "chore: the message being replaced",
+            to: subject,
+        },
+    ] {
+        let text = finalize_manifest(
+            Format::Agent,
+            subject_arm,
+            &included,
+            &left_out,
+            &findings,
+            None,
+        );
+        let doc = envelope(
+            &finalize_manifest(
+                Format::Json,
+                subject_arm,
+                &included,
+                &left_out,
+                &findings,
+                None,
+            ),
+            "jigc task finalize --dry-run",
+        );
+        text_prints(&text, subject, "jigc task finalize --dry-run", "subject");
+        carries(
+            &doc,
+            "subject",
+            &subject,
+            "jigc task finalize --dry-run",
+            "subject",
+        );
+    }
 }
 
 /// **The `upgrade` close.** The delta count the clean line names — *"N recorded config

@@ -2459,6 +2459,35 @@ impl TaskArea {
     /// resolved severity cascade — like the finalize-scope changelog advisory — so a
     /// project's severity delta applies to a previewed finding and the envelope stays
     /// one report.
+    /// **The index gate of the amend arm**, as one producer both positions ask (F-10).
+    ///
+    /// Empty unless this area carries the `amend` marker: the ordinary commit model stages
+    /// the agent's index deliberately, and only `--amend` rewrites `HEAD` **from** it.
+    ///
+    /// It is a method rather than two call-sites' worth of the same three git lines because
+    /// it is asked at two positions — the committing door, ahead of `plan_finalize`, and the
+    /// preview inside [`TaskArea::preview_gates`] — and the promise
+    /// [`crate::gate_coverage::Door::Previewed`] makes is *same check, same severity, same
+    /// exit code*. Two spellings of one check is how that promise stops being true.
+    fn amend_index_findings(&self) -> Result<Vec<Finding>> {
+        if state::read_amend_pin(&self.dir)
+            .with_context(|| format!("could not read the amend marker for task `{}`", self.id))?
+            .is_none()
+        {
+            return Ok(Vec::new());
+        }
+        let staged = git_capture(
+            &self.repo_root,
+            &["diff", "--cached", "--name-only", "HEAD"],
+        )?;
+        Ok(staged
+            .lines()
+            .map(str::trim)
+            .filter(|path| !path.is_empty())
+            .map(|path| amend_index_dirty_finding(path, &self.repo_root))
+            .collect())
+    }
+
     fn preview_gates(
         &self,
         report: engine::result::ValidationReport,
@@ -2473,7 +2502,24 @@ impl TaskArea {
             GatePreview::Forecast { carry_staged } => (carry_staged, false),
         };
         let mut previewed = Vec::new();
-        if !carry_staged {
+        // **The `carryover` member's check is arm-dependent, and the preview asks the arm's
+        // own** (F-10; `crate::gate_coverage::GATE_COVERAGE`'s `carryover` row). The member
+        // is *the index gate* — `finalize.carried-staged` on the ordinary commit model,
+        // `finalize.amend-index-dirty` on the amend model, which refuses the whole index
+        // rather than the pre-task subset and takes no `--carry-staged`. Asking the wrong
+        // one here would re-open the class M52 Increment 3 closed for posture: a preview
+        // reading clean over a state its own committing door refuses at exit 3.
+        //
+        // The amend arm's other refusal, `finalize.base-mismatch`, deliberately does **not**
+        // preview: the base pin is finalize-only by the M47 Settle, Decision 1, and the
+        // amend form is that same member (the pin *is* the commit it rewrites).
+        let amending = state::read_amend_pin(&self.dir)
+            .with_context(|| format!("could not read the amend marker for task `{}`", self.id))?
+            .is_some();
+        if amending {
+            previewed.extend(self.amend_index_findings()?);
+        }
+        if !carry_staged && !amending {
             let snapshot = state::read_staged_snapshot(&self.dir).with_context(|| {
                 format!(
                     "could not read the staged snapshot for task at {:?}",
@@ -2791,16 +2837,7 @@ impl TaskArea {
         // nothing to decide, and gate 1 above is its stricter replacement — it refuses the
         // WHOLE index, declared or not, where `--carry-staged` would wave a subset through.
         if amend.is_some() {
-            let staged = git_capture(
-                &self.repo_root,
-                &["diff", "--cached", "--name-only", "HEAD"],
-            )?;
-            let dirty: Vec<Finding> = staged
-                .lines()
-                .map(str::trim)
-                .filter(|path| !path.is_empty())
-                .map(|path| amend_index_dirty_finding(path, &self.repo_root))
-                .collect();
+            let dirty = self.amend_index_findings()?;
             if !dirty.is_empty() {
                 return self.blocked(dirty, format);
             }
@@ -3047,13 +3084,35 @@ impl TaskArea {
                 GatePreview::Forecast { carry_staged },
                 &schemas,
             )?)?;
+            // **Which sentence the forecast makes is the commit model's** (F-10): the amend
+            // arm rewrites `HEAD` rather than adding to it, so it names the commit it would
+            // replace and the subject that commit carries **now** — read here, where `HEAD`
+            // is still that commit. Both models hand the envelope the same `subject`
+            // ([`render::ForecastSubject`]).
+            let rewrites = match amend.as_deref() {
+                Some(pinned) => Some((
+                    git_capture(&self.repo_root, &["rev-parse", "--short", pinned])?,
+                    git_capture(
+                        &self.repo_root,
+                        &["log", "-1", "--pretty=format:%s", pinned],
+                    )?,
+                )),
+                None => None,
+            };
             print!(
                 "{}",
                 // The subject is the plan's OWN render (phase 3, already computed above),
                 // never a dry-run-side re-spelling — M50 Inc 12 / F-7.
                 render::finalize_manifest(
                     format,
-                    plan.subject(),
+                    match rewrites.as_ref() {
+                        Some((sha, from)) => render::ForecastSubject::Rewrites {
+                            sha,
+                            from,
+                            to: plan.subject(),
+                        },
+                        None => render::ForecastSubject::Adds(plan.subject()),
+                    },
                     &included,
                     &left_out,
                     &forecast.findings,
@@ -3277,7 +3336,19 @@ impl TaskArea {
                     // F-10 — the superseded sha, present only on the amend arm, which is its
                     // own `ENVELOPE_ARMS` row. `--amend` has already moved `HEAD` by here, so
                     // the marker jigc wrote at the mint is the only place this still is.
-                    amended: amend.clone(),
+                    //
+                    // **Abbreviated to the same length `hash` above carries**, and the reason
+                    // is the object it rides: two commit shas sit in one `committed` object,
+                    // and the door's own mint ack already named this commit `amending:
+                    // <sha7>`. A 40-character `amended` beside a 7-character `hash` would
+                    // make a reader ask what the difference means, and the answer would be
+                    // *nothing* (`design/surface-contract.md` → law 3). The marker holds the
+                    // full sha, which is what `git rev-parse --short` is asked to shorten
+                    // here rather than a truncation this code invents.
+                    amended: amend
+                        .as_deref()
+                        .map(|full| git_capture(&self.repo_root, &["rev-parse", "--short", full]))
+                        .transpose()?,
                     // M53 — the cwd census, C2-09: the checkout this commit landed in, when
                     // it is not the one the workbench binds to. Text-only by declared bound.
                     site: self.commit_site(),
