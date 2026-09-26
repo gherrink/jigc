@@ -257,6 +257,83 @@ fn amend_index_dirty_finding(path: &str, repo_root: &Path) -> Finding {
     )
 }
 
+/// Which position raised [`amend_staged_doc_finding`]. The two differ **only** in the
+/// route, and they differ because the state differs — the finding, its code and its
+/// message are one identity for one condition.
+pub(crate) enum AmendDocDoor<'a> {
+    /// A **`jigc doc` write verb**, asked at the copy-on-first-touch seam before anything
+    /// is staged. The committed doc is untouched and this task still has its message to
+    /// repair, so the repair is to author the doc's change where it can land.
+    Write,
+    /// The **finalize arm**, over a doc the task has already staged. No verb un-stages one
+    /// doc from a task, so the task itself is what goes — and `jigc task discard` refuses
+    /// over staged prose without `--force`, which is why the consent is named.
+    Finalize { task: &'a str },
+}
+
+/// **The amend arm's staged-doc gate** (the F-10 review's HIGH-1) — an amend task cannot
+/// carry a doc that **promotes**, because its commit model changes no tree.
+///
+/// Driven at `48d1d529`: inside an amend task an ordinary `jigc doc set-slot
+/// vision:vision#thesis` acked *"copied in for update — … re-promoted at finalize"* at exit
+/// 0, and `jigc task finalize` then **did** promote it — `try_execute_finalize_plan`'s
+/// promote phase runs over `plan.promotions` on every arm — while `StagePolicy::Amend`
+/// staged nothing and `git commit --amend` rewrote only the message. After exit 0:
+/// ` M VISION.md` in the worktree, `git show HEAD:VISION.md` still the old bytes, the landed
+/// manifest empty, the pinned `jigc doc show vision:vision` **committed**-doc read serving
+/// the uncommitted bytes, and `jigc validate` **exit 0** because the transaction had
+/// baselined file-state to its own un-committed promotion. Exit-0 divergence behind a
+/// committing door, plus a false green on the CI-gated verb. The asymmetry that showed it
+/// was unintended: a *rejected* amend rolls that promotion back, so the transaction
+/// discarded a promotion it refused to commit and kept the one it did.
+///
+/// **The axis is the promote predicate, not a doctype name.** Membership is
+/// [`engine::finalize::promote_destination`] answering `Some` — the very function the
+/// promote plan is built from — so the gate and the promote cannot disagree about which
+/// docs diverge. In both shipped packs `commit` is the only doctype it answers `None` for,
+/// which is the corollary `design/finalize.md` states as *an amend task carries exactly one
+/// doc, its own transient commit doc*; the rule itself is derived rather than counted, so a
+/// pack that ships a second transient doctype stays correct with no edit here.
+///
+/// One finding per staged doc, keyed at the **destination** — the file that would be left
+/// diverged — on the [`FinalizeSubject::FilePath`](crate::render::FinalizeSubject) precedent
+/// its `promote-io` / `promote-clobber` siblings already take, so a driver reading
+/// `findings[].key` gets the set rather than a count.
+pub(crate) fn amend_staged_doc_finding(
+    address: &str,
+    home: &str,
+    door: AmendDocDoor<'_>,
+) -> Finding {
+    let route = match door {
+        AmendDocDoor::Write => engine::finding::Route::mechanical(
+            ["jigc", "start", "\"<intent>\""],
+            " mints an ordinary task, whose finalize commits the promoted doc; this amend \
+             task keeps its own job, repairing `HEAD`'s message",
+        ),
+        AmendDocDoor::Finalize { task } => engine::finding::Route::mechanical(
+            ["jigc", "task", "discard", task, "--force"],
+            " discards this amend task — the committed doc is untouched, so the store loses \
+             nothing; then author the doc's change in an ordinary task (`jigc start \
+             \"<intent>\"`) and repair the message with a fresh `jigc task amend`",
+        ),
+    };
+    Finding::graded(
+        Severity::Blocking,
+        "finalize.amend-staged-doc",
+        // One message for one condition, worded to be true at **both** positions: the
+        // write door is asked before the doc is staged and the finalize arm after, so a
+        // sentence built around *staged* would be false at one of them.
+        format!(
+            "`{address}` is a managed doc, and it promotes to `{home}` — but this task's \
+             commit model is an amend, which changes no tree: its finalize would write \
+             `{home}` into the worktree and commit none of it, leaving the file diverged \
+             from the commit it just rewrote"
+        ),
+        Some(Location::addressed(home.to_string(), 1, 1)),
+        Some(route),
+    )
+}
+
 /// The `jigc task amend` long help.
 ///
 /// **This door commits nothing, and says so** — the surface-contract's law 1 read the other
@@ -2488,6 +2565,55 @@ impl TaskArea {
             .collect())
     }
 
+    /// **The amend arm's staged-doc gate**, as one producer both positions ask (the F-10
+    /// review's HIGH-1) — the direct sibling of [`Self::amend_index_findings`], and a
+    /// method for the same reason: it is asked at the committing door ahead of
+    /// `plan_finalize` **and** inside [`Self::preview_gates`], and what
+    /// [`crate::gate_coverage::Door::Previewed`] promises is *same check, same severity,
+    /// same exit code*. Two spellings of one check is how that promise stops being true.
+    ///
+    /// Empty unless this area carries the `amend` marker: every other commit model stages
+    /// and commits its promotions, so a staged managed doc there is the ordinary case.
+    ///
+    /// The subject is [`Self::staged_docs`] — the one enumeration of *what this task
+    /// staged* — filtered by [`engine::finalize::promote_destination`], the promote plan's
+    /// own membership predicate. A staged file whose stem is not an address, or whose
+    /// doctype this pack does not resolve, is skipped here exactly as `plan_promotions`
+    /// skips it: it promotes nothing, so it diverges nothing, and the doors that own an
+    /// unresolvable staged doc answer for it at their own positions.
+    fn amend_staged_doc_findings(
+        &self,
+        schemas: &BTreeMap<String, Schema>,
+    ) -> Result<Vec<Finding>> {
+        if state::read_amend_pin(&self.dir)
+            .with_context(|| format!("could not read the amend marker for task `{}`", self.id))?
+            .is_none()
+        {
+            return Ok(Vec::new());
+        }
+        let mut findings = Vec::new();
+        for (name, _) in self.staged_docs()? {
+            let Some(address) = engine::state::staged_doc_id(&name) else {
+                continue;
+            };
+            let Some((ty, slug)) = address.split_once(':') else {
+                continue;
+            };
+            let Some(schema) = schemas.get(ty) else {
+                continue;
+            };
+            let Some(home) = engine::finalize::promote_destination(schema, slug) else {
+                continue;
+            };
+            findings.push(amend_staged_doc_finding(
+                address,
+                &home,
+                AmendDocDoor::Finalize { task: &self.id },
+            ));
+        }
+        Ok(findings)
+    }
+
     fn preview_gates(
         &self,
         report: engine::result::ValidationReport,
@@ -2518,6 +2644,16 @@ impl TaskArea {
             .is_some();
         if amending {
             previewed.extend(self.amend_index_findings()?);
+            // **The arm's second gate previews beside its first** (the F-10 review's
+            // HIGH-1). It is not a new [`crate::gate_coverage::GATE_COVERAGE`] member: it
+            // is a finding about **this task's staged content**, computed by this same
+            // task-scope sweep and reported in this same report at the same
+            // [`EXIT_VALIDATION_BLOCKED`] the committing door takes — the `content-findings`
+            // member, answered arm-dependently, exactly as the `carryover` row's own
+            // comment records for the index gate. A separate member would put an
+            // amend-only clause into the composed `what's-left:` line of every ordinary
+            // task, for a check that is inert on every one of them.
+            previewed.extend(self.amend_staged_doc_findings(schemas)?);
         }
         if !carry_staged && !amending {
             let snapshot = state::read_staged_snapshot(&self.dir).with_context(|| {
@@ -2828,7 +2964,15 @@ impl TaskArea {
         //    silently, at exit 0 (driven on the baseline: HEAD held one file, an unrelated
         //    path was staged, the amended commit carried two). This is
         //    `finalize.carried-staged` re-enacted on a commit that already landed.
-        // 2. `finalize.base-mismatch` — HEAD is no longer the commit the marker pinned, so
+        // 2. `finalize.amend-staged-doc` — the task staged a doc that **promotes**, and
+        //    this arm commits no tree change, so the promote phase would write that file
+        //    into the worktree and commit none of it (the F-10 review's HIGH-1; driven at
+        //    exit 0, with `jigc validate` false-green over it because the transaction
+        //    baselined its own un-committed promotion). Ahead of the conformance gate
+        //    deliberately: a half-authored staged doc answers there first, and a
+        //    conformance finding about a doc that cannot land in this task at all routes
+        //    the agent at filling it in.
+        // 3. `finalize.base-mismatch` — HEAD is no longer the commit the marker pinned, so
         //    the subject line the agent read and re-authored against belongs to a different
         //    commit. The shipped code, re-worded for this arm.
         //
@@ -2840,6 +2984,10 @@ impl TaskArea {
             let dirty = self.amend_index_findings()?;
             if !dirty.is_empty() {
                 return self.blocked(dirty, format);
+            }
+            let staged_docs = self.amend_staged_doc_findings(&schemas)?;
+            if !staged_docs.is_empty() {
+                return self.blocked(staged_docs, format);
             }
         }
         if let Some(pinned) = amend.as_deref()

@@ -269,6 +269,23 @@ const AMEND_TABLE: &[Row] = &[
         says: "`HEAD` is unchanged",
         answer: rejecting_hook_at_finalize,
     },
+    // | a promoted doc in HEAD's tree | — the settle called this row *"message-only by
+    // construction"*, and the F-10 review's HIGH-1 drove it false for a doc **this task
+    // stages**: the promote phase runs on every arm, so an amend's finalize wrote the doc
+    // into the worktree, committed none of it, and baselined file-state to the bytes no
+    // commit carries. The arm now refuses instead — and the fixture plants the staged doc
+    // directly, because the live route to it (the copy-on-first-touch seam) is closed by
+    // the write-door half of the same fix, which is the point of having both.
+    Row {
+        id: "finalize.amend-staged-doc",
+        door: Door::Finalize,
+        code: "finalize.amend-staged-doc",
+        exit: 3,
+        arm: Arm::Envelope,
+        text: TextIdentity::Named,
+        says: "this task's commit model is an amend, which changes no tree",
+        answer: staged_managed_doc_at_finalize,
+    },
     // Not a settle row, and here because the settle's shape (D) hands this door a *prose*
     // intent: the id slugs from what the caller typed, so a title that slugs to nothing has
     // to refuse rather than fall back to `amend-<sha7>` and name the task after something
@@ -694,6 +711,45 @@ fn rejecting_hook_at_finalize() -> Answered {
     answered
 }
 
+/// **A managed doc in the amend task's staged set, at the finalize arm** — the F-10
+/// review's HIGH-1, on its backstop path.
+///
+/// The doc is **planted** into the working area rather than written through a verb, and the
+/// plant is the honest fixture rather than a shortcut: the write door now refuses the
+/// copy-on-first-touch that used to put it there ([`DOC_WRITE_LEAVES`] sweeps that half), so
+/// the only way to reach the finalize gate is to arrive at the area by some other path —
+/// which is exactly the case the finalize gate exists for. The planted name is a **member
+/// shape** (`<type>:<slug>.md` is what `engine::state::staged_doc_id` admits), so this is not
+/// the foreign-bytes cell and no destroying-door guard answers first.
+fn staged_managed_doc_at_finalize() -> Answered {
+    let corpus = TrialCorpus::build(State::Vendored);
+    let task = mint_amend(&corpus, "repair the arch-doc commit message");
+    author_message(&corpus, &task, "the authored subject");
+    plant_staged_doc(&corpus, &task);
+    let before = head_of(&corpus);
+    let answered = both_formats(|format| {
+        let mut argv = vec!["task", "finalize", task.as_str()];
+        argv.extend_from_slice(format);
+        corpus.jigc(&argv)
+    });
+    assert_unmoved(&corpus, &before, "finalize.amend-staged-doc");
+    assert!(
+        answered.text.both().contains(SPEC_HOME),
+        "the refusal names the canonical home that would have been left diverged:\n{}",
+        answered.text.both(),
+    );
+    // **Never made, not rolled back.** The gate sits ahead of `plan_finalize`, so the
+    // promote phase is not reached at all — the distinction matters, because the shipped
+    // rejected-amend path *does* roll a promotion back and a test satisfied by a clean
+    // worktree alone could not tell the two apart.
+    assert_eq!(
+        corpus.git(&["status", "--porcelain"]),
+        "",
+        "the refused finalize wrote nothing into the worktree",
+    );
+    answered
+}
+
 /// **A title that slugs to nothing.** The id is slugged from the caller's own words, so a
 /// title carrying no ASCII letter or digit cannot name a task — and must not quietly become
 /// `amend-<sha7>`, which would name it after something the caller never typed.
@@ -1043,6 +1099,419 @@ fn the_forecast_names_the_commit_it_would_rewrite() {
         before,
         "a forecast commits nothing",
     );
+}
+
+// ───────── the write doors: an amend task carries one doc (F-10 review, HIGH-1) ─────────
+
+/// The committed **non-singleton** [`State::Vendored`] carries, and its canonical home.
+///
+/// Non-singleton on purpose: `jigc doc rename` refuses a singleton outright
+/// (`write.identity-change` — its `# H1` is the schema's), so a sweep run against
+/// `vision`/`changelog` would report that leaf as *covered* while the address never reached
+/// the seam under test.
+const SPEC_ADDRESS: &str = "spec:padding";
+const SPEC_HOME: &str = "docs/specs/padding.md";
+
+/// What a `jigc doc` write leaf answers when it is aimed at a **managed** doc from inside an
+/// amend task.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum WriteVerdict {
+    /// The F-10 refusal: the leaf reaches the copy-on-first-touch seam, and the seam refuses
+    /// before `copy_in` — so the *"re-promoted at finalize"* ack is never printed and
+    /// nothing is staged.
+    AmendRefusal,
+    /// Already closed, by a **different shipped gate**, before this fix existed: the leaf
+    /// mints through the create-gate and the `amend` workflow declares `allows-create: []`.
+    /// Carried as a row rather than dropped from the sweep, because a leaf missing from the
+    /// table is indistinguishable from a leaf nobody thought about — and because the review
+    /// counted these two inside the copy-on-write class, which driving refutes.
+    CreateGate,
+}
+
+impl WriteVerdict {
+    fn code(self) -> &'static str {
+        match self {
+            WriteVerdict::AmendRefusal => "finalize.amend-staged-doc",
+            WriteVerdict::CreateGate => "create.gate-blocked",
+        }
+    }
+}
+
+/// One `(leaf, arm)` **occurrence** of a `jigc doc` write verb aimed at a managed doc.
+///
+/// Keyed by occurrence rather than by leaf because `set-field` reaches the seam twice — its
+/// set arm and its `--unset` arm are two call sites of one leaf — which is the
+/// `PATH_ARG_OCCURRENCES` shape, one registry over.
+struct DocWrite {
+    /// The clap leaf, spelled as [`cli::cli::VERB_KINDS`] spells it. The sweep is fenced ⇔
+    /// against that registry, so a ninth `doc` write leaf reddens here until it is answered.
+    leaf: &'static str,
+    /// What distinguishes this row from its sibling arm of the same leaf.
+    arm: &'static str,
+    /// The argv after `jigc`, minus `--task <id>`, which the sweep appends.
+    argv: &'static [&'static str],
+    /// The payload a `--from-file -` row reads from stdin.
+    stdin: Option<&'static str>,
+    verdict: WriteVerdict,
+}
+
+/// A valid `doc author` payload for the committed spec — valid **deliberately**, so the row
+/// proves the create-gate answers rather than the payload parser, which runs first.
+const AUTHOR_PAYLOAD: &str = "title: Padding\nsections:\n  - id: goal\n    set:\n      goal: |\n        <<a goal authored through the batch verb>>\n";
+
+/// Every `jigc doc` write leaf, aimed at the committed `spec:padding`.
+const DOC_WRITE_LEAVES: &[DocWrite] = &[
+    DocWrite {
+        leaf: "set-field",
+        arm: "set",
+        argv: &[
+            "doc",
+            "set-field",
+            "spec:padding#criteria/pads-the-input/maps-to-test",
+            "--value",
+            "tests/pad_test.rs#pads_the_input",
+        ],
+        stdin: None,
+        verdict: WriteVerdict::AmendRefusal,
+    },
+    DocWrite {
+        leaf: "set-field",
+        arm: "--unset",
+        argv: &[
+            "doc",
+            "set-field",
+            "spec:padding#criteria/pads-the-input/maps-to-test",
+            "--unset",
+        ],
+        stdin: None,
+        verdict: WriteVerdict::AmendRefusal,
+    },
+    DocWrite {
+        leaf: "set-slot",
+        arm: "--from-file -",
+        argv: &["doc", "set-slot", "spec:padding#goal", "--from-file", "-"],
+        stdin: Some("a goal the amend task tried to rewrite\n"),
+        verdict: WriteVerdict::AmendRefusal,
+    },
+    DocWrite {
+        leaf: "add-item",
+        arm: "--title",
+        argv: &[
+            "doc",
+            "add-item",
+            "spec:padding#criteria",
+            "--title",
+            "Another criterion",
+        ],
+        stdin: None,
+        verdict: WriteVerdict::AmendRefusal,
+    },
+    DocWrite {
+        leaf: "remove-item",
+        arm: "the item address",
+        argv: &["doc", "remove-item", "spec:padding#criteria/pads-the-input"],
+        stdin: None,
+        verdict: WriteVerdict::AmendRefusal,
+    },
+    DocWrite {
+        leaf: "retitle-item",
+        arm: "--title",
+        argv: &[
+            "doc",
+            "retitle-item",
+            "spec:padding#criteria/pads-the-input",
+            "--title",
+            "Pads it",
+        ],
+        stdin: None,
+        verdict: WriteVerdict::AmendRefusal,
+    },
+    DocWrite {
+        // The same-slug arm: a re-slug of a committed identity is refused on its own code,
+        // but **after** the copy-in — driven on the baseline, a *refused* re-slug still
+        // staged the doc and the amend then promoted it. So the seam guard has to fire
+        // first, and this row is the one that proves it does.
+        leaf: "rename",
+        arm: "--to (same slug, retitle in place)",
+        argv: &["doc", "rename", "spec:padding", "--to", "padding"],
+        stdin: None,
+        verdict: WriteVerdict::AmendRefusal,
+    },
+    DocWrite {
+        leaf: "create",
+        arm: "--title",
+        argv: &["doc", "create", "spec", "--title", "Another spec"],
+        stdin: None,
+        verdict: WriteVerdict::CreateGate,
+    },
+    DocWrite {
+        leaf: "author",
+        arm: "--from-file -",
+        argv: &["doc", "author", "spec", "--from-file", "-"],
+        stdin: Some(AUTHOR_PAYLOAD),
+        verdict: WriteVerdict::CreateGate,
+    },
+];
+
+/// **The table is total over the clap tree.** Membership is `cli::cli::VERB_KINDS` filtered
+/// to `doc` × `Write`, read from the registry rather than written down here, so a ninth
+/// write leaf cannot ship without a row saying what it does inside an amend task.
+#[test]
+fn the_sweep_covers_every_doc_write_leaf() {
+    let declared: std::collections::BTreeSet<&str> =
+        DOC_WRITE_LEAVES.iter().map(|row| row.leaf).collect();
+    let registry: std::collections::BTreeSet<&str> = cli::cli::VERB_KINDS
+        .iter()
+        .filter(|(path, kind)| path.first() == Some(&"doc") && *kind == cli::cli::VerbKind::Write)
+        .filter_map(|(path, _)| path.get(1).copied())
+        .collect();
+    assert_eq!(
+        declared, registry,
+        "`DOC_WRITE_LEAVES` must cover exactly the `doc` leaves `cli::cli::VERB_KINDS` \
+         classifies as `Write` — a leaf missing here is a leaf nobody decided about",
+    );
+}
+
+/// **No `jigc doc` write verb stages a managed doc into an amend task** — the F-10 review's
+/// HIGH-1 at its write half, over the whole leaf axis.
+///
+/// The seam it closes is one site: `cli::doc`'s `read_or_copy_in` is the only production
+/// caller of `engine::state::copy_in`, and the six leaves that can stage a *committed* doc
+/// all come through it. The other two mint through the create-gate, which the `amend`
+/// workflow's `allows-create: []` already refuses — driven, and recorded as its own verdict
+/// rather than folded into the six.
+///
+/// Each cell asserts what a refusal has to be worth: the exit, the code, **and** that
+/// nothing was staged — because the defect this closes was a write that acked
+/// *"re-promoted at finalize"* at exit 0 and staged the doc anyway.
+#[test]
+fn no_doc_write_verb_stages_a_managed_doc_into_an_amend_task() {
+    let corpus = TrialCorpus::build(State::Vendored);
+    let task = mint_amend(&corpus, "repair the arch-doc commit message");
+    author_message(&corpus, &task, "the authored subject");
+    let staged_before = staged_doc_names(&corpus, &task);
+
+    for row in DOC_WRITE_LEAVES {
+        let cell = format!("jigc {} ({})", row.argv.join(" "), row.arm);
+        let mut argv: Vec<&str> = row.argv.to_vec();
+        argv.extend_from_slice(&["--task", task.as_str()]);
+        let out = match row.stdin {
+            Some(payload) => corpus.jigc_stdin(&argv, payload),
+            None => corpus.jigc(&argv),
+        };
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr),
+        );
+        assert_eq!(
+            out.status.code(),
+            Some(1),
+            "[{cell}] a write-door refusal takes the operational exit:\n{text}",
+        );
+        assert!(
+            text.contains(row.verdict.code()),
+            "[{cell}] must refuse with `{}`:\n{text}",
+            row.verdict.code(),
+        );
+        if row.verdict == WriteVerdict::AmendRefusal {
+            assert!(
+                text.contains(SPEC_HOME),
+                "[{cell}] the refusal names the home the doc would have been promoted to:\n{text}",
+            );
+            assert!(
+                text.contains("jigc start"),
+                "[{cell}] and routes at the task that CAN land it — this amend task keeps \
+                 its own job:\n{text}",
+            );
+        }
+        assert!(
+            !text.contains("copied in for update"),
+            "[{cell}] the copy-in ack is the lie the seam guard exists to stop printing:\n{text}",
+        );
+        assert_eq!(
+            staged_doc_names(&corpus, &task),
+            staged_before,
+            "[{cell}] a refused write stages nothing — the area still holds only the \
+             transient commit doc",
+        );
+    }
+
+    // And the task is still a good amend task: the refusals cost it nothing, so its own
+    // job still lands.
+    let landed = corpus.jigc_ok(&["task", "finalize", &task]);
+    assert!(
+        landed.contains("the commit's tree is unchanged"),
+        "the amend still lands after every refused doc write:\n{landed}",
+    );
+}
+
+/// **The control: the amend task's own transient `commit` doc takes every write it needs.**
+///
+/// The guard keys on `engine::finalize::promote_destination` — *does this doc promote?* — so
+/// a fix that had keyed on *"is this a `doc` write verb?"* instead would have broken the arm
+/// it exists to protect, and every refusal above would still have been green.
+///
+/// Five of the eight leaves, and the three absences are stated rather than skipped:
+/// `create`/`author` mint through the gate the workflow closes (the task's commit doc is
+/// provisioned by the mint, not created by the agent), and `rename` would re-slug the commit
+/// doc away from the task id its finalize looks it up by — neither is part of authoring a
+/// message.
+#[test]
+fn the_amend_tasks_own_commit_doc_takes_every_write_it_needs() {
+    let corpus = TrialCorpus::build(State::Vendored);
+    let task = mint_amend(&corpus, "repair the arch-doc commit message");
+
+    corpus.set_field(&format!("commit:{task}#type"), &task, "fix"); // set-field
+    corpus.set_slot(
+        &format!("commit:{task}#summary"),
+        &task,
+        "the repaired subject",
+    ); // set-slot
+    let keep = corpus.add_item(&format!("commit:{task}#trailers"), "Refs", &task); // add-item
+    corpus.set_field(&format!("{keep}/value"), &task, "F-10");
+    let drop = corpus.add_item(&format!("commit:{task}#trailers"), "Temp", &task);
+    corpus.set_field(&format!("{drop}/value"), &task, "scratch");
+    corpus.jigc_ok(&[
+        "doc",
+        "retitle-item",
+        &drop,
+        "--title",
+        "Temporary",
+        "--task",
+        &task,
+    ]); // retitle-item
+    // The **same** address: the `{#id}` anchor is frozen by the retitle, so the item the
+    // removal names is the one the `add-item` minted, not one re-slugged from the new
+    // heading (`design/write-commands.md` → the retitle-without-reslug invariant).
+    corpus.jigc_ok(&["doc", "remove-item", &drop, "--task", &task]); // remove-item
+
+    let landed = corpus.jigc_ok(&["task", "finalize", &task]);
+    assert!(
+        landed.contains("the commit's tree is unchanged"),
+        "the amend lands over its own doc:\n{landed}",
+    );
+    let message = corpus.git(&["log", "-1", "--pretty=format:%B"]);
+    assert!(
+        message.starts_with("fix: the repaired subject") && message.contains("Refs: F-10"),
+        "every accepted write reached the rendered message:\n{message}",
+    );
+    assert!(
+        !message.contains("Temporary"),
+        "including the removal:\n{message}",
+    );
+}
+
+/// **All three doors answer the staged-doc gate identically, and the forecast stops naming
+/// a promotion it will not make.**
+///
+/// The `--dry-run` line read `promoted VISION.md` on the defect — a forecast of a write that
+/// would land in the worktree and in no commit — so the fix is only complete when that line
+/// is gone, and the preview promise (*same check, same severity, same exit*) is what makes
+/// the three doors one answer.
+#[test]
+fn every_gate_door_previews_the_staged_doc_refusal_and_promises_no_promotion() {
+    let corpus = TrialCorpus::build(State::Vendored);
+    let task = mint_amend(&corpus, "repair the arch-doc commit message");
+    author_message(&corpus, &task, "the authored subject");
+    plant_staged_doc(&corpus, &task);
+
+    let baseline = std::fs::read_to_string(corpus.repo().join(".jigc/state/file-state.json"))
+        .expect("the corpus has a file-state baseline");
+    let before_validate = corpus.jigc(&["validate"]);
+
+    for (label, argv) in [
+        (
+            "jigc task validate",
+            vec!["task", "validate", task.as_str()],
+        ),
+        (
+            "jigc task finalize --dry-run",
+            vec!["task", "finalize", task.as_str(), "--dry-run"],
+        ),
+        (
+            "jigc task finalize",
+            vec!["task", "finalize", task.as_str()],
+        ),
+    ] {
+        let out = corpus.jigc(&argv);
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr),
+        );
+        assert_eq!(
+            out.status.code(),
+            Some(3),
+            "`{label}` must take the finalize gate's own exit:\n{text}",
+        );
+        assert!(
+            text.contains("finalize.amend-staged-doc"),
+            "`{label}` must raise the arm's staged-doc gate:\n{text}",
+        );
+        assert!(
+            !text.contains("promoted "),
+            "`{label}` must not forecast a promotion this arm commits nowhere:\n{text}",
+        );
+    }
+
+    // The promotion was **never made**: no worktree write, no baseline advance, and the
+    // store's own verdict is the verdict it had. The last one is the false green the
+    // defect produced — `jigc validate` read exit 0 over bytes no commit carried.
+    assert_eq!(
+        corpus.git(&["status", "--porcelain"]),
+        "",
+        "the refused finalize wrote nothing into the worktree",
+    );
+    assert_eq!(
+        std::fs::read_to_string(corpus.repo().join(".jigc/state/file-state.json")).ok(),
+        Some(baseline),
+        "and baselined nothing — the defect advanced file-state onto its own uncommitted \
+         promotion, which is what made `jigc validate` green over it",
+    );
+    let after_validate = corpus.jigc(&["validate"]);
+    assert_eq!(
+        after_validate.status.code(),
+        before_validate.status.code(),
+        "the store's verdict is unchanged",
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&after_validate.stdout),
+        String::from_utf8_lossy(&before_validate.stdout),
+        "and it says the same thing about the same store",
+    );
+}
+
+/// Plant the committed spec into `task`'s staged-docs area, byte-for-byte — the state the
+/// finalize gate is the backstop for, reachable by no `jigc doc` verb since the write half
+/// of this fix landed.
+fn plant_staged_doc(corpus: &TrialCorpus, task: &str) {
+    let docs = corpus.repo().join(".jigc/tasks").join(task).join("docs");
+    std::fs::create_dir_all(&docs).expect("the staged-docs dir");
+    std::fs::copy(
+        corpus.repo().join(SPEC_HOME),
+        docs.join(format!("{SPEC_ADDRESS}.md")),
+    )
+    .expect("plant the staged managed doc");
+}
+
+/// The `<type>:<slug>.md` entries of `task`'s staged-docs area, sorted — *what this task
+/// staged*, as the gate's own subject reads it.
+fn staged_doc_names(corpus: &TrialCorpus, task: &str) -> Vec<String> {
+    let docs = corpus.repo().join(".jigc/tasks").join(task).join("docs");
+    let mut names: Vec<String> = std::fs::read_dir(&docs)
+        .expect("the staged-docs dir")
+        .map(|entry| {
+            entry
+                .expect("a dir entry")
+                .file_name()
+                .to_string_lossy()
+                .into_owned()
+        })
+        .filter(|name| name.contains(':'))
+        .collect();
+    names.sort();
+    names
 }
 
 // ───────────────────────────── plumbing ─────────────────────────────

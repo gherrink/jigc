@@ -1157,6 +1157,29 @@ fn is_staged_shape(entry: &std::fs::DirEntry) -> bool {
     entry.file_type().is_ok_and(|shape| shape.is_file())
 }
 
+/// **Where a staged `<type>:<slug>` doc promotes to** — its canonical repo-relative
+/// destination — or `None` for a **transient** doctype, one declaring neither a
+/// `placement:` file nor a `location:` and therefore promoted by nothing (the `commit`
+/// doc is the only shipped member of that class in either pack).
+///
+/// `Some(…)` is exactly the predicate *"a finalize of this task writes this doc into the
+/// worktree"*, which is why it is a function and not two `if let`s in two files. Two doors
+/// ask it: [`plan_promotions`] builds the promote plan from it, and the **amend arm's
+/// staged-doc gate** (`cli::task`) refuses over every staged doc it answers `Some` for —
+/// the F-10 review's HIGH-1, where `StagePolicy::Amend` stages nothing while the promote
+/// phase still wrote each promotion into the worktree, leaving it diverged from `HEAD` at
+/// exit 0. A gate keyed on a second spelling of *would this doc promote?* could disagree
+/// with the planner about precisely the doc that diverges, which is the drift the one-home
+/// rule exists to stop.
+#[must_use]
+pub fn promote_destination(schema: &Schema, slug: &str) -> Option<String> {
+    if let Some(placement) = &schema.placement {
+        return Some(placement.file.clone());
+    }
+    let location = schema.location.as_deref()?;
+    Some(format!("{}/{slug}.md", location.trim_end_matches('/')))
+}
+
 /// The phase-4 promote decision: the staged docs to copy plus their phase-7 hashes.
 struct PromotePlan {
     promotions: Vec<Promotion>,
@@ -1212,16 +1235,12 @@ fn plan_promotions(
         let Some(schema) = schemas.get(ty) else {
             continue;
         };
-        // Resolve the canonical destination: a **placement** doctype
-        // (`design/storage.md` → Placement) lands at its one literal `placement.file`
-        // repo-root-relative path (case-preserved, no docs-root, no slug); a `location:`
-        // doctype lands at `<location>/<slug>.md`; a type with neither is transient (the
-        // commit doc) and is never promoted.
-        let destination = if let Some(placement) = &schema.placement {
-            placement.file.clone()
-        } else if let Some(location) = schema.location.as_deref() {
-            format!("{}/{slug}.md", location.trim_end_matches('/'))
-        } else {
+        // Resolve the canonical destination through the shared predicate: a **placement**
+        // doctype (`design/storage.md` → Placement) lands at its one literal
+        // `placement.file` repo-root-relative path (case-preserved, no docs-root, no
+        // slug); a `location:` doctype lands at `<location>/<slug>.md`; a type with
+        // neither is transient (the commit doc) and is never promoted.
+        let Some(destination) = promote_destination(schema, slug) else {
             continue;
         };
 

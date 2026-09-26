@@ -1508,6 +1508,15 @@ pub const FINALIZE_FAMILY: &[FinalizeCode] = &[
                        refused; one refusal per run, so the work-unit ref alone keys it",
     },
     FinalizeCode {
+        code: "finalize.amend-staged-doc",
+        producer: "cli::task",
+        subject: FinalizeSubject::FilePath,
+        subject_note: "the canonical home a managed doc the amend task staged would be \
+                       promoted to — the arm commits no tree change, so promoting it \
+                       leaves that file diverged from the commit it just rewrote; one \
+                       finding per staged doc, asked at the write door too",
+    },
+    FinalizeCode {
         code: "finalize.base-mismatch",
         producer: "engine::finalize",
         subject: FinalizeSubject::WorkUnit,

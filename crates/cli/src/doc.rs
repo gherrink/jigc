@@ -6190,6 +6190,40 @@ impl ActiveTask {
         if let Some(committed) = engine::store::canonical_path(&self.jigc_home, schema, slug)
             && committed.is_file()
         {
+            // **An amend task may not copy a promoting doc in** (the F-10 review's
+            // HIGH-1), refused here rather than only at its finalize because the ack this
+            // seam is about to print — *"copied in for update … re-promoted at finalize"*
+            // — is a law-1 lie the moment it prints in an amend task: that finalize
+            // commits no tree change, so the doc is never re-promoted into any commit.
+            // Refusing before [`state::copy_in`] means nothing is staged, no role is
+            // bound, and the task is still a good amend task.
+            //
+            // **One site, six verbs.** This is the only production caller of `copy_in`
+            // (see this method's doc-comment), and all six `VerbKind::Write` `doc` leaves
+            // that can stage a *committed* doc come through it — `set-field` (both its
+            // set and `--unset` arms), `set-slot`, `add-item`, `remove-item`,
+            // `retitle-item` and `rename`. The remaining two write leaves, `create` and
+            // `author`, never reach here: both mint through the create-gate, which the
+            // `amend` workflow's `allows-create: []` already refuses with
+            // `create.gate-blocked` (driven). The finalize arm's own gate is the backstop
+            // for any staged doc that arrives by some other path.
+            if let Some(home) = engine::finalize::promote_destination(schema, slug)
+                && state::read_amend_pin(&self.dir)
+                    .with_context(|| {
+                        format!("could not read the amend marker for task `{}`", self.id)
+                    })?
+                    .is_some()
+            {
+                // The **doc** address, never the caller's `addr` — which carries the
+                // fragment the verb aimed at (`vision:vision#thesis`), while the subject
+                // here is the whole document that cannot ride this task.
+                let doc = format!("{}:{}", address.r#type.as_str(), address.slug.as_str());
+                return Err(DocFailure::block(crate::task::amend_staged_doc_finding(
+                    &doc,
+                    &home,
+                    crate::task::AmendDocDoor::Write,
+                )));
+            }
             let body = std::fs::read_to_string(&committed)
                 .with_context(|| format!("could not read committed `{addr}`"))?;
             state::copy_in(&self.dir, address.r#type.as_str(), slug, &body)
