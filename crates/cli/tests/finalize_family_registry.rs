@@ -722,13 +722,21 @@ fn every_finalize_identifier_in_a_live_doc_is_declared_one_way_or_the_other() {
     );
 }
 
-/// **Arm 7 — the ambush-class claim rests on the derived set. Green today: pinned, not changed.**
+/// **Arm 7 — every fenced `finalize.*` contract identifier is disposed one way or the other,
+/// and the split is *derived*.**
 ///
-/// `crate::pack`'s constraint-token map hand-asserts *"Membership (verified against the real
-/// producers): three are minted finding codes … and one is not"*. That is the same hand
-/// verification this task exists to retire, so it is now checked against the derived registry:
-/// each of its `finalize.*` entries must be a declared member or a declared non-member, and the
-/// split must be the one the doc comment claims.
+/// The claim is that `crate::pack`'s constraint-token map cannot name a `finalize.*` identifier
+/// this registry has not answered for: each one is either a **minted** member of
+/// [`FINALIZE_FAMILY`] or a **declared non-member** of [`FINALIZE_NON_MEMBERS`] carrying its
+/// reason, with no third state.
+///
+/// **The split is read off the consts, not remembered** (the F-10 review's MEDIUM-4). It was
+/// pinned at `(3, 1)` — a hand count that stood for a `crate::pack` doc-comment sentence
+/// (*"three are minted finding codes … and one is not"*) which no longer exists there, and that
+/// moved to `(5, 1)` the moment the amend arm's two contracts joined the fenced set. A numeral
+/// here fences nothing the partition does not already fence: the declared-only half **is**
+/// `DECLARED_CONTRACT_IDENTIFIERS` narrowed to this namespace, the minted half is the
+/// remainder, and both halves being non-empty is what makes the disjunction meaningful.
 #[test]
 fn the_ambush_class_finalize_codes_are_declared_one_way_or_the_other() {
     let members: BTreeSet<&str> = FINALIZE_FAMILY.iter().map(|m| m.code).collect();
@@ -736,10 +744,12 @@ fn the_ambush_class_finalize_codes_are_declared_one_way_or_the_other() {
 
     let mut minted = 0usize;
     let mut declared_only = 0usize;
+    let mut namespaced = 0usize;
     for (code, _) in cli::pack::CONSTRAINT_REQUIRED_TOKENS {
         if !code.starts_with(NAMESPACE) {
             continue;
         }
+        namespaced += 1;
         if members.contains(code) {
             minted += 1;
         } else if non_members.contains(code) {
@@ -751,11 +761,24 @@ fn the_ambush_class_finalize_codes_are_declared_one_way_or_the_other() {
             );
         }
     }
+    let expected_declared_only = cli::pack::DECLARED_CONTRACT_IDENTIFIERS
+        .iter()
+        .filter(|(code, _)| code.starts_with(NAMESPACE))
+        .count();
     assert_eq!(
-        (minted, declared_only),
-        (3, 1),
-        "the ambush-class set's split must be the one `crate::pack`'s doc comment states — three \
-         minted finding codes and one declared-only contract identifier — read off the derived \
-         registry rather than re-verified by hand",
+        declared_only, expected_declared_only,
+        "the declared-only half of the fenced `{NAMESPACE}` set IS \
+         `DECLARED_CONTRACT_IDENTIFIERS` narrowed to this namespace — a producer-less identifier \
+         the token map fences and that const does not carry would be a contract nothing owns",
+    );
+    assert_eq!(
+        minted + declared_only,
+        namespaced,
+        "every fenced `{NAMESPACE}` identifier falls in exactly one half",
+    );
+    assert!(
+        minted > 0 && declared_only > 0,
+        "the disjunction means nothing unless both halves are represented (got {minted} minted, \
+         {declared_only} declared-only)",
     );
 }

@@ -1,6 +1,5 @@
 ---
-states-constraints:
-  [read.staged-read-back, finalize.amend-index-dirty, finalize.amend-staged-doc]
+states-constraints: [read.staged-read-back, finalize.amend-index-dirty, finalize.amend-staged-doc]
 ---
 The commit at HEAD keeps every byte of its tree, and its author; what the rewrite
 replaces is the message, and it also resets the committer identity and date to

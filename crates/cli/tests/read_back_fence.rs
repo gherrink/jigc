@@ -294,6 +294,12 @@ fn declarers(pack: &Path) -> BTreeSet<String> {
 /// leaving its siblings standing — the mutation the fence must catch, and narrower
 /// than emptying the list (a step declaring `create.singleton-copy-in` too must
 /// fail on *this* fence, not on that one).
+///
+/// It rewrites the **inline flow sequence on the key's own line**, which is how every shipped
+/// step writes the key. A list wrapped onto the following line parses identically for the
+/// loader and is invisible here, so the miss arm below says so rather than reporting the step
+/// as a non-declarer — a false diagnosis that cost one gate run when a third code made the
+/// line long enough to wrap (the F-10 review's MEDIUM-4).
 fn withdraw_code(pack: &Path, step: &str, code: &str) {
     let path = pack.join("steps").join(format!("{step}.yaml"));
     let text = fs::read_to_string(&path).expect("read the copied step");
@@ -320,7 +326,14 @@ fn withdraw_code(pack: &Path, step: &str, code: &str) {
     }
     assert!(
         hit,
-        "the shipped `{step}` step must declare `{code}` for its withdrawal to be a real mutation",
+        "the shipped `{step}` step must declare `{code}` on its own `states-constraints:` line \
+         for its withdrawal to be a real mutation — it carries \
+         {:?}; if the declaration is there but wrapped onto the next line, this helper cannot \
+         see it and the step's format is what to fix, not its front-matter",
+        text.lines()
+            .skip_while(|line| !line.starts_with("states-constraints:"))
+            .take(2)
+            .collect::<Vec<_>>(),
     );
     fs::write(&path, out).expect("write the mutated step");
 }
