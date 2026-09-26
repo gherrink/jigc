@@ -629,8 +629,27 @@ fn amending_block(view: &Composition) -> String {
         Some(id) => format!("`jigc task finalize {id}`"),
         None => String::from("finalize"),
     };
+    // **Whose `HEAD` this is, when it is not the workbench's** (the F-10 review's LOW-7). The
+    // task roster, the `.jigc/` workbench and every door the reader reached this one through
+    // bind to the main checkout; the pin does not — it is the `HEAD` of the checkout they are
+    // standing in. Its own sentence rather than [`commit_site_line`]'s: that producer speaks
+    // in a commit tense (`committed` / `would commit`) and this door has committed nothing.
+    let checkout = match &target.checkout {
+        None => String::new(),
+        Some(site) => {
+            let branch = match &site.branch {
+                Some(branch) => format!(" on branch `{branch}`"),
+                None => String::new(),
+            };
+            format!(
+                "  that is the `HEAD` of the linked worktree at `{}`{branch} — not of the main \
+                 checkout jigc's workbench binds to\n",
+                site.checkout,
+            )
+        }
+    };
     format!(
-        "amending: {} {subject}\n  \
+        "amending: {} {subject}\n{checkout}  \
          {door} replaces that message and leaves the commit's tree exactly as it is — so \
          this repairs the message, never the change.\n  \
          {}\n\n",
@@ -2023,6 +2042,7 @@ fn validation_scoped(
 /// `--format json` driver still reads the commit target from git. That is a **declared
 /// bound**, not an oversight: giving the machine surface this fact is a key addition, and
 /// a key addition is a 2.0 act.
+#[derive(Debug)]
 pub struct CommitSite {
     /// The checkout the commit lands in. A linked worktree usually sits outside the
     /// repository's own tree, which is law 1's *honest absolute* case
@@ -2034,6 +2054,40 @@ pub struct CommitSite {
     /// unreachable at this door — the posture guard refuses `repo.head-detached` before it
     /// — but the probe can also simply fail to answer, and *unknown* is not *none*.
     pub branch: Option<String>,
+}
+
+impl CommitSite {
+    /// The pair — checkout and branch — when `standing` is **not** the checkout the `.jigc/`
+    /// workbench binds to, and `None` when they are the same directory.
+    ///
+    /// One producer for the two questions that ask it, because it is one comparison: *where
+    /// will this commit land* (`crate::task::TaskArea::commit_site`, the landed ack and the
+    /// forecast) and *whose `HEAD` did this amend pin* (`jigc task amend`'s mint ack — the
+    /// F-10 review's LOW-7, where the settle claimed the ack names the checkout and driving
+    /// found it did not). The two write **different sentences** over it, deliberately: the
+    /// finalize surfaces speak in a commit tense, and the mint has not committed anything —
+    /// it has read a `HEAD`.
+    ///
+    /// Both paths are canonicalized before the comparison, because one of the two can carry
+    /// macOS's `/private` prefix and the other not. A path that cannot be canonicalized falls
+    /// back to its own bytes, which errs toward *different* and therefore toward saying
+    /// something rather than staying silent.
+    pub(crate) fn differing(
+        jigc_home: &std::path::Path,
+        standing: &std::path::Path,
+    ) -> Option<Self> {
+        let real =
+            |path: &std::path::Path| path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        if real(jigc_home) == real(standing) {
+            return None;
+        }
+        Some(CommitSite {
+            checkout: repo_relative(jigc_home, standing),
+            branch: crate::repo::head_ref(standing)
+                .flatten()
+                .map(|head| head.trim_start_matches("refs/heads/").to_string()),
+        })
+    }
 }
 
 /// **Which checkout a `jigc setup` / `jigc uninstall` acted on, when that is not the one

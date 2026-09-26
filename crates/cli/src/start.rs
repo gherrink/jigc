@@ -309,6 +309,12 @@ pub(crate) const AMEND_WORKFLOW: &str = "amend";
 /// `Human` route is for. A merge commit gets no such hand-back: its message is git's own
 /// merge narration, and re-authoring it as a Conventional-Commits subject would replace a
 /// structural message with a prose one, the same class the composed step names.
+///
+/// `id_hint` is **the id the mint would have taken** — the caller's slugged intent where there
+/// is one, the commit-derived `amend-<sha7>` fallback where there is not. It was the fallback
+/// unconditionally, so a refusal over a supplied intent addressed a work unit no invocation
+/// would ever have created (the F-10 review's LOW-5); the caller now resolves it after the
+/// intent is adjudicated, which is the only position where it can be right.
 fn head_shape_refusal(repo_root: &Path, id_hint: &str) -> Option<Finding> {
     let (shape, route) = if crate::task::head_is_unborn(repo_root).unwrap_or(false) {
         (
@@ -362,10 +368,20 @@ fn head_shape_refusal(repo_root: &Path, id_hint: &str) -> Option<Finding> {
 /// working area and composes text, and every byte it moves in git is
 /// `jigc task finalize <id>`'s.
 ///
-/// **The order, and why it is this one.** The pack loads first, then HEAD's shape is
-/// adjudicated ([`head_shape_refusal`]), then the mint. Both gates precede the mint so a
+/// **The order, and why it is this one.** The pack loads first, then the caller's own intent
+/// is adjudicated ([`state::reject_unslugable_title`]), then HEAD's shape
+/// ([`head_shape_refusal`]), then the mint. Every gate precedes the mint so a
 /// refused amend strands no task directory — the discipline `compose_named_in_repo` states
-/// for its own verb-routed rejection. And the pack precedes the shape probe so this door
+/// for its own verb-routed rejection.
+///
+/// **The intent precedes the shape probe** (the F-10 review's LOW-5), for two reasons that
+/// point the same way: a token the caller typed is this door's to reject before it reports a
+/// fact about the repository, and the shape refusal's locus *is* the id the mint would have
+/// taken — which is knowable only once the intent has been accepted. Both cells refuse at the
+/// same exit and mint nothing, so the swap changes which sentence a doubly-bad call gets and
+/// nothing else.
+///
+/// And the pack precedes both so this door
 /// answers the way every other door answers over a corpus jigc cannot adjudicate: the freeze
 /// and ref-target fences block *everywhere*, and a door that reported a local fact about
 /// HEAD instead would be the one place an operator learned something other than what is
@@ -394,14 +410,12 @@ pub(crate) fn amend_in_repo(start: &Path, intent: Option<&str>) -> Result<Compos
     let resolved = resolve_severity_cascade(pack.as_ref(), &project_config)?;
     let defs = CascadeDefs::new(&resolved, &project_config);
 
-    // The base pin and the marker name the same commit, and both are read before the shape
-    // gate so the refusal can key its target on the id the mint *would* have taken.
     let base = read_head(&repo_root)?;
     let fallback_id = format!("amend-{}", base.short);
-    if let Some(finding) = head_shape_refusal(&repo_root, &fallback_id) {
-        return Err(finding_to_err(finding));
-    }
 
+    // **The caller's own token is adjudicated before any fact about the repository** — and
+    // that order is what makes the shape refusal's locus honest (the F-10 review's LOW-5).
+    //
     // **The fallback covers the ABSENT intent, never a present one that says nothing.** The
     // branch is on `Option`, not on emptiness, and the difference is the whole degenerate-id
     // class: keyed on `trim().is_empty()`, `jigc task amend "   "` minted `amend-<sha7>` at
@@ -410,12 +424,26 @@ pub(crate) fn amend_in_repo(start: &Path, intent: Option<&str>) -> Result<Compos
     // `"   "`, `"日本語"` and `"the"` are each answered *unusable* rather than silently
     // renamed (`flow54_acceptance`'s arm 5, which is where this was driven).
     let (intent, slug_override) = match intent {
-        None => ("", Some(fallback_id)),
+        None => ("", Some(fallback_id.clone())),
         Some(text) => {
             state::reject_unslugable_title("task", text).map_err(finding_to_err)?;
             (text, None)
         }
     };
+
+    // The id the mint **would** take, which is what `amend.head-shape`'s locus must be: the
+    // override verbatim where there is one, and otherwise `slugify(intent)` — reached only
+    // once the refusal above has cleared, so the slug is non-empty by construction and this
+    // never has to guess. Shipped, the locus was `amend-<sha7>` unconditionally, so a refused
+    // `jigc task amend "root probe"` pointed at `work-unit:amend-b219d05`, a work unit no
+    // invocation would ever have created — while the function's own doc-comment claimed
+    // otherwise.
+    let id_hint = slug_override
+        .clone()
+        .unwrap_or_else(|| engine::slug::slugify(intent));
+    if let Some(finding) = head_shape_refusal(&repo_root, &id_hint) {
+        return Err(finding_to_err(finding));
+    }
 
     let minted = mint_amend_in_repo(start, &repo_root, intent, slug_override.as_deref(), &base)?;
     provision_commit_doc(pack.as_ref(), &defs, &minted.dir, &minted.id)?;
@@ -437,7 +465,14 @@ pub(crate) fn amend_in_repo(start: &Path, intent: Option<&str>) -> Result<Compos
         // every later re-compose cannot describe one commit two ways (the F-10 review's
         // MEDIUM-2). The marker holds the sha `base` pinned, so this is the same commit
         // `head_shape_refusal` adjudicated one statement above.
-        amend: amend_target_of(&repo_root, &minted.dir)?,
+        //
+        // The checkout rides here and nowhere else (the F-10 review's LOW-7): this is the
+        // invocation that read that `HEAD`, and `repo_root` is where it stood.
+        amend: amend_target_of(
+            &repo_root,
+            &minted.dir,
+            crate::render::CommitSite::differing(&jigc_home_or_repo(start)?, &repo_root),
+        )?,
         ..composed
     })
 }
@@ -900,6 +935,22 @@ pub struct AmendTarget {
     /// That commit's current subject line, verbatim. Empty when the commit's message has
     /// no subject at all, which the block then says rather than printing empty quotes.
     pub subject: String,
+    /// The checkout whose `HEAD` this amend pinned, when that is **not** the one the `.jigc/`
+    /// workbench binds to — `None` on the ordinary path, where they are the same directory
+    /// (the F-10 review's LOW-7).
+    ///
+    /// The settle's row *"the ack names the checkout when it is not the workbench's"* was
+    /// driven **not real**: from a linked worktree the mint ack named no checkout, and the
+    /// `committed / would commit in the linked worktree at …` line appeared only on the
+    /// forecast and the landed ack. It is made real here rather than struck, because the fact
+    /// is this door's own: a reader standing in a linked worktree is about to have *that*
+    /// worktree's `HEAD` rewritten, and every task-roster surface they reached the door
+    /// through belongs to the main checkout.
+    ///
+    /// Same producer as the finalize surfaces ([`crate::render::CommitSite::differing`]),
+    /// different sentence: those speak in a commit tense, and this door has committed nothing
+    /// — it has read a `HEAD`.
+    pub checkout: Option<crate::render::CommitSite>,
 }
 
 /// The [`AmendTarget`] a **re-compose** of `task_dir` carries — `None` for every ordinary
@@ -921,7 +972,17 @@ pub struct AmendTarget {
 /// commit was `HEAD` at the mint and stays reachable through the reflog, so this is the
 /// gc'd-and-expired cell, and in it the finalize arm refuses anyway. Naming a commit that is
 /// not there would be exactly the law-1 lie the block exists to prevent.
-fn amend_target_of(repo_root: &Path, task_dir: &Path) -> Result<Option<AmendTarget>> {
+///
+/// `checkout` is [`AmendTarget::checkout`], and only the **mint** passes one: which checkout's
+/// `HEAD` was pinned is a fact about the invocation that pinned it, and the marker records the
+/// sha alone. A re-compose passes `None` rather than comparing *its own* cwd, which would put a
+/// different question's answer under the same sentence — and the surfaces that then act (the
+/// forecast, the landed ack) name their own checkout from their own position.
+fn amend_target_of(
+    repo_root: &Path,
+    task_dir: &Path,
+    checkout: Option<crate::render::CommitSite>,
+) -> Result<Option<AmendTarget>> {
     let Some(sha) = state::read_amend_pin(task_dir)
         .with_context(|| format!("could not read the amend marker at {task_dir:?}"))?
     else {
@@ -933,7 +994,11 @@ fn amend_target_of(repo_root: &Path, task_dir: &Path) -> Result<Option<AmendTarg
     // Reached only once `rev-parse` has answered for this object, so an empty string here is
     // the genuine no-subject-line commit the block renders as such.
     let subject = git_rev_parse(repo_root, &["log", "-1", "--format=%s", &sha]).unwrap_or_default();
-    Ok(Some(AmendTarget { short, subject }))
+    Ok(Some(AmendTarget {
+        short,
+        subject,
+        checkout,
+    }))
 }
 
 /// One row of [`Composition::also_open`] — a task that was live before this call.
@@ -2945,7 +3010,7 @@ fn compose_task_workflow(
         // area's own marker at the one shared re-compose spine — so both doors that re-compose
         // a task (`jigc start --task`, `jigc workflow <W> --task`) name the commit being
         // repaired, exactly as the mint does, and neither can drift from the other.
-        amend: amend_target_of(repo_root, task_dir)?,
+        amend: amend_target_of(repo_root, task_dir, None)?,
     })
 }
 

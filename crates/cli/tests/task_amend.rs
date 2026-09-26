@@ -156,9 +156,19 @@ const AMEND_TABLE: &[Row] = &[
     // at both doors | — driven at the door that acts: `jigc task amend` is `Neither` and
     // mints under every posture exactly as `jigc start` does, while the finalize arm is
     // commit-on-behalf and refuses. Four `GitState` members, chosen to span the family's
-    // three detection shapes (a marker file · a marker directory · a detached HEAD) rather
-    // than to re-run `posture_door_axis`, which sweeps all seventeen against every acting
-    // door and now includes this arm through `BEHALF_DOORS`.
+    // three detection shapes (a marker file · a marker directory · a detached HEAD).
+    //
+    // **`posture_door_axis` does not cover this arm, and is not owed a cell** (corrected at
+    // the F-10 review's LOW-6, which found this comment claiming it *"now includes this arm
+    // through `BEHALF_DOORS`"* — false: that suite filters the registry to acting rows,
+    // `task amend` is `Neither`, and its `task finalize` row is driven over an **ordinary**
+    // task). The reason no second sweep is owed is that the posture family's subject is the
+    // **door**, never the task: `cli::cli::finalize_posture_refusal` takes a cwd and a format
+    // and cannot see which commit model a task carries, and the pre-commit re-probe is
+    // `SeamSubject::verify` inside `git_commit_capture`, which `git_commit_amend` funnels
+    // through like every other commit site. So all seventeen states × this door are already
+    // swept there, once, for both arms — and these four rows drive the arm's own claim, that
+    // a refusal leaves `HEAD` *and its tree* where they were.
     Row {
         id: "posture / merge",
         door: Door::Finalize,
@@ -977,6 +987,60 @@ fn an_amend_inside_a_detached_linked_worktree_refuses_at_the_commit_arm() {
     );
 }
 
+/// **The mint ack names the checkout whose `HEAD` it pinned, when that is not the
+/// workbench's** (the F-10 review's LOW-7 — the settle row driven *not real*).
+///
+/// From an **attached** linked worktree the amend pins that worktree's `HEAD` (the C2-09 rule:
+/// `task finalize` commits where you stand) while the task roster, the `.jigc/` workbench and
+/// every door the reader reached this one through belong to the main checkout. Shipped, the
+/// mint ack said nothing: the `committed / would commit in the linked worktree at …` line
+/// existed only on the forecast and the landed ack, after the fact.
+///
+/// The control is the ordinary cell: from the main checkout the sentence is always true and
+/// never news, so it renders no bytes — the omitting-context rule every line beside it obeys.
+#[test]
+fn the_mint_ack_names_the_pinned_checkout_when_it_is_not_the_workbenchs() {
+    let corpus = TrialCorpus::build(State::Fresh);
+    let worktree = corpus
+        .repo()
+        .parent()
+        .expect("a parent dir")
+        .join("side-wt");
+    corpus.git(&[
+        "worktree",
+        "add",
+        "-b",
+        "side",
+        worktree.to_str().expect("utf-8 worktree path"),
+        "HEAD",
+    ]);
+
+    let from_worktree = run_jigc_in(&worktree, &corpus.home(), &["task", "amend", "repair here"]);
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&from_worktree.stdout),
+        String::from_utf8_lossy(&from_worktree.stderr),
+    );
+    assert!(
+        from_worktree.status.success(),
+        "the mint door commits nothing, so it mints here:\n{text}",
+    );
+    assert!(
+        text.contains("that is the `HEAD` of the linked worktree at")
+            && text.contains("on branch `side`")
+            && text.contains("not of the main checkout jigc's workbench binds to"),
+        "the mint ack names the checkout it pinned, and the branch that checkout is on:\n{text}",
+    );
+
+    // The control: the same door from the main checkout says nothing about a checkout.
+    let from_main = corpus.jigc_ok(&["task", "amend", "repair at home"]);
+    assert!(
+        from_main.contains("amending: ") && !from_main.contains("linked worktree"),
+        "…and stays silent where the pin IS the workbench's, rather than printing a line \
+         that is always true and never news:\n{from_main}",
+    );
+}
+
 // ─────────────────── the two gates the arm owes its preview ───────────────────
 
 /// **`jigc task validate` previews the index gate the amend arm's `finalize` enforces** —
@@ -1099,6 +1163,71 @@ fn the_forecast_names_the_commit_it_would_rewrite() {
         before,
         "a forecast commits nothing",
     );
+}
+
+// ───────── the refusal's locus is the id that was never minted (F-10 review, LOW-5) ─────────
+
+/// **`amend.head-shape` keys its target on the id the mint *would* have taken** — both cells
+/// of the axis that decides that id (the F-10 review's LOW-5).
+///
+/// The axis is `{intent supplied, intent absent}`, which is the whole of what the door branches
+/// on when it names the task: a supplied intent slugs like every other work-unit id, an absent
+/// one falls back to the commit itself (`amend-<sha7>`). Shipped, the locus was the **fallback
+/// in both cells**, so a refused `jigc task amend "root probe"` addressed
+/// `work-unit:amend-b219d05` — a work unit no invocation would ever have created — while
+/// `head_shape_refusal`'s own doc-comment claimed it named the id the mint would have taken.
+///
+/// One fixture, driven twice: the refusal mints nothing, so the same root-`HEAD` repository
+/// answers both cells.
+#[test]
+fn the_head_shape_refusal_names_the_id_the_mint_would_have_taken() {
+    let fixture = GitStateRepo::build(GitState::Unborn);
+    let repo = fixture.repo();
+    let home = fixture.home();
+    // `jigc setup` births `HEAD` on an unborn repository, so the one commit it leaves is the
+    // root commit the shape gate refuses.
+    let setup = run_jigc(&repo, &home, &["setup"]);
+    assert!(
+        setup.status.success(),
+        "`jigc setup` births HEAD:\n{}",
+        String::from_utf8_lossy(&setup.stderr),
+    );
+    let short = git(&repo, &["rev-parse", "--short", "HEAD"]);
+
+    for (cell, argv, expected) in [
+        (
+            "an intent supplied",
+            vec!["task", "amend", "repair the first commit"],
+            "at: work-unit:repair-the-first-commit".to_string(),
+        ),
+        (
+            "no intent",
+            vec!["task", "amend"],
+            format!("at: work-unit:amend-{short}"),
+        ),
+    ] {
+        let out = run_jigc(&repo, &home, &argv);
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr),
+        );
+        assert!(
+            text.contains("amend.head-shape") && text.contains(&expected),
+            "[{cell}] the refusal names the id the mint would have taken — `{expected}`:\n{text}",
+        );
+        assert!(
+            !repo
+                .join(".jigc/tasks")
+                .join("repair-the-first-commit")
+                .exists()
+                && !repo
+                    .join(".jigc/tasks")
+                    .join(format!("amend-{short}"))
+                    .exists(),
+            "[{cell}] …and that id is exactly what does NOT exist: the refusal mints nothing",
+        );
+    }
 }
 
 // ───────── the arm's sentences are the arm's (F-10 review, MEDIUM-3 / LOW-8) ─────────

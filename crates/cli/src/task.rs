@@ -2214,22 +2214,14 @@ impl TaskArea {
     /// workbench binds to** — `None` on the ordinary path (M53 — the cwd census, row C2-09;
     /// [`crate::render::CommitSite`] carries the rule and the declared bound).
     ///
-    /// Both paths are canonicalized before they are compared, because one of the two can
-    /// carry macOS's `/private` prefix and the other not — the same reason
-    /// [`crate::milestone::sub_task_fan_out_refusal`] canonicalizes its own pair. A path
-    /// that cannot be canonicalized falls back to the raw comparison, which errs toward
-    /// *different* and therefore toward saying something rather than staying silent.
+    /// The comparison itself lives on [`crate::render::CommitSite::differing`] — one producer
+    /// shared with `jigc task amend`'s mint ack, which asks the same question about the same
+    /// pair and answers it in its own tense (the F-10 review's LOW-7). Both paths are
+    /// canonicalized there, because one of the two can carry macOS's `/private` prefix and
+    /// the other not, the same reason [`crate::milestone::sub_task_fan_out_refusal`]
+    /// canonicalizes its own pair.
     fn commit_site(&self) -> Option<crate::render::CommitSite> {
-        let real = |path: &Path| path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-        if real(&self.repo_root) == real(&self.jigc_home) {
-            return None;
-        }
-        Some(crate::render::CommitSite {
-            checkout: crate::render::repo_relative(&self.jigc_home, &self.repo_root),
-            branch: crate::repo::head_ref(&self.repo_root)
-                .flatten()
-                .map(|head| head.trim_start_matches("refs/heads/").to_string()),
-        })
+        crate::render::CommitSite::differing(&self.jigc_home, &self.repo_root)
     }
 
     /// The project cascade layer's config dir (`<repo>/.jigc/config`) — the override
