@@ -162,6 +162,44 @@ pub struct GateCoverage {
     /// [`crate::pack::normalized_body`]'s form (lowercase, single-spaced) so a phrase
     /// that wraps across a line or opens a sentence capitalized still matches.
     pub token: &'static str,
+    /// How this member is spelled on the **amend** commit model, when that differs
+    /// ([`AmendSpelling`]) — [`None`] for every member whose one spelling is true on both.
+    pub amend: Option<AmendSpelling>,
+}
+
+/// A member's spelling on the **amend** commit model (the F-10 review's MEDIUM-3).
+///
+/// The *member* is the same member on both models — that is the F-10 decision this does not
+/// touch, and its reason stands: a second member would put an amend-only clause into the
+/// composed line of every ordinary task. What varies is the **name** the surface gives the
+/// check, and for the index gate that name was wrong on the amend arm: the word *carryover*
+/// spells a pre-task-snapshot comparison with a `--carry-staged` declaration, and the amend
+/// arm has neither — it refuses the whole index and takes no flag.
+#[derive(Clone, Copy, Debug)]
+pub struct AmendSpelling {
+    /// The fragment [`whats_left_coverage`] renders for this member on the amend model.
+    pub fragment: &'static str,
+    /// The token a surface that states this member *on the amend model* must carry.
+    pub token: &'static str,
+}
+
+impl GateCoverage {
+    /// This member's fragment on `model` — its own where it has one, the canonical one
+    /// otherwise, so a caller never has to know which members differ.
+    pub fn fragment(&self, model: crate::render::CommitModel) -> &'static str {
+        match (model, self.amend) {
+            (crate::render::CommitModel::Amend, Some(spelling)) => spelling.fragment,
+            _ => self.fragment,
+        }
+    }
+
+    /// This member's required token on `model`, on [`Self::fragment`]'s rule.
+    pub fn token(&self, model: crate::render::CommitModel) -> &'static str {
+        match (model, self.amend) {
+            (crate::render::CommitModel::Amend, Some(spelling)) => spelling.token,
+            _ => self.token,
+        }
+    }
 }
 
 /// The table. Order is the order the generated fragment renders in.
@@ -178,6 +216,7 @@ pub const GATE_COVERAGE: &[GateCoverage] = &[
         tiers: &[Tier::Previewed],
         fragment: "the repository posture finalize refuses under",
         token: "repository posture",
+        amend: None,
     },
     GateCoverage {
         id: "content-findings",
@@ -185,6 +224,7 @@ pub const GATE_COVERAGE: &[GateCoverage] = &[
         tiers: &[Tier::Previewed],
         fragment: "this task's content findings",
         token: "content findings",
+        amend: None,
     },
     GateCoverage {
         // **The member is the *index* gate, and which check answers for it depends on the
@@ -200,11 +240,22 @@ pub const GATE_COVERAGE: &[GateCoverage] = &[
         // and the same exit code, which is the whole of what [`Door::Previewed`] promises
         // and the whole of what those surfaces claim. A second member would put an
         // amend-only clause in the composed line of every ordinary task.
+        //
+        // **It does cost the member a second spelling** (the F-10 review's MEDIUM-3). The
+        // canonical fragment *names the ordinary check*: "carryover" is a comparison against
+        // a pre-task snapshot with `--carry-staged` as its declaration, and on the amend arm
+        // there is neither — so a composed amend task's own `what's-left:` line was naming a
+        // gate that does not answer for it, over a check that answers with a different code
+        // and refuses a strictly wider set. One member, two names.
         id: "carryover",
         door: Door::Previewed(Invocation::PreviewGates),
         tiers: &[Tier::Previewed],
         fragment: "the carryover gate",
         token: "carryover",
+        amend: Some(AmendSpelling {
+            fragment: "the empty-index gate this arm refuses any staged path at",
+            token: "empty-index gate",
+        }),
     },
     GateCoverage {
         id: "owner-artifact-unstaged",
@@ -212,6 +263,7 @@ pub const GATE_COVERAGE: &[GateCoverage] = &[
         tiers: &[Tier::Previewed],
         fragment: "the owner-artifact causes that need no staging",
         token: "owner-artifact",
+        amend: None,
     },
     GateCoverage {
         // The changelog-gate advisory (M46 Inc 6 / T3). It joined the previewed set
@@ -223,6 +275,7 @@ pub const GATE_COVERAGE: &[GateCoverage] = &[
         tiers: &[Tier::Previewed],
         fragment: "the granted-but-unused changelog gate",
         token: "changelog gate",
+        amend: None,
     },
     GateCoverage {
         id: "staged-set",
@@ -230,6 +283,7 @@ pub const GATE_COVERAGE: &[GateCoverage] = &[
         tiers: &[Tier::LaterSummary],
         fragment: "the staged set",
         token: "staged set",
+        amend: None,
     },
     GateCoverage {
         // Stated at both depths: the one-liners name the phase, `finalize.md` names
@@ -240,6 +294,7 @@ pub const GATE_COVERAGE: &[GateCoverage] = &[
         tiers: &[Tier::LaterSummary, Tier::LaterCause],
         fragment: "promotion",
         token: "promot",
+        amend: None,
     },
     GateCoverage {
         id: "commit-surface",
@@ -247,6 +302,7 @@ pub const GATE_COVERAGE: &[GateCoverage] = &[
         tiers: &[Tier::LaterSummary],
         fragment: "the commit surface at finalize",
         token: "the commit",
+        amend: None,
     },
     GateCoverage {
         // The preflight's base pin — excluded from the preview by the M47 Settle,
@@ -257,6 +313,7 @@ pub const GATE_COVERAGE: &[GateCoverage] = &[
         tiers: &[Tier::LaterCause],
         fragment: "the preflight's base pin",
         token: "base pin",
+        amend: None,
     },
     GateCoverage {
         id: "empty-commit",
@@ -264,6 +321,7 @@ pub const GATE_COVERAGE: &[GateCoverage] = &[
         tiers: &[Tier::LaterCause],
         fragment: "the empty-commit / nothing-staged guard",
         token: "empty-commit",
+        amend: None,
     },
     GateCoverage {
         id: "stage-failed",
@@ -271,6 +329,7 @@ pub const GATE_COVERAGE: &[GateCoverage] = &[
         tiers: &[Tier::LaterCause],
         fragment: "finalize.stage-failed",
         token: "stage-failed",
+        amend: None,
     },
     GateCoverage {
         id: "owner-artifact-untracked",
@@ -278,6 +337,7 @@ pub const GATE_COVERAGE: &[GateCoverage] = &[
         tiers: &[Tier::LaterCause],
         fragment: "the untracked owner-artifact cause",
         token: "untracked",
+        amend: None,
     },
     GateCoverage {
         id: "commit-hook",
@@ -285,6 +345,7 @@ pub const GATE_COVERAGE: &[GateCoverage] = &[
         tiers: &[Tier::LaterCause],
         fragment: "the commit hook's rejection",
         token: "commit hook",
+        amend: None,
     },
 ];
 
@@ -304,19 +365,30 @@ pub fn members(tier: Tier) -> impl Iterator<Item = &'static GateCoverage> {
 /// Taking the rows as an argument rather than reading [`GATE_COVERAGE`] directly is
 /// what makes the fence's own redness testable: a synthetic row whose token no site
 /// carries must come back reported.
+///
+/// `model` picks which token a row is asked for ([`GateCoverage::token`]) — a surface that
+/// states this split **for a specific task** states it on that task's own commit model, and a
+/// member whose check is the arm's is named in the arm's words there (the F-10 review's
+/// MEDIUM-3). Every model-independent site passes [`crate::render::CommitModel::Index`] and
+/// nothing about it moves.
 pub fn unmet_in<'a>(
     text: &str,
     rows: impl IntoIterator<Item = &'a GateCoverage>,
+    model: crate::render::CommitModel,
 ) -> Vec<&'a GateCoverage> {
     let normalized = crate::pack::normalized_body(text);
     rows.into_iter()
-        .filter(|row| !normalized.contains(row.token))
+        .filter(|row| !normalized.contains(row.token(model)))
         .collect()
 }
 
-/// The members of `tier` that `text` fails to name.
-pub fn unmet(text: &str, tier: Tier) -> Vec<&'static GateCoverage> {
-    unmet_in(text, members(tier))
+/// The members of `tier` that `text` fails to name, on `model`.
+pub fn unmet(
+    text: &str,
+    tier: Tier,
+    model: crate::render::CommitModel,
+) -> Vec<&'static GateCoverage> {
+    unmet_in(text, members(tier), model)
 }
 
 /// Join fragments as English prose: `", "` between all but the last, `connector`
@@ -340,11 +412,22 @@ const COVERAGE_LEAD: &str = "previews part of the finalize gate";
 /// the canonical fragments verbatim — the highest-traffic surface (every id-carrying
 /// compose), and the one a new member must reach without an author remembering to
 /// edit it.
-pub fn whats_left_coverage() -> String {
+///
+/// **Per commit model** (the F-10 review's MEDIUM-3): a member whose check is the arm's
+/// renders the arm's own name for it ([`GateCoverage::fragment`]). [`CommitModel::Index`]
+/// reproduces the shipped sentence byte-for-byte, so every ordinary surface — and every
+/// golden over one — is unmoved.
+pub fn whats_left_coverage(model: crate::render::CommitModel) -> String {
     format!(
         "{COVERAGE_LEAD}: {}; {}",
-        join(members(Tier::Previewed).map(|row| row.fragment), ", and "),
-        join(members(Tier::LaterSummary).map(|row| row.fragment), " and "),
+        join(
+            members(Tier::Previewed).map(|row| row.fragment(model)),
+            ", and ",
+        ),
+        join(
+            members(Tier::LaterSummary).map(|row| row.fragment(model)),
+            " and ",
+        ),
     )
 }
 
@@ -396,7 +479,7 @@ mod tests {
     fn every_token_is_carried_by_its_own_fragment() {
         for row in GATE_COVERAGE {
             assert!(
-                unmet_in(row.fragment, [row]).is_empty(),
+                unmet_in(row.fragment, [row], crate::render::CommitModel::Index).is_empty(),
                 "`{}`'s fragment does not carry its own token `{}`",
                 row.id,
                 row.token,
@@ -429,27 +512,86 @@ mod tests {
             tiers: &[Tier::Previewed],
             fragment: "a member no surface names",
             token: "no surface names this",
+            amend: None,
         };
         let text = "previews part of the finalize gate: this task's content findings";
-        let missing = unmet_in(text, [&ABSENT]);
+        let missing = unmet_in(text, [&ABSENT], crate::render::CommitModel::Index);
         assert_eq!(
             missing.iter().map(|row| row.id).collect::<Vec<_>>(),
             vec!["synthetic-absent"],
         );
-        assert!(unmet_in(ABSENT.fragment, [&ABSENT]).len() == 1);
+        assert!(
+            unmet_in(
+                ABSENT.fragment,
+                [&ABSENT],
+                crate::render::CommitModel::Index
+            )
+            .len()
+                == 1
+        );
     }
 
     /// The generated fragment is the sentence the composed line carried by hand — the
     /// byte-identity this task's whole content is.
+    ///
+    /// Asserted on [`crate::render::CommitModel::Index`] because that is the identity claim:
+    /// the per-model rendering (the F-10 review's MEDIUM-3) must leave the ordinary
+    /// sentence byte-for-byte as it was, or every surface and golden over one moves.
     #[test]
     fn the_generated_fragment_is_the_shipped_sentence() {
         assert_eq!(
-            whats_left_coverage(),
+            whats_left_coverage(crate::render::CommitModel::Index),
             "previews part of the finalize gate: the repository posture finalize refuses \
              under, this task's content findings, the carryover gate, the owner-artifact \
              causes that need no staging, and the granted-but-unused changelog gate; the \
              staged set, promotion and the commit surface at finalize",
         );
+    }
+
+    /// **And the amend model renames exactly the one member whose check is the arm's** (the
+    /// F-10 review's MEDIUM-3) — one difference, in one clause, iterated off the table rather
+    /// than spelled: every row without an [`AmendSpelling`] renders identically on both
+    /// models, and every row with one renders its own words.
+    #[test]
+    fn the_amend_model_renames_only_the_members_that_declare_a_second_spelling() {
+        use crate::render::CommitModel;
+
+        let index = whats_left_coverage(CommitModel::Index);
+        let amend = whats_left_coverage(CommitModel::Amend);
+        assert_ne!(
+            index, amend,
+            "the amend arm's index gate is not the carryover gate, and the sentence says so",
+        );
+        for row in GATE_COVERAGE {
+            match row.amend {
+                None => assert_eq!(
+                    row.fragment(CommitModel::Amend),
+                    row.fragment,
+                    "`{}` declares no second spelling, so both models render its canonical \
+                     fragment",
+                    row.id,
+                ),
+                Some(spelling) => {
+                    assert!(
+                        amend.contains(spelling.fragment) && !amend.contains(row.fragment),
+                        "`{}`'s amend sentence carries its own fragment and not the \
+                         canonical one:\n{amend}",
+                        row.id,
+                    );
+                    assert!(
+                        index.contains(row.fragment) && !index.contains(spelling.fragment),
+                        "…and the ordinary sentence is untouched:\n{index}",
+                    );
+                    assert!(
+                        crate::pack::normalized_body(spelling.token) == spelling.token
+                            && spelling.fragment.contains(spelling.token),
+                        "`{}`'s amend token is authored in normalized form and is carried by \
+                         its own fragment",
+                        row.id,
+                    );
+                }
+            }
+        }
     }
 
     /// The join renders English, not a debug list — pinned at the three sizes the

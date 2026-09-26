@@ -581,7 +581,7 @@ fn migrate_corpus_help_lists_every_schema_change_kind_and_no_other() {
 #[test]
 fn task_finalize_help_states_the_generated_gate_coverage() {
     let help = help_stdout(&["task", "finalize", "--help"]);
-    let coverage = cli::gate_coverage::whats_left_coverage();
+    let coverage = cli::gate_coverage::whats_left_coverage(cli::render::CommitModel::Index);
     assert!(
         help.contains(&coverage),
         "`task finalize --help` must carry the generated coverage sentence verbatim \

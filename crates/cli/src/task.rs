@@ -213,8 +213,13 @@ fn finalize_long_about() -> String {
          rather than adding one. That arm stages nothing and refuses over a non-empty index \
          (`git commit --amend` rewrites `HEAD` from the index, so anything staged would be \
          folded into a commit that never carried it); there is no flag that declares that \
-         carry-over deliberate.",
-        crate::gate_coverage::whats_left_coverage(),
+         carry-over deliberate, so on that arm the index gate above is this refusal and not \
+         the carryover gate.",
+        // One help text serves both arms, so the coverage sentence renders the **ordinary**
+        // model's spelling and the paragraph below names the amend arm's own index gate in
+        // its own words (the F-10 review's MEDIUM-3). Rendering the amend spelling here
+        // instead would state an amend-only name on the door every ordinary task runs.
+        crate::gate_coverage::whats_left_coverage(crate::render::CommitModel::Index),
         crate::invocation_log::TASK_FINALIZE_AMEND_COMMITS,
     )
 }
@@ -456,7 +461,11 @@ pub enum TaskCommand {
         /// still rewrite it. A dry-run never requires `--approve`. It *refuses* on three
         /// gates: this task's validation findings, the empty-commit guard, and the
         /// carryover gate — where an undeclared carry-over is reported (exit 3) instead of
-        /// the manifest (add `--carry-staged` to forecast the carry). Its `findings` are
+        /// the manifest (add `--carry-staged` to forecast the carry). On an **amend** task
+        /// the last two read differently: the amend adds no commit, so the empty-commit
+        /// guard does not apply, and the index gate there is the arm's own
+        /// `finalize.amend-index-dirty` over *any* staged path, which `--carry-staged`
+        /// cannot forecast past. Its `findings` are
         /// the set `jigc task validate <id>` reports, the staging-independent
         /// `owner-artifact` causes included — reported here, decided at the real finalize.
         /// Every other gate — staging, promotion, the untracked `owner-artifact` cause,
@@ -467,7 +476,11 @@ pub enum TaskCommand {
         /// Declare the carry-over of pre-task staged changes deliberate: land index
         /// entries staged before this task existed instead of refusing
         /// (`finalize.carried-staged`). On a migration task it composes with
-        /// `--approve` — two independent declarations. Inert when nothing is carried.
+        /// `--approve` — two independent declarations. Inert when nothing is carried,
+        /// and inert on an **amend** task in every state: that arm refuses over *any*
+        /// non-empty index (`finalize.amend-index-dirty`) because `git commit --amend`
+        /// rewrites HEAD from the index, so there is nothing here to declare deliberate
+        /// and this flag declares nothing there.
         #[arg(long)]
         carry_staged: bool,
     },
@@ -3363,7 +3376,16 @@ impl TaskArea {
         // attempted, and on a reject the document is stderr's ([`emit_or_defer`]).
         let mut deferred_advisories = String::new();
         let (_, pending_left_out) = self.predict_manifest(&plan, staged_migration)?;
-        emit_left_out_advisory(format, &mut deferred_advisories, &pending_left_out);
+        // The model this run is on, so the print describes the commit it is about to make
+        // rather than the ordinary one (the F-10 review's MEDIUM-3). Read off the same `amend`
+        // marker `stage` is chosen from three statements below, so the sentence and the act
+        // cannot disagree.
+        emit_left_out_advisory(
+            format,
+            &mut deferred_advisories,
+            &pending_left_out,
+            render::CommitModel::of(amend.as_deref()),
+        );
 
         // M43 — the carried-over half of the pre-commit print: a `--carry-staged` run
         // names what it is about to carry, BEFORE it commits, with the same
@@ -6057,12 +6079,17 @@ pub(crate) use engine::finding::shell_token;
 /// **stdout** (where the agent reads the finalize surface), but under `--format json` the
 /// structured envelope owns stdout and must not be corrupted, so the advisory goes to
 /// **stderr**.
+/// `model` is this finalize's commit model ([`render::CommitModel`]) — the advisory's stem and
+/// its guidance clause are both the model's, because on the amend arm *"about to commit the
+/// index"* is false and *"git add to include"* is a route this same run refuses (the F-10
+/// review's MEDIUM-3).
 fn emit_left_out_advisory(
     format: Format,
     deferred: &mut String,
     left_out: &[render::ManifestEntry],
+    model: render::CommitModel,
 ) {
-    emit_or_defer(format, deferred, render::left_out_advisory(left_out));
+    emit_or_defer(format, deferred, render::left_out_advisory(left_out, model));
 }
 
 /// Emit the **pre-commit** carried-over print (M43, `design/surface-contract.md` → The

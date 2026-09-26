@@ -119,9 +119,19 @@ fn orientation_active(
         out.push_str(&format!(
             "Run: `jigc start --task {id}`   — resume: re-composes this task's own workflow where it left off\n"
         ));
+        // **The ordinary model's spelling, as a declared bound** (the F-10 review's
+        // MEDIUM-3). The composed `what's-left:` line below renders this sentence on the
+        // task's own commit model, because its [`Composition`] carries the amend target;
+        // an [`engine::result::ActiveTask`] does not, and the authority on *is this an
+        // amend task* is the area's `amend` marker — not the recorded workflow id sitting
+        // one field away, which would be a second discriminator for one condition, the
+        // divergence the arm's own gates exist to prevent. Putting the marker on this view
+        // is an additive key on a **pinned** envelope (`OrientationView`'s
+        // `SCHEMA_VERSION`, moved at M50), which the pre-1.0 window closed at M48: a 2.0
+        // act, not a wording fix.
         out.push_str(&format!(
             "Run: `jigc task validate {id}`   — {}\n",
-            crate::gate_coverage::whats_left_coverage()
+            crate::gate_coverage::whats_left_coverage(CommitModel::Index)
         ));
         // The commit boundary is the milestone door for a sub-task, and `jigc task
         // finalize <sub>` refuses outright there — so the directive names the door that
@@ -537,7 +547,15 @@ fn task_state_lines(view: &Composition) -> String {
     // The coverage clause is **generated** from the gate-coverage table, never spelled
     // here: this line and seven other surfaces state the same split, and a member that
     // joins the previewed set must reach all eight or none (`crate::gate_coverage`).
-    let coverage = crate::gate_coverage::whats_left_coverage();
+    //
+    // **On this task's own commit model** (the F-10 review's MEDIUM-3): an amend task's
+    // index gate is not the carryover gate, and this line named it as one. The model comes
+    // off the `amending:` block's own target — the marker-derived fact this view already
+    // carries — so the surface and the arm's gate cannot disagree, and an ordinary task's
+    // bytes do not move.
+    let coverage = crate::gate_coverage::whats_left_coverage(CommitModel::of(
+        view.amend.as_ref().map(|target| target.short.as_str()),
+    ));
     format!(
         "{resume}\n\
          what's-left: `jigc task validate {id}`   — {coverage}\n\
@@ -2285,16 +2303,80 @@ fn manifest_line(entry: &ManifestEntry) -> String {
     format!("  {} {}", entry.kind.tag(), entry.path)
 }
 
+/// **What an amend rewrites, stated in full** — one home for the forecast's second line and
+/// the landed ack's, so the two cannot describe one act differently (F-10; the review's LOW-8).
+///
+/// It said *"the commit's tree is unchanged; only its message was rewritten"*, and *only* was
+/// false: `git commit --amend` preserves the **author** and the author date and **resets the
+/// committer identity and date** to the running user's, now (driven — `AD` byte-identical
+/// before and after, `CD` moved). On a shared repository that silently re-attributes the
+/// commit of whoever made it, which is exactly the class of fact law 1 exists to print: an
+/// agent repairing a colleague's subject line is not told it is also taking their name off the
+/// committer line.
+///
+/// The tense differs between the two surfaces and nothing else does, so the constant carries
+/// the present tense and the landed caller re-uses it as-is: what an amend does to a commit is
+/// one statement, whether it is about to happen or just has.
+const AMEND_REWRITES: &str = "  the tree and the author are unchanged; the message is \
+                              re-authored and the committer becomes you, now";
+
+/// **Which commit model a finalize surface is describing** — the axis every sentence about
+/// *what this commit carries* turns on, and the one `jigc task finalize` has had two of since
+/// F-10 (`design/finalize.md` → The amend arm).
+///
+/// It exists because the left-out surfaces were spelling the ordinary model's guidance on
+/// both arms, and on the amend arm one of those sentences instructed the agent to do what the
+/// same binary then refuses (the F-10 review's MEDIUM-3, driven: *"left-out (unstaged/untracked
+/// — git add to include)"* printed by a run whose `git add` turns into `finalize.amend-index-dirty`
+/// at exit 3). A route the same binary refuses is a route-floor defect; a *guidance clause*
+/// the same binary refuses is the same defect one tier down.
+///
+/// [`ForecastSubject`] already carried the distinction for the headline
+/// ([`ForecastSubject::model`]) and [`Landed::amended`] carries it for the ack, so this is the
+/// axis those two already encode, named once so the sentences below can read it.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum CommitModel {
+    /// The ordinary model: the commit **is** the index, so unstaged work joins it with
+    /// `git add` and a left-out path is a choice the reader can change.
+    Index,
+    /// The amend model: `git commit --amend` over an index this arm refuses unless it is
+    /// **empty**, with the committed tree unchanged. Nothing in the worktree can join this
+    /// commit, so naming `git add` there is not guidance but misdirection.
+    Amend,
+}
+
+impl CommitModel {
+    /// The model a surface is on, from the pinned/superseded sha only the amend arm carries —
+    /// the landed ack's [`Landed::amended`], the committing path's own `amend` marker read. One
+    /// producer, so no caller decides this twice.
+    pub(crate) fn of(amended: Option<&str>) -> Self {
+        match amended {
+            Some(_) => CommitModel::Amend,
+            None => CommitModel::Index,
+        }
+    }
+}
+
 /// The left-out section a finalize manifest appends when the working tree carries
-/// unstaged/untracked changes the commit (the index) leaves behind (M30 G3): a guidance
+/// unstaged/untracked changes the commit leaves behind (M30 G3): a guidance
 /// header naming the set, then one indented path per [`ManifestEntry`]. Empty when nothing
 /// is left out. Shared by the dry-run forecast and the landed residual so both surfaces
 /// render the left-out set identically.
-fn left_out_lines(left_out: &[ManifestEntry]) -> Vec<String> {
+///
+/// **The header is the commit model's** (the F-10 review's MEDIUM-3; [`CommitModel`]). On the
+/// ordinary model the set is a choice — `git add` moves a path into the commit. On the amend
+/// model it is not: the arm's contract is that the committed tree does not move and its own
+/// gate refuses any staged path, so the honest clause says the set cannot join rather than
+/// naming the verb that would be refused for trying.
+fn left_out_lines(left_out: &[ManifestEntry], model: CommitModel) -> Vec<String> {
     if left_out.is_empty() {
         return Vec::new();
     }
-    let mut lines = vec!["  left-out (unstaged/untracked — git add to include):".to_string()];
+    let guidance = match model {
+        CommitModel::Index => "git add to include",
+        CommitModel::Amend => "an amend commits no tree change, so none of it can join",
+    };
+    let mut lines = vec![format!("  left-out (unstaged/untracked — {guidance}):")];
     lines.extend(left_out.iter().map(|entry| format!("    {}", entry.path)));
     lines
 }
@@ -2313,12 +2395,23 @@ fn left_out_lines(left_out: &[ManifestEntry]) -> Vec<String> {
 /// stood above the rejection and *"read as done until the next line contradicted it"*.
 /// **Reworded, never moved** — the print's position is settled (`design/finalize.md` → "The
 /// `left-out` advisory prints BEFORE the commit too"), so the fix is in the words alone.
-pub fn left_out_advisory(left_out: &[ManifestEntry]) -> String {
-    let lines = left_out_lines(left_out);
+///
+/// **And it states the intent of the model it is on** (the F-10 review's MEDIUM-3): *"about to
+/// commit the index"* is doubly false on the amend arm, which commits no tree change and has
+/// already refused unless that index is **empty**. The stem is therefore the model's, like the
+/// section's guidance below it.
+pub fn left_out_advisory(left_out: &[ManifestEntry], model: CommitModel) -> String {
+    let lines = left_out_lines(left_out, model);
     if lines.is_empty() {
         return String::new();
     }
-    let mut out = String::from("finalize — about to commit the index; leaving out:\n");
+    let mut out = String::from(match model {
+        CommitModel::Index => "finalize — about to commit the index; leaving out:\n",
+        CommitModel::Amend => {
+            "finalize — about to rewrite HEAD's message; the committed tree does not move, so \
+             it leaves out:\n"
+        }
+    });
     for line in lines {
         out.push_str(&line);
         out.push('\n');
@@ -2618,6 +2711,15 @@ pub enum ForecastSubject<'a> {
 }
 
 impl<'a> ForecastSubject<'a> {
+    /// Which [`CommitModel`] this forecast is of — the variant *is* the model, so the
+    /// sentences downstream of it read this rather than each re-matching the enum.
+    fn model(&self) -> CommitModel {
+        match self {
+            ForecastSubject::Adds(_) => CommitModel::Index,
+            ForecastSubject::Rewrites { .. } => CommitModel::Amend,
+        }
+    }
+
     /// The subject jigc will hand git — the envelope's `subject`, identical in meaning on
     /// both models.
     fn rendered(&self) -> &'a str {
@@ -2636,7 +2738,7 @@ impl<'a> ForecastSubject<'a> {
             ForecastSubject::Adds(subject) => vec![format!("would commit — {subject}")],
             ForecastSubject::Rewrites { sha, from, to } => vec![
                 format!("would rewrite {sha} \"{from}\" → \"{to}\""),
-                "  the commit's tree is unchanged; only its message is replaced".to_string(),
+                AMEND_REWRITES.to_string(),
             ],
         }
     }
@@ -2668,7 +2770,7 @@ pub fn finalize_manifest(
             // have told them.
             lines.extend(site.map(|site| commit_site_line("would commit", site)));
             lines.extend(included.iter().map(manifest_line));
-            lines.extend(left_out_lines(left_out));
+            lines.extend(left_out_lines(left_out, subject.model()));
             with_carried_findings(lines.join("\n"), findings)
         }
     }
@@ -2763,8 +2865,8 @@ fn landed_summary(landed: &Landed) -> String {
     // states the tree's status instead of counting files into it.
     let mut out = match landed.amended.as_deref() {
         Some(superseded) => format!(
-            "amended {superseded} → {} — {}\n  the commit's tree is unchanged; only its \
-             message was rewritten\n  the superseded commit stays reachable in the reflog\n",
+            "amended {superseded} → {} — {}\n{AMEND_REWRITES}\n  the superseded commit stays \
+             reachable in the reflog\n",
             landed.hash, landed.subject,
         ),
         None => format!("finalized {} — {}\n", landed.hash, landed.subject),
@@ -2787,7 +2889,7 @@ fn landed_summary(landed: &Landed) -> String {
         out.push('\n');
         out.push_str(&commit_site_line("committed", site));
     }
-    for line in left_out_lines(&landed.left_out) {
+    for line in left_out_lines(&landed.left_out, CommitModel::of(landed.amended.as_deref())) {
         out.push('\n');
         out.push_str(&line);
     }

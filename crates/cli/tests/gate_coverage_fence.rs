@@ -31,6 +31,7 @@
 //! a fence that only ever runs green is a grep wearing a badge.
 
 use cli::gate_coverage::{self, GateCoverage, Tier};
+use cli::render::CommitModel;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -95,6 +96,27 @@ fn init_repo(root: &Path) {
     fs::create_dir_all(root.join(".jigc").join("config")).expect("create project layer");
 }
 
+/// A second commit, so `HEAD` is the single-parent commit `jigc task amend` requires — its
+/// `amend.head-shape` gate refuses a root commit, which is what [`init_repo`] leaves.
+fn second_commit(root: &Path) {
+    fs::write(root.join("NOTES.md"), "notes\n").expect("write the second file");
+    for args in [
+        vec!["add", "NOTES.md"],
+        vec!["commit", "-q", "--no-verify", "-m", "the second commit"],
+    ] {
+        let out = Command::new("git")
+            .args(&args)
+            .current_dir(root)
+            .output()
+            .expect("run git");
+        assert!(
+            out.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+}
+
 /// Run `jigc <args>` and return stdout + stderr concatenated (a tip rides stderr).
 fn run(repo: &Path, home: &Path, pack: Option<&Path>, args: &[&str]) -> String {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_jigc"));
@@ -136,6 +158,11 @@ struct Site {
     tiers: &'static [Tier],
     /// The site's text, region-sliced to its own statement.
     text: String,
+    /// The **commit model** this site's statement is about — which token each member is
+    /// asked for (the F-10 review's MEDIUM-3). Every site but one is the ordinary model;
+    /// the composed line of a `jigc task amend` task states the same split about an arm
+    /// whose index gate is its own, and must name it in the arm's words.
+    model: CommitModel,
 }
 
 impl Site {
@@ -150,8 +177,9 @@ impl Site {
 
 /// Every coverage site, its text taken from the surface that actually emits it.
 ///
-/// Four binary runs: one dev-pack compose (which carries **two** sites — the composed
-/// `what's-left:` line and the dev `finalize` step body), one methodology compose, one
+/// Five binary runs: one dev-pack compose (which carries **two** sites — the composed
+/// `what's-left:` line and the dev `finalize` step body), one `jigc task amend` mint (the
+/// same composed line on the **amend** commit model), one methodology compose, one
 /// read-shaped `task` guess, one `describe`.
 fn sites() -> Vec<Site> {
     let root = repo_root();
@@ -160,12 +188,21 @@ fn sites() -> Vec<Site> {
     let meth = TempDir::new("meth");
     init_repo(dev.path());
     init_repo(meth.path());
+    // `jigc task amend` refuses a **root** HEAD (`amend.head-shape`), and `init_repo` leaves
+    // exactly one commit — so the amend site needs a second one before it can be composed.
+    second_commit(dev.path());
 
     let composed = run(
         dev.path(),
         home.path(),
         None,
         &["start", "--workflow", "single-task", "add a thing"],
+    );
+    let amend = run(
+        dev.path(),
+        home.path(),
+        None,
+        &["task", "amend", "repair the message"],
     );
     let methodology = run(
         meth.path(),
@@ -188,6 +225,23 @@ fn sites() -> Vec<Site> {
                 "\n",
                 "what's-left",
             ),
+            model: CommitModel::Index,
+        },
+        Site {
+            // The same generated sentence, about the **other** commit model (the F-10
+            // review's MEDIUM-3): an amend task's index gate is `finalize.amend-index-dirty`
+            // over the whole index with no `--carry-staged`, so naming it *"the carryover
+            // gate"* named a check that does not answer for this task. One member, two
+            // spellings — and this site is what makes the second one binding.
+            name: "the composed `what's-left:` line of an AMEND task (render.rs, generated)",
+            tiers: &[Tier::Previewed, Tier::LaterSummary],
+            text: region(
+                &amend,
+                "what's-left: `jigc task validate",
+                "\n",
+                "what's-left (amend)",
+            ),
+            model: CommitModel::Amend,
         },
         Site {
             name: "the dev pack's `finalize` step (composed)",
@@ -198,6 +252,7 @@ fn sites() -> Vec<Site> {
                 "at finalize.",
                 "dev finalize step",
             ),
+            model: CommitModel::Index,
         },
         Site {
             name: "the methodology pack's `finalize` step (composed)",
@@ -208,11 +263,13 @@ fn sites() -> Vec<Site> {
                 "at finalize.",
                 "methodology finalize step",
             ),
+            model: CommitModel::Index,
         },
         Site {
             name: "the `task` unknown-subcommand tip (cli.rs)",
             tiers: &[Tier::Previewed],
             text: region(&tip, "`jigc task validate <task-id>`", "\n", "task tip"),
+            model: CommitModel::Index,
         },
         Site {
             name: "the `validate-task` catalog hint (`jigc describe`)",
@@ -223,6 +280,7 @@ fn sites() -> Vec<Site> {
                 "without committing.",
                 "validate-task hint",
             ),
+            model: CommitModel::Index,
         },
         Site {
             name: "QUICKSTART.md → the core loop",
@@ -233,6 +291,7 @@ fn sites() -> Vec<Site> {
                 "not *this will commit*:",
                 "QUICKSTART.md",
             ),
+            model: CommitModel::Index,
         },
         Site {
             name: "design/command-output-contract.md → the exit-code taxonomy, third clause",
@@ -243,6 +302,7 @@ fn sites() -> Vec<Site> {
                 "*nothing this side of the commit blocks it*.",
                 "command-output-contract.md",
             ),
+            model: CommitModel::Index,
         },
         Site {
             name: "design/finalize.md → 2. Validate",
@@ -253,6 +313,7 @@ fn sites() -> Vec<Site> {
                 "not *this will commit*.",
                 "finalize.md",
             ),
+            model: CommitModel::Index,
         },
     ]
 }
@@ -265,11 +326,14 @@ fn sites() -> Vec<Site> {
 fn every_site_names_every_member_of_the_tiers_it_enumerates() {
     let mut broken = Vec::new();
     for site in sites() {
-        let missing = gate_coverage::unmet_in(&site.text, site.owed());
+        let missing = gate_coverage::unmet_in(&site.text, site.owed(), site.model);
         for row in missing {
             broken.push(format!(
                 "{} does not name `{}` (token {:?})\n  text: {}",
-                site.name, row.id, row.token, site.text
+                site.name,
+                row.id,
+                row.token(site.model),
+                site.text
             ));
         }
     }
@@ -291,13 +355,14 @@ fn the_fence_reddens_when_a_site_drops_a_member() {
     let mut checked = 0usize;
     for site in sites() {
         for row in site.owed() {
-            let cut = strike(&site.text, row.token);
+            let token = row.token(site.model);
+            let cut = strike(&site.text, token);
             assert_ne!(
                 cut, site.text,
-                "{}: token {:?} was not present to cut",
-                site.name, row.token
+                "{}: token {token:?} was not present to cut",
+                site.name,
             );
-            let reported: Vec<&str> = gate_coverage::unmet_in(&cut, [row])
+            let reported: Vec<&str> = gate_coverage::unmet_in(&cut, [row], site.model)
                 .iter()
                 .map(|r| r.id)
                 .collect();
@@ -311,13 +376,14 @@ fn the_fence_reddens_when_a_site_drops_a_member() {
             checked += 1;
         }
     }
-    // The axis today is 58 cells (8 sites × the tiers each owes) — 45 before the
-    // changelog gate joined [`Tier::Previewed`] and 51 before the repository posture
-    // did (M52 Increment 3 / T6), each of them one cell per site owing that tier, and
-    // seven sites owe it. The floor guards against the axis silently collapsing — a
-    // site whose region stopped resolving, or a tier that lost its members, would
-    // otherwise pass as a vacuous green.
-    assert!(checked >= 58, "the mutation axis ran only {checked} cells");
+    // The axis today is 66 cells (9 sites × the tiers each owes) — 45 before the
+    // changelog gate joined [`Tier::Previewed`], 51 before the repository posture did
+    // (M52 Increment 3 / T6), and 58 before the amend model's own composed line became a
+    // site of its own (the F-10 review's MEDIUM-3, +8: five previewed members and three
+    // later-summary ones). Each is one cell per site owing that tier. The floor guards
+    // against the axis silently collapsing — a site whose region stopped resolving, or a
+    // tier that lost its members, would otherwise pass as a vacuous green.
+    assert!(checked >= 66, "the mutation axis ran only {checked} cells");
 }
 
 /// Remove **every** occurrence of `token` from the normalized view's perspective:
@@ -369,10 +435,10 @@ fn the_composed_line_carries_the_generated_fragment_verbatim() {
         .find(|line| line.starts_with("what's-left: "))
         .expect("the composed text carries a what's-left line");
     assert!(
-        line.contains(&gate_coverage::whats_left_coverage()),
+        line.contains(&gate_coverage::whats_left_coverage(CommitModel::Index)),
         "the composed line must carry the generated fragment verbatim:\n  line: {line}\n  \
          generated: {}",
-        gate_coverage::whats_left_coverage(),
+        gate_coverage::whats_left_coverage(CommitModel::Index),
     );
 }
 

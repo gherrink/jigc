@@ -1080,7 +1080,7 @@ fn the_forecast_names_the_commit_it_would_rewrite() {
         "nothing is added on this arm, so the ordinary headline must not appear:\n{text}",
     );
     assert!(
-        text.contains("the commit's tree is unchanged"),
+        text.contains("the tree and the author are unchanged"),
         "and the forecast states the fact the empty manifest below it would otherwise \
          leave a reader to infer:\n{text}",
     );
@@ -1098,6 +1098,87 @@ fn the_forecast_names_the_commit_it_would_rewrite() {
         corpus.git(&["log", "-1", "--pretty=format:%s"]),
         before,
         "a forecast commits nothing",
+    );
+}
+
+// ───────── the arm's sentences are the arm's (F-10 review, MEDIUM-3 / LOW-8) ─────────
+
+/// **No surface of the amend arm tells the agent to do what the arm refuses** — and the two
+/// that describe the rewrite say what it rewrites (the F-10 review's MEDIUM-3 and LOW-8).
+///
+/// **The set: every left-out consumer that is live on this arm**, which is 2 of the 3
+/// (`cli::render::left_out_lines`' callers — the `--dry-run` forecast, the landing run's
+/// pre-commit advisory, and the landed residual, which is inert here because the arm supplies
+/// an empty manifest by construction). Both live ones are driven.
+///
+/// Driven at `48d1d529`: over a dirty worktree both printed *"left-out (unstaged/untracked —
+/// **git add** to include)"*, and following that instruction makes the same finalize refuse at
+/// exit 3 with `finalize.amend-index-dirty` — a guidance clause the same binary refuses, which
+/// is the route floor's defect one tier down. The landing run's stem also said *"about to
+/// commit the index"*, on an arm that commits no tree change and has already refused unless
+/// that index is empty.
+///
+/// And the rewrite's own sentence: `git commit --amend` preserves the author and author date
+/// and **resets the committer identity and date**, so *"only its message was rewritten"* was
+/// false on both the forecast and the landed ack.
+#[test]
+fn the_amend_arms_sentences_describe_the_amend() {
+    let (corpus, task) = amend_ready("repair the message", "the re-authored subject");
+    // A dirty worktree with nothing staged — the state the arm lands in, and the one the
+    // left-out surfaces describe. The index stays empty: a staged path would refuse instead.
+    std::fs::write(corpus.repo().join("README.md"), "edited after the commit\n")
+        .expect("dirty an existing tracked file");
+    std::fs::write(corpus.repo().join("untracked.txt"), "wip\n").expect("write an untracked file");
+    let author_before = corpus.git(&["log", "-1", "--format=%an <%ae> %aI"]);
+
+    let forecast = corpus.jigc_ok(&["task", "finalize", &task, "--dry-run"]);
+    let landing = corpus.jigc_ok(&["task", "finalize", &task]);
+
+    for (surface, text) in [("--dry-run", &forecast), ("the landing run", &landing)] {
+        assert!(
+            !text.contains("git add to include"),
+            "[{surface}] must not name `git add`: this arm refuses any staged path \
+             (`finalize.amend-index-dirty`), so that is a route the same binary refuses:\n{text}",
+        );
+        assert!(
+            text.contains("an amend commits no tree change, so none of it can join"),
+            "[{surface}] says why the left-out set cannot join instead:\n{text}",
+        );
+        assert!(
+            text.contains("untracked.txt") && text.contains("README.md"),
+            "[{surface}] still NAMES the set — the fix is the guidance, not the \
+             disclosure:\n{text}",
+        );
+    }
+    assert!(
+        !landing.contains("about to commit the index"),
+        "the landing run's stem is the model's too — this arm commits no tree change and has \
+         already refused unless the index is empty:\n{landing}",
+    );
+    assert!(
+        landing.contains("about to rewrite HEAD's message"),
+        "…and says what it is about to do instead:\n{landing}",
+    );
+
+    // LOW-8: the committer rewrite, on both surfaces, and driven rather than asserted.
+    for (surface, text) in [("--dry-run", &forecast), ("the landed ack", &landing)] {
+        assert!(
+            text.contains("the tree and the author are unchanged")
+                && text.contains("the committer becomes you, now"),
+            "[{surface}] `git commit --amend` resets the committer identity and date — on a \
+             shared repository that silently re-attributes someone else's commit, so the \
+             surface says so:\n{text}",
+        );
+        assert!(
+            !text.contains("only its message"),
+            "[{surface}] and it no longer claims the message is the only thing that moved:\n{text}",
+        );
+    }
+    assert_eq!(
+        corpus.git(&["log", "-1", "--format=%an <%ae> %aI"]),
+        author_before,
+        "the sentence is true in the half it claims preservation for: the author and the \
+         author date survive the amend byte-for-byte",
     );
 }
 
@@ -1422,7 +1503,7 @@ fn no_doc_write_verb_stages_a_managed_doc_into_an_amend_task() {
     // job still lands.
     let landed = corpus.jigc_ok(&["task", "finalize", &task]);
     assert!(
-        landed.contains("the commit's tree is unchanged"),
+        landed.contains("the tree and the author are unchanged"),
         "the amend still lands after every refused doc write:\n{landed}",
     );
 }
@@ -1469,7 +1550,7 @@ fn the_amend_tasks_own_commit_doc_takes_every_write_it_needs() {
 
     let landed = corpus.jigc_ok(&["task", "finalize", &task]);
     assert!(
-        landed.contains("the commit's tree is unchanged"),
+        landed.contains("the tree and the author are unchanged"),
         "the amend lands over its own doc:\n{landed}",
     );
     let message = corpus.git(&["log", "-1", "--pretty=format:%B"]);

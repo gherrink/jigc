@@ -1,9 +1,10 @@
 ---
 states-constraints: [read.staged-read-back, finalize.amend-index-dirty]
 ---
-The commit at HEAD keeps every byte of its tree; only its message is replaced.
-Nothing is re-run, nothing is re-staged, and no file changes — so a wrong *change*
-is not repaired here, it is a new task.
+The commit at HEAD keeps every byte of its tree, and its author; what the rewrite
+replaces is the message, and it also resets the committer identity and date to
+yours. Nothing is re-run, nothing is re-staged, and no file changes — so a wrong
+*change* is not repaired here, it is a new task.
 
 You are re-authoring the message from scratch, not editing the old one: jigc does
 not read HEAD's message back into this doc, because the render that produced it is

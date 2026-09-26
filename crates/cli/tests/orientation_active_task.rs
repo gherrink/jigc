@@ -355,7 +355,7 @@ fn the_active_block_renders_byte_for_byte() {
     )
     .expect("the pin is JSON");
     let short = pin["short"].as_str().expect("the pin carries a short sha");
-    let coverage = cli::gate_coverage::whats_left_coverage();
+    let coverage = cli::gate_coverage::whats_left_coverage(cli::render::CommitModel::Index);
 
     let expected = format!(
         "Active task: {task}
