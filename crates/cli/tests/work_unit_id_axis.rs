@@ -1097,3 +1097,88 @@ fn outside_a_repository_the_degenerate_title_still_answers_not_in_repo() {
          reads that establish where jigc is standing\n{surface}",
     );
 }
+
+/// **A mint door whose title is optional routes at the exit that omits it** (M53, the rc.20
+/// per-axis review `(3, F-C)`).
+///
+/// `write.unslugable-title` is one producer for the whole mint class, and its route —
+/// *re-run with a title carrying ASCII letters or digits* — is the complete exit set at
+/// every [`MINT_DOORS`] row whose title is **required**. Then the registry grew a sixth
+/// member whose title is not: `jigc task amend ["<intent>"]`, where omitting the intent
+/// names the task after the commit it rewrites (`amend-<sha7>`). The shared route was not
+/// re-derived over the widened set, so the one door with a second exit was the one door
+/// that never named it — M45's complete-fix lens turned on M53's own new code, with the
+/// registry as the axis.
+///
+/// **The axis is read off the registry, not listed here.** A row's `door` spelling is where
+/// the optionality is already written down (the brackets), so a seventh door with an
+/// optional title joins this cell by existing, and a row that drops its brackets reddens
+/// the count. The control is the sibling immediately beside it: `jigc milestone create ""`
+/// raises the identical code and must **not** grow the clause, because there is no fallback
+/// there to name.
+#[test]
+fn a_mint_door_whose_title_is_optional_routes_at_the_exit_that_omits_it() {
+    let optional: Vec<&str> = MINT_DOORS
+        .iter()
+        .map(|row| row.door)
+        .filter(|door| door.contains('['))
+        .collect();
+    assert_eq!(
+        optional,
+        vec!["jigc task amend [\"<intent>\"]"],
+        "the axis is the rows whose registry spelling makes the title optional — a new one \
+         owes this cell, and a row that loses its brackets owes an explanation",
+    );
+
+    let fixture = clean_fixture("optional-title-route");
+    let short = {
+        let out = Command::new("git")
+            .args(["rev-parse", "--short=7", "HEAD"])
+            .current_dir(fixture.path())
+            .output()
+            .expect("read HEAD");
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    };
+
+    for title in UNSLUGABLE_TITLES {
+        let out = fixture.run(&["task", "amend", title]);
+        let surface = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr),
+        );
+        assert!(
+            surface.contains(UNSLUGABLE_CODE) && surface.contains("amend-<sha7>"),
+            "the refusal must name the exit only this door has, for the title {title:?}\
+             \n{surface}",
+        );
+    }
+
+    // The control: the sibling with no fallback must not acquire the clause.
+    let refused = fixture.run(&["milestone", "create", "日本語"]);
+    let surface = format!(
+        "{}{}",
+        String::from_utf8_lossy(&refused.stdout),
+        String::from_utf8_lossy(&refused.stderr),
+    );
+    assert!(
+        surface.contains(UNSLUGABLE_CODE) && !surface.contains("amend-<sha7>"),
+        "a door with no second exit must not be given one\n{surface}",
+    );
+
+    // …and the exit the route names is real: run it, and the mint lands at that id.
+    let minted = fixture.run(&["task", "amend"]);
+    assert!(
+        minted.status.success(),
+        "the routed exit must run; output:\n{}{}",
+        String::from_utf8_lossy(&minted.stdout),
+        String::from_utf8_lossy(&minted.stderr),
+    );
+    assert!(
+        area_names(fixture.path())
+            .iter()
+            .any(|(kind, name)| kind == "task" && *name == format!("amend-{short}")),
+        "the fallback the route names is the id the mint takes; areas: {:?}",
+        area_names(fixture.path()),
+    );
+}

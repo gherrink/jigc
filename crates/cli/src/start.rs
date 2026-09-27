@@ -102,7 +102,7 @@ pub fn mint_in_repo(
     // ask the same thing at their own seams, so the predicate moved beside the producer
     // ([`state::reject_unslugable_title`]) rather than being copied a fourth time — two
     // spellings of one condition is how the class acquired two wordings in the first place.
-    state::reject_unslugable_title("task", intent).map_err(finding_to_err)?;
+    state::reject_unslugable_title("task", intent, None).map_err(finding_to_err)?;
     // The `--slug` override drives the minted id **verbatim** — validate its shape at
     // this CLI boundary (never silently re-slugify a malformed value; `DECISIONS.md`
     // 2026-07-06 M39 planning → Slug (G6)). A value that is not a well-formed slug is
@@ -354,8 +354,18 @@ fn head_shape_refusal(repo_root: &Path, id_hint: &str) -> Option<Finding> {
             "`jigc task amend` rewrites a single-parent commit, and HEAD is {shape} — nothing \
              was minted"
         ),
+        // **`task:<id>`, the declared spelling** (M53, the rc.20 per-axis review
+        // `(5, DEFECT 2 · rc.20)`). It shipped as `work-unit:<id>` — a third work-unit
+        // address form that no grammar in the product declares: `structural-grammar.md`
+        // enumerates `type:name` (`task:…`, `milestone:…`) and
+        // `command-output-contract.md` the work-unit ref `task:<id>` / `milestone:<id>`,
+        // and nothing resolves the third. The rationale it shipped with — that `task:<id>`
+        // would name a task that does not exist — is answered by the message standing one
+        // line above it, which says *nothing was minted* in as many words; and neither
+        // spelling resolves at a read surface, so the invented one bought no honesty and
+        // cost the only two homes that enumerate the form.
         Some(engine::finding::Location::addressed(
-            format!("work-unit:{id_hint}"),
+            format!("task:{id_hint}"),
             1,
             1,
         )),
@@ -426,7 +436,22 @@ pub(crate) fn amend_in_repo(start: &Path, intent: Option<&str>) -> Result<Compos
     let (intent, slug_override) = match intent {
         None => ("", Some(fallback_id.clone())),
         Some(text) => {
-            state::reject_unslugable_title("task", text).map_err(finding_to_err)?;
+            // **The one door with a second exit, and it says so** (M53, the rc.20 per-axis
+            // review `(3, F-C)`). `state::MINT_DOORS` spells this row
+            // `jigc task amend ["<intent>"]` — the brackets are the fact: omit the intent
+            // and the mint names the task after the commit it rewrites. The shared advice
+            // (*re-run with a title carrying ASCII letters or digits*) is complete at every
+            // other row and incomplete here, so the exit rides the producer's own route
+            // instead of the class acquiring a second wording at this door.
+            state::reject_unslugable_title(
+                "task",
+                text,
+                Some(
+                    "omit the title — `jigc task amend` names the task after the commit \
+                      it rewrites (`amend-<sha7>`)",
+                ),
+            )
+            .map_err(finding_to_err)?;
             (text, None)
         }
     };

@@ -1174,11 +1174,17 @@ fn the_forecast_names_the_commit_it_would_rewrite() {
 /// on when it names the task: a supplied intent slugs like every other work-unit id, an absent
 /// one falls back to the commit itself (`amend-<sha7>`). Shipped, the locus was the **fallback
 /// in both cells**, so a refused `jigc task amend "root probe"` addressed
-/// `work-unit:amend-b219d05` — a work unit no invocation would ever have created — while
+/// `task:amend-b219d05` — a work unit no invocation would ever have created — while
 /// `head_shape_refusal`'s own doc-comment claimed it named the id the mint would have taken.
 ///
 /// One fixture, driven twice: the refusal mints nothing, so the same root-`HEAD` repository
 /// answers both cells.
+///
+/// **The spelling is `task:<id>`** (M53, the rc.20 per-axis review `(5, DEFECT 2 · rc.20)`).
+/// It shipped as `work-unit:<id>`, a third work-unit address form no grammar in the product
+/// declares — `design/structural-grammar.md` enumerates `type:name` and
+/// `design/command-output-contract.md` the work-unit ref `task:<id>` / `milestone:<id>`.
+/// What LOW-5 fixed is the **id**; what this fixes is the **type token** in front of it.
 #[test]
 fn the_head_shape_refusal_names_the_id_the_mint_would_have_taken() {
     let fixture = GitStateRepo::build(GitState::Unborn);
@@ -1198,12 +1204,12 @@ fn the_head_shape_refusal_names_the_id_the_mint_would_have_taken() {
         (
             "an intent supplied",
             vec!["task", "amend", "repair the first commit"],
-            "at: work-unit:repair-the-first-commit".to_string(),
+            "at: task:repair-the-first-commit".to_string(),
         ),
         (
             "no intent",
             vec!["task", "amend"],
-            format!("at: work-unit:amend-{short}"),
+            format!("at: task:amend-{short}"),
         ),
     ] {
         let out = run_jigc(&repo, &home, &argv);

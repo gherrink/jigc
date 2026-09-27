@@ -1710,7 +1710,15 @@ fn mint_id(intent: &str, type_name: &str) -> String {
 /// raise this code that does not ask the condition, which is exactly the shape D5 exists to
 /// prevent; the guard stays `pub` because `cli` calls it, and the identity it raises is now
 /// unreachable except through it.
-fn unslugable_title_finding(work_unit: &str) -> Finding {
+fn unslugable_title_finding(work_unit: &str, also: Option<&str>) -> Finding {
+    let mut route = format!(
+        "re-run with a title carrying ASCII letters or digits — the {work_unit} id is \
+         slugged from it"
+    );
+    if let Some(also) = also {
+        route.push_str(", or ");
+        route.push_str(also);
+    }
     Finding::graded(
         Severity::Blocking,
         "write.unslugable-title",
@@ -1720,13 +1728,7 @@ fn unslugable_title_finding(work_unit: &str) -> Finding {
              another script, or of stopwords only, yields none"
         ),
         Some(Location::addressed(work_unit, 1, 1)),
-        Some(
-            format!(
-                "re-run with a title carrying ASCII letters or digits — the {work_unit} id \
-                 is slugged from it"
-            )
-            .into(),
-        ),
+        Some(route.into()),
     )
 }
 
@@ -1749,9 +1751,25 @@ fn unslugable_title_finding(work_unit: &str) -> Finding {
 /// *before the first write*, which at `jigc milestone create` is after the two reads that
 /// establish where jigc is standing — otherwise a caller outside a repository is told about
 /// their title instead of getting M49's converged not-in-repo answer (§12).
-pub fn reject_unslugable_title(work_unit: &str, title: &str) -> Result<(), Finding> {
+///
+/// **`also` is the door's own extra exit, and it exists because one door has one** (M53,
+/// the rc.20 per-axis review `(3, F-C)`). The shared advice — *re-run with a title carrying
+/// ASCII letters or digits* — is the whole exit set at every [`MINT_DOORS`] row whose
+/// registry spelling makes the title **required**. `jigc task amend ["<intent>"]` brackets
+/// it: omit the intent and the task is named after the commit it rewrites
+/// (`amend-<sha7>`), a mint the shipped route never named, because `MINT_DOORS` grew a
+/// sixth member with a wider exit set and the shared route was not re-derived over it.
+/// Passing it here rather than editing the finding at the door keeps the class's **one
+/// sentence, one producer** rule — a second wording site is exactly what the pre-D5 `jigc
+/// start` bail was — while letting a door state an exit only it has. `None` is the answer
+/// for every door that has none, and it is stated rather than defaulted.
+pub fn reject_unslugable_title(
+    work_unit: &str,
+    title: &str,
+    also: Option<&str>,
+) -> Result<(), Finding> {
     if crate::slug::slugify(title).is_empty() {
-        return Err(unslugable_title_finding(work_unit));
+        return Err(unslugable_title_finding(work_unit, also));
     }
     Ok(())
 }

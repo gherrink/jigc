@@ -706,7 +706,7 @@ fn run_create(cwd: &Path, title: &str, conflicts: &mut Vec<Finding>) -> Result<(
     // that is not their problem; and ahead of `shipped_schemas`, `guard_record_free` and
     // `gitignore::ensure`, so **no write precedes it**: no area, no record commit, and no
     // entry appended to the user's own `.gitignore` on the way out of a run that refused.
-    engine::state::reject_unslugable_title("milestone", title).map_err(finding_to_err)?;
+    engine::state::reject_unslugable_title("milestone", title, None).map_err(finding_to_err)?;
 
     // The record-home split (`design/team-ready-state.md` → The `milestone-record` doctype;
     // The commit model): under a `[dev ▸ methodology]` project the composed cascade resolves

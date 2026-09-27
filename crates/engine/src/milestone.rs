@@ -383,7 +383,7 @@ pub fn add_task(
     // `task:task` to the list **and committed it to the record**, at exit 0, where the
     // second such criterion then collides on an id nobody typed. Ahead of [`mint_sub_id`],
     // whose empty→`task` fallback is exactly what this keeps out of production.
-    crate::state::reject_unslugable_title(SUB_TASK_TYPE, intent)?;
+    crate::state::reject_unslugable_title(SUB_TASK_TYPE, intent, None)?;
 
     // The id the sub-task will mint to — checked against *this milestone's* list
     // before the mint, so a within-milestone collision rejects without side effect.
@@ -509,7 +509,7 @@ pub fn add_from_spec(
         // The abort carries `added` out with it rather than taking `From<Finding>`'s empty
         // set: this call may already have minted earlier criteria, and the door's mid-loop
         // unwind is what keeps the workbench naming exactly what the record names.
-        if let Err(finding) = crate::state::reject_unslugable_title(SUB_TASK_TYPE, intent) {
+        if let Err(finding) = crate::state::reject_unslugable_title(SUB_TASK_TYPE, intent, None) {
             return Err(SeedingAborted {
                 finding,
                 minted: added,
