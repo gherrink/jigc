@@ -6099,8 +6099,20 @@ schema-version: 1
             let record = render_fresh_record(&schema, &minted.id, &base, 1);
 
             let target = minted.dir.join(_file);
-            let before = std::fs::metadata(&target)
-                .unwrap_or_else(|err| panic!("{label}: the target must exist first: {err}"))
+            // **The held handle is the witness, not scaffolding.** It *is* the "concurrent
+            // reader who already has it open" this axis is about, and holding it across the
+            // write is what keeps `ino` a sound reading. An open handle pins the old inode,
+            // so no later writer's temp file can be handed that inode number back. Without
+            // it, an arm that writes twice (`add_task` then `drop_sub_tasks`) frees the
+            // original inode at the first `rename`, and a filesystem that recycles inode
+            // numbers hands the second temp the very number `before` recorded — so a correct
+            // temp + `rename` reads as a truncation. Measured 2026-09-27: green on macOS
+            // (APFS does not recycle), red on every run under Linux/ext4, which is CI.
+            let held_open_by_a_reader = std::fs::File::open(&target)
+                .unwrap_or_else(|err| panic!("{label}: the target must exist first: {err}"));
+            let before = held_open_by_a_reader
+                .metadata()
+                .unwrap_or_else(|err| panic!("{label}: the held handle answers metadata: {err}"))
                 .ino();
 
             let written = write(root.path(), &minted.id, &schema, &record);
@@ -6114,6 +6126,7 @@ schema-version: 1
                 "{label}: the write must REPLACE the shared-area file (temp + rename), not \
                  truncate-and-refill the inode a concurrent reader may already have open",
             );
+            drop(held_open_by_a_reader);
 
             // The replacement is also a correct one — the reader parses what landed.
             if *_file == BASE_PIN_FILE {

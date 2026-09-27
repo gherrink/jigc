@@ -7663,7 +7663,18 @@ mod tests {
         std::fs::create_dir_all(&area).expect("open a temp milestone area");
         let list = area.join("tasks.json");
         std::fs::write(&list, br#"{"tasks":["task:a","task:b"]}"#).expect("seed the task list");
-        let before = std::fs::metadata(&list).expect("the seeded list").ino();
+        // Held open across the restore for the reason its engine-side sibling
+        // (`engine::milestone::tests::shared_area_writers_replace_rather_than_truncate`)
+        // states in full: the handle is the concurrent `read_task_list` this claim is about,
+        // and pinning the old inode is what stops a filesystem that recycles inode numbers
+        // from handing one back and making a correct temp + `rename` read as a truncation.
+        // One write stands between the two readings here, so the pin is what keeps that a
+        // property of the test rather than of the arm count.
+        let held_open_by_a_reader = std::fs::File::open(&list).expect("hold the seeded list open");
+        let before = held_open_by_a_reader
+            .metadata()
+            .expect("the held handle answers metadata")
+            .ino();
 
         // The mint half unwinds a sub-task area this call created; the restore half puts the
         // task list back to its captured pre-append bytes.
@@ -7694,6 +7705,7 @@ mod tests {
             "the restore must REPLACE the shared task list (temp + rename), not truncate-and-\
              refill the inode a concurrent `read_task_list` may already have open",
         );
+        drop(held_open_by_a_reader);
 
         let _ = std::fs::remove_dir_all(&area);
     }
