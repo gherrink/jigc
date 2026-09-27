@@ -483,8 +483,13 @@ fn an_ordinary_task_in_a_fan_out_worktree_is_previewed_as_the_door_refuses_it() 
         "the ordinary task and the sub-task, both live"
     );
 
-    // …and the route runs verbatim from the checkout that printed it, which is the half
-    // `git switch <branch>` could not do: it exits 128 over a branch another worktree holds.
+    // …and the route runs from the checkout that printed it **with its one placeholder
+    // substituted** — `<new-branch>` is the agent's to name, exactly as `git switch <branch>`
+    // and `--value <value>` are elsewhere, so this is the emitted argv with that span filled
+    // and nothing else changed (M53, the last pre-1.0.0 batch's review, LOW 1: the comment
+    // here, and `7081de80`'s commit body, both said *run verbatim*, and pasted literally the
+    // `<` is a shell redirect). Running it is the half `git switch <branch>` could not do: it
+    // exits 128 over a branch another worktree holds.
     let switched = std::process::Command::new("git")
         .args(["switch", "-c", "fan-out-ordinary"])
         .current_dir(&worktree)
@@ -492,7 +497,8 @@ fn an_ordinary_task_in_a_fan_out_worktree_is_previewed_as_the_door_refuses_it() 
         .expect("run the emitted route");
     assert!(
         switched.status.success(),
-        "the emitted route must run verbatim from the checkout that printed it; git said:\n{}",
+        "the emitted route must run from the checkout that printed it, with its `<new-branch>` \
+         placeholder substituted; git said:\n{}",
         String::from_utf8_lossy(&switched.stderr),
     );
     let refused = std::process::Command::new("git")
@@ -505,6 +511,159 @@ fn an_ordinary_task_in_a_fan_out_worktree_is_previewed_as_the_door_refuses_it() 
         "the control that makes this cell a dead end: the only branch here is the one the \
          main checkout holds, and git must refuse it",
     );
+
+    // (3) **One step further: the state that route CREATES** (M53, the last pre-1.0.0
+    // batch's review, MEDIUM 1). The cell above stopped here — it ran the switch and never
+    // asked what the *sub-task's* doors say afterwards. Driven, the answer was a dead end:
+    // the ordinary finalize this batch unblocked lands a commit on the new branch, HEAD
+    // leaves the milestone's shared base, and `blanket_base_pin_refusal`'s provisioned arm
+    // then told a reader standing **in** the worktree to `cd` to the directory they were
+    // already in.
+    //
+    // So this half drives the whole arc as an agent walks it: land the ordinary task here,
+    // then both sub-task read doors, then the act their refusal names — and read back that
+    // the act cost nothing. The **unprovisioned** arm of that refusal needs no cell of its
+    // own: its worktree does not exist, so no caller's repository root can equal it.
+    std::fs::write(worktree.join("wt-work.txt"), "the ordinary task's work\n")
+        .expect("the ordinary task's own code edit");
+    let added = std::process::Command::new("git")
+        .args(["add", "wt-work.txt"])
+        .current_dir(&worktree)
+        .output()
+        .expect("stage the ordinary task's work");
+    assert!(added.status.success(), "the edit must stage");
+    for (address, value) in [("type", "feat"), ("scope", "worktree")] {
+        let wrote = corpus.jigc_stdin_from(
+            &worktree,
+            &[
+                "doc",
+                "set-field",
+                &format!("commit:{task}#{address}"),
+                "--task",
+                task,
+                "--value",
+                value,
+            ],
+            "",
+        );
+        assert!(
+            wrote.status.success(),
+            "authoring `{address}` must succeed; stderr:\n{}",
+            String::from_utf8_lossy(&wrote.stderr),
+        );
+    }
+    for (address, prose) in [
+        ("summary", "land the ordinary work"),
+        ("body", "In-worktree."),
+    ] {
+        let wrote = corpus.jigc_stdin_from(
+            &worktree,
+            &[
+                "doc",
+                "set-slot",
+                &format!("commit:{task}#{address}"),
+                "--task",
+                task,
+                "--from-file",
+                "-",
+            ],
+            prose,
+        );
+        assert!(
+            wrote.status.success(),
+            "authoring `{address}` must succeed; stderr:\n{}",
+            String::from_utf8_lossy(&wrote.stderr),
+        );
+    }
+    let landed = corpus.jigc_stdin_from(&worktree, &["task", "finalize", task], "");
+    let (code, _, stderr) = printed(&landed);
+    assert_eq!(
+        code, 0,
+        "the ordinary finalize this batch unblocked must land from the worktree — the whole \
+         premise of the state below; stderr:\n{stderr}",
+    );
+    let landed_sha = git_line(&worktree, &["rev-parse", "HEAD"]);
+
+    // Both sub-task read doors, from that cwd. `area-one` is the sub-task; its recorded
+    // minting workflow is `sub-task`, which the re-entry door asserts equality on.
+    let sub = "area-one";
+    let mut pin: Option<String> = None;
+    for argv in [
+        vec!["workflow", "sub-task", "--task", sub],
+        vec!["start", "--task", sub],
+    ] {
+        let (code, _, stderr) = printed(&corpus.jigc_stdin_from(&worktree, &argv, ""));
+        assert_eq!(
+            code,
+            1,
+            "`jigc {}` must still keep the blanket base-pin refusal here; stderr:\n{stderr}",
+            argv.join(" "),
+        );
+        assert!(
+            !stderr.contains("cd "),
+            "the refusal must not offer a `cd` to the directory the reader is standing in — \
+             a route whose first clause is a no-op; stderr:\n{stderr}",
+        );
+        let short = stderr
+            .split("is pinned to base ")
+            .nth(1)
+            .and_then(|tail| tail.split_whitespace().next())
+            .expect("the refusal names the pin it is off")
+            .to_string();
+        assert!(
+            stderr.contains(&format!("git switch --detach {short}")),
+            "the refusal must name the act that resolves it — re-attaching HEAD to the pin; \
+             stderr:\n{stderr}",
+        );
+        match &pin {
+            None => pin = Some(short),
+            Some(first) => assert_eq!(first, &short, "one producer, one pin, both doors"),
+        }
+    }
+
+    // The act, run as printed — and then the door it was printed by, which is the step the
+    // cell used to stop short of.
+    let pin = pin.expect("both doors named the pin");
+    let reattached = std::process::Command::new("git")
+        .args(["switch", "--detach", &pin])
+        .current_dir(&worktree)
+        .output()
+        .expect("run the emitted act");
+    assert!(
+        reattached.status.success(),
+        "the emitted act must run from the checkout that printed it; git said:\n{}",
+        String::from_utf8_lossy(&reattached.stderr),
+    );
+    let (code, _, stderr) =
+        printed(&corpus.jigc_stdin_from(&worktree, &["workflow", "sub-task", "--task", sub], ""));
+    assert_eq!(
+        code, 0,
+        "having run the act the refusal named, the sub-task door must compose; stderr:\n{stderr}",
+    );
+
+    // …and it cost nothing: the branch the agent made is still there, and the commit it
+    // landed is still reachable from it. A route that resolved the pin by throwing the
+    // agent's own commit away would be a worse dead end than the no-op it replaces.
+    assert_eq!(
+        git_line(&worktree, &["rev-parse", "fan-out-ordinary"]),
+        landed_sha,
+        "the branch the route created still holds the commit the ordinary finalize landed",
+    );
+}
+
+/// One trimmed line of `git <args>` in `cwd`, asserting git succeeded.
+fn git_line(cwd: &std::path::Path, args: &[&str]) -> String {
+    let out = std::process::Command::new("git")
+        .args(args)
+        .current_dir(cwd)
+        .output()
+        .expect("run git");
+    assert!(
+        out.status.success(),
+        "git {args:?} must succeed; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    String::from_utf8_lossy(&out.stdout).trim().to_string()
 }
 
 /// **The omitting context.** Over the same corpus with **no** operation left

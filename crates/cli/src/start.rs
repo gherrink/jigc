@@ -315,6 +315,22 @@ pub(crate) const AMEND_WORKFLOW: &str = "amend";
 /// unconditionally, so a refusal over a supplied intent addressed a work unit no invocation
 /// would ever have created (the F-10 review's LOW-5); the caller now resolves it after the
 /// intent is adjudicated, which is the only position where it can be right.
+///
+/// **Where this locus lands on the wire, so the repair is not mistaken for one** (M53, the last
+/// pre-1.0.0 batch's review, LOW 2). The refusal leaves this door through
+/// [`finding_to_err`], the **flattened** `{"error": …}` carrier, so under `--format json` the
+/// code, the `at:` locus and the route ride inside one string rather than as keys:
+/// `amend.head-shape` is no [`crate::render::ENVELOPE_OWED_CODES`] member, and the M53 batch's
+/// change was to the *spelling inside that message* — it moved nothing about which arm answers.
+/// That is a **recorded residual, not a covered case**, because the arm's own stated rule
+/// ([`crate::render::ENVELOPE_ARMS`]' `Reject::Error` row) keeps the refusals whose code the
+/// contract lists under **no** target form, and the work-unit ref `task:<id>` is a form the
+/// contract does list. It stays flattened on the same measured ground M50's completion audit
+/// declined the analogous envelope fix on: **nothing was minted**, so the `(code, target)` pair
+/// would name a work unit that exists nowhere and resolves at no read surface — strictly less
+/// for a driver than the message that says so in as many words. The condition that reopens it is
+/// a target this door can key that *does* resolve — the repository's own HEAD, were a caller
+/// shown to need the pair rather than the sentence.
 fn head_shape_refusal(repo_root: &Path, id_hint: &str) -> Option<Finding> {
     let (shape, route) = if crate::task::head_is_unborn(repo_root).unwrap_or(false) {
         (
@@ -2496,6 +2512,23 @@ pub(crate) fn selectable_workflows(
 ///   end on an absolute, pasteable `cd` (`design/surface-contract.md` → the printed-path
 ///   fence, the *pasteable shell bytes* disposition) — the same absolute the `Spawn:` line
 ///   emits, because this refusal and that line are two ways of reaching one cwd.
+///
+///   **And the split is three-way, because the reader can already be standing there** (M53,
+///   the last pre-1.0.0 batch's review, MEDIUM 1). The `cd` arm answers a reader in the
+///   *shared checkout*; the batch that landed just before this one made the first
+///   jigc-sanctioned path that puts a reader **inside** the worktree with HEAD off the base
+///   — `git switch -c <own-branch>` there, then an ordinary `jigc task finalize`, which used
+///   to be refused at the seam and now lands. Driven from that cwd, the refusal printed `cd
+///   <the very directory the reader was in>`: byte-identical to the caller's own canonical
+///   path, and therefore the same no-op the arm above exists to avoid, one state over. So
+///   the *already-there* cell names the act that actually resolves it — re-attaching HEAD to
+///   the pin with `git switch --detach <pin>`, driven lossless: a branch created in the
+///   worktree survives and every commit on it stays reachable, and the sub-task door composes
+///   again immediately afterwards. It is `cd`'s sibling and not its replacement: from anywhere
+///   else the `cd` is the act, and from a *subdirectory* of the worktree the `cd` resolves
+///   nothing either, which is why the predicate is *the caller's repository root is this
+///   worktree* rather than a raw cwd string equality. The **unprovisioned** arm needs nothing:
+///   its worktree does not exist, so no caller's root can equal it.
 /// - A **top-level task** (`None`) can only reach this refusal at the re-entry door
 ///   ([`reenter_in_repo`], which takes no membership decision), and there both offered
 ///   routes are right — no record names it and its own discard is the real teardown — so
@@ -2506,6 +2539,7 @@ fn blanket_base_pin_refusal(
     pinned: &BasePin,
     head: &BasePin,
     jigc_home: &Path,
+    caller_root: &Path,
 ) -> anyhow::Error {
     let pinned_to = format!(
         "task `{id}` is pinned to base {} but you're on {}",
@@ -2534,6 +2568,26 @@ fn blanket_base_pin_refusal(
     // question is about what git can vouch for.
     let provisioned = crate::repo::posture_subject(&worktree).is_dedicated();
     let worktree = worktree.canonicalize().unwrap_or(worktree);
+    // **Is the reader already standing in it?** The comparison is over *canonicalized* roots,
+    // because the two spellings differ on the one platform this was driven on: the caller's
+    // cwd reads `/var/folders/…` while the emitted `cd` operand reads `/private/var/folders/…`
+    // — the same directory, and a raw string compare would call them different and print the
+    // no-op anyway. The subject is the caller's **repository root**, not its literal cwd, so a
+    // reader in a subdirectory of the worktree takes this arm too: `cd <worktree>` would move
+    // them, but it would not re-attach HEAD, so it resolves nothing there either.
+    let already_there = provisioned
+        && caller_root
+            .canonicalize()
+            .is_ok_and(|root| root == worktree);
+    if already_there {
+        return anyhow!(
+            "{pinned_to} — this is a sub-task of milestone `{milestone_id}`, and this checkout \
+             IS its worktree: its HEAD has moved off the base the milestone shares, so \
+             re-attach it with `git switch --detach {}` and re-run this command — a branch you \
+             created here and every commit on it stay reachable",
+            pinned.short,
+        );
+    }
     let cd = engine::finding::shell_operand(&worktree.display().to_string());
     let here = "a sub-task's work happens in its own worktree, cut from that base rather \
                 than in this checkout";
@@ -2631,6 +2685,7 @@ pub fn resume_in_repo(start: &Path, id: &str) -> Result<Composition> {
                 &pinned,
                 &head,
                 &jigc_home,
+                &repo_root,
             ));
         }
         // The schema set the promote-destination half of the footprint needs — loaded
@@ -2757,6 +2812,7 @@ pub fn reenter_in_repo(start: &Path, workflow_id: &str, id: &str) -> Result<Comp
             &pinned,
             &head,
             &jigc_home,
+            &repo_root,
         ));
     }
 
