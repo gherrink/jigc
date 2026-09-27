@@ -263,7 +263,14 @@ fn the_composed_fix_phase_carries_the_partition_rule_the_round_and_the_fallback(
     }
 }
 
-/// Arm 2 — the done-criterion's named arm: the emitted `add-task` line runs verbatim.
+/// Arm 2 — the done-criterion's named arm: the emitted `add-task` line runs **with its two
+/// declared placeholders substituted** and nothing else changed.
+///
+/// The precision is the point (M53, the last pre-1.0.0 batch's review, LOW 1, swept over the
+/// suites that claim it): *verbatim* is what the bytes are held to, and a line still carrying
+/// `<fix-milestone-id>` is not runnable at all — pasted literally, `<` is a shell redirect. The
+/// function name keeps the compressed claim; the two places that state it — here and the
+/// assertion below — say which spans the reader fills.
 #[test]
 fn the_emitted_add_task_line_runs_verbatim_against_a_real_milestone() {
     let (repo, home) = composed_repo("addtask");
@@ -292,7 +299,8 @@ fn the_emitted_add_task_line_runs_verbatim_against_a_real_milestone() {
     let out = run_in(root, home, &rest);
     assert!(
         out.status.success(),
-        "the emitted `add-task` line must run verbatim at exit 0; line:\n{filled}\nstdout:\n{}\nstderr:\n{}",
+        "the emitted `add-task` line must run at exit 0 with only its two placeholders \
+         substituted; line:\n{filled}\nstdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr),
     );
