@@ -196,6 +196,25 @@ fn jigc(corpus: &Corpus, args: &[&str], stdin: Option<&[u8]>) -> std::process::O
     child.wait_with_output().expect("wait for jigc")
 }
 
+/// Drive the real binary from `cwd` rather than the repository root — the one cell that needs
+/// it is a milestone sub-task, whose re-entry door is pinned to the milestone's base and so
+/// only composes from the provisioned worktree.
+fn jigc_in(corpus: &Corpus, cwd: &Path, args: &[&str], what: &str) {
+    let out = Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(args)
+        .current_dir(cwd)
+        .env("HOME", corpus.home())
+        .env_remove("JIGC_PACK_DIR")
+        .output()
+        .expect("spawn the jigc binary");
+    assert!(
+        out.status.success(),
+        "`{what}` must exit 0 from {cwd:?}; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+}
+
 /// Drive `jigc <args>`, asserting exit 0, returning trimmed stdout.
 fn ok(corpus: &Corpus, args: &[&str], what: &str) -> String {
     let out = jigc(corpus, args, None);
@@ -832,57 +851,94 @@ fn a_finding_free_doc_ack_is_still_one_line() {
 /// naming only the amend arm's `finalize.base-mismatch` (which is where the review first
 /// found it) would ship the same incomplete sweep one member over: the ordinary arm's
 /// `finalize.empty-commit` was already outside the set before `jigc task amend` existed.
-/// Each cell drives the pair — `task validate` clean, `--dry-run` refusing with a code that
-/// preview will never print — and then asserts the **shipped help** names that code, so the
-/// sentence is fenced against the binary rather than proof-read once.
+/// Each cell drives the pair — `task validate` clean of the code, `--dry-run` refusing with
+/// a code that preview will never print — and then asserts the **shipped help** names that
+/// code, so the sentence is fenced against the binary rather than proof-read once.
 ///
-/// Why these two and no third: `cli::gate_coverage` is the membership authority for what
-/// the preview reports, and it carries a row for neither. Every other pre-transaction gate
-/// is either inside `Tier::Previewed` (the carryover gate, the staging-independent
-/// `owner-artifact` causes, the changelog gate, the content sweep) or is a **door**-level
-/// refusal both surfaces share (the repository posture, the sub-task boundary).
+/// **[Struck 2026-09-27 (the last pre-1.0.0 batch's review, MEDIUM 2).** This paragraph read
+/// *"Why these two and no third: `cli::gate_coverage` is the membership authority … Every
+/// other pre-transaction gate is either inside `Tier::Previewed` … or is a **door**-level
+/// refusal both surfaces share (the repository posture, **the sub-task boundary**)."* Its
+/// load-bearing clause is false, driven on `1.0.0-rc.20`: from the main checkout,
+/// `jigc task validate <sub>` never prints `finalize.milestone-sub-task` and
+/// `--dry-run` refuses with it at exit 3, so the sub-task boundary is not shared — it is a
+/// **third** out-of-set member, which is the same *"incomplete sweep one member over"* the
+/// fix set out to avoid, committed inside its own completeness leg. And a prose leg is what
+/// let it: a paragraph reasoning about *"every other pre-transaction gate"* was never
+/// measured against the producers the path actually runs through.**]
+///
+/// **So the subject is derived.** [`DRY_RUN_REFUSALS`] enumerates every refusal producer a
+/// `--dry-run` passes through, in path order, each disposed exactly once — previewed, shared,
+/// **out of set**, or not a gate with the reason — and three fences hold it to the source and
+/// to the binary: the rows of each [`Span`] are **counted against that span's own text**
+/// ([`the_refusal_table_counts_the_producers_the_source_carries`]), every `Previewed` payload
+/// must name a real `Tier::Previewed` member, and every `OutOfSet` code must be **named in the
+/// shipped help** and **driven** — here, or at a cited suite that drives it
+/// ([`the_forecast_names_every_gate_it_refuses_on_that_the_preview_does_not_report`]).
+///
+/// **What it measured: six out-of-set codes, where the shipped sentence named two.** Beside
+/// `finalize.base-mismatch` and `finalize.empty-commit` it found the review's
+/// `finalize.milestone-sub-task`, plus `finalize.nothing-staged` (the empty-commit guard's CLI
+/// recolor — a distinct code, pointing at `git add`, and the one an agent actually greps),
+/// `finalize.promote-clobber` and `finalize.migration-no-replacement` — the planner's two
+/// collision gates, both raised inside `plan_finalize`, which the `--dry-run` branch sits
+/// *after*. All four new members were driven to a live repro before the help was touched.
+///
+/// The derivation also **shrank** the set in one place, which is the half that says it is a
+/// derivation: the two amend gates the shipped sentence names read like out-of-set members and
+/// are not — `preview_gates` computes both when the amend marker is present, so they are the
+/// `carryover` member answered on the amend arm, and their rows say so.
 #[test]
 fn the_forecast_names_every_gate_it_refuses_on_that_the_preview_does_not_report() {
-    let help = {
-        let out = Command::new(env!("CARGO_BIN_EXE_jigc"))
-            .args(["task", "finalize", "--help"])
-            .output()
-            .expect("run the jigc binary");
-        String::from_utf8_lossy(&out.stdout).to_string()
-    };
+    let help = finalize_help();
     assert!(
         !help.contains("It *refuses* on three gates")
             && !help.contains("It refuses on three gates"),
         "the count the binary contradicts must be gone; help:\n{help}",
     );
 
-    // Cell 1 — the ORDINARY arm's empty-commit guard. Pre-existing: it predates the amend
-    // arm entirely, which is what makes this class older than the row that found it.
-    let corpus = Corpus::new("out-of-set-empty");
-    ok(
-        &corpus,
-        &["start", "--workflow", "quick-fix", "empty commit probe"],
-        "jigc start --workflow quick-fix",
+    let mut driven = 0usize;
+    for row in DRY_RUN_REFUSALS {
+        let Disposition::OutOfSet { code, cell } = row.disposition else {
+            continue;
+        };
+        assert!(
+            help.contains(code),
+            "the `--dry-run` help must name `{code}` — a gate the flag refuses on and the \
+             preview it claims parity with never reports ({}); help:\n{help}",
+            row.producer,
+        );
+        if let Cell::Driven(build) = cell {
+            let corpus = Corpus::new(code.rsplit('.').next().expect("a code stem"));
+            let task = build(&corpus);
+            out_of_set_cell(&corpus, &task, code, &help);
+            driven += 1;
+        }
+    }
+    assert!(
+        driven >= 4,
+        "the cells this suite drives itself must not quietly empty out; drove {driven}",
     );
-    let task = the_open_task(&corpus);
-    fill_commit(&corpus, &task, "fix");
-    out_of_set_cell(&corpus, &task, "finalize.empty-commit", &help);
-
-    // Cell 2 — the AMEND arm's base pin, over a HEAD that moved after the mint.
-    let corpus = Corpus::new("out-of-set-base");
-    ok(&corpus, &["task", "amend", "moved head"], "jigc task amend");
-    let task = the_open_task(&corpus);
-    fill_commit(&corpus, &task, "docs");
-    ok(
-        &corpus,
-        &["milestone", "create", "Move head wave"],
-        "a record-only commit that moves HEAD under the amend pin",
-    );
-    out_of_set_cell(&corpus, &task, "finalize.base-mismatch", &help);
 }
 
-/// One out-of-set cell: `jigc task validate` reports nothing, `--dry-run` refuses with
-/// `code`, and the flag's shipped help names it.
+/// `jigc task finalize --help` as the binary ships it.
+fn finalize_help() -> String {
+    let out = Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(["task", "finalize", "--help"])
+        .output()
+        .expect("run the jigc binary");
+    String::from_utf8_lossy(&out.stdout).to_string()
+}
+
+/// One out-of-set cell: `jigc task validate` does not report `code`, `--dry-run` refuses
+/// with it, and the flag's shipped help names it.
+///
+/// **The preview assertion is `does not report the code`, not `reports nothing`** — widened at
+/// the MEDIUM-2 fix, because two of the derived cells are legitimately noisy: the clobber
+/// corpus's untracked squatter fires `schema-conformance.unadopted-instance` and
+/// `file-state.staged-copy` at exit 0. A preview that is clean *of this code* is the property
+/// the row claims; a preview that is empty was the two original cells' accident of shape, and
+/// requiring it would have made the wider axis unreachable rather than false.
 fn out_of_set_cell(corpus: &Corpus, task: &str, code: &str, help: &str) {
     let validate = jigc(
         corpus,
@@ -892,14 +948,14 @@ fn out_of_set_cell(corpus: &Corpus, task: &str, code: &str, help: &str) {
     assert_eq!(
         validate.status.code(),
         Some(0),
-        "the preview must be clean, or this cell proves nothing about the difference; \
+        "the preview must not block here, or this cell proves nothing about the difference; \
          stdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&validate.stdout),
         String::from_utf8_lossy(&validate.stderr),
     );
     assert!(
-        emitted_codes(&validate, "jigc task validate").is_empty(),
-        "`{code}` is outside the previewed set — `task validate` must report nothing here",
+        !emitted_codes(&validate, "jigc task validate").contains(&code.to_string()),
+        "`{code}` is outside the previewed set — `task validate` must not report it here",
     );
 
     let forecast = jigc(
@@ -924,4 +980,489 @@ fn out_of_set_cell(corpus: &Corpus, task: &str, code: &str, help: &str) {
         "the `--dry-run` help must name `{code}` — a gate the flag refuses on and the \
          preview it claims parity with never reports; help:\n{help}",
     );
+}
+
+// --- the derived subject: every refusal producer a `--dry-run` passes through ------------
+
+/// The four source spans a `jigc task finalize --dry-run` can refuse from, in path order —
+/// and the subject each [`Refusal`] row is counted against.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Span {
+    /// `cli::task::run_finalize` — the door funnel, ahead of the transaction entirely.
+    Funnel,
+    /// `cli::task::TaskArea::finalize`, from its head to the `if dry_run {` branch.
+    Finalize,
+    /// `engine::finalize::plan_finalize`, whose every error reaches the caller through
+    /// [`Span::Finalize`]'s planner arm.
+    Planner,
+    /// The `if dry_run {` branch itself.
+    Forecast,
+}
+
+impl Span {
+    /// `(workspace-relative file, from, to, needles)`. The occurrences of `needles` in the
+    /// span's text must total the rows attributed to it — the completeness leg, measured
+    /// rather than asserted in prose.
+    fn source(
+        self,
+    ) -> (
+        &'static str,
+        &'static str,
+        &'static str,
+        &'static [&'static str],
+    ) {
+        match self {
+            Span::Funnel => (
+                "crates/cli/src/task.rs",
+                "fn run_finalize(",
+                "\n}\n",
+                &["return "],
+            ),
+            Span::Finalize => (
+                "crates/cli/src/task.rs",
+                "    fn finalize(\n",
+                "        if dry_run {",
+                &["self.blocked("],
+            ),
+            Span::Planner => (
+                "crates/engine/src/finalize.rs",
+                "pub fn plan_finalize(",
+                "    Ok(FinalizePlan::new(",
+                &["return Err(", "?;"],
+            ),
+            Span::Forecast => (
+                "crates/cli/src/task.rs",
+                "        if dry_run {",
+                "            return Ok(Outcome::with_findings(",
+                &["return self.blocked("],
+            ),
+        }
+    }
+}
+
+/// How one producer is disposed. Every row takes exactly one, which is what makes the
+/// enumeration a *disposition* rather than a listing.
+#[derive(Clone, Copy)]
+enum Disposition {
+    /// The code it raises belongs to a [`Tier::Previewed`] member — `jigc task validate`
+    /// reports it, so the help owes it nothing beyond the parity sentence. The payload is the
+    /// `gate_coverage` member id, asked of the registry by
+    /// [`every_previewed_disposition_names_a_real_member`].
+    Previewed(&'static str),
+    /// Both surfaces raise it, with the same identity, so there is no difference to name.
+    Shared(&'static str),
+    /// Outside the previewed set: the shipped help must name `code`, and `cell` says where
+    /// the pair is driven.
+    OutOfSet { code: &'static str, cell: Cell },
+    /// Not a gate — an I/O fault channel — carrying the reason it is not one. The help's
+    /// sentence is about *gates*, so a fault channel is out of its scope by construction.
+    NotAGate(&'static str),
+}
+
+/// Where an [`Disposition::OutOfSet`] row's `validate`-clean / `--dry-run`-refuses pair is
+/// driven: in this suite, or at the suite cited (the `pinned-by:` discipline,
+/// [pinning.md](../../../implementation/pinning.md) §3 — verified by reading what the cited
+/// test asserts, never by a symbol parser).
+#[derive(Clone, Copy)]
+enum Cell {
+    Driven(fn(&Corpus) -> String),
+    PinnedBy(&'static str),
+}
+
+/// One refusal producer on the `--dry-run` path.
+struct Refusal {
+    /// The span it lives in — the count fence's subject.
+    span: Span,
+    /// The producer as the source spells it, in span order.
+    producer: &'static str,
+    disposition: Disposition,
+}
+
+/// **Every refusal producer a `jigc task finalize --dry-run` passes through**, in path order.
+///
+/// The rows of each [`Span`] are counted against that span's own text, so a producer added to
+/// any of the four reddens this suite until someone disposes it — which is the leg the struck
+/// prose paragraph did not have.
+const DRY_RUN_REFUSALS: &[Refusal] = &[
+    // ── the door funnel (`run_finalize`) ───────────────────────────────────────────────
+    Refusal {
+        span: Span::Funnel,
+        producer: "`TaskArea::resolve`'s unknown / malformed work-unit id",
+        disposition: Disposition::Shared(
+            "`jigc task validate <unknown>` refuses with the same `finalize.no-task` at the \
+             same `task:<id>` key — one of M51 Increment 6's 25 cells, so the two surfaces \
+             agree and there is no difference for the help to name",
+        ),
+    },
+    Refusal {
+        span: Span::Funnel,
+        producer: "`cli::cli::finalize_posture_refusal`",
+        disposition: Disposition::Previewed("posture"),
+    },
+    // ── `TaskArea::finalize`, head → the `if dry_run` branch ───────────────────────────
+    Refusal {
+        span: Span::Finalize,
+        producer: "`engine::milestone::sub_task_finalize_finding`",
+        disposition: Disposition::OutOfSet {
+            code: "finalize.milestone-sub-task",
+            cell: Cell::Driven(corpus_sub_task),
+        },
+    },
+    Refusal {
+        span: Span::Finalize,
+        producer: "`engine::finalize::decide_base_repin`'s overlap block",
+        disposition: Disposition::OutOfSet {
+            code: "finalize.base-mismatch",
+            cell: Cell::PinnedBy(
+                "the amend-pin row below drives this CODE, and the help's obligation is per \
+                 code: all three producers of `finalize.base-mismatch` owe the same one \
+                 sentence, so one driven cell discharges it and this row says which",
+            ),
+        },
+    },
+    // **The next two are PREVIEWED, and checking rather than assuming it is what kept them out
+    // of the out-of-set list.** Both are the `carryover` member answered on the amend arm —
+    // `TaskArea::preview_gates` extends its own set with `amend_index_findings` and
+    // `amend_staged_doc_findings` when the amend marker is present (`task.rs`, the
+    // `if amending` block), so `jigc task validate` reports them at the finalize exit and the
+    // help's amend paragraph is a *spelling* note about a previewed member, not an out-of-set
+    // claim. Read the other way round, the derivation would have grown two rows the binary
+    // contradicts — the mirror image of the mistake it exists to correct.
+    Refusal {
+        span: Span::Finalize,
+        producer: "`TaskArea::amend_index_findings`",
+        disposition: Disposition::Previewed("carryover"),
+    },
+    Refusal {
+        span: Span::Finalize,
+        producer: "`TaskArea::amend_staged_doc_findings`",
+        disposition: Disposition::Previewed("carryover"),
+    },
+    Refusal {
+        span: Span::Finalize,
+        producer: "`engine::finalize::amend_base_mismatch_finding` (the amend arm's own pin)",
+        disposition: Disposition::OutOfSet {
+            code: "finalize.base-mismatch",
+            cell: Cell::Driven(corpus_amend_moved_head),
+        },
+    },
+    Refusal {
+        span: Span::Finalize,
+        producer: "`cli::task::nothing_staged_finding` (the empty-commit block, recolored \
+                   when the tree is dirty and the index empty)",
+        disposition: Disposition::OutOfSet {
+            code: "finalize.nothing-staged",
+            cell: Cell::Driven(corpus_nothing_staged),
+        },
+    },
+    Refusal {
+        span: Span::Finalize,
+        producer: "`engine::finalize::plan_finalize`'s findings, passed through",
+        disposition: Disposition::Shared(
+            "a carrier, not a producer of its own: every code it delivers is disposed at its \
+             own `Span::Planner` row below",
+        ),
+    },
+    // ── `plan_finalize` ───────────────────────────────────────────────────────────────
+    Refusal {
+        span: Span::Planner,
+        producer: "`task_missing_finding`",
+        disposition: Disposition::Shared(
+            "the same `finalize.no-task` the funnel's first row disposes — and unreachable \
+             from this door, which resolved the area before the planner ran",
+        ),
+    },
+    Refusal {
+        span: Span::Planner,
+        producer: "`base_mismatch_finding` (the preflight's pin == HEAD leg)",
+        disposition: Disposition::OutOfSet {
+            code: "finalize.base-mismatch",
+            cell: Cell::PinnedBy("the ordinary arm's cell above, on the same code"),
+        },
+    },
+    Refusal {
+        span: Span::Planner,
+        producer: "the validation report's blocking findings",
+        disposition: Disposition::Previewed("content-findings"),
+    },
+    Refusal {
+        span: Span::Planner,
+        producer: "`empty_commit_finding`",
+        disposition: Disposition::OutOfSet {
+            code: "finalize.empty-commit",
+            cell: Cell::Driven(corpus_empty_commit),
+        },
+    },
+    Refusal {
+        span: Span::Planner,
+        producer: "`render_io_finding` over the staged commit doc",
+        disposition: Disposition::NotAGate(
+            "`finalize.render-io` is an I/O fault channel — it reports that the staged commit \
+             doc could not be read, never a verdict about the task's state; `gate_coverage`'s \
+             own module header already declares it free prose no enumeration owes",
+        ),
+    },
+    Refusal {
+        span: Span::Planner,
+        producer: "`write::instance_from_source` over the staged commit doc",
+        disposition: Disposition::Previewed("content-findings"),
+    },
+    Refusal {
+        span: Span::Planner,
+        producer: "`plan_promotions`",
+        disposition: Disposition::NotAGate(
+            "`finalize.promote-io` — the same fault channel one phase on: a staged doc's bytes \
+             could not be read",
+        ),
+    },
+    Refusal {
+        span: Span::Planner,
+        producer: "`plan_clobber_guard`",
+        disposition: Disposition::OutOfSet {
+            code: "finalize.promote-clobber",
+            cell: Cell::Driven(corpus_promote_clobber),
+        },
+    },
+    Refusal {
+        span: Span::Planner,
+        producer: "`plan_retirements`",
+        disposition: Disposition::OutOfSet {
+            code: "finalize.migration-no-replacement",
+            cell: Cell::Driven(corpus_migration_no_replacement),
+        },
+    },
+    // ── the `if dry_run` branch ───────────────────────────────────────────────────────
+    Refusal {
+        span: Span::Forecast,
+        producer: "the carryover decision, refused unless `--carry-staged` is declared",
+        disposition: Disposition::Previewed("carryover"),
+    },
+];
+
+/// **The completeness leg, measured against the source.** For each span, the occurrences of
+/// its refusal needles in its own text equal the rows attributed to it — so a producer added
+/// to any of the four reddens here until it is disposed above.
+///
+/// **Declared bound, and it is the reason this is a count rather than a proof.** A needle
+/// counts *statements that can leave the span with a refusal*, not codes: `Span::Planner`'s
+/// nine are four `return Err(` and five `?;` propagations, and two of those propagate a fault
+/// channel rather than a gate — which the rows say. What the count buys is that the table
+/// cannot silently fall behind the path; what it does not buy is that a *code* added inside an
+/// existing producer is noticed, and that is what the help fence and the driven cells are for.
+#[test]
+fn the_refusal_table_counts_the_producers_the_source_carries() {
+    for span in [Span::Funnel, Span::Finalize, Span::Planner, Span::Forecast] {
+        let (file, from, to, needles) = span.source();
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join(file);
+        let body = fs::read_to_string(&path).unwrap_or_else(|err| panic!("read {file}: {err}"));
+        let start = body
+            .find(from)
+            .unwrap_or_else(|| panic!("{file} must carry the span opener {from:?}"));
+        let end = body[start..]
+            .find(to)
+            .map(|at| start + at)
+            .unwrap_or_else(|| panic!("{file} must carry the span closer {to:?} after {from:?}"));
+        let text = &body[start..end];
+        let counted: usize = needles
+            .iter()
+            .map(|needle| text.matches(needle).count())
+            .sum();
+        let rows = DRY_RUN_REFUSALS
+            .iter()
+            .filter(|row| row.span == span)
+            .count();
+        assert_eq!(
+            counted, rows,
+            "{span:?} carries {counted} refusal-producing statement(s) ({needles:?}) and \
+             `DRY_RUN_REFUSALS` disposes {rows} — every producer on the `--dry-run` path owes \
+             a row, which is the leg the struck prose paragraph did not have",
+        );
+    }
+}
+
+/// Every `Previewed` disposition names a member the registry actually carries at
+/// [`Tier::Previewed`] — so "the preview reports it" is asked of `cli::gate_coverage`, the
+/// membership authority, rather than asserted here.
+#[test]
+fn every_previewed_disposition_names_a_real_member() {
+    let members: Vec<&str> = gate_coverage::members(Tier::Previewed)
+        .map(|row| row.id)
+        .collect();
+    let mut cited = 0usize;
+    for row in DRY_RUN_REFUSALS {
+        if let Disposition::Previewed(id) = row.disposition {
+            assert!(
+                members.contains(&id),
+                "`{id}` is cited as a previewed member by {} and `Tier::Previewed` has no \
+                 such row; it carries {members:?}",
+                row.producer,
+            );
+            cited += 1;
+        }
+    }
+    assert!(
+        cited >= 3,
+        "the previewed dispositions must not empty out; found {cited}"
+    );
+}
+
+/// **Every non-previewed disposition carries its stated reason, and the reason is read.** A
+/// `Shared`, `NotAGate` or `PinnedBy` row is a *judgment* — nothing mechanical decides that a
+/// fault channel is not a gate, or that another suite drives a code's pair — so the table's
+/// discipline is that each such row states why, in the `UNSWEPT_PRODUCERS` shape: the payload is
+/// an assertion subject here rather than a comment the compiler warns is unread.
+#[test]
+fn every_judged_disposition_states_its_reason() {
+    for row in DRY_RUN_REFUSALS {
+        let (kind, reason, floor) = match row.disposition {
+            Disposition::Shared(reason) => ("Shared", reason, 60),
+            Disposition::NotAGate(reason) => ("NotAGate", reason, 60),
+            Disposition::OutOfSet {
+                cell: Cell::PinnedBy(citation),
+                ..
+            } => ("PinnedBy", citation, 30),
+            _ => continue,
+        };
+        assert!(
+            reason.len() >= floor,
+            "{} disposes {kind} on {} character(s) of reason — a judged row states why, at \
+             least as fully as `UNSWEPT_PRODUCERS`' rows do; got:\n{reason}",
+            row.producer,
+            reason.len(),
+        );
+    }
+}
+
+// --- the corpora the out-of-set cells are driven over -----------------------------------
+
+/// The ORDINARY arm's empty-commit guard. Pre-existing: it predates the amend arm entirely,
+/// which is what makes this class older than the row that found it.
+fn corpus_empty_commit(corpus: &Corpus) -> String {
+    ok(
+        corpus,
+        &["start", "--workflow", "quick-fix", "empty commit probe"],
+        "jigc start --workflow quick-fix",
+    );
+    let task = the_open_task(corpus);
+    fill_commit(corpus, &task, "fix");
+    task
+}
+
+/// The AMEND arm's base pin, over a HEAD that moved after the mint.
+fn corpus_amend_moved_head(corpus: &Corpus) -> String {
+    ok(corpus, &["task", "amend", "moved head"], "jigc task amend");
+    let task = the_open_task(corpus);
+    fill_commit(corpus, &task, "docs");
+    ok(
+        corpus,
+        &["milestone", "create", "Move head wave"],
+        "a record-only commit that moves HEAD under the amend pin",
+    );
+    task
+}
+
+/// **The empty-commit guard's recolor.** The working tree has changes and the index is empty,
+/// so the CLI replaces the engine's clean-empty block with `finalize.nothing-staged` — a
+/// distinct code, pointing at `git add` rather than at "produced no diff", and one the help's
+/// `finalize.empty-commit` spelling does not answer for an agent grepping the refusal it got.
+fn corpus_nothing_staged(corpus: &Corpus) -> String {
+    ok(
+        corpus,
+        &["start", "--workflow", "quick-fix", "nothing staged probe"],
+        "jigc start --workflow quick-fix",
+    );
+    let task = the_open_task(corpus);
+    fill_commit(corpus, &task, "fix");
+    // Dirty, unstaged: the tree has work and the index has none.
+    fs::write(corpus.repo().join("unstaged.txt"), "never added\n").expect("write the dirty file");
+    task
+}
+
+/// **The sub-task boundary** — the member the rc.20 fix's own completeness leg called shared.
+/// Driven from the main checkout: the preview reports nothing, and the forecast refuses.
+fn corpus_sub_task(corpus: &Corpus) -> String {
+    ok(
+        corpus,
+        &["milestone", "create", "Boundary wave"],
+        "jigc milestone create",
+    );
+    ok(
+        corpus,
+        &["milestone", "add-task", "boundary-wave", "Area one"],
+        "jigc milestone add-task",
+    );
+    // The commit doc is authored so the PREVIEW is clean: an unauthored sub-task blocks on its
+    // own conformance findings, and a cell whose preview blocks proves nothing about the
+    // difference between the two surfaces. Reaching it takes the sub-task's **first re-entry**,
+    // which is what provisions its `commit` doc — and that door is pinned to the milestone's
+    // base, which the record commits have already left in the main checkout, so it is run from
+    // the provisioned worktree. Authoring afterwards is done from the repository root, because
+    // the `.jigc/` workbench a worktree binds to is the main checkout's.
+    ok(
+        corpus,
+        &["milestone", "provision", "boundary-wave"],
+        "jigc milestone provision",
+    );
+    jigc_in(
+        corpus,
+        &corpus
+            .repo()
+            .join(".jigc")
+            .join("worktrees")
+            .join("area-one"),
+        &["workflow", "sub-task", "--task", "area-one"],
+        "the sub-task's first re-entry",
+    );
+    fill_commit(corpus, "area-one", "feat");
+    "area-one".to_owned()
+}
+
+/// **The planner's clobber guard.** A create-provenance staged doc whose canonical destination
+/// already holds a file — here an untracked squatter, which is what keeps the cell reachable:
+/// the guard asks the **worktree** (`repo_root.join(destination).is_file()`), so no commit is
+/// needed and HEAD does not move. Planted through a commit instead, the base-pin overlap block
+/// adjudicates the same state one phase earlier and this code never prints (driven).
+fn corpus_promote_clobber(corpus: &Corpus) -> String {
+    ok(
+        corpus,
+        &["start", "--workflow", "single-task", "record the decision"],
+        "jigc start --workflow single-task",
+    );
+    let task = the_open_task(corpus);
+    let addr = ok(
+        corpus,
+        &["doc", "create", "adr", "--title", "Fresh choice"],
+        "doc create adr",
+    );
+    for section in ["context", "decision", "consequences"] {
+        set_slot(corpus, &format!("{addr}#{section}"), b"Prose.\n");
+    }
+    stage_code(corpus);
+    fill_commit(corpus, &task, "docs");
+    let home = corpus.repo().join("docs").join("decisions");
+    fs::create_dir_all(&home).expect("the adr home");
+    fs::write(home.join("fresh-choice.md"), "a squatter\n").expect("plant the squatter");
+    task
+}
+
+/// **The planner's retire-safety gate.** A migration task whose recorded foreign source has
+/// nothing staged to replace it — the state a `jigc migrate` leaves before the agent authors
+/// anything, which is exactly when an agent reaches for `--dry-run`.
+fn corpus_migration_no_replacement(corpus: &Corpus) -> String {
+    fs::write(
+        corpus.repo().join("old-decision.md"),
+        "# Old decision\n\nWe chose the thing, for the reasons below.\n",
+    )
+    .expect("write the foreign source");
+    git(&corpus.repo(), &["add", "old-decision.md"]);
+    git(&corpus.repo(), &["commit", "-q", "-m", "a foreign doc"]);
+    ok(
+        corpus,
+        &["migrate", "old-decision.md", "--as", "adr"],
+        "jigc migrate --as adr",
+    );
+    the_open_task(corpus)
 }

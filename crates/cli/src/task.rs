@@ -462,7 +462,13 @@ pub enum TaskCommand {
         /// than printing a manifest, on **every gate decided before the transaction** —
         /// which is more than `jigc task validate` reports: the repository posture, this
         /// task's validation findings, the **base pin** (`finalize.base-mismatch`), the
-        /// empty-commit guard (`finalize.empty-commit`), and the carryover gate, where an
+        /// empty-commit guard (`finalize.empty-commit`, or `finalize.nothing-staged` where
+        /// the working tree has changes and the index is empty), the **sub-task boundary**
+        /// (`finalize.milestone-sub-task` — a milestone's sub-task has no per-task commit
+        /// door at all), the planner's two collision gates
+        /// (`finalize.promote-clobber` over a file already sitting at a promote
+        /// destination, `finalize.migration-no-replacement` over a recorded migration
+        /// source with nothing staged to replace it), and the carryover gate, where an
         /// undeclared carry-over is
         /// reported (exit 3) instead of the manifest (add `--carry-staged` to forecast the
         /// carry). On an **amend** task three of those read differently: the amend adds no
@@ -472,9 +478,12 @@ pub enum TaskCommand {
         /// that would promote; and the base pin is the commit it rewrites having moved out
         /// from under it. When it **does** print a manifest, its `findings` are the set
         /// `jigc task validate <id>` reports, the staging-independent `owner-artifact`
-        /// causes included — reported here, decided at the real finalize. The base pin and
-        /// the empty-commit guard are **outside** that set by design, so a refusal here can
-        /// name a code no `jigc task validate <id>` will ever print. Every other gate —
+        /// causes included — reported here, decided at the real finalize. The gates named
+        /// above are **outside** that set by design — the base pin, the empty-commit /
+        /// nothing-staged guard, the sub-task boundary and the planner's two collision gates
+        /// — so a refusal here can name a code no `jigc task validate <id>` will ever print;
+        /// the amend arm's two are the exception, being the index gate the preview answers on
+        /// that arm. Every other gate —
         /// staging, promotion, the untracked
         /// `owner-artifact` cause, the commit hook — is decided only by the real finalize,
         /// so a printed manifest is not a promise the commit lands.
