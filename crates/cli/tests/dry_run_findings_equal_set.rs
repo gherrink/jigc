@@ -815,3 +815,113 @@ fn a_finding_free_doc_ack_is_still_one_line() {
         "set slot adr:cache-policy#decision (42 chars)",
     );
 }
+
+// --- the out-of-set members the arg help has to name (M53, the rc.20 review `(2, A2-1)`) ---
+
+/// **The forecast refuses on gates `jigc task validate` does not report — and the flag's
+/// own help says which** (M53, the rc.20 per-axis review `(2, A2-1)`).
+///
+/// The `--dry-run` arg help shipped two false sentences at once: *"It refuses on **three
+/// gates**: this task's validation findings, the empty-commit guard, and the carryover
+/// gate"* and, three lines later, *"Its `findings` are the set `jigc task validate <id>`
+/// reports"*. The second contradicts the first — the empty-commit guard is named as a gate
+/// and is no member of `validate`'s set — and driven, **two** of the gates the forecast
+/// refuses on sit outside that set.
+///
+/// **The axis is the whole out-of-set part of the refusal set, not either cell.** A fix
+/// naming only the amend arm's `finalize.base-mismatch` (which is where the review first
+/// found it) would ship the same incomplete sweep one member over: the ordinary arm's
+/// `finalize.empty-commit` was already outside the set before `jigc task amend` existed.
+/// Each cell drives the pair — `task validate` clean, `--dry-run` refusing with a code that
+/// preview will never print — and then asserts the **shipped help** names that code, so the
+/// sentence is fenced against the binary rather than proof-read once.
+///
+/// Why these two and no third: `cli::gate_coverage` is the membership authority for what
+/// the preview reports, and it carries a row for neither. Every other pre-transaction gate
+/// is either inside `Tier::Previewed` (the carryover gate, the staging-independent
+/// `owner-artifact` causes, the changelog gate, the content sweep) or is a **door**-level
+/// refusal both surfaces share (the repository posture, the sub-task boundary).
+#[test]
+fn the_forecast_names_every_gate_it_refuses_on_that_the_preview_does_not_report() {
+    let help = {
+        let out = Command::new(env!("CARGO_BIN_EXE_jigc"))
+            .args(["task", "finalize", "--help"])
+            .output()
+            .expect("run the jigc binary");
+        String::from_utf8_lossy(&out.stdout).to_string()
+    };
+    assert!(
+        !help.contains("It *refuses* on three gates")
+            && !help.contains("It refuses on three gates"),
+        "the count the binary contradicts must be gone; help:\n{help}",
+    );
+
+    // Cell 1 — the ORDINARY arm's empty-commit guard. Pre-existing: it predates the amend
+    // arm entirely, which is what makes this class older than the row that found it.
+    let corpus = Corpus::new("out-of-set-empty");
+    ok(
+        &corpus,
+        &["start", "--workflow", "quick-fix", "empty commit probe"],
+        "jigc start --workflow quick-fix",
+    );
+    let task = the_open_task(&corpus);
+    fill_commit(&corpus, &task, "fix");
+    out_of_set_cell(&corpus, &task, "finalize.empty-commit", &help);
+
+    // Cell 2 — the AMEND arm's base pin, over a HEAD that moved after the mint.
+    let corpus = Corpus::new("out-of-set-base");
+    ok(&corpus, &["task", "amend", "moved head"], "jigc task amend");
+    let task = the_open_task(&corpus);
+    fill_commit(&corpus, &task, "docs");
+    ok(
+        &corpus,
+        &["milestone", "create", "Move head wave"],
+        "a record-only commit that moves HEAD under the amend pin",
+    );
+    out_of_set_cell(&corpus, &task, "finalize.base-mismatch", &help);
+}
+
+/// One out-of-set cell: `jigc task validate` reports nothing, `--dry-run` refuses with
+/// `code`, and the flag's shipped help names it.
+fn out_of_set_cell(corpus: &Corpus, task: &str, code: &str, help: &str) {
+    let validate = jigc(
+        corpus,
+        &["--format", "json", "task", "validate", task],
+        None,
+    );
+    assert_eq!(
+        validate.status.code(),
+        Some(0),
+        "the preview must be clean, or this cell proves nothing about the difference; \
+         stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&validate.stdout),
+        String::from_utf8_lossy(&validate.stderr),
+    );
+    assert!(
+        emitted_codes(&validate, "jigc task validate").is_empty(),
+        "`{code}` is outside the previewed set — `task validate` must report nothing here",
+    );
+
+    let forecast = jigc(
+        corpus,
+        &["--format", "json", "task", "finalize", task, "--dry-run"],
+        None,
+    );
+    assert!(
+        !forecast.status.success(),
+        "`--dry-run` must refuse on `{code}`; stdout:\n{}",
+        String::from_utf8_lossy(&forecast.stdout),
+    );
+    assert!(
+        emitted_codes(&forecast, "jigc task finalize --dry-run").contains(&code.to_string()),
+        "the forecast must refuse with `{code}`; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&forecast.stdout),
+        String::from_utf8_lossy(&forecast.stderr),
+    );
+
+    assert!(
+        help.contains(code),
+        "the `--dry-run` help must name `{code}` — a gate the flag refuses on and the \
+         preview it claims parity with never reports; help:\n{help}",
+    );
+}

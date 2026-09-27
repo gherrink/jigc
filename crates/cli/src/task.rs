@@ -458,19 +458,26 @@ pub enum TaskCommand {
         /// file-set the commit would carry, untracked sweeps flagged) and stop — commit
         /// nothing, no destructive side effect (B1 dirty-tree sweep). The subject is the
         /// one jigc will hand git, not what git ends up with: a `commit-msg` hook may
-        /// still rewrite it. A dry-run never requires `--approve`. It *refuses* on three
-        /// gates: this task's validation findings, the empty-commit guard, and the
-        /// carryover gate — where an undeclared carry-over is reported (exit 3) instead of
-        /// the manifest (add `--carry-staged` to forecast the carry). On an **amend** task
-        /// the last two read differently: the amend adds no commit, so the empty-commit
-        /// guard does not apply, and the index gate there is the arm's own
-        /// `finalize.amend-index-dirty` over *any* staged path, which `--carry-staged`
-        /// cannot forecast past. Its `findings` are
-        /// the set `jigc task validate <id>` reports, the staging-independent
-        /// `owner-artifact` causes included — reported here, decided at the real finalize.
-        /// Every other gate — staging, promotion, the untracked `owner-artifact` cause,
-        /// the commit hook — is decided only by the real finalize, so a printed manifest
-        /// is not a promise the commit lands.
+        /// still rewrite it. A dry-run never requires `--approve`. It *refuses*, rather
+        /// than printing a manifest, on **every gate decided before the transaction** —
+        /// which is more than `jigc task validate` reports: the repository posture, this
+        /// task's validation findings, the **base pin** (`finalize.base-mismatch`), the
+        /// empty-commit guard (`finalize.empty-commit`), and the carryover gate, where an
+        /// undeclared carry-over is
+        /// reported (exit 3) instead of the manifest (add `--carry-staged` to forecast the
+        /// carry). On an **amend** task three of those read differently: the amend adds no
+        /// commit, so the empty-commit guard does not apply; the index gate is the arm's
+        /// own `finalize.amend-index-dirty` over *any* staged path, which `--carry-staged`
+        /// cannot forecast past, joined by `finalize.amend-staged-doc` over a staged doc
+        /// that would promote; and the base pin is the commit it rewrites having moved out
+        /// from under it. When it **does** print a manifest, its `findings` are the set
+        /// `jigc task validate <id>` reports, the staging-independent `owner-artifact`
+        /// causes included — reported here, decided at the real finalize. The base pin and
+        /// the empty-commit guard are **outside** that set by design (`cli::gate_coverage`
+        /// carries a row for neither), so a refusal here can name a code no `task validate`
+        /// will ever print. Every other gate — staging, promotion, the untracked
+        /// `owner-artifact` cause, the commit hook — is decided only by the real finalize,
+        /// so a printed manifest is not a promise the commit lands.
         #[arg(long)]
         dry_run: bool,
         /// Declare the carry-over of pre-task staged changes deliberate: land index
