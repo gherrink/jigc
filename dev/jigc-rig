@@ -393,8 +393,10 @@ gen_git() {
     cat <<'EOF'
 
 # --- unmanaged repo furniture: a real repo, a per-repo identity, one commit ------
+# `-b main` for the same reason as the identity: nothing here may come from ambient
+# git config, and `trial_corpus.rs`'s `git_init` — the builder this mirrors — pins it.
 cd "$REPO"
-git init -q
+git init -q -b main .
 git config user.email 'trial@example.com'
 git config user.name 'Trial Corpus'
 printf 'trial corpus\n' > README.md
@@ -927,8 +929,10 @@ gen_standalone_repo() {
     cat <<'EOF'
 
 # --- a from-scratch repo, deliberately NOT set up (the standalone git-state form) ---
+# `-b main`, as in `git_state.rs`'s `GitStateRepo::build`: `unborn` is defined by the
+# branch HEAD points at not existing, so that name must not vary by machine.
 cd "$REPO"
-git init -q
+git init -q -b main .
 git config user.email 'posture@example.com'
 git config user.name 'Posture Fixture'
 mkdir -p .jigc/config

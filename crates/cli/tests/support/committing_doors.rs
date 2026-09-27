@@ -109,7 +109,10 @@ pub fn jigc_ok(repo: &Path, home: &Path, args: &[&str], what: &str) -> std::proc
 pub fn base_repo(tag: &str, squash: Option<&str>) -> (TempDir, TempDir) {
     let repo = TempDir::new(tag);
     let home = TempDir::new(&format!("home-{tag}"));
-    git(repo.path(), &["init", "-q"]);
+    // `-b main` for the same reason as the identity below: a door fixture must not
+    // inherit `init.defaultBranch`, which is set on a developer machine and unset on a
+    // CI runner.
+    git(repo.path(), &["init", "-q", "-b", "main", "."]);
     git(repo.path(), &["config", "user.email", "test@example.com"]);
     git(repo.path(), &["config", "user.name", "Test"]);
     fs::write(repo.path().join("README.md"), "hello\n").expect("write README.md");

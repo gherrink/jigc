@@ -994,8 +994,15 @@ impl TrialCorpus {
 
     /// Unmanaged repo furniture: a real git repo with one commit and a per-repo
     /// identity (never the developer's global config).
+    ///
+    /// `-b main` for the same reason as the identity: **nothing about this corpus may
+    /// come from ambient git config**. A bare `git init` takes its branch name from
+    /// `init.defaultBranch`, which is set on a developer machine and unset on a CI
+    /// runner — so a consumer that names `main` passes here and fails there, and one
+    /// that only *expects git to refuse* `main` passes in both places for two different
+    /// reasons. `dev/jigc-rig`'s `gen_git` mirrors this builder and pins it too.
     fn git_init(&self) {
-        self.git(&["init", "-q"]);
+        self.git(&["init", "-q", "-b", "main", "."]);
         self.git(&["config", "user.email", "trial@example.com"]);
         self.git(&["config", "user.name", "Trial Corpus"]);
         fs::write(self.repo().join("README.md"), "trial corpus\n").expect("write README.md");

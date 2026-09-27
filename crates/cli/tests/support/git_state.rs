@@ -832,7 +832,12 @@ impl GitStateRepo {
             repo: repo.clone(),
             home,
         };
-        driver.ok(&["init", "-q"]);
+        // `-b main` for the same reason as the identity two lines down: no part of a
+        // posture fixture may come from ambient git config. A bare `git init` names its
+        // branch from `init.defaultBranch` — set on a developer machine, unset on a CI
+        // runner — and `Unborn` is *defined* by the branch HEAD points at not existing,
+        // so that name must not vary by machine either.
+        driver.ok(&["init", "-q", "-b", "main", "."]);
         driver.ok(&["config", "user.email", "posture@example.com"]);
         driver.ok(&["config", "user.name", "Posture Fixture"]);
         // The project-layer marker, by hand: `cli::locate` reads the presence of

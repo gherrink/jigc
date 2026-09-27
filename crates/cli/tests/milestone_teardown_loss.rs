@@ -95,8 +95,13 @@ fn git_ok(cwd: &Path, args: &[&str]) -> String {
 }
 
 /// Initialize a real git repo with one commit (the milestone mint reads HEAD).
+///
+/// `-b main` is **load-bearing**, not decoration: the shared-checkout arm below checks
+/// `main` out by name, and a bare `git init` takes its branch name from the ambient
+/// `init.defaultBranch` — set on the developer machine, unset on a CI runner, where the
+/// same fixture then dies at *"pathspec 'main' did not match any file(s) known to git"*.
 fn init_repo(root: &Path) {
-    git_ok(root, &["init", "-q"]);
+    git_ok(root, &["init", "-q", "-b", "main", "."]);
     git_ok(root, &["config", "user.email", "test@example.com"]);
     git_ok(root, &["config", "user.name", "Test"]);
     fs::write(root.join("README.md"), "hello\n").expect("write file");
