@@ -691,8 +691,11 @@ fn run_diff(cwd: &Path, id: &str, format: Format) -> Result<()> {
 /// every surface that carries the coverage claim.
 fn run_validate(cwd: &Path, id: &str, format: Format, carry_staged: bool) -> Outcome {
     // The one pre-commit phase a caller can resolve BEFORE finalizing, asked here and
-    // answered by the committing door's own producer (M52 Increment 3 / T6).
-    if let Some(refusal) = crate::cli::finalize_posture_refusal(cwd, format) {
+    // answered by the committing door's own producer (M52 Increment 3 / T6) — against the
+    // subject that door's own seam will have (M53, the rc.20 review `(2, A2-2)`).
+    if let Some(refusal) =
+        crate::cli::finalize_posture_refusal(cwd, crate::milestone::is_sub_task(cwd, id), format)
+    {
         return refusal;
     }
     // …and, for a milestone sub-task, the posture of the checkout ITS boundary commits
@@ -1597,6 +1600,21 @@ fn run_finalize(
             return crate::invocation_log::operational_failure(format, &err);
         }
     };
+    // **The posture, against this task's own seam subject** (M53, the rc.20 per-axis review
+    // `(2, A2-2)`). `Cli::dispatch`'s guard has already adjudicated the cwd with the
+    // classifier's subject and let this door through, which in a provisioned fan-out worktree
+    // means it let a detached HEAD through — and `SeamSubject::live` then refused it deep
+    // inside the transaction, after the promote/retire/stage phases had run and rolled back,
+    // while `--dry-run` forecast a clean manifest. Asked here it is the same finding at the
+    // same exit from the same producer, one phase earlier and on both arms, so the forecast
+    // and the act agree and the door refuses before it writes anything. Inert everywhere the
+    // dispatch guard already answered: outside a fan-out worktree the two subjects are the
+    // same value.
+    if let Some(refusal) =
+        crate::cli::finalize_posture_refusal(cwd, crate::milestone::is_sub_task(cwd, id), format)
+    {
+        return refusal;
+    }
     match task.finalize(id, format, approve, dry_run, carry_staged) {
         Ok(outcome) => outcome,
         Err(err) => crate::invocation_log::operational_failure(format, &err),

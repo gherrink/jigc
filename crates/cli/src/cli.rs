@@ -607,10 +607,13 @@ fn refuse_on_posture(command: &Command, format: Format) -> Option<Outcome> {
 /// forecasts it cannot answer differently.
 fn posture_refusal_in(cwd: &Path, acts: &ActsOnBehalf, format: Format) -> Option<Outcome> {
     let breach = posture_breach_in(cwd, acts)?;
-    Some(crate::invocation_log::operational_failure(
-        format,
-        &render::finding_error(&breach.finding()),
-    ))
+    Some(posture_refusal(&breach, format))
+}
+
+/// One breach, rendered as the door's refusal — an exit code and a logged operational
+/// failure. Split out so the preview's own subject can reach the identical render.
+fn posture_refusal(breach: &crate::repo::PostureBreach, format: Format) -> Outcome {
+    crate::invocation_log::operational_failure(format, &render::finding_error(&breach.finding()))
 }
 
 /// **The breach itself**, split out of [`posture_refusal_in`] so a surface that *reports*
@@ -624,11 +627,30 @@ fn posture_refusal_in(cwd: &Path, acts: &ActsOnBehalf, format: Format) -> Option
 /// with no edit anywhere else.
 fn posture_breach_in(cwd: &Path, acts: &ActsOnBehalf) -> Option<crate::repo::PostureBreach> {
     let repo_root = crate::repo::discover_repo_root(cwd)?;
-    // The family's one composition ([`crate::repo::adjudicated_breach`]): resolve the
-    // subject, probe, take the first breach both the subject and this door owe. The
-    // milestone boundary's fan-out preflight asks the identical function with `owes` =
-    // `true`, so the two cannot classify one checkout differently (M53 post-review fix).
-    crate::repo::adjudicated_breach(&repo_root, |member| match acts {
+    // The dispatch guard's subject is the **classifier's**, and that is deliberate: most
+    // committing doors bind their act to `crate::repo::jigc_home` (the milestone family's
+    // five, `setup`, `migrate-corpus`, `rename` all resolve `require_project_layer(cwd)`),
+    // so run from inside a provisioned fan-out worktree the cwd is not the checkout they
+    // commit in at all, and refusing on its detached HEAD would refuse jigc's own
+    // provisioning at every one of them. The one door whose seam IS the cwd's checkout —
+    // `jigc task finalize` — is previewed against the seam's own subject instead, one
+    // function down.
+    let subject = crate::repo::posture_subject(&repo_root);
+    breach_against(&repo_root, &subject, acts)
+}
+
+/// [`posture_breach_in`] with the subject stated — the shared composition both the door
+/// guard and the `task finalize` preview reach, so the `owes` rule is written once.
+fn breach_against(
+    repo_root: &Path,
+    subject: &crate::repo::PostureSubject,
+    acts: &ActsOnBehalf,
+) -> Option<crate::repo::PostureBreach> {
+    // The family's one composition ([`crate::repo::adjudicated_breach`]): probe, take the
+    // first breach both the subject and this door owe. The milestone boundary's fan-out
+    // preflight asks the identical function with `owes` = `true`, so the two cannot
+    // classify one checkout differently (M53 post-review fix).
+    crate::repo::adjudicated_breach(repo_root, subject, |member| match acts {
         ActsOnBehalf::CommitsOnBehalf { exempt, .. } => {
             !exempt.iter().any(|row| row.member == member)
         }
@@ -654,12 +676,21 @@ fn posture_breach_in(cwd: &Path, acts: &ActsOnBehalf) -> Option<crate::repo::Pos
 ///
 /// A sub-task's commit boundary is `jigc milestone finalize`, whose row is
 /// commit-on-behalf with the same empty exemption set — so one lookup answers for both
-/// doors rather than the preview having to know which one a task belongs to.
+/// doors rather than the preview having to know which one a task belongs to. What it does
+/// have to know is `sub_task`, and only because the two doors' **subjects** differ; see
+/// [`finalize_posture_subject`].
 ///
 /// `None` — the miss arm — keeps a table hole a missing guard rather than an exit-101 on
 /// top of the user's command, exactly as [`refuse_on_posture`] does.
-pub(crate) fn finalize_posture_refusal(cwd: &Path, format: Format) -> Option<Outcome> {
-    posture_refusal_in(cwd, finalize_acts()?, format)
+pub(crate) fn finalize_posture_refusal(
+    cwd: &Path,
+    sub_task: bool,
+    format: Format,
+) -> Option<Outcome> {
+    Some(posture_refusal(
+        &finalize_posture_breach(cwd, sub_task)?,
+        format,
+    ))
 }
 
 /// **The breach `jigc task finalize` would refuse on in `cwd`'s repository**, for a surface
@@ -673,8 +704,45 @@ pub(crate) fn finalize_posture_refusal(cwd: &Path, format: Format) -> Option<Out
 /// learned at `finalize`, after authoring. This asks the **`task finalize` row's own**
 /// exemptions through the same producer, so what orientation reports and what the boundary
 /// refuses on cannot diverge.
-pub(crate) fn finalize_posture_breach(cwd: &Path) -> Option<crate::repo::PostureBreach> {
-    posture_breach_in(cwd, finalize_acts()?)
+pub(crate) fn finalize_posture_breach(
+    cwd: &Path,
+    sub_task: bool,
+) -> Option<crate::repo::PostureBreach> {
+    let repo_root = crate::repo::discover_repo_root(cwd)?;
+    breach_against(
+        &repo_root,
+        &finalize_posture_subject(&repo_root, sub_task),
+        finalize_acts()?,
+    )
+}
+
+/// **The subject the preview forecasts** — the one the seam that lands `task`'s work will
+/// have (M53, the rc.20 per-axis review `(2, A2-2)`).
+///
+/// It is the whole of the fix, and it is one sentence: *`jigc task finalize` commits in the
+/// checkout it was run in, through [`crate::repo::SeamSubject::live`]* — it stages that
+/// checkout's index and its `--dry-run` says so out loud (*"would commit in the linked
+/// worktree at `…`"*). So an **ordinary** task's preview asks
+/// [`crate::repo::PostureSubject::live`], whatever directory that is, and reaches the same
+/// verdict the seam will. Derived from the path instead, it took
+/// [`crate::repo::posture_subject`]'s `Dedicated` exemption inside a provisioned fan-out
+/// worktree: `task validate` exited 0, `--dry-run` printed a manifest, `jigc start`'s
+/// `tasks[].findings` carried nothing, and the door then refused `repo.head-detached` at the
+/// seam — three previews green over a state the door does not act in.
+///
+/// A **sub-task** is the other answer, not an omission. Its boundary is `jigc milestone
+/// finalize`, which reads that worktree's index and commits it from a
+/// [`crate::repo::SeamSubject::dedicated`] handle — the very act the exemption exists for —
+/// so its subject stays the classifier's, and a sub-task previewed inside its own
+/// provisioned worktree keeps reporting nothing about the HEAD jigc detached itself. The
+/// *rest* of the family is unchanged for both: an operation git left un-concluded in that
+/// worktree is refused either way.
+fn finalize_posture_subject(repo_root: &Path, sub_task: bool) -> crate::repo::PostureSubject {
+    if sub_task {
+        crate::repo::posture_subject(repo_root)
+    } else {
+        crate::repo::PostureSubject::live()
+    }
 }
 
 /// The `task finalize` row's [`ActsOnBehalf`] — one lookup, so its two askers (the

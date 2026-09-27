@@ -356,6 +356,157 @@ fn orientation_reports_every_posture_finalize_refuses_without_refusing() {
     );
 }
 
+/// **The fan-out-worktree cell** — the one checkout where the preview took a subject the
+/// door's own seam does not (M53, the rc.20 per-axis review `(2, A2-2)`).
+///
+/// `cli::repo::posture_subject` exempts a jigc-provisioned fan-out worktree from
+/// `PostureMember::HeadDetached`, because jigc detached it. That exemption belongs to the
+/// acts jigc performs there **holding the worktree's handle** — the boundary's own commits
+/// through `SeamSubject::dedicated` — and `jigc task finalize` is not one of them: it
+/// commits in the checkout it was run in, through `SeamSubject::live`, which adjudicates
+/// the member. Driven on `1.0.0-rc.20`, all three previews read clean at exit 0 while the
+/// door refused at exit 1 from inside the transaction.
+///
+/// So the cell is two claims, and the second is what keeps the first from being a
+/// regression:
+///
+/// 1. an **ordinary** task minted inside a provisioned worktree is refused
+///    `repo.head-detached` **byte-identically** at all three doors, and reported by
+///    orientation, exactly as every other member of this suite's axis is; and its route is
+///    one that **runs there** — `git switch <branch>` is what the shipped bytes said, and
+///    git refuses a branch another worktree holds at exit 128, which is no exit at all;
+/// 2. the **sub-task** in the same worktree, at the same instant, is still silent about it
+///    — its boundary is `jigc milestone finalize`, and the exemption is that door's.
+#[test]
+fn an_ordinary_task_in_a_fan_out_worktree_is_previewed_as_the_door_refuses_it() {
+    let corpus = TrialCorpus::build(State::CommittedSingletons);
+    for argv in [
+        vec!["milestone", "create", "Cwd wave"],
+        vec!["milestone", "add-task", "cwd-wave", "Area one"],
+        vec!["milestone", "provision", "cwd-wave"],
+    ] {
+        corpus.jigc_ok(&argv);
+    }
+    let worktree = corpus
+        .repo()
+        .join(".jigc")
+        .join("worktrees")
+        .join("area-one");
+    assert!(
+        worktree.is_dir(),
+        "the sub-task worktree must be provisioned"
+    );
+
+    // An ORDINARY task, minted from inside that worktree — not a sub-task, so the door
+    // that lands it is `jigc task finalize` and the checkout it commits in is this one.
+    let minted = corpus.jigc_stdin_from(
+        &worktree,
+        &["start", "--workflow", "single-task", "Ordinary in worktree"],
+        "",
+    );
+    assert!(
+        minted.status.success(),
+        "the ordinary task must mint; stderr:\n{}",
+        String::from_utf8_lossy(&minted.stderr),
+    );
+    let task = "ordinary-in-worktree";
+
+    // (1) The three doors, from that cwd — byte-identical refusal, identical exit.
+    let mut seen: Vec<(i32, String)> = Vec::new();
+    for (index, (label, args)) in DOORS.iter().enumerate() {
+        let owned = argv(index, args, task, &[]);
+        let borrowed: Vec<&str> = owned.iter().map(String::as_str).collect();
+        let (code, _, stderr) = printed(&corpus.jigc_stdin_from(&worktree, &borrowed, ""));
+        assert_eq!(
+            code, 1,
+            "`{label}` must refuse the posture its own seam refuses; stderr:\n{stderr}",
+        );
+        assert!(
+            stderr.contains("blocking · repo.head-detached"),
+            "`{label}` must render the door's own finding; stderr:\n{stderr}",
+        );
+        seen.push((code, stderr));
+    }
+    let (_, first) = &seen[0];
+    for (_, other) in &seen[1..] {
+        assert_eq!(
+            first, other,
+            "one producer — the three doors must print the same bytes in this cell",
+        );
+    }
+
+    // …and the route is an exit that RUNS from the checkout that printed it. `git switch
+    // <branch>` is the one it must no longer be: the only branch in this repository is the
+    // one the main checkout holds, and git refuses it at 128.
+    assert!(
+        first.contains("git switch -c <new-branch>") && first.contains("`area-one`"),
+        "the route must name a branch-creating exit and say which worktree this is; \
+         stderr:\n{first}",
+    );
+    assert!(
+        !first.contains("git switch <branch>"),
+        "the unrunnable placeholder must be gone from this cell; stderr:\n{first}",
+    );
+    // (2) The fourth surface and the sub-task control, read off one orientation while HEAD
+    // is still the one jigc detached — before the route below re-attaches it.
+    let oriented = corpus.jigc_stdin_from(&worktree, &["--format", "json", "start"], "");
+    let json = String::from_utf8_lossy(&oriented.stdout).to_string();
+    let doc: serde_json::Value = serde_json::from_str(&json).expect("orientation is JSON");
+    let rows = doc["tasks"].as_array().expect("an active set");
+    for row in rows {
+        let id = row["id"].as_str().unwrap_or_default();
+        let codes: Vec<&str> = row["findings"]
+            .as_array()
+            .map(|set| {
+                set.iter()
+                    .filter_map(|finding| finding["code"].as_str())
+                    .collect()
+            })
+            .unwrap_or_default();
+        let carries = codes.contains(&"repo.head-detached");
+        if id == task {
+            assert!(
+                carries,
+                "the ordinary row must carry the posture its door refuses under; row:\n{row}",
+            );
+        } else {
+            assert!(
+                !carries,
+                "sub-task `{id}`'s boundary commits this worktree from its own handle — the \
+                 exemption is that door's, and the row must stay silent; row:\n{row}",
+            );
+        }
+    }
+    assert_eq!(
+        rows.len(),
+        2,
+        "the ordinary task and the sub-task, both live"
+    );
+
+    // …and the route runs verbatim from the checkout that printed it, which is the half
+    // `git switch <branch>` could not do: it exits 128 over a branch another worktree holds.
+    let switched = std::process::Command::new("git")
+        .args(["switch", "-c", "fan-out-ordinary"])
+        .current_dir(&worktree)
+        .output()
+        .expect("run the emitted route");
+    assert!(
+        switched.status.success(),
+        "the emitted route must run verbatim from the checkout that printed it; git said:\n{}",
+        String::from_utf8_lossy(&switched.stderr),
+    );
+    let refused = std::process::Command::new("git")
+        .args(["switch", "main"])
+        .current_dir(&worktree)
+        .output()
+        .expect("run the placeholder the route no longer names");
+    assert!(
+        !refused.status.success(),
+        "the control that makes this cell a dead end: the only branch here is the one the \
+         main checkout holds, and git must refuse it",
+    );
+}
+
 /// **The omitting context.** Over the same corpus with **no** operation left
 /// un-concluded, the preview is untouched: it renders its validation report on stdout
 /// and exits on the report's own verdict, never on a posture.

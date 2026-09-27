@@ -576,6 +576,17 @@ fn index_has_unmerged_paths(repo_root: &Path) -> bool {
 pub struct PostureBreach {
     member: PostureMember,
     operation: Option<InProgress>,
+    /// The sub-task this checkout is jigc's own fan-out worktree for, when it is one —
+    /// [`posture_subject`]'s verdict, read back at the probe and carried to the render.
+    ///
+    /// It exists for one route. `repo.head-detached`'s advice is *"re-attach HEAD with
+    /// `git switch <branch>`"*, and in a provisioned fan-out worktree there is no branch the
+    /// placeholder can take: jigc detached it, the main checkout holds `main`, and git
+    /// refuses a branch another worktree has checked out at exit **128** (driven, the M53
+    /// rc.20 per-axis review `(2, A2-2)`). A route that is textually perfect and returns 128
+    /// is a dead end, so the one cell where the family's own subject classifier says
+    /// *dedicated* renders an exit that runs there instead.
+    provisioned: Option<String>,
 }
 
 /// **Whose checkout a breach is being reported about, as the reader must read it** — the
@@ -741,10 +752,27 @@ impl PostureBreach {
                     "{lead}HEAD is detached — a commit made here would belong to no \
                      branch, and the next checkout would leave it unreachable"
                 ),
-                format!(
-                    "re-attach HEAD with `{}`, then re-run this command",
-                    site.aim("git switch <branch>"),
-                ),
+                // **The one member whose generic advice is unrunnable in one checkout.**
+                // `git switch <branch>` resolves a detached HEAD everywhere but jigc's own
+                // provisioned fan-out worktree, where the only branch in the repository is
+                // the one the main checkout holds and git refuses it at exit 128. The
+                // substitution is keyed on [`PostureBreach::provisioned`] — the family's own
+                // subject classifier, not a path-shape guess — and only at
+                // [`BreachSite::Here`]: a breach reported *about* a fan-out worktree from the
+                // main checkout is `HeadDetached`-exempt by construction, so that pair cannot
+                // occur, and the `_` arm keeps the render total rather than asserting it.
+                match (&self.provisioned, site) {
+                    (Some(sub_task), BreachSite::Here) => format!(
+                        "this checkout is the fan-out worktree jigc provisioned for sub-task \
+                         `{sub_task}` and detached itself, and a branch another worktree holds \
+                         cannot be switched to from here — give this work a branch of its own \
+                         with `git switch -c <new-branch>`, then re-run this command"
+                    ),
+                    _ => format!(
+                        "re-attach HEAD with `{}`, then re-run this command",
+                        site.aim("git switch <branch>"),
+                    ),
+                },
             ),
             (PostureMember::HeadUnborn, _) => (
                 format!(
@@ -799,21 +827,31 @@ impl PostureBreach {
     }
 }
 
-/// **The breach `repo_root` owes an answer for** — resolve the subject, probe the family,
-/// and take the first breach *both* the subject and the asking door adjudicate.
+/// **The breach `repo_root` owes an answer for** — probe the family and take the first
+/// breach *both* `subject` and the asking door adjudicate.
 ///
-/// The family's one composition home (M53 post-review fix, 2026-09-22). Two doors ask it:
-/// [`crate::cli::posture_refusal_in`], whose `owes` is its [`crate::cli::BEHALF_DOORS`]
-/// row (a mover's one member, minus the row's stated exemptions), and the milestone
-/// boundary's fan-out preflight, whose `owes` is `true` — it commits, and it carries no
-/// exemption row. Splitting the composition would let the door guard and the boundary
-/// classify the same checkout differently, which is exactly the defect this fix closes
-/// one level down.
+/// The family's one composition home (M53 post-review fix, 2026-09-22). Three askers: the
+/// door guard ([`crate::cli::posture_refusal_in`]), whose `owes` is its
+/// [`crate::cli::BEHALF_DOORS`] row (a mover's one member, minus the row's stated
+/// exemptions); the milestone boundary's fan-out preflight, whose `owes` is `true` — it
+/// commits, and it carries no exemption row; and the `jigc task finalize` preview. Splitting
+/// the composition would let them classify the same checkout differently, which is exactly
+/// the defect the 2026-09-22 fix closes one level down.
+///
+/// **The subject is the caller's to state, because it is a fact about the *act*, not about
+/// the path** (M53, the rc.20 per-axis review `(2, A2-2)`). [`posture_subject`]'s
+/// `Dedicated` verdict exempts [`PostureMember::HeadDetached`] so jigc's own `--detach`
+/// provisioning is not refused — and that exemption belongs to the acts jigc performs there
+/// **holding the worktree's handle** ([`SeamSubject::dedicated`]), never to a door a user
+/// invoked inside one. Derived from the path here, it was taken by a surface forecasting a
+/// [`SeamSubject::live`] commit, and the preview read *clean* over a state the seam refused:
+/// so the caller says which subject its act will have, and the classifier is one of the two
+/// answers rather than the only one.
 pub fn adjudicated_breach(
     repo_root: &Path,
+    subject: &PostureSubject,
     owes: impl Fn(PostureMember) -> bool,
 ) -> Option<PostureBreach> {
-    let subject = posture_subject(repo_root);
     posture(repo_root)
         .into_iter()
         .find(|breach| subject.adjudicates(breach.member()) && owes(breach.member()))
@@ -849,6 +887,20 @@ enum Checkout {
 }
 
 impl PostureSubject {
+    /// **The user's own checkout** — the subject of every act but jigc's two fan-out commit
+    /// sites, and the value [`SeamSubject::live`] records.
+    ///
+    /// Public because a surface that *forecasts* a live seam has to ask the same subject that
+    /// seam will: `jigc task finalize` commits in the checkout it was run in, through
+    /// [`SeamSubject::live`], whichever directory that is — so its preview asks this rather
+    /// than [`posture_subject`], whose `Dedicated` exemption belongs to the boundary's own
+    /// handle-holding commits. Constructing the **live** variant forges nothing: the variant
+    /// that must not be forgeable is `Dedicated`, and it has no constructor at all outside
+    /// [`posture_subject`]'s three legs.
+    pub fn live() -> PostureSubject {
+        PostureSubject(Checkout::Live)
+    }
+
     /// Whether this subject owes an answer for `member`.
     ///
     /// A [`Checkout::Live`] subject adjudicates the whole family. A dedicated worktree is
@@ -998,7 +1050,7 @@ impl SeamSubject {
             path: repo_root.to_path_buf(),
             identity: git_dir_identity(repo_root),
             head: head_ref(repo_root),
-            posture: PostureSubject(Checkout::Live),
+            posture: PostureSubject::live(),
             exempt,
         }
     }
@@ -1153,16 +1205,22 @@ pub fn posture(repo_root: &Path) -> Vec<PostureBreach> {
     // caused the detachment went unnamed
     // ([baseline-posture.md](../../../completions/artifacts/M52/baseline-posture.md)
     // §2.2, §3.1). The cause before the symptom.
+    // Asked once, of the same classifier the exemption is keyed on, and stamped on every
+    // breach this probe raises — so the render can say *which* checkout this is without a
+    // second opinion about it (the `repo.head-detached` route, M53's rc.20 `(2, A2-2)`).
+    let provisioned = provisioned_sub_task(repo_root);
     if let Some(operation) = operation_in_progress(&git_dir, repo_root) {
         breaches.push(PostureBreach {
             member: PostureMember::OperationInProgress,
             operation: Some(operation),
+            provisioned: provisioned.clone(),
         });
     }
     if head_is_detached(repo_root) == Some(true) {
         breaches.push(PostureBreach {
             member: PostureMember::HeadDetached,
             operation: None,
+            provisioned: provisioned.clone(),
         });
     }
     // An unborn HEAD is a *symbolic* ref to a branch that does not exist yet, so it is
@@ -1171,9 +1229,26 @@ pub fn posture(repo_root: &Path) -> Vec<PostureBreach> {
         breaches.push(PostureBreach {
             member: PostureMember::HeadUnborn,
             operation: None,
+            provisioned,
         });
     }
     breaches
+}
+
+/// The sub-task `repo_root` is jigc's own provisioned fan-out worktree for, or `None`.
+///
+/// It asks [`posture_subject`] rather than re-reading its three legs — the shape M50's
+/// completion audit condemned — and reads the id back off the path only once that classifier
+/// has answered *dedicated*, which is the verdict that already required the last component to
+/// be a **registered** sub-task of a milestone in the shared workbench.
+fn provisioned_sub_task(repo_root: &Path) -> Option<String> {
+    if !posture_subject(repo_root).is_dedicated() {
+        return None;
+    }
+    repo_root
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(str::to_owned)
 }
 
 /// `Some(true)` when HEAD points at a commit rather than a branch, `Some(false)` when it

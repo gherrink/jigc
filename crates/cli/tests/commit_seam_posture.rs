@@ -1011,6 +1011,72 @@ fn the_sub_task_preview_forecasts_the_boundarys_worktree_refusal() {
     );
 }
 
+/// (f) **The door reaches the seam's verdict before the transaction runs** — the fan-out
+/// worktree's `HeadDetached` cell (M53, the rc.20 per-axis review `(2, A2-2)`).
+///
+/// This suite's subject is the seam, and this is the one cell where the seam was the *only*
+/// asker. `SeamSubject::live` adjudicates `PostureMember::HeadDetached`; `posture_subject`
+/// exempts a provisioned worktree from it. An **ordinary** task finalized from inside one
+/// therefore passed the dispatch guard, ran promote / retire / stage, and was refused by
+/// `verify` deep inside the transaction — correct in outcome, and reached only after the
+/// rollback had work to undo, while `--dry-run` forecast a clean manifest one command
+/// earlier.
+///
+/// What is asserted is that the two askers now **agree**, and that the refusal arrives
+/// before the transaction does anything: the same code, the same runnable route, and the
+/// task's working area still standing with HEAD unmoved — which is what says the door
+/// answered rather than the seam's rollback.
+#[test]
+fn an_ordinary_tasks_finalize_in_a_fan_out_worktree_is_refused_before_the_transaction() {
+    let repo = TempDir::new("fanout-ordinary-seam");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+    setup_one_sub_task(repo.path(), home.path(), false, Overlay::Nothing);
+    let worktree = repo.path().join(".jigc").join("worktrees").join("area-low");
+
+    let minted = Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(["start", "--workflow", "single-task", "Ordinary in worktree"])
+        .current_dir(&worktree)
+        .env("HOME", home.path())
+        .output()
+        .expect("run the jigc binary");
+    assert!(
+        minted.status.success(),
+        "the ordinary task must mint; stderr:\n{}",
+        String::from_utf8_lossy(&minted.stderr),
+    );
+    let head = git_stdout(&worktree, &["rev-parse", "HEAD"]);
+
+    let refused = Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(["task", "finalize", "ordinary-in-worktree"])
+        .current_dir(&worktree)
+        .env("HOME", home.path())
+        .output()
+        .expect("run the jigc binary");
+    let text = String::from_utf8_lossy(&refused.stderr).to_string();
+    assert!(
+        !refused.status.success() && text.contains("blocking · repo.head-detached"),
+        "the door must adjudicate the member its own seam adjudicates; stderr:\n{text}",
+    );
+    assert!(
+        text.contains("git switch -c <new-branch>") && text.contains("`area-low`"),
+        "and route at an exit that runs in a worktree holding no free branch; \
+         stderr:\n{text}",
+    );
+    assert_eq!(
+        git_stdout(&worktree, &["rev-parse", "HEAD"]),
+        head,
+        "a refused finalize must not move the worktree's HEAD",
+    );
+    assert!(
+        repo.path()
+            .join(".jigc/tasks/ordinary-in-worktree")
+            .is_dir(),
+        "the refusal must leave the task standing — it is recoverable from an attached \
+         checkout, which is what the route says",
+    );
+}
+
 /// (f) **The zero-false-fire control**: no operation anywhere, and both commit models land.
 ///
 /// `fan_out_cell`'s `detached` cell already carries the *exempt-member* half; this is the

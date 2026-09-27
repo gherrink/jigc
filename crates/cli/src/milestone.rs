@@ -3543,9 +3543,11 @@ pub struct LeftoverHold {
 /// answered for it would refuse every ordinary fan-out teardown — and `HeadUnborn` cannot occur
 /// in a checkout git created at a commit.
 fn held_operation(worktree: &Path) -> Option<crate::repo::InProgress> {
-    crate::repo::adjudicated_breach(worktree, |member| {
-        matches!(member, crate::repo::PostureMember::OperationInProgress)
-    })?
+    crate::repo::adjudicated_breach(
+        worktree,
+        &crate::repo::posture_subject(worktree),
+        |member| matches!(member, crate::repo::PostureMember::OperationInProgress),
+    )?
     .operation()
 }
 
@@ -4004,7 +4006,15 @@ fn fan_out_posture_findings(jigc_home: &Path, worktrees: &[PathBuf]) -> Vec<Find
     worktrees
         .iter()
         .filter_map(|worktree| {
-            let breach = crate::repo::adjudicated_breach(worktree, |_| true)?;
+            // The subject is the **classifier's**, and here that is the whole point: this
+            // door commits that worktree's index from a `SeamSubject::dedicated` handle, so
+            // the `HeadDetached` exemption is about jigc's own provisioning and arrives from
+            // `posture_subject` rather than from a rule restated here.
+            let breach = crate::repo::adjudicated_breach(
+                worktree,
+                &crate::repo::posture_subject(worktree),
+                |_| true,
+            )?;
             let at = render::repo_relative(jigc_home, worktree);
             Some(breach.finding_at(crate::repo::BreachSite::FanOutWorktree {
                 at: &at,
@@ -4042,6 +4052,22 @@ fn fan_out_posture_findings(jigc_home: &Path, worktrees: &[PathBuf]) -> Vec<Find
 /// or when that worktree **is** the checkout the command was run in — there the cwd guard
 /// has already answered, at its own site, and a second finding about the same state would
 /// be two answers to one question.
+/// **Is `id` a milestone sub-task?** — the one question the `task finalize` preview needs
+/// before it can say which committing door it is forecasting
+/// ([`crate::cli::finalize_posture_refusal`]).
+///
+/// It asks the shipped enumerator ([`engine::milestone::owning_milestone`]) over the shared
+/// workbench, which is the same authority `TaskArea::finalize`'s own sub-task guard and
+/// [`sub_task_fan_out_refusal`] read — so the preview cannot decide a task belongs to a
+/// milestone that the door it forecasts disagrees about. A workbench it cannot locate reads
+/// **not a sub-task**: the ordinary answer, and the one whose preview is stricter.
+pub(crate) fn is_sub_task(cwd: &Path, id: &str) -> bool {
+    crate::start::jigc_home_or_repo(cwd)
+        .ok()
+        .and_then(|home| engine::milestone::owning_milestone(&home.join(".jigc"), id))
+        .is_some()
+}
+
 pub(crate) fn sub_task_fan_out_refusal(cwd: &Path, id: &str, format: Format) -> Option<Outcome> {
     let repo_root = discover_repo_root(cwd)?;
     let jigc_home = crate::start::jigc_home_or_repo(cwd).ok()?;

@@ -175,11 +175,30 @@ fn orient_with(ctx: &RunContext, pack: &dyn PackSource) -> Result<OrientationVie
 /// rendered as *a list of one*, which is the same rule the sweep's own arm obeys.
 fn active_tasks(ctx: &RunContext) -> Vec<ActiveTask> {
     let jigc_root = ctx.jigc_home.join(".jigc");
-    let posture = crate::cli::finalize_posture_breach(&ctx.repo_root);
+    // **Two subjects, because two committing doors** (M53, the rc.20 per-axis review
+    // `(2, A2-2)`). A row's posture is the one the door that lands *that* task refuses
+    // under, and inside a provisioned fan-out worktree the two part company: an ordinary
+    // task is `jigc task finalize`'s, whose seam is this checkout live, while a sub-task is
+    // the boundary's, which commits that worktree from its own handle and is exempt from the
+    // HEAD jigc detached. Both are asked once here rather than per row — the answer is a
+    // fact about the repository, and the row only chooses between them.
+    let ordinary_posture = crate::cli::finalize_posture_breach(&ctx.repo_root, false);
+    let sub_task_posture = crate::cli::finalize_posture_breach(&ctx.repo_root, true);
     engine::state::list_active_task_ids(&jigc_root)
         .into_iter()
         .map(|id| {
             let dir = jigc_root.join("tasks").join(&id);
+            // A milestone's sub-tasks are ordinary areas under `.jigc/tasks/`, so the
+            // enumerator above lists them — and a sub-task's commit boundary is the
+            // milestone door, `jigc task finalize` refusing outright. Asked here so the
+            // renderer can route to the door that runs (`design/surface-contract.md` →
+            // the route floor) — and so the row takes that door's posture, above.
+            let milestone = engine::milestone::owning_milestone(&jigc_root, &id);
+            let posture = if milestone.is_some() {
+                &sub_task_posture
+            } else {
+                &ordinary_posture
+            };
             let (findings, findings_unavailable) =
                 match crate::task::sweep_for_orientation(&ctx.repo_root, &id) {
                     Ok(swept) => (Some(prepend_posture(posture.as_ref(), swept)), None),
@@ -188,12 +207,7 @@ fn active_tasks(ctx: &RunContext) -> Vec<ActiveTask> {
             ActiveTask {
                 workflow: engine::state::read_workflow_id(&dir).ok().flatten(),
                 intent: engine::state::read_intent(&dir).unwrap_or_default(),
-                // A milestone's sub-tasks are ordinary areas under `.jigc/tasks/`, so the
-                // enumerator above lists them — and a sub-task's commit boundary is the
-                // milestone door, `jigc task finalize` refusing outright. Asked here so the
-                // renderer can route to the door that runs (`design/surface-contract.md` →
-                // the route floor).
-                milestone: engine::milestone::owning_milestone(&jigc_root, &id),
+                milestone,
                 base: engine::state::read_base_pin(&dir).ok(),
                 staged: crate::task::staged_doc_ids(&dir.join("docs")).unwrap_or_default(),
                 id,

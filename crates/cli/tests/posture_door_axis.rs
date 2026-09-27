@@ -688,8 +688,14 @@ fn carry_staged_does_not_conclude_a_live_merge() {
     );
 }
 
-/// **A fan-out worktree is typed, never sniffed** — and the exemption is exactly **one**
-/// member wide.
+/// **A fan-out worktree is typed, never sniffed** — and its exemption covers the
+/// boundary's own work and nothing else.
+///
+/// *(Renamed at M53's rc.20 fix pass from
+/// `a_dedicated_worktree_is_exempt_from_the_detached_member_and_from_nothing_else`, which
+/// leg (3) below makes false as a sentence: the exemption is one member wide **and** one
+/// door wide, and the old name claimed only the first half.
+/// `completions/artifacts/M53/per-axis-review/axis-2.md` cites the old name.)*
 ///
 /// jigc's own `milestone provision` mints a `--detach` worktree per sub-task, and
 /// `cli::repo::posture` answers `repo.head-detached` there **byte-identically** to a
@@ -697,17 +703,22 @@ fn carry_staged_does_not_conclude_a_live_merge() {
 /// read off the probe: it is carried by `cli::repo::posture_subject`, whose
 /// `DedicatedWorktree` no caller can construct.
 ///
-/// Two claims, because they are one property:
+/// Three claims, because they are one property:
 ///
 /// 1. inside a provisioned worktree, `jigc task finalize <sub-task>` still answers the
 ///    **routed** `finalize.milestone-sub-task` refusal it has answered since M31 — a
 ///    door-top that answered `repo.head-detached` here would have replaced a tested,
 ///    routed refusal with a posture the user cannot resolve (re-attaching a fan-out
 ///    worktree's HEAD is not a repair, it is a different bug);
-/// 2. a merge left un-concluded **inside** that worktree still refuses, because a
-///    dedicated worktree is exempt from *detached* and from nothing else.
+/// 2. a merge left un-concluded **inside** that worktree still refuses, because the
+///    exemption is *detached* and no other member;
+/// 3. an **ordinary** task minted in that same worktree **is** refused `repo.head-detached`
+///    (M53, the rc.20 per-axis review `(2, A2-2)`). Its committing door is `jigc task
+///    finalize`, whose seam is `SeamSubject::live` at this checkout — so the exemption is
+///    not its to take, and the door that exempted it at dispatch refused it anyway at the
+///    seam, three previews having already called the state clean.
 #[test]
-fn a_dedicated_worktree_is_exempt_from_the_detached_member_and_from_nothing_else() {
+fn a_dedicated_worktrees_exemption_covers_the_boundarys_own_work_and_nothing_else() {
     let repo = TempDir::new("posture-worktree");
     git(repo.path(), &["init", "-q", "-b", "main", "."]);
     std::fs::create_dir_all(repo.path().join(".jigc").join("config")).expect("mk config layer");
@@ -765,6 +776,61 @@ fn a_dedicated_worktree_is_exempt_from_the_detached_member_and_from_nothing_else
     assert!(
         text.contains("finalize.milestone-sub-task"),
         "the routed sub-task refusal must still be the answer here; output:\n{text}",
+    );
+
+    // (3) …while an ORDINARY task minted in the same worktree is refused for that HEAD:
+    // its door commits HERE, so the boundary's exemption is not its to take. Driven before
+    // the merge overlay below, so the member under test is `detached` alone.
+    let minted = run_jigc(
+        &worktree,
+        home.path(),
+        &[
+            "start".to_string(),
+            "--workflow".to_string(),
+            "single-task".to_string(),
+            "Ordinary in worktree".to_string(),
+        ],
+    );
+    assert!(
+        minted.status.success(),
+        "the ordinary task must mint; output:\n{}",
+        output_of(&minted),
+    );
+    let ordinary = run_jigc(
+        &worktree,
+        home.path(),
+        &[
+            "task".to_string(),
+            "finalize".to_string(),
+            "ordinary-in-worktree".to_string(),
+        ],
+    );
+    let text = output_of(&ordinary);
+    assert!(
+        !ordinary.status.success() && text.contains("blocking · repo.head-detached"),
+        "an ordinary task's finalize commits in THIS checkout, so it adjudicates the \
+         detached HEAD; output:\n{text}",
+    );
+    assert!(
+        text.contains("git switch -c <new-branch>"),
+        "and its route must be one that runs here — no branch this repository has is free; \
+         output:\n{text}",
+    );
+    let discarded = run_jigc(
+        &worktree,
+        home.path(),
+        &[
+            "task".to_string(),
+            "discard".to_string(),
+            "ordinary-in-worktree".to_string(),
+            "--force".to_string(),
+        ],
+    );
+    assert!(
+        discarded.status.success(),
+        "the ordinary task is cleared before the next leg, so (2) drives the sub-task's \
+         own door; output:\n{}",
+        output_of(&discarded),
     );
 
     // (2) …and a merge left un-concluded inside that worktree still refuses.
