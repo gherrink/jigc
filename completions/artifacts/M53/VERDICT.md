@@ -278,3 +278,42 @@ spelling on an amend task (a pinned envelope; one predicate, one authority); `--
 the amend arm and says so rather than refusing; `git commit --amend` resets the committer identity, now
 said on the ack. **`1.0.0-rc.20` is the fourth stamp**, after these fixes. **Then axes 2 · 3 · 5
 re-driven on rc.20 — a new committing arm — and then the 1.0.0 call, which is the human's.**
+
+---
+
+## Addendum 4 (2026-09-27) — the last batch, and the fifth stamp
+
+**The rc.20 re-review found zero tier-1 rows on all three axes** ([per-axis-review-rc20/](per-axis-review-rc20/README.md)),
+all eight F-10 review findings verified closed on the release binary, and five new surface rows — one
+tier-2 (inside a jigc-provisioned fan-out worktree the three preview surfaces reported a clean posture
+while `task finalize` refused `repo.head-detached`, and the refusal's route `git switch <branch>` exited
+128 there), four tier-3 (three inside F-10's own week-old code). **The human asked whether another round
+was needed, was told the rule permits the call and one row fails the standard set at the `cd` question,
+and chose one final batch — the five rows, one review, a stamp, and no further re-drive.**
+
+**The batch** (`7081de80`…`a34f910a`): the preview takes the seam's subject for an *ordinary* task in a
+fan-out worktree while a sub-task keeps the classifier's exemption (its boundary is `milestone finalize`
+from the main checkout — `finalize.md:60` and `posture_subject`'s own doc-comment decide it); the class
+narrowed to **one** door, `task finalize`, because every other committing door binds its act to
+`jigc_home` (driven at five); the route became `git switch -c <new-branch>`, driven to land — the fixer
+overrode the orchestrator's suggested *"finish it from the main checkout"* because that loses the work
+(an ordinary task minted in a worktree stages in *that* index). `--dry-run`'s help names the gates the
+forecast adds; the amend mint refusal names its own exit; the head-shape locus takes a declared
+spelling; the settle's one false sentence struck with its datum.
+
+**Its review** ([audit/final-batch-code-review.md](audit/final-batch-code-review.md)) — **HOLDS WITH
+FINDINGS: 0 HIGH · 2 MEDIUM · 2 LOW**, all fixed (`6cf2aab1`…`96f0f937`), gate **3985 / 0**: the new route
+led one step later to a sub-task refusal whose first clause was `cd` into the reader's own cwd — routed at
+the act instead (`git switch --detach <pin>`), keyed on the canonicalized repository root, not the cwd
+(from a subdirectory of the worktree the `cd` *moves* the reader and still resolves nothing); and the
+`--dry-run` help's "every gate" enumeration was **six** out-of-set codes where it named two — the set is
+now **derived** from 19 refusal producers over four spans, each count-fenced against its own source text,
+and the derivation also *shrank* the set by two that read like members and are the `carryover` member's
+amend spelling.
+
+**Bounds carried:** `amend.head-shape` on `--format json` lands in the flattened `{"error"}` carrier
+(M50's measured ground, the reopening condition written at the producer); the engine side's remaining
+`finalize.*` members are outside the `--dry-run` derivation's four spans, stated; axes 1, 4, 6, 7, 8
+stand at their last measurement (6 on rc.19, the rest on rc.16). **`1.0.0-rc.21` is the fifth stamp**,
+after these fixes; the negative fence is empty from M53's planning base to it; the golden fixed point
+holds at **646**. **The 1.0.0 call is the human's.**
