@@ -15,7 +15,7 @@
 //!   2. **QUICKSTART.md cross-refs it.** The quickstart's finalize section is where a
 //!      cold reader meets the commit boundary; it points at the gate rather than
 //!      restating it (CLAUDE.md → *Cross-reference, never restate*).
-//!   3. **CLAUDE.md's project-state paragraph names the wave whose claim is still moving,
+//!   3. **The project-state record names the wave whose claim is still moving,
 //!      and claims exactly what has been reached — no more, and no less.** At a close
 //!      increment the wave is **built, not audited**, and the fence requires those words
 //!      while forbidding a `VERDICT` citation: the doc may not claim a verdict nobody has
@@ -59,6 +59,16 @@
 //!      what falsified it — and that bracket names the home, so landing on the record
 //!      still reaches the count that is current.
 //!
+//! **Where claim 3 reads, and why it moved (2026-09-27).** The record used to be one
+//! ~157 KB line inside `CLAUDE.md`'s `## Project state`, which every session preloads
+//! whole; it now lives in [`implementation/project-history.md`](../../../implementation/project-history.md),
+//! **byte-for-byte** apart from one mechanical link re-rooting (every repo-root-relative
+//! target gained a `../`), and `CLAUDE.md` keeps current truth plus a pointer. So the
+//! subject of the claim arm and of the version arm is [`RECORD`], not `CLAUDE.md` — the
+//! fence follows the record, not the filename. `CLAUDE.md` stays inside the version arm
+//! for its own one current-truth claim, which is a **second home for a version string**
+//! and therefore exactly the thing five consecutive waves got wrong.
+//!
 //! These are doc-content assertions by nature — the deliverable *is* the prose. The
 //! behaviour the prose describes is proven elsewhere, through the real binary:
 //! `crates/cli/tests/commit_rejected_axis.rs` drives every committing door under a
@@ -83,6 +93,11 @@ fn read_doc(name: &str) -> String {
     fs::read_to_string(&path)
         .unwrap_or_else(|_| panic!("{name} must exist at the repo root: {path:?}"))
 }
+
+/// The running project-state record — the home of every `**M<nn> —` milestone claim, and
+/// the file a close increment appends its fold-back to. It left `CLAUDE.md` on 2026-09-27
+/// (see the module doc); nothing in this suite reads a milestone claim anywhere else.
+const RECORD: &str = "implementation/project-history.md";
 
 /// The body of a `## <heading>` section — up to the next `## ` heading or EOF.
 fn section<'a>(body: &'a str, heading: &str) -> &'a str {
@@ -191,7 +206,7 @@ fn quickstart_cross_refs_the_hook_rejection_gate() {
 fn milestone_span<'a>(body: &'a str, marker: &str) -> &'a str {
     let start = body
         .find(marker)
-        .unwrap_or_else(|| panic!("CLAUDE.md's project state must carry `{marker}`"));
+        .unwrap_or_else(|| panic!("the project-state record must carry `{marker}`"));
     let rest = &body[start + marker.len()..];
     let end = rest
         .match_indices("**M")
@@ -295,12 +310,12 @@ fn milestone_span<'a>(body: &'a str, marker: &str) -> &'a str {
 /// M47 — that call is the human's, and it is the call this whole pass exists to make
 /// reachable, which is exactly why the paragraph may not take it.
 #[test]
-fn claude_md_names_m53_and_claims_exactly_what_the_build_reached() {
-    let body = read_doc("CLAUDE.md");
-    // The project-state paragraph is a single line; the sections that follow it (build /
-    // lint / test, quickstart, code architecture) are not milestone claims, and M53 is the
-    // last marker in the paragraph — so the span is bounded at the paragraph's own end
-    // rather than running to EOF and forbidding these words to the whole file.
+fn the_record_names_m53_and_claims_exactly_what_the_build_reached() {
+    let body = read_doc(RECORD);
+    // The project-state record is a single line; the header above it is not a milestone
+    // claim, and M53 is the last marker on the line — so the span is bounded at the
+    // paragraph's own end rather than running to EOF and forbidding these words to the
+    // whole file.
     let span = milestone_span(&body, "**M53 —")
         .split('\n')
         .next()
@@ -356,9 +371,13 @@ fn claude_md_names_m53_and_claims_exactly_what_the_build_reached() {
 /// M48 Settle's own site list plus `implementation/roadmap.md`, which was already
 /// correct and must stay so. Enumerated rather than globbed: a glob over the repo
 /// would sweep in the goldens and this suite's own prose.
+///
+/// The row that reads [`RECORD`] was `CLAUDE.md` until 2026-09-27: the sentence carrying
+/// this claim is inside the project-state record, and the record moved out of `CLAUDE.md`
+/// with the sentence in it (module doc, *Where claim 3 reads*).
 const STEP_COUNT_HOMES: [&str; 8] = [
     "implementation/decisions-pending.md",
-    "CLAUDE.md",
+    RECORD,
     "design/surface-contract.md",
     "DECISIONS.md",
     "implementation/roadmap.md",
@@ -376,7 +395,7 @@ const STEP_COUNT_HOME: &str = "implementation/decisions-pending.md";
 /// `implementation/roadmap.md` is deliberately not here: its M48 row is the milestone's
 /// own claim, already stated at 66 before this task, and owned by the record repair (T6).
 const STEP_COUNT_RESTATEMENTS: [&str; 3] = [
-    "CLAUDE.md",
+    RECORD,
     "design/surface-contract.md",
     "completions/artifacts/M48/handover.md",
 ];
@@ -1076,8 +1095,8 @@ fn manifest_kind_all_holds_every_variant_the_enum_declares() {
 //     register). A new pack step would also move the pack-step count and make the count
 //     fence's cell above disappear by accident.
 //
-// **What "the version the fold-back names" means, stated as a grammar.** CLAUDE.md's
-// project-state paragraph names **every** version this project has ever shipped, so *any
+// **What "the version the fold-back names" means, stated as a grammar.** The project-state
+// record names **every** version this project has ever shipped, so *any
 // version token* is the wrong subject. The subject is the paragraph's **built-and-installed
 // claim**: a version token immediately followed by the words the fold-back has used at every
 // wave — `built and installed` / `built + installed`, optionally through an `is`, across the
@@ -1092,6 +1111,14 @@ fn manifest_kind_all_holds_every_variant_the_enum_declares() {
 // claim was true when it was written. A claim phrased with the token **after** the words
 // (*"we built and installed `x`"*) is outside the grammar; the non-vacuity leg below is what
 // catches a wholesale drift of the shipped phrasing.
+//
+// **Two homes since 2026-09-27, and the second is the reason this fence exists.** The record
+// moved to [`RECORD`] and `CLAUDE.md`'s `## Project state` became current truth — which
+// includes one built-and-installed claim, because a reader who must open a second file to
+// learn which binary is installed is not being told current truth. That is a **second home
+// for a version string**, the exact shape that shipped stale in five consecutive waves, so
+// the arm below reads both: the newest span's claim in the record, and **every** claim
+// `CLAUDE.md` makes, since it carries no historical spans and therefore owes no exemption.
 
 /// The workspace version — the second home, read from `[workspace.package]` rather than from
 /// any crate's inherited `version.workspace = true`.
@@ -1215,7 +1242,7 @@ fn built_and_installed_versions(text: &str) -> Vec<(usize, String)> {
         .collect()
 }
 
-/// The newest wave's marker in CLAUDE.md's project-state paragraph — the claim a fold-back
+/// The newest wave's marker in the project-state record — the claim a fold-back
 /// is still able to move. Derived rather than pinned, so the fence follows the paragraph the
 /// way the paragraph grows: each wave appends its own claim at the end.
 fn newest_milestone_marker(body: &str) -> String {
@@ -1230,7 +1257,7 @@ fn newest_milestone_marker(body: &str) -> String {
             newest = Some(format!("**M{digits} —"));
         }
     }
-    newest.expect("CLAUDE.md's project state must carry at least one `**M<nn> —` marker")
+    newest.expect("the project-state record must carry at least one `**M<nn> —` marker")
 }
 
 /// The newest wave's claim: its span within the project-state paragraph, which is one line.
@@ -1256,13 +1283,13 @@ fn foldback_version_mismatches(body: &str, version: &str) -> Vec<String> {
 
 #[test]
 fn the_foldback_names_the_version_cargo_toml_carries() {
-    let body = read_doc("CLAUDE.md");
+    let body = read_doc(RECORD);
     let version = workspace_version();
 
     let mismatches = foldback_version_mismatches(&body, &version);
     assert!(
         mismatches.is_empty(),
-        "CLAUDE.md's newest wave claims a version built and installed that `Cargo.toml` does \
+        "the record's newest wave claims a version built and installed that `Cargo.toml` does \
          not carry (`{version}`): {mismatches:?}. Either the bump is owed — the failure five \
          consecutive waves needed a human to notice — or the fold-back is naming the wrong \
          binary.",
@@ -1275,11 +1302,30 @@ fn the_foldback_names_the_version_cargo_toml_carries() {
     let paragraph = body
         .lines()
         .find(|line| line.contains(&marker))
-        .expect("the project-state paragraph must be one line of CLAUDE.md");
+        .expect("the project-state record must be one line of the record file");
     assert!(
         !built_and_installed_versions(paragraph).is_empty(),
         "no built-and-installed claim is recognisable anywhere in the project-state \
          paragraph — the phrasing this fence reads moved, and the fence stopped fencing",
+    );
+
+    // The second home. `CLAUDE.md` carries current truth only — no historical span — so
+    // **every** built-and-installed claim it makes is a claim about the binary installed
+    // today, and each is held to `Cargo.toml` without any newest-span carve-out. Naming no
+    // version is still allowed: the bump is the completion workflow's obligation, not this
+    // fence's to require (the recorded refusal above).
+    let claude = read_doc("CLAUDE.md");
+    let stale: Vec<String> = built_and_installed_versions(&claude)
+        .into_iter()
+        .filter(|(_, named)| named != &version)
+        .map(|(at, named)| format!("names `{named}` at offset {at}"))
+        .collect();
+    assert!(
+        stale.is_empty(),
+        "CLAUDE.md → *Project state* states a built-and-installed version `Cargo.toml` does \
+         not carry (`{version}`): {stale:?}. The record's own claim lives in {RECORD}; this \
+         is the second home, and a second home for a version string is what shipped stale in \
+         five consecutive waves.",
     );
 }
 

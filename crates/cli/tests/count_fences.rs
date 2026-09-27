@@ -21,9 +21,9 @@
 //!      freeze* argues the whole-file-shadow decision from how many doctypes a
 //!      refusal-by-name would have cost, and counted the methodology manifest at ten after
 //!      `planning-record` joined it at M49.
-//!   4. **The write-miss axis' two sizes** (T6). `CLAUDE.md`'s M50 paragraph stated one
-//!      numeral for two different tables — the cross's coordinates and the rows that
-//!      witness them — and it was neither table's.
+//!   4. **The write-miss axis' two sizes** (T6). The record's M50 span (then still in
+//!      `CLAUDE.md`) stated one numeral for two different tables — the cross's
+//!      coordinates and the rows that witness them — and it was neither table's.
 //!   5. **The record-only door set** (M52 Increment 5, T11) — one axis stated three
 //!      different sizes inside one tree, and every suite passed because every suite
 //!      iterated the doors and nothing read the prose.
@@ -56,10 +56,19 @@
 //! *N committing doors* and *N-door … axis* — because they name their own subject. The
 //! looser shapes (*N doors*, *N pairwise distinct*, *N distinct identities*) are read **only
 //! inside a prose unit that names `COMMITTING_DOORS`**, since *doors* is a word this repo
-//! uses for a dozen different registries. `CLAUDE.md` therefore takes the explicit shapes
-//! only: its project-state record is one ~40 000-character paragraph, so a unit-scoped rule
+//! uses for a dozen different registries. [`RECORD`] therefore takes the explicit shapes
+//! only: the project-state record is one ~156 000-character paragraph, so a unit-scoped rule
 //! has no unit there — it would read every door count in the repo's history as a claim about
 //! this axis. A count stated in some third wording is outside this probe.
+//!
+//! **The record's home moved on 2026-09-27, and four homes here moved with it.** Every
+//! numeral this suite reads out of the project-state record — the committing-door axis, the
+//! write-miss axis' two sizes, the unswept path-text remainder and `ROLLBACK_POPULATIONS`'
+//! row count — was written inside that one paragraph, and the paragraph left `CLAUDE.md`
+//! for [`RECORD`] byte-for-byte (`crates/cli/tests/foldback_truth.rs`' module doc carries
+//! the move and its link rule). So each home is re-keyed onto the file the sentence is
+//! actually in; none of the four facts is stated in the guidance `CLAUDE.md` retained, so
+//! none of them stays.
 
 use crate::support;
 use cli::invocation_log::{COMMITTING_DOORS, ERROR_CODE_REGISTRY};
@@ -77,6 +86,11 @@ fn repo_root() -> PathBuf {
 fn read(rel: &str) -> String {
     fs::read_to_string(repo_root().join(rel)).unwrap_or_else(|e| panic!("{rel} is readable: {e}"))
 }
+
+/// The running project-state record — the home of every milestone fold-back, and the file
+/// four of this suite's subjects state their size in. It left `CLAUDE.md` on 2026-09-27
+/// (module doc, *The record's home moved*).
+const RECORD: &str = "implementation/project-history.md";
 
 /// The doc of record for the error-code namespace.
 const MIRROR: &str = "design/surface-contract.md";
@@ -111,7 +125,7 @@ struct Home {
 /// **discharged** and the guide is fenced live here, like every other home.
 const HOMES: &[Home] = &[
     Home {
-        path: "CLAUDE.md",
+        path: RECORD,
         scope: Scope::ExplicitOnly,
     },
     Home {
@@ -749,7 +763,7 @@ const AXIS_ROWS: &str = "crates/cli/tests/support/write_miss_cells.rs";
 /// the declared bound of this half of the fence.
 const AXIS_CROSS: &str = "crates/cli/tests/write_miss_shape_axis.rs";
 /// The one doc that states either size outside the two files above.
-const AXIS_CLAIM_HOME: &str = "CLAUDE.md";
+const AXIS_CLAIM_HOME: &str = RECORD;
 
 /// The number of `MissShape` rows `write_miss_shape_axis.rs` declares in `MISS_SHAPES`,
 /// read from the source of the table itself.
@@ -809,7 +823,8 @@ fn axis_claims(text: &[char], map: &[usize]) -> Vec<(Claim, &'static str)> {
 
 /// The write-miss axis has two sizes and they count different things — the **cross**'s
 /// `(verb, shape, leading-hop declaredness)` coordinates and the **rows** that witness
-/// them. `CLAUDE.md`'s M50 paragraph stated one numeral for both, and it was neither:
+/// them. The record's M50 span (then still in `CLAUDE.md`) stated one numeral for both,
+/// and it was neither:
 /// *thirteen* is `write_miss_shape_axis.rs`'s count of the address-shape column's own new
 /// item-addressing rows, read as the size of the whole axis.
 #[test]
@@ -1029,8 +1044,8 @@ fn a_qualified_record_only_door_claim_is_not_a_claim_about_the_whole_set() {
 // was the **prose** that states the table's size, and the three sentences that state it
 // disagreed with the table and with each other.
 //
-// **The scoping rule is proximity, not the prose unit.** `CLAUDE.md`'s project-state record
-// is one ~40 000-character paragraph, so a unit-scoped rule has no unit there — and a bare
+// **The scoping rule is proximity, not the prose unit.** The project-state record is one
+// ~156 000-character paragraph, so a unit-scoped rule has no unit there — and a bare
 // `<N> producers` is a shape this repo writes about a dozen different producer sets (the same
 // bullet that states this bound also says *"the class is **three** producers, not one"* about
 // an entirely different one). So a numeral is read as a claim about **this** table only when
@@ -1053,10 +1068,10 @@ const UNSWEPT_NAMING_WINDOW: usize = 80;
 ///
 /// `DECISIONS.md` and `implementation/roadmap.md` name the table and are deliberately **not**
 /// homes: they are dated records, whose job is to state the world as it was on the day of the
-/// entry. `CLAUDE.md` is a home because its fold-back speaks in the present tense about what
+/// entry. [`RECORD`] is a home because its fold-back speaks in the present tense about what
 /// a wave left standing — and when that is a past measurement, the dated-bracket rule below
 /// is how it keeps saying so.
-const UNSWEPT_HOMES: &[&str] = &["CLAUDE.md", "implementation/decisions-pending.md"];
+const UNSWEPT_HOMES: &[&str] = &[RECORD, "implementation/decisions-pending.md"];
 
 /// Which of the table's two sizes a claim counts.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -1493,7 +1508,7 @@ fn the_refusing_worktree_door_count_is_the_registrys_own() {
 /// homes, on [`UNSWEPT_HOMES`]' reason: they are dated records, and a superseded figure
 /// stays visible there beside the correction that superseded it — which is exactly the
 /// chain the roadmap's Increment 5 row now carries (ten → twelve → eleven).
-const ROLLBACK_ROW_HOME: &str = "CLAUDE.md";
+const ROLLBACK_ROW_HOME: &str = RECORD;
 
 /// The registry's row count is the registry's own.
 #[test]

@@ -45,6 +45,8 @@ The evidence: the first milestone's external audit found a reachable parser pani
 
 The milestone is **done** when every confirmed finding is closed (or consciously tracked), the gate is green, and the deliverable holds under the re-run end-to-end flows.
 
+**Where the fold-back lands (2026-09-27).** The completion entry's prose half — the wave's `**M<nn> — …**` span — appends to [project-history.md](project-history.md), the running record, and its two `crates/cli/tests/foldback_truth.rs` arms are re-aimed onto the new span in the same edit (that suite's module doc carries the inversion rule: *say no more about the audit than the audit found*). It does **not** go in `CLAUDE.md`, whose `## Project state` carries current truth and a pointer; touch that only when current truth moved — the installed version, the instrument still owed, what comes next. The record left `CLAUDE.md` because one paragraph had reached 157 KB, preloaded whole by every session.
+
 ## Why this shape
 
 - **External adversarial audit is the acceptance gate.** Only a fresh pass over the finished whole — by something that did not build it and cannot fix it — catches the integration, latent, and emergent issues that in-line, per-slice validation structurally misses.
