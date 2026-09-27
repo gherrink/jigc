@@ -1,7 +1,15 @@
 name: CI
 
-# Internal-only: the four-command dev-workflow gate on every push and PR.
-# No external publish (M36 F4) — no crates.io / npm / release step.
+# The dev-workflow gate on every push and PR: the probe prebuild, then fmt, clippy,
+# build and test — the same five steps `dev/gate` runs locally, in the same order and
+# for the same reason (see the prebuild step's own comment) — followed by the CI-only
+# manifest-freeze fence.
+#
+# External publish is DECIDED and not yet wired: M36 F4's "internal-only, no external
+# publish" was reversed on 2026-09-27 (DECISIONS.md -> the road to the 1.0.0 call, D2),
+# so 1.0.0 is the first real published version. The release workflow, the tag convention
+# and `cargo publish --dry-run` arrive with M54 (implementation/roadmap.md -> M54); until
+# they do, nothing here publishes and both crates still carry `publish = false`.
 on:
   push:
   pull_request:
