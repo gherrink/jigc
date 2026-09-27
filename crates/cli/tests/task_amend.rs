@@ -162,13 +162,22 @@ const AMEND_TABLE: &[Row] = &[
     // the F-10 review's LOW-6, which found this comment claiming it *"now includes this arm
     // through `BEHALF_DOORS`"* — false: that suite filters the registry to acting rows,
     // `task amend` is `Neither`, and its `task finalize` row is driven over an **ordinary**
-    // task). The reason no second sweep is owed is that the posture family's subject is the
-    // **door**, never the task: `cli::cli::finalize_posture_refusal` takes a cwd and a format
-    // and cannot see which commit model a task carries, and the pre-commit re-probe is
-    // `SeamSubject::verify` inside `git_commit_capture`, which `git_commit_amend` funnels
-    // through like every other commit site. So all seventeen states × this door are already
-    // swept there, once, for both arms — and these four rows drive the arm's own claim, that
-    // a refusal leaves `HEAD` *and its tree* where they were.
+    // task). The reason no second sweep is owed is that the family's answer does not turn on
+    // the **commit model**: `cli::cli::finalize_posture_refusal` cannot see which model a
+    // task carries, and the pre-commit re-probe is `SeamSubject::verify` inside
+    // `git_commit_capture`, which `git_commit_amend` funnels through like every other commit
+    // site. So all seventeen states × this door are already swept there, once, for both arms
+    // — and these four rows drive the arm's own claim, that a refusal leaves `HEAD` *and its
+    // tree* where they were.
+    //
+    // *(Narrowed 2026-09-27, the rc.20 per-axis review's `(2, A2-2)`: this read "the posture
+    // family's subject is the **door**, never the task", which is now false as written —
+    // the preview takes a `sub_task` verdict, because a sub-task's committing door is the
+    // milestone boundary and the two doors' subjects differ inside a provisioned fan-out
+    // worktree. It never turned on the commit **model**, which is the clause this paragraph
+    // needs, and an amend task is an ordinary task on that axis. Driven in the same review:
+    // an amend task in a fan-out worktree answers `repo.head-detached` identically to an
+    // ordinary one.)*
     Row {
         id: "posture / merge",
         door: Door::Finalize,

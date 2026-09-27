@@ -473,9 +473,9 @@ pub enum TaskCommand {
         /// from under it. When it **does** print a manifest, its `findings` are the set
         /// `jigc task validate <id>` reports, the staging-independent `owner-artifact`
         /// causes included — reported here, decided at the real finalize. The base pin and
-        /// the empty-commit guard are **outside** that set by design (`cli::gate_coverage`
-        /// carries a row for neither), so a refusal here can name a code no `task validate`
-        /// will ever print. Every other gate — staging, promotion, the untracked
+        /// the empty-commit guard are **outside** that set by design, so a refusal here can
+        /// name a code no `jigc task validate <id>` will ever print. Every other gate —
+        /// staging, promotion, the untracked
         /// `owner-artifact` cause, the commit hook — is decided only by the real finalize,
         /// so a printed manifest is not a promise the commit lands.
         #[arg(long)]

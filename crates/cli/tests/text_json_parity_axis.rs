@@ -314,8 +314,13 @@ const REGISTRY: &[(&[&str], Tier)] = &[
     (
         &["task", "amend"],
         Tier::Judgment(
-            "the composed-workflow surface — prose, pinned as {task, text}, led by the \
-             `amending:` block naming the commit at HEAD",
+            // The subject names the arm the census is about, and **only** that (M53, the
+            // rc.20 per-axis review `(2, A2-3)`). It read *"…, led by the `amending:` block
+            // naming the commit at HEAD"* while the disposition beneath declares that block
+            // out of this very arm — the two halves of one row describing two surfaces, and
+            // the half a reader takes as the contract is the one on top. The block is named
+            // where it is disposed of, below, and nowhere else.
+            "the composed-workflow surface — prose, pinned as {task, text}",
             Disposition::DeclaredOut(
                 "the same pinned `{task, text}` projection as `start`'s composing arm, and the \
                  same declaration governs what the text adds over it: the mint announcement, \
