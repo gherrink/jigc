@@ -4178,6 +4178,10 @@ mod tests {
         // hooks dir via git — so the install target must be a git repo (as the real
         // `jigc setup` always is: `locate` requires one).
         git(dir.path(), &["init", "-q"]);
+        // ...and a committable identity: `install` makes its own commit, which git
+        // rejects outright where no identity is auto-detectable (a CI runner). A dev
+        // machine's global gitconfig hides that; the runner has none.
+        git_identity(dir.path());
         let profile = adapter::load_profile("claude-code").expect("the shipped profile loads");
 
         let (summary, _) = install(dir.path(), &profile, false).expect("install succeeds");
@@ -4200,8 +4204,10 @@ mod tests {
     #[test]
     fn install_accepts_shipped_spawn_template() {
         let dir = TempDir::new();
-        // The hook-install step resolves the real hooks dir via git (see above).
+        // The hook-install step resolves the real hooks dir via git, and the install
+        // commit needs an identity git will accept without auto-detection (see above).
         git(dir.path(), &["init", "-q"]);
+        git_identity(dir.path());
         let profile = adapter::load_profile("claude-code").expect("the shipped profile loads");
 
         install(dir.path(), &profile, false)
