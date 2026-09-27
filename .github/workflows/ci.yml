@@ -30,6 +30,25 @@ jobs:
       - name: Show toolchain
         run: cargo --version && rustc --version
 
+      # Both cargo workspaces are cached: the root one, and the DETACHED doc-code
+      # probe workspace, which is a separate manifest with its own target dir and so
+      # is invisible to a cache keyed on the root Cargo.lock alone.
+      - name: Cache cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            crates/cli/probes/doc-code -> target
+
+      # The probe prebuild, first, exactly as in `dev/gate`: dozens of suites shell out
+      # to cargo for the detached doc-code probe and share one target dir, so co-resident
+      # in a group target one suite can replace target/debug/doc-code while another runs
+      # it. Prebuilt, every in-test build is an up-to-date no-op. `--target-dir` is
+      # pinned to the same path crates/cli/build.rs and the suites pass explicitly —
+      # anywhere else and the prebuild stops preventing the race it exists to prevent.
+      - name: probe prebuild (doc-code)
+        run: cargo build --manifest-path crates/cli/probes/doc-code/Cargo.toml --target-dir crates/cli/probes/doc-code/target
+
       - name: cargo fmt --check
         run: cargo fmt --check
 
