@@ -36,6 +36,7 @@
 //! **milestone-record** reslug refuses always — between milestones too — while a same-slug
 //! retitle stays legal on both.
 
+use crate::support::run_then_parse::{stderr_json, stdout_json};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -768,9 +769,7 @@ fn idempotent_retitle_acks_the_no_op_and_never_claims_a_rejection() {
             "json",
         ],
     );
-    let no_op_stdout = String::from_utf8_lossy(&no_op.stdout);
-    let no_op_doc: serde_json::Value =
-        serde_json::from_str(&no_op_stdout).expect("the no-op envelope is valid JSON");
+    let no_op_doc: serde_json::Value = stdout_json(&no_op, &[0], "the no-op rename envelope");
     assert_eq!(
         no_op_doc["commit"],
         serde_json::Value::Null,
@@ -794,8 +793,7 @@ fn idempotent_retitle_acks_the_no_op_and_never_claims_a_rejection() {
         "the landed rename must exit 0; stdout:\n{landed_stdout}\nstderr:\n{}",
         String::from_utf8_lossy(&landed.stderr),
     );
-    let landed_doc: serde_json::Value =
-        serde_json::from_str(&landed_stdout).expect("the landed envelope is valid JSON");
+    let landed_doc: serde_json::Value = stdout_json(&landed, &[0], "the landed rename envelope");
     assert_eq!(
         landed_doc["commit"].as_str().map(str::is_empty),
         Some(false),
@@ -1604,7 +1602,7 @@ fn store_scope_oob_rename_flips_exit_and_report_only() {
         "an OOB rename must flip the store sweep exit non-zero; stdout:\n{stdout}\nstderr:\n{stderr}",
     );
 
-    let value: serde_json::Value = serde_json::from_str(&stdout).expect("validate emits JSON");
+    let value: serde_json::Value = stdout_json(&out, &[1], "`jigc validate --format json`");
     let codes: Vec<&str> = value["findings"]
         .as_array()
         .expect("findings array")
@@ -1704,11 +1702,7 @@ fn store_scope_content_drift_raises_no_exit_flipping_finding() {
     git(repo.path(), &["commit", "-aq", "-m", "oob content edit"]);
 
     let out = jigc(repo.path(), &["validate", "--format", "json"]);
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    let stderr = String::from_utf8_lossy(&out.stderr);
-
-    let value: serde_json::Value = serde_json::from_str(&stdout)
-        .unwrap_or_else(|_| panic!("validate emits JSON; stdout:\n{stdout}\nstderr:\n{stderr}"));
+    let value: serde_json::Value = stdout_json(&out, &[1], "`jigc validate --format json`");
     let codes: Vec<&str> = value["findings"]
         .as_array()
         .expect("findings array")
@@ -2186,8 +2180,8 @@ fn an_unmovable_destination_names_itself_and_prints_no_host_path() {
     ];
     let json_out = jigc(repo.path(), &json_argv);
     let json_stderr = String::from_utf8_lossy(&json_out.stderr).into_owned();
-    let envelope: serde_json::Value = serde_json::from_str(json_stderr.trim())
-        .unwrap_or_else(|_| panic!("the refusal renders a JSON envelope; stderr:\n{json_stderr}"));
+    let envelope: serde_json::Value =
+        stderr_json(&json_out, &[1], "the refused rename's JSON envelope");
     assert!(
         envelope["error"].as_str().is_some_and(|e| {
             e.contains(RefusalKind::UntrackableDestination.code())

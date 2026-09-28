@@ -40,6 +40,7 @@
 //! finding in the same run), below-version and stamp-absent ⇒ the corpus-migration route,
 //! above-current ⇒ the `ahead` route that names no verb which would block it.
 
+use crate::support::run_then_parse::stdout_json;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -344,11 +345,14 @@ Per-IP throttling was weighed and rejected as too coarse.
 Rate limit per API key.
 ";
 
-/// The findings array of a `--format json` envelope.
-fn envelope_findings(out: &std::process::Output, what: &str) -> Vec<serde_json::Value> {
-    let stdout = String::from_utf8(out.stdout.clone()).expect("utf-8 stdout");
-    let value: serde_json::Value = serde_json::from_str(&stdout)
-        .unwrap_or_else(|e| panic!("{what} envelope must parse ({e}); got:\n{stdout}"));
+/// The findings array of a `--format json` envelope, from a run that exited `expected`.
+fn envelope_findings(
+    out: &std::process::Output,
+    expected: &[i32],
+    what: &str,
+) -> Vec<serde_json::Value> {
+    let value: serde_json::Value = stdout_json(out, expected, what);
+    let stdout = String::from_utf8_lossy(&out.stdout);
     value["findings"]
         .as_array()
         .unwrap_or_else(|| {
@@ -447,7 +451,7 @@ fn a_foreign_file_answers_one_code_and_one_route_at_every_door() {
 
     // ── the store door: lift the emitted route verbatim ──────────────────────────────
     let store = jigc(repo.path(), home.path(), &["validate", "--format", "json"]);
-    let store_findings = envelope_findings(&store, "jigc validate");
+    let store_findings = envelope_findings(&store, &[1], "jigc validate");
     let store_route = route_of(one_at(&store_findings, UNADOPTED, NOTES, "store"), "store");
     assert!(
         store_route.contains("jigc ingest"),
@@ -484,7 +488,7 @@ fn a_foreign_file_answers_one_code_and_one_route_at_every_door() {
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr),
     );
-    let task_findings = envelope_findings(&out, "task validate");
+    let task_findings = envelope_findings(&out, &[0], "task validate");
     assert_eq!(
         route_of(
             one_at(&task_findings, UNADOPTED, NOTES, "task validate"),
@@ -528,7 +532,7 @@ fn a_foreign_file_answers_one_code_and_one_route_at_every_door() {
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr),
     );
-    let finalize_findings = envelope_findings(&out, "task finalize");
+    let finalize_findings = envelope_findings(&out, &[0], "task finalize");
     assert_eq!(
         route_of(
             one_at(&finalize_findings, UNADOPTED, NOTES, "task finalize"),
@@ -568,7 +572,7 @@ fn a_foreign_file_answers_one_code_and_one_route_at_every_door() {
         &["task", "finalize", task_b, "--format", "json"],
     );
     assert_ok(&out, "`jigc task finalize` (second pass)");
-    let again = envelope_findings(&out, "task finalize (second pass)");
+    let again = envelope_findings(&out, &[0], "task finalize (second pass)");
     assert_eq!(
         route_of(
             one_at(&again, UNADOPTED, NOTES, "second sweep"),
@@ -655,7 +659,7 @@ fn the_managed_advisory_routes_on_the_stamp_never_at_adoption() {
             "json",
         ],
     );
-    let findings = envelope_findings(&out, "task validate");
+    let findings = envelope_findings(&out, &[3], "task validate");
     let door = "task validate";
 
     // ── the sanction, lifted from the DRIFTED arm in this very report ────────────────

@@ -128,6 +128,7 @@
 
 use crate::support;
 
+use crate::support::run_then_parse::stdout_json;
 use cli::gate_coverage::{self, GateCoverage, Tier};
 use cli::milestone::{DESTROYING_DOORS, DestroyingDoor, Disposition, UNINSTALL_DOOR};
 use cli::render::STORE_EXIT_FLIPS;
@@ -736,10 +737,9 @@ fn drive_contrast(baseline_present: bool) -> ContrastOutcome {
         .is_some();
     let commits_before = commit_count(repo);
     let out = run_jigc(repo, home, &["task", "finalize", &warm, "--format", "json"]);
+    let envelope: Value = stdout_json(&out, &[0, 3], "`jigc task finalize --format json`");
     let exit = out.status.code().expect("finalize exits, never signalled");
     let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
-    let envelope: Value = serde_json::from_str(&stdout)
-        .unwrap_or_else(|err| panic!("finalize must emit the JSON envelope ({err}):\n{stdout}"));
     let codes = envelope["findings"]
         .as_array()
         .unwrap_or_else(|| panic!("the envelope carries a `findings` array; got:\n{stdout}"))
@@ -1543,11 +1543,9 @@ fn finding_words(findings: &[Value], code: &str, path: &str, door: &str) -> (Str
     )
 }
 
-/// The `findings[]` array of a `--format json` envelope.
-fn findings_of(out: &Output, what: &str) -> Vec<Value> {
-    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
-    let envelope: Value = serde_json::from_str(&stdout)
-        .unwrap_or_else(|err| panic!("`{what}` must emit JSON ({err}); got:\n{stdout}"));
+/// The `findings[]` array of a `--format json` envelope, from a run that exited `expected`.
+fn findings_of(out: &Output, expected: &[i32], what: &str) -> Vec<Value> {
+    let envelope: Value = stdout_json(out, expected, what);
     envelope["findings"]
         .as_array()
         .unwrap_or_else(|| panic!("`{what}` carries a `findings` array; got:\n{envelope:#}"))
@@ -1604,7 +1602,7 @@ fn a_never_adopted_foreign_file_draws_one_advisory_at_both_doors() {
 
     // ── Door 1 — the store sweep ───────────────────────────────────────────────
     let swept = run_jigc_probed(&repo, &home, &["validate", "--format", "json"]);
-    let store_findings = findings_of(&swept, "jigc validate --format json");
+    let store_findings = findings_of(&swept, &[1], "jigc validate --format json");
     assert!(
         !swept.status.success(),
         "the corpus is not green: a below-version managed doc and two never-adopted files \
@@ -1613,9 +1611,7 @@ fn a_never_adopted_foreign_file_draws_one_advisory_at_both_doors() {
 
     // ── Door 2 — the corpus migration ──────────────────────────────────────────
     let migrated = run_jigc_probed(&repo, &home, &["migrate-corpus", "--format", "json"]);
-    let stdout = String::from_utf8_lossy(&migrated.stdout).into_owned();
-    let report: Value = serde_json::from_str(&stdout)
-        .unwrap_or_else(|err| panic!("`jigc migrate-corpus` must emit JSON ({err}):\n{stdout}"));
+    let report: Value = stdout_json(&migrated, &[0], "`jigc migrate-corpus --format json`");
     // The corpus envelope reports the excluded files under its own `unadopted[]` key — the
     // one producer both doors read, surfaced here rather than folded into a verdict.
     let migrate_findings = report["unadopted"]
@@ -1903,8 +1899,7 @@ fn sole_blocked(repo: &Path, home: &Path, pack: Option<&Path>) -> Value {
         "a corpus with a doc the verb could not migrate is NOT migrated, and the caller \
          hears so; got:\n{stdout}",
     );
-    let report: Value = serde_json::from_str(&stdout)
-        .unwrap_or_else(|err| panic!("the report must be JSON ({err}):\n{stdout}"));
+    let report: Value = stdout_json(&out, &[1], "`jigc migrate-corpus --format json`");
     let blocked = report["blocked"]
         .as_array()
         .unwrap_or_else(|| panic!("the envelope carries `blocked[]`; got:\n{report:#}"));
@@ -2054,7 +2049,11 @@ fn every_halt_names_its_own_cause_and_a_conforming_absence_is_a_byte_no_op() {
         forecast.status.success(),
         "an absence that already conforms must MIGRATE, not block; got:\n{stdout}",
     );
-    let report: Value = serde_json::from_str(&stdout).expect("the report is JSON");
+    let report: Value = stdout_json(
+        &forecast,
+        &[0],
+        "`jigc migrate-corpus --dry-run --format json`",
+    );
     assert_eq!(
         report["migrated"]
             .as_array()
@@ -2449,7 +2448,7 @@ fn the_preview_door_covers_every_member_it_claims_and_the_changelog_gate_keys_on
         home.path(),
         &["task", "validate", &task, "--format", "json"],
     );
-    let codes: Vec<String> = findings_of(&out, "jigc task validate --format json")
+    let codes: Vec<String> = findings_of(&out, &[3], "jigc task validate --format json")
         .iter()
         .map(|finding| finding["code"].as_str().unwrap_or_default().to_string())
         .collect();
@@ -2480,7 +2479,7 @@ fn the_preview_door_covers_every_member_it_claims_and_the_changelog_gate_keys_on
 
     // The changelog advisory's route must run **at this door** — an in-task arm offered
     // where in-task verbs are dead is the dead end M46 removed.
-    let advisory = findings_of(&out, "jigc task validate --format json")
+    let advisory = findings_of(&out, &[3], "jigc task validate --format json")
         .into_iter()
         .find(|finding| finding["code"].as_str() == Some(CHANGELOG_GATE))
         .expect("the changelog advisory is in the preview envelope");
@@ -2539,7 +2538,7 @@ fn the_preview_door_covers_every_member_it_claims_and_the_changelog_gate_keys_on
     );
 
     let out = corpus.jigc(&["task", "validate", &task, "--format", "json"]);
-    let codes: Vec<String> = findings_of(&out, "jigc task validate (write-touch)")
+    let codes: Vec<String> = findings_of(&out, &[3], "jigc task validate (write-touch)")
         .iter()
         .map(|finding| finding["code"].as_str().unwrap_or_default().to_string())
         .collect();
@@ -2613,7 +2612,7 @@ fn a_closure_registered_test_name_is_told_what_the_probe_compared() {
     corpus.git(&["commit", "-q", "-m", "cite the vitest closure test"]);
 
     let swept = run_jigc_probed(&repo, &home, &["validate", "--format", "json"]);
-    let findings = findings_of(&swept, "jigc validate --format json");
+    let findings = findings_of(&swept, &[0], "jigc validate --format json");
     let finding = findings
         .iter()
         .find(|finding| finding["code"].as_str() == Some("doc-code.criterion-maps-to-test"))

@@ -21,6 +21,7 @@
 //! repo is a real `git init`, and the `doc-code` probe is the real binary built from the
 //! pack and selected via `JIGC_DOC_CODE_PROBE` (the flow13_acceptance idiom).
 
+use crate::support::run_then_parse::stdout_json;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -356,8 +357,7 @@ fn validate_stale_anchor_surfaces_finding_without_flipping_the_exit_itself() {
 
     // The `--format json` surface carries the same signal, from the same predicate.
     let out = jigc(repo.path(), &["validate", "--format", "json"]);
-    let value: serde_json::Value =
-        serde_json::from_slice(&out.stdout).expect("`--format json` emits valid JSON");
+    let value: serde_json::Value = stdout_json(&out, &[1], "`jigc validate --format json`");
     assert_eq!(value["scope"], "store");
     assert_eq!(
         value["report_only"],
@@ -407,8 +407,7 @@ fn validate_injected_probe_failure_exits_non_zero() {
 
     // The `--format json` surface marks the run not-report-only.
     let out = jigc_with_probe(repo.path(), &["validate", "--format", "json"], &crasher);
-    let value: serde_json::Value =
-        serde_json::from_slice(&out.stdout).expect("`--format json` emits valid JSON");
+    let value: serde_json::Value = stdout_json(&out, &[1], "`jigc validate --format json`");
     assert_eq!(
         value["report_only"],
         serde_json::Value::Bool(false),
@@ -548,8 +547,7 @@ fn validate_labels_a_gating_store_finding_with_the_gate_it_carries() {
     // The **JSON severity token is unchanged** — the label is a text-surface affordance, never a
     // break of the machine contract (`command-output-contract.md`).
     let out = jigc(repo.path(), &["validate", "--format", "json"]);
-    let value: serde_json::Value =
-        serde_json::from_slice(&out.stdout).expect("`--format json` emits valid JSON");
+    let value: serde_json::Value = stdout_json(&out, &[0], "`jigc validate --format json`");
     let findings = value["findings"].as_array().expect("a findings array");
     let ref_finding = findings
         .iter()
@@ -594,8 +592,7 @@ fn validate_leaves_a_gateless_store_finding_unlabelled() {
 
     // The JSON severity token is unchanged here too — the two surfaces do not diverge.
     let out = jigc(repo.path(), &["validate", "--format", "json"]);
-    let value: serde_json::Value =
-        serde_json::from_slice(&out.stdout).expect("`--format json` emits valid JSON");
+    let value: serde_json::Value = stdout_json(&out, &[0], "`jigc validate --format json`");
     let findings = value["findings"].as_array().expect("a findings array");
     let break_finding = findings
         .iter()

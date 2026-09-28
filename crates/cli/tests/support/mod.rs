@@ -22,6 +22,7 @@ pub mod git_state;
 pub mod goldens;
 pub mod leaf_argv;
 pub mod route_spans;
+pub mod run_then_parse;
 pub mod rust_source;
 pub mod shape_space;
 pub mod trial_corpus;

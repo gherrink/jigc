@@ -13,6 +13,7 @@
 //! flow33 real-binary fan-out idiom), the real `doc-code` probe pointed at via
 //! `JIGC_DOC_CODE_PROBE` (the flow13 idiom).
 
+use crate::support::run_then_parse::stdout_json;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -475,14 +476,8 @@ fn author_required_commit_leaves(repo: &Path, home: &Path) -> Vec<CommitLeaf> {
         .env("HOME", home)
         .output()
         .expect("run the jigc binary");
-    let projection: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap_or_else(|err| {
-        panic!(
-            "`jigc doc schema commit --format json` must emit the pinned projection ({err}); \
-             stdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&out.stdout),
-            String::from_utf8_lossy(&out.stderr),
-        )
-    });
+    let projection: serde_json::Value =
+        stdout_json(&out, &[0], "`jigc doc schema commit --format json`");
     let mut leaves = Vec::new();
     for field in projection["fields"].as_array().into_iter().flatten() {
         if field["author-required"] == serde_json::Value::Bool(true) {

@@ -67,6 +67,7 @@
 //!   json`, never the exit code, and always exits 0 outside the M35 rename block, so a commit over
 //!   a stale corpus still lands.
 
+use crate::support::run_then_parse::stdout_json;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -344,10 +345,7 @@ fn commit_adr(repo: &Path, body: &str) {
 /// The whole `jigc validate --format json` envelope, plus the exit code.
 fn validate_json(repo: &Path, home: &Path) -> (i32, serde_json::Value) {
     let out = jigc(repo, home, &["validate", "--format", "json"]);
-    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
-    let json: serde_json::Value = serde_json::from_str(&stdout).unwrap_or_else(|err| {
-        panic!("`jigc validate --format json` must emit JSON ({err}):\n{stdout}")
-    });
+    let json: serde_json::Value = stdout_json(&out, &[0, 1], "`jigc validate --format json`");
     (out.status.code().expect("an exit code"), json)
 }
 
@@ -1095,7 +1093,7 @@ fn a_conformance_break_on_an_un_baselined_committed_doc_gates_nowhere_and_the_tr
         home.path(),
         &["task", "validate", "prove-the-gate", "--format", "json"],
     );
-    let task_findings = findings_of(&task);
+    let task_findings = findings_of(&task, &[3]);
     assert!(
         by_code(&task_findings, "conformance.section-missing").is_empty(),
         "no task-scope path emits the store sweep's `conformance.*` code over a COMMITTED doc — \
@@ -1208,7 +1206,7 @@ fn a_conformance_break_on_a_baselined_committed_doc_really_does_gate_and_the_tra
         home.path(),
         &["task", "validate", "prove-the-gate", "--format", "json"],
     );
-    let task_findings = findings_of(&task);
+    let task_findings = findings_of(&task, &[3]);
     let block = by_code(&task_findings, "reconciliation.conformance-block");
     assert_eq!(
         block.len(),
@@ -1236,9 +1234,7 @@ fn a_conformance_break_on_a_baselined_committed_doc_really_does_gate_and_the_tra
 fn listed_state(repo: &Path, home: &Path, id: &str) -> Option<String> {
     let out = jigc(repo, home, &["doc", "list", "--format", "json"]);
     assert_ok(&out, "`jigc doc list --format json`");
-    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
-    let json: serde_json::Value = serde_json::from_str(&stdout)
-        .unwrap_or_else(|err| panic!("`doc list --format json` must emit JSON ({err}):\n{stdout}"));
+    let json: serde_json::Value = stdout_json(&out, &[0], "`jigc doc list --format json`");
     json["docs"]
         .as_array()
         .expect("the listing carries a `docs` array")
@@ -1422,11 +1418,10 @@ fn fill_commit_doc(repo: &Path, home: &Path, task: &str) {
     fs::remove_file(&summary).expect("remove the scratch prose file");
 }
 
-/// The `findings` array of a `--format json` validation envelope.
-fn findings_of(out: &std::process::Output) -> Vec<serde_json::Value> {
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    let json: serde_json::Value = serde_json::from_str(&stdout)
-        .unwrap_or_else(|err| panic!("`--format json` must emit JSON ({err}):\n{stdout}"));
+/// The `findings` array of a `--format json` validation envelope, from a run that exited
+/// `expected`.
+fn findings_of(out: &std::process::Output, expected: &[i32]) -> Vec<serde_json::Value> {
+    let json: serde_json::Value = stdout_json(out, expected, "a `--format json` validation");
     json["findings"]
         .as_array()
         .expect("the report carries a `findings` array")

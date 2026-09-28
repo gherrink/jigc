@@ -15,6 +15,7 @@
 //! This drives the **built binary** end-to-end against the real store-scope sweep — the
 //! bytes an operator actually sees.
 
+use crate::support::run_then_parse::stdout_json;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -559,15 +560,14 @@ fn migrate_corpus_completes_an_interrupted_relocation() {
     );
 }
 
-/// The `jigc validate --format json` findings over `repo`. The **exit code is not asserted**
-/// here: since M42 an unmigrated corpus flips the store sweep's exit non-zero (the third
-/// exit-flipping exception), and the whole point of the callers below is to read the findings
-/// over exactly such a corpus. A run that could not sweep at all emits no JSON, so the parse
-/// below is the "the sweep ran" guard.
+/// The `jigc validate --format json` findings over `repo`. The exit is asserted only to be
+/// one the sweep **answers** with — 0, or 1: since M42 an unmigrated corpus flips the store
+/// sweep's exit non-zero (the third exit-flipping exception), and the whole point of the
+/// callers below is to read the findings over exactly such a corpus. Anything else is a run
+/// that did not sweep, reported by its exit and streams before any parse.
 fn validate_findings(repo: &Path, home: &Path) -> Vec<serde_json::Value> {
     let out = jigc(repo, home, &["validate", "--format", "json"]);
-    let report: serde_json::Value =
-        serde_json::from_slice(&out.stdout).expect("`jigc validate` emits valid JSON");
+    let report: serde_json::Value = stdout_json(&out, &[0, 1], "`jigc validate --format json`");
     report["findings"]
         .as_array()
         .expect("the report carries a findings array")
@@ -788,7 +788,8 @@ fn migrate_corpus_names_the_landed_commit_in_json() {
     assert_ok(&migrate, "`jigc migrate-corpus --format json`");
 
     let sha = git(repo.path(), &["rev-parse", "--short", "HEAD"]);
-    let report: serde_json::Value = serde_json::from_str(&out).expect("the report is JSON");
+    let report: serde_json::Value =
+        stdout_json(&migrate, &[0], "`jigc migrate-corpus --format json`");
     assert_eq!(
         report["commit"].as_str(),
         Some(sha.as_str()),
@@ -803,8 +804,11 @@ fn migrate_corpus_names_the_landed_commit_in_json() {
     );
     assert_ok(&again, "the `jigc migrate-corpus --format json` re-run");
     let out2 = String::from_utf8_lossy(&again.stdout);
-    let report2: serde_json::Value =
-        serde_json::from_str(&out2).expect("the re-run report is JSON");
+    let report2: serde_json::Value = stdout_json(
+        &again,
+        &[0],
+        "the `jigc migrate-corpus --format json` re-run",
+    );
     assert!(
         report2["commit"].is_null(),
         "a re-run that commits nothing carries a null commit; stdout:\n{out2}",

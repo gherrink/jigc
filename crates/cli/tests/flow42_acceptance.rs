@@ -40,6 +40,7 @@
 //! Everything is asserted on the EMITTED bytes / exit codes / committed files of the real
 //! binary (`CARGO_BIN_EXE_jigc`). No external test crates beyond `serde_json`.
 
+use crate::support::run_then_parse::stdout_json;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -428,7 +429,7 @@ fn start_json_carries_task_and_write_ack_carries_target_and_findings() {
     );
     assert_ok(&router, "`jigc start --format json <intent>` (router)");
     let router_json: serde_json::Value =
-        serde_json::from_str(&stdout_of(&router)).expect("the router composition is json");
+        stdout_json(&router, &[0], "the router composition is json");
     assert!(
         router_json
             .as_object()
@@ -459,8 +460,7 @@ fn start_json_carries_task_and_write_ack_carries_target_and_findings() {
         &work,
         "`jigc start --format json --workflow single-task <intent>`",
     );
-    let work_json: serde_json::Value =
-        serde_json::from_str(&stdout_of(&work)).expect("the work composition is json");
+    let work_json: serde_json::Value = stdout_json(&work, &[0], "the work composition is json");
     assert_eq!(
         work_json["task"].as_str(),
         Some("add-rate-limiter"),
@@ -484,8 +484,7 @@ fn start_json_carries_task_and_write_ack_carries_target_and_findings() {
         None,
     );
     assert_ok(&ack, "`jigc doc set-field --format json`");
-    let ack_json: serde_json::Value =
-        serde_json::from_str(&stdout_of(&ack)).expect("the write-ack is json");
+    let ack_json: serde_json::Value = stdout_json(&ack, &[0], "the write-ack is json");
     assert_eq!(
         ack_json["op"], "set-field",
         "the ack names the op; got:\n{ack_json}"
@@ -617,8 +616,7 @@ fn two_dangling_ref_sweep_emits_two_uniquely_keyed_findings_every_advisory_route
         None,
     );
     assert_ok(&sweep, "`jigc validate --format json` (report-only exit 0)");
-    let report: serde_json::Value =
-        serde_json::from_str(&stdout_of(&sweep)).expect("validate emits json");
+    let report: serde_json::Value = stdout_json(&sweep, &[0], "validate emits json");
     let findings = report["findings"]
         .as_array()
         .expect("`findings` is an array");
@@ -684,8 +682,7 @@ fn doc_schema_shows_enum_members_and_field_sections() {
         None,
     );
     assert_ok(&out, "`jigc doc schema adr --format json`");
-    let value: serde_json::Value =
-        serde_json::from_str(&stdout_of(&out)).expect("the schema projection is json");
+    let value: serde_json::Value = stdout_json(&out, &[0], "the schema projection is json");
     assert_eq!(
         value["contract-version"], 7,
         "the projection carries the pinned contract version"
@@ -1047,8 +1044,7 @@ fn set_field_unset_clears_an_optional_scalar() {
         None,
     );
     assert_ok(&unset, "`jigc doc set-field --unset --format json`");
-    let ack: serde_json::Value =
-        serde_json::from_str(&stdout_of(&unset)).expect("the unset ack is json");
+    let ack: serde_json::Value = stdout_json(&unset, &[0], "the unset ack is json");
     assert_eq!(ack["op"], "set-field", "the ack names the op; got:\n{ack}");
     assert_eq!(
         ack["unset"],

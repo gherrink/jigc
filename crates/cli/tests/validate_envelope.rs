@@ -52,6 +52,7 @@
 //!   the unrelated blocking finding yields `blocking_probes == []` — present and empty, never
 //!   absent.
 
+use crate::support::run_then_parse::stdout_json;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -686,13 +687,7 @@ fn commit_arch_doc(repo: &Path, home: &Path, components: &[(&str, &str)]) {
 /// driver (and the installed pre-commit hook) consumes.
 fn store_envelope(repo: &Path, home: &Path) -> serde_json::Value {
     let out = jigc(repo, home, &["validate", "--format", "json"]);
-    serde_json::from_slice(&out.stdout).unwrap_or_else(|err| {
-        panic!(
-            "`jigc validate --format json` must emit valid JSON ({err}); stdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&out.stdout),
-            String::from_utf8_lossy(&out.stderr),
-        )
-    })
+    stdout_json(&out, &[0, 1], "`jigc validate --format json`")
 }
 
 /// The envelope's `blocking_probes` as a plain string vector — asserted to be an array of

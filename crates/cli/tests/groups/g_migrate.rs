@@ -111,6 +111,8 @@ mod record_vacated_home;
 mod registry_seam;
 #[path = "../retire_sink_validation.rs"]
 mod retire_sink_validation;
+#[path = "../run_then_parse_helper.rs"]
+mod run_then_parse_helper;
 #[path = "../schema_change_kind_registry.rs"]
 mod schema_change_kind_registry;
 #[path = "../setup.rs"]

@@ -556,6 +556,7 @@ fn real_doc_code_probe_over_committed_store() {
 /// exit 0, recurring — only the code it is routed under. The convergence itself is pinned
 /// at `crates/cli/tests/foreign_at_both_doors.rs`.
 mod g4_baseline_adopt_gate {
+    use crate::support::run_then_parse::stdout_json;
     use std::fs;
     use std::path::Path;
     use std::process::Command;
@@ -730,11 +731,11 @@ mod g4_baseline_adopt_gate {
         envelope_findings(&out, "task finalize")
     }
 
-    /// Parse the `findings` array of a `--format json` report envelope.
+    /// Parse the `findings` array of a `--format json` report envelope — both callers
+    /// assert the run exited 0 first.
     fn envelope_findings(out: &std::process::Output, what: &str) -> Vec<serde_json::Value> {
-        let stdout = String::from_utf8(out.stdout.clone()).expect("utf-8 stdout");
-        let value: serde_json::Value = serde_json::from_str(&stdout)
-            .unwrap_or_else(|e| panic!("{what} envelope must parse ({e}); got:\n{stdout}"));
+        let value: serde_json::Value = stdout_json(out, &[0], what);
+        let stdout = String::from_utf8_lossy(&out.stdout);
         value["findings"]
             .as_array()
             .unwrap_or_else(|| {

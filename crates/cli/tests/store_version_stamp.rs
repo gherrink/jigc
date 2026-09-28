@@ -14,6 +14,7 @@
 //! embedded pack. The probe is the real built `doc-code` (so the `jigc validate` pre-flight
 //! resolves) and a self-cleaning `TempDir` keeps the test off the developer's repo.
 
+use crate::support::run_then_parse::stdout_json;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -227,8 +228,7 @@ fn binary_mismatch_advisory_carries_a_route() {
         String::from_utf8_lossy(&out.stderr),
     );
 
-    let report: serde_json::Value =
-        serde_json::from_str(&stdout).expect("`jigc validate --format json` emits JSON");
+    let report: serde_json::Value = stdout_json(&out, &[0], "`jigc validate --format json`");
     let findings = report["findings"]
         .as_array()
         .expect("the report carries a findings array");

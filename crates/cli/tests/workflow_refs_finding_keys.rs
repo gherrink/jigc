@@ -19,6 +19,7 @@
 //! run over a store whose project layer shadows one step (two catalog-absent command-refs) and
 //! one workflow (a dangling include), and the assertions read the `key` the emitted JSON carries.
 
+use crate::support::run_then_parse::stdout_json;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -152,10 +153,8 @@ fn seed_dangling_include(repo: &Path) {
 
 /// The findings array of `jigc validate --format json`.
 fn findings(out: &std::process::Output) -> Vec<serde_json::Value> {
+    let value: serde_json::Value = stdout_json(out, &[0, 1], "`jigc validate --format json`");
     let stdout = String::from_utf8_lossy(&out.stdout);
-    let value: serde_json::Value = serde_json::from_str(&stdout).unwrap_or_else(|e| {
-        panic!("`jigc validate --format json` emits the pinned envelope ({e}); got:\n{stdout}")
-    });
     value["findings"]
         .as_array()
         .unwrap_or_else(|| panic!("the report carries a `findings` array; got:\n{stdout}"))

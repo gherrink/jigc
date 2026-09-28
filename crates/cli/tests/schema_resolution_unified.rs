@@ -40,6 +40,7 @@
 //! when a trial finds it (the `test_target_registration` / `temp_mint_fence` precedent).
 
 use crate::support::frozen_pack;
+use crate::support::run_then_parse::stdout_json;
 use crate::support::rust_source;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -358,10 +359,13 @@ fn create_over_a_committed_doc_at_the_shadowed_home_copies_it_in() {
 
     corpus.ok(&["start", "record a decision", "--workflow", "single-task"]);
     let task = corpus.task_id();
-    let ack = corpus.ok(&[
-        "doc", "create", "adr", "--title", "Cache", "--task", &task, "--format", "json",
-    ]);
-    let ack: serde_json::Value = serde_json::from_str(&ack).expect("the create ack is json");
+    let ack: serde_json::Value = stdout_json(
+        &corpus.jigc(&[
+            "doc", "create", "adr", "--title", "Cache", "--task", &task, "--format", "json",
+        ]),
+        &[0],
+        "`jigc doc create adr --format json`",
+    );
     assert_eq!(
         ack["existed"], true,
         "`doc create` must see the committed doc at the resolved home; ack:\n{ack:#}",

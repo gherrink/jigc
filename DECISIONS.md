@@ -2,6 +2,10 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-09-28 — M54 Inc 1 T2: the run-then-parse re-count (O8)
+
+**O8's answer is 41, counted in lines, which here are sites:** the rule (`serde_json::from_(str|slice)` in the 39 files matching both `doc-code` and `"build"`) finds 50 lines in 22 files before and 9 after — the 9 file reads (`provenance.json` ×4, `file-state.json` ×4, the `flow37_rename.rs` invocation-log lines) — so **41 process-output parses in 20 files** now go through `support::run_then_parse`, a wrapping helper (`findings_of`, `envelope_findings`, `validate_json`, …) counting once at its one parse line; not S1's *19* (its criterion was not recorded with it) and not the map's *38* (which counted `flow49_acceptance.rs:339`, a file read, and missed `flow37_rename.rs:773`/`:798`/`:2189`, `add_item_slug.rs:239`, `schema_resolution_unified.rs:364`).
+
 ## 2026-09-28 — M54 Increment 1 planning: decomposition
 
 Cut [Increment 1](implementation/roadmap.md) (*the pre-public audit, and the before run's instruments*) into **3 ordered single-concern tasks**, grounded at HEAD `1b1d395e` (tree clean; the milestone's first increment). Cross-ref [roadmap.md](implementation/roadmap.md) → Milestone 54 → Increment 1; the M54 Settle below (S1, S6 · S7, S8); [planning-gate-record.md](completions/artifacts/M54/planning-gate-record.md) → rows 1–3 and O8; [release.md](implementation/release.md) → The one-time bootstrap; [dev-workflow.md](implementation/dev-workflow.md) → Gate. **Codes registered: none. Nothing flips.**

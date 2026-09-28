@@ -43,6 +43,7 @@
 //! No external test crates: the binary comes from `CARGO_BIN_EXE_jigc`, the repo is a
 //! real `git init`, and the `TempDir`s clean themselves up.
 
+use crate::support::run_then_parse::stdout_json;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
@@ -227,16 +228,16 @@ fn show_json(
     addr: &str,
     task: &str,
 ) -> serde_json::Value {
-    let text = ok_stdout(
-        jigc(
+    stdout_json(
+        &jigc(
             repo,
             home,
             pack,
             &["doc", "show", addr, "--task", task, "--format", "json"],
         ),
+        &[0],
         &format!("doc show {addr} --task {task} --format json"),
-    );
-    serde_json::from_str(&text).unwrap_or_else(|e| panic!("`doc show {addr}` json: {e}\n{text}"))
+    )
 }
 
 /// The arch-doc task both shipped-pack arms open: start the architecture workflow and

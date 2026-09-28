@@ -28,6 +28,7 @@
 //! [`implementation/dev-workflow.md`]: ../../../implementation/dev-workflow.md
 //! [`implementation/pinning.md`]: ../../../implementation/pinning.md
 
+use crate::support::run_then_parse::stdout_json;
 use cli::pack::{CompositePack, EmbeddedPack, load_pack_schema};
 use engine::packsource::{PackResourceKind, PackSource};
 use engine::schema::Schema;
@@ -273,8 +274,7 @@ fn every_versioned_doctype_detects_and_blocks_an_above_current_stamp() {
         "an above-current corpus flips `jigc validate`'s exit non-zero; \
          stdout:\n{stdout}\nstderr:\n{stderr}",
     );
-    let report: serde_json::Value =
-        serde_json::from_str(stdout.trim()).expect("`jigc validate --format json` emits JSON");
+    let report: serde_json::Value = stdout_json(&out, &[1], "`jigc validate --format json`");
     let ahead_addresses: Vec<&str> = report["findings"]
         .as_array()
         .expect("the report carries a findings array")

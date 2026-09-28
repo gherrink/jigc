@@ -43,6 +43,7 @@
 //! Everything is asserted on the EMITTED bytes / exit codes / committed files of the
 //! real binary (`CARGO_BIN_EXE_jigc`). No external test crates.
 
+use crate::support::run_then_parse::stdout_json;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -645,8 +646,7 @@ fn doc_schema_returns_the_pinned_contract_shape() {
         None,
     );
     assert_ok(&out, "`jigc doc schema adr --format json`");
-    let value: serde_json::Value =
-        serde_json::from_str(&stdout_of(&out)).expect("the emitted contract parses as json");
+    let value: serde_json::Value = stdout_json(&out, &[0], "the emitted contract parses as json");
 
     assert_eq!(
         value["contract-version"], 7,

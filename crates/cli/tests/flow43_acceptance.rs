@@ -52,6 +52,7 @@
 //! Everything is asserted on the EMITTED bytes / exit codes / committed files of the real
 //! binary (`CARGO_BIN_EXE_jigc`). No external test crates beyond `serde_json`.
 
+use crate::support::run_then_parse::stdout_json;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -292,10 +293,7 @@ fn fill_commit(repo: &Path, home: &Path, task: &str, scope: &str) {
 /// The `jigc validate --format json` envelope plus its exit code.
 fn validate_json(repo: &Path, home: &Path) -> (i32, serde_json::Value) {
     let out = jigc(repo, home, &["validate", "--format", "json"], None);
-    let stdout = stdout_of(&out);
-    let json: serde_json::Value = serde_json::from_str(&stdout).unwrap_or_else(|err| {
-        panic!("`jigc validate --format json` emits JSON ({err}):\n{stdout}")
-    });
+    let json: serde_json::Value = stdout_json(&out, &[0, 1], "`jigc validate --format json`");
     (out.status.code().expect("an exit code"), json)
 }
 

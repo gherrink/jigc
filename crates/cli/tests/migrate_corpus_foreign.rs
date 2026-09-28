@@ -57,6 +57,7 @@
 //! member is iterated by the compose goldens, so adding one there would force a golden
 //! regeneration this task does not own.
 
+use crate::support::run_then_parse::stdout_json;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -369,10 +370,7 @@ impl Fixture {
         }
         args.extend(["--format", "json"]);
         let out = self.jigc(&args);
-        let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
-        let json = serde_json::from_str(&stdout).unwrap_or_else(|err| {
-            panic!("`jigc migrate-corpus --format json` must emit JSON ({err}):\n{stdout}")
-        });
+        let json = stdout_json(&out, &[0, 1], "`jigc migrate-corpus --format json`");
         (out.status.code().expect("an exit code"), json)
     }
 
@@ -388,10 +386,7 @@ impl Fixture {
     /// The `findings[]` of `jigc validate --format json` — the store door's own report.
     fn validate_findings(&self) -> Vec<serde_json::Value> {
         let out = self.jigc(&["validate", "--format", "json"]);
-        let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
-        let json: serde_json::Value = serde_json::from_str(&stdout).unwrap_or_else(|err| {
-            panic!("`jigc validate --format json` must emit JSON ({err}):\n{stdout}")
-        });
+        let json: serde_json::Value = stdout_json(&out, &[0, 1], "`jigc validate --format json`");
         json["findings"]
             .as_array()
             .expect("the store envelope carries a `findings` array")

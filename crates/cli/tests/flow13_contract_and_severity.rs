@@ -34,6 +34,7 @@
 //! are compiled with `rustc` (real processes — the `probe_invoker.rs` precedent), and
 //! self-cleaning `TempDir`s keep the developer's repo clean.
 
+use crate::support::run_then_parse::stdout_json;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -498,8 +499,8 @@ fn mint_bind_and_author_adr(
 /// blocking exit (`task.rs` → `finalize`: the `blocked` branch `print!`s the json report
 /// to stdout, so `> report.json` captures it), so the JSON is parsed from stdout.
 fn finalize_block_findings(out: &std::process::Output) -> Vec<serde_json::Value> {
-    let value: serde_json::Value = serde_json::from_slice(&out.stdout)
-        .expect("a blocked finalize --format json emits a parseable report on stdout");
+    let value: serde_json::Value =
+        stdout_json(out, &[3], "a blocked `task finalize --format json`");
     value["findings"].as_array().cloned().unwrap_or_default()
 }
 

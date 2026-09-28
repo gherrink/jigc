@@ -51,6 +51,7 @@
 //! findings, which `blocking_probes`), so an arm that stopped producing its finding fails
 //! loudly instead of passing on a store that carries nothing.
 
+use crate::support::run_then_parse::stdout_json;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -165,13 +166,7 @@ fn store_envelope(repo: &Path) -> serde_json::Value {
         .env("JIGC_DOC_CODE_PROBE", doc_code_probe())
         .output()
         .expect("run the jigc binary");
-    serde_json::from_slice(&out.stdout).unwrap_or_else(|err| {
-        panic!(
-            "`jigc validate --format json` must emit valid JSON ({err}); stdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&out.stdout),
-            String::from_utf8_lossy(&out.stderr),
-        )
-    })
+    stdout_json(&out, &[0, 1], "`jigc validate --format json`")
 }
 
 /// The envelope's `blocking_probes` as plain strings — the flat, `]`-delimited array the

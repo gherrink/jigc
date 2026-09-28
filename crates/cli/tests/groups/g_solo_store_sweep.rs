@@ -7,5 +7,8 @@
 // and `severity_tuning`, co-resident for the first time, picked it up and failed. Keep
 // this root at exactly one suite.
 
+#[path = "../support/mod.rs"]
+mod support;
+
 #[path = "../store_sweep_acceptance.rs"]
 mod store_sweep_acceptance;
