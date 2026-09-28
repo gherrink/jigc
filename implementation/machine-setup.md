@@ -30,4 +30,6 @@ cargo test
 cargo build
 ```
 
+*(From M54 — settled 2026-09-28 — the probe prebuild line goes: the `doc-code` probe runs inside `jigc` by self-exec, so there is no separate probe to build ([module-layout.md](module-layout.md) → Probe boundary). Until that increment lands, keep it.)*
+
 If it runs dramatically longer than that and the machine is otherwise idle, check whether `syspolicyd` is burning CPU (`ps aux | grep syspolicyd`) before assuming the suite is at fault — that is exactly the wrong turn taken in M47.
