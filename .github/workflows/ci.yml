@@ -33,6 +33,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      # The runner's CPU count, recorded for M54's before/after measurement: the
+      # before run's value is read back by this step's name (M54 Increment 8).
+      - name: CPU count
+        run: nproc
+
       # rustup honors ./rust-toolchain.toml (channel 1.95.0 + rustfmt, clippy),
       # so the pinned stable toolchain installs on first cargo invocation.
       - name: Show toolchain
