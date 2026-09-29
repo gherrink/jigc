@@ -117,6 +117,8 @@ mod run_then_parse_helper;
 mod schema_change_kind_registry;
 #[path = "../setup.rs"]
 mod setup;
+#[path = "../setup_failed_first_run.rs"]
+mod setup_failed_first_run;
 #[path = "../setup_install_pathspec_guard.rs"]
 mod setup_install_pathspec_guard;
 #[path = "../setup_pack_load_advisory.rs"]

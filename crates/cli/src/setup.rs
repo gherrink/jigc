@@ -1360,6 +1360,123 @@ fn install(
         InstallSubject::Unknown => {}
     }
 
+    // 1–5. **The write span**, behind one seam (M54 Increment 4 / T1; S22): every error
+    //      it returns reaches [`record_failed_install`] before it propagates, so a failed
+    //      first run leaves a repository a plain re-run completes.
+    let InstallWrites {
+        ignore,
+        seeded_gitignore,
+        hook_path,
+    } = write_install_span(
+        jigc_home,
+        profile,
+        &line_file,
+        &bootstrap_file,
+        &allowlist_file,
+        declared_guide.filter(|_| guide_file.is_some()),
+    )
+    .inspect_err(|_| {
+        record_failed_install(
+            jigc_home,
+            &subject,
+            &line_file,
+            &allowlist_file,
+            guide_file.as_deref(),
+        );
+    })?;
+    let hook_file = display_hook_path(jigc_home, &hook_path);
+
+    // 6. Commit setup's own install files as a dedicated commit (M26 shakedown), so the
+    //    user's first `jigc finalize` doesn't sweep the scaffolding into their first
+    //    feature commit. Idempotent; benign skips (no repo / unborn HEAD / git absent)
+    //    degrade gracefully — but a genuine *rejection* of either git step (e.g. no git
+    //    identity) means the install is in no commit, so it fails loudly with a finding
+    //    routed on git's own cause ([`InstallCommitRejection::finding`]) rather than
+    //    masquerading as a clean success (mirrors `finalize`'s identical git-identity
+    //    failure).
+    let InstallCommitOutcome {
+        commit: install_commit,
+        hook_committed,
+    } = commit_install(
+        jigc_home,
+        &line_file,
+        &allowlist_file,
+        seeded_gitignore,
+        &hook_path,
+        guide_file.as_deref(),
+        &subject,
+    )
+    .map_err(|rejection| rejection.finding())?;
+
+    // 7. The forecast (M50 Increment 12 / T3, D5): the install is done — now say what the
+    //    **next** door will refuse. `setup` is the one door that meets a repo whose project
+    //    layer breaks pack-load and says nothing about it, so an adopter installs at exit 0
+    //    and then meets a block on their next command with no idea the install had already
+    //    seen it. Deliberately **after** every write and the install commit: this reports on
+    //    the state the install leaves behind, and it must not be able to change it.
+    //
+    //    Never `?`-propagated — the declared bound (D5) is that the bootstrap door itself
+    //    refuses nothing, so the probe's failure is an advisory on the existing `findings`
+    //    key, never this function's `Err` arm.
+    if let Err(err) = crate::pack::make_pack() {
+        findings.push(pack_load_finding(&err));
+    }
+
+    Ok((
+        SetupSummary {
+            line_file,
+            allowlist_file,
+            hook_file,
+            hook_committed,
+            guide_file,
+            findings: findings.into(),
+            install_commit,
+            // The location step is [`run`]'s, not this core's: it is handed one root and
+            // has no second one to compare it against ([`install_site`]).
+            site: None,
+        },
+        ignore,
+    ))
+}
+
+/// What the write span hands on to the install commit and the summary.
+struct InstallWrites {
+    ignore: crate::gitignore::Ensured,
+    seeded_gitignore: bool,
+    hook_path: PathBuf,
+}
+
+/// **Every write [`install`] makes before its install commit, as one fallible span** (M54
+/// Increment 4 / T1; `DECISIONS.md` → 2026-09-28 M54 settled, S22; the gate-record's row 9).
+///
+/// It is its own function so that [`install`] meets **every** `Err` it returns in one
+/// place, [`record_failed_install`], before the error propagates. A failure here used to
+/// leave the steps already taken uncommitted and unrecorded, and the next run's pre-write
+/// gate refused them as the adopter's work with `setup.dirty-install-path`, recoverable
+/// only by `--force`. A return added to this span later is covered by construction.
+///
+/// **The enumeration, by grep over this span: 12 error returns**, all `.map_err(…)?` —
+/// `setup.write-bootstrap`, `setup.inject-reference`, `setup.init-project-layer`,
+/// `setup.compose-marker`, `setup.version-stamp`, `setup.secrets-gitignore`,
+/// `setup.inject-allowlist`, `setup.inject-hook`, `setup.inject-deny`,
+/// `setup.write-guide`, and `setup.install-hook` twice (`current_exe`, the hook write).
+/// **What that grep misses:** (a) a `?` **inside a callee** — `init_project_layer`, the
+/// `inject_*` merges and `install_precommit_hook` can fail after a partial write of their
+/// own, which is why the record is keyed on the bytes on disk at the failure rather than on
+/// which step failed; (b) [`commit_install`]'s own `Err` arms, which follow its own record
+/// and keep M51's rule; (c) its `Ok(Skipped)` arms, which are successes in which git could
+/// not be used, not error returns; (d) a panic, which returns nothing.
+///
+/// `guide` is the guide artifact to write: `None` when the profile declares none, or when
+/// [`install`]'s step 0d decided the file on disk is the adopter's.
+fn write_install_span(
+    jigc_home: &Path,
+    profile: &AdapterProfile,
+    line_file: &str,
+    bootstrap_file: &str,
+    allowlist_file: &str,
+    guide: Option<&adapter::GuideTarget>,
+) -> Result<InstallWrites, Finding> {
     // 1. Reference floor: write the managed bootstrap file, then point the
     //    always-loaded file at it with a bare import line.
     adapter::write_bootstrap_file(jigc_home).map_err(|err| {
@@ -1487,9 +1604,9 @@ fn install(
     //     installed list nor the install commit's pathspec claims a file this run did not
     //     write — the user's edit stays their business, unstaged.
     //
-    //     The **ownership decision** is made above (step 0d), before any write, because the
-    //     pre-write gate needs it; this is the write it gates.
-    if let Some(guide) = declared_guide.filter(|_| guide_file.is_some()) {
+    //     The **ownership decision** is made in [`install`]'s step 0d, before any write,
+    //     because the pre-write gate needs it; this is the write it gates.
+    if let Some(guide) = guide {
         write_guide_artifact(jigc_home, guide).map_err(|err| {
             Finding::block(
                 "setup.write-guide",
@@ -1528,59 +1645,11 @@ fn install(
             "ensure the repo's git hooks directory is writable, then re-run `jigc setup`",
         )
     })?;
-    let hook_file = display_hook_path(jigc_home, &hook_path);
-
-    // 6. Commit setup's own install files as a dedicated commit (M26 shakedown), so the
-    //    user's first `jigc finalize` doesn't sweep the scaffolding into their first
-    //    feature commit. Idempotent; benign skips (no repo / unborn HEAD / git absent)
-    //    degrade gracefully — but a genuine *rejection* of either git step (e.g. no git
-    //    identity) means the install is in no commit, so it fails loudly with a finding
-    //    routed on git's own cause ([`InstallCommitRejection::finding`]) rather than
-    //    masquerading as a clean success (mirrors `finalize`'s identical git-identity
-    //    failure).
-    let InstallCommitOutcome {
-        commit: install_commit,
-        hook_committed,
-    } = commit_install(
-        jigc_home,
-        &line_file,
-        &allowlist_file,
-        seeded_gitignore,
-        &hook_path,
-        guide_file.as_deref(),
-        &subject,
-    )
-    .map_err(|rejection| rejection.finding())?;
-
-    // 7. The forecast (M50 Increment 12 / T3, D5): the install is done — now say what the
-    //    **next** door will refuse. `setup` is the one door that meets a repo whose project
-    //    layer breaks pack-load and says nothing about it, so an adopter installs at exit 0
-    //    and then meets a block on their next command with no idea the install had already
-    //    seen it. Deliberately **after** every write and the install commit: this reports on
-    //    the state the install leaves behind, and it must not be able to change it.
-    //
-    //    Never `?`-propagated — the declared bound (D5) is that the bootstrap door itself
-    //    refuses nothing, so the probe's failure is an advisory on the existing `findings`
-    //    key, never this function's `Err` arm.
-    if let Err(err) = crate::pack::make_pack() {
-        findings.push(pack_load_finding(&err));
-    }
-
-    Ok((
-        SetupSummary {
-            line_file,
-            allowlist_file,
-            hook_file,
-            hook_committed,
-            guide_file,
-            findings: findings.into(),
-            install_commit,
-            // The location step is [`run`]'s, not this core's: it is handed one root and
-            // has no second one to compare it against ([`install_site`]).
-            site: None,
-        },
+    Ok(InstallWrites {
         ignore,
-    ))
+        seeded_gitignore,
+        hook_path,
+    })
 }
 
 /// The finding code the install's forecast raises. **Un-keyed** — not a `CHECK_INVENTORY`
@@ -2098,6 +2167,55 @@ fn record_install_footprint(jigc_home: &Path, paths: &[String]) {
 /// is nothing left uncommitted for a later run to mistake for the adopter's work.
 fn clear_install_footprint(jigc_home: &Path) {
     let _ = std::fs::remove_file(jigc_home.join(INSTALL_FOOTPRINT_PATH));
+}
+
+/// Record, and stage, what a run that failed inside [`write_install_span`] wrote — the seam
+/// every error return between the install's first write and [`commit_install`] passes
+/// through (M54 Increment 4 / T1; `DECISIONS.md` → 2026-09-28 M54 settled, S22).
+///
+/// **The set is asked at the failure, from the bytes on disk:** the install candidates
+/// ([`install_candidate_paths`], re-asked here because it filters on existence and a fresh
+/// install creates most of them), intersected with what differs from `HEAD` now, minus what
+/// differed **before** the run. Those are exactly the paths that were clean before the run
+/// and are not clean now, so jigc wrote them in this run, whichever step failed and however
+/// far a callee got before its own `?`. A path the adopter had dirty before the run is in
+/// `before`, so it is never recorded.
+///
+/// **Then staged, mirroring [`commit_install`]'s refusal arm.** A record alone leaves a
+/// tracked install path (a committed `CLAUDE.md` the install merged into) refused, because
+/// [`own_uncommitted_footprint`]'s index leg drops a path whose worktree differs from its
+/// index entry. Staging cannot replace an adopter's blob: every staged path had
+/// index == `HEAD` before the run. A staging refusal is not reported — the run already
+/// failed with its own finding, and the re-run meets a false refusal at worst.
+///
+/// **Only under [`InstallSubject::Dirty`]**, the rule the sibling calls in
+/// [`commit_install`] keep. A `--force` run never established the bytes as jigc's own, and
+/// its `Consented(∅)` is also what [`InstallSubject::probe`] returns when git could not
+/// answer, so subtracting it could record a consented user file jigc merged into; the cost
+/// of recording nothing is a false refusal the operator's own `--force` clears. When git
+/// cannot answer at the failure, no record is written or cleared.
+fn record_failed_install(
+    jigc_home: &Path,
+    subject: &InstallSubject,
+    line_file: &str,
+    allowlist_file: &str,
+    guide_file: Option<&str>,
+) {
+    let InstallSubject::Dirty(before) = subject else {
+        return;
+    };
+    let Some(now) = dirty_against_head(jigc_home, &[]) else {
+        return;
+    };
+    let written: Vec<String> =
+        install_candidate_paths(jigc_home, line_file, allowlist_file, guide_file)
+            .into_iter()
+            .filter(|path| now.contains(path) && !before.contains(path))
+            .collect();
+    record_install_footprint(jigc_home, &written);
+    if !written.is_empty() {
+        let _ = stage_paths(jigc_home, &written);
+    }
 }
 
 /// Every repo-relative path under `pathspec` (or in the whole repository, when it is

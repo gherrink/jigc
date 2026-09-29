@@ -2,6 +2,10 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-09-30 — M54 Inc 4 T1: the failed-run seam
+
+**M54 Inc 4 T1 pins** (S22, row 9). (1) **The seam is a function boundary.** Steps 1–5 of `install()` move verbatim into `write_install_span` (`crates/cli/src/setup.rs`), and `install()` calls it once with one `.inspect_err` that runs `record_failed_install` before the `Err` propagates, so every `?` in the span, the twelve the planner enumerated and any added later, is covered by construction. The count and the four misses live in `write_install_span`'s doc comment. (2) **The dirty-now query is whole-repository** (`dirty_against_head(jigc_home, &[])`) intersected with the re-asked candidates, not a pathspec query over them: the same set, and no empty-pathspec edge to guard. (3) Everything else is the planner's reading as written: minus `before`, only under `InstallSubject::Dirty`, record then best-effort `stage_paths`, nothing written or cleared when git cannot answer. (4) **Mutants, each reverted:** dropping the stage reddens only arm (b) (a committed `CLAUDE.md` stays refused); recording under `Consented` reddens only arm (e). Suite `crates/cli/tests/setup_failed_first_run.rs`, in `g_migrate`.
+
 ## 2026-09-30 — M54 Increment 4 planning: decomposition
 
 Cut [Increment 4](implementation/roadmap.md) (*a failed first setup does not wedge the repository*) into **2 ordered tasks**, grounded at HEAD `f24ab346` (Increment 3's tip, tree clean). Cross-ref [roadmap.md](implementation/roadmap.md) → Milestone 54 → Increment 4; the M54 Settle below (S22); [planning-gate-record.md](completions/artifacts/M54/planning-gate-record.md) → row 9; [project-setup.md](design/project-setup.md):144; [decisions-pending.md](implementation/decisions-pending.md) → (I), M57's `uninstall` row, which stays keyed there. **Codes registered: none.**
