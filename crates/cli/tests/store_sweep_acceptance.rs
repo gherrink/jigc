@@ -6,8 +6,8 @@
 //! `EffectiveStateSnapshot` to a temp scratch path, drive a CLI-supplied invoker, and
 //! ingest the probe's findings + the `pack-probe-integrity.*` meta-findings into a
 //! [`engine::result::ValidationReport`]. T1's own tests stubbed the invoker in-process.
-//! **This test supplies the real one**: it builds the actual `doc-code` probe executable
-//! (the `build_doc_code_probe` idiom, manifest at `probes/doc-code`) and wraps
+//! **This test supplies the real one**: it takes the actual `doc-code` probe executable
+//! (the one the build places beside `jigc`) and wraps
 //! [`cli::invoke::invoke_probe`]`(`[`cli::invoke::doc_code_program`]`(), ..,
 //! `[`cli::invoke::DOC_CODE_BUDGET`]`)` — a genuine subprocess over a snapshot the engine
 //! materialized, exactly as production `jigc validate` will.
@@ -86,27 +86,12 @@ impl Drop for TempDir {
     }
 }
 
-/// Build the `doc-code` probe executable (a program **outside** the workspace) and
-/// return its path — the `build_doc_code_probe` idiom (manifest at
-/// `probes/doc-code`), built into its own target dir so it never collides with the
-/// workspace build.
-fn build_doc_code_probe() -> PathBuf {
-    let manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("probes/doc-code/Cargo.toml");
-    let target_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("probes/doc-code/target");
-    let out = std::process::Command::new(env!("CARGO"))
-        .arg("build")
-        .arg("--manifest-path")
-        .arg(&manifest)
-        .arg("--target-dir")
-        .arg(&target_dir)
-        .output()
-        .expect("invoke cargo build for the doc-code probe");
-    assert!(
-        out.status.success(),
-        "cargo build failed for the doc-code probe:\n{}",
-        String::from_utf8_lossy(&out.stderr),
-    );
-    target_dir.join("debug/doc-code")
+/// The `doc-code` probe `jigc` resolves in production: the sibling of the built `jigc`
+/// binary (`CARGO_BIN_EXE_jigc`), which the build places there. An in-process caller has
+/// no `jigc` of its own to resolve from — its `current_exe()` is the test binary — so it
+/// names that sibling directly.
+fn doc_code_probe() -> PathBuf {
+    Path::new(env!("CARGO_BIN_EXE_jigc")).with_file_name("doc-code")
 }
 
 /// Translate the CLI invoker's raw [`ProbeOutcome`] into the engine's [`ProbeRun`] — the
@@ -386,7 +371,7 @@ fn build_crasher(dir: &Path) -> PathBuf {
 /// test because each mutates the process-global `JIGC_DOC_CODE_PROBE` override.
 #[test]
 fn real_doc_code_probe_over_committed_store() {
-    let probe = build_doc_code_probe();
+    let probe = doc_code_probe();
     // SAFETY: the documented dev/test override of the probe-path knob. The Rust harness
     // runs `#[test]` fns in parallel and this env var is process-global, so all three
     // cases live in this one test to keep the mutations sequential; no other test reads

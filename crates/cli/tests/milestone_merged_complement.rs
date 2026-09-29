@@ -43,7 +43,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::OnceLock;
 
 /// The milestone every driven arm builds.
 const MILESTONE: &str = "cache-rework";
@@ -143,43 +142,13 @@ fn init_repo(root: &Path) {
     crate::support::mint_project_layer(root);
 }
 
-/// Build the pack's real `doc-code` probe once (process-wide) — the merged-state gate's
-/// anchor arm shells out to it (the `milestone_boundary_gate` idiom).
-fn real_doc_code_probe() -> &'static Path {
-    static PROBE: OnceLock<PathBuf> = OnceLock::new();
-    PROBE.get_or_init(|| {
-        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("probes")
-            .join("doc-code")
-            .join("Cargo.toml");
-        let out = Command::new(env!("CARGO"))
-            .args(["build", "--quiet", "--manifest-path"])
-            .arg(&manifest)
-            .output()
-            .expect("invoke cargo build for doc-code");
-        assert!(
-            out.status.success(),
-            "building the doc-code probe failed:\n{}",
-            String::from_utf8_lossy(&out.stderr),
-        );
-        let bin = manifest
-            .parent()
-            .unwrap()
-            .join("target")
-            .join("debug")
-            .join("doc-code");
-        assert!(bin.is_file(), "doc-code binary missing at {bin:?}");
-        bin
-    })
-}
-
 /// Run the real binary in `repo`.
 fn jigc(repo: &Path, home: &Path, args: &[&str]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_jigc"))
         .args(args)
         .current_dir(repo)
         .env("HOME", home)
-        .env("JIGC_DOC_CODE_PROBE", real_doc_code_probe())
+        .env_remove("JIGC_DOC_CODE_PROBE")
         .env_remove("JIGC_PACK_DIR")
         .output()
         .expect("run the jigc binary")

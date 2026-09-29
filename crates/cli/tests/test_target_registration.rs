@@ -147,14 +147,14 @@ fn every_suite_file_is_registered_in_exactly_one_group() {
     );
 }
 
-// NOTE — the shared `doc-code` probe is deliberately NOT fenced here. Dozens of suites
-// shell out to cargo against the detached `crates/cli/probes/doc-code` workspace, and
-// they all drive the same `target/` directory, so "at most one builder per group" is not
-// a rule this tree can satisfy without undoing the consolidation. The race — one suite
-// replacing `target/debug/doc-code` while a co-resident suite executes it — is closed at
-// the source instead, by building the probe **once before** the suite runs (the gate's
-// prebuild step, `implementation/dev-workflow.md` → Gate): after that every in-test
-// `cargo build` for the same manifest is an up-to-date no-op that rewrites nothing.
+// NOTE — no suite builds the `doc-code` probe, so there is no builder to fence here.
+// A suite that needs the real probe drives the real `jigc` with the `JIGC_DOC_CODE_PROBE`
+// override removed, so the probe resolves through the production path; the negative legs
+// point the override at an absent path or a stub the suite compiles itself. The race the
+// consolidation exposed — one suite rebuilding the shared probe executable while a
+// co-resident suite ran it — therefore has no rebuilding suite left
+// (`DECISIONS.md` → M54 Settle, S1). `doc_code_probe_suite` still runs the probe's own
+// unit tests through cargo, and nothing any suite spawns is built by that run.
 
 /// A suite that mutates **process-global** environment state is only sound while it is
 /// the sole test in its process. Before the M47 consolidation every suite owned its own

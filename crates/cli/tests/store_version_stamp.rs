@@ -11,14 +11,13 @@
 //!
 //! This drives the built `jigc` binary end-to-end (the invocation-path-masking lesson:
 //! drive the bytes an operator would actually run) with **no** `JIGC_PACK_DIR` — the real
-//! embedded pack. The probe is the real built `doc-code` (so the `jigc validate` pre-flight
+//! embedded pack. The probe is the real `doc-code` (so the `jigc validate` pre-flight
 //! resolves) and a self-cleaning `TempDir` keeps the test off the developer's repo.
 
 use crate::support::run_then_parse::stdout_json;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::OnceLock;
 
 /// A throwaway directory that removes itself on drop.
 struct TempDir(PathBuf);
@@ -51,36 +50,6 @@ impl Drop for TempDir {
 /// workspace version (`1.0.0-rc.2`).
 const RUNNING_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// Build the pack's `doc-code` probe once (process-wide) and return its binary path, so the
-/// `jigc validate` probe pre-flight resolves (the `mention_resolves.rs` idiom).
-fn doc_code_probe() -> &'static Path {
-    static PROBE: OnceLock<PathBuf> = OnceLock::new();
-    PROBE.get_or_init(|| {
-        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("probes")
-            .join("doc-code")
-            .join("Cargo.toml");
-        let out = Command::new(env!("CARGO"))
-            .args(["build", "--quiet", "--manifest-path"])
-            .arg(&manifest)
-            .output()
-            .expect("invoke cargo build for doc-code");
-        assert!(
-            out.status.success(),
-            "building the doc-code probe failed:\n{}",
-            String::from_utf8_lossy(&out.stderr),
-        );
-        let bin = manifest
-            .parent()
-            .unwrap()
-            .join("target")
-            .join("debug")
-            .join("doc-code");
-        assert!(bin.is_file(), "doc-code binary missing at {bin:?}");
-        bin
-    })
-}
-
 /// Run a `git` command in `repo`, asserting success, returning trimmed stdout.
 fn git(repo: &Path, args: &[&str]) -> String {
     let out = Command::new("git")
@@ -100,13 +69,13 @@ fn git(repo: &Path, args: &[&str]) -> String {
 }
 
 /// Run `jigc <args>` with `cwd = repo`, `$HOME = home`, and the real `doc-code` probe
-/// selected via `JIGC_DOC_CODE_PROBE` so the validate pre-flight resolves.
+/// resolved through the production path (no `JIGC_DOC_CODE_PROBE` override).
 fn jigc(repo: &Path, home: &Path, args: &[&str]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_jigc"))
         .args(args)
         .current_dir(repo)
         .env("HOME", home)
-        .env("JIGC_DOC_CODE_PROBE", doc_code_probe())
+        .env_remove("JIGC_DOC_CODE_PROBE")
         .output()
         .expect("run the jigc binary")
 }

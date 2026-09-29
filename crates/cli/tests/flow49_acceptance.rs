@@ -1380,42 +1380,10 @@ fn the_milestone_boundary_reads_the_worktree_on_disk_not_the_registered_set() {
 // Arm 3 — a never-adopted foreign file is not the corpus migration's subject (Inc 3)
 // ═════════════════════════════════════════════════════════════════════════════
 
-/// Build the pack's `doc-code` probe once per process and return its binary path — the
-/// real subprocess the sweep's pre-flight resolves. A sweep that cannot run its probe
-/// raises a `pack-probe-integrity` meta-finding, which is the **first** exit flip in
-/// precedence and would mask the member this arm is about.
-fn doc_code_probe() -> &'static Path {
-    static PROBE: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
-    PROBE.get_or_init(|| {
-        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("probes")
-            .join("doc-code")
-            .join("Cargo.toml");
-        let out = Command::new(env!("CARGO"))
-            .args(["build", "--quiet", "--manifest-path"])
-            .arg(&manifest)
-            .output()
-            .expect("invoke cargo build for doc-code");
-        assert!(
-            out.status.success(),
-            "building the doc-code probe failed:\n{}",
-            String::from_utf8_lossy(&out.stderr),
-        );
-        let bin = manifest
-            .parent()
-            .expect("the probe manifest has a parent")
-            .join("target")
-            .join("debug")
-            .join("doc-code");
-        assert!(bin.is_file(), "doc-code binary missing at {bin:?}");
-        bin
-    })
-}
-
-/// Run `jigc <args>` with the **real** `doc-code` probe selected.
+/// Run `jigc <args>` with the **real** `doc-code` probe (no `JIGC_DOC_CODE_PROBE` override).
 fn run_jigc_probed(repo: &Path, home: &Path, args: &[&str]) -> Output {
     jigc_command(repo, home, args)
-        .env("JIGC_DOC_CODE_PROBE", doc_code_probe())
+        .env_remove("JIGC_DOC_CODE_PROBE")
         .output()
         .expect("run the jigc binary")
 }

@@ -71,7 +71,6 @@ use crate::support::run_then_parse::stdout_json;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::OnceLock;
 
 /// A throwaway directory that removes itself on drop.
 struct TempDir(PathBuf);
@@ -99,36 +98,6 @@ impl Drop for TempDir {
     }
 }
 
-/// Build the pack's `doc-code` probe once (process-wide) and return its binary path — the
-/// real subprocess the `jigc validate` pre-flight resolves.
-fn doc_code_probe() -> &'static Path {
-    static PROBE: OnceLock<PathBuf> = OnceLock::new();
-    PROBE.get_or_init(|| {
-        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("probes")
-            .join("doc-code")
-            .join("Cargo.toml");
-        let out = Command::new(env!("CARGO"))
-            .args(["build", "--quiet", "--manifest-path"])
-            .arg(&manifest)
-            .output()
-            .expect("invoke cargo build for doc-code");
-        assert!(
-            out.status.success(),
-            "building the doc-code probe failed:\n{}",
-            String::from_utf8_lossy(&out.stderr),
-        );
-        let bin = manifest
-            .parent()
-            .unwrap()
-            .join("target")
-            .join("debug")
-            .join("doc-code");
-        assert!(bin.is_file(), "doc-code binary missing at {bin:?}");
-        bin
-    })
-}
-
 /// Run a `git` command in `cwd`, asserting success.
 fn git(cwd: &Path, args: &[&str]) {
     let out = Command::new("git")
@@ -149,7 +118,7 @@ fn jigc(repo: &Path, home: &Path, args: &[&str]) -> std::process::Output {
         .args(args)
         .current_dir(repo)
         .env("HOME", home)
-        .env("JIGC_DOC_CODE_PROBE", doc_code_probe())
+        .env_remove("JIGC_DOC_CODE_PROBE")
         .output()
         .expect("run the jigc binary")
 }
@@ -825,7 +794,7 @@ fn the_pre_commit_hook_still_lets_a_commit_land_over_an_exit_flipping_stale_corp
         .args(["commit", "-q", "-m", "an unrelated change"])
         .current_dir(repo.path())
         .env("HOME", home.path())
-        .env("JIGC_DOC_CODE_PROBE", doc_code_probe())
+        .env_remove("JIGC_DOC_CODE_PROBE")
         .output()
         .expect("run git commit");
     assert!(

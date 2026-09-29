@@ -57,7 +57,6 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::OnceLock;
 
 /// A throwaway directory that removes itself on drop.
 struct TempDir(PathBuf);
@@ -84,37 +83,6 @@ impl Drop for TempDir {
         // The fan-out worktrees (arm 6) are ordinary directories under `.jigc/worktrees/`.
         let _ = fs::remove_dir_all(&self.0);
     }
-}
-
-/// Build the pack's `doc-code` probe once (process-wide) and return its binary path — the
-/// `jigc validate` / finalize probe pre-flight resolves it via `JIGC_DOC_CODE_PROBE`
-/// (the `flow42_acceptance` / `validate_envelope` idiom).
-fn doc_code_probe() -> &'static Path {
-    static PROBE: OnceLock<PathBuf> = OnceLock::new();
-    PROBE.get_or_init(|| {
-        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("probes")
-            .join("doc-code")
-            .join("Cargo.toml");
-        let out = Command::new(env!("CARGO"))
-            .args(["build", "--quiet", "--manifest-path"])
-            .arg(&manifest)
-            .output()
-            .expect("invoke cargo build for doc-code");
-        assert!(
-            out.status.success(),
-            "building the doc-code probe failed:\n{}",
-            String::from_utf8_lossy(&out.stderr),
-        );
-        let bin = manifest
-            .parent()
-            .unwrap()
-            .join("target")
-            .join("debug")
-            .join("doc-code");
-        assert!(bin.is_file(), "doc-code binary missing at {bin:?}");
-        bin
-    })
 }
 
 /// The embedded dev-pack tree on disk — the faithful source arm 5's mutated copy mirrors.
@@ -165,16 +133,17 @@ fn git_init(repo: &Path) {
     git(repo, &["commit", "-q", "-m", "initial"]);
 }
 
-/// Run `jigc <args>` with `cwd = repo`, `$HOME = home`, the doc-code probe selected,
-/// optionally piping `stdin`. Never inherits a harness `JIGC_PACK_DIR` — the embedded
-/// shipped packs are the base, so the arms prove exactly what ships.
+/// Run `jigc <args>` with `cwd = repo`, `$HOME = home`, the `JIGC_DOC_CODE_PROBE` override
+/// removed (the real probe resolves through the production path), optionally piping
+/// `stdin`. Never inherits a harness `JIGC_PACK_DIR` — the embedded shipped packs are the
+/// base, so the arms prove exactly what ships.
 fn jigc(repo: &Path, home: &Path, args: &[&str], stdin: Option<&[u8]>) -> std::process::Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_jigc"));
     command
         .args(args)
         .current_dir(repo)
         .env("HOME", home)
-        .env("JIGC_DOC_CODE_PROBE", doc_code_probe())
+        .env_remove("JIGC_DOC_CODE_PROBE")
         .env_remove("JIGC_PACK_DIR")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -199,7 +168,7 @@ fn jigc_with_pack(repo: &Path, home: &Path, pack: &Path, args: &[&str]) -> std::
         .args(args)
         .current_dir(repo)
         .env("HOME", home)
-        .env("JIGC_DOC_CODE_PROBE", doc_code_probe())
+        .env_remove("JIGC_DOC_CODE_PROBE")
         .env("JIGC_PACK_DIR", pack)
         .output()
         .expect("run the jigc binary")

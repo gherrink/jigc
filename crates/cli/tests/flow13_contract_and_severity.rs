@@ -30,16 +30,15 @@
 //!   meta-findings stay floor-locked. This is the tunable half of the two-tier rule.
 //!
 //! No external test crates: the `jigc` path comes from `CARGO_BIN_EXE_jigc`, the temp
-//! repo is a real `git init`, the real `doc-code` probe is built from the pack, the stubs
-//! are compiled with `rustc` (real processes — the `probe_invoker.rs` precedent), and
-//! self-cleaning `TempDir`s keep the developer's repo clean.
+//! repo is a real `git init`, the real `doc-code` probe resolves through the production
+//! path, the stubs are compiled with `rustc` (real processes — the `probe_invoker.rs`
+//! precedent), and self-cleaning `TempDir`s keep the developer's repo clean.
 
 use crate::support::run_then_parse::stdout_json;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::OnceLock;
 
 /// A throwaway directory that removes itself on drop.
 struct TempDir(PathBuf);
@@ -65,37 +64,6 @@ impl Drop for TempDir {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.0);
     }
-}
-
-/// Build the pack's **real** `doc-code` probe once (process-wide) and return its binary
-/// path — the tree-sitter subprocess the severity-demotion walk drives (the meta-finding
-/// walks point `JIGC_DOC_CODE_PROBE` at a stub instead).
-fn real_doc_code_probe() -> &'static Path {
-    static PROBE: OnceLock<PathBuf> = OnceLock::new();
-    PROBE.get_or_init(|| {
-        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("probes")
-            .join("doc-code")
-            .join("Cargo.toml");
-        let out = Command::new(env!("CARGO"))
-            .args(["build", "--quiet", "--manifest-path"])
-            .arg(&manifest)
-            .output()
-            .expect("invoke cargo build for doc-code");
-        assert!(
-            out.status.success(),
-            "building the doc-code probe failed:\n{}",
-            String::from_utf8_lossy(&out.stderr),
-        );
-        let bin = manifest
-            .parent()
-            .unwrap()
-            .join("target")
-            .join("debug")
-            .join("doc-code");
-        assert!(bin.is_file(), "doc-code binary missing at {bin:?}");
-        bin
-    })
 }
 
 /// Compile `source` (a tiny Rust program) into an executable at `<dir>/<name>` and return
@@ -168,32 +136,36 @@ fn init_repo(repo: &Path) {
     fs::create_dir_all(repo.join(".jigc").join("config")).expect("create project layer");
 }
 
-/// Run `jigc <args>` with `cwd = repo`, `$HOME = home`, and `JIGC_DOC_CODE_PROBE` pointed
-/// at `probe` (the real probe or an adversarial stub), capturing output.
-fn jigc(repo: &Path, home: &Path, probe: &Path, args: &[&str]) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_jigc"))
-        .args(args)
-        .current_dir(repo)
-        .env("HOME", home)
-        .env("JIGC_DOC_CODE_PROBE", probe)
-        .output()
-        .expect("run the jigc binary")
+/// Point `JIGC_DOC_CODE_PROBE` at `probe` (an adversarial stub), or — `None` — remove it,
+/// so the real probe resolves through the production path.
+fn select_probe(command: &mut Command, probe: Option<&Path>) {
+    match probe {
+        Some(stub) => command.env("JIGC_DOC_CODE_PROBE", stub),
+        None => command.env_remove("JIGC_DOC_CODE_PROBE"),
+    };
 }
 
-/// Run `jigc doc <args>`, optionally piping `stdin`, with `JIGC_DOC_CODE_PROBE = probe`.
+/// Run `jigc <args>` with `cwd = repo`, `$HOME = home`, and the probe [`select_probe`]
+/// picks, capturing output.
+fn jigc(repo: &Path, home: &Path, probe: Option<&Path>, args: &[&str]) -> std::process::Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_jigc"));
+    command.args(args).current_dir(repo).env("HOME", home);
+    select_probe(&mut command, probe);
+    command.output().expect("run the jigc binary")
+}
+
+/// Run `jigc doc <args>`, optionally piping `stdin`, with the probe [`select_probe`] picks.
 fn jigc_doc(
     repo: &Path,
     home: &Path,
-    probe: &Path,
+    probe: Option<&Path>,
     args: &[&str],
     stdin: Option<&[u8]>,
 ) -> std::process::Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_jigc"));
     command.arg("doc").args(args);
-    command
-        .current_dir(repo)
-        .env("HOME", home)
-        .env("JIGC_DOC_CODE_PROBE", probe);
+    command.current_dir(repo).env("HOME", home);
+    select_probe(&mut command, probe);
     if stdin.is_some() {
         command.stdin(Stdio::piped());
     }
@@ -230,7 +202,14 @@ fn streams(out: &std::process::Output) -> String {
 }
 
 /// Stage a slot from `prose` for `addr` (optionally scoped to `task`), asserting success.
-fn set_slot(repo: &Path, home: &Path, probe: &Path, addr: &str, task: Option<&str>, prose: &[u8]) {
+fn set_slot(
+    repo: &Path,
+    home: &Path,
+    probe: Option<&Path>,
+    addr: &str,
+    task: Option<&str>,
+    prose: &[u8],
+) {
     let mut args = vec!["set-slot", addr, "--from-file", "-"];
     if let Some(task) = task {
         args.push("--task");
@@ -241,7 +220,14 @@ fn set_slot(repo: &Path, home: &Path, probe: &Path, addr: &str, task: Option<&st
 }
 
 /// Stage a field `value` for `addr` (optionally scoped to `task`), asserting success.
-fn set_field(repo: &Path, home: &Path, probe: &Path, addr: &str, task: Option<&str>, value: &str) {
+fn set_field(
+    repo: &Path,
+    home: &Path,
+    probe: Option<&Path>,
+    addr: &str,
+    task: Option<&str>,
+    value: &str,
+) {
     let mut args = vec!["set-field", addr, "--value", value];
     if let Some(task) = task {
         args.push("--task");
@@ -265,7 +251,7 @@ const CITES_CODE: &str = "src/limiter.rs#TokenBucket";
 /// on the base branch BEFORE the work task is minted (the pin-to-base constraint). Mirrors
 /// `flow13_acceptance.rs`'s `commit_spec_with_maps_to_test` (the same fixture the T3 walks
 /// drive, so the demotion walk lands on the identical surface).
-fn commit_spec_with_maps_to_test(repo: &Path, home: &Path, probe: &Path, anchor: &str) {
+fn commit_spec_with_maps_to_test(repo: &Path, home: &Path, probe: Option<&Path>, anchor: &str) {
     let out = jigc(
         repo,
         home,
@@ -374,7 +360,7 @@ fn commit_spec_with_maps_to_test(repo: &Path, home: &Path, probe: &Path, anchor:
 fn mint_bind_and_author_adr(
     repo: &Path,
     home: &Path,
-    probe: &Path,
+    probe: Option<&Path>,
     intent: &str,
     task: &str,
     cites_code: &str,
@@ -539,11 +525,11 @@ fn timeout_meta_finding_fires_and_is_floor_locked_against_demotion() {
 
     // Seed the spec + a dangling `maps-to-test` so a `code-anchor` leaf exists for the
     // probe to be scheduled over (the stub controls the outcome, not the anchor).
-    commit_spec_with_maps_to_test(repo.path(), home.path(), &sleeper, MAPS_TO_TEST);
+    commit_spec_with_maps_to_test(repo.path(), home.path(), Some(&sleeper), MAPS_TO_TEST);
     mint_bind_and_author_adr(
         repo.path(),
         home.path(),
-        &sleeper,
+        Some(&sleeper),
         WORK_INTENT,
         WORK_TASK,
         CITES_CODE,
@@ -555,7 +541,7 @@ fn timeout_meta_finding_fires_and_is_floor_locked_against_demotion() {
     let set = jigc(
         repo.path(),
         home.path(),
-        &sleeper,
+        Some(&sleeper),
         &[
             "config",
             "set",
@@ -572,7 +558,7 @@ fn timeout_meta_finding_fires_and_is_floor_locked_against_demotion() {
     let out = jigc(
         repo.path(),
         home.path(),
-        &sleeper,
+        Some(&sleeper),
         &["task", "finalize", WORK_TASK, "--format", "json"],
     );
     let rendered = streams(&out);
@@ -629,11 +615,11 @@ fn malformed_output_meta_finding_fires_and_blocks_finalize() {
     init_repo(repo.path());
     let garbage = build_stub(stubs.path(), "garbage", GARBAGE_STUB);
 
-    commit_spec_with_maps_to_test(repo.path(), home.path(), &garbage, MAPS_TO_TEST);
+    commit_spec_with_maps_to_test(repo.path(), home.path(), Some(&garbage), MAPS_TO_TEST);
     mint_bind_and_author_adr(
         repo.path(),
         home.path(),
-        &garbage,
+        Some(&garbage),
         WORK_INTENT,
         WORK_TASK,
         CITES_CODE,
@@ -643,7 +629,7 @@ fn malformed_output_meta_finding_fires_and_blocks_finalize() {
     let out = jigc(
         repo.path(),
         home.path(),
-        &garbage,
+        Some(&garbage),
         &["task", "finalize", WORK_TASK, "--format", "json"],
     );
     let rendered = streams(&out);
@@ -685,7 +671,8 @@ fn malformed_output_meta_finding_fires_and_blocks_finalize() {
 fn demoting_doc_code_criterion_to_warning_surfaces_but_does_not_block_finalize() {
     let repo = TempDir::new("demote-repo");
     let home = TempDir::new("demote-home");
-    let probe = real_doc_code_probe();
+    // No override: the real probe resolves through the production path.
+    let probe = None;
     init_repo(repo.path());
 
     // The criterion's `maps-to-test` points at a test the working tree LACKS — a dangling

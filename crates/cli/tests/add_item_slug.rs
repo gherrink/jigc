@@ -47,7 +47,6 @@ use crate::support::run_then_parse::stdout_json;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
-use std::sync::OnceLock;
 
 /// A throwaway directory that removes itself on drop.
 struct TempDir(PathBuf);
@@ -95,37 +94,6 @@ fn copy_tree(src: &Path, dst: &Path) {
     }
 }
 
-/// Build the pack's `doc-code` probe once (process-wide) and return its binary path —
-/// `arch-doc`'s `implemented-by` anchors resolve through it (mirrors
-/// `retitle_item::doc_code_probe`).
-fn doc_code_probe() -> &'static Path {
-    static PROBE: OnceLock<PathBuf> = OnceLock::new();
-    PROBE.get_or_init(|| {
-        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("probes")
-            .join("doc-code")
-            .join("Cargo.toml");
-        let out = Command::new(env!("CARGO"))
-            .args(["build", "--quiet", "--manifest-path"])
-            .arg(&manifest)
-            .output()
-            .expect("invoke cargo build for doc-code");
-        assert!(
-            out.status.success(),
-            "building the doc-code probe failed:\n{}",
-            String::from_utf8_lossy(&out.stderr),
-        );
-        let bin = manifest
-            .parent()
-            .unwrap()
-            .join("target")
-            .join("debug")
-            .join("doc-code");
-        assert!(bin.is_file(), "doc-code binary missing at {bin:?}");
-        bin
-    })
-}
-
 /// Run a `git` command in `repo`, asserting success.
 fn git(repo: &Path, args: &[&str]) {
     let out = Command::new("git")
@@ -157,16 +125,17 @@ fn init_repo(repo: &Path) {
     fs::create_dir_all(repo.join(".jigc").join("config")).expect("create project layer");
 }
 
-/// Run `jigc <args>` with `cwd = repo`, `$HOME = home`, the doc-code probe selected and
-/// — when `pack` is `Some` — an explicit `JIGC_PACK_DIR`. `None` runs the **shipped**
-/// embedded pack, so every arm but the nesting one is proven against what ships.
+/// Run `jigc <args>` with `cwd = repo`, `$HOME = home`, the `JIGC_DOC_CODE_PROBE` override
+/// removed (the real probe resolves through the production path), and — when `pack` is
+/// `Some` — an explicit `JIGC_PACK_DIR`. `None` runs the **shipped** embedded pack, so
+/// every arm but the nesting one is proven against what ships.
 fn jigc(repo: &Path, home: &Path, pack: Option<&Path>, args: &[&str]) -> Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_jigc"));
     command
         .args(args)
         .current_dir(repo)
         .env("HOME", home)
-        .env("JIGC_DOC_CODE_PROBE", doc_code_probe())
+        .env_remove("JIGC_DOC_CODE_PROBE")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     if let Some(dir) = pack {

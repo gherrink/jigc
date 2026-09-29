@@ -40,7 +40,6 @@ use crate::support::run_then_parse::{stderr_json, stdout_json};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::OnceLock;
 
 use cli::rename::{RefusalKind, Repair};
 
@@ -70,36 +69,6 @@ impl Drop for TempDir {
     }
 }
 
-/// Build the pack's `doc-code` probe once (process-wide) so the `jigc validate` pre-flight
-/// resolves (the `validate_command.rs` idiom).
-fn doc_code_probe() -> &'static Path {
-    static PROBE: OnceLock<PathBuf> = OnceLock::new();
-    PROBE.get_or_init(|| {
-        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("probes")
-            .join("doc-code")
-            .join("Cargo.toml");
-        let out = Command::new(env!("CARGO"))
-            .args(["build", "--quiet", "--manifest-path"])
-            .arg(&manifest)
-            .output()
-            .expect("invoke cargo build for doc-code");
-        assert!(
-            out.status.success(),
-            "building the doc-code probe failed:\n{}",
-            String::from_utf8_lossy(&out.stderr),
-        );
-        let bin = manifest
-            .parent()
-            .unwrap()
-            .join("target")
-            .join("debug")
-            .join("doc-code");
-        assert!(bin.is_file(), "doc-code binary missing at {bin:?}");
-        bin
-    })
-}
-
 /// Run a `git` command in `repo`, asserting success and returning trimmed stdout.
 fn git(repo: &Path, args: &[&str]) -> String {
     let out = Command::new("git")
@@ -118,13 +87,13 @@ fn git(repo: &Path, args: &[&str]) -> String {
         .to_string()
 }
 
-/// Run `jigc <args>` with `cwd = repo`, the real `doc-code` probe selected via
-/// `JIGC_DOC_CODE_PROBE`.
+/// Run `jigc <args>` with `cwd = repo`, and the `JIGC_DOC_CODE_PROBE` override
+/// removed (the real probe resolves through the production path).
 fn jigc(repo: &Path, args: &[&str]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_jigc"))
         .args(args)
         .current_dir(repo)
-        .env("JIGC_DOC_CODE_PROBE", doc_code_probe())
+        .env_remove("JIGC_DOC_CODE_PROBE")
         .output()
         .expect("run the jigc binary")
 }

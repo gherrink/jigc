@@ -10,14 +10,13 @@
 //! worktree removes). Both must now block at exit 3 committing nothing; a clean fan-out
 //! still finalizes at exit 0. The whole flow drives the cargo-built `jigc` binary
 //! (`CARGO_BIN_EXE_jigc`) against throwaway git repos with the **embedded** dev pack (the
-//! flow33 real-binary fan-out idiom), the real `doc-code` probe pointed at via
-//! `JIGC_DOC_CODE_PROBE` (the flow13 idiom).
+//! flow33 real-binary fan-out idiom), the real `doc-code` probe resolved through the
+//! production path (the `JIGC_DOC_CODE_PROBE` override removed, the flow29 idiom).
 
 use crate::support::run_then_parse::stdout_json;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::OnceLock;
 
 /// A throwaway directory that removes itself on drop.
 struct TempDir(PathBuf);
@@ -83,36 +82,6 @@ fn init_repo(root: &Path, extra: &[(&str, &str)]) {
     crate::support::mint_project_layer(root);
 }
 
-/// Build the pack's **real** `doc-code` probe once (process-wide) and return its path — the
-/// tree-sitter subprocess the cross-worktree anchor arm drives (the flow13 idiom).
-fn real_doc_code_probe() -> &'static Path {
-    static PROBE: OnceLock<PathBuf> = OnceLock::new();
-    PROBE.get_or_init(|| {
-        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("probes")
-            .join("doc-code")
-            .join("Cargo.toml");
-        let out = Command::new(env!("CARGO"))
-            .args(["build", "--quiet", "--manifest-path"])
-            .arg(&manifest)
-            .output()
-            .expect("invoke cargo build for doc-code");
-        assert!(
-            out.status.success(),
-            "building the doc-code probe failed:\n{}",
-            String::from_utf8_lossy(&out.stderr),
-        );
-        let bin = manifest
-            .parent()
-            .unwrap()
-            .join("target")
-            .join("debug")
-            .join("doc-code");
-        assert!(bin.is_file(), "doc-code binary missing at {bin:?}");
-        bin
-    })
-}
-
 /// Run `jigc milestone <args>` with `cwd = repo`, `$HOME = home`, the embedded pack, and the
 /// real `doc-code` probe (so the merged-state `doc-code` arm resolves anchors for real).
 fn run_milestone(repo: &Path, home: &Path, args: &[&str]) -> std::process::Output {
@@ -121,7 +90,7 @@ fn run_milestone(repo: &Path, home: &Path, args: &[&str]) -> std::process::Outpu
     command
         .current_dir(repo)
         .env("HOME", home)
-        .env("JIGC_DOC_CODE_PROBE", real_doc_code_probe())
+        .env_remove("JIGC_DOC_CODE_PROBE")
         .output()
         .expect("run the jigc binary")
 }
@@ -134,7 +103,7 @@ fn run_milestone_json(repo: &Path, home: &Path, args: &[&str]) -> std::process::
     command
         .current_dir(repo)
         .env("HOME", home)
-        .env("JIGC_DOC_CODE_PROBE", real_doc_code_probe())
+        .env_remove("JIGC_DOC_CODE_PROBE")
         .output()
         .expect("run the jigc binary")
 }

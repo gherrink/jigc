@@ -18,14 +18,13 @@
 //! The exit-class halves (probe pre-flight → one operational error; the
 //! `pack-probe-integrity.*` non-zero exit rule) land in T2/T3; this task is the clean
 //! path only (always exit 0). The `jigc` path comes from `CARGO_BIN_EXE_jigc`, the temp
-//! repo is a real `git init`, and the `doc-code` probe is the real binary built from the
-//! pack and selected via `JIGC_DOC_CODE_PROBE` (the flow13_acceptance idiom).
+//! repo is a real `git init`, and the `doc-code` probe is the real one, resolved through
+//! the production path with the `JIGC_DOC_CODE_PROBE` override removed (the flow29 idiom).
 
 use crate::support::run_then_parse::stdout_json;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::OnceLock;
 
 /// A throwaway directory that removes itself on drop.
 struct TempDir(PathBuf);
@@ -53,36 +52,6 @@ impl Drop for TempDir {
     }
 }
 
-/// Build the pack's `doc-code` probe once (process-wide) and return its binary path —
-/// the **real** tree-sitter subprocess the engine/CLI seam drives, never a mock.
-fn doc_code_probe() -> &'static Path {
-    static PROBE: OnceLock<PathBuf> = OnceLock::new();
-    PROBE.get_or_init(|| {
-        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("probes")
-            .join("doc-code")
-            .join("Cargo.toml");
-        let out = Command::new(env!("CARGO"))
-            .args(["build", "--quiet", "--manifest-path"])
-            .arg(&manifest)
-            .output()
-            .expect("invoke cargo build for doc-code");
-        assert!(
-            out.status.success(),
-            "building the doc-code probe failed:\n{}",
-            String::from_utf8_lossy(&out.stderr),
-        );
-        let bin = manifest
-            .parent()
-            .unwrap()
-            .join("target")
-            .join("debug")
-            .join("doc-code");
-        assert!(bin.is_file(), "doc-code binary missing at {bin:?}");
-        bin
-    })
-}
-
 /// Run a `git` command in `repo`, asserting success.
 fn git(repo: &Path, args: &[&str]) {
     let out = Command::new("git")
@@ -97,10 +66,15 @@ fn git(repo: &Path, args: &[&str]) {
     );
 }
 
-/// Run `jigc <args>` with `cwd = repo` and the real doc-code probe selected via
-/// `JIGC_DOC_CODE_PROBE`, capturing output.
+/// Run `jigc <args>` with `cwd = repo` and the `JIGC_DOC_CODE_PROBE` override removed,
+/// so the real probe resolves through the production path, capturing output.
 fn jigc(repo: &Path, args: &[&str]) -> std::process::Output {
-    jigc_with_probe(repo, args, doc_code_probe())
+    Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(args)
+        .current_dir(repo)
+        .env_remove("JIGC_DOC_CODE_PROBE")
+        .output()
+        .expect("run the jigc binary")
 }
 
 /// Run `jigc <args>` with `cwd = repo` and an explicit `JIGC_DOC_CODE_PROBE`,

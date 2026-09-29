@@ -6,8 +6,8 @@
 //!
 //! Built against `implementation/roadmap.md` → M20 Increment 2 Deliverable + Proves and
 //! `design/validation.md` → Completing the envelope. The store is set up via `jigc setup`
-//! over a real `git init` temp repo, and the real `doc-code` probe is selected via
-//! `JIGC_DOC_CODE_PROBE` (the `validate_command.rs` idiom) so the probe pre-flight passes.
+//! over a real `git init` temp repo, and the real `doc-code` probe resolves through the
+//! production path (the `JIGC_DOC_CODE_PROBE` override removed) so the probe pre-flight passes.
 //!
 //! The four proofs:
 //!
@@ -29,7 +29,7 @@
 //!   — the content-only-exits-0 rule did not loosen the probe-missing exit.
 //!
 //! No external test crates: the binary path comes from `CARGO_BIN_EXE_jigc`, the temp repo
-//! is a real `git init`, the probe is the real built `doc-code`, and a self-cleaning
+//! is a real `git init`, the probe is the real `doc-code`, and a self-cleaning
 //! `TempDir` keeps the test off the developer's repo.
 //!
 //! **M47 inc-7 / T2 — `blocking_probes`.** The store envelope gains a third top-level key
@@ -57,7 +57,6 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::OnceLock;
 
 /// A throwaway directory that removes itself on drop.
 struct TempDir(PathBuf);
@@ -85,37 +84,6 @@ impl Drop for TempDir {
     }
 }
 
-/// Build the pack's `doc-code` probe once (process-wide) and return its binary path —
-/// the **real** tree-sitter subprocess the engine/CLI seam drives, so the `jigc validate`
-/// probe pre-flight resolves (the `validate_command.rs` idiom).
-fn doc_code_probe() -> &'static Path {
-    static PROBE: OnceLock<PathBuf> = OnceLock::new();
-    PROBE.get_or_init(|| {
-        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("probes")
-            .join("doc-code")
-            .join("Cargo.toml");
-        let out = Command::new(env!("CARGO"))
-            .args(["build", "--quiet", "--manifest-path"])
-            .arg(&manifest)
-            .output()
-            .expect("invoke cargo build for doc-code");
-        assert!(
-            out.status.success(),
-            "building the doc-code probe failed:\n{}",
-            String::from_utf8_lossy(&out.stderr),
-        );
-        let bin = manifest
-            .parent()
-            .unwrap()
-            .join("target")
-            .join("debug")
-            .join("doc-code");
-        assert!(bin.is_file(), "doc-code binary missing at {bin:?}");
-        bin
-    })
-}
-
 /// Run a `git` command in `repo`, asserting success, returning trimmed stdout.
 fn git(repo: &Path, args: &[&str]) -> String {
     let out = Command::new("git")
@@ -134,10 +102,16 @@ fn git(repo: &Path, args: &[&str]) -> String {
         .to_string()
 }
 
-/// Run `jigc <args>` with `cwd = repo`, `$HOME = home`, and the real `doc-code` probe
-/// selected via `JIGC_DOC_CODE_PROBE` so the validate pre-flight resolves.
+/// Run `jigc <args>` with `cwd = repo`, `$HOME = home`, and the `JIGC_DOC_CODE_PROBE`
+/// override removed, so the real probe resolves through the production path.
 fn jigc(repo: &Path, home: &Path, args: &[&str]) -> std::process::Output {
-    jigc_with_probe(repo, home, args, doc_code_probe())
+    Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(args)
+        .current_dir(repo)
+        .env("HOME", home)
+        .env_remove("JIGC_DOC_CODE_PROBE")
+        .output()
+        .expect("run the jigc binary")
 }
 
 /// Run `jigc <args>` against an on-disk pack tree (`JIGC_PACK_DIR`), otherwise identical
@@ -147,7 +121,7 @@ fn jigc_with_pack(repo: &Path, home: &Path, pack: &Path, args: &[&str]) -> std::
         .args(args)
         .current_dir(repo)
         .env("HOME", home)
-        .env("JIGC_DOC_CODE_PROBE", doc_code_probe())
+        .env_remove("JIGC_DOC_CODE_PROBE")
         .env("JIGC_PACK_DIR", pack)
         .output()
         .expect("run the jigc binary")
@@ -172,7 +146,7 @@ fn jigc_doc(repo: &Path, home: &Path, args: &[&str], stdin: Option<&[u8]>) -> st
     command
         .current_dir(repo)
         .env("HOME", home)
-        .env("JIGC_DOC_CODE_PROBE", doc_code_probe());
+        .env_remove("JIGC_DOC_CODE_PROBE");
     if stdin.is_some() {
         command.stdin(Stdio::piped());
     }

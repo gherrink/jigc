@@ -29,7 +29,6 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::OnceLock;
 
 /// A throwaway directory that removes itself on drop.
 struct TempDir(PathBuf);
@@ -57,33 +56,6 @@ impl Drop for TempDir {
     }
 }
 
-/// Build the `doc-code` probe executable once and return its path (the `doc_code_gate`
-/// idiom — the probe crate lives outside the workspace, built into its own target dir).
-fn doc_code_probe() -> &'static Path {
-    static PROBE: OnceLock<PathBuf> = OnceLock::new();
-    PROBE
-        .get_or_init(|| {
-            let manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("probes/doc-code/Cargo.toml");
-            let target_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("probes/doc-code/target");
-            let out = Command::new(env!("CARGO"))
-                .args(["build", "--manifest-path"])
-                .arg(&manifest)
-                .arg("--target-dir")
-                .arg(&target_dir)
-                .output()
-                .expect("cargo build the doc-code probe");
-            assert!(
-                out.status.success(),
-                "cargo build failed for the doc-code probe:\n{}",
-                String::from_utf8_lossy(&out.stderr),
-            );
-            let bin = target_dir.join("debug/doc-code");
-            assert!(bin.is_file(), "doc-code binary missing at {bin:?}");
-            bin
-        })
-        .as_path()
-}
-
 /// Run a `git` command in `repo`, asserting success, returning trimmed stdout.
 fn git(repo: &Path, args: &[&str]) -> String {
     let out = Command::new("git")
@@ -102,14 +74,15 @@ fn git(repo: &Path, args: &[&str]) -> String {
         .to_string()
 }
 
-/// Run `jigc <args>` with the real `doc-code` probe selected, optionally piping stdin.
+/// Run `jigc <args>` with the real `doc-code` probe (no `JIGC_DOC_CODE_PROBE` override),
+/// optionally piping stdin.
 fn jigc(repo: &Path, home: &Path, args: &[&str], stdin: Option<&[u8]>) -> std::process::Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_jigc"));
     command
         .args(args)
         .current_dir(repo)
         .env("HOME", home)
-        .env("JIGC_DOC_CODE_PROBE", doc_code_probe())
+        .env_remove("JIGC_DOC_CODE_PROBE")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     if stdin.is_some() {

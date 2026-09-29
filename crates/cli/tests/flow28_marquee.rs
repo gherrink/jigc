@@ -1,6 +1,6 @@
 //! M26 Increment 3, T1 — the **flow-28 marquee**: the migration arc's last doctype
 //! (`arch-doc`) proven end to end against the built `jigc` binary over `git init` temp
-//! repos against the **shipped** dev pack and the test-built `doc-code` probe
+//! repos against the **shipped** dev pack and the real `doc-code` probe
 //! (worked-examples.md → flow 28; auto-migration.md → Acceptance corpus (HYBRID, C1),
 //! doc↔code on a migrated arch-doc, committed-first ordering; DECISIONS.md 2026-06-18
 //! forks C1/C2/C3).
@@ -30,13 +30,12 @@
 //!
 //! Every assertion drives the EMITTED bytes / exit code of the real `jigc` binary
 //! (`CARGO_BIN_EXE_jigc`) over the shipped dev pack (`JIGC_PACK_DIR`) and the real
-//! `doc-code` probe (`JIGC_DOC_CODE_PROBE`). No pack/engine/CLI/schema change.
+//! `doc-code` probe (no `JIGC_DOC_CODE_PROBE` override). No pack/engine/CLI/schema change.
 
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::OnceLock;
 
 /// A throwaway directory that removes itself on drop.
 struct TempDir(PathBuf);
@@ -69,37 +68,6 @@ impl Drop for TempDir {
 /// composes the exact bytes it ships.
 fn dev_pack() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("pack")
-}
-
-/// Build the pack's `doc-code` probe once (process-wide) and return its binary path — a
-/// real subprocess the engine/CLI seam drives over each migrated `implemented-by` anchor
-/// (never a mock). Mirrors `migrate_arch_doc.rs`.
-fn doc_code_probe() -> &'static Path {
-    static PROBE: OnceLock<PathBuf> = OnceLock::new();
-    PROBE.get_or_init(|| {
-        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("probes")
-            .join("doc-code")
-            .join("Cargo.toml");
-        let out = Command::new(env!("CARGO"))
-            .args(["build", "--quiet", "--manifest-path"])
-            .arg(&manifest)
-            .output()
-            .expect("invoke cargo build for doc-code");
-        assert!(
-            out.status.success(),
-            "building the doc-code probe failed:\n{}",
-            String::from_utf8_lossy(&out.stderr),
-        );
-        let bin = manifest
-            .parent()
-            .unwrap()
-            .join("target")
-            .join("debug")
-            .join("doc-code");
-        assert!(bin.is_file(), "doc-code binary missing at {bin:?}");
-        bin
-    })
 }
 
 /// Run a `git` command in `repo`, asserting success, returning trimmed stdout.
@@ -165,7 +133,8 @@ fn init_repo(root: &Path) {
 }
 
 /// Run a `jigc` subcommand with `cwd = repo`, `$HOME = home`, `JIGC_PACK_DIR = pack`, and
-/// the `doc-code` probe selected via `JIGC_DOC_CODE_PROBE`, optionally piping `stdin`.
+/// the `JIGC_DOC_CODE_PROBE` override removed (the real probe resolves through the
+/// production path), optionally piping `stdin`.
 fn run_jigc(
     repo: &Path,
     home: &Path,
@@ -179,7 +148,7 @@ fn run_jigc(
         .current_dir(repo)
         .env("HOME", home)
         .env("JIGC_PACK_DIR", pack)
-        .env("JIGC_DOC_CODE_PROBE", doc_code_probe())
+        .env_remove("JIGC_DOC_CODE_PROBE")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     if stdin.is_some() {

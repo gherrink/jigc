@@ -3,7 +3,7 @@
 //!
 //! The probe is a standalone program living **outside** the workspace
 //! ([module-layout.md](../../../implementation/module-layout.md) → Probe boundary). This
-//! test builds it (`cargo build --manifest-path …`), then drives it the way the engine
+//! test takes the one the build places beside `jigc` and drives it the way the engine
 //! will: serialize a crafted [`EffectiveStateSnapshot`] to a temp file, build a
 //! [`ProbeRequest`] carrying its path-ref, hand the request to the CLI invoker
 //! ([`cli::invoke::invoke_probe`]), and **ingest** the invoker's raw outcome through the
@@ -52,26 +52,12 @@ impl Drop for TempDir {
     }
 }
 
-/// Build the `doc-code` probe executable (a program **outside** the workspace) and
-/// return its path. Built once per test via its own manifest, into its own target dir
-/// so it never collides with the workspace build.
-fn build_doc_code_probe() -> PathBuf {
-    let manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("probes/doc-code/Cargo.toml");
-    let target_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("probes/doc-code/target");
-    let out = std::process::Command::new(env!("CARGO"))
-        .arg("build")
-        .arg("--manifest-path")
-        .arg(&manifest)
-        .arg("--target-dir")
-        .arg(&target_dir)
-        .output()
-        .expect("invoke cargo build for the doc-code probe");
-    assert!(
-        out.status.success(),
-        "cargo build failed for the doc-code probe:\n{}",
-        String::from_utf8_lossy(&out.stderr),
-    );
-    target_dir.join("debug/doc-code")
+/// The `doc-code` probe `jigc` resolves in production: the sibling of the built `jigc`
+/// binary (`CARGO_BIN_EXE_jigc`), which the build places there. An in-process caller has
+/// no `jigc` of its own to resolve from — its `current_exe()` is the test binary — so it
+/// names that sibling directly.
+fn doc_code_probe() -> PathBuf {
+    Path::new(env!("CARGO_BIN_EXE_jigc")).with_file_name("doc-code")
 }
 
 /// Translate the CLI invoker's raw outcome into the engine's [`ProbeRun`] (the inc-3
@@ -117,7 +103,7 @@ fn sample_anchors() -> Vec<TargetAnchor> {
 /// and the bare-path anchor at a present file passes.
 #[test]
 fn doc_code_probe_blocks_missing_file_passes_present_and_bare_path() {
-    let probe = build_doc_code_probe();
+    let probe = doc_code_probe();
 
     // A working tree where `present.rs` EXISTS and `missing.rs` does not.
     let root = TempDir::new("tree");
@@ -186,7 +172,7 @@ fn run_symbol_fixture(
     file_body: &str,
     anchors: Vec<TargetAnchor>,
 ) -> Vec<engine::finding::Finding> {
-    let probe = build_doc_code_probe();
+    let probe = doc_code_probe();
 
     let root = TempDir::new("symtree");
     fs::create_dir_all(root.path().join("crates/engine/src")).expect("mk tree");
@@ -304,7 +290,7 @@ fn symbol_exists_blocks_when_file_absent() {
 /// determinism assertion compares byte-for-byte across repeated runs. Reuses the same
 /// build + snapshot + request shape as [`run_symbol_fixture`].
 fn raw_stdout_for_fixture(file_body: &str, anchors: Vec<TargetAnchor>) -> Vec<u8> {
-    let probe = build_doc_code_probe();
+    let probe = doc_code_probe();
 
     let root = TempDir::new("dettree");
     fs::create_dir_all(root.path().join("crates/engine/src")).expect("mk tree");
@@ -485,7 +471,7 @@ fn run_lang_fixture(
     file_body: &str,
     anchors: Vec<TargetAnchor>,
 ) -> Vec<engine::finding::Finding> {
-    let probe = build_doc_code_probe();
+    let probe = doc_code_probe();
 
     let root = TempDir::new("langtree");
     let abs = root.path().join(rel_path);
@@ -858,7 +844,7 @@ fn run_two_file_fixture(
     files: &[(&str, &str)],
     anchors: Vec<TargetAnchor>,
 ) -> Vec<engine::finding::Finding> {
-    let probe = build_doc_code_probe();
+    let probe = doc_code_probe();
 
     let root = TempDir::new("ordertree");
     for (rel, body) in files {
@@ -924,7 +910,7 @@ it('rejects a burst beyond the cap', () => {
 /// reconstruction — this is the sentence an agent reads.
 #[test]
 fn closure_registered_test_name_reports_what_the_probe_compared_not_an_absence() {
-    let probe = build_doc_code_probe();
+    let probe = doc_code_probe();
 
     let root = TempDir::new("closuretree");
     fs::create_dir_all(root.path().join("tests")).expect("mk tests dir");
@@ -1026,7 +1012,7 @@ const ANCHOR_GRAMMAR: &str = "<repo-relative-path>[#<symbol>]";
 /// staged index holding `src/pad.ts`, for one anchor value — task scope, because the task
 /// gate is where the trial's worker typed the value and read the answer.
 fn pad_ts_findings(anchor_value: &str) -> Vec<engine::finding::Finding> {
-    let probe = build_doc_code_probe();
+    let probe = doc_code_probe();
 
     let root = TempDir::new("padtree");
     fs::create_dir_all(root.path().join("src")).expect("mk src dir");

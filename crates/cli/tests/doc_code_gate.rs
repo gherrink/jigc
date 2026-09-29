@@ -1,5 +1,5 @@
 //! T2 acceptance — `doc-code` scheduled at the live `task validate` gate, end-to-end
-//! through the built binary against the **real** test-built `doc-code` probe.
+//! through the built binary against the **real** `doc-code` probe.
 //!
 //! This is the wiring half of M10's headline (`design/validation.md` → The `doc-code`
 //! probe; `implementation/roadmap.md` → Increment 5, T2): the engine enumerates the
@@ -19,16 +19,15 @@
 //!   task WITH the anchor (i) is what produces the finding. A green pass over (i)/(ii)
 //!   alone would hide a scope bug in every anchor-less task.
 //!
-//! The probe binary is built once (a `cargo build` of the pack's `doc-code` crate) and
-//! selected via `JIGC_DOC_CODE_PROBE` (the production env-var override, `JIGC_PACK_DIR`
-//! precedent). No external test crates: the `jigc` path comes from `CARGO_BIN_EXE_jigc`,
-//! the temp repo is a real `git init`, and self-cleaning `TempDir`s keep the dev repo clean.
+//! The probe resolves through the production path, with the `JIGC_DOC_CODE_PROBE` override
+//! removed; the probe-absent legs set it to an unresolvable path. No external test crates:
+//! the `jigc` path comes from `CARGO_BIN_EXE_jigc`, the temp repo is a real `git init`, and
+//! self-cleaning `TempDir`s keep the dev repo clean.
 
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::OnceLock;
 
 /// A throwaway directory that removes itself on drop.
 struct TempDir(PathBuf);
@@ -54,36 +53,6 @@ impl Drop for TempDir {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.0);
     }
-}
-
-/// Build the pack's `doc-code` probe once (process-wide) and return its binary path.
-/// A real subprocess the engine/CLI seam drives — never a mock.
-fn doc_code_probe() -> &'static Path {
-    static PROBE: OnceLock<PathBuf> = OnceLock::new();
-    PROBE.get_or_init(|| {
-        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("probes")
-            .join("doc-code")
-            .join("Cargo.toml");
-        let out = Command::new(env!("CARGO"))
-            .args(["build", "--quiet", "--manifest-path"])
-            .arg(&manifest)
-            .output()
-            .expect("invoke cargo build for doc-code");
-        assert!(
-            out.status.success(),
-            "building the doc-code probe failed:\n{}",
-            String::from_utf8_lossy(&out.stderr),
-        );
-        let bin = manifest
-            .parent()
-            .unwrap()
-            .join("target")
-            .join("debug")
-            .join("doc-code");
-        assert!(bin.is_file(), "doc-code binary missing at {bin:?}");
-        bin
-    })
 }
 
 /// Run a `git` command in `repo`, asserting success.
@@ -118,14 +87,14 @@ fn init_repo(repo: &Path) {
     fs::create_dir_all(repo.join(".jigc").join("config")).expect("create project layer");
 }
 
-/// Run `jigc <args>` with `cwd = repo`, `$HOME = home`, the doc-code probe selected via
-/// `JIGC_DOC_CODE_PROBE`, capturing output.
+/// Run `jigc <args>` with `cwd = repo`, `$HOME = home`, the `JIGC_DOC_CODE_PROBE`
+/// override removed (the real probe resolves through the production path), capturing output.
 fn jigc(repo: &Path, home: &Path, args: &[&str]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_jigc"))
         .args(args)
         .current_dir(repo)
         .env("HOME", home)
-        .env("JIGC_DOC_CODE_PROBE", doc_code_probe())
+        .env_remove("JIGC_DOC_CODE_PROBE")
         .output()
         .expect("run the jigc binary")
 }
@@ -150,7 +119,7 @@ fn jigc_doc(repo: &Path, home: &Path, args: &[&str], stdin: Option<&[u8]>) -> st
     command
         .current_dir(repo)
         .env("HOME", home)
-        .env("JIGC_DOC_CODE_PROBE", doc_code_probe());
+        .env_remove("JIGC_DOC_CODE_PROBE");
     if stdin.is_some() {
         command.stdin(Stdio::piped());
     }

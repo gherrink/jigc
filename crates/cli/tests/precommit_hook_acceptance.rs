@@ -23,9 +23,9 @@
 //!   *before* the foreign body, so a foreign `exit` cannot skip it).
 //!
 //! The hook embeds the installing `jigc`'s absolute path (the stale-binary hazard);
-//! the hook in turn runs `jigc validate`, which selects the real `doc-code` probe via
-//! the `JIGC_DOC_CODE_PROBE` dev/test knob (the `validate_command.rs` idiom). That env
-//! var is inherited by `git commit` → the hook → `jigc validate`, so the commit-time
+//! the hook in turn runs `jigc validate`, which resolves the real `doc-code` probe
+//! through the production path: `git commit` runs with the `JIGC_DOC_CODE_PROBE`
+//! override removed, so the hook → `jigc validate` inherits none, and the commit-time
 //! sweep drives the genuine subprocess exactly as production would.
 //!
 //! **M47 inc-7 / T3 — the hook keys on SEVERITY, via `blocking_probes`.** The hook no
@@ -55,7 +55,6 @@ use crate::support::run_then_parse::stdout_json;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::OnceLock;
 
 /// A throwaway directory that removes itself on drop.
 struct TempDir(PathBuf);
@@ -83,37 +82,6 @@ impl Drop for TempDir {
     }
 }
 
-/// Build the pack's `doc-code` probe once (process-wide) and return its binary path —
-/// the **real** tree-sitter subprocess the commit-time sweep drives, never a mock
-/// (the `validate_command.rs` idiom).
-fn doc_code_probe() -> &'static Path {
-    static PROBE: OnceLock<PathBuf> = OnceLock::new();
-    PROBE.get_or_init(|| {
-        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("probes")
-            .join("doc-code")
-            .join("Cargo.toml");
-        let out = Command::new(env!("CARGO"))
-            .args(["build", "--quiet", "--manifest-path"])
-            .arg(&manifest)
-            .output()
-            .expect("invoke cargo build for doc-code");
-        assert!(
-            out.status.success(),
-            "building the doc-code probe failed:\n{}",
-            String::from_utf8_lossy(&out.stderr),
-        );
-        let bin = manifest
-            .parent()
-            .unwrap()
-            .join("target")
-            .join("debug")
-            .join("doc-code");
-        assert!(bin.is_file(), "doc-code binary missing at {bin:?}");
-        bin
-    })
-}
-
 /// Run a `git` command in `repo`, asserting success. Pins config to `/dev/null` so a
 /// developer's global git config never leaks into the throwaway repo.
 fn git(repo: &Path, args: &[&str]) {
@@ -131,8 +99,8 @@ fn git(repo: &Path, args: &[&str]) {
     );
 }
 
-/// Run `git commit -m <msg>` in `repo` with the real `doc-code` probe selected via
-/// `JIGC_DOC_CODE_PROBE` (inherited by the hook → `jigc validate`). Returns the full
+/// Run `git commit -m <msg>` in `repo` with the `JIGC_DOC_CODE_PROBE` override
+/// removed, so the hook → `jigc validate` resolves the real probe in production. Returns the full
 /// `Output` so a caller can assert exit status + the merged hook output.
 fn git_commit(repo: &Path, msg: &str) -> std::process::Output {
     Command::new("git")
@@ -140,7 +108,7 @@ fn git_commit(repo: &Path, msg: &str) -> std::process::Output {
         .current_dir(repo)
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
         .env("GIT_CONFIG_SYSTEM", "/dev/null")
-        .env("JIGC_DOC_CODE_PROBE", doc_code_probe())
+        .env_remove("JIGC_DOC_CODE_PROBE")
         .output()
         .expect("run git commit")
 }
@@ -155,7 +123,7 @@ fn jigc(repo: &Path, args: &[&str]) -> std::process::Output {
 }
 
 /// The store envelope the hook itself consumes: `jigc validate --format json` run through
-/// the **real** binary with the **real** `doc-code` probe selected, parsed. The M47 arms
+/// the **real** binary with the **real** `doc-code` probe (no override), parsed. The M47 arms
 /// pin their fixture's sweep state with it before asserting the hook's behaviour, so an
 /// arm whose store stopped carrying the finding under test fails loudly instead of passing
 /// vacuously.
@@ -163,7 +131,7 @@ fn store_envelope(repo: &Path) -> serde_json::Value {
     let out = Command::new(env!("CARGO_BIN_EXE_jigc"))
         .args(["validate", "--format", "json"])
         .current_dir(repo)
-        .env("JIGC_DOC_CODE_PROBE", doc_code_probe())
+        .env_remove("JIGC_DOC_CODE_PROBE")
         .output()
         .expect("run the jigc binary");
     stdout_json(&out, &[0, 1], "`jigc validate --format json`")
