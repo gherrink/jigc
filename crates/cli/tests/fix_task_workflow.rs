@@ -4,7 +4,7 @@
 //!
 //! §3 has said *"each confirmed fix is its own agent"* since M38 and *"triage fixes
 //! should ride"* the `fan-out`/`join` primitive since M42 — while the step the loop
-//! actually composes (`packs/methodology/steps/fix-gate.yaml`) told the fixer to run
+//! actually composes (`crates/cli/packs/methodology/steps/fix-gate.yaml`) told the fixer to run
 //! **strictly serial over the one shared working tree**. A Fix phase can only fan out
 //! if `jigc milestone add-task … --workflow <id>` has an id to take: at HEAD before
 //! this task `--workflow fix-task` was refused with `workflow-refs.unknown-workflow`,

@@ -299,7 +299,7 @@ const SLOTLESS: &[(&str, &str)] = &[
     (
         "changelog.releases",
         "a release item is scalar fields plus the nested `changes` repeatable — a \
-         leading prose slot would swallow the nested groups (crates/cli/pack/schemas/\
+         leading prose slot would swallow the nested groups (crates/cli/packs/dev/schemas/\
          changelog.yaml, review finding B1). It is still exercised, as the PARENT \
          the `changelog.releases/changes` context is built under.",
     ),

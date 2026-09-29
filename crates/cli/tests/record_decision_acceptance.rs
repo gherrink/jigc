@@ -1,6 +1,6 @@
 //! M44 Increment 5 (T1) acceptance — the `record-decision` from-knowledge ADR
 //! authoring workflow, end-to-end through the built `jigc` binary against the
-//! **on-disk** dev pack (`JIGC_PACK_DIR = crates/cli/pack`).
+//! **on-disk** dev pack (`JIGC_PACK_DIR = crates/cli/packs/dev`).
 //!
 //! The sole-channel hole for the flagship doctype: before this, an agent could
 //! author an `adr` only inside a *code* task (`single-task`) or by *migrating* a

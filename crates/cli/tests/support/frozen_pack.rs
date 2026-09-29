@@ -19,14 +19,14 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// The embedded dev pack's on-disk source tree (`crates/cli/pack`).
+/// The embedded dev pack's on-disk source tree (`crates/cli/packs/dev`).
 pub fn dev_pack_tree() -> PathBuf {
     Path::new(cli::pack_path!(dev)).to_path_buf()
 }
 
-/// The embedded **methodology** pack's on-disk source tree (`packs/methodology`) — the dev
-/// pack's manifest-governed sibling, and the home of the work-doc doctypes whose item blocks
-/// a migration reshapes.
+/// The embedded **methodology** pack's on-disk source tree
+/// (`crates/cli/packs/methodology`) — the dev pack's manifest-governed sibling, and the
+/// home of the work-doc doctypes whose item blocks a migration reshapes.
 pub fn methodology_pack_tree() -> PathBuf {
     Path::new(cli::pack_path!(methodology)).to_path_buf()
 }

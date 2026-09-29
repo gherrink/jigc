@@ -7,7 +7,7 @@
 //! `pack-builtin` crate of its own. Both moves stay mechanical only while exactly one
 //! module knows where a pack sits: [`SEAM`], which owns both `include_dir!` roots. A
 //! production string anywhere else that names a pack directory — a row that points a
-//! reader at `crates/cli/pack/steps/…`, a runtime `join("pack")` — is a second copy of
+//! reader at `crates/cli/packs/dev/steps/…`, a runtime `join("pack")` — is a second copy of
 //! that knowledge, and a move leaves it behind. So the fence reads every string literal
 //! the binary could carry and fails on one that names a pack directory.
 //!

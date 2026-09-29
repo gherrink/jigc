@@ -79,7 +79,7 @@ fn init_repo(repo: &Path) {
     crate::support::mint_project_layer(repo);
 }
 
-/// The on-disk methodology pack home (`<root>/packs/methodology`).
+/// The on-disk methodology pack home (`<root>/crates/cli/packs/methodology`).
 fn methodology_pack_tree() -> PathBuf {
     Path::new(cli::pack_path!(methodology)).to_path_buf()
 }

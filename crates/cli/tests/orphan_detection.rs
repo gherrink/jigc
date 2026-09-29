@@ -57,8 +57,9 @@ impl Drop for TempDir {
     }
 }
 
-/// The on-disk methodology pack home (`<root>/packs/methodology`) — the literal directory a
-/// `.jigc/config/packs.yaml` entry names (the `flow_design_altitude.rs` harness shape).
+/// The on-disk methodology pack home (`<root>/crates/cli/packs/methodology`) — the literal
+/// directory a `.jigc/config/packs.yaml` entry names (the `flow_design_altitude.rs` harness
+/// shape).
 fn methodology_pack_tree() -> PathBuf {
     Path::new(cli::pack_path!(methodology)).to_path_buf()
 }

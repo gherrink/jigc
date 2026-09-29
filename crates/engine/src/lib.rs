@@ -17,19 +17,19 @@
 /// or `pack_path!(methodology, "schemas")` as a runtime root.
 ///
 /// Each arm is keyed by the pack's `pack-id` and expands to one absolute `concat!`
-/// literal, so it serves wherever `include_*!` needs a literal. The two packs sit at
-/// different roots until they share one home, which is why each arm carries its own.
+/// literal, so it serves wherever `include_*!` needs a literal. Both packs share one home,
+/// `crates/cli/packs/<pack-id>/`, and each arm names its own directory there.
 /// `crates/cli/tests/pack_path_fence.rs` leaves this macro alone because it is
 /// `#[cfg(test)]`.
 #[cfg(test)]
 macro_rules! pack_path {
     (dev, $rel:literal) => {
-        concat!(env!("CARGO_MANIFEST_DIR"), "/../cli/pack/", $rel)
+        concat!(env!("CARGO_MANIFEST_DIR"), "/../cli/packs/dev/", $rel)
     };
     (methodology, $rel:literal) => {
         concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../../packs/methodology/",
+            "/../cli/packs/methodology/",
             $rel
         )
     };

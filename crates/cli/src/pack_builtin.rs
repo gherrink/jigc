@@ -41,10 +41,10 @@ use include_dir::{Dir, include_dir};
 #[macro_export]
 macro_rules! pack_path {
     (dev) => {
-        concat!(env!("CARGO_MANIFEST_DIR"), "/pack")
+        concat!(env!("CARGO_MANIFEST_DIR"), "/packs/dev")
     };
     (methodology) => {
-        concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/methodology")
+        concat!(env!("CARGO_MANIFEST_DIR"), "/packs/methodology")
     };
     ($pack:ident, $rel:literal) => {
         concat!($crate::pack_path!($pack), "/", $rel)
@@ -52,14 +52,14 @@ macro_rules! pack_path {
 }
 
 /// The built-in dev pack, embedded at compile time.
-static DEV: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/pack");
+static DEV: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/packs/dev");
 
 /// The methodology pack (the M12 second pack — `roadmap`/`planning`/`completion`/…),
 /// embedded at compile time by a **second** `include_dir!`. Pure-YAML data (no `target/`
 /// build-tree, so the M20 bloat lesson does not apply); composed in-binary, never
 /// extracted. See `design/multi-pack.md` → Embedded second pack; `module-layout.md` →
 /// Pack distribution.
-static METHODOLOGY: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/../../packs/methodology");
+static METHODOLOGY: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/packs/methodology");
 
 /// `PackSource` over a binary-embedded pack tree. **Field-carrying:** the selected
 /// `&'static Dir` is the dev base or the methodology tree, so the two in-binary packs can

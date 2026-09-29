@@ -66,7 +66,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// `<root>/packs/methodology` — `CARGO_MANIFEST_DIR` is `<root>/crates/cli`.
+/// `<root>/crates/cli/packs/methodology` — `CARGO_MANIFEST_DIR` is `<root>/crates/cli`.
 fn methodology_pack_tree() -> PathBuf {
     Path::new(cli::pack_path!(methodology)).to_path_buf()
 }

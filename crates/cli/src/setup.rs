@@ -92,7 +92,7 @@ fn version_stamp_body() -> String {
 const GUIDE_HASH_KEY: &str = "jigc-body-blake3:";
 
 /// The shipped guides, embedded at compile time from the **repo's own** copies — the
-/// single home for this content (the `include_dir!` of `packs/methodology/` from the
+/// single home for this content (the `include_dir!` of `crates/cli/packs/methodology/` from the
 /// workspace root is the same move). A second authored copy in `crates/cli/` would drift
 /// behind them the first time either is edited.
 const QUICKSTART_GUIDE: &str = include_str!("../../../QUICKSTART.md");

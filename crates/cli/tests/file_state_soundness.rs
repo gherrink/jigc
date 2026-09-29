@@ -362,7 +362,7 @@ fn absorbed_oob_edit_fires_absorb_exactly_once_across_tasks() {
     );
 }
 
-/// The on-disk methodology pack home (`<root>/packs/methodology`).
+/// The on-disk methodology pack home (`<root>/crates/cli/packs/methodology`).
 fn methodology_pack_tree() -> PathBuf {
     Path::new(cli::pack_path!(methodology)).to_path_buf()
 }
@@ -591,7 +591,7 @@ fn promoted_owner_artifact_does_not_poison_later_finalizes() {
     assert_eq!(before, after, "a blocked finalize creates no commit");
 }
 
-/// The embedded dev-pack source tree (`crates/cli/pack/`) — `CARGO_MANIFEST_DIR` is
+/// The embedded dev-pack source tree (`crates/cli/packs/dev/`) — `CARGO_MANIFEST_DIR` is
 /// `<root>/crates/cli`, the very tree `include_dir!` embeds (mirrors
 /// `flow8_override_default_warning.rs`).
 fn embedded_pack_tree() -> PathBuf {

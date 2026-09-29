@@ -56,7 +56,7 @@ impl Drop for TempDir {
     }
 }
 
-/// The on-disk methodology pack home (`<root>/packs/methodology`) — composed atop the
+/// The on-disk methodology pack home (`<root>/crates/cli/packs/methodology`) — composed atop the
 /// embedded dev base so both dev-pack (record-decision, plan, implement-from-spec,
 /// architecture-documentation) and methodology-pack (form-vision, decided-task)
 /// workflows resolve in one repo.

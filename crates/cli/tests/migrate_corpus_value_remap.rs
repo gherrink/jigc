@@ -62,7 +62,7 @@ impl Drop for TempDir {
     }
 }
 
-/// The on-disk methodology pack home (`<root>/packs/methodology`) — the sibling
+/// The on-disk methodology pack home (`<root>/crates/cli/packs/methodology`) — the sibling
 /// methodology-test seam threaded via `JIGC_PACK_DIR`, so the composed verbs govern the
 /// `deferral-ledger` doctype (and its frozen schema-version 2 manifest entry).
 fn methodology_pack_tree() -> PathBuf {

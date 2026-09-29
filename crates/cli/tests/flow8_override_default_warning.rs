@@ -68,7 +68,7 @@ impl Drop for TempDir {
     }
 }
 
-/// The embedded pack source tree (`crates/cli/pack/`) — `CARGO_MANIFEST_DIR` is
+/// The embedded pack source tree (`crates/cli/packs/dev/`) — `CARGO_MANIFEST_DIR` is
 /// `<root>/crates/cli`, the very tree `include_dir!` embeds. The v1 pack is a faithful
 /// copy of it, so the recording verbs read byte-identical pack bytes (mirroring
 /// `upgrade_v1_v2.rs`).

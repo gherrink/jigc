@@ -148,7 +148,7 @@ fn dev_pack_id() -> String {
 }
 
 /// The pack `usage:` clause for single-task — the string that must be GONE once the
-/// project shadow wins (from `crates/cli/pack/workflows/single-task.yaml`).
+/// project shadow wins (from `crates/cli/packs/dev/workflows/single-task.yaml`).
 const PACK_SINGLE_TASK_USAGE: &str = "the work is one coherent change you can hold in your head";
 
 /// The project shadow's edited `usage:` — a **bare clause** (the weave supplies the

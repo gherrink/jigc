@@ -32,7 +32,7 @@
 //!         `default-workflow → dev-task`) — `JIGC_PACK_DIR` supersedes the marker (T2a).
 //!
 //! No external test crates: the binary path comes from `CARGO_BIN_EXE_jigc`, the
-//! methodology pack from `CARGO_MANIFEST_DIR/../../packs/methodology`, the temp repo is a
+//! methodology pack from `CARGO_MANIFEST_DIR/packs/methodology`, the temp repo is a
 //! real `git init`, and a self-cleaning `TempDir` keeps the test off the developer's repo.
 
 use std::fs;
@@ -66,7 +66,7 @@ impl Drop for TempDir {
     }
 }
 
-/// The on-disk methodology pack home (`<root>/packs/methodology`) — the literal
+/// The on-disk methodology pack home (`<root>/crates/cli/packs/methodology`) — the literal
 /// directory a `JIGC_PACK_DIR` env value names (the (v) supersession probe).
 fn methodology_pack_tree() -> PathBuf {
     Path::new(cli::pack_path!(methodology)).to_path_buf()

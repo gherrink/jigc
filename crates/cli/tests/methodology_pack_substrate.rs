@@ -3,7 +3,7 @@
 //! → Subsume; the knob-enum build note).
 //!
 //! The substrate this task ships is *pure pack data* — `config/{defaults,knobs,
-//! commands}.yaml` + the vendored `schemas/commit.yaml` under `packs/methodology/`,
+//! commands}.yaml` + the vendored `schemas/commit.yaml` under `crates/cli/packs/methodology/`,
 //! with **zero `crates/*/src` changes**. At T1 the `dev-task` workflow does **not**
 //! yet exist (it lands in T2), so this file does **not** assert `start "<intent>"`
 //! composes. It asserts the two facts the substrate must already carry:
@@ -24,7 +24,7 @@
 //!       `[dev-task]` enum is what makes (a)'s pack correct.
 //!
 //! No external test crates: the binary path comes from `CARGO_BIN_EXE_jigc`, the
-//! methodology pack from `CARGO_MANIFEST_DIR/../../packs/methodology`, and a
+//! methodology pack from `CARGO_MANIFEST_DIR/packs/methodology`, and a
 //! self-cleaning `TempDir` keeps the test off the developer's real repo / files.
 
 use std::fs;
@@ -58,8 +58,8 @@ impl Drop for TempDir {
     }
 }
 
-/// The on-disk methodology pack home (`<root>/packs/methodology`) — `CARGO_MANIFEST_DIR`
-/// is `<root>/crates/cli`, so the pack tree is two parents up plus `packs/methodology`.
+/// The on-disk methodology pack home (`<root>/crates/cli/packs/methodology`) — `CARGO_MANIFEST_DIR`
+/// is `<root>/crates/cli`, so the pack tree is its `crates/cli/packs/methodology`.
 fn methodology_pack_tree() -> PathBuf {
     Path::new(cli::pack_path!(methodology)).to_path_buf()
 }

@@ -10,7 +10,7 @@
 //! Every assertion runs on the EMITTED bytes of the real binary
 //! (`CARGO_BIN_EXE_jigc`) — never a reconstruction — over a throwaway git repo with
 //! a self-cleaning `TempDir`. The shipped methodology pack
-//! (`CARGO_MANIFEST_DIR/../../packs/methodology`) is selected via `JIGC_PACK_DIR`
+//! (`CARGO_MANIFEST_DIR/packs/methodology`) is selected via `JIGC_PACK_DIR`
 //! for the headline assertions (1, 5, 6); the scope-honesty contrasts that need a
 //! marker-removed sibling, a shadowing prose line, or a `{{task.intent}}` carrier
 //! (2, 3, 4) ride a minimal **fixture** pack seeded under the same temp root, since
@@ -69,8 +69,8 @@ impl Drop for TempDir {
     }
 }
 
-/// The on-disk methodology pack home (`<root>/packs/methodology`) — `CARGO_MANIFEST_DIR`
-/// is `<root>/crates/cli`, so the pack tree is two parents up plus `packs/methodology`.
+/// The on-disk methodology pack home (`<root>/crates/cli/packs/methodology`) — `CARGO_MANIFEST_DIR`
+/// is `<root>/crates/cli`, so the pack tree is its `crates/cli/packs/methodology`.
 fn methodology_pack_tree() -> PathBuf {
     Path::new(cli::pack_path!(methodology)).to_path_buf()
 }

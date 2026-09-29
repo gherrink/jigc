@@ -86,7 +86,7 @@ impl Drop for TempDir {
     }
 }
 
-/// The on-disk methodology pack home (`<root>/packs/methodology`).
+/// The on-disk methodology pack home (`<root>/crates/cli/packs/methodology`).
 fn methodology_pack_tree() -> PathBuf {
     Path::new(cli::pack_path!(methodology)).to_path_buf()
 }
@@ -139,7 +139,7 @@ fn init_repo_with_setup(repo: &Path, home: &Path) {
 /// need: with **dev** primary its `knobs.yaml` wins, so `docs-root` is a declared knob.
 /// Under [`init_repo`]'s methodology-primary layout it is not — methodology's whole-file
 /// `knobs.yaml` shadow drops `docs-root` deliberately (a recorded divergence,
-/// `packs/methodology/config/knobs.yaml`), and `jigc config set docs-root` answers
+/// `crates/cli/packs/methodology/config/knobs.yaml`), and `jigc config set docs-root` answers
 /// `config.undeclared-key` there.
 fn init_repo_embedded_with_setup(repo: &Path, home: &Path) {
     git(repo, &["init", "-q"]);

@@ -2,7 +2,7 @@
 //! cold-create → warm-append byte-stable proof, the two reds, and the `single-task`
 //! fold-in bar, all driven through the **rebuilt** `jigc` binary over a `git init`
 //! temp repo against the **shipped** dev pack (selected via `JIGC_PACK_DIR` = the
-//! embedded `pack/` tree, so it is the bytes that ship, not a fixture).
+//! embedded `packs/dev/` tree, so it is the bytes that ship, not a fixture).
 //!
 //! The multi-level authoring path is net-new engine, so the verb sequence was spiked
 //! against the rebuilt binary at build (M16 exercise-don't-infer). The spike confirmed

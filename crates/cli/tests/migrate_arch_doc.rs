@@ -1,6 +1,6 @@
 //! M26 Increment 2, T1 — end-to-end arch-doc migration acceptance (the deliverable's
 //! Proves). Drives the **built** `jigc` binary against throwaway `git init` temp repos
-//! over the **shipped** dev pack (`JIGC_PACK_DIR` = the embedded `pack/` tree) with the
+//! over the **shipped** dev pack (`JIGC_PACK_DIR` = the embedded `packs/dev/` tree) with the
 //! real `doc-code` probe (no `JIGC_DOC_CODE_PROBE` override), exercising — not assuming —
 //! the doctype-general migrate → author → review-gate → retire → adopt spine on
 //! `arch-doc`, the migration arc's last and hardest doctype: its repeatable `components`

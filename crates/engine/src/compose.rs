@@ -5067,7 +5067,7 @@ A failed charge retries with exponential backoff, capped at five attempts.
     }
 
     /// The shipped command catalog bytes — kept in sync with
-    /// `crates/cli/pack/config/commands.yaml` (asserted byte-identical below).
+    /// `crates/cli/packs/dev/config/commands.yaml` (asserted byte-identical below).
     const COMMANDS_YAML: &[u8] = include_bytes!(pack_path!(dev, "config/commands.yaml"));
 
     /// M49 Increment 10 (T4) — the three shipped milestone command-refs render the
@@ -5668,7 +5668,7 @@ commands:
     }
 
     /// The shipped single-task definition bytes — the embedded pack file this
-    /// composer loads. Kept in sync with `crates/cli/pack/workflows/single-task.yaml`.
+    /// composer loads. Kept in sync with `crates/cli/packs/dev/workflows/single-task.yaml`.
     ///
     /// A **reduced** mirror: the shipped file also includes `step:record-changelog`
     /// (M42), which this fixture omits — it carries no placeholder class the four
@@ -6062,7 +6062,7 @@ allows-create: [{type: adr, as: decision}]
     }
 
     /// The shipped `locate` step body — kept in sync with
-    /// `crates/cli/pack/steps/locate.yaml` (a plain, front-matter-less step).
+    /// `crates/cli/packs/dev/steps/locate.yaml` (a plain, front-matter-less step).
     const STEP_LOCATE: &str = "\
 Reason about the change. The intent is:
 {{ task.intent }}
@@ -6072,7 +6072,7 @@ scope before implementing.
 ";
 
     /// The shipped `superseded-context` step body — kept in sync with
-    /// `crates/cli/pack/steps/superseded-context.yaml` (also front-matter-less).
+    /// `crates/cli/packs/dev/steps/superseded-context.yaml` (also front-matter-less).
     const STEP_SUPERSEDED: &str = "\
 If your decision supersedes an earlier one, set `supersedes` on the ADR; the
 superseded decision then appears below for reference, so your consequences can

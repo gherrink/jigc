@@ -19,7 +19,7 @@
 //! so a pack file that drops or garbles either doctype's prose fails here.
 //!
 //! No external test crates: the binary path comes from `CARGO_BIN_EXE_jigc`, the
-//! methodology pack from `CARGO_MANIFEST_DIR/../../packs/methodology`, the temp repo
+//! methodology pack from `CARGO_MANIFEST_DIR/packs/methodology`, the temp repo
 //! is a real `git init`, and a self-cleaning `TempDir` keeps the test off the
 //! developer's real repo / files.
 
@@ -57,7 +57,7 @@ impl Drop for TempDir {
     }
 }
 
-/// The on-disk methodology pack home (`<root>/packs/methodology`) — the literal
+/// The on-disk methodology pack home (`<root>/crates/cli/packs/methodology`) — the literal
 /// directory a `.jigc/config/packs.yaml` entry names.
 fn methodology_pack_tree() -> PathBuf {
     Path::new(cli::pack_path!(methodology)).to_path_buf()

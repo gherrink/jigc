@@ -846,7 +846,7 @@ fn blocking_probes_is_the_empty_array_when_nothing_blocks() {
     );
 }
 
-/// The on-disk methodology pack home (`<root>/packs/methodology`) — the listed,
+/// The on-disk methodology pack home (`<root>/crates/cli/packs/methodology`) — the listed,
 /// highest-precedence pack the two-pack `[dev ▸ methodology]` store composes.
 fn methodology_pack_tree() -> PathBuf {
     Path::new(cli::pack_path!(methodology)).to_path_buf()

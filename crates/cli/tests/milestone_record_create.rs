@@ -101,7 +101,7 @@ fn init_repo(repo: &Path) -> String {
     git(repo, &["rev-parse", "HEAD"]).trim().to_string()
 }
 
-/// The on-disk methodology pack home (`<root>/packs/methodology`).
+/// The on-disk methodology pack home (`<root>/crates/cli/packs/methodology`).
 fn methodology_pack_tree() -> PathBuf {
     Path::new(cli::pack_path!(methodology)).to_path_buf()
 }

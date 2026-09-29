@@ -77,7 +77,7 @@ fn init_repo(repo: &Path) {
 
 /// Run `jigc <args>` against the **embedded** packs (`JIGC_PACK_DIR` removed — the
 /// `[dev ▸ methodology]` compose marker requires it absent, and the embedded dev pack is
-/// compiled from `crates/cli/pack/`, so every arm reads the same schemas).
+/// compiled from `crates/cli/packs/dev/`, so every arm reads the same schemas).
 fn jigc(repo: &Path, home: &Path, args: &[&str], stdin: Option<&[u8]>) -> std::process::Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_jigc"));
     command

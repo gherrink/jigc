@@ -6,10 +6,10 @@
 //! The mechanism has always been sound — an empty index over a dirty tree already blocks
 //! `finalize` with a routed finding. The RC-adoption trial's silent partial commits were a
 //! **prompting gap**: the dev pack states the contract twice
-//! (`crates/cli/pack/steps/implement.yaml`, `finalize.yaml`) while the methodology pack
+//! (`crates/cli/packs/dev/steps/implement.yaml`, `finalize.yaml`) while the methodology pack
 //! stated it **nowhere** — `dev-task` / `decided-task` / `planning` / `completion` composed
-//! **zero** mentions of `git add` — and `packs/methodology/steps/finalize.yaml` overloaded
-//! the word *"Stage"* to mean *set the commit-doc slot* ("Stage the subject line"), an
+//! **zero** mentions of `git add` — and `crates/cli/packs/methodology/steps/finalize.yaml`
+//! overloaded the word *"Stage"* to mean *set the commit-doc slot* ("Stage the subject line"), an
 //! active semantic collision in the one step where the git contract belongs.
 //!
 //! Everything here is asserted on the **emitted bytes** of the real binary over the
@@ -17,7 +17,7 @@
 //! `JIGC_PACK_DIR`, no listed packs) — the pack-set a dogfooding project actually runs.
 //! Note the includes resolve **per-origin-pack**: even though dev wins every top-level
 //! collision, methodology's `dev-task` composes *methodology's own* `step:implement` and
-//! `step:finalize` — so this contract can only be fixed in `packs/methodology/steps/`.
+//! `step:finalize` — so this contract can only be fixed in `crates/cli/packs/methodology/steps/`.
 //!
 //! The omitting context is covered too (hardening #5): `increment` is `creates-task: false`
 //! and includes **neither** step — it must compose clean and stay **inert** (no contract,

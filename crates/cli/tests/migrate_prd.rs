@@ -1,6 +1,6 @@
 //! M25 Increment 6, T2 — end-to-end prd migration acceptance (the deliverable's
 //! Proves). Drives the **built** `jigc` binary against throwaway `git init` temp repos
-//! over the **shipped** dev pack (`JIGC_PACK_DIR` = the embedded `pack/` tree),
+//! over the **shipped** dev pack (`JIGC_PACK_DIR` = the embedded `packs/dev/` tree),
 //! exercising — not assuming — the doctype-general migrate → author → review-gate →
 //! retire → adopt spine on the `prd` doctype, whose shape difference from `adr`/`spec` is
 //! the **repeatable `requirements`** (per-requirement `title` + `statement` slot, the

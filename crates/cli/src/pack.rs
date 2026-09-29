@@ -5795,7 +5795,7 @@ sections:
                 .collect();
             assert!(
                 missing.is_empty(),
-                "dev knob keys missing from packs/methodology/config/knobs.yaml — a \
+                "dev knob keys missing from crates/cli/packs/methodology/config/knobs.yaml — a \
                  methodology-primary project loses each to the whole-file shadow \
                  (pinned default unreachable, key unsettable); mirror them (or record \
                  a divergence here AND in multi-pack.md): {missing:?}",

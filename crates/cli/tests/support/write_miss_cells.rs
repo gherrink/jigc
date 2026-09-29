@@ -43,7 +43,7 @@
 /// **`write.identity-change`** arm only through an **enum** id-from. A fixture that
 /// declares its change-group `category` as a plain `string` — as this one first did —
 /// sidesteps that arm entirely and greens a cell the shipped pack false-fails. So both
-/// `category` blocks are enums (`crates/cli/pack/schemas/changelog.yaml`), and a
+/// `category` blocks are enums (`crates/cli/packs/dev/schemas/changelog.yaml`), and a
 /// single-level `staged` repeatable mirrors the pack's `unreleased-changes` so the
 /// **top-level** enum id-from is on the axis too, not only the nested one.
 ///

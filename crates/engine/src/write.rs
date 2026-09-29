@@ -10085,7 +10085,7 @@ Done.
 //      changes only that field's value bytes.
 //
 // The schema bytes are loaded test-only via `include_bytes!` from
-// `packs/methodology/schemas/` (the M33 pattern) — the engine-empty invariant
+// `crates/cli/packs/methodology/schemas/` (the M33 pattern) — the engine-empty invariant
 // is intact: nothing ships in the engine binary.
 // ============================================================================
 #[cfg(test)]
@@ -11615,7 +11615,7 @@ mod spec_roundtrip {
     //! The shipped `spec` doctype round-trips byte-stably (M3 Increment 1, T2).
     //!
     //! Unlike the in-test `spec`-shaped fixtures elsewhere in this crate, this suite
-    //! loads the **shipped** `crates/cli/pack/schemas/spec.yaml` bytes and proves the
+    //! loads the **shipped** `crates/cli/packs/dev/schemas/spec.yaml` bytes and proves the
     //! #1-risk round-trip over the new doctype's highest-risk shape — the repeatable
     //! `criteria` items, each carrying a frozen `{#id}` anchor and a `statement`
     //! slot. Both round-trip clauses (`parsing.md` → Round-trip guarantees):

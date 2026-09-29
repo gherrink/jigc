@@ -1930,7 +1930,7 @@ fn fixed_identity_schemas() -> Vec<Schema> {
 ///
 /// The home is the **declared** one, which at the default cascade is also the resolved one:
 /// `placement-root`'s default is `""` = unset, under which every declared home stands
-/// byte-identical to no knob at all (`crates/cli/pack/config/knobs.yaml`). The arms below
+/// byte-identical to no knob at all (`crates/cli/packs/dev/config/knobs.yaml`). The arms below
 /// intersect it with what the corpus actually committed rather than assuming it is on
 /// disk, so a corpus that *did* re-point the knob drops out of the sweep instead of
 /// failing it on a path this helper guessed.

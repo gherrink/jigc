@@ -14,7 +14,7 @@
 //!       `Pack: <id>/<version>` provenance label that orientation renders.
 //!
 //! The faithful directory pack is a recursive copy of the embedded pack tree at
-//! `crates/cli/pack/` (the very tree `include_dir!` embeds), so the FilesystemPack
+//! `crates/cli/packs/dev/` (the very tree `include_dir!` embeds), so the FilesystemPack
 //! reads byte-identical resource bytes. No external test crates: the binary path
 //! comes from `CARGO_BIN_EXE_jigc`, the pack source from `CARGO_MANIFEST_DIR`, and
 //! a self-cleaning `TempDir` keeps the test off the developer's real repo / files.
@@ -78,7 +78,7 @@ the reason it is hidden from the catalog.
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 ";
 
-/// The embedded pack source tree (`crates/cli/pack/`) — `CARGO_MANIFEST_DIR` is
+/// The embedded pack source tree (`crates/cli/packs/dev/`) — `CARGO_MANIFEST_DIR` is
 /// `<root>/crates/cli`, the very tree `include_dir!` embeds into the binary.
 fn embedded_pack_tree() -> PathBuf {
     Path::new(cli::pack_path!(dev)).to_path_buf()

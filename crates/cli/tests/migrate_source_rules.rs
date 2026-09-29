@@ -720,7 +720,7 @@ fn migrate_and_approve(corpus: &TrialCorpus, path: &str) -> String {
 }
 
 /// **The pack step's own sentence, checked against what the two admissible cells do**
-/// (`crates/cli/pack/steps/migration-finalize.yaml` and its methodology twin; the Settle's
+/// (`crates/cli/packs/dev/steps/migration-finalize.yaml` and its methodology twin; the Settle's
 /// owed G-5 re-drive, discharged here rather than restated).
 ///
 /// The Settle predicted that the trackedness leg would make the old sentence — *"the

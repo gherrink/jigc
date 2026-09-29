@@ -706,7 +706,8 @@ fn a_foreign_squatter_at_the_new_home_is_displaced_into_the_workbench() {
 // derivation, fenced by the last arm below rather than asserted in a comment.
 // -------------------------------------------------------------------------------------
 
-/// The `roadmap` singleton's home as **declared** (`packs/methodology/schemas/roadmap.yaml`).
+/// The `roadmap` singleton's home as **declared**
+/// (`crates/cli/packs/methodology/schemas/roadmap.yaml`).
 const DECLARED_HOME: &str = "docs/roadmap.md";
 /// The same home as **resolved** under `placement-root: notes` — the only home any door may name.
 const RESOLVED_HOME: &str = "notes/roadmap.md";

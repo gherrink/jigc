@@ -2,7 +2,7 @@
 //! beside the existing `{type: adr, as: decision}` in `single-task`'s `allows-create`.
 //!
 //! Over a `git init` temp repo against the **shipped** dev pack (selected via
-//! `JIGC_PACK_DIR` = the embedded `pack/` tree, so it is the bytes that ship), prove:
+//! `JIGC_PACK_DIR` = the embedded `packs/dev/` tree, so it is the bytes that ship), prove:
 //!   - `jigc start` (the cascade default `single-task`) mints a task;
 //!   - `jigc doc create changelog` is **admitted** through `single-task`'s create-gate
 //!     (the singleton mints at the fixed slug, bound to `task.change`), and an

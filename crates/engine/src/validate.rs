@@ -1747,7 +1747,7 @@ pub const UNVERSIONED_DOCTYPE_CODE: &str = "schema-conformance.unversioned-docty
 /// (§18): *a manifest-less pack means "unchecked" by the manifest header's own stated design,
 /// and flipping would fail every manifest-less project pack's CI for a permitted choice*. The
 /// header states the mechanism plainly — *an absent manifest = unchecked*
-/// (`crates/cli/pack/config/schema-manifest.yaml`) — so a pack author who takes that choice
+/// (`crates/cli/packs/dev/config/schema-manifest.yaml`) — so a pack author who takes that choice
 /// is told what they are not getting, never failed for taking it.
 ///
 /// **Route: `Human`, two exits, the second a real one.** Declare the doctype's version by

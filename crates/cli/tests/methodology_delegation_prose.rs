@@ -1,7 +1,7 @@
 //! M49 Increment 10 / T1 — the **delegation prose sweep**: every phase step of the
 //! three methodology loops **names the actor and the instrument**
 //! ([DECISIONS.md](../../../DECISIONS.md) → the M49 Settle, D7), applying over the
-//! whole class what `packs/methodology/steps/plan-review.yaml` already did at
+//! whole class what `crates/cli/packs/methodology/steps/plan-review.yaml` already did at
 //! exactly one site (*"A reader who did NOT author the decisions…"*).
 //!
 //! **The rule it enforces** — [finalize.md](../../../design/finalize.md):131, written
@@ -24,7 +24,7 @@
 //! **Why a standing suite over a dispositioned set, and not a pack-load fence.** The
 //! M43/M47 stated-at tiers derive their owe-set from a *structural* signal
 //! (`{{schema:<T>}}` × singleton, a `set:`-kind, a committing door). Delegation has
-//! none — `packs/methodology/steps/triage.yaml` carries the mandated defer fork while
+//! none — `crates/cli/packs/methodology/steps/triage.yaml` carries the mandated defer fork while
 //! never using the word *"defer"*, so a keyword selector misses the class's hardest
 //! member. Where the owe-set is a judgment rather than a signal, this repo's idiom is
 //! a standing suite whose subject is **derived** and whose every member is

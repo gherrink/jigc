@@ -71,7 +71,7 @@ fn embedded_pack_tree() -> PathBuf {
     Path::new(cli::pack_path!(dev)).to_path_buf()
 }
 
-/// The on-disk methodology pack home (`<root>/packs/methodology`) — the faithful
+/// The on-disk methodology pack home (`<root>/crates/cli/packs/methodology`) — the faithful
 /// source the methodology-arm copies mirror.
 fn methodology_pack_tree() -> PathBuf {
     Path::new(cli::pack_path!(methodology)).to_path_buf()

@@ -53,7 +53,7 @@
 //! were added over the two verbs × the two depths, and — the reason the one pre-existing
 //! nested row greened over a live defect — **the fixture's id-from topology was corrected
 //! to the shipped dev pack's**: its change-group `category` was declared a plain `string`,
-//! the one shape that sidesteps the enum arm, while `crates/cli/pack/schemas/changelog.yaml`
+//! the one shape that sidesteps the enum arm, while `crates/cli/packs/dev/schemas/changelog.yaml`
 //! declares it an **enum**. A fixture authored in the case the implementation handles
 //! proves nothing about the case the corpus actually has.
 //!
@@ -1583,7 +1583,7 @@ fn every_write_miss_answers_inside_the_finding_envelope() {
 /// `doc create`**, so the `doc author` batch's own `create` is the doc's first write.
 /// This is the shape every `migrate-*` workflow drives — the pack's own step prose says
 /// *"the CLI creates the record and places every field and prose slot over a single
-/// staged buffer"* (`crates/cli/pack/steps/author-migration-spec.yaml`) — and it is the
+/// staged buffer"* (`crates/cli/packs/dev/steps/author-migration-spec.yaml`) — and it is the
 /// arm the batch's whole-or-nothing rollback **discards**: nothing is staged when the
 /// reject prints, so a route naming that doc cannot run.
 ///

@@ -840,7 +840,8 @@ const VISION_DOCTYPE: &str = "vision";
 const RESEARCH_STORE_KEY: &str = "research";
 
 /// The HTML-comment marker lines delimiting the empty-research advisory block the
-/// `author-vision` step carries at its opening (`packs/methodology/steps/author-vision.yaml`).
+/// `author-vision` step carries at its opening
+/// (`crates/cli/packs/methodology/steps/author-vision.yaml`).
 /// The CLI keeps the inner advisory line when the compose warrants it, else drops the
 /// whole block; the markers are **always** stripped, so they never reach the agent.
 const ADVISORY_OPEN: &str = "<!-- research-advisory -->";

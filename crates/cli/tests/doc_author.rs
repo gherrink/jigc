@@ -6,7 +6,7 @@
 //! verb chain M23 proved byte-stable — so it inherits byte-stability, the
 //! create-gate, and the squatter seam unchanged. This test drives the **emitted**
 //! staged file both ways over the SHIPPED dev pack (`JIGC_PACK_DIR` = the embedded
-//! `pack/` tree) and asserts, on a multi-release DATED changelog:
+//! `packs/dev/` tree) and asserts, on a multi-release DATED changelog:
 //!   (a) the batch-authored doc round-trips byte-stable (`render(parse(x)) == x`);
 //!   (b) it is byte-identical to the equivalent per-leaf `create`/`add-item`/
 //!       `set-field`/`set-slot` chain.

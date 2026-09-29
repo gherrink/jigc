@@ -3,7 +3,7 @@
 //!
 //! This is the T1 done-criterion's real-binary arm: over a `git init` temp repo
 //! against the **shipped** dev pack (selected via `JIGC_PACK_DIR` = the embedded
-//! `pack/` tree, so it is the bytes that ship, not a fixture), prove that
+//! `packs/dev/` tree, so it is the bytes that ship, not a fixture), prove that
 //!   - `jigc start --workflow record-change` composes (author-change step +
 //!     finalize, no compose error) — the off-router driver mints a task;
 //!   - `jigc doc create changelog` cold-mints the FIXED-slug singleton
@@ -50,7 +50,7 @@ impl Drop for TempDir {
 }
 
 /// The embedded dev pack tree on disk — selected via `JIGC_PACK_DIR` so the binary
-/// composes the exact bytes it ships (a FilesystemPack over the same `pack/` the
+/// composes the exact bytes it ships (a FilesystemPack over the same `packs/dev/` the
 /// `include_dir!` embeds).
 fn dev_pack() -> PathBuf {
     Path::new(cli::pack_path!(dev)).to_path_buf()

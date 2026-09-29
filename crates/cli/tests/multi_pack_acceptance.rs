@@ -37,7 +37,7 @@
 //!     non-zero ("no field addressed"), where the single-pack dev base resolves it fine.
 //!
 //! No external test crates: the binary path comes from `CARGO_BIN_EXE_jigc`, the
-//! methodology pack from `CARGO_MANIFEST_DIR/../../packs/methodology`, the temp repo
+//! methodology pack from `CARGO_MANIFEST_DIR/packs/methodology`, the temp repo
 //! is a real `git init`, and a self-cleaning `TempDir` keeps the test off the
 //! developer's real repo / files.
 
@@ -72,7 +72,7 @@ impl Drop for TempDir {
     }
 }
 
-/// The on-disk methodology pack home (`<root>/packs/methodology`) — the literal
+/// The on-disk methodology pack home (`<root>/crates/cli/packs/methodology`) — the literal
 /// directory a `.jigc/config/packs:` entry names.
 fn methodology_pack_tree() -> PathBuf {
     Path::new(cli::pack_path!(methodology)).to_path_buf()
@@ -777,7 +777,7 @@ fn pack_local_winner_pack_workflow_resolves_body_refs_in_its_own_pack() {
 // → flow 17 → the six-part bar; `design/multi-pack.md` → Provenance).
 
 /// Stand up a methodology-primary two-pack repo: a real git repo with the project
-/// layer, `packs.yaml` listing `packs/methodology` (highest) over the embedded dev
+/// layer, `packs.yaml` listing `crates/cli/packs/methodology` (highest) over the embedded dev
 /// base. The shared fixture every flow-17 assertion composes against — the genuine
 /// dev × methodology overlap (`commit`, `default-workflow`, `step:implement` all
 /// owned by BOTH packs).

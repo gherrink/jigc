@@ -1,6 +1,6 @@
 //! M25 Increment 6, T1 — end-to-end spec migration acceptance (the deliverable's
 //! Proves). Drives the **built** `jigc` binary against throwaway `git init` temp repos
-//! over the **shipped** dev pack (`JIGC_PACK_DIR` = the embedded `pack/` tree),
+//! over the **shipped** dev pack (`JIGC_PACK_DIR` = the embedded `packs/dev/` tree),
 //! exercising — not assuming — the doctype-general migrate → author → review-gate →
 //! retire → adopt spine on the `spec` doctype, whose shape difference from `adr` is the
 //! **repeatable `criteria`** with an **optional `maps-to-test`** code-anchor

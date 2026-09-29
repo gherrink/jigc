@@ -14,7 +14,7 @@
 //!     byte count, Framing-A — not a content judgment).
 //!
 //! Drives the built `jigc` binary over the shipped dev pack (`JIGC_PACK_DIR` = the
-//! embedded `pack/` tree) against throwaway `git init` temp repos.
+//! embedded `packs/dev/` tree) against throwaway `git init` temp repos.
 
 use std::fs;
 use std::path::{Path, PathBuf};

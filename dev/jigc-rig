@@ -1120,7 +1120,7 @@ esac
 [ -x "$binary" ] || die "not executable: $binary"
 
 # --- validate the pack inputs before anything is built ----------------------
-dev_pack=$repo_root/crates/cli/pack
+dev_pack=$repo_root/crates/cli/packs/dev
 if [ "$pack_copy" -eq 1 ]; then
     [ -d "$dev_pack" ] || die "no dev pack at $dev_pack"
 fi

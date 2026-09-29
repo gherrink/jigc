@@ -121,7 +121,7 @@ pub const RECORD_COMMIT_MSG_FILE: &str = "record-commit-msg.txt";
 
 /// The `milestone-record` doctype's **header (front-matter) section id** — the
 /// `meta` block, the `completion-record` sibling convention
-/// (`packs/methodology/schemas/milestone-record.yaml`;
+/// (`crates/cli/packs/methodology/schemas/milestone-record.yaml`;
 /// `design/team-ready-state.md` → The milestone-record doctype). The record's
 /// machine-maintained state lives on this doctype; the ids below name its leaves,
 /// so the create/materialize write arm can build the canonical instance the pack
@@ -601,7 +601,7 @@ pub fn drop_sub_tasks(jigc_root: &Path, milestone_id: &str, ids: &[String]) -> s
 }
 
 /// The block-section id the spec's repeatable acceptance criteria live in
-/// (`cli/pack/schemas/spec.yaml`); the seed substrate `add_from_spec` enumerates.
+/// (`cli/packs/dev/schemas/spec.yaml`); the seed substrate `add_from_spec` enumerates.
 const CRITERIA_SECTION: &str = "criteria";
 
 /// Read a committed spec named by `spec_addr` and return its `criteria` items'
@@ -5307,7 +5307,7 @@ Finalize milestone cache-hardening (3 sub-tasks)
     }
 
     /// Load the **shipped** `milestone-record` schema from the methodology pack
-    /// tree (`packs/methodology/schemas/milestone-record.yaml`, through `pack_path!`)
+    /// tree (`crates/cli/packs/methodology/schemas/milestone-record.yaml`, through `pack_path!`)
     /// — so the golden pins the create arm against the real pack bytes, not an
     /// inlined stand-in. The schema-version stamp is injected
     /// exactly as the production load does (`load_pack_schema`: milestone-record is

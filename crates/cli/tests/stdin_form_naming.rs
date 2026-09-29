@@ -33,7 +33,7 @@
 //!
 //!   * a **literal** `jigc … --from-file - …` line in the step body (the 42), and
 //!   * a **catalog** `{{cli.<id>}}` ref whose command-ref carries `--from-file -` —
-//!     rendered into the composed bytes as a `Run:` line. `packs/methodology`'s
+//!     rendered into the composed bytes as a `Run:` line. `crates/cli/packs/methodology`'s
 //!     `author-commit` step has **no** literal site and two catalog ones, so a
 //!     grep-shaped owe-set would have missed a member outright.
 //!

@@ -1,6 +1,6 @@
 //! M25 Increment 1, T3 — end-to-end ADR migration acceptance (the deliverable's
 //! Proves). Drives the **built** `jigc` binary against throwaway `git init` temp repos
-//! over the **shipped** dev pack (`JIGC_PACK_DIR` = the embedded `pack/` tree),
+//! over the **shipped** dev pack (`JIGC_PACK_DIR` = the embedded `packs/dev/` tree),
 //! exercising — not assuming — the doctype-general migrate → author → review-gate →
 //! retire → adopt spine on the new NON-SINGLETON `docs/decisions/` doctype
 //! ([auto-migration.md](../../../design/auto-migration.md) → Migration model +

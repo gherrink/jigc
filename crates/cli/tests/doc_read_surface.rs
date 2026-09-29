@@ -900,7 +900,7 @@ allows-create: [{type: changelog, as: probe}]
 /// field (`note`); the deepest level also carries a prose slot (`detail`), so the arm
 /// drives an advertised `set-slot` address at full depth. A slot is declared **only**
 /// at the deepest level: a leading bare-prose slot on a block that also nests would
-/// swallow the nested item headings (`crates/cli/pack/schemas/changelog.yaml` → review
+/// swallow the nested item headings (`crates/cli/packs/dev/schemas/changelog.yaml` → review
 /// finding B1), which is a rendering question, not a ceiling one.
 ///
 /// It is written over the dev pack's `changelog` slot — a fixture pack **replaces** a

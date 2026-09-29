@@ -4,7 +4,7 @@
 //! doctype; `implementation/roadmap.md` → M39 Increment 3).
 //!
 //! The methodology pack ships no `schema-manifest.yaml`, so a new schema dropped into
-//! `packs/methodology/schemas/` auto-registers by directory (freeze-exempt). The
+//! `crates/cli/packs/methodology/schemas/` auto-registers by directory (freeze-exempt). The
 //! observable proof that the novel all-machine-set + empty-repeatable schema is **real
 //! and composable** is that `describe`:
 //!   - exits 0 (a schema that failed to parse would `bail` out of `load_schemas`), AND
@@ -14,7 +14,7 @@
 //! Asserted on the EMITTED bytes of the real binary (hardening #4), so a pack file that
 //! drops or garbles the doctype's prose fails here. Scaffolding mirrors
 //! `design_altitude_schemas.rs`: the binary path from `CARGO_BIN_EXE_jigc`, the
-//! methodology pack from `CARGO_MANIFEST_DIR/../../packs/methodology`, a real `git init`
+//! methodology pack from `CARGO_MANIFEST_DIR/packs/methodology`, a real `git init`
 //! temp repo, and a self-cleaning `TempDir`.
 
 use std::fs;
@@ -48,7 +48,7 @@ impl Drop for TempDir {
     }
 }
 
-/// The on-disk methodology pack home (`<root>/packs/methodology`) — the literal
+/// The on-disk methodology pack home (`<root>/crates/cli/packs/methodology`) — the literal
 /// directory a `.jigc/config/packs.yaml` entry names.
 fn methodology_pack_tree() -> PathBuf {
     Path::new(cli::pack_path!(methodology)).to_path_buf()
