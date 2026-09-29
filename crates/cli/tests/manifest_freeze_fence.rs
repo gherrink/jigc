@@ -32,12 +32,23 @@
 //! | neither moved | clean |
 //! | entity absent at base (added) | clean |
 //! | entity absent at head (removed) | clean — strict set-equality is the pack-load assert's job |
-//! | manifest absent at base | clean — nothing to compare |
+//! | pack absent at base | clean — nothing to compare, **stated** in the report |
 //! | manifest text unparseable | **violation, fail closed** (either side; this wave's re-settled F3 precedent) |
+//! | two manifests claim one pack id at one revision | **violation, a fence error** — never a pick |
 //!
-//! A violation names **the manifest path and the entity**: a bare count is
-//! unactionable across two files, and the **named escape** (T2, `escape::…`) is
-//! per-entity, so the entity is the identity the report is keyed by.
+//! **A manifest is found per revision by pack identity, never by a fixed path** (M54
+//! Increment 3, S16; `support::pack_locator`): each side of the window locates each
+//! pack's `config/schema-manifest.yaml` by the `pack-id` its sibling
+//! `config/defaults.yaml` carries, and the two sides pair **by pack id**. A fixed path
+//! read across history passes vacuously the moment the pack moves — the base reads
+//! *absent*, the clean cell — so the very push that moves a pack would re-pin
+//! unchecked (`identity::…` carries that push, reduced to two commits).
+//!
+//! A violation names **the pack id, the manifest path and the entity**: a bare count
+//! is unactionable across two files, and the **named escape** (T2, `escape::…`) is
+//! per-entity, so the entity is the identity the report is keyed by. The path is the
+//! one the manifest was read at on the **head** side, or on the base side when the
+//! head lacks it.
 //!
 //! **The escape is a table too.** A re-pin is sometimes legitimate, so a violation is
 //! excused **iff** a commit message in the inspected range carries a line-leading
@@ -47,20 +58,13 @@
 //! excuse **nothing**, deliberately: a blanket escape would restore *"re-pin the hash"*
 //! as one keystroke with two meanings, merely renamed.
 
+use crate::support::pack_locator::{self, Duplicate, Tree};
 use engine::manifest::Manifest;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-
-/// The dev pack's frozen doctype-set manifest — one of the two texts the fence
-/// compares.
-pub const DEV_MANIFEST: &str = "crates/cli/pack/config/schema-manifest.yaml";
-
-/// The methodology pack's frozen doctype-set manifest — the second (M40 A1: each
-/// pack declares its own frozen set, so a fence over only one is half a fence).
-pub const METHODOLOGY_MANIFEST: &str = "packs/methodology/config/schema-manifest.yaml";
 
 /// The entity name the `slug-rule:` singleton is reported and escaped under — the
 /// one frozen entity that is not a doctype.
@@ -90,6 +94,8 @@ pub enum Violation {
     /// A frozen entity's hash moved while its **co-located** version stayed equal —
     /// the silent freeze breach the fence exists to catch.
     HashMovedWithoutVersion {
+        /// The pack whose manifest declares the entity.
+        pack: String,
         /// The repo-relative manifest path the entity is declared in.
         manifest: String,
         /// The entity: a doctype name, or [`SLUG_RULE_ENTITY`].
@@ -104,12 +110,24 @@ pub enum Violation {
     /// A manifest text did not deserialize. **Fail closed:** an unreadable prior
     /// state is not evidence of a clean one.
     Unparseable {
+        /// The pack whose manifest failed to parse.
+        pack: String,
         /// The repo-relative manifest path.
         manifest: String,
         /// Which side failed to parse.
         side: Side,
         /// The deserializer's own message.
         error: String,
+    },
+    /// Two or more manifests claim one pack id at one revision. **A fence error, never
+    /// a pick:** comparing either one would let the other re-pin anything.
+    DuplicatePack {
+        /// The pack id claimed more than once.
+        pack: String,
+        /// The side the revision is on.
+        side: Side,
+        /// Every manifest path claiming it, sorted.
+        paths: Vec<String>,
     },
 }
 
@@ -120,7 +138,7 @@ impl Violation {
     fn entity(&self) -> Option<&str> {
         match self {
             Violation::HashMovedWithoutVersion { entity, .. } => Some(entity),
-            Violation::Unparseable { .. } => None,
+            Violation::Unparseable { .. } | Violation::DuplicatePack { .. } => None,
         }
     }
 }
@@ -129,6 +147,7 @@ impl fmt::Display for Violation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Violation::HashMovedWithoutVersion {
+                pack,
                 manifest,
                 entity,
                 version,
@@ -136,18 +155,26 @@ impl fmt::Display for Violation {
                 head_hash,
             } => write!(
                 f,
-                "{manifest}: `{entity}` — hash moved ({base_hash} -> {head_hash}) \
+                "{manifest} (pack `{pack}`): `{entity}` — hash moved ({base_hash} -> {head_hash}) \
                  while its version stayed {version}: a frozen shape moves only \
                  together with its co-located version",
             ),
             Violation::Unparseable {
+                pack,
                 manifest,
                 side,
                 error,
             } => write!(
                 f,
-                "{manifest}: the {side} text does not parse as a freeze manifest \
-                 ({error}): the fence fails closed rather than reporting clean",
+                "{manifest} (pack `{pack}`): the {side} text does not parse as a freeze \
+                 manifest ({error}): the fence fails closed rather than reporting clean",
+            ),
+            Violation::DuplicatePack { pack, side, paths } => write!(
+                f,
+                "pack `{pack}`: {} manifests claim it at the {side} ({}): the fence \
+                 never picks one, so it cannot compare this pack until one remains",
+                paths.len(),
+                paths.join(", "),
             ),
         }
     }
@@ -191,21 +218,28 @@ fn pins(manifest: &Manifest) -> BTreeMap<String, Pin> {
     out
 }
 
-/// Compare one manifest's base text against its head text.
+/// Compare one pack's manifest base text against its head text.
 ///
-/// `base: None` is the *manifest absent at base* cell — a manifest that did not
+/// `pack` and `manifest` are **labels** — the identity and the path a violation is
+/// reported under. The comparison is a pure function of the two texts and never reads
+/// a path. `base: None` is the *pack absent at base* cell — a manifest that did not
 /// exist there declares no prior pin, so there is nothing to compare.
-pub fn compare_manifest(manifest: &str, base: Option<&str>, head: &str) -> Vec<Violation> {
+pub fn compare_manifest(
+    pack: &str,
+    manifest: &str,
+    base: Option<&str>,
+    head: &str,
+) -> Vec<Violation> {
     let Some(base) = base else {
         return Vec::new();
     };
     let base = match serde_yaml_ng::from_str::<Manifest>(base) {
         Ok(m) => m,
-        Err(e) => return vec![unparseable(manifest, Side::Base, &e)],
+        Err(e) => return vec![unparseable(pack, manifest, Side::Base, &e)],
     };
     let head = match serde_yaml_ng::from_str::<Manifest>(head) {
         Ok(m) => m,
-        Err(e) => return vec![unparseable(manifest, Side::Head, &e)],
+        Err(e) => return vec![unparseable(pack, manifest, Side::Head, &e)],
     };
 
     let head_pins = pins(&head);
@@ -218,6 +252,7 @@ pub fn compare_manifest(manifest: &str, base: Option<&str>, head: &str) -> Vec<V
             let now = head_pins.get(&entity)?;
             (now.hash != was.hash && now.version == was.version).then(|| {
                 Violation::HashMovedWithoutVersion {
+                    pack: pack.to_string(),
                     manifest: manifest.to_string(),
                     entity,
                     version: was.version,
@@ -230,21 +265,22 @@ pub fn compare_manifest(manifest: &str, base: Option<&str>, head: &str) -> Vec<V
 }
 
 /// The fail-closed violation for a text that does not deserialize.
-fn unparseable(manifest: &str, side: Side, error: &serde_yaml_ng::Error) -> Violation {
+fn unparseable(pack: &str, manifest: &str, side: Side, error: &serde_yaml_ng::Error) -> Violation {
     Violation::Unparseable {
+        pack: pack.to_string(),
         manifest: manifest.to_string(),
         side,
         error: error.to_string(),
     }
 }
 
-/// Compare every `(manifest path, base text, head text)` the caller hands over —
-/// the fence's whole subject is **both** manifests, so violations from either must
-/// reach the report, each naming its own file.
-pub fn compare_all(manifests: &[(&str, Option<&str>, &str)]) -> Vec<Violation> {
+/// Compare every `(pack, manifest path, base text, head text)` the caller hands over
+/// — the fence's whole subject is **every** pack's manifest, so violations from any
+/// must reach the report, each naming its own pack and file.
+pub fn compare_all(manifests: &[(&str, &str, Option<&str>, &str)]) -> Vec<Violation> {
     manifests
         .iter()
-        .flat_map(|(path, base, head)| compare_manifest(path, *base, head))
+        .flat_map(|(pack, path, base, head)| compare_manifest(pack, path, *base, head))
         .collect()
 }
 
@@ -344,6 +380,14 @@ fn manifest_text(slug: Option<(u32, &str)>, doctypes: &[(&str, u32, &str)]) -> S
     out
 }
 
+/// The labels the pure-comparator arms report under — a pack id and a manifest path
+/// that are **labels, not live paths**: the comparator never reads a path, so no arm
+/// of it names where a real pack sits.
+const DEV_PACK: &str = "dev";
+const DEV_LABEL: &str = "<dev>/config/schema-manifest.yaml";
+const METHODOLOGY_PACK: &str = "methodology";
+const METHODOLOGY_LABEL: &str = "<methodology>/config/schema-manifest.yaml";
+
 const HASH_A: &str = "1111111111111111111111111111111111111111111111111111111111111111";
 const HASH_B: &str = "2222222222222222222222222222222222222222222222222222222222222222";
 const SLUG_HASH_A: &str = "3333333333333333333333333333333333333333333333333333333333333333";
@@ -405,11 +449,12 @@ mod verdict {
         fn hash_moved_version_equal_is_a_violation() {
             let base = with_doctypes(&[("adr", 2, HASH_A)]);
             let head = with_doctypes(&[("adr", 2, HASH_B)]);
-            let found = compare_manifest(DEV_MANIFEST, Some(&base), &head);
+            let found = compare_manifest(DEV_PACK, DEV_LABEL, Some(&base), &head);
             assert_eq!(
                 found,
                 vec![Violation::HashMovedWithoutVersion {
-                    manifest: DEV_MANIFEST.to_string(),
+                    pack: DEV_PACK.to_string(),
+                    manifest: DEV_LABEL.to_string(),
                     entity: "adr".to_string(),
                     version: 2,
                     base_hash: HASH_A.to_string(),
@@ -425,7 +470,7 @@ mod verdict {
             let base = with_doctypes(&[("adr", 2, HASH_A)]);
             let head = with_doctypes(&[("adr", 3, HASH_B)]);
             assert_eq!(
-                compare_manifest(DEV_MANIFEST, Some(&base), &head),
+                compare_manifest(DEV_PACK, DEV_LABEL, Some(&base), &head),
                 vec![],
                 "a hash moving together with its co-located schema-version is the \
                  declared, versioned change the freeze asks for",
@@ -437,7 +482,7 @@ mod verdict {
             let base = with_doctypes(&[("adr", 2, HASH_A)]);
             let head = with_doctypes(&[("adr", 3, HASH_A)]);
             assert_eq!(
-                compare_manifest(DEV_MANIFEST, Some(&base), &head),
+                compare_manifest(DEV_PACK, DEV_LABEL, Some(&base), &head),
                 vec![],
                 "the successor rule is one-directional — it constrains a moving hash, \
                  not a moving version",
@@ -448,7 +493,10 @@ mod verdict {
         fn neither_moved_is_clean() {
             let base = with_doctypes(&[("adr", 2, HASH_A)]);
             let head = with_doctypes(&[("adr", 2, HASH_A)]);
-            assert_eq!(compare_manifest(DEV_MANIFEST, Some(&base), &head), vec![]);
+            assert_eq!(
+                compare_manifest(DEV_PACK, DEV_LABEL, Some(&base), &head),
+                vec![]
+            );
         }
 
         #[test]
@@ -456,7 +504,7 @@ mod verdict {
             let base = with_doctypes(&[("adr", 2, HASH_A)]);
             let head = with_doctypes(&[("adr", 2, HASH_A), ("idea", 1, HASH_B)]);
             assert_eq!(
-                compare_manifest(DEV_MANIFEST, Some(&base), &head),
+                compare_manifest(DEV_PACK, DEV_LABEL, Some(&base), &head),
                 vec![],
                 "an entity added in this range has no prior pin to have moved from",
             );
@@ -467,7 +515,7 @@ mod verdict {
             let base = with_doctypes(&[("adr", 2, HASH_A), ("idea", 1, HASH_B)]);
             let head = with_doctypes(&[("adr", 2, HASH_A)]);
             assert_eq!(
-                compare_manifest(DEV_MANIFEST, Some(&base), &head),
+                compare_manifest(DEV_PACK, DEV_LABEL, Some(&base), &head),
                 vec![],
                 "a removed entity is the pack-load assert's strict set-equality job, \
                  not this fence's",
@@ -484,7 +532,7 @@ mod verdict {
                         if version_moved { 3 } else { 2 },
                         if hash_moved { HASH_B } else { HASH_A },
                     )]);
-                    let found = compare_manifest(DEV_MANIFEST, Some(&base), &head);
+                    let found = compare_manifest(DEV_PACK, DEV_LABEL, Some(&base), &head);
                     assert_eq!(
                         verdict_of(&found),
                         expected(hash_moved, version_moved),
@@ -507,9 +555,10 @@ mod verdict {
             let base = with_slug(3, SLUG_HASH_A);
             let head = with_slug(3, SLUG_HASH_B);
             assert_eq!(
-                compare_manifest(METHODOLOGY_MANIFEST, Some(&base), &head),
+                compare_manifest(METHODOLOGY_PACK, METHODOLOGY_LABEL, Some(&base), &head),
                 vec![Violation::HashMovedWithoutVersion {
-                    manifest: METHODOLOGY_MANIFEST.to_string(),
+                    pack: METHODOLOGY_PACK.to_string(),
+                    manifest: METHODOLOGY_LABEL.to_string(),
                     entity: SLUG_RULE_ENTITY.to_string(),
                     version: 3,
                     base_hash: SLUG_HASH_A.to_string(),
@@ -525,7 +574,7 @@ mod verdict {
             let base = with_slug(3, SLUG_HASH_A);
             let head = with_slug(4, SLUG_HASH_B);
             assert_eq!(
-                compare_manifest(METHODOLOGY_MANIFEST, Some(&base), &head),
+                compare_manifest(METHODOLOGY_PACK, METHODOLOGY_LABEL, Some(&base), &head),
                 vec![],
             );
         }
@@ -535,7 +584,7 @@ mod verdict {
             let base = with_slug(3, SLUG_HASH_A);
             let head = with_slug(4, SLUG_HASH_A);
             assert_eq!(
-                compare_manifest(METHODOLOGY_MANIFEST, Some(&base), &head),
+                compare_manifest(METHODOLOGY_PACK, METHODOLOGY_LABEL, Some(&base), &head),
                 vec![],
             );
         }
@@ -545,7 +594,7 @@ mod verdict {
             let base = with_slug(3, SLUG_HASH_A);
             let head = with_slug(3, SLUG_HASH_A);
             assert_eq!(
-                compare_manifest(METHODOLOGY_MANIFEST, Some(&base), &head),
+                compare_manifest(METHODOLOGY_PACK, METHODOLOGY_LABEL, Some(&base), &head),
                 vec![],
             );
         }
@@ -555,7 +604,7 @@ mod verdict {
             let base = manifest_text(None, &[("adr", 2, HASH_A)]);
             let head = with_slug(3, SLUG_HASH_A);
             assert_eq!(
-                compare_manifest(METHODOLOGY_MANIFEST, Some(&base), &head),
+                compare_manifest(METHODOLOGY_PACK, METHODOLOGY_LABEL, Some(&base), &head),
                 vec![],
                 "a slug rule first declared in this range has no prior pin",
             );
@@ -566,7 +615,7 @@ mod verdict {
             let base = with_slug(3, SLUG_HASH_A);
             let head = manifest_text(None, &[("adr", 2, HASH_A)]);
             assert_eq!(
-                compare_manifest(METHODOLOGY_MANIFEST, Some(&base), &head),
+                compare_manifest(METHODOLOGY_PACK, METHODOLOGY_LABEL, Some(&base), &head),
                 vec![],
                 "an undeclared slug rule blocks at pack-load — this fence does not \
                  duplicate that verdict",
@@ -582,7 +631,8 @@ mod verdict {
                         if version_moved { 4 } else { 3 },
                         if hash_moved { SLUG_HASH_B } else { SLUG_HASH_A },
                     );
-                    let found = compare_manifest(METHODOLOGY_MANIFEST, Some(&base), &head);
+                    let found =
+                        compare_manifest(METHODOLOGY_PACK, METHODOLOGY_LABEL, Some(&base), &head);
                     assert_eq!(
                         verdict_of(&found),
                         expected(hash_moved, version_moved),
@@ -602,7 +652,7 @@ mod verdict {
         fn manifest_absent_at_base_is_clean() {
             let head = with_doctypes(&[("adr", 2, HASH_A)]);
             assert_eq!(
-                compare_manifest(DEV_MANIFEST, None, &head),
+                compare_manifest(DEV_PACK, DEV_LABEL, None, &head),
                 vec![],
                 "a manifest that did not exist at the base declares no prior pin",
             );
@@ -611,15 +661,17 @@ mod verdict {
         #[test]
         fn base_text_unparseable_is_a_violation_fail_closed() {
             let head = with_doctypes(&[("adr", 2, HASH_A)]);
-            let found = compare_manifest(DEV_MANIFEST, Some("doctypes: [ {{{"), &head);
+            let found = compare_manifest(DEV_PACK, DEV_LABEL, Some("doctypes: [ {{{"), &head);
             assert_eq!(found.len(), 1, "found {found:?}");
             match &found[0] {
                 Violation::Unparseable {
+                    pack,
                     manifest,
                     side,
                     error,
                 } => {
-                    assert_eq!(manifest, DEV_MANIFEST);
+                    assert_eq!(pack, DEV_PACK);
+                    assert_eq!(manifest, DEV_LABEL);
                     assert_eq!(*side, Side::Base);
                     assert!(!error.is_empty(), "the deserializer's own message is kept");
                 }
@@ -630,7 +682,7 @@ mod verdict {
         #[test]
         fn head_text_unparseable_is_a_violation_fail_closed() {
             let base = with_doctypes(&[("adr", 2, HASH_A)]);
-            let found = compare_manifest(DEV_MANIFEST, Some(&base), "doctypes: [ {{{");
+            let found = compare_manifest(DEV_PACK, DEV_LABEL, Some(&base), "doctypes: [ {{{");
             assert_eq!(found.len(), 1, "found {found:?}");
             match &found[0] {
                 Violation::Unparseable { side, .. } => assert_eq!(*side, Side::Head),
@@ -642,7 +694,7 @@ mod verdict {
         fn an_unknown_key_is_unparseable_not_ignored() {
             let head = with_doctypes(&[("adr", 2, HASH_A)]);
             let base = format!("{}surprise: 1\n", with_doctypes(&[("adr", 2, HASH_A)]));
-            let found = compare_manifest(DEV_MANIFEST, Some(&base), &head);
+            let found = compare_manifest(DEV_PACK, DEV_LABEL, Some(&base), &head);
             assert!(
                 matches!(found.as_slice(), [Violation::Unparseable { .. }]),
                 "the manifest model denies unknown fields; a text the freeze gate \
@@ -657,11 +709,12 @@ mod verdict {
         use super::*;
 
         #[test]
-        fn a_violation_names_the_manifest_path_and_the_entity() {
+        fn a_violation_names_the_pack_the_manifest_path_and_the_entity() {
             let base = with_doctypes(&[("adr", 2, HASH_A)]);
             let head = with_doctypes(&[("adr", 2, HASH_B)]);
-            let text = rendered(&compare_manifest(DEV_MANIFEST, Some(&base), &head));
-            assert!(text.contains(DEV_MANIFEST), "names its manifest: {text}");
+            let text = rendered(&compare_manifest(DEV_PACK, DEV_LABEL, Some(&base), &head));
+            assert!(text.contains("pack `dev`"), "names its pack: {text}");
+            assert!(text.contains(DEV_LABEL), "names its manifest: {text}");
             assert!(text.contains("`adr`"), "names its entity: {text}");
         }
 
@@ -672,13 +725,18 @@ mod verdict {
             let meth_base = with_slug(3, SLUG_HASH_A);
             let meth_head = with_slug(3, SLUG_HASH_B);
             let found = compare_all(&[
-                (DEV_MANIFEST, Some(&dev_base), &dev_head),
-                (METHODOLOGY_MANIFEST, Some(&meth_base), &meth_head),
+                (DEV_PACK, DEV_LABEL, Some(&dev_base), &dev_head),
+                (
+                    METHODOLOGY_PACK,
+                    METHODOLOGY_LABEL,
+                    Some(&meth_base),
+                    &meth_head,
+                ),
             ]);
             assert_eq!(found.len(), 2, "found {found:?}");
             let text = rendered(&found);
-            assert!(text.contains(DEV_MANIFEST), "{text}");
-            assert!(text.contains(METHODOLOGY_MANIFEST), "{text}");
+            assert!(text.contains(DEV_LABEL), "{text}");
+            assert!(text.contains(METHODOLOGY_LABEL), "{text}");
             assert!(text.contains("`adr`"), "{text}");
             assert!(text.contains("`slug-rule`"), "{text}");
         }
@@ -695,12 +753,14 @@ mod verdict {
             let reverse_head = [("changelog", 2, HASH_B), ("adr", 2, HASH_B)];
 
             let in_order = compare_manifest(
-                DEV_MANIFEST,
+                DEV_PACK,
+                DEV_LABEL,
                 Some(&manifest_text(Some((3, SLUG_HASH_A)), &forward)),
                 &manifest_text(Some((3, SLUG_HASH_B)), &forward_head),
             );
             let reversed = compare_manifest(
-                DEV_MANIFEST,
+                DEV_PACK,
+                DEV_LABEL,
                 Some(&manifest_text(Some((3, SLUG_HASH_A)), &reverse)),
                 &manifest_text(Some((3, SLUG_HASH_B)), &reverse_head),
             );
@@ -733,7 +793,8 @@ mod escape {
     /// A violation over one named entity, to hold the escape against.
     fn violation(entity: &str) -> Violation {
         Violation::HashMovedWithoutVersion {
-            manifest: DEV_MANIFEST.to_string(),
+            pack: DEV_PACK.to_string(),
+            manifest: DEV_LABEL.to_string(),
             entity: entity.to_string(),
             version: 2,
             base_hash: HASH_A.to_string(),
@@ -902,7 +963,8 @@ mod escape {
     #[test]
     fn an_unparseable_manifest_is_never_excused() {
         let unparseable = Violation::Unparseable {
-            manifest: DEV_MANIFEST.to_string(),
+            pack: DEV_PACK.to_string(),
+            manifest: DEV_LABEL.to_string(),
             side: Side::Base,
             error: "did not parse".to_string(),
         };
@@ -925,7 +987,7 @@ mod escape {
     fn the_escape_composes_over_the_comparator_it_excuses() {
         let base = with_doctypes(&[("adr", 2, HASH_A)]);
         let head = with_doctypes(&[("adr", 2, HASH_B)]);
-        let found = compare_manifest(DEV_MANIFEST, Some(&base), &head);
+        let found = compare_manifest(DEV_PACK, DEV_LABEL, Some(&base), &head);
         assert_eq!(
             found.len(),
             1,
@@ -1004,9 +1066,6 @@ mod escape {
 // **floor is `HEAD~1`** — the originally-settled shape, kept as the floor rather than
 // replaced, so widening the window can only ever add reach. A root commit has no
 // `HEAD~1` and therefore nothing to compare: clean, not an error.
-
-/// Both manifests the fence compares, in the order it reports them.
-pub const MANIFESTS: [&str; 2] = [DEV_MANIFEST, METHODOLOGY_MANIFEST];
 
 /// The raw GitHub Actions event fields the ladder chooses between.
 ///
@@ -1108,21 +1167,6 @@ fn rev_parse(repo: &Path, rev: &str) -> Option<String> {
     (!sha.is_empty()).then_some(sha)
 }
 
-/// One file's bytes at one rev, or `None` when the path does not exist there.
-///
-/// `None` is the comparator's *manifest absent at base* cell — a pack whose manifest
-/// was first added inside the inspected range declares no prior pin.
-pub fn show_at(repo: &Path, rev: &str, path: &str) -> Option<String> {
-    let out = Command::new("git")
-        .args(["show", &format!("{rev}:{path}")])
-        .current_dir(repo)
-        .output()
-        .expect("run git show");
-    out.status
-        .success()
-        .then(|| String::from_utf8(out.stdout).expect("a manifest is utf-8"))
-}
-
 /// Every commit message in `base..head`, whole — subject and body — feeding the
 /// per-entity escape.
 ///
@@ -1163,26 +1207,113 @@ pub fn messages_in(repo: &Path, base: &str, head: &str) -> Vec<String> {
 /// it one entity at a time.
 const NO_DECLARATION: &str = "doctypes: []\n";
 
-/// The whole fence over one window of one clone: both manifests at either end,
-/// compared, then excused by the range's own commit messages.
-pub fn fence_over(repo: &Path, base: &str, head: &str) -> Vec<Violation> {
-    let texts: Vec<(&str, Option<String>, String)> = MANIFESTS
+/// A pack with no manifest on one side of the window — **stated**, never silent.
+///
+/// At the base it is the *pack absent at base* cell (first added inside the range:
+/// no prior pin, nothing to compare); at the head it is the pack-level opt-out read
+/// as [`NO_DECLARATION`]. Either way the report says so, because a fence that went
+/// quiet over a pack it could not find is the vacuous pass S16 exists to end.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Absent {
+    /// The pack id located on the other side only.
+    pub pack: String,
+    /// The side it is absent from.
+    pub side: Side,
+}
+
+impl fmt::Display for Absent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "pack `{}`: absent at the {} — no manifest claims it there, so there is \
+             nothing to compare on that side",
+            self.pack, self.side,
+        )
+    }
+}
+
+/// What one run of the fence found: the violations that survived the escape, and
+/// every pack it could locate on one side only.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Report {
+    /// The surviving violations — the fence is green iff this is empty.
+    pub violations: Vec<Violation>,
+    /// Every one-sided pack, stated — ordered by pack id, base side first.
+    pub absent: Vec<Absent>,
+}
+
+/// Every pack's manifest at one end of the window, by pack identity — or the
+/// [`Violation::DuplicatePack`] fence errors when some pack id is claimed twice.
+fn located(repo: &Path, rev: &str, side: Side) -> Result<BTreeMap<String, String>, Vec<Violation>> {
+    pack_locator::locate(repo, Tree::Rev(rev)).map_err(|duplicates| {
+        duplicates
+            .into_iter()
+            .map(|Duplicate { pack, paths }| Violation::DuplicatePack { pack, side, paths })
+            .collect()
+    })
+}
+
+/// The whole fence over one window of one clone: every pack's manifest located **by
+/// pack identity** at either end, paired by pack id, compared, then excused by the
+/// range's own commit messages.
+///
+/// A pack id claimed twice on either side is a fence error and the fence compares
+/// nothing further — it never picks one of two manifests.
+pub fn fence_over(repo: &Path, base: &str, head: &str) -> Report {
+    let (at_base, at_head) = match (
+        located(repo, base, Side::Base),
+        located(repo, head, Side::Head),
+    ) {
+        (Ok(at_base), Ok(at_head)) => (at_base, at_head),
+        (at_base, at_head) => {
+            return Report {
+                violations: [at_base.err(), at_head.err()]
+                    .into_iter()
+                    .flatten()
+                    .flatten()
+                    .collect(),
+                absent: Vec::new(),
+            };
+        }
+    };
+
+    let packs: BTreeSet<&String> = at_base.keys().chain(at_head.keys()).collect();
+    let mut absent = Vec::new();
+    let mut texts: Vec<(&str, &str, Option<String>, String)> = Vec::new();
+    for pack in packs {
+        let (base_path, head_path) = (at_base.get(pack), at_head.get(pack));
+        for (path, side) in [(base_path, Side::Base), (head_path, Side::Head)] {
+            if path.is_none() {
+                absent.push(Absent {
+                    pack: pack.clone(),
+                    side,
+                });
+            }
+        }
+        let read = |rev: &str, path: &String| {
+            pack_locator::read(repo, Tree::Rev(rev), path)
+                .unwrap_or_else(|| panic!("{path} was listed at {rev} and must read there"))
+        };
+        texts.push((
+            pack,
+            // Named at the head side, or at the base side when the head lacks it.
+            head_path
+                .or(base_path)
+                .expect("a located pack is on some side"),
+            base_path.map(|path| read(base, path)),
+            head_path.map_or_else(|| NO_DECLARATION.to_string(), |path| read(head, path)),
+        ));
+    }
+    let pairs: Vec<(&str, &str, Option<&str>, &str)> = texts
         .iter()
-        .map(|path| {
-            (
-                *path,
-                show_at(repo, base, path),
-                show_at(repo, head, path).unwrap_or_else(|| NO_DECLARATION.to_string()),
-            )
-        })
-        .collect();
-    let pairs: Vec<(&str, Option<&str>, &str)> = texts
-        .iter()
-        .map(|(path, base, head)| (*path, base.as_deref(), head.as_str()))
+        .map(|(pack, path, base, head)| (*pack, *path, base.as_deref(), head.as_str()))
         .collect();
     let messages = messages_in(repo, base, head);
     let messages: Vec<&str> = messages.iter().map(String::as_str).collect();
-    excuse(compare_all(&pairs), &messages)
+    Report {
+        violations: excuse(compare_all(&pairs), &messages),
+        absent,
+    }
 }
 
 /// A self-cleaning temp dir — the shipped suite idiom (pid + nanos, `Drop`-removed),
@@ -1247,12 +1378,22 @@ fn commit_all(repo: &Path, message: &str) -> String {
     git(repo, &["rev-parse", "HEAD"])
 }
 
-/// Write one manifest text at its repo-relative path, creating the pack dirs.
-fn write_manifest(repo: &Path, path: &str, text: &str) {
-    let target = repo.join(path);
-    fs::create_dir_all(target.parent().expect("a manifest has a parent"))
-        .expect("create pack dirs");
-    fs::write(target, text).expect("write manifest");
+/// A pack's manifest path under a fixture pack root.
+fn manifest_at(root: &str) -> String {
+    format!("{root}/{}", pack_locator::MANIFEST)
+}
+
+/// Write one fixture pack at `root`: its manifest text, and the sibling
+/// `config/defaults.yaml` that carries `pack` as its identity.
+fn write_pack(repo: &Path, root: &str, pack: &str, manifest: &str) {
+    let config = repo.join(root).join("config");
+    fs::create_dir_all(&config).expect("create the pack's config dir");
+    fs::write(repo.join(manifest_at(root)), manifest).expect("write manifest");
+    fs::write(
+        repo.join(root).join(pack_locator::DEFAULTS),
+        format!("pack-id: {pack}\n"),
+    )
+    .expect("write defaults");
 }
 
 /// The base-ref ladder: which commit the fence compares against, and why.
@@ -1491,33 +1632,46 @@ mod base_ref {
         );
     }
 
-    /// The plumbing the comparator eats: one file's bytes at a rev.
+    /// The plumbing the comparator eats: each pack located at a rev, and its bytes
+    /// read there.
     #[test]
-    fn a_manifest_is_read_at_its_rev_and_a_path_absent_there_is_none() {
+    fn a_manifest_is_read_at_its_rev_and_a_pack_absent_there_is_not_located() {
         let repo = fresh_repo("show");
-        write_manifest(
+        write_pack(
             repo.path(),
-            DEV_MANIFEST,
+            "a",
+            "dev",
             &with_doctypes(&[("adr", 2, HASH_A)]),
         );
-        let base = commit_all(repo.path(), "the dev manifest only");
-        write_manifest(
+        let base = commit_all(repo.path(), "the dev pack only");
+        write_pack(
             repo.path(),
-            METHODOLOGY_MANIFEST,
+            "b",
+            "methodology",
             &with_doctypes(&[("idea", 1, HASH_B)]),
         );
-        commit_all(repo.path(), "the methodology manifest joins");
+        commit_all(repo.path(), "the methodology pack joins");
 
+        let at_base = pack_locator::locate(repo.path(), Tree::Rev(&base)).expect("unique");
         assert_eq!(
-            show_at(repo.path(), &base, DEV_MANIFEST).as_deref(),
+            at_base,
+            BTreeMap::from([("dev".to_string(), manifest_at("a"))]),
+            "the base carries the dev pack only — the methodology pack is simply not \
+             located there",
+        );
+        assert_eq!(
+            pack_locator::read(repo.path(), Tree::Rev(&base), &at_base["dev"]).as_deref(),
             Some(with_doctypes(&[("adr", 2, HASH_A)]).as_str()),
             "the base text is the file's own bytes at that commit",
         );
         assert_eq!(
-            show_at(repo.path(), &base, METHODOLOGY_MANIFEST),
-            None,
-            "a manifest first added inside the range is absent at the base — the \
-             comparator's *absent at base* cell, fed from git rather than fabricated",
+            fence_over(repo.path(), &base, "HEAD").absent,
+            vec![Absent {
+                pack: "methodology".to_string(),
+                side: Side::Base,
+            }],
+            "a pack first added inside the range is absent at the base — the \
+             comparator's *absent at base* cell, fed from git and STATED",
         );
     }
 
@@ -1547,15 +1701,17 @@ mod base_ref {
     /// in the **middle** of the batch, never at the tip.
     fn batched_push_repo(tag: &str, repin_message: &str) -> (TempDir, String) {
         let repo = fresh_repo(tag);
-        write_manifest(
+        write_pack(
             repo.path(),
-            DEV_MANIFEST,
+            "a",
+            "dev",
             &with_doctypes(&[("adr", 2, HASH_A)]),
         );
         let base = commit_all(repo.path(), "the pinned base");
-        write_manifest(
+        write_pack(
             repo.path(),
-            DEV_MANIFEST,
+            "a",
+            "dev",
             &with_doctypes(&[("adr", 2, HASH_B)]),
         );
         commit_all(repo.path(), repin_message);
@@ -1571,11 +1727,12 @@ mod base_ref {
     fn the_declared_window_catches_a_mid_batch_repin_the_floor_cannot_see() {
         let (repo, base) = batched_push_repo("batch", "re-pin adr with nothing declaring it");
 
-        let over_the_push = fence_over(repo.path(), &base, "HEAD");
+        let over_the_push = fence_over(repo.path(), &base, "HEAD").violations;
         assert_eq!(
             over_the_push,
             vec![Violation::HashMovedWithoutVersion {
-                manifest: DEV_MANIFEST.to_string(),
+                pack: "dev".to_string(),
+                manifest: manifest_at("a"),
                 entity: "adr".to_string(),
                 version: 2,
                 base_hash: HASH_A.to_string(),
@@ -1586,7 +1743,7 @@ mod base_ref {
 
         let floor = rev_parse(repo.path(), "HEAD~1").expect("a floor exists");
         assert_eq!(
-            fence_over(repo.path(), &floor, "HEAD"),
+            fence_over(repo.path(), &floor, "HEAD").violations,
             vec![],
             "the settled HEAD~1 window is PROVABLY CLEAN over the very push that \
              carries the breach — which is why the floor is a floor and not the fence",
@@ -1602,7 +1759,7 @@ mod base_ref {
             "re-pin adr, declared\n\nManifest-Repin: adr\n",
         );
         assert_eq!(
-            fence_over(repo.path(), &base, "HEAD"),
+            fence_over(repo.path(), &base, "HEAD").violations,
             vec![],
             "a legitimate re-pin declares itself on its own commit — and the fence \
              reads the range, not the tip",
@@ -1619,20 +1776,198 @@ mod base_ref {
     #[test]
     fn a_manifest_deleted_inside_the_range_reads_as_removed_not_moved() {
         let repo = fresh_repo("deleted");
-        write_manifest(
+        write_pack(
             repo.path(),
-            DEV_MANIFEST,
+            "a",
+            "dev",
             &with_doctypes(&[("adr", 2, HASH_A)]),
         );
         let base = commit_all(repo.path(), "the pinned base");
-        fs::remove_file(repo.path().join(DEV_MANIFEST)).expect("remove the manifest");
+        fs::remove_file(repo.path().join(manifest_at("a"))).expect("remove the manifest");
         commit_all(repo.path(), "opt the pack out of the freeze, wholesale");
 
         assert_eq!(
             fence_over(repo.path(), &base, "HEAD"),
-            vec![],
+            Report {
+                violations: vec![],
+                absent: vec![Absent {
+                    pack: "dev".to_string(),
+                    side: Side::Head,
+                }],
+            },
             "no hash moved — the declaration itself is gone, which the freeze permits \
              at pack level and this fence does not re-adjudicate per entity",
+        );
+    }
+}
+
+/// **A manifest is found per revision by pack identity, never by a fixed path** (M54
+/// Increment 3, S16).
+///
+/// The fixed-path form this replaces read one literal path per pack at both ends of
+/// the window, so a push that **moves** a pack read *absent at base* on the new path
+/// and *absent at head* on the old one — two clean cells — and a hash re-pinned at an
+/// unchanged version inside that very push shipped unchecked. The first arm below is
+/// that push, reduced to two commits; it was red against the fixed-path form.
+mod identity {
+    use super::*;
+
+    /// The dev pack's root before and after the move M54 Increment 3 ships — the push
+    /// the fixed-path form could not see into.
+    const BEFORE: &str = "crates/cli/pack";
+    const AFTER: &str = "crates/cli/packs/dev";
+
+    #[test]
+    fn a_hash_repinned_across_a_move_inside_the_range_is_flagged() {
+        let repo = fresh_repo("moved");
+        let pins = |adr_hash| with_doctypes(&[("adr", 2, adr_hash), ("spec", 1, HASH_A)]);
+        write_pack(repo.path(), BEFORE, "dev", &pins(HASH_A));
+        let base = commit_all(repo.path(), "the pinned base");
+        fs::remove_dir_all(repo.path().join(BEFORE)).expect("move the pack away");
+        write_pack(repo.path(), AFTER, "dev", &pins(HASH_B));
+        commit_all(repo.path(), "move the pack and quietly re-pin adr");
+
+        assert_eq!(
+            fence_over(repo.path(), &base, "HEAD"),
+            Report {
+                violations: vec![Violation::HashMovedWithoutVersion {
+                    pack: "dev".to_string(),
+                    manifest: manifest_at(AFTER),
+                    entity: "adr".to_string(),
+                    version: 2,
+                    base_hash: HASH_A.to_string(),
+                    head_hash: HASH_B.to_string(),
+                }],
+                absent: vec![],
+            },
+            "the two ends pair by pack id, so a move is not an absence on either side — \
+             and the re-pin it carried is named at the path the head reads it at",
+        );
+    }
+
+    #[test]
+    fn a_pack_absent_at_base_is_stated_not_silent() {
+        let repo = fresh_repo("absent");
+        write_pack(
+            repo.path(),
+            "a",
+            "dev",
+            &with_doctypes(&[("adr", 2, HASH_A)]),
+        );
+        let base = commit_all(repo.path(), "the dev pack only");
+        write_pack(
+            repo.path(),
+            "b",
+            "methodology",
+            &with_doctypes(&[("idea", 1, HASH_B)]),
+        );
+        commit_all(repo.path(), "the methodology pack joins");
+
+        let report = fence_over(repo.path(), &base, "HEAD");
+        assert_eq!(report.violations, vec![], "nothing to compare is clean");
+        assert_eq!(
+            report.absent,
+            vec![Absent {
+                pack: "methodology".to_string(),
+                side: Side::Base,
+            }],
+            "the pack no manifest claims at the base is reported as absent there",
+        );
+        let stated = report.absent[0].to_string();
+        assert!(
+            stated.contains("pack `methodology`") && stated.contains("absent at the base"),
+            "the statement names the pack and the side: {stated}",
+        );
+    }
+
+    #[test]
+    fn two_manifests_claiming_one_pack_id_are_a_fence_error_never_a_pick() {
+        let repo = fresh_repo("duplicate");
+        write_pack(
+            repo.path(),
+            "a",
+            "dev",
+            &with_doctypes(&[("adr", 2, HASH_A)]),
+        );
+        let base = commit_all(repo.path(), "one dev pack");
+        write_pack(
+            repo.path(),
+            "z",
+            "dev",
+            &with_doctypes(&[("adr", 2, HASH_B)]),
+        );
+        commit_all(repo.path(), "a second manifest claims the dev pack");
+
+        let report = fence_over(repo.path(), &base, "HEAD");
+        assert_eq!(
+            report.violations,
+            vec![Violation::DuplicatePack {
+                pack: "dev".to_string(),
+                side: Side::Head,
+                paths: vec![manifest_at("a"), manifest_at("z")],
+            }],
+            "the fence does not choose between two same-id manifests — either choice \
+             would let the other one re-pin anything",
+        );
+        assert_eq!(
+            excuse(
+                report.violations.clone(),
+                &["Manifest-Repin: adr", "Manifest-Repin: dev"]
+            ),
+            report.violations,
+            "a fence error names no entity, so no escape reaches it",
+        );
+    }
+
+    #[test]
+    fn a_fixture_pack_is_not_the_pack_it_imitates() {
+        let repo = fresh_repo("fixture");
+        write_pack(
+            repo.path(),
+            "a",
+            "dev",
+            &with_doctypes(&[("adr", 2, HASH_A)]),
+        );
+        write_pack(
+            repo.path(),
+            &format!("{}imitation", pack_locator::FIXTURES),
+            "dev",
+            &with_doctypes(&[("adr", 2, HASH_B)]),
+        );
+        let rev = commit_all(repo.path(), "a pack and a fixture imitating it");
+        assert_eq!(
+            pack_locator::locate(repo.path(), Tree::Rev(&rev)),
+            Ok(BTreeMap::from([("dev".to_string(), manifest_at("a"))])),
+            "fixtures under {} are excluded, so an imitation is neither the pack nor \
+             a second claim on its id",
+            pack_locator::FIXTURES,
+        );
+    }
+
+    /// The working tree is located as it stands — an uncommitted move is read at its
+    /// new path, which is the state a gate run before the move's commit sees.
+    #[test]
+    fn the_working_tree_is_located_as_it_stands() {
+        let repo = fresh_repo("working");
+        write_pack(
+            repo.path(),
+            BEFORE,
+            "dev",
+            &with_doctypes(&[("adr", 2, HASH_A)]),
+        );
+        commit_all(repo.path(), "the pinned base");
+        fs::remove_dir_all(repo.path().join(BEFORE)).expect("move the pack away");
+        write_pack(
+            repo.path(),
+            AFTER,
+            "dev",
+            &with_doctypes(&[("adr", 2, HASH_A)]),
+        );
+
+        assert_eq!(
+            pack_locator::locate(repo.path(), Tree::Working),
+            Ok(BTreeMap::from([("dev".to_string(), manifest_at(AFTER))])),
+            "a deleted-but-indexed path is gone and an untracked one is there",
         );
     }
 }
@@ -1668,6 +2003,13 @@ mod historical {
 
     /// How far the genesis commit landed from its push tip, first-parent.
     const DISTANCE_FROM_TIP: usize = 34;
+
+    /// Where the fence **locates** each pack's manifest across that window — by pack
+    /// identity, so these are observations about those revisions, not paths the fence
+    /// reads. A violation is named at the head side's path, and neither pack moved
+    /// inside the window, so both ends agree.
+    const DEV_AT_GENESIS: &str = "crates/cli/pack/config/schema-manifest.yaml";
+    const METHODOLOGY_AT_GENESIS: &str = "packs/methodology/config/schema-manifest.yaml";
 
     /// The dev pack's frozen doctypes at the genesis commit.
     const DEV_DOCTYPES: [&str; 6] = ["commit", "adr", "spec", "prd", "arch-doc", "changelog"];
@@ -1727,25 +2069,36 @@ mod historical {
         require_reachable(&repo, GENESIS_PARENT);
         require_reachable(&repo, PUSH_TIP);
 
-        let found = fence_over(&repo, GENESIS_PARENT, PUSH_TIP);
-        let flagged: BTreeSet<(String, String)> = found
+        let report = fence_over(&repo, GENESIS_PARENT, PUSH_TIP);
+        assert_eq!(
+            report.absent,
+            vec![],
+            "both packs are located at both ends of the window — neither was added or \
+             removed inside it",
+        );
+        let found = report.violations;
+        let flagged: BTreeSet<(String, String, String)> = found
             .iter()
             .map(|violation| match violation {
                 Violation::HashMovedWithoutVersion {
-                    manifest, entity, ..
-                } => (manifest.clone(), entity.clone()),
+                    pack,
+                    manifest,
+                    entity,
+                    ..
+                } => (pack.clone(), manifest.clone(), entity.clone()),
                 other => panic!("the genesis re-pin is a hash move, got {other:?}"),
             })
             .collect();
 
-        let expected: BTreeSet<(String, String)> = DEV_DOCTYPES
+        let expected: BTreeSet<(String, String, String)> = DEV_DOCTYPES
             .iter()
-            .map(|ty| (DEV_MANIFEST.to_string(), ty.to_string()))
+            .map(|ty| ("dev", DEV_AT_GENESIS, ty))
             .chain(
                 METHODOLOGY_DOCTYPES
                     .iter()
-                    .map(|ty| (METHODOLOGY_MANIFEST.to_string(), ty.to_string())),
+                    .map(|ty| ("methodology", METHODOLOGY_AT_GENESIS, ty)),
             )
+            .map(|(pack, manifest, ty)| (pack.to_string(), manifest.to_string(), ty.to_string()))
             .collect();
         assert_eq!(
             flagged, expected,
@@ -1755,7 +2108,9 @@ mod historical {
         );
         assert_eq!(found.len(), 16, "one violation each: {found:?}");
         assert!(
-            !flagged.iter().any(|(_, entity)| entity == SLUG_RULE_ENTITY),
+            !flagged
+                .iter()
+                .any(|(_, _, entity)| entity == SLUG_RULE_ENTITY),
             "the genesis commit re-pinned doctype hashes only — the slug rule did not \
              move, and the fence does not invent a violation over it",
         );
@@ -1767,7 +2122,10 @@ mod historical {
         require_reachable(&repo, PUSH_TIP);
         assert_eq!(
             fence_over(&repo, &format!("{PUSH_TIP}~1"), PUSH_TIP),
-            vec![],
+            Report {
+                violations: vec![],
+                absent: vec![],
+            },
             "the settled `HEAD~1` shape, evaluated where CI would actually have \
              evaluated it, is PROVABLY CLEAN over the push that carried the re-pin of \
              all 16 — the fence as settled would have missed the exact event it exists \
@@ -1885,11 +2243,13 @@ fn live() {
         // A root commit has no prior state: clean, not an error.
         Window::Nothing => return,
     };
-    let violations = fence_over(&repo, base, "HEAD");
+    let Report { violations, absent } = fence_over(&repo, base, "HEAD");
+    let absent: Vec<String> = absent.iter().map(Absent::to_string).collect();
     assert!(
         violations.is_empty(),
         "the freeze moved without its versions.\n\n{}\n\n\
          Window: {rung} ({base}).\n\
+         Stated: {absent:?}\n\
          Each line names a manifest and an entity whose `{}` moved while its \
          co-located version stood still — a schema-shape change shipping past every \
          gate at exit 0 unless the version moves with it.\n\
@@ -2019,13 +2379,29 @@ mod live_wiring {
 mod record {
     use super::*;
 
-    /// The four homes that state the successor rule.
-    const HOMES: [&str; 4] = [
-        DEV_MANIFEST,
-        METHODOLOGY_MANIFEST,
-        "design/corpus-migration.md",
-        "design/storage.md",
-    ];
+    /// The packs whose manifests are homes — located in the working tree by pack
+    /// identity, never named by path.
+    const PACKS: [&str; 2] = ["dev", "methodology"];
+
+    /// The homes that are docs rather than manifests.
+    const DOC_HOMES: [&str; 2] = ["design/corpus-migration.md", "design/storage.md"];
+
+    /// The four homes that state the successor rule: each pack's manifest, as the
+    /// working tree carries it, and the two docs.
+    fn homes() -> Vec<String> {
+        let manifests = pack_locator::locate(&repo_root(), Tree::Working)
+            .unwrap_or_else(|duplicates| panic!("a pack id is claimed twice: {duplicates:?}"));
+        PACKS
+            .iter()
+            .map(|pack| {
+                manifests
+                    .get(*pack)
+                    .unwrap_or_else(|| panic!("no manifest claims pack `{pack}` in the tree"))
+                    .clone()
+            })
+            .chain(DOC_HOMES.iter().map(|home| home.to_string()))
+            .collect()
+    }
 
     /// What every home must now say, one row per claim — the claim named, so a red arm
     /// says which sentence went missing rather than which substring did.
@@ -2076,8 +2452,8 @@ mod record {
 
     #[test]
     fn every_home_states_what_is_now_fenced() {
-        for home in HOMES {
-            let text = prose(&fs::read_to_string(repo_root().join(home)).expect(home));
+        for home in homes() {
+            let text = prose(&fs::read_to_string(repo_root().join(&home)).expect(&home));
             for (claim, token) in MUST_STATE {
                 assert!(
                     text.contains(token),
@@ -2089,8 +2465,8 @@ mod record {
 
     #[test]
     fn no_home_still_says_the_rule_is_unfenced() {
-        for home in HOMES {
-            let text = prose(&fs::read_to_string(repo_root().join(home)).expect(home));
+        for home in homes() {
+            let text = prose(&fs::read_to_string(repo_root().join(&home)).expect(&home));
             for (why, token) in MUST_NOT_STATE {
                 assert!(
                     !text.contains(token),
