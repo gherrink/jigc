@@ -17,6 +17,11 @@
 //! is refused by name (d), a `--force` run records nothing (e), and a path dirty before the
 //! run is still refused before anything is written (f).
 //!
+//! **And the settings cell is refused before the first write** (T2): a committed
+//! `.claude/settings.json` the merges cannot parse (g) or take the shape of (j) is refused
+//! with nothing written and a route to fix and commit it; after the committed fix a plain
+//! re-run completes (h), and a fix left uncommitted is refused by name (i).
+//!
 //! Every arm drives the real binary (`CARGO_BIN_EXE_jigc`) over a throwaway repository with
 //! one commit and no setup — the shape `dev/jigc-rig bare` builds.
 
@@ -376,5 +381,141 @@ fn a_path_dirty_before_the_run_is_still_refused_with_nothing_written() {
             .expect("read CLAUDE.md")
             .contains("UNCOMMITTED WIP"),
         "the adopter's bytes are untouched"
+    );
+}
+
+/// A committed `.claude/settings.json` whose JSON does not parse — the M54 baseline's
+/// second wedge cell (S22).
+const MALFORMED_SETTINGS: &str = "{ \"permissions\": { \"allow\": [ }\n";
+
+/// The settings file the allowlist, hook and deny merges write into.
+const SETTINGS: &str = ".claude/settings.json";
+
+/// The refusal's `route:` line, as the text surface prints it.
+fn route(out: &std::process::Output) -> String {
+    said(out)
+        .lines()
+        .map(str::trim)
+        .find_map(|line| line.strip_prefix("route:"))
+        .unwrap_or_else(|| panic!("the refusal prints a route: {}", said(out)))
+        .trim()
+        .to_string()
+}
+
+/// Assert a settings refusal came **before the first write** (M54 Increment 4 / T2): exit 1
+/// with `setup.inject-allowlist`, a message naming the file, a route that never sends the
+/// adopter to a permission they already have, and nothing on disk or in the index for the
+/// next run to meet — which is also why no footprint is recorded.
+fn assert_refused_before_any_write(repo: &Path, out: &std::process::Output, what: &str) {
+    assert_fails_with(out, "setup.inject-allowlist", what);
+    let said = said(out);
+    assert!(
+        said.contains(SETTINGS),
+        "{what}: the message names `{SETTINGS}`: {said}"
+    );
+    let route = route(out);
+    assert!(
+        !route.contains("writable"),
+        "{what}: the route is not a permission fix: {route}"
+    );
+    assert!(
+        route.contains("commit"),
+        "{what}: the route says to commit the fix, since an uncommitted one is refused: {route}"
+    );
+    let status = git(repo, &["status", "--short"]);
+    assert!(
+        status.is_empty(),
+        "{what}: `git status --short` is empty: {status}"
+    );
+    assert!(!repo.join(".jigc").exists(), "{what}: `.jigc/` is absent");
+    assert!(
+        !repo.join("CLAUDE.md").exists(),
+        "{what}: `CLAUDE.md` is absent"
+    );
+    assert!(
+        !repo.join(INSTALL_FOOTPRINT).exists(),
+        "{what}: no `{INSTALL_FOOTPRINT}` is recorded"
+    );
+}
+
+/// The adopter's fix to the settings file: valid JSON jigc merges into.
+const FIXED_SETTINGS: &str = "{ \"permissions\": { \"allow\": [] } }\n";
+
+/// (g) A committed `.claude/settings.json` that does not parse is refused **before the
+/// first write**, with the parser's own line and column and a route to fix and commit it.
+#[test]
+fn a_malformed_committed_settings_file_is_refused_before_any_write() {
+    let (repo, home) = bare_repo("settings-malformed");
+    let (repo, home) = (repo.path(), home.path());
+    commit_file(repo, SETTINGS, MALFORMED_SETTINGS);
+
+    let out = jigc(repo, home, &["setup"]);
+    assert_refused_before_any_write(repo, &out, "a malformed settings file");
+    let said = said(&out);
+    assert!(
+        said.contains("line 1") && said.contains("column"),
+        "the message carries the parser's line and column: {said}"
+    );
+}
+
+/// (h) After the adopter **commits** the fix, a plain re-run completes.
+#[test]
+fn after_the_settings_fix_is_committed_a_plain_rerun_completes() {
+    let (repo, home) = bare_repo("settings-fixed");
+    let (repo, home) = (repo.path(), home.path());
+    commit_file(repo, SETTINGS, MALFORMED_SETTINGS);
+
+    let first = jigc(repo, home, &["setup"]);
+    assert_fails_with(
+        &first,
+        "setup.inject-allowlist",
+        "a malformed settings file",
+    );
+
+    commit_file(repo, SETTINGS, FIXED_SETTINGS);
+    let rerun = jigc(repo, home, &["setup"]);
+    assert_rerun_completes(repo, &rerun);
+}
+
+/// (i) **Re-arm control.** The fix left **uncommitted** is the adopter's work on a tracked
+/// install path, so the re-run refuses it by name — which is why the route says commit.
+#[test]
+fn an_uncommitted_settings_fix_is_refused_by_name() {
+    let (repo, home) = bare_repo("settings-uncommitted");
+    let (repo, home) = (repo.path(), home.path());
+    commit_file(repo, SETTINGS, MALFORMED_SETTINGS);
+
+    let first = jigc(repo, home, &["setup"]);
+    assert_fails_with(
+        &first,
+        "setup.inject-allowlist",
+        "a malformed settings file",
+    );
+
+    write(repo, SETTINGS, FIXED_SETTINGS);
+    let rerun = jigc(repo, home, &["setup"]);
+    assert_fails_with(&rerun, DIRTY_CODE, "an uncommitted settings fix");
+    assert_eq!(
+        refused_paths(&rerun),
+        vec![SETTINGS.to_string()],
+        "the refusal names exactly the settings file: {}",
+        said(&rerun)
+    );
+}
+
+/// (j) A committed settings file that **parses but has a shape the merge cannot take** —
+/// `permissions` an array — is refused the same way, before any write.
+#[test]
+fn a_settings_file_of_the_wrong_shape_is_refused_before_any_write() {
+    let (repo, home) = bare_repo("settings-shape");
+    let (repo, home) = (repo.path(), home.path());
+    commit_file(repo, SETTINGS, "{\"permissions\": []}\n");
+
+    let out = jigc(repo, home, &["setup"]);
+    assert_refused_before_any_write(repo, &out, "a wrong-shape settings file");
+    let said = said(&out);
+    assert!(
+        said.contains("`permissions` is not a JSON object"),
+        "the message carries the shape error: {said}"
     );
 }

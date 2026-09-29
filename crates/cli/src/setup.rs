@@ -1360,6 +1360,28 @@ fn install(
         InstallSubject::Unknown => {}
     }
 
+    // 0f. **The settings file, asked before the first write** (M54 Increment 4 / T2; S22).
+    //     Steps 3, 4 and 4b merge into it, and a committed file they cannot parse or merge
+    //     into used to fail step 3 after `.jigc/` and `CLAUDE.md` were written, routed to
+    //     *ensure it is writable*, which it was. [`adapter::check_settings_merge`] runs the
+    //     same merges in memory, so this refuses exactly what they would, with nothing
+    //     written and so nothing to record. It sits after 0e, so a settings file the
+    //     adopter has not committed is refused as theirs first.
+    adapter::check_settings_merge(jigc_home, profile).map_err(|err| {
+        let route = if err.kind() == std::io::ErrorKind::InvalidData {
+            format!(
+                "fix `{allowlist_file}` so jigc can merge into it, commit the fix, then re-run `jigc setup`"
+            )
+        } else {
+            format!("ensure `{allowlist_file}` is readable, then re-run `jigc setup`")
+        };
+        Finding::block(
+            "setup.inject-allowlist",
+            format!("cannot merge jigc's settings into `{allowlist_file}`: {err}"),
+            route,
+        )
+    })?;
+
     // 1–5. **The write span**, behind one seam (M54 Increment 4 / T1; S22): every error
     //      it returns reaches [`record_failed_install`] before it propagates, so a failed
     //      first run leaves a repository a plain re-run completes.

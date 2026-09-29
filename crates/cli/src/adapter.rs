@@ -652,7 +652,16 @@ pub fn inject_allowlist(repo_root: &Path, profile: &AdapterProfile) -> std::io::
     let target = repo_root.join(&profile.allowlist.file);
 
     let mut settings = read_settings(&target)?;
+    merge_allowlist(&mut settings, profile)?;
+    write_settings(&target, &settings)
+}
 
+/// [`inject_allowlist`]'s merge, in memory: ensure every permit is in `permissions.allow`,
+/// creating the containers it needs, or fail on a shape it cannot merge into.
+fn merge_allowlist(
+    settings: &mut serde_json::Value,
+    profile: &AdapterProfile,
+) -> std::io::Result<()> {
     // Navigate/create `permissions.allow`, then ensure each permit is present.
     let allow = settings
         .as_object_mut()
@@ -687,8 +696,7 @@ pub fn inject_allowlist(repo_root: &Path, profile: &AdapterProfile) -> std::io::
             allow.push(serde_json::Value::String(permit.clone()));
         }
     }
-
-    write_settings(&target, &settings)
+    Ok(())
 }
 
 /// Idempotently merge the profile's `deny` **safety floor** into the host project's
@@ -715,7 +723,17 @@ pub fn inject_deny(repo_root: &Path, profile: &AdapterProfile) -> std::io::Resul
     let target = repo_root.join(&profile.allowlist.file);
 
     let mut settings = read_settings(&target)?;
+    merge_deny(&mut settings, profile)?;
+    write_settings(&target, &settings)
+}
 
+/// [`inject_deny`]'s merge, in memory: ensure every floor pattern is in
+/// `permissions.deny`, creating the containers it needs, or fail on a shape it cannot
+/// merge into. Inert for a profile with no floor, exactly as [`inject_deny`] is.
+fn merge_deny(settings: &mut serde_json::Value, profile: &AdapterProfile) -> std::io::Result<()> {
+    if profile.allowlist.deny.is_empty() {
+        return Ok(());
+    }
     // Navigate/create `permissions.deny`, then ensure each floor pattern is present.
     let deny = settings
         .as_object_mut()
@@ -750,8 +768,29 @@ pub fn inject_deny(repo_root: &Path, profile: &AdapterProfile) -> std::io::Resul
             deny.push(serde_json::Value::String(pattern.clone()));
         }
     }
+    Ok(())
+}
 
-    write_settings(&target, &settings)
+/// **Ask, before any write, whether the settings file can take all three merges** (M54
+/// Increment 4 / T2; `DECISIONS.md` → 2026-09-28 M54 settled, S22).
+///
+/// Runs [`read_settings`] and the in-memory merges of [`inject_allowlist`],
+/// [`inject_hook`] and [`inject_deny`], in the order `jigc setup` writes them, on the
+/// parsed value, and writes nothing. It is the same code the writers run, so it accepts
+/// exactly what they accept. An `Err` is the error the first failing writer would have
+/// returned: `InvalidData` for a file that does not parse (the parser's line and column)
+/// or a shape a merge cannot take, any other kind for a file that cannot be read.
+///
+/// `jigc setup` asks it before its first write, so a malformed committed settings file is
+/// refused with nothing on disk to wedge the re-run, rather than after jigc's other install
+/// files are written.
+pub fn check_settings_merge(repo_root: &Path, profile: &AdapterProfile) -> std::io::Result<()> {
+    let mut settings = read_settings(&repo_root.join(&profile.allowlist.file))?;
+    merge_allowlist(&mut settings, profile)?;
+    if let Some(hook) = profile.hook() {
+        merge_hook(&mut settings, hook)?;
+    }
+    merge_deny(&mut settings, profile)
 }
 
 /// Idempotently **unwire** the bootstrap reference from the host project's
@@ -883,7 +922,13 @@ pub fn inject_hook(repo_root: &Path, profile: &AdapterProfile) -> std::io::Resul
     let target = repo_root.join(&profile.allowlist.file);
 
     let mut settings = read_settings(&target)?;
+    merge_hook(&mut settings, hook)?;
+    write_settings(&target, &settings)
+}
 
+/// [`inject_hook`]'s merge, in memory: ensure a `hooks.<event>` matcher runs the hook
+/// command, creating the containers it needs, or fail on a shape it cannot merge into.
+fn merge_hook(settings: &mut serde_json::Value, hook: &HookTarget) -> std::io::Result<()> {
     // Navigate/create `hooks.<event>` (an array of matcher objects).
     let event_matchers = settings
         .as_object_mut()
@@ -929,8 +974,7 @@ pub fn inject_hook(repo_root: &Path, profile: &AdapterProfile) -> std::io::Resul
             "hooks": [ { "type": "command", "command": hook.run } ]
         }));
     }
-
-    write_settings(&target, &settings)
+    Ok(())
 }
 
 /// Idempotently **remove** the profile's session-event hook from the host project's
@@ -2837,6 +2881,59 @@ mod tests {
           }
         }
         "###);
+    }
+
+    /// [`check_settings_merge`] accepts exactly what the three writers accept, in
+    /// `setup`'s order, and writes nothing (M54 Increment 4 / T2). Each input is run
+    /// through the check and through the writers on a fresh copy; the outcome and the
+    /// error text agree, and the check leaves the file's bytes (or its absence) alone.
+    /// The faults reach every merge: the parse, `permissions`, `allow`, `hooks`,
+    /// `hooks.<event>` and `deny`.
+    #[test]
+    fn the_settings_check_accepts_exactly_what_the_writers_accept_and_writes_nothing() {
+        let profile = load_profile("claude-code").expect("the shipped profile loads");
+        let cases: [Option<&str>; 9] = [
+            None,
+            Some("{}"),
+            Some(r#"{"permissions": {"allow": ["Read"]}, "model": "x"}"#),
+            Some(r#"{ "permissions": { "allow": [ }"#),
+            Some("[]"),
+            Some(r#"{"permissions": []}"#),
+            Some(r#"{"permissions": {"allow": {}}}"#),
+            Some(r#"{"hooks": []}"#),
+            Some(r#"{"permissions": {"deny": "x"}}"#),
+        ];
+        for case in cases {
+            let checked = TempDir::new();
+            let written = TempDir::new();
+            let file = profile.allowlist.file.clone();
+            if let Some(body) = case {
+                for dir in [&checked, &written] {
+                    let path = dir.path().join(&file);
+                    std::fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+                    std::fs::write(path, body).expect("seed settings");
+                }
+            }
+
+            let check = check_settings_merge(checked.path(), &profile);
+            let writers = inject_allowlist(written.path(), &profile)
+                .and_then(|()| inject_hook(written.path(), &profile))
+                .and_then(|()| inject_deny(written.path(), &profile));
+            assert_eq!(
+                check.as_ref().map_err(ToString::to_string),
+                writers.as_ref().map_err(ToString::to_string),
+                "the check and the writers agree on {case:?}",
+            );
+            if let Err(err) = &check {
+                assert_eq!(err.kind(), std::io::ErrorKind::InvalidData, "{case:?}");
+            }
+            let after = std::fs::read_to_string(checked.path().join(&file)).ok();
+            assert_eq!(
+                after.as_deref(),
+                case,
+                "the check writes nothing over {case:?}"
+            );
+        }
     }
 
     /// Installing the hook into a `.claude/settings.json` that already holds the
