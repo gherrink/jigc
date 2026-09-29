@@ -75,6 +75,8 @@ mod pack_source_determinism;
 mod placement_override;
 #[path = "../planning_checklist_sanction.rs"]
 mod planning_checklist_sanction;
+#[path = "../probe_boundary_fences.rs"]
+mod probe_boundary_fences;
 #[path = "../read_back_fence.rs"]
 mod read_back_fence;
 #[path = "../root_knob_rules.rs"]
