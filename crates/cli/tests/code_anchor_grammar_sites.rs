@@ -20,12 +20,12 @@
 //!     containing [`GRAMMAR`] is **exactly** the declared set, so a fifth home cannot
 //!     appear un-declared and drift into a second spelling.
 //!
-//! A shared `const` would be the stronger fence and is **impossible here**: the
-//! grammar's adjudicator is `crates/cli/probes/doc-code`, whose `Cargo.toml` declares
-//! an empty `[workspace]` precisely so its tree-sitter grammars stay out of the
-//! engine/cli lock graph — it cannot depend on `engine`, so no constant can reach both
-//! it and the surfaces below. A source-scanning token table, total in both directions,
-//! is what is available; it is asserted rather than assumed.
+//! A shared `const` would be the stronger fence and is **refused here**: the grammar's
+//! adjudicator is the bundled `doc-code` probe (`crates/cli/src/doc_code_probe/`, in the
+//! `jigc` bin), whose wire types stay independently declared — it imports neither
+//! `engine` nor `cli` (M54 S4), so no constant can reach both it and the surfaces below.
+//! A source-scanning token table, total in both directions, is what is available; it is
+//! asserted rather than assumed.
 //!
 //! **The rendered arms are separate, and drive the real binary**, because a source
 //! site carrying the token proves nothing about whether the surface fed from it still
@@ -73,8 +73,7 @@ struct Site {
 /// worker is routed to: it feeds `doc schema`'s listing, the `{{schema:}}` compose seam and
 /// `doc set-field --help` alike, so the grammar is authored once and rendered three times
 /// rather than typed four times. The guide states it in prose, and the `doc-code` probe
-/// re-declares it because it structurally cannot read the pack's — its `Cargo.toml` declares
-/// an empty `[workspace]` to keep the tree-sitter grammars out of the engine/cli lock graph,
+/// re-declares it because its wire types stay independent of `engine` and `cli` (M54 S4),
 /// which is exactly why this table is a source scan rather than a shared `const`.
 const SOURCE_SITES: &[Site] = &[
     Site {
@@ -87,9 +86,10 @@ const SOURCE_SITES: &[Site] = &[
         feeds: "the shipped guide `jigc setup` installs at `.claude/skills/jigc/SKILL.md`",
     },
     Site {
-        path: "crates/cli/probes/doc-code/src/main.rs",
+        path: "crates/cli/src/doc_code_probe/mod.rs",
         feeds: "the `doc-code` finding a value that is not an anchor takes (M50 / T5, RC-m50 \
-                F-2) — the probe re-declares the token because it cannot depend on `engine`",
+                F-2) — the probe re-declares the token because it imports neither `engine` \
+                nor `cli`",
     },
 ];
 
@@ -98,7 +98,6 @@ const SOURCE_SITES: &[Site] = &[
 const SCANNED_ROOTS: &[&str] = &[
     "crates/engine/src",
     "crates/cli/src",
-    "crates/cli/probes/doc-code/src",
     "crates/cli/pack",
     "packs",
     "QUICKSTART.md",

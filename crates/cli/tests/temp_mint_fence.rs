@@ -47,9 +47,9 @@
 //! resolution fence (M49 Increment 3): the scanner is subtle enough that a second copy
 //! would be a second set of bugs.
 //!
-//! The `doc-code` probe is likewise outside by construction: it is its own workspace
-//! (`crates/cli/probes/doc-code`, excluded from the root manifest) and **cannot depend
-//! on `engine`**, so it carries a local `AtomicU32` instead.
+//! The bundled `doc-code` probe is likewise outside by construction: its module
+//! (`crates/cli/src/doc_code_probe/`, in the `jigc` bin) keeps its wire types independent
+//! and **cannot depend on `engine`** (M54 S4), so it carries a local `AtomicU32` instead.
 
 use crate::support::rust_source::{cfg_test_regions, code_only, is_test_domain};
 use std::path::{Path, PathBuf};
@@ -72,8 +72,9 @@ fn workspace_sources(root: &Path) -> Vec<PathBuf> {
         .iter()
         .flat_map(|crate_dir| crate::support::rust_source::rust_files(&root.join(crate_dir)))
         .collect();
-    // The `doc-code` probe is a detached workspace that cannot depend on `engine`.
-    out.retain(|p| !p.components().any(|c| c.as_os_str() == "probes"));
+    // The bundled `doc-code` probe cannot depend on `engine` — its wire types stay
+    // independent of `engine` and `cli` (M54 S4) — so it cannot reach the mint.
+    out.retain(|p| !p.components().any(|c| c.as_os_str() == "doc_code_probe"));
     out.sort();
     assert!(
         out.len() > 100,

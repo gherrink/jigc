@@ -5,8 +5,11 @@
 //! keeps only `fn main` and the fd-level output tee the invocation log needs. See
 //! `implementation/module-layout.md` → The I/O boundary.
 
+mod doc_code_probe;
+
 use clap::Parser;
 use cli::invocation_log::{self, Outcome};
+use cli::invoke::{self, ProbeArgv};
 use cli::{cli as cli_tree, route_fence};
 use std::os::unix::io::RawFd;
 use std::process::ExitCode;
@@ -28,6 +31,12 @@ use std::time::Instant;
 /// Install is gated on the knob because teeing repoints fd 1/2 at a pipe (`isatty` → false),
 /// which suppresses clap's terminal colour; keeping that cost on the opted-in operator alone.
 fn main() -> ExitCode {
+    // The self-exec probe intercept (M54 S4) — the FIRST statement, ahead of the route
+    // fence, the invocation-log gate and the output tee, so `jigc`'s own probe child is
+    // never logged as an agent's call. It matches the literal argv, never through clap.
+    if let Some(code) = probe_intercept() {
+        return code;
+    }
     // The M43 route fence: install the mechanical-route argv validator before anything can
     // construct a route, so every debug-build run (incl. the flow suites driving this binary)
     // carries the parse assert live. A release build stores it and never consults it.
@@ -97,6 +106,23 @@ fn main() -> ExitCode {
         invocation_log::log_invocation(&logs_dir, started.elapsed(), &outcome, output_bytes);
     }
     outcome.exit_code()
+}
+
+/// Run the bundled `doc-code` probe when the argv is exactly this build's probe argv
+/// ([`invoke::doc_code_probe_args`]); refuse any other `__probe` argv — a skewed
+/// `--build` or a malformed one — with its reason on stderr and a non-zero exit, which
+/// the invoker carries into the `pack-probe-integrity.probe-failure` finding. `None` for
+/// every other argv: `main` goes on as `jigc`.
+fn probe_intercept() -> Option<ExitCode> {
+    let args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
+    match invoke::probe_argv(&args) {
+        ProbeArgv::NotProbe => None,
+        ProbeArgv::Run => Some(doc_code_probe::run()),
+        ProbeArgv::Refuse(reason) => {
+            eprintln!("{reason}");
+            Some(ExitCode::from(cli::task::EXIT_ERROR))
+        }
+    }
 }
 
 /// An fd-level counting tee over stdout (fd 1) and stderr (fd 2): each fd's real sink is saved

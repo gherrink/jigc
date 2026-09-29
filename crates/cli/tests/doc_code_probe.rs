@@ -1,10 +1,10 @@
 //! M10 inc-4 / T1 — the dev pack's `doc-code` probe executable skeleton, proven on a
 //! fixture **over the proven seam + invoker** (inc 3).
 //!
-//! The probe is a standalone program living **outside** the workspace
-//! ([module-layout.md](../../../implementation/module-layout.md) → Probe boundary). This
-//! test takes the one the build places beside `jigc` and drives it the way the engine
-//! will: serialize a crafted [`EffectiveStateSnapshot`] to a temp file, build a
+//! The probe is bundled in `jigc` and run by **self-exec** — `jigc __probe doc-code
+//! --build <version>` ([module-layout.md](../../../implementation/module-layout.md) →
+//! Probe boundary, the bundled probe; M54 S4). This test runs the built `jigc` as that
+//! probe and drives it the way the engine will: serialize a crafted [`EffectiveStateSnapshot`] to a temp file, build a
 //! [`ProbeRequest`] carrying its path-ref, hand the request to the CLI invoker
 //! ([`cli::invoke::invoke_probe`]), and **ingest** the invoker's raw outcome through the
 //! engine's [`engine::probe::ingest_probe_run`] (the inc-3 ingestion path).
@@ -52,12 +52,12 @@ impl Drop for TempDir {
     }
 }
 
-/// The `doc-code` probe `jigc` resolves in production: the sibling of the built `jigc`
-/// binary (`CARGO_BIN_EXE_jigc`), which the build places there. An in-process caller has
-/// no `jigc` of its own to resolve from — its `current_exe()` is the test binary — so it
-/// names that sibling directly.
+/// The program an in-process caller runs the bundled probe from: the built `jigc`
+/// (`CARGO_BIN_EXE_jigc`), paired at every call with [`invoke::doc_code_probe_args`] —
+/// the in-process arm of `doc_code_command` (M54 S4). A test process's own
+/// `current_exe()` is the test binary, so it names the real `jigc` directly.
 fn doc_code_probe() -> PathBuf {
-    Path::new(env!("CARGO_BIN_EXE_jigc")).with_file_name("doc-code")
+    PathBuf::from(env!("CARGO_BIN_EXE_jigc"))
 }
 
 /// Translate the CLI invoker's raw outcome into the engine's [`ProbeRun`] (the inc-3
@@ -136,8 +136,13 @@ fn doc_code_probe_blocks_missing_file_passes_present_and_bare_path() {
     );
     let request_bytes = serde_json::to_vec(&request).expect("serialize request");
 
-    let outcome = invoke::invoke_probe(&probe, &request_bytes, Duration::from_secs(30))
-        .expect("invoker drives the doc-code probe");
+    let outcome = invoke::invoke_probe(
+        &probe,
+        &invoke::doc_code_probe_args(),
+        &request_bytes,
+        Duration::from_secs(30),
+    )
+    .expect("invoker drives the doc-code probe");
 
     assert_eq!(
         outcome.status,
@@ -200,8 +205,13 @@ fn run_symbol_fixture(
     );
     let request_bytes = serde_json::to_vec(&request).expect("serialize request");
 
-    let outcome = invoke::invoke_probe(&probe, &request_bytes, Duration::from_secs(60))
-        .expect("invoker drives the doc-code probe");
+    let outcome = invoke::invoke_probe(
+        &probe,
+        &invoke::doc_code_probe_args(),
+        &request_bytes,
+        Duration::from_secs(60),
+    )
+    .expect("invoker drives the doc-code probe");
     assert_eq!(
         outcome.status,
         ProbeStatus::Exited { code: Some(0) },
@@ -318,8 +328,13 @@ fn raw_stdout_for_fixture(file_body: &str, anchors: Vec<TargetAnchor>) -> Vec<u8
     );
     let request_bytes = serde_json::to_vec(&request).expect("serialize request");
 
-    let outcome = invoke::invoke_probe(&probe, &request_bytes, Duration::from_secs(60))
-        .expect("invoker drives the doc-code probe");
+    let outcome = invoke::invoke_probe(
+        &probe,
+        &invoke::doc_code_probe_args(),
+        &request_bytes,
+        Duration::from_secs(60),
+    )
+    .expect("invoker drives the doc-code probe");
     assert_eq!(
         outcome.status,
         ProbeStatus::Exited { code: Some(0) },
@@ -498,8 +513,13 @@ fn run_lang_fixture(
     );
     let request_bytes = serde_json::to_vec(&request).expect("serialize request");
 
-    let outcome = invoke::invoke_probe(&probe, &request_bytes, Duration::from_secs(60))
-        .expect("invoker drives the doc-code probe");
+    let outcome = invoke::invoke_probe(
+        &probe,
+        &invoke::doc_code_probe_args(),
+        &request_bytes,
+        Duration::from_secs(60),
+    )
+    .expect("invoker drives the doc-code probe");
     assert_eq!(
         outcome.status,
         ProbeStatus::Exited { code: Some(0) },
@@ -873,8 +893,13 @@ fn run_two_file_fixture(
     );
     let request_bytes = serde_json::to_vec(&request).expect("serialize request");
 
-    let outcome = invoke::invoke_probe(&probe, &request_bytes, Duration::from_secs(60))
-        .expect("invoker drives the doc-code probe");
+    let outcome = invoke::invoke_probe(
+        &probe,
+        &invoke::doc_code_probe_args(),
+        &request_bytes,
+        Duration::from_secs(60),
+    )
+    .expect("invoker drives the doc-code probe");
     assert_eq!(
         outcome.status,
         ProbeStatus::Exited { code: Some(0) },
@@ -947,8 +972,13 @@ fn closure_registered_test_name_reports_what_the_probe_compared_not_an_absence()
     );
     let request_bytes = serde_json::to_vec(&request).expect("serialize request");
 
-    let outcome = invoke::invoke_probe(&probe, &request_bytes, Duration::from_secs(60))
-        .expect("invoker drives the doc-code probe");
+    let outcome = invoke::invoke_probe(
+        &probe,
+        &invoke::doc_code_probe_args(),
+        &request_bytes,
+        Duration::from_secs(60),
+    )
+    .expect("invoker drives the doc-code probe");
     assert_eq!(
         outcome.status,
         ProbeStatus::Exited { code: Some(0) },
@@ -1043,8 +1073,13 @@ fn pad_ts_findings(anchor_value: &str) -> Vec<engine::finding::Finding> {
     );
     let request_bytes = serde_json::to_vec(&request).expect("serialize request");
 
-    let outcome = invoke::invoke_probe(&probe, &request_bytes, Duration::from_secs(60))
-        .expect("invoker drives the doc-code probe");
+    let outcome = invoke::invoke_probe(
+        &probe,
+        &invoke::doc_code_probe_args(),
+        &request_bytes,
+        Duration::from_secs(60),
+    )
+    .expect("invoker drives the doc-code probe");
     assert_eq!(
         outcome.status,
         ProbeStatus::Exited { code: Some(0) },
@@ -1127,5 +1162,107 @@ fn a_file_line_value_names_the_grammar_and_the_symbol_side_is_unmoved() {
         !symbol.message.contains(ANCHOR_GRAMMAR),
         "a value that parses as an anchor is not a grammar miss: {}",
         symbol.message,
+    );
+}
+
+// ----- M54 Inc 2 T4: the self-exec argv, driven through the built binary -----
+
+/// A real request over a one-anchor snapshot (a present symbol), written to `scratch`.
+fn one_anchor_request(root: &Path, scratch: &Path) -> Vec<u8> {
+    fs::create_dir_all(root.join("src")).expect("mk tree");
+    fs::write(root.join("src/lib.rs"), b"pub fn alpha() {}\n").expect("write lib.rs");
+    let snapshot = EffectiveStateSnapshot::new(
+        vec![symbol_exists_anchor("src/lib.rs", "alpha")],
+        root.to_path_buf(),
+        RootKind::WorkingTree,
+    );
+    let snapshot_path = scratch.join("snapshot.json");
+    fs::write(
+        &snapshot_path,
+        serde_json::to_vec(&snapshot).expect("serialize snapshot"),
+    )
+    .expect("write snapshot");
+    let request = ProbeRequest::new(
+        "doc-code",
+        "adr:x#status/cites-code",
+        snapshot_path,
+        serde_json::Map::new(),
+    );
+    serde_json::to_vec(&request).expect("serialize request")
+}
+
+/// Spawn the built `jigc` with `args`, feed it `request` on stdin, and collect its output.
+fn run_jigc_with_stdin(args: &[String], request: &[u8]) -> std::process::Output {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    let mut child = Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn the built jigc");
+    child
+        .stdin
+        .take()
+        .expect("stdin piped")
+        .write_all(request)
+        .expect("write the request");
+    child.wait_with_output().expect("wait for jigc")
+}
+
+/// `jigc` + the one args spelling (`__probe doc-code --build <own version>`) is the
+/// `doc-code` probe: fed a real request it prints a valid response and exits 0.
+#[test]
+fn jigc_runs_as_the_doc_code_probe_on_its_own_build_id() {
+    let root = TempDir::new("self-exec-tree");
+    let scratch = TempDir::new("self-exec-scratch");
+    let request = one_anchor_request(root.path(), scratch.path());
+
+    let out = run_jigc_with_stdin(&invoke::doc_code_probe_args(), &request);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "the self-exec probe exits 0; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let response: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("the self-exec probe prints valid JSON");
+    assert_eq!(
+        response["findings"],
+        serde_json::json!([]),
+        "a present symbol draws no finding: {response}",
+    );
+    assert!(
+        response["schema_version"].is_u64(),
+        "the response carries the wire schema version: {response}",
+    );
+}
+
+/// A skewed `--build` (another `jigc` version asked this one for its probe) is refused:
+/// non-zero exit, nothing on stdout, and a stderr reason naming **both** versions — the
+/// text the invoker carries into the `probe-failure` finding.
+#[test]
+fn jigc_refuses_the_probe_argv_of_another_build() {
+    let root = TempDir::new("skew-tree");
+    let scratch = TempDir::new("skew-scratch");
+    let request = one_anchor_request(root.path(), scratch.path());
+
+    let mut args = invoke::doc_code_probe_args();
+    *args.last_mut().expect("the args end in the build id") = "0.0.0-skew".to_owned();
+    let out = run_jigc_with_stdin(&args, &request);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "a skewed build id exits non-zero; stderr:\n{stderr}"
+    );
+    assert!(
+        out.stdout.is_empty(),
+        "a refused probe prints nothing on stdout: {:?}",
+        String::from_utf8_lossy(&out.stdout),
+    );
+    assert!(
+        stderr.contains("0.0.0-skew") && stderr.contains(env!("CARGO_PKG_VERSION")),
+        "the refusal names both versions; stderr:\n{stderr}",
     );
 }

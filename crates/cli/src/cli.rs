@@ -1690,21 +1690,15 @@ fn validate_store_in_repo(cwd: &Path) -> Result<StoreSweep> {
     })
 }
 
-/// The store sweep's **probe pre-flight**: resolve the `doc-code` probe program (the
-/// `JIGC_DOC_CODE_PROBE` override else the `<bin-dir>/doc-code` sibling) and require it
-/// to be an existing file before the sweep runs. A missing probe is a single
-/// misconfiguration to report once — not a `crash` meta-finding per anchor — so this
-/// bails with **one** operational error naming the resolved path + the override knob,
-/// and the handler routes it to stderr with a non-zero exit (`design/validation.md` →
-/// Distribution bound; review S2).
+/// The store sweep's **probe pre-flight**: when the `JIGC_DOC_CODE_PROBE` override is set,
+/// require it to be an existing file before the sweep runs (without it the probe is the
+/// running `jigc` itself, M54 S4). A missing probe is a single misconfiguration to
+/// report once — not a `crash` meta-finding per anchor — so this bails with **one**
+/// operational error naming the resolved path + the override knob, and the handler routes
+/// it to stderr with a non-zero exit (`design/validation.md` → Distribution bound; review
+/// S2).
 fn require_doc_code_probe() -> Result<()> {
-    let program = crate::invoke::doc_code_program();
-    if !program.is_file() {
-        anyhow::bail!(
-            "`doc-code` probe not found at {program:?} — place the `doc-code` binary beside `jigc` or set `JIGC_DOC_CODE_PROBE` to its path"
-        );
-    }
-    Ok(())
+    crate::invoke::require_doc_code_override()
 }
 
 /// Locate the repo root and its `.jigc/config/` project layer — the store-walk locate

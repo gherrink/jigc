@@ -1654,8 +1654,10 @@ fn run_finalize(
 pub(crate) fn doc_code_invoker(request: &ProbeRequest) -> std::io::Result<ProbeRun> {
     let bytes = serde_json::to_vec(request)
         .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
-    let program = crate::invoke::doc_code_program();
-    match crate::invoke::invoke_probe(&program, &bytes, crate::invoke::DOC_CODE_BUDGET) {
+    let outcome = crate::invoke::doc_code_command().and_then(|(program, args)| {
+        crate::invoke::invoke_probe(&program, &args, &bytes, crate::invoke::DOC_CODE_BUDGET)
+    });
+    match outcome {
         Ok(outcome) => Ok(ProbeRun {
             stdout: outcome.stdout,
             stderr: outcome.stderr,
@@ -2325,11 +2327,12 @@ impl TaskArea {
 
     /// The task-scope **probe pre-flight** — the task twin of `cli.rs`'s store-scope
     /// `require_doc_code_probe`. When the task's effective state carries `code-anchor`
-    /// work (the same surface `schedule_doc_code` invokes the probe over), resolve the
-    /// `doc-code` program (the `JIGC_DOC_CODE_PROBE` override else the `<bin-dir>/doc-code`
-    /// sibling) and require it to be an existing file **before** the engine sweep reaches
-    /// the probe. A missing probe is one misconfiguration to report once — not an
-    /// N-per-anchor `pack-probe-integrity.crash` floor — so this bails with **one**
+    /// work (the same surface `schedule_doc_code` invokes the probe over) and the
+    /// `JIGC_DOC_CODE_PROBE` override is set, require the override to be an existing file
+    /// **before** the engine sweep reaches the probe. Without the override the probe is
+    /// the running `jigc` itself (M54 S4), so there is nothing to check. A missing probe
+    /// is one misconfiguration to report once — not an N-per-anchor
+    /// `pack-probe-integrity.crash` floor — so this bails with **one**
     /// operational error naming the resolved path + the override knob, which the verb
     /// handler routes to stderr with a non-zero exit (`module-layout.md` → Probe
     /// distribution, the task-scope absence fix; `design/validation.md` → Distribution
@@ -2348,13 +2351,7 @@ impl TaskArea {
         if anchors.is_empty() {
             return Ok(());
         }
-        let program = crate::invoke::doc_code_program();
-        if !program.is_file() {
-            anyhow::bail!(
-                "`doc-code` probe not found at {program:?} — place the `doc-code` binary beside `jigc` or set `JIGC_DOC_CODE_PROBE` to its path"
-            );
-        }
-        Ok(())
+        crate::invoke::require_doc_code_override()
     }
 
     /// Run the task-scope validation sweep against the committed-state `file-state`

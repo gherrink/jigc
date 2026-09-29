@@ -110,7 +110,7 @@ fn main() {
 "##,
     );
 
-    let outcome = invoke::invoke_probe(&stub, &sample_request(), Duration::from_secs(10))
+    let outcome = invoke::invoke_probe(&stub, &[], &sample_request(), Duration::from_secs(10))
         .expect("invoker runs the well-behaved stub");
 
     assert_eq!(
@@ -146,8 +146,8 @@ fn main() {
 
     let budget = Duration::from_millis(500);
     let start = Instant::now();
-    let outcome =
-        invoke::invoke_probe(&stub, &sample_request(), budget).expect("invoker drives the sleeper");
+    let outcome = invoke::invoke_probe(&stub, &[], &sample_request(), budget)
+        .expect("invoker drives the sleeper");
     let elapsed = start.elapsed();
 
     assert_eq!(
@@ -181,7 +181,7 @@ fn main() {
 "#,
     );
 
-    let outcome = invoke::invoke_probe(&stub, &sample_request(), Duration::from_secs(10))
+    let outcome = invoke::invoke_probe(&stub, &[], &sample_request(), Duration::from_secs(10))
         .expect("invoker drives the crasher");
 
     assert_eq!(
@@ -226,8 +226,8 @@ fn main() {
 
     let budget = Duration::from_secs(10);
     let start = Instant::now();
-    let outcome =
-        invoke::invoke_probe(&stub, &sample_request(), budget).expect("invoker drives the flooder");
+    let outcome = invoke::invoke_probe(&stub, &[], &sample_request(), budget)
+        .expect("invoker drives the flooder");
     let elapsed = start.elapsed();
 
     assert_eq!(
@@ -271,7 +271,7 @@ fn main() {
 "#,
     );
 
-    let outcome = invoke::invoke_probe(&stub, &sample_request(), Duration::from_secs(10))
+    let outcome = invoke::invoke_probe(&stub, &[], &sample_request(), Duration::from_secs(10))
         .expect("invoker drives the garbage stub");
 
     assert_eq!(

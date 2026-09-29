@@ -6,11 +6,11 @@
 //! `EffectiveStateSnapshot` to a temp scratch path, drive a CLI-supplied invoker, and
 //! ingest the probe's findings + the `pack-probe-integrity.*` meta-findings into a
 //! [`engine::result::ValidationReport`]. T1's own tests stubbed the invoker in-process.
-//! **This test supplies the real one**: it takes the actual `doc-code` probe executable
-//! (the one the build places beside `jigc`) and wraps
-//! [`cli::invoke::invoke_probe`]`(`[`cli::invoke::doc_code_program`]`(), ..,
-//! `[`cli::invoke::DOC_CODE_BUDGET`]`)` — a genuine subprocess over a snapshot the engine
-//! materialized, exactly as production `jigc validate` will.
+//! **This test supplies the real one**: it runs the built `jigc` as its own `doc-code`
+//! probe (self-exec, M54 S4) through
+//! [`cli::invoke::invoke_probe`]`(.., `[`cli::invoke::DOC_CODE_BUDGET`]`)` — a genuine
+//! subprocess over a snapshot the engine materialized, exactly as production
+//! `jigc validate` will.
 //!
 //! It seeds a committed store — a `docs/decisions/`-located `adr` carrying a `cites-code`
 //! anchor (`symbol-exists`), a `docs/specs/`-located `spec` carrying a criterion
@@ -35,7 +35,7 @@
 //! so splitting the cases into separate tests would race the override. No other test
 //! reads `JIGC_DOC_CODE_PROBE`, so a single sequential test is collision-free.
 
-use cli::invoke::{self, DOC_CODE_BUDGET, ProbeOutcome, ProbeStatus, doc_code_program};
+use cli::invoke::{self, DOC_CODE_BUDGET, ProbeOutcome, ProbeStatus};
 use engine::probe::{ProbeRequest, ProbeRun, ProbeRunStatus};
 use engine::result::ValidationReport;
 use engine::schema::{PackTypeDecl, Schema, load_schema_with_types};
@@ -86,12 +86,19 @@ impl Drop for TempDir {
     }
 }
 
-/// The `doc-code` probe `jigc` resolves in production: the sibling of the built `jigc`
-/// binary (`CARGO_BIN_EXE_jigc`), which the build places there. An in-process caller has
-/// no `jigc` of its own to resolve from — its `current_exe()` is the test binary — so it
-/// names that sibling directly.
-fn doc_code_probe() -> PathBuf {
-    Path::new(env!("CARGO_BIN_EXE_jigc")).with_file_name("doc-code")
+/// How this in-process caller runs the probe — `doc_code_command`'s two arms with the
+/// production one re-aimed: the `JIGC_DOC_CODE_PROBE` override as a standalone program
+/// with no args, else the built `jigc` (`CARGO_BIN_EXE_jigc`) with
+/// [`invoke::doc_code_probe_args`] (M54 S4). A test process's own `current_exe()` is the
+/// test binary, so the self-exec arm names the real `jigc` directly.
+fn doc_code_command() -> (PathBuf, Vec<String>) {
+    match invoke::doc_code_override() {
+        Some(program) => (program, Vec::new()),
+        None => (
+            PathBuf::from(env!("CARGO_BIN_EXE_jigc")),
+            invoke::doc_code_probe_args(),
+        ),
+    }
 }
 
 /// Translate the CLI invoker's raw [`ProbeOutcome`] into the engine's [`ProbeRun`] — the
@@ -112,12 +119,13 @@ fn into_run(outcome: ProbeOutcome) -> ProbeRun {
 
 /// The real invoker closure the store sweep drives — a genuine subprocess over the
 /// snapshot the engine materialized, wrapping
-/// [`invoke::invoke_probe`]`(`[`doc_code_program`]`(), .., `[`DOC_CODE_BUDGET`]`)`. It
+/// [`invoke::invoke_probe`]`(`[`doc_code_command`]`(), .., `[`DOC_CODE_BUDGET`]`)`. It
 /// serializes the engine's [`ProbeRequest`] to the child's stdin and translates the raw
 /// outcome (or a spawn failure) into a [`ProbeRun`] for the engine to ingest.
 fn real_doc_code_invoker(req: &ProbeRequest) -> std::io::Result<ProbeRun> {
     let request_bytes = serde_json::to_vec(req)?;
-    match invoke::invoke_probe(&doc_code_program(), &request_bytes, DOC_CODE_BUDGET) {
+    let (program, args) = doc_code_command();
+    match invoke::invoke_probe(&program, &args, &request_bytes, DOC_CODE_BUDGET) {
         Ok(outcome) => Ok(into_run(outcome)),
         // A spawn failure (e.g. an absent program) is the crash path: no run, no
         // findings, so it must NOT propagate as `Err` (that would abort the sweep with
@@ -371,12 +379,12 @@ fn build_crasher(dir: &Path) -> PathBuf {
 /// test because each mutates the process-global `JIGC_DOC_CODE_PROBE` override.
 #[test]
 fn real_doc_code_probe_over_committed_store() {
-    let probe = doc_code_probe();
     // SAFETY: the documented dev/test override of the probe-path knob. The Rust harness
     // runs `#[test]` fns in parallel and this env var is process-global, so all three
     // cases live in this one test to keep the mutations sequential; no other test reads
-    // `JIGC_DOC_CODE_PROBE`, so this is the sole in-process writer.
-    unsafe { std::env::set_var("JIGC_DOC_CODE_PROBE", &probe) };
+    // `JIGC_DOC_CODE_PROBE`, so this is the sole in-process writer. Removed first, so an
+    // ambient value cannot mask the self-exec arm (a) and (b) exercise.
+    unsafe { std::env::remove_var("JIGC_DOC_CODE_PROBE") };
 
     // --- (a) every cited symbol exists → no doc-code content finding, no block.
     let clean = seed_store("clean", "evict_lru", "covers_burst", "walk_edges");

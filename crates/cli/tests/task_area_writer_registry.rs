@@ -197,11 +197,6 @@ const NON_AREA_JOINS: &[(&str, usize, &str)] = &[
         "the invocation log's own file under `.jigc/logs/`, which is no working area",
     ),
     (
-        "crates/cli/src/invoke.rs",
-        1,
-        "the `doc-code` probe binary under the pack's bin dir",
-    ),
-    (
         "crates/cli/src/pack.rs",
         2,
         "two `packs.yaml` reads off the project config dir. **[Corrected 2026-09-23 (M53 — \

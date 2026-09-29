@@ -33,6 +33,12 @@ fn main() {
     let probe_src = manifest_dir.join("probes/doc-code/src");
     println!("cargo::rerun-if-changed={}", probe_manifest.display());
     println!("cargo::rerun-if-changed={}", probe_src.display());
+    // Transitional (M54 Inc 2 T4 → deleted with this script at T5): the probe's `main.rs`
+    // is a `#[path]` shim onto the module the `jigc` bin now owns, so watch that too.
+    println!(
+        "cargo::rerun-if-changed={}",
+        manifest_dir.join("src/doc_code_probe").display()
+    );
 
     let profile = std::env::var("PROFILE").expect("PROFILE");
     // The probe builds in its own target dir (its detached workspace), then we copy the
