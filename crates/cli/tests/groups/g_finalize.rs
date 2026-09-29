@@ -77,6 +77,8 @@ mod posture_door_axis;
 mod posture_member_inventory;
 #[path = "../pre_guard_repair_route.rs"]
 mod pre_guard_repair_route;
+#[path = "../probe_failure_doors.rs"]
+mod probe_failure_doors;
 #[path = "../reconciliation_baseline_contrast.rs"]
 mod reconciliation_baseline_contrast;
 #[path = "../ref_edge_guidance.rs"]

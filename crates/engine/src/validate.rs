@@ -2129,7 +2129,14 @@ fn schedule_doc_code(
                     .is_some_and(|a| blast_addresses.contains(a) && base_unresolved.contains(a))
             })
             .collect();
-        kept.extend(base_meta);
+        // A base meta-finding whose key the index run already reports is one a driver cannot
+        // tell apart from it (a probe that cannot start fails alike on both spawns), and the
+        // block it exists to guarantee already stands — so it is surfaced once (M54 Inc 2 T7).
+        for meta in base_meta {
+            if !kept.iter().any(|f| f.key() == meta.key()) {
+                kept.push(meta);
+            }
+        }
         kept
     };
 
@@ -8929,6 +8936,72 @@ Effects.
             "a base probe failure must surface a pack-probe-integrity finding, got {:?}",
             report.findings,
         );
+    }
+
+    /// When the **index and base runs both fail** the same way — a probe that cannot start,
+    /// or a skewed build, fails identically on every spawn — the report carries **one**
+    /// `pack-probe-integrity.probe-failure`, not two (M54 Inc 2 T7). The two share the key
+    /// `(pack-probe-integrity.probe-failure, doc-code)`, so the second is a finding a driver
+    /// cannot tell apart from the first (`command-output-contract.md` → The membership test),
+    /// and the block P2a exists for already stands on the index run's. Red before: two
+    /// byte-identical findings, which the debug build's key assertion panics on.
+    #[test]
+    fn index_and_base_failing_alike_surface_one_probe_failure() {
+        let repo = TempRoot::new("both-fail-repo");
+        repo.commit("decisions", "cited", &adr_citing("src/foo.rs#kept_symbol"));
+        let task = TempRoot::new("both-fail-task");
+        let index = code_tree("both-fail-index", &[("src/foo.rs", "pub fn other() {}\n")]);
+        let base = code_tree(
+            "both-fail-base",
+            &[("src/foo.rs", "pub fn kept_symbol() {}\n")],
+        );
+        let spawns = std::cell::Cell::new(0);
+        let invoker = |_: &ProbeRequest| -> std::io::Result<ProbeRun> {
+            spawns.set(spawns.get() + 1);
+            Ok(ProbeRun {
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+                status: ProbeRunStatus::CouldNotStart {
+                    error: "Permission denied (os error 13)".to_string(),
+                },
+            })
+        };
+        let report = validate_task(
+            task.path(),
+            &schemas(),
+            &mut FileStateRecord::new(),
+            repo.path(),
+            index.path(),
+            repo.path(),
+            "HEAD",
+            &no_delta_resolved(),
+            &invoker,
+            &|_: &str| false,
+            &|_| true,
+            &change_set(&["src/foo.rs"]),
+            base.path(),
+            &test_conflict(),
+            &AdoptionInputs::inert(),
+            &crate::file_state::LiveRecord::none(),
+        )
+        .expect("sweep runs");
+        assert_eq!(
+            spawns.get(),
+            2,
+            "the fixture drives both the index and the base run"
+        );
+        let failures: Vec<&Finding> = report
+            .findings
+            .iter()
+            .filter(|f| f.code == "pack-probe-integrity.probe-failure")
+            .collect();
+        assert_eq!(
+            failures.len(),
+            1,
+            "one probe-failure for two identical failed runs, got {:?}",
+            report.findings,
+        );
+        assert!(failures[0].message.contains("could not start"));
     }
 
     /// The **path-locality guard** of the blast radius (`validation.md` → Scope = effective
