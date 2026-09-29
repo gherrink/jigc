@@ -99,4 +99,6 @@ translated its citations, swept HEAD and added the guard).
 **CLEARED for publication, subject to the human's sign-off below.** No secret and none of the confirmed
 names remain in any commit, message, path or blob of the rewritten history.
 
-Signed: ______________________________________________ Date: ______________
+Signed: Maurice Busch — Date: 2026-09-29
+
+The credential was rotated by the human before publication (2026-09-29), and the application it belonged to is scheduled to be shut down.
