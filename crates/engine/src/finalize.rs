@@ -1834,9 +1834,9 @@ mod tests {
         }
     }
 
-    const COMMIT_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/commit.yaml");
-    const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
-    const CHANGELOG_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/changelog.yaml");
+    const COMMIT_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/commit.yaml"));
+    const ADR_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/adr.yaml"));
+    const CHANGELOG_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/changelog.yaml"));
 
     fn commit_schema() -> Schema {
         crate::schema::load_schema(COMMIT_YAML).expect("commit.yaml loads")

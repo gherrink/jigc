@@ -428,8 +428,8 @@ mod canonical {
     use crate::field_block::Value;
     use crate::parse::parse_sections;
 
-    const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
-    const COMMIT_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/commit.yaml");
+    const ADR_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/adr.yaml"));
+    const COMMIT_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/commit.yaml"));
 
     fn adr_schema() -> Schema {
         crate::schema::load_schema_with_types(ADR_YAML, &crate::schema::dev_pack_field_types())
@@ -745,7 +745,7 @@ mod prop_tests {
     use crate::parse::parse_sections;
     use proptest::prelude::*;
 
-    const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
+    const ADR_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/adr.yaml"));
 
     fn adr_schema() -> Schema {
         crate::schema::load_schema_with_types(ADR_YAML, &crate::schema::dev_pack_field_types())
@@ -4298,7 +4298,7 @@ mod splice {
     use crate::parse::parse_sections;
     use crate::schema::Schema;
 
-    const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
+    const ADR_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/adr.yaml"));
 
     fn adr_schema() -> Schema {
         crate::schema::load_schema_with_types(ADR_YAML, &crate::schema::dev_pack_field_types())
@@ -4756,7 +4756,7 @@ mod splice_prop_tests {
     use crate::schema::Schema;
     use proptest::prelude::*;
 
-    const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
+    const ADR_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/adr.yaml"));
 
     fn adr_schema() -> Schema {
         crate::schema::load_schema_with_types(ADR_YAML, &crate::schema::dev_pack_field_types())
@@ -4886,7 +4886,7 @@ mod generate {
     use crate::parse::parse_sections;
     use crate::schema::Schema;
 
-    const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
+    const ADR_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/adr.yaml"));
 
     fn adr_schema() -> Schema {
         crate::schema::load_schema_with_types(ADR_YAML, &crate::schema::dev_pack_field_types())
@@ -8011,7 +8011,7 @@ mod validate_after {
     use crate::field_block::Value;
     use crate::schema::Schema;
 
-    const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
+    const ADR_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/adr.yaml"));
 
     fn adr_schema() -> Schema {
         crate::schema::load_schema_with_types(ADR_YAML, &crate::schema::dev_pack_field_types())
@@ -8555,7 +8555,7 @@ mod set_field_generate {
     use crate::field_block::Value;
     use crate::schema::Schema;
 
-    const COMMIT_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/commit.yaml");
+    const COMMIT_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/commit.yaml"));
 
     fn commit_schema() -> Schema {
         crate::schema::load_schema(COMMIT_YAML).expect("commit.yaml loads")
@@ -8617,7 +8617,7 @@ Centralize limiting at the gateway.
     /// path; the `create` flow renders the adr's front matter as an EMPTY `---\n---`
     /// fence pair before any header field is materialized).
     fn adr_schema() -> Schema {
-        const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
+        const ADR_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/adr.yaml"));
         crate::schema::load_schema_with_types(ADR_YAML, &crate::schema::dev_pack_field_types())
             .expect("adr.yaml loads")
     }
@@ -8705,7 +8705,7 @@ mod set_slot_validated {
     use super::*;
     use crate::schema::Schema;
 
-    const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
+    const ADR_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/adr.yaml"));
 
     fn adr_schema() -> Schema {
         crate::schema::load_schema_with_types(ADR_YAML, &crate::schema::dev_pack_field_types())
@@ -9020,7 +9020,7 @@ mod validate_after_prop_tests {
     use crate::schema::Schema;
     use proptest::prelude::*;
 
-    const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
+    const ADR_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/adr.yaml"));
 
     fn adr_schema() -> Schema {
         crate::schema::load_schema_with_types(ADR_YAML, &crate::schema::dev_pack_field_types())
@@ -9098,7 +9098,7 @@ mod generate_prop_tests {
     use crate::schema::Schema;
     use proptest::prelude::*;
 
-    const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
+    const ADR_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/adr.yaml"));
 
     fn adr_schema() -> Schema {
         crate::schema::load_schema_with_types(ADR_YAML, &crate::schema::dev_pack_field_types())
@@ -9207,12 +9207,12 @@ mod roundtrip {
     use crate::schema::Schema;
     use proptest::prelude::*;
 
-    const COMMIT_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/commit.yaml");
-    const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
-    const PRD_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/prd.yaml");
-    const SPEC_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/spec.yaml");
-    const ARCH_DOC_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/arch-doc.yaml");
-    const CHANGELOG_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/changelog.yaml");
+    const COMMIT_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/commit.yaml"));
+    const ADR_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/adr.yaml"));
+    const PRD_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/prd.yaml"));
+    const SPEC_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/spec.yaml"));
+    const ARCH_DOC_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/arch-doc.yaml"));
+    const CHANGELOG_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/changelog.yaml"));
 
     fn commit_schema() -> Schema {
         crate::schema::load_schema(COMMIT_YAML).expect("commit.yaml loads")
@@ -10104,22 +10104,22 @@ mod methodology_roundtrip {
     use crate::schema::Schema;
     use proptest::prelude::*;
 
-    const ROADMAP_YAML: &[u8] = include_bytes!("../../../packs/methodology/schemas/roadmap.yaml");
+    const ROADMAP_YAML: &[u8] = include_bytes!(pack_path!(methodology, "schemas/roadmap.yaml"));
     const DEFERRAL_LEDGER_YAML: &[u8] =
-        include_bytes!("../../../packs/methodology/schemas/deferral-ledger.yaml");
+        include_bytes!(pack_path!(methodology, "schemas/deferral-ledger.yaml"));
     const DECISIONS_LOG_YAML: &[u8] =
-        include_bytes!("../../../packs/methodology/schemas/decisions-log.yaml");
+        include_bytes!(pack_path!(methodology, "schemas/decisions-log.yaml"));
     const COMPLETION_RECORD_YAML: &[u8] =
-        include_bytes!("../../../packs/methodology/schemas/completion-record.yaml");
+        include_bytes!(pack_path!(methodology, "schemas/completion-record.yaml"));
     const DOGFOOD_RECORD_YAML: &[u8] =
-        include_bytes!("../../../packs/methodology/schemas/dogfood-record.yaml");
-    const VISION_YAML: &[u8] = include_bytes!("../../../packs/methodology/schemas/vision.yaml");
-    const RESEARCH_YAML: &[u8] = include_bytes!("../../../packs/methodology/schemas/research.yaml");
-    const IDEA_YAML: &[u8] = include_bytes!("../../../packs/methodology/schemas/idea.yaml");
+        include_bytes!(pack_path!(methodology, "schemas/dogfood-record.yaml"));
+    const VISION_YAML: &[u8] = include_bytes!(pack_path!(methodology, "schemas/vision.yaml"));
+    const RESEARCH_YAML: &[u8] = include_bytes!(pack_path!(methodology, "schemas/research.yaml"));
+    const IDEA_YAML: &[u8] = include_bytes!(pack_path!(methodology, "schemas/idea.yaml"));
     const MILESTONE_RECORD_YAML: &[u8] =
-        include_bytes!("../../../packs/methodology/schemas/milestone-record.yaml");
+        include_bytes!(pack_path!(methodology, "schemas/milestone-record.yaml"));
     const PLANNING_RECORD_YAML: &[u8] =
-        include_bytes!("../../../packs/methodology/schemas/planning-record.yaml");
+        include_bytes!(pack_path!(methodology, "schemas/planning-record.yaml"));
 
     /// Load the shipped schema for one methodology doctype. Every methodology
     /// doctype declares **engine-native** field types only (`string`/`enum`/
@@ -11625,8 +11625,8 @@ mod spec_roundtrip {
     use super::*;
     use crate::schema::Schema;
 
-    const SPEC_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/spec.yaml");
-    const ARCH_DOC_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/arch-doc.yaml");
+    const SPEC_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/spec.yaml"));
+    const ARCH_DOC_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/arch-doc.yaml"));
 
     fn spec_schema() -> Schema {
         crate::schema::load_schema_with_types(SPEC_YAML, &crate::schema::dev_pack_field_types())
@@ -12011,7 +12011,7 @@ mod commit_render {
     use crate::field_block::Value;
     use crate::schema::Schema;
 
-    const COMMIT_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/commit.yaml");
+    const COMMIT_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/commit.yaml"));
 
     fn commit_schema() -> Schema {
         crate::schema::load_schema(COMMIT_YAML).expect("commit.yaml loads")
@@ -13129,7 +13129,7 @@ mod retitle_item_tests {
     use super::*;
     use crate::schema::Schema;
 
-    const ARCH_DOC_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/arch-doc.yaml");
+    const ARCH_DOC_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/arch-doc.yaml"));
 
     fn arch_doc_schema() -> Schema {
         crate::schema::load_schema_with_types(ARCH_DOC_YAML, &crate::schema::dev_pack_field_types())
@@ -13780,8 +13780,8 @@ mod repoint_ref_tests {
     use super::*;
     use crate::parse::parse_sections;
 
-    const SPEC_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/spec.yaml");
-    const ARCH_DOC_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/arch-doc.yaml");
+    const SPEC_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/spec.yaml"));
+    const ARCH_DOC_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/arch-doc.yaml"));
 
     fn spec_schema() -> Schema {
         crate::schema::load_schema_with_types(SPEC_YAML, &crate::schema::dev_pack_field_types())
@@ -13947,7 +13947,7 @@ mod unset {
     use super::*;
     use crate::schema::Schema;
 
-    const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
+    const ADR_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/adr.yaml"));
 
     fn adr_schema() -> Schema {
         crate::schema::load_schema_with_types(ADR_YAML, &crate::schema::dev_pack_field_types())
@@ -14274,9 +14274,9 @@ mod item_slot_gate {
     use crate::finding::Severity;
     use crate::schema::Schema;
 
-    const SPEC_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/spec.yaml");
-    const CHANGELOG_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/changelog.yaml");
-    const ROADMAP_YAML: &[u8] = include_bytes!("../../../packs/methodology/schemas/roadmap.yaml");
+    const SPEC_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/spec.yaml"));
+    const CHANGELOG_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/changelog.yaml"));
+    const ROADMAP_YAML: &[u8] = include_bytes!(pack_path!(methodology, "schemas/roadmap.yaml"));
 
     /// The shipped `spec` — a **plain single-slot** item at depth 1 (`criteria`),
     /// reserved through `###`. Loads with the dev-pack field types (its `maps-to-test`
@@ -14653,7 +14653,7 @@ mod splice_error_payload {
     use crate::finding::Severity;
     use crate::schema::Schema;
 
-    const SPEC_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/spec.yaml");
+    const SPEC_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/spec.yaml"));
 
     fn spec_schema() -> Schema {
         crate::schema::load_schema_with_types(SPEC_YAML, &crate::schema::dev_pack_field_types())

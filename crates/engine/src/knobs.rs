@@ -242,7 +242,7 @@ mod tests {
 
     /// The shipped pack knob surface, loaded from the embedded source tree so the
     /// test pins exactly the bytes that ship.
-    const KNOBS_YAML: &[u8] = include_bytes!("../../cli/pack/config/knobs.yaml");
+    const KNOBS_YAML: &[u8] = include_bytes!(pack_path!(dev, "config/knobs.yaml"));
 
     /// Loading the embedded `knobs.yaml`, building the pack-default layer from its
     /// base scalars, and resolving yields each key's declared default — and the

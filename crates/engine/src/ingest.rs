@@ -282,7 +282,7 @@ mod tests {
     use super::*;
     use std::path::{Path, PathBuf};
 
-    const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
+    const ADR_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/adr.yaml"));
 
     /// A throwaway directory that removes itself on drop — keeps ingest tests off any
     /// real repo tree.

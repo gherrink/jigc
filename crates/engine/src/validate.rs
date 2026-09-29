@@ -4424,7 +4424,7 @@ mod commit_trailer_key_shape_tests {
     use crate::field_block::{Field, Value};
     use crate::parse::{Document, ParsedItem, ParsedSection};
 
-    const COMMIT_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/commit.yaml");
+    const COMMIT_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/commit.yaml"));
 
     fn commit_schema() -> Schema {
         crate::schema::load_schema(COMMIT_YAML).expect("commit.yaml loads")
@@ -5362,7 +5362,7 @@ kind: memo
 
     // ── M43 A14: the honest staged-sweep display + the transient file-state skip ──
 
-    const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
+    const ADR_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/adr.yaml"));
 
     fn adr_schemas() -> BTreeMap<String, Schema> {
         let mut m = BTreeMap::new();
@@ -5817,7 +5817,7 @@ mod ref_resolves_in_sweep_tests {
     use super::*;
     use std::path::PathBuf;
 
-    const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
+    const ADR_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/adr.yaml"));
 
     /// A throwaway directory that removes itself on drop.
     struct TempRoot(PathBuf);
@@ -6754,7 +6754,7 @@ mod validate_store_tests {
         }
     }
 
-    const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
+    const ADR_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/adr.yaml"));
 
     /// The two code-anchor doctypes the store sweep walks — `adr` (decisions/) with a
     /// header `cites-code`, and an inline `spec` (specs/) with a criterion `maps-to-test`.
@@ -6788,7 +6788,7 @@ sections:
     /// The real methodology `roadmap` — a **placement** doctype (its one instance
     /// lives at the literal `docs/roadmap.md`, `location: None`), the headline
     /// hollow-adoption case the family-5 location walk cannot reach.
-    const ROADMAP_YAML: &[u8] = include_bytes!("../../../packs/methodology/schemas/roadmap.yaml");
+    const ROADMAP_YAML: &[u8] = include_bytes!(pack_path!(methodology, "schemas/roadmap.yaml"));
 
     /// A `milestone-record`-shaped located doctype whose `tasks` section is a
     /// pack-default exempt token (`milestone-record#tasks` — zero tasks is a valid

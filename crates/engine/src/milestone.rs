@@ -3291,7 +3291,7 @@ mod tests {
     use crate::schema::Schema;
     use std::collections::BTreeMap;
 
-    const SPEC_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/spec.yaml");
+    const SPEC_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/spec.yaml"));
 
     /// The schema map `add_from_spec` resolves the spec address's type against —
     /// the shipped `spec` doctype (its repeatable `criteria` section is the seed
@@ -3850,8 +3850,8 @@ A cold node loses its sessions; clients re-authenticate.
         }
     }
 
-    const COMMIT_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/commit.yaml");
-    const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
+    const COMMIT_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/commit.yaml"));
+    const ADR_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/adr.yaml"));
 
     /// The schema set the join's per-area `overlay_working` basis resolves staged
     /// doc types against — `commit` (the `created` instance) and `adr` (the
@@ -5307,20 +5307,14 @@ Finalize milestone cache-hardening (3 sub-tasks)
     }
 
     /// Load the **shipped** `milestone-record` schema from the methodology pack
-    /// tree (`packs/methodology/schemas/milestone-record.yaml`, `../../` off the
-    /// engine crate root) — so the golden pins the create arm against the real
-    /// pack bytes, not an inlined stand-in. The schema-version stamp is injected
+    /// tree (`packs/methodology/schemas/milestone-record.yaml`, through `pack_path!`)
+    /// — so the golden pins the create arm against the real pack bytes, not an
+    /// inlined stand-in. The schema-version stamp is injected
     /// exactly as the production load does (`load_pack_schema`: milestone-record is
     /// manifest-frozen since M40 A1), so the goldens pin the stamped shape.
     fn milestone_record_schema() -> crate::schema::Schema {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join("packs")
-            .join("methodology")
-            .join("schemas")
-            .join("milestone-record.yaml");
-        let bytes = std::fs::read(&path).expect("read the shipped milestone-record schema");
+        let path = pack_path!(methodology, "schemas/milestone-record.yaml");
+        let bytes = std::fs::read(path).expect("read the shipped milestone-record schema");
         let mut schema =
             crate::schema::load_schema(&bytes).expect("the shipped milestone-record schema loads");
         crate::schema::inject_schema_version_stamp(&mut schema);

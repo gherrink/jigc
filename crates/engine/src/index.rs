@@ -1040,7 +1040,7 @@ fn repeatable_ref_ids(block: &[Leaf]) -> Vec<&str> {
 mod tests {
     use super::*;
 
-    const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
+    const ADR_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/adr.yaml"));
 
     /// A throwaway directory that removes itself on drop — keeps index tests off any
     /// real repo tree.
@@ -1472,7 +1472,7 @@ mod overlay_tests {
 
     use super::*;
 
-    const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
+    const ADR_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/adr.yaml"));
 
     /// A throwaway directory that removes itself on drop.
     struct TempRoot(PathBuf);
@@ -1914,8 +1914,8 @@ mod commit_overlay_tests {
 
     use super::*;
 
-    const COMMIT_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/commit.yaml");
-    const SPEC_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/spec.yaml");
+    const COMMIT_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/commit.yaml"));
+    const SPEC_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/spec.yaml"));
 
     /// A throwaway directory that removes itself on drop.
     struct TempRoot(PathBuf);
@@ -2128,7 +2128,7 @@ mod arch_doc_cites_tests {
 
     use super::*;
 
-    const ARCH_DOC_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/arch-doc.yaml");
+    const ARCH_DOC_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/arch-doc.yaml"));
 
     fn arch_doc_schema() -> Schema {
         crate::schema::load_schema_with_types(ARCH_DOC_YAML, &crate::schema::dev_pack_field_types())
@@ -2297,7 +2297,7 @@ mod prop_tests {
     use crate::write::{self, Instance, SectionContent};
     use proptest::prelude::*;
 
-    const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
+    const ADR_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/adr.yaml"));
 
     fn adr_schema() -> Schema {
         crate::schema::load_schema_with_types(ADR_YAML, &crate::schema::dev_pack_field_types())

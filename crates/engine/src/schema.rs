@@ -1560,10 +1560,10 @@ mod tests {
 
     /// The two shipped MVP schemas, loaded from the embedded pack source tree so
     /// the test pins exactly the bytes that ship.
-    const COMMIT_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/commit.yaml");
-    const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
-    const SPEC_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/spec.yaml");
-    const CHANGELOG_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/changelog.yaml");
+    const COMMIT_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/commit.yaml"));
+    const ADR_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/adr.yaml"));
+    const SPEC_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/spec.yaml"));
+    const CHANGELOG_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/changelog.yaml"));
 
     /// Golden: the parsed `commit` schema projection. Pins section ids in
     /// document order, the header flag, the `subject` string field, and the
@@ -3250,7 +3250,7 @@ mod arch_doc {
 
     use super::*;
 
-    const ARCH_DOC_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/arch-doc.yaml");
+    const ARCH_DOC_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/arch-doc.yaml"));
 
     fn arch_doc_schema() -> Schema {
         load_schema_with_types(ARCH_DOC_YAML, &dev_pack_field_types()).expect("arch-doc.yaml loads")

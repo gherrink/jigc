@@ -1777,8 +1777,8 @@ mod tests {
     use super::*;
     use proptest::prelude::*;
 
-    const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
-    const COMMIT_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/commit.yaml");
+    const ADR_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/adr.yaml"));
+    const COMMIT_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/commit.yaml"));
 
     fn adr_schema() -> Schema {
         crate::schema::load_schema_with_types(ADR_YAML, &crate::schema::dev_pack_field_types())
@@ -2236,10 +2236,9 @@ The read path only.
     /// rather than waiting for someone to remember this list.
     #[test]
     fn every_shipped_section_id_is_recognized_from_its_rendered_heading() {
-        let engine_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let pack_dirs = [
-            engine_dir.join("../cli/pack/schemas"),
-            engine_dir.join("../../packs/methodology/schemas"),
+            std::path::Path::new(pack_path!(dev, "schemas")),
+            std::path::Path::new(pack_path!(methodology, "schemas")),
         ];
 
         let mut checked = 0usize;
@@ -2306,7 +2305,7 @@ mod fields {
     use super::*;
     use crate::field_block::Value;
 
-    const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
+    const ADR_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/adr.yaml"));
 
     fn adr_schema() -> Schema {
         crate::schema::load_schema_with_types(ADR_YAML, &crate::schema::dev_pack_field_types())
@@ -4121,7 +4120,7 @@ mod prop_tests {
     use super::*;
     use proptest::prelude::*;
 
-    const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
+    const ADR_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/adr.yaml"));
 
     /// Heading-free slot prose: arbitrary paragraphs and `####`-deep headings, but
     /// never a `##`/`###` ATX heading or a Setext underline (the ceiling), and never

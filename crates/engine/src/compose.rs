@@ -3767,7 +3767,7 @@ If your decision supersedes an earlier one, here is that decision:
         let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
         let mut ctx = emit_ctx();
         let commit_schema =
-            crate::schema::load_schema(include_bytes!("../../cli/pack/schemas/commit.yaml"))
+            crate::schema::load_schema(include_bytes!(pack_path!(dev, "schemas/commit.yaml")))
                 .expect("the shipped commit schema loads");
         ctx.schemas
             .insert("commit".to_owned(), commit_schema.clone());
@@ -3833,7 +3833,7 @@ If your decision supersedes an earlier one, here is that decision:
         let mut fed = emit_ctx();
         fed.schemas.insert(
             "commit".to_owned(),
-            crate::schema::load_schema(include_bytes!("../../cli/pack/schemas/commit.yaml"))
+            crate::schema::load_schema(include_bytes!(pack_path!(dev, "schemas/commit.yaml")))
                 .expect("the shipped commit schema loads"),
         );
         let emitted =
@@ -4577,7 +4577,7 @@ plain prose, {single} braces, no tokens
     use std::collections::BTreeMap;
     use std::path::{Path, PathBuf};
 
-    const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
+    const ADR_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/adr.yaml"));
 
     /// A throwaway directory that removes itself on drop.
     struct TempRoot(PathBuf);
@@ -5068,7 +5068,7 @@ A failed charge retries with exponential backoff, capped at five attempts.
 
     /// The shipped command catalog bytes — kept in sync with
     /// `crates/cli/pack/config/commands.yaml` (asserted byte-identical below).
-    const COMMANDS_YAML: &[u8] = include_bytes!("../../cli/pack/config/commands.yaml");
+    const COMMANDS_YAML: &[u8] = include_bytes!(pack_path!(dev, "config/commands.yaml"));
 
     /// M49 Increment 10 (T4) — the three shipped milestone command-refs render the
     /// **bound** work-unit's id, and keep the `<MILESTONE_ID>` marker where none is
@@ -5662,11 +5662,8 @@ commands:
     /// The in-test catalog const stays byte-identical to the shipped pack file.
     #[test]
     fn shipped_commands_yaml_is_byte_identical() {
-        let shipped = std::fs::read(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../cli/pack/config/commands.yaml"
-        ))
-        .expect("shipped commands.yaml reads");
+        let shipped = std::fs::read(pack_path!(dev, "config/commands.yaml"))
+            .expect("shipped commands.yaml reads");
         assert_eq!(COMMANDS_YAML, shipped.as_slice());
     }
 
@@ -6626,7 +6623,7 @@ explain what changes (nothing appears if it supersedes none).
     fn single_task_source() -> MapSource {
         let implement = apply_slot_fills(
             "implement",
-            include_str!("../../cli/pack/steps/implement.yaml"),
+            include_str!(pack_path!(dev, "steps/implement.yaml")),
             &ResolvedFills::new(),
         )
         .expect("empty-fill phase 5 over the pack implement body");
@@ -6636,11 +6633,11 @@ explain what changes (nothing appears if it supersedes none).
             ("superseded-context", STEP_SUPERSEDED),
             (
                 "author-commit",
-                include_str!("../../cli/pack/steps/author-commit.yaml"),
+                include_str!(pack_path!(dev, "steps/author-commit.yaml")),
             ),
             (
                 "finalize",
-                include_str!("../../cli/pack/steps/finalize.yaml"),
+                include_str!(pack_path!(dev, "steps/finalize.yaml")),
             ),
         ])
     }
@@ -8152,7 +8149,7 @@ explain what changes (nothing appears if it supersedes none).
             ("superseded-context", STEP_SUPERSEDED),
             (
                 "finalize",
-                include_str!("../../cli/pack/steps/finalize.yaml"),
+                include_str!(pack_path!(dev, "steps/finalize.yaml")),
             ),
         ]);
         let deltas = vec![replace(
@@ -8183,7 +8180,7 @@ explain what changes (nothing appears if it supersedes none).
         // live compose path does, so its `{{fill:}}` point does not reach phase 8.
         let implement = apply_slot_fills(
             "implement",
-            include_str!("../../cli/pack/steps/implement.yaml"),
+            include_str!(pack_path!(dev, "steps/implement.yaml")),
             &ResolvedFills::new(),
         )
         .expect("empty-fill phase 5 over the pack implement body");
@@ -8197,11 +8194,11 @@ explain what changes (nothing appears if it supersedes none).
             ("superseded-context", STEP_SUPERSEDED),
             (
                 "author-commit",
-                include_str!("../../cli/pack/steps/author-commit.yaml"),
+                include_str!(pack_path!(dev, "steps/author-commit.yaml")),
             ),
             (
                 "finalize",
-                include_str!("../../cli/pack/steps/finalize.yaml"),
+                include_str!(pack_path!(dev, "steps/finalize.yaml")),
             ),
         ]);
         let deltas = vec![replace(

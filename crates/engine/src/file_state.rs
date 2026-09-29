@@ -1687,7 +1687,7 @@ mod tests {
     use crate::index::{Edge, EdgeIndex};
     use crate::schema::Schema;
 
-    const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
+    const ADR_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/adr.yaml"));
 
     fn adr_schema() -> Schema {
         crate::schema::load_schema_with_types(ADR_YAML, &crate::schema::dev_pack_field_types())

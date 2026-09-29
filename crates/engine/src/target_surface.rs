@@ -643,7 +643,7 @@ mod tests {
     use crate::schema::{dev_pack_field_types, load_schema_with_types};
     use std::path::PathBuf;
 
-    const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
+    const ADR_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/adr.yaml"));
 
     /// A throwaway directory tree that removes itself on drop.
     struct TempRoot(PathBuf);
@@ -707,7 +707,7 @@ sections:
         m
     }
 
-    const ARCH_DOC_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/arch-doc.yaml");
+    const ARCH_DOC_YAML: &[u8] = include_bytes!(pack_path!(dev, "schemas/arch-doc.yaml"));
 
     /// A committed `arch-doc` whose one component anchors `src/lib.rs#session_store`
     /// while its heading names the compound identifier `sessionStore` — the shape the
@@ -1220,7 +1220,7 @@ sections:
     fn shipped_cascade(
         project: Option<&crate::cascade::OverrideLayer>,
     ) -> crate::cascade::Resolved {
-        let knobs = crate::knobs::load_knobs(include_bytes!("../../cli/pack/config/knobs.yaml"))
+        let knobs = crate::knobs::load_knobs(include_bytes!(pack_path!(dev, "config/knobs.yaml")))
             .expect("knobs.yaml loads");
         let pack =
             crate::cascade::PackDefaultLayer::new("dev", "0.1.0", knobs.base_scalars(), Vec::new())
