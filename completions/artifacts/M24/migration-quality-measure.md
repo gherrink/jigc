@@ -10,6 +10,8 @@ through **per-leaf** authoring, this is the M24 done-bar: the **FULL** `project-
 authored through **ONE** declarative `jigc doc author changelog --from` batch payload (Hardening
 #1), measured on the four facts incl. **agent-call count** (#d).
 
+> **Raw evidence removed before publication (2026-09-28).** The two subject repositories are real client projects, anonymized here as `project-delta` and `project-gamma`. Their per-repository logs, batch payloads, canonical outputs and `*.counts` files — the `evidence/` files this record cites as `*.log`, `*.counts` and the canonical outputs — held the clients' changelogs verbatim and were removed from this repository **and its history** ([implementation/public-hygiene.md](../../../implementation/public-hygiene.md) → rule 2). The counts and verdicts recorded below are the record; the driver and payload builder stay in [`evidence/`](evidence/).
+
 ## Binary under test
 
 | | |

@@ -5,6 +5,8 @@ directional first pass). Harness: `harness/` (canonical), mirrored to `~/lh-stud
 sequences clean: **0 control-edge violations, 0 oracle (path-a vs path-b) disagreements, 0
 authentication failures** across the whole matrix — the run is valid, not voided.
 
+*Raw evidence removed before publication (2026-09-28): the per-sequence `sequences/*.json` files are not in this repository ([implementation/public-hygiene.md](../../../implementation/public-hygiene.md) → rule 3). The aggregate — [`matrix.json`](matrix.json) and [`matrix-table.md`](matrix-table.md) — and this record carry the findings; the per-sequence files are in the private archive of the pre-publication history.*
+
 > **Headline (both models, decisive): the harder claim is REFUTED.** The problem is real —
 > the plain arm ships 4 dangling cross-doc refs by the end of every sequence. But a **static
 > `CLAUDE.md` cross-reference rule fully prevents it, at every dilution level including the

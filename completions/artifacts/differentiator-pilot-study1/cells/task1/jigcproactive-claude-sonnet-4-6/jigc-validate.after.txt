@@ -1,2 +1,0 @@
-no findings — the committed store validates clean
-— jigc · run `jigc start` for orientation; all writes through `jigc`.

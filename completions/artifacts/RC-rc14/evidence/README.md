@@ -2,6 +2,8 @@
 
 Archived because it previously existed on one machine only. One directory per arm:
 
+> **Raw transcripts removed before publication (2026-09-28).** Every `transcript.jsonl`, `result.txt` and `subagents/*.jsonl` below is gone from this repository except `B1/transcript.jsonl`, which `completions/trial-driver/test_observe.py` reads as a named fixture ([implementation/public-hygiene.md](../../../../implementation/public-hygiene.md) → rule 3). `invocations.jsonl` and `PROVENANCE.txt` remain in every directory, so VERB and VERB-ADJACENT still re-score from here; the FILESYSTEM channel of the other arms needs the transcripts, which are in the private archive of the pre-publication history.
+
 - `invocations.jsonl` — the product surface. VERB and VERB-ADJACENT come from here, and it has a
   pinned record shape.
 - `transcript.jsonl` — the CLI transcript. The FILESYSTEM channel comes from here and is a

@@ -8,7 +8,7 @@
 
 - **Repo:** `~/ideas/project-alpha-2.0` (directory name carries the typo) — an existing GSD-managed project (`.planning/`, 215 files), agent-driven migration on the human's direction.
 - **Binary:** jigc **1.0.0-rc.3** (installed release build; workbench stamp `jigc-version: 1.0.0-rc.3`).
-- **Invocation log:** ON with the M39 output-size fd-tee — **416 records** over ~72 min (2026-07-09 12:28–13:40 UTC); snapshot at [invocations.jsonl](invocations.jsonl) (entries 0–415; three later read-only analysis invocations excluded).
+- **Invocation log:** ON with the M39 output-size fd-tee — **416 records** over ~72 min (2026-07-09 12:28–13:40 UTC); snapshot at `invocations.jsonl` (the raw log was removed from this repository and its history before publication — it carried the subject repository's document titles; [public-hygiene.md](../../../implementation/public-hygiene.md) → rule 2) (entries 0–415; three later read-only analysis invocations excluded).
 - **Outcome:** 20 conventional commits, `.planning/` fully retired, 41 managed docs across 12 doctypes, store validates clean. Corpus kept in place (keeper).
 - **Analysis inputs archived here:** [findings-verification.md](findings-verification.md) (the 12 findings verified against the code, with file:line evidence) · [self-migration-coverage.md](self-migration-coverage.md) (jigc-repo → doctype coverage map) · [capability-matrix.md](capability-matrix.md) (doctype × capability matrix + the new-doctype checklist draft). The latter two were commissioned off the trial's doctype-gap feedback and are the planning inputs for the post-1.0 doctype-completeness milestone.
 

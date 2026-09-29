@@ -105,6 +105,9 @@ run_file() {
 }
 
 # ─────────────────────── REAL-FOREIGN arm (the fidelity claim) ───────────────────────
+# This arm cannot be re-run from this repository: its source is a real client repository,
+# and its log, payload and canonical output were removed before publication
+# (implementation/public-hygiene.md -> rule 2). The SYNTHETIC arm below is complete.
 real_arm() {
   local repo=/tmp/jigc-m26-real log="$EVID/real-arch-doc.log"
   : > "$log"

@@ -1,8 +1,0 @@
-Understood — I'll keep to exactly what's asked going forward, and flag anything else I notice rather than acting on it.
-
-On the milestone work just finished, nothing further is queued or in progress. Two things came up during that work that I didn't act on beyond recording them on the deferral ledger, worth flagging explicitly here since they're genuine findings, not just planning artifacts:
-
-- **`IngestQueue` is disconnected from the real ingest path** — `Router.ingest()` writes straight to the store, so the queue is built but never fed, and `Service.tick()`'s drain loop always drains empty. Worth a decision on whether to wire it in or delete it.
-- **The service has no live transport** (no HTTP server, no stdin reader) — `main()` constructs the service and exits. Nothing runs continuously today.
-
-Both are on the deferral ledger already; I'm not proposing to pick them up unless you want them scheduled.

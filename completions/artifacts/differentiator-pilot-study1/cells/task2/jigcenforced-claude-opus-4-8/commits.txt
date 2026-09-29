@@ -1,1 +1,0 @@
-e54e763 refactor: rename public MarkdownDescriptionParser class to MarkdownDocParser

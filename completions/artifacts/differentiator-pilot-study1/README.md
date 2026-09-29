@@ -52,8 +52,8 @@ cleared.**
 - `prompts/` — the two byte-identical task prompts.
 - `harness/` — Dockerfiles (4 arm images on a glibc-2.41 trixie base) + run scripts.
 - `judge/` — blind judging input, the (kept-secret-until-decode) arm mapping, the blind verdict, the Codex-quota note.
-- `cells/<task>/<arm>-<model>/` — raw per-run capture: `transcript.json`, `changes.diff`, `README.after.md`, `arch-doc.after.md`, `commits.txt`, `jigc-validate.after.txt`, `base.sha`.
-- `MANIFEST.sha256` — content hashes of every exported file.
+- `cells/<task>/<arm>-<model>/` — raw per-run capture: `transcript.json`, `changes.diff`, `README.after.md`, `arch-doc.after.md`, `commits.txt`, `jigc-validate.after.txt`, `base.sha`. **Raw evidence removed before publication (2026-09-28):** the `cells/` tree is not in this repository ([implementation/public-hygiene.md](../../../implementation/public-hygiene.md) → rule 3); `results.md`, `VERDICT.md` and the blind `judge/` verdict carry the findings, and the raw captures are kept in the private archive of the pre-publication history.
+- `MANIFEST.sha256` — content hashes of every exported file that remains (re-hashed at the removal; the `cells/` entries were dropped with the files).
 
 ## Reversibility
 

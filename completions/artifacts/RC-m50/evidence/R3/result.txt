@@ -1,8 +1,0 @@
-Landed. The half-done task was `record-the-ingest-queue-overflow`: a drafted ADR whose title/slug ("Reject the newest sample...") contradicted its own decision text and code (`src/ingest.ts` actually drops the *oldest* sample on overflow, keeping the newest), and whose status was left as `superseded` with nothing superseding it. I:
-
-- Renamed the staged ADR to `drop-the-oldest-sample-when`, matching the decision and the implementation
-- Corrected `status` from `superseded` → `accepted`
-- Filled in the commit doc (type `docs`, scope `decisions`, summary)
-- Validated (advisory-only) and ran `jigc task finalize`, which committed as `d4e5a64`
-
-Working tree is clean and the task directory is gone — nothing left open.

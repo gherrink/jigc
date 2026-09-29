@@ -13,6 +13,8 @@ anchor** that must resolve against real code, plus a header `cites → adr` rela
 a time** (NOT a sweep — [auto-migration.md](../../../design/auto-migration.md) → Migration model),
 on throwaway scratch repos, measured on the four facts incl. **agent-call count**.
 
+> **Raw evidence removed before publication (2026-09-28).** The REAL-FOREIGN arm's subject is a real client repository, anonymized here as `project-beta`. Its log, batch payload and canonical output (`real-arch-doc.log`, `payload-real-arch-doc.yaml`, `real-project-beta.canonical.md`) held the client's architecture document verbatim and were removed from this repository **and its history** ([implementation/public-hygiene.md](../../../implementation/public-hygiene.md) → rule 2). The counts and verdicts recorded below are the record; the SYNTHETIC arm's evidence stays in full in [`evidence/`](evidence/).
+
 ## Binary under test
 
 | | |

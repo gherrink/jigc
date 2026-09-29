@@ -1,1 +1,0 @@
-I need permission to edit `src/store.ts` before I can implement this change — please grant access to continue.

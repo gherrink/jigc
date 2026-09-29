@@ -34,7 +34,7 @@ instruction**?
 - `arms/` — the dilution ladder (`C40`/`C160`/`C550` `CLAUDE.md`, rule byte-identical
   across all three) + the managed `arch-doc` under test.
 - `prompts/` — the 8 byte-identical neutral tickets.
-- `runs/sequences/` — per-sequence rollups; `runs/matrix-tables.md` — the raw aggregate.
+- `runs/sequences/` — per-sequence rollups; `runs/matrix-tables.md` — the raw aggregate. **Raw evidence removed before publication (2026-09-28):** `runs/` is not in this repository ([implementation/public-hygiene.md](../../../implementation/public-hygiene.md) → rule 3); `results.md` and `VERDICT.md` carry the findings, and `MANIFEST.sha256` lists only the files that remain.
 - `judge/judge-results.json` — the blinded Codex verdicts + unblinding map.
 
 ## Reproduce

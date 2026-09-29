@@ -6,6 +6,8 @@ source) — plus `PROVENANCE.txt` (image, sha, `session-start`) and `result.txt`
 closing text). Archived because the machine loss of 2026-08-02 took a trial's analysis with it:
 what exists on one machine only does not exist.
 
+> **Raw transcripts removed before publication (2026-09-28).** Every `transcript.jsonl` and `result.txt` below is gone from this repository, and so is everything under `subagents/` except `B2/subagents/*.jsonl`, which `completions/trial-driver/test_observe.py` reads as a named fixture ([implementation/public-hygiene.md](../../../../implementation/public-hygiene.md) → rule 3). `invocations.jsonl` and `PROVENANCE.txt` remain, so VERB and VERB-ADJACENT still re-score from here; the FILESYSTEM channel needs the transcripts, which are in the private archive of the pre-publication history.
+
 | dir | arm | scored |
 |---|---|---|
 | `R3/` | plant E rehearsal, headless | rehearsal |

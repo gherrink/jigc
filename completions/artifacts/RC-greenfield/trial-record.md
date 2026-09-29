@@ -7,7 +7,7 @@
 - **Repo:** `~/ideas/project-kb` — fresh project, human-driven from `jigc setup` onward (keeper corpus, kept in place).
 - **Binary:** jigc **1.0.0-rc.2** (installed release build; store stamp `jigc-version: 1.0.0-rc.2`).
 - **Composition:** dev pack ▸ embedded methodology (`compose-embedded-methodology: true`) — the full M37/M38 design altitude was exercised (`do-research` → `form-vision` with `grounded-in`, `park-idea`), plus the M38 placement layout.
-- **Invocation log:** ON — 82 records (snapshot refreshed 2026-07-06 after the 8th task; source: `<repo>/.jigc/logs/invocations.jsonl`); snapshot at [invocations.jsonl](invocations.jsonl).
+- **Invocation log:** ON — 82 records (snapshot refreshed 2026-07-06 after the 8th task; source: `<repo>/.jigc/logs/invocations.jsonl`); snapshot at `invocations.jsonl` (the raw log was removed from this repository and its history before publication — it carried the subject repository's document titles; [public-hygiene.md](../../../implementation/public-hygiene.md) → rule 2).
 - **Analysis:** greenfield half done 2026-07-06 (§ Invocation-log analysis below); the adoption trial's half still owed before the 1.0.0 call.
 
 ## Feedback (verbatim, captured 2026-07-06)
