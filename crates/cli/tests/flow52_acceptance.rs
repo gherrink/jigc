@@ -2222,13 +2222,8 @@ fn copy_tree(src: &Path, dst: &Path) {
 
 /// Every step of `pack` whose `states-constraints:` front-matter declares `code`.
 fn declarers_of(pack: &Path, code: &str) -> Vec<PathBuf> {
-    let steps = pack.join("steps");
-    let Ok(entries) = fs::read_dir(&steps) else {
-        return Vec::new();
-    };
-    entries
-        .flatten()
-        .map(|entry| entry.path())
+    support::root_walk::files_in(&pack.join("steps"), |_| true)
+        .into_iter()
         .filter(|path| {
             fs::read_to_string(path)
                 .unwrap_or_default()

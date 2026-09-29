@@ -81,6 +81,8 @@ mod probe_boundary_fences;
 mod read_back_fence;
 #[path = "../root_knob_rules.rs"]
 mod root_knob_rules;
+#[path = "../root_walk_panics.rs"]
+mod root_walk_panics;
 #[path = "../set_kind_vocabulary.rs"]
 mod set_kind_vocabulary;
 #[path = "../slug_override.rs"]

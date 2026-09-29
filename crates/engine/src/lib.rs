@@ -42,3 +42,6 @@ pub mod write;
 pub mod packsource;
 pub mod probe;
 pub mod result;
+
+#[cfg(test)]
+mod root_walk;

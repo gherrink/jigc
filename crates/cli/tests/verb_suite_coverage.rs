@@ -46,6 +46,7 @@
 //! Both are *textual* — the honest bound restated: this reads the suites, it does
 //! not run them.
 
+use crate::support::root_walk;
 use clap::CommandFactory;
 use cli::cli::Cli;
 use std::collections::BTreeMap;
@@ -121,12 +122,11 @@ struct Suite {
 
 /// The counted suites: `tests/*.rs` minus [`EXCLUDED_SUITES`], each scanned once.
 fn counted_suites() -> Vec<Suite> {
-    let mut v: Vec<Suite> = fs::read_dir(tests_dir())
-        .expect("tests/ is readable")
-        .filter_map(|e| {
-            let p = e.expect("dir entry").path();
-            let stem = p.file_name()?.to_str()?.strip_suffix(".rs")?.to_string();
-            if !p.is_file() || EXCLUDED_SUITES.iter().any(|(s, _)| *s == stem) {
+    let mut v: Vec<Suite> = root_walk::files_in(&tests_dir(), root_walk::ext("rs"))
+        .into_iter()
+        .filter_map(|p| {
+            let stem = p.file_stem()?.to_str()?.to_string();
+            if EXCLUDED_SUITES.iter().any(|(s, _)| *s == stem) {
                 return None;
             }
             let src = fs::read_to_string(&p).expect("suite is readable");

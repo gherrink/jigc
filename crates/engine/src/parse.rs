@@ -2244,14 +2244,7 @@ The read path only.
 
         let mut checked = 0usize;
         for dir in &pack_dirs {
-            let entries = std::fs::read_dir(dir).unwrap_or_else(|e| panic!("read {dir:?}: {e}"));
-            let mut saw_schema = false;
-            for entry in entries {
-                let path = entry.expect("dir entry").path();
-                if path.extension().and_then(|e| e.to_str()) != Some("yaml") {
-                    continue;
-                }
-                saw_schema = true;
+            for path in crate::root_walk::files(dir, crate::root_walk::ext("yaml")) {
                 let bytes = std::fs::read(&path).expect("read schema");
                 let schema = crate::schema::load_schema_with_types(
                     &bytes,
@@ -2271,7 +2264,6 @@ The read path only.
                     checked += 1;
                 }
             }
-            assert!(saw_schema, "no schema YAML found under {dir:?}");
         }
         assert!(
             checked >= 29,

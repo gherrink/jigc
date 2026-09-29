@@ -268,23 +268,7 @@ fn the_rig_builds_exactly_the_git_states_the_fixture_builder_declares() {
 
 /// Every file under `dev/`, recursively.
 fn dev_files() -> Vec<PathBuf> {
-    fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
-        for entry in
-            std::fs::read_dir(dir).unwrap_or_else(|e| panic!("read {}: {e}", dir.display()))
-        {
-            let entry = entry.expect("read a dev/ entry");
-            let path = entry.path();
-            if entry.file_type().expect("stat a dev/ entry").is_dir() {
-                walk(&path, out);
-            } else {
-                out.push(path);
-            }
-        }
-    }
-    let mut out = Vec::new();
-    walk(&dev_dir(), &mut out);
-    out.sort();
-    out
+    support::root_walk::files(&dev_dir(), |_| true)
 }
 
 /// Does this line carry a *recursive* removal whose subject is a shell variable?

@@ -24,6 +24,7 @@
 //!   mechanism (deleted, deletion staged, lands in the approving finalize's own
 //!   commit — what `retire` + `stage_migration` actually do).
 
+use crate::support::root_walk;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -432,11 +433,7 @@ fn no_shipped_pack_step_claims_a_fixed_safe_depth() {
     ];
     let mut checked = 0usize;
     for dir in step_dirs {
-        for entry in fs::read_dir(&dir).expect("read the shipped step dir") {
-            let path = entry.expect("a step dir entry").path();
-            if path.extension().and_then(|e| e.to_str()) != Some("yaml") {
-                continue;
-            }
+        for path in root_walk::files_in(&dir, root_walk::ext("yaml")) {
             let body = collapsed(&fs::read_to_string(&path).expect("read the step"));
             assert!(
                 !body.contains(RETIRED_GLOBAL_CLAIM),

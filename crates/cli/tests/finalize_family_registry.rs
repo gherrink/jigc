@@ -69,6 +69,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::support::root_walk;
 use cli::render::{FINALIZE_FAMILY, FINALIZE_NON_MEMBERS};
 
 fn repo_root() -> PathBuf {
@@ -97,23 +98,10 @@ const NAMESPACE: &str = "finalize.";
 
 /// Every `.rs` file under a crate's `src/`, recursively, sorted for a stable diagnostic order.
 fn crate_sources(crate_dir: &str) -> Vec<PathBuf> {
-    fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
-        let mut entries: Vec<_> = fs::read_dir(dir)
-            .unwrap_or_else(|e| panic!("read {dir:?}: {e}"))
-            .map(|e| e.expect("dir entry").path())
-            .collect();
-        entries.sort();
-        for path in entries {
-            if path.is_dir() {
-                walk(&path, out);
-            } else if path.extension().is_some_and(|e| e == "rs") {
-                out.push(path);
-            }
-        }
-    }
-    let mut out = Vec::new();
-    walk(&repo_root().join(crate_dir).join("src"), &mut out);
-    out
+    root_walk::files(
+        &repo_root().join(crate_dir).join("src"),
+        root_walk::ext("rs"),
+    )
 }
 
 /// The **production** view of a Rust source file: whole-line comments dropped, and every
@@ -409,43 +397,25 @@ fn the_contract_sub_table_renders_the_registry() {
 /// docs. `DECISIONS.md` and `completions/` are declared out (dated records — see the bounds in
 /// the module doc).
 fn live_docs() -> Vec<(String, String)> {
-    fn walk(root: &Path, rel: &str, out: &mut Vec<String>) {
-        let mut entries: Vec<_> = fs::read_dir(root.join(rel))
-            .unwrap_or_else(|e| panic!("read {rel}: {e}"))
-            .map(|e| e.expect("dir entry").path())
-            .collect();
-        entries.sort();
-        for path in entries {
-            let name = path
-                .file_name()
-                .expect("named")
-                .to_string_lossy()
-                .to_string();
-            let child = format!("{rel}/{name}");
-            if path.is_dir() {
-                walk(root, &child, out);
-            } else if name.ends_with(".md") {
-                out.push(child);
-            }
-        }
-    }
     let root = repo_root();
-    let mut rels = Vec::new();
-    walk(&root, "design", &mut rels);
-    walk(&root, "implementation", &mut rels);
-    let mut roots: Vec<String> = fs::read_dir(&root)
-        .expect("read repo root")
-        .filter_map(|e| {
-            let name = e
-                .expect("dir entry")
-                .file_name()
-                .to_string_lossy()
-                .to_string();
-            (name.ends_with(".md") && name != "DECISIONS.md").then_some(name)
-        })
+    let rel = |path: PathBuf| {
+        path.strip_prefix(&root)
+            .expect("a walked path sits under the repo root")
+            .to_string_lossy()
+            .to_string()
+    };
+    let mut rels: Vec<String> = ["design", "implementation"]
+        .into_iter()
+        .flat_map(|tree| root_walk::files(&root.join(tree), root_walk::ext("md")))
+        .map(rel)
         .collect();
-    roots.sort();
-    rels.extend(roots);
+    rels.extend(
+        root_walk::files_in(&root, |path| {
+            root_walk::ext("md")(path) && !path.ends_with("DECISIONS.md")
+        })
+        .into_iter()
+        .map(rel),
+    );
     assert!(
         rels.len() > 30,
         "the live-doc set collapsed to {} files — the walk regressed",

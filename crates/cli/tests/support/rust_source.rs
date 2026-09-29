@@ -196,29 +196,10 @@ pub fn is_test_domain(path: &Path, regions: &[(usize, usize)], offset: usize) ->
 }
 
 /// Every `.rs` file under `dir`, recursively, skipping `target/` trees. Sorted, so a
-/// fence's offender list is deterministic.
+/// fence's offender list is deterministic. Read through [`super::root_walk`], so a
+/// missing `dir`, or one holding no `.rs` file, panics rather than scanning nothing.
 pub fn rust_files(dir: &Path) -> Vec<std::path::PathBuf> {
-    let mut out = Vec::new();
-    collect(dir, &mut out);
-    out.sort();
-    out
-}
-
-fn collect(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            if path.file_name().is_some_and(|n| n == "target") {
-                continue;
-            }
-            collect(&path, out);
-        } else if path.extension().is_some_and(|e| e == "rs") {
-            out.push(path);
-        }
-    }
+    super::root_walk::files(dir, super::root_walk::ext("rs"))
 }
 
 /// The name of the function whose body encloses `at` — the last `fn <name>` declared

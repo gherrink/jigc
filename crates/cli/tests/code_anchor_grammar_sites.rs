@@ -48,6 +48,7 @@
 //! normative spelling (`<repo-relative-path>#<symbol>`, the design home) and is
 //! deliberately outside the scan — a design doc is not a surface a worker is routed to.
 
+use crate::support::root_walk;
 use cli::pack::FilesystemPack;
 use engine::packsource::{PackResourceKind, PackSource};
 use engine::schema::{Field, Leaf, Schema, SectionBody};
@@ -259,25 +260,6 @@ fn code_anchor_fields() -> BTreeSet<(String, String)> {
     out
 }
 
-/// Every file under `root` (a file or a directory), recursively.
-fn files_under(root: &Path, out: &mut Vec<PathBuf>) {
-    if root.is_file() {
-        out.push(root.to_path_buf());
-        return;
-    }
-    let Ok(entries) = fs::read_dir(root) else {
-        return;
-    };
-    for entry in entries {
-        let path = entry.expect("dir entry").path();
-        if path.is_dir() {
-            files_under(&path, out);
-        } else if path.is_file() {
-            out.push(path);
-        }
-    }
-}
-
 // ---------------------------------------------------------------------------
 // The fence — both directions.
 // ---------------------------------------------------------------------------
@@ -343,9 +325,7 @@ fn no_undeclared_shipping_file_states_the_grammar() {
 
     let mut found = BTreeSet::new();
     for scanned in SCANNED_ROOTS {
-        let mut files = Vec::new();
-        files_under(&root.join(scanned), &mut files);
-        for file in files {
+        for file in root_walk::files(&root.join(scanned), |_| true) {
             let Ok(text) = fs::read_to_string(&file) else {
                 continue; // a non-UTF-8 shipping asset carries no prose
             };

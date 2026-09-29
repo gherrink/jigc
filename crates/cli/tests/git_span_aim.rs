@@ -28,6 +28,7 @@
 //! producers**, by the source they route through, plus the key-leak invariant driven through
 //! the real binary — the absolute is allowed in the route and nowhere else.
 
+use crate::support::root_walk;
 use crate::support::rust_source;
 use engine::finding::{Route, git_at, unaimed_git_span};
 use std::path::{Path, PathBuf};
@@ -377,12 +378,7 @@ fn every_production_caller_of_the_one_home_is_a_row() {
     // otherwise a new file would be invisible to its own fence.
     let mut unlisted: Vec<String> = Vec::new();
     for dir in ["crates/cli/src", "crates/engine/src"] {
-        for entry in std::fs::read_dir(workspace_root().join(dir)).expect("read the crate src") {
-            let entry = entry.expect("a dir entry");
-            let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) != Some("rs") {
-                continue;
-            }
+        for path in root_walk::files_in(&workspace_root().join(dir), root_walk::ext("rs")) {
             let rel = format!("{dir}/{}", path.file_name().unwrap().to_string_lossy());
             for owner in aim_home_callers(&rel) {
                 // The home's own definition and its fence live in `engine/src/finding.rs`.
@@ -644,11 +640,7 @@ fn every_based_migrate_site_routes_through_the_one_home_and_every_row_states_why
 fn every_production_caller_of_the_migrate_operand_home_is_a_row() {
     let mut unlisted: Vec<String> = Vec::new();
     for dir in ["crates/cli/src", "crates/engine/src"] {
-        for entry in std::fs::read_dir(workspace_root().join(dir)).expect("read the crate src") {
-            let path = entry.expect("a dir entry").path();
-            if path.extension().and_then(|e| e.to_str()) != Some("rs") {
-                continue;
-            }
+        for path in root_walk::files_in(&workspace_root().join(dir), root_walk::ext("rs")) {
             let rel = format!("{dir}/{}", path.file_name().unwrap().to_string_lossy());
             if rel == "crates/engine/src/finding.rs" {
                 continue; // the home's own definition

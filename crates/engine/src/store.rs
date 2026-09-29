@@ -1232,19 +1232,11 @@ A cold node loses its sessions; clients re-authenticate.
         // Built at runtime so this guard's own body doesn't match itself.
         let needle = ["jigc doc", "types"].join(" ");
         let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-        let mut stack = vec![src];
         let mut offenders = Vec::new();
-        while let Some(dir) = stack.pop() {
-            for entry in std::fs::read_dir(&dir).expect("read engine src dir") {
-                let path = entry.expect("dir entry").path();
-                if path.is_dir() {
-                    stack.push(path);
-                } else if path.extension().is_some_and(|e| e == "rs") {
-                    let text = std::fs::read_to_string(&path).expect("read rs file");
-                    if text.contains(&needle) {
-                        offenders.push(path.display().to_string());
-                    }
-                }
+        for path in crate::root_walk::files(&src, crate::root_walk::ext("rs")) {
+            let text = std::fs::read_to_string(&path).expect("read rs file");
+            if text.contains(&needle) {
+                offenders.push(path.display().to_string());
             }
         }
         assert!(

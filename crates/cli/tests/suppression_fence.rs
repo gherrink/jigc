@@ -16,6 +16,7 @@
 //! `design/surface-contract.md` → The suppression fence + The fences
 //! (pack-load posture).
 
+use crate::support::root_walk;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -391,12 +392,7 @@ const VERB_ROUTED_DOORS: &[(&str, &str)] = &[
 fn shipped_workflow_defs() -> Vec<(String, engine::compose::WorkflowDef)> {
     let mut out = Vec::new();
     for tree in [embedded_pack_tree(), methodology_pack_tree()] {
-        let dir = tree.join("workflows");
-        for entry in fs::read_dir(&dir).expect("read the pack's workflows dir") {
-            let path = entry.expect("dir entry").path();
-            if path.extension().and_then(|e| e.to_str()) != Some("yaml") {
-                continue;
-            }
+        for path in root_walk::files_in(&tree.join("workflows"), root_walk::ext("yaml")) {
             let id = path
                 .file_stem()
                 .and_then(|s| s.to_str())

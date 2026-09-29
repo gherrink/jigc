@@ -22,6 +22,7 @@ pub mod git_state;
 pub mod goldens;
 pub mod leaf_argv;
 pub mod pack_locator;
+pub mod root_walk;
 pub mod route_spans;
 pub mod run_then_parse;
 pub mod rust_source;

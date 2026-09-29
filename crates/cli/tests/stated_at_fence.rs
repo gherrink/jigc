@@ -72,6 +72,7 @@
 //! the obligation itself while the composed step keeps promising a payload that
 //! never follows.
 
+use crate::support::root_walk;
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -1383,8 +1384,7 @@ fn the_exempt_contract_is_declared_by_no_step_and_the_packs_still_load() {
     );
 
     for tree in [embedded_pack_tree(), methodology_pack_tree()] {
-        for entry in fs::read_dir(tree.join("steps")).expect("read the pack's steps") {
-            let path = entry.expect("a step entry").path();
+        for path in root_walk::files_in(&tree.join("steps"), |_| true) {
             let body = fs::read_to_string(&path).expect("read a shipped step");
             assert!(
                 !body.contains(exempt),

@@ -49,6 +49,7 @@
 //! copy of the rule, and nothing here catches that — it is not a home a reader is
 //! routed to for current truth.
 
+use crate::support::root_walk;
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -91,13 +92,7 @@ fn repo_root() -> PathBuf {
 }
 
 fn markdown_files(dir: &Path) -> Vec<PathBuf> {
-    let mut out: Vec<PathBuf> = fs::read_dir(dir)
-        .unwrap_or_else(|e| panic!("{} is readable: {e}", dir.display()))
-        .map(|e| e.expect("a readable directory entry").path())
-        .filter(|p| p.is_file() && p.extension().is_some_and(|x| x == "md"))
-        .collect();
-    out.sort();
-    out
+    root_walk::files_in(dir, root_walk::ext("md"))
 }
 
 /// Every line of `src` preceding its first `## ` heading — the header region, where a

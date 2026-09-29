@@ -29,6 +29,7 @@
 //! same parsers a would-be consumer would reach for — the predicate proves *they*
 //! cannot deserialize the output into keyed fields.
 
+use crate::support::root_walk;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -845,11 +846,7 @@ fn shipped_workflows() -> Vec<ShippedWorkflow> {
     ];
     let mut out = Vec::new();
     for dir in pack_dirs {
-        for entry in fs::read_dir(&dir).expect("read pack workflows dir") {
-            let path = entry.expect("dir entry").path();
-            if path.extension().and_then(|e| e.to_str()) != Some("yaml") {
-                continue;
-            }
+        for path in root_walk::files_in(&dir, root_walk::ext("yaml")) {
             let text = fs::read_to_string(&path).expect("read workflow yaml");
             let front_matter = text
                 .strip_prefix("---\n")

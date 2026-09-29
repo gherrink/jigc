@@ -2646,12 +2646,7 @@ mod tests {
     #[test]
     fn every_production_blocking_finding_is_routed_or_exempt() {
         let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-        let mut files = Vec::new();
-        collect_rs(&src, &mut files);
-        assert!(
-            !files.is_empty(),
-            "found no engine source to scan under {src:?}"
-        );
+        let files = crate::root_walk::files(&src, crate::root_walk::ext("rs"));
 
         let mut examined = 0usize;
         let mut violations = Vec::new();
@@ -2730,8 +2725,7 @@ mod tests {
     #[test]
     fn every_conformance_code_named_in_engine_source_has_a_producer() {
         let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-        let mut files = Vec::new();
-        collect_rs(&src, &mut files);
+        let files = crate::root_walk::files(&src, crate::root_walk::ext("rs"));
 
         let mut named: Vec<(String, String)> = Vec::new();
         let mut producers: Vec<String> = Vec::new();
@@ -2820,18 +2814,6 @@ mod tests {
                 out.push(lit);
             }
         });
-    }
-
-    /// Recursively collect `.rs` files under `dir` — the seam-sweep scan's file set.
-    fn collect_rs(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
-        for entry in std::fs::read_dir(dir).expect("read dir") {
-            let path = entry.expect("dir entry").path();
-            if path.is_dir() {
-                collect_rs(&path, out);
-            } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
-                out.push(path);
-            }
-        }
     }
 
     /// Neutralize a source byte that would confuse paren-/comma-matching if it hid inside a

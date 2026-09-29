@@ -22,6 +22,7 @@
 //! roots, the aggregator ↔ disk bijection over submodule directories like
 //! `pinned_facts/`, and the count both this file and the manifest state in prose.
 
+use crate::support::root_walk;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -81,16 +82,9 @@ fn declared_test_targets() -> Vec<(String, String)> {
 
 /// Every `tests/*.rs` file — the suites that must each be owned by exactly one group.
 fn suite_files() -> Vec<String> {
-    let mut v: Vec<String> = fs::read_dir(tests_dir())
-        .expect("tests/ is readable")
-        .filter_map(|e| {
-            let p = e.expect("dir entry").path();
-            if !p.is_file() {
-                return None;
-            }
-            let name = p.file_name()?.to_str()?.to_string();
-            name.strip_suffix(".rs").map(str::to_string)
-        })
+    let mut v: Vec<String> = root_walk::files_in(&tests_dir(), root_walk::ext("rs"))
+        .iter()
+        .filter_map(|p| Some(p.file_stem()?.to_str()?.to_string()))
         .collect();
     v.sort();
     v
@@ -236,15 +230,11 @@ fn every_group_root_is_declared_as_a_test_target() {
         .into_iter()
         .map(|(_, path)| path)
         .collect();
-    let on_disk: BTreeSet<String> = fs::read_dir(tests_dir().join("groups"))
-        .expect("tests/groups/ exists")
-        .filter_map(|e| {
-            let p = e.expect("dir entry").path();
-            let name = p.file_name()?.to_str()?;
-            name.ends_with(".rs")
-                .then(|| format!("tests/groups/{name}"))
-        })
-        .collect();
+    let on_disk: BTreeSet<String> =
+        root_walk::files_in(&tests_dir().join("groups"), root_walk::ext("rs"))
+            .iter()
+            .filter_map(|p| Some(format!("tests/groups/{}", p.file_name()?.to_str()?)))
+            .collect();
 
     let undeclared: Vec<&String> = on_disk.difference(&declared).collect();
     assert!(
@@ -301,17 +291,11 @@ fn every_aggregated_submodule_is_declared_by_its_aggregator() {
     );
 
     for dir in dirs {
-        let on_disk: BTreeSet<String> = fs::read_dir(tests_dir().join(&dir))
-            .expect("aggregated directory is readable")
-            .filter_map(|e| {
-                let p = e.expect("dir entry").path();
-                if !p.is_file() {
-                    return None;
-                }
-                let name = p.file_name()?.to_str()?.to_string();
-                name.strip_suffix(".rs").map(str::to_string)
-            })
-            .collect();
+        let on_disk: BTreeSet<String> =
+            root_walk::files_in(&tests_dir().join(&dir), root_walk::ext("rs"))
+                .iter()
+                .filter_map(|p| Some(p.file_stem()?.to_str()?.to_string()))
+                .collect();
 
         let body = fs::read_to_string(tests_dir().join(format!("{dir}.rs")))
             .expect("aggregator is readable");

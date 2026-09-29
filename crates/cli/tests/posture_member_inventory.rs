@@ -33,6 +33,7 @@
 //! cannot disagree. Only the two fenced columns are duplicated; the *why* of each member
 //! lives in `validation.md`'s third column alone.
 
+use crate::support::root_walk;
 use cli::repo::InProgress;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -390,11 +391,7 @@ fn no_design_doc_counts_the_family_by_its_own_vocabulary() {
     let design = repo_root().join("design");
     let mut carriers = Vec::new();
     let mut scanned = 0usize;
-    for entry in fs::read_dir(&design).expect("design/ is readable") {
-        let path = entry.expect("a design/ entry").path();
-        if path.extension().is_none_or(|ext| ext != "md") {
-            continue;
-        }
+    for path in root_walk::files_in(&design, root_walk::ext("md")) {
         scanned += 1;
         let body = fs::read_to_string(&path).expect("a design/ doc is readable");
         // `STRUCK_CLAIM` stays on the **exact** match it shipped with, and the reason is a

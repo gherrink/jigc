@@ -24,6 +24,7 @@
 //! `implementation/decisions-pending.md` → the mis-keyed-leaf entry, discharged
 //! as D5's precondition.
 
+use crate::support::root_walk;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -277,12 +278,7 @@ fn every_shipped_schema_and_snapshot_loads_unchanged() {
     let mut loaded = 0usize;
     for pack in [dev_pack_tree(), methodology_pack_tree()] {
         for dir in ["schemas", "schema-snapshots"] {
-            let home = pack.join(dir);
-            for entry in fs::read_dir(&home).expect("read the schema directory") {
-                let path = entry.expect("dir entry").path();
-                if path.extension().and_then(|e| e.to_str()) != Some("yaml") {
-                    continue;
-                }
+            for path in root_walk::files_in(&pack.join(dir), root_walk::ext("yaml")) {
                 let bytes = fs::read(&path).expect("read the shipped schema");
                 engine::schema::load_schema_with_types(&bytes, &field_types)
                     .unwrap_or_else(|e| panic!("{} must load unchanged: {e}", path.display()));

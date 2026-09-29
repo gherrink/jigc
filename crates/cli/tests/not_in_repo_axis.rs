@@ -54,6 +54,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::support::leaf_argv;
+use crate::support::root_walk;
 
 /// The sentence stem every spelling of this refusal has always shared — the needle the
 /// source arm counts and the emitted-bytes arm asserts appears exactly once.
@@ -202,11 +203,7 @@ fn every_door_outside_a_repo_answers_with_the_one_text_and_route() {
 fn only_the_shared_constructor_composes_the_precondition_text() {
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut carriers: Vec<String> = Vec::new();
-    for entry in fs::read_dir(&src).expect("read crates/cli/src") {
-        let path = entry.expect("dir entry").path();
-        if path.extension().and_then(|ext| ext.to_str()) != Some("rs") {
-            continue;
-        }
+    for path in root_walk::files_in(&src, root_walk::ext("rs")) {
         let text = fs::read_to_string(&path).expect("read a source file");
         if text.contains(STEM) {
             carriers.push(

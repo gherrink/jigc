@@ -50,6 +50,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::support::root_walk;
 use cli::pack::{EmbeddedPack, load_pack_schema};
 use engine::packsource::{PackResourceKind, PackSource, ResourceId};
 
@@ -158,32 +159,17 @@ fn gate_table() -> (Vec<String>, Vec<String>) {
 
 /// Every governed markdown file, repo-relative, depth-first and sorted.
 fn governed_docs() -> Vec<String> {
-    fn walk(dir: &Path, root: &Path, out: &mut Vec<String>) {
-        let mut entries: Vec<PathBuf> = fs::read_dir(dir)
-            .unwrap_or_else(|e| panic!("{} is readable: {e}", dir.display()))
-            .map(|e| e.expect("a readable dir entry").path())
-            .collect();
-        entries.sort();
-        for path in entries {
-            if path.is_dir() {
-                walk(&path, root, out);
-            } else if path.extension().is_some_and(|e| e == "md") {
-                out.push(
-                    path.strip_prefix(root)
-                        .expect("a path under the repo root")
-                        .to_string_lossy()
-                        .into_owned(),
-                );
-            }
-        }
-    }
     let root = repo_root();
-    let mut out = Vec::new();
-    for tree in GOVERNED_TREES {
-        walk(&root.join(tree), &root, &mut out);
-    }
-    assert!(!out.is_empty(), "the governed trees hold markdown");
-    out
+    GOVERNED_TREES
+        .iter()
+        .flat_map(|tree| root_walk::files(&root.join(tree), root_walk::ext("md")))
+        .map(|path| {
+            path.strip_prefix(&root)
+                .expect("a path under the repo root")
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect()
 }
 
 /// Does `text` name `gate` as a whole token? The ids are hyphenated words, so the

@@ -39,6 +39,7 @@
 //! `jigc doc set-field` lines and no `{{cli.<id>}}` ref) carries no structural
 //! signal, so it states the read-back without joining the fenced set.
 
+use crate::support::root_walk;
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -175,13 +176,7 @@ fn list_pack(repo: &Path, pack: &Path) {
 
 /// Load a pack tree's step defs, sorted by id.
 fn step_defs(pack: &Path) -> Vec<(String, engine::compose::StepDef)> {
-    let mut steps: Vec<PathBuf> = fs::read_dir(pack.join("steps"))
-        .expect("read the copied steps dir")
-        .map(|entry| entry.expect("dir entry").path())
-        .filter(|path| path.extension().is_some_and(|ext| ext == "yaml"))
-        .collect();
-    steps.sort();
-    steps
+    root_walk::files_in(&pack.join("steps"), root_walk::ext("yaml"))
         .into_iter()
         .map(|path| {
             let id = path

@@ -32,6 +32,7 @@
 //! `{{schema:changelog}}` seam, and the third arm below drives its emitted lines end
 //! to end to a real, committed changelog entry.
 
+use crate::support::root_walk;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -263,18 +264,6 @@ fn changelog_create_lines(composed: &str) -> Vec<&str> {
         .collect()
 }
 
-/// Walk a pack tree, yielding every file's text.
-fn pack_files(root: &Path, out: &mut Vec<(PathBuf, String)>) {
-    for entry in fs::read_dir(root).unwrap_or_else(|e| panic!("read {root:?}: {e}")) {
-        let path = entry.expect("dir entry").path();
-        if path.is_dir() {
-            pack_files(&path, out);
-        } else if let Ok(text) = fs::read_to_string(&path) {
-            out.push((path, text));
-        }
-    }
-}
-
 /// The core done-criterion: the changelog instruction composes **only** where the
 /// create-gate is granted, and the emitted line is the one the binary admits.
 #[test]
@@ -370,9 +359,14 @@ fn no_composed_workflow_and_no_pack_source_claims_start_lists_the_gates() {
     }
 
     let root = workspace_root();
-    let mut files = Vec::new();
-    pack_files(&root.join("crates").join("cli").join("pack"), &mut files);
-    pack_files(&root.join("packs").join("methodology"), &mut files);
+    let files: Vec<(PathBuf, String)> = [
+        root.join("crates").join("cli").join("pack"),
+        root.join("packs").join("methodology"),
+    ]
+    .iter()
+    .flat_map(|tree| root_walk::files(tree, |_| true))
+    .filter_map(|path| fs::read_to_string(&path).ok().map(|text| (path, text)))
+    .collect();
     let offenders: Vec<&PathBuf> = files
         .iter()
         .filter(|(_, text)| text.contains("lists the gates"))
