@@ -91,12 +91,12 @@ fn version_stamp_body() -> String {
 /// Reserved against the profile ([`adapter::GUIDE_RESERVED_KEYS`]).
 const GUIDE_HASH_KEY: &str = "jigc-body-blake3:";
 
-/// The shipped guides, embedded at compile time from the **repo's own** copies — the
-/// single home for this content (the `include_dir!` of `crates/cli/packs/methodology/` from the
-/// workspace root is the same move). A second authored copy in `crates/cli/` would drift
-/// behind them the first time either is edited.
-const QUICKSTART_GUIDE: &str = include_str!("../../../QUICKSTART.md");
-const MIGRATING_GUIDE: &str = include_str!("../../../MIGRATING.md");
+/// The shipped guides, embedded at compile time from `crates/cli/guides/` — their one
+/// authored home, inside the crate because a published crate carries only its own
+/// directory (M54 S21). There is no root copy: a second copy of a guide is the drift the
+/// embed exists to prevent.
+const QUICKSTART_GUIDE: &str = include_str!("../guides/QUICKSTART.md");
+const MIGRATING_GUIDE: &str = include_str!("../guides/MIGRATING.md");
 
 /// The generated paragraph the artifact opens with — the ownership statement, the version
 /// it was written from, and the two facts an adopter needs to read the rest honestly: the

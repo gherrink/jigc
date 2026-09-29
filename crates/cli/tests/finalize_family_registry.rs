@@ -393,8 +393,9 @@ fn the_contract_sub_table_renders_the_registry() {
 // The live-doc set, the count fence, the record fence
 // ---------------------------------------------------------------------------
 
-/// Every markdown file that states current truth: `design/`, `implementation/` and the root
-/// docs. `DECISIONS.md` and `completions/` are declared out (dated records — see the bounds in
+/// Every markdown file that states current truth: `design/`, `implementation/`, the root
+/// docs and the shipped guides in `crates/cli/guides/` (their home since M54 S21).
+/// `DECISIONS.md` and `completions/` are declared out (dated records — see the bounds in
 /// the module doc).
 fn live_docs() -> Vec<(String, String)> {
     let root = repo_root();
@@ -404,7 +405,7 @@ fn live_docs() -> Vec<(String, String)> {
             .to_string_lossy()
             .to_string()
     };
-    let mut rels: Vec<String> = ["design", "implementation"]
+    let mut rels: Vec<String> = ["design", "implementation", "crates/cli/guides"]
         .into_iter()
         .flat_map(|tree| root_walk::files(&root.join(tree), root_walk::ext("md")))
         .map(rel)
@@ -421,6 +422,16 @@ fn live_docs() -> Vec<(String, String)> {
         "the live-doc set collapsed to {} files — the walk regressed",
         rels.len(),
     );
+    for guide in [
+        "crates/cli/guides/QUICKSTART.md",
+        "crates/cli/guides/MIGRATING.md",
+    ] {
+        assert!(
+            rels.iter().any(|rel| rel == guide),
+            "the live-doc set must carry the shipped guide `{guide}` — a guide that moved \
+             out of the walked roots would leave this fence unread over it",
+        );
+    }
     rels.into_iter()
         .map(|rel| {
             let body = read_file(&rel);

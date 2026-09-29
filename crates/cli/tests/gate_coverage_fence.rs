@@ -286,7 +286,7 @@ fn sites() -> Vec<Site> {
             name: "QUICKSTART.md → the core loop",
             tiers: &[Tier::Previewed, Tier::LaterSummary],
             text: region(
-                &doc("QUICKSTART.md"),
+                &doc("crates/cli/guides/QUICKSTART.md"),
                 "You can preview part of what finalize will gate on",
                 "not *this will commit*:",
                 "QUICKSTART.md",

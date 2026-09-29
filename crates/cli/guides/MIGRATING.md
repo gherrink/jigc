@@ -7,7 +7,7 @@ Two different migrations get called "migrating to jigc." Both have now been run 
 
 ## Adopting an existing project
 
-The full method write-up from the reference migration (220 foreign files → 41 managed docs, ~55 commits, one day) is archived at [completions/artifacts/RC-adoption/rerun-rc4/migration-method.md](completions/artifacts/RC-adoption/rerun-rc4/migration-method.md). The short version:
+The full method write-up from the reference migration (220 foreign files → 41 managed docs, ~55 commits, one day) is archived at [completions/artifacts/RC-adoption/rerun-rc4/migration-method.md](../../../completions/artifacts/RC-adoption/rerun-rc4/migration-method.md). The short version:
 
 1. **Triage with the tool first.** `jigc ingest` classifies every candidate against the managed schemas before you decide anything. Conformant-but-misplaced docs can be adopted; everything else is a re-authoring job through the write verbs. Knowing the split up front sets the whole plan's cost.
 2. **Treat every claim in the old docs as unverified.** This is the load-bearing rule, and it is why adoption is a *verification* job, not a reformatting job. Your existing docs may already be lying about the code — status claims especially ("shipped", "passes audit", "the gate works"). Check each claim against the code before carrying it over; a false claim migrated into jigc is *worse* than a deleted one, because the new system lends it credibility (managed, validated, green). Don't migrate what you haven't verified — and where a claim can't be cheaply verified, either drop it or carry it explicitly marked as unverified and put the verification question to the human.

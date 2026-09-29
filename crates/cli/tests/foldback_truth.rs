@@ -136,7 +136,7 @@ fn numbered_items(section_body: &str) -> Vec<(usize, String)> {
 
 #[test]
 fn migrating_carries_the_hook_rejection_gate_in_meeting_order() {
-    let body = read_doc("MIGRATING.md");
+    let body = read_doc("crates/cli/guides/MIGRATING.md");
     let chapter = section(&body, "Reconciling and backing out");
     let gates = numbered_items(chapter);
     assert!(
@@ -188,7 +188,7 @@ fn migrating_carries_the_hook_rejection_gate_in_meeting_order() {
 
 #[test]
 fn quickstart_cross_refs_the_hook_rejection_gate() {
-    let body = read_doc("QUICKSTART.md");
+    let body = read_doc("crates/cli/guides/QUICKSTART.md");
     let lower = body.to_lowercase();
     assert!(
         lower.contains("hook") && lower.contains("reject"),
@@ -709,9 +709,14 @@ fn the_pack_step_count_is_stated_once_and_names_its_measurement_point() {
 /// `crates/cli/tests/staged_prose_consent_axis.rs` drives both doors that carry the guard,
 /// their codes and their `--force` consent. This arm asserts only that the shipped prose
 /// says what that suite proves.
-const GUIDE_INCLUDE_PREFIX: &str = "include_str!(\"../../../";
+///
+/// The prefix is the step from `crates/cli/src/` up to the crate root, where the guides live
+/// since M54 S21 (`crates/cli/guides/`), so each site maps to its repo-relative path as
+/// `crates/cli/<rest>`.
+const GUIDE_INCLUDE_PREFIX: &str = "include_str!(\"../";
 
-/// Every guide `setup.rs` embeds into the installed artifact, in declaration order.
+/// Every guide `setup.rs` embeds into the installed artifact, in declaration order, as a
+/// repo-relative path.
 fn shipped_guides() -> Vec<String> {
     let setup = fs::read_to_string(repo_root().join("crates/cli/src/setup.rs"))
         .expect("crates/cli/src/setup.rs must be readable");
@@ -719,7 +724,7 @@ fn shipped_guides() -> Vec<String> {
     for (at, _) in setup.match_indices(GUIDE_INCLUDE_PREFIX) {
         let tail = &setup[at + GUIDE_INCLUDE_PREFIX.len()..];
         let Some(end) = tail.find('"') else { continue };
-        guides.push(tail[..end].to_string());
+        guides.push(format!("crates/cli/{}", &tail[..end]));
     }
     assert!(
         !guides.is_empty(),
@@ -937,7 +942,7 @@ fn missing_tags(unit: &str) -> Vec<&'static str> {
 const VOCABULARY_HOMES: [&str; 3] = [
     "design/finalize.md",
     "design/command-output-contract.md",
-    "MIGRATING.md",
+    "crates/cli/guides/MIGRATING.md",
 ];
 
 #[test]
@@ -1429,7 +1434,7 @@ not before**, with the goldens regenerated). **M51 — the count wave — is com
 /// prove.
 #[test]
 fn the_quickstart_teardown_chapter_names_both_areas_and_the_byte_that_stays() {
-    let body = read_doc("QUICKSTART.md");
+    let body = read_doc("crates/cli/guides/QUICKSTART.md");
     let chapter: Vec<String> = prose_units(&body)
         .into_iter()
         .filter(|unit| unit.contains(".jigc/displaced/"))

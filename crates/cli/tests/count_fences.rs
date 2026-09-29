@@ -149,7 +149,7 @@ const HOMES: &[Home] = &[
         scope: Scope::ExplicitOnly,
     },
     Home {
-        path: "MIGRATING.md",
+        path: "crates/cli/guides/MIGRATING.md",
         scope: Scope::ExplicitOnly,
     },
     // The two `design/` part-docs that state this axis' size (M52 Increment 10, T10).

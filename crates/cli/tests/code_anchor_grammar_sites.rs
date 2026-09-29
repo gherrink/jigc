@@ -83,7 +83,7 @@ const SOURCE_SITES: &[Site] = &[
                 compose seam, and `doc set-field --help`",
     },
     Site {
-        path: "QUICKSTART.md",
+        path: "crates/cli/guides/QUICKSTART.md",
         feeds: "the shipped guide `jigc setup` installs at `.claude/skills/jigc/SKILL.md`",
     },
     Site {
@@ -101,8 +101,7 @@ const SCANNED_ROOTS: &[&str] = &[
     "crates/cli/src",
     cli::pack_path!(dev),
     cli::pack_path!(methodology),
-    "QUICKSTART.md",
-    "MIGRATING.md",
+    "crates/cli/guides",
 ];
 
 /// The workspace root (`crates/cli/../..`).

@@ -8,7 +8,7 @@
 //! both directions — `jigc validate` printed *"no findings — the committed store validates
 //! clean"* at **exit 0** while `git ls-files` still carried every one of those files, and
 //! `jigc doc list` dropped their rows entirely. A green there means *I stopped looking at
-//! these files*, on the verb [MIGRATING.md](../../../MIGRATING.md) tells adopters to CI-gate
+//! these files*, on the verb [MIGRATING.md](../guides/MIGRATING.md) tells adopters to CI-gate
 //! on — which is why the code is **blocking at store scope and joins
 //! [`cli::render::STORE_EXIT_FLIPS`]** rather than reporting at exit 0 beside it (§9): without
 //! the flip the adopter's CI is still green and the decision's own admission argument is
@@ -441,7 +441,7 @@ fn a_resolved_doctype_with_no_manifest_entry_answers_beside_the_orphans() {
 /// **Arm 7 (M51 inc-8 T5) — the advisory flips no exit, driven rather than asserted from the
 /// table.** §18's two severities are read off the two causes: the orphan's exit flip is
 /// *required* by its own admission argument (a green meaning *I stopped looking at these
-/// files*, on the verb [MIGRATING.md](../../../MIGRATING.md) tells adopters to CI-gate on),
+/// files*, on the verb [MIGRATING.md](../guides/MIGRATING.md) tells adopters to CI-gate on),
 /// while flipping this one — quoting the human's confirmation — *"would fail every
 /// manifest-less project pack's CI for a permitted choice"*.
 ///

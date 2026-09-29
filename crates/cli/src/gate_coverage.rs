@@ -4,7 +4,7 @@
 //! The claim `jigc task validate` makes is a *coverage* claim, and it is stated on
 //! eight surfaces: the composed `what's-left:` line, both packs' `finalize` steps,
 //! the `task` unknown-subcommand tip, the `validate-task` catalog hint `describe`
-//! mirrors, [QUICKSTART.md](../../../QUICKSTART.md), and the two design docs that
+//! mirrors, [QUICKSTART.md](../guides/QUICKSTART.md), and the two design docs that
 //! own the split — [command-output-contract.md](../../../design/command-output-contract.md)
 //! → The exit-code taxonomy (third clause: *"position, not scope"*) and
 //! [finalize.md](../../../design/finalize.md) → 2. Validate. Every one of those

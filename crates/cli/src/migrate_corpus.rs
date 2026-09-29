@@ -2325,7 +2325,7 @@ pub(crate) fn prior_homes(
 /// end to end).
 ///
 /// The adopter-facing half of this — the flip-list line in
-/// [MIGRATING.md](../../../MIGRATING.md) — is **owed to M52 Increment 10**, the wave's guide
+/// [MIGRATING.md](../guides/MIGRATING.md) — is **owed to M52 Increment 10**, the wave's guide
 /// batch, which is where the roadmap places every adopter-guide edit; it is named here so the
 /// punt is tracked to a landing rather than left as prose.
 fn candidate_docs(

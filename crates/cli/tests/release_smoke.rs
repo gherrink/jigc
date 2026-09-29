@@ -9,7 +9,9 @@
 //!   2. `jigc setup` in a fresh temp repo exits 0 and leaves *both* adapter
 //!      files in place (the install end-to-end over the real binary);
 //!   3. `QUICKSTART.md` exists and names the three loop commands
-//!      (`jigc setup` → `jigc start "<intent>"` → `jigc task finalize`).
+//!      (`jigc setup` → `jigc start "<intent>"` → `jigc task finalize`);
+//!   4. both shipped guides have one home, `crates/cli/guides/`, with no root copy
+//!      (M54 S21 — a published crate carries only its own directory).
 //!
 //! No external test crates: the binary path comes from Cargo's
 //! `CARGO_BIN_EXE_jigc`, the version from `CARGO_PKG_VERSION`, the temp repo is
@@ -142,11 +144,31 @@ fn setup_runs_end_to_end_over_the_built_binary() {
     );
 }
 
+/// The guides' one home (M54 S21): inside the binary crate, which `setup.rs` embeds from.
+const GUIDES: &str = "crates/cli/guides";
+
+/// **One home, no root copy** (M54 S21). A published crate carries only its own
+/// directory, so the guides `jigc setup` installs live in `crates/cli/guides/`; a second
+/// copy at the repository root is the drift the embed exists to prevent.
+#[test]
+fn the_shipped_guides_live_in_the_crate_with_no_root_copy() {
+    let root = repo_root();
+    for guide in ["QUICKSTART.md", "MIGRATING.md"] {
+        let home = root.join(GUIDES).join(guide);
+        assert!(home.is_file(), "{guide} must live in {GUIDES}: {home:?}");
+        let copy = root.join(guide);
+        assert!(
+            !copy.exists(),
+            "{guide} must have no root copy beside {GUIDES}/{guide}: {copy:?}",
+        );
+    }
+}
+
 #[test]
 fn quickstart_documents_the_three_loop_commands() {
-    let quickstart = repo_root().join("QUICKSTART.md");
+    let quickstart = repo_root().join(GUIDES).join("QUICKSTART.md");
     let body = fs::read_to_string(&quickstart)
-        .unwrap_or_else(|_| panic!("QUICKSTART.md must exist at the repo root: {quickstart:?}"));
+        .unwrap_or_else(|_| panic!("QUICKSTART.md must exist in {GUIDES}: {quickstart:?}"));
 
     for cmd in ["jigc setup", "jigc start", "jigc task finalize"] {
         assert!(

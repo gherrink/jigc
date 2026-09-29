@@ -303,11 +303,11 @@ hook rejection above, out-of-band edits) is in
 alongside your own `src/`. (The names are chosen for readability, not a uniform
 `<type>s/` rule.) A few doctypes are **placed** rather than located: they live at
 one literal path that `docs-root` does not move — the changelog is your
-repo-root `CHANGELOG.md` ([design/storage.md](design/storage.md) → Placement).
+repo-root `CHANGELOG.md` ([design/storage.md](../../../design/storage.md) → Placement).
 Prefer a different parent, or the old flat repo-root layout? Set
 `jigc config set docs-root <path>` (`.` or `""` for the old flat layout). Everything else jigc
 writes lives under `.jigc/` (committed config + bootstrap; gitignored caches) —
-see [design/storage.md](design/storage.md) → Repository layout / Config layout. If
+see [design/storage.md](../../../design/storage.md) → Repository layout / Config layout. If
 you already have a same-named dir (say an existing `docs/architecture/`), run
 `jigc ingest` first — it detects and routes existing content rather than
 overwriting it.
@@ -330,6 +330,6 @@ jigc task diff <id>
 That is the whole loop: **`jigc setup`** once, then **`jigc start "<intent>"` →
 pick from the menu → `jigc start --workflow <chosen> "<intent>"` → implement →
 `jigc task finalize <id>`** per task. See
-[`design/worked-examples.md`](design/worked-examples.md) for end-to-end flows
-and [`implementation/roadmap.md`](implementation/roadmap.md) for the build
+[`design/worked-examples.md`](../../../design/worked-examples.md) for end-to-end flows
+and [`implementation/roadmap.md`](../../../implementation/roadmap.md) for the build
 sequence.
