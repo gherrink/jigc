@@ -1,6 +1,6 @@
 # Self-hosting — distill the harness into a methodology pack, dogfood it on a fresh project
 
-**Status: settled for M12's bounded first slice (2026-06-07); exploratory beyond it.** The project's designed terminus — the workflow docs already call the hand-run loops *"the dogfood for the product workflow we will eventually compose."* De-parked from `ideas/self-hosting.md` (removed) at M12 planning (the M11 `describe`→[introspection.md](introspection.md) precedent). This doc is the locked spec M12 decomposes against; the dialect surface *beyond* the bounded slice is deliberately **discovered by attempting the encode**, not designed here.
+**Status: settled for M12's bounded first slice (2026-06-07); exploratory beyond it.** The project's designed terminus — the workflow docs already call the hand-run loops *"the dogfood for the product workflow we will eventually compose."* De-parked from ~~`ideas/self-hosting.md`~~ (removed) at M12 planning (the M11 `describe`→[introspection.md](introspection.md) precedent). This doc is the locked spec M12 decomposes against; the dialect surface *beyond* the bounded slice is deliberately **discovered by attempting the encode**, not designed here.
 
 Reading-order note: this is the terminus doc — it reads after [worked-examples.md](worked-examples.md), because the methodology pack is the product turned on its own process and presupposes every prior surface.
 

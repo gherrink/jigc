@@ -39,6 +39,8 @@ mod config_relocation_rollback;
 mod config_replace_remove_step;
 #[path = "../config_set_relocation_ack.rs"]
 mod config_set_relocation_ack;
+#[path = "../doc_link_fence.rs"]
+mod doc_link_fence;
 #[path = "../doctype_authoring_fences.rs"]
 mod doctype_authoring_fences;
 #[path = "../flow13_acceptance.rs"]

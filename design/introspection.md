@@ -2,7 +2,7 @@
 
 `jigc describe` — an on-demand **prose self-description** of jigc's resolved surface: *what doc-types / workflows / commands this project has and how they're used*. Any LLM can call it to orient, or be pointed at it. It is the **introspection read-path surface**: a projection of the resolved definitions (`project > team > pack-default`) into human-readable prose.
 
-Promoted from `ideas/describe.md` (direction locked 2026-05-30; open thread settled at M11 planning 2026-06-07 — see [DECISIONS.md](../DECISIONS.md)). This is the home of record.
+Promoted from ~~`ideas/describe.md`~~ (direction locked 2026-05-30; open thread settled at M11 planning 2026-06-07 — see [DECISIONS.md](../DECISIONS.md)). This is the home of record.
 
 ## Purpose & audience
 

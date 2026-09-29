@@ -204,7 +204,7 @@ each with a `when:` hint). Each mints a task and lands one commit through `final
   + trigger) and finalizes. `when:` "a shaped-but-unscheduled idea occurs mid-work and is
   worth keeping." Router-selectable so it is discoverable (fork 5).
 
-New command-refs in `packs/methodology/config/commands.yaml`: `create-research`,
+New command-refs in `crates/cli/packs/methodology/config/commands.yaml`: `create-research`,
 `create-vision`, `create-idea` (the `{{cli.*}}` catalog the author steps surface).
 
 **Acceptance ordering (Shape 2):** `do-research` (task 1) → commit `research:<slug>` →
@@ -267,7 +267,7 @@ are `[a-z0-9-]`, so the managed home is `vision.md`; the uppercase root name is 
 
 ## 5. The methodology `commit` fix (GF5)
 
-`packs/methodology/schemas/commit.yaml`: add `optional: true` to the `scope` field and the
+`crates/cli/packs/methodology/schemas/commit.yaml`: add `optional: true` to the `scope` field and the
 `body` slot — the M26 finalize-wall fix the methodology fork missed (without it, `finalize`
 hard-blocks an empty `scope`/`body`, the first-run wall the dev pack already removed). Leave
 `implements→spec` dropped (a deliberate methodology subset, [multi-pack.md](multi-pack.md)).
