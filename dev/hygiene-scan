@@ -1,0 +1,126 @@
+#!/usr/bin/env bash
+#
+# dev/hygiene-scan — the denylist half of the public-hygiene guard
+# (implementation/public-hygiene.md).
+#
+# Scans a revision range for any line of a private denylist, case-insensitively:
+# every commit message in the range and every line the range ADDS (removed lines are
+# not new exposure, and a history rewrite is the only fix for an old one). With
+# --tree it also scans the tracked working-tree files and their paths.
+#
+# The denylist never lives in this repository -- naming the terms is the leak. CI
+# reads it from the JIGC_DENYLIST secret, dev/gate from ~/.config/jigc/denylist.
+# One POSIX extended regex per line; blank lines and `#` lines are ignored.
+#
+# A hit is reported by WHERE it is -- commit, path, line number -- and never by
+# what matched: CI logs are public, so echoing the matching line would publish the
+# very term the scan exists to keep out.
+#
+# Usage:
+#   dev/hygiene-scan [--tree] <denylist-file> <rev-list args...>
+#   dev/hygiene-scan ~/.config/jigc/denylist origin/main..HEAD
+#   dev/hygiene-scan --tree ~/.config/jigc/denylist HEAD --not --remotes
+#   dev/hygiene-scan <file> HEAD           # the whole history reachable from HEAD
+#
+# Exit status: 0 no hit · 1 at least one hit · 2 usage or setup error.
+
+set -u
+
+tree=0
+if [ "${1:-}" = "--tree" ]; then
+    tree=1
+    shift
+fi
+case "${1:-}" in
+    -h|--help) awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"; exit 0 ;;
+esac
+if [ $# -lt 2 ]; then
+    printf 'dev/hygiene-scan: usage: dev/hygiene-scan [--tree] <denylist-file> <rev-list args...>\n' >&2
+    exit 2
+fi
+denylist=$1
+shift
+if [ ! -r "$denylist" ]; then
+    printf 'dev/hygiene-scan: cannot read denylist %s\n' "$denylist" >&2
+    exit 2
+fi
+# Absolute before the cd below, or a relative denylist path stops resolving.
+case "$denylist" in
+    /*) ;;
+    *) denylist="$PWD/$denylist" ;;
+esac
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P) || exit 2
+repo_root=$(dirname -- "$script_dir")
+cd "$repo_root" || exit 2
+
+tmp_root=${TMPDIR:-/tmp}
+tmp_root=${tmp_root%/}
+work=$(mktemp -d "$tmp_root/jigc-hygiene-XXXXXX") || exit 2
+
+# A blank line in a `grep -f` file matches EVERY line, so the patterns are normalised
+# first: CR stripped, blank and comment lines dropped.
+pats="$work/patterns"
+tr -d '\r' <"$denylist" | awk 'NF && $1 !~ /^#/' >"$pats"
+if [ ! -s "$pats" ]; then
+    printf 'dev/hygiene-scan: denylist %s holds no pattern\n' "$denylist" >&2
+    exit 2
+fi
+
+hits="$work/hits"
+: >"$hits"
+
+# --- commit messages ---------------------------------------------------------
+# One record per message line, prefixed with its commit, so a hit can be named by
+# commit without printing the line.
+git log --no-color --format='%x01%H%n%B' "$@" >"$work/msgs" 2>"$work/git.err"
+rc=$?
+if [ "$rc" -ne 0 ]; then
+    printf 'dev/hygiene-scan: git log failed (%s):\n' "$rc" >&2
+    cat "$work/git.err" >&2
+    exit 2
+fi
+awk '/^\001/ { sha = substr($0, 2); next } { print sha "\t" $0 }' "$work/msgs" >"$work/msg-lines"
+grep -i -E -f "$pats" "$work/msg-lines" >"$work/msg-hits"
+awk -F'\t' '{ print "message  " substr($1, 1, 12) }' "$work/msg-hits" | sort -u >>"$hits"
+
+# --- added lines ---------------------------------------------------------------
+# --no-renames: a pure rename has no `+++` line, so with rename detection on, the
+# destination path would never be scanned. Without it a rename is a delete plus an
+# add, and every line of the new path is scanned under the new path.
+#
+# `commit <sha>` / `+++ b/<path>` / `@@ … +<start>[,<n>] @@` / `+<line>`, flattened to
+# `<sha> TAB <path> TAB <lineno> TAB <line>`. The path is part of the scanned record,
+# because a path can leak a name as surely as a line can.
+git log --no-color --no-ext-diff --no-renames --unified=0 --format='%x01%H' -p "$@" >"$work/diff" 2>"$work/git.err"
+rc=$?
+if [ "$rc" -ne 0 ]; then
+    printf 'dev/hygiene-scan: git log -p failed (%s):\n' "$rc" >&2
+    cat "$work/git.err" >&2
+    exit 2
+fi
+awk '
+    /^\001/                { sha = substr($0, 2); path = ""; next }
+    /^\+\+\+ /             { path = substr($0, 5); sub(/^b\//, "", path); next }
+    /^@@ /                 { split($3, a, ","); ln = substr(a[1], 2) + 0; next }
+    /^\+/ && path != ""    { print sha "\t" path "\t" ln "\t" substr($0, 2); ln++ }
+' "$work/diff" >"$work/added"
+grep -i -E -f "$pats" "$work/added" >"$work/added-hits"
+awk -F'\t' '{ print "added    " substr($1, 1, 12) "  " $2 ":" $3 }' "$work/added-hits" | sort -u >>"$hits"
+
+# --- the working tree ----------------------------------------------------------
+if [ "$tree" -eq 1 ]; then
+    git grep -I -i -n -E -f "$pats" >"$work/tree-hits"
+    awk -F: '{ print "tree     " $1 ":" $2 }' "$work/tree-hits" | sort -u >>"$hits"
+    git ls-files | grep -i -E -f "$pats" | sed 's/^/path     /' >>"$hits"
+fi
+
+count=$(wc -l <"$hits")
+count=$((count))
+if [ "$count" -eq 0 ]; then
+    printf 'hygiene: denylist clean (%s pattern(s))\n' "$(wc -l <"$pats" | tr -d ' ')"
+    exit 0
+fi
+printf 'hygiene: %s denylist hit(s) -- by location only, never by content:\n' "$count"
+sed 's/^/  /' "$hits"
+exit 1

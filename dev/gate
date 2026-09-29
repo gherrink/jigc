@@ -32,6 +32,14 @@
 # `dev/clean-litter`. That directory is never garbage-collected by cargo and has taken a
 # full gate from ~9.5 min to ~20 min; the advisory is never a step and never fails a run.
 #
+# Every run also prints a `gate: hygiene` advisory (implementation/public-hygiene.md):
+# the private denylist at ~/.config/jigc/denylist (or $JIGC_DENYLIST_FILE) over the
+# unpushed commits and the tracked working tree, via dev/hygiene-scan, and gitleaks
+# over the unpushed commits when it is installed. A hit WARNS and names the file; like
+# the deps count it is never a step and never fails a run -- CI holds the hard stop.
+# JIGC_GATE_HYGIENE=off skips it; JIGC_GATE_HYGIENE_RANGE=<rev-list args> scans that
+# range instead of the unpushed commits.
+#
 # A step that exits 127 DID NOT RUN -- the command was not found -- and is reported as
 # that rather than as a failure, because the two are indistinguishable otherwise and
 # only one of them is a verdict about this repo.
@@ -212,6 +220,73 @@ if [ "$deps_count" -gt "$deps_warn" ]; then
     printf 'gate:          cargo never removes them and Gatekeeper rescans the tree on\n'
     printf 'gate:          every link, which is minutes per gate run. Clean them with:\n'
     printf 'gate:              dev/clean-litter\n'
+fi
+
+# --- the hygiene advisory ---------------------------------------------------
+# The local half of the public-hygiene guard (implementation/public-hygiene.md): a
+# name or a secret caught here costs an amend; caught by CI after the push it costs a
+# history rewrite. An advisory exactly like the deps count above -- printed, never a
+# step, never in the verdict -- so a hit cannot redden a gate whose steps passed, and
+# the only output is WHERE a hit is, never what matched. Its alarm word is HYGIENE,
+# never the deps advisory's WARNING, so neither advisory's fence reads the other's.
+#
+# "Unpushed" is the branch's upstream when it has one, else everything no remote has,
+# else (a repo that was never pushed anywhere) the whole history of HEAD -- unless
+# JIGC_GATE_HYGIENE_RANGE names the range outright.
+if [ "${JIGC_GATE_HYGIENE:-on}" = off ]; then
+    printf 'gate: hygiene  skipped (JIGC_GATE_HYGIENE=off)\n'
+else
+    if [ -n "${JIGC_GATE_HYGIENE_RANGE:-}" ]; then
+        # Deliberately unquoted: the override is a rev-list argument list.
+        # shellcheck disable=SC2086
+        set -- $JIGC_GATE_HYGIENE_RANGE
+        range_desc="$JIGC_GATE_HYGIENE_RANGE (JIGC_GATE_HYGIENE_RANGE)"
+    elif upstream=$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null); then
+        set -- "$upstream..HEAD"
+        range_desc="$upstream..HEAD"
+    elif [ -n "$(git remote 2>/dev/null)" ]; then
+        set -- HEAD --not --remotes
+        range_desc="HEAD --not --remotes"
+    else
+        set -- HEAD
+        range_desc="HEAD (no remote: the whole history)"
+    fi
+    printf 'gate: hygiene  range %s\n' "$range_desc"
+
+    denylist=${JIGC_DENYLIST_FILE:-${HOME:-}/.config/jigc/denylist}
+    if [ ! -f "$denylist" ]; then
+        printf 'gate: hygiene  no denylist at %s -- denylist scan skipped\n' "$denylist"
+    else
+        hygiene_log=$(mktemp "$tmp_root/jigc-gate-hygiene-XXXXXX") || exit 2
+        # Bare: no pipe, so $? is the scan's own status (0 clean, 1 hit, 2 error).
+        "$script_dir/hygiene-scan" --tree "$denylist" "$@" >"$hygiene_log" 2>&1
+        hygiene_code=$?
+        if [ "$hygiene_code" -eq 0 ]; then
+            printf 'gate: hygiene  denylist clean (%s)\n' "$denylist"
+        elif [ "$hygiene_code" -eq 1 ]; then
+            printf 'gate: HYGIENE  denylist hit(s) -- terms from %s are in this change:\n' "$denylist"
+            sed -n 's/^  /gate:            /p' "$hygiene_log"
+            printf 'gate:          fix before pushing (implementation/public-hygiene.md)\n'
+        else
+            printf 'gate: HYGIENE  the denylist scan could not run (exit %s): %s\n' \
+                "$hygiene_code" "$hygiene_log"
+        fi
+    fi
+
+    if command -v gitleaks >/dev/null 2>&1; then
+        leaks_log=$(mktemp "$tmp_root/jigc-gate-gitleaks-XXXXXX") || exit 2
+        gitleaks git --redact --no-banner --log-opts="$*" "$repo_root" >"$leaks_log" 2>&1
+        leaks_code=$?
+        if [ "$leaks_code" -eq 0 ]; then
+            printf 'gate: hygiene  gitleaks clean\n'
+        else
+            printf 'gate: HYGIENE  gitleaks exit %s over %s -- read %s\n' \
+                "$leaks_code" "$range_desc" "$leaks_log"
+        fi
+    else
+        printf 'gate: hygiene  gitleaks not installed -- secret scan skipped\n'
+    fi
+    set --
 fi
 printf '\n'
 

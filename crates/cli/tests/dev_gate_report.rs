@@ -484,3 +484,94 @@ fn an_absent_deps_directory_counts_zero_rather_than_erroring() {
         "a target dir with no `debug/deps` is the post-clean state, not an error.\n{text}",
     );
 }
+
+// ---------------------------------------------------------------------------
+// The hygiene advisory: the local half of the public-hygiene guard.
+// ---------------------------------------------------------------------------
+//
+// `dev/gate` scans the unpushed range and the tracked tree with a PRIVATE denylist
+// (`implementation/public-hygiene.md`), through `dev/hygiene-scan` — the same tool CI
+// runs as a hard step. Locally it is an advisory, exactly like the deps count, and the
+// three arms below pin the properties that make an advisory safe to print on every run:
+// a hit is reported by **where** it is and never by **what** matched (a scan that
+// echoed the term would publish it in the next pasted gate log), a hit never joins the
+// step list or the verdict, and a clean or absent list says so rather than printing
+// nothing. The fixture denylist names a phrase from `dev/gate`'s own comments through a
+// bracket class, so the pattern's own spelling in this file cannot match itself.
+//
+// `JIGC_GATE_HYGIENE_RANGE=HEAD^!` bounds the history half to one commit: the tree half
+// is what these arms exercise, and a clone with no remote would otherwise scan its whole
+// history on every arm.
+
+/// Run `dev/gate --quick` with cargo absent, a fixture denylist, and a one-commit range.
+fn quick_gate_with_denylist(label: &str, denylist: Option<&str>) -> String {
+    let dir = support::trial_corpus::unique_root(label);
+    std::fs::create_dir_all(&dir).expect("create the fixture dir");
+    let list = dir.join("denylist");
+    if let Some(body) = denylist {
+        std::fs::write(&list, body).expect("write the fixture denylist");
+    }
+    let out = Command::new(gate())
+        .arg("--quick")
+        .current_dir(repo_root())
+        .env("PATH", "/usr/bin:/bin")
+        .env("CARGO_TARGET_DIR", &dir)
+        .env("JIGC_DENYLIST_FILE", &list)
+        .env("JIGC_GATE_HYGIENE_RANGE", "HEAD^!")
+        .output()
+        .expect("spawn dev/gate --quick");
+    String::from_utf8_lossy(&out.stdout).to_string()
+}
+
+#[test]
+fn a_denylist_hit_is_named_by_location_and_never_by_content() {
+    // `alarm wor[d]` matches the `Its alarm word is HYGIENE` comment in dev/gate.
+    let text = quick_gate_with_denylist("gate-hygiene-hit", Some("# fixture\n\nalarm wor[d]\n"));
+    assert!(
+        text.contains("gate: HYGIENE  denylist hit(s)"),
+        "a denylist term in the tracked tree must be reported.\n{text}",
+    );
+    assert!(
+        text.lines()
+            .any(|l| l.contains("tree") && l.contains("dev/gate:")),
+        "the hit must be named by path and line — that is the whole actionable content.\n{text}",
+    );
+    assert!(
+        !text.contains("alarm word"),
+        "the matching text must never be printed: a gate log is pasted into commits and \
+         reviews, and CI's copy of this scan runs in a public log.\n{text}",
+    );
+    assert!(
+        text.lines()
+            .any(|l| l == "GATE: FAIL (step: fmt clippy build)"),
+        "the hygiene advisory must not join the step list or the verdict — with cargo \
+         absent the verdict names exactly the three quick steps.\n{text}",
+    );
+}
+
+#[test]
+fn a_clean_denylist_says_clean() {
+    // A bracket class keeps the pattern from matching its own spelling in this file.
+    let text = quick_gate_with_denylist("gate-hygiene-clean", Some("zq[9]x7kw-no-such-term\n"));
+    assert!(
+        text.lines()
+            .any(|l| l.starts_with("gate: hygiene  denylist clean (")),
+        "a scan that found nothing must say it ran, or silence reads as skipped.\n{text}",
+    );
+    assert!(
+        !text.lines().any(|l| l.starts_with("gate: HYGIENE")),
+        "a clean scan raises no alarm.\n{text}",
+    );
+}
+
+#[test]
+fn an_absent_denylist_is_named_as_skipped() {
+    let text = quick_gate_with_denylist("gate-hygiene-absent", None);
+    assert!(
+        text.lines()
+            .any(|l| l.starts_with("gate: hygiene  no denylist at ")
+                && l.ends_with("-- denylist scan skipped")),
+        "without a denylist the scan did not run, and the header must say where the file \
+         was looked for — the denylist is private, so every clone starts without one.\n{text}",
+    );
+}

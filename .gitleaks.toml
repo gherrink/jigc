@@ -1,0 +1,15 @@
+# gitleaks configuration (implementation/public-hygiene.md -> The guard).
+#
+# The default ruleset, plus one allowlist entry for the one known false positive. An
+# entry here is a claim that a finding is NOT a secret, so each one names the exact
+# file AND the exact line shape, never a path alone -- a path-only entry would also
+# silence a real secret that later lands in the same file.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "file_state.rs: an insta snapshot of FileStateRecord's on-disk form. The value is the SHA-256 of a test fixture's bytes; generic-api-key fires on the `auth` in the key `decisions/auth.md`."
+condition = "AND"
+paths = ['''^crates/engine/src/file_state\.rs$''']
+regexTarget = "line"
+regexes = ['''^\s*"decisions/auth\.md": "[0-9a-f]{64}",?\s*$''']

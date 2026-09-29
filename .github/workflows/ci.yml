@@ -3,7 +3,8 @@ name: CI
 # The dev-workflow gate on every push and PR: the probe prebuild, then fmt, clippy,
 # build and test — the same five steps `dev/gate` runs locally, in the same order and
 # for the same reason (see the prebuild step's own comment) — followed by the CI-only
-# manifest-freeze fence.
+# manifest-freeze fence. Ahead of all of it, the public-hygiene guard (gitleaks and the
+# private denylist over the pushed range — implementation/public-hygiene.md).
 #
 # External publish is DECIDED and not yet wired: M36 F4's "internal-only, no external
 # publish" was reversed on 2026-09-27 (DECISIONS.md -> the road to the 1.0.0 call, D2),
@@ -32,6 +33,62 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      # The public-hygiene guard (implementation/public-hygiene.md), ahead of the cargo
+      # steps so a leak fails in seconds rather than after the test run. Both scans read
+      # the PUSHED RANGE, computed once here: a push's `before..HEAD`, a pull request's
+      # `base..HEAD`, and the whole history when there is no usable base (a branch's
+      # first push reports an all-zero `before`; a force-push's `before` may be gone).
+      - name: hygiene range
+        env:
+          HYGIENE_EVENT: ${{ github.event_name }}
+          HYGIENE_BEFORE: ${{ github.event.before }}
+          HYGIENE_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ "$HYGIENE_EVENT" = pull_request ] && git cat-file -e "$HYGIENE_BASE^{commit}" 2>/dev/null; then
+            range="$HYGIENE_BASE..HEAD"
+          elif [ -n "$HYGIENE_BEFORE" ] && git cat-file -e "$HYGIENE_BEFORE^{commit}" 2>/dev/null; then
+            range="$HYGIENE_BEFORE..HEAD"
+          else
+            range="HEAD"
+          fi
+          echo "hygiene range: $range"
+          echo "HYGIENE_RANGE=$range" >> "$GITHUB_ENV"
+
+      # gitleaks, pinned, verified against the release's own checksum list, and run with
+      # --redact so a finding never prints the value it found. `.gitleaks.toml` at the
+      # repo root is picked up automatically and allowlists the one known false positive.
+      - name: gitleaks
+        env:
+          GITLEAKS_VERSION: 8.30.1
+        run: |
+          set -eu
+          cd "$RUNNER_TEMP"
+          base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
+          tarball="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfLO "$base/$tarball"
+          curl -sSfLO "$base/gitleaks_${GITLEAKS_VERSION}_checksums.txt"
+          grep " $tarball\$" "gitleaks_${GITLEAKS_VERSION}_checksums.txt" | sha256sum -c -
+          tar -xzf "$tarball" gitleaks
+          cd "$GITHUB_WORKSPACE"
+          "$RUNNER_TEMP/gitleaks" git --redact --no-banner --log-opts="$HYGIENE_RANGE" .
+
+      # The denylist: private terms (names, hosts, ticket keys) that gitleaks has no rule
+      # for. The list itself is the JIGC_DENYLIST secret and never a repo file, because a
+      # committed denylist is the leak. Hits are reported by commit, path and line only.
+      # Unset (a fork's pull request has no secrets), the step says so rather than
+      # passing silently.
+      - name: denylist
+        env:
+          JIGC_DENYLIST: ${{ secrets.JIGC_DENYLIST }}
+        run: |
+          if [ -z "$JIGC_DENYLIST" ]; then
+            echo "::notice title=denylist skipped::the JIGC_DENYLIST secret is not set, so the denylist scan did not run"
+            exit 0
+          fi
+          list=$(mktemp)
+          printf '%s\n' "$JIGC_DENYLIST" > "$list"
+          dev/hygiene-scan "$list" $HYGIENE_RANGE
 
       # The runner's CPU count, recorded for M54's before/after measurement: the
       # before run's value is read back by this step's name (M54 Increment 8).
