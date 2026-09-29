@@ -753,7 +753,6 @@ fn no_production_code_reads_the_process_argv_as_strings() {
     let sources: Vec<PathBuf> = ["crates/engine", "crates/cli"]
         .iter()
         .flat_map(|krate| crate::support::rust_source::rust_files(&root.join(krate)))
-        .filter(|path| !path.components().any(|c| c.as_os_str() == "probes"))
         .collect();
     assert!(
         sources.len() > 100,

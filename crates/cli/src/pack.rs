@@ -2709,11 +2709,10 @@ mod tests {
     }
 
     /// The embedded `PACK` carries **only** real pack content — never the
-    /// `doc-code` probe's source tree (and its gitignored multi-hundred-MB
-    /// `target/`). The probe source lives outside the `include_dir!` root
-    /// (`crates/cli/probes/`, not `pack/probes/`), so the embed sweeps no
-    /// `probes/` directory. See module-layout.md → Probe distribution (the
-    /// de-bloat site).
+    /// `doc-code` probe's source tree. The probe's sources live outside the
+    /// `include_dir!` root (the `jigc` bin's `src/doc_code_probe/`, not
+    /// `pack/probes/`), so the embed sweeps no `probes/` directory. See
+    /// module-layout.md → Probe distribution (the de-bloat site).
     #[test]
     fn embedded_pack_carries_no_probes_directory() {
         assert!(

@@ -37,7 +37,7 @@
 //! `milestone::remove_worktrees`).
 //!
 //! **Domain boundary, stated so it is not mistaken for a sweep of the binary.** `jigc setup`'s
-//! own surfaces (the installed-hook report, the probe-extract refusal, the hook script body)
+//! own surfaces (the installed-hook report, the hook script body)
 //! render paths too and are **out of this class**: they are a different door's text, with a
 //! different subject — the installing binary and the git hooks dir, neither of which is a repo
 //! path — and folding them in would put a rule written for *the doc a finding addresses* over
@@ -1114,8 +1114,10 @@ const UNSWEPT_PRODUCERS: &[(&str, usize, &str)] = &[
     ),
     (
         "crates/cli/src/setup.rs",
-        8,
-        "**[Corrected 2026-09-20 (M52 Increment 10, T10).** This row read *\"install's \
+        6,
+        "**[Re-counted 2026-09-29 (M54 Increment 2, T5).** 8 → 6: the probe-extract step's two \
+         `bin_dir` sites retired with it, since the `doc-code` probe runs inside `jigc`.] \
+         **[Corrected 2026-09-20 (M52 Increment 10, T10).** This row read *\"install's \
          subject is the installing binary and the git hooks dir, neither a repo path\"*. \
          Falsifying datum, read at HEAD: **two** of the eight name neither — `setup.rs:822` \
          (`resolve_hooks_dir`) composes the **repo root itself** into git's failure text, \
@@ -1124,8 +1126,8 @@ const UNSWEPT_PRODUCERS: &[(&str, usize, &str)] = &[
          out of this class is their **channel** — each is a `std::io::Error` a caller \
          wraps, not a finding a surface prints — which is the reason this row should have \
          given for them and did not.**] \
-         Declared out of this class by M50 Increment 12 / T1 with a stated reason — six of \
-         the eight have the installing binary or the git hooks dir as their subject, \
+         Declared out of this class by M50 Increment 12 / T1 with a stated reason — four of \
+         the six have the installing binary or the git hooks dir as their subject, \
          neither a repo path, and the other two are `io::Error` channels; `uninstall`'s own \
          two sites are disposed `Relative` above",
     ),

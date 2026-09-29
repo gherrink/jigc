@@ -760,8 +760,8 @@ fn run_validate(cwd: &Path, id: &str, format: Format, carry_staged: bool) -> Out
 /// shifted baseline).
 ///
 /// **The error is a reason, not a failure.** The sweep can genuinely fail to run — a
-/// fresh clone with no `doc-code` probe beside the binary and an anchored task, an
-/// unreadable working area — and the bootstrap door must still name the task. The whole
+/// `JIGC_DOC_CODE_PROBE` override naming no file over an anchored task, an unreadable
+/// working area — and the bootstrap door must still name the task. The whole
 /// context chain is returned as the string the caller carries as
 /// `findings_unavailable`, so *unknown* is never rendered as *clean*.
 pub(crate) fn sweep_for_orientation(cwd: &Path, id: &str) -> std::result::Result<Findings, String> {

@@ -2,7 +2,7 @@
 #
 # dev/gate — run this project's dev-workflow gate and report it honestly.
 #
-# The gate is five commands (implementation/dev-workflow.md -> Gate). Running them
+# The gate is four commands (implementation/dev-workflow.md -> Gate). Running them
 # by hand is where the two standing shell rules get broken:
 #
 #   * `cargo test 2>&1 | tail -5` reports *tail's* exit status, so a red gate reads
@@ -16,7 +16,7 @@
 # It writes only to the repo's own target/ (via cargo) and to $TMPDIR. Never ~/.local.
 #
 # Usage:
-#   dev/gate                     # full gate: probe prebuild, fmt, clippy, build, test
+#   dev/gate                     # full gate: fmt, clippy, build, test
 #   dev/gate --quick             # fmt, clippy, build only -- a fast pre-check
 #   dev/gate --private-target    # build in a private CARGO_TARGET_DIR (no lock
 #                                #   contention with a concurrent gate in this tree).
@@ -204,7 +204,7 @@ fi
 # someone flips back, and the slow ordinary growth of the directory itself.
 #
 # It is an advisory and never a step: the count is printed, never judged, so nothing
-# here can redden a gate whose five commands passed. `find` without -delete/-exec/-mtime
+# here can redden a gate whose four commands passed. `find` without -delete/-exec/-mtime
 # is one readdir -- ~3s over 530 k entries, and imperceptible under 100 k.
 #
 # The threshold is overridable so the warning branch is reachable by a fixture the
@@ -323,19 +323,7 @@ run_step() {
     return 0
 }
 
-# The gate, in order. The probe prebuild comes first: dozens of suites shell out
-# to cargo for the detached doc-code probe and share one target dir, so co-resident
-# in a group target one suite can replace target/debug/doc-code while another runs
-# it. Prebuilt, every in-test build is an up-to-date no-op.
-#
-# --target-dir is pinned to the same path crates/cli/build.rs and the suites pass
-# explicitly. Without it, --private-target would send the prebuild to the private
-# dir while the suites still built into probes/doc-code/target -- i.e. the prebuild
-# would silently stop preventing the race it exists to prevent.
-if [ "$quick" -eq 0 ]; then
-    run_step probe cargo build --manifest-path crates/cli/probes/doc-code/Cargo.toml \
-        --target-dir crates/cli/probes/doc-code/target
-fi
+# The gate, in order.
 run_step fmt cargo fmt --check
 run_step clippy cargo clippy --all-targets -- -D warnings
 run_step build cargo build

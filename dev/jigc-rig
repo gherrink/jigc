@@ -611,7 +611,7 @@ git add .gitignore src/pad.ts tests/pad_test.rs
 git commit -q -m 'vendor the runtime, track the source'
 
 # The code-anchored half: `symbol-exists` and `criterion-maps-to-test` are BLOCKING
-# at finalize and the doc-code probe ships beside the binary, so these two finalizes
+# at finalize and the doc-code probe runs inside the binary, so these two finalizes
 # landing at all is the resolution proof, not a claim about it. The anchors are
 # deliberately different checks over different grammars — a TypeScript declaration
 # and a Rust `#[test]` fn.

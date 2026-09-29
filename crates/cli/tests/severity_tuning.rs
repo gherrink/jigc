@@ -222,7 +222,7 @@ fn tunable_severity_demotion_regrades_a_file_state_drift() {
     let repo = TempDir::new("tunable");
     let home = TempDir::new("home");
     init_repo(repo.path());
-    // The store sweep pre-flights the `doc-code` probe — `jigc setup` extracts it.
+    // Set up the project layer the store sweep reads.
     let setup = jigc(repo.path(), home.path(), &["setup"]);
     assert_ok(&setup, "`jigc setup`");
 

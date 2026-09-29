@@ -153,8 +153,8 @@ fn every_suite_file_is_registered_in_exactly_one_group() {
 // point the override at an absent path or a stub the suite compiles itself. The race the
 // consolidation exposed — one suite rebuilding the shared probe executable while a
 // co-resident suite ran it — therefore has no rebuilding suite left
-// (`DECISIONS.md` → M54 Settle, S1). `doc_code_probe_suite` still runs the probe's own
-// unit tests through cargo, and nothing any suite spawns is built by that run.
+// (`DECISIONS.md` → M54 Settle, S1). The probe's own unit tests run as the `jigc` bin's
+// unit tests, and the probe any suite spawns is `jigc` itself.
 
 /// A suite that mutates **process-global** environment state is only sound while it is
 /// the sole test in its process. Before the M47 consolidation every suite owned its own

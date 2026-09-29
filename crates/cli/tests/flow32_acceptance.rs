@@ -96,8 +96,8 @@ fn init_repo(repo: &Path) {
 
 /// Run `jigc <args>` with `cwd = repo`, `$HOME = home`, the **embedded** pack (no
 /// `JIGC_PACK_DIR`), and **no `JIGC_DOC_CODE_PROBE` override** — so the probe resolves
-/// through the **production default** path (`<jigc-bin-dir>/doc-code`, a sibling of the
-/// running binary), the path a real install hits. `env_remove` guards against an env var
+/// through the **production default** path (`jigc` spawning itself), the path a real
+/// install hits. `env_remove` guards against an env var
 /// leaking in from the test runner.
 fn jigc(repo: &Path, home: &Path, args: &[&str]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_jigc"))
@@ -182,7 +182,7 @@ fn fill_commit(repo: &Path, home: &Path, task: &str, ty: &str, scope: &str) {
 /// The marquee: a per-task `finalize` commits exactly the agent's **staged** edit (+ jigc's
 /// own files), leaves both unrelated dirty paths uncommitted, and **names the left-out set**
 /// in its emitted output (the untracked file + the unstaged-tracked file). Proven on the
-/// production path (embedded pack, sibling probe).
+/// production path (embedded pack, self-spawned probe).
 #[test]
 fn flow32_finalize_commits_only_the_staged_set_and_surfaces_the_rest() {
     let repo = TempDir::new("scope-repo");
@@ -267,7 +267,7 @@ fn flow32_finalize_commits_only_the_staged_set_and_surfaces_the_rest() {
 /// git **index** (not the working tree, M30 Inc 3 G4). The agent appends `render_widget` to a
 /// tracked `widget.rs` but never `git add`s it; an unrelated file IS staged so the narrowed
 /// set is non-empty (the block is the doc-code gate, never the empty-commit guard). Proven on
-/// the production path (embedded pack, sibling probe).
+/// the production path (embedded pack, self-spawned probe).
 #[test]
 fn flow32_finalize_blocks_when_a_cited_symbol_is_unstaged() {
     let repo = TempDir::new("block-repo");
@@ -391,11 +391,11 @@ fn flow32_finalize_blocks_when_a_cited_symbol_is_unstaged() {
         rendered.contains("widget.rs#render_widget"),
         "the block names the dangling anchor target; got:\n{rendered}",
     );
-    // A missing sibling probe would surface as a floor-locked crash meta-finding — assert the
-    // production path resolved a runnable probe (not a probe-integrity failure standing in).
+    // A probe that could not run would surface as a floor-locked crash meta-finding — assert
+    // the production path ran the probe (not a probe-integrity failure standing in).
     assert!(
         !rendered.contains("pack-probe-integrity"),
-        "production resolution must find a runnable `doc-code` sibling; got:\n{rendered}",
+        "the production path must run the `doc-code` probe; got:\n{rendered}",
     );
 
     assert_eq!(

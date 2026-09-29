@@ -5,23 +5,20 @@
 //! Drives the **built** `jigc` binary against a throwaway temp repo. `jigc setup`
 //! installs the repo-local footprint (`.jigc/`, the `CLAUDE.md` `@.jigc/AGENT.md`
 //! import line, the `.claude/settings.json` `Bash(jigc:*)` permit, the
-//! `compose-embedded-methodology` marker) **and** the one machine-global write — the
-//! `doc-code` probe sibling beside the `jigc` binary. `jigc uninstall` then reverses
-//! **exactly the repo-local set**, leaving the probe sibling intact (design-review
-//! B2: the probe is shared across every repo on the machine — deleting it would break
-//! `jigc validate` for sibling repos).
+//! `compose-embedded-methodology` marker), and writes **nothing** outside the repository:
+//! the `doc-code` probe runs inside `jigc` (M54), so the directory holding the binary
+//! holds only `jigc`. `jigc uninstall` then reverses **exactly the repo-local set**.
 //!
 //! Asserts the Deliverable's done-picture: (i) `.jigc/` is gone; (ii) `CLAUDE.md` no
 //! longer carries `@.jigc/AGENT.md` with the pre-existing house-rules prose preserved
 //! **byte-for-byte**; (iii) `permissions.allow` no longer carries `Bash(jigc:*)` with
-//! unrelated keys preserved and the file still valid JSON; (iv) the machine-global
-//! `<bin-dir>/doc-code` probe **STILL exists** (the B2 guarantee — the
-//! omits-the-target face of the hardening rule); (v) a second `jigc uninstall` is a
-//! clean no-op (exit 0).
+//! unrelated keys preserved and the file still valid JSON; (iv) the bin dir holding the
+//! `jigc` that ran still holds only that `jigc` — after `setup`, after `uninstall`, and
+//! after the second `uninstall` (the omits-the-target face of the hardening rule); (v) a
+//! second `jigc uninstall` is a clean no-op (exit 0).
 //!
-//! The probe-survives assertion is driven against a **copied** `jigc` in a fresh bin
-//! dir so `current_exe().parent()` is that dir — the same apparatus `tests/setup.rs`'s
-//! probe-extract acceptance uses.
+//! The bin-dir assertion is driven against a **copied** `jigc` in a fresh bin dir, so the
+//! dir a `cargo install` would populate is one the test can list.
 //!
 //! No external test crates: the binary path comes from Cargo's `CARGO_BIN_EXE_jigc`,
 //! the temp repo is built with `std::fs`, and a self-cleaning `TempDir` keeps the test
@@ -122,21 +119,34 @@ fn make_executable(path: &Path) {
     fs::set_permissions(path, perms).expect("chmod");
 }
 
+/// The file names in `dir`, sorted — the bin dir's whole contents.
+fn entries(dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = fs::read_dir(dir)
+        .expect("list the bin dir")
+        .map(|entry| {
+            entry
+                .expect("read a bin dir entry")
+                .file_name()
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+    names.sort();
+    names
+}
+
 /// The full Deliverable, driven against the real built binary. `setup` writes the
-/// repo-local footprint + the machine-global probe sibling; `uninstall` reverses
-/// exactly the repo-local set and leaves the probe intact; a second `uninstall` is a
-/// clean no-op.
+/// repo-local footprint and nothing beside the binary; `uninstall` reverses exactly the
+/// repo-local set; a second `uninstall` is a clean no-op.
 #[test]
-fn uninstall_removes_repo_local_footprint_keeps_probe_and_is_idempotent() {
-    // A probe-less install dir: copy ONLY the `jigc` binary into it, so `setup`
-    // extracts the `doc-code` sibling beside it and `current_exe().parent()` is this
-    // dir (mirroring a `cargo install`). This lets us assert the probe SURVIVES
-    // uninstall (the B2 guarantee).
+fn uninstall_removes_repo_local_footprint_and_is_idempotent() {
+    // An install dir holding ONLY the `jigc` binary, as a `cargo install` leaves it, so
+    // the test can see that nothing lands beside it.
     let bin = TempDir::new("bin");
     let jigc = bin.path().join("jigc");
-    fs::copy(env!("CARGO_BIN_EXE_jigc"), &jigc).expect("copy the built jigc into a probe-less dir");
+    fs::copy(env!("CARGO_BIN_EXE_jigc"), &jigc).expect("copy the built jigc into a fresh dir");
     make_executable(&jigc);
-    let probe = bin.path().join("doc-code");
+    let only_jigc = vec!["jigc".to_string()];
 
     let repo = TempDir::new("repo");
     mark_repo(repo.path());
@@ -183,9 +193,11 @@ fn uninstall_removes_repo_local_footprint_keeps_probe_and_is_idempotent() {
     );
     // Sanity: setup wrote the footprint we're about to tear down.
     assert!(repo.path().join(".jigc").is_dir(), "setup writes .jigc/");
-    assert!(
-        probe.exists(),
-        "setup extracts the machine-global doc-code probe"
+    assert_eq!(
+        entries(bin.path()),
+        only_jigc,
+        "setup must leave the bin dir holding only the `jigc` it ran from — the \
+         `doc-code` probe runs inside it",
     );
     let claude_after_setup =
         fs::read_to_string(repo.path().join("CLAUDE.md")).expect("CLAUDE.md present");
@@ -193,7 +205,6 @@ fn uninstall_removes_repo_local_footprint_keeps_probe_and_is_idempotent() {
         claude_after_setup.contains("@.jigc/AGENT.md"),
         "setup wires the @.jigc/AGENT.md import; got:\n{claude_after_setup}",
     );
-    let probe_bytes = fs::read(&probe).expect("read the extracted probe");
     assert!(
         repo.path().join(GUIDE_PATH).is_file(),
         "setup installs the adapter's owned guide artifact",
@@ -318,16 +329,12 @@ fn uninstall_removes_repo_local_footprint_keeps_probe_and_is_idempotent() {
         "uninstall must remove the standalone jigc pre-commit hook",
     );
 
-    // (iv) The machine-global doc-code probe STILL exists, byte-identical (B2): a
-    //      sibling repo's `jigc validate` must still resolve a runnable probe.
-    assert!(
-        probe.exists(),
-        "uninstall must NOT remove the machine-global doc-code probe (B2)",
-    );
+    // (iv) Nothing outside the repository was touched: the bin dir still holds only
+    //      the `jigc` that ran.
     assert_eq!(
-        fs::read(&probe).expect("probe still present"),
-        probe_bytes,
-        "the machine-global doc-code probe must be left byte-identical",
+        entries(bin.path()),
+        only_jigc,
+        "uninstall must leave the bin dir holding only `jigc`",
     );
 
     // (v) A second uninstall is a clean no-op (exit 0).
@@ -337,8 +344,8 @@ fn uninstall_removes_repo_local_footprint_keeps_probe_and_is_idempotent() {
         "a second `jigc uninstall` must exit 0 as a clean no-op; stderr:\n{}",
         String::from_utf8_lossy(&out2.stderr),
     );
-    // The repo-local footprint stays gone; the human content is untouched; the probe
-    // survives the no-op too.
+    // The repo-local footprint stays gone; the human content is untouched; the bin dir
+    // is untouched by the no-op too.
     assert!(
         !repo.path().join(".jigc").exists(),
         "second uninstall leaves .jigc/ gone"
@@ -348,7 +355,11 @@ fn uninstall_removes_repo_local_footprint_keeps_probe_and_is_idempotent() {
         seeded_claude,
         "a second uninstall leaves the restored CLAUDE.md untouched",
     );
-    assert!(probe.exists(), "a second uninstall leaves the probe intact");
+    assert_eq!(
+        entries(bin.path()),
+        only_jigc,
+        "a second uninstall leaves the bin dir holding only `jigc`",
+    );
 
     // (v-b) The second uninstall removed nothing — its summary must NOT claim to have
     //       torn down artifacts that were already absent ("don't claim to remove what

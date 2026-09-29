@@ -4291,8 +4291,7 @@ pub fn setup_success(format: Format, summary: &SetupSummary) -> String {
 /// so a no-op (a second `uninstall`, nothing present) reports a clean "nothing to
 /// remove" line rather than over-claiming — followed by the routing footer; `json`
 /// emits a generic object naming the two host targets plus the per-artifact `removed`
-/// flags, with no footer (tooling-consumed). The machine-global `doc-code` probe is
-/// left in place — B2.
+/// flags, with no footer (tooling-consumed).
 ///
 /// Both surfaces also carry what the teardown **declined** to remove: a user-modified guide
 /// artifact is left standing, so it is neither a removal bullet nor a silence — it rides

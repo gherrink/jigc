@@ -27,10 +27,10 @@
 //!   `docs(arch-doc):` commit, promotes the doc to `architecture/gateway.md`, the working
 //!   area is cleaned, and the report carries **no** `doc-code` block.
 //!
-//! The probe is resolved through the **production sibling path** — found beside the running
-//! `jigc` (`<bin-dir>/doc-code`, **no** `JIGC_DOC_CODE_PROBE` override), the path a real
-//! install hits, exercising the six-grammar set a normal `cargo build` links in (the
-//! `flow13_acceptance.rs` `env_remove` + cargo-build-sibling idiom). The temp repo is a
+//! The probe is resolved through the **production path** — `jigc` spawning itself as the
+//! probe, **no** `JIGC_DOC_CODE_PROBE` override — the path a real install hits, exercising
+//! the six-grammar set the binary links in (the `flow13_acceptance.rs` `env_remove`
+//! idiom). The temp repo is a
 //! real `git init`; self-cleaning `TempDir`s keep the developer's repo clean.
 
 use std::fs;
@@ -134,9 +134,9 @@ fn init_repo(repo: &Path) {
 }
 
 /// Run `jigc <args>` with `cwd = repo`, `$HOME = home`, and **no `JIGC_DOC_CODE_PROBE`
-/// override** — so the probe resolves through the **production default** path
-/// (`<jigc-bin-dir>/doc-code`, a sibling of the running binary). `env_remove` guards against
-/// an env var leaking in from the test runner.
+/// override** — so the probe resolves through the **production default** path (`jigc`
+/// spawning itself). `env_remove` guards against an env var leaking in from the test
+/// runner.
 fn jigc(repo: &Path, home: &Path, args: &[&str]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_jigc"))
         .args(args)
@@ -529,11 +529,11 @@ fn flow29_finalize_passes_when_both_polyglot_anchors_resolve() {
         String::from_utf8_lossy(&out.stderr),
     );
 
-    // A missing sibling probe would surface as a floor-locked crash meta-finding — assert it
-    // resolved (the production path a real install hits).
+    // A probe that could not run would surface as a floor-locked crash meta-finding — assert
+    // it ran (the production path a real install hits).
     assert!(
         !rendered.contains("pack-probe-integrity"),
-        "production resolution must find a runnable `doc-code` sibling; got:\n{rendered}",
+        "the production path must run the `doc-code` probe; got:\n{rendered}",
     );
     assert_ok(
         &out,

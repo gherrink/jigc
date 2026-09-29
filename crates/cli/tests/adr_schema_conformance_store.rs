@@ -124,7 +124,7 @@ fn assert_ok(out: &std::process::Output, what: &str) {
 }
 
 /// Make `root` a real git repo with identity, then run `jigc setup` over it (the project
-/// layer + probe extraction). Returns once the store is a clean, set-up repo.
+/// layer). Returns once the store is a clean, set-up repo.
 fn setup_repo(repo: &Path, home: &Path) {
     git(repo, &["init", "-q"]);
     git(repo, &["config", "user.email", "test@example.com"]);

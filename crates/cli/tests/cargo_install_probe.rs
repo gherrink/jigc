@@ -31,13 +31,13 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-/// A ceiling on the installed `jigc` binary, re-measured at M54 Inc 2 T4 when the probe
-/// joined the `jigc` bin: the test artifact is the unoptimized **debug**
-/// `CARGO_BIN_EXE_jigc` (line-tables-only debuginfo), ~40.7 MB (40,743,912 bytes) then —
-/// the nine grammars now linked in, plus the ~9.4 MB detached probe `setup` still embeds
-/// until T5 retires it. 50 MiB (≈1.29× that) leaves modest headroom: a re-swept
-/// build-tree embed (~400MB) or a second copy of the grammars blows it, while a clean
-/// debug build stays under.
+/// A ceiling on the installed `jigc` binary. The test artifact is the unoptimized
+/// **debug** `CARGO_BIN_EXE_jigc` (line-tables-only debuginfo): ~40.7 MB (40,743,912
+/// bytes) at M54 Inc 2 T4, when the probe joined the `jigc` bin while `setup` still
+/// embedded the ~9.4 MB detached probe, and ~31.3 MB (31,264,520 bytes, macOS) at T5,
+/// once that embed retired. The ceiling stays 50 MiB (≈1.68× the T5 size), because the
+/// Linux runner's size was not re-measured here: a re-swept build-tree embed (~400MB)
+/// still blows it, while a clean debug build stays under.
 const SIZE_CEILING_BYTES: u64 = 50 * 1024 * 1024;
 
 /// A throwaway directory that removes itself on drop.

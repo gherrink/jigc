@@ -1,10 +1,6 @@
 [workspace]
 resolver = "3"
 members = ["crates/engine", "crates/cli"]
-# Probe executables live OUTSIDE the workspace (module-layout.md → Probe boundary):
-# any language, their own deps (tree-sitter from T2) kept out of the engine/cli lock.
-# The dev pack's `doc-code` probe is built on demand by its fixture test, never a member.
-exclude = ["crates/cli/probes/doc-code"]
 
 [workspace.package]
 version = "1.0.0-rc.21"

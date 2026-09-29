@@ -1972,7 +1972,7 @@ mod store_scratch_path_tests {
 
 /// The **file portion** of a `code-anchor` value (`<path>#<symbol>` → `<path>`; a bare
 /// path with no `#` is itself the file). Split on the **first** `#`, byte-identical to
-/// the `doc-code` probe's own `split_anchor` (`crates/cli/probes/doc-code/src/main.rs`),
+/// the `doc-code` probe's own `split_anchor` (`crates/cli/src/doc_code_probe/mod.rs`),
 /// so the engine's change-set scoping and the probe's resolution agree on what "the
 /// file" is.
 ///

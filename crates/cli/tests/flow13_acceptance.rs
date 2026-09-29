@@ -510,9 +510,9 @@ fn flow13_passing_walk_resolves_both_anchors_and_lands_one_commit() {
 }
 
 /// The passing walk through the **production default probe resolution** — finalize must
-/// resolve `doc-code` as a sibling of the `jigc` binary (`<bin-dir>/doc-code`) with **no**
-/// `JIGC_DOC_CODE_PROBE` override, proving a normal `cargo build` leaves a probe at the
-/// production-resolved location. On a tree where the probe is missing,
+/// run `doc-code` through the production path — `jigc` spawning itself — with **no**
+/// `JIGC_DOC_CODE_PROBE` override, proving a normal `cargo build` yields a binary that
+/// runs its own probe. Where the probe cannot start,
 /// `Command::spawn` errors and the engine raises a floor-locked
 /// `pack-probe-integrity.crash` meta-finding, blocking finalize permanently — the failure
 /// this guards against. The passing walk (both anchors resolve) must land exactly ONE
@@ -543,10 +543,10 @@ fn flow13_passing_walk_resolves_via_production_default_probe_path() {
         String::from_utf8_lossy(&out.stderr),
     );
 
-    // A missing probe would surface here as a floor-locked crash meta-finding.
+    // A probe that could not run would surface here as a floor-locked crash meta-finding.
     assert!(
         !rendered.contains("pack-probe-integrity"),
-        "production resolution must find a runnable `doc-code` sibling — a missing probe \
+        "the production path must run the `doc-code` probe — a probe that cannot run \
          raises a floor-locked pack-probe-integrity meta-finding; got:\n{rendered}",
     );
     assert_ok(

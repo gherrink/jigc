@@ -107,10 +107,6 @@ fn production_ensure_sites() -> BTreeSet<String> {
     let mut files = 0usize;
     for crate_dir in ["crates/engine", "crates/cli"] {
         for path in rust_files(&root.join(crate_dir)) {
-            // The `doc-code` probe is a detached workspace that cannot depend on `cli`.
-            if path.components().any(|c| c.as_os_str() == "probes") {
-                continue;
-            }
             files += 1;
             let body = fs::read_to_string(&path).expect("read a workspace source");
             let code = code_only(&body);

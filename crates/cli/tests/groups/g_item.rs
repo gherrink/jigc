@@ -15,8 +15,6 @@ mod corpus_migration;
 mod corpus_migration_backstop;
 #[path = "../describe.rs"]
 mod describe;
-#[path = "../doc_code_probe_suite.rs"]
-mod doc_code_probe_suite;
 #[path = "../flow15_dogfood_walk.rs"]
 mod flow15_dogfood_walk;
 #[path = "../flow21_measured_run.rs"]

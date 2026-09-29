@@ -471,12 +471,11 @@ fn doc_code_response_is_byte_identical_across_runs() {
 
 // ----- M27 follow-up: per-language gate coverage over the REAL probe binary -----
 //
-// The probe's behavioral unit suite lives in a *detached* workspace the root gate skips
-// (see `doc_code_probe_suite.rs`). These cases drive the actual probe binary over the wire
-// (same build → write-fixture → snapshot → invoke → ingest path as the helpers above) so a
-// regression in the multi-language guarantees (the per-language allowlists, the
-// `unsupported-language` advisory, the non-Rust `maps-to-test` truth table) is caught by the
-// outer `cargo test` directly, not only by the meta-test.
+// The probe's behavioral unit suite runs as the `jigc` bin's unit tests. These cases drive
+// the actual probe over the wire (same write-fixture → snapshot → invoke → ingest path as
+// the helpers above) so a regression in the multi-language guarantees (the per-language
+// allowlists, the `unsupported-language` advisory, the non-Rust `maps-to-test` truth
+// table) is caught through the process boundary too, not only in-process.
 
 /// Drive the probe over the invoker against a working tree holding ONE file at an arbitrary
 /// relative path (so a `.ts`/`.js`/`.py`/`.php`/`.sh`/`.css` fixture can be cited), returning

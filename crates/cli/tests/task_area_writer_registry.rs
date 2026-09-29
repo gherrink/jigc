@@ -221,9 +221,10 @@ const NON_AREA_JOINS: &[(&str, usize, &str)] = &[
     ),
     (
         "crates/cli/src/setup.rs",
-        6,
-        "two `pre-commit` hook paths off the hooks dir, the `doc-code` probe binary off \
-         the bin dir, `packs.yaml` off the config dir, and — since M52 Increment 4 / T5 — \
+        5,
+        "two `pre-commit` hook paths off the hooks dir, `packs.yaml` off the config dir \
+         (the `doc-code` probe binary off the bin dir retired at M54 Increment 2 / T5, when \
+         the probe moved inside `jigc`), and — since M52 Increment 4 / T5 — \
          the two receivers `workbench_foreign_areas` builds its subject FROM: \
          `.jigc/<tasks|milestones>` and `.jigc/displaced`, which are the directories that \
          *hold* working areas (and the parking home) rather than working areas themselves",

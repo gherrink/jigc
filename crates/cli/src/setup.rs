@@ -510,8 +510,8 @@ pub const PRECOMMIT_SENTINEL: &str =
 ///
 /// The **absolute** installing-`jigc` path is embedded (the PATH-vs-absolute hazard:
 /// a hook calling bare `jigc` would run whatever is on PATH at commit time, possibly
-/// a stale binary, and would also break doc-code sibling-probe resolution; the
-/// absolute path pins both). A pure CLI-side renderer — the engine stays
+/// a stale binary, and with it a stale `doc-code` probe, which runs inside `jigc`; the
+/// absolute path pins the one binary that is both). A pure CLI-side renderer — the engine stays
 /// filesystem-/shell-free. Disk placement + idempotency land in T2.
 pub fn precommit_hook_body(jigc_path: &Path) -> String {
     // The committed-in jigc path. `display()` is the install-time, single-machine
@@ -951,47 +951,6 @@ fn make_executable(path: &Path) -> std::io::Result<()> {
     let mut perms = std::fs::metadata(path)?.permissions();
     perms.set_mode(0o755);
     std::fs::set_permissions(path, perms)
-}
-
-/// The `doc-code` probe executable, embedded into the `jigc` binary so it travels
-/// through `cargo install` (which relocates only declared `[[bin]]` targets — the
-/// build-script sibling does not travel; `module-layout.md` → Probe distribution,
-/// M20). `build.rs` builds the probe and copies it into `OUT_DIR/doc-code`; the
-/// `(I)`-pick is that the include path is nameable only after `build.rs` has run,
-/// hence the `OUT_DIR` indirection. [`extract_doc_code_probe`] writes these bytes
-/// beside the installed `jigc` at `jigc setup` so the production resolution path
-/// (`<jigc-bin-dir>/doc-code`) finds a runnable probe with no manual copy.
-const DOC_CODE_PROBE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/doc-code"));
-
-/// Extract the embedded [`DOC_CODE_PROBE`] beside the running `jigc` at `bin_dir`,
-/// applying the pinned **heal/upgrade** policy (`module-layout.md` → Probe
-/// distribution, M20): write when no sibling exists **or** when an existing sibling's
-/// bytes differ from the embedded copy. This is the **first machine-global** setup
-/// write — every other setup write is repo-local — so its idempotency is judged at the
-/// install-tree scope, not per-repo.
-///
-/// Writes `bin_dir/doc-code` with the exec bit (`0o755`) when the sibling is **absent
-/// or byte-different**, and is a **no-op only** when an existing sibling is
-/// byte-identical to the embedded copy. Overwriting a byte-different sibling **heals** a
-/// corrupt stub (which would otherwise surface as a `pack-probe-integrity` failure) and
-/// **upgrades** a stale probe left behind by a prior `jigc` after an upgrade. (In a
-/// build tree this also overwrites the `build.rs`-placed sibling with the embedded copy;
-/// both are functional probes built from the same source — debug builds simply aren't
-/// byte-reproducible — so the swap is harmless.) A read-only target dir surfaces the
-/// underlying IO error to the caller, which maps it to one operational `setup.*` finding
-/// (never a panic).
-fn extract_doc_code_probe(bin_dir: &Path) -> std::io::Result<()> {
-    let dest = bin_dir.join("doc-code");
-    // No-op only when an existing sibling is byte-identical to the embedded copy.
-    // An absent sibling, or one whose bytes differ (a stale post-upgrade probe or a
-    // corrupt stub), is (re)written from the embedded copy — heal/upgrade.
-    if let Ok(existing) = std::fs::read(&dest)
-        && existing == DOC_CODE_PROBE
-    {
-        return Ok(());
-    }
-    std::fs::write(&dest, DOC_CODE_PROBE)?;
-    make_executable(&dest)
 }
 
 /// The sentinel comment that heads the secrets-floor block in a root `.gitignore`
@@ -1571,33 +1530,7 @@ fn install(
     })?;
     let hook_file = display_hook_path(jigc_home, &hook_path);
 
-    // 6. Extract the embedded `doc-code` probe beside the installed `jigc` (the
-    //    production resolution path `<jigc-bin-dir>/doc-code`), so a `cargo
-    //    install`-style install gets a runnable probe with no manual copy. The
-    //    **first machine-global** setup write; heal/upgrade policy — write if absent
-    //    or if the existing sibling's bytes differ from the embedded copy, so a stale
-    //    post-upgrade or corrupt sibling self-heals (`module-layout.md` → Probe
-    //    distribution, M20).
-    let bin_dir = jigc_path.parent().ok_or_else(|| {
-        Finding::block(
-            "setup.extract-probe",
-            "cannot resolve the directory of the running `jigc` to place the `doc-code` probe"
-                .to_string(),
-            "re-run `jigc setup` from an installed `jigc` (the install resolves its own directory)",
-        )
-    })?;
-    extract_doc_code_probe(bin_dir).map_err(|err| {
-        Finding::block(
-            "setup.extract-probe",
-            format!("cannot write the `doc-code` probe beside `jigc` at `{}`: {err}", bin_dir.display()),
-            format!(
-                "ensure the directory holding the `jigc` binary (`{}`) is writable, then re-run `jigc setup`",
-                bin_dir.display()
-            ),
-        )
-    })?;
-
-    // 7. Commit setup's own install files as a dedicated commit (M26 shakedown), so the
+    // 6. Commit setup's own install files as a dedicated commit (M26 shakedown), so the
     //    user's first `jigc finalize` doesn't sweep the scaffolding into their first
     //    feature commit. Idempotent; benign skips (no repo / unborn HEAD / git absent)
     //    degrade gracefully — but a genuine *rejection* of either git step (e.g. no git
@@ -1619,7 +1552,7 @@ fn install(
     )
     .map_err(|rejection| rejection.finding())?;
 
-    // 8. The forecast (M50 Increment 12 / T3, D5): the install is done — now say what the
+    // 7. The forecast (M50 Increment 12 / T3, D5): the install is done — now say what the
     //    **next** door will refuse. `setup` is the one door that meets a repo whose project
     //    layer breaks pack-load and says nothing about it, so an adopter installs at exit 0
     //    and then meets a block on their next command with no idea the install had already
@@ -1705,8 +1638,7 @@ fn pack_load_finding(err: &anyhow::Error) -> Finding {
 /// tracked in git — the committable install footprint, enumerated **explicitly** so the
 /// install commit never sweeps the user's unrelated working-tree changes (a blanket
 /// `git add -A` would). Deliberately excludes: the transient `.jigc/` working area
-/// (`tasks/`/`index/`/`state/`, gitignored by setup's own `.jigc/.gitignore`) and the
-/// machine-global `doc-code` probe (beside the binary, not in the repo).
+/// (`tasks/`/`index/`/`state/`, gitignored by setup's own `.jigc/.gitignore`).
 ///
 /// **The `pre-commit` hook is included exactly when it is a committable working-tree
 /// file** — the rule, not the `.git/hooks` instance (M48 Increment 5 / F4). The list was
@@ -2831,10 +2763,10 @@ impl RemovedArtifacts {
 /// [`guide_kept_finding`] advisory, since deleting authored bytes at exit 0 is the class
 /// the guards below close. `force` removes it either way.
 ///
-/// **Explicitly NOT** the machine-global `doc-code` probe sibling beside the `jigc`
-/// binary — it is shared across every jigc repo on the machine, so deleting it would
-/// break `jigc validate` for sibling repos (design-review B2). Machine-global removal
-/// is `cargo uninstall jigc` + manual probe removal, never this per-project verb.
+/// **Nothing outside the repository is touched**, because `setup` writes nothing there:
+/// the `doc-code` probe runs inside `jigc` (M54), so the directory holding the binary
+/// holds only `jigc`. Removing jigc from the machine is `cargo uninstall jigc`, never
+/// this per-project verb.
 ///
 /// **It refuses over the four things inside `.jigc/` that live nowhere else**, before it
 /// removes anything (`DECISIONS.md` 2026-08-13 → the Settle, F3; 2026-09-05 → M50 Inc 4 /
@@ -3109,10 +3041,6 @@ fn uninstall(
             }
         }
     }
-
-    // The machine-global `doc-code` probe sibling is deliberately left in place (B2):
-    // it is shared across every jigc repo on the machine, so this per-project verb must
-    // not delete it.
 
     Ok(UninstallSummary {
         line_file,
@@ -5463,87 +5391,6 @@ mod tests {
             std::fs::read_to_string(&hook).expect("hook present"),
             foreign,
             "a foreign hook must be left byte-untouched",
-        );
-    }
-
-    /// The embedded `doc-code` probe is non-empty and begins with a native
-    /// executable magic (ELF on Linux / `0xFEEDFACE`-family Mach-O on macOS). This
-    /// is the cheap proof the `(I)`-pick build-ordering held: `build.rs` actually
-    /// built and copied the probe into `OUT_DIR` *before* `include_bytes!` expanded,
-    /// so a real, runnable executable rides in the `jigc` binary (not a stale/empty
-    /// placeholder).
-    #[test]
-    fn embedded_doc_code_probe_is_a_native_executable() {
-        assert!(
-            !DOC_CODE_PROBE.is_empty(),
-            "the embedded doc-code probe must be non-empty",
-        );
-        let elf = DOC_CODE_PROBE.starts_with(&[0x7f, b'E', b'L', b'F']);
-        // Mach-O: 32/64-bit, little/big-endian, and the fat (universal) magics.
-        let macho = matches!(
-            DOC_CODE_PROBE.get(..4),
-            Some([0xFE, 0xED, 0xFA, 0xCE])
-                | Some([0xCE, 0xFA, 0xED, 0xFE])
-                | Some([0xFE, 0xED, 0xFA, 0xCF])
-                | Some([0xCF, 0xFA, 0xED, 0xFE])
-                | Some([0xCA, 0xFE, 0xBA, 0xBE])
-                | Some([0xBE, 0xBA, 0xFE, 0xCA])
-        );
-        assert!(
-            elf || macho,
-            "the embedded doc-code probe must begin with a native executable magic; \
-             got first bytes {:02x?}",
-            &DOC_CODE_PROBE[..DOC_CODE_PROBE.len().min(4)],
-        );
-    }
-
-    /// `extract_doc_code_probe` applies the **heal/upgrade** policy: it writes an
-    /// executable `doc-code` sibling whose bytes equal the embedded copy when the
-    /// target dir has none; a second extract over a byte-identical sibling is a no-op;
-    /// a pre-existing sibling whose bytes **differ** (a stale post-upgrade probe, or a
-    /// corrupt stub) is **overwritten** with the embedded copy (heal/upgrade).
-    #[test]
-    fn extract_writes_absent_noops_on_match_and_heals_different() {
-        let dir = TempDir::new();
-
-        // (i) Absent → write the embedded bytes, executable.
-        extract_doc_code_probe(dir.path()).expect("extract into an empty dir succeeds");
-        let probe = dir.path().join("doc-code");
-        assert_eq!(
-            std::fs::read(&probe).expect("the probe sibling was written"),
-            DOC_CODE_PROBE,
-            "the written sibling must be byte-identical to the embedded copy",
-        );
-        assert_eq!(
-            mode(&probe) & 0o100,
-            0o100,
-            "the extracted probe must be owner-executable",
-        );
-
-        // (ii) Re-extract over a matching sibling → byte-identical no-op.
-        extract_doc_code_probe(dir.path()).expect("re-extract succeeds");
-        assert_eq!(
-            std::fs::read(&probe).expect("the probe sibling still present"),
-            DOC_CODE_PROBE,
-            "a re-extract over a matching sibling must leave it byte-identical",
-        );
-
-        // (iii) A pre-existing DIFFERENT sibling (stale upgrade leftover / corrupt
-        //       stub) is OVERWRITTEN with the embedded copy and made executable
-        //       (heal/upgrade — a byte-mismatch is healed, never left to surface as a
-        //       probe-integrity failure).
-        let sentinel = b"#!/bin/sh\n# a stale / corrupt leftover probe\nexit 0\n";
-        std::fs::write(&probe, sentinel).expect("seed a different sibling");
-        extract_doc_code_probe(dir.path()).expect("extract over a different sibling succeeds");
-        assert_eq!(
-            std::fs::read(&probe).expect("the healed sibling is present"),
-            DOC_CODE_PROBE,
-            "a pre-existing byte-different sibling must be overwritten with the embedded copy",
-        );
-        assert_eq!(
-            mode(&probe) & 0o100,
-            0o100,
-            "the healed probe must be owner-executable",
         );
     }
 

@@ -15,17 +15,17 @@
 # the reset for what is already there, and the step the milestone-completion workflow
 # runs at its close so the next wave starts on a clean tree.
 #
-# It removes nothing itself: `cargo clean` owns both trees, so there is no `rm` here at
+# It removes nothing itself: `cargo clean` owns the tree, so there is no `rm` here at
 # all -- no path built from variables, nothing for the shell guard to refuse, and no way
-# for a typo to reach outside the two target directories cargo knows about.
+# for a typo to reach outside the target directory cargo knows about.
 #
 # Cost: the next build is cold (~minutes). That is the point of running it AFTER a
 # milestone rather than during one.
 #
 # Usage:
-#   dev/clean-litter        # clean both target trees and report what went
+#   dev/clean-litter        # clean the target tree and report what went
 #
-# Exit status: 0 iff every clean it ran exited 0.
+# Exit status: 0 iff the clean exited 0.
 
 set -u
 
@@ -50,43 +50,23 @@ count_entries() {
 }
 
 workspace_deps="$repo_root/target/debug/deps"
-probe_deps="$repo_root/crates/cli/probes/doc-code/target/debug/deps"
 
 before_workspace=$(count_entries "$workspace_deps")
-before_probe=$(count_entries "$probe_deps")
 
 printf 'clean-litter: workspace deps  %s entries\n' "$before_workspace"
-printf 'clean-litter: probe deps      %s entries\n' "$before_probe"
 printf '\n'
-
-failed=""
 
 # Bare, and its own $? captured directly -- never through a pipe.
 cargo clean
 if [ $? -ne 0 ]; then
-    failed="$failed workspace"
-fi
-
-# The doc-code probe is OUTSIDE the workspace (Cargo.toml -> exclude) and builds into
-# its own target dir, which crates/cli/build.rs and ~30 suites name explicitly. Both
-# arguments are the same ones dev/gate's prebuild step passes.
-cargo clean --manifest-path crates/cli/probes/doc-code/Cargo.toml \
-    --target-dir crates/cli/probes/doc-code/target
-if [ $? -ne 0 ]; then
-    failed="$failed probe"
+    printf 'clean-litter: FAILED -- the tree is not clean\n' >&2
+    exit 1
 fi
 
 after_workspace=$(count_entries "$workspace_deps")
-after_probe=$(count_entries "$probe_deps")
 
 printf '\n'
 printf 'clean-litter: workspace deps  %s -> %s entries\n' "$before_workspace" "$after_workspace"
-printf 'clean-litter: probe deps      %s -> %s entries\n' "$before_probe" "$after_probe"
-
-if [ -n "$failed" ]; then
-    printf 'clean-litter: FAILED (%s) -- the tree is not clean\n' "${failed# }" >&2
-    exit 1
-fi
 
 printf 'clean-litter: done -- the next build is cold, which is why this runs after a milestone\n'
 exit 0

@@ -1,7 +1,7 @@
 //! The fence over `dev/gate`'s **report layer** — the part of the gate tool that is
 //! pure text over a log file, and therefore testable in milliseconds.
 //!
-//! `dev/gate` runs five commands and then *reports* what it measured: the aggregate
+//! `dev/gate` runs four commands and then *reports* what it measured: the aggregate
 //! `passed=`/`failed=` totals, the number of test binaries those totals came from, and
 //! on failure the named failing tests. The report is the whole reason to prefer the
 //! tool over retyping the gate, and it is also the half that had never been checked —
@@ -463,7 +463,7 @@ fn a_deps_directory_over_the_threshold_warns_and_names_the_cleanup() {
          own product applies to its tooling.\n{text}",
     );
     // The advisory is an advisory: it is never a step, so it can never redden a gate
-    // whose five commands all passed. With cargo absent all three quick steps exit 127,
+    // whose four commands all passed. With cargo absent all three quick steps exit 127,
     // and the verdict must name exactly those three.
     assert!(
         text.lines()

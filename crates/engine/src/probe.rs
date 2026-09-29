@@ -372,9 +372,9 @@ fn meta_finding(probe_id: &str, reason: &str, message: String) -> Finding {
         // problem, not a corpus problem — judgment-shaped (which half is broken is the
         // operator's call), so the route is human.
         Some(crate::finding::Route::human(
-            "the probe subprocess misbehaved (the message carries the reason) — repair or \
-             re-install the probe binary (`jigc setup` reinstalls the shipped probes), then \
-             re-run the sweep",
+            "the probe subprocess misbehaved (the message carries the reason) — a shipped \
+             probe runs inside `jigc`, so reinstall `jigc` (or repair the probe binary an \
+             override names), then re-run the sweep",
         )),
     )
     .with_check(reason)

@@ -289,8 +289,8 @@ pub enum Command {
 
     /// Reverse this project's jigc install — removes `.jigc/`, unwires the
     /// `CLAUDE.md` reference, and drops the `Bash(jigc:*)` permit from
-    /// `.claude/settings.json`. Leaves the machine-global `doc-code` probe (shared
-    /// across repos) in place. Idempotent: a second run is a clean no-op, and the
+    /// `.claude/settings.json`. Touches nothing outside the repository — the `doc-code`
+    /// probe runs inside `jigc`. Idempotent: a second run is a clean no-op, and the
     /// host files it edits (`CLAUDE.md`, `.claude/settings.json`, a wrapped
     /// `pre-commit` hook) keep your own content byte-for-byte. Four states it
     /// refuses instead of destroying, because `.jigc/` is their only copy — a
@@ -984,7 +984,7 @@ fn run_setup(format: Format, force: bool) -> Outcome {
 /// directory: locate **jigc_home**, the same root `setup` installs at ([`run_setup`]),
 /// and reverse the enumerated repo-local install
 /// (remove `.jigc/`, unwire the `CLAUDE.md` reference, drop the `Bash(jigc:*)` allowlist
-/// permit — never the machine-global `doc-code` probe), render the outcome through the
+/// permit — never anything outside the repository), render the outcome through the
 /// selected `format`, and map it to the exit code. Success prints a summary on stdout
 /// and exits 0; a write failure — or either WIP guard, unless `force` — prints a blocking
 /// `uninstall.*` finding (with its route) on stderr and exits non-zero
