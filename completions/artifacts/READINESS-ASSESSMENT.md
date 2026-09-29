@@ -5,7 +5,7 @@
 > The body below is the **historical 2026-06-21 assessment** — kept as the record of
 > the gate definition and the evidence state that produced "Not yet." Its three gates
 > have since been met and the verdict is superseded
-> ([DECISIONS.md](DECISIONS.md) → 2026-07-02 Go-live gate adjudication):
+> ([DECISIONS.md](../../DECISIONS.md) → 2026-07-02 Go-live gate adjudication):
 >
 > - **G1 — schema/format freeze** ✓ shipped as **M33** (frozen-v1 declared, hash-asserted at pack load).
 > - **G2 — corpus-migration path** ✓ shipped as **M34** (`schema-version` stamp + `jigc migrate-corpus`, measured v1→v2 facts).
@@ -15,7 +15,7 @@
 >   study honestly tied and redirected the thesis to *owning* structural ops; and **M35's
 >   pre-registered cost study WON** — jigc strictly cheaper per rename than plain on all three
 >   models *and* ≥ static on completeness, with 100% verb engagement
->   ([completions/artifacts/M35/VERDICT.md](completions/artifacts/M35/VERDICT.md)).
+>   ([completions/artifacts/M35/VERDICT.md](M35/VERDICT.md)).
 >   The 2026-06-21 "leaning negative" reading was superseded by evidence this doc predicted
 >   would be decisive.
 >
@@ -55,7 +55,7 @@ unguided baselines (plain, GSD) and lost to a static-methodology `CLAUDE.md`
 (4/4 clean) — even when that rule was diluted into a realistic 157-line file. Not a
 clean refutation (one small task; jigc's case narrows to the *long-horizon
 many-edit* regime), but the gate is **unproven, leaning negative**. Full result:
-[completions/artifacts/differentiator-pilot-study1/VERDICT.md](completions/artifacts/differentiator-pilot-study1/VERDICT.md).
+[completions/artifacts/differentiator-pilot-study1/VERDICT.md](differentiator-pilot-study1/VERDICT.md).
 
 ## Per-surface verdict
 
@@ -84,7 +84,7 @@ plain files** — the productive project and jigc's own repo stay unmanaged. Thi
 yields the real signal (does jigc beat a static `CLAUDE.md` when the differentiators
 are engaged — the M17-relocated hypothesis) **reversibly**.
 
-**Executed 2026-06-21** ([study 1](completions/artifacts/differentiator-pilot-study1/)):
+**Executed 2026-06-21** ([study 1](differentiator-pilot-study1/)):
 a 4-arm (jigc / GSD / static-methodology / plain) × 2-model × 2-task matrix on
 isolated container twins of `gherrink-ui-doc @ 542b3206`, doc↔code engaged via the
 shipped `arch-doc` doctype, blind-judged. **Result: jigc did not beat static** —
@@ -121,8 +121,8 @@ Do **not** commit a productive corpus (or self-host this repo) yet. Three gates:
   but rarely fired; **proactive instruction did not route the weaker model** (Sonnet
   still bypassed). So jigc's self-inflicted losses look *fixable*, but the parity is
   **not established** — and parity wouldn't be superiority anyway. See the
-  [ADDENDUM](completions/artifacts/differentiator-pilot-study1/ADDENDUM-jigc-enforced.md)
-  follow-on. **Replication (2026-06-22, n=16/arm) then settled it** ([REPLICATION.md](completions/artifacts/differentiator-pilot-study1/REPLICATION.md)):
+  [ADDENDUM](differentiator-pilot-study1/ADDENDUM-jigc-enforced.md)
+  follow-on. **Replication (2026-06-22, n=16/arm) then settled it** ([REPLICATION.md](differentiator-pilot-study1/REPLICATION.md)):
   drift-rates plain **88%** · static **0%** · jigc **19%** · jigc-gate **0%** — but
   the agent ran a jigc command in **0 of 32** jigc runs and the gate fired **0/16**.
   So jigc's benefit is its **bootstrap-as-instruction, not its mechanism** (which

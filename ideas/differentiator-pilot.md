@@ -2,7 +2,7 @@
 
 **Status:** planned, ready to execute (plan finalized 2026-06-21; **execution
 deferred to the next session**). The operational spec for the **value gate** the
-[readiness assessment](../READINESS-ASSESSMENT.md) named: the test that would tell
+[readiness assessment](../completions/artifacts/READINESS-ASSESSMENT.md) named: the test that would tell
 us whether a productive jigc commitment is worth its lock-in cost. Protocol design
 home is [measurement.md](../design/measurement.md) (don't restate it); this file is
 the *delta* M17 left un-run + the **environment-isolation harness** + the concrete
