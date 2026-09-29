@@ -25,11 +25,10 @@ A full gate from a warm build should be **~5 minutes** (measured 4m34s–5m18s):
 ```sh
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings
-cargo build --quiet --manifest-path crates/cli/probes/doc-code/Cargo.toml   # probe prebuild
 cargo test
 cargo build
 ```
 
-*(From M54 — settled 2026-09-28 — the probe prebuild line goes: the `doc-code` probe runs inside `jigc` by self-exec, so there is no separate probe to build ([module-layout.md](module-layout.md) → Probe boundary). Until that increment lands, keep it.)*
+**[Retired 2026-09-29 (M54 Increment 2): this block carried a fifth line, the probe prebuild `cargo build --quiet --manifest-path crates/cli/probes/doc-code/Cargo.toml`. The `doc-code` probe runs inside `jigc` by self-exec, so there is no separate probe to build ([module-layout.md](module-layout.md) → Probe boundary).]**
 
 If it runs dramatically longer than that and the machine is otherwise idle, check whether `syspolicyd` is burning CPU (`ps aux | grep syspolicyd`) before assuming the suite is at fault — that is exactly the wrong turn taken in M47.

@@ -105,7 +105,7 @@ Run: `jigc task finalize add-rate-limiter`   — validate + commit
 Run: `jigc task discard add-rate-limiter --force`   — abandon
 ```
 
-State 4 is state 3 with findings, which is why one view renders both: a blocking finding changes what the block *says*, never which directives are reachable — and orientation reports it at **exit 0**, because orientation is not a gate. The findings render through the same finding renderer every other surface uses, so this surface grows no private finding shape ([command-output-contract.md](command-output-contract.md) → findings-as-data). A task whose sweep cannot run — no `doc-code` probe beside the binary on a fresh clone, say — reads `findings: unknown — <reason>`: the bootstrap door degrades, and *unknown* is never printed as *none*.
+State 4 is state 3 with findings, which is why one view renders both: a blocking finding changes what the block *says*, never which directives are reachable — and orientation reports it at **exit 0**, because orientation is not a gate. The findings render through the same finding renderer every other surface uses, so this surface grows no private finding shape ([command-output-contract.md](command-output-contract.md) → findings-as-data). A task whose sweep cannot run — a `JIGC_DOC_CODE_PROBE` override naming no file, say, since M54 put the probe inside `jigc` — reads `findings: unknown — <reason>`: the bootstrap door degrades, and *unknown* is never printed as *none*.
 
 The shapes share a header (pack/cascade summary), a status block, and at most a small set of `Run:` directives for next steps. Content-class findings are the engine's voice. Author-class (`<<author: …>>`) never appears — orientation never asks the agent to write.
 

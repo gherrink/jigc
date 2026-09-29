@@ -10,16 +10,17 @@ The loop is shaped as named, ordered steps on purpose: each maps onto a future j
 2. **Red** — write the failing test(s) that encode the done-criteria **first**. Run them; confirm they fail, and **for the right reason** (not a compile error standing in for the assertion). Parser / serialization work is **golden + property/fuzz** tests — the #1-risk discipline ([parsing.md](parsing.md) → Round-trip guarantees) lives here, not as an afterthought.
 3. **Green** — the **minimal** implementation that makes the test pass. No extra scope, no speculative generality (keep it minimal).
 4. **Refactor** — tidy while green, touching **only what this task touches**. Pre-existing mess is not this task's to fix (stay in scope).
-5. **Gate** — the verification gate; all **five** pass or the task isn't done, in this order:
-   - `cargo build --manifest-path crates/cli/probes/doc-code/Cargo.toml --target-dir crates/cli/probes/doc-code/target` — **the probe prebuild, first.** Dozens of suites shell out to cargo for the detached `doc-code` probe and every one drives the same `probes/doc-code/target/`. While each suite owned its own binary they were sequential; co-resident in a group target they are not, and one suite's first build can replace `target/debug/doc-code` while another executes it (seen once as `precommit_hook_acceptance` failing on a backstop that never fired). Building it once up front makes every in-test build an up-to-date no-op that rewrites nothing. **The `--target-dir` is not optional:** hand-run with `CARGO_TARGET_DIR` set — which both `--private-target` and `JIGC_GATE_TARGET` set — the prebuild builds into the *private* dir while the suites still build into `crates/cli/probes/doc-code/target`, so it silently stops preventing the race it exists to prevent, at exit 0. **[Corrected 2026-09-15 (M51 Increment 9, T11): this bullet read `cargo build --quiet --manifest-path …` with no `--target-dir`, and sat third. Falsifying datum, driven at HEAD: `dev/gate:218-219` runs it *first* and passes `--target-dir crates/cli/probes/doc-code/target` and no `--quiet` — so the sentence below, *“the five commands above, in order”*, was false about this command's text as well as its position.]** **[M54 — settled 2026-09-28, true when it lands: this step goes, and the gate is four commands again. The probe runs inside `jigc` by self-exec, so the detached workspace, its shared `target/debug/doc-code` and the race this step exists to narrow are all removed by construction — the race was reproduced at 5.5 % under load, 39 suites relinking one file ([DECISIONS.md](../DECISIONS.md) → *M54 settled*, S1 · S4). `dev/gate` drops the step in the same increment; until then, run it as written.]**
+5. **Gate** — the verification gate; all **four** pass or the task isn't done, in this order:
    - `cargo fmt --check`
    - `cargo clippy --all-targets -- -D warnings`
    - `cargo build`
    - `cargo test`
 
+   **[Retired 2026-09-29 (M54 Increment 2) — kept as the record: until then a fifth step ran first, the probe prebuild `cargo build --manifest-path crates/cli/probes/doc-code/Cargo.toml --target-dir crates/cli/probes/doc-code/target`.** Dozens of suites shelled out to cargo for the detached `doc-code` probe workspace and all drove one `target/`; co-resident in a group target, one suite's build could replace `target/debug/doc-code` while another executed it (reproduced at 5.5 % under load, 39 suites relinking one file — [DECISIONS.md](../DECISIONS.md) → *M54 settled*, S1 · S4), and prebuilding made every in-test build an up-to-date no-op. Its `--target-dir` was not optional: hand-run with `CARGO_TARGET_DIR` set, it built into the private dir while the suites still raced, at exit 0 (the bullet itself once omitted it and sat third — corrected 2026-09-15, M51 Increment 9, T11). **The probe now runs inside `jigc` by self-exec ([module-layout.md](module-layout.md) → Probe boundary), so no suite builds a probe, no file is left to race on, and `dev/gate` runs no probe step.]**
+
    **Measure the gate unpiped — `cmd | tail` reports *tail's* exit status, not the command's** (2026-08-13, the pre-1.0.0 trial session, where this one habit produced **four** near-misses in a day). A pipeline's `$?` is its *last* stage, so `cargo test 2>&1 | tail -40` exits 0 over a failing suite, and `cargo fmt --check | tail -3` exits 0 over a real diff — both were nearly recorded as green, and a `tail` also silently discarded the per-target counts that would have shown the run was never measured at all. The same shape produced two *false findings* against the product in the same session (`jigc validate`'s exit code read through a pipe; an authored item "missing" because `head -8` cut the render before it), both caught only by re-measuring and both recorded as died-in-verification in [the trial's verification](../completions/artifacts/RC-pre-1.0/findings-verification.md).
 
-   **So: run `dev/gate`.** It is the five commands above, in order, each run **bare** with its exit code
+   **So: run `dev/gate`.** It is the four commands above, in order, each run **bare** with its exit code
    captured directly — plus the aggregate totals and, on a red, the failing step *and the failing test
    names*. It exists because this habit is a **reflex, not an oversight**: a scan of 139 subagent
    transcripts found the piped form blocked **215 times across 117 of 137 agents**, and an independent
@@ -28,7 +29,7 @@ The loop is shaped as named, ordered steps on purpose: each maps onto a future j
    what produced 239 post-rule violations of the rule two paragraphs above.
 
    ```sh
-   dev/gate                  # the full gate — probe · fmt · clippy · build · test
+   dev/gate                  # the full gate — fmt · clippy · build · test
    dev/gate --quick          # fmt · clippy · build, no tests
    dev/gate --private-target # a private CARGO_TARGET_DIR, for a tree with concurrent gates
    ```
