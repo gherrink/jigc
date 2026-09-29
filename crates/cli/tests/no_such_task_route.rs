@@ -225,7 +225,7 @@ fn doc_verb_with_unknown_explicit_task_routes_to_task_list() {
 /// The one converged **residual** refusal every wrong-id surface emits over a directory
 /// that carries no base pin, byte for byte.
 ///
-/// Driven at `766f32ef` the same three doors answered this state three different ways —
+/// Driven at `2e491967` the same three doors answered this state three different ways —
 /// `task validate` *"the task validates clean"* at exit **0**, `doc set-field` a
 /// `store.not-staged` block about a task's staged set, `start --task` a code-less
 /// `could not read the base pin for task …` — because each had already accepted the

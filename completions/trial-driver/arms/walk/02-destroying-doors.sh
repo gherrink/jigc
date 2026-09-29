@@ -196,7 +196,7 @@ echo 'sole copy of a file' > .jigc/worktrees/leftover-file
 ls -la .jigc/worktrees/
 step jigc uninstall
 C1="$(jigc uninstall 2>&1)"; C1RC=$?
-# MEASURED on 1.0.0-rc.13 (979baca), 2026-09-04, and left as FAILing bars rather than
+# MEASURED on 1.0.0-rc.13 (f266770), 2026-09-04, and left as FAILing bars rather than
 # re-worded to pass: the door refuses at exit 1 and the file survives — the audit's
 # data-loss hole is closed — but the refusal is the fail-closed PROBE-ERROR shape
 # (`could not read the leftover directory ".../leftover-file": Not a directory (os

@@ -1,4 +1,4 @@
-<!-- M51 · the independent pre-decompose design review from OpenAI Codex (unseeded, source-based, no cargo and no binary run), 2026-09-11 against HEAD `bd348a83` plus the uncommitted planning files. Persisted verbatim; its prompt is [codex-design-prompt.md](codex-design-prompt.md). Every finding accepted by the human 2026-09-11 — the amendments are in [settle-record.md](settle-record.md) → Review amendments. -->
+<!-- M51 · the independent pre-decompose design review from OpenAI Codex (unseeded, source-based, no cargo and no binary run), 2026-09-11 against HEAD `74627547` plus the uncommitted planning files. Persisted verbatim; its prompt is [codex-design-prompt.md](codex-design-prompt.md). Every finding accepted by the human 2026-09-11 — the amendments are in [settle-record.md](settle-record.md) → Review amendments. -->
 
 Verdict: **not ready to decompose**. D1, D2, D3, D4, and D5 still contain safety- or contract-defining forks disguised as implementation detail. Decomposing now would let increment authors silently settle them.
 

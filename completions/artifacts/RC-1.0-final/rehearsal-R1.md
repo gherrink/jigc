@@ -1,6 +1,6 @@
 # R1 — plant E against a live agent
 
-Run 2026-08-28 on `jigc-gate:rc12` (`JIGC_SHA 314f59ec…`), model `claude-sonnet-5`, headless,
+Run 2026-08-28 on `jigc-gate:rc12` (`JIGC_SHA 5ff85eaa…`), model `claude-sonnet-5`, headless,
 `bypassPermissions`. Owed by [protocol.md](protocol.md) §2.3, which owes it to
 [cue-card-postmortem.md](../RC-1.0-gate/cue-card-postmortem.md) rule 4:
 

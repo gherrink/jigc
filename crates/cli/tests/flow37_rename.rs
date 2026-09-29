@@ -513,7 +513,7 @@ fn rename_onto_a_different_existing_slug_blocks() {
     );
 }
 
-/// **M50 Inc 2 / T2 — `--slug ""` stops blaming the title.** Driven at `b32def1`, an empty
+/// **M50 Inc 2 / T2 — `--slug ""` stops blaming the title.** Driven at `f04fea1`, an empty
 /// override answered `write.unslugable-title` with `` `--to "New Title"` slugs to
 /// nothing ``, which is false — that title slugs fine, and the emptiness came from the
 /// override — and routed the caller to *"name the id yourself: `--slug <new-slug>`"*, i.e.

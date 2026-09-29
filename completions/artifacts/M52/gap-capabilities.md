@@ -1,6 +1,6 @@
 # M52 gap detection — dimension: capabilities
 
-**HEAD `85ad06c5`; binary `~/.local/bin/jigc` = 1.0.0-rc.15.** Every claim is marked **[driven]**
+**HEAD `7637a46f`; binary `~/.local/bin/jigc` = 1.0.0-rc.15.** Every claim is marked **[driven]**
 (rig + release binary, two-step eval, `cd "$REPO"`, no cargo, nothing written into the working
 repo), **[read]** (source read at a cited line — a lead, not a measurement, per M46's rule), or
 **[baseline]** (relayed from a M52 companion ledger; not re-driven here).

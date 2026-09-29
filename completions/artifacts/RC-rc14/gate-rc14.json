@@ -2,7 +2,7 @@
   "identity": {
     "tag": "jigc-gate:rc14",
     "image_id": "sha256:e71fe0e8b227d51b10cf9f583bdd4ecc3e693d717cd29f15b33d9bdc2ac3402f",
-    "jigc_sha": "21ffc0d47c9be41ae93f7d9f69dad24110a783a3",
+    "jigc_sha": "82075cc3de6f2c4af5de3e683bbdf33e83f8f594",
     "jigc_version": "jigc 1.0.0-rc.14",
     "cli_version": "2.1.233 (Claude Code)"
   },
@@ -15,5 +15,5 @@
     "transcript_recoverable": true,
     "no_host_instructions": true
   },
-  "note": "verify-image.sh jigc-gate:rc14 1.0.0-rc.14 => 7 passed / 0 failed, 2026-09-09, check 4 (the host-YES/container-NO differential) among them; image built from 21ffc0d4 (HEAD; the two commits past 95c79be are docs-only, proven by git diff --name-only touching no crates/, packs/, .rs, .yaml or .toml, so this tree's CODE is the one the shipped rc.14 binary was built from); verify-pair.sh PAIR_PROBES=m50 rc13->rc14 4/4 discriminating and a same-image pair refused at exit 1, recorded in protocol.md"
+  "note": "verify-image.sh jigc-gate:rc14 1.0.0-rc.14 => 7 passed / 0 failed, 2026-09-09, check 4 (the host-YES/container-NO differential) among them; image built from 82075cc3 (HEAD; the two commits past 2224ce0 are docs-only, proven by git diff --name-only touching no crates/, packs/, .rs, .yaml or .toml, so this tree's CODE is the one the shipped rc.14 binary was built from); verify-pair.sh PAIR_PROBES=m50 rc13->rc14 4/4 discriminating and a same-image pair refused at exit 1, recorded in protocol.md"
 }

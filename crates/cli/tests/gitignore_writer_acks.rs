@@ -3,7 +3,7 @@
 //! → §6 *"with the ack naming the content change"* · `design/surface-contract.md` → law
 //! 1 · `completions/artifacts/M51/gap-capabilities.md` → G10 item 3).
 //!
-//! **The base-red, driven at `6e59973f`** (the amend-to-union writer, T1's commit). A
+//! **The base-red, driven at `db70f1e3`** (the amend-to-union writer, T1's commit). A
 //! repo whose committed `.jigc/.gitignore` predates an [`ENTRIES`] addition — the
 //! ordinary *upgrade jigc → run any door* sequence — and carries the user's own two
 //! lines:
@@ -493,7 +493,7 @@ fn assert_refusal_amends_nothing(
 /// **`jigc milestone provision <unknown-id>`** refuses without amending — and the same
 /// door, on the success it *does* need the entry for, still amends and still says so.
 ///
-/// Driven red at `032dbd93`: the refusal exited 1 with `milestone.unknown` and five
+/// Driven red at `8f0fb833`: the refusal exited 1 with `milestone.unknown` and five
 /// canonical entries appended to the planted file on the way out.
 #[test]
 fn a_refused_provision_amends_nothing_and_a_successful_one_still_does() {

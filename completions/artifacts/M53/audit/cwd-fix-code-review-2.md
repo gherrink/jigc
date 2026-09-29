@@ -1,4 +1,4 @@
-I drove the debug binary built at HEAD `7bf05636` against nine `dev/jigc-rig` corpora, including roots under `…/jigc space.rpTPYu/…` and `…/it's #odd.4e6xLP/…`, plus hand-built linked and fan-out worktrees. Every finding below is marked **DRIVEN** or **READ**.
+I drove the debug binary built at HEAD `e46622d7` against nine `dev/jigc-rig` corpora, including roots under `…/jigc space.rpTPYu/…` and `…/it's #odd.4e6xLP/…`, plus hand-built linked and fan-out worktrees. Every finding below is marked **DRIVEN** or **READ**.
 
 ---
 
@@ -112,7 +112,7 @@ for span in backticked_spans(text) {
     if tokens.first() != Some("jigc") || tokens.get(1) != Some("migrate") { continue; }
 ```
 
-`unaimed_git_span` (`:1123`, commit `94f6bb93`) and `unsafe_command_token` (`:1268`, commit `8076d9c5`) were both widened to `split_shell_sequence` in this range on the finding that a composite span is never checked. The migrate fence was minted one commit earlier (`46169f6c`) and was not swept with them, so `` `cd <abs> && jigc migrate rel.md --as adr` `` evades it. No producer emits that shape today; the gap is structural and is the same one that was just named a defect twice.
+`unaimed_git_span` (`:1123`, commit `8fa277c2`) and `unsafe_command_token` (`:1268`, commit `272c0ae6`) were both widened to `split_shell_sequence` in this range on the finding that a composite span is never checked. The migrate fence was minted one commit earlier (`38c345fd`) and was not swept with them, so `` `cd <abs> && jigc migrate rel.md --as adr` `` evades it. No producer emits that shape today; the gap is structural and is the same one that was just named a defect twice.
 
 **Smallest correction:** run the loop over `split_shell_sequence(span)`, as its two siblings now do.
 
@@ -120,7 +120,7 @@ for span in backticked_spans(text) {
 
 ## LOW 5 — two records of the same measurement disagree: `DECISIONS.md` says 33 functions, the commit message says 44, and 44 is what the file carries
 
-**Location:** `DECISIONS.md:11` — *"`setup.rs` threads **one** root through 33 functions from two seams"* — against commit `82a4c4a0`'s message, *"setup.rs threads ONE root through 44 functions"*.
+**Location:** `DECISIONS.md:11` — *"`setup.rs` threads **one** root through 33 functions from two seams"* — against commit `b37bdb5e`'s message, *"setup.rs threads ONE root through 44 functions"*.
 
 **Measured** (`head -4013 crates/cli/src/setup.rs`, i.e. everything above `mod tests` at `:4014`): `jigc_home: &Path` occurs **44** times; `root: &Path` once (`write_version_stamp`, the declared exception); `repo_root: &Path` zero. The commit message's figure is the derivable one.
 
@@ -181,12 +181,12 @@ Pre-existing, not introduced here — the same residue followed a root-cwd `unin
 | LOW 5 | `setup` binds `jigc_home` | **CLOSED** | DRIVEN: from a linked worktree rc=0, main's `.jigc/{AGENT.md,config,state,version}` written, zero worktree-local `.jigc` write, site line names the home; `--format json` 7 keys, no `site` |
 | LOW 6 | AGENT.md "the one exception" | **CLOSED** | READ + goldens: 6 files, exactly `1 +/1 −` each, the paragraph only; it now states two rules and covers the migrate and commit-site absolutes |
 | LOW 7 | stale test citation in `migrate.rs` | **CLOSED** | READ: re-pointed at `path_arg_occurrence_axis.rs::every_path_arg_occurrence_resolves_its_token_against_the_base_it_states`, which exists |
-| LOW 8 | aim-fence shape gaps | **CLOSED** | DRIVEN via suite: `git_span_aim::` 12 passed, asserting the unaimed composite `is_some` and `commit`/`log`/`show` admitted, `-- <path>` forms still caught; quoting twin `8076d9c5` likewise. Residual → LOW 4 |
+| LOW 8 | aim-fence shape gaps | **CLOSED** | DRIVEN via suite: `git_span_aim::` 12 passed, asserting the unaimed composite `is_some` and `commit`/`log`/`show` admitted, `-- <path>` forms still caught; quoting twin `272c0ae6` likewise. Residual → LOW 4 |
 | LOW 9 | `adapter::render_spawn` | **CLOSED** | READ: deleted; only test-local helpers and a struck comment remain |
 | LOW 10 | `uninstall` binds `jigc_home` | **CLOSED** | DRIVEN: from a fan-out worktree rc=0 removing the home's `.jigc/`, hook, SKILL.md, preload; all four WIP guards fire (dirty / bisect / untracked-workbench / foreign-bytes); `--format json` 4 keys, no `site`, warning on stderr. Ack wording → MEDIUM 2 |
 | LOW 11 | `provision_worktrees` on `jigc_home` | **CLOSED** | READ: `milestone.rs:2906-2912` takes `jigc_home: &Path` |
 
-**Other checks:** `count_fences::` 14 passed · `posture_member_inventory::` 4 · `git_span_aim::` 12 · `repo_relative_paths::` 7 · `path_arg_occurrence_axis::` 4 · `text_json_parity_axis::` 5 · `precommit_hook_acceptance::` 12 · `cwd_verb_subject::` 11 — all rc=0, run bare. No golden was widened: the only golden movement in the range is 6 AGENT.md files at 1 line each, and it is a content decision, not an admission of new output. The parity fence asserts `site` non-emission **both** ways (key absent *and* value absent) for `setup` and `uninstall`, confirmed against the real binary. `f00800f9` is dangling — `git log --all` does not contain it, `git branch -a --contains` is empty, the working tree carries only the untracked review file, `DECISIONS.md` and the review file are intact. No census row was left undispositioned by these fixes; `cwd-census.md` is a dated measurement snapshot against rc.18 (its line 171 generalisation *"a `jigc` span resolves its token against the root"* was already falsified by `7cd03c59` before this range, and is superseded by the two DECISIONS entries rather than carried as a live claim).
+**Other checks:** `count_fences::` 14 passed · `posture_member_inventory::` 4 · `git_span_aim::` 12 · `repo_relative_paths::` 7 · `path_arg_occurrence_axis::` 4 · `text_json_parity_axis::` 5 · `precommit_hook_acceptance::` 12 · `cwd_verb_subject::` 11 — all rc=0, run bare. No golden was widened: the only golden movement in the range is 6 AGENT.md files at 1 line each, and it is a content decision, not an admission of new output. The parity fence asserts `site` non-emission **both** ways (key absent *and* value absent) for `setup` and `uninstall`, confirmed against the real binary. `f00800f9` is dangling — `git log --all` does not contain it, `git branch -a --contains` is empty, the working tree carries only the untracked review file, `DECISIONS.md` and the review file are intact. No census row was left undispositioned by these fixes; `cwd-census.md` is a dated measurement snapshot against rc.18 (its line 171 generalisation *"a `jigc` span resolves its token against the root"* was already falsified by `4f61c80a` before this range, and is superseded by the two DECISIONS entries rather than carried as a live claim).
 
 ---
 

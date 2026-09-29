@@ -1,4 +1,4 @@
-<!-- M52 per-axis review (re-run) — axis 5 · transaction / rollback — RECONCILED · driven on the installed `jigc 1.0.0-rc.16` (built from commit a3eb026b), 2026-09-21. -->
+<!-- M52 per-axis review (re-run) — axis 5 · transaction / rollback — RECONCILED · driven on the installed `jigc 1.0.0-rc.16` (built from commit e519e4eb), 2026-09-21. -->
 
 <!-- M52 per-axis review (the RE-RUN of M51's instrument) — axis 5 · pinned contracts · RECONCILED -->
 
@@ -42,8 +42,8 @@ are recorded in Part II §D rather than written into the driver's own text.
 else ran. **Release posture** — the `Route::mechanical` span fence and the other
 `#[cfg(debug_assertions)]` panics do not exist here.
 
-**The binary this table reflects carries M52's seven post-build audit fixes** (`79e54c75` ·
-`6d95756c` · `fe8f29c4` · `c96137e4` · `b9ab6a70` · `1b036264`, plus the fold-back `a3eb026b`).
+**The binary this table reflects carries M52's seven post-build audit fixes** (`ad527fa4` ·
+`6c2de03a` · `33bd5692` · `68d14cd3` · `a83a9e60` · `66af090a`, plus the fold-back `e519e4eb`).
 Four of the seven are visible in the drives: F4's `ENVELOPE_OWED_CODES` at §5, F5's
 `RelocateRefusal::ALL` at §8, F3's rollback-conflict fold at §9, and F1's `home-vacated`
 territory at §6.
@@ -61,7 +61,7 @@ I did **not** read the Codex source pass for this axis.
 
 ## 0 · The door set, derived from the code
 
-Counts read at `HEAD = a3eb026b` by symbol, not from the design doc's numbers:
+Counts read at `HEAD = e519e4eb` by symbol, not from the design doc's numbers:
 
 | registry | file | rows read |
 |---|---|---|
@@ -1090,10 +1090,10 @@ crates/cli/pack/config/schema-manifest.yaml
 crates/cli/tests/fixtures/prior-schema-prd/config/schema-manifest.yaml
 packs/methodology/config/schema-manifest.yaml
 
-$ git diff --stat 35195f56 HEAD -- '*schema-manifest.yaml'
+$ git diff --stat 577a0099 HEAD -- '*schema-manifest.yaml'
 (empty)
 ```
-All three tracked manifests are byte-unchanged from the M51 tag commit through `a3eb026b`. M52's declared
+All three tracked manifests are byte-unchanged from the M51 tag commit through `e519e4eb`. M52's declared
 boundary held.
 
 ---

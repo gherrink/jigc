@@ -1487,7 +1487,7 @@ fn the_refusing_worktree_door_count_is_the_registrys_own() {
 //
 // `cli::rollback::ROLLBACK_POPULATIONS` is the registry two of the fences above already
 // read — and nothing read the prose that states **its** size. It was minted **twelve**
-// rows at M52 Increment 5 / T1 and became **eleven** at T9 (`9375d3cd`), when
+// rows at M52 Increment 5 / T1 and became **eleven** at T9 (`9720620e`), when
 // `rename-head-restore` was deleted rather than re-worded: one discipline is one row, so
 // `rollback_rename`'s HEAD-sourced arm folded back into the door's single population. The
 // source header carries that strike with its arithmetic (`crates/cli/src/rollback.rs` →

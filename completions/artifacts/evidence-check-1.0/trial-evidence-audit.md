@@ -1,7 +1,7 @@
 <!-- persisted verbatim 2026-09-10 from the evidence-check-1.0 session; agent: Claude Opus 5 (1M context); see VERDICT.md -->
 # Adversarial review — is the rc.14 trial valid input for the 1.0.0 call?
 
-Read-only review at HEAD `bd348a83`. Every number below was re-derived from the raw
+Read-only review at HEAD `74627547`. Every number below was re-derived from the raw
 evidence or driven on the installed `jigc 1.0.0-rc.14`, never taken from the record's prose.
 
 ---
@@ -374,7 +374,7 @@ record argues *against* its own result on a fact its evidence contradicts.
 
 ## 7 · COVERAGE — the four `neither` rows are honest; the table is not complete
 
-**The `neither` rows are right and well-explained.** 10b / 11a / 11b / `1799a2d` all require a
+**The `neither` rows are right and well-explained.** 10b / 11a / 11b / `d854e25` all require a
 milestone fan-out; none ran; B4-h was the chartered arm and F-13 is a documented, corroborated
 reason it could not (its own words are in the transcript and quoted in the ledger). Row 4
 (`ROOT_KNOBS` untried, fenced by `flow51_acceptance` arm 4) is correctly separated into
@@ -382,10 +382,10 @@ reason it could not (its own words are in the transcript and quoted in the ledge
 
 **Three defects in the derivation:**
 
-1. **`1799a2d` is not in the rc.13→rc.14 diff.** `git merge-base --is-ancestor 1799a2d 979baca`
+1. **`d854e25` is not in the rc.13→rc.14 diff.** `git merge-base --is-ancestor d854e25 f266770`
    → **yes**. It landed 2026-09-04 and is an ancestor of the sha the *previous* trial ran. The
    table's stated subject is *"the rc.13 → rc.14 diff"* and *"18 sources: 13 increments +
-   `1799a2d` + 4 audit findings"*. Including it is conservative (it was reached by neither
+   `d854e25` + 4 audit findings"*. Including it is conservative (it was reached by neither
    trial) but the subject statement is wrong about that member.
 2. **Row 12 is classified from the artifact, not the code.** It reads
    *"the bootstrap warning · the surface batch | **trial-reached** | walk 18"*. Increment 12's
@@ -401,13 +401,13 @@ reason it could not (its own words are in the transcript and quoted in the ledge
    sixth instance of the exact failure `implementation/pinning.md` §5 catalogues five of, and
    §5 binds *"at the moment of classification"*.
 3. **One M50 surface is in no column at all.** Increment 10 shipped `pack.resource-missing`
-   (commits `08b738bb`, `aa98d1bd` — a new code, a searched-pack-set message, a `Human` route,
+   (commits `d974134e`, `9b9c0e1a` — a new code, a searched-pack-set message, a `Human` route,
    and the front door joining the family). No walk arm mentions it (`grep -l 'pack.resource-missing'
    arms/walk/*.sh` → empty) and no coverage row names it. Its correct column is **test-fenced**
    (`crates/cli/tests/pack_resource_miss_axis.rs` exists), so nothing is unfenced — but a table
    titled *"every changed surface in exactly one column"* has a surface in none.
 
-**Nothing else is missing.** I walked `git log 979baca..21ffc0d4` (13 `design(m50): increment N
+**Nothing else is missing.** I walked `git log f266770..82075cc3` (13 `design(m50): increment N
 task decomposition` markers, confirming 13 increments) against roadmap Milestone 50's increment
 headings and the coverage table's rows 1–13 + F1–F4: the mapping is 1:1 apart from the three
 items above.
@@ -423,7 +423,7 @@ items above.
 - **Whether the reader's channel *definitions* were identical at scoring time and now.** I
   verified the *outputs* are identical (the table reproduces) and that `test_observe.py` passes
   63/63 today. I did not diff the reader across the trial's working-tree states — the whole
-  apparatus landed in one commit (`b89c092b`), so per-fix timestamps are unrecoverable from git.
+  apparatus landed in one commit (`ba826655`), so per-fix timestamps are unrecoverable from git.
   This is why the "post-hoc scorer over persisted channels" argument does the load-bearing work
   rather than a timeline.
 - **B3-strict's counterfactual.** Whether the strict-posture worker would have read the plant

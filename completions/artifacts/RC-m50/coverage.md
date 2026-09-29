@@ -1,6 +1,6 @@
 # Coverage — every changed surface in exactly one column
 
-[protocol.md](protocol.md) §6: M47's rule over the M49 + `1799a2d` diff. Each changed surface
+[protocol.md](protocol.md) §6: M47's rule over the M49 + `d854e25` diff. Each changed surface
 lands in **trial-reached** (naming the arm or session) · **test-fenced** (naming the suite) ·
 **neither** (explained). Derived from the increments' own surfaces as enumerated against the
 roadmap, the VERDICT and the DECISIONS entries, and from the registries the arms iterate —
@@ -49,7 +49,7 @@ a recorded arm or session drove it.
 | **11** read surfaces + the heredoc form named in the pack (S-1) | walk 18 · every session's composed text | `read_surface_naming.rs` · `stdin_form_naming.rs` | |
 | **11** S-4: `jigc rename --task` names `doc rename` | walk 18 | `clap_error_kind_axis.rs` | |
 | **12** `MINT_DOORS` · goldens · ledgers | — | `mint_doors.rs` · the 624 goldens | *(no verb, finding or route — declared)* |
-| **`1799a2d`** the milestone boundary gates the sub-task commit doc | walk 14/21 (baseline landed → blocks; route run verbatim) · **W-1** (text prefix) | `milestone_boundary_gate.rs` | |
+| **`d854e25`** the milestone boundary gates the sub-task commit doc | walk 14/21 (baseline landed → blocks; route run verbatim) · **W-1** (text prefix) | `milestone_boundary_gate.rs` | |
 | **audit 1** `.git` as placement root | walk 15 | `placement_override.rs` | |
 | **audit 5/uninstall** a non-directory leftover at a destroying door | walk 02 cell C · **W-2** | flow49 `DESTROYING_DOORS` arm (registered) | |
 | **audit 3/4/6/7** whitespace literals · `non-reparseable` target · `FREEZE_DOORS` · `location` concatenation | — | their own suites (`freeze_enforcement.rs` etc.) | *(no verb of their own; the doors they sit behind are reached above)* |

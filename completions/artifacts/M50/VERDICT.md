@@ -46,10 +46,10 @@ axis afterwards.
 
 | # | severity | reported as | what it actually was | commit |
 |---|---|---|---|---|
-| F1 | HIGH | one unguarded door (`milestone add-from-spec`) | a registry whose root was a **hand-maintained name allowlist** | `cee0ae1` |
-| F2 | MEDIUM | four new codes outside the envelope | **31 production sites** dropping any carried finding from the invocation log | `38f860a` |
-| F3 | LOW | one leaking predicate + one read path | the shared predicate **and 4 read-path sites**, with 60 producers left countable | `b34a8c7` |
-| F4 | LOW | a third destroying door disagreeing | confirmed, and the class derived to **6 doors, 3 in scope, 3 excluded with reasons** | `33c6478` |
+| F1 | HIGH | one unguarded door (`milestone add-from-spec`) | a registry whose root was a **hand-maintained name allowlist** | `4ce8a16` |
+| F2 | MEDIUM | four new codes outside the envelope | **31 production sites** dropping any carried finding from the invocation log | `99e4758` |
+| F3 | LOW | one leaking predicate + one read path | the shared predicate **and 4 read-path sites**, with 60 producers left countable | `a9c0246` |
+| F4 | LOW | a third destroying door disagreeing | confirmed, and the class derived to **6 doors, 3 in scope, 3 excluded with reasons** | `3ffbea2` |
 
 ### F1 — the guard reached every address door, and the registry stopped being a name allowlist
 `jigc milestone add-from-spec` read a file **outside the repository** at exit 0, seeded a sub-task
@@ -164,7 +164,7 @@ infrastructure. *If the razor cannot refuse, the claim is wrong*; it can.
    in `UNSWEPT_PRODUCERS`, so closing one reddens the row. *(Corrected 2026-09-09 at the RC-rc14
    handover verification: this bound and its two siblings said **60**, which the table it cites has
    never summed to — `UNSWEPT_PRODUCERS` is 11+22+20+9+8+3+1+1+2+1+1 = **79**, and the const did not
-   exist before `b34a8c72`, the commit that also wrote the 60. The **per-file** counts hold and are
+   exist before `a9c0246d`, the commit that also wrote the 60. The **per-file** counts hold and are
    mechanically fenced by `the_unswept_remainder_is_counted_not_described`; only the unchecked
    summary was wrong — a bound nothing measures is a sentence.)* Two are genuine law-1 siblings left
    deliberately: `engine::finalize` (11 sites / 5 finding helpers, none handed a repo root —

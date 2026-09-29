@@ -429,7 +429,7 @@ for the reason M47 recorded (a pack-load assert cannot observe a *change* withou
 The settled form (`fetch-depth: 2` + `git show HEAD~1:<manifest>`) inspects only the **last commit of
 a push**, because GitHub Actions fires one run per push, at the tip — and this repo pushes in large
 batches (**53** commits in one push during this very build; the historically relevant one carried
-**37**). **The instance that decides it:** `6e81d53` (M47 Increment 1, *"the schema-hash becomes a
+**37**). **The instance that decides it:** `2c5eee5` (M47 Increment 1, *"the schema-hash becomes a
 presentation projection"*) re-pinned **all 16 doctype hashes at unchanged `schema-version`s, in both
 manifests, in one commit** — the exact shape this fence exists to catch, and the one both manifest
 headers name as *"the declared genesis exemption and the ONLY one."* It landed **34 commits from its
@@ -634,7 +634,7 @@ build at F3's first red test.
 naming the path, `--force` as the hatch. **The decisive argument is the repo's own:** the binary
 cannot distinguish `junk.txt` from `precious.txt` — the old assertion passes only because *the test
 author* knew, which is pinning data loss as expected output, the exact reason the leftover
-re-`provision` left the latent-surface sweep (`20800f7`) rather than being fenced. Verdict 3 is not
+re-`provision` left the latent-surface sweep (`0aa38bd`) rather than being fenced. Verdict 3 is not
 reached only by junk: **any** non-empty directory at the target path lands there, including untracked
 user work that was never a worktree. **Declared behaviour change:** provision refuses where it used
 to succeed — breaking now rather than after 1.0.

@@ -1,4 +1,4 @@
-<!-- M52 per-axis review (re-run) — axis 6 · pinned contracts — RECONCILED · driven on the installed `jigc 1.0.0-rc.16` (built from commit a3eb026b), 2026-09-21. -->
+<!-- M52 per-axis review (re-run) — axis 6 · pinned contracts — RECONCILED · driven on the installed `jigc 1.0.0-rc.16` (built from commit e519e4eb), 2026-09-21. -->
 
 <!-- M52 per-axis review RE-RUN — axis 6 · composed surfaces · RECONCILED (driver × codex source pass) · 2026-09-21 -->
 
@@ -37,7 +37,7 @@ explicitly. My reading of the rule and the rows that came closest are in *Notes*
 **Binary.** `/Users/maurice/.local/bin/jigc`, asserted **`jigc 1.0.0-rc.16`** before anything
 else (`jigc --version` → `jigc 1.0.0-rc.16`). **RELEASE posture** — the `#[cfg(debug_assertions)]`
 route-fence panics do not exist here. The binary carries M52's seven audit fixes
-(`79e54c75 6d95756c fe8f29c4 c96137e4 b9ab6a70 1b036264`, folded at `a3eb026b`); every row below
+(`ad527fa4 6c2de03a 33bd5692 68d14cd3 a83a9e60 66af090a`, folded at `e519e4eb`); every row below
 is a fact about **that** binary.
 
 **Method.** Every row ran in a throwaway `dev/jigc-rig` repo
@@ -56,7 +56,7 @@ bare).
 
 ## 1. The door set, derived from the code
 
-Counts read at HEAD (`a3eb026b`) by parsing each slice literal with comments stripped — **not**
+Counts read at HEAD (`e519e4eb`) by parsing each slice literal with comments stripped — **not**
 taken from the design doc's prose. The three that **moved since M51** are marked.
 
 | registry | file | count I read | vs M51 |
@@ -876,13 +876,13 @@ Refuted half — two falsifying data, both driven:
 
 ### CX-10 — bound: "JSON composed output deliberately remains `{task,text}` and excludes presentation-only task-state lines." → **CONFIRMED (repro)** — the same drive as CX-4. Matches the driver's OPEN lead 2; **declared, not a defect**.
 
-### CX-11 — "Schema-hash boundary: no violation; the diff from `35195f56` to HEAD changes neither frozen `schema-manifest.yaml`." → **CONFIRMED (datum)**
+### CX-11 — "Schema-hash boundary: no violation; the diff from `577a0099` to HEAD changes neither frozen `schema-manifest.yaml`." → **CONFIRMED (datum)**
 
 ```
-git diff --stat 35195f56..HEAD -- crates/cli/pack/config/schema-manifest.yaml \
+git diff --stat 577a0099..HEAD -- crates/cli/pack/config/schema-manifest.yaml \
                                   packs/methodology/config/schema-manifest.yaml
 (empty)
-git diff 35195f56..HEAD -- <both manifests> | grep -c 'schema-hash'   -> 0
+git diff 577a0099..HEAD -- <both manifests> | grep -c 'schema-hash'   -> 0
 ```
 
 *(Out of this axis's cell set; recorded because the pass asserted it and it is checkable in one

@@ -1,7 +1,7 @@
 <!-- persisted verbatim 2026-09-10 from the evidence-check-1.0 session; agent: Claude Opus 5 (1M context); see VERDICT.md -->
 # What jigc's 1.0.0 would promise, and whether HEAD can keep it
 
-Independent review · repo `/Users/maurice/projects/gherrink-jigc` @ `bd348a83` · binary `target/release/jigc` = `1.0.0-rc.14` · 2026-09-10.
+Independent review · repo `/Users/maurice/projects/gherrink-jigc` @ `74627547` · binary `target/release/jigc` = `1.0.0-rc.14` · 2026-09-10.
 Everything below was driven against that binary in throwaway corpora built with `dev/jigc-rig`, or read at HEAD. No cargo was run; no repo file was touched.
 
 ## Verdict on contract readiness
@@ -341,7 +341,7 @@ MIGRATING steps 1–2 (validate blocks over a stale corpus, then `migrate-corpus
 
 **The RC-rc14 conversion ledger is OPEN.** `completions/artifacts/RC-rc14/trial-record.md:200`: *"Every row carries a repro block; most carry `UNPINNED:` with a reason, several because pinning them would pin a gap or a carried defect as expected output. **The 1.0.0 call is not taken until it closes, and that is the human's gate, not this record's.**"* Counted at HEAD: `findings-verification.md` carries 13 rows, 15 `pinned-by:` citations and **14 `UNPINNED:` markers**. `implementation/pinning.md` §3 explicitly refuses a mechanical checker for this, so closing it means reading each cited test's content by hand. This is the only obligation in the repo that is *stated* as gating the call.
 
-Four more items are listed as "Owed after the trial" (`trial-record.md:204`): the human's reading of 3/3 against 1/3; **two declared changes reached by nothing** — the fan-out boundary (`1799a2d`) and the SKILL.md re-clobber — *"either walked or stated as uncovered in the 1.0.0 record"*; N27's re-argument as a cost question; and the F-2→F-9→F-10 chain.
+Four more items are listed as "Owed after the trial" (`trial-record.md:204`): the human's reading of 3/3 against 1/3; **two declared changes reached by nothing** — the fan-out boundary (`d854e25`) and the SKILL.md re-clobber — *"either walked or stated as uncovered in the 1.0.0 record"*; N27's re-argument as a cost question; and the F-2→F-9→F-10 chain.
 
 ### 6.2 The rc.14 trial's seven findings — all triggered, none 1.0-keyed
 
@@ -398,7 +398,7 @@ None carries a literal "before 1.0.0" trigger. The nearest are: **the harness-su
 
 ## Not verified
 
-- **I ran no cargo.** Every test grade in §1 is from **reading the test body** at HEAD, not from executing it. I did not confirm the suite is green at `bd348a83`; `completions/artifacts/RC-rc14/trial-record.md:197` records that the gate was **red** at the sha the RC-rc14 handover certified green, and states it was fixed there — I did not re-verify that.
+- **I ran no cargo.** Every test grade in §1 is from **reading the test body** at HEAD, not from executing it. I did not confirm the suite is green at `74627547`; `completions/artifacts/RC-rc14/trial-record.md:197` records that the gate was **red** at the sha the RC-rc14 handover certified green, and states it was fixed there — I did not re-verify that.
 - **MIGRATING steps 1–2, 3 and 5 were not driven** (§5 "Not walked"): the stale-corpus block+route, the `migrate-corpus`-before-`setup` ordering, the same-path `M`-not-`D`+`A` landing, and the hook-rejection frame across the nine committing doors. Graded from their standing tests only.
 - **The fan-out / milestone execute / join / `milestone finalize` path was not driven.** `milestone create` only. So N20 is relayed from the record, not reproduced.
 - **`jigc relocate`, `jigc unmanage`, `jigc uninstall`, `jigc migrate <path> --as`, `jigc rename`, `jigc doc rename` were not driven** — help text read only.

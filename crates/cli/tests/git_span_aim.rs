@@ -230,7 +230,7 @@ const GIT_SPAN_SITES: &[(&str, &str, Aim, &str)] = &[
         "`migrate.source-untracked` — the one route line carrying TWO spans with two \
          resolution bases: the `git` half is aimed and keeps the adjudicated repo-relative \
          pathspec, while the `jigc migrate` half echoes the token the operator typed, \
-         because that door resolves against the caller's cwd since `7cd03c59`",
+         because that door resolves against the caller's cwd since `4f61c80a`",
     ),
     (
         "crates/cli/src/repo.rs",
@@ -415,7 +415,7 @@ fn every_production_caller_of_the_one_home_is_a_row() {
 /// **`jigc migrate` is the second verb in this class, and it was swept at one producer of
 /// six** (M53 post-review-fix review, HIGH 2).
 ///
-/// `7cd03c59` moved `jigc migrate <PATH>`'s base from the repository root to the caller's
+/// `4f61c80a` moved `jigc migrate <PATH>`'s base from the repository root to the caller's
 /// cwd. That is right for a path the caller types and wrong for a path **jigc** prints into
 /// the verb: a repo-relative store key, a promote destination, a recorded migration source.
 /// Driven from `$REPO/docs/deep` on a `fresh` corpus with a foreign `CHANGELOG.md`, the store

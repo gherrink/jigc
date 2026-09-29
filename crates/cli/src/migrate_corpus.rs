@@ -2304,7 +2304,7 @@ pub(crate) fn prior_homes(
 /// returned early having loaded **no snapshot at all**, so a `location:`→`location:` move (and
 /// a `placement:`→`location:` one) saw nothing but the new home; and the placement branch's
 /// `.filter_map(|prior| prior.location)` dropped every prior `placement:` home by construction,
-/// so `placement:`→`placement:` saw nothing but the new file. Driven at `1932c00f`
+/// so `placement:`→`placement:` saw nothing but the new file. Driven at `7be200ac`
 /// (`completions/artifacts/M52/baseline-freeze.md` §2.1), each stranded doc reported
 /// `0 migrated, 0 already current, 0 blocked` at exit 0 — and where the stranded home was the
 /// repo root, **no surface named the document at all**: `validate` said *"validates clean"*.

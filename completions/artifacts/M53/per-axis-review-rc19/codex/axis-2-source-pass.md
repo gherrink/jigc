@@ -1,6 +1,6 @@
 <!-- M53 THIRD PARTIAL per-axis review — axis 2 — the unseeded Codex SOURCE pass, verbatim. Source-only: it drove nothing and wrote nothing. Captured 2026-09-23 against the rc.19 tree. -->
 
-## Axis 2 source pass — rc.19 (`1cc5da8d`)
+## Axis 2 source pass — rc.19 (`4a862b96`)
 
 ### Claims
 

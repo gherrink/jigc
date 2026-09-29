@@ -12,7 +12,7 @@
 //! ## The defect, driven
 //!
 //! `jigc doc show <miss-address> --task <id>` and the task-less read were **byte-identical**
-//! at `9ae1f40b`:
+//! at `2f9f7993`:
 //!
 //! ```text
 //! blocking · store.not-found — `vision:wrong-slug` names no committed doc: `vision` is a

@@ -4,7 +4,7 @@ I have the evidence. Writing the case.
 
 # Robust case — fork `(3, A3-1)`: what the charter's fix LEAVES under `merged/`
 
-Binary: `/Users/maurice/.local/bin/jigc` → `jigc 1.0.0-rc.16`, code-identical to HEAD (`978577ec`). Every fixture built by driving that binary from `dev/jigc-rig committed-singletons --binary ~/.local/bin/jigc` (two-step eval); only plants written by hand; no edits, no `cargo`. All loss claims use `command grep -rlE` with a before-control that finds the plant.
+Binary: `/Users/maurice/.local/bin/jigc` → `jigc 1.0.0-rc.16`, code-identical to HEAD (`155054cc`). Every fixture built by driving that binary from `dev/jigc-rig committed-singletons --binary ~/.local/bin/jigc` (two-step eval); only plants written by hand; no edits, no `cargo`. All loss claims use `command grep -rlE` with a before-control that finds the plant.
 
 ## 1 · The predicate behind `team-ready-state.md:92`, tested rather than obeyed
 
@@ -34,7 +34,7 @@ exit=0   finalized d30c6b7 — … 2 files committed
 $ command grep -rlE 'HOOK-WROTE-THIS|HOOK-IN-DOCS' .     # → nothing.  .jigc/displaced never created
 ```
 
-`crates/engine/src/state.rs:214-218` records the identical writer, driven at `1d0bd171`, as the reason M52 narrowed `staged_doc_id`: *"a `pre-commit` hook that wrote `docs/agent-notes.md` into the area a `jigc milestone add-task` had just minted had that file removed by `unwind_docs` at exit 1 … one run, two answers."* M52 judged that shape a loss worth an audit fix. It is live, unfixed, one registry row over.
+`crates/engine/src/state.rs:214-218` records the identical writer, driven at `6f4a975a`, as the reason M52 narrowed `staged_doc_id`: *"a `pre-commit` hook that wrote `docs/agent-notes.md` into the area a `jigc milestone add-task` had just minted had that file removed by `unwind_docs` at exit 1 … one run, two answers."* M52 judged that shape a loss worth an audit fix. It is live, unfixed, one registry row over.
 
 **(c) The M52 source pass already looked at the site and foreclosed it by the same phrase.** `completions/artifacts/M52/per-axis-review/codex/axis-3-source-pass.md:55` lists `engine/milestone.rs:1892` as *"rebuild of the registry-owned `merged/docs` staging tree"* and `engine/state.rs:415` as *"registry-bounded unwind"*, then closes with the positive claim *"I found no unguarded production removal of adopter bytes outside an ownership, transaction, cache, temporary-file, refusal, narration, or displacement seam."* That claim is **falsified** by §2 below. The exclusion was inherited from the doc, not tested — which is the gate's failure mode verbatim.
 

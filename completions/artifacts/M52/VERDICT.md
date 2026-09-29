@@ -59,7 +59,7 @@ brownfield repo that once had and deleted a `CHANGELOG.md` is red at exit 1 the 
 runs, with no exit that clears it — a measured regression against rc.15. **Confirmed** on a `bare`
 rig; the installed rc.15 answered *validates clean* on the identical tree. **The class** is
 `orphan::fixed_identity_homes` over the resolved schemas — **five** members across both packs, and
-all five fired on one `validate`. **Fixed** (`79e54c75`): the history leg becomes *jigc committed
+all five fired on one `validate`. **Fixed** (`ad527fa4`): the history leg becomes *jigc committed
 into* — the last committed blob at the exact declared path (or its first parent where that commit
 removed it) must carry jigc's `schema-version:` stamp; `Territory` moves by zero bytes so M51's HIGH
 narrowing is untouched; git failure stays conservative. **Bound stated, not hidden:** a pre-jigc doc
@@ -78,7 +78,7 @@ cell and its location cousin (where `orphaned-instance` fired with the wrong dia
 **The class:** 12 `committed_instances` call sites, four fixed (the conformance sweep, `doc list`, the
 baseline trailer, the orphan walk's claimed set) and eight left with a stated reason each (address
 resolution, file-state, shape advisories, compose-time store values, `vacated_homes`). **Fixed**
-(`6d95756c`): the sweep's subject is every prior home of the doctype through the shared
+(`6c2de03a`): the sweep's subject is every prior home of the doctype through the shared
 `migrate_corpus::prior_homes` derivation, narrowed by `is_unmigrated` after the suite falsified the
 first cut's premise (a re-pinned at-version reshape must stay the orphan family's). One stranded doc,
 one finding, routed at `migrate-corpus`. `doc list` shows the row `managed` at the stale home — no new
@@ -93,7 +93,7 @@ and in one cell its re-run instruction was refused. **Confirmed** on both repros
 first was refused too, which the finding had not claimed. **The class:** the grep found 7 frame
 constructions over 10 doors, but the axis is `COMMITTING_DOORS ∩ {rollback populations that can leave
 a path standing}` — **9 doors, 12 driven cells** where 2 cells at 2 doors were reported. **Fixed**
-(`fe8f29c4`): the clause opens with the exception and prescribes the re-run only behind the
+(`33bd5692`): the clause opens with the exception and prescribes the re-run only behind the
 survivors' routes; the count is threaded at the single render seam all three arms pass through, so
 the non-hook cell cannot take the constant — a new arm reddens at the type level. **Bound:** the
 non-hook cell × a surviving path cannot be driven (no racer instrument exists for it) and is covered by
@@ -104,7 +104,7 @@ the shared composition, stated.
 **Reported:** `command-output-contract.md:292` said the `store.*` siblings are keyed; driven,
 `store.unknown-type` and `store.not-found` flattened into `{error}` at three doors. **Confirmed.**
 **The class:** **5 doors / 7 coordinates, not 3 / 4** — `task bind` and `milestone add-from-spec`
-were in no finding and each diverged inside one function. **Fixed** (`c96137e4`): `ENVELOPE_OWED_CODES`
+were in no finding and each diverged inside one function. **Fixed** (`68d14cd3`): `ENVELOPE_OWED_CODES`
 makes the arm the **code's** property at every producer (13 constructor sites through named
 constants); `store.malformed-slug` stays flattened on M50's measured grounds, fenced as the negative
 half. The text arm gained the orientation footer at the seven moved cells (the declared byte change
@@ -116,7 +116,7 @@ declaration was made visible by the move and re-declared. **Flagged, not fixed:*
 
 **Reported:** six user-reachable `relocate` refusals with no code and no route. **Confirmed.** **The
 class:** `RelocateRefusal::ALL` — **ten members / nine codes**, ⇔-fenced; the seventh grep hit was
-unreachable by construction and is left with its reason. **Fixed** (`b9ab6a70`): `relocate.frozen-doctype`
+unreachable by construction and is left with its reason. **Fixed** (`a83a9e60`): `relocate.frozen-doctype`
 and `relocate.malformed-prior-home` minted, `write.untrackable-destination` closed at the shared
 `move_doc` primitive (a declared bound discharged), the rest reused. **Two of the brief's premises
 were stale** and the record says so: `UNSWEPT_PRODUCERS` counts printed-path sites, not route gaps
@@ -132,7 +132,7 @@ contract lists under a declared target form, and joining it is a fifth pre-pin c
 nothing and the repair it prescribed was not the one that state needed. **Confirmed**; the locator
 run verbatim printed nothing. **The class:** the brief named five states; driven, they collapse onto
 **three** git-observable ones (`orphan::Removal`: committed · worktree-only · staged removal),
-because the repair turns on where the removal is, not why. **Fixed** (`1b036264`): each state its own
+because the repair turns on where the removal is, not why. **Fixed** (`66af090a`): each state its own
 route, the locator run before it is printed and dropped when it answers nothing. **The one-finding
 rule, decided with a datum:** both `reconciliation.rename` and `home-vacated` fire on the uncommitted
 states — on a fresh clone the file-state gate does not exist, so `home-vacated` is the only voice

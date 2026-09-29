@@ -10,10 +10,10 @@
 //! > siblings — `store.not-found`, `store.no-such-leaf`, `store.unknown-type`, and since
 //! > M52 `store.fixed-identity` — are keyed.
 //!
-//! Driven at `c80b3f8f` that was false at **five** doors and **seven** `(door, cell)`
+//! Driven at `26d021de` that was false at **five** doors and **seven** `(door, cell)`
 //! coordinates, not the three doors and four coordinates the audit finding reported:
 //!
-//! | door | cell | code | arm at `c80b3f8f` |
+//! | door | cell | code | arm at `26d021de` |
 //! |---|---|---|---|
 //! | `jigc migrate --as` | unknown doctype | `store.unknown-type` | flattened |
 //! | `jigc relocate` | unknown doctype | `store.unknown-type` | flattened |
@@ -221,7 +221,7 @@ struct Cell {
 ///
 /// **Two** of the three `store.not-found` rows are the ones the fix moved — `rename` and
 /// `milestone add-from-spec`. The third (`task bind`) and all three `store.fixed-identity`
-/// rows were already enveloped at `c80b3f8f` and ride along as **controls**: they are the
+/// rows were already enveloped at `26d021de` and ride along as **controls**: they are the
 /// halves of the two self-diverging doors that were already right, so a regression in the
 /// other direction is caught by the same sweep rather than by nothing, and the row set
 /// records which cell of each door was the broken one rather than implying all were.

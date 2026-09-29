@@ -298,7 +298,7 @@ pub struct SpawnTarget {
 //
 // It was a `#[allow(dead_code)]` second renderer of the launch line, substituting
 // `{{worktree}}` with the repo-relative `.jigc/worktrees/<task_id>` — the exact spelling
-// `efe16554` declared broken, because that line is pasted into a shell of unknown cwd. Its
+// `a8318211` declared broken, because that line is pasted into a shell of unknown cwd. Its
 // doc-comment said *"consumed by the launch path (this increment's later tasks)"*, and no
 // such consumer ever arrived: the launch line the product emits is composed by
 // `engine::compose::emit_fan_out_spawns`, which owns the rule (the absolute worktree the

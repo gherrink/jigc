@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 11-item-region-shipped-doctypes.sh — protocol.md §5 arm 11 (M49 Increment 1, the
-# item-region class, plus the M49 completion audit's fix 2 — `1cf9295`).
+# item-region class, plus the M49 completion audit's fix 2 — `3bbf207`).
 #
 # WHICH SET THIS ARM ITERATES: a **derivation over the shipped doctypes' item blocks**,
 # read off the binary rather than remembered — section 0 re-runs the census

@@ -7,7 +7,7 @@
 //! `singleton: true` doctype's `<location><ty>.md` — the repository's history touches the
 //! path while no committed instance is there.
 //!
-//! **The baseline it repairs, driven at `1932c00f` and again here before the code:**
+//! **The baseline it repairs, driven at `7be200ac` and again here before the code:**
 //! `git mv CHANGELOG.md HISTORY.md` + commit — one ordinary human act — then
 //! `find .jigc/state -mindepth 1 -delete`, which is the **fresh-clone shape** (`.jigc/state/`
 //! is gitignored, so it is what every clone and every CI runner has). `jigc validate` printed
@@ -358,7 +358,7 @@ fn vacated_flip() -> &'static StoreExitFlip {
 
 /// **Arm 6 — the sweep exits non-zero, and the closing line names this condition.**
 ///
-/// The red this arm was written against, driven on the same fixture at `0556c4f0` (T5's own
+/// The red this arm was written against, driven on the same fixture at `1639a16d` (T5's own
 /// commit, the finding already shipping): `blocking · schema-conformance.home-vacated — …`
 /// on one line and *"5 finding(s) — report-only at store scope (exit 0); each gates nowhere"*
 /// on the next, at **exit 0**. A blocking store finding that is not an axis member is a green
@@ -504,7 +504,7 @@ fn a_vacated_home_closes_the_report_ahead_of_a_never_adopted_file() {
 // M52 completion audit, fix 1 — the discriminator: **jigc wrote what the history carries**
 // ---------------------------------------------------------------------------------------
 //
-// The red these arms were written against, driven at `c80b3f8f` on a `bare` rig corpus:
+// The red these arms were written against, driven at `26d021de` on a `bare` rig corpus:
 //
 //     printf '# Changelog\n\n## 0.1.0\n' > CHANGELOG.md && git add … && git commit
 //     git rm -q CHANGELOG.md && git commit
@@ -755,7 +755,7 @@ const REMOVAL_CELLS: &[RemovalCell] = &[
 /// **Arm 12 — the route is a function of the removal's state, and no route names a locator
 /// that answers nothing.**
 ///
-/// The defect, driven at `b9ab6a70` before a line changed: the route was written for the
+/// The defect, driven at `a83a9e60` before a line changed: the route was written for the
 /// committed-removal cell alone, while the emptiness leg reads the **worktree** — so an
 /// uncommitted `rm CHANGELOG.md` drew *"`git log --diff-filter=D -1 -- CHANGELOG.md` names the
 /// commit that removed it"*, which printed nothing at exit 0, and prescribed a restore-and-

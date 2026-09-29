@@ -1,4 +1,4 @@
-# M53 completion audit — code review (Opus, read-only, driving the built debug binary at `45427083`)
+# M53 completion audit — code review (Opus, read-only, driving the built debug binary at `f664863a`)
 
 ## Summary
 
@@ -85,7 +85,7 @@ Increment 1's shape leg added `let shape = entry.file_type().with_context(|| for
 
 `crates/cli/src/milestone.rs` is the **first entry of `GUARDED_SRC`** (repo_relative_paths.rs:956), the list whose claim is that the module's path text is repo-relative or a declared absolute. That fence (`a_guarded_module_renders_no_host_path_outside_a_declared_absolute`, :1346) scans for `.display()` and nothing else — its own declared bound at :1340 says the `{…:?}` half is checked per-row over `PATH_TEXT_SITES`, and `milestone_boundary_gate` is not a row there. So the new site is fenced by nothing and the gate stayed green over it.
 
-**How the count was derived:** `grep -nE '\{[a-z_]+:\?\}' crates/cli/src/milestone.rs` → 29 hits; `git diff 5d9fd714..HEAD -- crates/cli/src/milestone.rs | grep -E '^\+.*\{[a-z_]+:\?\}'` → exactly 1, the line above. So this is **one new site joining a ~28-site pre-existing class in the same file** (two of them, :6014 and :6065, are in the same function) — reported because the pass added it and because the `GUARDED_SRC` label over-claims for this file, not because the class is new.
+**How the count was derived:** `grep -nE '\{[a-z_]+:\?\}' crates/cli/src/milestone.rs` → 29 hits; `git diff 73737faa..HEAD -- crates/cli/src/milestone.rs | grep -E '^\+.*\{[a-z_]+:\?\}'` → exactly 1, the line above. So this is **one new site joining a ~28-site pre-existing class in the same file** (two of them, :6014 and :6065, are in the same function) — reported because the pass added it and because the `GUARDED_SRC` label over-claims for this file, not because the class is new.
 
 **Suggested fix:** 
 

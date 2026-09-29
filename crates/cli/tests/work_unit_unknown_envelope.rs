@@ -55,7 +55,7 @@
 //! an area that carries its base pin.* A directory under `.jigc/tasks/` that holds no
 //! `base.json` is a leftover — a bare `mkdir`, or the tail of a teardown that faulted —
 //! and until this increment the by-id doors resolved it as a **live** task, because their
-//! only question was `dir.is_dir()`. Driven at `766f32ef`: `jigc task validate <residual>`
+//! only question was `dir.is_dir()`. Driven at `2e491967`: `jigc task validate <residual>`
 //! answered *"no findings — the task validates clean"* at **exit 0**, `jigc task discard`
 //! reached `task-discard.foreign-bytes` (a refusal *about bytes in a task*), `jigc doc show
 //! … --task <residual>` answered `store.not-staged` (a statement *about a task's staged
@@ -73,7 +73,7 @@
 //! pass built the seventeen task rows and excluded the eight milestone rows on the written
 //! premise that *"a milestone id resolves from its committed record, not from a working
 //! area, so a record-less `.jigc/milestones/<id>` is not a cell of it"*. That premise is
-//! false, and one `mkdir` falsifies it: driven at `3f22150b` over a bare
+//! false, and one `mkdir` falsifies it: driven at `afd76ea3` over a bare
 //! `mkdir .jigc/milestones/stray-mile`, `list-tasks` / `provision` / `execute` / `finalize`
 //! / `discard` answered the code-less flattened `{"error": "could not read the task list …
 //! (os error 2)"}`, `join` and `add-task` answered a **false** `milestone.area-io` (*"a disk
@@ -483,7 +483,7 @@ fn the_discard_door_routes_at_the_roster_and_never_at_create() {
 enum Shape {
     /// Nothing at all — the bare `mkdir`, and the shape an interrupted teardown leaves.
     EmptyDir,
-    /// One file jigc did not write, at the area root. Driven at `766f32ef` this shape is
+    /// One file jigc did not write, at the area root. Driven at `2e491967` this shape is
     /// what took `jigc task discard` to `task-discard.foreign-bytes` — a refusal composed
     /// *about a task*, over a directory that is not one.
     ForeignFile,
@@ -917,7 +917,7 @@ fn the_named_cells_are_the_whole_residual_shape_space() {
 /// exception"*; D2.6 and §8): a bare `mkdir .jigc/tasks/<sub>` under a **joined** milestone,
 /// then `jigc task discard <sub>`.
 ///
-/// Driven at `766f32ef` this door reached the record — before M53 Increment 2's settled-item
+/// Driven at `2e491967` this door reached the record — before M53 Increment 2's settled-item
 /// guard it committed a false `- status: discarded` over an item the record had already
 /// settled, and with that guard it refused at the record with `milestone.terminal`. Either
 /// way the door had already accepted the directory **as a task** and gone looking for its

@@ -1,6 +1,6 @@
 # M43 planning gate-record — filled 2026-07-16
 
-Per [methodology-docs.md](../../../design/methodology-docs.md) → The planning gate-record. Evidence base: the four-auditor capability ledger + four gap-detectors + six robust-advocates (all exercising the real binary at `f480d01`), the design review (baked at `0db314a`+), [DECISIONS.md](../../../DECISIONS.md) → 2026-07-16 M43 Settle, [design/surface-contract.md](../../../design/surface-contract.md).
+Per [methodology-docs.md](../../../design/methodology-docs.md) → The planning gate-record. Evidence base: the four-auditor capability ledger + four gap-detectors + six robust-advocates (all exercising the real binary at `d1da0b6`), the design review (baked at `bdb838e`+), [DECISIONS.md](../../../DECISIONS.md) → 2026-07-16 M43 Settle, [design/surface-contract.md](../../../design/surface-contract.md).
 
 ## Milestone-level gates
 

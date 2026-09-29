@@ -24,7 +24,7 @@ jobs:
     steps:
       # Full history, not the default depth-1 snapshot. The manifest-freeze fence's
       # own acceptance is THIS REPO'S HISTORY: `manifest_freeze_fence::historical`
-      # replays the window over `6e81d53~1 -> d0b8728` (M47 Increment 1 re-pinned all
+      # replays the window over `2c5eee5~1 -> 7ada302` (M47 Increment 1 re-pinned all
       # 16 doctype hashes at unchanged schema-versions, 34 first-parent commits from
       # its push tip) and FAILS — never skips — on a clone that cannot reach them.
       # Cost: 9.89 MiB over 1800 commits (M48 Increment 11).

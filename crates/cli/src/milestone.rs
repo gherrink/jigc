@@ -21,7 +21,7 @@
 //!
 //! # The root a workbench path is spelled against
 //!
-//! **`jigc_home`, never `repo_root`** (the independent review of `986d5e0a`, MEDIUM 1;
+//! **`jigc_home`, never `repo_root`** (the independent review of `3c71da87`, MEDIUM 1;
 //! 2026-09-22). Every path this module prints is a *workbench* path — a fan-out worktree, a
 //! task or milestone area, the merged staging tree, `.jigc/` itself — or a scratch tree
 //! outside the repository entirely, for which [`crate::render::repo_relative`]'s absolute
@@ -32,7 +32,7 @@
 //! Every door here binds both side by side, which is what let one rule ship in two
 //! spellings: six sites already rendered against `jigc_home` (as `task.rs` does at every one
 //! of its own, passing `task.jigc_home`) while twenty passed `repo_root`. Driven from inside
-//! a sibling sub-task's worktree at `986d5e0a`, `repo.operation-in-progress` and
+//! a sibling sub-task's worktree at `3c71da87`, `repo.operation-in-progress` and
 //! `milestone.dirty-worktree` each put this machine's absolute path into the message, the
 //! route **and** the pinned `(code, target)` key — law 1 (`design/surface-contract.md`),
 //! whose one home is `render::repo_relative` and whose root is the caller's to get right.
@@ -677,7 +677,7 @@ fn require_milestone_area(jigc_root: &Path, milestone_id: &str) -> Result<PathBu
 fn run_create(cwd: &Path, title: &str, conflicts: &mut Vec<Finding>) -> Result<(String, String)> {
     // **The base pin and the staged snapshot are jigc_home's, not the standing checkout's**
     // (M53 post-review-fix review, MEDIUM 4). This comment read *"the base pin is the
-    // worktree HEAD"* and the code obeyed it, while `31921e57` moved the **boundary** that
+    // worktree HEAD"* and the code obeyed it, while `f919ea95` moved the **boundary** that
     // gates on both to `jigc_home` — so a milestone created from a linked worktree was born
     // un-finalizable. Driven on `committed-singletons` with a branch-attached worktree
     // `feat` at `9e7adc4` and main advanced: `milestone create` pinned `feat`'s HEAD, landed
@@ -685,7 +685,7 @@ fn run_create(cwd: &Path, title: &str, conflicts: &mut Vec<Finding>) -> Result<(
     // `finalize.base-mismatch` at exit 3 from every cwd, with a route asking the operator to
     // rewind the main checkout onto another branch's commit.
     //
-    // `31921e57`'s own reasoning — *"there was never a second subject to choose; every read
+    // `f919ea95`'s own reasoning — *"there was never a second subject to choose; every read
     // and write below is about the milestone"* — is the reasoning for the door that **sets**
     // what the gate compares, and this is that door. There is no `repo_root` binding left
     // here at all, which is the point: the two roots cannot diverge in a function that binds
@@ -697,7 +697,7 @@ fn run_create(cwd: &Path, title: &str, conflicts: &mut Vec<Finding>) -> Result<(
     // as amended by §12; [`engine::state::reject_unslugable_title`]). The milestone's id is
     // the frozen slug of this title, and `mint_id`'s empty→type-name fallback would put the
     // work at `milestone:milestone` — an identity nobody typed, that the next such call
-    // then serial-collides. Driven at `92ed1957~`, `jigc milestone create "日本語"` did
+    // then serial-collides. Driven at `a53bc0a1~`, `jigc milestone create "日本語"` did
     // exactly that **and committed the record for it**, at exit 0.
     //
     // **Its position is the decision.** It sits after `jigc_home_or_repo` — a read — so a
@@ -1099,7 +1099,7 @@ fn rollback_record_pre_image(
 /// `cli::rollback::ROLLBACK_POPULATIONS` → the two `MintedSet` rows; `settle-record.md` → §2).
 /// Until M52 this took the whole area with `remove_dir_all`, and the interval it runs in is
 /// precisely the interval holding the door's rejecting hook — arbitrary code, with the
-/// gitignored workbench in front of it. Driven at `032dbd93`, a hook that wrote a file into
+/// gitignored workbench in front of it. Driven at `8f0fb833`, a hook that wrote a file into
 /// `.jigc/tasks/<id>/docs/` and exited 1 had that file destroyed at exit 1, named by nothing.
 /// [`engine::state::unwind_area`] removes the area's own registry row and then the directory
 /// **non-recursively**, so a third party's bytes survive by construction; what comes back is
@@ -1127,7 +1127,7 @@ fn rollback_record_pre_image(
 /// **Shipped as three bare `eprintln!` notes until then, and all three were wrong in the same
 /// three ways.** They said *"the mint was rolled back"* by silence while the thing stood — so
 /// the identical re-run dead-ended on the id this call had already minted (driven at
-/// `7f6d6bf3`: `task.serial-collision` at `add-task`) with nothing on any surface naming the
+/// `dcc8340f`: `task.serial-collision` at `add-task`) with nothing on any surface naming the
 /// survivor; they printed a **host absolute** path (`design/surface-contract.md`
 /// → law 1's printed-path rule); and they went to **stderr on a reject arm**, whose document
 /// stderr already owns, so under `--format json` the stream stopped parsing at all
@@ -1965,7 +1965,7 @@ fn run_add_from_spec(
     // first, unchanged.
     //
     // **The state it refuses.** `canonical_path`'s placement branch ignores the slug, so
-    // driven at `14b9ebb5` this read door resolved `vision:alpha` to the real committed
+    // driven at `9961013c` this read door resolved `vision:alpha` to the real committed
     // `VISION.md`, read it, enumerated its sections and refused with
     // `store.no-such-section` — routed at `jigc doc show vision:alpha`, an address its
     // sibling read door refuses (`completions/artifacts/M52/baseline-tokens.md` §4.2). A
@@ -3517,7 +3517,7 @@ pub struct LeftoverHold {
     /// holds nothing"* (`design/surface-contract.md` → law 1).
     pub entries: Vec<String>,
     /// The git operation the checkout has left **un-concluded** — the probe's *second* leg,
-    /// and the one that is not a question about bytes (the independent review of `986d5e0a`,
+    /// and the one that is not a question about bytes (the independent review of `3c71da87`,
     /// the HIGH; 2026-09-22).
     ///
     /// [`dirty_worktrees`] asks `git status --porcelain`, which is a question about
@@ -3525,7 +3525,7 @@ pub struct LeftoverHold {
     /// git holds**: a paused `rebase -i`, a `git bisect`, a dangling sequencer queue all
     /// leave a spotless tree, so every one of them cleared the guard and the removal took the
     /// operation's todo, its authored message, `ORIG_HEAD` and that checkout's reflog with
-    /// it, at exit 0 and in silence. Driven at `986d5e0a` at all three refusing doors.
+    /// it, at exit 0 and in silence. Driven at `3c71da87` at all three refusing doors.
     ///
     /// **Populated only under [`LeftoverVerdict::OwnWorktree`]**, which is the one verdict
     /// where git can vouch for the path at all. At the other two *any* content already
@@ -3634,7 +3634,7 @@ pub(crate) fn because(hold: &LeftoverHold) -> &'static str {
 /// existed the three readers each asked their own question: the refusal asked
 /// `symlink_metadata`, the narration asked `path.is_dir()` and `path.exists()` — both of which
 /// *follow* a symlink — and one planted state made them contradict each other in the one place
-/// it costs most. Driven at `bec05f02` over a symlink at a sub-task's worktree path pointing
+/// it costs most. Driven at `83924730` over a symlink at a sub-task's worktree path pointing
 /// at the repository's own committed `docs/`: `jigc milestone provision` refused naming *"the
 /// file itself — it is a file, not a worktree"*, and `jigc milestone provision --force` then
 /// called the same path *"the leftover directory"*, enumerated **through** the link, named
@@ -3656,7 +3656,7 @@ pub(crate) fn because(hold: &LeftoverHold) -> &'static str {
 /// used to map *every* `symlink_metadata` failure to [`LeftoverAt::Absent`] — *"which is what
 /// both readers already did with it"*, said the paragraph this one replaces — and `Absent` is
 /// the single answer [`probe_leftover`] returns `None` for, i.e. **provably safe to delete**.
-/// An `EACCES` on the parent is not absence. Driven at `ffb4064c` over a provisioned fan-out
+/// An `EACCES` on the parent is not absence. Driven at `4572ca7c` over a provisioned fan-out
 /// with `chmod 000 .jigc/worktrees`, `jigc milestone discard <id>` exited **0** with an empty
 /// stderr, settled the record as `discarded` and removed the milestone workbench, while both
 /// sub-task worktrees sat on disk holding uncommitted work `git worktree list` no longer
@@ -3696,7 +3696,7 @@ fn leftover_at(path: &Path) -> LeftoverAt {
 /// the path at all, which is a hold like any other ([`LeftoverShape::Unreadable`]) rather than
 /// a failure.
 ///
-/// **"Clean" is two questions, not one** (the independent review of `986d5e0a`, the HIGH;
+/// **"Clean" is two questions, not one** (the independent review of `3c71da87`, the HIGH;
 /// 2026-09-22). This read *"a clean worktree of its own"* and asked
 /// [`dirty_worktrees`] alone — `git status --porcelain`, a question about **working-tree
 /// bytes** — while what these doors remove is also **repository state git holds**. A worktree
@@ -3724,7 +3724,7 @@ fn leftover_at(path: &Path) -> LeftoverAt {
 /// all remove worktree-shaped paths under `.jigc/worktrees/`"*, which is false of two of its
 /// six members — `jigc task discard` and `jigc task finalize` stand at `.jigc/tasks/<id>/`,
 /// where there is no checkout (driven: a `task discard` leaves a sub-task's worktree and every
-/// marker of it standing) — and it made the review of `986d5e0a` read the *four*
+/// marker of it standing) — and it made the review of `3c71da87` read the *four*
 /// [`WORKTREE_DOORS`] as this probe's callers. They are not: [`FINALIZE_DOOR`] is the
 /// [`Disposition::Displace`] member, whose teardown runs **after** its commit and is guarded a
 /// phase earlier by [`fan_out_posture_findings`]. The callers are the **three refusing**
@@ -3862,7 +3862,7 @@ fn leftover_finding(
 /// The clause every refusal over an un-concluded operation appends to its route — one home,
 /// because three doors print it and the reason is the same at all three: the door's shipped
 /// route names the moves that get *bytes* out of the way, and none of them reaches a
-/// repository state git is holding (the independent review of `986d5e0a`, the HIGH).
+/// repository state git is holding (the independent review of `3c71da87`, the HIGH).
 ///
 /// The concrete command per path rides that path's own listed line
 /// ([`held_here`]), since one route stands for a set of paths that may hold different
@@ -4039,7 +4039,7 @@ fn fan_out_posture_findings(jigc_home: &Path, worktrees: &[PathBuf]) -> Vec<Find
 ///
 /// It asks the **boundary's own producer** over the one worktree, so the finding, its
 /// route and its site are the door's, byte for byte — **and it answers on the door's arm**
-/// (the independent review of `986d5e0a`, MEDIUM 2). It did not: the producer was shared
+/// (the independent review of `3c71da87`, MEDIUM 2). It did not: the producer was shared
 /// while the carrier was not, so one state answered two ways under `--format json` — the
 /// door printing the pinned findings envelope on stdout at exit 3, the preview printing
 /// `{"error": …}` on stderr at exit 1. `repo.operation-in-progress` projects a key at this
@@ -4400,7 +4400,7 @@ fn run_discard(
     // not write is a refusal with `--force` as the single consent, and it lives at the door
     // (M52 Increment 4 / T5), never in the sink — `SubtaskComplement`.
     // **The ack keys on the OUTCOME of all three sinks, never on having run them** (M52
-    // Increment 4 / T7, D-2). Driven at `a8489bab` with `.jigc/worktrees` unwritable, this
+    // Increment 4 / T7, D-2). Driven at `f8d5957a` with `.jigc/worktrees` unwritable, this
     // door warned twice that it could not remove a fan-out worktree and then printed
     // `workbench removed` at exit 0 with both worktrees still on disk — the loss narration
     // beside it having been outcome-keyed since M50 while the ack was not. Class size 1: the
@@ -4476,7 +4476,7 @@ fn discard_foreign_subject(
 ///
 /// **Both area kinds.** The milestone area is a second registry row
 /// (`engine::state::MILESTONE_AREA_FILES`) and was reachable through no guard at all: driven
-/// at `2e20ffd9` a file beside `tasks.json` died with the abandon at exit 0, named by nothing.
+/// at `4f311cb1` a file beside `tasks.json` died with the abandon at exit 0, named by nothing.
 fn refuse_over_foreign_bytes(
     jigc_home: &Path,
     jigc_root: &Path,
@@ -4680,7 +4680,7 @@ fn unverified_subtask_prose_finding(milestone_id: &str, err: std::io::Error) -> 
 /// (`design/team-ready-state.md` → Abandon refuses on a dirty worktree).
 ///
 /// **It answers about bytes, and that is the whole of what it answers** (the independent
-/// review of `986d5e0a`, the HIGH). A worktree git has left mid-operation over a *spotless*
+/// review of `3c71da87`, the HIGH). A worktree git has left mid-operation over a *spotless*
 /// tree is invisible here by construction, and the second leg that sees it lives at the
 /// caller, beside this one: [`LeftoverHold::operation`]. Widening this probe instead would
 /// have put a repository-state question behind a `git status` name.
@@ -7041,7 +7041,7 @@ fn doomed_at(jigc_home: &Path, path: &Path) -> Result<Doomed> {
                 .collect();
             // The un-concluded operation is a doomed item too — and on a clean tree it is the
             // ONLY one, which is why `--force` past this guard used to print nothing at all
-            // (the independent review of `986d5e0a`, the HIGH). Its `at` is the checkout's own
+            // (the independent review of `3c71da87`, the HIGH). Its `at` is the checkout's own
             // `.git` entry, so the line is outcome-keyed like every other: the two doors that
             // remove the checkout report it, and `jigc milestone discard` over a path this
             // repository never registered — which its teardown leaves on disk — does not.
@@ -7084,7 +7084,7 @@ fn doomed_at(jigc_home: &Path, path: &Path) -> Result<Doomed> {
 /// immediately **before** the removal, so a removal that then failed left the door claiming a
 /// destruction it had not performed. T2 closed that for one *shape* — `remove_dir_all` aimed
 /// at a plain file — and the class is not a shape, it is *any* cause a removal can fail for: a
-/// read-only parent directory, a lock, a busy path. Driven at `ee8c3e2` it was live at three
+/// read-only parent directory, a lock, a busy path. Driven at `1653d3d` it was live at three
 /// of this pair's call sites at once, on one `chmod 555` state: `jigc milestone provision
 /// --force` (exit 1), `jigc uninstall --force` (exit 1) and `jigc milestone discard --force`
 /// (**exit 0**) each printed `not recoverable` over bytes still on disk afterwards. Keying the

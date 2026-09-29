@@ -9,7 +9,7 @@ written down whichever way it came out.
 unusable turned out to be usable.** Both halves are below, including the
 prediction that was wrong.
 
-Run 2026-08-25 on `jigc-gate:rc11` (`JIGC_SHA=9a37f0152744f0cba5f9140483e1ca1b1c453c46`,
+Run 2026-08-25 on `jigc-gate:rc11` (`JIGC_SHA=d1ebbc227ba9f4b8310bcb7984c648c3865aa306`,
 `jigc 1.0.0-rc.11`, `claude-sonnet-5`). Evidence in
 [increment-0-evidence/](increment-0-evidence/).
 

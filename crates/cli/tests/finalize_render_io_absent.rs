@@ -1,7 +1,7 @@
 //! M49 Increment 10 / T6 — `finalize.render-io` stops reporting a **never-composed**
 //! sub-task as a disk fault.
 //!
-//! Driven at `2cc47df` under `finalize.fan-out.squash = false`, with one sub-task composed
+//! Driven at `f29c6cd` under `finalize.fan-out.squash = false`, with one sub-task composed
 //! and the other merely `git add`-ed in its worktree, the boundary refused with
 //!
 //! ```text

@@ -198,7 +198,7 @@ fn task_bind_enforces_the_five_steps_and_records_the_binding() {
     );
     // …and it names itself and routes (M52 completion audit, fix 5). This refusal fires
     // **before** the two `decisions-pending.md`'s axis-6 lead 6a named — the ones M52
-    // Increment 10 / T7 discharged — and was in no ledger: driven at `c96137e4` it answered
+    // Increment 10 / T7 discharged — and was in no ledger: driven at `68d14cd3` it answered
     // a bare sentence with no code and no route, on text and inside `{"error": …}`.
     assert!(
         bad_role_err.contains("blocking · task-bind.undeclared-role")

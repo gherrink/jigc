@@ -6,7 +6,7 @@
 
 * **Binary:** `/Users/maurice/.local/bin/jigc` → `jigc 1.0.0-rc.15` (asserted at the top of the first
   rig). RELEASE posture. No cargo was run; no file in the working repository was written.
-* **Repo HEAD at read time:** `85ad06c571945157d5b6df166659b74ce5f0cc86`, tree clean.
+* **Repo HEAD at read time:** `7637a46f1908af7cffd83cc2e5e96dc2365744a0`, tree clean.
 * **Rigs (all two-step `rig=$(dev/jigc-rig <state> --binary ~/.local/bin/jigc) || exit; eval "$rig"`,
   every root from `mktemp -d`, no teardown, no `rm -rf` anywhere):**
   `committed-singletons` ×8 (rig1…rig9, rigC/D/E/H) · `fresh --pack-from-dev` ×2 (rigA, rigB) ·

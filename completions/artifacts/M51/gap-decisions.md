@@ -1,8 +1,8 @@
-<!-- 2026-09-10 · Opus gap-detector · dimension: decisions · HEAD bd348a83 · target/release/jigc 1.0.0-rc.14 · no cargo, no repo edits · copied verbatim -->
+<!-- 2026-09-10 · Opus gap-detector · dimension: decisions · HEAD 74627547 · target/release/jigc 1.0.0-rc.14 · no cargo, no repo edits · copied verbatim -->
 
 # M51 gap detection — dimension: DECISIONS
 
-Probed at HEAD `bd348a83` against the release binary `target/release/jigc` = `1.0.0-rc.14`.
+Probed at HEAD `74627547` against the release binary `target/release/jigc` = `1.0.0-rc.14`.
 Spikes driven in a throwaway `dev/jigc-rig committed-singletons` corpus under the session
 scratchpad. No repo file edited, no cargo run. Every claim below carries `file:line` or a
 driven command. **I settle nothing** — each item names the decision the Settle must take.

@@ -4,7 +4,7 @@
 milestone-completion phase. M17's increments 1–5 (capture apparatus + three binary soundness fixes)
 were audited and remediated in a prior session (5 findings fixed); this audit covers the
 session that added `decided-task` (the self-hosting dogfood target, promoted to main) + the
-measurement runs + the verdict — diff `fdcab9d..e5367ba`.
+measurement runs + the verdict — diff `f9c4b0a..00e2ab3`.
 
 ## Verdict: PASS — no blocking findings
 

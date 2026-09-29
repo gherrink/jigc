@@ -1,4 +1,4 @@
-<!-- M51 per-axis review — axis 4 · reconciled · driven on the installed `jigc 1.0.0-rc.15` (commit 35195f56), 2026-09-16 -->
+<!-- M51 per-axis review — axis 4 · reconciled · driven on the installed `jigc 1.0.0-rc.15` (commit 577a0099), 2026-09-16 -->
 
 # M51 per-axis review — AXIS 4 · transaction / rollback — RECONCILED
 
@@ -36,8 +36,8 @@ anything else (release posture — the `Route::mechanical` fence panic of `findi
 `dev/jigc-rig <state> --binary /Users/maurice/.local/bin/jigc`, two-step eval, no teardown, no
 `rm -rf` on a variable path.
 
-**The table reflects the FIXED binary** — the audit's four commits are in it: routes `8a42fbbd`,
-orphan territory `b5ccd818`, setup guard `0fc80bab`, the LOWs `dc508994`. Two of the four are
+**The table reflects the FIXED binary** — the audit's four commits are in it: routes `6c2391c0`,
+orphan territory `da5173a1`, setup guard `ff2bde99`, the LOWs `507c332d`. Two of the four are
 directly on this axis and were driven as such (the setup guard is rows **C11/C11b**; the route-quoting
 fix is visible in every route span below, none of which dead-ends).
 
@@ -162,7 +162,7 @@ declared, not hidden.
 |---|---|---|---|---|---|---|---|
 | E1 | `task finalize` (migration) | `jigc task finalize migrate-vision-direction-plan-… --approve`, `source-path` → an absolute path in a `mktemp -d` outside the repo | 1 | `finalize.retire-untrackable` **blocking** | `Human` | *"… resolves outside the repository …"*; **the canary outside the repo is intact**; the promote is rolled back (`VISION.md` absent); HEAD unmoved; `git ls-files -s` **identical** | matches contract |
 | E2 | `task finalize`, same + a **pending config-layer amend** | same, over a user-trimmed `.jigc/.gitignore` | 1 | `finalize.retire-untrackable` | `Human` | `.jigc/.gitignore` **restored to its pre-image**, `git ls-files -s` identical, `git diff --cached --name-status` **empty** — the M51 Inc 1 regression (*the in-closure refusal left the index staged to delete the whole `.jigc/` layer*) **does not reproduce** | matches contract — the Inc 1 hoist holds |
-| E3 | the cell's **caller-typed** route in, driven at its door (`migrate`) | `jigc migrate legacy/untracked.md --as vision` (untracked source) | 1 | `migrate.source-untracked` **blocking** | `Mechanical` — `git add -- legacy/untracked.md`, **run verbatim, exits 0** (the `8a42fbbd` route-span fix) | *"… `jigc task finalize --approve` retires the source it migrates, so the file would be deleted from the worktree with nothing to recover it from …"*; **no task minted** (`jigc task list — no active tasks`) | matches contract — the retire cell is closed upstream, which is why E1/E2 need a tampered fixture |
+| E3 | the cell's **caller-typed** route in, driven at its door (`migrate`) | `jigc migrate legacy/untracked.md --as vision` (untracked source) | 1 | `migrate.source-untracked` **blocking** | `Mechanical` — `git add -- legacy/untracked.md`, **run verbatim, exits 0** (the `6c2391c0` route-span fix) | *"… `jigc task finalize --approve` retires the source it migrates, so the file would be deleted from the worktree with nothing to recover it from …"*; **no task minted** (`jigc task list — no active tasks`) | matches contract — the retire cell is closed upstream, which is why E1/E2 need a tampered fixture |
 | E4 | the other 12 doors | n/a | — | — | — | — | **n/a — no retire phase** |
 
 ### Cell F — empty commit × worktree unchanged

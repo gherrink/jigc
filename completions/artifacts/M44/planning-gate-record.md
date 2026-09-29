@@ -1,6 +1,6 @@
 # M44 planning gate-record — the rc.8 wave (the pull tier)
 
-Filled by hand at planning (2026-07-21), the by-hand form of the pack-encoded `planning-record` presence gate. One row per scope item; every cell carries evidence or `N/A` + a one-line why. An empty/hand-wavy cell is a halt, not a pass. Grounded in the four-auditor + four-detector baseline (real binary at `026efb6`), four robust-advocate cases, and the independent pre-decompose review (2 blocking + 4 should-fix findings, all baked — [DECISIONS.md](../../../DECISIONS.md) → 2026-07-21 M44 planning: the Settle → Review).
+Filled by hand at planning (2026-07-21), the by-hand form of the pack-encoded `planning-record` presence gate. One row per scope item; every cell carries evidence or `N/A` + a one-line why. An empty/hand-wavy cell is a halt, not a pass. Grounded in the four-auditor + four-detector baseline (real binary at `3b41824`), four robust-advocate cases, and the independent pre-decompose review (2 blocking + 4 should-fix findings, all baked — [DECISIONS.md](../../../DECISIONS.md) → 2026-07-21 M44 planning: the Settle → Review).
 
 ## Milestone-level gates
 

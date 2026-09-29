@@ -31,7 +31,7 @@
 //! **[Corrected 2026-09-22 (M53 completion audit, fix 1).** This arm shipped asserting the
 //! census was *exactly* `["finalize-message.tmp"]` — one non-member — with the removal
 //! statement offered as the reason that was safe. **Falsifying datum, driven on the debug
-//! binary at `45427083`:** that removal is `let _ = std::fs::remove_file(…)`, and a
+//! binary at `f664863a`:** that removal is `let _ = std::fs::remove_file(…)`, and a
 //! `pre-commit` hook that `chmod 0555`s the area makes it fail. `jigc task finalize` then
 //! landed at exit 0 printing `finalize.foreign-bytes` over
 //! `.jigc/tasks/<id>/finalize-message.tmp` — jigc's own transient, named as *a path jigc did

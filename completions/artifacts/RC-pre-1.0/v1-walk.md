@@ -6,7 +6,7 @@ trial*. Six arms, each justified by a behaviour M47 changed that no blind probe 
 design — its value is entirely operator-placed plants and scripted destructive sequences.
 
 **Binary:** `jigc 1.0.0-rc.10` throughout, except arm 6's setup half, which runs the temp-prefix
-`1.0.0-rc.9` build from `d13d8ac`. Confirmed in the logs: 115 records across the three logging
+`1.0.0-rc.9` build from `e2858b3`. Confirmed in the logs: 115 records across the three logging
 corpora, `binary_version` `1.0.0-rc.10` on all of `rc10-walk` (30) and `rc10-fanout` (13), and
 `rc9-legacy` (72) splitting **52 on rc.9 then 20 on rc.10** — the version transition this arm exists
 to exercise, visible in the record.

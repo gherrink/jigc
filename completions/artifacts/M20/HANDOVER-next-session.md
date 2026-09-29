@@ -1,6 +1,6 @@
 # M20 handover — next session: plan + build M21 (production-readiness for real-project live testing)
 
-**Written 2026-06-14.** Branch `main`, tree clean, HEAD `b9c68aa` (+ this handover's commit on top).
+**Written 2026-06-14.** Branch `main`, tree clean, HEAD `ee2ca5e` (+ this handover's commit on top).
 Pinned binary `~/.local/bin/jigc` sha `3f492263…` (M20 release — 6.4MB, embedded-probe + 3-target
 validate), `doc-code` sibling beside it; `~/.cargo/bin/jigc` is the same build. **M20 is fully closed.**
 **Multi-assistant adapter profiles stay deferred** ([decisions-pending.md](../../implementation/decisions-pending.md))
@@ -128,7 +128,7 @@ finalize baseline-adopt trust hazard; defer auto-migration/doctype-coverage; nee
 cleanup). Goal: the human's manual new-project (Flow A) live test on a clean setup."*
 
 ## State at handoff
-- `main` clean, HEAD `b9c68aa` (+ the DECISIONS direction entry + this handover). Gate green at M20 close.
+- `main` clean, HEAD `ee2ca5e` (+ the DECISIONS direction entry + this handover). Gate green at M20 close.
 - Binary re-pinned to the M20 build (`3f492263…`) at both `~/.local/bin` and `~/.cargo/bin` (+ `doc-code`).
 - **No milestone scoped beyond M20.** M21 is created when you run `/milestone-plan` next session.
 - Open deferrals untouched ([decisions-pending.md](../../implementation/decisions-pending.md)): multi-assistant

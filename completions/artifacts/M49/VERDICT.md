@@ -3,7 +3,7 @@
 **Green.** Built, audited, **7 findings confirmed live and fixed axis-complete**, re-verified
 **3155 passed / 0 failed** with `fmt` / `clippy -D warnings` / `build` all clean on the combined tree.
 
-- **Base** `8a5d73d` · **100 commits** (94 build + 6 audit-fix)
+- **Base** `f8870fe` · **100 commits** (94 build + 6 audit-fix)
 - **Planning**: [settle-record.md](settle-record.md) · [baseline-ledger.md](baseline-ledger.md) ·
   [planning-gate-record.md](planning-gate-record.md) · [charter.md](charter.md) (superseded where they disagree)
 - **Acceptance**: [worked-examples.md](../../../design/worked-examples.md) → flow 50 ·
@@ -67,13 +67,13 @@ each found more.
 
 | # | severity | finding | reported → actual | commit |
 |---|---|---|---|---|
-| 1 | **HIGH** | `config set placement-root .git` moves managed docs into git's own dir, **reports success, exits 0**, `validate` grades the store clean — **the doc is gone from every clone** | **2 → 8 movers** (`relocate` and `rename` unreported) | `5fb6138` |
-| 2 | MEDIUM | In the wave's **own centrepiece cell**, a slot payload at the depth jigc's message just prescribed is refused with a **false reason** | **1 → 3 faces**, one of them **silent data loss** | `1cf9295` |
-| 3 | MEDIUM | Six new user-facing messages ship their source indentation (14–22 space runs) | **6 → 9 literals** | `9706016` |
-| 4 | LOW/MED | `write.non-reparseable` emits an unresolvable `key.target` on one branch | **1 → nearly every break shape** | `2262e02` |
-| 5 | LOW | `milestone provision` over a leftover *file* answers with a bare error, no code, no route | **1 → 3 doors**, plus **unreported data loss** | `2262e02` |
-| 6 | LOW | `FREEZE_DOORS` is a hand-listed 5-member sample feeding a test named `…_blocks_every_door` | **5 → 47 rows**, bijected with `VERB_KINDS` | `6d376d6` |
-| 7 | LOW | A `location:` without a trailing slash keys file-state at a path that cannot exist | **1 → 8 concatenation sites** | `ad7452b` |
+| 1 | **HIGH** | `config set placement-root .git` moves managed docs into git's own dir, **reports success, exits 0**, `validate` grades the store clean — **the doc is gone from every clone** | **2 → 8 movers** (`relocate` and `rename` unreported) | `5c7bf67` |
+| 2 | MEDIUM | In the wave's **own centrepiece cell**, a slot payload at the depth jigc's message just prescribed is refused with a **false reason** | **1 → 3 faces**, one of them **silent data loss** | `3bbf207` |
+| 3 | MEDIUM | Six new user-facing messages ship their source indentation (14–22 space runs) | **6 → 9 literals** | `099bd74` |
+| 4 | LOW/MED | `write.non-reparseable` emits an unresolvable `key.target` on one branch | **1 → nearly every break shape** | `47ffce5` |
+| 5 | LOW | `milestone provision` over a leftover *file* answers with a bare error, no code, no route | **1 → 3 doors**, plus **unreported data loss** | `47ffce5` |
+| 6 | LOW | `FREEZE_DOORS` is a hand-listed 5-member sample feeding a test named `…_blocks_every_door` | **5 → 47 rows**, bijected with `VERB_KINDS` | `7670119` |
+| 7 | LOW | A `location:` without a trailing slash keys file-state at a path that cannot exist | **1 → 8 concatenation sites** | `6d17965` |
 
 ### The two unreported data-loss faces
 

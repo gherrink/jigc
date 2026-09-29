@@ -5,7 +5,7 @@
 //!
 //! `.jigc/tasks/<id>/` and `.jigc/milestones/<id>/` are built by joining a
 //! caller-supplied token onto a path. Until M50 no door asked whether that token was an
-//! id, and driven at `caa137e~`, `jigc task discard "../.."` resolved the **repository
+//! id, and driven at `75ff3f1~`, `jigc task discard "../.."` resolved the **repository
 //! root** as a working area and removed it — `.git`, `.jigc`, every tracked file — at
 //! **exit 0** (`DECISIONS.md` → 2026-09-05; the trial finding in
 //! `completions/artifacts/RC-m50/findings-verification.md`).
@@ -207,7 +207,7 @@ enum Expect {
     /// `milestone.unknown` at a milestone door. The first pass held the milestone rows out
     /// of this cell on the written premise that *"a milestone door resolves its unit from
     /// the committed record, not from a working area"*; the premise is false and one
-    /// `mkdir` falsifies it. Driven at `3f22150b`, a bare `mkdir .jigc/milestones/<id>`
+    /// `mkdir` falsifies it. Driven at `afd76ea3`, a bare `mkdir .jigc/milestones/<id>`
     /// turned the family's keyed `(milestone.unknown, milestone:<id>)` into five code-less
     /// `could not read the task list …` errors, two **false** `milestone.area-io` refusals
     /// and one answer about a spec — while the identical id with *no* directory answered
@@ -289,7 +289,7 @@ fn mint_leaf_verbs() -> BTreeSet<Vec<String>> {
 /// Each malformed cell must block with [`MALFORMED_CODE`], name the token as typed, and
 /// carry exactly one route; the unknown cell must give the family's unchanged roster
 /// answer and must **not** carry the grammar refusal. After every cell the fixture's tree
-/// is re-asserted, because at `caa137e~` the *text* of one of these cells was already
+/// is re-asserted, because at `75ff3f1~` the *text* of one of these cells was already
 /// correct over a repository that had just been deleted.
 ///
 /// **The fifth cell is every row's** ([`Expect::Residual`], M53 Increment 3): a *well-formed
@@ -730,7 +730,7 @@ fn hostile_milestone(fixture: &Fixture) -> String {
 ///
 /// **The degenerate half** (M53 Increment 5 / T3): the same registry, crossed with the
 /// titles that yield *no* id at all. The hostile half proves a door's id survives the
-/// grammar; this half proves the door never invents one. Driven at `92ed1957~`,
+/// grammar; this half proves the door never invents one. Driven at `a53bc0a1~`,
 /// `jigc milestone create "日本語"` minted `milestone:milestone` and **committed a record**
 /// for it at exit 0, and `jigc milestone add-task <m> "日本語"` committed `task:task` — an
 /// identity nobody typed, that the next such call then serial-collides. Each of the three
@@ -988,7 +988,7 @@ fn every_mint_door_produces_an_id_every_door_accepts() {
 /// computes `mint_sub_id(intent)` and consults the **resume skip set** *before* it calls
 /// `add_task`, so a degenerate criterion whose fabricated `task` id the milestone already
 /// carries was skipped at exit 0 and never reached `add_task`'s guard at all (driven at
-/// `423d8a58`). The guard therefore sits ahead of the skip check, and this arm drives the
+/// `4185268f`). The guard therefore sits ahead of the skip check, and this arm drives the
 /// door rather than the function.
 ///
 /// The degenerate criterion is deliberately the **second** one: the pass mints the first,

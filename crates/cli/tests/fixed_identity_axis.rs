@@ -346,7 +346,7 @@ fn a_location_homed_singletons_bare_head_expands_to_its_canonical_address() {
 // ---------------------------------------------------------------------------
 //
 // The predicate above answers the question; this half is the **doors acting on the
-// answer**. Driven at `89ff8232` on the shipped packs, `jigc doc set-field
+// answer**. Driven at `cbf7d833` on the shipped packs, `jigc doc set-field
 // vision:alpha#meta/grounded-in --value "[research:x]" --task <id>` exited **0** and
 // minted `.jigc/tasks/<id>/docs/vision:alpha.md` — a staged instance at an identity the
 // store cannot hold, while every read surface said `vision:alpha` does not exist. Taken
@@ -697,7 +697,7 @@ fn the_refusal_rides_the_findings_arm_with_a_key() {
 // resolution point**: after the door's `store.unknown-type` answer, so precedence is
 // unchanged, and ahead of every mutation, because two of the three mutate.
 //
-// Driven at `14b9ebb5` (T2's HEAD), the state each cell below refuses:
+// Driven at `9961013c` (T2's HEAD), the state each cell below refuses:
 //
 //   * `jigc rename vision:alpha --to Phantom --slug alpha` → **exit 0**, `# Vision`
 //     rewritten to `# Phantom` in the real `VISION.md`, commit `7107ec5` landed. A
@@ -1150,7 +1150,7 @@ fn every_sibling_door_answers_the_refusal_on_the_findings_arm() {
 // `schema.placement.is_some()`, so the second disjunct of `Schema::has_fixed_identity`
 // fell straight through it.
 //
-// Driven at `d11c6b51` over the manufactured `location:` + `singleton: true` doctype,
+// Driven at `79677138` over the manufactured `location:` + `singleton: true` doctype,
 // with the instance committed by a real `jigc task finalize`:
 //
 //     $ jigc rename runbook:runbook --to Phantom --slug other

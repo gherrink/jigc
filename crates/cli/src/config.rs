@@ -687,7 +687,7 @@ fn repoint_failed(key: &str, value: &str, at: &str, cause: &str, conflicted: boo
 /// **Why the fold is here and not in each reader.** Every root rule already folds privately to
 /// find the home a value *reaches* ([`is_workbench_root`], [`unusable_root_reason`],
 /// [`crate::trackable::untrackable_reason`]), and the two move floors and every read surface
-/// then resolved the value **as typed** — a spelling no fold had touched. Driven at `71c8f7a`,
+/// then resolved the value **as typed** — a spelling no fold had touched. Driven at `18b6e52`,
 /// on a corpus whose docs are homed under `docs/`:
 ///
 ///   - `jigc config set placement-root docs/../docs` — a value naming byte-for-byte the home
@@ -762,7 +762,7 @@ fn normalize_root_value(value: &str) -> String {
 ///
 /// The value is **normalized lexically first** — a `./` folded, a `..` applied against the
 /// components accumulated so far — and only then is its first component asked. Asking the value
-/// *as typed* is what the first cut did, and it left the rule evadable by one hop: at `6551d49`
+/// *as typed* is what the first cut did, and it left the rule evadable by one hop: at `1bd5efa`
 /// the three literal spellings were refused (`config.workbench-root`, rc=1, both knobs) while
 /// `jigc config set placement-root docs/../.jigc` exited **0** and staged
 /// `R docs/decisions-log.md -> .jigc/decisions-log.md`, because git normalizes the path it
@@ -1034,7 +1034,7 @@ fn unusable_root_reason(repo_root: &Path, value: &str) -> Option<String> {
 ///
 /// The whitespace leg of [`unusable_root_reason`], and the only one of its four that asks
 /// nothing of the filesystem: the defect is on the **read** surface, not on disk. Driven at
-/// `b9e13cf`, `jigc config set docs-root '   '` exited 0 and `jigc config get docs-root` then
+/// `7a0037c`, `jigc config set docs-root '   '` exited 0 and `jigc config get docs-root` then
 /// printed `docs-root =      (project)` — a reading no operator can tell from unset — while
 /// every managed doc would finalize under a directory literally named three spaces.
 /// `'  x  '` is the same defect one step less total. [`normalize_root_value`] folds `.` and
@@ -1146,7 +1146,7 @@ fn over_name_ceiling_component(value: &str) -> Option<(String, usize)> {
 /// `git add -- <path>` prevents **option** parsing, never magic: a path beginning `:(top)` or
 /// `:!` is a pathspec, not a file name.
 ///
-/// Driven at `be8ca6d`, before this leg: `jigc config set docs-root ':!docs'` exited **0**, a
+/// Driven at `e0d5d53`, before this leg: `jigc config set docs-root ':!docs'` exited **0**, a
 /// task authored an `adr`, and `jigc task finalize` reported `1 file committed` while the
 /// promoted doc — written to `:!docs/decisions/probe.md` on disk — matched the exclude
 /// pathspec and reached **no commit**; the store went on calling it managed. The `:(top)`
@@ -1602,7 +1602,7 @@ fn reroot(rel: &str, old_root: &str, new_root: &str) -> Option<String> {
 ///
 /// Both verbs took the token as an opaque path: `fs::read(file)`, `file_stem()`, and the bytes
 /// landed at `.jigc/config/steps/<stem>.yaml` — an in-repo, committable file that **composes
-/// into the step text `jigc start` hands the agent**. Driven at `dddc11a5`:
+/// into the step text `jigc start` hands the agent**. Driven at `210779b6`:
 /// `jigc config insert-step … .git/config` exits **0** and copies this repository's git config
 /// in. That the copy then renders `repositoryformatversion = 0` into that step text is the
 /// baseline's own drive (`completions/artifacts/M51/baseline-tokens.md` §2d).

@@ -183,7 +183,7 @@ that produced a route naming in-task verbs the worker can no longer run.
 ### Regression? **No** — identical on rc.10
 
 ```console
-# jigc-gate:rc10 (8979f16, pre-M48), the same corpus, the same task-2 sequence
+# jigc-gate:rc10 (1d4f9bc, pre-M48), the same corpus, the same task-2 sequence
 $ jigc --version
 jigc 1.0.0-rc.10
 $ jigc task finalize tighten-the-summary-rounding ; echo "exit=$?"
@@ -1286,7 +1286,7 @@ decision history — and `migrate-corpus` is the **only** surface that gets it w
 ### Regression? **No** — identical on rc.10
 
 ```console
-# jigc-gate:rc10 (8979f16, pre-M48) — the same corpus, docker cp'd in
+# jigc-gate:rc10 (1d4f9bc, pre-M48) — the same corpus, docker cp'd in
 $ jigc --version
 jigc 1.0.0-rc.10
 $ jigc migrate-corpus ; echo "exit=$?"

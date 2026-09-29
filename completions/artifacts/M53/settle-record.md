@@ -6,7 +6,7 @@ baseline: [baseline-ledger.md](baseline-ledger.md) with five companions · advoc
 [advocates/](advocates/) (two forks, both cheap-vs-robust, neither framed by the proposer).
 
 **Posture.** Every driven fact below was executed on the installed release `1.0.0-rc.16`
-(code-identical to `HEAD = 978577ec`) on `dev/jigc-rig` corpora. *An agent's report is a lead*: the
+(code-identical to `HEAD = 155054cc`) on `dev/jigc-rig` corpora. *An agent's report is a lead*: the
 claims each fork turned on were **re-driven by the orchestrator** before the fork went to the human
 ([baseline-ledger.md](baseline-ledger.md) §5, plus the three drives recorded at D2/D3 below); everything
 else is **relayed** from a companion, which marks its own claims DRIVEN or READ.

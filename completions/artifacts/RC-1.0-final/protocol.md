@@ -1,6 +1,6 @@
 # The 1.0.0 trial — pre-registered protocol
 
-**Binary under test: `1.0.0-rc.12`**, built from `314f59e`. Written 2026-08-28, **before the
+**Binary under test: `1.0.0-rc.12`**, built from `5ff85ea`. Written 2026-08-28, **before the
 trial runs**. Everything needed to execute it is here, or is named as owed in §10.
 
 **What makes this trial different from the eight before it: its designed instrument is new.**
@@ -584,7 +584,7 @@ obstruction and is a finding.
 ⚠️ **The shipped `verify-pair.sh` is vacuous on an rc.11/rc.12 pair.** It probes three verbs
 M48 shipped — `doc rename`, `config get`, `describe --workflows` — asserting `old=absent` /
 `new=PRESENT`, and **rc.11 already has all three**. It is also hard-pinned to
-`EXPECT_OLD_SHA=8979f163d628…`, the pre-M48 rc.10 build.
+`EXPECT_OLD_SHA=1d4f9bc7d056…`, the pre-M48 rc.10 build.
 
 **M46 shipped no new verb**, so the replacement probes are **behavioural**, each with its
 direction stated:
@@ -595,7 +595,7 @@ direction stated:
 | `jigc migrate-corpus --format json`, same corpus | `blocked` non-empty, exit 1 | `unadopted[]` key present, exit 0 |
 | `jigc task validate <id>` on a clean `single-task` | *"no findings"* | the changelog advisory |
 
-Re-pin `EXPECT_OLD_SHA` to `9a37f0152744f0cba5f9140483e1ca1b1c453c46` — the rc.11 image's own,
+Re-pin `EXPECT_OLD_SHA` to `d1ebbc227ba9f4b8310bcb7984c648c3865aa306` — the rc.11 image's own,
 read back from `docker image inspect`, not searched for by version string — and parameterize
 the probe list rather than hard-coding a second verb triple that will rot the same way.
 **The rewritten script must fail when given the same image twice**; that is its own test.
@@ -735,7 +735,7 @@ exists.
 
 | item | how it was verified |
 |---|---|
-| the rc.12 image | built from `314f59e`; `verify-image.sh` **7 passed / 0 failed**; gate record written, and it refuses rc.11 by name |
+| the rc.12 image | built from `5ff85ea`; `verify-image.sh` **7 passed / 0 failed**; gate record written, and it refuses rc.11 by name |
 | `verify-pair.sh` | rewritten on behavioural probes (M46 shipped no new verb); **3/3 discriminate**; refuses a same-image pair; the `m48` set still verifies rc.10 → rc.11 |
 | **plant E** | driven through the container's binary, **11/11 bars**, survives the transport (asserted *inside* a fresh container), and **rehearsed against a live agent twice** — both instruments fired and were consumed ([rehearsal-R1.md](rehearsal-R1.md)) |
 | **plant F** | the pause is real on rc.12: a live agent stopped at the hook and declined to self-approve ([rehearsal-R2.md](rehearsal-R2.md)) |

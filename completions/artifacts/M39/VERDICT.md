@@ -2,7 +2,7 @@
 
 **Verdict: ✅ SHIPPED** (2026-07-07). Built (8 increments), independently audited (code-review + e2e), all confirmed findings fixed, re-verified green. The last build milestone before the rc.3 → adoption-trial → 1.0.0 sequence.
 
-## What shipped (8 increments, base `09e8a82` → HEAD `ac37fb6`; 43 commits, 86 files, +9062/−521)
+## What shipped (8 increments, base `70642cf` → HEAD `7de68f8`; 43 commits, 86 files, +9062/−521)
 
 1. **`jigc doc show`** — the committed-doc read surface (`read_slice` extended to whole-doc + item/leaf/deep slices) + a **pinned 1.0 `--format json` contract**. Closes the declared "reads *and* writes" hole (an agent can now read every committed instance the adapter rule forbids reading directly).
 2. **Compose renders ALL grounded sources** — multi-target `walk_edge` (order-invariant, byte-identical), revising the M37 first-only design + flipping its two pinning tests.
@@ -15,7 +15,7 @@
 
 ## The mid-build fork (surfaced by the harness, human-decided)
 
-Per-op record commits advance HEAD, colliding with `plan_milestone_finalize`'s `base == HEAD` guard (the M31 worktree-combine drift protection); `record.base` is structurally always behind HEAD, so the guard could never pass in this model. **Settled (human): relax the guard to advance `base → HEAD` over a linear record-only range; any foreign commit still blocks** — external drift stays caught, the milestone's own bookkeeping is tolerated. Fixed test-first (`0790bcb`), recorded in DECISIONS + [team-ready-state.md](../../../design/team-ready-state.md). ([DECISIONS.md](../../../DECISIONS.md) → 2026-07-07 M39 build: the milestone-finalize base-guard refinement.)
+Per-op record commits advance HEAD, colliding with `plan_milestone_finalize`'s `base == HEAD` guard (the M31 worktree-combine drift protection); `record.base` is structurally always behind HEAD, so the guard could never pass in this model. **Settled (human): relax the guard to advance `base → HEAD` over a linear record-only range; any foreign commit still blocks** — external drift stays caught, the milestone's own bookkeeping is tolerated. Fixed test-first (`d192749`), recorded in DECISIONS + [team-ready-state.md](../../../design/team-ready-state.md). ([DECISIONS.md](../../../DECISIONS.md) → 2026-07-07 M39 build: the milestone-finalize base-guard refinement.)
 
 ## Audit (independent, adversarial)
 
@@ -26,17 +26,17 @@ Per-op record commits advance HEAD, colliding with `plan_milestone_finalize`'s `
 
 | # | Finding | Fix | Commit |
 |---|---------|-----|--------|
-| 1 | Slug word-cap dropped the char-length ceiling for single-word id-sources → unbounded filename (a regression this milestone introduced) | Restored a 50-char filename backstop after the word cap; hardened the proptest that missed it | `02213f3` |
-| 2 | `doc show` `#section/<item>/<leaf>` over-claimed field-leaf slicing on the 1.0 witness (returned `store.no-such-leaf`) | Made field-leaf + id-from slices resolve the value (contract made true, not narrowed); absent-leaf still blocks | `e2a4c28` |
-| 3 | `author-vision` pack step still told the agent "only the first source appears" — contradicted the shipped all-source render | Aligned the guidance prose | `f9db38b` |
-| 4 | `doc show vision:<any-slug>` returned VISION.md exit 0 (placement singleton ignored the slug) | Read-path rejects a non-canonical singleton slug, routes not-found | `0d8fcb1` |
-| 5 | (Contract decision, human) the pinned json rendered `base` as a fragile space-joined `"<sha> <short>"` string | Renders structured `{sha, short}` (`.md` scalar + round-trip unchanged) | `ac37fb6` |
+| 1 | Slug word-cap dropped the char-length ceiling for single-word id-sources → unbounded filename (a regression this milestone introduced) | Restored a 50-char filename backstop after the word cap; hardened the proptest that missed it | `2f61aef` |
+| 2 | `doc show` `#section/<item>/<leaf>` over-claimed field-leaf slicing on the 1.0 witness (returned `store.no-such-leaf`) | Made field-leaf + id-from slices resolve the value (contract made true, not narrowed); absent-leaf still blocks | `459ffc3` |
+| 3 | `author-vision` pack step still told the agent "only the first source appears" — contradicted the shipped all-source render | Aligned the guidance prose | `18abb1d` |
+| 4 | `doc show vision:<any-slug>` returned VISION.md exit 0 (placement singleton ignored the slug) | Read-path rejects a non-canonical singleton slug, routes not-found | `f520e7e` |
+| 5 | (Contract decision, human) the pinned json rendered `base` as a fragile space-joined `"<sha> <short>"` string | Renders structured `{sha, short}` (`.md` scalar + round-trip unchanged) | `7de68f8` |
 
 The base-json refinement resolved the Inc-3 audit advisory that flagged the compound base; the human chose the structured shape from three previewed options ([DECISIONS.md](../../../DECISIONS.md) → 2026-07-07).
 
 ## Re-verify (the acceptance gate)
 
-Full unscoped gate at HEAD `ac37fb6`: `cargo fmt --check` clean · `cargo clippy --all-targets -- -D warnings` clean · `cargo build` clean · `cargo test` → **1583 passed, 0 failed across 160 test binaries** (incl. the `--bin jigc` pack/describe goldens). Tree clean.
+Full unscoped gate at HEAD `7de68f8`: `cargo fmt --check` clean · `cargo clippy --all-targets -- -D warnings` clean · `cargo build` clean · `cargo test` → **1583 passed, 0 failed across 160 test binaries** (incl. the `--bin jigc` pack/describe goldens). Tree clean.
 
 ## Honest bounds (carried into the adoption trial)
 

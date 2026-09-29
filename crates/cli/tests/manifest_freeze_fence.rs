@@ -977,7 +977,7 @@ mod escape {
 // question this section answers, and it is the question the increment-11 plan halt
 // (2026-08-15) re-opened. The settled shape compared `HEAD~1` against the working
 // copy — but GitHub Actions fires **one run per push, at the tip**, and this repo
-// pushes in large batches. `6e81d53` (M47 Increment 1) re-pinned **all 16 doctype
+// pushes in large batches. `2c5eee5` (M47 Increment 1) re-pinned **all 16 doctype
 // hashes at unchanged `schema-version`s, in both manifests, in one commit** — the
 // exact shape this fence exists to catch — and it landed **34 first-parent commits
 // from its push tip**, where a `HEAD~1` window is provably clean. A fence that
@@ -1640,14 +1640,14 @@ mod base_ref {
 /// **The window's acceptance is this repo's own history.**
 ///
 /// The halt's finding is not left as a paragraph: the commit it turned on is the
-/// fixture. `6e81d53` — M47 Increment 1, *"the schema-hash becomes a presentation
+/// fixture. `2c5eee5` — M47 Increment 1, *"the schema-hash becomes a presentation
 /// projection"* — re-pinned **all 16 doctype hashes at unchanged `schema-version`s in
 /// both manifests**, and both manifest headers name it *"the declared genesis exemption
 /// and the ONLY one."* Over the pushed range the fence flags every one of the 16; over
 /// the `HEAD~1`-shaped window at that push's tip it flags none.
 ///
-/// The window is stable by construction: **no commit after `6e81d53` touches either
-/// manifest** (`git log 6e81d53..HEAD -- <both>` is empty), so the flagged set is
+/// The window is stable by construction: **no commit after `2c5eee5` touches either
+/// manifest** (`git log 2c5eee5..HEAD -- <both>` is empty), so the flagged set is
 /// exactly the 16 and stays so.
 ///
 /// **These arms fail loudly rather than skip.** A shallow clone that cannot reach the
@@ -1658,13 +1658,13 @@ mod historical {
     use super::*;
 
     /// M47 Increment 1 — the re-pin of all 16, and the only declared genesis exemption.
-    const GENESIS: &str = "6e81d53";
+    const GENESIS: &str = "2c5eee5";
 
     /// The base of the window that contains it.
-    const GENESIS_PARENT: &str = "6e81d53~1";
+    const GENESIS_PARENT: &str = "2c5eee5~1";
 
     /// The tip of the push that carried it — pinned as a sha rather than an offset.
-    const PUSH_TIP: &str = "d0b8728";
+    const PUSH_TIP: &str = "7ada302";
 
     /// How far the genesis commit landed from its push tip, first-parent.
     const DISTANCE_FROM_TIP: usize = 34;

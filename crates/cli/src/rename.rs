@@ -385,7 +385,7 @@ pub(crate) fn run(
     // **Why ahead of every other gate.** `doc_path`'s placement branch **ignores the
     // slug entirely** — that is the whole mechanism — so a bogus head resolved to the
     // real committed file and the door proceeded to rewrite and commit it. Driven at
-    // `14b9ebb5`: `jigc rename vision:alpha --to Phantom --slug alpha` exited **0**,
+    // `9961013c`: `jigc rename vision:alpha --to Phantom --slug alpha` exited **0**,
     // rewrote `VISION.md`'s `# Vision` to `# Phantom` and landed a commit
     // (`completions/artifacts/M52/baseline-tokens.md` §4.1) — a committing,
     // `MovesOnBehalf` door taking an identity `vision` cannot have. One argument away,
@@ -416,7 +416,7 @@ pub(crate) fn run(
     // path component (`<docs-root>/<location>/<slug>.md`) — so a value that is not a slug
     // names a file the store cannot address. Asked **before** the destination path is
     // built and before the empty-slug arm below, because both of those answer about the
-    // *title*: driven at `b32def1`, `--slug '../../src/pwned'` exited 0 and committed
+    // *title*: driven at `f04fea1`, `--slug '../../src/pwned'` exited 0 and committed
     // `docs/decisions/keeper.md => src/pwned.md` (after which no `doc list` row, no
     // `doc show` and no `validate` finding could name the doc), and `--slug ''` answered
     // `write.unslugable-title` — "`--to "New Title"` slugs to nothing" — about a title
@@ -442,7 +442,7 @@ pub(crate) fn run(
         ));
     }
     // …and the name-ceiling half, from the shared home the other five doors read (M51 Inc 9
-    // / T3, EC-28). Driven at `d7ebbeb9` the `doc rename` sibling answered a 300-byte
+    // / T3, EC-28). Driven at `422032b6` the `doc rename` sibling answered a 300-byte
     // override with the bare OS error — no code, no route, no `at:`; this door's own
     // destination build would reach `git mv` with a name the filesystem cannot take. It is
     // not a [`RefusalKind`] member for [`crate::task::reject_malformed_slug_head`]'s reason
@@ -539,7 +539,7 @@ pub(crate) fn run(
     //     (M52 Increment 6 / T4). Keyed on `placement` alone this arm answered only the
     //     first disjunct, so a `location:` + `singleton: true` doctype — minted at its fixed
     //     slug by a mint that keys on exactly the *other* disjunct — reslugged straight
-    //     through it. Driven at `d11c6b51` over a manufactured one, `jigc rename
+    //     through it. Driven at `79677138` over a manufactured one, `jigc rename
     //     runbook:runbook --to Phantom --slug other` exited **0** and committed
     //     `docs/runbooks/runbook.md -> docs/runbooks/other.md`, after which the doc was
     //     addressable by nothing: `jigc doc show runbook:other` refused
@@ -1207,7 +1207,7 @@ fn parse_addr(addr: &str) -> Result<(String, String)> {
     }
     // The slug head is what names the file this verb `git mv`s, so it has to be a slug —
     // the third of the four user-address parse boundaries the guard covers (M50 Inc 2 /
-    // T1). Driven at `23487ab`, `jigc rename 'research:../../src/planted' --to "Captured
+    // T1). Driven at `ce5b015`, `jigc rename 'research:../../src/planted' --to "Captured
     // Doc"` exited 0 and committed an arbitrary source file into the docs root.
     crate::task::reject_malformed_slug_head(addr, slug)?;
     Ok((ty.to_string(), slug.to_string()))

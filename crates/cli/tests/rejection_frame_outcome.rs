@@ -10,7 +10,7 @@
 //! `FileCas` swap declined to overwrite a racer's bytes, so jigc's own write survives) and
 //! `<door>.foreign-bytes` (the `MintedSet` unwind declined to remove an area holding a third
 //! party's file, so the area survives) — and printed them **beside** the constant, inside one
-//! document. Driven at `c80b3f8f`:
+//! document. Driven at `26d021de`:
 //!
 //! ```text
 //! nothing was committed — the record write and the milestone workbench were both rolled

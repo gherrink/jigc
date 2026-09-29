@@ -15,7 +15,7 @@ authored through **ONE** declarative `jigc doc author changelog --from` batch pa
 | | |
 |---|---|
 | `jigc` sha256 | `25fa3cd1201b16ebfe3d7278d1a08050a87973eb5b4cf861c1c7707e940c5ce4` |
-| HEAD commit | `3ddad94f2fb9058a14e19bf4c35d53064e1ea271` (Inc-7 T3, the flow-26 marquee; clean tree) |
+| HEAD commit | `72480ae3883c579dd61bd5ae0864f5a0ca6d1975` (Inc-7 T3, the flow-26 marquee; clean tree) |
 | Built | `cargo build --release` |
 | Pinned to | `~/.local/bin/jigc` **and** `~/.cargo/bin/jigc` (the roadmap "before any exercise" re-pin; `which jigc` → `~/.local/bin/jigc`) |
 | Invocation | `jigc` from `PATH`, with the **embedded** dev pack (no `JIGC_PACK_DIR`) |

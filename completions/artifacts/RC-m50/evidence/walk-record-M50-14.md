@@ -147,7 +147,7 @@ exit **0**
 
 ```
 image      : jigc-gate:rc12 (jigc 1.0.0-rc.12)
-jigc sha   : 314f59ecc1c32c0ccf16685b83f2797fd2e13fc2
+jigc sha   : 5ff85eaad3f784710ee1df5233c183f9408ad46d
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-m50-mig
@@ -305,7 +305,7 @@ finalized c7e811d — Finalize milestone bound-the-store (1 sub-task)
 c7e811d Finalize milestone bound-the-store (1 sub-task)
 c50e030 : cap distinct series
 05c6c0b chore(milestone): record task:cap-distinct-series on milestone:bound-the-store
-  OK    the 1799a2d baseline: rc.12 LANDS the milestone over the type-less commit doc
+  OK    the d854e25 baseline: rc.12 LANDS the milestone over the type-less commit doc
   OK    …with a type-less subject (`: …`) in the history
   OK    …and the sub-task's code is in it
 

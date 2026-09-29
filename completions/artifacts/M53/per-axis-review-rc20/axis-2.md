@@ -1,18 +1,18 @@
-<!-- Reconciled AXIS 2 file, copied verbatim. Driven on the installed `/Users/maurice/.local/bin/jigc` -> `jigc 1.0.0-rc.20` (repo HEAD `51e0b8e4`), 2026-09-27. -->
+<!-- Reconciled AXIS 2 file, copied verbatim. Driven on the installed `/Users/maurice/.local/bin/jigc` -> `jigc 1.0.0-rc.20` (repo HEAD `4d3175c3`), 2026-09-27. -->
 
 <!-- M53 FOURTH PARTIAL per-axis review — AXIS 2 · posture — the RECONCILED axis file.
      The Opus driver table below is reproduced VERBATIM (no demotions were required: every
      row lacking a fenced repro block in the driver file was re-driven by the reconciler and
      stands on the reconcilers own repro — see the ledger's "Rows filed without a repro block").
      The Codex source pass (codex/axis2-codex.md) is entered claim-by-claim in the ledger.
-     Reconciler drove on /Users/maurice/.local/bin/jigc -> jigc 1.0.0-rc.20, repo HEAD 51e0b8e4,
+     Reconciler drove on /Users/maurice/.local/bin/jigc -> jigc 1.0.0-rc.20, repo HEAD 4d3175c3,
      2026-09-27. Rigs from dev/jigc-rig only (every root mktemp -d; no teardown; no rm -rf on a
      variable path anywhere), plus three non-rig fixtures a real repository can have: a rejecting
      hook behind core.hooksPath, a deterministic git shim on PATH, and a second repository.
      Nothing was fixed, committed or edited in the working repository. -->
 
 <!-- M53 FOURTH PARTIAL per-axis review — axis 2 · posture — the OPUS DRIVER. Driven on the installed
-     `/Users/maurice/.local/bin/jigc` -> `jigc 1.0.0-rc.20` (repo HEAD `51e0b8e4`), 2026-09-27. -->
+     `/Users/maurice/.local/bin/jigc` -> `jigc 1.0.0-rc.20` (repo HEAD `4d3175c3`), 2026-09-27. -->
 
 # M53 — the FOURTH PARTIAL per-axis review — AXIS 2 · posture — the OPUS DRIVER
 
@@ -21,7 +21,7 @@
 ```
 argv : /Users/maurice/.local/bin/jigc --version
      -> jigc 1.0.0-rc.20
-repo HEAD at read time: 51e0b8e4 ("chore(release): 1.0.0-rc.20 — the fourth M53 stamp, after the
+repo HEAD at read time: 4d3175c3 ("chore(release): 1.0.0-rc.20 — the fourth M53 stamp, after the
                                    usability batch and F-10's review fixes")
 ```
 
@@ -31,11 +31,11 @@ in this file was therefore **executed**, not asserted.
 
 **Baseline re-driven.** [per-axis-review-rc19/README.md](../../../../../../../Users/maurice/projects/gherrink-jigc/completions/artifacts/M53/per-axis-review-rc19/README.md)
 §A (all tiers) + [per-axis-review-rc19/axis-2.md](../../../../../../../Users/maurice/projects/gherrink-jigc/completions/artifacts/M53/per-axis-review-rc19/axis-2.md)
-(rc.19, HEAD `7d86f99f`) — its four findings `N-1`…`N-4`, the two rc.18 rows `(2, F-1)`/`(2, F-2)`, the
+(rc.19, HEAD `a8904637`) — its four findings `N-1`…`N-4`, the two rc.18 rows `(2, F-1)`/`(2, F-2)`, the
 three M52 rows `(2, DEFECT A/B/C)`, `(2, DEFECT 1)`, and M51's `D1`/`D2`. **What changed under them:**
 [VERDICT.md](../../../../../../../Users/maurice/projects/gherrink-jigc/completions/artifacts/M53/VERDICT.md)
-→ Addendum 3 — the pre-v1 usability batch (`1b45707c`…`136a0878`) and **one new capability, F-10
-`jigc task amend`** (`3c4f4c7a`…`e87835ea`), whose design of record is
+→ Addendum 3 — the pre-v1 usability batch (`be40738e`…`b6b1a18f`) and **one new capability, F-10
+`jigc task amend`** (`407ebf08`…`bb252c25`), whose design of record is
 [f10-amend-settle.md](../../../../../../../Users/maurice/projects/gherrink-jigc/completions/artifacts/M53/f10-amend-settle.md)
 and whose eight review findings are in
 [audit/f10-code-review.md](../../../../../../../Users/maurice/projects/gherrink-jigc/completions/artifacts/M53/audit/f10-code-review.md).
@@ -89,7 +89,7 @@ was used for every read under `.jigc/`.
 
 ---
 
-## 2 · The door set and the registry counts, read from the code at HEAD `51e0b8e4`
+## 2 · The door set and the registry counts, read from the code at HEAD `4d3175c3`
 
 Read from the code, not from the design doc's numbers.
 
@@ -1130,7 +1130,7 @@ keyed on them.
 # RECONCILIATION — the Opus driver × the Codex source pass
 
 **Reconciler's binary, asserted first.** `/Users/maurice/.local/bin/jigc --version` → `jigc 1.0.0-rc.20`;
-repo HEAD `51e0b8e4`. Release posture, so every emitted `git …` span quoted below was **executed**, not
+repo HEAD `4d3175c3`. Release posture, so every emitted `git …` span quoted below was **executed**, not
 asserted. Every exit code was measured **bare**, output to `/dev/null` or a file — never through a pipe.
 
 **The rule applied** (`acceptance-design.md` → The reconciliation rule): a claim by one side the other
@@ -1322,7 +1322,7 @@ CONTROL, a LOCATION doctype (docs/milestone-records/loc-wave.md -> …/zz-oob.md
 
 ### B.6 · `lead(codex, new F-10 code)` — `task amend` is correctly `Neither`; `COMMITTING_DOORS` rises to 11 while the commit-on-behalf **leaf** set stays at ten — **CONFIRMED (registry read + repro)**
 
-Registries read from the code at HEAD `51e0b8e4`, parsed rather than eyeballed:
+Registries read from the code at HEAD `4d3175c3`, parsed rather than eyeballed:
 
 ```
 VERB_KINDS        : 48 rows  {Write: 36, Read: 12}
@@ -1561,12 +1561,12 @@ No one driven cell establishes or refutes it; the closest behavioural evidence i
 classification (48 `BEHALF_DOORS` rows, 10 commit-on-behalf / 2 move-on-behalf, every one refusing every
 posture member) plus §B.6's parsed registries. Recorded open rather than promoted.
 
-### B.17 · `lead(codex, boundary)` — no schema or doctype-manifest file changed in `834772b6..HEAD`; the M52 zero-schema-hash boundary is intact — **CONFIRMED (datum)**
+### B.17 · `lead(codex, boundary)` — no schema or doctype-manifest file changed in `609da011..HEAD`; the M52 zero-schema-hash boundary is intact — **CONFIRMED (datum)**
 
 ```
-argv : git diff --name-only 834772b6..HEAD -- '*schema-manifest*' 'crates/cli/pack/schemas/*' 'packs/methodology/schemas/*'
+argv : git diff --name-only 609da011..HEAD -- '*schema-manifest*' 'crates/cli/pack/schemas/*' 'packs/methodology/schemas/*'
 observed: 0 files
-argv : git diff --name-only 834772b6..HEAD -- '*schema*' '*manifest*' 'crates/cli/pack/**' 'packs/methodology/**'
+argv : git diff --name-only 609da011..HEAD -- '*schema*' '*manifest*' 'crates/cli/pack/**' 'packs/methodology/**'
 observed: crates/cli/pack/steps/amend-message.yaml
           crates/cli/pack/workflows/amend.yaml
 ```

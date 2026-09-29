@@ -5,7 +5,7 @@
 //! A doc address is `<type>:<slug>`, and the slug is what names the file:
 //! `<docs-root>/<location>/<slug>.md`. The address grammar splits on `:` / `#` / `/`
 //! and **sanitizes nothing**, so until M50 the `<slug>` head reached a path component
-//! with no door asking whether it was a slug at all. Driven at `23487ab`:
+//! with no door asking whether it was a slug at all. Driven at `ce5b015`:
 //!
 //!   * `jigc doc show "research:<absolute path outside the repository>" --format json`
 //!     exits **0** and serves the outside file's prose through the **1.0-pinned** JSON
@@ -51,7 +51,7 @@
 //!
 //! ## Why the tree arms exist
 //!
-//! The text alone passed at `23487ab`'s exit 0, so two arms assert the **tree**: the
+//! The text alone passed at `ce5b015`'s exit 0, so two arms assert the **tree**: the
 //! read arm plants a canary **outside the repository** and requires that no byte of it
 //! reaches the pinned JSON, and the rename arm requires that no commit lands and that
 //! `src/planted.md` is still where it was. (Fixture fact, driven: macOS resolves `..`

@@ -2955,7 +2955,7 @@ fn run_doc_rename(
     //
     // That bound is discharged (M52 Increment 10 / T3, per-axis review row D-1). It read:
     // *"`render::doc_ack`'s TEXT arm renders no findings at all, so this production reaches
-    // a driver only"* — driven true at `9a308b5c`, and it meant the notice minted so the
+    // a driver only"* — driven true at `528f1eda`, and it meant the notice minted so the
     // agent that made the title stale hears about it was the one surface that agent reads.
     // The widening it named — all nine `DocAck` variants — is the sweep that landed, in the
     // renderer's one `with_carried_findings` call, so this ack states it on both arms.

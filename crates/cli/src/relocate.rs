@@ -36,7 +36,7 @@ use crate::task::git_run;
 ///
 /// **Why it is an axis and not six repairs.** The door declines **ten** states carrying
 /// **nine** distinct codes (the two malformed `--from` cells share one — the consequence is
-/// one). Driven at `c80b3f8f`, **four** of the ten already carried a code and a route — the
+/// one). Driven at `26d021de`, **four** of the ten already carried a code and a route — the
 /// unknown doctype and the two installed-root `--from` values (M52 Increment 8 / T7), and
 /// the destination-identity gate (Increment 8 / T6) — while the other **six** reached the
 /// wire as bare `anyhow` strings: no `blocking · <code>` prefix, no `route:` line, and on
@@ -474,7 +474,7 @@ fn parse_prior_home(from: &str) -> Result<Home> {
 /// home. Every other spelling reaches at worst nothing — an absolute value, a `../` hop and a
 /// symlink all match no committed spelling, which is the no-rule this row used to carry — but
 /// two prefixes are guaranteed to reach files, and both of them are **jigc's own install**.
-/// Driven at `a5deabf4` on a freeze-exempt pack with one ordinarily-named doc planted under
+/// Driven at `4c0c513e` on a freeze-exempt pack with one ordinarily-named doc planted under
 /// each: `--from .claude` reported `1 moved` at exit **0** and staged
 /// `R .claude/notes.md -> docs/decisions/notes.md`, and `--from .jigc` did the same to
 /// `.jigc/notes.md`; the artifacts whose basenames are not doc ids (`.jigc/AGENT.md`,
@@ -775,7 +775,7 @@ fn displace_foreign_squatter(
             engine::finding::Route::human(format!(
                 // Both claimants are in the file-state record, i.e. **committed**, and
                 // `jigc relocate` is a task-less store op — so the verb that moves one of
-                // them is `jigc rename`, not its in-task sibling. Driven at `834772b6`,
+                // them is `jigc rename`, not its in-task sibling. Driven at `609da011`,
                 // the shipped route dead-ended: `jigc doc rename vision --to X` over a
                 // committed doc with no task open exits 1 with *no active task — start one
                 // with `jigc start`*, and with a task open it refuses the re-slug of a
@@ -839,7 +839,7 @@ fn displace_foreign_squatter(
 /// **The subject is the destination, not the `--from` token.** The move is byte-faithful —
 /// `git mv` carries the source's own filename into the home — so the identity the store
 /// will mint is decided by a name the caller never typed on the command line. Driven at
-/// `a2e10a52`, `jigc relocate note --from notes` over `notes/My Note.md` moved it at exit
+/// `25cb978a`, `jigc relocate note --from notes` over `notes/My Note.md` moved it at exit
 /// 0; `jigc doc list` then reported `note:My Note` **managed** and `jigc doc show` refused
 /// that very identity `store.malformed-slug`, routing the reader back at `jigc doc list` —
 /// the loop `ingest.unaddressable-identity` was minted to close, at the *other* door that

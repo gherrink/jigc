@@ -1,6 +1,6 @@
 # The 1.0.0 trial — record
 
-**Binary: `1.0.0-rc.12`**, built from `314f59e`, run 2026-08-28 in the isolated container rig.
+**Binary: `1.0.0-rc.12`**, built from `5ff85ea`, run 2026-08-28 in the isolated container rig.
 Pre-registered in [protocol.md](protocol.md), which was written and committed **before** any
 session ran.
 

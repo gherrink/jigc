@@ -9,8 +9,8 @@ exported **unchanged** alongside this file and content-hashed below, so the
 - **Case:** pilot (stand-in — see Honesty bounds; this is the *self-hosting* run, a case the
   `dogfood-record` enum predates).
 - **Binary (pinned):** `jigc` sha256 `8d7ab2626411da7c169e0002dc7fd85e7474b1f1f2a3288e781debd13fbb7779`
-  (`cargo build --release` at gherrink-jigc `fdcab9d`; reproduces the handover's pinned sha).
-- **Twin:** local `git clone` of gherrink-jigc at `fdcab9d`, on real disk (not the working tree).
+  (`cargo build --release` at gherrink-jigc `f9c4b0a`; reproduces the handover's pinned sha).
+- **Twin:** local `git clone` of gherrink-jigc at `f9c4b0a`, on real disk (not the working tree).
 - **Capture:** inline-orchestrated — jrun shadows `jigc` (real exit captured), `JIGC_DOGFOOD_LOG`
   set. The Write|Edit OOB hook is inactive in inline mode (a compliant run routes managed-doc
   writes through jigc, so that channel is ~0 organically); the absorb channel + the sed-seed are

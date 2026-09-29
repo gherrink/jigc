@@ -1,4 +1,4 @@
-<!-- M52 per-axis review (re-run) — axis 7 · composed surfaces — RECONCILED · driven on the installed `jigc 1.0.0-rc.16` (built from commit a3eb026b), 2026-09-21. -->
+<!-- M52 per-axis review (re-run) — axis 7 · composed surfaces — RECONCILED · driven on the installed `jigc 1.0.0-rc.16` (built from commit e519e4eb), 2026-09-21. -->
 
 <!-- M52 per-axis review RE-RUN — axis 7 · freeze & migration — the OPUS DRIVER table.
      Driven on the installed `jigc 1.0.0-rc.16`, 2026-09-21. No fixes, no commits, no repo edits. -->
@@ -8,8 +8,8 @@
 **Binary:** `/Users/maurice/.local/bin/jigc` → **`jigc 1.0.0-rc.16`** — asserted before any drive
 (`jigc --version` → `jigc 1.0.0-rc.16`, exit 0). **RELEASE posture**: the debug route-fence panics do
 not exist here.
-**Repo HEAD while driving:** `a3eb026b` (clean tree) — the commit that closed M52's audit, so all
-seven audit fixes (`79e54c75 6d95756c fe8f29c4 c96137e4 b9ab6a70 1b036264` + the record commit) are
+**Repo HEAD while driving:** `e519e4eb` (clean tree) — the commit that closed M52's audit, so all
+seven audit fixes (`ad527fa4 6c2de03a 33bd5692 68d14cd3 a83a9e60 66af090a` + the record commit) are
 in this binary. Confirmed **by driving**, not by reading: F1's brownfield control is silent (§4 C-4),
 F2's stranded-doc sweep fires (§3.2), F5's `relocate.frozen-doctype` is minted (§3.2), F6's three
 removal routes are distinct (§4).
@@ -19,7 +19,7 @@ removal routes are distinct (§4).
 
 ---
 
-## 1 · The door set and the registries, read from the code at `a3eb026b`
+## 1 · The door set and the registries, read from the code at `e519e4eb`
 
 Counts I **read** (not taken from the design doc's numerals):
 
@@ -601,7 +601,7 @@ belong to other axes' door sets and are listed so the coverage diff can see them
 # Reconciliation ledger
 
 **Reconciler:** a third agent, driving the same binary (`/Users/maurice/.local/bin/jigc` →
-`jigc 1.0.0-rc.16`, asserted) at repo HEAD `a3eb026b` (clean tree), 2026-09-21. Rigs the same way
+`jigc 1.0.0-rc.16`, asserted) at repo HEAD `e519e4eb` (clean tree), 2026-09-21. Rigs the same way
 (`rig=$(dev/jigc-rig <state> --binary …) || exit; eval "$rig"`, two-step, `mktemp -d` roots, no
 teardown, no `rm -rf` on a variable path). **The rule applied** (acceptance-design.md → The
 reconciliation rule): a claim by one pass that the other cannot reproduce is a **lead**, not a
@@ -752,10 +752,10 @@ construction → OPEN LEAD, owned by axes 3 and 4.
 Driven against git, not read:
 
 ```
-git diff 35195f56..HEAD -- '*.yaml' | grep -E '^[+-].*schema-hash'      -> no output
-git diff 35195f56..HEAD -- crates/cli/pack/config/schema-manifest.yaml
+git diff 577a0099..HEAD -- '*.yaml' | grep -E '^[+-].*schema-hash'      -> no output
+git diff 577a0099..HEAD -- crates/cli/pack/config/schema-manifest.yaml
                            packs/methodology/config/schema-manifest.yaml -> no output
-git diff --stat 35195f56..HEAD -- crates/cli/pack/schemas packs/methodology/schemas -> no output
+git diff --stat 577a0099..HEAD -- crates/cli/pack/schemas packs/methodology/schemas -> no output
 ```
 
 Zero `schema-hash` lines moved, zero manifest bytes changed, zero schema files changed between

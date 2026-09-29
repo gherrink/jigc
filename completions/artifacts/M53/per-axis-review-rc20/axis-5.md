@@ -1,8 +1,8 @@
-<!-- Reconciled AXIS 5 file, copied verbatim. Driven on the installed `/Users/maurice/.local/bin/jigc` -> `jigc 1.0.0-rc.20` (repo HEAD `51e0b8e4`), 2026-09-27. -->
+<!-- Reconciled AXIS 5 file, copied verbatim. Driven on the installed `/Users/maurice/.local/bin/jigc` -> `jigc 1.0.0-rc.20` (repo HEAD `4d3175c3`), 2026-09-27. -->
 
 <!-- M53 FOURTH PARTIAL per-axis review — axis 5 · pinned contracts · THE OPUS DRIVER.
      Every row driven on the installed `/Users/maurice/.local/bin/jigc` -> `jigc 1.0.0-rc.20`,
-     repo HEAD `51e0b8e4`, 2026-09-27. Release posture. -->
+     repo HEAD `4d3175c3`, 2026-09-27. Release posture. -->
 
 # M53 fourth partial per-axis review (rc.20, after the usability batch + F-10 `jigc task amend`) — AXIS 5 · pinned contracts · THE OPUS DRIVER
 
@@ -12,9 +12,9 @@ exist in this binary, so a fence violation shows up here as a bad emitted comman
 Every route claim below is a claim about the **bytes the release binary printed**, and where it
 mattered I **ran those bytes verbatim** and recorded the shell's status.
 
-**What changed under this axis since the rc.19 run** — `7d86f99f..51e0b8e4`, 16 commits: the
-**pre-v1 usability batch** (`1b45707c`…`136a0878`, six surface rows) and **F-10 `jigc task amend`**
-(`9fa66338`…`e87835ea`, four build tasks + eight review fixes), then the `1.0.0-rc.20` stamp.
+**What changed under this axis since the rc.19 run** — `a8904637..4d3175c3`, 16 commits: the
+**pre-v1 usability batch** (`be40738e`…`b6b1a18f`, six surface rows) and **F-10 `jigc task amend`**
+(`232ee075`…`bb252c25`, four build tasks + eight review fixes), then the `1.0.0-rc.20` stamp.
 Axis 5 owns the question those changes could break silently: **does a new committing arm ship with a
 declared envelope, a declared key, a declared exit and a stable finding key — and do the arms that
 already shipped still say the same thing?**
@@ -37,7 +37,7 @@ I did **not** read the Codex source pass for this axis.
 
 ## 0 · The door set, derived from the code
 
-Counts read **by symbol** at `HEAD = 51e0b8e4`, not from the design doc's numbers:
+Counts read **by symbol** at `HEAD = 4d3175c3`, not from the design doc's numbers:
 
 | registry | file:line | rows read | vs the rc.19 run |
 |---|---|---|---|
@@ -49,7 +49,7 @@ Counts read **by symbol** at `HEAD = 51e0b8e4`, not from the design doc's number
 | `ERROR_CODE_REGISTRY` | `crates/cli/src/invocation_log.rs:267` | **12** | 11 → **12** (`ERROR_AMEND_REJECTED`) |
 | `DESTROYING_DOORS` | `crates/cli/src/milestone.rs:3430` | **6** | = (the settle's `+0`, confirmed) |
 | `WORK_UNIT_ID_DOORS` | `crates/cli/src/cli.rs:2641` | **25** | = (the settle's `+0`, confirmed — `task amend` takes no id) |
-| `DOCTYPE_DOORS` | `crates/cli/src/cli.rs:2574` | **16** (9 `Address` + 7 `Bare`) | the rc.19 file said 17; **16 is what the symbol carries** at this HEAD, and the block is byte-unchanged in `7d86f99f..51e0b8e4` — the rc.19 count was of `DoctypeArg::` occurrences including one in a doc-comment |
+| `DOCTYPE_DOORS` | `crates/cli/src/cli.rs:2574` | **16** (9 `Address` + 7 `Bare`) | the rc.19 file said 17; **16 is what the symbol carries** at this HEAD, and the block is byte-unchanged in `a8904637..4d3175c3` — the rc.19 count was of `DoctypeArg::` occurrences including one in a doc-comment |
 | `SLUG_DOORS` | `crates/cli/src/cli.rs:2881` | **6** | = |
 | **`PATH_ARG_OCCURRENCES`** | `crates/cli/src/cli.rs:3189` | **14** occurrences / **18** arms | = (`Cwd 6 · RepoRoot 4 · NotAPath 8`); **no `task amend` row** — correct, the door takes no path |
 | `ROLLBACK_POPULATIONS` | `crates/cli/src/rollback.rs:169` | **11** | = (the settle's `+0`, confirmed) |
@@ -625,7 +625,7 @@ complement rule holds with the new member in it.
 
 ### 5.1 — `PATH_ARG_OCCURRENCES`: the registry is byte-unchanged, and the two bases that discriminate were re-driven
 
-`git diff 7d86f99f..51e0b8e4 -- crates/cli/src/cli.rs` touches **no** `PathArgOccurrence`,
+`git diff a8904637..4d3175c3 -- crates/cli/src/cli.rs` touches **no** `PathArgOccurrence`,
 `PathArgBase`, `DOCTYPE_DOORS`, `SLUG_DOORS` or `WORK_UNIT_ID_DOORS` line, so the rc.19 run's
 **18 / 18** stands. Re-driven here from a subdirectory, because a changed **verb** can still change
 an unchanged base's behaviour:
@@ -691,7 +691,7 @@ $ jigc --format json relocate research --from docs/old-research             -> r
    version-gated `jigc migrate-corpus`, not the freeze-exempt path"
 ```
 
-### 5.6 — the displacement surface on a committing door, from a linked worktree (`bd8c1d67`)
+### 5.6 — the displacement surface on a committing door, from a linked worktree (`d556b887`)
 
 ```
 rig: committed-singletons + a linked worktree (branch feat2);  cwd = $RIG/lw
@@ -812,7 +812,7 @@ THE SAME ON AN AMEND TASK (the new committing arm), same cwd:
                                                              the linked worktree at `.jigc/worktrees/area-one`"
   jigc task finalize fanout-amend-probe              -> 1   repo.head-detached
 
-AND THE M53 USABILITY ROW `11fe5941` ("a live task's findings carry the repository posture finalize
+AND THE M53 USABILITY ROW `be663712` ("a live task's findings carry the repository posture finalize
 refuses under") IS SILENT IN THE SAME CELL:
   from $REPO/.jigc/worktrees/area-one:  jigc --format json start
       every tasks[].findings -> NO repo.head-detached on any of the four live tasks
@@ -849,7 +849,7 @@ F-10 review itself graded MEDIUM (*"the preview lied over a dirty index"*), one 
 
 **It is wider than the amend arm** — the ordinary `task finalize` arm has the identical divergence
 in the same cwd (driven above), so it is **not** a finding inside F-10's new code. **The `jigc start`
-half is inside M53's own new code** (`11fe5941`, the usability batch's row 2), which is the exit
+half is inside M53's own new code** (`be663712`, the usability batch's row 2), which is the exit
 rule's third clause.
 
 **Door:** `task validate` (and `start`, and `task finalize --dry-run`). **Cell:** cwd = a registered,
@@ -906,17 +906,17 @@ byte that died.
    but `completion-record.owner-artifact: owned-location`. The `{sha,short}` shape *is* on the wire
    at `task diff`'s `base` key (row 37, driven), but that is not a `doc show` slice. Recorded as not
    driven rather than presented as covered — the same disposition, and the same reason, as rc.19.
-2. **`finalize.stage-failed`'s copy-runnable route** (`f54036f6`). Reaching a stage failure needs a
+2. **`finalize.stage-failed`'s copy-runnable route** (`2c0c15be`). Reaching a stage failure needs a
    manufactured index fault; the row is an emitted-argv row that belongs to axis 2/6's route
    question rather than to a pinned envelope, and I did not drive it. Named rather than implied.
-3. **`4493c6cd` — `doc show` over a *relocated* doc routing at the store sweep's repair.** My fixture
+3. **`d45da1b7` — `doc show` over a *relocated* doc routing at the store sweep's repair.** My fixture
    for this cell did not reach the relocated state (a prior `git reset --hard` had reverted the
    out-of-band move), so what I drove was an ordinary `store.not-found` over a doc that does not
    exist. **Not driven at its cell**, and stated as such rather than reported.
 4. **`STORE_EXIT_FLIPS` at 6 of its 7 members.** What this axis owes is key-set invariance under the
    flip; the exit-flip members themselves need a manufactured pack, a down-stamped corpus or a
    removed doctype (axis 7's fixture work). Not re-derived this run — the registry is byte-unchanged
-   in `7d86f99f..51e0b8e4`, which is stated, not driven.
+   in `a8904637..4d3175c3`, which is stated, not driven.
 5. **`ManifestKind::ALL` (6) and `SchemaChangeKind::ALL × LOCI` (18).** They shape values *inside*
    `task finalize | Forecast`'s `manifest` and `migrate-corpus | Report`'s report, not any envelope's
    top-level key set. Both carrying envelopes are driven (rows 44 and 11). Axes 4 and 7 own them.
@@ -945,7 +945,7 @@ byte that died.
 
 | | |
 |---|---|
-| binary | `jigc 1.0.0-rc.20`, asserted before anything else ran; repo HEAD `51e0b8e4` |
+| binary | `jigc 1.0.0-rc.20`, asserted before anything else ran; repo HEAD `4d3175c3` |
 | **rows driven** | **~500** — A: 65 `ENVELOPE_ARMS` rows with key sets · B: 96 F-10 cells (§4.1–§4.15: 12 posture × 2 doors = 24 · 5 index shapes · 8 doc write leaves + 3 controls · 4 head-shape cells × 2 formats · 4 cwds · 2 spaced cells · 12 fence/token cells · the rest) · C: 7 path-arg / usability cells + 5 migrate escape shapes · D: 96 hostile-cwd cells (48 outside-repo + 48 deleted-cwd) · E: 216 four-cwd cells (46 leaves × 4, of which 8 re-driven at refusal cells) · F: 7 baseline rows · G: 3 emitted spans run verbatim |
 | rows not applicable / not driven | **10 classes** (§9) |
 | declared key set == driven key set | **65 / 65** driven arms (1 of 66 not driven, §9.1) |
@@ -997,14 +997,14 @@ installed **release `1.0.0-rc.20`** — a different binary, a different posture 
   staged path — and run them verbatim, recording the shell's status.
 - **The three previews and the door are four surfaces of one gate, and no in-tree arm compares all
   four in a checkout jigc itself provisioned.** §8's DEFECT 1 is exactly that comparison, with three
-  controls isolating the cell and the `11fe5941` orientation half driven beside it.
+  controls isolating the cell and the `be663712` orientation half driven beside it.
 
 ---
 
 ## 12 · Doors covered
 
 Every clap leaf that is the door of ≥1 **driven** row, in `VERB_KINDS` spelling
-(`crates/cli/src/cli.rs:1877`, **48** leaves read by symbol at `HEAD = 51e0b8e4`).
+(`crates/cli/src/cli.rs:1877`, **48** leaves read by symbol at `HEAD = 4d3175c3`).
 **48 / 48 · uncovered: none.**
 
 ```
@@ -1047,7 +1047,7 @@ run** (rows 41, 57).
   All five "what does not move" claims (`ROLLBACK_POPULATIONS`, `DESTROYING_DOORS`,
   `WORK_UNIT_ID_DOORS`, `PATH_ARG_OCCURRENCES`, `contract-version`) hold by symbol (§5.3).
 - **The exit rule's third clause is engaged by DEFECT 1's orientation half**, which sits inside the
-  usability batch's own new code (`11fe5941`) — the adjudication is the human's and this record does
+  usability batch's own new code (`be663712`) — the adjudication is the human's and this record does
   not pre-empt it. Read by **tier**, both defects are below the tier-1 line and neither blocks the
   call.
 
@@ -1059,7 +1059,7 @@ run** (rows 41, 57).
 **The reconciler.** Driver table above: `driver/axis5.md`, unchanged. Source pass: `codex/axis5-codex.md`
 (read-only, its own stated bound: *"no binary behavior, tier-2/3 repro, release-only behavior, hostile
 cwd, or hook execution was independently driven"*). Binary for every drive in this ledger:
-`/Users/maurice/.local/bin/jigc` → **`jigc 1.0.0-rc.20`**, asserted first. Repo `HEAD = 51e0b8e4`.
+`/Users/maurice/.local/bin/jigc` → **`jigc 1.0.0-rc.20`**, asserted first. Repo `HEAD = 4d3175c3`.
 Rigs two-step-evalled with a non-empty-`$REPO` guard, `mktemp -d` roots, no teardown.
 
 **The rule applied** (acceptance-design.md → *The reconciliation rule*): a claim by one pass that the
@@ -1114,7 +1114,7 @@ row 60 milestone list-tasks    | Listing       rc=0  text      (no hook_output �
 
 **One correction to the driver, not a demotion — §3's partition line is miscounted in two places.**
 The driver's preamble reads *"**60 `Success` / 3 `Adjudicated` / 2 `Reject`** · **`Pinned` 60 /
-`Unpinned` 6**"*. Read by symbol at `HEAD = 51e0b8e4`:
+`Unpinned` 6**"*. Read by symbol at `HEAD = 4d3175c3`:
 
 ```
 $ awk 'NR>=6572 && /^];/{exit} NR>=6572' crates/cli/src/render.rs > arms.txt
@@ -1383,17 +1383,17 @@ a state neither pass built would appear in neither, which is the registry's own 
 proof.
 
 **C-20 — *"the schema manifest SHA-256 is identical … zero schema-hash movement was not violated"***
-→ **CONFIRMED (repro), with one reading correction.** Codex's sentence reads as though `834772b6`
+→ **CONFIRMED (repro), with one reading correction.** Codex's sentence reads as though `609da011`
 were a file hash; it is a **commit** — the rc.19 review commit — and `e15d332b…` is the file digest.
 Read that way the claim is exactly right:
 
 ```
-$ git show 834772b6:crates/cli/pack/config/schema-manifest.yaml | shasum -a 256   -> e15d332bc8dd…
-$ git show 51e0b8e4:crates/cli/pack/config/schema-manifest.yaml | shasum -a 256   -> e15d332bc8dd…
-$ git show 834772b6:packs/methodology/config/schema-manifest.yaml | shasum -a 256 -> df0484d706a5…
-$ git show 51e0b8e4:packs/methodology/config/schema-manifest.yaml | shasum -a 256 -> df0484d706a5…
+$ git show 609da011:crates/cli/pack/config/schema-manifest.yaml | shasum -a 256   -> e15d332bc8dd…
+$ git show 4d3175c3:crates/cli/pack/config/schema-manifest.yaml | shasum -a 256   -> e15d332bc8dd…
+$ git show 609da011:packs/methodology/config/schema-manifest.yaml | shasum -a 256 -> df0484d706a5…
+$ git show 4d3175c3:packs/methodology/config/schema-manifest.yaml | shasum -a 256 -> df0484d706a5…
 ```
-Both manifests are byte-identical across `834772b6..51e0b8e4`. The driver's §5.2 reaches the same
+Both manifests are byte-identical across `609da011..4d3175c3`. The driver's §5.2 reaches the same
 boundary from the other side, and the reconciler re-drove that too: `jigc doc schema adr --format
 json` → `contract-version` **7**; `jigc doc show vision --format json` → `schema-version` **1**.
 
@@ -1441,7 +1441,7 @@ THE THREE SURFACES OF ONE GATE, all from that same cwd:
         route: re-attach HEAD with `git switch <branch>`, then re-run this command
   $ git rev-parse --short HEAD   -> cea1417 (unmoved by the refusal)
 
-THE ORIENTATION HALF (M53's own usability row `11fe5941`), same cwd:
+THE ORIENTATION HALF (M53's own usability row `be663712`), same cwd:
   $ jigc --format json start | jq -c '.tasks[]|{id, findings:(.findings//[]|map(.code//.))}'
       {"id":"area-one","findings":[]}
       {"id":"ordinary-in-worktree","findings":["changelog-recording.gate-granted-unused"]}
@@ -1510,7 +1510,7 @@ reaches is the printed `at:` locus alone, on a code minted this wave. Tier 3, su
 ## D · Doors covered
 
 Every clap leaf that is the door of **≥ 1 driven row** in this reconciled file, in `VERB_KINDS`
-spelling (`crates/cli/src/cli.rs:1877`, **48** leaves read by symbol at `HEAD = 51e0b8e4`).
+spelling (`crates/cli/src/cli.rs:1877`, **48** leaves read by symbol at `HEAD = 4d3175c3`).
 **48 / 48 · uncovered: none.**
 
 ```
@@ -1549,9 +1549,9 @@ and **found no leaf where the driver's recorded answer failed to reproduce**.
    (the rig script's banner lines had been swallowed by a stdout redirect on the `eval`), and the
    subsequent `cd "$REPO"` was a no-op in zsh rather than an error — so a `mkdir -p docs/deep`, a
    `git add` and a `git commit -q` landed **in the working repository**, creating commit `344c08e6`
-   *"chore: deep dir"* on `main`. It was undone in the same minute: `git reset --mixed 51e0b8e4`,
+   *"chore: deep dir"* on `main`. It was undone in the same minute: `git reset --mixed 4d3175c3`,
    then `find docs -mindepth 1 -delete && rmdir docs` (no `rm -rf`, no variable path). **State
-   restored and verified**: `HEAD = 51e0b8e4`, working tree carrying only the one pre-existing
+   restored and verified**: `HEAD = 4d3175c3`, working tree carrying only the one pre-existing
    modification (`completions/artifacts/M53/per-axis-review-rc20/instrument/per-axis-review.workflow.js`),
    `docs/` absent, no stray object reachable from any ref. Every later rig eval carries an explicit
    `[ -n "$REPO" ] || exit` guard. Recorded because a review whose subject is *doors that destroy or

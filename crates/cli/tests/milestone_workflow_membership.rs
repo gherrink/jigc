@@ -4,7 +4,7 @@
 //! → T0-4; the `read_workflow` mint-after-validate discipline stated at
 //! `crates/cli/src/migrate.rs:141`).
 //!
-//! **The defect, driven at `ddbd217`:** `jigc milestone add-task <m> "<intent>" --workflow
+//! **The defect, driven at `bbba84a`:** `jigc milestone add-task <m> "<intent>" --workflow
 //! no-such-workflow` exits **0** — it writes the bogus id into the sub-task's area and commits
 //! a record naming the sub-task `status: active`. The sub-task is then permanently unreachable:
 //! `jigc workflow no-such-workflow --task <sub>` blocks on the unknown workflow, `jigc workflow

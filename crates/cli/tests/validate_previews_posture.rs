@@ -487,7 +487,7 @@ fn an_ordinary_task_in_a_fan_out_worktree_is_previewed_as_the_door_refuses_it() 
     // substituted** — `<new-branch>` is the agent's to name, exactly as `git switch <branch>`
     // and `--value <value>` are elsewhere, so this is the emitted argv with that span filled
     // and nothing else changed (M53, the last pre-1.0.0 batch's review, LOW 1: the comment
-    // here, and `7081de80`'s commit body, both said *run verbatim*, and pasted literally the
+    // here, and `6281f768`'s commit body, both said *run verbatim*, and pasted literally the
     // `<` is a shell redirect). Running it is the half `git switch <branch>` could not do: it
     // exits 128 over a branch another worktree holds.
     let switched = std::process::Command::new("git")

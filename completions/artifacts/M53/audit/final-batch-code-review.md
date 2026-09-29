@@ -1,4 +1,4 @@
-# Adversarial review — `13a8afbb..a34f910a` (the last pre-1.0.0 batch)
+# Adversarial review — `d8b0a0ee..3e362bf8` (the last pre-1.0.0 batch)
 
 Debug binary built bare from HEAD (`jigc 1.0.0-rc.20`), five `dev/jigc-rig` corpora, every row driven.
 
@@ -34,7 +34,7 @@ The `cd` is the reader's own directory: a route that, followed exactly, changes 
 
 ---
 
-### MEDIUM 2 — `4d0cfea5`'s own completeness claim is falsified by the binary: a third out-of-set code, and the fence hand-lists two cells with "no third" as a stated judgment
+### MEDIUM 2 — `f57698fb`'s own completeness claim is falsified by the binary: a third out-of-set code, and the fence hand-lists two cells with "no third" as a stated judgment
 
 **Location:** `crates/cli/src/task.rs:461-480` (the `--dry-run` help) · `crates/cli/tests/dry_run_findings_equal_set.rs` (`the_forecast_names_every_gate_it_refuses_on_that_the_preview_does_not_report`, the *"Why these two and no third"* paragraph)
 
@@ -58,13 +58,13 @@ rig committed-singletons, milestone second-probe, sub-task alpha-work, from the 
 
 ### LOW 1 — "run verbatim" is an overclaim in the test comment and the commit message; the emitted placeholder is a shell parse error if actually pasted
 
-**Location:** `crates/cli/tests/validate_previews_posture.rs:487-497`; `7081de80`'s body ("Run verbatim from the checkout that printed it: rc 0")
+**Location:** `crates/cli/tests/validate_previews_posture.rs:487-497`; `6281f768`'s body ("Run verbatim from the checkout that printed it: rc 0")
 
 The test substitutes `<new-branch>` → `fan-out-ordinary` before running. Driven literally: `git switch -c <new-branch>` → zsh `parse error near ';'` (the `<` is a redirect). The `<…>` convention is pre-existing (`git switch <branch>`, `--value <value>`), so this is the *wording*, not a new class. **Correction:** say "with the placeholder substituted" in both places.
 
 ---
 
-### LOW 2 — `9b2d0655`'s locus fix lands only inside a flattened `{"error"}` blob on the JSON arm
+### LOW 2 — `8a40a5e2`'s locus fix lands only inside a flattened `{"error"}` blob on the JSON arm
 
 ```
 jigc --format json task amend "repair the merge"   (merge HEAD)
@@ -89,8 +89,8 @@ jigc --format json task amend "repair the merge"   (merge HEAD)
 
 | check | result |
 |---|---|
-| schemas · both manifests · both snapshot trees, `5d9fd714..a34f910a` | **empty** |
-| goldens, `13a8afbb..a34f910a` | **empty** |
+| schemas · both manifests · both snapshot trees, `73737faa..3e362bf8` | **empty** |
+| goldens, `d8b0a0ee..3e362bf8` | **empty** |
 | golden count | **646** |
 | `count_fences::` 14 · `posture_member_inventory::` 4 · `gate_coverage_fence::` 4 · `help_truth::` 23 · `work_unit_id_axis::` 5 · `validate_previews_posture::` 5 · `posture_door_axis::` 7 · `commit_seam_posture` 20 | **all rc=0, 0 failed** (run bare, one filter each) |
 

@@ -18,7 +18,7 @@ false completeness claim on the record at the 1.0 pin** — the exact failure th
 to correct.
 
 **Posture.** Every fact this record turns on was driven against the **release** binary
-`target/release/jigc` (`1.0.0-rc.14`) at `HEAD = bd348a83`. The advocates drove their own spikes
+`target/release/jigc` (`1.0.0-rc.14`) at `HEAD = 74627547`. The advocates drove their own spikes
 (F1's two-door table, F2's three-posture probe table, F3's [`advocates/f3-spike3.sh`](advocates/f3-spike3.sh) unrecoverable-loss cell,
 F4's cells A and B on `dev/jigc-rig bare`, F7's key census); everything else is relayed from the
 baseline or a gap-detector and is marked as such in those artifacts. **An agent's report is a lead,
@@ -1283,7 +1283,7 @@ that is stated rather than presented as a result; a leaf added before the review
 automatically and must be given a reason here or an axis row.
 
 **The four HALT drives are folded in** ([gate-halt-discharges.md](gate-halt-discharges.md), all run
-against the release `1.0.0-rc.14` at `bd348a83`, each section naming its script and quoting the
+against the release `1.0.0-rc.14` at `74627547`, each section naming its script and quoting the
 output that matters):
 
 - **EC-30's milestone arm is REFUTED, with its datum, and nothing is built for it.** `jigc milestone
@@ -1393,7 +1393,7 @@ shape it takes.)*
 [planning gate-record](planning-gate-record.md) row 14, and D14 — and absent from
 [roadmap](../../../implementation/roadmap.md) Increment 9's Grouped scope, so Increment 9's twelve
 tasks omit it and the close's planner, whose scope owes the conversion, halted rather than either
-absorb an unsettled fix or reduce the human's own gate. Driven at `be160142`: `doc rename --task`
+absorb an unsettled fix or reduce the human's own gate. Driven at `0e51d884`: `doc rename --task`
 re-slugs the adr, `doc show commit:<T> --task <T>` still carries the old title in `## Summary`, and
 `task finalize --dry-run` prints the stale subject and the new path on adjacent, unconnected lines.
 

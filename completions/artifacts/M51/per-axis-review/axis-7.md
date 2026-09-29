@@ -1,4 +1,4 @@
-<!-- M51 per-axis review — axis 7 · reconciled · driven on the installed `jigc 1.0.0-rc.15` (commit 35195f56), 2026-09-16 -->
+<!-- M51 per-axis review — axis 7 · reconciled · driven on the installed `jigc 1.0.0-rc.15` (commit 577a0099), 2026-09-16 -->
 
 # M51 per-axis review — AXIS 7 · freeze & migration — RECONCILED
 
@@ -10,18 +10,18 @@
 
 **Binary:** `/Users/maurice/.local/bin/jigc` → `jigc 1.0.0-rc.15` (asserted before any drive; RELEASE
 posture — the debug route-fence panics do not exist here).
-**Repo HEAD at review time:** `1922c7f5` (clean tree). Every audit fix named in
+**Repo HEAD at review time:** `67c0c369` (clean tree). Every audit fix named in
 `completions/artifacts/M51/VERDICT.md`
 is in this binary — confirmed by driving them, not by reading: the orphan **territory** narrowing
-(`b5ccd818`) is live (§Cell 4 rows: the repo-root placement orphan is silent, the docs-tree one fires),
-the route/quoting sweep (`8a42fbbd`) is live, and the `setup` guard (`0fc80bab`) is out of this axis.
+(`da5173a1`) is live (§Cell 4 rows: the repo-root placement orphan is silent, the docs-tree one fires),
+the route/quoting sweep (`6c2391c0`) is live, and the `setup` guard (`ff2bde99`) is out of this axis.
 **No fixes, no commits, no repo edits were made.**
 
 ---
 
 ## 1 · The door set, derived from the code (not from the design doc's numbers)
 
-Registries read at `1922c7f5`, with the count I read:
+Registries read at `67c0c369`, with the count I read:
 
 | registry | file:symbol | rows I counted | how |
 |---|---|---|---|

@@ -5,7 +5,7 @@
 //! A `--slug` value drives a minted identity **verbatim** — that is the point of the flag
 //! — and a doc's slug *is* its path component (`<docs-root>/<location>/<slug>.md`). Five
 //! doors have refused a value that is not a slug since M39. The sixth, `jigc rename`, did
-//! not, and driven at `b32def1`:
+//! not, and driven at `f04fea1`:
 //!
 //!   * `jigc rename adr:keeper --to "New Title" --slug '../../src/pwned'` exits **0** and
 //!     commits `docs/decisions/keeper.md => src/pwned.md` — after which `jigc doc list`
@@ -41,7 +41,7 @@
 //! The fourth asks the question the grammar cannot: a **300-byte slug** (M51 Increment 9 /
 //! T3, EC-28). It *is* a slug — the grammar has nothing to say about it — and a slug is
 //! what jigc turns into a filesystem path component, so three doors hit the OS name
-//! ceiling and told the caller a story about a disk. Driven at `d7ebbeb9`, per door in its
+//! ceiling and told the caller a story about a disk. Driven at `422032b6`, per door in its
 //! own fresh fixture:
 //!
 //!   * `jigc start --workflow single-task "x" --slug <300>` → `blocking ·
@@ -64,7 +64,7 @@
 //!
 //! ## Why the tree arm exists
 //!
-//! The text alone passed at `b32def1`'s exit 0 for the sixth door, so one arm asserts the
+//! The text alone passed at `f04fea1`'s exit 0 for the sixth door, so one arm asserts the
 //! **tree**: a traversal override must land no commit and leave the doc at its own slug,
 //! addressable by the surfaces that name it.
 
@@ -182,7 +182,7 @@ impl Fixture {
         fs::write(repo.join("README.md"), "hello\n").expect("write README");
         // Driven fixture fact: the traversal's destination directory must exist on disk,
         // or the escape is refused for an unrelated reason (macOS resolves `..`
-        // physically) and the tree arm proves nothing — at `b32def1` with `src/` present
+        // physically) and the tree arm proves nothing — at `f04fea1` with `src/` present
         // the same call exits 0 and commits `docs/decisions/keeper.md => src/pwned.md`.
         fs::create_dir_all(repo.join("src")).expect("mk src");
         fs::write(repo.join("src/module.md"), "source-tree prose\n").expect("write src");
@@ -371,7 +371,7 @@ fn every_slug_door_refuses_a_malformed_override() {
                     );
                 }
             }
-            // The tree, not only the text: at `b32def1` the sixth door's traversal cell
+            // The tree, not only the text: at `f04fea1` the sixth door's traversal cell
             // committed the doc out of the store while printing a success line.
             assert!(
                 fixture.path().join(KEEPER).is_file(),

@@ -1,4 +1,4 @@
-<!-- Reconciled AXIS 3 file, copied verbatim. Driven on the installed `/Users/maurice/.local/bin/jigc` -> `jigc 1.0.0-rc.20` (repo HEAD `51e0b8e4`), 2026-09-27. -->
+<!-- Reconciled AXIS 3 file, copied verbatim. Driven on the installed `/Users/maurice/.local/bin/jigc` -> `jigc 1.0.0-rc.20` (repo HEAD `4d3175c3`), 2026-09-27. -->
 
 <!-- M53 FOURTH PARTIAL per-axis review · AXIS 3 · destroying doors · the OPUS DRIVER.
      Every row driven on the installed /Users/maurice/.local/bin/jigc -> `jigc 1.0.0-rc.20`, 2026-09-27.
@@ -26,7 +26,7 @@ declared fixed — **each verified closed below, §3**).
 
 ---
 
-## 0 · The door set and the cell axis, read from the code at HEAD `51e0b8e4`
+## 0 · The door set and the cell axis, read from the code at HEAD `4d3175c3`
 
 Counted **by symbol**, not from the design docs' numbers:
 
@@ -333,7 +333,7 @@ $ jigc --format json task amend "json probe"                              -> exi
 > `text`, no new key needed — verify**; if a key is needed it is declared in the additive-key paragraph.
 
 **The mitigating datum, stated because it decides the tier.** The row ends in *"— **verify**"*, and the
-verification came back negative and was **acted on**: the MEDIUM-2 fix commit `e1cf5871` records the
+verification came back negative and was **acted on**: the MEDIUM-2 fix commit `c65d3495` records the
 decision in full (*"the block is presentation, DECLARED OUT of the pinned `{task, text}` arm … No key was
 added and none was needed"*), and the authority is a code-side census row —
 `crates/cli/tests/text_json_parity_axis.rs:314` `Disposition::DeclaredOut` with a three-clause reason
@@ -1419,7 +1419,7 @@ a current measurement rather than on rc.19's, and it verifies each of F-10's eig
 
 ---
 
-**Scope.** This is **axis 3 only**, on `1.0.0-rc.20` (repo HEAD `51e0b8e4`). The Codex source pass for
+**Scope.** This is **axis 3 only**, on `1.0.0-rc.20` (repo HEAD `4d3175c3`). The Codex source pass for
 this axis was **not read** (reconciliation is a separate agent). No fix was applied, no commit made,
 nothing written into the working repository.
 
@@ -1439,7 +1439,7 @@ $ /Users/maurice/.local/bin/jigc --version
 jigc 1.0.0-rc.20
 ```
 
-Source facts read at `HEAD = 51e0b8e4` (the same commit the driver counted from). Every drive in its own
+Source facts read at `HEAD = 4d3175c3` (the same commit the driver counted from). Every drive in its own
 `dev/jigc-rig` throwaway repo (two-step eval, every root from `mktemp -d`, no teardown, no `rm` on a
 variable path). Exit codes read bare. Every loss/survival claim carries a `command grep` before-control
 beside its after-count.
@@ -1478,7 +1478,7 @@ five closed M51 rows, the F-10/M52 seam readings, and a removal-site census. Eac
 
 | # | `lead(codex, …)` | verdict | the driven datum |
 |---|---|---|---|
-| **C-1** | *no destroying door is omitted from the registry; no removal of user/foreign bytes bypasses the guard/displacement seam; no new F-10 amend-specific bypass* | **CONFIRMED** | `DESTROYING_DOORS` read at `51e0b8e4` = **6**; the three refusing members driven over one foreign complement (**before 2 / after 2**), the two displacing members driven at RX-1/RX-6, `milestone provision` at RX-3. No drive reached a removal outside that seam — **RX-2** |
+| **C-1** | *no destroying door is omitted from the registry; no removal of user/foreign bytes bypasses the guard/displacement seam; no new F-10 amend-specific bypass* | **CONFIRMED** | `DESTROYING_DOORS` read at `4d3175c3` = **6**; the three refusing members driven over one foreign complement (**before 2 / after 2**), the two displacing members driven at RX-1/RX-6, `milestone provision` at RX-3. No drive reached a removal outside that seam — **RX-2** |
 | **C-2** | rc.20 `(3, F-A)` **CLOSED** — `task finalize` displacement renders from `jigc_root`, zero host-absolute paths; *re-drive from a branch-attached linked worktree, both the all-move and a blocked destination, text and JSON* | **CONFIRMED CLOSED** — driven on Codex's own proposed argv | all-move: `displaced [{from ".jigc/tasks/fa-probe/notes.txt", to ".jigc/displaced/fa-probe/notes.txt"}]`, **0 host-absolute hits** over stdout+stderr; blocked destination: `displaced []`, area standing, plant 1/1, three path occurrences in `findings[0].message` **all repo-relative**, **0 host-absolute hits** — **RX-1** |
 | **C-3** | rc.20 `(3, F-B)` **STILL-OPEN**, tier 3 — *place a plain file at `.jigc/worktrees/<sub-id>`, `milestone provision <ms> --force`, expect `<sub-id>` beneath the leftover-file heading* | **CONFIRMED** (agrees with driver row 61; independently predicted from source) | `warning: removing the leftover file .jigc/worktrees/area-one-work discards work that is not in git:` / `    area-one-work` — the path's own basename in the child-entry position; the `Directory` control in the same rig lists a real child (`precious.txt`). No loss — **RX-3** |
 | **C-4** | M51 **C-1 CLOSED across all doors** — `task discard` · `milestone discard` · `uninstall` refuse over the complement unless `--force`; `task finalize` · `milestone finalize` displace; a failed displacement is never followed by recursive destruction | **CONFIRMED** | the three refusals driven in one rig, each naming the exact plant paths, **before 2 / after 2**; the failed-displacement cell (`.jigc/displaced` a regular file) leaves the area **standing** with the plant **1/1** and the commit landed — **RX-1 · RX-2** |
@@ -1487,9 +1487,9 @@ five closed M51 rows, the F-10/M52 seam readings, and a removal-site census. Eac
 | **C-7** | M51 **D-3 CLOSED** — the staged-prose enumeration renders its unreadable `docs/` path through `repo_relative` (`task.rs:1259`) | **OPEN LEAD — the cited site is unreachable through any door I could build** | With `.jigc/tasks/<id>/docs` at mode `000`, all three doors fail closed **earlier**, at the foreign-bytes readability guard: `uninstall` → `uninstall.foreign-bytes — cannot check '.jigc/' …`; `task discard` → `task-discard.foreign-bytes — cannot check task 'plain-task's working area …`; `milestone discard` → `milestone.foreign-bytes — cannot check milestone:echo-one's workbench …`. The claim's **consequence** is corroborated (every one of those messages is repo-relative, **0 host-absolute hits**), but the enumeration itself was never entered, so the site is not confirmed. Reaching it needs the foreign scan to succeed while the docs read fails — a race, not a state a rig builds — **RX-6** |
 | **C-8** | M51 **D-4 CLOSED** — the `uninstall` worktree-root failure is routed as a *readability* failure with the sibling `--force` consent, no longer diagnosed as missing `git` | **CONFIRMED**, verbatim | `.jigc/worktrees` at mode `000` → ``blocking · uninstall.dirty-worktree — cannot check `.jigc/worktrees/` for uncommitted fan-out work …`` with the route ``make sure `.jigc/worktrees/` is readable — this failure is a `read_dir` of that directory, not a git fault — … or … `jigc uninstall --force` deletes them with the install``; **0 host-absolute hits**; no mention of a missing git — **RX-6** |
 | **C-9** | the F-10 seams — the `amend` marker is inside `TASK_AREA_FILES`; the amend arm refuses every staged index path (`finalize.amend-index-dirty`) and every staged promoting doc (`finalize.amend-staged-doc`); it stages nothing before `git commit --amend`; the review HIGH's worktree-divergence path is closed at both writer and backstop | **CONFIRMED**, four drives | area holds `amend base.json docs intent staged-snapshot.json workflow` and `task discard` answers `task-discard.staged-prose` — **not** `foreign-bytes` — so the marker is inside the writer set; `doc set-slot vision:vision#thesis --task` → exit 1 `finalize.amend-staged-doc`, `git status` **0 lines**; a staged `added.txt` → exit **3** `finalize.amend-index-dirty` with the `restore --staged` route and *"this arm takes no `--carry-staged`"*; the landing rewrites `61ce013 → 0b0cacd` with **TREE `76ceb188…` → `76ceb188…` byte-identical** and a clean worktree — **RX-7** |
-| **C-10** | the M52 destroying-door seam is internally consistent — `Disposition::{Refuse,Narrate,Displace}` exhaustive (silence is not an arm), `WORKTREE_DOORS` explicitly four, `probe_leftover` `symlink_metadata`-based and fail-closed on an unreadable path | **CONFIRMED** — source read at `51e0b8e4` **plus** the fail-closed cells driven | `DESTROYING_DOORS: [&DestroyingDoor; 6]`, `WORKTREE_DOORS: [&DestroyingDoor; 4]` read by symbol; fail-closed driven at three doors: `milestone provision` → ``unknown — could not read the leftover directory …: Permission denied`` (driver row 64, re-driven shape at RX-6), `milestone discard` → ``unknown — Permission denied (os error 13) — nothing could be read there, so nothing can say those bytes are disposable``, `uninstall` → the readability refusal above — **RX-6** |
+| **C-10** | the M52 destroying-door seam is internally consistent — `Disposition::{Refuse,Narrate,Displace}` exhaustive (silence is not an arm), `WORKTREE_DOORS` explicitly four, `probe_leftover` `symlink_metadata`-based and fail-closed on an unreadable path | **CONFIRMED** — source read at `4d3175c3` **plus** the fail-closed cells driven | `DESTROYING_DOORS: [&DestroyingDoor; 6]`, `WORKTREE_DOORS: [&DestroyingDoor; 4]` read by symbol; fail-closed driven at three doors: `milestone provision` → ``unknown — could not read the leftover directory …: Permission denied`` (driver row 64, re-driven shape at RX-6), `milestone discard` → ``unknown — Permission denied (os error 13) — nothing could be read there, so nothing can say those bytes are disposable``, `uninstall` → the readability refusal above — **RX-6** |
 | **C-11** | the removal-site census — every production removal is a guarded/narrated/displaced door sink, a registry-keyed unwind, a transaction-owned temp artifact, a cache invalidation or a migration retirement with rollback capture; **no unguarded production removal of foreign/user bytes**; there is no `crates/cli/src/uninstall.rs` | **PARTLY CONFIRMED / OPEN LEAD on the exhaustive half** | `ls crates/cli/src/uninstall.rs` → *No such file or directory* (confirmed). The census itself is a **negative existential over all production paths**: no drive can establish it, and this agent found no counter-example in any cell it drove. Recorded as an open lead rather than promoted on the source read, per the rule |
-| **C-12** | no schema or schema-manifest file changed in `834772b6..HEAD`; the M52 zero-schema-hash-movement boundary is not violated | **CONFIRMED** | `git diff --name-only 834772b6..HEAD -- '*schema*'` → **0** paths |
+| **C-12** | no schema or schema-manifest file changed in `609da011..HEAD`; the M52 zero-schema-hash-movement boundary is not violated | **CONFIRMED** | `git diff --name-only 609da011..HEAD -- '*schema*'` → **0** paths |
 
 **Refuted Codex claims: none.** No claim in the source pass was contradicted by a drive.
 
@@ -1513,7 +1513,7 @@ Each re-driven once by this agent, in a fresh rig, on the same installed `1.0.0-
 
 **Driver observations** OBS-A … OBS-G are carried unchanged; the source pass neither contradicts nor
 addresses any of them, and C-10 above corroborates OBS-F's structural half (`Disposition::Narrate` holds
-no `DESTROYING_DOORS` member at `51e0b8e4`, so that arm still has no drivable cell).
+no `DESTROYING_DOORS` member at `4d3175c3`, so that arm still has no drivable cell).
 
 ---
 

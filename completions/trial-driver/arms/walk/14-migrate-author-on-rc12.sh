@@ -25,7 +25,7 @@
 #
 # THE SUBJECTS this half authors on rc.12, each recorded as the binary did it:
 #   (1) a milestone under `finalize.fan-out.squash false` whose provisioned sub-task
-#       holds staged code AND a commit doc with `type` left unset — the `1799a2d`
+#       holds staged code AND a commit doc with `type` left unset — the `d854e25`
 #       baseline: rc.12's `jigc milestone finalize` did not gate a sub-task's
 #       transient commit doc, so it LANDS a subject like `: …` at exit 0
 #   (2) a `completion-record` whose `findings` item is graded `HIGH` — refused on
@@ -212,7 +212,7 @@ SUBJ="$(git log --format=%s -3 | grep -E '^[a-z]*: ' | head -1)"
 rec rc12-milestone-finalize-typeless-landed "$MF_LANDED"
 rec rc12-milestone-finalize-typeless-exit "$MF_EXIT"
 rec rc12-milestone-finalize-typeless-subject "$SUBJ"
-bar "the 1799a2d baseline: rc.12 LANDS the milestone over the type-less commit doc" "test $MF_LANDED -eq 1"
+bar "the d854e25 baseline: rc.12 LANDS the milestone over the type-less commit doc" "test $MF_LANDED -eq 1"
 bar "…with a type-less subject (\`: …\`) in the history" "git log --format=%s -3 | grep -q '^: '"
 LOG3="$(git log --stat --format= -3)"
 bar "…and the sub-task's code is in it" "printf '%s' \"\$LOG3\" | grep -q 'src/cap.ts'"

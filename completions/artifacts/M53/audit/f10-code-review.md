@@ -4,7 +4,7 @@
 
 One **HIGH** must close before the 1.0.0 call: it is exit-0 divergence behind a committing door **plus** a false green on the CI-gated verb — the class that blocked the call after RC-m50.
 
-All drives on the DEBUG binary at `48d1d529`, `dev/jigc-rig` corpora.
+All drives on the DEBUG binary at `d9c4bd84`, `dev/jigc-rig` corpora.
 
 ---
 
@@ -97,7 +97,7 @@ Beside it: `--dry-run`'s help says it refuses on *"the empty-commit guard"* (byp
 
 **Location:** `crates/cli/src/pack.rs:1037` (`AMBUSH_CONTRACTS`), `:1177` (`CONSTRAINT_REQUIRED_TOKENS`), declarer at `crates/cli/pack/steps/amend-message.yaml:2`.
 
-`git diff 9fa66338..48d1d529 -- crates/cli/src/pack.rs` is **10 lines, all inside `mod tests`** — the production registries are untouched. `command grep -c "AmbushContract {" crates/cli/src/pack.rs` → 5 (one struct definition + **4 rows**), none for amend. `CONSTRAINT_REQUIRED_TOKENS` is still `[(&str, &[&str]); 6]` with no amend row.
+`git diff 232ee075..d9c4bd84 -- crates/cli/src/pack.rs` is **10 lines, all inside `mod tests`** — the production registries are untouched. `command grep -c "AmbushContract {" crates/cli/src/pack.rs` → 5 (one struct definition + **4 rows**), none for amend. `CONSTRAINT_REQUIRED_TOKENS` is still `[(&str, &[&str]); 6]` with no amend row.
 
 The registry's stated source-set rule (pack.rs, `AMBUSH_CONTRACTS`' doc-comment): *"blocking codes minted by a door in the **commit-on-behalf** class … an ambush contract is a rule about what the door will refuse to do with the user's own work."* `finalize.amend-index-dirty` is blocking, minted at `cli::task::amend_index_dirty_finding` (`task.rs:89`), reached through `jigc task finalize` (`CommitsOnBehalf`), and is the direct sibling of the `Owed` row `finalize.carried-staged`. Its recorded reason for existing is *"nothing reddened when a new ambush-class contract stayed off one"* — and nothing did. Consequently the step's voluntary `states-constraints:` entry buys nothing: delete the dirty-index paragraph from `amend-message.yaml` and no fence notices.
 
@@ -140,7 +140,7 @@ The function's own doc-comment (`start.rs` ~156) claims *"both are read before t
 
 ## Informational — the golden count moved and `pinning.md`'s running accounting has no paragraph yet
 
-Measured: `find crates/cli/tests/goldens -type f -name '*.txt' | wc -l` → **646** (634 at M52's close). `git diff 9fa66338..48d1d529 --stat -- crates/cli/tests/goldens` → exactly **24 files: 12 added + 12 modified** (`start--amend--*` ×6, `workflow-preview--amend--*` ×6 new; `agent-md` ×6 and `describe` ×6 re-blessed) — **nothing else moved**. Both new families correctly capture `exit: 1` refusals (`workflow.verb-routed`), which I confirmed live. `DECISIONS.md` accounts for `+12 / 12 re-blessed`; the arithmetic reconciles (dev 17→18 × 2 × 6). `implementation/pinning.md`'s running fixed-point paragraph still ends at 634 — a close-increment obligation, not a defect in this range.
+Measured: `find crates/cli/tests/goldens -type f -name '*.txt' | wc -l` → **646** (634 at M52's close). `git diff 232ee075..d9c4bd84 --stat -- crates/cli/tests/goldens` → exactly **24 files: 12 added + 12 modified** (`start--amend--*` ×6, `workflow-preview--amend--*` ×6 new; `agent-md` ×6 and `describe` ×6 re-blessed) — **nothing else moved**. Both new families correctly capture `exit: 1` refusals (`workflow.verb-routed`), which I confirmed live. `DECISIONS.md` accounts for `+12 / 12 re-blessed`; the arithmetic reconciles (dev 17→18 × 2 × 6). `implementation/pinning.md`'s running fixed-point paragraph still ends at 634 — a close-increment obligation, not a defect in this range.
 
 **Also worth recording:** the golden harness enumerates workflows only through `workflow --preview` and `start --workflow` (`crates/cli/tests/compose_goldens.rs:286,305`), and **both refuse `amend`** — so `amend-message.yaml`'s step body, the whole surface an agent reads, is pinned by no golden. Every other workflow's body is. And `amend-message.yaml` duplicates ~35 lines of `author-commit.yaml` verbatim (heading depths, the heredoc paragraph, the schema paragraph, scope/body, read-back) with no include, against the one-home rule.
 

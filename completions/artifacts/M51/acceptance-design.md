@@ -6,7 +6,7 @@ and states in the same sentence that the arm set is owed at decompose) and **the
 matrices** (D15 + §17: an axis's cell matrix is *a written table of `(door, cell)` rows whose cells are
 driven*, and a verb is covered iff it is the door of **≥1 driven row**). Nothing here is driven — the drives
 happen on the built and installed `1.0.0-rc.15`, **after** the audit's fixes land (D15, EC-10). Every set
-named below either exists at `HEAD = bd348a83` (cited by symbol and file) or is minted by a named decision.
+named below either exists at `HEAD = 74627547` (cited by symbol and file) or is minted by a named decision.
 
 Sources: [settle-record.md](settle-record.md) (D1–D15, amendments §1–§17), [charter.md](charter.md) → Acceptance,
 [envelope-key-census.md](envelope-key-census.md), `crates/cli/src/cli.rs` → `VERB_KINDS` (47 leaves, line 1412),

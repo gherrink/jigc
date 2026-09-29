@@ -33,7 +33,7 @@ freeze/migration and adopter docs/help. Their rows stand where they were last dr
 
 **The binary.** Every row in every file here was driven on the installed release
 `/Users/maurice/.local/bin/jigc` → **`jigc 1.0.0-rc.19`**, on **2026-09-23**, with the repository at HEAD
-**`7d86f99f`** (*“chore(release): 1.0.0-rc.19 — the third M53 stamp, after the cwd-dependence arc”*).
+**`a8904637`** (*“chore(release): 1.0.0-rc.19 — the third M53 stamp, after the cwd-dependence arc”*).
 Each axis file asserts `jigc --version` **first, before anything else ran**, and read its registry counts
 **by symbol** at that HEAD. The binary is the **release** build, so the debug-only fences
 (`Route::mechanical`'s argv fence, `unaimed_git_span`, `unbased_migrate_span`, the two quoting fences)
@@ -48,9 +48,9 @@ committed or edited in the working repository by any agent in this review.**
 
 | axis | baseline | binary | driven |
 |---|---|---|---|
-| 2 · posture | [per-axis-review-rc18/axis-2.md](../per-axis-review-rc18/axis-2.md) | `1.0.0-rc.18` (`fbd8b190`) | 2026-09-23 |
-| 3 · destroying doors | [per-axis-review-rc18/axis-3.md](../per-axis-review-rc18/axis-3.md) | `1.0.0-rc.18` (`fbd8b190`) | 2026-09-23 |
-| 5 · pinned contracts | [per-axis-review/axis-5.md](../per-axis-review/axis-5.md) (the rc.17 run) | `1.0.0-rc.17` (`75ab77ca`) | 2026-09-22 |
+| 2 · posture | [per-axis-review-rc18/axis-2.md](../per-axis-review-rc18/axis-2.md) | `1.0.0-rc.18` (`271b0cb7`) | 2026-09-23 |
+| 3 · destroying doors | [per-axis-review-rc18/axis-3.md](../per-axis-review-rc18/axis-3.md) | `1.0.0-rc.18` (`271b0cb7`) | 2026-09-23 |
+| 5 · pinned contracts | [per-axis-review/axis-5.md](../per-axis-review/axis-5.md) (the rc.17 run) | `1.0.0-rc.17` (`7e98faf1`) | 2026-09-22 |
 | 6 · composed surfaces | [M52/per-axis-review/axis-6.md](../../M52/per-axis-review/axis-6.md) | `1.0.0-rc.16` | 2026-09-21 |
 
 **The four cwds this run adds as a cell axis** — the census's own shape, re-driven at every applicable
@@ -114,7 +114,7 @@ the human should read next:
 > **`(2, N-1)` = `(6, A6-R1)`** — *the same defect, found independently by two axes*. The installed
 > **pre-commit hook** announces *“an out-of-band managed-doc rename exists in the committed tree”* on
 > commits that contain **no rename**, and says the change is *“not staged in this commit”* when it **is**.
-> The cause is the arc's own commit `34584687`: the hook's extraction grep was widened from
+> The cause is the arc's own commit `65de53f5`: the hook's extraction grep was widened from
 > `grep -o 'git mv …'` to `grep -o 'git -C …'` **because the arc made every operator-facing git span
 > `git -C <absolute> …`** — and `git -C ` is now the prefix of *every* route in the report, not just a
 > rename revert. `crates/cli/src/setup.rs:620` (`PRECOMMIT_RENAME_BLOCK`), gate at `:634`.
@@ -392,7 +392,7 @@ CONTROLS — the genuine block is intact, and the space axis really is closed:
 
 **The cause, read after it was driven.** `crates/cli/src/setup.rs:620`'s `PRECOMMIT_RENAME_BLOCK` gates on
 `moves="$(printf '%s' "$report" | grep -o 'git -C [^\`]*')"`. Before the arc it was
-`grep -o 'git mv [^\`]*'`; commit **`34584687`** (*“every operator-facing `git` span names the checkout it
+`grep -o 'git mv [^\`]*'`; commit **`65de53f5`** (*“every operator-facing `git` span names the checkout it
 runs in”*) rendered the rename revert as `git -C <abs> mv <new> <old>`, so the grep was widened to
 `git -C` — which is now the prefix of **every** operator-facing span in the report (`home-vacated`'s
 `show`, `owner-artifact`'s `add`, `file_state`'s restores). The gate `[ -n "$moves" ]` therefore passes
@@ -587,7 +587,7 @@ declaration, quoted in its axis file.
 # COVERAGE — the four axes against the 47 `VERB_KINDS` leaves
 
 **The leaf count, read rather than quoted.** `crates/cli/src/cli.rs:1835`'s `VERB_KINDS` carries **47**
-leaf rows at HEAD `7d86f99f`, counted by reading the `(&[…], VerbKind::…)` rows of the const itself
+leaf rows at HEAD `a8904637`, counted by reading the `(&[…], VerbKind::…)` rows of the const itself
 (`awk 'NR>=1830 && NR<=1890' crates/cli/src/cli.rs | command grep -cE '^\s+\(&\[' → 47`), and all four
 axis files read the same **47** independently, by symbol. The spellings and their order are identical to
 the rc.18, rc.17, M52 and M51 tables, so the columns below are directly comparable row by row.

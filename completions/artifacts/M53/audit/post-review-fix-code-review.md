@@ -1,4 +1,4 @@
-# Independent review — `986d5e0a` (the M53 post-review fan-out posture fix)
+# Independent review — `3c71da87` (the M53 post-review fan-out posture fix)
 
 I read the whole diff, both design-doc deltas, the surrounding `repo.rs` / `cli.rs` / `milestone.rs` code in full, and drove the **debug binary** (`target/debug/jigc`, built bare) plus the installed `1.0.0-rc.17` against `dev/jigc-rig committed-singletons` corpora. Targeted suites run: `repo_posture::` (16/16), `posture_door_axis::` (7/7), `posture_member_inventory` (4/4). I did not run `dev/gate`.
 
@@ -105,7 +105,7 @@ This is the divergence M52's completion audit closed one family over (five doors
 
 ### MEDIUM — "nine of the ten `InProgress` members" is a count with a stated reason that names a non-member, landed in six homes, one of which is a `COUNT_HOMES` file whose own fence states the rule it breaks
 
-**Locations (derived: `git show 986d5e0a | grep -n nine` → 6 file homes + the commit message):** `DECISIONS.md:9` · `crates/cli/src/repo.rs:47-48` · `crates/cli/src/milestone.rs:3779` · `crates/cli/tests/commit_seam_posture.rs:743` · `design/finalize.md:35` · `design/validation.md:660`.
+**Locations (derived: `git show 3c71da87 | grep -n nine` → 6 file homes + the commit message):** `DECISIONS.md:9` · `crates/cli/src/repo.rs:47-48` · `crates/cli/src/milestone.rs:3779` · `crates/cli/tests/commit_seam_posture.rs:743` · `design/finalize.md:35` · `design/validation.md:660`.
 
 **Evidence.**
 - READ: `InProgress::ALL` has **ten** members (`repo.rs:289-298`) and `Unborn` is **not** one of them — it is a `PostureMember`. `GitState::worktree_refusal` excludes exactly one `GitState`, `Unborn`, whose `in_progress()` is `None` (`git_state.rs:258, 265-274`). With `repo_posture.rs:529-537`'s standing surjectivity fence (*every* `InProgress` member is produced by some `GitState`), the fan-out axis reaches **ten of ten** — which is what the new acceptance asserts (`refused + excluded + 1 == 17`, i.e. 15 refusing cells).

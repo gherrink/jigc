@@ -1086,7 +1086,7 @@ fn plant_user_bytes(repo: &Path, path: &str) {
 /// **The rule this arm used to drive is struck with its falsifying datum** (the M51
 /// completion audit): it was *"bytes that survive the install would ride the commit, so the
 /// door refuses; bytes the install regenerates are jigc's own, and the door proceeds"* — and
-/// the `else` branch asserted **exit 0 over destroyed bytes**. Driven at `b5ccd818`, planting
+/// the `else` branch asserted **exit 0 over destroyed bytes**. Driven at `da5173a1`, planting
 /// prose in `.jigc/AGENT.md` and re-running `setup` left the adopter's lines in no git object
 /// at exit 0 with `git status --short` empty, and this arm graded that green. *"What would be
 /// committed is jigc's canonical bytes"* was true and beside the point: the loss happened
@@ -1100,7 +1100,7 @@ fn plant_user_bytes(repo: &Path, path: &str) {
 /// path — so the day a ninth path joins the install commit, this arm asks it the question
 /// rather than passing over it.
 ///
-/// **Red at the wave's base** (`DECISIONS.md` → M51 Increment 3, driven at `61f05c01`): on a
+/// **Red at the wave's base** (`DECISIONS.md` → M51 Increment 3, driven at `442bbd2f`): on a
 /// repo whose `CLAUDE.md` carried an edit that was **never staged at all**, `jigc setup`
 /// exited 0, `git show HEAD:CLAUDE.md` carried the user's line, and `git status --short` was
 /// **empty** — so nothing prompted recovery.
@@ -1450,7 +1450,7 @@ fn refused_finalize(race: Race) -> RefusedFinalize {
 /// as it found it, so the door's *"nothing was committed"* is true of the disk too — and, on
 /// the raced run, that **both** versions survive.
 ///
-/// **Red at the wave's base** (`DECISIONS.md` → M51 Increment 4, driven at `93407e98`): four
+/// **Red at the wave's base** (`DECISIONS.md` → M51 Increment 4, driven at `92755635`): four
 /// index axes restored the *index* and the M45 audit's own row said *"worktree untouched"*
 /// about the mechanism, so a hook-rejected finalize left ` M .jigc/.gitignore` and
 /// ` M .jigc/version` on disk while telling the operator *"nothing was committed"*.

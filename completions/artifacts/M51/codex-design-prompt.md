@@ -1,6 +1,6 @@
 <!-- M51 · the verbatim prompt that produced [codex-design-review.md](codex-design-review.md), persisted so the review's scope and its seven directed questions (A–G) are auditable rather than inferred from the answer. -->
 
-You are an independent, adversarial reviewer of a SETTLED design before it is decomposed into build increments. Repository: jigc (Rust CLI), HEAD bd348a83 plus uncommitted planning files. Read-only; do not run cargo; do not modify files.
+You are an independent, adversarial reviewer of a SETTLED design before it is decomposed into build increments. Repository: jigc (Rust CLI), HEAD 74627547 plus uncommitted planning files. Read-only; do not run cargo; do not modify files.
 
 Read in this order: completions/artifacts/M51/settle-record.md (fifteen decisions D1–D15), completions/artifacts/M51/charter.md, completions/artifacts/M51/baseline-ledger.md, completions/artifacts/M51/gap-findings.md, the 2026-09-11 entry at the top of DECISIONS.md, and completions/artifacts/evidence-check-1.0/VERDICT.md for the underlying findings (your earlier review is archived as completions/artifacts/evidence-check-1.0/codex-source-review.md — your migrate-path claim was reproduced live and became D1). Then the code each decision touches: crates/cli/src/{migrate.rs,task.rs,setup.rs,milestone.rs,config.rs,render.rs,invocation_log.rs,trackable.rs,repo.rs,gitignore.rs,cli.rs}, crates/engine/src/{finalize.rs,state.rs,milestone.rs}, crates/cli/tests/{format_json_success_axis.rs,text_json_parity_axis.rs,foldback_truth.rs}.
 

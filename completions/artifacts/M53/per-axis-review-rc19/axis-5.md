@@ -1,8 +1,8 @@
-<!-- M53 THIRD PARTIAL per-axis review — axis 5 — the reconciled file, copied verbatim. Driven on the installed `/Users/maurice/.local/bin/jigc` -> `jigc 1.0.0-rc.19` (repo HEAD `7d86f99f`), 2026-09-23. -->
+<!-- M53 THIRD PARTIAL per-axis review — axis 5 — the reconciled file, copied verbatim. Driven on the installed `/Users/maurice/.local/bin/jigc` -> `jigc 1.0.0-rc.19` (repo HEAD `a8904637`), 2026-09-23. -->
 
 <!-- M53 THIRD PARTIAL per-axis review — axis 5 · pinned contracts · THE OPUS DRIVER.
      Every row driven on the installed `/Users/maurice/.local/bin/jigc` -> `jigc 1.0.0-rc.19`,
-     repo HEAD `7d86f99f`, 2026-09-23. Release posture. -->
+     repo HEAD `a8904637`, 2026-09-23. Release posture. -->
 
 # M53 third partial per-axis review (rc.19, after the cwd-dependence arc) — AXIS 5 · pinned contracts · THE OPUS DRIVER
 
@@ -15,7 +15,7 @@ I **ran those bytes verbatim** and recorded the shell's status.
 
 **What changed under this axis since the rc.17 run** — the cwd-dependence arc
 (`completions/artifacts/M53/cwd-census.md`; VERDICT → Addendum 2; the 2026-09-23 DECISIONS entries;
-`audit/cwd-fix-code-review.md` + `-2.md`), 31 commits `c8cc9187..7d86f99f`. Two classes on one root
+`audit/cwd-fix-code-review.md` + `-2.md`), 31 commits `20c18b74..a8904637`. Two classes on one root
 cause: **store doors** now resolve through `repo::jigc_home` instead of six/seven private
 `discover_repo_root` walk-ups, and **every operator-facing `git` span** renders
 `git -C <absolute checkout> … -- <repo-relative path>` (`engine::finding::git_at`), with
@@ -41,7 +41,7 @@ I did **not** read the Codex source pass for this axis.
 
 ## 0 · The door set, derived from the code
 
-Counts read **by symbol** at `HEAD = 7d86f99f`, not from the design doc's numbers:
+Counts read **by symbol** at `HEAD = a8904637`, not from the design doc's numbers:
 
 | registry | file:line | rows read | vs the rc.17 run |
 |---|---|---|---|
@@ -164,7 +164,7 @@ $ jigc --format json start          -> 0   keys ['header','next_steps','schema_v
 DECLARED (render.rs) Clean:              ['header','next_steps','schema_version','state','workflows']
 The open row is the composition where `OFF_CATALOG_VERBS ∩ pack.list(Workflows)` is empty; the rc.17 run
 drove it on `fresh --pack-from-dev` with `ingest-existing.yaml` MOVED out, and the producer
-(`orient.rs`, `skip_serializing_if = "Vec::is_empty"`) is unchanged in the `c8cc9187..7d86f99f` range.
+(`orient.rs`, `skip_serializing_if = "Vec::is_empty"`) is unchanged in the `20c18b74..a8904637` range.
 Re-driven here only at the populated arm — recorded as STILL-OPEN on the unchanged producer, not
 re-derived.
 ```
@@ -786,7 +786,7 @@ then asks what those arms cannot:
 ## 12 · Doors covered
 
 Every clap leaf that is the door of ≥1 **driven** row, in `VERB_KINDS` spelling
-(`crates/cli/src/cli.rs:1835`, read at `HEAD = 7d86f99f`). **47 / 47 leaves · uncovered: none.**
+(`crates/cli/src/cli.rs:1835`, read at `HEAD = a8904637`). **47 / 47 leaves · uncovered: none.**
 
 ```
 start · workflow · setup · uninstall · upgrade · ingest · migrate · migrate-corpus · unmanage ·
@@ -813,15 +813,15 @@ are **`task bind`**, **`milestone add-from-spec`** and — for the `CompoundFiel
 # RECONCILIATION — axis 5 · pinned contracts
 
 **Inputs.** The Opus driver's table above (unchanged except the two demotions marked inline) and the
-Codex source pass `codex/axis5-codex.md` — a source-only review at `2d6c6c62`, *"no binary was driven
+Codex source pass `codex/axis5-codex.md` — a source-only review at `645fcb64`, *"no binary was driven
 and nothing was written"*, by its own first line. Its prompt was **not** beside it: no
 `codex/axis5-prompt.md` exists in the run directory (only `axis{2,3,5,6}-codex.md`, their `.stdout` /
 `.stderr` and `rc.txt`), so the pass was reconciled against its own text with no prompt to check it
 against. Stated, not worked around.
 
 **Binary.** `/Users/maurice/.local/bin/jigc` → **`jigc 1.0.0-rc.19`**, asserted before anything else ran.
-Release posture. Repo `HEAD = 7d86f99f` (the driver's; Codex read `2d6c6c62`, five commits earlier —
-`git log --oneline 2d6c6c62..7d86f99f` is the three record/release commits plus the addendum, none of
+Release posture. Repo `HEAD = a8904637` (the driver's; Codex read `645fcb64`, five commits earlier —
+`git log --oneline 645fcb64..a8904637` is the three record/release commits plus the addendum, none of
 which touches `render.rs`, `orient.rs`, `store.rs` or `doc.rs`, so the two passes read the same code on
 every symbol either of them cites).
 
@@ -852,7 +852,7 @@ $ jigc --format json start --workflow single-task --explain > o 2> e; rc=$?
          "workflow","workflow_layer"]
 $ jigc --format json start --explain > o2 2> e2; rc=$?      # the bare form, same shape
   rc=0   stdout 939 bytes   same key set   "workflow":"router","schema_version":3
-registry, read by symbol at HEAD 7d86f99f:
+registry, read by symbol at HEAD a8904637:
 $ awk '/pub const ENVELOPE_ARMS/,/^];/' crates/cli/src/render.rs | grep -c 'EnvelopeArm {'   -> 64
 $ …                                     | grep 'ResolutionTree\|collision_winners\|explain'  -> (none)
 $ …                                     | grep -A1 'path: &\["start"\]'
@@ -950,7 +950,7 @@ triaged to 1.x; outside the cwd arc, carried rather than new.
 | M52 **DEFECT 4** STILL-OPEN — an optional-but-absent leaf converges on the physical `store.no-such-leaf` (`doc.rs:3922-3973`) | source | `doc schema vision --format json` declares `{"id":"grounded-in","type":"ref","to":"research","required":false,"author-required":false,"section":"meta","set-field":"vision:<slug>#meta/grounded-in"}`; `doc show 'vision:vision#meta/grounded-in'` → rc=1, key `{store.no-such-leaf, vision:vision#meta/grounded-in}`, message *"names no leaf `grounded-in` in section `meta`"*, route *"name a field the committed section carries"* — the schema surface advertises the address the read surface calls nonexistent | **CONFIRMED** |
 | M52 **DEFECT 1** CLOSED — `reject_unslugable_title` is asked before any write (`start.rs:80-104`) | source | the driver drove it at §2.1 (5 titles × `milestone create`, exit 1 each, `write.unslugable-title`, HEAD `46c3233 → 46c3233`, clean `git status --porcelain`, `.jigc/milestones` absent). Not contradicted by either pass, so not re-driven | **agreed CLOSED** (driver's repro stands) |
 | M51 **DEFECT A / B / C / D** all CLOSED | source | spot-checked against the driver's §6.1/§6.2 roll-ups rather than taken on either read: **outside any git repo** — `start`·`validate`·`doc list`·`task list` → rc=1, stdout 0 bytes, stderr root `["error"]`; `setup`·`uninstall` → rc=1, stdout 0 bytes, stderr root `["findings","schema_version"]` (the two declared findings-arm leaves the driver names); **cwd deleted under the process** — `start`·`validate`·`doc list`·`task list` → rc=1, `{"error":"cannot determine the current directory: No such file or directory (os error 2)"}`, 0 NOT-JSON, 0 bare-`Finding` roots | **agreed CLOSED**, 10 spot cells consistent with the driver's 94 |
-| the census — *"64 rows over all 47 clap leaves, including its two cross-cutting reject rows"*; *"every CLI JSON stdout serialization found is covered except Claim 1"* | source | the countable half verified by symbol at `HEAD 7d86f99f`: `ENVELOPE_ARMS` = **64** `EnvelopeArm {` rows; `VERB_KINDS` = **47** leaves; the registry's distinct `path:` spellings = **47** real leaves **+ 2 empty-path reject rows**. The negative half (*no other undeclared production arm*) is not drivable as stated — it is a claim over all serialization sites — but the driver's 94 hostile-cwd cells and 180 four-cwd cells returned **0** undeclared shapes, and this pass's `--explain` drive found the one exception both passes name | **counts CONFIRMED; the negative recorded as corroborated-not-proven**, which is what a negative over a code-wide set can be |
+| the census — *"64 rows over all 47 clap leaves, including its two cross-cutting reject rows"*; *"every CLI JSON stdout serialization found is covered except Claim 1"* | source | the countable half verified by symbol at `HEAD a8904637`: `ENVELOPE_ARMS` = **64** `EnvelopeArm {` rows; `VERB_KINDS` = **47** leaves; the registry's distinct `path:` spellings = **47** real leaves **+ 2 empty-path reject rows**. The negative half (*no other undeclared production arm*) is not drivable as stated — it is a claim over all serialization sites — but the driver's 94 hostile-cwd cells and 180 four-cwd cells returned **0** undeclared shapes, and this pass's `--explain` drive found the one exception both passes name | **counts CONFIRMED; the negative recorded as corroborated-not-proven**, which is what a negative over a code-wide set can be |
 
 ### Driver defects — status after reconciliation
 
@@ -1003,7 +1003,7 @@ by 274 driven hostile-cwd and four-cwd cells rather than promoted to a finding o
 ## Doors covered
 
 Every clap leaf that is the door of ≥1 **driven** row in this reconciled file, in `VERB_KINDS` spelling
-(`crates/cli/src/cli.rs:1835`, **47** leaves read by symbol at `HEAD = 7d86f99f`). The two demotions
+(`crates/cli/src/cli.rs:1835`, **47** leaves read by symbol at `HEAD = a8904637`). The two demotions
 remove no door: `(5, C1)`'s door is `start`, which the reconciliation itself drove, and §10's count is a
 tally, not a row.
 
@@ -1057,8 +1057,8 @@ reason at §9.
   span or quoting fence, so every route claim is a claim about **emitted bytes**. Nothing in this
   reconciliation's own drives required running an emitted span; the driver's nine verbatim executions are
   its evidence, unre-run here.
-- **Codex read `2d6c6c62`, the driver `7d86f99f`.** The five-commit gap is release-stamp and record
-  commits; `git log --oneline 2d6c6c62..7d86f99f` touches none of `render.rs`, `orient.rs`,
+- **Codex read `645fcb64`, the driver `a8904637`.** The five-commit gap is release-stamp and record
+  commits; `git log --oneline 645fcb64..a8904637` touches none of `render.rs`, `orient.rs`,
   `engine/src/store.rs` or `doc.rs`, so no citation in either pass is stale. Recorded rather than assumed.
 - **No `axis5-prompt.md` exists** beside the Codex pass, so what the source reviewer was asked could not
   be checked against what it answered. The pass states its own bounds (source-only, no driving, no

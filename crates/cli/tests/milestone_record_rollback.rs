@@ -1524,7 +1524,7 @@ fn add_from_spec_never_drops_a_criterion_from_the_record_at_any_divergence_produ
 // ---------------------------------------------------------------------------
 //
 // T2/T3 above assert that the mint is unwound. They do not ask **what** the unwind removes,
-// and driven at `032dbd93` the answer was *the directory* — a bare `remove_dir_all` over an
+// and driven at `8f0fb833` the answer was *the directory* — a bare `remove_dir_all` over an
 // area a rejecting hook (or any other process) had written into. `.jigc/` is gitignored
 // whole, so those bytes had no second copy: they died at exit 1, named by nothing, on the
 // recovery path jigc's own survivable frame calls re-runnable.
@@ -1577,7 +1577,7 @@ struct MintDoor {
     /// reachability premise — that a plain foreign `docs/*.md` blocks first at
     /// `schema-conformance.unknown-type` — is about the *displacement* door at `task
     /// finalize`, where a validate runs. **No validate runs before a mint unwind**, so the
-    /// plain-file cell is reachable here directly, and at `1d0bd171` it was destroyed at exit
+    /// plain-file cell is reachable here directly, and at `6f4a975a` it was destroyed at exit
     /// 1 and named by nothing while the area-root `.md` beside it survived. The membership
     /// rule is the fix: jigc's own writer emits `<type>:<slug>.md` at every site
     /// (`engine::state::instance_path`), so a colon-less `.md` is something else's.
@@ -1977,7 +1977,7 @@ fn assert_rollback_step_named(
 /// off the area the door just minted and rejects the record commit, so
 /// `engine::state::unwind_area` returns `Err` on the first member it may not remove and leaves
 /// the area **as found** — the state the door's own frame, one line below, calls *"rolled
-/// back"*. Driven at `7f6d6bf3` the whole cell was a `note:` on stderr with a host absolute
+/// back"*. Driven at `dcc8340f` the whole cell was a `note:` on stderr with a host absolute
 /// path in it, and the surviving area was named by nothing: the identical re-run then blocked
 /// on the id this call had already minted — `task.serial-collision` at the `add-task` cell —
 /// with no route from the door that caused it.

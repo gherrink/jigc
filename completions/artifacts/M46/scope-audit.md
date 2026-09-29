@@ -1,7 +1,7 @@
 # Scope audit — M46, the combined pre-1.0 wave
 
 The **Scope phase** of the [milestone-planning workflow](../../../implementation/milestone-planning-workflow.md)
-for M46, run 2026-08-18 against HEAD `4f0b9e6` on binary `1.0.0-rc.11`.
+for M46, run 2026-08-18 against HEAD `b06bf72` on binary `1.0.0-rc.11`.
 
 Its subject is the [scope brief](../RC-1.0-gate/next-wave-scope.md), whose own
 [handover](handover.md) says plainly: *"its ledger dispositions are reasoned but unverified by me.
@@ -12,7 +12,7 @@ exercising the binary turned up that no ledger, brief or trial anticipated.
 subagents exercising the real binary, not the orchestrator reading code — and states that an
 existing recent audit does not discharge it, *even the audit that chartered the milestone*. Four
 `capability-auditor` agents took one slice each, in throwaway repos under the session scratchpad; the
-project repo was untouched throughout (`git status --porcelain` empty at `4f0b9e6`, verified after).
+project repo was untouched throughout (`git status --porcelain` empty at `b06bf72`, verified after).
 Every exit code was measured **unpiped** — redirected to a file, `$?` read directly.
 
 **The gate at HEAD was re-measured, not inherited: 2735 passed / 0 failed, exit 0** — identical to
@@ -598,7 +598,7 @@ finalize asserting writes the task never made) is **[auditor]**-observed, not re
 
 ## 8 · Declared bounds on this ledger
 
-- **This is a verified-at-`4f0b9e6` map, not gospel.** Every disposition above was exercised at one
+- **This is a verified-at-`b06bf72` map, not gospel.** Every disposition above was exercised at one
   sha on one binary.
 - **Provenance is mixed.** Four of the six new defects (N-1, N-3, N-5, N-6) were independently
   reproduced by the orchestrating session — N-5 on a *second language*, which is why it is stated as

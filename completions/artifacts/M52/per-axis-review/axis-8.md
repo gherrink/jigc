@@ -1,4 +1,4 @@
-<!-- M52 per-axis review (re-run) — axis 8 · freeze & migration — RECONCILED · driven on the installed `jigc 1.0.0-rc.16` (built from commit a3eb026b), 2026-09-21. -->
+<!-- M52 per-axis review (re-run) — axis 8 · freeze & migration — RECONCILED · driven on the installed `jigc 1.0.0-rc.16` (built from commit e519e4eb), 2026-09-21. -->
 
 <!-- M52 per-axis review (re-run) — axis 8 · adopter docs & help — RECONCILED (driver table + reconciliation ledger) -->
 <!-- reconciler: drove every Codex claim and both driver defects on the installed `jigc 1.0.0-rc.16`, 2026-09-21 -->
@@ -42,7 +42,7 @@ jigc 1.0.0-rc.16
 
 Release posture. Route-fence panics (`#[cfg(debug_assertions)]`) do not exist here — every row
 below is what an adopter's installed binary does, **after** M52's seven audit fixes
-(`79e54c75` `6d95756c` `fe8f29c4` `c96137e4` `b9ab6a70` `1b036264`, plus the close).
+(`ad527fa4` `6c2de03a` `33bd5692` `68d14cd3` `a83a9e60` `66af090a`, plus the close).
 
 All fixtures built with `dev/jigc-rig <state> --binary /Users/maurice/.local/bin/jigc`, two-step
 eval, states `bare` · `fresh` · `committed-singletons`, one with `--start record-decision
@@ -750,10 +750,10 @@ $ jigc milestone finalize --help | grep -icE 'displac|moved aside|parked'   → 
 $ jigc uninstall --help          | grep -c  'displaced'                     → 1   # the control
 ```
 
-### C-17 — `lead(codex, "zero schema-hash movement 35195f56..HEAD on both shipped manifests")` → **CONFIRMED (repro)**
+### C-17 — `lead(codex, "zero schema-hash movement 577a0099..HEAD on both shipped manifests")` → **CONFIRMED (repro)**
 
 ```
-$ git diff 35195f56..HEAD -- crates/cli/pack/config/schema-manifest.yaml \
+$ git diff 577a0099..HEAD -- crates/cli/pack/config/schema-manifest.yaml \
                              packs/methodology/config/schema-manifest.yaml
 (empty)
 ```

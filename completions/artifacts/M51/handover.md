@@ -7,15 +7,15 @@ transcript**: every decision, correction and drive is committed, and this file o
 
 | | |
 |---|---|
-| HEAD | `fa2710cb`, pushed, tree clean |
-| Gate | **3341 passed / 0 failed**, fmt + clippy clean, measured unpiped via `dev/gate` ([log](../evidence-check-1.0/gate-rc14-at-bd348a83.log), at `bd348a83` — the planning commit on top is docs only) |
+| HEAD | `cd4ba5fa`, pushed, tree clean |
+| Gate | **3341 passed / 0 failed**, fmt + clippy clean, measured unpiped via `dev/gate` ([log](../evidence-check-1.0/gate-rc14-at-74627547.log), at `74627547` — the planning commit on top is docs only) |
 | Binary | `1.0.0-rc.14` installed at `~/.local/bin/jigc`; `target/release/jigc` built from HEAD is the same product code |
 | The 1.0.0 call | **Not taken.** The evidence check found two data-loss defects at exit 0 that no trial reached ([VERDICT](../evidence-check-1.0/VERDICT.md)); the call waits on M51 and its acceptance |
 | M51 | **Planned, settled, reviewed, gate-record filled, decomposed — not built** |
 
 ## What you're running
 
-**`milestone-build` for M51, base `fa2710cb`.** The decomposition has one home and is not restated
+**`milestone-build` for M51, base `cd4ba5fa`.** The decomposition has one home and is not restated
 here: [implementation/roadmap.md](../../../implementation/roadmap.md) → *Milestone 51 … decomposition*
 — eleven increments, risk-first and linear, each with Deliverable / Grouped scope / Proves / the design
 docs it moves / the codes it registers / its flow-52 arm / declared bounds.

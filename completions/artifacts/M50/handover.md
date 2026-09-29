@@ -8,8 +8,8 @@ traps. Written 2026-09-04, the same day as the trial it rests on.
 | | |
 |---|---|
 | Branch | `main`, clean, **pushed** through the trial's last commit |
-| Binary under test | `1.0.0-rc.13` from **`979baca`**, image `jigc-gate:rc13`, gated ([../RC-m50/gate-rc13.json](../RC-m50/gate-rc13.json)) |
-| Host binaries | `target/release/jigc` **is** HEAD's tree (built 20:03). **`~/.local/bin/jigc` is stale** — Sep 1, predates `1799a2d`, same stamp. Reinstall before any host probe: `cargo build --release && install -m755 target/release/jigc ~/.local/bin/jigc` |
+| Binary under test | `1.0.0-rc.13` from **`f266770`**, image `jigc-gate:rc13`, gated ([../RC-m50/gate-rc13.json](../RC-m50/gate-rc13.json)) |
+| Host binaries | `target/release/jigc` **is** HEAD's tree (built 20:03). **`~/.local/bin/jigc` is stale** — Sep 1, predates `d854e25`, same stamp. Reinstall before any host probe: `cargo build --release && install -m755 target/release/jigc ~/.local/bin/jigc` |
 | Gate | green at HEAD before the trial (3171 / 0 / 17); the trial changed no Rust |
 | The 1.0.0 call | **blocked by W-13** until M50 lands; then the human's |
 | This repo | still **not self-hosted** — the port follows 1.0.0 (M49's order stands) |

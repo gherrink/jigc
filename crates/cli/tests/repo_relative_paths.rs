@@ -541,7 +541,7 @@ fn no_read_or_config_door_prints_the_host_path_of_the_machine_it_ran_on() {
 /// (`completions/artifacts/M53/settle-record.md` → §9). The predicate is **existence, never a
 /// parse**, so a legitimate area whose pin is torn, corrupt or unreadable passes the door and
 /// still fails the read — and both of those arms named the pin with the host path of the
-/// machine they ran on, driven on the debug binary at `b8ae481c`:
+/// machine they ran on, driven on the debug binary at `df1ae40b`:
 ///
 /// ```text
 /// malformed base pin at "/private/var/folders/nj/…/repo/.jigc/tasks/probe-the-pin/base.json"
@@ -1044,7 +1044,7 @@ const GUARDED_SRC: &[&str] = &[
 /// **[Struck 2026-09-23 (M53 post-review-fix review, LOW 9).** The sixth row, `adapter.rs`'s
 /// *"the `{{worktree}}` substitution in a spawn template"*, is gone because its site is: the
 /// `#[allow(dead_code)]` `render_spawn` it described was deleted rather than corrected, its
-/// spelling being the repo-relative one `efe16554` had declared broken. The count fence caught
+/// spelling being the repo-relative one `a8318211` had declared broken. The count fence caught
 /// the row the moment the site went — which is the whole point of counting it.**]
 const UNSWEPT_PRODUCERS: &[(&str, usize, &str)] = &[
     (

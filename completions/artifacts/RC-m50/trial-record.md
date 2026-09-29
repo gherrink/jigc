@@ -1,6 +1,6 @@
 # The pre-v1 trial on `1.0.0-rc.13` — record
 
-**Binary:** `1.0.0-rc.13` from `979baca`, in `jigc-gate:rc13` ([gate-rc13.json](gate-rc13.json)).
+**Binary:** `1.0.0-rc.13` from `f266770`, in `jigc-gate:rc13` ([gate-rc13.json](gate-rc13.json)).
 **Run:** 2026-09-04, by the session that verified the handover. **Protocol:** [protocol.md](protocol.md),
 pre-registered before any session. **Status:** complete — the headless arms, the walk, the migration pair, and both interactive arms (B1,
 B2) are run and adjudicated; the headline is at its full N.
@@ -77,7 +77,7 @@ step names the verb, so this is compliance.
 | 0.3 `planning-record` 14 gates block | **B4-s** (blocked twice at `task validate` on unfilled gates, then filled) · walk 19 | **yes, 4/4**, and a blind worker filled all fourteen against evidence it gathered itself |
 | 0.4 `--workflow <unknown>` before the mint | walk 12 · verify-pair | yes |
 | 0.5 the rc.12 corpus migration | walk 21 | yes, 4/4 — stamp-only, `migrate-corpus` first |
-| 0.6 `1799a2d` the boundary tightening | walk 14 → 21 | yes, 4/4 on substance; **the text render drops the code prefix (W-1)** |
+| 0.6 `d854e25` the boundary tightening | walk 14 → 21 | yes, 4/4 on substance; **the text render drops the code prefix (W-1)** |
 | 0.7 `setup` exit 0 over a shadow | walk 13 | **0/4** — the declared bound, measured |
 | 0.8 `describe --commands` union | walk 18 · verify-pair | yes |
 | 0.9 the empty-id class | walk 17 | **no** — W-13 |

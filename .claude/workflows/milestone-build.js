@@ -646,7 +646,7 @@ for (const inc of increments) {
     //     result` has a `mod tests`, so cargo prints `test result::tests::alpha ... ok`.
     //     Measured on `cargo test -p engine --lib`: 17 matches, 16 of them names and 1 a
     //     real summary — i.e. evidence with zero real summaries could still pass.
-    // Same undelimited-match bug, second site: 4171e10 fixed it in dev/gate's own counting
+    // Same undelimited-match bug, second site: 03abf34 fixed it in dev/gate's own counting
     // awk (33 binaries reported for a 17-binary run) by matching fields instead.
     // The binary count is deliberately NOT hard-coded here — it is derived inside dev/gate
     // from the run itself; pinning it would only mint a drift point against tests/groups/.

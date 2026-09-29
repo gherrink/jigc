@@ -9,7 +9,7 @@ The classification axis is **working vs record**, and it assigns each side a *ho
 - **The record lives OUTSIDE `.jigc/`**, at a legible committed home — reconciled, `jigc doc show`-able, migratable, uniform with every other managed artifact.
 - **`.jigc/` is a pure working directory** — WIP staging, per-machine caches, worktrees. Gitignored as a matter of **identity**, not convenience.
 
-Today (verified at HEAD `f372b2b`) the milestone's authoritative state is raw engine JSON in gitignored `.jigc/milestones/<id>/`: `base.json` (`{sha, short}` base-pin, read by `engine::milestone.rs::read_base_pin`) + `tasks.json` (`{tasks: [<sub-task-id>, …]}` ordered list, `read_task_list`), with per-task `intent`/`status` in `.jigc/tasks/<id>/`. A teammate cloning the repo cannot see or continue in-flight milestone work — the genuinely-lost-on-clone set (`index`/`state` re-derive on a stateless clone; the milestone record does not).
+Today (verified at HEAD `eaca116`) the milestone's authoritative state is raw engine JSON in gitignored `.jigc/milestones/<id>/`: `base.json` (`{sha, short}` base-pin, read by `engine::milestone.rs::read_base_pin`) + `tasks.json` (`{tasks: [<sub-task-id>, …]}` ordered list, `read_task_list`), with per-task `intent`/`status` in `.jigc/tasks/<id>/`. A teammate cloning the repo cannot see or continue in-flight milestone work — the genuinely-lost-on-clone set (`index`/`state` re-derive on a stateless clone; the milestone record does not).
 
 ## What graduates, and what stays WIP — the split is field-granular
 

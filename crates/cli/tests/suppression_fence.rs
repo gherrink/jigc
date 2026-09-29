@@ -512,7 +512,7 @@ fn retarget_door(pack: &Path, workflow: &str, door: &str) {
 // pack *states* and wrong for one over a *door*: a declared door is the argv
 // the compose-door refusal renders as its `Mechanical` route, whose own check
 // is a **debug-only panic**. So two layers that serve workflow definitions were
-// never parse-checked, and both were driven at `c6b45da0` before this axis was
+// never parse-checked, and both were driven at `dbb35b8c` before this axis was
 // written — `jigc start --workflow <id>` panicked at exit **101** (release:
 // emitted a route that cannot run) for a **project-layer** shadow and for a
 // **manifest-less listed pack** alike.
@@ -703,7 +703,7 @@ fn a_well_formed_door_loads_clean_on_every_layer() {
 /// The finding's own repro, kept as its own cell because the axis above never
 /// composes the workflow whose door is malformed: a project shadow **of a shipped
 /// id** (`single-task`) declaring an unparseable door, named to the compose door
-/// that would render it as a `Mechanical` route. At `c6b45da0` this exited **101**
+/// that would render it as a `Mechanical` route. At `dbb35b8c` this exited **101**
 /// with `a `Route::mechanical` argv must parse against the real CLI` — the fence
 /// having never looked at this layer. It must refuse as a finding instead, in the
 /// debug posture this suite runs in and in release alike.

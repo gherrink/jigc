@@ -2603,7 +2603,7 @@ pub fn commit_failure_route(survived: &str, rerun: &str, surviving: usize) -> St
 /// overwrite a racer's bytes so jigc's own write survives, and `<door>.foreign-bytes`, where
 /// the minted-area unwind declined to remove an area holding a third party's file so the
 /// area survives — and carried them as findings *beside* the frame. Both print inside one
-/// document, so before this the document contradicted itself: driven at `c80b3f8f`,
+/// document, so before this the document contradicted itself: driven at `26d021de`,
 /// `jigc milestone create` said *"nothing of milestone:text-arm-probe survives"* one line
 /// above `milestone.rollback-conflict` naming the record that did.
 ///
@@ -2640,7 +2640,7 @@ fn clause_scoped_to_the_outcome(survived: &str, surviving: usize) -> String {
 /// The recovery instruction's own outcome-dependent half: with something left standing, the
 /// re-run is prescribed **behind** the survivors' routes rather than bare.
 ///
-/// It is not decoration. Driven at `c80b3f8f`, the bare re-run the frame printed was refused
+/// It is not decoration. Driven at `26d021de`, the bare re-run the frame printed was refused
 /// in both shapes — `milestone.record-exists` over the record a `FileCas` swap had left
 /// standing, `task.serial-collision` over the area a `MintedSet` unwind had left standing —
 /// so the frame's third part promised a command the state it had just described forbids.
@@ -2725,7 +2725,7 @@ fn code_fence(content: &str) -> String {
 /// **It rode the envelope only, and that sentence is why the gap shipped** (M52 Increment
 /// 10 / T3, per-axis review row D-1). What stood here was *"a JSON-only key, deliberately:
 /// the standing parity fence runs text → envelope, so an additive envelope key is inside
-/// it"* — true about the **fence** and false about the **surface**. Driven at `9a308b5c`
+/// it"* — true about the **fence** and false about the **surface**. Driven at `528f1eda`
 /// on a granted-and-unused changelog gate, the forecast's agent arm printed its title, its
 /// `would commit — …` line and `added c.txt`, and named no finding at all, while the
 /// envelope three bytes away carried `changelog-recording.gate-granted-unused`: an agent
@@ -5932,7 +5932,7 @@ fn scan_version_tokens(text: &str) -> Vec<String> {
 ///
 /// **Why the choice is the code's and not the door's.** It was the door's until the M52
 /// completion audit, and the audit's own driving is why it no longer is. The contract's
-/// `store.*` sentence asserted these four were keyed everywhere; driven at `c80b3f8f`, five
+/// `store.*` sentence asserted these four were keyed everywhere; driven at `26d021de`, five
 /// doors answered `store.unknown-type` flattened and two answered `store.not-found`
 /// flattened — seven `(door, cell)` coordinates, against the three doors and four
 /// coordinates the finding reported. Two of the five had never been counted at all, and
@@ -5985,7 +5985,7 @@ pub const ENVELOPE_OWED_CODES: &[&str] = &[
 ///
 /// **[Corrected 2026-09-21 (M52 completion audit, fix 4).** *"Those refusals take
 /// `envelope_finding_error` instead"* made the obligation a **choice made at each door**,
-/// and driven at `c80b3f8f` seven `(door, cell)` coordinates had not made it: the
+/// and driven at `26d021de` seven `(door, cell)` coordinates had not made it: the
 /// contract's `store.*` sentence claimed four codes were keyed everywhere while
 /// `jigc migrate --as`, `jigc relocate`, `jigc rename`, `jigc task bind` and
 /// `jigc milestone add-from-spec` flattened `store.unknown-type`, and `rename` and

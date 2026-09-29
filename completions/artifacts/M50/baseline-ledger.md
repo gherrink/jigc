@@ -1,6 +1,6 @@
 # M50 — the baseline ledger
 
-**Verified at `HEAD = d9e91f1`** (branch `main`, clean tree), driven against the **release** binary
+**Verified at `HEAD = cdce9fc`** (branch `main`, clean tree), driven against the **release** binary
 `target/release/jigc` (`1.0.0-rc.13`, rebuilt at HEAD before probing; the host `~/.local/bin/jigc`
 was reinstalled from the same tree, closing the handover's stale-binary trap). Fixtures from
 `dev/jigc-rig <state> --binary target/release/jigc`. Debug posture was used nowhere.
@@ -231,7 +231,7 @@ arm blocks at both doors with nothing committed). **The pack composition is 0 % 
 serial rule, `triage.yaml` has no `add-task` line. Two riders the cut does not price: **N12** (the
 ack a fix-round orchestrator reads is wrong on exactly the prescribed knob) and **N20** (a dirty
 main is the *normal* state a fix round runs in, and that refusal has no code, no route, no frame).
-Also: `milestone_boundary_gate.rs` **pre-stages** the commit doc, so `1799a2d`'s acceptance runs on
+Also: `milestone_boundary_gate.rs` **pre-stages** the commit doc, so `d854e25`'s acceptance runs on
 a fixture that skips the provisioning barrier every real fan-out must cross.
 
 ---
@@ -278,11 +278,11 @@ issued against a variable path at any point.
 
 ## 7 · Dispositions — appended 2026-09-07 (M50 Increment 13 / T2)
 
-**Appended, not merged.** §§0–6 above are a dated record of what was driven at `d9e91f1` and stay
+**Appended, not merged.** §§0–6 above are a dated record of what was driven at `cdce9fc` and stay
 one; this section is a second dated record of what the wave then *did* about each row. Where the two
 disagree, the disagreement is stated here rather than edited out of the prose above.
 
-**Posture.** Every verdict below was **driven at `HEAD = 061e7a3`** against the **release** binary
+**Posture.** Every verdict below was **driven at `HEAD = 4080fa6`** against the **release** binary
 `target/release/jigc` (rebuilt at that HEAD) on `dev/jigc-rig` corpora, unless a cell says *source
 read*. **Eleven** of D14's nineteen were disposed by earlier increments — the plan said twelve — and
 each is cited to the increment **and task** that took it; each was also **re-driven here** rather

@@ -2,7 +2,7 @@
 //! stops being rebuildable** (`implementation/roadmap.md` → M49 Increment 2, bullet 4;
 //! `design/team-ready-state.md` → The lifecycle / the per-op record-only-door transaction).
 //!
-//! Driven at `ddbd217`: `jigc task discard <sub-id>` removed the sub-task's working area,
+//! Driven at `bbba84a`: `jigc task discard <sub-id>` removed the sub-task's working area,
 //! exited 0, and left the committed record saying `- status: active` for it forever — the
 //! team-ready record lying about work that was abandoned. And because
 //! `engine::milestone::reseed_sub_task_areas` filtered on the **area's absence** alone,
@@ -669,7 +669,7 @@ fn ordinary_task(repo: &Path, home: &Path) -> String {
 }
 
 /// **Arm 4 — an unreadable record is never read as "no record names this task".** Driven at
-/// `3778161`, where `recording_milestone` `continue`d past a record it could not read or
+/// `4210c08`, where `recording_milestone` `continue`d past a record it could not read or
 /// parse, returned `Ok(None)`, and `task discard` deleted the sub-task's working area **at
 /// exit 0** while the committed record went on calling it `status: active` — the exact lie
 /// this door exists to close, surviving on the door itself, and silently, while every sibling

@@ -1,4 +1,4 @@
-<!-- M51 per-axis review — axis 2 · reconciled · driven on the installed `jigc 1.0.0-rc.15` (commit 35195f56), 2026-09-16 -->
+<!-- M51 per-axis review — axis 2 · reconciled · driven on the installed `jigc 1.0.0-rc.15` (commit 577a0099), 2026-09-16 -->
 
 # M51 per-axis review — AXIS 2 · posture — RECONCILED
 
@@ -19,8 +19,8 @@ eval, one fresh rig per posture cell (no `rm -rf` anywhere; every root is a `mkt
 was extended through the binary with a live task (`jigc start … --workflow decided-task`) and a
 milestone with one sub-task (`milestone create` + `milestone add-task`) **before** the posture was
 induced, so every door's argv is runnable and the posture is the only thing it can fault on.
-**The fixed binary:** the four M51 audit fixes (`8a42fbbd` routes, `b5ccd818` orphan territory,
-`0fc80bab` setup guard, `dc508994` LOWs) are all in `rc.15`; the setup guard
+**The fixed binary:** the four M51 audit fixes (`6c2391c0` routes, `da5173a1` orphan territory,
+`ff2bde99` setup guard, `507c332d` LOWs) are all in `rc.15`; the setup guard
 (F2) shows up in this axis as a real interaction and is recorded as a cell, not as noise.
 
 ---

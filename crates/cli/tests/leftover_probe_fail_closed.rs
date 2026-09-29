@@ -28,7 +28,7 @@
 //!
 //! **N8's axis is the removal's *cause of failure*, not the leftover's shape** (M50 Increment
 //! 12 completion audit). The first pass swept it over `Shape::ALL` alone, and `remove_dir_all`
-//! aimed at a plain file is one cause among many: driven at `ee8c3e2`, one `chmod 555` on a
+//! aimed at a plain file is one cause among many: driven at `1653d3d`, one `chmod 555` on a
 //! leftover directory holding a file put the identical defect back at **three** call sites at
 //! once — `jigc milestone provision --force` (exit 1), `jigc uninstall --force` (exit 1) and
 //! `jigc milestone discard --force` over a *registered* worktree (**exit 0**) — each printing
@@ -538,7 +538,7 @@ fn every_refusing_door_answers_every_leftover_shape_and_never_narrates_a_removal
 /// worktrees — which the fixture above deliberately never has, so every cell of the door table
 /// walks straight past it.
 ///
-/// Driven at `ee8c3e2` it carried N8 in its worst form: `jigc milestone discard --force` over a
+/// Driven at `1653d3d` it carried N8 in its worst form: `jigc milestone discard --force` over a
 /// read-only registered worktree printed *"the fan-out worktree is the only copy of these bytes
 /// — they are not recoverable"*, git's removal then failed with `Permission denied`, and the
 /// door **exited 0** — the one cell of the class where the operator is told their work is gone
@@ -597,7 +597,7 @@ fn a_registered_worktree_the_teardown_cannot_remove_is_not_narrated_as_gone() {
 /// **The same rule at `jigc uninstall`'s other two subjects.** The teardown narrates three
 /// things — the fan-out worktrees, the open tasks' staged prose, and the rest of the workbench
 /// split on recoverability — and all three were printed *before* `remove_dir_all(.jigc)` ran.
-/// Driven at `ee8c3e2` over a `.jigc/` whose bits make the removal impossible, the door
+/// Driven at `1653d3d` over a `.jigc/` whose bits make the removal impossible, the door
 /// therefore reported the whole workbench as destroyed and exited 1 with every byte in place.
 ///
 /// The removable control run is the other half: a teardown that succeeds must still name what
@@ -769,7 +769,7 @@ fn claimed_contents(said: &str, printed: &str) -> Vec<String> {
 /// **EC-17 — one leftover shape, one subject, at every destroying door: the symlink cell**
 /// (M51 Increment 9 / T2).
 ///
-/// Driven at `bec05f02` over ONE planted state — a symlink at a sub-task's worktree path
+/// Driven at `83924730` over ONE planted state — a symlink at a sub-task's worktree path
 /// pointing at the repository's own committed `docs/` — the doors disagreed about what was
 /// there, and the half that disagreed is the half an operator reads while consenting to a
 /// permanent deletion:
@@ -902,7 +902,7 @@ fn a_symlink_leftover_is_one_shape_at_every_destroying_door_and_the_target_survi
 /// `Absent`, and `Absent` is the one answer `probe_leftover` returns `None` for — *provably
 /// safe to delete*.
 ///
-/// Driven at `ffb4064c` over a provisioned fan-out with `chmod 000 .jigc/worktrees`,
+/// Driven at `4572ca7c` over a provisioned fan-out with `chmod 000 .jigc/worktrees`,
 /// `jigc milestone discard <id>` exited **0** with an empty stderr, settled the record and
 /// removed the milestone workbench, while both sub-task worktrees stayed on disk holding
 /// uncommitted work `git worktree list` no longer named — an irreversible settle taken over

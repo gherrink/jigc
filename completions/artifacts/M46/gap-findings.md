@@ -1,7 +1,7 @@
 # Gap findings — M46, the Detect-gaps pass
 
 The **Detect gaps** phase of the [milestone-planning workflow](../../../implementation/milestone-planning-workflow.md)
-for M46, run 2026-08-18 at HEAD `4f0b9e6` on `1.0.0-rc.11`. Four adversarial probes — decisions,
+for M46, run 2026-08-18 at HEAD `b06bf72` on `1.0.0-rc.11`. Four adversarial probes — decisions,
 docs, doctypes, capabilities — each carrying the three cross-cutting hunts (cheap-vs-robust against
 the vision's committed trajectory · foreclosed-by-doc · prior-art-reconciled).
 

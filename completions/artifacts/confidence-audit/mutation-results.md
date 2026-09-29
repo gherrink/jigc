@@ -6,20 +6,20 @@ Working tree: never modified by the runs (cargo-mutants copies the tree to /var/
 **Substrate note (important):** the audit spans TWO revisions, because the back-sweep fix
 wave landed *while the run was in flight*:
 
-- **Run 1** copied the tree at **271454b** (the assigned HEAD) — 123/174 mutants adjudicated
+- **Run 1** copied the tree at **5b7ed10** (the assigned HEAD) — 123/174 mutants adjudicated
   before the run was killed (collateral of stopping a progress-monitor task).
-- **Run 2** (`--iterate`, same output dir) copied the tree at **e393dfb**, which includes
-  **c71f181** `fix(cli): rollback captures survive a mid-promote/mid-retire finalize failure`
+- **Run 2** (`--iterate`, same output dir) copied the tree at **91d9ca6**, which includes
+  **4ea6a7a** `fix(cli): rollback captures survive a mid-promote/mid-retire finalize failure`
   (+267 lines in `crates/cli/src/task.rs` — one of the mutated seam files). Its discovery
   grew to **192** mutants (the fix added code inside mutated functions: 174 + 18 new).
-  Run 2 tested **76** = 51 not-yet-tested + 7 run-1 MISSED retests + 18 new-from-c71f181.
+  Run 2 tested **76** = 51 not-yet-tested + 7 run-1 MISSED retests + 18 new-from-4ea6a7a.
   The 116 run-1 caught/unviable were excluded by `--iterate` and NOT retested against the
-  new tree — their verdicts are 271454b verdicts (caveat below).
+  new tree — their verdicts are 5b7ed10 verdicts (caveat below).
 
 ## Command lines
 
 ```
-# discovery/count (271454b):
+# discovery/count (5b7ed10):
 cargo mutants --list -f <9 seam files> -F '<seam-fn regex>'        # → 174
 
 # run 1 (killed at 123 outcomes) and run 2 (--iterate) — identical except --iterate:
@@ -51,7 +51,7 @@ mutants. Baseline: 28s build + 200s test (all workspace tests, green); auto time
 | item-slot ceiling seam (M45 Inc 2) | `is_reserved_depth`, `ceiling_violations` (read side); `validate_after`, `set_gated_item_slot`, `locate_item_region`, `set_slot_validated`, `set_field_validated`, `reparse_or_reject` (write side) | engine/src/parse.rs, engine/src/write.rs |
 | shared id-from adjudicator | `id_from_enum_violation` | engine/src/validate.rs |
 
-## Results — run 1 (271454b substrate, 123/174 tested)
+## Results — run 1 (5b7ed10 substrate, 123/174 tested)
 
 **caught 87 · missed 7 · unviable 29 · timeout 0**
 
@@ -83,7 +83,7 @@ non-empty-at-stage-0. One-line test change. (Class note: this is the only
 `starts_with("D ")` porcelain assertion in the tree, but any porcelain X-column assertion
 routed through a trimming helper has the same blindness.)
 
-Substrate caveat: c71f181 (landed mid-run) reworked this function's captures; run 2 retests
+Substrate caveat: 4ea6a7a (landed mid-run) reworked this function's captures; run 2 retests
 the sibling against the new code — see the run-2 section for whether it now dies.
 
 #### 2. `cli/src/doc.rs:3594` — `bind_role_on_copy_in`: `e.doc_type == addr.type && !e.as_role.is_empty()` → `||` — **(a) GENUINE GAP, rank #2**
@@ -171,7 +171,7 @@ extensionally identical at that point. No input can distinguish them. (The `s > 
 *behavior* itself — the future-stamp block — is pinned caught: the sibling mutants on the
 arm were killed, see caught.txt.)
 
-## Results — run 2 (e393dfb substrate, `--iterate`, 76 mutants, 62 min)
+## Results — run 2 (91d9ca6 substrate, `--iterate`, 76 mutants, 62 min)
 
 **caught 42 · missed 8 · unviable 13 · timeout 13**
 
@@ -245,9 +245,9 @@ a genuine hang.
 
 The 3 pass-3 MISSED:
 
-#### 11. `cli/src/task.rs:2795` — `rollback_promotions` un-stage guard `==` → `!=` (the e393dfb sibling of finding #1) — **(a), merges into finding #1**
+#### 11. `cli/src/task.rs:2795` — `rollback_promotions` un-stage guard `==` → `!=` (the 91d9ca6 sibling of finding #1) — **(a), merges into finding #1**
 
-Confirms finding #1 against the POST-c71f181 code: the guard is byte-identical at HEAD
+Confirms finding #1 against the POST-4ea6a7a code: the guard is byte-identical at HEAD
 (only shifted +32 lines) and the pinning test's trimmed-porcelain oracle still cannot see
 the index axis. One finding, verified on both substrates.
 
@@ -340,10 +340,10 @@ success; observed as a false mutant catch. Fix the generator or accept the typed
 
 ## Caveats
 
-- The 116 run-1 caught/unviable verdicts were not retested against e393dfb (c71f181
+- The 116 run-1 caught/unviable verdicts were not retested against 91d9ca6 (4ea6a7a
   changed cli/src/task.rs). For the non-task.rs seams the two trees are identical, so
   those verdicts transfer; the task.rs caught-set should be re-read as "caught at
-  271454b" — run 2's 18 new mutants cover the code c71f181 added.
+  5b7ed10" — run 2's 18 new mutants cover the code 4ea6a7a added.
 - Run 2's 13 timeouts were load-suspicious (4 parallel workers against a timeout
   calibrated on an idle baseline, plus the sibling fix-wave session's gates running
   concurrently): nine of them are pure route-string mutants in `route_schema_conformance`

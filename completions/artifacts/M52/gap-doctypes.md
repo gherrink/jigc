@@ -1,6 +1,6 @@
 # M52 gap probe — dimension `doctypes`
 
-Binary `~/.local/bin/jigc` = `jigc 1.0.0-rc.15`, repo HEAD `85ad06c5`, tree unmodified, **no cargo run**.
+Binary `~/.local/bin/jigc` = `jigc 1.0.0-rc.15`, repo HEAD `7637a46f`, tree unmodified, **no cargo run**.
 Rig states: `fresh`, `fresh --pack-from-dev --schema adr <manufactured>`, `committed-singletons`. Every
 root from `mktemp -d`; nothing written into the working repo. *driven* / *read* marked per claim.
 

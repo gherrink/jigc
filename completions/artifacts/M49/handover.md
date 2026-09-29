@@ -8,7 +8,7 @@ to do in what order. The charter is *what*; this is *where you are standing*.
 | | |
 |---|---|
 | Branch | `main`, clean, **not pushed** |
-| Binary | `1.0.0-rc.12`, built from `314f59e` |
+| Binary | `1.0.0-rc.12`, built from `5ff85ea` |
 | Images | `jigc-gate:rc10`, `rc11`, **`rc12`** — rc12 gated, 7/7, record at [../RC-1.0-final/gate-rc12.json](../RC-1.0-final/gate-rc12.json) |
 | The 1.0.0 call | **the human's, unblocked** — the trial found no blocking findings |
 | This repo | **not self-hosted.** No `.jigc/`, no `docs/roadmap.md`. Every port claim assumes that migration happens first |

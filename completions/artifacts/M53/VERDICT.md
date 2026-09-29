@@ -1,17 +1,17 @@
 # M53 — the rc.17 fix pass: completion verdict
 
 **Verdict: COMPLETE — built, audited, seven findings confirmed live and fixed axis-complete, re-verified
-3904 passed / 0 failed.** Written 2026-09-22 after the last fix commit (`5702bf4f`), before the version
+3904 passed / 0 failed.** Written 2026-09-22 after the last fix commit (`b8d3f7bb`), before the version
 bump — the bump is the next act and is not claimed here.
 
 | | |
 |---|---|
-| Planned | 2026-09-21 at `5d9fd714` ([settle record](settle-record.md) D1–D5 + §1–§14 · [gate-record](planning-gate-record.md) · [acceptance design](acceptance-design.md)) |
-| Built | 36 commits, six increments, each independently validated clean by the harness (`wf_6b6da729-238`; one transient halt on a 529, resumed with the same args, no dirty tree) — the build's close at `45427083`, fold-back reading *built, not audited* |
+| Planned | 2026-09-21 at `73737faa` ([settle record](settle-record.md) D1–D5 + §1–§14 · [gate-record](planning-gate-record.md) · [acceptance design](acceptance-design.md)) |
+| Built | 36 commits, six increments, each independently validated clean by the harness (`wf_6b6da729-238`; one transient halt on a 529, resumed with the same args, no dirty tree) — the build's close at `f664863a`, fold-back reading *built, not audited* |
 | Audited | code review ([audit/code-review.md](audit/code-review.md)): **1 MEDIUM · 4 LOW**, no HIGH; e2e ([audit/e2e.md](audit/e2e.md)): **7 of 8** scenarios green, **1 defect** |
-| Fixed | seven commits, four fixers one at a time: `4a8cec2d` · `620c1644` · `1e68662f` · `33ab0f76` · `2cb2c29f` · `c00fdd97` · `5702bf4f` — every finding confirmed by driving the built binary before any fix, the two headliners re-driven by the orchestrator; the seventh is a carried bound the human chose to close rather than carry |
+| Fixed | seven commits, four fixers one at a time: `c9fc0d41` · `5672e32f` · `e15b64e3` · `e9757c94` · `5badfbda` · `5a4d12d6` · `b8d3f7bb` — every finding confirmed by driving the built binary before any fix, the two headliners re-driven by the orchestrator; the seventh is a carried bound the human chose to close rather than carry |
 | Re-verified | `dev/gate` bare: probe · fmt · clippy · build · test all exit 0 — **3904 passed / 0 failed** over 17 test binaries (build close 3898; +6 are the fixes' arms) |
-| The boundary | `git diff 5d9fd714..HEAD --stat` over both packs' schemas, both manifests and both `schema-snapshots/` trees: **empty**. Zero schema-hash movement, zero `schema-version`s, zero corpora, zero `contract-version`s, zero envelope keys; the **634 goldens byte-unmoved** across the whole pass (the code reviewer's own check) |
+| The boundary | `git diff 73737faa..HEAD --stat` over both packs' schemas, both manifests and both `schema-snapshots/` trees: **empty**. Zero schema-hash movement, zero `schema-version`s, zero corpora, zero `contract-version`s, zero envelope keys; the **634 goldens byte-unmoved** across the whole pass (the code reviewer's own check) |
 
 ## What the pass claimed, and whether it is true of what shipped
 
@@ -42,7 +42,7 @@ registries.** Written as a string literal at `task.rs:3961`, in neither `TASK_AR
 `finalize.foreign-bytes` fired over jigc's own file and `task discard` + `uninstall` **refused at exit 1
 over nothing foreign**, at both area kinds, with the narration's count off by one. Planning saw the name
 and disposed it on *"removed before phase 7"* — falsified by the pass's own fault model. Flow 54 was green
-because arm 2 counted plants, never the complement's contents. **Fixed at `4a8cec2d`:** `FINALIZE_MESSAGE_FILE`
+because arm 2 counted plants, never the complement's contents. **Fixed at `c9fc0d41`:** `FINALIZE_MESSAGE_FILE`
 joins both registry rows, the writer uses the constant, three tests proven red first (one of them had
 **pinned the defect as expected output**), arm 2 gains *an area left standing holds no file jigc wrote*.
 **Class derived, not taken:** exactly one literal outside the registries; `write_atomic`'s
@@ -52,12 +52,12 @@ The secondary host-absolute path on the same statement fixed through `render::re
 **MEDIUM — `owning_milestone` still asked `is_dir()`.** The one production reader of `.jigc/milestones/`
 Increment 3 did not convert: a pin-less milestone directory holding a `tasks.json` claimed a **live** task
 as its sub-task, so `task finalize` refused and routed at a `milestone finalize` that answered *leftover*
-— a live task with staged prose had no commit boundary but `task discard --force`. **Fixed at `620c1644`**
+— a live task with staged prose had no commit boundary but `task discard --force`. **Fixed at `5672e32f`**
 at the seam (the shared `carries_base_pin`, never a second copy); the class held at **one** un-fixed
 reader, but the finding's **five consumers were ten**. Proven red through a real landed boundary whose
 teardown faulted after the pin — no hand plant — with a control that a pinned milestone still claims.
 
-**The four LOWs** (`1e68662f` · `33ab0f76` · `2cb2c29f` · `c00fdd97`): flow 54 arm 5's `add-from-spec`
+**The four LOWs** (`e15b64e3` · `e9757c94` · `5badfbda` · `5a4d12d6`): flow 54 arm 5's `add-from-spec`
 cell was vacuous (one criterion, the degenerate one — now three, degenerate second, the unwind asserted
 both halves and falsified by stubbing it); the abandon-route qualifier's *"the operation is all it
 touches"* was **false at six of ten members** (driven: `git *--abort` and `git reset --merge` **destroy**
@@ -87,7 +87,7 @@ binary sim plus the rendered template executed verbatim, which is not that proof
 ## Declared bounds, carried in writing
 
 - ~~**Five pinned route lines under-state what `git *--abort` does to unrelated staged work.**~~ **Closed
-  at `5702bf4f` on the human's call (2026-09-22)**: driven `Discarded`, the five owed a clause by law 1
+  at `b8d3f7bb` on the human's call (2026-09-22)**: driven `Discarded`, the five owed a clause by law 1
   and were left by the L2 fixer only because `SHIPPED_ROUTE_LINES` pins their bytes. Put to the human as a
   surface decision; reworded — one clause per *fate*, not per member — the five pins re-blessed, the
   driven fence made **total** over `InProgress::ALL` (eight members owe a clause and carry one; two are
@@ -117,7 +117,7 @@ row against M52's §A — and then stop. The 1.0.0 call is the human's.
 
 ## Addendum (2026-09-22) — the post-review fix, and the second stamp
 
-**The partial re-review ran** ([per-axis-review/](per-axis-review/README.md), `3c6ec648`): all four of M52's
+**The partial re-review ran** ([per-axis-review/](per-axis-review/README.md), `aedeffde`): all four of M52's
 tier-1 rows **CLOSED**, each driven twice — and **one new tier-1 row**, `(2, DEFECT 1)`: `jigc milestone
 finalize` committed a provisioned sub-task worktree's un-concluded git operation at exit 0, destroying its
 authored message, while every door run *inside* that worktree refused. **Outside M53's ledger** (§14): the
@@ -127,7 +127,7 @@ named only the inside-new-code case; the human decided the outside case the same
 under the milestone, no new milestone** — fix → independent review of the diff → records → the stamp →
 the affected axes re-driven.
 
-**The fix (`986d5e0a`)** — one seam, `repo::adjudicated_breach`: the shipped probe asked over a widened
+**The fix (`3c71da87`)** — one seam, `repo::adjudicated_breach`: the shipped probe asked over a widened
 subject (the main checkout *and* every provisioned worktree the boundary commits from), the main-checkout
 path rewired onto it byte-identically, a worktree refusal naming which one and re-aiming its route as
 `git -C <worktree> …`. **The class was ten of ten `InProgress` members, not the two reported**
@@ -137,7 +137,7 @@ could not land, was worse — the operation landed *inside the sub-task's own co
 
 **The independent review** ([audit/post-review-fix-code-review.md](audit/post-review-fix-code-review.md)):
 **HOLDS WITH FINDINGS — 1 HIGH · 3 MEDIUM · 3 LOW**, every one driven, all seven fixed in seven commits
-(`90110d59` · `2ddcc003` · `64b63bd5` · `312680b1` · `d101ca9d` · `49371315` · `35870a04`), re-verified
+(`7329801b` · `a6711cee` · `de77b686` · `7a44d85d` · `7af8d6b4` · `5da4634a` · `16da362a`), re-verified
 **3918 / 0**. **The HIGH was a carried bound the human overturned**: `milestone discard` tore down a
 worktree whose git dir held a live operation (a `rebase -i` at a `break`, tree clean) at exit 0 with no
 consent and no narration — the fixer had carried it as *a destroying door whose `--force` is its consent*,
@@ -195,21 +195,21 @@ message, `at:` and `(code, target)` staying repo-relative — the *pasteable she
 `jigc_home` too** (from a worktree, `uninstall` had removed the repository-wide hook and left the install
 standing while *all four* of its WIP guards ran inert).
 
-**Two fixers, 9 commits (`057b5642`…`b433875b`); one independent review** ([audit/cwd-fix-code-review.md](audit/cwd-fix-code-review.md)) —
+**Two fixers, 9 commits (`18c4655e`…`21665da0`); one independent review** ([audit/cwd-fix-code-review.md](audit/cwd-fix-code-review.md)) —
 **HOLDS WITH FINDINGS: 2 HIGH · 2 MEDIUM · 7 LOW**, whose diagnosis is the arc's lesson: *the range
 moved paths from relative to absolute and did not re-ask the two questions an absolute raises — does it
 survive a shell, and does everything that consumes it still parse it.* The unquoted `Spawn:` `cd` broke
 on a spaced repo path; the pre-commit hook's awk assumed `git -C <home>` is one field and the
 out-of-band-rename guard **failed open** on a spaced path; five producers still printed a root-relative
 path into the now cwd-based `jigc migrate`; `milestone create`'s base pin was left on the standing
-checkout while the boundary moved. **All eleven fixed** (`ccdfb3d2`…`7bf05636`, 16 commits; two widened —
+checkout while the boundary moved. **All eleven fixed** (`a6d1ae6e`…`e46622d7`, 16 commits; two widened —
 the span fence's head-only blindness had a twin in the quoting fence), then a **confirmation pass**
 ([audit/cwd-fix-code-review-2.md](audit/cwd-fix-code-review-2.md)) confirmed every closure by driving,
 nine of eleven on spaced and `'`/`#`-bearing roots, and found **2 MEDIUM · 5 LOW** — a declared-open
 hook axis one `config set docs-root "my docs"` away, the uninstall site line asserting the opposite of
 what it did in the fan-out cell — fixed before the stamp.
 
-**Counts and bounds.** Gate at the last fix (`1cc5da8d`): **3947 / 0**. The negative fence stayed
+**Counts and bounds.** Gate at the last fix (`4a862b96`): **3947 / 0**. The negative fence stayed
 empty across the whole arc; 6 goldens moved twice, both times the AGENT.md paragraph and nothing else.
 **Carried:** the `jigc migrate` half of a route echoes the token as typed (runs from the cwd it was
 typed in — nothing short of an absolute makes a `jigc <path>` span cwd-free, out of scope); a
@@ -232,7 +232,7 @@ makes jigc unusable by an agent* — and answered it from the 1.x ledger rather 
 **six surface rows** (the hook crying wolf on commits with no rename · orientation silent on posture ·
 the two rename verbs costing every worker 2–3 help reads · `doc show` over a relocated doc routing
 nowhere · `finalize.stage-failed`'s route not copy-runnable · `task finalize`'s displacement printing
-host paths from a linked worktree), landed `1b45707c`…`136a0878` (the hook's inert backstop for the
+host paths from a linked worktree), landed `be40738e`…`b6b1a18f` (the hook's inert backstop for the
 placement family was a *census* bug, not a filter; the displacement class was 8 sites, not 3) — and
 **F-10, the one capability the human chose to build before 1.0.0, bending the no-new-capability rule
 once**: the rc.14 trial's only adapter bypass was a worker who finalized with a wrong summary, found no
@@ -249,7 +249,7 @@ takes a second commit model, `git commit --amend -F` with the tree untouched. `g
 the whole index in silently (driven), so the arm refuses a non-empty index; a hook-rejected amend leaves
 HEAD byte-identical, so the frame's clause is the cheapest in the registry.
 
-**Built in four tasks** (`3c4f4c7a` · `e346efa9` · `d76f80f6` · `48d1d529`) — **task 2 recovered, not
+**Built in four tasks** (`407ebf08` · `9e94ac85` · `9c172b17` · `d9c4bd84`) — **task 2 recovered, not
 authored**: its executor was killed by the weekly API limit between green and commit; classified per the
 harness rule (gate 3958/0 bare, the arm driven end to end) and committed as recovered, then audited row by
 row by its successor, which closed three gaps (the preview lied over a dirty index; `--dry-run` said
@@ -258,7 +258,7 @@ row by its successor, which closed three gaps (the preview lied over a dirty ind
 `ERROR_CODE_REGISTRY` 11→12 · `ENVELOPE_ARMS` 64→66 · dev workflows 17→18 · goldens 634→**646**.
 
 **The independent review** ([audit/f10-code-review.md](audit/f10-code-review.md)) — **HOLDS WITH FINDINGS:
-1 HIGH · 3 MEDIUM · 4 LOW**, all fixed (`4214804b`…`e87835ea`), gate **3978 / 0**, 646 goldens unmoved
+1 HIGH · 3 MEDIUM · 4 LOW**, all fixed (`59aa3887`…`bb252c25`), gate **3978 / 0**, 646 goldens unmoved
 through every fix. **The HIGH was the class that blocked the call after RC-m50**, inside the new
 capability: an amend task that staged a *managed* doc had it **promoted into the worktree while nothing
 was committed**, then baselined — `HEAD:VISION.md` old, `doc show` serving the uncommitted bytes,
@@ -291,7 +291,7 @@ while `task finalize` refused `repo.head-detached`, and the refusal's route `git
 was needed, was told the rule permits the call and one row fails the standard set at the `cd` question,
 and chose one final batch — the five rows, one review, a stamp, and no further re-drive.**
 
-**The batch** (`7081de80`…`a34f910a`): the preview takes the seam's subject for an *ordinary* task in a
+**The batch** (`6281f768`…`3e362bf8`): the preview takes the seam's subject for an *ordinary* task in a
 fan-out worktree while a sub-task keeps the classifier's exemption (its boundary is `milestone finalize`
 from the main checkout — `finalize.md:60` and `posture_subject`'s own doc-comment decide it); the class
 narrowed to **one** door, `task finalize`, because every other committing door binds its act to
@@ -302,7 +302,7 @@ forecast adds; the amend mint refusal names its own exit; the head-shape locus t
 spelling; the settle's one false sentence struck with its datum.
 
 **Its review** ([audit/final-batch-code-review.md](audit/final-batch-code-review.md)) — **HOLDS WITH
-FINDINGS: 0 HIGH · 2 MEDIUM · 2 LOW**, all fixed (`6cf2aab1`…`96f0f937`), gate **3985 / 0**: the new route
+FINDINGS: 0 HIGH · 2 MEDIUM · 2 LOW**, all fixed (`40046113`…`af20dd0e`), gate **3985 / 0**: the new route
 led one step later to a sub-task refusal whose first clause was `cd` into the reader's own cwd — routed at
 the act instead (`git switch --detach <pin>`), keyed on the canonicalized repository root, not the cwd
 (from a subdirectory of the worktree the `cd` *moves* the reader and still resolves nothing); and the

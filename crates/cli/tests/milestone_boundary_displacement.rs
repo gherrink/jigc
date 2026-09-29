@@ -6,7 +6,7 @@
 //! destroying it. The **fifth** destroying door reaches the very same bytes one verb over:
 //! a landed `jigc milestone finalize` removes each sub-task's `.jigc/tasks/<sub-id>/` area
 //! through [`cleanup_subtask_areas`], which was a bare `remove_dir_all` at **both**
-//! `finalize.fan-out.squash` arms. Driven at `af0b5903`, a sub-task's `NOTES.md` and
+//! `finalize.fan-out.squash` arms. Driven at `83bed573`, a sub-task's `NOTES.md` and
 //! `analysis/perf.txt` died there at **exit 0 with an empty stderr** — byte-identical bytes
 //! to the ones the task door now keeps, on the door next to it.
 //!
@@ -790,7 +790,7 @@ fn holds_marker(path: &Path) -> bool {
 /// The cells above all ask what happens to a *plant*. The complement is also what the
 /// advisory **names** and what every later destroying door **refuses over**, so a file jigc
 /// itself wrote that is absent from its own registry row is a lie on one surface and a dead
-/// end at three doors. Driven at `45427083`, the `fault on the pin` cell left
+/// end at three doors. Driven at `f664863a`, the `fault on the pin` cell left
 /// `finalize-message.tmp` — the shared finalize executor's commit-message transient, whose
 /// `msg_tmp_dir` **is** this very area — in the complement of all three standing areas, at
 /// exit 0, named as *a path jigc did not write*.

@@ -1,6 +1,6 @@
 # M44 — the rc.8 wave (the pull tier): completion verdict
 
-**Status: COMPLETE — built + audited clean, 2 advisory-surface findings fixed, re-verified 2195 / 0.** As of 2026-07-21, at HEAD `9f6a67b` (base `04d7feb`).
+**Status: COMPLETE — built + audited clean, 2 advisory-surface findings fixed, re-verified 2195 / 0.** As of 2026-07-21, at HEAD `ec2c4eb` (base `f28bf4e`).
 
 ## The claim proved
 
@@ -24,8 +24,8 @@
 
 ## Findings fixed (completion-triage autonomy — both bounded fix-now)
 
-- **MEDIUM — byte-floor advisory misdirection (`7ee77d1`).** `trivial_source_advisory` fired for every doctype but hard-coded adr-specific advice + the `record-decision` route (which produces an ADR), so a trivial `--as changelog` migration was told to author an ADR — a surface-contract law-1 lie. Fixed by gating the advisory to `--as adr`, restoring the rider to the exact scope of the rc.7 adr placeholder-source loophole it was built for. Red-reproduced through the real binary, then green.
-- **LOW — fidelity guard v-prefix over-rejection (`9f6a67b`).** The word-boundary guard rejected any dotted run preceded by an alphanumeric, so a conventional `v1.0.0` was dropped from both scan sides and never reported. Fixed with a lone-`v`/`V` version-marker exception that still rejects `project-alpha-2.0`/`dev2.0`. Display-only, no gate (Framing A).
+- **MEDIUM — byte-floor advisory misdirection (`aac397b`).** `trivial_source_advisory` fired for every doctype but hard-coded adr-specific advice + the `record-decision` route (which produces an ADR), so a trivial `--as changelog` migration was told to author an ADR — a surface-contract law-1 lie. Fixed by gating the advisory to `--as adr`, restoring the rider to the exact scope of the rc.7 adr placeholder-source loophole it was built for. Red-reproduced through the real binary, then green.
+- **LOW — fidelity guard v-prefix over-rejection (`ec2c4eb`).** The word-boundary guard rejected any dotted run preceded by an alphanumeric, so a conventional `v1.0.0` was dropped from both scan sides and never reported. Fixed with a lone-`v`/`V` version-marker exception that still rejects `project-alpha-2.0`/`dev2.0`. Display-only, no gate (Framing A).
 
 ## Honest bound carried forward
 

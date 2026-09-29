@@ -279,7 +279,7 @@ pub(crate) enum AmendDocDoor<'a> {
 /// **The amend arm's staged-doc gate** (the F-10 review's HIGH-1) — an amend task cannot
 /// carry a doc that **promotes**, because its commit model changes no tree.
 ///
-/// Driven at `48d1d529`: inside an amend task an ordinary `jigc doc set-slot
+/// Driven at `d9c4bd84`: inside an amend task an ordinary `jigc doc set-slot
 /// vision:vision#thesis` acked *"copied in for update — … re-promoted at finalize"* at exit
 /// 0, and `jigc task finalize` then **did** promote it — `try_execute_finalize_plan`'s
 /// promote phase runs over `plan.promotions` on every arm — while `StagePolicy::Amend`
@@ -919,7 +919,7 @@ fn discard_rejection_frame(id: &str, force: bool) -> RejectionFrame {
 /// **The name is not enough: the entry has to be a file** (M52 Increment 4 / T1, defect
 /// L-3). This asked `strip_suffix(".md")` and no shape question at all, so a *directory*
 /// named `<type>:<slug>.md` became a staged identity at every surface reading this probe.
-/// Driven at `ffb4064c` with `mkdir '.jigc/tasks/<id>/docs/fake:thing.md'`: `jigc task
+/// Driven at `4572ca7c` with `mkdir '.jigc/tasks/<id>/docs/fake:thing.md'`: `jigc task
 /// discard` refused naming `fake:thing` and routed at `jigc doc show fake:thing --task <id>`,
 /// which dead-ends at `store.unknown-type`; the forced discard acked *"dropped staged edits
 /// to: fake:thing"*; and `jigc doc list --task` — a 1.0-pinned contract — listed it
@@ -1702,7 +1702,7 @@ pub(crate) fn task_list_route() -> engine::finding::Route {
 /// Four seams used to ask `!dir.is_dir()` in four copies — [`TaskArea::resolve`],
 /// `crate::start::resume_in_repo`, `crate::start::reenter_in_repo` and
 /// `crate::doc::ActiveTask::resolve` — and a directory was therefore a task because it was
-/// a directory. Driven at `766f32ef` over a bare `mkdir .jigc/tasks/leftover`, the four
+/// a directory. Driven at `2e491967` over a bare `mkdir .jigc/tasks/leftover`, the four
 /// disagreed four ways: `jigc task validate` reported *"the task validates clean"* at exit
 /// **0**, `jigc task discard` composed `task-discard.foreign-bytes` (a refusal about bytes
 /// *in a task*), `jigc doc show … --task` answered `store.not-staged` (a statement about a
@@ -1839,7 +1839,7 @@ pub(crate) const MALFORMED_SLUG_HEAD: &str = "store.malformed-slug";
 /// A doc's slug *is* its path component — `<docs-root>/<location>/<slug>.md` — and
 /// [`engine::address`] splits on `:` / `#` / `/` and sanitizes nothing, so until M50 the
 /// slug reached that join with no door asking whether it was a slug. Driven at
-/// `23487ab`: `jigc doc show "research:<absolute path>" --format json` served a file from
+/// `ce5b015`: `jigc doc show "research:<absolute path>" --format json` served a file from
 /// **outside the repository** through the 1.0-pinned read contract at exit 0, and
 /// `jigc rename 'research:../../src/planted' --to "Captured Doc"` committed an arbitrary
 /// source file into the docs root.
@@ -1959,7 +1959,7 @@ pub(crate) const FIXED_IDENTITY: &str = "store.fixed-identity";
 /// **fixed-identity** doctype has ([`engine::schema::Schema::has_fixed_identity`] — the
 /// predicate's one engine home, M52 Increment 6 / T1).
 ///
-/// **The state it refuses, driven at `89ff8232` on the shipped packs.** `jigc doc set-field
+/// **The state it refuses, driven at `cbf7d833` on the shipped packs.** `jigc doc set-field
 /// vision:alpha#meta/grounded-in --value "[research:x]" --task <id>` exited **0** and minted
 /// `.jigc/tasks/<id>/docs/vision:alpha.md` — a staged instance at an identity the store
 /// cannot hold — while `jigc doc list` carried no `alpha` row and `jigc doc show
@@ -2093,7 +2093,7 @@ pub(crate) const SLUG_NAME_CEILING_CODE: &str = "write.slug-name-ceiling";
 ///
 /// **The state it refuses.** A `--slug` value drives a minted identity **verbatim**, and
 /// jigc turns that identity into a single filesystem path component — so a value the OS
-/// cannot name is a value no door can mint from. Driven at `d7ebbeb9` with a 300-byte slug,
+/// cannot name is a value no door can mint from. Driven at `422032b6` with a 300-byte slug,
 /// three of the six doors discovered that at the `write`/`create_dir_all`, after the door
 /// had accepted the value:
 ///
@@ -3959,7 +3959,7 @@ impl TaskArea {
         // door is not a caller of `cli::doc::parse_verb_addr`'s funnel — and **after**
         // the unknown-doctype answer above, so that precedence is unchanged.
         //
-        // Driven at `14b9ebb5` over a manufactured `reads:` role, `jigc task bind vision
+        // Driven at `9961013c` over a manufactured `reads:` role, `jigc task bind vision
         // vision:alpha <task>` exited **0** and wrote `"vision": "vision:alpha"` into
         // `roles.json` — because step 3b below resolves through `canonical_path`, whose
         // placement branch ignores the slug and finds the real committed `VISION.md`. The
@@ -4939,7 +4939,7 @@ fn promote(
 /// a **mutable, gitignored working area** (`.jigc/tasks/<id>/source-path`), and one commit
 /// closure later [`retire`] reads it back and hands it to `std::fs::remove_file`. Between
 /// those two moments the value is caller-supplied *again*, so a guard that only ran at the
-/// door is a guard on the typing, not on the deletion. Driven at `c5f7a85`: rewriting that
+/// door is a guard on the typing, not on the deletion. Driven at `93095bd`: rewriting that
 /// file to an absolute path outside the repository and running `finalize --approve` deleted a
 /// file in another tree at **exit 0**, inside a commit that said it had migrated a document.
 ///
@@ -6201,7 +6201,7 @@ fn work_unit_location(task_id: &str) -> Location {
 
 /// **The root a workbench path is spelled against** — `jigc_home`, never `repo_root`
 /// (M53 — the pre-v1 usability batch, row 6 / the rc.19 per-axis review's `(3, F-A)`; the
-/// rule `crate::milestone`'s module header states, and `2ddcc003` applied there).
+/// rule `crate::milestone`'s module header states, and `a6711cee` applied there).
 ///
 /// Everything under `.jigc/` — a working area, a displaced entry, the transient
 /// `COMMIT_MSG` — belongs to the **main checkout**, which is what `jigc_root`'s parent is by
@@ -6840,7 +6840,7 @@ pub(crate) fn narrate_displacement(outcome: &Displacement) {
 /// subject it was not given"*. The subject **was** given: `cleanup_dir` at both milestone call
 /// sites IS the milestone area, and the removal below is what tears it down. So the
 /// sentence did not decline a subject — it declined to *look* at one it was already
-/// destroying, and driven at `ee6ef91f` a landed `jigc milestone finalize` took an operator's
+/// destroying, and driven at `a4ce1d97` a landed `jigc milestone finalize` took an operator's
 /// `merged/docs/deep.txt` out of a gitignored tree at **exit 0**, with an empty stderr, while
 /// printing `"displaced": []` on a 1.0-pinned envelope.
 fn post_commit(

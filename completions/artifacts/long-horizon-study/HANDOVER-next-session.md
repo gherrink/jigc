@@ -17,8 +17,8 @@ everything you need is below or in the linked files.
    engagement-driven** (jigc forced repair even on edits where the agent ran zero jigc commands).
 2. **The one anti-jigc result (Opus prose drift) is closed.** Opus cleared the anchor gate
    and left stale component *titles* → jigc ended dirtier than static. Fixed with the
-   pack-declared **`title-names-symbol`** check (commit `9d99924`); re-test dropped Opus stale
-   prose **3.0 → 0.5** (commit `1dd5c08`). Read [title-fix-retest.md](title-fix-retest.md).
+   pack-declared **`title-names-symbol`** check (commit `33caa87`); re-test dropped Opus stale
+   prose **3.0 → 0.5** (commit `b2b87bc`). Read [title-fix-retest.md](title-fix-retest.md).
 3. **The general lesson** (now the project's working thesis, in VISION.md proven-section):
    *jigc's value is the salience-independent enforcement of a **checkable surface** — extend
    the checkable surface and the win extends with it.*
@@ -28,10 +28,10 @@ everything you need is below or in the linked files.
 ## This session's commits (on the branch, unpushed)
 
 ```
-ea2ba68 docs(decisions): OAuth token-expiry recorded as a closed known issue
-1dd5c08 study(long-horizon): title-fix re-test — Opus prose 3.0 → 0.5
-9d99924 feat(validate): arch-doc title-names-symbol — close the prose blind spot
-75261a7 study(long-horizon): empirical superiority tested — qualified yes / self-refuting
+0844ea8 docs(decisions): OAuth token-expiry recorded as a closed known issue
+b2b87bc study(long-horizon): title-fix re-test — Opus prose 3.0 → 0.5
+33caa87 feat(validate): arch-doc title-names-symbol — close the prose blind spot
+baad050 study(long-horizon): empirical superiority tested — qualified yes / self-refuting
 ```
 Decisions log: three dated `DECISIONS.md` entries (2026-06-23). VISION.md proven-section updated.
 

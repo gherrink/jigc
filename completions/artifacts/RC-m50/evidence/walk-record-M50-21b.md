@@ -203,7 +203,7 @@ exit **1**
 
 ```
 image      : jigc-gate:rc13 (jigc 1.0.0-rc.13)
-jigc sha   : 979bacaf31cbf513ca8afcb0bade447a88c06ba1
+jigc sha   : f2667709b168a447f14fb348fd04287081b72548
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-m50-mig-c
@@ -421,7 +421,7 @@ finalized 34b8523 — docs: record the M2 completion
   OK    the HIGH-graded record lands
   OK    …stamped 2 at birth
 
-=== 4 · (d) the 1799a2d tightening: the boundary now gates the sub-task's commit doc
+=== 4 · (d) the d854e25 tightening: the boundary now gates the sub-task's commit doc
 
 $ jigc config get finalize.fan-out.squash
 finalize.fan-out.squash = false  (project)

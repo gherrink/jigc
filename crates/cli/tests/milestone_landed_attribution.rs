@@ -3,7 +3,7 @@
 //! `design/finalize.md` → `fan-out` finalize — the two squash modes;
 //! `design/command-output-contract.md` → the pre-1.0 additive-key window).
 //!
-//! Driven at `aa98d1b` before the fix: a two-sub-task `squash: false` milestone lands
+//! Driven at `9b9c0e1` before the fix: a two-sub-task `squash: false` milestone lands
 //! **three** commits, and the `--format json` envelope reported `hash` = the aggregate
 //! alone beside `files: 6` and a six-entry `manifest` **of which that sha owns four** —
 //! the two per-sub-task shas, *the entire product of `squash: false`*, appeared nowhere,

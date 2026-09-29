@@ -30,7 +30,7 @@ The trial supports a narrow result:
 
 It does **not** establish the unrestricted headline “zero data loss, zero corruption, zero regressions, nothing blocking”:
 
-- Four changed surfaces—join’s blocked rendering, both Fix fan-out outputs, and the `1799a2d` milestone boundary—were never reached. [coverage.md:21](</Users/maurice/projects/gherrink-jigc/completions/artifacts/RC-rc14/coverage.md:21>) [coverage.md:32](</Users/maurice/projects/gherrink-jigc/completions/artifacts/RC-rc14/coverage.md:32>)
+- Four changed surfaces—join’s blocked rendering, both Fix fan-out outputs, and the `d854e25` milestone boundary—were never reached. [coverage.md:21](</Users/maurice/projects/gherrink-jigc/completions/artifacts/RC-rc14/coverage.md:21>) [coverage.md:32](</Users/maurice/projects/gherrink-jigc/completions/artifacts/RC-rc14/coverage.md:32>)
 - The root-knob refusal was also untried. [coverage.md:14](</Users/maurice/projects/gherrink-jigc/completions/artifacts/RC-rc14/coverage.md:14>)
 - The trial itself says a `squash:false` boundary remains unmeasured on rc.14. [coverage.md:40](</Users/maurice/projects/gherrink-jigc/completions/artifacts/RC-rc14/coverage.md:40>)
 - F-10 is explicitly classified as a “blocking dead end”; it is placed outside the blocking row only because raw git is deemed an available recovery. [findings-verification.md:299](</Users/maurice/projects/gherrink-jigc/completions/artifacts/RC-rc14/findings-verification.md:299>) [findings-verification.md:318](</Users/maurice/projects/gherrink-jigc/completions/artifacts/RC-rc14/findings-verification.md:318>)
@@ -152,4 +152,4 @@ Fixing the newly found `migrate <path>` defect need not break a pinned JSON shap
 5. Decide whether rollback promises index fidelity or full worktree fidelity; make the implementation and documentation say the same thing.
 6. Exercise the unreached fan-out/join/finalize boundary before claiming “nothing blocking.”
 
-I did not run Cargo, execute the binary, or modify files, as requested. The critical migrate finding is based on direct source tracing rather than a live reproduction. HEAD is `bd348a83`, while the trial binary was built from `21ffc0d4`; the intervening commits shown in the repository history are trial tooling, evidence, tests, and documentation rather than product implementation, but I did not rebuild either revision.
+I did not run Cargo, execute the binary, or modify files, as requested. The critical migrate finding is based on direct source tracing rather than a live reproduction. HEAD is `74627547`, while the trial binary was built from `82075cc3`; the intervening commits shown in the repository history are trial tooling, evidence, tests, and documentation rather than product implementation, but I did not rebuild either revision.

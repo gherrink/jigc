@@ -166,7 +166,7 @@ const ROW_READ_JOINS: &[(&str, usize, &str)] = &[(
 /// its `finalize-message.tmp` is joined onto a working area. It belongs in the remainder all
 /// the same, for the reason its row carries: the registry's members are what a door about to
 /// **destroy** an area must not take, and a name that is gone before that door ever reads the
-/// area is not one of them."* **Falsifying datum, driven on the debug binary at `45427083`:** a
+/// area is not one of them."* **Falsifying datum, driven on the debug binary at `f664863a`:** a
 /// `pre-commit` hook that `chmod 0555`s the task area makes the best-effort
 /// `remove_file(&msg_path)` fail, so the transient is **not** gone before the door reads the
 /// area — `jigc task finalize` landed at exit 0 naming `.jigc/tasks/<id>/finalize-message.tmp`
@@ -247,7 +247,7 @@ const NON_AREA_JOINS: &[(&str, usize, &str)] = &[
         "**[Corrected 2026-09-22 (M53 completion audit, fix 1).** This row read `2` and \
          counted `try_execute_finalize_plan`'s `finalize-message.tmp` beside the `.git` \
          probe, on the ground that *it does not outlive the transaction: it is gone before \
-         phase 7 reads the area*. **Falsifying datum, driven at `45427083`:** the removal is \
+         phase 7 reads the area*. **Falsifying datum, driven at `f664863a`:** the removal is \
          `let _ = std::fs::remove_file(…)`, and a `pre-commit` hook that `chmod 0555`s the \
          area makes it fail — the transient survived into the complement, `task finalize` \
          named it as *a path jigc did not write* at exit 0, and `task discard` then refused \
@@ -546,7 +546,7 @@ impl Drop for TempDir {
 }
 
 /// **The shape space, manufactured and declared so.** S-a…S-j are the baseline's own plant
-/// (`baseline-destroying.md` §1.4), driven through `jigc task discard` at `85ad06c5` and
+/// (`baseline-destroying.md` §1.4), driven through `jigc task discard` at `7637a46f` and
 /// destroyed at exit 0 to the last one; the final three cells are §6's `docs/` rule and
 /// §18's rider (the reachable foreign `docs/*.md` is a **directory** wearing that name).
 ///

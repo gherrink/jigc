@@ -2,7 +2,7 @@
 
 **Written 2026-06-23.** The verdict's named next move — *close the prose blind spot,
 then re-test the capable model* — implemented and measured. The fix
-(`title-names-symbol`, commit `9d99924`) makes the engine **block** when an arch-doc
+(`title-names-symbol`, commit `33caa87`) makes the engine **block** when an arch-doc
 component heading carries a symbol-shaped token that is not the anchored symbol; it
 rides the existing `doc-code` finding path, so `jigc validate`, the finalize floor, and
 the blocking pre-commit hook all enforce it with no hook change. Implementation +

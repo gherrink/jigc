@@ -1,6 +1,6 @@
 # Coverage — every changed surface in exactly one column
 
-[protocol.md](protocol.md) §6, applied to M46's diff (`9cb9b78..a4960f0`).
+[protocol.md](protocol.md) §6, applied to M46's diff (`1d2f146..33b3baa`).
 
 **Three columns, never two.** M47's rule: a two-way split has no way to say *"fenced by a test,
 not by the trial"*, which inflates the probe count and leaves changed lines unexamined. Each

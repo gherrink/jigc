@@ -1,4 +1,4 @@
-<!-- M52 per-axis review (re-run) — axis 4 · destroying doors — RECONCILED · driven on the installed `jigc 1.0.0-rc.16` (built from commit a3eb026b), 2026-09-21. -->
+<!-- M52 per-axis review (re-run) — axis 4 · destroying doors — RECONCILED · driven on the installed `jigc 1.0.0-rc.16` (built from commit e519e4eb), 2026-09-21. -->
 
 <!-- M52 per-axis review (the re-run of M51's instrument) — axis 4 · transaction / rollback — the OPUS DRIVER -->
 
@@ -997,11 +997,11 @@ present on this row as well as the milestone row exactly as the claim states.
 K5–K7 (the declared flattened complement); I did not re-drive those rows, and they carry argv and
 observed arm each.
 
-### CL-11 · zero schema-hash boundary movement since M51's `35195f56` — no shipped schema YAML and neither manifest changed
+### CL-11 · zero schema-hash boundary movement since M51's `577a0099` — no shipped schema YAML and neither manifest changed
 
 **CONFIRMED — source-datum.**
-`git diff --stat 35195f56..HEAD -- '*schema*.yaml' crates/cli/pack/config/schema-manifest.yaml packs/methodology/config/schema-manifest.yaml crates/cli/pack/doctypes packs/methodology/doctypes` → **empty**, and
-`git diff --name-only 35195f56..HEAD | grep -E '\.ya?ml$' | grep -iE 'schema|doctype'` → **empty**.
+`git diff --stat 577a0099..HEAD -- '*schema*.yaml' crates/cli/pack/config/schema-manifest.yaml packs/methodology/config/schema-manifest.yaml crates/cli/pack/doctypes packs/methodology/doctypes` → **empty**, and
+`git diff --name-only 577a0099..HEAD | grep -E '\.ya?ml$' | grep -iE 'schema|doctype'` → **empty**.
 M52's declared boundary held.
 
 ---

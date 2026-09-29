@@ -48,7 +48,7 @@ block per arm **including the ones that did not run**, which is the whole point:
 | `18-surface-batch.sh` | M49 Inc 11: one unknown-doctype answer, not-a-git-repo once, `write.unknown-section` at four write verbs (the section-level `set-field` cell still bare), `RefusalKind::ALL` at `rename`, non-UTF-8 argv, `describe --commands`, S-1/S-4 discharged | `DOCTYPE_DOORS` (15) · `RefusalKind::ALL` (9) |
 | `19-planning-record.sh` | M49 Inc 9: the 14 gates read through the binary, one held out blocks and names itself, filled → lands at `planning-records/` | the schema's own gate set |
 | `20-project-pack-composition.sh` | M49 Inc 6: a listed pack adds a doctype end-to-end, a frozen doctype in it is demoted, `--explain` names the winner — **expected RED on one bar** (a missing catalog blamed on the embedded pack) | a 3-pack composition |
-| `21-migrate-continue-on-rc13.sh` | the rc.13 half: `validate` flips non-zero with `schema-version-current`, `migrate-corpus` lands stamp-only, `HIGH` exits 0, `1799a2d`'s boundary blocks with a `--task` route, `setup` after | — (pairs with `14`) |
+| `21-migrate-continue-on-rc13.sh` | the rc.13 half: `validate` flips non-zero with `schema-version-current`, `migrate-corpus` lands stamp-only, `HIGH` exits 0, `d854e25`'s boundary blocks with a `--task` route, `setup` after | — (pairs with `14`) |
 
 ## The upgrade pairs need three commands, not one
 

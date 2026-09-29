@@ -2424,7 +2424,7 @@ pub enum ArgToken {
     /// Until M51 this variant was payload-free and its doc-comment said, of the five
     /// arguments that do become paths, that *"a path argument is a path the caller
     /// **means** as one, adjudicated by the filesystem and by their own doors"*. Driven,
-    /// the second half of that claim was false at `abd81df`: `jigc migrate` joined its
+    /// the second half of that claim was false at `5688e2c`: `jigc migrate` joined its
     /// `<path>` onto the repository root, read whatever came back and recorded the
     /// spelling as the value `finalize --approve` **deletes** — an absolute path outside
     /// the repository included. Nothing adjudicated it, at that door or at the sink.
@@ -2474,7 +2474,7 @@ pub enum PlainValue {
 /// that list. An allowlist of names is a **finder, not a fence**: a door whose address
 /// argument is named anything else is invisible to it, and one was. `jigc milestone
 /// add-from-spec` takes its address through `spec_addr`, so it carried no
-/// [`DOCTYPE_DOORS`] row, no `<slug>`-head guard ran on it, and driven at `d9e91f1` the
+/// [`DOCTYPE_DOORS`] row, no `<slug>`-head guard ran on it, and driven at `cdce9fc` the
 /// address `spec:../../../../<outside>/planted` **read a file from outside the
 /// repository**, seeded a sub-task from its criteria and landed a commit naming the
 /// foreign source — at exit 0, on the wave whose claim is that no caller-supplied token
@@ -2936,7 +2936,7 @@ pub struct SlugDoor {
 /// so the set is the binary's, not a remembered one.
 ///
 /// Six doors. Five of them refused a malformed override byte-identically from M39
-/// onward; the sixth — `jigc rename` — did not, and driven at `b32def1`
+/// onward; the sixth — `jigc rename` — did not, and driven at `f04fea1`
 /// `jigc rename adr:keeper --to "New Title" --slug '../../src/pwned'` exited **0** and
 /// committed `docs/decisions/keeper.md => src/pwned.md`, after which no `doc list` row,
 /// no `doc show` and no `validate` finding could name the doc again. `crates/cli/tests/

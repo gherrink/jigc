@@ -1,6 +1,6 @@
 # M34 — the corpus-migration detect→block→migrate loop (the dogfood, end-to-end)
 
-**Run 2026-06-25 (pinned at HEAD `c01eea7`).** This artifact is the **productive-go G2
+**Run 2026-06-25 (pinned at HEAD `946333b`).** This artifact is the **productive-go G2
 retirement record** for [roadmap.md](../../../implementation/roadmap.md) → M34 Increment 3. M34
 adds the **per-doc `schema-version` stamp** (schema-declared, engine-valued) to the frozen-v1
 persisted doctypes, the **version-aware migrate-vs-corrupt routing** in the store-scope conformance
@@ -24,10 +24,10 @@ repo, with the **embedded** dev pack (no `JIGC_PACK_DIR`) and the `doc-code` pro
 |---|---|
 | `jigc` sha256 | `e2b482045698a52de7a76c75c821be1682f9a421b83139858f242621efd8b360` |
 | `doc-code` probe sha256 | `b0a413a1cb8fa7fff6ceb85e3fdebc304508c42d76c57447112f4f208ea74304` (unchanged — the probe was untouched across M34; the milestone added no grammar/probe code) |
-| HEAD commit | **`c01eea7`** (`feat(cli): add the jigc migrate-corpus verb + the live v0->v1 stamp dogfood` — the M34 Inc-3 T4 verb). T5 adds only this `completions/artifacts/M34/` record on top, so the shipped binary equals the increment's code HEAD. |
+| HEAD commit | **`946333b`** (`feat(cli): add the jigc migrate-corpus verb + the live v0->v1 stamp dogfood` — the M34 Inc-3 T4 verb). T5 adds only this `completions/artifacts/M34/` record on top, so the shipped binary equals the increment's code HEAD. |
 | Built | `cargo install --path crates/cli --force` (release; `build.rs` builds the eight-grammar `doc-code` probe and embeds it via `OUT_DIR/doc-code` for the `jigc setup` extract path, plus the embedded dev pack incl. `config/schema-manifest.yaml` re-frozen at the M34 stamp); `rustc 1.95.0` |
 | Pinned to | `jigc` **and** its `doc-code` probe sibling to **both** `~/.local/bin/` and `~/.cargo/bin/`. `cargo install` placed `jigc` at `~/.cargo/bin/jigc` (byte-identical to the `target/release/jigc` it co-produced); both `jigc` and its `doc-code` sibling (the `build.rs` `OUT_DIR/doc-code`, byte-identical to `target/release/doc-code`) were copied into both dirs. **All four sha256 identical** — `jigc` identical across both dirs (`e2b48204…`), `doc-code` identical across both dirs (`b0a413a1…`). `which jigc` → `~/.local/bin/jigc`, `which doc-code` → `~/.local/bin/doc-code` (a pinned dir). |
-| Fresh-build cross-check | The pinned `jigc` IS the output of this `cargo install` at `c01eea7` — byte-identical to the `target/release/jigc` it co-produced (same `e2b48204…`); the `doc-code` sibling is byte-identical to the `build.rs`-embedded `OUT_DIR/doc-code` and to `target/release/doc-code` (`b0a413a1…`). (Release `jigc` is **not** stripped, so a *separate* later rebuild yields a different sha — the pin is the bytes this install wrote, not a reproducibility claim.) |
+| Fresh-build cross-check | The pinned `jigc` IS the output of this `cargo install` at `946333b` — byte-identical to the `target/release/jigc` it co-produced (same `e2b48204…`); the `doc-code` sibling is byte-identical to the `build.rs`-embedded `OUT_DIR/doc-code` and to `target/release/doc-code` (`b0a413a1…`). (Release `jigc` is **not** stripped, so a *separate* later rebuild yields a different sha — the pin is the bytes this install wrote, not a reproducibility claim.) |
 | Size | release `jigc` **13.41 MiB** (14 060 376 B), `doc-code` **8.10 MiB** (8 489 160 B). |
 | Invocation | `jigc` from `PATH`, embedded dev pack (**no** `JIGC_PACK_DIR`), `doc-code` resolved as the installed sibling (**no** `JIGC_DOC_CODE_PROBE` — the driver `unset`s it) — the production probe-resolution path. |
 | Driver | [`evidence/drive.sh`](evidence/drive.sh) — a self-cleaning scratch git repo + isolated `$HOME` per corpus; logs in [`evidence/`](evidence/). |

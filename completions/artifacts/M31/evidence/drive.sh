@@ -364,7 +364,7 @@ run_wip_survives() {
 # ARM WIP-SURVIVES-SUCCESS — a SUCCESSFUL squash:true combine (two disjoint-code sub-agents)
 # leaves unrelated MAIN-checkout WIP byte-identical (the success-path twin of WIP-SURVIVES,
 # mirroring crates/cli/tests/flow33_acceptance.rs::flow33_unrelated_wip_survives_successful_combine).
-# The dec61c7 fix lands the combine via `git merge --ff-only`, NOT `git reset --hard` — so
+# The eb3c706 fix lands the combine via `git merge --ff-only`, NOT `git reset --hard` — so
 # unstaged WIP a human is editing in the main checkout rides the fast-forward intact.
 # -----------------------------------------------------------------------------------------
 run_wip_survives_success() {

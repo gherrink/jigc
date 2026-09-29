@@ -6,7 +6,7 @@ binary rather than this document. Written 2026-09-04 by the session that ran the
 exactly the position that produces confident wrong premises; every row below is a lead until the
 baseline drives it.
 
-**Chartered on** [the pre-v1 trial](../RC-m50/trial-record.md) on `1.0.0-rc.13` (`979baca`):
+**Chartered on** [the pre-v1 trial](../RC-m50/trial-record.md) on `1.0.0-rc.13` (`f266770`):
 seven sessions across two transports, a 22-arm walk, the rc.12 → rc.13 migration pair. **One
 finding blocks the 1.0.0 call**; twelve more confirmed and recorded; zero corruption, zero
 regression; the headline **escalated at 1/3 and read by the human** (below). The human's criterion

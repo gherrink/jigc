@@ -308,7 +308,7 @@ const AMEND_TABLE: &[Row] = &[
     // Not a settle row, and here because the settle's shape (D) hands this door a *prose*
     // intent: the id slugs from what the caller typed, so a title that slugs to nothing has
     // to refuse rather than fall back to `amend-<sha7>` and name the task after something
-    // else (the degenerate-title axis; `3c4f4c7a`'s third fix).
+    // else (the degenerate-title axis; `407ebf08`'s third fix).
     Row {
         id: "write.unslugable-title",
         door: Door::Mint,
@@ -1255,7 +1255,7 @@ fn the_head_shape_refusal_names_the_id_the_mint_would_have_taken() {
 /// pre-commit advisory, and the landed residual, which is inert here because the arm supplies
 /// an empty manifest by construction). Both live ones are driven.
 ///
-/// Driven at `48d1d529`: over a dirty worktree both printed *"left-out (unstaged/untracked —
+/// Driven at `d9c4bd84`: over a dirty worktree both printed *"left-out (unstaged/untracked —
 /// **git add** to include)"*, and following that instruction makes the same finalize refuse at
 /// exit 3 with `finalize.amend-index-dirty` — a guidance clause the same binary refuses, which
 /// is the route floor's defect one tier down. The landing run's stem also said *"about to
@@ -1342,7 +1342,7 @@ fn the_amend_arms_sentences_describe_the_amend() {
 /// **Why it is not cosmetic.** The block is the settle's *only* mitigation for the cell it
 /// deliberately refuses to refuse: jigc cannot tell whether `HEAD` is a milestone boundary, a
 /// record-only bookkeeping commit or a foreign commit, so instead of a discriminator it shows
-/// the subject line before the instructions. Driven at `48d1d529`, the resume path — the one
+/// the subject line before the instructions. Driven at `d9c4bd84`, the resume path — the one
 /// five consecutive trials show an agent taking when context is lost — dropped it while the
 /// composed step still said *"read HEAD's subject line in the ack above"*.
 #[test]

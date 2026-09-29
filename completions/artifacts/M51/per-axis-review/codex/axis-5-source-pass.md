@@ -1,4 +1,4 @@
-<!-- M51 per-axis review — axis 5 · Codex source pass, verbatim · read against `jigc 1.0.0-rc.15` (commit 35195f56), 2026-09-16 -->
+<!-- M51 per-axis review — axis 5 · Codex source pass, verbatim · read against `jigc 1.0.0-rc.15` (commit 577a0099), 2026-09-16 -->
 
 ## Claims
 

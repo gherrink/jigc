@@ -27,7 +27,7 @@
 //! `is_file() && staged_doc_id(name).is_some()` — the rule `engine::state` states at
 //! `foreign_area_paths` and the rule `clear_staged_bodies` and `unwind_merged` obey — and
 //! `plan_promotions` asked **neither** leg completely, having no shape leg at all. Falsifying
-//! datum, driven at `6b570fb1`: with the copy loop corrected, a symlink named
+//! datum, driven at `0afc1295`: with the copy loop corrected, a symlink named
 //! `adr:operator-scratch.md` under `merged/docs/` was read **through** by that sweep and its
 //! target's bytes committed as `promoted docs/decisions/operator-scratch.md` at **exit 0**.
 //! Both walks take the shape leg as of this task; see [`SHAPE_PLANTS`].**]**
@@ -103,7 +103,7 @@ const PLANTS: &[(&str, &str)] = &[
 ///   its target's bytes as a managed doc at exit 0.
 ///
 /// Both were made reachable by the selective clear this suite's first test drives: at
-/// `6f333a6e` `materialize`'s unconditional `remove_dir_all(merged/docs)` destroyed them
+/// `0df9c0a6` `materialize`'s unconditional `remove_dir_all(merged/docs)` destroyed them
 /// before any consumer could see them.
 const SHAPE_PLANTS: &[(&str, PlantShape)] = &[
     ("adr:a-directory.md", PlantShape::Directory),

@@ -811,7 +811,7 @@ fn write_axis_pack(dir: &Path) {
 ///
 /// The set it iterates is the **code-side registry**
 /// [`cli::relocate::RelocateRefusal::ALL`], not the six the audit's finding reported: at
-/// `c80b3f8f` six of this door's nine states reached the wire as bare `anyhow` strings
+/// `26d021de` six of this door's nine states reached the wire as bare `anyhow` strings
 /// (`relocate --from ''`, `--from /`, the frozen doctype, the transient doctype, the
 /// occupied destination, the untrackable destination) while three already carried a code —
 /// and a fix that took the reported six would have left the registry a list of what one

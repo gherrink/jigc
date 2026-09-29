@@ -1,6 +1,6 @@
 # `(3, A3-2)` — verified baseline ledger fragment
 
-**Binary:** `/Users/maurice/.local/bin/jigc` → `jigc 1.0.0-rc.16`. Repo HEAD `978577ec`. Every rig: `rig=$(dev/jigc-rig fresh --binary ~/.local/bin/jigc) || exit 1; eval "$rig"` (two-step), `mktemp -d` roots, no teardown. No edits, no commits, no cargo.
+**Binary:** `/Users/maurice/.local/bin/jigc` → `jigc 1.0.0-rc.16`. Repo HEAD `155054cc`. Every rig: `rig=$(dev/jigc-rig fresh --binary ~/.local/bin/jigc) || exit 1; eval "$rig"` (two-step), `mktemp -d` roots, no teardown. No edits, no commits, no cargo.
 
 **Harness correction that invalidates part of the review's own evidence.** In this shell `grep` is a function that execs `ugrep -G --ignore-files --hidden …` — `--ignore-files` honours `.gitignore`, and `.jigc/` is gitignored, so **`grep -rl 'MARKER' .` returns rc=1 whether the byte is there or not**. The review's R-I repro asserts loss with `grep -rl`. I re-drove every negative claim with `command grep` plus `find` plus `git log -S` (control in §1.5). The verdict is unchanged — the bytes really are gone — but the *evidence shape* in `axis-3.md` §3 R-I is unsound and the fixer's acceptance must not copy it.
 
@@ -297,7 +297,7 @@ No overwrite (`free_displacement_path`, `task.rs:5902`, `symlink_metadata`-keyed
 | `design/team-ready-state.md:84` | *The working area's two populations* — the membership home | untouched |
 | `crates/cli/src/milestone.rs:3097` (`DESTROYING_DOORS` doc) | *"Every door **answers for what it removes** ([`PendingLoss`], read before the removal and printed after it, so neither half of the claim can be false) — a door that destroys what it never named is the law-1 half-truth"* | the rule the defect violates; `PendingLoss`' read-before/print-after discipline is the shipped pattern the `Displace` arm does **not** use |
 | `crates/cli/src/milestone.rs:3081` (`Disposition::Displace`) | *"**Keep it**: move it aside with its relative path preserved, and name where it went"* | the contract; a fix should make the variant's statement true rather than reword it |
-| `design/finalize.md:215` (the M52 rollback table) | already records the precedent: *"at `032dbd93` the unwind was a bare `remove_dir_all`, so a `pre-commit` hook that wrote a file into the area it was about to remove had that file destroyed at exit 1 … the honest unwind is to remove that row and then the directory **non-recursively**"* | **the same class, already decided the Option-A way one door over** — the strongest argument that Option A is not new mechanism |
+| `design/finalize.md:215` (the M52 rollback table) | already records the precedent: *"at `8f0fb833` the unwind was a bare `remove_dir_all`, so a `pre-commit` hook that wrote a file into the area it was about to remove had that file destroyed at exit 1 … the honest unwind is to remove that row and then the directory **non-recursively**"* | **the same class, already decided the Option-A way one door over** — the strongest argument that Option A is not new mechanism |
 
 ---
 
@@ -316,4 +316,4 @@ No overwrite (`free_displacement_path`, `task.rs:5902`, `symlink_metadata`-keyed
 | `engine::state::unwind_area` — registry-keyed, non-recursive, `AreaUnwind::Foreign` when a third party's byte remains | **built + proven, and unused by the two `Displace` doors** | §4 control DRIVEN: `milestone add-task` under a planting rejecting hook left the area standing, raised `milestone.foreign-bytes` located at it, with a route, and the hook's byte survived | the safe primitive is shipped; `task.rs:5981` and `milestone.rs:5538` call `remove_dir_all` instead |
 | the move-failure axis has a standing test | **absent** | `finalize_displacement.rs` / `milestone_boundary_displacement.rs` / flow53 arm 3 read; no suite contains `could not open` or `could not move` | three suites to extend, on `{all move, some move, none move} × {removal succeeds, fails} × {task finalize, milestone finalize}` — **12 cells, not 4** |
 
-**Verified at `978577ec` / `jigc 1.0.0-rc.16`. A map, not gospel. I settled nothing — §3(i) (no existing code at either door), §3(ii) (Option A vs B vs C) and §3(iii) (the four doc homes that state the opposite rule, and the joined-sub-task committed record) are the human's forks.**
+**Verified at `155054cc` / `jigc 1.0.0-rc.16`. A map, not gospel. I settled nothing — §3(i) (no existing code at either door), §3(ii) (Option A vs B vs C) and §3(iii) (the four doc homes that state the opposite rule, and the joined-sub-task committed record) are the human's forks.**

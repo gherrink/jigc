@@ -45,7 +45,7 @@ own writes. No authoring step names it.
 as **69** — here, in F1's `observed:` line, and in the closing coverage note — and 69 was never the
 number of step files. F1's second repro command,
 `ls crates/cli/pack/steps/ packs/methodology/steps/ | wc -l`, counts `ls`'s own two directory
-headers and the blank line separating them; the tree at the trial's HEAD (`8979f16`) carried **66**
+headers and the blank line separating them; the tree at the trial's HEAD (`1d4f9bc`) carried **66**
 step `*.yaml`, so the command reported 66 + 3. The command is corrected to glob the files it means
 to count (`ls crates/cli/pack/steps/*.yaml packs/methodology/steps/*.yaml | wc -l`), and the two
 restatements are corrected in place against this bracket. **The verdict does not move**: the

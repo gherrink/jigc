@@ -913,7 +913,7 @@ impl Drop for GitStateRepo {
 /// dedicated worktree is exempt from anyway.
 ///
 /// **One worktree per repository at a time — asserted, not only stated** (the independent
-/// review of `986d5e0a`, LOW 3). [`drive`] names its branches from module constants
+/// review of `3c71da87`, LOW 3). [`drive`] names its branches from module constants
 /// ([`THEIRS_BRANCH`], [`CLEAN_BRANCH`]), and git refuses to check one branch out in two
 /// worktrees of the same repository — so a fixture driving two sub-task worktrees into
 /// conflicting states at once would fail **at git**, several frames from the cause. The
@@ -994,7 +994,7 @@ fn refuse_if_a_construction_branch_is_taken(driver: &Driver, worktree: &Path, st
 }
 
 /// [`overlay_worktree`], **leaving HEAD exactly as jigc provisioned it — detached** (the
-/// independent review of `986d5e0a`, LOW 2).
+/// independent review of `3c71da87`, LOW 2).
 ///
 /// Its sibling attaches a branch first and states that as its one adaptation, on the ground
 /// that HEAD's shape decides no [`cli::repo::InProgress`] member. That is true of what the

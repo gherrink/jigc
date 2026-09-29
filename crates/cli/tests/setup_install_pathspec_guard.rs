@@ -3,7 +3,7 @@
 //! amendment and §5 · §10; `implementation/roadmap.md` → Milestone 51 Increment 3).
 //!
 //! The first command an adopter runs used to commit the user's uncommitted work into
-//! `chore(jigc): install jigc workspace config` at exit 0. Driven at `61f05c01` on a
+//! `chore(jigc): install jigc workspace config` at exit 0. Driven at `442bbd2f` on a
 //! repo whose `CLAUDE.md` carried an edit that was **never staged at all**: `jigc setup`
 //! exited 0, `git show HEAD:CLAUDE.md` carried the user's line, and `git status --short`
 //! was **empty** — so nothing prompted recovery.
@@ -967,7 +967,7 @@ fn an_untracked_install_path_on_an_unborn_head_is_the_stated_exemption() {
 /// guard first shipped as a *conjunction* — dirty before the install **and** still dirty
 /// after it — and `adapter::write_bootstrap_file` is an unconditional `fs::write` of the
 /// canonical body, so `.jigc/AGENT.md` matched `HEAD` again by the time the second leg was
-/// asked and the set came back empty. Driven at `b5ccd818`: the adopter's team rules were
+/// asked and the set came back empty. Driven at `da5173a1`: the adopter's team rules were
 /// gone at exit 0, `git status --short` was empty, and `git log --all -S` found the bytes
 /// in no object — the exact signature the guard was chartered on, one path over.
 #[test]

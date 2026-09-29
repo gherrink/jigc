@@ -47,7 +47,7 @@ exit **0**
 
 ```
 image      : jigc-gate:rc11 (jigc 1.0.0-rc.11)
-jigc sha   : 9a37f0152744f0cba5f9140483e1ca1b1c453c46
+jigc sha   : d1ebbc227ba9f4b8310bcb7984c648c3865aa306
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk03

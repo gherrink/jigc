@@ -1,8 +1,8 @@
-<!-- M51 baseline · companion 3 of 4 — the pinned-envelope and fence machinery. Driven 2026-09-10 by one Opus capability-auditor against the release binary `1.0.0-rc.14` at HEAD `bd348a83`; no cargo run, no repo file edited. Verbatim as returned; consolidated in [baseline-ledger.md](baseline-ledger.md). -->
+<!-- M51 baseline · companion 3 of 4 — the pinned-envelope and fence machinery. Driven 2026-09-10 by one Opus capability-auditor against the release binary `1.0.0-rc.14` at HEAD `74627547`; no cargo run, no repo file edited. Verbatim as returned; consolidated in [baseline-ledger.md](baseline-ledger.md). -->
 
 # M51 Scope baseline — the pinned-envelope and fence machinery
 
-**Verified at HEAD `bd348a83`, release binary `1.0.0-rc.14`. A map, not gospel.** Every row
+**Verified at HEAD `74627547`, release binary `1.0.0-rc.14`. A map, not gospel.** Every row
 marked *driven* was produced by running that binary in a throwaway rig
 (`dev/jigc-rig fresh --binary target/release/jigc`, bases copied per case). No repo file
 edited; no cargo run. Nothing here is settled — that is the human's gate in *Settle*.
@@ -414,7 +414,7 @@ law-1 problem lives.
   does not cover the weaker checkable claim — *the version this fold-back names is the
   version `Cargo.toml` carries* — which is what has been missed five times.
 - Same file `:229-238` records the fifth miss in its own words: the M50 audit rewrote
-  CLAUDE.md at `95c79be6` without touching the fence, which went red and *stayed* red
+  CLAUDE.md at `2224ce04` without touching the fence, which went red and *stayed* red
   through two commits while the handover recorded a green gate.
 
 **Additional stale-on-bump surface** (beyond the ten goldens): `Cargo.lock` ×2 entries
@@ -444,7 +444,7 @@ law-1 problem lives.
   correction in particular deserves one applied mutation before it is acted on.
 - **No cargo run.** I did not execute `text_json_parity_axis`, `format_json_success_axis`
   or `invocation_log` — their content is read at HEAD, and the gate result at this sha is
-  the orchestrating session's (`gate-rc14-at-bd348a83.log`, 3341/0).
+  the orchestrating session's (`gate-rc14-at-74627547.log`, 3341/0).
 - **`describe --format json`'s per-entry keys** (`router_hidden`, `origin_pack`, `pack`)
   were not enumerated per definition — only the top-level three.
 - **The reject-surface key sets** of the 47 verbs were not swept (I drove the success

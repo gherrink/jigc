@@ -104,7 +104,7 @@ All proven this session — just re-apply for the new twin:
 
 ## State at handoff
 
-- `main` clean, gate green, 14 commits this session (`9a019ed`…`3115743`).
+- `main` clean, gate green, 14 commits this session (`2a025a5`…`665827e`).
 - Environment **restored to normal**: `~/.claude/CLAUDE.md` back, claude-mem **re-enabled**, `jigc`
   un-wrapped to the real binary, **original galey untouched** (M12 held).
 - Artifacts committed under `completions/artifacts/M17/pilot/`: `pre-registration.md` (amended twice,

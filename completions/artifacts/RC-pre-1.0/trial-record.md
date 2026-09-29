@@ -65,7 +65,7 @@ justification, in [operator-log.md](operator-log.md).
   and as `1/69` in the adjudication below, and 69 was never the number of step files. It is what
   `ls crates/cli/pack/steps/ packs/methodology/steps/ | wc -l` — the command in F1's repro block —
   prints, because `ls` given two directories emits a header line for each plus a blank separator. The
-  tree at this trial's HEAD (`8979f16`) carried **66** step `*.yaml`, so the command reported 66 + 3.
+  tree at this trial's HEAD (`1d4f9bc`) carried **66** step `*.yaml`, so the command reported 66 + 3.
   The finding itself is untouched: one step file, and not an authoring one. The corrected count and
   the binary it was measured on (1.0.0-rc.10) live in one home,
   [decisions-pending.md](../../../implementation/decisions-pending.md) → *The rc.11 wave (M48)*; the
@@ -105,7 +105,7 @@ same-slug rename axis fenced at one point (`different H1`) and not the other (`s
 
 ## Coverage rule — the acceptance must reach what the wave changed
 
-Applied against `9e6cb17..HEAD` in **three** columns, because the two-way split is what left ~27% of
+Applied against `f2f8fd3..HEAD` in **three** columns, because the two-way split is what left ~27% of
 M47's changed lines unexamined last time.
 
 - **Trial-reached:** the survivable rejection frame (two doors live, one blind + one scripted) ·

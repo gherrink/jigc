@@ -1,4 +1,4 @@
-<!-- M52 per-axis review (re-run) — axis 1 ·  — RECONCILED · driven on the installed `jigc 1.0.0-rc.16` (built from commit a3eb026b), 2026-09-21. -->
+<!-- M52 per-axis review (re-run) — axis 1 ·  — RECONCILED · driven on the installed `jigc 1.0.0-rc.16` (built from commit e519e4eb), 2026-09-21. -->
 
 <!-- M52 per-axis review RE-RUN — axis 1 · caller tokens — the OPUS DRIVER — driven on the installed `jigc 1.0.0-rc.16`, 2026-09-21 -->
 
@@ -12,8 +12,8 @@ jigc 1.0.0-rc.16            exit=0
 ```
 
 **RELEASE posture** — the debug-only `debug_assert!` route fences do not exist in this binary, so a
-route-fence violation shows up as a *bad emitted command*, never as a panic. Repo at `a3eb026b`
-(M52's six audit-fix commits `79e54c75` `6d95756c` `fe8f29c4` `c96137e4` `b9ab6a70` `1b036264`
+route-fence violation shows up as a *bad emitted command*, never as a panic. Repo at `e519e4eb`
+(M52's six audit-fix commits `ad527fa4` `6c2de03a` `33bd5692` `68d14cd3` `a83a9e60` `66af090a`
 all present, plus the closing record commit). Every table below is of the **fixed** binary.
 
 **All rigs:** `rig=$(dev/jigc-rig <state> --binary /Users/maurice/.local/bin/jigc) || exit; eval "$rig"`
@@ -538,7 +538,7 @@ What the review adds that those arms' subjects cannot contain:
 # Reconciliation ledger — AXIS 1 · caller tokens
 
 **Everything above this line is the Opus driver's table, unchanged.** Below is the reconciliation of
-that table against the Codex source pass (`codex/axis1-codex.md`, commit `a3eb026b`), under the rule
+that table against the Codex source pass (`codex/axis1-codex.md`, commit `e519e4eb`), under the rule
 in `acceptance-design.md` → *The reconciliation rule*: **a claim by one that the other cannot
 reproduce is a lead, not a finding.** Every Codex claim was entered as a lead and then **driven**, or
 recorded OPEN with the reason it could not be. Every driver defect was **re-driven once by the
@@ -679,7 +679,7 @@ count in the driver's transcription differs from mine.
 
 ### C6 — `lead(codex, `ARG_TOKENS` remains total over the clap vocabulary and classifies exactly `file` · `from` · `from_file` · `path` · `target` · `value` as path-bearing)` → **CONFIRMED (source, and its drivable half driven)**
 
-Read at `crates/cli/src/cli.rs:2399-2438` at HEAD `a3eb026b`: **35** ids, **6** `Plain(PathBearing)`
+Read at `crates/cli/src/cli.rs:2399-2438` at HEAD `e519e4eb`: **35** ids, **6** `Plain(PathBearing)`
 — the same six, and the same counts the driver's §0 recorded independently. The two reads agree.
 
 The **drivable** half is Codex's own declared bound one step on (C15): the three `Other`-classified
@@ -835,11 +835,11 @@ prescribes a deterministic failure, and a record whose enumeration is falsified 
 missing row or a bypass. The two passes are asking different questions of the same axis and **both
 answers stand**.
 
-### C14 — `lead(codex, zero schema-hash movement: `git diff --name-only c59ec3d7..HEAD` over both schema trees, both manifests and both snapshot trees produces no paths)` → **CONFIRMED (repro)**
+### C14 — `lead(codex, zero schema-hash movement: `git diff --name-only 65d3cd76..HEAD` over both schema trees, both manifests and both snapshot trees produces no paths)` → **CONFIRMED (repro)**
 
 ```
-$ git rev-parse --short HEAD    → a3eb026b
-$ git diff --name-only c59ec3d7..HEAD -- \
+$ git rev-parse --short HEAD    → e519e4eb
+$ git diff --name-only 65d3cd76..HEAD -- \
     crates/cli/pack/config/schema-manifest.yaml packs/methodology/config/schema-manifest.yaml \
     crates/cli/pack/schemas packs/methodology/schemas
   (empty)

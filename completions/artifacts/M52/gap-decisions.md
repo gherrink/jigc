@@ -1,6 +1,6 @@
 # M52 gap probe — dimension: DECISIONS
 
-**Probed 2026-09-17 at `HEAD = 85ad06c5`** against the installed release `~/.local/bin/jigc` =
+**Probed 2026-09-17 at `HEAD = 7637a46f`** against the installed release `~/.local/bin/jigc` =
 `1.0.0-rc.15` (confirmed by `jigc --version`). Fixtures from `dev/jigc-rig <state> --binary
 ~/.local/bin/jigc`, two-step eval, roots under `mktemp -d`; nothing written into the working repo,
 no cargo run. Every claim is marked **[driven]** (I ran it, argv inline) or **[read]** (a source or

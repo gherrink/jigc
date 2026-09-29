@@ -1,4 +1,4 @@
-<!-- M52 per-axis review (re-run) — axis 2 · caller tokens — RECONCILED · driven on the installed `jigc 1.0.0-rc.16` (built from commit a3eb026b), 2026-09-21. -->
+<!-- M52 per-axis review (re-run) — axis 2 · caller tokens — RECONCILED · driven on the installed `jigc 1.0.0-rc.16` (built from commit e519e4eb), 2026-09-21. -->
 
 <!-- M52 per-axis review (the RE-RUN of M51's instrument) — axis 2 · posture — the OPUS DRIVER · driven on the installed `jigc 1.0.0-rc.16`, 2026-09-21 -->
 
@@ -8,8 +8,8 @@
 This is the **RELEASE** posture: the `Route::mechanical` argv fence is `#[cfg(debug_assertions)]`
 and does not exist here, so every refusal below is the shipped one.
 
-**The fixed binary.** M52's seven completion-audit fixes (`79e54c75` `6d95756c` `fe8f29c4`
-`c96137e4` `b9ab6a70` `1b036264`, plus the fold-back `a3eb026b`) are all in this build; the two
+**The fixed binary.** M52's seven completion-audit fixes (`ad527fa4` `6c2de03a` `33bd5692`
+`68d14cd3` `a83a9e60` `66af090a`, plus the fold-back `e519e4eb`) are all in this build; the two
 that touch this axis are **F3** (the survivable frame's state clause is a function of the
 rollback's outcome) and **F5** (`RelocateRefusal::ALL`, which gave `relocate`'s clean-control
 cell a code it did not have at rc.15). Both are recorded as cells, not as noise.
@@ -928,10 +928,10 @@ The sweep reads; it does not move, so there is no act for a posture probe to pre
 **blocking** arm was driven separately in the unborn rig (CX-10's `validate` row →
 `schema-conformance.home-vacated`, exit 1) and likewise moves nothing.
 
-### CX-15 — `lead(codex, zero schema-hash movement: the manifest `schema-hash` values at M51 commit `35195f56` are byte-identical to the current manifest)` → **CONFIRMED (datum)**
+### CX-15 — `lead(codex, zero schema-hash movement: the manifest `schema-hash` values at M51 commit `577a0099` are byte-identical to the current manifest)` → **CONFIRMED (datum)**
 
 ```
-$ git diff --stat 35195f56 HEAD -- crates/cli/pack/config/schema-manifest.yaml \
+$ git diff --stat 577a0099 HEAD -- crates/cli/pack/config/schema-manifest.yaml \
                                    packs/methodology/config/schema-manifest.yaml
   (no output)                                                                            exit=0
 $ grep -c "schema-hash" crates/cli/pack/config/schema-manifest.yaml       → 10

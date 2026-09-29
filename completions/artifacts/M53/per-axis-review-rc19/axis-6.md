@@ -1,4 +1,4 @@
-<!-- M53 THIRD PARTIAL per-axis review — axis 6 — the reconciled file, copied verbatim. Driven on the installed `/Users/maurice/.local/bin/jigc` -> `jigc 1.0.0-rc.19` (repo HEAD `7d86f99f`), 2026-09-23. -->
+<!-- M53 THIRD PARTIAL per-axis review — axis 6 — the reconciled file, copied verbatim. Driven on the installed `/Users/maurice/.local/bin/jigc` -> `jigc 1.0.0-rc.19` (repo HEAD `a8904637`), 2026-09-23. -->
 
 <!-- M53 THIRD PARTIAL per-axis review — axis 6 · composed surfaces · OPUS DRIVER · driven on the installed `jigc 1.0.0-rc.19`, 2026-09-23 -->
 
@@ -6,7 +6,7 @@
 
 **Binary.** `/Users/maurice/.local/bin/jigc`, asserted **`jigc 1.0.0-rc.19`** before anything else
 (`jigc --version` → `jigc 1.0.0-rc.19`, rc=0). **RELEASE posture** — the `#[cfg(debug_assertions)]`
-route-fence panics do not exist here. Repo HEAD at read time: `7d86f99f` (*chore(release): 1.0.0-rc.19
+route-fence panics do not exist here. Repo HEAD at read time: `a8904637` (*chore(release): 1.0.0-rc.19
 — the third M53 stamp, after the cwd-dependence arc*).
 
 **Method.** Every row ran in a throwaway `dev/jigc-rig` repo
@@ -33,7 +33,7 @@ worktree** outside `.jigc/` — and the emitting/consuming cells again on a **sp
 
 ## 1. The door set and the registry counts, read from the code
 
-Counts read at `7d86f99f` by parsing each slice literal with comments stripped (a small Python
+Counts read at `a8904637` by parsing each slice literal with comments stripped (a small Python
 top-level-comma counter), **not** taken from any design doc's prose. Every count is **unmoved from
 M52's re-run**.
 
@@ -293,10 +293,10 @@ json` report:
 
 ```
 moves="$(printf '%s' "$report" | grep -o 'git -C [^`]*')"      # HEAD (rc.19)
-moves="$(printf '%s' "$report" | grep -o 'git mv [^`]*')"      # HEAD~ of 34584687 (rc.18 and before)
+moves="$(printf '%s' "$report" | grep -o 'git mv [^`]*')"      # HEAD~ of 65de53f5 (rc.18 and before)
 ```
 
-`34584687` (*fix(route): every operator-facing `git` span names the checkout it runs in*) rendered the
+`65de53f5` (*fix(route): every operator-facing `git` span names the checkout it runs in*) rendered the
 `reconciliation.rename` revert route as `git -C <abs> mv <new> <old>`, so the grep had to widen. It was
 widened to **`git -C`**, which is now the prefix of **every operator-facing git span in the whole
 report** — `home-vacated`'s `git -C <abs> show <sha> -- <path>`, `owner-artifact`'s `git -C <abs> add`,
@@ -509,7 +509,7 @@ This review drives the half those arms structurally cannot reach, in four ways:
    the fences enumerate — it is a defect in what the **consumer** of those spans now matches, and the
    consumer is a shell script embedded in a Rust literal that no `Route` fence, no `GIT_SPAN_SITES`
    row and no `ENVELOPE_ARMS` row covers. Finding it required reading the *old* grep out of
-   `34584687^` and asking what the new one also matches. O-2 is the same shape one layer up: the
+   `65de53f5^` and asking what the new one also matches. O-2 is the same shape one layer up: the
    carve-out enumerates two span kinds and the arc minted a third.
 
 4. **It crosses two surfaces the arms measure separately.** Rows 12/13/35/44 assert agreement where it
@@ -808,8 +808,8 @@ jigc start --task build-the-thing --format json     # 0  keys=['task','text']  t
 ### CLAIM 10 — zero schema-hash movement: neither frozen manifest changed across the cwd arc → **CONFIRMED**
 
 ```
-git log --oneline fbd8b190..HEAD | wc -l                  → 35        # rc.18 → rc.19, the cwd arc
-git diff --stat fbd8b190..HEAD -- crates/cli/pack/config/schema-manifest.yaml \
+git log --oneline 271b0cb7..HEAD | wc -l                  → 35        # rc.18 → rc.19, the cwd arc
+git diff --stat 271b0cb7..HEAD -- crates/cli/pack/config/schema-manifest.yaml \
                                   packs/methodology/config/schema-manifest.yaml
   → 0 bytes of output                                                 # no movement
 ```

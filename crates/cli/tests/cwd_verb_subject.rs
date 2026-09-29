@@ -452,7 +452,7 @@ fn task_diff_of_a_sub_task_reads_its_worktree_from_every_cwd() {
 /// **A milestone created from a linked worktree must be finalizable** (M53 post-review-fix
 /// review, MEDIUM 4).
 ///
-/// `31921e57` moved `jigc milestone finalize`'s subject to `jigc_home` — it reads HEAD with
+/// `f919ea95` moved `jigc milestone finalize`'s subject to `jigc_home` — it reads HEAD with
 /// `git_head(&jigc_home)` and probes the index with `git_staged_snapshot(&jigc_home)` — and
 /// left `milestone create` reading the **standing** checkout for both. Driven on
 /// `committed-singletons` with a branch-attached worktree `feat` and main advanced by a
@@ -763,7 +763,7 @@ fn the_spawn_line_runs_verbatim_from_every_cwd() {
 /// shell word. Driven before the fix, the line split at the space and the sub-agent could not
 /// enter its worktree at all (`sh: cd: /…/jigc: No such file or directory`, rc=1).
 ///
-/// It also pins the pairing `efe16554`'s commit message claims and no test held: the refusal
+/// It also pins the pairing `a8318211`'s commit message claims and no test held: the refusal
 /// that sends an agent to that directory (`crate::blanket_base_pin_refusal`) and the `Spawn:`
 /// line must render **the same bytes** for it. They did not — one quoted, one did not — and
 /// the disagreement was invisible on every unspaced root.
@@ -994,10 +994,10 @@ fn wrote_an_install(checkout: &Path) -> bool {
 /// **LOW 5** — `jigc setup` installs at jigc_home from every cwd.
 ///
 /// The cwd axis, as every arm in this suite iterates it: the root, an ordinary
-/// subdirectory, a linked worktree, and a fan-out worktree. Driven red at `36a96758`: from
+/// subdirectory, a linked worktree, and a fan-out worktree. Driven red at `353029ce`: from
 /// the linked worktree the door exited 0 and wrote a worktree-local
 /// `.jigc/{AGENT.md,config,state,version}` **that nothing reads** — the pack loader moved
-/// to jigc_home at `31921e57` and `jigc config set` writes there — leaving the main
+/// to jigc_home at `f919ea95` and `jigc config set` writes there — leaving the main
 /// checkout with no install at all.
 ///
 /// The first three cells share one fixture: `setup` is idempotent, and the assertion is
@@ -1064,7 +1064,7 @@ fn setup_installs_at_the_workbench_home_from_every_cwd() {
 
 /// **LOW 10 / C2-07** — `jigc uninstall` removes jigc_home's install from every cwd.
 ///
-/// Driven red at `36a96758` from a fan-out worktree: exit 0, *"repo-local install
+/// Driven red at `353029ce` from a fan-out worktree: exit 0, *"repo-local install
 /// removed"*, seven removal lines — and the repository-wide `.git/hooks/pre-commit` (the
 /// **only** copy, shared by every checkout) gone, while the main checkout's `.jigc/`, its
 /// `.claude/skills/jigc/SKILL.md` and its `CLAUDE.md` preload line all stood. A destroying

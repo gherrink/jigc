@@ -54,11 +54,11 @@ class is a different act, performed by whoever drives the axis afterwards.
 
 | # | severity | reported as | what it actually was | commit |
 |---|---|---|---|---|
-| F1 | HIGH | one false-positive predicate | an **unbounded subject**: every committed `.md` in the repository, over an un-namespaced stamp key — closed by bounding the *home* | `b5ccd818` |
-| F2 | MEDIUM | two paths the guard cannot see | the guard's **shape**: a `before ∩ after` conjunction, structurally blind — class **ten install paths, not eleven** (`.claude/settings.json` is one path with three writers) | `0fc80bab` |
-| F3 | LOW + **both** e2e defects | 3 route sites | **22 producers over four carriers**, plus a tenth axis cell and two new fences | `8a42fbbd` |
-| F4 | LOW | one roadmap overclaim | confirmed, bracketed at **three** homes; no completeness fence built, and said so | `dc508994` |
-| F5 | LOW | two roadmap sentences | **three** roadmap sentences, plus a third LOW **made true in the binary** instead | `dc508994` |
+| F1 | HIGH | one false-positive predicate | an **unbounded subject**: every committed `.md` in the repository, over an un-namespaced stamp key — closed by bounding the *home* | `da5173a1` |
+| F2 | MEDIUM | two paths the guard cannot see | the guard's **shape**: a `before ∩ after` conjunction, structurally blind — class **ten install paths, not eleven** (`.claude/settings.json` is one path with three writers) | `ff2bde99` |
+| F3 | LOW + **both** e2e defects | 3 route sites | **22 producers over four carriers**, plus a tenth axis cell and two new fences | `6c2391c0` |
+| F4 | LOW | one roadmap overclaim | confirmed, bracketed at **three** homes; no completeness fence built, and said so | `507c332d` |
+| F5 | LOW | two roadmap sentences | **three** roadmap sentences, plus a third LOW **made true in the binary** instead | `507c332d` |
 
 ### F1 (HIGH) — the orphan sweep speaks for jigc's homes, not the repository
 
@@ -318,8 +318,8 @@ own prescribed move — so the next absolute render there reddens rather than sh
 | 2 | Inc 1 — untracked vs tracked source, and the exit-4 hold names the file `--approve` deletes | PASS |
 | 3 | Inc 1 — the destructive sink re-validates a rewritten `source-path` and rolls the promote back | PASS |
 | 4 | Inc 1 — the registry's other occurrences behave per their stated rule or stated no-rule | PASS |
-| 5 | Inc 1 — `migrate.source-untracked`'s route dead-ends on shell-significant bytes (release) | **CONFIRMED DEFECT** → `8a42fbbd` |
-| 6 | Inc 1 — `task finalize <migration-task> --approve` panics the debug binary at exit 101 | **CONFIRMED DEFECT** → `8a42fbbd` |
+| 5 | Inc 1 — `migrate.source-untracked`'s route dead-ends on shell-significant bytes (release) | **CONFIRMED DEFECT** → `6c2391c0` |
+| 6 | Inc 1 — `task finalize <migration-task> --approve` panics the debug binary at exit 101 | **CONFIRMED DEFECT** → `6c2391c0` |
 | 7 | Inc 2 — the posture family × the commit-on-behalf class: 12 acting doors × 3 driven postures | PASS |
 | 8 | Inc 2 — `jigc setup` is exempt from the unborn member; a fan-out worktree is typed, not sniffed | PASS |
 | 9 | Inc 3 — `setup` refuses its install commit over bytes it did not write; five controls clean | PASS |
@@ -330,12 +330,12 @@ own prescribed move — so the next absolute render there reddens rather than sh
 | 14 | Inc 7 — the count fences and the key-set fences hold against the sets they name | PASS |
 | 15 | Inc 8 — the two store-surface causes and the derived ambush owe-set | PASS |
 | 16 | Inc 9 — the law-1 surface batch drives clean | PASS |
-| 17 | Inc 9 — `UNSWEPT_PRODUCERS`' stated reason for `migrate.rs` is falsified by the binary | **LOW** → `dc508994` |
+| 17 | Inc 9 — `UNSWEPT_PRODUCERS`' stated reason for `migrate.rs` is falsified by the binary | **LOW** → `507c332d` |
 | 18 | Inc 11 / F-9 — `commit-recording.stale-title` produced at `doc rename --task` and re-raised | PASS |
 | 19 | Fan-out determinism — three divergent execution orders, byte-identical committed output | PASS |
 | 20 | Adapter spawn template rendered through the binary and its command executed verbatim | PASS |
 | 21 | Misuse probes off the acceptance path | PASS |
-| 22 | Full gate at HEAD `befdbf93` — `passed=3532 failed=0`, GATE: PASS | PASS |
+| 22 | Full gate at HEAD `c2faae6b` — `passed=3532 failed=0`, GATE: PASS | PASS |
 
 Scenario 19's assertion is the strong one: three deliberately divergent execution orders over a
 3-worktree fan-out yield a **byte-identical committed index** (`git ls-files -s` sha `32470dee…`) and
@@ -349,7 +349,7 @@ sha. Scenario 21 re-confirmed the M40 undeclared-nested-field class stays closed
 
 **The build halted twice, and both halts were adjudicated rather than guessed** — each is an
 instrument finding in its own right, and each is on the record rather than in a summary
-([settle-record](settle-record.md) §20 at commit `d5e0508c`, §21 at `5ebafaeb`; cited, not restated).
+([settle-record](settle-record.md) §20 at commit `548576a1`, §21 at `5f9499ba`; cited, not restated).
 §20's fork 1 turned on a settle sentence — *"`id` is read from the stamp"* — that **one `cat` of a
 committed doc's front matter falsifies**, which is this project's signature failure again: a claim
 about the composed product reached by reading the files it is composed from. §21's is the mirror

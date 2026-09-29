@@ -1,7 +1,7 @@
 # Findings verification — every claim driven, every verdict with a repro block
 
-**Binary: `1.0.0-rc.13` from `979baca`** (the container image; host repros use `target/release/jigc`
-built from the same sha — never `~/.local/bin/jigc`, which predates `1799a2d`). Every claim in
+**Binary: `1.0.0-rc.13` from `f266770`** (the container image; host repros use `target/release/jigc`
+built from the same sha — never `~/.local/bin/jigc`, which predates `d854e25`). Every claim in
 [session-findings.md](session-findings.md) that names the product is adjudicated here under
 [protocol.md](protocol.md) §1, **class from evidence first, consequence looked up second**, and
 carries a `pinned-by:` citation *verified by reading what the cited test asserts* or a stated
@@ -193,7 +193,7 @@ $ jigc milestone finalize bound-the-store-again --format json
 
 **Class:** the text surface withholds the severity and code the JSON carries and the task door
 prints — `milestone.rs:4106-4119` (`fn blocked`) writes `finding.message` raw instead of going
-through `render.rs:2642`'s `{severity} · {code} — {message}`. The gate itself (`1799a2d`) reads as
+through `render.rs:2642`'s `{severity} · {code} — {message}`. The gate itself (`d854e25`) reads as
 designed under §5's four-part standard: names the doc and leaf · says it blocks · names the route
 with `--task` · the route runs verbatim (walk 21). The codes are
 `schema-conformance.field-value-conformant` (unset `type` is `""`, not an enum member) and
@@ -368,7 +368,7 @@ Shipped: M50 Increment 6.
 | **W-8** `setup` exit 0 over a section-dropping shadow | **0/4** on §5's four-part standard; `describe` blocks with 4/4 and its route clears | the VERDICT's declared bound, now with a number; M50 may decide whether the bootstrap door should at least *say* what the next door will refuse |
 | **W-10** `planning-record` | 406 composed lines; one held-out gate blocks `task validate` and `task finalize` naming it, commits nothing | §0.3 reads as designed, 4/4 |
 | **W-3 / W-4** `migrate-corpus` | names the machine-maintained v3 leaf as *no action needed*; commits stamp-only on its own | §0.5 reads as designed, 4/4 (walk 21) |
-| **`1799a2d`** the boundary tightening | rc.12 landed `: cap distinct series` at exit 0; rc.13 blocks on `type` + `summary`, route with `--task` runs verbatim, one conventional commit per sub-task lands | §0.6 reads as designed, 4/4 — except the text prefix (W-1) |
+| **`d854e25`** the boundary tightening | rc.12 landed `: cap distinct series` at exit 0; rc.13 blocks on `type` + `summary`, route with `--task` runs verbatim, one conventional commit per sub-task lands | §0.6 reads as designed, 4/4 — except the text prefix (W-1) |
 | **W-12** the item-region cube on shipped doctypes | `12 item blocks · multi-slot: 1 · slot∧nested: 0` | *safe by accident of shape* still holds |
 | **W-9** `task validate` leaves `edges.json.lock` | inside `.jigc/index/`, fixed point on the second run | the read-verb carve-out (M49) |
 | **W-18** an OOB `git mv` of a placement doc | `reconciliation.rename` + `file-state.unregistered-doc`, routed | a reconciliation rename first, as designed |
@@ -388,10 +388,10 @@ Shipped: M50 Increment 6.
 
 | id | what | fixed by |
 |---|---|---|
-| I-1 | `walk.py` lost every arm's stdout across `--only` passes | `7be81e1` · `test_walk.py` |
+| I-1 | `walk.py` lost every arm's stdout across `--only` passes | `72ff515` · `test_walk.py` |
 | I-2 | `~/out/<arm>` collided with the previous trial's out-dirs; `observe` scored stale evidence silently after the refusal | relaunched under `M50-*`; recorded |
-| I-3 | a Bash read stored the matched *hint* as its path, so a `cat` of a staged `.md` never classified as a document — B3-h2's duress read rendered as bookkeeping | `abb64dd` · `test_observe.py::ABashReadOfAStagedDocumentIsADocumentRead` |
-| I-4 | `carry` handed `ARM-OUTPUT.txt` on as corpus (I-1's fix, one layer out) | `abb64dd` · `test_session.py::CarryLeavesTheWalksOwnOutputBehind` |
+| I-3 | a Bash read stored the matched *hint* as its path, so a `cat` of a staged `.md` never classified as a document — B3-h2's duress read rendered as bookkeeping | `e70c259` · `test_observe.py::ABashReadOfAStagedDocumentIsADocumentRead` |
+| I-4 | `carry` handed `ARM-OUTPUT.txt` on as corpus (I-1's fix, one layer out) | `e70c259` · `test_session.py::CarryLeavesTheWalksOwnOutputBehind` |
 | I-5 | `find <task dir> -type f \| xargs … cat {}` scored FILESYSTEM **0** — `find` is not a reader and the `cat` stage carries no path, and the `;` inside `sh -c` split the statement before the `cat` was seen. **B2's duress read, the cell the headline rests on, misfiled by a second mechanism.** Found from the worker's own feedback, not by the reader | this commit · `test_observe.py::AFindPipedIntoCatIsARead` (the archive's `find \| grep -v` false positive kept dead) |
 
 ## The conversion ledger — closed

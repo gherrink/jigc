@@ -1,6 +1,6 @@
 # M52 gap probe — dimension: docs
 
-HEAD `85ad06c5`, binary `~/.local/bin/jigc` = `1.0.0-rc.15`. *driven* = run on that binary via
+HEAD `7637a46f`, binary `~/.local/bin/jigc` = `1.0.0-rc.15`. *driven* = run on that binary via
 `dev/jigc-rig committed-singletons --binary ~/.local/bin/jigc` (two-step eval, `cd "$REPO"`, no cargo,
 nothing written into the working repo). Everything else is *read*.
 

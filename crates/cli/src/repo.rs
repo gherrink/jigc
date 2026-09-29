@@ -631,7 +631,7 @@ impl BreachSite<'_> {
     /// so that arm's bytes are the ones M51 shipped.
     ///
     /// It leads rather than trails, and that is the whole of the fix (the independent review
-    /// of `986d5e0a`, LOW 1). Appended, the clause landed after a predicate that may already
+    /// of `3c71da87`, LOW 1). Appended, the clause landed after a predicate that may already
     /// end in a prepositional phrase of its own — [`InProgress::predicate`] gives
     /// [`InProgress::UnmergedIndex`] *"left unmerged paths in the index"* and
     /// [`InProgress::Sequencer`] *"left a queue of commits in `sequencer/`"* — so those two

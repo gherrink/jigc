@@ -1,7 +1,7 @@
 # M50 — consolidated gap findings
 
 Four `gap-detector` subagents (decisions · docs · doctypes · capabilities), each driving
-`target/release/jigc` (`1.0.0-rc.13`) at `HEAD = d9e91f1`. Deduped and severity-ranked.
+`target/release/jigc` (`1.0.0-rc.13`) at `HEAD = cdce9fc`. Deduped and severity-ranked.
 Baseline: [baseline-ledger.md](baseline-ledger.md).
 
 **Provenance.** Orchestrator-driven personally: W-13, `task discard "../.."` (repository
@@ -220,8 +220,8 @@ ride in on it.
 ## J · Dispositions — appended 2026-09-07 (M50 Increment 13 / T2)
 
 **Appended, not merged**, for the reason §7 of [baseline-ledger.md](baseline-ledger.md) states: §§A–I
-are a dated record of what was driven at `d9e91f1`. Same posture — every verdict below **driven at
-`HEAD = 061e7a3`** against the release `target/release/jigc` on `dev/jigc-rig` corpora unless a cell
+are a dated record of what was driven at `cdce9fc`. Same posture — every verdict below **driven at
+`HEAD = 4080fa6`** against the release `target/release/jigc` on `dev/jigc-rig` corpora unless a cell
 says *source read*. N1–N20 are disposed in that file; N31 is a row that did not exist when either
 artifact closed and is disposed here so the wave leaves one ledger, not two.
 

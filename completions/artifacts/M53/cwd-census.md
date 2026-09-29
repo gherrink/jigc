@@ -1,4 +1,4 @@
-## Census of cwd-dependence — `jigc 1.0.0-rc.18` (installed release), repo HEAD `86dbe224`
+## Census of cwd-dependence — `jigc 1.0.0-rc.18` (installed release), repo HEAD `cfd471c1`
 
 Every row marked **DRIVEN** ran on `~/.local/bin/jigc` (`jigc 1.0.0-rc.18`) on 2026-09-23 against `dev/jigc-rig` fixtures (`committed-singletons`, `bare`; roots from `mktemp -d`, nothing torn down). **READ** = source read, not driven. Nothing was edited or committed in the working repository.
 
@@ -186,4 +186,4 @@ The rows that already work (C1-17, C1-12's re-run, C1-16's re-run, the `provisio
 - C1-02, C1-05, C1-07, C1-08, C1-09, C1-10 are **READ** (source-identical shape to driven siblings — all take `crate::task::shell_token(<repo_relative path>)`), not individually driven.
 - Fix-shape producer counts are derived from the production-only grep (`Route::human` 77, 22 interpolated git spans, ~15 operator-facing) — a count, not an enumeration fence; no mechanical checker exists for this class today.
 
-This ledger is verified at HEAD `86dbe224` on `1.0.0-rc.18` — **a map, not gospel**. Nothing was settled; that is the human's gate.
+This ledger is verified at HEAD `cfd471c1` on `1.0.0-rc.18` — **a map, not gospel**. Nothing was settled; that is the human's gate.

@@ -1,6 +1,6 @@
 # M49 — the verified baseline ledger
 
-**Driven at HEAD `99231f6`, binary `jigc 1.0.0-rc.12`.** Six capability-auditors + four gap-detectors,
+**Driven at HEAD `34d2c80`, binary `jigc 1.0.0-rc.12`.** Six capability-auditors + four gap-detectors,
 each exercising the real binary in throwaway repos. **This ledger supersedes `charter.md` wherever they
 disagree** — the charter was written by the session that ran the 1.0.0 trial, which its own handover
 names as "exactly the position that produces confident wrong premises."
@@ -216,7 +216,7 @@ transform arm) · `:354`/`:181` (`planning-record`) · `:146` (the frozen bump) 
 ## Dispositions — the conversion ledger, appended 2026-08-31 (Increment 12 / T2)
 
 **This section is APPENDED, not a rewrite.** Everything above is the dated, driven baseline as it
-stood at `99231f6` and is left exactly as measured; what follows is one line per finding id saying
+stood at `34d2c80` and is left exactly as measured; what follows is one line per finding id saying
 how the wave disposed of it. [pinning.md](../../../implementation/pinning.md) §3 and its 2026-08-18
 addendum govern: a citation is verified by **reading what the test asserts**, never by the name
 looking apt, so every `pinned-by:` below carries the one clause saying what its suite asserts, and

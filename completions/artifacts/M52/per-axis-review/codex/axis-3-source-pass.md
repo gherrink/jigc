@@ -1,8 +1,8 @@
-<!-- M52 per-axis review (re-run) — axis 3 · posture — the CODEX SOURCE PASS, verbatim. Read against the repository at commit a3eb026b, 2026-09-21. It reads; it drives nothing. Every claim below is a LEAD until the reconciler drove it — see axis-3.md for the verdict on each. -->
+<!-- M52 per-axis review (re-run) — axis 3 · posture — the CODEX SOURCE PASS, verbatim. Read against the repository at commit e519e4eb, 2026-09-21. It reads; it drives nothing. Every claim below is a LEAD until the reconciler drove it — see axis-3.md for the verdict on each. -->
 
 # M52 Axis 3 source pass
 
-Current source: `a3eb026b699ce9c23cb0201555838931b65bd2d2` (`1.0.0-rc.16`).
+Current source: `e519e4ebf952bbf71b8591294101bd63be779998` (`1.0.0-rc.16`).
 
 ## Claims
 
@@ -64,4 +64,4 @@ I found no unguarded production removal of adopter bytes outside an ownership, t
 
 I also traced the requested adjacent registries: `ROLLBACK_POPULATIONS`, `TASK_AREA_FILES`, `PRE_DISPATCH_FAULTS`, `InProgress::ALL`, `RelocateRefusal::ALL`, `ENVELOPE_OWED_CODES`, `suppressed.door`/`workflow.verb-routed`, the shared fixed-identity predicate, and `STORE_EXIT_FLIPS`. Within this axis, the material contact is the writer-set complement and destroying-door dispositions. `schema-conformance.home-vacated` is the seventh exit flip at `crates/cli/src/render.rs:1072-1117`; `ENVELOPE_OWED_CODES` is enforced centrally at `render.rs:5415-5420,5461-5474`.
 
-I performed no binary driving, permission-mode experiment, or write. Test-only destructors and external crates are outside the CLI-door census. The diff from M51 commit `35195f56` to HEAD showed **no schema-manifest or schema-file changes**: I see no violation of M52’s zero-schema-hash-movement boundary.
+I performed no binary driving, permission-mode experiment, or write. Test-only destructors and external crates are outside the CLI-door census. The diff from M51 commit `577a0099` to HEAD showed **no schema-manifest or schema-file changes**: I see no violation of M52’s zero-schema-hash-movement boundary.

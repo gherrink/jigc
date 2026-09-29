@@ -1,4 +1,4 @@
-Verified at `HEAD` = `978577ec` on the installed release `jigc 1.0.0-rc.16`, git 2.54.0 (Apple Git-157). **This ledger is a map, not gospel.** Nothing was edited; no `cargo` ran.
+Verified at `HEAD` = `155054cc` on the installed release `jigc 1.0.0-rc.16`, git 2.54.0 (Apple Git-157). **This ledger is a map, not gospel.** Nothing was edited; no `cargo` ran.
 
 # Row `(2, DEFECT A)` — baseline ledger
 

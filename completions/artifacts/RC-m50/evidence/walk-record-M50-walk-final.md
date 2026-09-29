@@ -35,7 +35,7 @@ exit **0**
 
 ```
 image      : jigc-gate:rc13 (jigc 1.0.0-rc.13)
-jigc sha   : 979bacaf31cbf513ca8afcb0bade447a88c06ba1
+jigc sha   : f2667709b168a447f14fb348fd04287081b72548
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-m50
@@ -111,7 +111,7 @@ exit **0**
 
 ```
 image      : jigc-gate:rc13 (jigc 1.0.0-rc.13)
-jigc sha   : 979bacaf31cbf513ca8afcb0bade447a88c06ba1
+jigc sha   : f2667709b168a447f14fb348fd04287081b72548
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-m50
@@ -237,7 +237,7 @@ exit **1**
 
 ```
 image      : jigc-gate:rc13 (jigc 1.0.0-rc.13)
-jigc sha   : 979bacaf31cbf513ca8afcb0bade447a88c06ba1
+jigc sha   : f2667709b168a447f14fb348fd04287081b72548
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-m50
@@ -432,7 +432,7 @@ exit **0**
 
 ```
 image      : jigc-gate:rc13 (jigc 1.0.0-rc.13)
-jigc sha   : 979bacaf31cbf513ca8afcb0bade447a88c06ba1
+jigc sha   : f2667709b168a447f14fb348fd04287081b72548
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-m50
@@ -478,7 +478,7 @@ exit **0**
 
 ```
 image      : jigc-gate:rc13 (jigc 1.0.0-rc.13)
-jigc sha   : 979bacaf31cbf513ca8afcb0bade447a88c06ba1
+jigc sha   : f2667709b168a447f14fb348fd04287081b72548
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-m50
@@ -666,7 +666,7 @@ exit **0**
 
 ```
 image      : jigc-gate:rc13 (jigc 1.0.0-rc.13)
-jigc sha   : 979bacaf31cbf513ca8afcb0bade447a88c06ba1
+jigc sha   : f2667709b168a447f14fb348fd04287081b72548
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-m50
@@ -789,7 +789,7 @@ exit **0**
 
 ```
 image      : jigc-gate:rc13 (jigc 1.0.0-rc.13)
-jigc sha   : 979bacaf31cbf513ca8afcb0bade447a88c06ba1
+jigc sha   : f2667709b168a447f14fb348fd04287081b72548
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-m50
@@ -887,7 +887,7 @@ exit **0**
 
 ```
 image      : jigc-gate:rc13 (jigc 1.0.0-rc.13)
-jigc sha   : 979bacaf31cbf513ca8afcb0bade447a88c06ba1
+jigc sha   : f2667709b168a447f14fb348fd04287081b72548
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-m50
@@ -973,7 +973,7 @@ exit **0**
 
 ```
 image      : jigc-gate:rc13 (jigc 1.0.0-rc.13)
-jigc sha   : 979bacaf31cbf513ca8afcb0bade447a88c06ba1
+jigc sha   : f2667709b168a447f14fb348fd04287081b72548
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-m50
@@ -1084,7 +1084,7 @@ exit **0**
 
 ```
 image      : jigc-gate:rc13 (jigc 1.0.0-rc.13)
-jigc sha   : 979bacaf31cbf513ca8afcb0bade447a88c06ba1
+jigc sha   : f2667709b168a447f14fb348fd04287081b72548
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-m50
@@ -1397,7 +1397,7 @@ exit **0**
 
 ```
 image      : jigc-gate:rc13 (jigc 1.0.0-rc.13)
-jigc sha   : 979bacaf31cbf513ca8afcb0bade447a88c06ba1
+jigc sha   : f2667709b168a447f14fb348fd04287081b72548
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-m50
@@ -1438,7 +1438,7 @@ exit **0**
 
 ```
 image      : jigc-gate:rc13 (jigc 1.0.0-rc.13)
-jigc sha   : 979bacaf31cbf513ca8afcb0bade447a88c06ba1
+jigc sha   : f2667709b168a447f14fb348fd04287081b72548
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-m50
@@ -1987,7 +1987,7 @@ exit **0**
 
 ```
 image      : jigc-gate:rc13 (jigc 1.0.0-rc.13)
-jigc sha   : 979bacaf31cbf513ca8afcb0bade447a88c06ba1
+jigc sha   : f2667709b168a447f14fb348fd04287081b72548
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-m50
@@ -2180,7 +2180,7 @@ exit **0**
 
 ```
 image      : jigc-gate:rc13 (jigc 1.0.0-rc.13)
-jigc sha   : 979bacaf31cbf513ca8afcb0bade447a88c06ba1
+jigc sha   : f2667709b168a447f14fb348fd04287081b72548
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-m50
@@ -2487,7 +2487,7 @@ exit **0**
 
 ```
 image      : jigc-gate:rc13 (jigc 1.0.0-rc.13)
-jigc sha   : 979bacaf31cbf513ca8afcb0bade447a88c06ba1
+jigc sha   : f2667709b168a447f14fb348fd04287081b72548
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-m50
@@ -2532,7 +2532,7 @@ exit **1**
 
 ```
 image      : jigc-gate:rc13 (jigc 1.0.0-rc.13)
-jigc sha   : 979bacaf31cbf513ca8afcb0bade447a88c06ba1
+jigc sha   : f2667709b168a447f14fb348fd04287081b72548
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-m50
@@ -2868,7 +2868,7 @@ exit **0**
 
 ```
 image      : jigc-gate:rc13 (jigc 1.0.0-rc.13)
-jigc sha   : 979bacaf31cbf513ca8afcb0bade447a88c06ba1
+jigc sha   : f2667709b168a447f14fb348fd04287081b72548
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-m50
@@ -3774,7 +3774,7 @@ exit **1**
 
 ```
 image      : jigc-gate:rc13 (jigc 1.0.0-rc.13)
-jigc sha   : 979bacaf31cbf513ca8afcb0bade447a88c06ba1
+jigc sha   : f2667709b168a447f14fb348fd04287081b72548
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-m50
@@ -4282,7 +4282,7 @@ exit **1**
 
 ```
 image      : jigc-gate:rc13 (jigc 1.0.0-rc.13)
-jigc sha   : 979bacaf31cbf513ca8afcb0bade447a88c06ba1
+jigc sha   : f2667709b168a447f14fb348fd04287081b72548
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-m50
@@ -4635,7 +4635,7 @@ exit **0**
 
 ```
 image      : jigc-gate:rc13 (jigc 1.0.0-rc.13)
-jigc sha   : 979bacaf31cbf513ca8afcb0bade447a88c06ba1
+jigc sha   : f2667709b168a447f14fb348fd04287081b72548
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-m50
@@ -4984,7 +4984,7 @@ exit **1**
 
 ```
 image      : jigc-gate:rc13 (jigc 1.0.0-rc.13)
-jigc sha   : 979bacaf31cbf513ca8afcb0bade447a88c06ba1
+jigc sha   : f2667709b168a447f14fb348fd04287081b72548
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-m50
@@ -5289,7 +5289,7 @@ exit **0**
 
 ```
 image      : jigc-gate:rc13 (jigc 1.0.0-rc.13)
-jigc sha   : 979bacaf31cbf513ca8afcb0bade447a88c06ba1
+jigc sha   : f2667709b168a447f14fb348fd04287081b72548
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-m50

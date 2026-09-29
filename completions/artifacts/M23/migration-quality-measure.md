@@ -13,7 +13,7 @@ existing-project live test.
 | | |
 |---|---|
 | `jigc` sha256 | `48448950e840527b367c457dc9a5e7c0426198bffcf1c044630076a6e67e0e1d` |
-| HEAD commit | `7e8d55751e02af39df4c7c7e7ebc9afab8156f42` (the Inc-4 T1 marquee, clean tree) |
+| HEAD commit | `c9033cc44d8e8213ba883c34b43c7671d67ff316` (the Inc-4 T1 marquee, clean tree) |
 | Pinned to | `~/.cargo/bin/jigc` **and** `~/.local/bin/jigc` (`cargo install --path crates/cli --force` + copy to both bin dirs — the roadmap "before any exercise" re-pin) |
 | Invocation | `jigc` from `PATH` (not `CARGO_BIN_EXE`), with the **embedded** dev pack (no `JIGC_PACK_DIR`) |
 | Driver | [`drive.sh`](evidence/) reproduced below in [evidence/](evidence/) — one `git init` temp repo per file |

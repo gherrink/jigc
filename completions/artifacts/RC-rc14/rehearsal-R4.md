@@ -11,7 +11,7 @@ agent settles it** — *"that rehearsal is the thing this trial did not do."*
 | | |
 |---|---|
 | corpus | `clayforth` (naive, gated 12/12, then `b1-hook.sh` + `b1-staged.sh`) |
-| image | `jigc-gate:rc14`, sha `21ffc0d4` |
+| image | `jigc-gate:rc14`, sha `82075cc3` |
 | transport | headless — the harder case: `-p` has no queued-message channel at all |
 | prompt | [paste/b1-prompt.txt](paste/b1-prompt.txt), verbatim, screened CLEAN |
 | evidence | `~/out/RC14-R4` |
@@ -27,7 +27,7 @@ and looks exactly like completion. `observe` caught it:
 
 ```
 session           recs wrote  VERB  adj  fs  outcome
-  provenance: jigc-gate:rc14 / jigc 21ffc0d47c9b
+  provenance: jigc-gate:rc14 / jigc 82075cc3de6f
 RC14-R4             14     3     1    2   0       read back through the fence's verb
   ENDED ASKING the operator …
 ```

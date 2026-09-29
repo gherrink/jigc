@@ -11,7 +11,7 @@
 //! **read**. Each leaf re-parses the growing buffer three or four times (the presence
 //! probe, the splice's own locate, `validate_after`), which is quadratic by
 //! construction — but `engine::parse` was itself quadratic *inside one parse*, so the
-//! product came out cubic. A `sample(1)` profile of the 800-item run at `ebfc53a`
+//! product came out cubic. A `sample(1)` profile of the 800-item run at `e0b53bd`
 //! attributed **3495 of 3554 samples — 98 % — to `engine::parse::line_of`**, which
 //! answered "which line is this byte on?" by counting the newlines in the whole
 //! prefix, once per heading in `scan_blocks` and again per item in `parse_items`.
@@ -35,7 +35,7 @@
 //! **Measured, one payload, release build, `spec` with three leaves per item
 //! (`add-item` + a `statement` slot + a `maps-to-test` field):**
 //!
-//! | items | before (`ebfc53a`) | after   | speedup |
+//! | items | before (`e0b53bd`) | after   | speedup |
 //! |-------|--------------------|---------|---------|
 //! |    50 |             0.08 s |  0.07 s |    1.2× |
 //! |   100 |             0.27 s |  0.14 s |    2.0× |
@@ -46,10 +46,10 @@
 //!
 //! Ratio per doubling **before**: 3.3 → 5.5 → 6.9 → 7.5, i.e. approaching **n²·⁹**.
 //! **After**: 2.0 → 3.0 → 3.8 → 4.3, i.e. **n²·¹** — the quadratic residual and no more.
-//! Every cell but one was measured for this task — "before" at `ebfc53a`, this
+//! Every cell but one was measured for this task — "before" at `e0b53bd`, this
 //! increment's HEAD before it, and "after" at the commit that lands it. The exception is
 //! the 1500 row's "before": that is the wave's own recorded observation at the earlier
-//! `2c6876a`, where the run was killed rather than timed, so it carries no speedup.
+//! `352993a`, where the run was killed rather than timed, so it carries no speedup.
 //!
 //! The debug build the assertion below actually runs on tells the same story, ~14× slower
 //! throughout: **before** 200 → 52.3 s, 400 → 410.4 s (ratio **7.85**); **after** 200 →
@@ -84,7 +84,7 @@ const GOLDEN_ITEMS: usize = 800;
 /// The residual shape is quadratic, so the honest expectation is **4**; the bound is
 /// set at 5.5 to absorb per-run noise and the fixed process-startup cost that inflates
 /// the denominator, while staying decisively under the **7.85** the cubic path measured
-/// at `ebfc53a`. It is a shape assertion with slack, not a stopwatch.
+/// at `e0b53bd`. It is a shape assertion with slack, not a stopwatch.
 const MAX_GROWTH_RATIO: f64 = 5.5;
 
 /// How many times each size is measured; the **minimum** is taken, which rejects

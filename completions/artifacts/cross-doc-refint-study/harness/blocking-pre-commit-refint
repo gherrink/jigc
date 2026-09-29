@@ -9,7 +9,7 @@
 #
 # The detection delta from the doc<->code study: the dangling-ref finding is
 # `schema-conformance.ref-resolves` (probe = "schema-conformance"), surfaced store-wide by
-# the 4th store-sweep family (engine commit 55b7a1c). So this greps `"probe":
+# the 4th store-sweep family (engine commit e01614e). So this greps `"probe":
 # "schema-conformance"`. (The `doc-code` alternation is kept too, so a corpus that ever
 # carries a code anchor is still covered; the cross-doc seed has none, so it is inert.)
 #

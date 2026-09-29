@@ -498,7 +498,7 @@ fn every_address_headed_door_answers_with_the_store_code() {
 ///
 /// `design/command-output-contract.md` → *The membership test* lists `store.unknown-type`
 /// under a **declared target form** (the bare doctype id), and that listing is a promise
-/// that a driver's `(code, target)` key resolves. Driven at `c80b3f8f` it did not: five of
+/// that a driver's `(code, target)` key resolves. Driven at `26d021de` it did not: five of
 /// the sixteen `store.unknown-type` doors — `jigc migrate --as`, `jigc relocate`,
 /// `jigc rename`, `jigc task bind` and `jigc milestone add-from-spec` — answered
 /// `--format json` with the flattened `{"error": "blocking · store.unknown-type — …"}`,

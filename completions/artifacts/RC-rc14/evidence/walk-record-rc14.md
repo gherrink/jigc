@@ -35,7 +35,7 @@ Run in an **earlier pass**, exit **0**. Its evidence is in `00-positive-control/
 
 ```
 image      : jigc-gate:rc14 (jigc 1.0.0-rc.14)
-jigc sha   : 21ffc0d47c9be41ae93f7d9f69dad24110a783a3
+jigc sha   : 82075cc3de6f2c4af5de3e683bbdf33e83f8f594
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-rc14
@@ -111,7 +111,7 @@ exit **0**
 
 ```
 image      : jigc-gate:rc14 (jigc 1.0.0-rc.14)
-jigc sha   : 21ffc0d47c9be41ae93f7d9f69dad24110a783a3
+jigc sha   : 82075cc3de6f2c4af5de3e683bbdf33e83f8f594
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-rc14
@@ -237,7 +237,7 @@ exit **0**
 
 ```
 image      : jigc-gate:rc14 (jigc 1.0.0-rc.14)
-jigc sha   : 21ffc0d47c9be41ae93f7d9f69dad24110a783a3
+jigc sha   : 82075cc3de6f2c4af5de3e683bbdf33e83f8f594
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-rc14
@@ -429,7 +429,7 @@ exit **0**
 
 ```
 image      : jigc-gate:rc14 (jigc 1.0.0-rc.14)
-jigc sha   : 21ffc0d47c9be41ae93f7d9f69dad24110a783a3
+jigc sha   : 82075cc3de6f2c4af5de3e683bbdf33e83f8f594
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-rc14
@@ -475,7 +475,7 @@ exit **0**
 
 ```
 image      : jigc-gate:rc14 (jigc 1.0.0-rc.14)
-jigc sha   : 21ffc0d47c9be41ae93f7d9f69dad24110a783a3
+jigc sha   : 82075cc3de6f2c4af5de3e683bbdf33e83f8f594
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-rc14
@@ -663,7 +663,7 @@ exit **0**
 
 ```
 image      : jigc-gate:rc14 (jigc 1.0.0-rc.14)
-jigc sha   : 21ffc0d47c9be41ae93f7d9f69dad24110a783a3
+jigc sha   : 82075cc3de6f2c4af5de3e683bbdf33e83f8f594
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-rc14
@@ -798,7 +798,7 @@ exit **0**
 
 ```
 image      : jigc-gate:rc14 (jigc 1.0.0-rc.14)
-jigc sha   : 21ffc0d47c9be41ae93f7d9f69dad24110a783a3
+jigc sha   : 82075cc3de6f2c4af5de3e683bbdf33e83f8f594
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-rc14
@@ -896,7 +896,7 @@ exit **1**
 
 ```
 image      : jigc-gate:rc14 (jigc 1.0.0-rc.14)
-jigc sha   : 21ffc0d47c9be41ae93f7d9f69dad24110a783a3
+jigc sha   : 82075cc3de6f2c4af5de3e683bbdf33e83f8f594
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-rc14
@@ -986,7 +986,7 @@ exit **1**
 
 ```
 image      : jigc-gate:rc14 (jigc 1.0.0-rc.14)
-jigc sha   : 21ffc0d47c9be41ae93f7d9f69dad24110a783a3
+jigc sha   : 82075cc3de6f2c4af5de3e683bbdf33e83f8f594
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-rc14
@@ -1096,7 +1096,7 @@ exit **0**
 
 ```
 image      : jigc-gate:rc14 (jigc 1.0.0-rc.14)
-jigc sha   : 21ffc0d47c9be41ae93f7d9f69dad24110a783a3
+jigc sha   : 82075cc3de6f2c4af5de3e683bbdf33e83f8f594
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-rc14
@@ -1409,7 +1409,7 @@ exit **0**
 
 ```
 image      : jigc-gate:rc14 (jigc 1.0.0-rc.14)
-jigc sha   : 21ffc0d47c9be41ae93f7d9f69dad24110a783a3
+jigc sha   : 82075cc3de6f2c4af5de3e683bbdf33e83f8f594
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-rc14
@@ -1450,7 +1450,7 @@ exit **0**
 
 ```
 image      : jigc-gate:rc14 (jigc 1.0.0-rc.14)
-jigc sha   : 21ffc0d47c9be41ae93f7d9f69dad24110a783a3
+jigc sha   : 82075cc3de6f2c4af5de3e683bbdf33e83f8f594
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-rc14
@@ -1999,7 +1999,7 @@ exit **0**
 
 ```
 image      : jigc-gate:rc14 (jigc 1.0.0-rc.14)
-jigc sha   : 21ffc0d47c9be41ae93f7d9f69dad24110a783a3
+jigc sha   : 82075cc3de6f2c4af5de3e683bbdf33e83f8f594
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-rc14
@@ -2192,7 +2192,7 @@ exit **0**
 
 ```
 image      : jigc-gate:rc14 (jigc 1.0.0-rc.14)
-jigc sha   : 21ffc0d47c9be41ae93f7d9f69dad24110a783a3
+jigc sha   : 82075cc3de6f2c4af5de3e683bbdf33e83f8f594
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-rc14
@@ -2504,7 +2504,7 @@ exit **0**
 
 ```
 image      : jigc-gate:rc14 (jigc 1.0.0-rc.14)
-jigc sha   : 21ffc0d47c9be41ae93f7d9f69dad24110a783a3
+jigc sha   : 82075cc3de6f2c4af5de3e683bbdf33e83f8f594
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-rc14
@@ -2549,7 +2549,7 @@ exit **0**
 
 ```
 image      : jigc-gate:rc14 (jigc 1.0.0-rc.14)
-jigc sha   : 21ffc0d47c9be41ae93f7d9f69dad24110a783a3
+jigc sha   : 82075cc3de6f2c4af5de3e683bbdf33e83f8f594
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-rc14
@@ -2844,7 +2844,7 @@ exit **0**
 
 ```
 image      : jigc-gate:rc14 (jigc 1.0.0-rc.14)
-jigc sha   : 21ffc0d47c9be41ae93f7d9f69dad24110a783a3
+jigc sha   : 82075cc3de6f2c4af5de3e683bbdf33e83f8f594
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-rc14
@@ -3750,7 +3750,7 @@ exit **1**
 
 ```
 image      : jigc-gate:rc14 (jigc 1.0.0-rc.14)
-jigc sha   : 21ffc0d47c9be41ae93f7d9f69dad24110a783a3
+jigc sha   : 82075cc3de6f2c4af5de3e683bbdf33e83f8f594
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-rc14
@@ -4250,7 +4250,7 @@ exit **1**
 
 ```
 image      : jigc-gate:rc14 (jigc 1.0.0-rc.14)
-jigc sha   : 21ffc0d47c9be41ae93f7d9f69dad24110a783a3
+jigc sha   : 82075cc3de6f2c4af5de3e683bbdf33e83f8f594
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-rc14
@@ -4619,7 +4619,7 @@ exit **0**
 
 ```
 image      : jigc-gate:rc14 (jigc 1.0.0-rc.14)
-jigc sha   : 21ffc0d47c9be41ae93f7d9f69dad24110a783a3
+jigc sha   : 82075cc3de6f2c4af5de3e683bbdf33e83f8f594
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-rc14
@@ -4968,7 +4968,7 @@ exit **0**
 
 ```
 image      : jigc-gate:rc14 (jigc 1.0.0-rc.14)
-jigc sha   : 21ffc0d47c9be41ae93f7d9f69dad24110a783a3
+jigc sha   : 82075cc3de6f2c4af5de3e683bbdf33e83f8f594
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-rc14
@@ -5273,7 +5273,7 @@ exit **0**
 
 ```
 image      : jigc-gate:rc14 (jigc 1.0.0-rc.14)
-jigc sha   : 21ffc0d47c9be41ae93f7d9f69dad24110a783a3
+jigc sha   : 82075cc3de6f2c4af5de3e683bbdf33e83f8f594
 model      : claude-sonnet-5
 permissions: bypassPermissions
 corpus     : /Users/maurice/ideas/walk-rc14

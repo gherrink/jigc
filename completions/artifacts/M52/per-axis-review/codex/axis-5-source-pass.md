@@ -1,8 +1,8 @@
-<!-- M52 per-axis review (re-run) — axis 5 · transaction / rollback — the CODEX SOURCE PASS, verbatim. Read against the repository at commit a3eb026b, 2026-09-21. It reads; it drives nothing. Every claim below is a LEAD until the reconciler drove it — see axis-5.md for the verdict on each. -->
+<!-- M52 per-axis review (re-run) — axis 5 · transaction / rollback — the CODEX SOURCE PASS, verbatim. Read against the repository at commit e519e4eb, 2026-09-21. It reads; it drives nothing. Every claim below is a LEAD until the reconciler drove it — see axis-5.md for the verdict on each. -->
 
 # M52 Axis 5 source pass
 
-Read-only review of HEAD `a3eb026b699ce9c23cb0201555838931b65bd2d2` (`1.0.0-rc.16`). No files or directories were created, and no binary was driven.
+Read-only review of HEAD `e519e4ebf952bbf71b8591294101bd63be779998` (`1.0.0-rc.16`). No files or directories were created, and no binary was driven.
 
 ## Claims
 
@@ -56,6 +56,6 @@ Read-only review of HEAD `a3eb026b699ce9c23cb0201555838931b65bd2d2` (`1.0.0-rc.1
 
 ## Schema-hash boundary and bounds
 
-No zero-schema-hash violation found. All three tracked `schema-manifest.yaml` files are byte-unchanged from M51 commit `35195f56` through HEAD: `packs/methodology/config/schema-manifest.yaml`, `crates/cli/pack/config/schema-manifest.yaml`, and `crates/cli/tests/fixtures/prior-schema-prd/config/schema-manifest.yaml`.
+No zero-schema-hash violation found. All three tracked `schema-manifest.yaml` files are byte-unchanged from M51 commit `577a0099` through HEAD: `packs/methodology/config/schema-manifest.yaml`, `crates/cli/pack/config/schema-manifest.yaml`, and `crates/cli/tests/fixtures/prior-schema-prd/config/schema-manifest.yaml`.
 
 Bounds: source inspection only; no binary execution, compilation, or filesystem mutation. The sole lead depends on a valid composed pack lacking both off-catalog workflows; the source contains an explicit unit witness for that state, but only the separate driver can confirm its installed-binary reproduction.

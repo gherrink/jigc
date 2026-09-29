@@ -1,6 +1,6 @@
 ## F‑10 baseline — what an amend would have to stand on
 
-Verified at `834772b6`, driven on the **installed** `1.0.0-rc.19` via `rig=$(dev/jigc-rig fresh --binary /Users/maurice/.local/bin/jigc) || exit; eval "$rig"`. Repro roots: `/var/folders/.../jigc-rig-fresh-6uXgtO/repo` (task arm), `/private/var/.../jigc-rig-fresh-CGDtTK/repo` (milestone arm). A map at this sha, not gospel.
+Verified at `609da011`, driven on the **installed** `1.0.0-rc.19` via `rig=$(dev/jigc-rig fresh --binary /Users/maurice/.local/bin/jigc) || exit; eval "$rig"`. Repro roots: `/var/folders/.../jigc-rig-fresh-6uXgtO/repo` (task arm), `/private/var/.../jigc-rig-fresh-CGDtTK/repo` (milestone arm). A map at this sha, not gospel.
 
 ---
 

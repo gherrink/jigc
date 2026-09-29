@@ -87,8 +87,8 @@ Every one of these is a failure this rehearsal actually hit. None is hypothetica
 
 ### The pair differential, and the trap it closes
 
-**Two commits stamp `1.0.0-rc.10`**: `8979f16` (the genuine pre-M48 binary) and `4fd7fbc`
-(rc.10-stamped but containing all of M48, because the bump landed late at `9cb9b78`).
+**Two commits stamp `1.0.0-rc.10`**: `1d4f9bc` (the genuine pre-M48 binary) and `78b288f`
+(rc.10-stamped but containing all of M48, because the bump landed late at `1d2f146`).
 `jigc --version` **cannot tell them apart**, so an upgrade arm built from the wrong one
 compares rc.11 against itself with nothing in the output to reveal it.
 
@@ -102,7 +102,7 @@ for and get wrong: the trap is unreachable rather than documented.
 
 ```sh
 ./build-image.sh HEAD      jigc-gate:rc11    # the binary under test
-./build-image.sh 8979f16   jigc-gate:rc10    # the upgrade arm's baseline
+./build-image.sh 1d4f9bc   jigc-gate:rc10    # the upgrade arm's baseline
 ./verify-image.sh jigc-gate:rc11 1.0.0-rc.11
 ./verify-pair.sh
 

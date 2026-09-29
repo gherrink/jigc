@@ -16,8 +16,8 @@ feedback in `feedback-B1.md` … `feedback-B3b.md`; corpora, cue cards, prompts 
 ## Provenance
 
 - **Binary:** `jigc 1.0.0-rc.11` throughout — `binary_version` on every one of the 331 logged
-  records, `jigc-sha 9a37f01` in every corpus's `PROVENANCE.txt`. Walk arm 2 additionally drove
-  **rc.10 built from the pinned `8979f16`**, the genuine pre-M48 tree, confirmed by
+  records, `jigc-sha d1ebbc2` in every corpus's `PROVENANCE.txt`. Walk arm 2 additionally drove
+  **rc.10 built from the pinned `1d4f9bc`**, the genuine pre-M48 tree, confirmed by
   `verify-pair.sh` before the arm ran.
 - **Isolation:** every session ran in the container rig, not on the operator's machine — a change to
   a pre-registered instrument, made **before any session ran**, because the host contaminates every

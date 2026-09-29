@@ -436,13 +436,13 @@ Every arm below is justified by a behaviour M48 changed that no blind probe reac
    it is protecting; (b) it **says what would be lost** — staged, unstaged, untracked — rather than
    just "not empty"; (c) it **names the consent** (`--force`) in the same output; and (d) the consent,
    run verbatim, **works**. Any of the four missing, it reads as obstruction and is a finding. Also drive the **junk-directory** case, which now refuses where rc.10 succeeded.
-2. **The rc.10 → rc.11 upgrade.** ⚠️ **Build rc.10 from `8979f16` — pin that sha, do not search for
-   the version string.** **Two commits stamp `version = "1.0.0-rc.10"`**: `8979f16`, the genuine
-   pre-M48 binary the last trial ran on, and `4fd7fbc`, which is still rc.10-stamped but **contains
-   every M48 change including the audit fixes** (the bump landed late, at `9cb9b78`, deliberately
+2. **The rc.10 → rc.11 upgrade.** ⚠️ **Build rc.10 from `1d4f9bc` — pin that sha, do not search for
+   the version string.** **Two commits stamp `version = "1.0.0-rc.10"`**: `1d4f9bc`, the genuine
+   pre-M48 binary the last trial ran on, and `78b288f`, which is still rc.10-stamped but **contains
+   every M48 change including the audit fixes** (the bump landed late, at `1d2f146`, deliberately
    *after* the audit). A search for the version finds the **wrong, newer** one, and building it makes
    this arm compare rc.11 against itself — **vacuous, with nothing in the output to reveal it**.
-   **Since the isolation change (§2), build it with `completions/trial-harness/build-image.sh 8979f16`** rather than
+   **Since the isolation change (§2), build it with `completions/trial-harness/build-image.sh 1d4f9bc`** rather than
    to a temp prefix: the sha is an argument, so the wrong-tree hazard above is unreachable rather
    than merely warned about, and this arm then runs in the same isolation as every other. Confirm
    the pair with `completions/trial-harness/verify-pair.sh` — it fails unless rc.10 **lacks** three verbs M48 shipped.

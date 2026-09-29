@@ -1,8 +1,8 @@
 # M52 baseline — area `posture` (axis 2: the posture family × every acting door)
 
 **Provenance.** Binary `/Users/maurice/.local/bin/jigc` → `jigc 1.0.0-rc.15`,
-sha256 `126f1584f183636bb6cd9e782b1dc26aca28dd1afaf2fb83da1fd0e5febc8fa9`, built from `35195f56`
-(RELEASE: the `#[cfg(debug_assertions)]` route fence does not exist here). Repo HEAD `85ad06c5`,
+sha256 `126f1584f183636bb6cd9e782b1dc26aca28dd1afaf2fb83da1fd0e5febc8fa9`, built from `577a0099`
+(RELEASE: the `#[cfg(debug_assertions)]` route fence does not exist here). Repo HEAD `7637a46f`,
 tree clean, **no cargo run, no edit to the working repo**. Date 2026-09-16/17. git **2.54.0**
 (Apple Git-157) — every marker fact below is a property of this git and is stated as such.
 Fixtures: `dev/jigc-rig committed-singletons --binary ~/.local/bin/jigc`, two-step eval, three rigs

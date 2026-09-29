@@ -824,7 +824,7 @@ pub(crate) fn vacated_homes(
 /// because a route written for one state is wrong in the others: the emptiness leg reads the
 /// **worktree** ([`engine::index::committed_instances`] asks `path.exists()`), so an
 /// uncommitted `rm` satisfies it exactly as a committed `git rm` does, while what repairs the
-/// two could not differ more (M52 completion audit, fix 6 — driven at `b9ab6a70`, the shipped
+/// two could not differ more (M52 completion audit, fix 6 — driven at `a83a9e60`, the shipped
 /// route drew *"`git log --diff-filter=D -1 -- CHANGELOG.md` names the commit that removed
 /// it"* over an uncommitted deletion, where that command prints nothing at exit 0, and then
 /// prescribed a restore-and-commit plus a re-registration the state does not need).

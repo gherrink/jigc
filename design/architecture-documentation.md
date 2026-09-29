@@ -37,7 +37,7 @@ sections:
         - { id: implemented-by, type: code-anchor, check: symbol-exists }
 ```
 
-Three things make this shape work on the built substrate, each **exercised at planning** (2026-06-07 spike, HEAD `e983dde`) rather than assumed:
+Three things make this shape work on the built substrate, each **exercised at planning** (2026-06-07 spike, HEAD `c93d441`) rather than assumed:
 
 - **`cites → adr` lives in the header (a Simple section), n→n.** A list-valued `ref` (`card: "0..*"`) parses to an ordered list and the edge index emits **one edge per element**; `ref-resolves` walks each at finalize, blocking the dangling target and passing the present one. A ref in a *repeatable* section emits no edge (an MVP non-target) — so `cites` stays doc-level, where the walk is the proven `supersedes`/`implements` path. Section ids stay **single-word** (`meta`/`overview`/`components`), sidestepping the latent multi-word-heading round-trip defect ([decisions-pending.md](../implementation/decisions-pending.md) — still deferred; arch-doc does not trip it).
 - **`components` is a repeatable section**, each item addressed `arch-doc:<slug>#components/<id>/…`. This is the first doctype to *author* repeatable items through the binary — the capability `spec.criteria` deferred. It forces the item-authoring surface below (`add-item` + item-leaf setters).

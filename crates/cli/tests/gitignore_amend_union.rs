@@ -3,7 +3,7 @@
 //! algorithm and EC-18 · `implementation/roadmap.md` → Milestone 51 Increment 4 ·
 //! `completions/artifacts/M51/gap-findings.md` → G-46).
 //!
-//! **The base-red, driven at `1922c7f5`.** A repo whose `.jigc/.gitignore` carried a
+//! **The base-red, driven at `67c0c369`.** A repo whose `.jigc/.gitignore` carried a
 //! user's own two lines (`# my private stuff` + `build-cache/`) and was one entry short
 //! of the canonical set: `jigc setup` exited **0**, the file came back as exactly
 //! [`ENTRIES`], `git status --short` was **empty** — the file had been rewritten to

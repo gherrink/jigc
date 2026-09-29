@@ -10,13 +10,13 @@ is the main-session orchestrator run that closes the gate.
 
 **Disposition (human-gated, 2026-06-21):** run the genuine spawn — chosen over
 accepting the sim, even though M32 changed **zero** launch/spawn/adapter/template
-code (`git diff 1e114f6..HEAD -- crates/cli/src/adapter.rs crates/engine/src/compose.rs
+code (`git diff b5cbba4..HEAD -- crates/cli/src/adapter.rs crates/engine/src/compose.rs
 crates/cli/pack/steps crates/cli/pack/workflows` is empty; M32's delta is the
 CLI-internal `provision_on_first_entry` only). Belt-and-suspenders.
 
 ## Method
 
-Binary: `target/debug/jigc` sha256 `47055ff9d2d1…` (built at HEAD `e4dc280`).
+Binary: `target/debug/jigc` sha256 `47055ff9d2d1…` (built at HEAD `35b0606`).
 Two **real concurrent sub-agents** spawned via the assistant Agent tool, each
 handed the rendered Spawn directive verbatim and an exact-content fixture, told
 to coordinate ONLY through `jigc` + `git add` in its own worktree and never read

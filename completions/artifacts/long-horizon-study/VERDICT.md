@@ -80,7 +80,7 @@ blind spot, previously a footnote, shown to be **outcome-determining**.
   were already perfect; the only leak was the unenforced title. **This is the highest-
   value next increment** the study surfaces, and it is squarely within the existing
   `doc-code` mechanism.
-  - **DONE + re-tested (2026-06-23, commit `9d99924`).** Implemented as the
+  - **DONE + re-tested (2026-06-23, commit `33caa87`).** Implemented as the
     pack-declared `title-names-symbol` check (a `doc-code` finding the floor/hook
     already catch). Opus re-test: stale prose **3.0 → 0.5**, rep2 clean across all 8
     edits — the fix works. Full result, bounds, and the one now-closed heuristic

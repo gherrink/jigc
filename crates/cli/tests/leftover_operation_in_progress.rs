@@ -1,8 +1,8 @@
 //! **A destroying door refuses a worktree git has left mid-operation, even when its tree is
-//! clean** — the leftover classifier's second leg (the independent review of `986d5e0a`, the
+//! clean** — the leftover classifier's second leg (the independent review of `3c71da87`, the
 //! HIGH; 2026-09-22).
 //!
-//! `986d5e0a` gave `jigc milestone finalize` the posture probe for every checkout it commits
+//! `3c71da87` gave `jigc milestone finalize` the posture probe for every checkout it commits
 //! **from**. The sibling it carried was the *destroying* half of the same boundary, and the
 //! warrant it was carried on — *"a destroying door whose guard refuses over content and whose
 //! `--force` is its consent"* — is true only where the operation leaves content.
@@ -11,7 +11,7 @@
 //! clean-tree cell no guard fired at all, so the consent the disposition pointed at was never
 //! asked for and `--force` was never reached.
 //!
-//! Driven on the debug binary at `986d5e0a`, all three refusing doors, exit **0**, nothing
+//! Driven on the debug binary at `3c71da87`, all three refusing doors, exit **0**, nothing
 //! printed about the operation:
 //!
 //!   * `jigc milestone discard <id>` over a provisioned sub-task worktree paused mid-bisect —

@@ -8,9 +8,9 @@ this file only points.
 
 | | |
 |---|---|
-| HEAD | `ec2f75c5` (the tooling chore) plus this handover commit on top, pushed, tree clean |
+| HEAD | `b2d78da8` (the tooling chore) plus this handover commit on top, pushed, tree clean |
 | Gate | **3550 passed / 0 failed**, fmt + clippy clean, measured bare via `dev/gate` (the chore commit's own run; its per-step times are in that commit's report) |
-| Binary | `1.0.0-rc.15` installed at `~/.local/bin/jigc` (sha256 `126f1584…`), built from `35195f56`; `target/` was `cargo clean`ed by the chore, so the first build is cold |
+| Binary | `1.0.0-rc.15` installed at `~/.local/bin/jigc` (sha256 `126f1584…`), built from `577a0099`; `target/` was `cargo clean`ed by the chore, so the first build is cold |
 | The 1.0.0 call | **Not taken on rc.15.** The per-axis review found exit-0 data-loss rows behind committing doors — the class that blocked the call after RC-m50 ([DECISIONS.md](../../../DECISIONS.md) → 2026-09-16 M52 chartered) |
 | M51 | **Complete**: built, audited (5 findings, 5 fixed axis-complete), rc.15 stamped after the fixes — [VERDICT](../M51/VERDICT.md) |
 | M52 | **Chartered, not planned.** [decisions-pending.md](../../../implementation/decisions-pending.md) → *The rc.16 wave (M52)*: all 39 confirmed review rows, tiered (12 · 17 · 10), the 7 open leads dispositioned with triggers, fixes + understandability only |
@@ -43,7 +43,7 @@ baseline; it does not inherit them.
 **Build with the harness defaults:** `Workflow({ name: 'milestone-build', args: { milestone: 'M52',
 base: '<HEAD after planning>', model: 'opus' } })`. The `model` arg is what pins the subagents to Opus
 — the `.claude/agents/*.md` frontmatter key is **not** honored by the Workflow runtime (measured
-2026-09-14; `f8007e64`). Re-pass **all three** args on every resume.
+2026-09-14; `2e24b324`). Re-pass **all three** args on every resume.
 
 ## The rules that bit M51 — do not re-learn them
 
@@ -70,7 +70,7 @@ base: '<HEAD after planning>', model: 'opus' } })`. The `model` arg is what pins
    version-stamp confirmation caught the owed bump unshipped in five consecutive waves.
 8. **`foldback_truth.rs` pins the newest `**M<nn> —` span of CLAUDE.md.** The close increment re-aims
    it to `**M52 —` in the *built, not audited* direction; the completion close inverts it back and
-   requires the VERDICT citation (M51's close did exactly this — `35195f56`).
+   requires the VERDICT citation (M51's close did exactly this — `577a0099`).
 9. **A halt's resume note lives in the run's script snapshot, keyed on the increment, and stays
    byte-identical** across later resumes; every other planner call replays from cache.
 
@@ -91,9 +91,9 @@ base: '<HEAD after planning>', model: 'opus' } })`. The `model` arg is what pins
 |---|---|
 | The charter (tiers, open leads, rules, Settle forks) | [decisions-pending.md](../../../implementation/decisions-pending.md) → *The rc.16 wave (M52)* |
 | The evidence base | [M51/per-axis-review/](../M51/per-axis-review/) — README (findings ledger, coverage, bounds), `axis-1.md` … `axis-8.md`, `codex/` (raw source passes), `instrument/` |
-| M51's audit and its fixes | [M51/VERDICT.md](../M51/VERDICT.md); fix commits `8a42fbbd` · `b5ccd818` · `0fc80bab` · `dc508994` |
+| M51's audit and its fixes | [M51/VERDICT.md](../M51/VERDICT.md); fix commits `6c2391c0` · `da5173a1` · `ff2bde99` · `507c332d` |
 | M51's planning artifacts (the mold) | [M51/](../M51/) — charter, baseline-ledger, gap-findings, settle-record (D1–D15, §1–§21), planning-gate-record, acceptance-design, handover |
-| The two mid-build halts | settle-record §20 (`d5e0508c`) and §21 (`5ebafaeb`) |
+| The two mid-build halts | settle-record §20 (`548576a1`) and §21 (`5f9499ba`) |
 | The build harness and its resume rules | `.claude/workflows/milestone-build.js` (header block) |
 | The why, dated | `DECISIONS.md` → the 2026-09-14/16 M51 entries and the M52 charter entry |
 

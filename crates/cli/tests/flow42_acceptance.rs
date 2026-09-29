@@ -326,7 +326,7 @@ fn fill_slots(skeleton: &str) -> String {
 /// author skeleton's `|-` block-scalar slots keep a multi-paragraph + bulleted body's line
 /// breaks through the `jigc doc author` → finalize round-trip — the committed prose carries
 /// `BODY` verbatim (a folding flow scalar would collapse the breaks). Proves the V1 fix
-/// (`ee2f7bf` — author-migration slot prose as fold-safe block scalars) end-to-end.
+/// (`7d32242` — author-migration slot prose as fold-safe block scalars) end-to-end.
 #[test]
 fn v1_folded_slot_template_round_trips_prose_intact() {
     let repo = TempDir::new("fold");

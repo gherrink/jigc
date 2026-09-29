@@ -32,7 +32,7 @@ The third bucket is forced by the determinism boundary recursing onto the harnes
 
 ## The dev-workflow sort (done for real — the executable graduation spec)
 
-M12's bounded first slice encodes **the dev-workflow only** ([dev-workflow.md](../implementation/dev-workflow.md): scope → red → green → refactor → gate → commit). Verified at planning (HEAD `8929f7d`): the dev-workflow *proper* is a **flat, single-pass linear sequence** — each step runs once. The bounded-loop / halt-resume / conditional primitives the roadmap feared live in the **increment-workflow wrapper**, *not* the dev-workflow. So the reduced-linear encode runs **today, with zero dialect extension** (spiked end-to-end against the real binary on a non-Rust repo — see Acceptance flow).
+M12's bounded first slice encodes **the dev-workflow only** ([dev-workflow.md](../implementation/dev-workflow.md): scope → red → green → refactor → gate → commit). Verified at planning (HEAD `9ea8302`): the dev-workflow *proper* is a **flat, single-pass linear sequence** — each step runs once. The bounded-loop / halt-resume / conditional primitives the roadmap feared live in the **increment-workflow wrapper**, *not* the dev-workflow. So the reduced-linear encode runs **today, with zero dialect extension** (spiked end-to-end against the real binary on a non-Rust repo — see Acceptance flow).
 
 Each dev-workflow step, sorted:
 

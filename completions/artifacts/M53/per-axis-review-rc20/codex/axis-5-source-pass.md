@@ -1,4 +1,4 @@
-<!-- The unseeded Codex source pass for AXIS 5, verbatim. Source read at `1.0.0-rc.20` (repo HEAD `51e0b8e4`), 2026-09-27. It drove nothing. -->
+<!-- The unseeded Codex source pass for AXIS 5, verbatim. Source read at `1.0.0-rc.20` (repo HEAD `4d3175c3`), 2026-09-27. It drove nothing. -->
 
 # Axis 5 source pass — pinned contracts
 
@@ -61,6 +61,6 @@ All command-stdout JSON paths were reviewed. Registered families cover orientati
 
 Non-command serialization hits are not envelope surfaces: generated setup front matter (`setup.rs:204`), adapter settings files (`adapter.rs:928,1078`), invocation JSONL (`invocation_log.rs:549`), and nested doc-show value construction (`doc.rs:5525-5532`).
 
-The schema manifest SHA-256 is identical at `834772b6` and the reviewed tree (`e15d332b…f0a`): **zero schema-hash movement was not violated**.
+The schema manifest SHA-256 is identical at `609da011` and the reviewed tree (`e15d332b…f0a`): **zero schema-hash movement was not violated**.
 
 Bounds: source structure only; no binary behavior, tier-2/3 repro, release-only behavior, hostile cwd, or hook execution was independently driven. The worktree was already dirty; nothing was changed.

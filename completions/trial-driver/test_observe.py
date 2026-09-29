@@ -813,7 +813,7 @@ class TheReaderSaysWhoseEvidenceItIsReading(unittest.TestCase):
 
     RECORD = {"identity": {"tag": "jigc-gate:rc14",
                            "image_id": "sha256:aaaa",
-                           "jigc_sha": "21ffc0d47c9be41ae93f7d9f69dad24110a783a3"}}
+                           "jigc_sha": "82075cc3de6f2c4af5de3e683bbdf33e83f8f594"}}
 
     def _out(self, tmp: pathlib.Path, provenance: "str | None") -> pathlib.Path:
         out = tmp / "RC14-B2"
@@ -832,11 +832,11 @@ class TheReaderSaysWhoseEvidenceItIsReading(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             tmp = pathlib.Path(d)
             out = self._out(tmp, "image        jigc-gate:rc13\n"
-                                 "jigc-sha     979bacaf31cbf513ca8afcb0bade447a88c06ba1\n")
+                                 "jigc-sha     f2667709b168a447f14fb348fd04287081b72548\n")
             ok, why = run._provenance_verdict(out, self._record(tmp))
             self.assertFalse(ok)
-            self.assertIn("979bacaf31cb", why)
-            self.assertIn("21ffc0d47c9b", why, "the refusal must name BOTH, or a reader "
+            self.assertIn("f2667709b168", why)
+            self.assertIn("82075cc3de6f", why, "the refusal must name BOTH, or a reader "
                                                "cannot tell which dir to go and find")
 
     def test_a_directory_run_session_never_wrote_is_refused(self) -> None:
@@ -853,7 +853,7 @@ class TheReaderSaysWhoseEvidenceItIsReading(unittest.TestCase):
             tmp = pathlib.Path(d)
             out = self._out(tmp, "image        jigc-gate:rc14\n"
                                  "image-id     sha256:aaaa\n"
-                                 "jigc-sha     21ffc0d47c9be41ae93f7d9f69dad24110a783a3\n")
+                                 "jigc-sha     82075cc3de6f2c4af5de3e683bbdf33e83f8f594\n")
             ok, why = run._provenance_verdict(out, self._record(tmp))
             self.assertTrue(ok, why)
             self.assertIn("jigc-gate:rc14", why,
@@ -866,7 +866,7 @@ class TheReaderSaysWhoseEvidenceItIsReading(unittest.TestCase):
             tmp = pathlib.Path(d)
             out = self._out(tmp, "image        jigc-gate:rc14\n"
                                  "image-id     sha256:bbbb\n"
-                                 "jigc-sha     21ffc0d47c9be41ae93f7d9f69dad24110a783a3\n")
+                                 "jigc-sha     82075cc3de6f2c4af5de3e683bbdf33e83f8f594\n")
             ok, why = run._provenance_verdict(out, self._record(tmp))
             self.assertFalse(ok, "a rebuilt tag is a different image")
             self.assertIn("rebuilt tag", why)
@@ -875,7 +875,7 @@ class TheReaderSaysWhoseEvidenceItIsReading(unittest.TestCase):
         import run
         with tempfile.TemporaryDirectory() as d:
             tmp = pathlib.Path(d)
-            out = self._out(tmp, "image        jigc-gate:rc14\njigc-sha     21ffc0d4\n")
+            out = self._out(tmp, "image        jigc-gate:rc14\njigc-sha     82075cc3\n")
             ok, why = run._provenance_verdict(out, None)
             self.assertTrue(ok)
             self.assertIn("ungated", why, "an ungated read must never LOOK gated")

@@ -20,7 +20,7 @@ capability), so it was decided as scope. Fork 4 **dissolved into a repair**: two
 code's own doc-comment already say the walk keys on `from`; the code keys on `to`; no hash moves.
 
 **Posture.** Every fact this record turns on was driven against `~/.local/bin/jigc` =
-`1.0.0-rc.15` at `HEAD = 85ad06c5` (HEAD's production code is byte-identical to that sha). The
+`1.0.0-rc.15` at `HEAD = 7637a46f` (HEAD's production code is byte-identical to that sha). The
 advocates drove their own spikes (F1: `unwind_mint`'s loss, the mint's three-file set, the
 leading/trailing DEFECT-1 stream at `task finalize`; F2: the revert cell and the **clean**
 `merge --squash` cell; F3: the nine-file task area and `displaced/`'s dying at `uninstall`; F5: the
@@ -717,7 +717,7 @@ best-effort sweep load stays declared.
 §3.2 drove `task discard` · `task finalize` · `milestone discard` · `milestone finalize` · `uninstall`
 independently — and D3.2/D3.3/D3.5 and §7 dispose **four**: three consenting doors and one displacing
 door. `jigc milestone finalize` was named in none of them. The Increment 4 planner drove the gap at
-HEAD `af0b5903`: a sub-task's `NOTES.md` and `analysis/perf.txt` under `.jigc/tasks/<id>/` die at
+HEAD `83bed573`: a sub-task's `NOTES.md` and `analysis/perf.txt` under `.jigc/tasks/<id>/` die at
 **exit 0 with empty stderr** when the boundary lands (`cleanup_subtask_areas`, `milestone.rs:4554`, a
 bare `remove_dir_all` at both `squash` arms, while `run_discard`'s identical sink at `:3311-3316` is
 guarded and narrated). Under the generalized registry the door would become a `Narrate` member whose
@@ -743,7 +743,7 @@ a foreign *regular* `docs/*.md` is not a reachable displacement cell — it bloc
 `schema-conformance.unknown-type` (exit 3) — so §6's *"a `docs/*.md` that is no staged id"* is reachable
 only as a **directory** named `*.md`, which is L-3 **[Struck 2026-09-18 (Increment 5, the validation
 fix). The premise holds for the *displacement* door, where a validate runs; it is false for the **mint
-unwind**, which runs no validate at all. Driven at `1d0bd171`: a `pre-commit` hook writing
+unwind**, which runs no validate at all. Driven at `6f4a975a`: a `pre-commit` hook writing
 `.jigc/tasks/<id>/docs/agent-notes.md` during `jigc milestone add-task` had that file destroyed at exit
 1, named by nothing, while the identical bytes at the area root survived and were named. The regular
 `docs/*.md` cell was reachable, and the rider is why nobody drove it. `engine::state::staged_doc_id` now
@@ -758,7 +758,7 @@ did, and `UNWINDING_DOORS.plants` iterates `{non-.md, .md}`.]**; and `validate.r
 reaches — as `Declared(intra-process)`, and [baseline-rollback.md](baseline-rollback.md) §2.8 grades it
 *built + proven, no third-party racer cell*; yet D1.3 and §14 listed `doc-author` among the doors that
 mint `<door>.rollback-conflict`, and Increment 5's *Codes it registers* carried the spelling. The
-Increment 5 planner drove the window at HEAD `bde393e5`: the create → leaf-chain → rollback span
+Increment 5 planner drove the window at HEAD `0b4523f5`: the create → leaf-chain → rollback span
 (`doc.rs:3835-3845`) spawns **no subprocess** — zero git or hook calls in `doc.rs`, none in
 `author.rs` — so arm 1's racer cannot enter it, and the code would register a surface claim the
 binary can never make. **The D1.3 listing was the orchestrator's transcription error against the

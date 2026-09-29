@@ -17,8 +17,8 @@ The first partial re-review ran on `1.0.0-rc.17`, the second on `rc.18`, the thi
 baseline**, and **not edited by it**). That third run found **zero tier-1 rows** and six new findings, two
 of them inside the arc's own new code and both on the installed pre-commit hook. What has happened since
 is on the record at [VERDICT.md](../VERDICT.md) → **Addendum 3**: the **pre-v1 usability batch**
-(`1b45707c`…`136a0878`, six surface rows — two of which set out to close rc.19's `(2, N-1)` and
-`(2, N-2)`) and **one new capability, F-10 `jigc task amend`** (`3c4f4c7a`…`e87835ea`), whose design of
+(`be40738e`…`b6b1a18f`, six surface rows — two of which set out to close rc.19's `(2, N-1)` and
+`(2, N-2)`) and **one new capability, F-10 `jigc task amend`** (`407ebf08`…`bb252c25`), whose design of
 record is [f10-amend-settle.md](../f10-amend-settle.md), whose driven baseline is
 [f10-amend-baseline.md](../f10-amend-baseline.md), and whose independent review
 ([audit/f10-code-review.md](../audit/f10-code-review.md)) raised **1 HIGH · 3 MEDIUM · 4 LOW**, all
@@ -35,7 +35,7 @@ held; it says they were not asked.**
 
 **The binary.** Every row in every file here was driven on the installed release
 `/Users/maurice/.local/bin/jigc` → **`jigc 1.0.0-rc.20`**, on **2026-09-27**, with the repository at HEAD
-**`51e0b8e4`** (*“chore(release): 1.0.0-rc.20 — the fourth M53 stamp, after the usability batch and
+**`4d3175c3`** (*“chore(release): 1.0.0-rc.20 — the fourth M53 stamp, after the usability batch and
 F-10's review fixes”*). Each of the six agents asserted `jigc --version` **first, before anything else
 ran**, and read its registry counts **by symbol** at that HEAD. The binary is the **release** build, so
 the debug-only fences (`Route::mechanical`'s argv fence, `unaimed_git_span`, `unbased_migrate_span`, the
@@ -49,7 +49,7 @@ rig cannot express are named at their cells (a rejecting hook behind `core.hooks
 pack). **One exception to *nothing was written to the working repository* is on the record rather than
 hidden — see HONEST BOUNDS → *The instrument's own fault*.**
 
-**The registry deltas the range produced, read by symbol at `51e0b8e4` and agreed by all three axes:**
+**The registry deltas the range produced, read by symbol at `4d3175c3` and agreed by all three axes:**
 
 | registry | rc.19 | rc.20 | what moved |
 |---|---|---|---|
@@ -62,7 +62,7 @@ hidden — see HONEST BOUNDS → *The instrument's own fault*.**
 | `AMBUSH_CONTRACTS` | 4 | **6** over **3** dispositions | the new `DeclaredWhereReachable`, both rows F-10's |
 | `CONSTRAINT_REQUIRED_TOKENS` | 6 | **8** | the two amend rows |
 | goldens | 634 | **646** | the one composed member the range minted |
-| **unmoved** | | | `STORE_EXIT_FLIPS` 7 · `DESTROYING_DOORS` 6 · `WORK_UNIT_ID_DOORS` 25 · `SLUG_DOORS` 6 · `PATH_ARG_OCCURRENCES` 14 · `ROLLBACK_POPULATIONS` 11 · `doc schema` `contract-version` 7 · `doc show` `schema-version` 1 · both schema manifests byte-identical over `834772b6..51e0b8e4` |
+| **unmoved** | | | `STORE_EXIT_FLIPS` 7 · `DESTROYING_DOORS` 6 · `WORK_UNIT_ID_DOORS` 25 · `SLUG_DOORS` 6 · `PATH_ARG_OCCURRENCES` 14 · `ROLLBACK_POPULATIONS` 11 · `doc schema` `contract-version` 7 · `doc show` `schema-version` 1 · both schema manifests byte-identical over `609da011..4d3175c3` |
 
 **An axis matrix row** is `(door, cell) → {argv driven, exit, code|none, route kind, surface asserted,
 verdict}`. A row is **driven** iff its argv ran on that binary. **A verb is covered iff it is the door of
@@ -136,7 +136,7 @@ tier 2; four are tier 3. None is tier 1.** And the thing on this page the human 
 >
 > | # | finding | tier | inside F-10's new code? | inside the six-row usability batch? |
 > |---|---|---|---|---|
-> | 1 | `(2, A2-2)` = `(5, DEFECT 1 · rc.20)` — a provisioned fan-out worktree: the preview says clean, the door refuses, and the refusal's route exits **128** | **2** | **NO** — reproduces identically on the **ordinary** `task finalize` arm; the exemption is M51's `posture_subject`, the seam's `live` subject is M52's | **the `jigc start` half YES** — `11fe5941`, the batch's row 2 (*“a live task's findings carry the repository posture finalize refuses under”*) is silent in exactly this cell |
+> | 1 | `(2, A2-2)` = `(5, DEFECT 1 · rc.20)` — a provisioned fan-out worktree: the preview says clean, the door refuses, and the refusal's route exits **128** | **2** | **NO** — reproduces identically on the **ordinary** `task finalize` arm; the exemption is M51's `posture_subject`, the seam's `live` subject is M52's | **the `jigc start` half YES** — `be663712`, the batch's row 2 (*“a live task's findings carry the repository posture finalize refuses under”*) is silent in exactly this cell |
 > | 2 | `(2, A2-3)` = `(3, F-D)` — F-10's design of record states `jigc task amend --format json` *“carries the pinned sha under `text`”*; it carries **no sha anywhere** | 3 | **YES** — it is a row of F-10's own settle, on the one row marked ***verify*** | no |
 > | 3 | `(2, A2-1)` — `task finalize --dry-run`'s help promises its `findings` are `task validate`'s set; **two** of the four gates it refuses on are outside that set | 3 | **partly** — the amend arm contributes the *second* member (`finalize.base-mismatch`); the class was **already false** pre-F-10 on the ordinary arm's `finalize.empty-commit` | no |
 > | 4 | `(3, F-C)` — `write.unslugable-title`'s route never names `jigc task amend`'s own `amend-<sha7>` fallback, the one exit that door uniquely has among `MINT_DOORS` | 3 | **YES**, in the complete-fix sense — `MINT_DOORS` grew a **sixth** member whose exit set is wider and the shared route was not re-derived over it | no |
@@ -195,7 +195,7 @@ It earned its keep four times this run, and the first two are the ones worth rea
   review states wrong is a datum the next wave inherits ([axis-5.md](axis-5.md) → §A).
 - **Axis 5 — a baseline count corrected against rc.19.** `DOCTYPE_DOORS` was recorded as **17** by the
   rc.19 run; the symbol carries **16** at this HEAD and the block is byte-unchanged in
-  `7d86f99f..51e0b8e4`, so the rc.19 figure counted one `DoctypeArg::` occurrence inside a doc-comment.
+  `a8904637..4d3175c3`, so the rc.19 figure counted one `DoctypeArg::` occurrence inside a doc-comment.
   Stated rather than silently re-asserted.
 - **Axis 2 — twenty rows filed without a repro block, all twenty re-driven rather than discarded.** The
   driver's 50-row table carried 20 rows backed by argv-and-observation lines rather than fenced blocks.
@@ -290,7 +290,7 @@ exactly as its record keys it. **rc.19's Layer D (axis 6) has no layer here: axi
 | **`(3, F-5)`** (rc.18) — a settled sub-task's leftover is *“1 active task(s)”* at one door and *“a leftover, not live work”* at another, and the route names a command that refuses | 3 | **STILL-OPEN(1.x, expected), all three halves** | `task list` → *1 active task(s)* / `area-two [sub-task]`; `task discard area-two` → `task-discard.staged-prose` whose route names `jigc task discard area-two --force`; that route **run verbatim** → exit 1 `milestone.terminal`. HEAD unmoved. **Reachability still undischarged** — built by restoring a `cp -R` backup, as rc.18, rc.19 and both agents here did. [axis-3.md](axis-3.md) R-34 · RX-13 |
 | **`OBS-1`** (rc.19, = OBS-E) — `uninstall.dirty-worktree`'s route carries an **unfilled** `<milestone-id>` placeholder | obs | **still open** | The route says ``jigc milestone discard <milestone-id> --force`` from both cwds while the `staged-prose` sibling one screen over names the real milestone. Placeholders are the house style, so it stays an inconsistency. [axis-3.md](axis-3.md) R-28 |
 | **`OBS-2`** (rc.19) — `milestone finalize` from a branch-attached linked worktree commits onto **main** and says nothing about it | obs | **unchanged** | `CommitSite::differing`'s own prescription; from `linked` the boundary lands on `main` and `feat` is unmoved. [axis-3.md](axis-3.md) R-38 |
-| **`OBS-4`** (rc.19) — `Disposition::Narrate` is empty by construction | obs | **unchanged** (OBS-F) | No `DESTROYING_DOORS` member holds it at `51e0b8e4`, so the arm still has no drivable cell — corroborated by Codex `C-10`'s symbol read. |
+| **`OBS-4`** (rc.19) — `Disposition::Narrate` is empty by construction | obs | **unchanged** (OBS-F) | No `DESTROYING_DOORS` member holds it at `4d3175c3`, so the arm still has no drivable cell — corroborated by Codex `C-10`'s symbol read. |
 
 ## Layer C — axis 5, against [per-axis-review-rc19](../per-axis-review-rc19/README.md) §A Layer C
 
@@ -350,7 +350,7 @@ THE THREE SURFACES OF ONE GATE, all from that same cwd:
         route: re-attach HEAD with `git switch <branch>`, then re-run this command
   git rev-parse --short HEAD -> cea1417 (unmoved by the refusal)
 
-THE ORIENTATION HALF — M53's own usability row `11fe5941`, same cwd:
+THE ORIENTATION HALF — M53's own usability row `be663712`, same cwd:
   jigc --format json start | jq -c '.tasks[]|{id, findings:…}'
       {"id":"area-one","findings":[]}
       {"id":"ordinary-in-worktree","findings":["changelog-recording.gate-granted-unused"]}
@@ -417,7 +417,7 @@ CONTROL, an ORDINARY start — the ack is a text-arm-only header at EVERY compos
 **verify**; if a key is needed it is declared in the additive-key paragraph.”* **The binary is internally
 consistent and the settle row is the false statement** — which is why this is filed as a record row. The
 mitigating datum that decides the tier, and it is a real one: the row ends in *“— **verify**”*, the
-verification came back negative and **was acted on** (the MEDIUM-2 fix commit `e1cf5871` records the
+verification came back negative and **was acted on** (the MEDIUM-2 fix commit `c65d3495` records the
 decision in full, and the authority is a code-side census row at
 `crates/cli/tests/text_json_parity_axis.rs` — `Disposition::DeclaredOut` with a three-clause reason, the
 sha and subject being facts about the **repository**, readable by any driver from `git log -1 HEAD`). So
@@ -548,7 +548,7 @@ two locked docs. Tier 3, surface-tier, reversible after 1.0. [axis-5.md](axis-5.
 
 | # | claim | pass | falsifying datum |
 |---|---|---|---|
-| axis 5 — the driver's §3 partition line | *“**60 `Success` / 3 `Adjudicated` / 2 `Reject`** · **`Pinned` 60 / `Unpinned` 6**”* over the 66-row `ENVELOPE_ARMS` registry | driver | Read by symbol at `51e0b8e4`: `grep -c 'outcome: ArmOutcome::Success'` → **61** · `Adjudicated` 3 · `Reject` 2; `ArmStatus::Pinned` → **59** · `Unpinned` → **7**. Two off-by-ones in the same direction, and self-evidently wrong: `60+3+2 = 65` and `60+6 = 66` cannot both partition one 66-row registry. The seven `Unpinned` rows by symbol are `describe \| Menu` + the five `milestone … \| RecordOnlyAck` + `milestone list-tasks \| Listing` — exactly the set **Codex's C-15** names, so the correction **corroborates** the source pass. **No row verdict moves**: all seven are driven and all seven are `= declared`. [axis-5.md](axis-5.md) §A |
+| axis 5 — the driver's §3 partition line | *“**60 `Success` / 3 `Adjudicated` / 2 `Reject`** · **`Pinned` 60 / `Unpinned` 6**”* over the 66-row `ENVELOPE_ARMS` registry | driver | Read by symbol at `4d3175c3`: `grep -c 'outcome: ArmOutcome::Success'` → **61** · `Adjudicated` 3 · `Reject` 2; `ArmStatus::Pinned` → **59** · `Unpinned` → **7**. Two off-by-ones in the same direction, and self-evidently wrong: `60+3+2 = 65` and `60+6 = 66` cannot both partition one 66-row registry. The seven `Unpinned` rows by symbol are `describe \| Menu` + the five `milestone … \| RecordOnlyAck` + `milestone list-tasks \| Listing` — exactly the set **Codex's C-15** names, so the correction **corroborates** the source pass. **No row verdict moves**: all seven are driven and all seven are `= declared`. [axis-5.md](axis-5.md) §A |
 
 **Nothing either Codex pass claimed was refuted on any of the three axes, and no driven row was
 contradicted by any source read.** The one refutation above is a **count**, not a behaviour, and it was
@@ -556,11 +556,11 @@ found by the demotion pass rather than by a drive. Two further **data correction
 recorded rather than filed:
 
 - **`DOCTYPE_DOORS` was 17 in the rc.19 record and is 16 by symbol** — the block is byte-unchanged in
-  `7d86f99f..51e0b8e4`, so the rc.19 figure counted one `DoctypeArg::` occurrence inside a doc-comment.
+  `a8904637..4d3175c3`, so the rc.19 figure counted one `DoctypeArg::` occurrence inside a doc-comment.
   ([axis-5.md](axis-5.md) → Notes.)
-- **Codex's `C-20` reads as though `834772b6` were a file hash**; it is a **commit** (the rc.19 review
+- **Codex's `C-20` reads as though `609da011` were a file hash**; it is a **commit** (the rc.19 review
   commit), and `e15d332b…` is the file digest. Read that way the claim is exactly right: both schema
-  manifests are byte-identical across `834772b6..51e0b8e4`. ([axis-5.md](axis-5.md) → C-20.)
+  manifests are byte-identical across `609da011..4d3175c3`. ([axis-5.md](axis-5.md) → C-20.)
 - **One immaterial driver/reconciler deviation on axis 2**, recorded for honesty: `jigc workflow amend
   --task <id>` was measured at **1** hit of `amending` by the driver and **2** by the reconciler. Both are
   non-zero, so the claim (*the resume doors do carry it on the text arm*) holds either way; the count is
@@ -648,7 +648,7 @@ declaration, quoted in its axis file.
 # COVERAGE — the three axes against the 48 `VERB_KINDS` leaves
 
 **The leaf count, read rather than quoted.** `crates/cli/src/cli.rs:1877`'s `VERB_KINDS` carries **48**
-leaf rows at HEAD `51e0b8e4` — **47 → 48**, `task amend` joining as the 28th row, a `Write` leaf. Counted
+leaf rows at HEAD `4d3175c3` — **47 → 48**, `task amend` joining as the 28th row, a `Write` leaf. Counted
 by reading the `(&[…], VerbKind::…)` rows of the const itself over its own span
 (`awk 'NR>1877 { if ($0 ~ /^\];/) exit; print }' crates/cli/src/cli.rs | command grep -cE '^\s+\(&\[' →
 48`), and **all three axis files read the same 48 independently, by symbol**. The spellings and their
@@ -778,8 +778,8 @@ hiding one.** Early in axis 5's reconciliation a `rig=$(…); eval "$rig"` left 
 script's banner lines were swallowed by a stdout redirect on the `eval`), and the subsequent `cd "$REPO"`
 was a **no-op in zsh rather than an error** — so a `mkdir -p docs/deep`, a `git add` and a `git commit -q`
 landed **in the working repository**, creating commit `344c08e6` *“chore: deep dir”* on `main`. It was
-undone in the same minute — `git reset --mixed 51e0b8e4`, then `find docs -mindepth 1 -delete && rmdir
-docs` (no `rm -rf`, no variable path) — and the **state was restored and verified**: `HEAD = 51e0b8e4`,
+undone in the same minute — `git reset --mixed 4d3175c3`, then `find docs -mindepth 1 -delete && rmdir
+docs` (no `rm -rf`, no variable path) — and the **state was restored and verified**: `HEAD = 4d3175c3`,
 working tree carrying only the one pre-existing modification
 (`completions/artifacts/M53/per-axis-review-rc20/instrument/per-axis-review.workflow.js`), `docs/` absent,
 no stray object reachable from any ref. Every later rig eval in that run carries an explicit

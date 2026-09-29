@@ -9,7 +9,7 @@
 //! rolled back neither. Four index axes restored the *index* and the M45 audit's own row
 //! said *"worktree untouched"* about the mechanism, so a hook-rejected finalize left
 //! ` M .jigc/.gitignore` and ` M .jigc/version` on disk while telling the operator
-//! *"nothing was committed"*. Driven at `93407e98`, both residues present.
+//! *"nothing was committed"*. Driven at `92755635`, both residues present.
 //!
 //! **The restore is compare-and-swap, not a rewrite** (§6, Codex 4). The interval between
 //! jigc's write and the rollback spans promotion, retirement, staging and the user's hooks —

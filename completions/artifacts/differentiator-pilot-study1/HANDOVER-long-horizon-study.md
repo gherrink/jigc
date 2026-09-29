@@ -1,6 +1,6 @@
 # Handover — next session: the long-horizon many-edit study (prove *superiority*, not parity)
 
-Written 2026-06-22. HEAD = `0a4e215` on `main`, tree clean, **pushed** to
+Written 2026-06-22. HEAD = `e5b7c9f` on `main`, tree clean, **pushed** to
 `github.com/gherrink/gherrink-jigc` (private). The previous session built the
 foundation this study needs — the universal finalize floor (hardened through two
 Codex review rounds) and the behavioral workflow-eval harness. This session runs
@@ -43,7 +43,7 @@ session.** Do not hand-wave it.
 
 ## What is now in place that M17–M19 did not have
 
-1. **A *blocking* finalize floor (this session, `af26db1` + remediations).** M18/M19
+1. **A *blocking* finalize floor (this session, `7b3bf61` + remediations).** M18/M19
    had only the store-wide `jigc validate` sweep + a **warn-only** pre-commit backstop
    (advisory — "closes the loop only when an agent heeds the warning"). Now jigc
    **blocks** doc↔code anchor drift at the commit boundary under *every* workflow

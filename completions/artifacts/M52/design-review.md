@@ -1,7 +1,7 @@
 # M52 — independent pre-decompose design review
 
 **Verdict: NOT READY.** 4 blocking · 7 significant · 10 advisory. Reviewed 2026-09-17 against
-HEAD `85ad06c5` and the installed release `~/.local/bin/jigc` = `1.0.0-rc.15`. Fixtures via
+HEAD `7637a46f` and the installed release `~/.local/bin/jigc` = `1.0.0-rc.15`. Fixtures via
 `dev/jigc-rig <state> --binary ~/.local/bin/jigc`; nothing written into the working repository.
 Each finding is marked **driven** (executed on the release binary) or **read** (source at the
 cited line). I authored none of what I review and I settle nothing.

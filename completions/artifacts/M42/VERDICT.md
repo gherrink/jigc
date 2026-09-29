@@ -1,6 +1,6 @@
 # M42 — the rc.6 wave: completion verdict
 
-**Status: COMPLETE.** Built (12 increments), audited, **5 audit findings fixed**, re-verified at HEAD `a309a53`: **1977 passed / 0 failed**, `clippy -D warnings` clean, `fmt --check` clean, tree clean.
+**Status: COMPLETE.** Built (12 increments), audited, **5 audit findings fixed**, re-verified at HEAD `e60d927`: **1977 passed / 0 failed**, `clippy -D warnings` clean, `fmt --check` clean, tree clean.
 
 Planning: [DECISIONS.md](../../../DECISIONS.md) → 2026-07-13 (the Settle) · [planning-gate-record.md](planning-gate-record.md) · [roadmap.md](../../../implementation/roadmap.md) → Milestone 42.
 Acceptance: [worked-examples.md](../../../design/worked-examples.md) → flow 43 · `crates/cli/tests/flow43_acceptance.rs`.
@@ -24,11 +24,11 @@ Acceptance: [worked-examples.md](../../../design/worked-examples.md) → flow 43
 
 | # | severity | finding | fix |
 |---|---|---|---|
-| 1 | **HIGH** | A v0-era doc of a doctype at schema-version ≥ 2 is a permanent dead end — `strip_stamp(current)` silently asserted *no doctype ever bumped past v1* | `3da864b` — the v0 arm sources the prior shape from the doctype's **earliest shipped snapshot** |
-| 2 | **HIGH** | `discarded` was **not terminal** — `provision`/`add-task` resurrected an abandoned milestone from its own settled record | `a309a53` — **one predicate at one site**: *a record in a terminal state does not re-seed a workbench* |
-| 3 | MEDIUM | `migrate-corpus` exited 0 on a refused migration; `blocked` was untyped `[path, route]` tuples outside the finding-key contract | `f3cd145` — exits non-zero; `blocked` is a `Findings` collection with stable `(code, target)` keys |
-| 4 | LOW | The pack-load slug-rule fence silently passed any manifest **omitting** the key | `6c431d0` — an omission is not an opt-out |
-| 5 | LOW | The relocation walk consulted only `version - 1`'s home | `9111ef7` — unions **every** prior home |
+| 1 | **HIGH** | A v0-era doc of a doctype at schema-version ≥ 2 is a permanent dead end — `strip_stamp(current)` silently asserted *no doctype ever bumped past v1* | `778a3bf` — the v0 arm sources the prior shape from the doctype's **earliest shipped snapshot** |
+| 2 | **HIGH** | `discarded` was **not terminal** — `provision`/`add-task` resurrected an abandoned milestone from its own settled record | `e60d927` — **one predicate at one site**: *a record in a terminal state does not re-seed a workbench* |
+| 3 | MEDIUM | `migrate-corpus` exited 0 on a refused migration; `blocked` was untyped `[path, route]` tuples outside the finding-key contract | `adf88df` — exits non-zero; `blocked` is a `Findings` collection with stable `(code, target)` keys |
+| 4 | LOW | The pack-load slug-rule fence silently passed any manifest **omitting** the key | `1682526` — an omission is not an opt-out |
+| 5 | LOW | The relocation walk consulted only `version - 1`'s home | `03605c1` — unions **every** prior home |
 
 **Two masking tests were caught and fixed, and both are worth recording.** Flow 43's discard arm asserted the record settled and then **never ran a milestone verb afterwards** — a snapshot assertion where the claim is a *lifecycle invariant*. And Increment 7's own e2e proof fixture (`setup_partially_joined_milestone`) minted its "partially-joined" record by doing `finalize` → `add-task`: **the fixture that proved the claim was itself an instance of the defect.** Both now exercise the invariant they assert.
 

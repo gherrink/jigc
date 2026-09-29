@@ -3,7 +3,7 @@
 //! `design/team-ready-state.md` → The working area's two populations;
 //! `design/storage.md` → the per-task working area).
 //!
-//! Driven at `8fdda36` on the debug binary, the exact cell below: a `NOTES.md` at a task
+//! Driven at `256b3e0` on the debug binary, the exact cell below: a `NOTES.md` at a task
 //! area's root, an `analysis/perf.txt` under it and a `docs/notes.txt` beside the staged
 //! prose all died at **exit 0** when the commit landed, with an **empty stderr** and no
 //! `.jigc/displaced/` ever created. Phase 7 removed the working area whole
@@ -348,7 +348,7 @@ fn a_task_with_no_foreign_byte_displaces_nothing_and_says_nothing() {
 /// a **third** value between *all* and *none*: some entries move and some do not, reachable
 /// with no permission game at all by occupying one entry's parking parent with a regular file.
 ///
-/// Driven at `73b6ac0e`, that cell announced itself as *the working area held 1 entry* over an
+/// Driven at `d84ad037`, that cell announced itself as *the working area held 1 entry* over an
 /// area that held **two** — the count came from `moved.len()`, so the door under-reported its
 /// own subject by exactly the entry whose move had failed. The narration's count is the
 /// **complement's**, and the entry that did not move is named with the reason it did not,
@@ -418,7 +418,7 @@ fn a_partial_move_names_what_it_could_not_move_and_counts_the_whole_area() {
 ///
 /// `render::repo_relative` falls back to the honest absolute when its strip fails, so a
 /// workbench path spelled against the *standing* checkout does not error — it silently
-/// prints the host filesystem. Driven at `834772b6`, running the identical populated cell
+/// prints the host filesystem. Driven at `609da011`, running the identical populated cell
 /// from a linked worktree gave `"from": "/private/var/folders/…/repo/.jigc/tasks/…"` on the
 /// **1.0-pinned** `committed.displaced` key, the same absolutes in the stderr note, and the
 /// same again inside `finalize.foreign-bytes`' message and route. `milestone finalize` was

@@ -1,6 +1,6 @@
 # The trial that follows M50 — pre-registered protocol
 
-**Binary under test: `1.0.0-rc.14`, built from `21ffc0d4`**, baked into `jigc-gate:rc14` and
+**Binary under test: `1.0.0-rc.14`, built from `82075cc3`**, baked into `jigc-gate:rc14` and
 gated by [gate-rc14.json](gate-rc14.json). Written 2026-09-09, **before any session runs**.
 
 **What this trial is for, in the human's own sequence: M50 → this trial → the 1.0.0 call.** The
@@ -10,9 +10,9 @@ have had audit findings that were *larger classes than reported*.
 
 **The binary's identity is settled by sha, never by stamp.** `jigc --version` cannot tell two
 trees apart — the trap that cost the last trial a corrected handover row. The image is built by
-`git archive 21ffc0d4` inside the container and records `JIGC_SHA` in its own env; the gate
+`git archive 82075cc3` inside the container and records `JIGC_SHA` in its own env; the gate
 record carries the image id, the sha and the stamp, and `run.py gate` refuses a round it does
-not cover. HEAD is two commits past the handover's `95c79be`, both **docs-only** (`git diff
+not cover. HEAD is two commits past the handover's `2224ce0`, both **docs-only** (`git diff
 --name-only` touches no `crates/`, `packs/`, `.rs`, `.yaml` or `.toml`), so this tree's code is
 the code the shipped rc.14 binary was built from.
 
@@ -83,7 +83,7 @@ Two consequences belong here rather than there, because they are about the *inst
 2. **`engine::result::SCHEMA_VERSION` 2 → 3** — the wave's only result-contract bump. Distinct
    from `doc show --format json`'s top-level `schema-version`, which is a *doctype* version and
    did not move; conflating them makes any probe on either vacuous.
-3. **A fan-out that landed clean on rc.13 may now block at exit 3** (`1799a2d`, landed before
+3. **A fan-out that landed clean on rc.13 may now block at exit 3** (`d854e25`, landed before
    the wave). The intended tightening, met **late in a milestone arm**, where a misread costs
    most.
 4. **The deny floor gained `Bash(jigc uninstall:*)` and `Bash(jigc milestone discard:*)`.** A
@@ -93,7 +93,7 @@ Two consequences belong here rather than there, because they are about the *inst
 
 ### 0.4 · No migration pair is owed — established, not assumed
 
-`git diff 979baca..HEAD` over both `config/schema-manifest.yaml` files and every
+`git diff f266770..HEAD` over both `config/schema-manifest.yaml` files and every
 `schemas/*.yaml` is **empty**: no doctype schema moved between rc.13 and rc.14. An
 rc.13-authored corpus is current on rc.14, so the RC-m50 arm 14↔21 analogue is unnecessary and
 is omitted deliberately rather than forgotten.
@@ -147,7 +147,7 @@ call, taken 2026-09-09: *full net + a blind milestone arm.*
 | **B3** corpus accretes | adopted + **E** | E + foreign-ADR (polled) | headless | **headline** |
 | **B3-h2** | adopted + **E** | E | headless | **headline** |
 | **B1** cold start | naive | carryover + hook; **F** rides the hook's pause | **interactive** | coverage; read-back **discounted** and reported separately (`setup` runs in-session, so the adapter is not in its context) |
-| **B4-h** the milestone | adopted | none | headless | coverage — the `fix-task`/`fix-finding` fan-out, `milestone join`'s changed verdict, the landing ack naming every commit, F1's new `add-from-spec` refusal, and `1799a2d` met late |
+| **B4-h** the milestone | adopted | none | headless | coverage — the `fix-task`/`fix-finding` fan-out, `milestone join`'s changed verdict, the landing ack naming every commit, F1's new `add-from-spec` refusal, and `d854e25` met late |
 | **B3-strict** | copy of B3's | same as B3 | headless, `--strict-permissions` | **unscored and labelled so** — the adopter's real condition |
 | **the walk** | `walk-rc14` | operator-placed | scripted | the regression net (§5) |
 
@@ -468,7 +468,7 @@ operator channel preference, never unprompted tool preference.
 |---|---|
 | the handover | every row driven or computed; **five corrections** and one blocking finding recorded ([handover.md](handover.md) → *Verified*; [pre-trial-findings.md](pre-trial-findings.md)) |
 | **the gate at HEAD** | **was RED at the sha the handover certifies green** (PT-1). The fold-back fence inverted as its own doc prescribes; `dev/gate` re-run to green **before** any session |
-| the rc.14 image | built from `21ffc0d4` by `git archive` inside the container, `JIGC_SHA` baked, stamp asserted against the tree's `Cargo.toml`; `verify-image.sh` **7 passed / 0 failed**, check 4 (host **YES** / container **NO**) among them; [gate-rc14.json](gate-rc14.json) written and `run.py gate` accepts it |
+| the rc.14 image | built from `82075cc3` by `git archive` inside the container, `JIGC_SHA` baked, stamp asserted against the tree's `Cargo.toml`; `verify-image.sh` **7 passed / 0 failed**, check 4 (host **YES** / container **NO**) among them; [gate-rc14.json](gate-rc14.json) written and `run.py gate` accepts it |
 | `verify-pair.sh` | new `m50` set, every probe **driven on both images before it was written**: 4/4 discriminate; a same-image pair refused at exit 1 |
 | the apparatus | I-1, I-2 and PT-D all landed with tests; the driver's 7 suites green (**59** tests in `test_observe.py`, where 46 were running); `observe --archive` reproduces the 1.0.0-gate table **before and after** every change |
 | the corpus template | 12 bars, 13 mutations, `self-test.sh` **14 passed / 0 failed**, suite 24/24 |

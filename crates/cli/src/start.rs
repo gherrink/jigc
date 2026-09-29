@@ -997,7 +997,7 @@ pub struct AmendTarget {
 /// The [`AmendTarget`] a **re-compose** of `task_dir` carries — `None` for every ordinary
 /// task, which renders no `amending:` block at all (the F-10 review's MEDIUM-2).
 ///
-/// Driven at `48d1d529`: `jigc start --task <amend-id>` and `jigc workflow amend --task
+/// Driven at `d9c4bd84`: `jigc start --task <amend-id>` and `jigc workflow amend --task
 /// <amend-id>` both composed the `amend` step body — whose own prose pointed at *"HEAD's
 /// subject line in the ack above"* — with no ack above it, on the one path five consecutive
 /// trials show an agent taking when context is lost. The block is the settle's **only**
@@ -1255,7 +1255,7 @@ fn read_named_workflow(
         // debug-only *panic*, so a door that reaches this line without having passed the
         // pack-load fence ([`crate::pack`] → `assert_workflow_doors` /
         // `assert_project_workflow_doors`) would crash a debug build at exit 101 and emit an
-        // unrunnable route in release. Driven at `c6b45da0`, that is exactly what a
+        // unrunnable route in release. Driven at `dbb35b8c`, that is exactly what a
         // project-layer workflow shadow did, because the parse fence's subject was the
         // manifest-shipping origin packs alone. The fence's subject is now every layer a
         // definition can be served from — and this door asks the same question again anyway,

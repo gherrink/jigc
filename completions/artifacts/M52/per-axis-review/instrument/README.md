@@ -1,7 +1,7 @@
 # The per-axis review instrument — the M52 re-run's copy
 
 This is [M51's instrument](../../../M51/per-axis-review/instrument/README.md) re-pointed for the M52
-re-run (2026-09-21, installed `jigc 1.0.0-rc.16` from `a3eb026b`): the eight Codex source-pass prompts
+re-run (2026-09-21, installed `jigc 1.0.0-rc.16` from `e519e4eb`): the eight Codex source-pass prompts
 and the Workflow script (eight Opus drivers → eight reconcilers → one assembler). What changed against
 M51's copy, so the next wave re-points the same things: the scratchpad root and the expected
 `--version`; the drivers read M52's `acceptance-design.md` and `VERDICT.md` beside M51's Part 2 axis

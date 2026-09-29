@@ -8,14 +8,14 @@
 #
 # WHICH SET THIS ARM ITERATES: the **declared change-set of the M49 → rc.13 bump**,
 # named from the two shipped manifests rather than from memory — every
-# `schema-version` that moved between `314f59e` and HEAD in
+# `schema-version` that moved between `5ff85ea` and HEAD in
 # `packs/methodology/config/schema-manifest.yaml`:
 #
 #   completion-record  1 → 2   (EnumWidened: severity gains HIGH/MEDIUM/LOW; AddedItemSlot: detail)
 #   milestone-record   2 → 3   (the per-task `workflow` leaf)
 #   planning-record    new     (no committed instance can predate it — nothing to migrate)
 #
-# plus the ONE behaviour tightening that landed after M49 closed, `1799a2d`: the
+# plus the ONE behaviour tightening that landed after M49 closed, `d854e25`: the
 # milestone boundary gates a sub-task's transient commit doc as hard as the task
 # door does. The dev pack's frozen set did not move, so it is not on the axis.
 #
@@ -193,7 +193,7 @@ bar "the HIGH-graded record lands" "git ls-files --error-unmatch docs/completion
 bar "…stamped 2 at birth" "test \"\$(file_sv docs/completions/m2.md)\" = 2"
 
 # ---------------------------------------------------------------------------
-say "4 · (d) the 1799a2d tightening: the boundary now gates the sub-task's commit doc"
+say "4 · (d) the d854e25 tightening: the boundary now gates the sub-task's commit doc"
 # The same construction the first half landed on rc.12 (baseline: landed=$(base rc12-milestone-finalize-typeless-landed),
 # exit $(base rc12-milestone-finalize-typeless-exit), subject "$(base rc12-milestone-finalize-typeless-subject)").
 # Both author-required leaves of `commit` — `type` and `summary` — are left as the
@@ -227,7 +227,7 @@ bar "…and the unset \`summary\`"                  "printf '%s' \"\$MF1\" | gre
 bar "…with a route carrying --task $SUB2"         "printf '%s' \"\$MF1\" | grep 'route' | grep -q -- '--task $SUB2'"
 bar "it commits NOTHING"                          "test \"\$(git rev-parse HEAD)\" = '$HEAD1'"
 bar "…and no \`: …\` subject entered the history" "! git log --format=%s -3 | grep -q '^: '"
-# MEASURED on 1.0.0-rc.13 (979baca), 2026-09-04, and left as a FAILing bar rather than
+# MEASURED on 1.0.0-rc.13 (f266770), 2026-09-04, and left as a FAILing bar rather than
 # re-worded: the task door prints each of these findings as
 # `blocking · schema-conformance.field-value-conformant — …`; the milestone door
 # prints the SAME findings as bare lines — no severity, no code — so the stable

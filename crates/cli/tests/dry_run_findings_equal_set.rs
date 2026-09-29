@@ -9,7 +9,7 @@
 //! not disagree about what it found* — and the bound struck below is the M51 half's own
 //! sentence that let the second half ship broken.
 //!
-//! **What was broken.** Driven at `9ae1f40b`, one task, one moment: `task validate`
+//! **What was broken.** Driven at `2f9f7993`, one task, one moment: `task validate`
 //! emitted `file-state.staged-copy` and `changelog-recording.gate-granted-unused`, the
 //! landed `task finalize` emitted the *identical* pair — and `--dry-run` emitted
 //! `{dry_run, left_out, manifest, subject}`, **no `findings` key at all**, dropping both.
@@ -63,7 +63,7 @@
 //!   * ~~**The text surface is unchanged.**~~ **Struck at M52 Increment 10 / T3** (per-axis
 //!     review row D-1). The M51 rider reasoned that *the standing parity fence runs text →
 //!     envelope, so a JSON-only addition is inside it* — true about the fence and false
-//!     about the surface: driven at `9a308b5c` on a granted-and-unused changelog gate, the
+//!     about the surface: driven at `528f1eda` on a granted-and-unused changelog gate, the
 //!     forecast's default agent arm named no finding while its envelope carried the
 //!     advisory, so the agent reading the surface jigc actually hands it was told a gated
 //!     forecast was clean. The two text-arm fences below

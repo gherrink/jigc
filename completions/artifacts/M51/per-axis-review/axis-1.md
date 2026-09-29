@@ -1,4 +1,4 @@
-<!-- M51 per-axis review — axis 1 · reconciled · driven on the installed `jigc 1.0.0-rc.15` (commit 35195f56), 2026-09-16 -->
+<!-- M51 per-axis review — axis 1 · reconciled · driven on the installed `jigc 1.0.0-rc.15` (commit 577a0099), 2026-09-16 -->
 
 # M51 per-axis review — AXIS 1 · caller tokens — RECONCILED
 
@@ -9,7 +9,7 @@ re-driven. Part III is the doors-covered list.
 
 **Reconciliation binary asserted:** `/Users/maurice/.local/bin/jigc --version` → `jigc 1.0.0-rc.15`
 (RELEASE posture — the debug-only `debug_assert!` route fences do not exist in it). Repo at
-`35195f56`. Every rig in Part II was built the way the driver built its own:
+`577a0099`. Every rig in Part II was built the way the driver built its own:
 `rig=$(dev/jigc-rig <state> --binary /Users/maurice/.local/bin/jigc) || exit; eval "$rig"`, two-step,
 every root from `mktemp -d`, no `rm -rf` on a variable path anywhere.
 
@@ -31,8 +31,8 @@ freeze-exempt doctype).
 
 ## 0 — the door set, derived from the code (counts I read, not the design doc's numbers)
 
-Read at `HEAD` (`1922c7f5` + the four post-build audit fixes `8a42fbbd` / `b5ccd818` / `0fc80bab` /
-`dc508994`, all present in the installed rc.15):
+Read at `HEAD` (`67c0c369` + the four post-build audit fixes `6c2391c0` / `da5173a1` / `ff2bde99` /
+`507c332d`, all present in the installed rc.15):
 
 | registry | file:symbol | count I read | note |
 |---|---|---|---|

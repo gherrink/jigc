@@ -1,4 +1,4 @@
-<!-- M51 per-axis review — axis 5 · reconciled · driven on the installed `jigc 1.0.0-rc.15` (commit 35195f56), 2026-09-16 -->
+<!-- M51 per-axis review — axis 5 · reconciled · driven on the installed `jigc 1.0.0-rc.15` (commit 577a0099), 2026-09-16 -->
 
 # M51 per-axis review — AXIS 5 · pinned contracts · RECONCILED (driver + codex source pass)
 
@@ -9,8 +9,8 @@ Every row below ran on that binary, in throwaway repos minted by
 `mktemp -d` roots, no teardown, no `rm -rf` on a variable path). The fixtures beyond the six rig states
 were built **by driving the binary**, never by writing into `.jigc/`.
 
-**The binary this table reflects carries the four post-build audit fixes** — routes `8a42fbbd`,
-orphan territory `b5ccd818`, setup guard `0fc80bab`, the two LOWs `dc508994`. Two of them are visible in
+**The binary this table reflects carries the four post-build audit fixes** — routes `6c2391c0`,
+orphan territory `da5173a1`, setup guard `ff2bde99`, the two LOWs `507c332d`. Two of them are visible in
 the drives: the orphan territory fix is driven at `validate`/`doc list` (row set E), and the setup guard's
 new refusal `setup.dirty-install-path` is the door that carries **DEFECT A**.
 
@@ -513,7 +513,7 @@ $ jigc --format json start
 exit=1 · stderr {"error": "not inside a git repository (…) — run jigc from inside the target git repository; …"}
 # 45 of 47 leaves answer that way.
 
-# cell 2 — the wave's OWN new refusal (audit fix 0fc80bab), on a real repo
+# cell 2 — the wave's OWN new refusal (audit fix ff2bde99), on a real repo
 rig=$(dev/jigc-rig fresh --binary /Users/maurice/.local/bin/jigc) || exit; eval "$rig"
 $ printf '\n## TEAM RULES\n\nNEVER deploy on Friday.\n' >> CLAUDE.md
 $ $JIGC --format json setup ; echo "exit=$?"

@@ -1,5 +1,5 @@
 <!-- persisted verbatim 2026-09-10 from the evidence-check-1.0 session; agent: OpenAI Codex; see VERDICT.md -->
-You are an independent, adversarial reviewer. The repository is jigc (a Rust CLI, a "context compiler for coding agents"). The maintainer is about to decide whether to ship 1.0.0 from 1.0.0-rc.14 (HEAD bd348a83). Your job: try to break the case for 1.0.0. Read-only; do not run cargo; do not modify files.
+You are an independent, adversarial reviewer. The repository is jigc (a Rust CLI, a "context compiler for coding agents"). The maintainer is about to decide whether to ship 1.0.0 from 1.0.0-rc.14 (HEAD 74627547). Your job: try to break the case for 1.0.0. Read-only; do not run cargo; do not modify files.
 
 Read, in this order:
 1. CLAUDE.md — the "Project state" paragraph's last third (from "M50 —" to the end) and "Architectural invariants".

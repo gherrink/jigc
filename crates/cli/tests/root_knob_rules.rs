@@ -121,7 +121,7 @@ use std::process::Command;
 /// it, the case-folded form a case-insensitive filesystem resolves onto it — and each of those
 /// again behind a `..` hop, which is where the first cut of the rule was evadable.
 ///
-/// The hop cells are driven, not imagined: at `6551d49` the literal three were refused
+/// The hop cells are driven, not imagined: at `1bd5efa` the literal three were refused
 /// (`config.workbench-root`, rc=1, both knobs) while
 /// `jigc config set placement-root docs/../.jigc` exited **0** and staged
 /// `R docs/decisions-log.md -> .jigc/decisions-log.md` — git normalizes the path it records,
@@ -415,7 +415,7 @@ fn no_root_knob_accepts_jigcs_own_workbench_as_a_home() {
 // **The positional subject of both on-disk shapes is every existing component of the value,
 // not its leaf.** A symlinked ANCESTOR (`linked/sub`) reaches the identical `RD` state, and a
 // file-shaped ANCESTOR (`README.md/sub`) reaches the identical vanished-store state — driven at
-// `c231a6d`, when the file-shaped arm was asked once, after the walk, of the leaf alone:
+// `b51d549`, when the file-shaped arm was asked once, after the walk, of the leaf alone:
 //
 // ```text
 // $ jigc config set placement-root README.md/sub
@@ -528,7 +528,7 @@ fn every_usable_root_is_still_admitted_and_the_store_still_describes_its_docs() 
 // and `./` privately to find it. The value itself was then stored **as typed**, so the
 // move floors and the read surfaces resolved a spelling no rule had folded — and a value
 // naming byte-for-byte the CURRENT home was admitted at exit 0 as a re-point. Driven at
-// `71c8f7a`, on a `committed-singletons` rig:
+// `18b6e52`, on a `committed-singletons` rig:
 //
 // ```
 // $ jigc config set placement-root 'docs/../docs'
@@ -681,7 +681,7 @@ fn a_hop_spelled_move_lands_the_canonical_path_in_the_store() {
 //
 // The three rules above all ask a question about the *home* a value reaches. This one asks a
 // question about the **value**: can the operator read it back and see what they set? Driven at
-// `b9e13cf` on a `committed-singletons` rig, all three cells at exit 0:
+// `7a0037c` on a `committed-singletons` rig, all three cells at exit 0:
 //
 // ```text
 // $ jigc config set docs-root '   '     # three spaces
@@ -771,7 +771,7 @@ fn no_root_knob_accepts_a_value_that_does_not_read_back_as_itself() {
 // prints states exactly the harm an unnameable one produces: *"`README.md` is a file, not a
 // directory — every move into it fails while the knob lands anyway"*.
 //
-// Driven at HEAD (`1922c7f5`+, the `committed-singletons` rig), a 300-byte component:
+// Driven at HEAD (`67c0c369`+, the `committed-singletons` rig), a 300-byte component:
 //
 // ```text
 // $ jigc config set docs-root "$(python3 -c "print('a'*300)")"

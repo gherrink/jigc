@@ -1,8 +1,8 @@
-<!-- M51 baseline · companion 2 of 4 — the committing-door seam and git posture. Driven 2026-09-10 by one Opus capability-auditor against the release binary `1.0.0-rc.14` at HEAD `bd348a83`; no cargo run, no repo file edited. Verbatim as returned (§1–§7 plus Honest bounds); consolidated in [baseline-ledger.md](baseline-ledger.md). -->
+<!-- M51 baseline · companion 2 of 4 — the committing-door seam and git posture. Driven 2026-09-10 by one Opus capability-auditor against the release binary `1.0.0-rc.14` at HEAD `74627547`; no cargo run, no repo file edited. Verbatim as returned (§1–§7 plus Honest bounds); consolidated in [baseline-ledger.md](baseline-ledger.md). -->
 
 # M51 baseline — the committing-door seam and git posture
 
-Verified at HEAD `bd348a83`, release binary `/Users/maurice/projects/gherrink-jigc/target/release/jigc` = `1.0.0-rc.14`. **A map at one sha, not gospel.** Every row was driven through the release binary on throwaway `dev/jigc-rig` corpora unless it says *source-read*. No repo file edited, no cargo run. Raw transcripts under `/private/tmp/claude-501/-Users-maurice-projects-gherrink-jigc/dd9473b1-8a73-47ad-8f77-67d4d3237620/scratchpad/baseline2/*.txt`.
+Verified at HEAD `74627547`, release binary `/Users/maurice/projects/gherrink-jigc/target/release/jigc` = `1.0.0-rc.14`. **A map at one sha, not gospel.** Every row was driven through the release binary on throwaway `dev/jigc-rig` corpora unless it says *source-read*. No repo file edited, no cargo run. Raw transcripts under `/private/tmp/claude-501/-Users-maurice-projects-gherrink-jigc/dd9473b1-8a73-47ad-8f77-67d4d3237620/scratchpad/baseline2/*.txt`.
 
 ---
 

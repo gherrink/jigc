@@ -1,6 +1,6 @@
 # M47 rebuild — hand-off to the build session (written 2026-08-02)
 
-**Goal state.** Re-execute the **M47 build** (the rc.10 wave — the surface-fundament wave) from the recovered decomposition. **This is a re-execution, not a re-plan**: the wave was planned, settled (fourteen forks), reviewed twice, decomposed, and fully built on a machine whose drive died with everything unpushed; the planning record was recovered **byte-exact** from the session event exports and folded back at `949ca02`, but the build's code (76 commits, all 11 increments, rc.10, suite 2552/0) is lost. Do not re-open any settled fork. Baseline: current `main` (code identical to installed `1.0.0-rc.9`; every commit since `7d11a38` is docs-only), suite **2385/0**.
+**Goal state.** Re-execute the **M47 build** (the rc.10 wave — the surface-fundament wave) from the recovered decomposition. **This is a re-execution, not a re-plan**: the wave was planned, settled (fourteen forks), reviewed twice, decomposed, and fully built on a machine whose drive died with everything unpushed; the planning record was recovered **byte-exact** from the session event exports and folded back at `b2560fc`, but the build's code (76 commits, all 11 increments, rc.10, suite 2552/0) is lost. Do not re-open any settled fork. Baseline: current `main` (code identical to installed `1.0.0-rc.9`; every commit since `e07637a` is docs-only), suite **2385/0**.
 
 **Run it as:** `/milestone-build` with `{ milestone: "M47", base: <current HEAD> }`, one increment at a time per the roadmap decomposition.
 

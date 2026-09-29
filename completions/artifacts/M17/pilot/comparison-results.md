@@ -66,7 +66,7 @@ instruction** (the adapter + `SessionStart` orientation routed the agent — the
   intent re-run shows they came from jigc's composed workflow, not from operator instruction.
 - *Apparatus:* the capture worked end-to-end on a real session, incl. the agent piping
   `jigc start … | head -60` (jrun logs the full output pre-truncation; hardened post-run so a
-  closed pipe can't drop an event — `ea8a065`).
+  closed pipe can't drop an event — `5ffe425`).
 
 ## Arm C — static-methodology  *(run 3, 2026-06-13)*
 

@@ -19,12 +19,12 @@ on throwaway scratch repos, measured on the four facts incl. **agent-call count*
 |---|---|
 | `jigc` sha256 | `191e9bdd18930153ca4f5016cc6bb69bc4c88a1975f7e620854d8c1ba92caac1` |
 | `doc-code` probe sha256 | `f56032c2474158609ddaaab19a40a1215267d8b474b41e69f982ec031d969b61` |
-| HEAD commit | `349aeac` (Inc-3 T1, the flow-28 marquee; clean tree) |
+| HEAD commit | `9567baf` (Inc-3 T1, the flow-28 marquee; clean tree) |
 | Built | `cargo clean -p cli && cargo build --release` (re-embeds the Inc-2 `migrate-arch-doc` workflow + `author-migration-arch-doc` guidance) |
 | Pinned to | `jigc` **and** its `doc-code` probe sibling to **both** `~/.local/bin/` and `~/.cargo/bin/` (the roadmap "before any exercise" re-pin; `which jigc` → `~/.local/bin/jigc`, `which doc-code` → `~/.local/bin/doc-code`; **all four sha256 identical** — `jigc` identical across both dirs, `doc-code` identical across both dirs) |
 | Invocation | `jigc` from `PATH`, with the **embedded** dev pack (**no** `JIGC_PACK_DIR`) and the `doc-code` probe resolved **as the sibling beside the installed binary** (**no** `JIGC_DOC_CODE_PROBE`) — the production probe-resolution path (the M20 embed/sibling), exercised live |
 | Driver | [`drive.sh`](evidence/drive.sh) — one detached scratch repo per arm; the `payload-*.yaml` files are the agent's declarative batch payloads (Framing A) |
-| Post-audit re-pin | The milestone-completion audit's two LOW findings were auto-fixed in `7d41141` (**test + comment only, no production behavior change** — a strengthened empty-slot masking guard + a `trim()`-intent clarification). That commit shifts embedded `file:line` panic locations, so the HEAD binary re-pinned to `jigc` sha256 `4817ec32f83b9a994113a831a0ca12502ea005a3d1a11e1f4a68f0c20c4c0f3f` (both dirs identical; `doc-code` sibling unchanged `f56032c…`). The measurements above were taken at `191e9bd` and **hold unchanged** — the fix touched no migration/render code path. |
+| Post-audit re-pin | The milestone-completion audit's two LOW findings were auto-fixed in `0c79ad8` (**test + comment only, no production behavior change** — a strengthened empty-slot masking guard + a `trim()`-intent clarification). That commit shifts embedded `file:line` panic locations, so the HEAD binary re-pinned to `jigc` sha256 `4817ec32f83b9a994113a831a0ca12502ea005a3d1a11e1f4a68f0c20c4c0f3f` (both dirs identical; `doc-code` sibling unchanged `f56032c…`). The measurements above were taken at `191e9bd` and **hold unchanged** — the fix touched no migration/render code path. |
 
 This is the **first** migration to author a *resolving* `implemented-by` code anchor (M25
 deliberately omitted them — adr's `cites-code` deferred, spec authored zero `maps-to-test`). The

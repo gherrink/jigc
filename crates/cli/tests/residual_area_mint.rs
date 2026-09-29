@@ -2,7 +2,7 @@
 //! unit** (`completions/artifacts/M53/settle-record.md` → D3, *What the mint answers*;
 //! `implementation/roadmap.md` → M53 Increment 3).
 //!
-//! **The two lies this suite retires**, both driven at `bde8a643` over a bare `mkdir` (the
+//! **The two lies this suite retires**, both driven at `9ad95fd5` over a bare `mkdir` (the
 //! debug binary, through `dev/jigc-rig`):
 //!
 //! - `jigc start --slug stray-alpha "<intent>"` over `.jigc/tasks/stray-alpha/` answered

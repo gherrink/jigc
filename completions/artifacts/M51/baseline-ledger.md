@@ -1,6 +1,6 @@
 # M51 — the baseline ledger
 
-**Driven 2026-09-10, at `HEAD = bd348a83`** (branch `main`, clean tree), against the **release**
+**Driven 2026-09-10, at `HEAD = 74627547`** (branch `main`, clean tree), against the **release**
 binary `target/release/jigc` = **`1.0.0-rc.14`**. Fixtures from
 `dev/jigc-rig <state> --binary target/release/jigc` (two-step eval, roots under the session
 scratchpad, `committed-singletons` · `fresh` · `vendored` · `bare`). **Debug posture was used
@@ -239,7 +239,7 @@ the **source** side is unswept [tokens §1].
   *"window closes here"* pair is **presentation, not a lie** (both paragraphs state the close is
   keyed to the 1.0 pin, not a wave name, and the M49 spend below each is explicitly declared)
   [prose §5, §9.2]; and CLAUDE.md's *"thirteen `CELLS` rows"* is **false and was false when
-  written** — `write_miss_cells.rs::CELLS` had **63** rows at `32de1121`, the very commit that
+  written** — `write_miss_cells.rs::CELLS` had **63** rows at `c9a50abd`, the very commit that
   wrote the sentence [prose §5].
 - **EC-7 is narrowed: right about `e2e_audit.rs`, wrong as a claim about the tree.** The
   self-reference is real (`e2e_audit.rs:261` `include_str!`s the profile and scrapes its `deny:`
@@ -326,7 +326,7 @@ subject is the live checkout at the landing act** [doors §1, §3].
   deserves one applied mutation before it is acted on** [envelopes, closing section].
 - **No cargo run**, by instruction; `text_json_parity_axis`, `format_json_success_axis` and
   `invocation_log` were read, not executed. The gate at this sha is the orchestrating session's
-  (`gate-rc14-at-bd348a83.log`, 3341/0) [envelopes, closing section].
+  (`gate-rc14-at-74627547.log`, 3341/0) [envelopes, closing section].
 - **`engine::validate::adoption_route`'s unquoted-path-token panic is debug-only** and the rig
   drives release, so it was **not re-driven** [tokens §5].
 - **`jigc migrate .jigc/<x>` was driven only to mint**; the `--approve` deletion of a workbench file

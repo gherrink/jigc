@@ -4,9 +4,9 @@
 # Prove the two images are DIFFERENT TREES, behaviourally — and that both binaries
 # actually run.
 #
-# Why this exists: TWO commits stamp `1.0.0-rc.10` — 8979f16 (the genuine pre-M48
-# binary) and 4fd7fbc (rc.10-stamped, but containing all of M48 because the bump landed
-# late at 9cb9b78). `jigc --version` cannot tell them apart, so an upgrade arm built
+# Why this exists: TWO commits stamp `1.0.0-rc.10` — 1d4f9bc (the genuine pre-M48
+# binary) and 78b288f (rc.10-stamped, but containing all of M48 because the bump landed
+# late at 1d2f146). `jigc --version` cannot tell them apart, so an upgrade arm built
 # from the wrong one compares a binary against itself and nothing in the output reveals it.
 #
 # ── The probe set is chosen, not assumed (2026-08-28) ────────────────────────────
@@ -57,10 +57,10 @@ PAIR_PROBES="${PAIR_PROBES:-m50}"
 
 # Trial-specific, and therefore overridable — the harness outlives any one trial.
 case "$PAIR_PROBES" in
-  m48) DEF_SHA=8979f163d628c72aa2b05821b0059606e2f8267a; DEF_VER="jigc 1.0.0-rc.10" ;;
-  m46) DEF_SHA=9a37f0152744f0cba5f9140483e1ca1b1c453c46; DEF_VER="jigc 1.0.0-rc.11" ;;
-  m49) DEF_SHA=314f59ecc1c32c0ccf16685b83f2797fd2e13fc2; DEF_VER="jigc 1.0.0-rc.12" ;;
-  m50) DEF_SHA=979bacaf31cbf513ca8afcb0bade447a88c06ba1; DEF_VER="jigc 1.0.0-rc.13" ;;
+  m48) DEF_SHA=1d4f9bc7d05619a78961083978cc3f192067fa19; DEF_VER="jigc 1.0.0-rc.10" ;;
+  m46) DEF_SHA=d1ebbc227ba9f4b8310bcb7984c648c3865aa306; DEF_VER="jigc 1.0.0-rc.11" ;;
+  m49) DEF_SHA=5ff85eaad3f784710ee1df5233c183f9408ad46d; DEF_VER="jigc 1.0.0-rc.12" ;;
+  m50) DEF_SHA=f2667709b168a447f14fb348fd04287081b72548; DEF_VER="jigc 1.0.0-rc.13" ;;
   *)   echo "refusing: unknown PAIR_PROBES='$PAIR_PROBES' (want m48, m46, m49 or m50)" >&2; exit 2 ;;
 esac
 EXPECT_OLD_SHA="${EXPECT_OLD_SHA:-$DEF_SHA}"

@@ -36,13 +36,13 @@ legitimately produce.
 ## PT-2 · the installed rc.13 binary predates the gate fix it was said to carry
 
 `~/.local/bin/jigc` and `target/release/jigc` are both dated Sep 1 01:01 — the rc.13 bump
-(`21b6236`). Commit `1799a2d` (Sep 4) changed `crates/cli/src/milestone.rs` after that. Both trees
+(`6533f70`). Commit `d854e25` (Sep 4) changed `crates/cli/src/milestone.rs` after that. Both trees
 stamp `1.0.0-rc.13`, so `jigc --version` cannot tell them apart. The handover's *"both on the
 binary this trial runs"* is true of an image built from HEAD and false of the installed binary.
 
 Not a product finding — it is the fourth consecutive instance of the version-stamp shape the
 completion audits keep catching, this time on the *other* side (a tree changed after the stamp
-rather than a stamp left unbumped). Consequence: the trial image is built from `979baca` and the
+rather than a stamp left unbumped). Consequence: the trial image is built from `f266770` and the
 gate record carries the sha; the installed binary is rebuilt from HEAD only **after** the trial,
 so the walk's `--binary`-less host probes cannot drift from the image mid-trial.
 

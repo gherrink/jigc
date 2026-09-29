@@ -1,8 +1,8 @@
-<!-- The unseeded Codex source pass for AXIS 2, verbatim. Source read at `1.0.0-rc.20` (repo HEAD `51e0b8e4`), 2026-09-27. It drove nothing. -->
+<!-- The unseeded Codex source pass for AXIS 2, verbatim. Source read at `1.0.0-rc.20` (repo HEAD `4d3175c3`), 2026-09-27. It drove nothing. -->
 
 ## Axis 2 source pass — M53 fourth partial rerun
 
-Source read at `a2ae65ef` (`1.0.0-rc.20`). Read-only: I did not drive the binary, run tests, or write files. “CLOSED (argv)” below preserves the rc.20 driver datum; source inspection confirms the closure still exists.
+Source read at `cb0de4ac` (`1.0.0-rc.20`). Read-only: I did not drive the binary, run tests, or write files. “CLOSED (argv)” below preserves the rc.20 driver datum; source inspection confirms the closure still exists.
 
 ### Claims
 
@@ -43,6 +43,6 @@ The new code introduces no axis-2 bypass:
 - `DedicatedWorktree` remains unforgeable outside `task.rs`: private fields, private constructor, typed `SeamSubject::dedicated` ([task.rs](/Users/maurice/projects/gherrink-jigc/crates/cli/src/task.rs:8010), [repo.rs](/Users/maurice/projects/gherrink-jigc/crates/cli/src/repo.rs:1006)).
 - The fast-forward merge still has an immediate commit re-probe ([task.rs](/Users/maurice/projects/gherrink-jigc/crates/cli/src/task.rs:7871)). No production HEAD-changing `switch` or ordinary `checkout` exists.
 
-I also traced the named M52 registries and their consumers. None adds a commit/move act or bypasses the posture seam. No schema or doctype-manifest file changed in `834772b6..HEAD`; the M52 zero-schema-hash boundary is intact.
+I also traced the named M52 registries and their consumers. None adds a commit/move act or bypasses the posture seam. No schema or doctype-manifest file changed in `609da011..HEAD`; the M52 zero-schema-hash boundary is intact.
 
 Bounds: source-only; no binary rerun, concurrency race, `GIT_DIR` redirect, submodule, `core.worktree`, or alternate-Git-version claim.

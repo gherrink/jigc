@@ -1,8 +1,8 @@
-<!-- 2026-09-10 · Opus gap-detector · dimension: doctypes · HEAD bd348a83 · target/release/jigc 1.0.0-rc.14 · no cargo, no repo edits · copied verbatim -->
+<!-- 2026-09-10 · Opus gap-detector · dimension: doctypes · HEAD 74627547 · target/release/jigc 1.0.0-rc.14 · no cargo, no repo edits · copied verbatim -->
 
 # M51 gap probe — dimension: doctypes and packs
 
-Probed at HEAD `bd348a83`, release binary `target/release/jigc` = `1.0.0-rc.14`.
+Probed at HEAD `74627547`, release binary `target/release/jigc` = `1.0.0-rc.14`.
 Every row marked **driven** was produced by running that binary on throwaway rigs
 (`dev/jigc-rig committed-singletons --binary …`, two-step eval) or by loading a copied pack
 tree through `JIGC_PACK_DIR`. No repo file edited, no cargo run. Rows marked *source-read*
@@ -423,7 +423,7 @@ is pinned to the `**M50 —` span of CLAUDE.md and currently asserts the **post-
 `built, not audited` / `1.0.0 is called` / `1.0.0 shipped`). At M51's build close it must be
 **re-aimed** to `**M51 —` and **inverted** back to the pre-audit direction, then inverted again at
 M51's completion fold-back. Its own doc-comment records that this was done **late** last time
-(*"Inverted 2026-09-09, late — and the lateness is the finding"*: the audit landed at `95c79be6`,
+(*"Inverted 2026-09-09, late — and the lateness is the finding"*: the audit landed at `2224ce04`,
 the fence went red on the spot and stayed red through two commits while the handover recorded a
 green gate). The `1.0.0 is called` / `1.0.0 shipped` prohibition is the one to watch: if the human
 takes the 1.0.0 call after M51, the fold-back and this fence must move together.

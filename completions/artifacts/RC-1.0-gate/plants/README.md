@@ -14,7 +14,7 @@ it, with the verbatim output recorded here. Exit codes were measured **unpiped**
 | | |
 |---|---|
 | host binary | `jigc 1.0.0-rc.11` (`~/.local/bin/jigc`) |
-| image | `jigc-gate:rc11`, `JIGC_SHA=9a37f01`, stamp `jigc 1.0.0-rc.11` |
+| image | `jigc-gate:rc11`, `JIGC_SHA=d1ebbc2`, stamp `jigc 1.0.0-rc.11` |
 | corpora | `trial-corpus-template/instantiate.sh --clean-prose` (throwaway copies in a scratchpad; all destroyed) |
 
 The B1 arc was rehearsed **twice** — once on the host for iteration, once **inside

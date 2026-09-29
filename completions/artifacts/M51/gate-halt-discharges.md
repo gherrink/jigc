@@ -1,7 +1,7 @@
 # M51 — the gate-record's HALT drives, discharged
 
 **Date:** 2026-09-11 · **Binary:** `1.0.0-rc.14`, the repo's `target/release/jigc` built at
-`bd348a83` (`jigc --version` → `jigc 1.0.0-rc.14`) · **Repo HEAD:** `bd348a83`, working tree
+`74627547` (`jigc --version` → `jigc 1.0.0-rc.14`) · **Repo HEAD:** `74627547`, working tree
 carrying only the uncommitted planning files.
 
 This file discharges the drives the [planning gate-record](planning-gate-record.md) → *HALT cells*

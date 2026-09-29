@@ -299,7 +299,7 @@ fn first_add_item_materializes_components_after_overview_in_schema_order() {
     // the `## Components` subtree to route around the M13-audit-HIGH leading-Simple-slot
     // `set_slot` defect — `set-slot …#overview` left `## Overview\n<prose>\n\n\n\n##`
     // `Components`, non-canonical; that defect is now fixed (`set_slot` re-renders the
-    // section canonically, mirroring the item-slot fix in 3afc98a), so the assertion is
+    // section canonically, mirroring the item-slot fix in 4ed8408), so the assertion is
     // broadened to whole-doc to catch a regression.)
     let staged = staged_arch_doc(repo.path(), task, slug);
     let schema = arch_doc_schema();

@@ -72,7 +72,7 @@ code each raises).
 |---|---|
 | 1 · `dev/gate` end-to-end fence asserting step + exit code | build infrastructure; the harness-surface wave's, not M50's — stated boundary holds |
 | 2 · `AddedNestedRepeatable` | **Tier 1 above** |
-| 3 · the fan-out Fix phase | cut and waiting; its prerequisite (`1799a2d`) shipped and **held under the migration pair** (walk 14/21). M50 is the wave it belongs to if M50 runs a completion audit with ≥2 independent findings — which W-13 + W-15 + W-1 already are |
+| 3 · the fan-out Fix phase | cut and waiting; its prerequisite (`d854e25`) shipped and **held under the migration pair** (walk 14/21). M50 is the wave it belongs to if M50 runs a completion audit with ≥2 independent findings — which W-13 + W-15 + W-1 already are |
 | 4 · measure whether the dev tooling took | M50's *build* transcripts — not this trial's |
 | 5 · the shell-guard `rm` rule | the human's session; unchanged |
 | 6 · T1-a | **re-described**: release = false green, debug = panic; **and it is the same class as W-13** — one entry, Tier 0 |

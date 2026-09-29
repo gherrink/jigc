@@ -1,7 +1,7 @@
 # M53 — the baseline ledger
 
 **Posture.** Driven 2026-09-21 on the **installed release** `~/.local/bin/jigc` = `1.0.0-rc.16`
-(sha256 `0ddd1ee6…`), git 2.54.0, at `HEAD = 978577ec`. `git diff a3eb026b..HEAD --stat -- crates packs
+(sha256 `0ddd1ee6…`), git 2.54.0, at `HEAD = 155054cc`. `git diff e519e4eb..HEAD --stat -- crates packs
 Cargo.toml Cargo.lock dev` is **empty**, so the installed binary is code-identical to HEAD and one drive
 confirms both. Four `capability-auditor`s, one per charter row, each on `dev/jigc-rig` corpora; their
 reports are persisted **verbatim** as the four companions below. **A fix pass, not a wave**: no gap

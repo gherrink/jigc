@@ -16,7 +16,7 @@
 //!     fills a field nothing fills;
 //!   * and the value sits **inside** every `schema-hash`, so the mistake freezes.
 //!
-//! Driven at `67c3320` before the fix: a `JIGC_PACK_DIR` dev-pack copy whose `adr`
+//! Driven at `73b6bd6` before the fix: a `JIGC_PACK_DIR` dev-pack copy whose `adr`
 //! `date` field read `set: on-creat` (hash re-pinned) ran `jigc doc schema adr
 //! --format json` at **exit 0**, emitting `"set": "on-creat"` with
 //! `"author-required": false`.

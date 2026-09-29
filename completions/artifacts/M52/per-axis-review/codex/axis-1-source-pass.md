@@ -1,8 +1,8 @@
-<!-- M52 per-axis review (re-run) — axis 1 ·  — the CODEX SOURCE PASS, verbatim. Read against the repository at commit a3eb026b, 2026-09-21. It reads; it drives nothing. Every claim below is a LEAD until the reconciler drove it — see axis-1.md for the verdict on each. -->
+<!-- M52 per-axis review (re-run) — axis 1 ·  — the CODEX SOURCE PASS, verbatim. Read against the repository at commit e519e4eb, 2026-09-21. It reads; it drives nothing. Every claim below is a LEAD until the reconciler drove it — see axis-1.md for the verdict on each. -->
 
 # M52 Axis 1 source pass — caller tokens
 
-Reviewed commit `a3eb026b699ce9c23cb0201555838931b65bd2d2` (`1.0.0-rc.16`). Read-only review; I drove no binary and wrote no files.
+Reviewed commit `e519e4ebf952bbf71b8591294101bd63be779998` (`1.0.0-rc.16`). Read-only review; I drove no binary and wrote no files.
 
 ## M51 §A row dispositions
 
@@ -36,4 +36,4 @@ The M52 registries named in the rerun brief do not expose an Axis 1 bypass where
 
 This is source completeness only: no runtime behavior was driven. The remaining declared limitation is explicit—an argument incorrectly classified as `PlainValue::Other` could evade the path-occurrence registry (`crates/cli/src/cli.rs:2380-2396`).
 
-**Zero schema-hash movement holds.** `git diff --name-only c59ec3d7..HEAD` over both shipped schema trees, both manifests, and both snapshot trees produced no paths. I see no violation: M52 changed the `doc schema` projection contract, not frozen schema hashes, schema versions, or corpus migrations.
+**Zero schema-hash movement holds.** `git diff --name-only 65d3cd76..HEAD` over both shipped schema trees, both manifests, and both snapshot trees produced no paths. I see no violation: M52 changed the `doc schema` projection contract, not frozen schema hashes, schema versions, or corpus migrations.

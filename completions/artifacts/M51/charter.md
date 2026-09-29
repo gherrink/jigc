@@ -10,10 +10,10 @@ bounds). Twenty-two of the forty-three rows are marked `reproduced-live? yes`; t
 source- or repo-reads and are named as such in the ledger — **drive them before fixing them.**
 
 **Chartered on** [the 1.0.0 evidence check](../evidence-check-1.0/VERDICT.md), run 2026-09-10 on
-**`1.0.0-rc.14`** built from HEAD **`bd348a83`** — five Opus reviewers plus one independent,
+**`1.0.0-rc.14`** built from HEAD **`74627547`** — five Opus reviewers plus one independent,
 unseeded Codex source review, every driving reviewer on the release binary, **no reviewer running
 cargo and none editing a repo file**. The gate passed at that HEAD: **3341 passed / 0 failed**
-([gate-rc14-at-bd348a83.log](../evidence-check-1.0/gate-rc14-at-bd348a83.log)). Its verdict is two
+([gate-rc14-at-74627547.log](../evidence-check-1.0/gate-rc14-at-74627547.log)). Its verdict is two
 independent conclusions:
 
 - **Not 1.0-ready as rc.14 stands** — **two data-loss-at-exit-0 defects that no trial reached, both
@@ -81,7 +81,7 @@ preamble warns about enters ([decisions-pending.md](../../../implementation/deci
 ### Baseline amendments (2026-09-10)
 
 **The baseline drove this charter's rows** — four Opus capability-auditors on the release
-`1.0.0-rc.14` at HEAD `bd348a83`, none running cargo, none editing a repo file:
+`1.0.0-rc.14` at HEAD `74627547`, none running cargo, none editing a repo file:
 [baseline-ledger.md](baseline-ledger.md) (consolidated) with its four companions. Every cell below
 is *added* to the tier named; nothing already in the tiers is removed. **Fifteen cells**, each
 tracing to a companion line.
@@ -364,7 +364,7 @@ falsifying datum quoted"*).
   invocation 3 and resumed at 6); **invocation 1 is the harness's `SessionStart` hook**, not the
   worker's; and the adapter's `SKILL.md` — tool call 1 in every arm — names the read verb
   **verbatim**, so the route was available directly (it shipped at M48 and cannot explain 1/3→3/3).
-- **EC-33** `1799a2d` is **not in the rc.13→rc.14 diff** (`git merge-base --is-ancestor` → yes); the
+- **EC-33** `d854e25` is **not in the rc.13→rc.14 diff** (`git merge-base --is-ancestor` → yes); the
   coverage table's stated subject is wrong about that member.
 - **EC-34** coverage **row 12 is classified from the artifact, not the code** — the sixth instance of
   the failure `pinning.md` §5 catalogues five of; and **one M50 surface is in no column at all**
@@ -519,7 +519,7 @@ not author it.
   stands with the bypass-chain entry, and **F-9 is the cheapest link in that chain** and is *in*.
 - **F-13** (a second, sequential milestone execution shape) — the trial record classifies it *"a
   **design** question, not a fix"*, and its trigger stands: *whichever wave first takes the
-  sequential-execution question*. It is also **why the `1799a2d` boundary was reached by nothing** —
+  sequential-execution question*. It is also **why the `d854e25` boundary was reached by nothing** —
   the uncovered arm and the gap are one event, and that is a trial-coverage fact, not a wave item.
 - **The doctype-completeness milestone** ([decisions-pending.md](../../../implementation/decisions-pending.md)
   → *The doctype-completeness milestone (post-1.0)*) — explicitly post-1.0 by the human's decision of

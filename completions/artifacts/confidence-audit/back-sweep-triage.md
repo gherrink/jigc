@@ -3,7 +3,7 @@
 Scope: the pre-1.0 confidence-audit session's third leg (DECISIONS → 2026-07-24 "The road to 1.0").
 Sources enumerated: `completions/artifacts/M39..M44/VERDICT.md`, the four trial findings-verification
 files those waves consumed (`RC-adoption/rerun-rc4/`, `RC-adoption/impl-rc5/`, `RC-lacon/`,
-`RC-adoption/rerun-rc7/`), spot-checks against the shipped test tree at HEAD `14bb1e1`.
+`RC-adoption/rerun-rc7/`), spot-checks against the shipped test tree at HEAD `bb2c408`.
 Vocabulary: `implementation/pinning.md` (compose goldens · contract property suites · repro blocks
 in `crates/cli/tests/pinned_facts/` · the trial-shaped fixture corpus).
 
@@ -12,8 +12,8 @@ verification (audit repro, trial probe, adversarial refutation), not by a standi
 it was established. Facts whose *fix* landed test-first are (a) by that fix's red test. Facts the
 M45 golden sweep / property suites now enforce are (a) by those. The sibling-hunt's 8 findings +
 minor residue (`completions/artifacts/M45/sibling-hunt.md`) are **deliberately excluded** — they are
-the same session's other third and already ranked (note: item 1 is already fixed at `1b3f1b5`;
-`--dry-run` landed at `d61f8fe`).
+the same session's other third and already ranked (note: item 1 is already fixed at `0aa4afb`;
+`--dry-run` landed at `be5710b`).
 
 **Counts: (a) 58 · (b) 21 · (c) 2 · unclassified 1.**
 
@@ -23,18 +23,18 @@ the same session's other third and already ranked (note: item 1 is already fixed
 
 | # | Fact (one line) | Pinned by |
 |---|---|---|
-| a1 | M39: slug 50-char backstop survives single-word id-sources | hardened proptest (fix `02213f3`), `slug.rs` proptests |
-| a2 | M39: `doc show` field-leaf + id-from slices resolve; absent leaf blocks | `doc_read_surface.rs` address round-trip (M45) + fix `e2a4c28` tests |
-| a3 | M39: non-canonical singleton slug on `doc show` routes not-found | fix `0d8fcb1` test |
-| a4 | M39: pinned JSON `base` renders structured `{sha, short}` | fix `ac37fb6` test + `doc_show.rs` |
-| a5 | M39: base-guard advances over a record-only range, foreign commit blocks | `milestone_finalize_base_guard.rs` (fix `0790bcb`) |
+| a1 | M39: slug 50-char backstop survives single-word id-sources | hardened proptest (fix `2f61aef`), `slug.rs` proptests |
+| a2 | M39: `doc show` field-leaf + id-from slices resolve; absent leaf blocks | `doc_read_surface.rs` address round-trip (M45) + fix `459ffc3` tests |
+| a3 | M39: non-canonical singleton slug on `doc show` routes not-found | fix `f520e7e` test |
+| a4 | M39: pinned JSON `base` renders structured `{sha, short}` | fix `7de68f8` test + `doc_show.rs` |
+| a5 | M39: base-guard advances over a record-only range, foreign commit blocks | `milestone_finalize_base_guard.rs` (fix `d192749`) |
 | a6 | M39: fresh-clone re-derive/resume of a milestone record | `milestone_record_fresh_clone.rs` |
 | a7 | M39: invocation-log `output_bytes` = exact stdout+stderr total (fd-tee) | `invocation_log.rs::output_bytes_equals_emitted_stdout_plus_stderr` |
 | a8 | M39: compose renders ALL grounded sources, order-invariant | flipped M37 pinning tests + `form_vision_grounding.rs` (pinned_facts) |
-| a9 | M40: field-less item templates scan stray field groups at every depth | fix `f15eef6` tests |
-| a10 | M40: milestone-record retitle refused (machine-maintained) | `retitle_item_milestone_record.rs` (fix `fb3fade`) |
-| a11 | M40: control-char titles rejected at all mint/retitle doors | fix `3d8faad` shared-guard tests |
-| a12 | M40: two nested repeatables per block refused at load | fix `7ae939d` loader test |
+| a9 | M40: field-less item templates scan stray field groups at every depth | fix `56178cf` tests |
+| a10 | M40: milestone-record retitle refused (machine-maintained) | `retitle_item_milestone_record.rs` (fix `8725fbf`) |
+| a11 | M40: control-char titles rejected at all mint/retitle doors | fix `f460a9c` shared-guard tests |
+| a12 | M40: two nested repeatables per block refused at load | fix `e244f34` loader test |
 | a13 | M40: gitignored trees never enter the ingest funnel | ingest tests + flow41 |
 | a14 | M40: methodology manifest freeze-asserts ten schemas at pack-load | pack-load fence tests + `corpus_migration.rs` v0-stamp arms |
 | a15 | M40: `doc schema` byte-determinism | compose goldens (`doc schema` × 6 states × 2 forms) |
@@ -43,7 +43,7 @@ the same session's other third and already ranked (note: item 1 is already fixed
 | a18 | rc4 V3/V6: enum members + field→section in `doc schema` | `doc_schema.rs` contract tests + goldens; rc7 R2 re-verified live |
 | a19 | rc4 V4: fabricated `.vue` script symbol blocks; real one resolves | M41 fork-3 tests + `resolve.rs` vue unit tests + flow42 |
 | a20 | rc4 V5: `--unset` splice-removes; `[]` non-ref-scalar rejected; empty scalar rejected | M41 V5/N2 tests, engine `write.rs` tests |
-| a21 | rc4 V7/W3: slug word-boundary retreat + edge-stopword drop, idempotency held | slug proptests incl. the restored `idempotent` invariant (`fe53318`) |
+| a21 | rc4 V7/W3: slug word-boundary retreat + edge-stopword drop, idempotency held | slug proptests incl. the restored `idempotent` invariant (`0c4b9cd`) |
 | a22 | rc4 V8/V13: advisory routes name the minting step / `jigc describe` (no dangling verbs) | M41 route repairs' tests + the M43 route fence (mechanical argv parses against the real CLI) |
 | a23 | rc4 V9: ingest collapses `unmanaged` rows per-directory (agent arm), itemized rows kept | `ingest.rs:227-251` |
 | a24 | rc4 V10: arch-doc `cites` committed-first warning present | M41 papercut test; preview golden-pinned |
@@ -52,8 +52,8 @@ the same session's other third and already ranked (note: item 1 is already fixed
 | a27 | M41: hostile input never panics the code-anchor resolvers (all grammars + Vue) | `resolve.rs::*_hostile_input_does_not_panic` |
 | a28 | rc5 U1: binary-mismatch route names `migrate-corpus` when the corpus is stale | `setup.rs` two-arm route + its tests |
 | a29 | rc5 U2: validate exits non-zero over an unmigrated *placement* corpus; stock brownfield stays exit-0 | flow43 + `managed_vs_foreign.rs` + `schema-conformance.schema-version-current` tests |
-| a30 | rc5 U4: `migrate-corpus --dry-run` exists (post-back-sweep: `d61f8fe`); validate is the real detector | flow43 + `corpus_migration.rs:1026` dry-run arms |
-| a31 | rc5 U5: migrate-corpus lands through the tool (commit boundary), exits non-zero on blocked | fix `f3cd145` tests + flow43 |
+| a30 | rc5 U4: `migrate-corpus --dry-run` exists (post-back-sweep: `be5710b`); validate is the real detector | flow43 + `corpus_migration.rs:1026` dry-run arms |
+| a31 | rc5 U5: migrate-corpus lands through the tool (commit boundary), exits non-zero on blocked | fix `adf88df` tests + flow43 |
 | a32 | rc5 W2: `task bind`/`task discard` emit acks (the `op` enum, two task acks) | M42 finding-key/ack seam tests |
 | a33 | rc5 W4/W5/M10: the two lying help sentences fixed; `task minted: <id>` printed | M42 papercut tests + compose goldens |
 | a34 | rc5 W6: `locate-from-spec` demands the `maps-to-test` wiring per satisfied criterion | pack text golden-pinned (workflow previews × states) |
@@ -74,16 +74,16 @@ the same session's other third and already ranked (note: item 1 is already fixed
 | a49 | lacon A14: findings print repo-real paths; file-state skips transient staging docs | M43 A14 fix tests |
 | a50 | lacon B7/rc5 R7: `doc show --task` serves the staged copy; transient `commit:<task>` staged-readable; stale read routed | `doc_show_staged.rs` + flow44 |
 | a51 | lacon B12: `decided-task` selectable; every `selectable: false` needs `suppressed: {reason, expires}` | pack-load fence tests + describe golden + `milestone-execution` suppressed test (M45) |
-| a52 | lacon B3 (refutation): `--task` optional under single-active-task; two-task reject names both ids | write-path resolution tests (since `70611e4`) + M43 composed statement (golden) |
+| a52 | lacon B3 (refutation): `--task` optional under single-active-task; two-task reject names both ids | write-path resolution tests (since `8112497`) + M43 composed statement (golden) |
 | a53 | lacon B11 (refutation): `#type` enum vocabulary on write-reject + `doc schema` + composed render (generated from `Field.of`) | M43 generation-seam tests + goldens |
 | a54 | lacon B4 (refutation): `start --task <id>` resumes; `task validate <id>` = what's-left; both named in composed output | `compose_statefulness.rs` + M43 footer (golden) |
 | a55 | rc7 R1 (refutation): `jigc migrate --format json` carries the minted id at `.task` | `migrate_adr.rs::migrate_format_json_carries_the_minted_task_id` + contract doc §1 names migrate |
 | a56 | rc7 C1/L1: path-hash task ids — distinct, deterministic, resumable per source path | flow45 arm 1 (`blake3` disambiguator) |
 | a57 | rc7 C2: `write.not-present` routes to the followable staged read | M44 fix test (route re-run verbatim in e2e, then pinned) |
-| a58 | rc7 C3/C4, D1–D5: fidelity boundary-guard + report split (`v1.0.0` kept, `project-alpha-2.0` not flagged) · `record-decision` from-knowledge adr · AGENT.md machine-output + read-rule paragraphs · `workflow --preview` mutation-free · stated-at fence | flow45 arms 2–7 + `stated_at_fence.rs` + preview goldens; M44's two post-audit fixes (`7ee77d1`, `9f6a67b`) test-first |
+| a58 | rc7 C3/C4, D1–D5: fidelity boundary-guard + report split (`v1.0.0` kept, `project-alpha-2.0` not flagged) · `record-decision` from-knowledge adr · AGENT.md machine-output + read-rule paragraphs · `workflow --preview` mutation-free · stated-at fence | flow45 arms 2–7 + `stated_at_fence.rs` + preview goldens; M44's two post-audit fixes (`aac397b`, `ec2c4eb`) test-first |
 
-Also (a), M43-audit cluster: the `unknown-type` route (`d47991b`), the three Display-rendered
-route-less siblings (`a1696d4`), the ambush-const honesty split (`56cc853`) — each landed red-first;
+Also (a), M43-audit cluster: the `unknown-type` route (`1e5cc04`), the three Display-rendered
+route-less siblings (`4113ccd`), the ambush-const honesty split (`172aea4`) — each landed red-first;
 the carryover gate incl. deletions + `--carry-staged` labeling + fail-open-on-missing-snapshot
 (`carryover_gate.rs`, incl. `:993 milestone_missing_snapshot_fails_open`).
 

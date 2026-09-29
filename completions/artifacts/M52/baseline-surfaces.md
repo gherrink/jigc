@@ -1,7 +1,7 @@
 # M52 baseline — area `surfaces` (axis 6 composed surfaces · axis 8 adopter docs / help / advisory arms)
 
 **Provenance.** Binary `/Users/maurice/.local/bin/jigc` — `jigc 1.0.0-rc.15` (asserted before every
-rig). Repo HEAD `85ad06c5`, tree clean, **no cargo run**. Date 2026-09-16/17. Rig states used:
+rig). Repo HEAD `7637a46f`, tree clean, **no cargo run**. Date 2026-09-16/17. Rig states used:
 `fresh` (×6), `bare` (×2), `committed-singletons` (×4), `vendored` (×1) — every one via
 `rig=$(dev/jigc-rig <state> --binary ~/.local/bin/jigc) || exit; eval "$rig"; cd "$REPO"`.
 Nothing was written into the working repository. Captured output under

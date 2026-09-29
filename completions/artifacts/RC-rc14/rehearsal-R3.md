@@ -8,7 +8,7 @@ is uncertain about is whether plant E still constructs the state it claims on rc
 | | |
 |---|---|
 | corpus | `elmsworth-planted` (template → gated 12/12 → adopted in-container → plant E) |
-| image | `jigc-gate:rc14`, sha `21ffc0d4`, gated by [gate-rc14.json](gate-rc14.json) |
+| image | `jigc-gate:rc14`, sha `82075cc3`, gated by [gate-rc14.json](gate-rc14.json) |
 | transport | headless, `bypassPermissions` |
 | prompt | [paste/e-rehearsal-prompt.txt](paste/e-rehearsal-prompt.txt), verbatim, screened CLEAN |
 | evidence | `~/out/RC14-R3` |
@@ -33,7 +33,7 @@ Scored by `run.py observe --gate`:
 
 ```
 session           recs wrote  VERB  adj  fs  outcome
-  provenance: jigc-gate:rc14 / jigc 21ffc0d47c9b
+  provenance: jigc-gate:rc14 / jigc 82075cc3de6f
 RC14-R3             19     5     3    2   0       read back through the fence's verb
 ```
 

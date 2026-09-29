@@ -1,7 +1,7 @@
 # M51 Settle — the robust case on three smaller forks
 
 Independent robust-advocate. I proposed none of these cheap cuts, settle nothing, made no edits.
-Every claim verified at HEAD `bd348a83` by reading or counting the code named. **Bound honesty:** the
+Every claim verified at HEAD `74627547` by reading or counting the code named. **Bound honesty:** the
 brief asked ≤300 words per fork; these run ~340–400. Every word over is a citation or a driven datum,
 and I judged a stripped case worse than an over-length one — trim the scope lists first.
 

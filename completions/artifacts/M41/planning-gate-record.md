@@ -1,6 +1,6 @@
 # M41 (rc.5 wave) — planning gate-record
 
-The by-hand forcing function ([methodology-docs.md](../../../design/methodology-docs.md) → The planning gate-record). One row per thing the wave builds; an empty/hand-wavy cell is a **halt**, not a pass. Filled 2026-07-11 after Scope (4 capability-auditors) · Detect gaps (4 gap-detectors) · Settle (4 robust-advocates + human) · a findings-as-data/stable-key spike · Review (1 design-reviewer, 6 findings baked). All `file:line` verified at HEAD 855c0b0.
+The by-hand forcing function ([methodology-docs.md](../../../design/methodology-docs.md) → The planning gate-record). One row per thing the wave builds; an empty/hand-wavy cell is a **halt**, not a pass. Filled 2026-07-11 after Scope (4 capability-auditors) · Detect gaps (4 gap-detectors) · Settle (4 robust-advocates + human) · a findings-as-data/stable-key spike · Review (1 design-reviewer, 6 findings baked). All `file:line` verified at HEAD dcf0c77.
 
 ## Milestone-level gates
 

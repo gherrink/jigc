@@ -2,7 +2,7 @@
   "identity": {
     "tag": "jigc-gate:rc13",
     "image_id": "sha256:470ed377cf9f6754db7d842afaa804633af4666dd528e9023b1c2da59606a233",
-    "jigc_sha": "979bacaf31cbf513ca8afcb0bade447a88c06ba1",
+    "jigc_sha": "f2667709b168a447f14fb348fd04287081b72548",
     "jigc_version": "jigc 1.0.0-rc.13",
     "cli_version": "2.1.233 (Claude Code)"
   },
@@ -15,5 +15,5 @@
     "transcript_recoverable": true,
     "no_host_instructions": true
   },
-  "note": "verify-image.sh jigc-gate:rc13 1.0.0-rc.13 => 7 passed / 0 failed, 2026-09-04; image built from 979baca (HEAD, four commits past 1799a2d \u2014 the gate fix is IN this tree, unlike the host-installed rc.13); verify-pair.sh PAIR_PROBES=m49 rc12->rc13 recorded in protocol.md \u00a710"
+  "note": "verify-image.sh jigc-gate:rc13 1.0.0-rc.13 => 7 passed / 0 failed, 2026-09-04; image built from f266770 (HEAD, four commits past d854e25 \u2014 the gate fix is IN this tree, unlike the host-installed rc.13); verify-pair.sh PAIR_PROBES=m49 rc12->rc13 recorded in protocol.md \u00a710"
 }

@@ -1,4 +1,4 @@
-<!-- M53 PARTIAL per-axis review · axis 3 · RECONCILED (Opus driver table + reconciliation ledger) — every row driven on the installed `/Users/maurice/.local/bin/jigc` -> `jigc 1.0.0-rc.17`, repo HEAD `75ab77ca`, 2026-09-22. -->
+<!-- M53 PARTIAL per-axis review · axis 3 · RECONCILED (Opus driver table + reconciliation ledger) — every row driven on the installed `/Users/maurice/.local/bin/jigc` -> `jigc 1.0.0-rc.17`, repo HEAD `7e98faf1`, 2026-09-22. -->
 
 # M53 partial per-axis review — AXIS 3 · destroying doors — the Opus driver's `(door, cell)` table
 
@@ -45,7 +45,7 @@ bare reading is the one recorded.
 
 ## 1 · The door set and the cell set, derived from the code
 
-Counted by a balanced-bracket top-level-item parse of each declaration at `HEAD = 75ab77ca`
+Counted by a balanced-bracket top-level-item parse of each declaration at `HEAD = 7e98faf1`
 (comments stripped). **The numbers below are what I read, not what a design doc states.**
 
 | registry | file:symbol | count read |
@@ -797,7 +797,7 @@ over.
 - **OBS-6 · `milestone finalize` lands at exit 0 over unauthored sub-task commit docs under the
   default `squash: true`** (driven: both `commit:<sub>` docs carry `type: ""` and an empty required
   `summary`, `jigc task validate <sub>` blocks on both, and the boundary commits). This is
-  `1799a2d`'s **stated carve-out** — under `squash: true` the aggregate message is CLI-synthesized and
+  `d854e25`'s **stated carve-out** — under `squash: true` the aggregate message is CLI-synthesized and
   no commit doc is read — and the gate does bind under `squash: false` (driven: exit 3, four findings,
   §3 R-F). Recorded because the un-driven reading of the fold-back sentence looks like a regression and
   is not.
@@ -874,7 +874,7 @@ single arm is the subject of.
 # 8 · Reconciliation ledger
 
 **Reconciled 2026-09-22 against `/…/axis-review/codex/axis3-codex.md`** (source pass at
-`10e3286c81fa39d4f5464820a2c7591483cfa8e2`, explicitly **not binary-driven**). Every drive below ran on
+`84db75517669bbfe3f499e5268fd2e0674e04d88`, explicitly **not binary-driven**). Every drive below ran on
 the same binary the driver used — `/Users/maurice/.local/bin/jigc`, asserted `jigc 1.0.0-rc.17` — in
 fresh `dev/jigc-rig` rigs (two-step eval, every root from `mktemp -d`, no teardown, nothing written to
 the working repository, no fix, no commit). Exit codes read **bare**; every loss/survival claim carries
@@ -913,7 +913,7 @@ rule, silence leaves a driven defect standing, so both were **re-driven here** a
 | **C13** | `LeftoverShape` is shape-complete; removal dispatches directories to `remove_dir_all` and every other present/fail-closed leaf shape to `remove_file` | **CONFIRMED** | Driver R-J drives all five shapes at `milestone provision` (dir · dangling `.git` · file · symlink · unreadable) plus both `--force` removal arms; §8.3-E re-drives the symlink arm at `uninstall --force` — the outside tree is **1/1 intact**, so the symlink was unlinked, not descended |
 | **C14** | `--force` belongs only to refusing dispositions; **both finalize rows are `Displace` with no consent flag** | **CONFIRMED (repro)** | Driven bare: `jigc task finalize zzz --force` → **exit 2**, `error: unexpected argument '--force' found`; `jigc milestone finalize zzz --force` → **exit 2**, same. Neither `--help` lists `--force` |
 | **C15** | removal-site census: *"I found **no unguarded production removal of adopter bytes**"* | **REFUTED as worded** | §8.3-G. A third party's `merged/docs/adr:user-authored.md` (`USER-BODY-KEEP`) is **destroyed at exit 0**, named on **neither** stream (`grep -c 'user-authored'` → **0** on stdout *and* stderr), absent from the whole repo and from git (`git grep -l … HEAD` → rc 1), while its sibling `plain.txt` is displaced. The site is the one Codex's own census lists as benign (`engine/milestone.rs:2228`, *"selective materialized-body removal"*). **This does not make it a defect** — it is the driver's OBS-1 and it matches the *stated* `merged/docs/` membership rule (`staged_doc_id` alone), so it contradicts no contract. What is refuted is the census sentence's **scope**, not the behaviour's correctness |
-| **C16** | the diff `a3eb026b`..fixed rc.17 moves **no** schema manifest, schema file or schema JSON | **CONFIRMED** | `git diff a3eb026b..HEAD -- '*schema-manifest.yaml' '*/schemas/*' '*schema-snapshots/*' \| wc -l` → **0** |
+| **C16** | the diff `e519e4eb`..fixed rc.17 moves **no** schema manifest, schema file or schema JSON | **CONFIRMED** | `git diff e519e4eb..HEAD -- '*schema-manifest.yaml' '*/schemas/*' '*schema-snapshots/*' \| wc -l` → **0** |
 | **C17** | the per-site classifications of the ~25-entry removal census (each named file:line read as owned/guarded/verified-empty) | **OPEN LEAD** | Not driveable per site through the binary: most sites are internal cleanup with no caller-reachable cell that distinguishes "guarded" from "never exercised", and the rig builds no state that reaches them individually. The **aggregate** claim is driven (C15). Recorded open rather than promoted on the source read |
 
 ## 8.3 · The reconciler's own repro blocks

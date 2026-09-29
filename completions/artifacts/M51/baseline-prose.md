@@ -1,8 +1,8 @@
-<!-- M51 baseline · companion 4 of 4 — the prose surfaces 1.0 ships, and the fences that keep them true. Driven 2026-09-10 by one Opus capability-auditor against the release binary `1.0.0-rc.14` at HEAD `bd348a83`; no cargo run, no repo file edited. Verbatim as returned; consolidated in [baseline-ledger.md](baseline-ledger.md). -->
+<!-- M51 baseline · companion 4 of 4 — the prose surfaces 1.0 ships, and the fences that keep them true. Driven 2026-09-10 by one Opus capability-auditor against the release binary `1.0.0-rc.14` at HEAD `74627547`; no cargo run, no repo file edited. Verbatim as returned; consolidated in [baseline-ledger.md](baseline-ledger.md). -->
 
 # M51 baseline — area: the prose surfaces 1.0 ships, and the fences that keep them true
 
-Verified at HEAD `bd348a83` against the release binary
+Verified at HEAD `74627547` against the release binary
 `/Users/maurice/projects/gherrink-jigc/target/release/jigc` (`jigc 1.0.0-rc.14`).
 **A map, not gospel.** No repo file was edited; nothing here is settled.
 Rigs built with `dev/jigc-rig <state> --binary target/release/jigc`, two-step eval,
@@ -481,7 +481,7 @@ Every "actual" re-derived at HEAD from the named registry.
 | `design/worked-examples.md:3005` | "**9** doors, **9** distinct identities" | 10 / 11 | `COMMITTING_DOORS` / `ERROR_CODE_REGISTRY` | **STALE** (= carried defect **(g)**) |
 | `crates/cli/tests/flow47_acceptance.rs:21` | "all **nine** pairwise distinct" | 10 | same — and `:18` of the **same file** says "10 doors since M49 Inc 2 T3" | **STALE, self-contradicting four lines apart** |
 | `implementation/decisions-pending.md:320` | "drove all **nine** committing doors" | 10 | same | **STALE** (historical framing, but present-tense verb) |
-| `CLAUDE.md` (M50 para) | "**thirteen** `CELLS` rows" | **63** | `crates/cli/tests/support/write_miss_cells.rs::CELLS` | **FALSE — and it was false when written**: at `32de1121`, the very commit that wrote the sentence, `CELLS` already had 63 rows |
+| `CLAUDE.md` (M50 para) | "**thirteen** `CELLS` rows" | **63** | `crates/cli/tests/support/write_miss_cells.rs::CELLS` | **FALSE — and it was false when written**: at `c9a50abd`, the very commit that wrote the sentence, `CELLS` already had 63 rows |
 | `design/doc-read-surface.md:175` (heading) + `:177` | "**five** regimes" / "**Five** independently-governed … regimes" | **6** table rows | the table two lines below it (`doc show`, `doc list`, `doc schema`, command-output contract, result contract, `describe`) | **STALE — the doc contradicts itself in one screen** |
 | `design/corpus-migration.md:281` | "all **sixteen** shipped doctypes (**6/6** dev + **10/10** methodology are manifest-listed)" | dev **6**, methodology **11** (17 entries, 16 distinct types) | both `schema-manifest.yaml`s | **STALE in the parenthetical** (`planning-record` joined at M49); the headline "sixteen" is right by distinct-type count and wrong by entry count — the sentence is ambiguous about which it means |
 | `crates/cli/pack/config/schema-manifest.yaml:48` | "all **16** doctype hashes" | 17 entries today | both manifests | **historical** (a true statement about M47 Inc 1), but reads as a live count in a file an author edits |

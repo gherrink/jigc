@@ -127,7 +127,7 @@ on de-identified artifacts/reports (the NGT pattern).
 
 ## State at handoff
 
-- `main` clean, gate green, HEAD `3e3f3a9`. This session's 9 commits: `fc1ba3b`…`3e3f3a9`.
+- `main` clean, gate green, HEAD `a8b69a1`. This session's 9 commits: `eb875eb`…`a8b69a1`.
 - **Environment normal:** `jigc` un-wrapped (real binary), `doc-code` probe in place, claude-mem on,
   global `~/.claude/CLAUDE.md` intact. No rollback owed.
 - **M17 fully closed:** verdict (`VERDICT.md`, Codex-revised) + completion audit (PASS) + the

@@ -1,4 +1,4 @@
-<!-- M51 per-axis review — axis 3 · reconciled · driven on the installed `jigc 1.0.0-rc.15` (commit 35195f56), 2026-09-16 -->
+<!-- M51 per-axis review — axis 3 · reconciled · driven on the installed `jigc 1.0.0-rc.15` (commit 577a0099), 2026-09-16 -->
 
 # M51 per-axis review — AXIS 3 · destroying doors — the Opus driver's `(door, cell)` table
 
@@ -10,8 +10,8 @@ jigc 1.0.0-rc.15
 ```
 
 This is the **release** posture (the route-fence panics that exist in the debug binary do not
-exist here), and it is the binary built **after** the M51 audit fixes — routes `8a42fbbd`,
-orphan territory `b5ccd818`, setup guard `0fc80bab`, LOWs `dc508994`
+exist here), and it is the binary built **after** the M51 audit fixes — routes `6c2391c0`,
+orphan territory `da5173a1`, setup guard `ff2bde99`, LOWs `507c332d`
 ([VERDICT](../../../../completions/artifacts/M51/VERDICT.md)). Every row below was driven on it.
 
 **Rigs.** `rig=$(dev/jigc-rig fresh --binary /Users/maurice/.local/bin/jigc) || exit; eval "$rig"`

@@ -35,7 +35,7 @@
 //!      the finding's own repro command printed: `ls crates/cli/pack/steps/
 //!      packs/methodology/steps/ | wc -l` counts `ls`'s two directory headers and the
 //!      blank line between them, so a tree of **66** step `*.yaml` — what the trial's HEAD
-//!      `8979f16` carried, and therefore what 1.0.0-rc.10 shipped — reported 66 + 3. The
+//!      `1d4f9bc` carried, and therefore what 1.0.0-rc.10 shipped — reported 66 + 3. The
 //!      finding survives its denominator intact; only the denominator was wrong.
 //!
 //!      A bare count also re-falsifies itself on the next step file the pack gains, so the
@@ -1101,7 +1101,7 @@ fn manifest_kind_all_holds_every_variant_the_enum_declares() {
 // claim**: a version token immediately followed by the words the fold-back has used at every
 // wave — `built and installed` / `built + installed`, optionally through an `is`, across the
 // markup that decorates it. A trial sentence naming the binary it ran on
-// (*"`1.0.0-rc.13` built from `979baca`"*) is not that claim and is not bound, which is the
+// (*"`1.0.0-rc.13` built from `f266770`"*) is not that claim and is not bound, which is the
 // distinction the historical paragraph actually turns on.
 //
 // **Declared bound:** the claim is a **conditional**, and it binds the **newest** wave's span
@@ -1340,7 +1340,7 @@ fn the_version_comparison_rejects_a_foldback_naming_another_version() {
 **M50 — the last wave — is complete** (… **`1.0.0-rc.14` built and installed after the fixes, \
 not before**, with the goldens regenerated). **M51 — the count wave — is complete** (… \
 **`1.0.0-rc.15` built and installed after the fixes, not before**). The trial ran on \
-`1.0.0-rc.14` built from `21ffc0d4`.
+`1.0.0-rc.14` built from `82075cc3`.
 
 ## Build / lint / test
 ";
@@ -1368,7 +1368,7 @@ not before**, with the goldens regenerated). **M51 — the count wave — is com
 
     // A trial sentence naming the binary it ran on is not a built-and-installed claim, which
     // is what keeps the paragraph's dozen historical version tokens out of the subject.
-    let trial = "The pre-v1 trial ran on `1.0.0-rc.13` built from `979baca` — not the \
+    let trial = "The pre-v1 trial ran on `1.0.0-rc.13` built from `f266770` — not the \
                  host-installed rc.13, which predates it.";
     assert!(
         built_and_installed_versions(trial).is_empty(),

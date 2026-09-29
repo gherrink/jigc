@@ -1,6 +1,6 @@
 # Robust-case brief — fork `(3, A3-2)`, the failed displacement
 
-Every behavioural claim below is marked **DRIVEN** (run on `~/.local/bin/jigc` → `jigc 1.0.0-rc.16`, rigs from `dev/jigc-rig`, two-step eval, `mktemp -d` roots) or **READ** (source at HEAD `978577ec`). No edits, no cargo. Where I drove something that weakens my own case, it is in §1, first.
+Every behavioural claim below is marked **DRIVEN** (run on `~/.local/bin/jigc` → `jigc 1.0.0-rc.16`, rigs from `dev/jigc-rig`, two-step eval, `mktemp -d` roots) or **READ** (source at HEAD `155054cc`). No edits, no cargo. Where I drove something that weakens my own case, it is in §1, first.
 
 ---
 

@@ -1,8 +1,8 @@
-<!-- 2026-09-10 · Opus gap-detector · dimension: capabilities · HEAD bd348a83 · target/release/jigc 1.0.0-rc.14 · no cargo, no repo edits · copied verbatim -->
+<!-- 2026-09-10 · Opus gap-detector · dimension: capabilities · HEAD 74627547 · target/release/jigc 1.0.0-rc.14 · no cargo, no repo edits · copied verbatim -->
 
 # M51 gap probe — dimension: CAPABILITIES (engine/CLI surface)
 
-Verified at HEAD `bd348a83` against the release binary
+Verified at HEAD `74627547` against the release binary
 `/Users/maurice/projects/gherrink-jigc/target/release/jigc` (`jigc 1.0.0-rc.14`). Spikes drove
 that binary on `dev/jigc-rig` corpora (two-step eval, roots under the session scratchpad);
 no cargo run, no repo file edited. Every reuse claim below is marked **verified-reuse** (I

@@ -2,7 +2,7 @@
 
 **Provenance.** Binary `/Users/maurice/.local/bin/jigc` — `jigc 1.0.0-rc.15`, sha256
 `126f1584f183636bb6cd9e782b1dc26aca28dd1afaf2fb83da1fd0e5febc8fa9`, release posture. Repo HEAD
-`85ad06c571945157d5b6df166659b74ce5f0cc86`, tree clean, nothing written into it. Date 2026-09-16/17.
+`7637a46f1908af7cffd83cc2e5e96dc2365744a0`, tree clean, nothing written into it. Date 2026-09-16/17.
 Rig states used: `committed-singletons` (×5 roots), `refs-post-hoc` (×3 roots) — every root from
 `mktemp -d`, no teardown, no `rm -rf` on a variable path, no cargo run.
 

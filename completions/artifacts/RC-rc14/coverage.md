@@ -6,9 +6,9 @@ increment set and the four audit findings — **never from a changed-file list**
 for the subject and slipped for one row; see *Row 12 was classified from the artifact* below.
 
 **The subject is 17 sources**: 13 increments + 4 audit findings. ~~*The subject is 18 sources:
-13 increments + `1799a2d` + 4 audit findings.*~~ — **struck, with the datum**:
-`git merge-base --is-ancestor 1799a2d 979baca` → **exit 0**, and `979baca` is the sha the
-**previous** trial ran (`1.0.0-rc.13`). `1799a2d` (2026-09-04, *fix(cli): the milestone boundary
+13 increments + `d854e25` + 4 audit findings.*~~ — **struck, with the datum**:
+`git merge-base --is-ancestor d854e25 f266770` → **exit 0**, and `f266770` is the sha the
+**previous** trial ran (`1.0.0-rc.13`). `d854e25` (2026-09-04, *fix(cli): the milestone boundary
 gates the commit docs it commits*) is therefore an **ancestor of the rc.13 side** of this diff,
 not a member of it. Its row below is **kept and re-labelled** — *reached by nothing* is a fact
 this record still owes — but it is **carried from RC-m50's uncovered set**, not counted here.
@@ -38,7 +38,7 @@ this record still owes — but it is **carried from RC-m50's uncovered set**, no
 | **12g** | `--dry-run` forecasts the composed commit subject | **trial-reached** | **B2 and B3, unprompted** (no operator cue; the installed guide names the flag): `task finalize <id> --dry-run --format json`, exit 0, each envelope carrying `"subject"` (`docs: Record the ingest queue overflow policy…` · `feat(store): bound the number of distinct series the store holds`). Walk 17 reaches the flag only on its **refusal** cells, which compose no subject |
 | **12h** | the absolute host paths out of finding loci and error text | **trial-reached** | walk 02 cell C — both loci repo-relative (`.jigc/worktrees/leftover-file`). The `/work/…` inside walk 13's `setup.pack-load` **relay** is the disposed `DeclaredAbsolute` half (`repo_relative_paths.rs` → `UNSWEPT_PRODUCERS`, `pack.rs`: *pack-load has no repo-root subject to be relative to*), not a miss |
 | **13** | the guide edit → `SKILL.md`, and its re-clobber path | **trial-reached** | arm 23 — unedited guide re-installs idempotently; an edited one is **not** clobbered and setup says so |
-| **`1799a2d`** | the milestone boundary gating a sub-task's transient commit doc — **carried, not a member of this diff** | **neither** | no fan-out reached a boundary — see below. Carried from **RC-m50's** uncovered set (it is an ancestor of `979baca`, the sha that trial ran): *reached by nothing* is still owed, so the row stays; the subject arithmetic above is what was wrong |
+| **`d854e25`** | the milestone boundary gating a sub-task's transient commit doc — **carried, not a member of this diff** | **neither** | no fan-out reached a boundary — see below. Carried from **RC-m50's** uncovered set (it is an ancestor of `f266770`, the sha that trial ran): *reached by nothing* is still owed, so the row stays; the subject arithmetic above is what was wrong |
 | **F1** | `add-from-spec` over an address reaching outside the repository | **trial-reached** | arm 23, **three traversal depths**, all `store.malformed-slug` |
 | **F2** | the finding identity swept over 31 production sites | **trial-reached** | R4's `finalize.commit-rejected` in the invocation log; the codes ride every arm's log |
 | **F3** | law 1 on the read paths | **trial-reached** | arm 23 — `doc show vision` names no host path and carries `store.*` |
@@ -78,11 +78,11 @@ falsified when the arm ran on rc.14 (one label, `house/fs-local`). The instrumen
 saying so is this record's job, editing the instrument is not.
 
 **What did not move:** the `neither` set is unchanged — rows 4, 10b, 11a, 11b and the carried
-`1799a2d`. No re-derived cell landed there.
+`d854e25`. No re-derived cell landed there.
 
 ## The four `neither` rows are one event, not four
 
-**10b, 11a, 11b and `1799a2d` all require a milestone fan-out to run, and none did** (`1799a2d`
+**10b, 11a, 11b and `d854e25` all require a milestone fan-out to run, and none did** (`d854e25`
 being a carried row rather than a member of this diff — the subject strike above). The arm
 chartered to reach them was **B4-h**, and **F-13 is why it could not**: it planned a
 three-increment *dependent* spine, read four `--help` outputs, correctly judged that the fan-out's
@@ -91,7 +91,7 @@ the milestone — where the deny floor stopped it and it asked.
 
 So the coverage hole has a cause, and the cause is itself a recorded finding. That is a better
 outcome than an unexplained gap, and a worse one than coverage: **a `squash: false` fan-out
-reaching a boundary is unmeasured on this binary**, and `1799a2d`'s tightening — which
+reaching a boundary is unmeasured on this binary**, and `d854e25`'s tightening — which
 deliberately makes a fan-out that landed clean on rc.13 block at exit 3 — has been driven by no
 trial, only by its own suite.
 

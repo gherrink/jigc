@@ -309,7 +309,7 @@ fn adjudicate_source_tracked(
                 // Two spans, two bases, and each is the one its own command uses (M53 — the cwd
                 // census, C1-03). The `git` half names the checkout it stages into and keeps the
                 // adjudicated repo-relative spelling as its pathspec; the `jigc` half echoes the
-                // token the operator typed, because since `7cd03c59` `jigc migrate <PATH>`
+                // token the operator typed, because since `4f61c80a` `jigc migrate <PATH>`
                 // resolves against the caller's cwd — driven from `docs/deep`, the shipped line's
                 // `git` half exited **128** and its `jigc` half could not read the file it named.
                 stage = engine::finding::git_at(
@@ -361,7 +361,7 @@ fn migrate_in_repo(
             "`--slug {slug:?}` is not a valid slug — use lowercase letters, digits, and single hyphens (no leading, trailing, or doubled `-`)"
         );
     }
-    // …and the name-ceiling half (M51 Inc 9 / T3, EC-28). Driven at `d7ebbeb9` this door
+    // …and the name-ceiling half (M51 Inc 9 / T3, EC-28). Driven at `422032b6` this door
     // took a 300-byte override at **exit 0** and minted a task, the value inert because the
     // `changelog` target is a singleton — so the ceiling is asked here for the same reason
     // the grammar is: the override is recorded and drives the created doc's id verbatim for

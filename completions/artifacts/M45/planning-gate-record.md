@@ -1,8 +1,8 @@
 # M45 planning gate-record — the rc.9 wave (the complete-fix contract)
 
-Filled by hand at planning, 2026-07-23, against HEAD `d55c88f`. The gate-record is the forcing function specified pack-shaped in [methodology-docs.md](../../../design/methodology-docs.md) → The planning gate-record; run by hand until the planning workflow is pack-encoded. **Every cell carries evidence, or `N/A` with a one-line why. An empty or hand-wavy cell is a halt, not a pass.**
+Filled by hand at planning, 2026-07-23, against HEAD `21d4ee3`. The gate-record is the forcing function specified pack-shaped in [methodology-docs.md](../../../design/methodology-docs.md) → The planning gate-record; run by hand until the planning workflow is pack-encoded. **Every cell carries evidence, or `N/A` with a one-line why. An empty or hand-wavy cell is a halt, not a pass.**
 
-Baseline: **5 capability-auditors + 4 gap-detectors + 1 robust-advocate + a 3-part cost spike**, all exercising the real binary at `d55c88f`, plus an independent `design-reviewer` pass over the settled design (7 blocking findings, all accepted and baked). Settled record: [DECISIONS.md](../../../DECISIONS.md) → 2026-07-23 M45 planning: the Settle.
+Baseline: **5 capability-auditors + 4 gap-detectors + 1 robust-advocate + a 3-part cost spike**, all exercising the real binary at `21d4ee3`, plus an independent `design-reviewer` pass over the settled design (7 blocking findings, all accepted and baked). Settled record: [DECISIONS.md](../../../DECISIONS.md) → 2026-07-23 M45 planning: the Settle.
 
 ---
 

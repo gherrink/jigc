@@ -1,8 +1,8 @@
 # Coverage — every surface M48 changed, in exactly one column
 
 Required by [protocol.md](protocol.md) §6. Derived 2026-08-18 from the repo, not from a summary:
-the diff range is **`8979f16..9cb9b78`** (`8979f16` = the last pre-M48 commit, the sha §5 arm 2 pins
-as the rc.10 baseline; `9cb9b78` = `chore(release): 1.0.0-rc.11`) — 698 files, 12 increments plus
+the diff range is **`1d4f9bc..1d2f146`** (`1d4f9bc` = the last pre-M48 commit, the sha §5 arm 2 pins
+as the rc.10 baseline; `1d2f146` = `chore(release): 1.0.0-rc.11`) — 698 files, 12 increments plus
 four audit fixes.
 
 ---

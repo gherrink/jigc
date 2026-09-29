@@ -1,9 +1,9 @@
-<!-- 2026-09-10 · consolidated from four Opus gap-detector reports (decisions · docs · doctypes · capabilities) · HEAD bd348a83 · target/release/jigc 1.0.0-rc.14 · no cargo, no repo edits -->
+<!-- 2026-09-10 · consolidated from four Opus gap-detector reports (decisions · docs · doctypes · capabilities) · HEAD 74627547 · target/release/jigc 1.0.0-rc.14 · no cargo, no repo edits -->
 
 # M51 — consolidated gap findings
 
 Four `gap-detector` subagents, one per dimension, each **driving the release binary**
-`target/release/jigc` (`1.0.0-rc.14`) at `HEAD = bd348a83` on `dev/jigc-rig` corpora under the
+`target/release/jigc` (`1.0.0-rc.14`) at `HEAD = 74627547` on `dev/jigc-rig` corpora under the
 session scratchpad. **None ran cargo; none edited a repo file; no mutation was applied to any
 fence.** Their reports are copied verbatim beside this file:
 [gap-decisions.md](gap-decisions.md) · [gap-docs.md](gap-docs.md) ·

@@ -491,7 +491,7 @@ fn planning_composes_the_commit_fill_and_finalize_tail() {
 }
 
 /// The byte-identical batch-authoring caveat span shared by author-roadmap /
-/// author-ledger / author-decisions (added 81df14d; `ideas/batch-authoring-
+/// author-ledger / author-decisions (added 9b664ae; `ideas/batch-authoring-
 /// ergonomics.md`). Planning composes all three, so before the compose-altitude
 /// dedupe it appeared verbatim three times.
 const BATCH_CAVEAT_SPAN: &str =

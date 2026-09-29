@@ -227,7 +227,7 @@ pub(crate) fn untrackable_reason(repo_root: &Path, relative: &str) -> Option<Str
 /// on the same true sentence: `git add -- <path>` prevents **option** parsing and nothing
 /// else, so a token git reads as a pathspec stages a set nobody named. But `:` is only git's
 /// *prefix* magic; its **wildmatch** magic needs no prefix at all, and that half was left
-/// open at every site. Driven at `8bc6f4e` on a corpus holding six tracked `.md` files, with
+/// open at every site. Driven at `b9d9262` on a corpus holding six tracked `.md` files, with
 /// an untracked file whose name is literally `*.md`:
 ///
 /// ```text
@@ -352,7 +352,7 @@ pub(crate) fn resolve_source_token(
 ///   1. **git's own directory** — by the literal `.git` component *and* by the git dirs git
 ///      itself reports, so a `--separate-git-dir` / `GIT_DIR` repository whose object store is
 ///      not called `.git` is covered too. Git's private files are not authored content, and
-///      the harm was exactly this: driven at `dddc11a5`,
+///      the harm was exactly this: driven at `210779b6`,
 ///      `jigc config insert-step … .git/config` exits **0** and copies this repository's git
 ///      config into `.jigc/config/steps/config.yaml`; that the copy then **composes** —
 ///      `repositoryformatversion = 0` rendered into the step text `jigc start` hands the

@@ -1,4 +1,4 @@
-<!-- M53 THIRD PARTIAL per-axis review — axis 2 — the reconciled file, copied verbatim. Driven on the installed `/Users/maurice/.local/bin/jigc` -> `jigc 1.0.0-rc.19` (repo HEAD `7d86f99f`), 2026-09-23. -->
+<!-- M53 THIRD PARTIAL per-axis review — axis 2 — the reconciled file, copied verbatim. Driven on the installed `/Users/maurice/.local/bin/jigc` -> `jigc 1.0.0-rc.19` (repo HEAD `a8904637`), 2026-09-23. -->
 
 # M53 — the THIRD PARTIAL per-axis review — AXIS 2 · posture — the OPUS DRIVER
 
@@ -7,14 +7,14 @@
 ```
 argv : /Users/maurice/.local/bin/jigc --version
      -> jigc 1.0.0-rc.19
-repo HEAD at read time: 7d86f99f ("chore(release): 1.0.0-rc.19 — the third M53 stamp, after the cwd-dependence arc")
+repo HEAD at read time: a8904637 ("chore(release): 1.0.0-rc.19 — the third M53 stamp, after the cwd-dependence arc")
 ```
 
 This is the **release** posture: the debug-only `Route::mechanical` argv fence does not exist here, so a
 route-fence violation shows up as a **bad emitted command**, never as a panic.
 
 **Baselines re-driven.** [per-axis-review-rc18/axis-2.md](../../../../../../../Users/maurice/projects/gherrink-jigc/completions/artifacts/M53/per-axis-review-rc18/axis-2.md)
-(rc.18, HEAD `fbd8b190`) — its two findings `(2, F-1)` and `(2, F-2)`, and the three M52 §A rows it
+(rc.18, HEAD `271b0cb7`) — its two findings `(2, F-1)` and `(2, F-2)`, and the three M52 §A rows it
 carries forward. **What changed under them is the cwd-dependence arc**
 (`completions/artifacts/M53/cwd-census.md`; VERDICT → Addendum 2; the two reviews at
 `completions/artifacts/M53/audit/cwd-fix-code-review{,-2}.md`).
@@ -53,7 +53,7 @@ operator pastes into a shell of unknown cwd*.
 
 ---
 
-## 2 · The door set and the registry counts, read from the code at HEAD `7d86f99f`
+## 2 · The door set and the registry counts, read from the code at HEAD `a8904637`
 
 | registry | file | count I read |
 |---|---|---|
@@ -73,7 +73,7 @@ operator pastes into a shell of unknown cwd*.
 | `dev/jigc-rig --list-git-states` | | **17** |
 
 **Axis 2's door set = the 12 acting `BEHALF_DOORS` rows** (10 commit-on-behalf ∪ 2 move-on-behalf),
-**plus the second subject `986d5e0a` minted**: every provisioned sub-task worktree the boundary commits
+**plus the second subject `3c71da87` minted**: every provisioned sub-task worktree the boundary commits
 from, and its preview at `jigc task validate <sub-id>`. The 35 `Neither` rows are driven as controls.
 
 **The new mechanism, read before it was probed.** `crate::repo::jigc_home` (`repo.rs:91`) layers
@@ -602,7 +602,7 @@ Stated plainly; none of these is presented as driven.
 **Cause, read after it was driven.** `crates/cli/src/setup.rs:634` gates its warning on
 `moves="$(printf '%s' "$report" | grep -o 'git -C [^\`]*')"`. Before the arc, an operator-facing git
 route was `git mv <new> <old>`; **the arc made every operator-facing git span `git -C <absolute> …`**
-(`34584687`), so that grep now matches *any* route in the sweep report — `home-vacated`'s
+(`65de53f5`), so that grep now matches *any* route in the sweep report — `home-vacated`'s
 `git -C <abs> show <sha> -- <path>`, `reconciliation.rename`'s `git -C <abs> restore --source=HEAD …`,
 and so on. The `awk` below it correctly scans for the `mv` token and finds none, so the block does not
 fire — and the **`else` echo** then prints a sentence about a rename, in a commit that has none.
@@ -817,7 +817,7 @@ LEAD** with the reason it could not be driven. No Codex claim was promoted on th
 ```
 argv : /Users/maurice/.local/bin/jigc --version
      -> jigc 1.0.0-rc.19
-repo HEAD at read time: 7d86f99f
+repo HEAD at read time: a8904637
 ```
 
 **Fixtures.** `dev/jigc-rig` only, two-step eval (`rig=$(dev/jigc-rig <state> --binary …) || exit;
@@ -1129,9 +1129,9 @@ worktree — and the md5 is the same value the driver recorded independently on 
 ### CX-21 — no schema-hash movement or schema-shape change in this arc — **CONFIRMED by repo datum**
 
 ```
-argv : git diff --name-only fbd8b190..HEAD          (fbd8b190 = the rc.18 stamp; HEAD = 7d86f99f)
+argv : git diff --name-only 271b0cb7..HEAD          (271b0cb7 = the rc.18 stamp; HEAD = a8904637)
        | grep -E 'schema|manifest'                  -> (empty)
-       git diff --stat fbd8b190..HEAD -- crates/cli/pack packs/methodology  -> (empty)
+       git diff --stat 271b0cb7..HEAD -- crates/cli/pack packs/methodology  -> (empty)
 ```
 
 Nothing under either pack moved across the whole rc.18 → rc.19 arc, so no `schema-hash` could.

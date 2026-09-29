@@ -7,7 +7,7 @@ that returned **13 blocking findings**, all accepted. Every fork was decided by 
 honestly-argued cases; none was self-framed by the proposer.
 
 **Posture.** Every fact this record turns on was driven against the **release** binary
-`target/release/jigc` (`1.0.0-rc.13`) at `HEAD = d9e91f1`. Orchestrator-driven personally: W-13,
+`target/release/jigc` (`1.0.0-rc.13`) at `HEAD = cdce9fc`. Orchestrator-driven personally: W-13,
 `task discard "../.."`, `rename --slug "../../src/pwned"`, `doc show 'research:../../../outside'`,
 and `rename 'research:../../src/planted'`. All else relayed from an agent that drove it, marked as
 such in the input artifacts.

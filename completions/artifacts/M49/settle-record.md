@@ -2,7 +2,7 @@
 
 **Ten decisions, taken with the human 2026-08-28**, against [baseline-ledger.md](baseline-ledger.md)
 (six capability-auditors + four gap-detectors + one robust-advocate, every claim driven on
-`1.0.0-rc.12` at HEAD `99231f6`). Where this record and [charter.md](charter.md) disagree, this
+`1.0.0-rc.12` at HEAD `34d2c80`). Where this record and [charter.md](charter.md) disagree, this
 record governs.
 
 ---

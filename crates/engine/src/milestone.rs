@@ -379,7 +379,7 @@ pub fn add_task(
     // **An intent that yields no id is refused before the mint** (M53 Increment 5 / D5;
     // [`crate::state::reject_unslugable_title`]). This is the one site covering both the
     // `jigc milestone add-task` door and, through [`add_from_spec`]'s per-criterion call,
-    // the spec-seeding door — driven at `92ed1957~`, `add-task <m> "日本語"` appended
+    // the spec-seeding door — driven at `a53bc0a1~`, `add-task <m> "日本語"` appended
     // `task:task` to the list **and committed it to the record**, at exit 0, where the
     // second such criterion then collides on an id nobody typed. Ahead of [`mint_sub_id`],
     // whose empty→`task` fallback is exactly what this keeps out of production.
@@ -499,7 +499,7 @@ pub fn add_from_spec(
         // **Ahead of the skip check, not inside [`add_task`]** (M53 Increment 5 / T3). The
         // guard at `add_task` covers the direct door; on this path it is unreachable for the
         // cell that matters, because the skip is keyed on [`mint_sub_id`]'s *fallback* id:
-        // driven at `423d8a58`, a spec carrying an ordinary criterion whose id is `task`
+        // driven at `4185268f`, a spec carrying an ordinary criterion whose id is `task`
         // plus a degenerate one seeded `task` on run 1, and on run 2 the degenerate
         // criterion minted the same fabricated id, was found in the resume set and was
         // **skipped at exit 0** — the criterion silently absent from the team-ready record
@@ -888,7 +888,7 @@ pub fn residual_milestone_area_finding(
 /// Eight doors asked whether the area *exists* — seven `!dir.is_dir()` guards (four in
 /// `cli::milestone`, three here) plus `list-tasks`' `dir.is_dir()` cache-branch selector —
 /// and each then went on to a *later* question about a milestone that does not exist.
-/// Driven at `3f22150b` over a bare
+/// Driven at `afd76ea3` over a bare
 /// `mkdir .jigc/milestones/stray-mile`, one `mkdir` converted the family's keyed, routed
 /// `(milestone.unknown, milestone:<id>)` into eight non-answers: five code-less flattened
 /// `{"error": "could not read the task list … (os error 2)"}`, two **false**
@@ -989,7 +989,7 @@ pub fn read_task_list(milestone_dir: &Path) -> std::io::Result<TaskList> {
 /// milestone at no door — including this one. It shipped asking `entry.file_type().is_dir()`
 /// and then [`read_task_list`], which made *membership* rest on a file the unwind removes
 /// **last** while *milestone-ness* rests on the file it removes **first**. Driven at
-/// `4a8cec2d`: a landed `jigc milestone finalize` whose teardown faulted on a member after
+/// `c9fc0d41`: a landed `jigc milestone finalize` whose teardown faulted on a member after
 /// the pin (an unreadable `merged/docs`, the cell [`crate::state::unwind_area`]'s own
 /// doc-comment names) left `.jigc/milestones/<id>/` holding `tasks.json` and no `base.json`
 /// at **exit 0** — and every later task minted at one of the ids that list names was claimed
@@ -2974,7 +2974,7 @@ mod tests {
     /// M53 Increment 3 / T4 (`completions/artifacts/M53/settle-record.md` → D3, *What the
     /// mint answers*) — **the milestone twin: the mint names the leftover.**
     ///
-    /// Driven at `bde8a643` (the debug binary, through `dev/jigc-rig`): over a bare
+    /// Driven at `9ad95fd5` (the debug binary, through `dev/jigc-rig`): over a bare
     /// `mkdir .jigc/milestones/stray-mile`, `jigc milestone create "Stray mile"` answered
     /// *"milestone `stray-mile` already exists"* and routed at
     /// `jigc milestone add-task stray-mile "<intent>"` — which answers

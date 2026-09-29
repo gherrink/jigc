@@ -5,7 +5,7 @@
 //! Both root knobs re-point where every managed doc lives and then **move** the committed
 //! docs the re-point strands ([`cli::config`]'s two `route_*_repoint_*` floors). The moves
 //! narrate on **stderr** as they happen and land as staged `git mv`s — and until this task
-//! the `--format json` ack said nothing about them at all. Reproduced at `9ae1f40b` on an
+//! the `--format json` ack said nothing about them at all. Reproduced at `2f9f7993` on an
 //! `adr`-bearing corpus: `jigc --format json config set docs-root documents` relocated one
 //! committed doc, `git status` showed the `R`, and stdout was **byte-identical** to the
 //! same invocation over a corpus with nothing to move —

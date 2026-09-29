@@ -8,9 +8,9 @@ correction, drive and halt is committed, and this file only points.
 
 | | |
 |---|---|
-| HEAD | `cf3b382b` (the M53 charter + the exit rule), pushed, tree clean — 103 commits since M52's planning base `c59ec3d7` |
-| Gate | **3798 passed / 0 failed**, fmt + clippy clean, measured bare via `dev/gate` at the close-out commit `a3eb026b` |
-| Binary | **`1.0.0-rc.16`** installed at `~/.local/bin/jigc` (sha256 `0ddd1ee6…`), built from `a3eb026b` **after** M52's audit fixes; `target/` is warm |
+| HEAD | `9bdbb90a` (the M53 charter + the exit rule), pushed, tree clean — 103 commits since M52's planning base `65d3cd76` |
+| Gate | **3798 passed / 0 failed**, fmt + clippy clean, measured bare via `dev/gate` at the close-out commit `e519e4eb` |
+| Binary | **`1.0.0-rc.16`** installed at `~/.local/bin/jigc` (sha256 `0ddd1ee6…`), built from `e519e4eb` **after** M52's audit fixes; `target/` is warm |
 | The 1.0.0 call | **Not taken on rc.16.** The per-axis review re-run found four tier-1 rows, all inside mechanism M52 itself minted ([DECISIONS.md](../../../DECISIONS.md) → 2026-09-21 the exit rule) |
 | M52 | **Complete**: built, audited (7 findings, 7 fixed axis-complete), rc.16 stamped after the fixes — [VERDICT](../M52/VERDICT.md); the review re-run persisted at [M52/per-axis-review/](../M52/per-axis-review/README.md) |
 | M53 | **Chartered, not planned** — [decisions-pending.md](../../../implementation/decisions-pending.md) → *The rc.17 fix pass (M53)*: the four tier-1 rows, **no new mechanism**, acceptance = axes 2 · 3 · 5 re-driven; the 23 tier-2/3 rows triaged to 1.x |
@@ -93,7 +93,7 @@ those axes. Then stop — the 1.0.0 call is the human's.
 |---|---|
 | The M53 charter (four rows with fix shapes, the exit rule, the 1.x triage, the port direction) | [decisions-pending.md](../../../implementation/decisions-pending.md) → *The rc.17 fix pass (M53)* |
 | The evidence base | [M52/per-axis-review/](../M52/per-axis-review/README.md) — README (the row-by-row comparison against M51's 39, §A's 27 findings by tier, coverage), `axis-1.md` … `axis-8.md`, `codex/`, `instrument/` (re-pointed, with the two lessons) |
-| M52's audit and its fixes | [M52/VERDICT.md](../M52/VERDICT.md) + `M52/audit/`; fix commits `79e54c75` · `6d95756c` · `fe8f29c4` · `c96137e4` · `b9ab6a70` · `1b036264` |
+| M52's audit and its fixes | [M52/VERDICT.md](../M52/VERDICT.md) + `M52/audit/`; fix commits `ad527fa4` · `6c2de03a` · `33bd5692` · `68d14cd3` · `a83a9e60` · `66af090a` |
 | M52's planning artifacts (the mold, scaled down for a fix pass) | [M52/](../M52/) — settle-record (D1–D13, §1–§19), baseline-ledger + 7 companions, gap-findings + 4, advocates/, acceptance-design, planning-gate-record, design-review + codex-design-review |
 | The build harness and its resume rules | `.claude/workflows/milestone-build.js` (header block) |
 | The why, dated | `DECISIONS.md` → the 2026-09-17/21 M52 entries and the 2026-09-21 exit-rule entry |

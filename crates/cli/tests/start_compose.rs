@@ -2453,7 +2453,7 @@ fn the_composed_json_is_unchanged_while_a_task_is_already_open() {
 /// **M53 Increment 5 / T2 — the fourth mint door refuses a title that yields no id, under
 /// the mint class's own identity.**
 ///
-/// Driven at `423d8a58`, `jigc --format json start --workflow single-task "日本語"` answered
+/// Driven at `4185268f`, `jigc --format json start --workflow single-task "日本語"` answered
 /// `{"error": "intent must contain at least one letter or digit (got \"日本語\")"}` and logged
 /// `finding_codes: []` — a sentence that is **false** of the title it names (three letters,
 /// none of them ASCII), with no code for a driver to key on and an anonymous exit 1 in the

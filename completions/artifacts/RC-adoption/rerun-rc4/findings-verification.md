@@ -1,6 +1,6 @@
 # Findings verification — migration-half rerun on rc.4 (2026-07-11)
 
-Every finding from the rerun's feedback ([trial-record.md](trial-record.md) → Feedback) plus the log-discovered findings, verified adversarially against the rc.4 code (`main` @ 074110b) by three independent read-only verifiers, with live repros in throwaway repos (the trial repo untouched). Verdicts: **CONFIRMED-BUG** (defect) / **CONFIRMED-GAP** (real, by omission or design hole) / **PARTLY-WRONG** (claim inaccurate in part; residual finding noted) / **MISUSE** (tool behaved as designed).
+Every finding from the rerun's feedback ([trial-record.md](trial-record.md) → Feedback) plus the log-discovered findings, verified adversarially against the rc.4 code (`main` @ 976f3fc) by three independent read-only verifiers, with live repros in throwaway repos (the trial repo untouched). Verdicts: **CONFIRMED-BUG** (defect) / **CONFIRMED-GAP** (real, by omission or design hole) / **PARTLY-WRONG** (claim inaccurate in part; residual finding noted) / **MISUSE** (tool behaved as designed).
 
 This file is analysis, not disposition — routing (fix wave vs park vs decline) is the triage session's output.
 

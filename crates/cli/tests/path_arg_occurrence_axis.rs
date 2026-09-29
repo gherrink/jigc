@@ -5,7 +5,7 @@
 //!
 //! A caller-supplied token that becomes a path component reaches the filesystem — at the
 //! door, or one commit closure later at the destructive sink. Until this increment `jigc
-//! migrate` took its `<path>` as an opaque token: driven at `abd81df`, an **absolute path
+//! migrate` took its `<path>` as an opaque token: driven at `5688e2c`, an **absolute path
 //! outside the repository** was joined onto the repo root, read, and recorded as the value
 //! `jigc task finalize --approve` **deletes**, at exit 0 (`DECISIONS.md` → the 2026-09-12
 //! M51 Increment 1 entries; `completions/artifacts/M51/baseline-tokens.md`).
@@ -40,7 +40,7 @@
 //! **The tenth cell asks the other half of every door's obligation: not what it decided, but
 //! whether the sentence it decided it in can be run.** Every cell above is shell-safe by
 //! accident of spelling, so no cell could witness what a door *prints*. Driven at
-//! `befdbf93`, `jigc migrate 'my notes.md' --as adr` refused correctly with
+//! `c2faae6b`, `jigc migrate 'my notes.md' --as adr` refused correctly with
 //! `migrate.source-untracked` and routed to `` stage it with `git add -- my notes.md` `` —
 //! which exits **128** (pathspec `my`), before a re-run that exits 2. So the cell plants a
 //! name a shell re-lexes into two words, and the route-runnability assertion beside it
@@ -54,7 +54,7 @@
 //! adjudicates answered `NotFound`, and the expectation table recorded that as a disposition
 //! rather than as a blind spot: the whole class was left to the sink on the stated ground
 //! that the door refuses such a token anyway. `*.md` is the spelling that ground is false
-//! for. Driven at `8bc6f4e`, on a corpus holding six tracked `.md` files, with the literal
+//! for. Driven at `b9d9262`, on a corpus holding six tracked `.md` files, with the literal
 //! file `*.md` planted untracked: `jigc migrate '*.md' --as changelog` read it, asked
 //! `git ls-files -- '*.md'` whether git held a copy, was told **yes** about six other
 //! people's files, and minted at exit 0 — after which `--approve` unlinked the source
@@ -172,7 +172,7 @@ const COLON_SOURCE: &str = ":colon.md";
 ///
 /// **Why the axis needed it** (M51 completion audit): every other cell's token is shell-safe
 /// by accident of spelling, so no cell could ever witness what a door *prints*. Driven at
-/// `befdbf93`, `jigc migrate 'my notes.md' --as adr` refused with a route reading `` stage it
+/// `c2faae6b`, `jigc migrate 'my notes.md' --as adr` refused with a route reading `` stage it
 /// with `git add -- my notes.md` ``; followed verbatim that exits **128** (pathspec `my`) and
 /// the re-run it names exits **2**. The finding code was right, the sentence was right, and
 /// the bytes were unrunnable — which is exactly the state a nine-cell axis with no
@@ -818,7 +818,7 @@ fn every_adjudicated_disposition_names_a_code_the_axis_drives() {
 /// (M52 Increment 8 / T7).
 ///
 /// `--from` names a **prior home**, and the door sweeps every committed `.md` under it into
-/// the doctype's home. Driven at `a5deabf4` on a freeze-exempt pack, twice. With one
+/// the doctype's home. Driven at `4c0c513e` on a freeze-exempt pack, twice. With one
 /// ordinarily-named doc planted under each root, `jigc relocate adr --from .claude` and
 /// `--from .jigc` each reported `1 moved` at exit **0** and staged
 /// `R .claude/notes.md -> docs/decisions/notes.md` / `R .jigc/notes.md -> …`. On the bare

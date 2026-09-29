@@ -1,4 +1,4 @@
-<!-- M53 PARTIAL per-axis review · axis 2 · RECONCILED (Opus driver table + reconciliation ledger) — every row driven on the installed `/Users/maurice/.local/bin/jigc` -> `jigc 1.0.0-rc.17`, repo HEAD `75ab77ca`, 2026-09-22. -->
+<!-- M53 PARTIAL per-axis review · axis 2 · RECONCILED (Opus driver table + reconciliation ledger) — every row driven on the installed `/Users/maurice/.local/bin/jigc` -> `jigc 1.0.0-rc.17`, repo HEAD `7e98faf1`, 2026-09-22. -->
 
 <!-- M53 PARTIAL per-axis review (axes 2 · 3 · 5) — axis 2 · posture — RECONCILED (driver × Codex source pass), 2026-09-22 -->
 
@@ -18,9 +18,9 @@
 else (exit 0). This is the **RELEASE** posture: the `Route::mechanical` argv fence is
 `#[cfg(debug_assertions)]` and does not exist here, so every refusal below is the shipped one.
 
-**The fixed binary.** M53's seven completion-audit fixes (`4a8cec2d` `620c1644` `1e68662f`
-`33ab0f76` `2cb2c29f` `c00fdd97` `5702bf4f`) are all in this build. Two touch this axis and are
-driven as cells rather than assumed: **finding 4 + finding 7** (`5702bf4f` — the abandon-route
+**The fixed binary.** M53's seven completion-audit fixes (`c9fc0d41` `5672e32f` `e15b64e3`
+`e9757c94` `5badfbda` `5a4d12d6` `b8d3f7bb`) are all in this build. Two touch this axis and are
+driven as cells rather than assumed: **finding 4 + finding 7** (`b8d3f7bb` — the abandon-route
 qualifier, one clause per *fate*, the `SHIPPED_ROUTE_LINES` pins re-blessed) and **D4 itself**
 (the tenth `InProgress` member). M53's **declared bounds are what I grade against, not re-find**:
 the stderr-only advisory at `milestone finalize`, the 21-render `DEBUG_REMAINDER`, the residual
@@ -200,7 +200,7 @@ after the full 12-door sweep:
 
 ### 3.6 · **The route's two arms, each claim driven against the state it claims about**
 
-`5702bf4f` and D4/§10 both make *claims about what a command does*, which a source read cannot
+`b8d3f7bb` and D4/§10 both make *claims about what a command does*, which a source read cannot
 settle. Each was run.
 
 | arm | cell | driven | verdict |
@@ -582,11 +582,11 @@ One fixture-construction error is on the record rather than buried. Building the
 parsed the rig's stdout with `sed` instead of eval-ing it; the pattern did not match, `$AREPO` and
 `$BREPO` came back **empty**, and the subsequent `git -C "" …` calls ran in
 `/Users/maurice/projects/gherrink-jigc` itself — creating a branch `bpick`, a no-op
-`cherry-pick -n`, and a stray `.git/MERGE_MSG`. **Nothing was committed** (HEAD stayed `75ab77ca`
+`cherry-pick -n`, and a stray `.git/MERGE_MSG`. **Nothing was committed** (HEAD stayed `7e98faf1`
 on `main`, nothing was staged, the only working-tree entry was the pre-existing untracked
 `completions/artifacts/M53/per-axis-review/`). It was restored immediately — `git reset` (nothing
 staged, so a no-op except clearing `MERGE_MSG`) and `git branch -D bpick` — and re-verified: branch
-`main`, HEAD `75ab77ca`, no markers, no stray branch, `git status --porcelain` showing only that
+`main`, HEAD `7e98faf1`, no markers, no stray branch, `git status --porcelain` showing only that
 one pre-existing untracked directory. The cell was then re-driven correctly by reading the paths
 back out of a subshell that eval-ed the rig, which is the prescribed form. **The lesson is the rig's
 own rule one level up:** *never parse the rig's output — eval it*, because a failed parse is silent

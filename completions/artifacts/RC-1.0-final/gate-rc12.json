@@ -2,7 +2,7 @@
   "identity": {
     "tag": "jigc-gate:rc12",
     "image_id": "sha256:d79c3db29f7b556189a8f31867fcf991585820d8bf2219195616055b5c27a9e2",
-    "jigc_sha": "314f59ecc1c32c0ccf16685b83f2797fd2e13fc2",
+    "jigc_sha": "5ff85eaad3f784710ee1df5233c183f9408ad46d",
     "jigc_version": "jigc 1.0.0-rc.12",
     "cli_version": "2.1.233 (Claude Code)"
   },

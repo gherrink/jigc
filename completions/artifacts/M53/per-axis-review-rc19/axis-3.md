@@ -1,4 +1,4 @@
-<!-- M53 THIRD PARTIAL per-axis review — axis 3 — the reconciled file, copied verbatim. Driven on the installed `/Users/maurice/.local/bin/jigc` -> `jigc 1.0.0-rc.19` (repo HEAD `7d86f99f`), 2026-09-23. -->
+<!-- M53 THIRD PARTIAL per-axis review — axis 3 — the reconciled file, copied verbatim. Driven on the installed `/Users/maurice/.local/bin/jigc` -> `jigc 1.0.0-rc.19` (repo HEAD `a8904637`), 2026-09-23. -->
 
 <!-- M53 THIRD partial per-axis review · AXIS 3 · destroying doors · the OPUS DRIVER.
      Every row driven on the installed /Users/maurice/.local/bin/jigc -> `jigc 1.0.0-rc.19`, 2026-09-23.
@@ -908,7 +908,7 @@ reconciler drove `task validate` beside `task discard` and got the byte-identica
 | **C-10** | M51 claim 3 CLOSED — milestone finalize uses `Displace`, then `unwind_settled_area`, not recursive deletion | **CONFIRMED** (driven, driver rows 69–71) | driver R-13a/b/c |
 | **C-11** | M51 §A `C-1`, `D-1` … `D-4` remain CLOSED — six-door enumeration, base-pin-derived ownership, acks keying on actual removal success, paths rendered relative to `jigc_home`, `symlink_metadata` distinguishing absent / directory / leaf / unreadable | **CONFIRMED in part, with one carried exception**: the *worktree-leftover* classifier does distinguish shapes (driver rows 4, 6, 8 — `File`, symlink-`File`, `Unreadable`), and acks are outcome-filtered (driver rows 42–43: the prune line is **absent** when nothing was pruned). **But `paths rendered relative to jigc_home` is exactly what F-A falsifies at `jigc task finalize`** — see 7.3 | driver R-9 · R-10 · **R-24a** |
 | **C-12** | `--force` is scoped to the four refusing rows' declared populations; **the two finalizers expose no invented force consent** | **CONFIRMED** (driven bare: `jigc task finalize <id> --force` → **exit 2**, `error: unexpected argument '--force' found`; `jigc milestone finalize <id> --force` → **exit 2**, same) | **R-25** |
-| **C-13** | no schema-manifest or schema-hash file changed in `c8cc9187..1cc5da8d` — M52's zero-schema-hash-movement boundary is not violated | **CONFIRMED** (driven: `git diff --name-only c8cc9187..1cc5da8d` = **84 files**, and the `schema\|manifest\|pack/` filter returns **nothing**) | **R-26** |
+| **C-13** | no schema-manifest or schema-hash file changed in `20c18b74..4a862b96` — M52's zero-schema-hash-movement boundary is not violated | **CONFIRMED** (driven: `git diff --name-only 20c18b74..4a862b96` = **84 files**, and the `schema\|manifest\|pack/` filter returns **nothing**) | **R-26** |
 | **C-14** | production removal sites are fully accounted for — destructive doors guarded, owned-artifact removals enumerated, and unguarded removals confined to minted temporaries / empty-directory pruning | **OPEN LEAD** — a **completeness assertion over the whole production surface**, not reducible to an argv, so it cannot be driven to a repro block; adjudicating it is its own sweep. Codex bounds it itself (*"source completeness only; no argv was driven"*). The reconciler's spot census is **consistent with it and did not falsify it**: 111 `remove_dir_all` textual hits over both crates' `src/`, of which the overwhelming majority are the in-module `#[cfg(test)]` temp-root destructor `remove_dir_all(&self.0)`; the one site Codex's account does **not** name — `invocation_log.rs:738` — was checked and is under `#[cfg(test)]` (line 565), i.e. not a reachable CLI door | **R-26** |
 
 ### 7.3 · The driver's defects, re-driven by the reconciler
@@ -1094,8 +1094,8 @@ $ jigc milestone finalize romeo-probe --force     (exit read BARE)          -> e
 ### R-26 — the two source-side claims (C-3, C-13, C-14)
 
 ```
-$ git diff --name-only c8cc9187..1cc5da8d | wc -l                      -> 84
-$ git diff --name-only c8cc9187..1cc5da8d | grep -iE 'schema|manifest|pack/'  -> (nothing, rc=1)
+$ git diff --name-only 20c18b74..4a862b96 | wc -l                      -> 84
+$ git diff --name-only 20c18b74..4a862b96 | grep -iE 'schema|manifest|pack/'  -> (nothing, rc=1)
   -> C-13 CONFIRMED: no schema-manifest, schema-hash, schema-snapshot or pack file in the range.
 
 $ sed -n '3430,3455p' crates/cli/src/milestone.rs

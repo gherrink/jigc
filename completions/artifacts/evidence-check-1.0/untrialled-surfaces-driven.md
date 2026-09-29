@@ -2,20 +2,20 @@
 # reviewB — the five surfaces no rc.14 trial reached
 
 Binary: `/Users/maurice/projects/gherrink-jigc/target/release/jigc`, `jigc 1.0.0-rc.14`
-(repo HEAD `bd348a83`). Every corpus built with `dev/jigc-rig <state> --binary <that path>`,
+(repo HEAD `74627547`). Every corpus built with `dev/jigc-rig <state> --binary <that path>`,
 two-step eval, roots under
 `/private/tmp/claude-501/.../scratchpad/reviewB`. No cargo was run. Nothing in the repo
 was modified.
 
 Coverage rows under test: `completions/artifacts/RC-rc14/coverage.md` rows **4**, **10b**,
-**11a**, **11b** and **`1799a2d`**, plus side probe **F** (hook rejection at the milestone
+**11a**, **11b** and **`d854e25`**, plus side probe **F** (hook rejection at the milestone
 boundary + the N20 repro).
 
 ## Verdict table
 
 | cell | reached? | exit | matches contract? | note |
 |---|---|---|---|---|
-| **A** `1799a2d` — milestone boundary gates the transient commit doc | yes, end to end | **3** blocking / **0** positive | **yes** | Both author-required leaves named in one block, both sub-tasks, routes carry `--task <sub>`; HEAD 6→6. `feat:` with an empty subject never landed. `jigc task finalize` on the identical doc shape gives the identical code, message and exit 3. |
+| **A** `d854e25` — milestone boundary gates the transient commit doc | yes, end to end | **3** blocking / **0** positive | **yes** | Both author-required leaves named in one block, both sub-tasks, routes carry `--task <sub>`; HEAD 6→6. `feat:` with an empty subject never landed. `jigc task finalize` on the identical doc shape gives the identical code, message and exit 3. |
 | **B** row 10b — a blocked `milestone join` | yes, both blocking classes | **1** | **yes**, with one defect | Block renders before the routing footer, never narrates a success; `--format json` carries `findings` + `schema_version: 3`. **But** on a `join.same-doc-clash` the `no docs staged from:` line (and the `no_docs_from` key) names sub-tasks that *did* stage the clashing doc — see Defect 1. |
 | **C** row 11b — `squash: false` landing ack names every sha | yes, twice | **0** | **yes** | Ack listed all 3 shas with the paths each landed and a per-sub-task attribution line; verified byte-for-byte against `git rev-list`/`git show --name-only`. |
 | **D** row 11a — the Fix-phase fan-out | yes, whole round, no LLM | **0** | **yes** | `config set … squash false` → `create` → `add-task --workflow fix-task` ×2 → `provision` → `execute` → both fixers on their own emitted `Spawn:` lines → `join` → `finalize`. One commit per fix, each owning exactly its partition's path; the config layer rode the aggregate; zero residue. |
@@ -25,7 +25,7 @@ boundary + the N20 repro).
 
 ---
 
-## A — `1799a2d`, the milestone boundary gate
+## A — `d854e25`, the milestone boundary gate
 
 Corpus: `dev/jigc-rig fresh`, plus `src/alpha.rs` + `src/beta.rs` committed.
 `finalize.fan-out.squash` set `false`.

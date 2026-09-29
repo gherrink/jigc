@@ -1,6 +1,6 @@
 # Handover — next session: improve the workflows (small → big)
 
-Written 2026-06-22. HEAD = `3205968` on `main`, tree clean. The differentiator
+Written 2026-06-22. HEAD = `2cc5362` on `main`, tree clean. The differentiator
 pilot (study 1) is complete and committed; this session turns its findings into
 **workflow improvements**, sequenced small→big so each step validates a foundation
 before the next builds on it. Nothing here re-opens the pilot verdict — it acts on it.
@@ -141,7 +141,7 @@ behavioral eval that a future session can re-run; documented as the pattern.
 
 ## Environment / state notes
 
-- **Commits:** the pilot series sits on `main`, **unpushed** (HEAD `3205968`). Push
+- **Commits:** the pilot series sits on `main`, **unpushed** (HEAD `2cc5362`). Push
   when ready.
 - **Workspace:** `~/diff-pilot/` (throwaway) — clones, Dockerfiles, run scripts,
   `runs-rep/`. Images: `pilot-{toolchain,deps,jigc,jigcgate,jigcnudge,static,bigstatic,jigcenforced,jigcproactive}` (~4 GB). All disposable; `RUNBOOK.md` reproduces them.

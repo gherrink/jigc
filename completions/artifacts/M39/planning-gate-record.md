@@ -1,6 +1,6 @@
 # M39 planning gate-record
 
-The plan-time forcing function ([methodology-docs.md](../../../design/methodology-docs.md) → The planning gate-record), filled **by hand** before decompose. One row per thing M39 builds; every cell carries evidence or `N/A` + why. An empty/hand-wavy cell is a halt. Filled 2026-07-06 against the verified ledgers (4 capability-auditors + 4 gap-detectors, exercised at HEAD `f372b2b`), the independent design-review (8 findings baked), and 2 robust-advocate briefs.
+The plan-time forcing function ([methodology-docs.md](../../../design/methodology-docs.md) → The planning gate-record), filled **by hand** before decompose. One row per thing M39 builds; every cell carries evidence or `N/A` + why. An empty/hand-wavy cell is a halt. Filled 2026-07-06 against the verified ledgers (4 capability-auditors + 4 gap-detectors, exercised at HEAD `eaca116`), the independent design-review (8 findings baked), and 2 robust-advocate briefs.
 
 ## Per-scope-item gates
 

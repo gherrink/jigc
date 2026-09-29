@@ -46,12 +46,12 @@
 //!     driven from *inside* a second linked worktree — the checkout the caller stands in is
 //!     not the one `.jigc/` hangs off, and rendering against the former leaks a host path
 //!     into the message, the pinned `(code, target)` key and the route (the independent
-//!     review of `986d5e0a`, MEDIUM 1).
+//!     review of `3c71da87`, MEDIUM 1).
 //!   * (h) a stated arm: `cli/src/milestone.rs` renders **no** path against the cwd's repo
 //!     root — the class (g) drives two members of, read off the source.
 //!   * (i) **one code, one declared envelope arm** at the door and at the preview the door
 //!     owns, plus the contract statement that names its target form (the independent review
-//!     of `986d5e0a`, MEDIUM 2).
+//!     of `3c71da87`, MEDIUM 2).
 //!
 //! (f)'s refusing cells run through `git_state::overlay_worktree`, which **attaches** a
 //! branch first, so each probes a subject with one breach; `jigc milestone provision`
@@ -645,7 +645,7 @@ use crate::support::git_state::{self, GitState};
 /// operation alongside.
 /// **How a cell enters its git state, and what it leaves HEAD as.**
 ///
-/// The third variant is the one the independent review of `986d5e0a` (LOW 2) asked for:
+/// The third variant is the one the independent review of `3c71da87` (LOW 2) asked for:
 /// `git_state::overlay_worktree` attaches a branch before driving, and every refusing cell
 /// of the axis therefore probes a subject with **one** breach, while a production fan-out
 /// worktree is `--detach`ed and answers with **two** — `OperationInProgress` and
@@ -813,7 +813,7 @@ fn fan_out_cell(state: GitState, squash_false: bool) {
         "the refusal must name WHICH worktree — the caller is not standing in it; \
          stderr:\n{stderr}",
     );
-    // The site clause **leads** (the independent review of `986d5e0a`, LOW 1). Appended, it
+    // The site clause **leads** (the independent review of `3c71da87`, LOW 1). Appended, it
     // landed after a predicate that may already end in a prepositional phrase of its own —
     // `UnmergedIndex`'s *"left unmerged paths in the index"*, `Sequencer`'s *"left a queue of
     // commits in `sequencer/`"* — and read as a place inside a place. Asserted here, over the
@@ -1212,7 +1212,7 @@ fn setup_two_sub_tasks(repo: &Path, home: &Path) {
 /// `repo_root` is `discover_repo_root(cwd)` — from inside a linked worktree that is the
 /// *worktree*, while every path in the worktree set is rooted at `jigc_home`, so the prefix
 /// strip fails and `render::repo_relative` falls back to the host-absolute spelling. Driven
-/// at `986d5e0a`, all three of the message, the `at:` locus (the pinned `(code, target)` key
+/// at `3c71da87`, all three of the message, the `at:` locus (the pinned `(code, target)` key
 /// the `--format json` `Blocked` arm carries) and the route carried
 /// `/private/var/folders/…/repo/.jigc/worktrees/area-zed`.
 #[test]
@@ -1255,7 +1255,7 @@ fn the_fan_out_refusal_is_workbench_relative_from_inside_another_worktree() {
 }
 
 /// (g) **The pre-existing sibling the same seam feeds** — `milestone.dirty-worktree`, driven
-/// from inside a second worktree at `986d5e0a` and leaking identically (it additionally
+/// from inside a second worktree at `3c71da87` and leaking identically (it additionally
 /// rendered the cwd's own worktree as `at: .`).
 #[test]
 fn the_dirty_worktree_refusal_is_workbench_relative_from_inside_another_worktree() {
@@ -1382,9 +1382,9 @@ fn envelope_findings(surface: &str, out: &std::process::Output) -> Vec<serde_jso
 }
 
 /// (i) **`repo.operation-in-progress` answers on one arm at the door and at the preview the
-/// door owns** (the independent review of `986d5e0a`, MEDIUM 2).
+/// door owns** (the independent review of `3c71da87`, MEDIUM 2).
 ///
-/// Driven at `986d5e0a`, one state answered two ways: `jigc --format json milestone finalize`
+/// Driven at `3c71da87`, one state answered two ways: `jigc --format json milestone finalize`
 /// printed the pinned findings envelope on stdout at exit 3, while `jigc --format json task
 /// validate <sub>` — the *forecast of that very door*, sharing its producer — printed
 /// `{"error": "blocking · repo.operation-in-progress — …"}` on stderr at exit 1. A code inside
@@ -1435,7 +1435,7 @@ fn the_fan_out_posture_finding_answers_on_one_declared_arm_at_both_surfaces() {
 ///
 /// `design/command-output-contract.md`'s closure claim — *every finding that projects a
 /// `key` lands in exactly one of those six forms, or in one of the named exceptions* — was
-/// false at `986d5e0a`: the finding above projects a filesystem-path key and appeared in no
+/// false at `3c71da87`: the finding above projects a filesystem-path key and appeared in no
 /// form's Members list, and nothing reddened, because `debug_assert_targets_declared` checks
 /// presence and uniqueness and never form membership.
 ///
@@ -1464,7 +1464,7 @@ fn the_contract_lists_the_fan_out_posture_code_under_the_filesystem_path_form() 
 }
 
 /// (f) **The refusing subject a production fan-out actually presents: two breaches, not
-/// one** (the independent review of `986d5e0a`, LOW 2).
+/// one** (the independent review of `3c71da87`, LOW 2).
 ///
 /// Every other refusing cell of the axis is driven through `git_state::overlay_worktree`,
 /// which attaches a branch first because `drive`'s constructions move between branches by

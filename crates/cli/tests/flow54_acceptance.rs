@@ -1370,7 +1370,7 @@ fn arm2_a_hook_write_during_the_commit_survives_the_teardown_that_could_not_enum
 /// itself wrote that is not on its own registry row is a lie on one surface and a dead end at
 /// three doors.
 ///
-/// Driven at `45427083`, before the fix: `jigc task finalize` landed at exit 0 printing
+/// Driven at `f664863a`, before the fix: `jigc task finalize` landed at exit 0 printing
 /// `finalize.foreign-bytes` over `.jigc/tasks/<id>/finalize-message.tmp` — jigc's own commit
 /// message transient, named as *a path jigc did not write* — and `jigc task discard <id>`
 /// then refused at **exit 1** over it, demanding `--force` to remove jigc's own file. The
@@ -1471,7 +1471,7 @@ fn arm2_an_area_left_standing_holds_no_file_jigc_wrote() {
     //     staged-prose guard is asked next and refuses over the staged `commit:<id>.md` the
     //     failed teardown left behind — a different, shipped condition about **authored
     //     prose**, with its own code and its own runnable route. What must be gone is the
-    //     refusal over jigc's own transient, which at `45427083` was
+    //     refusal over jigc's own transient, which at `f664863a` was
     //     `task-discard.foreign-bytes` naming `finalize-message.tmp`.
     let discard = corpus.jigc(&["task", "discard", &task]);
     let refusal = surface(&discard);

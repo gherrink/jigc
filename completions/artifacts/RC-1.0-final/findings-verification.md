@@ -46,7 +46,7 @@ expect:
 pinned-by: "stdin_form_naming::every_site_bearing_step_names_the_permitted_form +
   ::every_composed_workflow_names_the_form_above_its_sites +
   ::the_named_heredoc_form_runs_verbatim_through_a_real_shell — the NAMING half, which is the
-  half M49 shipped (increment 11 / T8, b5680ba). The `--from-file -` site set is DERIVED from
+  half M49 shipped (increment 11 / T8, 44180c1). The `--from-file -` site set is DERIVED from
   both loaded packs rather than listed; every site-bearing step is disposed — it names the
   permitted heredoc-on-the-command form, or it is out with a stated reason; the assertion is
   made on the COMPOSED bytes through the real binary, not on the step file; and the named form

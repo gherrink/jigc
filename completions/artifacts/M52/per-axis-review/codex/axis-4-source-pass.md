@@ -1,4 +1,4 @@
-<!-- M52 per-axis review (re-run) — axis 4 · destroying doors — the CODEX SOURCE PASS, verbatim. Read against the repository at commit a3eb026b, 2026-09-21. It reads; it drives nothing. Every claim below is a LEAD until the reconciler drove it — see axis-4.md for the verdict on each. -->
+<!-- M52 per-axis review (re-run) — axis 4 · destroying doors — the CODEX SOURCE PASS, verbatim. Read against the repository at commit e519e4eb, 2026-09-21. It reads; it drives nothing. Every claim below is a LEAD until the reconciler drove it — see axis-4.md for the verdict on each. -->
 
 ## CLAIMS
 
@@ -38,6 +38,6 @@ No source-grounded completeness defect found. I found no omitted transaction doo
 
 ## Schema-hash boundary and bounds
 
-No zero-schema-hash boundary violation observed: compared with M51 commit `35195f56`, neither shipped schema YAML nor either schema manifest changed. `engine/src/schema.rs` changed to centralize the fixed-identity predicate, but that is implementation logic, not persisted schema shape or manifest hash.
+No zero-schema-hash boundary violation observed: compared with M51 commit `577a0099`, neither shipped schema YAML nor either schema manifest changed. `engine/src/schema.rs` changed to centralize the fixed-identity predicate, but that is implementation logic, not persisted schema shape or manifest hash.
 
 Read-only source pass only: I did not build, run tests, drive the binary, mutate files, or create directories. `PRE_DISPATCH_FAULTS` is test-side rather than production-side; its phase/product completeness was inspected as context, not dynamically verified. Confidence in the no-lead conclusion: **high**.

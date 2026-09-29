@@ -1030,7 +1030,7 @@ pub fn set_slot(
 
     // Re-render the whole section body via [`render_section`] with the new slot prose
     // (the section's existing fields preserved), then splice it over the section's body
-    // region — the same canonicalization trick [`set_item_slot`] (3afc98a) uses for an
+    // region — the same canonicalization trick [`set_item_slot`] (4ed8408) uses for an
     // item slot. A bare splice of the recorded slot span is **not** byte-stable on a
     // **leading** Simple slot (a section followed by another section whose empty form
     // carries surrounding blanks): the parser records an empty/leading slot's span
@@ -11743,7 +11743,7 @@ The next window admits requests again.
     /// span *bare* (no surrounding blank lines); a bare-span splice yielded
     /// `## Goal\nLimit…\n\n\n## Context` — no blank after the heading, a double blank
     /// before the next section — while [`render_section`] emits one blank on each side.
-    /// `set_slot` now re-renders the section canonically (mirroring 3afc98a's item-slot
+    /// `set_slot` now re-renders the section canonically (mirroring 4ed8408's item-slot
     /// fix), so the present-splice path is byte-stable.
     #[test]
     fn set_slot_into_leading_goal_slot_is_byte_stable() {

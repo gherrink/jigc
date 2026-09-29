@@ -1,4 +1,4 @@
-<!-- M52 per-axis review (re-run) — axis 2 · caller tokens — the CODEX SOURCE PASS, verbatim. Read against the repository at commit a3eb026b, 2026-09-21. It reads; it drives nothing. Every claim below is a LEAD until the reconciler drove it — see axis-2.md for the verdict on each. -->
+<!-- M52 per-axis review (re-run) — axis 2 · caller tokens — the CODEX SOURCE PASS, verbatim. Read against the repository at commit e519e4eb, 2026-09-21. It reads; it drives nothing. Every claim below is a LEAD until the reconciler drove it — see axis-2.md for the verdict on each. -->
 
 ## M52 source-pass result
 
@@ -49,7 +49,7 @@ None. Consequently there is no source-grounded wrong-behaviour reproduction to p
 
 ## Schema-hash boundary and bounds
 
-I compared the six manifest `schema-hash` values at M51 commit `35195f56` with the current manifest; they are byte-identical. I see **no zero-schema-hash boundary violation**.
+I compared the six manifest `schema-hash` values at M51 commit `577a0099` with the current manifest; they are byte-identical. I see **no zero-schema-hash boundary violation**.
 
 Declared bounds remain:
 

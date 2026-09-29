@@ -73,7 +73,7 @@ Both fixed post-hardening (test-first, one commit each) — see DECISIONS
 
 ## Post-fix re-pin (the two papercuts now live)
 
-After the two fixes (`5df6d3d`, `e3a663c`), both bin dirs were rebuilt + re-pinned:
+After the two fixes (`af03f3f`, `2b002a4`), both bin dirs were rebuilt + re-pinned:
 
 | | sha256 |
 |---|---|

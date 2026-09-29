@@ -1,5 +1,5 @@
-<!-- AXIS 2 · posture — RECONCILED. Every row driven on the installed `/Users/maurice/.local/bin/jigc` -> `jigc 1.0.0-rc.18` (repo HEAD `fbd8b190`), 2026-09-23. Copied verbatim from the reconciler; this header line is the only addition. -->
-<!-- M53 SECOND PARTIAL per-axis review (axes 2 · 3) — axis 2 · posture — the OPUS DRIVER · every row driven on the installed `/Users/maurice/.local/bin/jigc` -> `jigc 1.0.0-rc.18`, repo HEAD `fbd8b190`, 2026-09-23 -->
+<!-- AXIS 2 · posture — RECONCILED. Every row driven on the installed `/Users/maurice/.local/bin/jigc` -> `jigc 1.0.0-rc.18` (repo HEAD `271b0cb7`), 2026-09-23. Copied verbatim from the reconciler; this header line is the only addition. -->
+<!-- M53 SECOND PARTIAL per-axis review (axes 2 · 3) — axis 2 · posture — the OPUS DRIVER · every row driven on the installed `/Users/maurice/.local/bin/jigc` -> `jigc 1.0.0-rc.18`, repo HEAD `271b0cb7`, 2026-09-23 -->
 
 # M53 second partial per-axis review — AXIS 2 · posture — RECONCILED
 
@@ -17,14 +17,14 @@
 # M53 second partial per-axis review — AXIS 2 · posture — the OPUS DRIVER
 
 **Binary.** `/Users/maurice/.local/bin/jigc` → **`jigc 1.0.0-rc.18`**, asserted first, before anything
-else ran (exit 0). Repository at HEAD **`fbd8b190`** (*"chore(release): 1.0.0-rc.18 — the second M53
+else ran (exit 0). Repository at HEAD **`271b0cb7`** (*"chore(release): 1.0.0-rc.18 — the second M53
 stamp, after the post-review fix and its review's seven fixes"*). This is the **RELEASE** posture: the
 `Route::mechanical` argv fence is `#[cfg(debug_assertions)]` and does not exist here, so every refusal
 below is the shipped one and a route-fence violation shows up as a **bad emitted command**, never as a
 panic.
 
-**The fixed binary.** The post-review fix (`986d5e0a`) **and its independent review's seven fixes**
-(`90110d59` · `2ddcc003` · `64b63bd5` · `312680b1` · `d101ca9d` · `49371315` · `35870a04`) are all in
+**The fixed binary.** The post-review fix (`3c71da87`) **and its independent review's seven fixes**
+(`7329801b` · `a6711cee` · `de77b686` · `7a44d85d` · `7af8d6b4` · `5da4634a` · `16da362a`) are all in
 this build; each is driven as a cell below rather than assumed. M53's **declared bounds are what I grade
 against, not re-find**: the stderr-only advisory at `milestone finalize`, the 21-render
 `DEBUG_REMAINDER`, the residual cleared by hand, `reseed_sub_task_areas`' `.exists()` skip. Where a
@@ -52,7 +52,7 @@ rigs**, with both roots asserted to exist before any `git -C` ran — the rc.17 
 
 ---
 
-## 1 · The door set and the registry counts, read from the code at HEAD `fbd8b190`
+## 1 · The door set and the registry counts, read from the code at HEAD `271b0cb7`
 
 | registry | file | count I read |
 |---|---|---|
@@ -509,8 +509,8 @@ The guard holds at the seam. What the surface does **not** say is M52 `(2, DEFEC
 ### F-1 · **TIER 2** — the aimed route `git -C <repo-relative-path>` does not run from the checkout that printed it; driven, it exits **128** from any cwd that is not the repository root
 
 **Where it lives: inside the post-review fix's own new code.** `crate::repo::aim_at`
-(`crates/cli/src/repo.rs:669`) is minted by `986d5e0a` and widened to its second caller by that fix's
-independent review (the HIGH, `35870a04`/`d101ca9d` family). Both callers are affected:
+(`crates/cli/src/repo.rs:669`) is minted by `3c71da87` and widened to its second caller by that fix's
+independent review (the HIGH, `16da362a`/`7af8d6b4` family). Both callers are affected:
 `BreachSite::aim` (`repo.rs:641`) and `crate::milestone::held_here` (`milestone.rs:3523`).
 
 **Contract violated — the fix's own stated rationale.** `design/finalize.md:35`, written by this fix:
@@ -919,7 +919,7 @@ driven; each was **re-driven once by this reconciler** to confirm its repro bloc
 not be driven at all stays an **OPEN LEAD** with the reason.
 
 **All reconciler drives**: binary `/Users/maurice/.local/bin/jigc` → `jigc 1.0.0-rc.18` (asserted),
-repo HEAD `fbd8b190`, 2026-09-23, macOS, `/usr/bin/git` (Apple Git-157 / 2.54.0). Fixtures
+repo HEAD `271b0cb7`, 2026-09-23, macOS, `/usr/bin/git` (Apple Git-157 / 2.54.0). Fixtures
 `dev/jigc-rig <state> --binary /Users/maurice/.local/bin/jigc`, two-step eval, every root from
 `mktemp -d`. No teardown, no `rm -rf` on a variable path, nothing written by hand into `.jigc/`.
 
@@ -1127,7 +1127,7 @@ commands**. Both rows **CLOSED**, driven.
 
 ### L-8 · Completeness claim *"`BEHALF_DOORS` remains total; `COMMITTING_DOORS` carries both milestone-finalize commit models"* — **CONFIRMED** (source read + drive)
 
-Source read at HEAD `fbd8b190`, bracket-matched over each array literal, so the driver's §1 counts are
+Source read at HEAD `271b0cb7`, bracket-matched over each array literal, so the driver's §1 counts are
 independently reproduced rather than taken:
 
 ```

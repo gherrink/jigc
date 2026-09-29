@@ -256,7 +256,7 @@ pub struct FindingKey {
 ///   repo-relative path and lands in the **filesystem-path** form, so two breaching worktrees
 ///   are two discriminating keys. The split is by *site*, not by code, and both halves are
 ///   named here and at `design/command-output-contract.md` rather than one of them being left
-///   to be discovered (the independent review of `986d5e0a`, MEDIUM 2).
+///   to be discovered (the independent review of `3c71da87`, MEDIUM 2).
 ///
 /// Anything else with no address is the un-swept state of a family nobody has looked at, and
 /// [`debug_assert_targets_declared`] says so at the seam.
@@ -814,7 +814,7 @@ impl Route {
     /// the exemption **one call site wide** and greppable, instead of a hole in a predicate.
     ///
     /// A caller-typed token is already rooted where the reader is standing — which is exactly
-    /// where `jigc migrate <PATH>` roots it (`7cd03c59`) — so re-spelling it absolute would
+    /// where `jigc migrate <PATH>` roots it (`4f61c80a`) — so re-spelling it absolute would
     /// not make it more runnable, only stop it being a re-run of what they ran.
     pub fn human_echoing_caller_token(caller_token: &str, text: impl Into<String>) -> Self {
         let text = text.into();
@@ -941,7 +941,7 @@ pub fn git_at(home: &std::path::Path, rest: &str) -> String {
 /// (M53 post-review-fix review, HIGH 2; `design/surface-contract.md` → The printed-path
 /// fence, the *pasteable shell bytes* disposition).
 ///
-/// It is [`git_at`]'s sibling and exists for the same reason, one verb over. `7cd03c59`
+/// It is [`git_at`]'s sibling and exists for the same reason, one verb over. `4f61c80a`
 /// moved `jigc migrate <PATH>`'s base from the repository root to the **caller's cwd**, which
 /// is right for a path the caller types. It is wrong for the five producers that print a path
 /// **jigc computed** — a repo-relative store key, a promote destination, a recorded migration
@@ -1174,7 +1174,7 @@ fn split_shell_sequence(span: &str) -> Vec<Vec<String>> {
 /// [`unaimed_git_span`]'s sibling, one verb over (M53 post-review-fix review, HIGH 2).
 ///
 /// `git` resolves a pathspec against the caller's cwd and answers the question by taking `-C`.
-/// `jigc migrate` resolves its `<PATH>` against the caller's cwd too (since `7cd03c59`) and
+/// `jigc migrate` resolves its `<PATH>` against the caller's cwd too (since `4f61c80a`) and
 /// takes no `-C`, so the only spelling that means the same file from every directory is an
 /// absolute one. The question this asks is therefore the same question, minus the redirection:
 /// *would these bytes name the same file from any directory?* — and the answer is yes in

@@ -8,13 +8,13 @@ transcript.**
 
 | | |
 |---|---|
-| HEAD | `c941fde`, pushed, tree clean |
+| HEAD | `3d8776a`, pushed, tree clean |
 | Gate | **2561 passed / 0 failed**, fmt + clippy clean — cargo's own exit code, measured unpiped |
 | Binary | `1.0.0-rc.10` installed at `~/.local/bin/jigc` |
 | M47 | Complete and audited ([VERDICT](../M47/VERDICT.md)) |
 | Pre-1.0.0 trial | **Run, verified, recorded** ([RC-pre-1.0/](../RC-pre-1.0/trial-record.md)) |
-| Latent-surface sweep | **Discharged** (`20800f7`) — one arm, and the reason there is only one is recorded |
-| Refuted set | **Closed** (`fa343dc`) — R1–R3 carry `pinned-by:` citations |
+| Latent-surface sweep | **Discharged** (`0aa38bd`) — one arm, and the reason there is only one is recorded |
+| Refuted set | **Closed** (`1a72c38`) — R1–R3 carry `pinned-by:` citations |
 
 ## What you're running
 

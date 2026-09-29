@@ -1,4 +1,4 @@
-<!-- The unseeded Codex source pass for AXIS 3, verbatim. Source read at `1.0.0-rc.20` (repo HEAD `51e0b8e4`), 2026-09-27. It drove nothing. -->
+<!-- The unseeded Codex source pass for AXIS 3, verbatim. Source read at `1.0.0-rc.20` (repo HEAD `4d3175c3`), 2026-09-27. It drove nothing. -->
 
 ## Axis 3 source pass
 
@@ -72,6 +72,6 @@ Production removals fall into:
 
 The many remaining recursive removals are test-fixture `Drop` implementations. I found no unguarded production removal of foreign/user bytes.
 
-No schema or schema-manifest file changed in `834772b6..HEAD`; the M52 zero-schema-hash-movement boundary is not violated.
+No schema or schema-manifest file changed in `609da011..HEAD`; the M52 zero-schema-hash-movement boundary is not violated.
 
 This was source inspection only: I did not build or drive the binary, write files, or create directories.

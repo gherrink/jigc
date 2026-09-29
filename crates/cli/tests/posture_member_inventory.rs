@@ -69,10 +69,10 @@ const STRUCK_CLAIM: &str = "three of four";
 /// the datum that falsified it.
 ///
 /// The increment landed the family's tenth member across three commits, and the one that
-/// reworded the family's prose (`f1883722`, *"the posture family's prose homes stop stating
+/// reworded the family's prose (`b8f7d47b`, *"the posture family's prose homes stop stating
 /// a count"*) **deliberately** left the enum's own doc-comments to the commit that would
 /// move them: *"the enum's own doc-comment, the variant doc and `ALL`'s probe-order doc
-/// stay as they are — they change with the member."* The member landed at `13c621f8` and
+/// stay as they are — they change with the member."* The member landed at `7d96932e` and
 /// they did not, so `cli::repo` shipped *"never a menu of nine"* and *"Eight members read
 /// … The ninth asks git"* around a `pub const ALL: [InProgress; 10]`, and
 /// `repo_posture.rs`' composition arm went on naming the member it was waiting for *the
@@ -80,7 +80,7 @@ const STRUCK_CLAIM: &str = "three of four";
 /// scans `design/`, and both prose homes there are **derived** from the enum by arm 1, so
 /// the one place a hand-written count survived was the crate that defines the set.
 ///
-/// **[Extended 2026-09-22 (the independent review of `986d5e0a`, MEDIUM 3).** The M53
+/// **[Extended 2026-09-22 (the independent review of `3c71da87`, MEDIUM 3).** The M53
 /// post-review fix put *"nine of the ten members"* back into `crates/cli/src/repo.rs` — a
 /// [`COUNT_HOMES`] member — and this arm stayed green, because the doc-comment **wrapped**
 /// between `**nine**` and `of the ten` and interpolated a `` [`InProgress`] `` link before
@@ -464,7 +464,7 @@ fn no_home_of_the_family_states_a_count_it_can_move() {
         "no prose home of the posture family states a count of `cli::repo::InProgress::ALL` \
          — the inventory is fenced by derivation (arm 1) and a numeral beside it is a \
          sentence one member away from being false, which is what the seven prose homes \
-         reworded at `f1883722` were reworded for. The family carries {} members today. \
+         reworded at `b8f7d47b` were reworded for. The family carries {} members today. \
          Carried at: {carried:#?}",
         InProgress::ALL.len()
     );

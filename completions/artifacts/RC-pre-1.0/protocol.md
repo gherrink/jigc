@@ -8,7 +8,7 @@ of it: roles, corpora, plants, verbatim prompts, and the operator walk's arm scr
 
 **Binary under trial:** `jigc 1.0.0-rc.10` at `~/.local/bin/jigc`, built after the M47 completion
 audit's three LOW fixes ([M47/VERDICT.md](../M47/VERDICT.md)). A second binary, `1.0.0-rc.9`, is
-built from `d13d8ac` to a temp prefix for V1 arm 6 only, and is never installed on the PATH.
+built from `e2858b3` to a temp prefix for V1 arm 6 only, and is never installed on the PATH.
 
 **Two instruments, deliberately different in kind** — three blind sessions for discoverability, one
 operator-scripted walk for the plants and destructive sequences a blind agent cannot be relied on to
@@ -214,7 +214,7 @@ Trial record + per-corpus invocation-log analysis land here; every claim adversa
 live repros — **CONFIRMED and REFUTED alike ship repro blocks**
 ([milestone-completion-workflow.md](../../../implementation/milestone-completion-workflow.md) →
 Audit); triage through the known-hole and discoverability lenses; the coverage rule applied against
-the M47 diff (`9e6cb17..HEAD`) in **three** columns — trial-reached · test-fenced (naming the suite) ·
+the M47 diff (`f2f8fd3..HEAD`) in **three** columns — trial-reached · test-fenced (naming the suite) ·
 neither — because the two-way split is what left ~27% of changed lines unexamined last time.
 
 Then the **conversion ledger**: every repro block carries `pinned-by:` or `UNPINNED: <why>`

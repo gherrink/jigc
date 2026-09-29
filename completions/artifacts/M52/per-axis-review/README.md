@@ -20,7 +20,7 @@ edited by this re-run** — it is a dated record of what was driven on `1.0.0-rc
 dated record of what was driven on its successor.
 
 **The binary.** Every row in every file here was driven on the installed release **`jigc 1.0.0-rc.16`**,
-built from commit **`a3eb026b`** (*"docs(m52): completion audit closed — seven findings, seven fixed,
+built from commit **`e519e4eb`** (*"docs(m52): completion audit closed — seven findings, seven fixed,
 rc.16 stamped after"*), on **2026-09-21**. The version was asserted first, before anything else, in each
 axis file. The binary is the **release** build, so the debug-only `debug_assert!` route fences do not
 exist in it — a route-fence violation shows up here as a *bad emitted command*, never as a panic, which
@@ -947,7 +947,7 @@ in aggregate because none names a defect; each axis file carries them individual
 | 8 | sixteen: the five M51 closures · `NO_WRITE_EXCEPTION` at all three homes · the derived help projections (`SchemaChangeKind::ALL` 18 kinds, `STORE_FAMILIES`, `whats_left_coverage()`, `WHOLE_DOC_KEYS`) · the installed `SKILL.md` built from both guides with `include_str!` and stamped · `DESTROYING_DOORS`' six disposition-bearing members · the `suppressed.door` help · `COMMITTING_DOORS` = 10 · zero schema-hash movement |
 
 **The freeze boundary, asserted on every axis.** All eight source passes ran the same check independently —
-`git diff` over both schema trees, both manifests and both snapshot trees from M51's `35195f56` to `a3eb026b`
+`git diff` over both schema trees, both manifests and both snapshot trees from M51's `577a0099` to `e519e4eb`
 — and all eight report **no paths**. M52's stated boundary (zero schema-hashes, zero `schema-version`s,
 zero corpora moved) holds on the shipped binary.
 
@@ -1086,7 +1086,7 @@ drive) · 12 of the 14 `suppressed.door` members individually (the **set-level**
 
 # COVERAGE — all 47 `VERB_KINDS` leaves
 
-**The count, read from the code at `a3eb026b`.** `crates/cli/src/cli.rs:1834` → `VERB_KINDS` carries
+**The count, read from the code at `e519e4eb`.** `crates/cli/src/cli.rs:1834` → `VERB_KINDS` carries
 **47** leaf rows — extracted by reading the `(&[…], VerbKind::…)` rows of the const itself, **47**, matching
 the acceptance design's number and M51's. The leaf spellings and their order are byte-identical to M51's
 table, so the two tables are directly comparable row by row.

@@ -1,6 +1,6 @@
 # M33 — the schema/format freeze gate (the frozen-v1 doctype set self-enforces)
 
-**Run 2026-06-24 (re-pinned at HEAD `3815413`).** This artifact is the **productive-go G1
+**Run 2026-06-24 (re-pinned at HEAD `e96614b`).** This artifact is the **productive-go G1
 retirement record** for [roadmap.md](../../../implementation/roadmap.md) → M33 Increment 4. M33
 declares the **six dev-pack doctypes** (`commit`, `adr`, `spec`, `prd`, `arch-doc`, `changelog`)
 + the schema-definition format **frozen v1** and makes the freeze **machine-checkable, not prose
@@ -24,12 +24,12 @@ a copy), exactly as the T3 acceptance (`crates/cli/tests/freeze_enforcement.rs`)
 
 | | |
 |---|---|
-| `jigc` sha256 | `c99d8d5fdfb01c0dd0e32110850be8bbd91940211eedf7b1bb446bcc50f86c83` (re-pinned at `c9b80da` — see HEAD note) |
+| `jigc` sha256 | `c99d8d5fdfb01c0dd0e32110850be8bbd91940211eedf7b1bb446bcc50f86c83` (re-pinned at `881e00d` — see HEAD note) |
 | `doc-code` probe sha256 | `b0a413a1cb8fa7fff6ceb85e3fdebc304508c42d76c57447112f4f208ea74304` (unchanged — the probe was untouched by the completion fix) |
-| HEAD commit | **Re-pinned at `c9b80da`** (`fix(engine): reject cyclic schema-fragment include as a typed error` — the M33 milestone-completion audit fix). The freeze-gate measured facts below are **unchanged** by that fix — it touches the schema-fragment `include` cycle surface, orthogonal to the freeze gate; the gate arms were re-verified clean on this binary. *(The original freeze-gate run was built at `3815413`, the M33 Inc-4 T4 doc fold-back; `jigc` sha was `5327c533…` then. The completion fix re-pin supersedes it so the shipped binary equals HEAD.)* |
+| HEAD commit | **Re-pinned at `881e00d`** (`fix(engine): reject cyclic schema-fragment include as a typed error` — the M33 milestone-completion audit fix). The freeze-gate measured facts below are **unchanged** by that fix — it touches the schema-fragment `include` cycle surface, orthogonal to the freeze gate; the gate arms were re-verified clean on this binary. *(The original freeze-gate run was built at `e96614b`, the M33 Inc-4 T4 doc fold-back; `jigc` sha was `5327c533…` then. The completion fix re-pin supersedes it so the shipped binary equals HEAD.)* |
 | Built | `cargo install --path crates/cli --force` (release; `build.rs` builds the eight-grammar `doc-code` probe and embeds it via `OUT_DIR/doc-code` for the `jigc setup` extract path, plus the embedded dev pack — incl. the M33 `config/schema-manifest.yaml`); `rustc 1.95.0` |
 | Pinned to | `jigc` **and** its `doc-code` probe sibling to **both** `~/.local/bin/` and `~/.cargo/bin/`. `cargo install` placed `jigc` at `~/.cargo/bin/jigc` (byte-identical to the `target/release/jigc` it co-produced); `jigc` was copied to `~/.local/bin/jigc` and the `doc-code` sibling (the `build.rs` `OUT_DIR/doc-code`, byte-identical to `target/release/doc-code`) into both dirs. **All four sha256 identical** — `jigc` identical across both dirs (`5327c533…`), `doc-code` identical across both dirs (`b0a413a1…`). `which jigc` → `~/.local/bin/jigc`, `which doc-code` → `~/.local/bin/doc-code` (a pinned dir). |
-| Fresh-build cross-check | The pinned `jigc` IS the output of this `cargo install` at `3815413` — byte-identical to the `target/release/jigc` it co-produced (same `5327c533…`); the `doc-code` sibling is byte-identical to the `build.rs`-embedded `OUT_DIR/doc-code` and to `target/release/doc-code` (`b0a413a1…`). (Release `jigc` is **not** stripped, so a *separate* later rebuild yields a different sha — the pin is the bytes this install wrote, not a reproducibility claim.) |
+| Fresh-build cross-check | The pinned `jigc` IS the output of this `cargo install` at `e96614b` — byte-identical to the `target/release/jigc` it co-produced (same `5327c533…`); the `doc-code` sibling is byte-identical to the `build.rs`-embedded `OUT_DIR/doc-code` and to `target/release/doc-code` (`b0a413a1…`). (Release `jigc` is **not** stripped, so a *separate* later rebuild yields a different sha — the pin is the bytes this install wrote, not a reproducibility claim.) |
 | Size | release `jigc` **13.29 MiB** (13 933 728 B), `doc-code` **8.10 MiB** (8 489 160 B). |
 | Invocation | `jigc` from `PATH`, with the **embedded** dev pack (**no** `JIGC_PACK_DIR`, except the blocked arm B which needs an on-disk copy to mutate) and the `doc-code` probe resolved **as the sibling beside the installed binary** (**no** `JIGC_DOC_CODE_PROBE` — the driver `unset`s both) — the production probe-resolution path. |
 | Driver | [`evidence/drive.sh`](evidence/drive.sh) — a self-cleaning scratch git repo + isolated `$HOME` per arm; logs in [`evidence/`](evidence/). |

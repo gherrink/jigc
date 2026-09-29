@@ -17,7 +17,7 @@
 //! was left un-swept, and the consequence is worse than a wrong answer because two of the
 //! four doors are *write* doors:
 //!
-//! | reader | door | driven at `0c2c2f7d` |
+//! | reader | door | driven at `aa16a64e` |
 //! |---|---|---|
 //! | `TaskArea::recorded_workflow` | `jigc task finalize` | a shadow composing the exit-4 migration hold **committed at exit 0** |
 //! | `TaskArea::workflow_def` | `jigc task bind` | a project-layer-only id: *"no pack resource of kind workflows"*, exit 1 |

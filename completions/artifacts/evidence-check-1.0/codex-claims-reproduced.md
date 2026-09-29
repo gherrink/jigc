@@ -2,7 +2,7 @@
 # Live reproduction — review E, two source-trace claims
 
 Binary: `/Users/maurice/projects/gherrink-jigc/target/release/jigc` → `jigc 1.0.0-rc.14`
-Repo HEAD: `bd348a83`. Corpora built with `dev/jigc-rig <state> --binary <that binary>`, evaluated in two steps.
+Repo HEAD: `74627547`. Corpora built with `dev/jigc-rig <state> --binary <that binary>`, evaluated in two steps.
 Nothing under the repo was modified. No `cargo` was run.
 
 ---

@@ -7,12 +7,12 @@ live. Nothing below needs reconstructing from a transcript.
 
 | | |
 |---|---|
-| HEAD | `bed5e0a`, pushed, tree clean |
+| HEAD | `e1ac87b`, pushed, tree clean |
 | Binary | `1.0.0-rc.11` at `~/.local/bin/jigc` |
 | Gate | 2735 passed / 0 failed as of M48 — **not re-measured today**; this session wrote docs and trial artifacts only, no `crates/` code |
 | 1.0.0-gate trial | **complete** — `completions/artifacts/RC-1.0-gate/` |
 | Conversion ledger | **closed**, 17/17 — the human's gate on the 1.0.0 call |
-| Docker images | `jigc-gate:rc11` and `jigc-gate:rc10` (8979f16) built and verified |
+| Docker images | `jigc-gate:rc11` and `jigc-gate:rc10` (1d4f9bc) built and verified |
 
 ## What you're building
 

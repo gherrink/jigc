@@ -1,4 +1,4 @@
-<!-- M51 per-axis review — axis 6 · reconciled · driven on the installed `jigc 1.0.0-rc.15` (commit 35195f56), 2026-09-16 -->
+<!-- M51 per-axis review — axis 6 · reconciled · driven on the installed `jigc 1.0.0-rc.15` (commit 577a0099), 2026-09-16 -->
 
 # M51 per-axis review — AXIS 6 · composed surfaces — RECONCILED
 
@@ -21,7 +21,7 @@ to a falsifying datum; every driver defect was re-driven once by me before it ke
 (RELEASE posture: the `#[cfg(debug_assertions)]` route-fence panics do not exist here). Every row
 below ran on that binary, in throwaway `dev/jigc-rig` repos (`mktemp -d` roots, no teardown, no
 `rm -rf` on a variable path). The table reflects the **fixed** binary — the audit's four fix commits
-(`8a42fbbd` routes · `b5ccd818` orphan territory · `0fc80bab` setup guard · `dc508994` LOWs) are in it.
+(`6c2391c0` routes · `da5173a1` orphan territory · `ff2bde99` setup guard · `507c332d` LOWs) are in it.
 
 **The Codex source pass for this axis was not read** (per brief).
 

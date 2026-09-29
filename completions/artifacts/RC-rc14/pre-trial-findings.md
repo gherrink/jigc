@@ -15,7 +15,7 @@ this repo's own gate discipline** that the fold-back fence caught correctly and 
 
 The handover records *"Gate at HEAD: **PASS · 3341 passed / 0 failed**, all five steps (probe ·
 fmt · clippy · build · test), re-run **after** the version bump and the golden regen"* at
-`95c79be6`. Driven at HEAD:
+`2224ce04`. Driven at HEAD:
 
 ```
 $ ./dev/gate
@@ -30,11 +30,11 @@ certified sha. The chain, each link driven:
 
 | fact | evidence |
 |---|---|
-| the fence existed at `95c79be6` | `git show 95c79be6:crates/cli/tests/foldback_truth.rs` contains `built, not audited` 3× |
-| CLAUDE.md at `95c79be6` does **not** contain that phrase | `grep -c` → `0` |
-| `95c79be6` is the commit that wrote `built + audited` + the `VERDICT` link | `git log -S"(built + audited — **4 audit findings"` — `95c79be6` |
-| it changed **15 files**, and `foldback_truth.rs` was not one | `git show --stat 95c79be6` |
-| the fence was in the tree at that point | `git merge-base --is-ancestor 32de1121 95c79be6` → yes |
+| the fence existed at `2224ce04` | `git show 2224ce04:crates/cli/tests/foldback_truth.rs` contains `built, not audited` 3× |
+| CLAUDE.md at `2224ce04` does **not** contain that phrase | `grep -c` → `0` |
+| `2224ce04` is the commit that wrote `built + audited` + the `VERDICT` link | `git log -S"(built + audited — **4 audit findings"` — `2224ce04` |
+| it changed **15 files**, and `foldback_truth.rs` was not one | `git show --stat 2224ce04` |
+| the fence was in the tree at that point | `git merge-base --is-ancestor c9a50abd 2224ce04` → yes |
 
 So the audit-closing commit rewrote the sentence the fence guards and did not touch the fence.
 **This is the fence working**, exactly as its own module doc-comment says it must:
@@ -205,7 +205,7 @@ and its scored table carries the `fs (DOC/wkbn)` split whose loss hid this.**]**
 
 ## What this changes about the trial
 
-1. The image is built from `21ffc0d4` and gated; the host binary is scored on nothing.
+1. The image is built from `82075cc3` and gated; the host binary is scored on nothing.
 2. The gate is green before the first session runs — **after** PT-1's fix, not before.
 3. The reader's control (`observe --archive`) reproduces the 1.0.0-gate table both before and
    after every apparatus change made here.

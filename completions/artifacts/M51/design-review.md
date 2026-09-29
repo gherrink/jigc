@@ -1,8 +1,8 @@
-<!-- M51 · the independent pre-decompose design review (Opus `design-reviewer`, read-only, driving the release binary `1.0.0-rc.14` at HEAD `bd348a83`). Written 2026-09-11; persisted here verbatim because it was authored in the planning session's scratchpad. Every finding accepted by the human 2026-09-11 — the amendments are in [settle-record.md](settle-record.md) → Review amendments. -->
+<!-- M51 · the independent pre-decompose design review (Opus `design-reviewer`, read-only, driving the release binary `1.0.0-rc.14` at HEAD `74627547`). Written 2026-09-11; persisted here verbatim because it was authored in the planning session's scratchpad. Every finding accepted by the human 2026-09-11 — the amendments are in [settle-record.md](settle-record.md) → Review amendments. -->
 
 # M51 — independent pre-decompose design review
 
-Written 2026-09-11 against `HEAD bd348a83` + the uncommitted M51 planning files. Every
+Written 2026-09-11 against `HEAD 74627547` + the uncommitted M51 planning files. Every
 "driven" row below was executed against the **release** binary `target/release/jigc`
 (`1.0.0-rc.14`) on `dev/jigc-rig` corpora and on `mktemp -d` scratch repos. No cargo was
 run; no repo file was edited.

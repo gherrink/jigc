@@ -1998,7 +1998,7 @@ fn stale_title_doors(corpus: &TrialCorpus, task: &str) -> Vec<(&'static str, Str
 /// (M51 Increment 11 / T2; `RC-rc14/findings-verification.md` → F-9,
 /// `settle-record.md` → §21).
 ///
-/// Driven at `c79aab21`, every surface was silent: `doc rename --task` acked `findings:
+/// Driven at `46eef998`, every surface was silent: `doc rename --task` acked `findings:
 /// []`, and `task validate` / `task finalize --dry-run` printed the stale subject and
 /// the new path on adjacent, unconnected lines. That is the shape the rc.14 trial
 /// measured as its **only adapter bypass** — B1 renamed at invocation 18 and finalized

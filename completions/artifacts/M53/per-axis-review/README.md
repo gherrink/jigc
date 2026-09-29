@@ -26,7 +26,7 @@ instrument itself (the three Codex prompts and the Workflow script) is preserved
 
 **The binary.** Every row in every file here was driven on the installed release
 `/Users/maurice/.local/bin/jigc` → **`jigc 1.0.0-rc.17`**, on **2026-09-22**, with the repository at
-HEAD **`75ab77ca`** (*"chore(release): 1.0.0-rc.17 — stamped after the M53 audit's seven fixes, not
+HEAD **`7e98faf1`** (*"chore(release): 1.0.0-rc.17 — stamped after the M53 audit's seven fixes, not
 before"*). Each of the three axis files asserts `jigc --version` **first, before anything else ran**,
 and each read its registry counts by symbol at that HEAD. *Stated rather than smoothed:* the binary's
 provenance is asserted **by its version string and by the seven audit fixes being visible in driven
@@ -38,7 +38,7 @@ and the `rm -rf $V/$D` shape appears nowhere in this review) and by driving the 
 written into the working repository, no fix was applied, and no commit was made by any agent in this
 review** — with one instrument failure on the record rather than buried (axis 2 §9: a rig's stdout was
 *parsed* instead of *eval*-ed, two variables came back empty, and three `git` commands ran in the
-working repository; nothing was staged or committed, HEAD stayed `75ab77ca`, and the stray branch and
+working repository; nothing was staged or committed, HEAD stayed `7e98faf1`, and the stray branch and
 `MERGE_MSG` were removed and re-verified immediately).
 
 **An axis matrix row** is `(door, cell) → {argv driven, exit, code|none, route kind, surface asserted,
@@ -422,7 +422,7 @@ declaration, quoted in its axis file.
   design decision §6 reached is unaffected; only the cell's stated reachability is narrower than
   written.
 - **`(3, OBS-6)`** — `milestone finalize` lands at exit 0 over unauthored sub-task commit docs under
-  the default `squash: true`. This is `1799a2d`'s **stated carve-out**, and the gate does bind under
+  the default `squash: true`. This is `d854e25`'s **stated carve-out**, and the gate does bind under
   `squash: false` (driven: exit 3, four findings). Recorded because the un-driven reading of the
   fold-back sentence looks like a regression and is not.
 - **`(3, OBS-3/5/7)`** and **axis 5's six observations** (the flattened `write.unslugable-title` arm ·
@@ -436,7 +436,7 @@ declaration, quoted in its axis file.
 # COVERAGE — the three axes against the 47 `VERB_KINDS` leaves
 
 **The leaf count, read rather than quoted.** `crates/cli/src/cli.rs:1834`'s `VERB_KINDS` carries
-**47** leaf rows at HEAD `75ab77ca` — **35 `VerbKind::Write` · 12 `VerbKind::Read`** — extracted by
+**47** leaf rows at HEAD `7e98faf1` — **35 `VerbKind::Write` · 12 `VerbKind::Read`** — extracted by
 reading the `(&[…], VerbKind::…)` rows of the const itself. The spellings and their order are identical
 to M52's and M51's tables, so the columns below are directly comparable row by row.
 

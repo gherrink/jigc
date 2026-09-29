@@ -74,7 +74,7 @@ and on this file declaring itself closed nowhere. It cannot tell a citation that
 claim from one that reads apt and asserts something else — that half was done by opening each
 cited test, and there is no command for it.
 
-Every repro ran on `jigc-gate:rc14` (sha `21ffc0d4`), in a throwaway container, never a live
+Every repro ran on `jigc-gate:rc14` (sha `82075cc3`), in a throwaway container, never a live
 corpus.
 
 ---
@@ -275,7 +275,7 @@ own work, for the fifth consecutive wave.
 
 `pinned-by:`
 `work_unit_unknown_envelope::every_work_unit_id_door_answers_the_findings_envelope_for_an_unknown_id`
-— **converted by M51 Increment 6** (`556b1986` + `4653aeff`), the fix's own red test, and
+— **converted by M51 Increment 6** (`1a3c0a52` + `392532b0`), the fix's own red test, and
 **verified by reading what it asserts**: it drives *every* row of `WORK_UNIT_ID_DOORS` with a
 well-formed id no work unit carries and requires, per door, empty stdout at exit 1 and a stderr
 document whose top-level keys are exactly what `ENVELOPE_ARMS`' `Reject::Findings` row declares
@@ -319,7 +319,7 @@ no **committed** doc, to a reader holding a staged copy.
 
 `pinned-by:`
 `staged_read_miss_arm::the_task_read_miss_names_the_staged_copy_and_keeps_the_task_in_its_route`
-— **converted by M51 Increment 5 / T6** (`63eec044`). **This row's disposition moved at the
+— **converted by M51 Increment 5 / T6** (`79d390b4`). **This row's disposition moved at the
 re-read**: N15 was carried at the trial and was *fixed* in this wave, so *"carried defect, as
 F-6"* stopped being true of it, and the close's obligation is to re-read every row rather than
 only the three the Settle named. **Verified by reading what the test asserts**: the two reads
@@ -390,7 +390,7 @@ titles and knows the task stages a commit doc.
 
 `pinned-by:`
 `doc_rename_in_task::the_stale_commit_summary_is_noticed_where_it_happens_and_re_raised_until_repaired`
-— **converted by M51 Increment 11 / T2** (`448670b7`, standing on `c79aab21`'s durable
+— **converted by M51 Increment 11 / T2** (`bcf7ad45`, standing on `46eef998`'s durable
 pre-rename title; [settle-record.md](../M51/settle-record.md) → §21). **Verified by reading what
 it asserts**: the `doc rename … --task --format json` ack carries the advisory in the `findings`
 array with **no envelope key moved**, keyed `(commit-recording.stale-title,
@@ -474,7 +474,7 @@ renderer. **SHIPS RECORDED.**
 
 `pinned-by:` `author_payload_floor::every_payload_refusal_answers_with_a_severity_a_code_an_at_and_a_route`
 + `author_payload_floor::every_payload_refusal_emits_the_findings_envelope_with_a_resolving_key`
-— **converted by M51 Increment 6 / T3** (`67b50f2b`), and **verified by reading what they
+— **converted by M51 Increment 6 / T3** (`b4567c77`), and **verified by reading what they
 assert**: the text arm drives every cell to exit 1 and requires `blocking · <code> — `, an
 `at: adr` and a `route:` on stderr; the machine arm requires the declared `Reject::Findings` key
 set (`{findings, schema_version}`) holding exactly one finding whose `key` is
@@ -546,7 +546,7 @@ sequential increments *outside* it for that reason.
 milestone work-unit it just built. B4-h chose the second and could not complete it.
 
 **Class: capability gap → SHIPS RECORDED.** Note it is *also* the reason this arm did not reach
-the `1799a2d` boundary tightening, which is therefore uncovered.
+the `d854e25` boundary tightening, which is therefore uncovered.
 
 `pinned-by:` **UNPINNED: the absence of a sequential execution mode. `milestone.rs`'s join is
 fenced over its own ordering and collision behaviour (read and confirmed); nothing asserts that a

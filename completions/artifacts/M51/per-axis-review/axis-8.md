@@ -1,4 +1,4 @@
-<!-- M51 per-axis review — axis 8 · reconciled · driven on the installed `jigc 1.0.0-rc.15` (commit 35195f56), 2026-09-16 -->
+<!-- M51 per-axis review — axis 8 · reconciled · driven on the installed `jigc 1.0.0-rc.15` (commit 577a0099), 2026-09-16 -->
 
 # M51 per-axis review — AXIS 8 · adopter docs & help — RECONCILED
 
@@ -64,8 +64,8 @@ verbs those sentences name*. Derived from the code and the wave's own records:
   help texts"*; the roadmap's Increment 9 Grouped scope says **"EC-11's four help texts"** and
   is the one that matches the binary. Recorded here as a count discrepancy in the planning
   record, not a defect in the product — I drove all four.
-- **The guide batch's edit set**, read from `git show 4a00f2d8 -- QUICKSTART.md MIGRATING.md`
-  and `git show 0fc80bab -- QUICKSTART.md MIGRATING.md` (the F2 audit fix).
+- **The guide batch's edit set**, read from `git show 1b736f45 -- QUICKSTART.md MIGRATING.md`
+  and `git show ff2bde99 -- QUICKSTART.md MIGRATING.md` (the F2 audit fix).
 
 **Doors reached by at least one axis-8 sentence, and driven below: 23** — `start` · `workflow` ·
 `setup` · `uninstall` · `upgrade` · `migrate` · `migrate-corpus` · `rename` · `validate` ·
@@ -142,7 +142,7 @@ after install.
 | 54 | `milestone execute` | C1 | `jigc milestone execute m9-the-arc` | 0 | none | none | the composed step text: `Spawn: cd .jigc/worktrees/<id> && jigc workflow sub-task --task <id>` per sub-task, and the worktree-deps paragraph | **matches** — every command the step text names is a verb that answers |
 | 55 | `milestone join` | C1 | `jigc milestone join m9-the-arc` + `--format json` | 0 | none | none | text `no docs staged from: second-sub-job`; JSON `no_docs_from: ["second-sub-job"]`, `overlay: {commit:first-sub-job: {provenance: "created", source_task: "first-sub-job"}}` | **matches** EC-15 — the overlay is per-sub-task provenance, `no_docs_from`'s values are true, the shape did not move |
 | 56 | `milestone finalize` | C2 | `jigc milestone finalize --help` | 0 | none | none | the two-half fold sentence + `--carry-staged`'s *"the carried entries never ride it — they stay staged across the boundary either way"* | **matches** (the two-half fold is the arm `help_truth.rs` already fences) |
-| 57 | `migrate` | C1 | `jigc migrate adir --as adr` | **1** | (read-fault, route-bearing) | Mechanical (`jigc migrate <path> --as adr`) | ``could not read the foreign `adr` source at `adir` `` — **the token as typed**, no host path | **matches** — the M51 audit's third LOW (`dc508994`) holds in the release binary |
+| 57 | `migrate` | C1 | `jigc migrate adir --as adr` | **1** | (read-fault, route-bearing) | Mechanical (`jigc migrate <path> --as adr`) | ``could not read the foreign `adr` source at `adir` `` — **the token as typed**, no host path | **matches** — the M51 audit's third LOW (`507c332d`) holds in the release binary |
 | 58 | `doc show` | C1 | `jigc doc show adr:nope` | 1 | `store.not-found` | Mechanical (`jigc doc show adr:nope --task <task-id>` + `jigc task list`) | the route's `--task` arm | **matches** N15 |
 | 59 | `doc show` | C1 | `jigc doc show adr:nope --task ghost-task` | 1 | `finalize.no-task` | Mechanical (`jigc task list`) | *"no task `ghost-task`"* | **matches** |
 | 60 | `doc rename` | C1 | `jigc doc rename … --to "Use Memcached caching" --task <id>` after the summary named the old title | 0 | **none printed (agent text)** | none | ack only: `adr:use-memcached-caching (renamed to "Use Memcached caching" from adr:use-redis-caching)` | **DEFECT D-1 (producer half, text arm)** |
@@ -528,7 +528,7 @@ your `PATH`."* Driven, the second clause is exactly what the shipped advisory sa
 true (*"it is no longer version-matched to jigc 1.0.0-rc.15"*). **The product behaves correctly
 and says so at the door** — the refuse-to-clobber is M48's deliberate capability, the ack omits
 the guide row, and the advisory names the escape. **One home is wrong: the guide sentence.**
-Note the sentence predates M51 (`0c7fb866`, the increment that *built* the refuse-to-clobber),
+Note the sentence predates M51 (`1ed2555b`, the increment that *built* the refuse-to-clobber),
 so this is an old law-1 overclaim the wave's guide walk did not catch, not an M51 regression.
 **Severity: LOW** (law 1, a surface that ships into every adopter repo; no bytes at risk —
 the honest behaviour is the one the sentence understates).

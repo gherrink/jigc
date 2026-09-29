@@ -5,7 +5,7 @@
 | role | path |
 |---|---|
 | original (lost `ad54751`, recovered verbatim) | `recovery/original-trial-record.md` (66 ln), `recovery/original-findings-verification.md` (375 ln) — copied unmodified from `analysis/files/`; the writes-journal shows each was written exactly once (07:12:06 / 07:17:20) with no later Edit, so these are the final committed bytes |
-| committed reconstruction | `completions/artifacts/RC-alpha4/{trial-record,findings-verification,recovered-analysis}.md` (repo `e2f28f7`) |
+| committed reconstruction | `completions/artifacts/RC-alpha4/{trial-record,findings-verification,recovered-analysis}.md` (repo `af73646`) |
 | supporting | `analysis/bash-ledger.md` (the live 504-record log analysis), `analysis/narrative.md` (5356 ln), `analysis/patches/`, `analysis/asks.md` |
 
 **Headline.** The two findings analyses converge (as `recovered-analysis.md` already claims) — **one true verdict conflict, four same-verdict factual contradictions**. The *large* delta is not in the findings at all: the committed `recovered-analysis.md` captured only the **first-pass** rc.10 recommendation (the 18:05 turn) and missed **two superseding human turns, the persisted charter commit `a822f87`, and an entire M47 planning session that ran to a completed Settle.** Section (d) is the substantive part of this report.
@@ -111,7 +111,7 @@ This is the largest delta, and it is **not** a findings delta. `recovered-analys
 
 ⇒ **the wording tier becomes declared scope, and the greenfield trial becomes three probes (G1/G2/G3).**
 
-> **This directly supersedes the committed record.** `recovered-analysis.md` item 3 and `DECISIONS.md` (`e2f28f7`, 2026-08-02) both re-instate *"the **lacon** re-drive as a fix-verification trial … fresh pre-jigc lacon copy … one migration session + one ordinary task session."* **Lacon was dropped by the human that same evening.** The repo's re-instated charter is the superseded first draft.
+> **This directly supersedes the committed record.** `recovered-analysis.md` item 3 and `DECISIONS.md` (`af73646`, 2026-08-02) both re-instate *"the **lacon** re-drive as a fix-verification trial … fresh pre-jigc lacon copy … one migration session + one ordinary task session."* **Lacon was dropped by the human that same evening.** The repo's re-instated charter is the superseded first draft.
 
 ### d.2 — The persisted charter (`a822f87`) — recoverable verbatim from `patches/0031`
 
@@ -160,7 +160,7 @@ Plus the assistant's stated-and-accepted calls at 20:57:35: P5-4 swept over the 
 
 **Fold back (ranked).**
 
-1. **Correct the M47 charter in the repo.** `DECISIONS.md` (`e2f28f7`) and `recovered-analysis.md` currently re-instate a **superseded** plan. Replace the lacon re-drive with the three-probe greenfield acceptance (G1/G2/G3 + the two plants), and restore Tier 1/2/3 + the checkable boundary from `patches/0031` — verbatim, it is the committed text of `a822f87`. **Two Tier-1 items are currently absent from the repo entirely: the P5-4 finding-key flip and the `task diff --format json` hole**, both argued as now-or-never under 1.0 key/contract stability.
+1. **Correct the M47 charter in the repo.** `DECISIONS.md` (`af73646`) and `recovered-analysis.md` currently re-instate a **superseded** plan. Replace the lacon re-drive with the three-probe greenfield acceptance (G1/G2/G3 + the two plants), and restore Tier 1/2/3 + the checkable boundary from `patches/0031` — verbatim, it is the committed text of `a822f87`. **Two Tier-1 items are currently absent from the repo entirely: the P5-4 finding-key flip and the `task diff --format json` hole**, both argued as now-or-never under 1.0 key/contract stability.
 2. **Record that the M47 planning session is recovered, not lost**, and archive its Settle. Seven human decisions (two overruling the recommendation) and ~15 non-fork resolutions exist; re-planning from the charter alone would silently re-decide them — including three one-way doors (the `SLUG_RULE_VERSION` 2→3 bump, the schema-hash narrowing, the per-door error codes) whose window closes at the 1.0 tag. `files/M47-scope-brief.md` and `files/M47-settle-agenda.md` are complete and should be archived alongside.
 3. **Add the eight missing findings rows + the H/P↔A/B/C/D crosswalk** to the committed archive — chiefly **P1-8** (drift hook), **P4-6** (silent copy-in on five edit verbs), **P5-4** (the pinned-wrong route), **H4** (the ahead-stamp doors + the absorb-cannot-mask refutation), P2-8, P4-2, P3-7, P3-8. Without the crosswalk the charter is unreadable against the surviving verification.
 4. **Fold the log-derived facts of §(b)** into `recovered-analysis.md` — especially the P2 zero-fragment proof (it corrects `C1`'s mechanism), the verb histograms, the H2 log-anonymity record (index 9, `error_code: null`), the 80 s hook-rejection recovery, the P4 34-second pre-mint read, and honesty item 5. Fix the P3 46-vs-47 record count.

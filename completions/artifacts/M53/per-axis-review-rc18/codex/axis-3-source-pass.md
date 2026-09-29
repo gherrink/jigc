@@ -1,6 +1,6 @@
 # Axis 3 source pass — second M53 partial re-run
 
-Reviewed production Rust at `b3fad4b3`—the rc.18 post-review source lineage (`986d5e0a` plus all seven audit fixes through `35870a04`). I performed no writes, builds, or binary driving.
+Reviewed production Rust at `1cef812d`—the rc.18 post-review source lineage (`3c71da87` plus all seven audit fixes through `16da362a`). I performed no writes, builds, or binary driving.
 
 ## Claims
 

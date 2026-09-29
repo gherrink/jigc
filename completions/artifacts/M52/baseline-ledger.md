@@ -1,7 +1,7 @@
 # M52 — the baseline ledger
 
-**Driven 2026-09-16/17, at `HEAD = 85ad06c5`** (branch `main`, clean tree), against the **installed
-release** binary `~/.local/bin/jigc` = **`1.0.0-rc.15`** (sha256 `126f1584…`, built from `35195f56`;
+**Driven 2026-09-16/17, at `HEAD = 7637a46f`** (branch `main`, clean tree), against the **installed
+release** binary `~/.local/bin/jigc` = **`1.0.0-rc.15`** (sha256 `126f1584…`, built from `577a0099`;
 HEAD's production code is byte-identical to that sha — only `Cargo.toml`'s dev profile and one test
 file changed since). Fixtures from `dev/jigc-rig <state> --binary ~/.local/bin/jigc` (two-step eval,
 `cd "$REPO"`, roots under the session scratchpad). **Debug posture was used nowhere**; **no auditor ran

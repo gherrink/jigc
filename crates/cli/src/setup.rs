@@ -39,9 +39,9 @@
 //! `crates/cli/tests/commit_seam_posture.rs`'s arm (h) both recorded it as *"out of this
 //! class, not unswept: it binds no `jigc_home` at all"* — true as a description of the
 //! source and false as a disposition. Falsifying datum, driven on the debug binary at
-//! `36a96758`: `jigc setup` from a linked worktree exits 0 and installs a worktree-local
+//! `353029ce`: `jigc setup` from a linked worktree exits 0 and installs a worktree-local
 //! `.jigc/{AGENT.md,config,state,version}` **that nothing reads** (the loader had already
-//! moved to `jigc_home` at `31921e57`), leaving the main checkout un-set-up; and `jigc
+//! moved to `jigc_home` at `f919ea95`), leaving the main checkout un-set-up; and `jigc
 //! uninstall` from a fan-out worktree exits 0 printing *"repo-local install removed"* while
 //! removing the repository-wide `pre-commit` hook — the one copy every checkout shares —
 //! and leaving the main checkout's `.jigc/`, its `.claude/skills/jigc/SKILL.md` and its
@@ -570,7 +570,7 @@ pub fn precommit_hook_body(jigc_path: &Path) -> String {
 /// runs in since M53 — the cwd census, C1-09 — which is why the extraction greps `git -C `).
 ///
 /// **The awk scans for the `mv` token rather than indexing at a fixed field** (M53
-/// post-review-fix review, MEDIUM 3). `34584687` inserted `-C <home>` into that route, and
+/// post-review-fix review, MEDIUM 3). `65de53f5` inserted `-C <home>` into that route, and
 /// `git_at` renders the home through `shell_operand` — so a checkout under a path with a
 /// space becomes `git -C '/a repo' mv <new> <old>`, **two** awk fields for the home, and the
 /// shipped fixed-index predicate stopped matching. Driven at the shell against the shipped
@@ -603,7 +603,7 @@ pub fn precommit_hook_body(jigc_path: &Path) -> String {
 ///
 /// **The `mv` token decides BOTH branches, not only the block** (M53 — the pre-v1 usability
 /// batch, row 1 / the rc.19 review's `(2, N-1)`). The extraction grep is `git -C `, and the
-/// cwd arc (`34584687`) made *every* operator-facing git span carry that prefix —
+/// cwd arc (`65de53f5`) made *every* operator-facing git span carry that prefix —
 /// `home-vacated`'s `git -C <abs> show <sha> -- <path>`, the weak rename's `git -C <abs>
 /// restore …`, and so on. A non-empty `$moves` therefore stopped meaning *a rename route
 /// exists*, and the warn branch, which keyed on nothing but that emptiness, announced a
@@ -1362,7 +1362,7 @@ fn install(
     //     audit). The predicate is [`InstallSubject`]'s pre-write worktree-vs-`HEAD` answer
     //     alone; the conjunction that also required the path to be *still* dirty afterwards
     //     is struck, because a path `setup` rewrites whole is clean afterwards **because the
-    //     adopter's bytes are gone** — driven at `b5ccd818`, `.jigc/AGENT.md` prose destroyed
+    //     adopter's bytes are gone** — driven at `da5173a1`, `.jigc/AGENT.md` prose destroyed
     //     at exit 0 with `git status` empty and the bytes in no git object.
     //
     //     Acting on it *here* rather than at the commit is what makes the refusal's own
@@ -3326,7 +3326,7 @@ fn fanout_worktree_paths(jigc_home: &Path) -> std::io::Result<Vec<PathBuf>> {
 /// one of those names is no subtree at all, and the two doors that own those subtrees are
 /// blind to it for the same reason this one was (`fanout_worktree_paths` and
 /// [`crate::task::staged_task_prose`] both open with `if !<root>.is_dir()`). Driven at
-/// `ffb4064c` on a fresh install, six files planted at `ENTRIES` names were destroyed at
+/// `4572ca7c` on a fresh install, six files planted at `ENTRIES` names were destroyed at
 /// **exit 0**, named by nothing, refused by nothing.
 fn workbench_paths(jigc_home: &Path) -> std::io::Result<Vec<String>> {
     let jigc_dir = jigc_home.join(".jigc");
@@ -3947,7 +3947,7 @@ fn dirty_worktree_finding(jigc_home: &Path, dirty: &[HeldWorktreePath]) -> Findi
     route.push_str("; `jigc uninstall --force` deletes them with the install");
     // *Get the work out* reaches bytes, and an un-concluded operation is not bytes — nor is
     // it cleared by the abandon this route offers above (the independent review of
-    // `986d5e0a`, the HIGH). One clause, from the home the two milestone doors print.
+    // `3c71da87`, the HIGH). One clause, from the home the two milestone doors print.
     if dirty.iter().any(|held| held.hold.operation.is_some()) {
         route.push_str(crate::milestone::OPERATION_CLAUSE);
     }
@@ -3974,7 +3974,7 @@ fn dirty_worktree_finding(jigc_home: &Path, dirty: &[HeldWorktreePath]) -> Findi
 /// enumerate at all.
 ///
 /// **Its route says what actually failed, and names the consent** (M52 Increment 4 / T7,
-/// D-4). Driven at `a8489bab` over an unreadable root it blamed `git` on PATH for an `EACCES`
+/// D-4). Driven at `f8d5957a` over an unreadable root it blamed `git` on PATH for an `EACCES`
 /// on a directory — a remedy that fits nothing it had found — while the same door's two
 /// sibling fail-closed refusals ([`crate::task::unverified_prose_finding`],
 /// [`unverified_foreign_finding`]) both name `--force`, the single consent past every guard

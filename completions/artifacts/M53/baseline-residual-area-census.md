@@ -2,7 +2,7 @@
 
 # M53 · `(3, A3-2)` sibling-cell enumeration — the residual task area
 
-**Binary:** `/Users/maurice/.local/bin/jigc` → `jigc 1.0.0-rc.16`. **Repo HEAD:** `978577ec` (worktree clean but for untracked `completions/artifacts/M53/`). Every rig: `rig=$(dev/jigc-rig fresh --binary /Users/maurice/.local/bin/jigc) || exit 1; eval "$rig"` — two-step, `mktemp -d` roots, no teardown, no edits, no cargo. Under `.jigc/` every scan uses `command grep` (the shell's `grep` is `ugrep --ignore-files`, which honours `.gitignore`).
+**Binary:** `/Users/maurice/.local/bin/jigc` → `jigc 1.0.0-rc.16`. **Repo HEAD:** `155054cc` (worktree clean but for untracked `completions/artifacts/M53/`). Every rig: `rig=$(dev/jigc-rig fresh --binary /Users/maurice/.local/bin/jigc) || exit 1; eval "$rig"` — two-step, `mktemp -d` roots, no teardown, no edits, no cargo. Under `.jigc/` every scan uses `command grep` (the shell's `grep` is `ugrep --ignore-files`, which honours `.gitignore`).
 
 Every claim is marked **DRIVEN** (run on that binary) or **READ** (source at HEAD). **This is a map at one sha, not gospel. I settled nothing.**
 
@@ -339,4 +339,4 @@ Identical bytes at `task finalize` · `task diff` · `task discard` · `start --
 | `design/storage.md:291` / `design/finalize.md:157` state the rule the fix inverts | **built + proven (the statements)** | READ, quoted §6.2; premise DRIVEN true | 2 design homes + `task.rs:5839-5843` + `post_commit`'s doc + `finalize_displacement.rs`'s module doc; **`finalize.md:159`'s second clause is driven FALSE already** |
 | `engine::milestone::discard_sub_task_item`'s *"a guard here would be code no state can reach"* | **latent defect (the comment)** | DRIVEN §3.2 on the **unfixed** binary | the premise is already false at HEAD; the fix does not falsify it, it is falsified |
 
-**Honest bounds on this report.** No concurrent racer was driven (§4f is READ). The foreign-directory-named-`base.json` shape and the `.exists()`-vs-`is_dir()` divergence at E9/E10 are READ, unexercised. `add-from-spec` was not driven as a mint door (it is not a `MINT_DOORS` row; it reaches `add_task`). The `--strict-permissions` and non-`fresh` rig states were not exercised. Every table row above is a fact about `jigc 1.0.0-rc.16` at `978577ec` and nothing else.
+**Honest bounds on this report.** No concurrent racer was driven (§4f is READ). The foreign-directory-named-`base.json` shape and the `.exists()`-vs-`is_dir()` divergence at E9/E10 are READ, unexercised. `add-from-spec` was not driven as a mint door (it is not a `MINT_DOORS` row; it reaches `add_task`). The `--strict-permissions` and non-`fresh` rig states were not exercised. Every table row above is a fact about `jigc 1.0.0-rc.16` at `155054cc` and nothing else.

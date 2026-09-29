@@ -1105,7 +1105,7 @@ Sessions must survive a restart.
     /// **The route is a command, so its operand is quoted** (M51 completion audit). The
     /// argv above is the emitted bytes — `Route::mechanical` composes its text as
     /// `argv.join(" ")` — and the path in it comes off the filesystem, not out of a
-    /// grammar. Driven at `befdbf93` a non-conformant `docs/decisions/my notes.md` panicked
+    /// grammar. Driven at `c2faae6b` a non-conformant `docs/decisions/my notes.md` panicked
     /// the whole `jigc ingest` run at exit 101 on the fence's own token check; in release it
     /// would have printed `jigc migrate docs/decisions/my notes.md --as adr`, which parses
     /// as a migrate of `docs/decisions/my`.

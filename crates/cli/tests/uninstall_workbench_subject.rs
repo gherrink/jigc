@@ -416,7 +416,7 @@ fn a_tracked_workbench_file_edited_and_staged_is_still_narrated() {
 /// transient subtree because there is no subtree — was invisible to this guard. It was
 /// invisible to the other two in the same stroke (`fanout_worktree_paths` and
 /// `staged_task_prose` both start `if !<root>.is_dir() { return empty }`), so all three
-/// guards and all three narrations missed it at once: driven at `ffb4064c`, six such files
+/// guards and all three narrations missed it at once: driven at `4572ca7c`, six such files
 /// were destroyed at **exit 0**, named by nothing.
 ///
 /// That is M49's `path.is_dir()` shape-vs-bytes error re-appearing as a **name**-vs-shape

@@ -1,7 +1,7 @@
 <!-- persisted verbatim 2026-09-10 from the evidence-check-1.0 session; agent: Claude Opus 5 (1M context); see VERDICT.md -->
 # Adversarial probe of `1.0.0-rc.14` — data loss / repo destruction / silent corruption
 
-Binary: `/Users/maurice/projects/gherrink-jigc/target/release/jigc` (1.0.0-rc.14), HEAD `bd348a83`.
+Binary: `/Users/maurice/projects/gherrink-jigc/target/release/jigc` (1.0.0-rc.14), HEAD `74627547`.
 All corpora built with `dev/jigc-rig <state> --binary <release>`; every probe snapshotted
 `git status --porcelain`, `git ls-files -s`, `git rev-parse HEAD` and a sha256 of every
 non-`.git` file before and after the door, and diffed them.

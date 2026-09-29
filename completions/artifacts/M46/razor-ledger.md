@@ -1,6 +1,6 @@
 # Razor ledger — M46, the adjudicated IN/OUT set
 
-The **guarded application** of M46's razor, run 2026-08-18 at HEAD `4f0b9e6` on `1.0.0-rc.11`. The
+The **guarded application** of M46's razor, run 2026-08-18 at HEAD `b06bf72` on `1.0.0-rc.11`. The
 human's instruction was *"guard this with agents and combine findings"*; this is the combination.
 
 **Instrument:** three independent appliers over disjoint slices — the correctness core · the 12

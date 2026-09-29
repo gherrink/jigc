@@ -1,4 +1,4 @@
-<!-- M52 per-axis review (re-run) — axis 8 · freeze & migration — the CODEX SOURCE PASS, verbatim. Read against the repository at commit a3eb026b, 2026-09-21. It reads; it drives nothing. Every claim below is a LEAD until the reconciler drove it — see axis-8.md for the verdict on each. -->
+<!-- M52 per-axis review (re-run) — axis 8 · freeze & migration — the CODEX SOURCE PASS, verbatim. Read against the repository at commit e519e4eb, 2026-09-21. It reads; it drives nothing. Every claim below is a LEAD until the reconciler drove it — see axis-8.md for the verdict on each. -->
 
 ## Claims
 
@@ -31,4 +31,4 @@ No new source-pass leads. I found no adopter-doc/help door omitted from the stat
 
 This was source-only: I executed no binary and wrote nothing. Reproductions above are therefore dispositions supported by source, not fresh driven observations.
 
-HEAD is `a3eb026b` (`1.0.0-rc.16`). Comparing both shipped `schema-manifest.yaml` files from the M51 commit `35195f56` through HEAD produced an empty diff. I therefore see **no violation of M52’s zero schema-hash movement boundary**.
+HEAD is `e519e4eb` (`1.0.0-rc.16`). Comparing both shipped `schema-manifest.yaml` files from the M51 commit `577a0099` through HEAD produced an empty diff. I therefore see **no violation of M52’s zero schema-hash movement boundary**.

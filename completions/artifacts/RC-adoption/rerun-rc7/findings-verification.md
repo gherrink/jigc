@@ -1,6 +1,6 @@
 # rc.7 rerun — findings verification (2026-07-20)
 
-Every load-bearing claim from the [trial feedback](trial-record.md) verified against the rc.7 code at HEAD `4e2b6ab` (which is the shipped rc.7 surface) and the installed binary (`jigc 1.0.0-rc.7`), by four independent read-only verification passes. Verdicts: **4 refuted/reclassified** (the capability exists — the discoverability evidence), **4 defects confirmed**, **4 discoverability gaps confirmed at the surface**, **1 log-discovered corollary**.
+Every load-bearing claim from the [trial feedback](trial-record.md) verified against the rc.7 code at HEAD `7e7d8c9` (which is the shipped rc.7 surface) and the installed binary (`jigc 1.0.0-rc.7`), by four independent read-only verification passes. Verdicts: **4 refuted/reclassified** (the capability exists — the discoverability evidence), **4 defects confirmed**, **4 discoverability gaps confirmed at the surface**, **1 log-discovered corollary**.
 
 ## Refuted / reclassified — the capability exists
 

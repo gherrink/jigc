@@ -1,4 +1,4 @@
-<!-- M53 PARTIAL per-axis review · axis 5 · RECONCILED (Opus driver table + reconciliation ledger) — every row driven on the installed `/Users/maurice/.local/bin/jigc` -> `jigc 1.0.0-rc.17`, repo HEAD `75ab77ca`, 2026-09-22. -->
+<!-- M53 PARTIAL per-axis review · axis 5 · RECONCILED (Opus driver table + reconciliation ledger) — every row driven on the installed `/Users/maurice/.local/bin/jigc` -> `jigc 1.0.0-rc.17`, repo HEAD `7e98faf1`, 2026-09-22. -->
 
 <!-- M53 PARTIAL per-axis review — axis 5 · pinned contracts · RECONCILED (driver table + reconciliation ledger). -->
 <!-- Reconciler: drove every Codex claim and re-drove the driver's defect on the installed `jigc 1.0.0-rc.17`, 2026-09-22. -->
@@ -15,8 +15,8 @@ ran. **Release posture** — the `Route::mechanical` span fence and the other `#
 route fences do not exist here, so a route-fence violation shows up as a bad emitted command, never as a
 panic.
 
-**The binary this table reflects carries M53's seven post-build audit fixes** (`4a8cec2d` · `620c1644` ·
-`1e68662f` · `33ab0f76` · `2cb2c29f` · `c00fdd97` · `5702bf4f`, plus the version stamp `75ab77ca`).
+**The binary this table reflects carries M53's seven post-build audit fixes** (`c9fc0d41` · `5672e32f` ·
+`e15b64e3` · `e9757c94` · `5badfbda` · `5a4d12d6` · `b8d3f7bb`, plus the version stamp `7e98faf1`).
 `FINALIZE_MESSAGE_FILE`'s membership in both area registries (fix 1) is visible in §5's control cells:
 an area left standing after a landed finalize holds **no** file jigc wrote, so `finalize.foreign-bytes`
 never fires over jigc's own temp file and the narration's count is the complement's real size.
@@ -41,7 +41,7 @@ I did **not** read the Codex source pass for this axis.
 
 ## 0 · The door set, derived from the code
 
-Counts read at `HEAD = 75ab77ca` **by symbol**, not from the design doc's numbers:
+Counts read at `HEAD = 7e98faf1` **by symbol**, not from the design doc's numbers:
 
 | registry | file | rows read | vs M52 |
 |---|---|---|---|
@@ -798,7 +798,7 @@ fixes — and then asks what those arms cannot:
 # 14 · Reconciliation ledger — the reconciler's section
 
 **Inputs.** The Opus driver table above (`driver/axis5.md`) and the Codex source pass
-(`codex/axis5-codex.md`, read-only review of source at `10e3286c`, **no binary driven**).
+(`codex/axis5-codex.md`, read-only review of source at `84db7551`, **no binary driven**).
 **Binary.** `/Users/maurice/.local/bin/jigc` → `jigc 1.0.0-rc.17`, asserted before anything ran.
 **Rigs.** `rig=$(dev/jigc-rig <state> --binary /Users/maurice/.local/bin/jigc) || exit; eval "$rig"`
 (two-step eval; `mktemp -d` roots; no teardown; no `rm` on a variable path).
@@ -1090,7 +1090,7 @@ a tightening of the driver's instrument, not a correction of its verdict.)*
 # 15 · Doors covered
 
 Every clap leaf that is the door of ≥1 **driven** row, in `VERB_KINDS` spelling (`crates/cli/src/cli.rs:1834`,
-read at `HEAD = 75ab77ca`). **47 / 47 leaves · uncovered: none.**
+read at `HEAD = 7e98faf1`). **47 / 47 leaves · uncovered: none.**
 
 ```
 start · workflow · setup · uninstall · upgrade · ingest · migrate · migrate-corpus · unmanage ·

@@ -1,6 +1,6 @@
 # Baseline ledger fragment — row `(5, DEFECT 1)`, M53 Scope
 
-Verified at **HEAD `978577ec`**, driven on the **installed release `jigc 1.0.0-rc.16`** (`~/.local/bin/jigc`). A map, not gospel. No edits made.
+Verified at **HEAD `155054cc`**, driven on the **installed release `jigc 1.0.0-rc.16`** (`~/.local/bin/jigc`). A map, not gospel. No edits made.
 
 ---
 

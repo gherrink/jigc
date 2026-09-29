@@ -1,8 +1,8 @@
-<!-- M52 per-axis review (re-run) — axis 6 · pinned contracts — the CODEX SOURCE PASS, verbatim. Read against the repository at commit a3eb026b, 2026-09-21. It reads; it drives nothing. Every claim below is a LEAD until the reconciler drove it — see axis-6.md for the verdict on each. -->
+<!-- M52 per-axis review (re-run) — axis 6 · pinned contracts — the CODEX SOURCE PASS, verbatim. Read against the repository at commit e519e4eb, 2026-09-21. It reads; it drives nothing. Every claim below is a LEAD until the reconciler drove it — see axis-6.md for the verdict on each. -->
 
 # Axis 6 · source pass — M52 / 1.0.0-rc.16
 
-Commit reviewed: `a3eb026b699ce9c23cb0201555838931b65bd2d2`.
+Commit reviewed: `e519e4ebf952bbf71b8591294101bd63be779998`.
 
 ## Claims
 
@@ -36,4 +36,4 @@ Of the newly minted seams, `suppressed.door` plus `workflow.verb-routed` directl
 
 This was source-only: I did not execute the binary or test runtime prose/help equivalence. JSON composed output deliberately remains `{task,text}` and excludes presentation-only task-state lines at [render.rs:322](/Users/maurice/projects/gherrink-jigc/crates/cli/src/render.rs:322).
 
-**Schema-hash boundary:** no violation found. The diff from M51 commit `35195f56` to HEAD changes neither frozen `schema-manifest.yaml`; M52’s workflow/step/front-matter changes do not move schema hashes.
+**Schema-hash boundary:** no violation found. The diff from M51 commit `577a0099` to HEAD changes neither frozen `schema-manifest.yaml`; M52’s workflow/step/front-matter changes do not move schema hashes.

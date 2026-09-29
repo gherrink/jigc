@@ -13,7 +13,7 @@ its consequence was looked up** — the rule that binds the adjudicator.
 **Reachable by:** a blind B3 worker. The plant lands a foreign ADR in an adopted corpus; running
 `jigc migrate-corpus` is a plausible next move for an agent that has just been told a doc is not
 current.
-**Not a regression** — identical output and exit code on `jigc-gate:rc10` (8979f16, pre-M48).
+**Not a regression** — identical output and exit code on `jigc-gate:rc10` (1d4f9bc, pre-M48).
 
 ### What happens
 
@@ -193,7 +193,7 @@ reach:
 ```console
 $ cat ~/ideas/rc11-control-out/PROVENANCE.txt
 image        jigc-gate:rc11
-jigc-sha     9a37f0152744f0cba5f9140483e1ca1b1c453c46
+jigc-sha     d1ebbc227ba9f4b8310bcb7984c648c3865aa306
 model        claude-sonnet-5
 permissions  bypassPermissions
 

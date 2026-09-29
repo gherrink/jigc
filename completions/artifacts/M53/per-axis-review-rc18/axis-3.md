@@ -1,7 +1,7 @@
-<!-- AXIS 3 · destroying doors — RECONCILED. Every row driven on the installed `/Users/maurice/.local/bin/jigc` -> `jigc 1.0.0-rc.18` (repo HEAD `fbd8b190`), 2026-09-23. Copied verbatim from the reconciler; this header line is the only addition. -->
+<!-- AXIS 3 · destroying doors — RECONCILED. Every row driven on the installed `/Users/maurice/.local/bin/jigc` -> `jigc 1.0.0-rc.18` (repo HEAD `271b0cb7`), 2026-09-23. Copied verbatim from the reconciler; this header line is the only addition. -->
 <!-- M53 SECOND partial per-axis review · axis 3 · destroying doors · RECONCILED (Opus driver table × Codex
      source pass). Every reconciliation drive ran on /Users/maurice/.local/bin/jigc -> `jigc 1.0.0-rc.18`,
-     repo HEAD `fbd8b190`, 2026-09-23. No fix applied, no commit made, nothing written into the repository. -->
+     repo HEAD `271b0cb7`, 2026-09-23. No fix applied, no commit made, nothing written into the repository. -->
 
 # M53 second partial per-axis review — AXIS 3 · destroying doors — RECONCILED
 
@@ -14,7 +14,7 @@ jigc 1.0.0-rc.18
 
 **Inputs.** The Opus driver's `(door, cell)` table (`driver/axis3.md`, 75 rows over 15 doors, its §3 repro
 blocks R-1 … R-16 and its §4–§9 bounds) and the Codex source pass (`codex/axis3-codex.md`, reviewed at
-`b3fad4b3`, no writes/builds/driving, prompt at
+`1cef812d`, no writes/builds/driving, prompt at
 `completions/artifacts/M53/per-axis-review-rc18/instrument/axis3-prompt.md`).
 
 **The rule applied** (acceptance-design.md → *The reconciliation rule*): a claim by one that the other
@@ -180,7 +180,7 @@ refuted.
 | **C-7** | **Post-review operation-bearing-worktree HIGH CLOSED**: `probe_leftover` admits clearance only when status entries **and** operation are both empty; `held_operation` delegates to `adjudicated_breach`; provision/discard/uninstall share the classifier | **CONFIRMED** | §3 **X-7**. A **spotless** worktree (`git status --porcelain` → 0 lines) carrying a live bisect: `milestone discard` → exit 1 `milestone.dirty-worktree`, `uninstall` → exit 1 `uninstall.dirty-worktree`, both naming the operation and its abandon command; worktree dir, admin record and `BISECT_LOG` all present after. Zero-false-fire control (clean **and** concluded) → exit 0, `workbench removed`. Provision's arm is the driver's R-2, re-read not re-driven. |
 | **C-8** | **M51 rows CLOSED**: C-1 (six-door registry) · D-1 (milestone ownership from live base-pinned areas) · D-2 (teardown tracks actual removal success) · D-3 (destroying-door paths render relative to `jigc_home`) · D-4 (unreadable/non-directory leftovers are distinct fail-closed shapes) | **CONFIRMED where driven; C-1/D-1/D-2 carried from the driver** | D-3 driven by me: `command grep -cE '/var/folders|/private/var'` over stdout+stderr → **0** at X-6 (and the driver's rows 47/57/60). D-4's shape leg is the driver's row 5 (`Permission denied (os error 13)`), re-read not re-driven. C-1, D-1, D-2 are the driver's rows 39/43 and 21; I did not re-drive them and neither instrument contradicts the other. |
 | **C-9** | *"I inspected **every** production `remove_dir_all` / `remove_file` / `remove_dir` … I found **no unguarded** production removal of adopter bytes"* | **OPEN LEAD — not drivable as stated** | A completeness claim over a source enumeration has no argv. Nothing I drove produced a counter-instance (the nearest, X-2, removes jigc's **own** install artefacts, not adopter bytes). Recorded open rather than promoted on the source read, per the rule. |
-| **C-10** | *"No schema, schema-manifest, or schema-hash movement appears in the post-M53 source range. The zero-schema-hash boundary holds."* | **CONFIRMED (verified against the repository, not the binary)** | `git diff 986d5e0a..HEAD --stat` over `crates/cli/pack/config/schema-manifest.yaml`, `packs/methodology/config/schema-manifest.yaml`, `crates/cli/pack/schemas`, `packs/methodology/schemas` → **empty**; `git diff --name-only 986d5e0a..HEAD | grep -E 'schema-manifest|/schemas/'` → **0**. The six `schema-hash` occurrences in the range are prose (`CLAUDE.md` ×3, the two axis prompts, `decisions-pending.md`). |
+| **C-10** | *"No schema, schema-manifest, or schema-hash movement appears in the post-M53 source range. The zero-schema-hash boundary holds."* | **CONFIRMED (verified against the repository, not the binary)** | `git diff 3c71da87..HEAD --stat` over `crates/cli/pack/config/schema-manifest.yaml`, `packs/methodology/config/schema-manifest.yaml`, `crates/cli/pack/schemas`, `packs/methodology/schemas` → **empty**; `git diff --name-only 3c71da87..HEAD | grep -E 'schema-manifest|/schemas/'` → **0**. The six `schema-hash` occurrences in the range are prose (`CLAUDE.md` ×3, the two axis prompts, `decisions-pending.md`). |
 
 ### 2.2 · Driver defects — each re-driven by me
 
@@ -540,5 +540,5 @@ spelling. **Fifteen** leaves; the six `DESTROYING_DOORS` members starred.
    exit 3). One drive narrowed a driver cell rather than reproducing it exactly (row 17). Exit codes were
    read bare in every verdict; `command grep` with a before-control carries every loss/survival claim,
    because this harness's `grep` honours `.gitignore` and the whole axis lives under a gitignored `.jigc/`.
-8. **Scope.** This reconciles **axis 3 only**, on `1.0.0-rc.18` at repo HEAD `fbd8b190`. No fix was applied,
+8. **Scope.** This reconciles **axis 3 only**, on `1.0.0-rc.18` at repo HEAD `271b0cb7`. No fix was applied,
    no commit made, nothing written into the working repository.

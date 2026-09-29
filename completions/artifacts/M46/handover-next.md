@@ -7,7 +7,7 @@ is live. Nothing below needs reconstructing from a transcript.
 
 | | |
 |---|---|
-| HEAD | `a4d8829`+, pushed, tree clean |
+| HEAD | `8545e56`+, pushed, tree clean |
 | Binary | **`1.0.0-rc.12`** at `~/.local/bin/jigc`, built **after** the audit fixes |
 | Gate | **2847 passed / 0 failed**, clippy + fmt clean, measured at HEAD (not inherited) |
 | M46 | **complete and audited** — [VERDICT](VERDICT.md) · [DECISIONS.md](../../../DECISIONS.md) → 2026-08-20 M46 complete |

@@ -1,4 +1,4 @@
-<!-- M51 · the envelope key census the Settle's D5 owes. Driven 2026-09-11 against the release binary `1.0.0-rc.14` at HEAD `bd348a83`; no cargo run, no repo file edited outside this one. Every cell traces to a driven output or a `file:line`. -->
+<!-- M51 · the envelope key census the Settle's D5 owes. Driven 2026-09-11 against the release binary `1.0.0-rc.14` at HEAD `74627547`; no cargo run, no repo file edited outside this one. Every cell traces to a driven output or a `file:line`. -->
 
 # M51 — the envelope key census
 
@@ -6,7 +6,7 @@
 
 ## Provenance
 
-- **Binary:** `target/release/jigc`, `jigc 1.0.0-rc.14`, repo HEAD `bd348a83`, worktree clean. No `cargo` invoked.
+- **Binary:** `target/release/jigc`, `jigc 1.0.0-rc.14`, repo HEAD `74627547`, worktree clean. No `cargo` invoked.
 - **Axis:** `cli::cli::VERB_KINDS` (`crates/cli/src/cli.rs:1412-1465`) — **47** leaf verbs (13 top-level · 11 `doc` · 6 `task` · 8 `config` · 9 `milestone`), fenced total against the clap tree by `cli_parse::every_leaf_verb_is_classified`.
 - **Corpora:** `dev/jigc-rig bare` and `dev/jigc-rig fresh`, plus two derived bases (`adr` — one committed ADR through a finalized `single-task`; `spec` — one committed spec with a populated repeatable) built by driving the binary. Every arm ran in its own `cp -a` copy.
 - **Driving scripts:** `$SCRATCH/key-census/{lib,a-top,a-top2,a-doc,a-task,a-cfg,a-ms,a-rest,a-last}.sh`; raw envelopes in `$SCRATCH/key-census/raw/`; the consolidated run log in `all-arms.txt` (**122 driven invocations**). The 48-row predecessor sweep — [baseline-envelopes.md](baseline-envelopes.md) §1, `$SCRATCH/baseline3/sweep.sh` — was reused for its three bases and re-driven for every row it covered; **every one of its 48 rows reproduced byte-identically**.

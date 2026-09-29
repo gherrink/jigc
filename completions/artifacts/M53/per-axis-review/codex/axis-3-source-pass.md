@@ -1,6 +1,6 @@
 # M53 axis 3 source pass — destroying doors
 
-Source reviewed at `10e3286c81fa39d4f5464820a2c7591483cfa8e2`, the fixed rc.17 source after all seven audit fixes. The worktree contains unrelated documentation/golden changes, but no modified production Rust source.
+Source reviewed at `84db75517669bbfe3f499e5268fd2e0674e04d88`, the fixed rc.17 source after all seven audit fixes. The worktree contains unrelated documentation/golden changes, but no modified production Rust source.
 
 ## Claims
 
@@ -66,4 +66,4 @@ All remaining `remove_dir_all`/`remove_file` matches are test fixture destructor
 
 I read the requested M51/M52 ledgers and prior source pass, M53 settle §14 and verdict, all named axis files, all consumers of the new membership/displacement symbols, and every Rust filesystem-removal match. I performed no binary driving, permission experiment, write, or directory creation.
 
-The diff from M52’s `a3eb026b` through fixed rc.17 contains **no schema manifest, schema file, or schema JSON movement**. The zero-schema-hash boundary holds.
+The diff from M52’s `e519e4eb` through fixed rc.17 contains **no schema manifest, schema file, or schema JSON movement**. The zero-schema-hash boundary holds.

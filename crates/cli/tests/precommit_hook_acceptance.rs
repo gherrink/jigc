@@ -622,7 +622,7 @@ fn commit_blocks_on_this_commit_oob_rename() {
 /// **(g2) The same block, from a repository whose path contains a space** (M53
 /// post-review-fix review, MEDIUM 3).
 ///
-/// `34584687` inserted `-C <home>` into the `reconciliation.rename` route the hook parses,
+/// `65de53f5` inserted `-C <home>` into the `reconciliation.rename` route the hook parses,
 /// and `git_at` renders the home through `shell_operand` — so a spaced checkout emits
 /// `git -C '/a repo' mv <new> <old>`, which is **two** awk fields for the home. The shipped
 /// `NF >= 6 && $4 == "mv"` stopped matching, the guard disappeared with no message, and it
@@ -690,7 +690,7 @@ fn commit_blocks_on_this_commit_oob_rename_under_a_repository_path_with_a_space(
 /// **(g3) The same block, over a managed doc whose own store key carries a space** (the
 /// confirmation pass, MEDIUM 1).
 ///
-/// (g2) closed the **home** axis — the `-C <home>` operand the route gained at `34584687`.
+/// (g2) closed the **home** axis — the `-C <home>` operand the route gained at `65de53f5`.
 /// The two *move operands* are rendered through `shell_token` too, and the bound shipped
 /// beside (g2) called that cell *"a managed doc whose own path contains a space"*, which
 /// reads as something an operator would have to contrive: `jigc ingest` refuses such a file
@@ -1011,7 +1011,7 @@ fn seed_placement_singleton(repo: &Path) {
 /// **(i) M53 — the hook says nothing about a rename on a commit that contains none**
 /// (the rc.19 review's `(2, N-1)`, a finding inside the cwd arc's own new code).
 ///
-/// The arc (`34584687`) made every operator-facing git span `git -C <absolute> …`, and the
+/// The arc (`65de53f5`) made every operator-facing git span `git -C <absolute> …`, and the
 /// hook's extraction grep is `git -C `. So a report carrying any aimed span at all — here
 /// `schema-conformance.home-vacated`'s `git -C <abs> checkout -- CHANGELOG.md` — filled
 /// `$moves`, and the warn branch, which keyed on nothing but that non-emptiness, announced

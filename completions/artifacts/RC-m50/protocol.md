@@ -1,7 +1,7 @@
 # The pre-v1 trial — pre-registered protocol
 
-**Binary under test: `1.0.0-rc.13`, built from `979baca`** (HEAD, four commits past the gate fix
-`1799a2d` — *not* the host-installed rc.13, which predates it; [pre-trial-findings.md](pre-trial-findings.md)
+**Binary under test: `1.0.0-rc.13`, built from `f266770`** (HEAD, four commits past the gate fix
+`d854e25` — *not* the host-installed rc.13, which predates it; [pre-trial-findings.md](pre-trial-findings.md)
 PT-2). Written 2026-09-04, **before any session runs**. Everything needed to execute it is here or
 is named as owed in §10.
 
@@ -15,7 +15,7 @@ whether it is cheap now and expensive after 1.0.0.
 **What makes it different from the trial before it.** [RC-1.0-final](../RC-1.0-final/protocol.md)
 measured `1.0.0-rc.12` and found no blocking finding. Since then M49 shipped **twelve increments**
 (three schema bumps, a new doctype, a new knob, a closed `set:` vocabulary, a project-pack
-composition, and the item-region integrity fix) and `1799a2d` tightened the milestone boundary.
+composition, and the item-region integrity fix) and `d854e25` tightened the milestone boundary.
 The human's two calls shape the instrument: **fresh corpora only**, so the blind sessions measure
 the fixes and not the migration; and **the migration gets its own arm**, so the three bumps are
 measured against an rc.12-authored corpus rather than met blind.
@@ -44,7 +44,7 @@ checked against the binary where a claim could be checked in one command.
 | **0.3** | no `planning-record` doctype | `jigc start --workflow planning` composes the 14-gate skeleton and `task finalize` **blocks** on any unfilled gate (`required-slot-present`, naming it) | M49 Inc 9 D9 | B4-h; walk 19 |
 | **0.4** | `milestone add-task … --workflow <unknown>` minted at exit 0 | blocks **before** the mint — `workflow-refs.unknown-workflow`, enumerating the loaded workflows | M49 Inc 2 | any milestone arc; walk 12 |
 | **0.5** | an rc.12 corpus is current | an rc.12 corpus holding a `completion-record` (1→2) or `milestone-record` (2→3) makes **`jigc validate` exit non-zero** (`schema-conformance.schema-version-current`, routed at `jigc migrate-corpus`) until the migration lands; **`migrate-corpus` first, `setup` second** ([MIGRATING.md](../../../MIGRATING.md)) | M49 Inc 9 | walk 14/21 only — a fresh corpus never meets it |
-| **0.6** | under `finalize.fan-out.squash: false` the milestone boundary landed a sub-task whose commit doc had `type`/`summary` unset — subject `: …`, or `feat:` with no subject | the boundary **blocks** on the sub-task's transient commit doc exactly as `task finalize` does; the route carries `--task <sub-id>` | `1799a2d`, DECISIONS 2026-09-04 | walk 14/21 only — the knob defaults to `true`, which is carved out |
+| **0.6** | under `finalize.fan-out.squash: false` the milestone boundary landed a sub-task whose commit doc had `type`/`summary` unset — subject `: …`, or `feat:` with no subject | the boundary **blocks** on the sub-task's transient commit doc exactly as `task finalize` does; the route carries `--task <sub-id>` | `d854e25`, DECISIONS 2026-09-04 | walk 14/21 only — the knob defaults to `true`, which is carved out |
 | **0.7** | a project schema shadow could drop a section and validate clean | every door **blocks** by name with a route — **except `jigc setup`, which completes at exit 0** over it (declared bound: the bootstrap door cannot refuse circularly) | M49 Inc 3; VERDICT → declared bounds | walk 13 |
 | **0.8** | `describe --commands` listed 16 ids | the **union** per (id, pack), **31** entries, each with a `pack` key; three more workflows carry `suppressed:` | M49 Inc 11 T6 | walk 18 |
 | **0.9** | `jigc task validate ""` — | on the **release** binary: *"validates clean"*, exit 0 (a false green over a task that does not exist); on a **debug** build: panic, exit 101. `task discard ""` acks at exit 0 on both. **Known before the trial**, routed to M50, measured by walk 17 | PT-1 | any worker that passes an empty id |
@@ -98,9 +98,9 @@ finding lands in a row above, or the table is revised **in writing, with a reaso
 operator-scripted walk, one unscored adopter-condition arm.**
 
 **Every session runs filesystem-isolated** — [trial-harness/README.md](../../trial-harness/README.md).
-The image is `jigc-gate:rc13`, built from `979baca`, gated by [gate-rc13.json](gate-rc13.json):
+The image is `jigc-gate:rc13`, built from `f266770`, gated by [gate-rc13.json](gate-rc13.json):
 `verify-image.sh` **7 passed / 0 failed**, `run.py gate` refuses a round the record does not cover.
-The rc.12 side of the migration pair is the existing `jigc-gate:rc12` (`314f59e`), and the pair
+The rc.12 side of the migration pair is the existing `jigc-gate:rc12` (`5ff85ea`), and the pair
 was proven **two distinct trees** on the new `m49` behavioural probe set, **3/3 discriminating**,
 and refuses a same-image pair (§10).
 
@@ -277,7 +277,7 @@ Conventions per that directory's README. **Each arm names the kind of set it ite
 | **11** | the item-region class on **shipped** doctypes: `--unset` of an absent field acks; a repeated field bullet reddens `task validate`; slot prose at the prescribed depth lands; `add-item --slug`, the enum-id refusal, the `--slug <id>-N` route run verbatim | a derivation; the 18-cell cube **declared test-fenced** | Inc 1 + audit 2 |
 | **12** | the doors that lie: `add-task --workflow <unknown>` before the mint; a sub-task `discard` reaching the committed record; `list-tasks` writes nothing on a fresh clone; a before/after `.jigc/` census over every read verb | `VerbKind::Read` (12) | Inc 2 |
 | **13** | the freeze at every layer: a section-dropping project shadow blocks every door by name; a presentation-only shadow loads; **`setup` exit 0 judged under the four-part standard**; a mis-keyed leaf inside `repeatable:` is refused, not erased | two layers, a stated derivation | Inc 3 |
-| **14 → 21** | **the migration pair**: 14 authors on **rc.12** (adrs · research · changelog · a `squash: false` fan-out whose sub-task commit doc lacks `type` — landed at exit 0 · a `completion-record` refusing `HIGH` · the two stamps) into `.upgrade-baseline`; 21 continues on **rc.13** — `validate` non-zero + `schema-version-current` routed at `migrate-corpus`, `store-version.binary-mismatch` naming both; `migrate-corpus` lands **stamp-only** 1→2 and 2→3; `HIGH` exits 0; the boundary now **blocks** on `type`/`summary` with a `--task <sub-id>` route, filled → one conventional commit per sub-task; `setup` after, SKILL.md stamped rc.13 | the three bumps + `1799a2d`'s author-required leaf set, read from `doc schema commit` | Inc 4, 9, `1799a2d` — **§0.5 and §0.6's standard lives here** |
+| **14 → 21** | **the migration pair**: 14 authors on **rc.12** (adrs · research · changelog · a `squash: false` fan-out whose sub-task commit doc lacks `type` — landed at exit 0 · a `completion-record` refusing `HIGH` · the two stamps) into `.upgrade-baseline`; 21 continues on **rc.13** — `validate` non-zero + `schema-version-current` routed at `migrate-corpus`, `store-version.binary-mismatch` naming both; `migrate-corpus` lands **stamp-only** 1→2 and 2→3; `HIGH` exits 0; the boundary now **blocks** on `type`/`summary` with a `--task <sub-id>` route, filled → one conventional commit per sub-task; `setup` after, SKILL.md stamped rc.13 | the three bumps + `d854e25`'s author-required leaf set, read from `doc schema commit` | Inc 4, 9, `d854e25` — **§0.5 and §0.6's standard lives here** |
 | **15** | `placement-root`: a dir re-roots the committed roadmap via `git mv`; root-declared `VISION.md` never re-roots; `""` → `.`; **`.git` refused** (the audit HIGH — `git mv` into `.git/` exits 0 and loses the doc from every clone); a hand-stranded placement doc reported by `validate` | the user-settable doors; the 8 mover sites **declared test-fenced** | Inc 7 + audit 1 |
 | **16** | the pinned contracts: N1 at four item doors (`key.target` verbatim); N2 staged, committed, `null` for `commit`, slices and `doc list` untouched; D1 located text; the gate route carrying `--task` with two open tasks, run verbatim | `DOCTYPE_DOORS` address rows, fenced by flow50 | Inc 8 |
 | **17** | **the empty-id axis** — every id-taking door with `""` and with `no-such-task`, on the **release** binary. **Expected RED on rc.13** — a measurement for M50, not a regression check | hand-enumerated from `--help`, said to be one | PT-1 |
@@ -294,7 +294,7 @@ recorded whichever way it falls.
 
 ### 5.1 · `verify-pair.sh`, the `m49` set — done
 
-Extended 2026-09-04 with `PAIR_PROBES=m49` (now the default, `EXPECT_OLD_SHA=314f59e…`), three
+Extended 2026-09-04 with `PAIR_PROBES=m49` (now the default, `EXPECT_OLD_SHA=5ff85ea…`), three
 behavioural probes each stating both sides — an unknown `--workflow` at `add-task` (exit 0 →
 non-zero) · the top-level `schema-version` key on `doc show` (absent → present) · the `pack` key on
 `describe --commands` (absent → present) — plus the two items decisions-pending had time-boxed
@@ -307,7 +307,7 @@ pair is refused (exit 1)**; the `m46` and `m48` sets are kept.
 
 ## 6 · Coverage — every changed surface in exactly one column
 
-M47's rule over the M49 + `1799a2d` diff, in [coverage.md](coverage.md) after the sessions:
+M47's rule over the M49 + `d854e25` diff, in [coverage.md](coverage.md) after the sessions:
 **trial-reached** · **test-fenced (naming the suite)** · **neither** (each explained). Derived from
 the registries (`VERB_KINDS`, `DOCTYPE_DOORS`, `MINT_DOORS`, `SetKind::ALL`, `DESTROYING_DOORS`)
 and flow50's declared proof split — never from a changed-file list.
@@ -391,7 +391,7 @@ preference, never unprompted tool preference.
 | item | how it was verified |
 |---|---|
 | the handover | every row driven or read; two corrected on the record ([handover.md](handover.md) → Verified; [pre-trial-findings.md](pre-trial-findings.md)) |
-| the rc.13 image | built from `979baca`; `verify-image.sh` **7 passed / 0 failed**; [gate-rc13.json](gate-rc13.json) written and `run.py gate` accepts it |
+| the rc.13 image | built from `f266770`; `verify-image.sh` **7 passed / 0 failed**; [gate-rc13.json](gate-rc13.json) written and `run.py gate` accepts it |
 | `verify-pair.sh` | `m49` set: **3/3 discriminate** rc12 → rc13; a same-image pair refused at exit 1 |
 | the corpora | nine instantiated with `--clean-prose`, each **gated 11/11** before anything else touched it |
 | B1's plants | `b1-hook.sh` + `b1-staged.sh` on `larkspur`: 8 commits, `core.hooksPath=.githooks`, marker absent, `A scripts/retention-sweep.sh` · `M src/router.ts` staged |

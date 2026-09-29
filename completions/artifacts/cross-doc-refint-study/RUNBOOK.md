@@ -6,7 +6,7 @@ directory; it is copied into `~/lh-study/` to run (twin workspace is throwaway).
 
 ## State at handoff (all green, no API spent)
 
-- **Step 1** — store-wide `ref-resolves` (4th store-sweep family), engine commit `55b7a1c`;
+- **Step 1** — store-wide `ref-resolves` (4th store-sweep family), engine commit `e01614e`;
   fires in the installed binary.
 - **Oracle** `harness/measure-refint.py` — selftest OK; path-a/path-b **agree** on the live seed.
 - **Hook** `harness/blocking-pre-commit-refint` — verified in-container: blocks on a dangle,

@@ -1,4 +1,4 @@
-<!-- M52 per-axis review (re-run) — axis 3 · posture — RECONCILED · driven on the installed `jigc 1.0.0-rc.16` (built from commit a3eb026b), 2026-09-21. -->
+<!-- M52 per-axis review (re-run) — axis 3 · posture — RECONCILED · driven on the installed `jigc 1.0.0-rc.16` (built from commit e519e4eb), 2026-09-21. -->
 
 <!-- RECONCILED FILE — M52 per-axis review (re-run), axis 3 · destroying doors.
      Sections 1–7 below are the Opus driver's table, verbatim, with exactly seven verdict
@@ -19,9 +19,9 @@ jigc 1.0.0-rc.16
 ```
 
 **Release** posture (the debug binary's route-fence panics do not exist here), and the binary built
-**after** M52's seven completion-audit fixes — `79e54c75` (home-vacated history leg) · `6d95756c`
-(the store sweep's prior-home subject) · `fe8f29c4` (the survivable frame's state clause) ·
-`c96137e4` (`ENVELOPE_OWED_CODES`) · `b9ab6a70` (`RelocateRefusal::ALL`) · `1b036264` (the vacated
+**after** M52's seven completion-audit fixes — `ad527fa4` (home-vacated history leg) · `6c2de03a`
+(the store sweep's prior-home subject) · `33bd5692` (the survivable frame's state clause) ·
+`68d14cd3` (`ENVELOPE_OWED_CODES`) · `a83a9e60` (`RelocateRefusal::ALL`) · `66af090a` (the vacated
 home's route) ([VERDICT](../../../../completions/artifacts/M52/VERDICT.md)). Every row below ran on
 that binary.
 
@@ -48,7 +48,7 @@ defect, the defect was **found by driving** and the citation is the contract it 
 
 ## 1 · The door set and the cell set, derived from the code
 
-**Read verbatim at HEAD `a3eb026b`, with the count each declaration carries** (counted by a
+**Read verbatim at HEAD `e519e4eb`, with the count each declaration carries** (counted by a
 balanced-bracket top-level-item parse of each declaration, comments stripped):
 
 | registry | file:symbol | count read | members |
@@ -951,7 +951,7 @@ jigc 1.0.0-rc.16
 
 Source pass reconciled against:
 `scratchpad/axis-review/codex/axis3-codex.md` (its prompt beside it as `axis3-prompt.md`),
-written against `a3eb026b` — the same HEAD the driver read. Rigs built exactly as the driver
+written against `e519e4eb` — the same HEAD the driver read. Rigs built exactly as the driver
 built them (`rig=$(dev/jigc-rig fresh --binary /Users/maurice/.local/bin/jigc) || exit;
 eval "$rig"`, two-step, then `milestone create` + `add-task` through the binary), every probe a
 single self-contained block for the cwd/`HOME` reason §3 records.
@@ -1061,7 +1061,7 @@ statements**. Entered as CX-1 … CX-13 in the order they appear in the pass.
 | **CX-10** | Writer rollback uses the same registry and **non-recursive** deletion, leaving a non-empty area intact — closing the hook-created-file bypass adjacent to this axis | **CONFIRMED** (driven; the pass proposed no repro for it) |
 | **CX-11** | Census aggregate: "I found **no unguarded production removal of adopter bytes** outside an ownership, transaction, cache, temporary-file, refusal, narration, or displacement seam" — with `cli/task.rs:5981` guarded as "foreign complement displaced first" and `cli/milestone.rs:5538` as "foreign complement already refused or displaced" | **REFUTED** (same two drives as CX-1, plus the source coordinate the census mis-reads) |
 | **CX-12** | `schema-conformance.home-vacated` is the **seventh** `STORE_EXIT_FLIPS` member; `ENVELOPE_OWED_CODES` is enforced centrally at `render.rs` | **CONFIRMED as consistent** — not an axis-3 behaviour claim; the axis-3 half of it (the destroying doors' codes are **not** `ENVELOPE_OWED_CODES` members, hence flatten) is driven at RD-29 |
-| **CX-13** | The diff `35195f56..HEAD` shows **no schema-manifest or schema-file changes** — M52's zero-schema-hash-movement boundary is not violated | **CONFIRMED** (datum, not a drive) |
+| **CX-13** | The diff `577a0099..HEAD` shows **no schema-manifest or schema-file changes** — M52's zero-schema-hash-movement boundary is not violated | **CONFIRMED** (datum, not a drive) |
 
 #### CX-1 · REFUTED — the falsifying data
 
@@ -1235,9 +1235,9 @@ after:  ls -a .jigc/tasks/third-sub -> . .. hookfile.txt        # jigc's own min
          names the survivor with a code and a route)
 
 CX-13 (a datum, not a drive):
-  git diff --stat 35195f56..HEAD -- '*schema-manifest.yaml' 'crates/cli/pack/schemas/**' \
+  git diff --stat 577a0099..HEAD -- '*schema-manifest.yaml' 'crates/cli/pack/schemas/**' \
       'packs/methodology/schemas/**'        -> (empty)
-  git diff 35195f56..HEAD -- '*schema-manifest.yaml' | grep -c '^[+-]'  -> 0
+  git diff 577a0099..HEAD -- '*schema-manifest.yaml' | grep -c '^[+-]'  -> 0
 ```
 
 ### 8.3 · Driver defects — status after reconciliation

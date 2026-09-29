@@ -1,8 +1,8 @@
-<!-- M51 baseline · companion 1 of 4 — caller-supplied tokens that become filesystem paths or git arguments. Driven 2026-09-10 by one Opus capability-auditor against the release binary `1.0.0-rc.14` at HEAD `bd348a83`; no cargo run, no repo file edited. Verbatim as returned; consolidated in [baseline-ledger.md](baseline-ledger.md). -->
+<!-- M51 baseline · companion 1 of 4 — caller-supplied tokens that become filesystem paths or git arguments. Driven 2026-09-10 by one Opus capability-auditor against the release binary `1.0.0-rc.14` at HEAD `74627547`; no cargo run, no repo file edited. Verbatim as returned; consolidated in [baseline-ledger.md](baseline-ledger.md). -->
 
 # M51 baseline — area: caller-supplied tokens that become filesystem paths or git arguments
 
-Verified at **HEAD `bd348a83`**, release binary `/Users/maurice/projects/gherrink-jigc/target/release/jigc` (1.0.0-rc.14).
+Verified at **HEAD `74627547`**, release binary `/Users/maurice/projects/gherrink-jigc/target/release/jigc` (1.0.0-rc.14).
 **A map, not gospel** — verified at this sha, nothing settled. No repo file edited, no cargo run.
 Corpora from `dev/jigc-rig <state> --binary …` (two-step eval; roots under the session scratchpad).
 

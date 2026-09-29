@@ -2,7 +2,7 @@
 //! code and a route.**
 //!
 //! The class: *what jigc says when a resource no composed pack ships is read*. At the
-//! increment's baseline (`bc595f1`) one literal answered at four sites —
+//! increment's baseline (`ceb44f2`) one literal answered at four sites —
 //! `crates/cli/src/start.rs`'s shared `read_pack` (serving `jigc start`/`describe`/
 //! `validate`/`upgrade`/`ingest`/`doc list`), `config.rs`'s two hand-copied reads (`jigc
 //! config get`/`list` and `jigc config set`) and `doc.rs`'s task-bound workflow read —

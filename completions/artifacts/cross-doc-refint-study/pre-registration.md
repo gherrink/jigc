@@ -22,7 +22,7 @@ A win here is a **capability gap**, not a regime-bound advantage — decisive fo
 gate in a way the doc↔code win was not.
 
 **Dependency (built, committed).** This study rests on the **store-wide `ref-resolves`**
-increment (the 4th store-sweep family), `crates/engine` commit `55b7a1c` on branch
+increment (the 4th store-sweep family), `crates/engine` commit `e01614e` on branch
 `study/long-horizon-many-edit`. Before that commit, `schema-conformance.ref-resolves`
 fired *only* at `jigc task finalize`, scoped to task-touched edges — so a dangling
 `supersedes`/`cites` already committed in the store was invisible to `jigc validate`,
@@ -107,7 +107,7 @@ genuinely salience-independent enforcement point is a git `pre-commit` hook firi
   configured to **block** — a one-line config delta from the shipped warn-only default
   (which `exit 0`s). jigc's shipped hook stays warn-only and `doc-code`-keyed; **no jigc
   source is modified** for this study (the store-wide sweep it relies on is already
-  committed in `55b7a1c`). The OUT-OF-SCOPE "don't re-open the floor design" boundary holds.
+  committed in `e01614e`). The OUT-OF-SCOPE "don't re-open the floor design" boundary holds.
 - **The honest bound:** `git commit --no-verify` and hook-skipping commit paths bypass any
   pre-commit hook. **Both are measured and reported** (§9); a bypass is a *routing/
   ergonomics* result, never counted as a mechanism win.
@@ -243,7 +243,7 @@ fair — it is the oracle, not enforcement):
   (a) the extended `measure.py` **edge-walker** (parse each doc's `supersedes`/`cites`
   values, check each `<type>:<slug>` target file exists in the store), and (b)
   `jigc validate --format json` on a managed copy, counting `schema-conformance.ref-resolves`
-  findings (the arm-A oracle, now reporting store-wide after `55b7a1c`).
+  findings (the arm-A oracle, now reporting store-wide after `e01614e`).
 - **Cumulative dangling-ref curve:** count of live dangling cross-doc edges after edit *k*,
   *k*=1..N — **the headline**. Predicted: static curves rise (steeper at higher dilution),
   arm A stays ~0.

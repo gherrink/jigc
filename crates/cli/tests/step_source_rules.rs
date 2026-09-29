@@ -7,7 +7,7 @@
 //! `jigc config insert-step` / `replace-step` took their `<file>` argument as an opaque
 //! token: `std::fs::read(file)`, `file_stem()`, and the bytes landed verbatim at
 //! `.jigc/config/steps/<stem>.yaml` — an in-repo, committable file that **composes into the
-//! step text `jigc start` hands the agent**. Driven at `dddc11a5`, all three of these exited
+//! step text `jigc start` hands the agent**. Driven at `210779b6`, all three of these exited
 //! **0**:
 //!
 //! ```text

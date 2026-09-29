@@ -2,7 +2,7 @@
 //! (B1; `design/doc-read-surface.md` → the four read surfaces;
 //! `design/surface-contract.md` → law 2, nothing hides).
 //!
-//! Measured across both shipped packs at `f0cda4b`: `jigc doc show` named **35×**,
+//! Measured across both shipped packs at `82d424c`: `jigc doc show` named **35×**,
 //! `jigc doc schema` **0×**, `jigc doc list` **0×**. The producer of that asymmetry
 //! is named and is jigc's own: M48's read-back fence
 //! (`cli::pack` → `assert_staged_read_back_stated`) routes at *"name the staged

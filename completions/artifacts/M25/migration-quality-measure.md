@@ -15,7 +15,7 @@ doctypes `adr`/`spec`/`prd`, **one file at a time** (NOT a sweep — [auto-migra
 | | |
 |---|---|
 | `jigc` sha256 | `aa61ac5ba865581353124fac3bfd8535940e88b1c3a5bedc5fb2a0a1639f5fe4` |
-| HEAD commit | `e224aaf` (Inc-7 T1, the flow-27 marquee; clean tree) |
+| HEAD commit | `c5fef70` (Inc-7 T1, the flow-27 marquee; clean tree) |
 | Built | `cargo build --release` |
 | Pinned to | `~/.local/bin/jigc` **and** `~/.cargo/bin/jigc` (the roadmap "before any exercise" re-pin; `which jigc` → `~/.local/bin/jigc`; all three sha256 identical) |
 | Invocation | `jigc` from `PATH`, with the **embedded** dev pack (no `JIGC_PACK_DIR`) |

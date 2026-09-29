@@ -1,7 +1,7 @@
 //! M49 Increment 11, T8 — **the permitted stdin form gets named against
 //! `--from-file -`** (S-1; `design/surface-contract.md` → law 2, nothing hides).
 //!
-//! Measured across both shipped packs at `f0cda4b`: `--from-file -` appears **42×** in
+//! Measured across both shipped packs at `82d424c`: `--from-file -` appears **42×** in
 //! authored pack text while `heredoc`, `<<EOF` and `<<'EOF'` appear **0×** there. A
 //! blind worker under the default permission set reached for
 //! `cat payload | jigc doc author … --from-file -` and for three write-a-scratch-file

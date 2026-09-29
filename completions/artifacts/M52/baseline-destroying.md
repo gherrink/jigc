@@ -2,7 +2,7 @@
 
 **Provenance.** Binary `/Users/maurice/.local/bin/jigc` → `jigc 1.0.0-rc.15`, sha256
 `126f1584f183636bb6cd9e782b1dc26aca28dd1afaf2fb83da1fd0e5febc8fa9` (asserted, verbatim, before the first
-drive). Repo HEAD `85ad06c571945157d5b6df166659b74ce5f0cc86`, tree clean. Date 2026-09-16/17.
+drive). Repo HEAD `7637a46f1908af7cffd83cc2e5e96dc2365744a0`, tree clean. Date 2026-09-16/17.
 **No cargo was run.** Every fixture from `dev/jigc-rig` (`fresh`, `committed-singletons`, `refs-post-hoc`),
 two-step eval, `cd "$REPO"` before every drive; nothing was written into the working repository.
 Rig scripts live at `<scratch>/dest/{mkrig.sh,mkfanout.sh,mkleftover.sh,plant.sh}`.

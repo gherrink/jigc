@@ -1,7 +1,7 @@
 # M48 — the verified capability ledger (baseline for Detect gaps)
 
 Consolidated from five `capability-auditor` fan-outs that **exercised the real binary**
-(`jigc 1.0.0-rc.10`) in throwaway repos at HEAD `8979f16`. **Verified-at-this-sha map, not gospel** —
+(`jigc 1.0.0-rc.10`) in throwaway repos at HEAD `1d4f9bc`. **Verified-at-this-sha map, not gospel** —
 the gap pass still spikes the specific new shape M48 needs.
 
 Charter under audit: `implementation/decisions-pending.md` → *The rc.11 wave (M48)*.

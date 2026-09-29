@@ -115,7 +115,7 @@ pub const SOURCE_FILE: &str = "source";
 /// the milestone area at both boundary arms — and its removal is best-effort
 /// (`let _ = std::fs::remove_file(…)`). One in-transaction fault defeats it: a `pre-commit`
 /// hook that `chmod 0555`s the area (M53 Increment 2's own racer) makes the removal *and* the
-/// teardown fail, and the transient then sits in the complement. Driven at `45427083`, that
+/// teardown fail, and the transient then sits in the complement. Driven at `f664863a`, that
 /// made `jigc task finalize` land at exit 0 printing a `finalize.foreign-bytes` advisory that
 /// named jigc's own transient as *a path jigc did not write*, and made every later
 /// `jigc task discard` / `jigc uninstall` refuse at **exit 1** over it, demanding `--force`.
@@ -390,7 +390,7 @@ pub(crate) fn area_repo_path(jigc_root: &Path, area: &Path) -> String {
 /// `plan_owner_artifacts`) have always required it before treating a staged file as an
 /// instance. This asked `strip_suffix(".md")` alone, so *every* `.md` under `docs/` was
 /// jigc's — and this rule is the **destroying** doors' subject, not only a read probe's:
-/// driven at `1d0bd171`, a `pre-commit` hook that wrote `docs/agent-notes.md` into the area
+/// driven at `6f4a975a`, a `pre-commit` hook that wrote `docs/agent-notes.md` into the area
 /// a `jigc milestone add-task` had just minted had that file removed by [`unwind_docs`] at
 /// exit 1, out of a gitignored tree with no second copy, while the identical bytes at the
 /// area *root* survived and were named — one run, two answers, because the root's membership
@@ -580,7 +580,7 @@ impl std::error::Error for AreaUnwindError {
 /// record it must unwind the mint, or the identical re-run blocks on the id it already minted
 /// forever (M47 Inc 2). Until M52 that unwind took the **directory**, and the interval it runs
 /// in is exactly the interval that contains the door's rejecting hook — arbitrary code, with
-/// the workbench in front of it. Driven at `032dbd93`: a `pre-commit` hook that wrote a file
+/// the workbench in front of it. Driven at `8f0fb833`: a `pre-commit` hook that wrote a file
 /// into `.jigc/tasks/<id>/docs/` and exited 1 had that file destroyed at exit 1, named by
 /// nothing, and `.jigc/` is gitignored whole, so it had no second copy.
 ///
@@ -1739,7 +1739,7 @@ fn unslugable_title_finding(work_unit: &str, also: Option<&str>) -> Finding {
 /// **One predicate, not four**, because the condition is one condition: the caller's title
 /// carries nothing [`crate::slug::slugify`] keeps, so [`mint_id`]'s empty→type-name
 /// fallback would hand the work unit a `task` / `milestone` id nobody typed. Driven at
-/// `92ed1957~`, `jigc milestone create "日本語"` minted `milestone:milestone` and committed
+/// `a53bc0a1~`, `jigc milestone create "日本語"` minted `milestone:milestone` and committed
 /// a record for it at exit 0; the sibling door committed `task:task`. Each door asks this
 /// here and raises `unslugable_title_finding`'s single sentence for it, so the class
 /// cannot acquire a second wording the way the pre-D5 `jigc start` bail did. That producer
@@ -2824,7 +2824,7 @@ mod tests {
     /// mint answers*) — **the mint names the leftover instead of claiming a live work
     /// unit.**
     ///
-    /// Driven at `bde8a643`: a bare `mkdir .jigc/tasks/stray-alpha` made the next
+    /// Driven at `9ad95fd5`: a bare `mkdir .jigc/tasks/stray-alpha` made the next
     /// same-slug mint answer *"task `stray-alpha` is already active"* — a law-1 lie about a
     /// directory that is no task at any door, routed at `jigc start --task` and
     /// `jigc task discard --force`, **both of which T3 made answer `finalize.no-task`**. So

@@ -4,7 +4,7 @@
 //!
 //! Three surfaces, three defects, one shape: a door said something the binary does not do.
 //!
-//! - **D-1 — a route that names a verb the state refuses.** Driven at `a8489bab`: over a
+//! - **D-1 — a route that names a verb the state refuses.** Driven at `f8d5957a`: over a
 //!   *milestone sub-task* both staged-prose refusals routed at ``jigc task finalize <sub>``,
 //!   and that command answers `finalize.milestone-sub-task` at exit **3** — *"the parent
 //!   milestone's finalize is the only commit boundary"*. The baseline measured the class
@@ -25,7 +25,7 @@
 //! **D-3 is not here, and the reason is a measured fact rather than an omission.** Its
 //! producer (`cli::task::staged_task_prose`'s `docs/` fault) is fixed in this same task and
 //! fenced in `crates/cli/tests/repo_relative_paths.rs` — by disposition and by the standing
-//! source fence, not by a drive — because at `a8489bab` **no door can reach it any more**:
+//! source fence, not by a drive — because at `f8d5957a` **no door can reach it any more**:
 //! T5's foreign-byte guard is asked *first* at all three doors and probes a **superset** of
 //! the same bytes. `staged_doc_ids` errors only where `std::fs::metadata` fails on an entry
 //! whose name parses as a staged doc id, and every such entry (a dangling symlink, a symlink

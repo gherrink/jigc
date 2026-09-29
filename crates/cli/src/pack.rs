@@ -824,7 +824,7 @@ fn assert_door_parses(
 /// stays on `introspection.md`'s skip-on-absent. That opt-in is right for a *statement* and
 /// wrong for a *door*: the failure mode here is not an absent narration but an emitted
 /// command line that cannot run — in a debug build, a panic at exit 101 before any verb
-/// dispatches. Driven at `c6b45da0`, a manifest-less **listed** pack whose workflow declared
+/// dispatches. Driven at `dbb35b8c`, a manifest-less **listed** pack whose workflow declared
 /// `door: jigc migraaate <path> --as adr` panicked `jigc start --workflow <that workflow>`
 /// exactly as the project-layer shadow did. So the subject of *this* half is the
 /// composition, and a constituent cannot opt out of it by shipping no manifest.
@@ -865,7 +865,7 @@ fn assert_workflow_doors(pack: &dyn PackSource) -> anyhow::Result<()> {
 /// construction (`crate::start::project_workflow_ids` feeds `OverrideLayer::shadow_file`, and
 /// project is the highest layer), so the enumeration is exact rather than conservative.
 ///
-/// Driven at `c6b45da0`: a project shadow of `single-task` declaring
+/// Driven at `dbb35b8c`: a project shadow of `single-task` declaring
 /// `door: jigc migraaate <path> --as adr` panicked the debug binary at exit **101** and, in
 /// release, emitted a route an agent cannot run — the parse half had never looked at this
 /// layer, because its only subject was `origin_packs(Config, schema-manifest)`.

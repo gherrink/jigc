@@ -13,7 +13,7 @@ jigc command mechanic (`{{ cli.* }}` placeholders, `jigc` invocations, the CLI w
   attributes to *jigc*, an A-beats-B-but-not-C result attributes to *written-down methodology*.
 
 Source: the `dev-task` workflow's steps (`packs/methodology/steps/{scope,implement,gate,finalize}.yaml`),
-flattened to static instructions. Frozen at jigc `main @ afeeb67`.
+flattened to static instructions. Frozen at jigc `main @ 743242d`.
 
 ---
 

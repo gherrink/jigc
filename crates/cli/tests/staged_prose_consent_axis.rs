@@ -3,7 +3,7 @@
 //! lifecycle · `jigc task discard <sub-id>`; `design/project-setup.md` → the two states
 //! `uninstall` refuses).
 //!
-//! Driven at `39cd84d`, both halves on one state: `jigc uninstall` exited **1** with
+//! Driven at `954ce0f`, both halves on one state: `jigc uninstall` exited **1** with
 //! `blocking · uninstall.staged-prose` over an open task's staged docs and removed nothing,
 //! while `jigc task discard <that same id>` exited **0** and removed those very bytes —
 //! two doors answering opposite ways about the identical files, with the refusing one's own
@@ -756,7 +756,7 @@ fn the_forced_abandons_loss_narration_rides_stderr_under_format_json() {
 ///
 /// `cli::task::staged_doc_ids` is the one probe every one of these surfaces reads, and it
 /// asked a **name** question — `strip_suffix(".md")` — and no shape question at all. Driven
-/// at `ffb4064c` with `mkdir '.jigc/tasks/<id>/docs/fake:thing.md'`: `jigc task discard`
+/// at `4572ca7c` with `mkdir '.jigc/tasks/<id>/docs/fake:thing.md'`: `jigc task discard`
 /// refused naming *"stages 1 doc(s) … : fake:thing"* and routed at
 /// `jigc doc show fake:thing --task <id>`, which dead-ends at `store.unknown-type`; the
 /// forced discard acked *"dropped staged edits to: fake:thing"*; and `jigc doc list --task`
@@ -856,7 +856,7 @@ fn a_directory_named_like_a_staged_doc_is_an_identity_at_no_surface() {
 //
 // A working area holds two populations: the files jigc wrote (`engine::state`'s registry,
 // T2) and everything else — bytes an agent or a human put there, in **no commit, no index
-// and no git object at all**, since the whole tree is gitignored. Driven at `2e20ffd9`, all
+// and no git object at all**, since the whole tree is gitignored. Driven at `4f311cb1`, all
 // three doors took that second population whole, at exit 0, named by nothing: `jigc task
 // discard` removed a `NOTES.md`, an `analysis/perf.txt` and a `docs/notes.txt`; `jigc
 // milestone discard` did the same across every sub-task area *and* its own milestone area;
@@ -914,7 +914,7 @@ fn assert_intact(area: &Path, what: &str) {
 /// **T5 arm (j)** — the task door refuses over the bytes it did not write, names every one,
 /// and takes nothing.
 ///
-/// Driven at `2e20ffd9`: exit **0**, all three destroyed, named by nothing.
+/// Driven at `4f311cb1`: exit **0**, all three destroyed, named by nothing.
 ///
 /// **The foreign subject is asked BEFORE the staged-prose one** (this fixture stages
 /// `commit:<id>.md`, as every `jigc start` does). Asked second it would be inert on the
@@ -1348,7 +1348,7 @@ fn each_foreign_byte_refusal_logs_the_code_it_printed() {
 /// that makes this an arm defect rather than a preference: a driver cannot discriminate the
 /// family it was handed.
 ///
-/// Driven at `f8baa640`: `task discard` and `milestone discard` each emitted
+/// Driven at `43c00034`: `task discard` and `milestone discard` each emitted
 /// `{"error": "blocking · <code> — …"}` with no `schema_version`, no `findings` and no `key`.
 ///
 /// The target half of the key is **not** asserted: every code in this family is a declared

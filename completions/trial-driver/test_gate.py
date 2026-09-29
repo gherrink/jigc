@@ -26,7 +26,7 @@ from driver.gate import Identity
 TAG = "jigc-gate:rc11"
 
 REAL = Identity(tag=TAG, image_id="sha256:" + "c" * 64,
-                jigc_sha="9a37f0152744f0cba5f9140483e1ca1b1c453c46",
+                jigc_sha="d1ebbc227ba9f4b8310bcb7984c648c3865aa306",
                 jigc_version="jigc 1.0.0-rc.11", cli_version="2.1.233 (Claude Code)")
 
 

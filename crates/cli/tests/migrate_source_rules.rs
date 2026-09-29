@@ -5,7 +5,7 @@
 //! The door took its `<path>` argument as an opaque token: it joined it onto the repository
 //! root, read whatever came back, minted an off-router task and recorded the spelling as the
 //! task's `source-path` — the value `finalize --approve` later **deletes**. Driven at
-//! `abd81df`, every one of these landed at **exit 0**:
+//! `5688e2c`, every one of these landed at **exit 0**:
 //!
 //! ```text
 //! jigc migrate /private/tmp/victim.XXXX/keepme.md --as changelog   # outside the repository
@@ -30,7 +30,7 @@
 //!
 //! **A fourth question, and it is not about location** (§2, the trackedness leg — T2). All
 //! three predicates above ask *where* the source is; none asks whether git has ever recorded
-//! it. Driven end to end at `706f5f3f`: an **untracked** in-repo `HISTORY.md` migrated,
+//! it. Driven end to end at `a16ade49`: an **untracked** in-repo `HISTORY.md` migrated,
 //! authored and `--approve`d landed the canonical doc, deleted the source from the worktree,
 //! and left `git log --all -- HISTORY.md` **empty** — the bytes in no git object, the deletion
 //! named on no surface. That falsified the recorded warrant under which the adapter deny floor
@@ -173,7 +173,7 @@ fn assert_refused_with(
 /// **The centrepiece.** An absolute path to a file outside the repository is refused at the
 /// door, and the planted canary is byte-identical afterwards.
 ///
-/// At `abd81df` this exited 0, recorded the **absolute host path** as the task's
+/// At `5688e2c` this exited 0, recorded the **absolute host path** as the task's
 /// `source-path`, and handed `finalize --approve` a deletion target on somebody else's
 /// filesystem. The canary assertion is the whole point of the arm: the refusal is not merely
 /// a message, it is the reason the bytes are still there.
@@ -204,7 +204,7 @@ fn an_absolute_source_outside_the_repository_is_refused_and_the_canary_survives(
 
 /// `.git/config` is not a migration source. Git refuses to record any path with a `.git`
 /// component, so a migration whose source lives there could only ever end in a deletion no
-/// index has a copy of — and the driven harm at `abd81df` was the file's **contents** reaching
+/// index has a copy of — and the driven harm at `5688e2c` was the file's **contents** reaching
 /// the composed step text.
 #[test]
 fn a_source_inside_gits_own_directory_is_refused_and_the_file_survives() {
@@ -230,7 +230,7 @@ fn a_source_inside_gits_own_directory_is_refused_and_the_file_survives() {
 /// The canary belongs to arm (a). What is specific here is that the pre-fix door did not merely
 /// accept this source: `repo_relative_source_path` folded the `..` lexically and recorded
 /// `outside.md`, a repo-relative spelling naming a file that is not the operator's. A canary at
-/// the real path would have survived at `abd81df` too, so it would prove nothing about this
+/// the real path would have survived at `5688e2c` too, so it would prove nothing about this
 /// cell; the recorded identity is what was wrong, and a refusal that mints nothing is the only
 /// state in which no identity is recorded at all.
 #[test]
@@ -515,7 +515,7 @@ fn a_committed_source_is_unaffected_by_the_trackedness_leg() {
 /// The location legs and the trackedness leg were both defeated by one spelling. `git ls-files
 /// -- <token>` takes a **pathspec**, and `--` prevents option parsing and nothing else — so on
 /// a corpus holding six tracked `.md` files, a token naming the untracked file `*.md` made the
-/// trackedness leg answer about *those six* and report **tracked**. Driven at `8bc6f4e`:
+/// trackedness leg answer about *those six* and report **tracked**. Driven at `b9d9262`:
 ///
 /// ```text
 /// jigc migrate '*.md' --as changelog      -> task minted: migrate-changelog-…   exit 0

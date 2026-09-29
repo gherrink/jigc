@@ -6,11 +6,11 @@
 
 | | |
 |---|---|
-| Branch | `main`, clean, **pushed** through `1799a2d` |
+| Branch | `main`, clean, **pushed** through `d854e25` |
 | Binary | **`1.0.0-rc.13`**, built and installed |
 | Gate | green — `dev/gate`: **3169 passed / 0 failed over 17 test binaries** |
 | M49 | complete + audited; 7 findings, all fixed axis-complete ([VERDICT](../M49/VERDICT.md)) |
-| Since M49 | the milestone-boundary gate fix (`1799a2d`) and the `dev/` tooling — both **on the binary this trial runs** |
+| Since M49 | the milestone-boundary gate fix (`d854e25`) and the `dev/` tooling — both **on the binary this trial runs** |
 | The v1 call | the human's, **after M50** |
 
 ## The sequence the human set
@@ -61,7 +61,7 @@ composed packs, N1's converged codes and N2's additive integer. Plus the two pos
    `crates/engine/src/transform.rs` — a file no adopter can edit.
 3. **The fan-out Fix phase** and its two increments are cut and waiting
    ([decisions-pending.md](../../../implementation/decisions-pending.md) → *Chartered and cut*). Its
-   prerequisite shipped at `1799a2d`.
+   prerequisite shipped at `d854e25`.
 4. **Measure whether the dev tooling took.** The counts to beat, from a scan of 139 subagent
    transcripts of the M49 build: **390** `rm`-on-a-variable-path calls by 77 of 137 agents, and **215**
    piped-gate blocks across 117 of 137. **This is measured in M50's *build* transcripts, not this
@@ -93,16 +93,16 @@ composed packs, N1's converged codes and N2's additive integer. Plus the two pos
 
 ## Verified 2026-09-04, by the session that runs the trial
 
-Every row above was driven or read at HEAD `979baca` before anything was built. Corrections
+Every row above was driven or read at HEAD `f266770` before anything was built. Corrections
 are recorded here rather than edited into the rows they correct, so the handover still says what
 it said when it was written.
 
 | Claim | Verdict | Evidence |
 |---|---|---|
-| `main` clean, pushed through `1799a2d` | **HOLDS** — pushed through `979baca`, four commits later | `git status -sb` → `## main...origin/main`, `origin/main..main` empty |
+| `main` clean, pushed through `d854e25` | **HOLDS** — pushed through `f266770`, four commits later | `git status -sb` → `## main...origin/main`, `origin/main..main` empty |
 | gate green, 3169 / 0 over 17 | **HOLDS** — now **3171 / 0 over 17**, the log at 19:36 is later than HEAD at 19:27 | `dev/gate --report` over `jigc-gate-wVcFbB` |
-| `1.0.0-rc.13` built and installed | **HOLDS as a stamp, FALSE as a tree.** `~/.local/bin/jigc` and `target/release/jigc` are dated **Sep 1 01:01**, the rc.13 bump (`21b6236`). `1799a2d` (Sep 4 06:45) changed `crates/cli/src/milestone.rs` *after* that build. | `ls -l`; `git diff --stat 21b6236..HEAD -- crates/*/src` → one file, `milestone.rs` |
-| *"both on the binary this trial runs"* | **FALSE for the installed binary; true only for an image built from HEAD.** Two trees stamp rc.13 — the exact trap `verify-pair.sh` exists for. The trial image is built from `979baca` and its sha recorded in the gate record. | as above |
+| `1.0.0-rc.13` built and installed | **HOLDS as a stamp, FALSE as a tree.** `~/.local/bin/jigc` and `target/release/jigc` are dated **Sep 1 01:01**, the rc.13 bump (`6533f70`). `d854e25` (Sep 4 06:45) changed `crates/cli/src/milestone.rs` *after* that build. | `ls -l`; `git diff --stat 6533f70..HEAD -- crates/*/src` → one file, `milestone.rs` |
+| *"both on the binary this trial runs"* | **FALSE for the installed binary; true only for an image built from HEAD.** Two trees stamp rc.13 — the exact trap `verify-pair.sh` exists for. The trial image is built from `f266770` and its sha recorded in the gate record. | as above |
 | `jigc task validate ""` panics at exit 101 on rc.13 | **PARTIAL — debug posture only.** The assert is `#[cfg(debug_assertions)]` (`crates/engine/src/finding.rs:737`). On the **release** binary the same call prints *"no findings — the task validates clean"* at **exit 0** (`--format json`: `findings: []`), with and without a live task. `jigc task discard ""` acks *"discarded task "* at exit 0 on both postures. The shipped observable is a **false green**, a worse row than a panic under the trial's own §1 table. `dev/jigc-rig` defaults to `target/debug/jigc`, which is how the class was seen as a panic. The routing to M50 stands; its description does not. | driven on `dev/jigc-rig committed-singletons` and `refs-post-hoc`, once with `--binary ~/.local/bin/jigc` and once with the default debug build |
 | reuse [trial-harness/](../../trial-harness/), do not rebuild | **HOLDS, with an omission.** `verify-pair.sh` defaults to the `m46` probe set (rc.11 → rc.12) and needs an **`m49`** set for this pair, exactly as the last trial needed `m46` ([RC-1.0-final/protocol.md](../RC-1.0-final/protocol.md) §5.1). Its `:72` version match and `:119` digit-leading-slug awk are the two items decisions-pending already time-boxes to *before the release*; they are taken here. | file read |
 | M49's *"twelve increments"* vs the eleven the surface list implies | the roadmap and the VERDICT say **twelve** — eleven build increments plus the acceptance/goldens increment, which does ship one product change (`MINT_DOORS`) | `implementation/roadmap.md:2235`, [M49/VERDICT.md](../M49/VERDICT.md):37 |

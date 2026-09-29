@@ -1,6 +1,6 @@
 # The trial that follows M50, on `1.0.0-rc.14` — record
 
-**Binary:** `1.0.0-rc.14` from `21ffc0d4`, in `jigc-gate:rc14` ([gate-rc14.json](gate-rc14.json)).
+**Binary:** `1.0.0-rc.14` from `82075cc3`, in `jigc-gate:rc14` ([gate-rc14.json](gate-rc14.json)).
 **Run:** 2026-09-09/10. **Protocol:** [protocol.md](protocol.md), pre-registered before any
 session ran. **Status:** the arms are complete and adjudicated; **the conversion ledger is open**
 ([findings-verification.md](findings-verification.md)), and that ledger is the human's own gate
@@ -44,7 +44,7 @@ The walk: **24 arms** — `00`–`23`, the control first and PASS ([coverage.md]
 *What the walk actually ran* enumerates them). ~~*23 arms, arm 00 PASS first.*~~
 — **struck, with the datum**: `ls completions/trial-driver/arms/walk/*.sh | wc -l` → **24**. The
 sentence admits two readings and the datum refuses both — 23 either excludes the control it names
-in its own next clause, or drops arm 23, which existed when this was written (`8228a42a`, the
+in its own next clause, or drops arm 23, which existed when this was written (`4bdb44c0`, the
 parent of the commit carrying this record). The count is stated as the enumerable one.
 `run.py observe --archive` reproduced the 1.0.0-gate table exactly, before and after every
 apparatus change.
@@ -104,7 +104,7 @@ trial's own archived channels:
    record precedes the worker's **own** first tool call (B3 `21:21:10Z` vs `21:21:12.784Z`;
    B3-strict `05:26:33Z` vs `05:26:37.649Z`; B2 `12:51:19Z` vs `12:52:15.132Z`; B3-h2 `21:19:13Z`
    vs `21:19:17.992Z`), and that first tool call is `Skill{jigc}` in every one.
-3. **`git show 21ffc0d4:QUICKSTART.md`** — line **128** is `jigc doc show adr:<slug> --task <id>
+3. **`git show 82075cc3:QUICKSTART.md`** — line **128** is `jigc doc show adr:<slug> --task <id>
    # the staged doc itself` and line **183** carries the same verb in prose. At that same sha
    `crates/cli/src/setup.rs:69` `include_str!`s `QUICKSTART.md` and `guide_body()` splices it into
    the installed `.claude/skills/jigc/SKILL.md`; neither line contains a `](`, so
@@ -174,7 +174,7 @@ orient hop delivered by the hook — and it moved it in the transport that had b
 | `store.malformed-slug` at the address doors | verify-pair · walk 18 | yes |
 | **`task discard` refuses over staged prose** | **every arm that cleans up** | **yes, 4/4** — see below |
 | the deny floor (`uninstall`, `milestone discard`) | **B4-h**, live | **yes** — and it halted a blind worker, correctly |
-| `1799a2d`'s boundary tightening | not reached | **unmet** — no arm provisioned a fan-out |
+| `d854e25`'s boundary tightening | not reached | **unmet** — no arm provisioned a fan-out |
 | Increment 13's guide edit / SKILL.md re-clobber | not reached | **unmet** |
 
 **The `task discard` change is the trial's clearest declared-change result, and it was nearly
@@ -225,7 +225,7 @@ and the same bump taken after 1.0.0 runs over every one.
    `--format json` contract.*~~ — **struck as categorical**: stated flat, it is a claim about the
    product made from a trial that did not reach every surface, and this same §1 says so two
    paragraphs down (*"reached by nothing"*). [coverage.md](coverage.md) leaves **five cells**
-   unreached — rows **4**, **10b**, **11a**, **11b** and the **`1799a2d`** milestone boundary. **The
+   unreached — rows **4**, **10b**, **11a**, **11b** and the **`d854e25`** milestone boundary. **The
    correction is to the wording, not to the result:** those five were subsequently driven end to
    end, on this same `1.0.0-rc.14`, and **all five matched contract**
    ([untrialled-surfaces-driven.md](../evidence-check-1.0/untrialled-surfaces-driven.md) → *Verdict
@@ -250,7 +250,7 @@ and the same bump taken after 1.0.0 runs over every one.
    an existing frozen doctype.**]**
 
 **Two things this trial cannot say**, and it says so rather than implying otherwise: the fan-out
-boundary (`1799a2d`) and the SKILL.md re-clobber path were **reached by nothing**. B4-h was the
+boundary (`d854e25`) and the SKILL.md re-clobber path were **reached by nothing**. B4-h was the
 arm chartered to reach the first, and **F-13 is why it could not**: it judged the fan-out unfit
 for the sequential increment spine it had just planned, moved to abandon the milestone, and was
 stopped by the deny floor. The uncovered boundary and the capability gap are the same event.

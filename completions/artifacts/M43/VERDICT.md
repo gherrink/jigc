@@ -1,6 +1,6 @@
 # M43 — the rc.7 wave (the surface contract): completion verdict
 
-**Status: COMPLETE.** Built (9 increments), audited, **3 audit findings fixed** (1 surfaced as a declared-bound observation, below), re-verified at HEAD `56cc853`: **2137 passed / 0 failed**, `clippy -D warnings` clean, `fmt --check` clean, tree clean.
+**Status: COMPLETE.** Built (9 increments), audited, **3 audit findings fixed** (1 surfaced as a declared-bound observation, below), re-verified at HEAD `172aea4`: **2137 passed / 0 failed**, `clippy -D warnings` clean, `fmt --check` clean, tree clean.
 
 Planning: [DECISIONS.md](../../../DECISIONS.md) → 2026-07-16 (the Settle — twelve decisions, every fork robust, each argued by an independent robust-advocate) · [planning-gate-record.md](planning-gate-record.md) · [roadmap.md](../../../implementation/roadmap.md) → Milestone 43. Design of record: [surface-contract.md](../../../design/surface-contract.md).
 Acceptance: [worked-examples.md](../../../design/worked-examples.md) → flow 44 · `crates/cli/tests/flow44_acceptance.rs`.
@@ -15,9 +15,9 @@ Acceptance: [worked-examples.md](../../../design/worked-examples.md) → flow 44
 
 | # | severity | finding | disposition |
 |---|---|---|---|
-| 1 | **MEDIUM** | `schema-conformance.unknown-type` shipped blocking with `route: None` — the wave's own seam assert panics the debug binary on `task validate --format json` over a staged instance of an undefined doctype (reproduced live); release builds emit the route-less block the wave claims unrepresentable | `d47991b` — routed via the Inc-1 declared route map (`jigc describe` check + restore-or-retype); **not** exempted (a recovery exists) |
-| 2 | LOW | Three latent route-less blocking producers (`structural-target.*`, `slot-fill-target.*`, `overrides.project-step-missing`) escape the seam only because they render via Display today | `a1696d4` — **all three routed** (grammar/recovery named), none exempted; the target-presence companion argued into `is_declared_singleton` per-family with rationale, `command-output-contract.md`'s outside-the-envelope bullet revised (decision, not accident) |
-| 3 | LOW | `AMBUSH_CLASS_CODES` documented `finalize.left-out` as an engine finding code no producer mints (its real surface is the M42 print pair) — a law-1 wobble in the fence's own doc | `56cc853` — the const is the ambush-class **constraint-identifier** set; the split (3 minted codes + 1 declared print-surface contract) stated honestly in the const and [surface-contract.md](../../../design/surface-contract.md); no new Finding (the M42 print-over-refuse settle untouched) |
+| 1 | **MEDIUM** | `schema-conformance.unknown-type` shipped blocking with `route: None` — the wave's own seam assert panics the debug binary on `task validate --format json` over a staged instance of an undefined doctype (reproduced live); release builds emit the route-less block the wave claims unrepresentable | `1e5cc04` — routed via the Inc-1 declared route map (`jigc describe` check + restore-or-retype); **not** exempted (a recovery exists) |
+| 2 | LOW | Three latent route-less blocking producers (`structural-target.*`, `slot-fill-target.*`, `overrides.project-step-missing`) escape the seam only because they render via Display today | `4113ccd` — **all three routed** (grammar/recovery named), none exempted; the target-presence companion argued into `is_declared_singleton` per-family with rationale, `command-output-contract.md`'s outside-the-envelope bullet revised (decision, not accident) |
+| 3 | LOW | `AMBUSH_CLASS_CODES` documented `finalize.left-out` as an engine finding code no producer mints (its real surface is the M42 print pair) — a law-1 wobble in the fence's own doc | `172aea4` — the const is the ambush-class **constraint-identifier** set; the split (3 minted codes + 1 declared print-surface contract) stated honestly in the const and [surface-contract.md](../../../design/surface-contract.md); no new Finding (the M42 print-over-refuse settle untouched) |
 | 4 | LOW | The error-code registry collision test checks the 34-row keyed inventory, not the un-keyed gate families the two members actually neighbour — a future un-keyed `finalize.commit-rejected` finding would collide undetected | **Declared-bound observation, not fixed** (the auditor's own framing: matches [surface-contract.md](../../../design/surface-contract.md)'s letter). Tightening requires enumerating un-keyed finding codes — no registry exists and a grep-census is the barred pattern. Carried below as the honest bound; re-open if a finding-code registry ever exists. |
 
 ## Honest bounds
@@ -30,4 +30,4 @@ Acceptance: [worked-examples.md](../../../design/worked-examples.md) → flow 44
 
 ## Re-verification
 
-Full gate at `56cc853` (the last fix commit): `cargo build` · `cargo test` → **2137 / 0** · `cargo clippy --all-targets -- -D warnings` · `cargo fmt --check` — all clean, tree clean. Each of the three fixes landed red-first through the dev-workflow with the auditor's reproduction re-driven through the real binary.
+Full gate at `172aea4` (the last fix commit): `cargo build` · `cargo test` → **2137 / 0** · `cargo clippy --all-targets -- -D warnings` · `cargo fmt --check` — all clean, tree clean. Each of the three fixes landed red-first through the dev-workflow with the auditor's reproduction re-driven through the real binary.

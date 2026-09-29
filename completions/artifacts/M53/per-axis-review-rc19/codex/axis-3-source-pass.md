@@ -2,7 +2,7 @@
 
 # Axis 3 source pass — rc.19
 
-Read-only review of rc.19’s production source through `1cc5da8d`; the two later commits modify only M53 records, not production Rust. I did not build, drive the binary, or modify files.
+Read-only review of rc.19’s production source through `4a862b96`; the two later commits modify only M53 records, not production Rust. I did not build, drive the binary, or modify files.
 
 ## Claims
 
@@ -54,6 +54,6 @@ Production removal sites were accounted for as follows:
 
 `--force` is scoped to the four refusing rows’ declared populations; the two finalizers expose no invented force consent. Narration is outcome-filtered after removal.
 
-No schema-manifest or schema-hash file changed in `c8cc9187..1cc5da8d`: **M52’s zero schema-hash movement boundary is not violated.**
+No schema-manifest or schema-hash file changed in `20c18b74..4a862b96`: **M52’s zero schema-hash movement boundary is not violated.**
 
 Bounds: source completeness only; no argv was driven. Test-only temporary-directory destructors were inspected but are not reachable CLI doors.

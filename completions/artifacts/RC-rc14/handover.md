@@ -16,8 +16,8 @@ respectively); if you do, move this file rather than copying it.
 
 | | |
 |---|---|
-| Branch | `main`, **clean**, pushed through `95c79be` |
-| HEAD | `95c79be68ab6873c788947f58190a0fd21f5d990` |
+| Branch | `main`, **clean**, pushed through `2224ce0` |
+| HEAD | `2224ce04befaf67fced6c3fad6253d0261fde33d` |
 | Binary under test | **`1.0.0-rc.14`** |
 | `target/release/jigc` | sha256 `99f226bb2e7dc67d42a1e70153afe3ed1714176eb0d1cc42a0b914d26feefdc5` |
 | `~/.local/bin/jigc` | **byte-identical** to the above (same sha256, verified) |
@@ -47,7 +47,7 @@ The four most dangerous to misread:
    block. That is the wave's headline fix, not a regression.
 2. **`engine::result::SCHEMA_VERSION` 2 → 3** — the wave's only result-contract bump. A driver
    pinned to 2 is the one adopter-shaped consumer a trial can contain.
-3. **A fan-out that landed clean on rc.13 may now block at exit 3** (`1799a2d`, landed *before* the
+3. **A fan-out that landed clean on rc.13 may now block at exit 3** (`d854e25`, landed *before* the
    wave). It is the intended tightening and it is met **late in a milestone arm**, where a misread
    costs the most.
 4. **The deny floor gained `Bash(jigc uninstall:*)` and `Bash(jigc milestone discard:*)`.** A
@@ -176,18 +176,18 @@ corpus: the RC-m50 corpora are **not** carried forward, and fresh ones are the h
 
 ## Verified 2026-09-09, by the session that runs the trial
 
-Every row above was driven or read at HEAD `21ffc0d4` before anything was built.
+Every row above was driven or read at HEAD `82075cc3` before anything was built.
 Corrections are recorded **here** rather than edited into the rows they correct, so the
 handover still says what it said when it was written — the convention
 [RC-m50's handover](../RC-m50/handover.md) → *Verified* set.
 
 | Claim | Verdict | Evidence |
 |---|---|---|
-| HEAD `95c79be6…`, pushed through `95c79be` | **STALE; the conclusion survives and is now proven.** HEAD is **`21ffc0d4`**, pushed. Two commits landed after this file was written — `56df440` (this handover) and `21ffc0d` (a CLAUDE.md + decisions-pending edit). | `git rev-parse HEAD`; `git rev-parse origin/main` agrees; `git diff --name-only 95c79be..HEAD` → exactly `CLAUDE.md`, `implementation/decisions-pending.md`, `completions/artifacts/RC-rc14/handover.md` — **zero** `crates/`, `packs/`, `.rs`, `.yaml`, `.toml` |
+| HEAD `2224ce04…`, pushed through `2224ce0` | **STALE; the conclusion survives and is now proven.** HEAD is **`82075cc3`**, pushed. Two commits landed after this file was written — `e544382` (this handover) and `82075cc` (a CLAUDE.md + decisions-pending edit). | `git rev-parse HEAD`; `git rev-parse origin/main` agrees; `git diff --name-only 2224ce0..HEAD` → exactly `CLAUDE.md`, `implementation/decisions-pending.md`, `completions/artifacts/RC-rc14/handover.md` — **zero** `crates/`, `packs/`, `.rs`, `.yaml`, `.toml` |
 | `target/release/jigc` sha256 `99f226bb…`, installed copy byte-identical | **HOLDS** | `shasum -a 256` on both → identical |
 | *"Is the binary HEAD's tree? Yes"* — via `find … -newer` | **HOLDS for what the check can say, and the check is weaker than the row implies.** `-newer` proves nothing under `crates/`/`packs/` was *touched after* the build; it cannot prove the build is *of* that tree. The docs-only diff above extends the claim to the new HEAD. The trial does not rest on it either way: the binary under test is the one baked into the image from a **pinned sha**, and no host binary is scored on. | `find crates packs -type f \( -name '*.rs' -o -name '*.yaml' -o -name '*.toml' \) -newer target/release/jigc` → empty |
 | **`also open:` … "with its resume/validate/finalize/discard directives"** | **FALSE — two surfaces conflated, and it is load-bearing.** The `also open:` block renders **one** directive per row: `` `<id>` (workflow `<x>`) — resume it with `jigc start --task <id>` ``. The **four** `Run:` directives (`start --task`, `task validate`, `task finalize`/`milestone finalize`, `task discard [--force]`) belong to the *orientation* `active-task` view — a different form of the verb. **Neither surface names a read verb**, so RC-m50's twice-named cause (*no read verb shows a task's whole staged area*) is not closed. Consequence: the protocol pre-registers the indirect mechanism (orient → resume → M48's read-back fence in the re-composed step) and its three outcomes, rather than meeting a null as a surprise. | `crates/cli/src/render.rs:541` (`also_open_block`) vs `:87-160` (`orientation_active`) |
-| declared bound 2 — *"**60** host-path producers remain, across 11 files"* | **FALSE. 79 across 11 files.** `UNSWEPT_PRODUCERS` sums 11+22+20+9+8+3+1+1+2+1+1 = **79**. The const did not exist before `b34a8c72` — the audit-fix commit that also states 60 — so 60 was never right for the table it cites. The *per-file* counts **hold**: `the_unswept_remainder_is_counted_not_described` checks each against the source and the gate is green. Only the unchecked summary is wrong. Same error in [M50/VERDICT.md](../M50/VERDICT.md) → declared bound 2 and `DECISIONS.md` → 2026-09-09. | `crates/cli/tests/repo_relative_paths.rs:721`; `git show 52840e6f:…` has no `UNSWEPT_PRODUCERS` |
+| declared bound 2 — *"**60** host-path producers remain, across 11 files"* | **FALSE. 79 across 11 files.** `UNSWEPT_PRODUCERS` sums 11+22+20+9+8+3+1+1+2+1+1 = **79**. The const did not exist before `a9c0246d` — the audit-fix commit that also states 60 — so 60 was never right for the table it cites. The *per-file* counts **hold**: `the_unswept_remainder_is_counted_not_described` checks each against the source and the gate is green. Only the unchecked summary is wrong. Same error in [M50/VERDICT.md](../M50/VERDICT.md) → declared bound 2 and `DECISIONS.md` → 2026-09-09. | `crates/cli/tests/repo_relative_paths.rs:721`; `git show 6bf5a506:…` has no `UNSWEPT_PRODUCERS` |
 | *"The declared behaviour-change list has one home … derived from the twelve increment records"* — read it before briefing | **HOLDS as a pointer; the list it points at is FIVE sources short.** It pins its own derivation to *"the twelve increment records"* while `CLAUDE.md` says *"Thirteen increments shipped"* — the two documents contradict each other — and the completion audit ran **2026-09-09**, a day *after* the derivation. Unrepresented, each with a user-visible change: **Increment 13** (the discard prose in `QUICKSTART.md`/`MIGRATING.md`, `include_str!`'d into `SKILL.md`, so shipped bytes and `jigc-body-blake3` moved → re-`setup` over a locally-edited copy now hits refuse-to-clobber); **F1** (`milestone add-from-spec` over an outside-repo path now refuses — a door that succeeded now blocks); **F2** (the finding identity swept over **31** production sites, so ~29 doors that dropped their code from the **invocation log** now record it — the trial's own measurement channel, and rc.13-vs-rc.14 logs are not like-for-like); **F3** (law 1 widened from the destroying/provisioning doors to the shared predicate plus **4 read-path sites**, so text and JSON bytes on `store.not-found`/`store.unparseable` moved); **F4** (`milestone discard` over staged prose now blocks — and it is deny-floored, so an agent arm sees a harness denial and no jigc output). | `implementation/decisions-pending.md:189-206`; `CLAUDE.md`; [M50/VERDICT.md](../M50/VERDICT.md) F1–F4; `implementation/roadmap.md` → Milestone 50 (13 increments) |
 | *"Seven defects driven at this wave's close are carried"* | **SIX. N31 is discharged and still listed as open.** Its stated trigger was *"the M50 completion audit's triage"* — that trigger **fired**, and audit finding F3 closed it: the `store.not-found` / `store.unparseable` loci now render through `crate::path::repo_relative`. `implementation/decisions-pending.md:544` still reads as carried, which is that file's own preamble failure — *"it fired once already and nobody noticed"*. | `crates/engine/src/store.rs:155`, `:288`; `crates/engine/src/milestone.rs:604`, `:621`; `crates/engine/src/path.rs:48` |
 | trial tooling — four homes present, do not rebuild | **HOLDS, with five omissions worth knowing before you reach for them.** (a) `verify-pair.sh` has **no `m50` case and exits 2 on one** — it needs the set, exactly as the last two trials needed `m49`/`m46`. (b) **Every** driver default is `jigc-gate:rc11` (`run.py` ×4 subcommands, `walk.py`, `run-session.sh`, `verify-image.sh`); only `verify-pair.sh` tracks the current trial — pass `--tag` everywhere. (c) `run.py`'s README row and module docstring under-report by six: `gate`, `record-gate`, `carry`, `seed`, `fork`, `plant` all exist. (d) There are **seven** `test_*.py`, not the six the README claims. (e) The archived evidence dirs are **flat** — no `.session-transcript/` tree — so `run.py observe <archived dir>` finds neither channel through `_find`, contradicting `evidence/README.md`. | file reads across `completions/trial-driver/`, `completions/trial-harness/` |
@@ -197,7 +197,7 @@ handover still says what it said when it was written — the convention
 | `SCHEMA_VERSION` 2 → 3; both deny-floor entries | **HOLD** (source-level; driven again by the `m50` pair set) | `crates/engine/src/result.rs:27`; `crates/cli/adapters/claude-code.yaml:35-36` |
 
 **One thing the handover does not say, established here and taken into the protocol: no
-migration pair is owed.** `git diff 979baca..HEAD` over both `config/schema-manifest.yaml`
+migration pair is owed.** `git diff f266770..HEAD` over both `config/schema-manifest.yaml`
 files and every `schemas/*.yaml` is **empty** — no doctype schema moved between rc.13 and
 rc.14 — so an rc.13-authored corpus is current on rc.14 and the RC-m50 arm 14↔21 analogue
 is unnecessary. Recorded rather than silently omitted.
@@ -211,7 +211,7 @@ uninterpretable. **N15** — a `--task` read of an unresolvable address is byte-
 the task-less one, and its route serves the *committed* copy to a reader holding a staged
 one — carries a trigger whose second clause is likewise *a trial observation*.
 
-**Consequences taken into the trial:** the image is built from `21ffc0d4` and its sha
+**Consequences taken into the trial:** the image is built from `82075cc3` and its sha
 recorded in the gate record; the protocol's §0 completes the behaviour-change list with
 Increment 13 and F1–F4 before the first session is briefed; the headline's mechanism and
 its three outcomes are pre-registered from the `also open:` correction; `verify-pair.sh`

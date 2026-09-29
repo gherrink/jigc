@@ -2156,7 +2156,7 @@ Referrers must point at the new decision.
     /// **The source arm's argv is emitted bytes, so the source is quoted** (M51 completion
     /// audit). `ConflictBlock::task` is built **eagerly for every migration task**, on the
     /// finalize path, before anything knows whether a conflict will be raised at all —
-    /// driven at `befdbf93` a migration of `my notes.md` panicked `jigc task finalize
+    /// driven at `c2faae6b` a migration of `my notes.md` panicked `jigc task finalize
     /// --approve` at exit 101 on the route fence's token check, the crash arriving after the
     /// authoring and at the one door that commits. In release the fence is compiled out and
     /// the same argv would have printed `jigc unmanage my notes.md`, dropping the baseline

@@ -2,7 +2,7 @@
 
 Filled by hand at M42 planning, **2026-07-13**, before decomposition ([methodology-docs.md](../../../design/methodology-docs.md) → The planning gate-record). One row per thing the milestone will build. **Every cell carries evidence, or `N/A` with a one-line why. An empty or hand-wavy cell is a halt, not a pass.**
 
-Baseline: five `capability-auditor` subagents exercised the **real binary** at HEAD `dca8284` (rc.5) in throwaway repos; four `gap-detector`s and three `robust-advocate`s measured the done-picture against it. Settled decisions: [DECISIONS.md](../../../DECISIONS.md) → 2026-07-13. Decomposition: [roadmap.md](../../../implementation/roadmap.md) → Milestone 42.
+Baseline: five `capability-auditor` subagents exercised the **real binary** at HEAD `5a03d48` (rc.5) in throwaway repos; four `gap-detector`s and three `robust-advocate`s measured the done-picture against it. Settled decisions: [DECISIONS.md](../../../DECISIONS.md) → 2026-07-13. Decomposition: [roadmap.md](../../../implementation/roadmap.md) → Milestone 42.
 
 ---
 

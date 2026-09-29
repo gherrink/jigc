@@ -1,7 +1,7 @@
 # M19 handover — next session: the thesis is thrice-H0; decide whether to chase the win-regime or accept scope-bound and pivot
 
 **Written 2026-06-13.** Branch `main`, tree clean, gate green (fmt · clippy -D · 427 lib tests +
-suites · build). HEAD `efc52cc`. Pinned binary `~/.local/bin/jigc` sha `5d64adc…` (M19 release —
+suites · build). HEAD `1c38a93`. Pinned binary `~/.local/bin/jigc` sha `5d64adc…` (M19 release —
 hook-installing + finalize-relaying), `doc-code` sibling beside it. **M19 is fully closed** (built,
 audited, tested, recorded). This handover is the running start for whatever comes next — and the
 honest truth is that **the next move is a strategic decision, not a foregone task.**
@@ -140,8 +140,8 @@ This is the human's call; don't pick it silently.
 
 ## State at handoff
 
-- `main` clean, gate green, HEAD `efc52cc`. M19's commits span the planning (`6382dbc`-era forward),
-  build (`8e0ee62…561b541`), and test-half/record commits through `efc52cc`.
+- `main` clean, gate green, HEAD `1c38a93`. M19's commits span the planning (`16c0c2e`-era forward),
+  build (`211dce8…3990b54`), and test-half/record commits through `1c38a93`.
 - **Environment normal:** `jigc` un-wrapped real binary (`5d64adc`) + `doc-code` sibling at
   `~/.local/bin/`; claude-mem on; global `~/.claude/CLAUDE.md` intact. No rollback owed.
 - **M19 fully closed:** plan + design-review + build + audit (3 LOW fixed) + the cross-session test

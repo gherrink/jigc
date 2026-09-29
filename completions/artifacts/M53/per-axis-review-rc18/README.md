@@ -14,9 +14,9 @@
 > another fix pass and a partial re-review, never a full wave.*
 
 The first partial re-review ran on `1.0.0-rc.17` and found **one tier-1 row**, `(2, DEFECT 1)`, outside
-M53's own new code. That fired the completed clause above: a post-review fix (`986d5e0a`), an
-independent review of the diff (1 HIGH · 3 MEDIUM · 3 LOW, all seven fixed — `90110d59` · `2ddcc003` ·
-`64b63bd5` · `312680b1` · `d101ca9d` · `49371315` · `35870a04`), the record, the second stamp, **and the
+M53's own new code. That fired the completed clause above: a post-review fix (`3c71da87`), an
+independent review of the diff (1 HIGH · 3 MEDIUM · 3 LOW, all seven fixed — `7329801b` · `a6711cee` ·
+`de77b686` · `7a44d85d` · `7af8d6b4` · `5da4634a` · `16da362a`), the record, the second stamp, **and the
 affected axes re-driven**. **This directory is that re-drive.**
 
 **AXES 2 · 3 ONLY.** The post-review fix's blast radius is the posture family and the destroying doors'
@@ -27,7 +27,7 @@ were not asked.
 
 **The binary.** Every row in every file here was driven on the installed release
 `/Users/maurice/.local/bin/jigc` → **`jigc 1.0.0-rc.18`**, on **2026-09-23**, with the repository at HEAD
-**`fbd8b190`** (*“chore(release): 1.0.0-rc.18 — the second M53 stamp, after the post-review fix and its
+**`271b0cb7`** (*“chore(release): 1.0.0-rc.18 — the second M53 stamp, after the post-review fix and its
 review's seven fixes”*). Each axis file asserts `jigc --version` **first, before anything else ran**, and
 read its registry counts by symbol at that HEAD. The binary is the **release** build, so the debug-only
 `Route::mechanical` argv fence does not exist in it: a route-fence violation shows up here as a **bad
@@ -38,7 +38,7 @@ the `rm -rf $V/$D` shape appears nowhere in this review) and by driving the bina
 committed or edited in the working repository by any agent in this review.**
 
 **The baseline.** [../per-axis-review/](../per-axis-review/README.md) — the **first** partial re-run,
-driven on `1.0.0-rc.17` at HEAD `75ab77ca` on 2026-09-22, over axes 2 · 3 · 5. It is a dated record and
+driven on `1.0.0-rc.17` at HEAD `7e98faf1` on 2026-09-22, over axes 2 · 3 · 5. It is a dated record and
 **is not edited by this run**.
 
 **An axis matrix row** is `(door, cell) → {argv driven, exit, code|none, route kind, surface asserted,
@@ -90,8 +90,8 @@ should read next:
 
 > ### One of the two tier-2 rows sits **INSIDE** the post-review fix's own new code.
 >
-> **`(2, F-1)`** — `crate::repo::aim_at` (`crates/cli/src/repo.rs:669`), **minted by `986d5e0a`** and
-> widened to its second caller by that fix's own review (`35870a04` / `d101ca9d`). Both callers emit
+> **`(2, F-1)`** — `crate::repo::aim_at` (`crates/cli/src/repo.rs:669`), **minted by `3c71da87`** and
+> widened to its second caller by that fix's own review (`16da362a` / `7af8d6b4`). Both callers emit
 > `git -C <repo-relative-path> …` as the remedy, and driven, that command exits **128** from every cwd
 > that is not the repository root — including from inside a sibling fan-out worktree, the topology the
 > fix's own review used to find its MEDIUM 1. It violates the sentence the fix itself wrote into
@@ -281,8 +281,8 @@ untracked-byte cell guarded) · `(3, F-5)` (HEAD byte-unmoved through both arms)
 
 #### `(2, F-1)` · origin **driver**, re-driven by the reconciler at both producers · **INSIDE M53's own new code** · the aimed route `git -C <repo-relative-path>` does not run from the checkout that printed it
 
-`crate::repo::aim_at` (`crates/cli/src/repo.rs:669`) is **minted by the post-review fix `986d5e0a`** and
-widened to its second caller by that fix's independent review (`35870a04` / `d101ca9d`). Both callers are
+`crate::repo::aim_at` (`crates/cli/src/repo.rs:669`) is **minted by the post-review fix `3c71da87`** and
+widened to its second caller by that fix's independent review (`16da362a` / `7af8d6b4`). Both callers are
 affected: `BreachSite::aim` (`repo.rs:641`) and `crate::milestone::held_here` (`milestone.rs:3523`).
 
 ```
@@ -498,7 +498,7 @@ declaration, quoted in its axis file.
 # COVERAGE — the two axes against the 47 `VERB_KINDS` leaves
 
 **The leaf count, read rather than quoted.** `crates/cli/src/cli.rs:1830`'s `VERB_KINDS` carries **47**
-leaf rows at HEAD `fbd8b190` — **35 `VerbKind::Write` · 12 `VerbKind::Read`** — counted by reading the
+leaf rows at HEAD `271b0cb7` — **35 `VerbKind::Write` · 12 `VerbKind::Read`** — counted by reading the
 `(&[…], VerbKind::…)` rows of the const itself (`awk 'NR>=1830 && NR<=1882' crates/cli/src/cli.rs |
 command grep -cE '^\s+\(&\[' → 47`). The spellings and their order are identical to the rc.17, M52 and
 M51 tables, so the columns below are directly comparable row by row.

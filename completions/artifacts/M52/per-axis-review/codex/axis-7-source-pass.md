@@ -1,4 +1,4 @@
-<!-- M52 per-axis review (re-run) — axis 7 · composed surfaces — the CODEX SOURCE PASS, verbatim. Read against the repository at commit a3eb026b, 2026-09-21. It reads; it drives nothing. Every claim below is a LEAD until the reconciler drove it — see axis-7.md for the verdict on each. -->
+<!-- M52 per-axis review (re-run) — axis 7 · composed surfaces — the CODEX SOURCE PASS, verbatim. Read against the repository at commit e519e4eb, 2026-09-21. It reads; it drives nothing. Every claim below is a LEAD until the reconciler drove it — see axis-7.md for the verdict on each. -->
 
 ## Claims
 
@@ -32,6 +32,6 @@ I read `CLAUDE.md`, the M51 README §A, the complete prior Axis 7 source pass, a
 - The fixed-identity predicate is exactly `placement || singleton` ([crates/engine/src/schema.rs:160](/Users/maurice/projects/gherrink-jigc/crates/engine/src/schema.rs:160)); adoption, unmanage, store-home enumeration, and address parsing consume the shared identity rule. I found no remaining ingest/unmanage path that leaves the index lying.
 - The Axis 7 intersections of `STORE_EXIT_FLIPS`/`ENVELOPE_OWED_CODES` include the orphan, home-vacated, version-current/ahead, and unadopted store codes; I found no missing Axis 7 envelope or exit-flip member. The other minted registries—`ROLLBACK_POPULATIONS`, `TASK_AREA_FILES`, `PRE_DISPATCH_FAULTS`, `InProgress::ALL`, `RelocateRefusal::ALL`, `DESTROYING_DOORS`, `suppressed.door`, and `workflow.verb-routed`—do not introduce an additional Axis 7 corpus-walk bypass in their consumers.
 
-**Schema-hash boundary:** no violation found. The diff from M51’s reviewed commit `35195f56` to HEAD `a3eb026b699ce9c23cb0201555838931b65bd2d2` contains no changed schema manifest, schema, snapshot, or `schema-hash` line. The workspace declares `1.0.0-rc.16`.
+**Schema-hash boundary:** no violation found. The diff from M51’s reviewed commit `577a0099` to HEAD `e519e4ebf952bbf71b8591294101bd63be779998` contains no changed schema manifest, schema, snapshot, or `schema-hash` line. The workspace declares `1.0.0-rc.16`.
 
 **Bounds:** source-only, read-only review; I did not run the binary, tests, or reproductions, and wrote nothing. I found **one surviving lead**, the already-declared root-placement departed-doctype residual; no new omission beyond it.
