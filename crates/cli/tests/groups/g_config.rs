@@ -69,6 +69,8 @@ mod maps_to_test_caveat_fence;
 mod nested_add_item_on_create;
 #[path = "../nested_item_addressing.rs"]
 mod nested_item_addressing;
+#[path = "../pack_path_fence.rs"]
+mod pack_path_fence;
 #[path = "../pack_source_determinism.rs"]
 mod pack_source_determinism;
 #[path = "../placement_override.rs"]

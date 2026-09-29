@@ -36,6 +36,7 @@ pub mod milestone;
 pub mod orient;
 pub mod orphan;
 pub mod pack;
+pub mod pack_builtin;
 pub mod relocate;
 pub mod rename;
 pub mod render;

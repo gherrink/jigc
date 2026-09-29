@@ -78,7 +78,7 @@
 # with two meanings, merely renamed. The one declared genesis exemption — M47 Increment 1,
 # which re-pinned every listed hash at unchanged schema-versions BY CONSTRUCTION, and is
 # now the fixture that proves the fence fires — is stated once, in the dev pack's header
-# (crates/cli/pack/config/schema-manifest.yaml), and is not restated here: one fact, one
+# (its config/schema-manifest.yaml), and is not restated here: one fact, one
 # home (CLAUDE.md → Cross-reference, never restate). This manifest is inside the fence's
 # subject exactly as that one is (crates/cli/tests/manifest_freeze_fence.rs).
 #

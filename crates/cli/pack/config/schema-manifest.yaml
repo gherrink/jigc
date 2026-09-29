@@ -73,7 +73,7 @@
 # caps). A slug-rule change CANNOT be migrated after the fact (no transform kind
 # re-mints an id) — a corpus that spans one carries two id generations permanently —
 # so it is a declared event: bump slug-rule-version AND re-pin the hash here and in
-# packs/methodology/config/schema-manifest.yaml, together, in one commit
+# the methodology pack's config/schema-manifest.yaml, together, in one commit
 # (design/storage.md → Identity → The slug rule is itself a versioned rule).
 slug-rule:
   version: 3

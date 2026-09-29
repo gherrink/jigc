@@ -1,17 +1,12 @@
-//! `EmbeddedPack` — the MVP `PackSource` impl that serves the built-in dev pack
-//! from bytes embedded in the `jigc` binary.
+//! The pack surface: the `PackSource` impls and factories, pack-load and its assertions.
 //!
-//! Embed mechanism is `include_dir` (decided 2026-05-31; always-embedded, so what
-//! you test is what ships). The pack tree lives in `crates/cli/pack/`, one
-//! sub-directory per [`PackResourceKind`] (`workflows/`, `schemas/`, `steps/`,
-//! `config/`); a resource's [`ResourceId`] is its file stem. The pack versions
-//! with the release, so `pack_version` is the binary's `CARGO_PKG_VERSION`
-//! (override-reconciliation: built-in pack-default version = binary version).
-//! See `implementation/module-layout.md` → The dev pack's home.
+//! The built-in packs' embeds and their `EmbeddedPack` impl live in the embed seam,
+//! [`crate::pack_builtin`], re-exported here; this module supplies the version they report
+//! — the binary's `CARGO_PKG_VERSION` (override-reconciliation: built-in pack-default
+//! version = binary version). See `implementation/module-layout.md` → The dev pack's home.
 
 use engine::packsource::{PackError, PackResourceKind, PackSource, ResourceId};
 use engine::schema::{PackTypeDecl, Schema, SchemaError, load_schema_with_types};
-use include_dir::{Dir, include_dir};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
@@ -935,9 +930,13 @@ pub enum AmbushDisposition {
     DeclaredWhereReachable {
         /// Why no pack *owes* a declarer — the reason a reader needs to accept the row.
         reason: &'static str,
-        /// The step that does declare it, `<pack-relative path>` — checked against the
-        /// shipped pack's bytes by `crates/cli/tests/stated_at_fence.rs`, so the claim
-        /// cannot become false silently.
+        /// The `pack-id` of the pack whose step declares it — the pack is named by
+        /// identity, never by where it sits (M54 S2).
+        pack: &'static str,
+        /// The step that does declare it, a path relative to that pack's root —
+        /// checked against the shipped pack's bytes by
+        /// `crates/cli/tests/stated_at_fence.rs`, so the claim cannot become false
+        /// silently.
         declarer: &'static str,
     },
 }
@@ -1029,7 +1028,8 @@ pub const AMBUSH_CONTRACTS: &[AmbushContract] = &[
                      composition the door cannot mint at all and a declarer there would \
                      state a contract that binds on nothing (driven: `Owed` reddens \
                      pack-load for the methodology pack and every composition holding it)",
-            declarer: "crates/cli/pack/steps/amend-message.yaml",
+            pack: "dev",
+            declarer: "steps/amend-message.yaml",
         },
     },
     AmbushContract {
@@ -1039,7 +1039,8 @@ pub const AMBUSH_CONTRACTS: &[AmbushContract] = &[
         disposition: AmbushDisposition::DeclaredWhereReachable {
             reason: "its sibling's reason, unchanged: the same arm, reached only through the \
                      same dev-pack workflow",
-            declarer: "crates/cli/pack/steps/amend-message.yaml",
+            pack: "dev",
+            declarer: "steps/amend-message.yaml",
         },
     },
     // The first exempt row (M51 Increment 3), and the cell a hand-list could not
@@ -1820,38 +1821,25 @@ fn assert_when_shape(workflow: &str, when: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The built-in dev pack, embedded at compile time from `crates/cli/pack/`.
-static PACK: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/pack");
+pub use crate::pack_builtin::EmbeddedPack;
 
-/// The methodology pack (the M12 second pack — `roadmap`/`planning`/`completion`/…),
-/// embedded at compile time from `packs/methodology/` by a **second** `include_dir!`.
-/// Pure-YAML data (no `target/` build-tree, so the M20 bloat lesson does not apply);
-/// composed in-binary, never extracted. Selected by [`EmbeddedPack::methodology`].
-/// See `design/multi-pack.md` → Embedded second pack; `module-layout.md` → Pack
-/// distribution.
-static METHODOLOGY: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/../../packs/methodology");
-
-/// `PackSource` over a binary-embedded pack tree. **Field-carrying:** the selected
-/// `&'static Dir` is the dev base ([`new`](EmbeddedPack::new)) or the methodology
-/// tree ([`methodology`](EmbeddedPack::methodology)), so the two in-binary packs can
-/// be composed. Both selectors report `pack_version = CARGO_PKG_VERSION` — the pack
-/// versions with the binary release regardless of which tree is selected
-/// (`multi-pack.md` → Version ties to the binary).
-pub struct EmbeddedPack {
-    dir: &'static Dir<'static>,
-}
+/// The version `jigc` hands its built-in packs — **the one site that supplies it** (M54
+/// S2). The embed seam ([`crate::pack_builtin`]) reads no version of its own; the packs
+/// version with the binary release, so the built-in pack-default version is the binary
+/// version (override-reconciliation; `multi-pack.md` → Version ties to the binary).
+const JIGC_PACK_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 impl EmbeddedPack {
-    /// The dev base pack (the lowest-precedence foundation).
+    /// The dev base pack (the lowest-precedence foundation), at `jigc`'s version.
     pub fn new() -> Self {
-        EmbeddedPack { dir: &PACK }
+        EmbeddedPack::dev_at(JIGC_PACK_VERSION)
     }
 
-    /// The methodology pack — the second embedded tree, composed dev-highest at
-    /// `jigc setup` behind the `compose-embedded-methodology` marker. Consumed by the
-    /// pack-source factory ([`make_pack_from_marker`]) when the marker is set.
+    /// The methodology pack at `jigc`'s version — composed dev-highest at `jigc setup`
+    /// behind the `compose-embedded-methodology` marker. Consumed by the pack-source
+    /// factory ([`make_pack_from_marker`]) when the marker is set.
     pub fn methodology() -> Self {
-        EmbeddedPack { dir: &METHODOLOGY }
+        EmbeddedPack::methodology_at(JIGC_PACK_VERSION)
     }
 }
 
@@ -1862,46 +1850,13 @@ impl Default for EmbeddedPack {
 }
 
 /// The pack sub-directory that holds resources of `kind`.
-fn kind_dir(kind: PackResourceKind) -> &'static str {
+pub(crate) fn kind_dir(kind: PackResourceKind) -> &'static str {
     match kind {
         PackResourceKind::Schemas => "schemas",
         PackResourceKind::Workflows => "workflows",
         PackResourceKind::Steps => "steps",
         PackResourceKind::Config => "config",
         PackResourceKind::SchemaSnapshots => "schema-snapshots",
-    }
-}
-
-impl PackSource for EmbeddedPack {
-    fn pack_version(&self) -> String {
-        env!("CARGO_PKG_VERSION").to_owned()
-    }
-
-    fn list(&self, kind: PackResourceKind) -> Vec<ResourceId> {
-        let Some(dir) = self.dir.get_dir(kind_dir(kind)) else {
-            return Vec::new();
-        };
-        let mut ids: Vec<ResourceId> = dir
-            .files()
-            .filter_map(|f| f.path().file_stem())
-            .filter_map(|stem| stem.to_str())
-            .map(ResourceId::from)
-            .collect();
-        ids.sort();
-        ids
-    }
-
-    fn read(&self, kind: PackResourceKind, id: &ResourceId) -> Result<Vec<u8>, PackError> {
-        let dir = self.dir.get_dir(kind_dir(kind));
-        let bytes = dir.and_then(|dir| {
-            dir.files()
-                .find(|f| f.path().file_stem().and_then(|s| s.to_str()) == Some(id.as_str()))
-                .map(|f| f.contents().to_vec())
-        });
-        bytes.ok_or_else(|| PackError::NotFound {
-            kind,
-            id: id.clone(),
-        })
     }
 }
 
@@ -2708,20 +2663,6 @@ mod tests {
         assert_eq!(pack.pack_version(), env!("CARGO_PKG_VERSION"));
     }
 
-    /// The embedded `PACK` carries **only** real pack content — never the
-    /// `doc-code` probe's source tree. The probe's sources live outside the
-    /// `include_dir!` root (the `jigc` bin's `src/doc_code_probe/`, not
-    /// `pack/probes/`), so the embed sweeps no `probes/` directory. See
-    /// module-layout.md → Probe distribution (the de-bloat site).
-    #[test]
-    fn embedded_pack_carries_no_probes_directory() {
-        assert!(
-            PACK.get_dir("probes").is_none(),
-            "the embedded PACK must not carry a `probes/` entry — the probe source \
-             lives outside the include_dir! root",
-        );
-    }
-
     /// Read a resource as UTF-8 text (pack definitions are text).
     fn read_text(pack: &EmbeddedPack, kind: PackResourceKind, id: &str) -> String {
         let bytes = pack
@@ -3121,10 +3062,15 @@ mod tests {
             let (held_out, reason) = match row.disposition {
                 AmbushDisposition::Owed => continue,
                 AmbushDisposition::Exempt(reason) => ("exempt", reason),
-                AmbushDisposition::DeclaredWhereReachable { reason, declarer } => {
+                AmbushDisposition::DeclaredWhereReachable {
+                    reason,
+                    pack,
+                    declarer,
+                } => {
                     assert!(
-                        !declarer.trim().is_empty(),
-                        "`{}` claims a declarer and names none",
+                        !pack.trim().is_empty() && !declarer.trim().is_empty(),
+                        "`{}` claims a declarer and names none (pack `{pack}`, step \
+                         `{declarer}`)",
                         row.code,
                     );
                     ("declared-where-reachable", reason)
@@ -5697,9 +5643,9 @@ sections:
     /// second `include_dir!`, selected by [`EmbeddedPack::methodology`]. Proves
     /// the field-carrying `EmbeddedPack` can serve a *different* `&'static Dir`
     /// than the dev base, that its content loads through the **production**
-    /// loaders, that both selectors honour the binary-version invariant, and that
-    /// the embedded methodology `Dir` carries no `target/`/build subtree (only the
-    /// four resource dirs). See `design/multi-pack.md` → Embedded second pack;
+    /// loaders, and that both selectors honour the binary-version invariant (the
+    /// embedded tree's own shape is `crate::pack_builtin`'s to test). See
+    /// `design/multi-pack.md` → Embedded second pack;
     /// `module-layout.md` → Pack distribution.
     mod methodology_pack {
         use super::super::*;
@@ -5797,35 +5743,6 @@ sections:
                 !methodology.contains(&ResourceId::from("single-task")),
                 "the methodology pack must NOT carry dev's `single-task`; got {methodology:?}",
             );
-        }
-
-        /// The embedded methodology `Dir` carries **only** the resource dirs
-        /// (`workflows/`, `schemas/`, `steps/`, `config/`, and — since the M41 F4
-        /// v1→v2 `deferral-ledger` rename — `schema-snapshots/`) — never a `target/`
-        /// / build subtree. The methodology tree is pure YAML data, so an embed that
-        /// swept a build tree would re-introduce the M20 bloat. Guards that the
-        /// `include_dir!` root holds no `target/`, mirroring
-        /// `embedded_pack_carries_no_probes_directory` for the dev pack.
-        #[test]
-        fn methodology_dir_carries_no_build_subtree() {
-            assert!(
-                METHODOLOGY.get_dir("target").is_none(),
-                "the embedded methodology Dir must not carry a `target/` build subtree",
-            );
-            let top_level: Vec<&str> = METHODOLOGY
-                .dirs()
-                .filter_map(|d| d.path().file_name().and_then(|n| n.to_str()))
-                .collect();
-            for name in &top_level {
-                assert!(
-                    matches!(
-                        *name,
-                        "workflows" | "schemas" | "steps" | "config" | "schema-snapshots"
-                    ),
-                    "the methodology Dir must hold only the resource dirs; saw `{name}` \
-                     among {top_level:?}",
-                );
-            }
         }
 
         /// **Knob-surface parity — the whole-`knobs.yaml`-shadow drift guard (M40).**

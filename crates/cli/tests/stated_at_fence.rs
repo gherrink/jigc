@@ -72,7 +72,7 @@
 //! the obligation itself while the composed step keeps promising a payload that
 //! never follows.
 
-use crate::support::root_walk;
+use crate::support::{pack_locator, root_walk};
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -793,11 +793,25 @@ fn every_named_fact_the_dev_pack_owes_is_bought_at_pack_load() {
 fn every_declared_where_reachable_row_is_declared_by_the_step_it_names() {
     let root = workspace_root();
     for row in cli::pack::AMBUSH_CONTRACTS {
-        let cli::pack::AmbushDisposition::DeclaredWhereReachable { declarer, .. } = row.disposition
+        let cli::pack::AmbushDisposition::DeclaredWhereReachable { pack, declarer, .. } =
+            row.disposition
         else {
             continue;
         };
-        let path = root.join(declarer);
+        // The pack is named by identity, so it is found by identity (M54 S2): the tree
+        // whose manifest's sibling `defaults.yaml` carries that `pack-id`.
+        let manifests = pack_locator::locate(&root, pack_locator::Tree::Working)
+            .unwrap_or_else(|dups| panic!("a pack id is claimed twice: {dups:?}"));
+        let manifest = manifests.get(pack).unwrap_or_else(|| {
+            panic!(
+                "`{}` names the pack `{pack}`, which no pack in the working tree claims \
+                 (found {:?})",
+                row.code,
+                manifests.keys().collect::<Vec<_>>(),
+            )
+        });
+        let pack_root = &manifest[..manifest.len() - pack_locator::MANIFEST.len()];
+        let path = root.join(pack_root).join(declarer);
         let bytes = fs::read(&path).unwrap_or_else(|err| {
             panic!(
                 "`{}` names the declarer `{declarer}`, unreadable: {err}",
