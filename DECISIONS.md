@@ -2,6 +2,10 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-09-29 — M54 Inc 2 T1: the entry gate
+
+**M54 Inc 2 T1: H1 verified; the before run is `36549870099` (`push`, `in_progress`) at `d7d3e1cea9de32efa7eae971b6ae5a1bb9bfedc4`**, the only run `gh run list --commit` lists for that sha (workflow `CI`, branch `main`, created 2026-09-29T09:32:51Z), so it is the one Increment 8 reads by id. The rest was checked by `gh api` on 2026-09-29 and each value matched: `repos/gherrink/jigc` gives `visibility: public`; `environments/release` gives `can_admins_bypass: false`, a `required_reviewers` rule naming reviewer id `5682286` (`gherrink`), and `custom_branch_policies: true`; `deployment-branch-policies` gives `total_count: 1`, `name: main`, `type: branch` (checked by name, as planned; the id is `61391261`); and `pre-public-audit.md:102` reads *Signed: Maurice Busch — Date: 2026-09-29*.
+
 ## 2026-09-29 — M54 Increment 2 planning: decomposition
 
 Cut [Increment 2](implementation/roadmap.md) (*the probe runs inside `jigc`*) into **9 ordered tasks**, grounded at HEAD `d7d3e1ce` (tree clean, `main` = `origin/main`, after the history rewrite and the human's H1 commits). Cross-ref [roadmap.md](implementation/roadmap.md) → Milestone 54 → Increment 2; the M54 Settle below (S1, S4); [planning-gate-record.md](completions/artifacts/M54/planning-gate-record.md) → row 4; [module-layout.md](implementation/module-layout.md) → Probe boundary; [validation.md](design/validation.md) → Distribution bound. **Codes registered: none. `setup.extract-probe` retires (T5).**
