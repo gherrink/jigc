@@ -21,18 +21,14 @@ use std::path::{Path, PathBuf};
 
 /// The embedded dev pack's on-disk source tree (`crates/cli/pack`).
 pub fn dev_pack_tree() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("pack")
+    Path::new(cli::pack_path!(dev)).to_path_buf()
 }
 
 /// The embedded **methodology** pack's on-disk source tree (`packs/methodology`) — the dev
 /// pack's manifest-governed sibling, and the home of the work-doc doctypes whose item blocks
 /// a migration reshapes.
 pub fn methodology_pack_tree() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("packs")
-        .join("methodology")
+    Path::new(cli::pack_path!(methodology)).to_path_buf()
 }
 
 /// Recursively copy `src` into `dst` (both directories), creating `dst`.

@@ -68,11 +68,7 @@ use std::path::{Path, PathBuf};
 
 /// `<root>/packs/methodology` — `CARGO_MANIFEST_DIR` is `<root>/crates/cli`.
 fn methodology_pack_tree() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("packs")
-        .join("methodology")
+    Path::new(cli::pack_path!(methodology)).to_path_buf()
 }
 
 /// `<root>/design/self-hosting.md` — the locked honesty spec.

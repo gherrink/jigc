@@ -64,19 +64,10 @@ impl Drop for TempDir {
     }
 }
 
-/// The workspace root — both shipped pack trees hang off it.
-fn workspace_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(Path::parent)
-        .expect("the workspace root is two levels above crates/cli")
-        .to_path_buf()
-}
-
 /// The embedded dev pack tree on disk — selected via `JIGC_PACK_DIR` so the binary
 /// composes the exact bytes it ships.
 fn dev_pack() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("pack")
+    Path::new(cli::pack_path!(dev)).to_path_buf()
 }
 
 /// Initialize a real git repo with one commit plus the `.jigc/config/` project layer.
@@ -358,15 +349,11 @@ fn no_composed_workflow_and_no_pack_source_claims_start_lists_the_gates() {
         );
     }
 
-    let root = workspace_root();
-    let files: Vec<(PathBuf, String)> = [
-        root.join("crates").join("cli").join("pack"),
-        root.join("packs").join("methodology"),
-    ]
-    .iter()
-    .flat_map(|tree| root_walk::files(tree, |_| true))
-    .filter_map(|path| fs::read_to_string(&path).ok().map(|text| (path, text)))
-    .collect();
+    let files: Vec<(PathBuf, String)> = [cli::pack_path!(dev), cli::pack_path!(methodology)]
+        .iter()
+        .flat_map(|tree| root_walk::files(Path::new(tree), |_| true))
+        .filter_map(|path| fs::read_to_string(&path).ok().map(|text| (path, text)))
+        .collect();
     let offenders: Vec<&PathBuf> = files
         .iter()
         .filter(|(_, text)| text.contains("lists the gates"))
@@ -609,15 +596,8 @@ fn following_the_composed_changelog_step_yields_a_real_changelog_entry() {
     // recording "already rides `single-task`'s record-changelog step". The claim is
     // true of the step this test just drove end-to-end — and it stays anchored to it:
     // the reason must keep naming the step, byte-unchanged.
-    let reason = fs::read_to_string(
-        workspace_root()
-            .join("crates")
-            .join("cli")
-            .join("pack")
-            .join("workflows")
-            .join("record-change.yaml"),
-    )
-    .expect("read the record-change workflow");
+    let reason = fs::read_to_string(cli::pack_path!(dev, "workflows/record-change.yaml"))
+        .expect("read the record-change workflow");
     assert!(
         reason.contains(
             "routine change recording already rides `single-task`'s record-changelog step"

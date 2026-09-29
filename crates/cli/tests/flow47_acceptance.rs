@@ -1403,7 +1403,7 @@ fn every_leaf_verb_speaks_exactly_one_json_document() {
 
 /// The on-disk dev pack the binary embeds.
 fn embedded_pack_tree() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("pack")
+    Path::new(cli::pack_path!(dev)).to_path_buf()
 }
 
 /// The named-fact comparison view: whitespace collapsed, ASCII case folded — the

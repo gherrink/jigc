@@ -43,11 +43,6 @@ use engine::schema::{Leaf, Schema, SectionBody};
 // The shipped packs, read the way production reads them.
 // ---------------------------------------------------------------------------------------------
 
-/// The repo root — the parent of `crates/cli`.
-fn repo_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..")
-}
-
 /// The two shipped pack trees, each paired with the **embedded** pack built from it: the
 /// disk tree is where the snapshot *files* are enumerated, the embedded pack is what
 /// `migrate-corpus` actually reads. Asserting over both is the point — a snapshot present
@@ -56,12 +51,12 @@ fn shipped_packs() -> Vec<(&'static str, PathBuf, EmbeddedPack)> {
     vec![
         (
             "dev",
-            repo_root().join("crates").join("cli").join("pack"),
+            Path::new(cli::pack_path!(dev)).to_path_buf(),
             EmbeddedPack::new(),
         ),
         (
             "methodology",
-            repo_root().join("packs").join("methodology"),
+            Path::new(cli::pack_path!(methodology)).to_path_buf(),
             EmbeddedPack::methodology(),
         ),
     ]
@@ -78,8 +73,8 @@ fn manifest_of(tree: &Path) -> engine::manifest::Manifest {
 /// The `schema-version` the shipped **methodology** manifest declares for `ty` — read, never
 /// spelled, so the next bump of some other doctype does not redden arms that are not about it.
 fn declared_schema_version(ty: &str) -> u32 {
-    let tree = repo_root().join("packs").join("methodology");
-    manifest_of(&tree)
+    let tree = Path::new(cli::pack_path!(methodology));
+    manifest_of(tree)
         .doctypes
         .iter()
         .find(|entry| entry.ty == ty)

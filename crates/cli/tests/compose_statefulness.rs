@@ -69,17 +69,13 @@ impl Drop for TempDir {
 /// The embedded dev pack tree on disk — selected via `JIGC_PACK_DIR` so the binary
 /// composes the exact bytes it ships.
 fn dev_pack() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("pack")
+    Path::new(cli::pack_path!(dev)).to_path_buf()
 }
 
 /// The methodology pack tree at the repo root — the second shipped pack, whose
 /// `finalize` step owes the same what's-left sentence.
 fn methodology_pack() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("packs")
-        .join("methodology")
+    Path::new(cli::pack_path!(methodology)).to_path_buf()
 }
 
 /// Initialize a real git repo with one commit plus the `.jigc/config/` project layer.

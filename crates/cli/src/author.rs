@@ -477,15 +477,21 @@ mod tests {
     /// The shipped `changelog` schema (two-level repeatable: releases → changes), the
     /// cross-check target for the changelog-shaped payloads.
     fn changelog_schema() -> Schema {
-        load_schema(include_bytes!("../pack/schemas/changelog.yaml"))
-            .expect("shipped changelog schema loads")
+        load_schema(include_bytes!(crate::pack_path!(
+            dev,
+            "schemas/changelog.yaml"
+        )))
+        .expect("shipped changelog schema loads")
     }
 
     /// The shipped `commit` schema (`header` fields + a `summary`/`body` slot), the
     /// cross-check target for the doc-level simple-section payload.
     fn commit_schema() -> Schema {
-        load_schema(include_bytes!("../pack/schemas/commit.yaml"))
-            .expect("shipped commit schema loads")
+        load_schema(include_bytes!(crate::pack_path!(
+            dev,
+            "schemas/commit.yaml"
+        )))
+        .expect("shipped commit schema loads")
     }
 
     /// A multi-release **dated-changelog-shaped** payload lowers to the expected

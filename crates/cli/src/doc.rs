@@ -7378,10 +7378,10 @@ mod tests {
     use engine::schema::load_schema;
 
     /// The shipped `commit` schema, loaded from the embedded pack source tree.
-    const COMMIT_YAML: &[u8] = include_bytes!("../pack/schemas/commit.yaml");
+    const COMMIT_YAML: &[u8] = include_bytes!(crate::pack_path!(dev, "schemas/commit.yaml"));
     /// The shipped `prd` schema (M9 new-project doc-type), loaded from the
     /// embedded pack source tree so the round-trip pins exactly the bytes that ship.
-    const PRD_YAML: &[u8] = include_bytes!("../pack/schemas/prd.yaml");
+    const PRD_YAML: &[u8] = include_bytes!(crate::pack_path!(dev, "schemas/prd.yaml"));
 
     /// A throwaway directory that removes itself on drop — keeps the prd round-trip
     /// off any real repo tree.
@@ -7767,7 +7767,7 @@ mod tests {
     fn on_create_item_fields_stamps_only_on_create_date_leaves() {
         // The shipped `spec` doctype's `criteria` block carries NO `set: on-create`
         // field, so `add-item` over it passes no fields (the regression-safe path).
-        const SPEC_YAML: &[u8] = include_bytes!("../pack/schemas/spec.yaml");
+        const SPEC_YAML: &[u8] = include_bytes!(crate::pack_path!(dev, "schemas/spec.yaml"));
         let types = vec![engine::schema::PackTypeDecl {
             name: "code-anchor".to_owned(),
             adjudicator: "doc-code".to_owned(),
@@ -7937,7 +7937,8 @@ sections:
 
         // The shipped changelog `changes` groups carry NO on-create date — symmetric
         // regression-safety with the top-level path (no fields stamped).
-        const CHANGELOG_YAML: &[u8] = include_bytes!("../pack/schemas/changelog.yaml");
+        const CHANGELOG_YAML: &[u8] =
+            include_bytes!(crate::pack_path!(dev, "schemas/changelog.yaml"));
         let changelog = load_schema(CHANGELOG_YAML).expect("changelog loads");
         assert!(
             on_create_nested_item_fields(
@@ -7957,7 +7958,7 @@ sections:
     /// omitting-context guard, M22 engine work #4).
     #[test]
     fn on_create_doc_fields_materializes_default_and_on_create() {
-        const ADR_YAML: &[u8] = include_bytes!("../pack/schemas/adr.yaml");
+        const ADR_YAML: &[u8] = include_bytes!(crate::pack_path!(dev, "schemas/adr.yaml"));
         let types = vec![engine::schema::PackTypeDecl {
             name: "code-anchor".to_owned(),
             adjudicator: "doc-code".to_owned(),
@@ -8005,7 +8006,7 @@ sections:
             hint: None,
         }];
 
-        const ADR_YAML: &[u8] = include_bytes!("../pack/schemas/adr.yaml");
+        const ADR_YAML: &[u8] = include_bytes!(crate::pack_path!(dev, "schemas/adr.yaml"));
         let adr = engine::schema::load_schema_with_types(ADR_YAML, &types).expect("adr loads");
 
         // Migration mode drops the date stamp but KEEPS the `status: proposed` default.
@@ -8036,7 +8037,7 @@ sections:
         );
 
         // `spec` carries no date field, so the flag is invariant (moot for spec/prd).
-        const SPEC_YAML: &[u8] = include_bytes!("../pack/schemas/spec.yaml");
+        const SPEC_YAML: &[u8] = include_bytes!(crate::pack_path!(dev, "schemas/spec.yaml"));
         let spec = engine::schema::load_schema_with_types(SPEC_YAML, &types).expect("spec loads");
         assert_eq!(
             on_create_doc_fields(&spec, true, 1),

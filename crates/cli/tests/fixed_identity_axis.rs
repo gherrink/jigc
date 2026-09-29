@@ -1733,16 +1733,11 @@ fn normalized(body: &str) -> String {
 
 /// The two shipped pack trees, by the name their steps are reported under.
 fn pack_trees() -> Vec<(&'static str, PathBuf)> {
-    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
     vec![
-        ("dev", manifest.join("pack")),
+        ("dev", Path::new(cli::pack_path!(dev)).to_path_buf()),
         (
             "methodology",
-            manifest
-                .join("..")
-                .join("..")
-                .join("packs")
-                .join("methodology"),
+            Path::new(cli::pack_path!(methodology)).to_path_buf(),
         ),
     ]
 }

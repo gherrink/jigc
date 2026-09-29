@@ -51,7 +51,7 @@ impl Drop for TempDir {
 
 /// The embedded dev pack tree on disk — selected via `JIGC_PACK_DIR`.
 fn dev_pack() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("pack")
+    Path::new(cli::pack_path!(dev)).to_path_buf()
 }
 
 /// Stage a foreign migration source. **M51 Increment 1 / T2**: `jigc migrate` refuses a source

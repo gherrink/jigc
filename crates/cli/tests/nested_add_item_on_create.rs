@@ -66,7 +66,7 @@ fn copy_tree(from: &Path, to: &Path) {
 /// `log-change` workflow whose create-gate admits it.
 fn fixture_pack() -> TempDir {
     let pack = TempDir::new("pack");
-    let dev_pack = Path::new(env!("CARGO_MANIFEST_DIR")).join("pack");
+    let dev_pack = Path::new(cli::pack_path!(dev)).to_path_buf();
     copy_tree(&dev_pack, pack.path());
     // This fixture ships a deliberately divergent `changelog` shape, so it is NOT the
     // frozen dev pack — drop the copied freeze manifest (M33 pack-load gate would
@@ -284,7 +284,7 @@ fn nested_add_item_materializes_an_on_create_date_on_the_change_group() {
 /// composes the bytes it ships) — its changelog nests a `changes` repeatable keyed by
 /// an `enum` id-from (`category`), the nested write-time reject target.
 fn dev_pack() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("pack")
+    Path::new(cli::pack_path!(dev)).to_path_buf()
 }
 
 /// M24 inc-2 T1 — a **nested** `add-item` (`{release}/changes`) whose `--title`

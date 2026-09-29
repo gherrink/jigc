@@ -93,7 +93,7 @@ fn repo_root() -> PathBuf {
 
 /// The on-disk methodology pack home.
 fn methodology_pack_tree() -> PathBuf {
-    repo_root().join("packs").join("methodology")
+    Path::new(cli::pack_path!(methodology)).to_path_buf()
 }
 
 /// Split a markdown table row into its trimmed cells.

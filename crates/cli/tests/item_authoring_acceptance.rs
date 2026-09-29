@@ -129,7 +129,7 @@ fn staged_spec(repo: &Path, task: &str, slug: &str) -> String {
 /// dev-pack `code-anchor` type so the byte-stable round-trip asserts against
 /// exactly the bytes that ship (mirrors `doc_write.rs`).
 fn spec_schema() -> engine::schema::Schema {
-    const SPEC_YAML: &[u8] = include_bytes!("../pack/schemas/spec.yaml");
+    const SPEC_YAML: &[u8] = include_bytes!(cli::pack_path!(dev, "schemas/spec.yaml"));
     let types = vec![engine::schema::PackTypeDecl {
         name: "code-anchor".to_owned(),
         adjudicator: "doc-code".to_owned(),

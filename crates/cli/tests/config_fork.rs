@@ -112,10 +112,7 @@ fn fork_copies_step_bytes_records_pinned_basis_and_round_trips() {
     // (a) the native step file holds the pack `implement` body byte-for-byte.
     let native = config_dir(repo.path()).join("steps").join("implement.yaml");
     let written = fs::read(&native).expect("the forked native step file must be written");
-    let pack_implement = include_bytes!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/pack/steps/implement.yaml"
-    ));
+    let pack_implement = include_bytes!(cli::pack_path!(dev, "steps/implement.yaml"));
     assert_eq!(
         written,
         pack_implement.as_slice(),

@@ -49,11 +49,7 @@ impl Drop for TempDir {
 
 /// The methodology pack's source tree (the `vision` singleton's home).
 fn methodology_pack_tree() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("packs")
-        .join("methodology")
+    Path::new(cli::pack_path!(methodology)).to_path_buf()
 }
 
 /// Run a `git` command in `repo`, asserting success.

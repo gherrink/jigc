@@ -431,7 +431,7 @@ const ADVERSARIAL_PACK_TARGETS: &[(&str, &str)] = &[
 /// A legitimate file to install — the rig only *copies* it under `--print-only`, so
 /// any readable file proves the path shape.
 fn a_readable_pack_file() -> PathBuf {
-    repo_root().join("crates/cli/pack/schemas/adr.yaml")
+    Path::new(cli::pack_path!(dev, "schemas/adr.yaml")).to_path_buf()
 }
 
 /// Drive the rig, always against the freshly built binary and an absolute scratch root.

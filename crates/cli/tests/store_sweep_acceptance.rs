@@ -155,9 +155,9 @@ fn invoker() -> fn(&ProbeRequest) -> std::io::Result<ProbeRun> {
 /// - `arch-doc` (`docs/architecture/`) — a repeatable `components` block with a bare
 ///   `implemented-by` code-anchor inheriting the type's `symbol-exists` check.
 fn schemas() -> BTreeMap<String, Schema> {
-    const ADR_YAML: &[u8] = include_bytes!("../pack/schemas/adr.yaml");
-    const SPEC_YAML: &[u8] = include_bytes!("../pack/schemas/spec.yaml");
-    const ARCH_DOC_YAML: &[u8] = include_bytes!("../pack/schemas/arch-doc.yaml");
+    const ADR_YAML: &[u8] = include_bytes!(cli::pack_path!(dev, "schemas/adr.yaml"));
+    const SPEC_YAML: &[u8] = include_bytes!(cli::pack_path!(dev, "schemas/spec.yaml"));
+    const ARCH_DOC_YAML: &[u8] = include_bytes!(cli::pack_path!(dev, "schemas/arch-doc.yaml"));
     // The dev pack's `code-anchor` field type — the `field-types.yaml` declaration the
     // CLI feeds the engine (`doc.rs`'s `code-anchor → doc-code/symbol-exists` idiom).
     let types = vec![PackTypeDecl {

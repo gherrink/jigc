@@ -703,7 +703,7 @@ fn a_from_knowledge_adr_lands_with_a_fresh_on_create_date_via_plain_finalize() {
 
 /// The embedded dev pack tree — the faithful source the on-disk copies mirror.
 fn embedded_pack_tree() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("pack")
+    Path::new(cli::pack_path!(dev)).to_path_buf()
 }
 
 /// Recursively copy `src` into `dst`.

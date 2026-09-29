@@ -65,11 +65,7 @@ impl Drop for TempDir {
 
 /// The on-disk methodology pack home (`<root>/packs/methodology`).
 fn methodology_pack_tree() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("packs")
-        .join("methodology")
+    Path::new(cli::pack_path!(methodology)).to_path_buf()
 }
 
 /// The production composition, built the CWD-free way: `[dev ▸ methodology]`.

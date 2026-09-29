@@ -61,11 +61,7 @@ impl Drop for TempDir {
 /// architecture-documentation) and methodology-pack (form-vision, decided-task)
 /// workflows resolve in one repo.
 fn methodology_pack_tree() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("packs")
-        .join("methodology")
+    Path::new(cli::pack_path!(methodology)).to_path_buf()
 }
 
 /// Run a `git` command in `repo`, asserting success.

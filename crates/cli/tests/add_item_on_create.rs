@@ -47,18 +47,14 @@ impl Drop for TempDir {
 
 /// The on-disk methodology pack home (`<root>/packs/methodology`).
 fn methodology_pack_tree() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("packs")
-        .join("methodology")
+    Path::new(cli::pack_path!(methodology)).to_path_buf()
 }
 
 /// The embedded dev pack tree on disk (selected via `JIGC_PACK_DIR` so the binary
 /// composes the exact bytes it ships) — carries the `changelog` doctype whose
 /// `unreleased-changes` repeatable is keyed by an `enum` id-from (`category`).
 fn dev_pack() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("pack")
+    Path::new(cli::pack_path!(dev)).to_path_buf()
 }
 
 /// Initialize a real git repo with one commit (composition reads HEAD) plus the

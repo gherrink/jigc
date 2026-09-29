@@ -33,7 +33,7 @@ use std::path::{Path, PathBuf};
 const LEDGER: &str = "completions/artifacts/M49/baseline-ledger.md";
 const SETTLE: &str = "completions/artifacts/M49/settle-record.md";
 const PENDING: &str = "implementation/decisions-pending.md";
-const MANIFEST: &str = "packs/methodology/config/schema-manifest.yaml";
+const MANIFEST: &str = cli::pack_path!(methodology, "config/schema-manifest.yaml");
 
 fn repo_file(rel: &str) -> String {
     let path: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -182,7 +182,8 @@ fn the_leg_two_refusal_is_homed_with_one_written_trigger() {
 /// reddens this fence on the day one of the three actually lands.
 #[test]
 fn the_manifest_still_stands_where_the_refusal_left_it() {
-    let manifest = repo_file(MANIFEST);
+    let manifest =
+        fs::read_to_string(MANIFEST).unwrap_or_else(|e| panic!("{MANIFEST} must exist: {e}"));
     for (doctype, from) in leg_two_refusals() {
         let entry = format!("- type: {doctype}\n");
         let at = manifest

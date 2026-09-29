@@ -83,16 +83,12 @@ impl Drop for TempDir {
 
 /// The embedded dev pack tree.
 fn dev_pack_tree() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("pack")
+    Path::new(cli::pack_path!(dev)).to_path_buf()
 }
 
 /// The on-disk methodology pack home (`<root>/packs/methodology`).
 fn methodology_pack_tree() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("packs")
-        .join("methodology")
+    Path::new(cli::pack_path!(methodology)).to_path_buf()
 }
 
 /// Every shipped pack tree — both constituents of the composed `[dev ▸ methodology]`

@@ -78,7 +78,7 @@ struct Site {
 /// which is exactly why this table is a source scan rather than a shared `const`.
 const SOURCE_SITES: &[Site] = &[
     Site {
-        path: "crates/cli/pack/config/field-types.yaml",
+        path: cli::pack_path!(dev, "config/field-types.yaml"),
         feeds: "the `code-anchor` declaration — read by `doc schema`, the `{{schema:<doctype>}}` \
                 compose seam, and `doc set-field --help`",
     },
@@ -99,8 +99,8 @@ const SOURCE_SITES: &[Site] = &[
 const SCANNED_ROOTS: &[&str] = &[
     "crates/engine/src",
     "crates/cli/src",
-    "crates/cli/pack",
-    "packs",
+    cli::pack_path!(dev),
+    cli::pack_path!(methodology),
     "QUICKSTART.md",
     "MIGRATING.md",
 ];
@@ -116,7 +116,7 @@ fn repo_root() -> PathBuf {
 
 /// The embedded dev pack tree.
 fn dev_pack_tree() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("pack")
+    Path::new(cli::pack_path!(dev)).to_path_buf()
 }
 
 /// A throwaway directory that removes itself on drop.

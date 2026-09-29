@@ -138,7 +138,7 @@ fn staged_arch_doc(repo: &Path, task: &str, slug: &str) -> String {
 /// so the byte-stable round-trip asserts against exactly the bytes that ship
 /// (mirrors `item_authoring_acceptance::spec_schema`).
 fn arch_doc_schema() -> engine::schema::Schema {
-    const ARCH_YAML: &[u8] = include_bytes!("../pack/schemas/arch-doc.yaml");
+    const ARCH_YAML: &[u8] = include_bytes!(cli::pack_path!(dev, "schemas/arch-doc.yaml"));
     let types = vec![engine::schema::PackTypeDecl {
         name: "code-anchor".to_owned(),
         adjudicator: "doc-code".to_owned(),

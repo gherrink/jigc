@@ -135,8 +135,7 @@ fn origin_pack_of<'a>(json: &'a serde_json::Value, id: &str) -> &'a serde_json::
 /// string `PackSource::own_pack_id` reads, derived from the pack source rather than typed
 /// here, so a renamed pack moves the expectation with it.
 fn dev_pack_id() -> String {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("pack")
+    let path = Path::new(cli::pack_path!(dev))
         .join("config")
         .join("defaults.yaml");
     let text = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));

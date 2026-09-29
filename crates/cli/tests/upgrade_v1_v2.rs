@@ -75,7 +75,7 @@ impl Drop for TempDir {
 /// pack is a faithful copy of it, so the recording verbs read byte-identical pack
 /// bytes (mirroring `pack_source_determinism.rs`).
 fn embedded_pack_tree() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("pack")
+    Path::new(cli::pack_path!(dev)).to_path_buf()
 }
 
 /// Recursively copy `src` into `dst` (both directories), creating `dst`.

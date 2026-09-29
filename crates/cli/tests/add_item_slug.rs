@@ -76,7 +76,7 @@ impl Drop for TempDir {
 
 /// The embedded dev pack tree on disk — the faithful source arm 2's mutated copy mirrors.
 fn dev_pack() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("pack")
+    Path::new(cli::pack_path!(dev)).to_path_buf()
 }
 
 /// Recursively copy `src` into `dst` (both directories), creating `dst`.

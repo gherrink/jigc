@@ -61,16 +61,12 @@ impl Drop for TempDir {
 
 /// The embedded dev pack tree on disk (`JIGC_PACK_DIR` selects it).
 fn dev_pack() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("pack")
+    Path::new(cli::pack_path!(dev)).to_path_buf()
 }
 
 /// The on-disk methodology pack home a `packs.yaml` entry names.
 fn methodology_pack_tree() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("packs")
-        .join("methodology")
+    Path::new(cli::pack_path!(methodology)).to_path_buf()
 }
 
 /// Run a `git` command in `repo`, asserting success, returning trimmed stdout.

@@ -312,7 +312,7 @@ fn copy_tree(from: &Path, to: &Path) {
 /// fixture `changelog` schema and a `log-change` workflow whose create-gate admits it.
 fn fixture_pack() -> TempDir {
     let pack = TempDir::new("pack");
-    let dev_pack = Path::new(env!("CARGO_MANIFEST_DIR")).join("pack");
+    let dev_pack = Path::new(cli::pack_path!(dev)).to_path_buf();
     copy_tree(&dev_pack, pack.path());
     // The fixture ships a deliberately divergent `changelog` shape, so it is NOT the
     // frozen dev pack — drop the copied freeze manifest (the pack-load gate would

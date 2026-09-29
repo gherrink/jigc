@@ -103,11 +103,7 @@ fn init_repo(repo: &Path) -> String {
 
 /// The on-disk methodology pack home (`<root>/packs/methodology`).
 fn methodology_pack_tree() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("packs")
-        .join("methodology")
+    Path::new(cli::pack_path!(methodology)).to_path_buf()
 }
 
 /// The shipped `milestone-record.yaml` schema, loaded engine-native — the record read-back

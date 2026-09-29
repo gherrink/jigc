@@ -22,6 +22,35 @@ use crate::pack::kind_dir;
 use engine::packsource::{PackError, PackResourceKind, PackSource, ResourceId};
 use include_dir::{Dir, include_dir};
 
+/// The on-disk path of a built-in pack, or of a file inside one, for the **tests** of
+/// this package — beside the two embeds below, the one place that knows where a pack
+/// sits (M54 S2). Every pack path a `cli` test names comes from here.
+///
+/// - **Literal form**, `pack_path!(<pack-id>, "<pack-relative path>")`: one `concat!`
+///   literal, so it serves wherever `include_*!` needs one —
+///   `include_bytes!(cli::pack_path!(dev, "schemas/adr.yaml"))`.
+/// - **Root form**, `pack_path!(<pack-id>)`: the pack's root directory, no trailing
+///   separator — the runtime root a test copies, lists in `packs.yaml` or hands to
+///   `JIGC_PACK_DIR`: `Path::new(cli::pack_path!(methodology))`.
+///
+/// Arms are keyed by the pack's `pack-id` (`dev`, `methodology`), and each pack's root is
+/// written once, in its root arm. The expansion reads `CARGO_MANIFEST_DIR` **where it is
+/// expanded**, so the macro means something only inside this package (its lib's unit
+/// tests and its integration suites); nothing in the shipped binary expands it.
+/// `each_root_form_is_the_tree_its_embed_carries` proves each root arm against its embed.
+#[macro_export]
+macro_rules! pack_path {
+    (dev) => {
+        concat!(env!("CARGO_MANIFEST_DIR"), "/pack")
+    };
+    (methodology) => {
+        concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/methodology")
+    };
+    ($pack:ident, $rel:literal) => {
+        concat!($crate::pack_path!($pack), "/", $rel)
+    };
+}
+
 /// The built-in dev pack, embedded at compile time.
 static DEV: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/pack");
 
@@ -107,6 +136,69 @@ mod tests {
             EmbeddedPack::methodology_at("0.0.1-seam").pack_version(),
             "0.0.1-seam",
         );
+    }
+
+    /// Every file `embed` carries, as `(pack-relative path, bytes)`, sorted by path.
+    fn embedded_files(embed: &Dir<'static>) -> Vec<(String, Vec<u8>)> {
+        fn walk(dir: &Dir<'static>, out: &mut Vec<(String, Vec<u8>)>) {
+            for file in dir.files() {
+                let rel = file.path().to_str().expect("a UTF-8 pack path").to_owned();
+                out.push((rel, file.contents().to_vec()));
+            }
+            for sub in dir.dirs() {
+                walk(sub, out);
+            }
+        }
+        let mut out = Vec::new();
+        walk(embed, &mut out);
+        out.sort();
+        out
+    }
+
+    /// **`pack_path!` reaches the tree the binary embeds, per pack.** Each root form is
+    /// read file by file against its `include_dir!` embed: every embedded file sits at
+    /// the macro's root with the same bytes, and the literal form's
+    /// `config/defaults.yaml` names the pack the arm is keyed by. So a test that takes a
+    /// pack path from the macro reads exactly what ships, and an arm pointed at the
+    /// wrong pack cannot pass.
+    #[test]
+    fn each_root_form_is_the_tree_its_embed_carries() {
+        let arms: [(&str, &str, &Dir<'static>, &str); 2] = [
+            (
+                "dev",
+                crate::pack_path!(dev),
+                &DEV,
+                crate::pack_path!(dev, "config/defaults.yaml"),
+            ),
+            (
+                "methodology",
+                crate::pack_path!(methodology),
+                &METHODOLOGY,
+                crate::pack_path!(methodology, "config/defaults.yaml"),
+            ),
+        ];
+        for (pack_id, root, embed, defaults) in arms {
+            let files = embedded_files(embed);
+            assert!(!files.is_empty(), "the `{pack_id}` embed carries no files");
+            for (rel, bytes) in &files {
+                let on_disk =
+                    std::fs::read(std::path::Path::new(root).join(rel)).unwrap_or_else(|e| {
+                        panic!("`pack_path!({pack_id})` = {root} lacks embedded `{rel}`: {e}")
+                    });
+                assert!(
+                    on_disk == *bytes,
+                    "`pack_path!({pack_id})` = {root}: `{rel}` differs from the embed",
+                );
+            }
+            let text = std::fs::read_to_string(defaults).expect("read the arm's defaults.yaml");
+            let declared: serde_yaml_ng::Value =
+                serde_yaml_ng::from_str(&text).expect("parse the arm's defaults.yaml");
+            assert_eq!(
+                declared["pack-id"].as_str(),
+                Some(pack_id),
+                "`pack_path!({pack_id}, …)` reaches a pack with another pack-id",
+            );
+        }
     }
 
     /// The embedded dev pack carries **only** real pack content — never the `doc-code`

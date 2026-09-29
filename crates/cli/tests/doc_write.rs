@@ -568,7 +568,7 @@ fn malformed_field_value_blocks_with_a_routed_finding() {
 /// dev-pack field types (`code-anchor` on `maps-to-test`), so the byte-stable
 /// round-trip asserts against exactly the bytes that ship.
 fn spec_schema() -> engine::schema::Schema {
-    const SPEC_YAML: &[u8] = include_bytes!("../pack/schemas/spec.yaml");
+    const SPEC_YAML: &[u8] = include_bytes!(cli::pack_path!(dev, "schemas/spec.yaml"));
     // The spec's `maps-to-test` is a pack-declared `code-anchor`, so the schema only
     // loads with that type threaded in (mirrors the shipped pack's `code-anchor →
     // doc-code` decl).
@@ -896,7 +896,7 @@ fn add_item_blocks_a_blank_title_and_passes_a_clean_one() {
 /// The shipped `changelog` schema (engine-native types only), so the byte-stable
 /// round-trip asserts against exactly the bytes the pack ships.
 fn changelog_schema() -> engine::schema::Schema {
-    const CHANGELOG_YAML: &[u8] = include_bytes!("../pack/schemas/changelog.yaml");
+    const CHANGELOG_YAML: &[u8] = include_bytes!(cli::pack_path!(dev, "schemas/changelog.yaml"));
     let mut schema = engine::schema::load_schema(CHANGELOG_YAML).expect("changelog.yaml loads");
     engine::schema::inject_schema_version_stamp(&mut schema);
     schema

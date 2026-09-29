@@ -57,7 +57,7 @@ impl Drop for TempDir {
 
 /// The on-disk dev pack tree — the faithful source the embedded pack mirrors.
 fn pack_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("pack")
+    Path::new(cli::pack_path!(dev)).to_path_buf()
 }
 
 /// Run a `git` command in `repo`, asserting success, returning trimmed stdout.

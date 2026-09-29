@@ -85,7 +85,7 @@ fn repo_root() -> PathBuf {
 
 /// The embedded dev pack tree — the faithful source every on-disk copy mirrors.
 fn dev_pack_tree() -> PathBuf {
-    crate_dir().join("pack")
+    Path::new(cli::pack_path!(dev)).to_path_buf()
 }
 
 /// Recursively copy `src` into `dst` (both directories), creating `dst`.

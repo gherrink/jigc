@@ -570,7 +570,7 @@ fn one_pack_is_named_one_way_on_every_surface_that_names_one() {
 /// embedded copy answers `CARGO_PKG_VERSION` instead, so this is the only way to drive
 /// a version-less pack through the real binary.
 fn dev_pack_tree() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("pack")
+    Path::new(cli::pack_path!(dev)).to_path_buf()
 }
 
 /// Like [`run`] but with `JIGC_PACK_DIR` **set** — the explicit channel, used only by

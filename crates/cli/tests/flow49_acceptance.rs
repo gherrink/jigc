@@ -1684,7 +1684,7 @@ fn a_never_adopted_foreign_file_draws_one_advisory_at_both_doors() {
 
 /// The embedded dev pack tree on disk — the faithful source a mutated copy mirrors.
 fn embedded_pack_tree() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("pack")
+    Path::new(cli::pack_path!(dev)).to_path_buf()
 }
 
 /// Recursively copy `src` into `dst` (both directories), creating `dst`.

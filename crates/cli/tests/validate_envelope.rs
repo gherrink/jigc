@@ -849,11 +849,7 @@ fn blocking_probes_is_the_empty_array_when_nothing_blocks() {
 /// The on-disk methodology pack home (`<root>/packs/methodology`) — the listed,
 /// highest-precedence pack the two-pack `[dev ▸ methodology]` store composes.
 fn methodology_pack_tree() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("packs")
-        .join("methodology")
+    Path::new(cli::pack_path!(methodology)).to_path_buf()
 }
 
 /// Record the listed pack-set in the in-repo project layer's `packs.yaml` — the

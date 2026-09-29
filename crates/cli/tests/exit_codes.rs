@@ -57,7 +57,7 @@ impl Drop for TempDir {
 /// The embedded dev pack tree on disk — selected via `JIGC_PACK_DIR` (byte-identical to
 /// the binary-embedded pack, so setting it is harmless and pins the pack this suite reads).
 fn dev_pack() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("pack")
+    Path::new(cli::pack_path!(dev)).to_path_buf()
 }
 
 /// Run a `git` command in `repo`, asserting success.

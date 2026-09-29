@@ -69,11 +69,7 @@ impl Drop for TempDir {
 /// The on-disk methodology pack home (`<root>/packs/methodology`) — the literal
 /// directory a `JIGC_PACK_DIR` env value names (the (v) supersession probe).
 fn methodology_pack_tree() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("packs")
-        .join("methodology")
+    Path::new(cli::pack_path!(methodology)).to_path_buf()
 }
 
 /// Initialize a real git repo with one commit (composition mints, which reads HEAD

@@ -120,11 +120,7 @@ fn init_repo(repo: &Path) {
 /// `milestone-record` 2→3 bump).
 fn declared_schema_version(ty: &str) -> u32 {
     let bytes = fs::read(
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join("packs")
-            .join("methodology")
+        Path::new(cli::pack_path!(methodology))
             .join("config")
             .join("schema-manifest.yaml"),
     )

@@ -53,7 +53,7 @@ impl Drop for TempDir {
 /// composes the exact bytes it ships (a FilesystemPack over the same `pack/` the
 /// `include_dir!` embeds).
 fn dev_pack() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("pack")
+    Path::new(cli::pack_path!(dev)).to_path_buf()
 }
 
 /// Initialize a real git repo with one commit (composition reads HEAD) plus the

@@ -47,7 +47,7 @@ impl Drop for TempDir {
 
 /// The embedded dev pack tree — the faithful source the on-disk copies mirror.
 fn embedded_pack_tree() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("pack")
+    Path::new(cli::pack_path!(dev)).to_path_buf()
 }
 
 /// Recursively copy `src` into `dst` (both directories), creating `dst`.

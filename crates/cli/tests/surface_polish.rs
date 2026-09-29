@@ -426,14 +426,13 @@ fn migrate_decisions_log_preview_keeps_the_shallower_reserved_set() {
 /// and defers the depths to the projection.
 #[test]
 fn no_shipped_pack_step_claims_a_fixed_safe_depth() {
-    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
     let step_dirs = [
-        manifest.join("pack/steps"),
-        manifest.join("../../packs/methodology/steps"),
+        cli::pack_path!(dev, "steps"),
+        cli::pack_path!(methodology, "steps"),
     ];
     let mut checked = 0usize;
     for dir in step_dirs {
-        for path in root_walk::files_in(&dir, root_walk::ext("yaml")) {
+        for path in root_walk::files_in(Path::new(dir), root_walk::ext("yaml")) {
             let body = collapsed(&fs::read_to_string(&path).expect("read the step"));
             assert!(
                 !body.contains(RETIRED_GLOBAL_CLAIM),

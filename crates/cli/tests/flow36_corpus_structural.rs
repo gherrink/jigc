@@ -90,7 +90,7 @@ fn copy_dir_all(src: &Path, dst: &Path) {
 /// riding a stale one. The version map (`schema-version`) is still the authority the
 /// detector routes against; only the hash is recomputed.
 fn build_fixture_pack(pack_dir: &Path) {
-    let embedded = Path::new(env!("CARGO_MANIFEST_DIR")).join("pack");
+    let embedded = Path::new(cli::pack_path!(dev)).to_path_buf();
     copy_dir_all(&embedded, pack_dir);
 
     let snaps_src = Path::new(env!("CARGO_MANIFEST_DIR"))

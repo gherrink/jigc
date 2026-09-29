@@ -75,11 +75,7 @@ impl Drop for TempDir {
 /// The on-disk methodology pack home (`<root>/packs/methodology`) — the literal
 /// directory a `.jigc/config/packs:` entry names.
 fn methodology_pack_tree() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("packs")
-        .join("methodology")
+    Path::new(cli::pack_path!(methodology)).to_path_buf()
 }
 
 /// The single-pack floor golden: the no-override bare-`jigc start "<intent>"`

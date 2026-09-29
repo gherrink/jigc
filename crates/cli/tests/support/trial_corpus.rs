@@ -226,7 +226,7 @@ impl FixturePack {
     /// manifest, leaving a loadable pack a caller may reshape.
     pub fn from_dev_pack(label: &str) -> Self {
         let root = unique_root(&format!("pack-{label}"));
-        let dev_pack = Path::new(env!("CARGO_MANIFEST_DIR")).join("pack");
+        let dev_pack = Path::new(cli::pack_path!(dev)).to_path_buf();
         copy_tree(&dev_pack, &root);
         fs::remove_file(root.join("config").join("schema-manifest.yaml"))
             .expect("drop the copied freeze manifest");

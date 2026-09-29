@@ -81,7 +81,7 @@ the reason it is hidden from the catalog.
 /// The embedded pack source tree (`crates/cli/pack/`) — `CARGO_MANIFEST_DIR` is
 /// `<root>/crates/cli`, the very tree `include_dir!` embeds into the binary.
 fn embedded_pack_tree() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("pack")
+    Path::new(cli::pack_path!(dev)).to_path_buf()
 }
 
 /// Recursively copy `src` into `dst` (both directories), creating `dst`.

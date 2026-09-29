@@ -478,7 +478,7 @@ fn today_iso() -> String {
 /// The `adr` schema, loaded with the dev-pack `code-anchor` field-type (so a re-parse of
 /// the staged bytes resolves `cites-code`) — mirrors `arch_doc_components_materialize`.
 fn adr_schema() -> engine::schema::Schema {
-    const ADR_YAML: &[u8] = include_bytes!("../pack/schemas/adr.yaml");
+    const ADR_YAML: &[u8] = include_bytes!(cli::pack_path!(dev, "schemas/adr.yaml"));
     let types = vec![engine::schema::PackTypeDecl {
         name: "code-anchor".to_owned(),
         adjudicator: "doc-code".to_owned(),

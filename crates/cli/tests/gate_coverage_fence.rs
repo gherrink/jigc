@@ -207,7 +207,7 @@ fn sites() -> Vec<Site> {
     let methodology = run(
         meth.path(),
         home.path(),
-        Some(&root.join("packs").join("methodology")),
+        Some(Path::new(cli::pack_path!(methodology))),
         &["start", "--workflow", "dev-task", "add a thing"],
     );
     let tip = run(dev.path(), home.path(), None, &["task", "status"]);

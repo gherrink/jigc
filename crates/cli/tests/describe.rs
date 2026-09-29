@@ -299,17 +299,13 @@ fn describe_routes_to_workflow_preview() {
 /// The dev pack tree on disk — the same bytes `include_dir!` embeds, selectable as
 /// the **base** pack via `JIGC_PACK_DIR`.
 fn dev_pack() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("pack")
+    Path::new(cli::pack_path!(dev)).to_path_buf()
 }
 
 /// The methodology pack tree on disk — the same bytes `include_dir!` embeds,
 /// selectable as the **highest-precedence listed** pack via `packs.yaml`.
 fn methodology_pack() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("packs")
-        .join("methodology")
+    Path::new(cli::pack_path!(methodology)).to_path_buf()
 }
 
 /// The `doc show` command-ref a shipped pack's catalog carries, as `(id, hint)` —
@@ -834,19 +830,13 @@ struct ShippedWorkflow {
 /// on disk (the same files `include_dir!` embeds). Derived, not hard-coded — the
 /// workflow set grows and shrinks with the packs.
 fn shipped_workflows() -> Vec<ShippedWorkflow> {
-    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
     let pack_dirs = [
-        manifest.join("pack").join("workflows"),
-        manifest
-            .join("..")
-            .join("..")
-            .join("packs")
-            .join("methodology")
-            .join("workflows"),
+        cli::pack_path!(dev, "workflows"),
+        cli::pack_path!(methodology, "workflows"),
     ];
     let mut out = Vec::new();
     for dir in pack_dirs {
-        for path in root_walk::files_in(&dir, root_walk::ext("yaml")) {
+        for path in root_walk::files_in(Path::new(dir), root_walk::ext("yaml")) {
             let text = fs::read_to_string(&path).expect("read workflow yaml");
             let front_matter = text
                 .strip_prefix("---\n")

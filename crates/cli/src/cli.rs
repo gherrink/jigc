@@ -6714,7 +6714,7 @@ mod cli_parse {
             ("jigc doc show --help", long_help(&["doc", "show"])),
             (
                 "the dev pack's `author-change` step",
-                include_str!("../pack/steps/author-change.yaml").to_owned(),
+                include_str!(crate::pack_path!(dev, "steps/author-change.yaml")).to_owned(),
             ),
         ] {
             assert!(

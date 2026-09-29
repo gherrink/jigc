@@ -39,10 +39,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 /// The dev pack's frozen doctype-set manifest.
-const DEV_MANIFEST: &str = "crates/cli/pack/config/schema-manifest.yaml";
+const DEV_MANIFEST: &str = cli::pack_path!(dev, "config/schema-manifest.yaml");
 
 /// The methodology pack's own manifest (M40 A1 — each pack declares its own set).
-const METHODOLOGY_MANIFEST: &str = "packs/methodology/config/schema-manifest.yaml";
+const METHODOLOGY_MANIFEST: &str = cli::pack_path!(methodology, "config/schema-manifest.yaml");
 
 /// Both shipped manifests, in read order.
 const MANIFESTS: [&str; 2] = [DEV_MANIFEST, METHODOLOGY_MANIFEST];

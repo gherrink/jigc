@@ -66,11 +66,7 @@ impl Drop for TempDir {
 /// methodology-test seam threaded via `JIGC_PACK_DIR`, so the composed verbs govern the
 /// `deferral-ledger` doctype (and its frozen schema-version 2 manifest entry).
 fn methodology_pack_tree() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("packs")
-        .join("methodology")
+    Path::new(cli::pack_path!(methodology)).to_path_buf()
 }
 
 /// Run a `git` command in `repo`, asserting success.

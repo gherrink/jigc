@@ -2194,16 +2194,12 @@ fn every_manifest_kind_reaches_the_wire_from_one_finalize() {
 
 /// The shipped dev pack's tree on disk.
 fn dev_pack_tree() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("pack")
+    Path::new(cli::pack_path!(dev)).to_path_buf()
 }
 
 /// The shipped methodology pack's tree on disk.
 fn methodology_pack_tree() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("packs")
-        .join("methodology")
+    Path::new(cli::pack_path!(methodology)).to_path_buf()
 }
 
 /// Recursively copy `src` into `dst`.

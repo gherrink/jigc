@@ -240,14 +240,6 @@ fn json(payload: &str) -> Value {
         .unwrap_or_else(|err| panic!("the payload is JSON ({err}); got:\n{payload}"))
 }
 
-/// The workspace root — the checkout both shipped `schema-manifest.yaml` files live in.
-fn repo_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .canonicalize()
-        .expect("the workspace root is reachable from the cli crate")
-}
-
 // ═════════════════════════════════════════════════════════════════════════════
 // Arm 1 — the item region, over a MANUFACTURED SHAPE SPACE, driven to a commit
 // ═════════════════════════════════════════════════════════════════════════════
@@ -1190,20 +1182,23 @@ fn a_project_pack_extends_the_composition_without_shadowing_what_the_freeze_gove
 /// arm green.
 #[test]
 fn every_doctype_reports_the_version_its_manifest_declares() {
-    let declared: BTreeMap<String, u32> = ["crates/cli/pack", "packs/methodology"]
-        .into_iter()
-        .flat_map(|pack| {
-            let path = repo_root().join(pack).join("config/schema-manifest.yaml");
-            let bytes = fs::read_to_string(&path)
-                .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-            let manifest: Manifest = serde_yaml_ng::from_str(&bytes)
-                .unwrap_or_else(|e| panic!("{} deserializes: {e}", path.display()));
-            manifest
-                .doctypes
-                .into_iter()
-                .map(|e| (e.ty, e.schema_version))
-        })
-        .collect();
+    let declared: BTreeMap<String, u32> = [
+        cli::pack_path!(dev, "config/schema-manifest.yaml"),
+        cli::pack_path!(methodology, "config/schema-manifest.yaml"),
+    ]
+    .into_iter()
+    .flat_map(|path| {
+        let path = Path::new(path);
+        let bytes =
+            fs::read_to_string(path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        let manifest: Manifest = serde_yaml_ng::from_str(&bytes)
+            .unwrap_or_else(|e| panic!("{} deserializes: {e}", path.display()));
+        manifest
+            .doctypes
+            .into_iter()
+            .map(|e| (e.ty, e.schema_version))
+    })
+    .collect();
     assert!(
         declared.len() > 10,
         "both manifests must parse to a real doctype set; got {declared:?}",

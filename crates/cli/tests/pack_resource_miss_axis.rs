@@ -102,13 +102,6 @@ fn copy_tree(from: &Path, to: &Path) {
     }
 }
 
-fn repo_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .to_path_buf()
-}
-
 /// The two composed pack trees + the repo they compose over.
 struct Rig {
     /// Kept only to hold the whole rig alive until the test ends.
@@ -127,8 +120,8 @@ impl Rig {
         let home = TempDir::new("home");
         let base = root.path().join("devpack");
         let listed = root.path().join("methpack");
-        copy_tree(&repo_root().join("crates").join("cli").join("pack"), &base);
-        copy_tree(&repo_root().join("packs").join("methodology"), &listed);
+        copy_tree(Path::new(cli::pack_path!(dev)), &base);
+        copy_tree(Path::new(cli::pack_path!(methodology)), &listed);
 
         let repo = root.path().join("repo");
         fs::create_dir_all(&repo).expect("create the repo dir");

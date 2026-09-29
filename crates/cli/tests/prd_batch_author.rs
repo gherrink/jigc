@@ -129,7 +129,7 @@ fn ok_stdout(out: std::process::Output, what: &str) -> String {
 /// code-anchor that `spec.criteria` carries), loaded from the embedded pack source so the
 /// byte-stable round-trip asserts against exactly the bytes that ship.
 fn prd_schema() -> engine::schema::Schema {
-    const PRD_YAML: &[u8] = include_bytes!("../pack/schemas/prd.yaml");
+    const PRD_YAML: &[u8] = include_bytes!(cli::pack_path!(dev, "schemas/prd.yaml"));
     let mut schema = engine::schema::load_schema(PRD_YAML).expect("shipped prd schema loads");
     engine::schema::inject_schema_version_stamp(&mut schema);
     schema

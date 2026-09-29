@@ -2788,7 +2788,7 @@ mod tests {
     /// **intrinsic** check to be declared with its demotion floor, so a minimal knobs
     /// file fails resolution on a rule that has nothing to do with this test. Including
     /// the real one keeps the fixture honest and makes it track the pack.
-    const DEV_PACK_KNOBS: &str = include_str!("../pack/config/knobs.yaml");
+    const DEV_PACK_KNOBS: &str = include_str!(crate::pack_path!(dev, "config/knobs.yaml"));
 
     /// A project-config path that does not exist — the **no-override** cascade layer
     /// (`crate::start::load_project_layer` yields an empty layer), so these arms

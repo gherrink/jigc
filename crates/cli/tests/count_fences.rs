@@ -659,9 +659,9 @@ fn mirror_identities(body: &str) -> Vec<&str> {
 //     cross-references it (CLAUDE.md → *Cross-reference, never restate*).
 
 /// The dev pack's frozen-set manifest.
-const DEV_MANIFEST: &str = "crates/cli/pack/config/schema-manifest.yaml";
+const DEV_MANIFEST: &str = cli::pack_path!(dev, "config/schema-manifest.yaml");
 /// The methodology pack's, which ends its freeze exemption (M40 A1).
-const METHODOLOGY_MANIFEST: &str = "packs/methodology/config/schema-manifest.yaml";
+const METHODOLOGY_MANIFEST: &str = cli::pack_path!(methodology, "config/schema-manifest.yaml");
 /// The doc that states how many doctypes the two of them list between them.
 const MANIFEST_CLAIM_HOME: &str = "design/corpus-migration.md";
 /// The phrase that opens the claim. Anchored on the *sentence*, not on a numeral, so a
