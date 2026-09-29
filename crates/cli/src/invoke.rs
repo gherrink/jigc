@@ -17,8 +17,9 @@
 //! to a read-only snapshot the engine materialized) and never grants it a callback —
 //! the probe reads, it never writes back through the invoker.
 //!
-//! **The wait-timeout mechanism is std-only** (no crate): the child's stdout is drained
-//! on a dedicated reader thread (so a chatty probe never deadlocks on a full pipe),
+//! **The wait-timeout mechanism is std-only** (no crate): the child's stdout and stderr
+//! are each drained on a dedicated reader thread (so a chatty probe never deadlocks on a
+//! full pipe; stderr is kept only up to its bound),
 //! while the main thread keeps the [`Child`] handle and polls [`Child::try_wait`]
 //! against a real elapsed-time budget. On expiry the child is **killed** through that
 //! retained handle (never leaked) and the outcome is [`ProbeStatus::TimedOut`]. This
@@ -26,6 +27,7 @@
 //! CLI and the poll-against-`try_wait` wait needs no third-party `wait-timeout` crate
 //! ([DECISIONS.md](../../../DECISIONS.md) 2026-06-06, M10 inc-3 / T2 elaboration pin).
 
+use engine::probe::PROBE_STDERR_BOUND;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -88,23 +90,28 @@ pub enum ProbeStatus {
 }
 
 /// The raw outcome of one probe invocation: the child's stdout bytes (verbatim,
-/// unparsed) and how it ended. The invoker classifies nothing — `stdout` may be valid
-/// JSON, unparseable garbage, or empty, and the engine decides what that means.
+/// unparsed), its bounded stderr, and how it ended. The invoker classifies nothing —
+/// `stdout` may be valid JSON, unparseable garbage, or empty, and the engine decides what
+/// that means.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProbeOutcome {
     /// The bytes the probe wrote to stdout, captured verbatim (empty if it wrote none).
     pub stdout: Vec<u8>,
+    /// The first [`PROBE_STDERR_BOUND`] bytes the probe wrote to stderr (empty if it wrote
+    /// none, or timed out); the rest is drained and dropped.
+    pub stderr: Vec<u8>,
     /// How the process ended.
     pub status: ProbeStatus,
 }
 
 /// Run the probe `program`, writing `request` to its stdin and enforcing `budget` as a
-/// real elapsed-time bound. Returns the [`ProbeOutcome`] — stdout bytes + exit /
-/// timed-out status — or an [`io::Error`] if the child could not be spawned.
+/// real elapsed-time bound. Returns the [`ProbeOutcome`] — stdout bytes, the first
+/// [`PROBE_STDERR_BOUND`] bytes of stderr, and the exit / timed-out status — or an
+/// [`io::Error`] if the child could not be spawned.
 ///
 /// On a budget overrun the child is **killed and reaped** (no leaked process, no hang),
-/// and the outcome is [`ProbeStatus::TimedOut`] with empty stdout (the probe's partial
-/// output is discarded — a timed-out probe is untrusted).
+/// and the outcome is [`ProbeStatus::TimedOut`] with empty stdout and stderr (the
+/// probe's partial output is discarded — a timed-out probe is untrusted).
 pub fn invoke_probe(program: &Path, request: &[u8], budget: Duration) -> io::Result<ProbeOutcome> {
     let mut child = Command::new(program)
         .stdin(Stdio::piped())
@@ -121,25 +128,20 @@ pub fn invoke_probe(program: &Path, request: &[u8], budget: Duration) -> io::Res
         drop(stdin);
     }
 
-    // Drain stdout on a dedicated thread so a probe that writes more than a pipe buffer
-    // can never deadlock against our wait. The `Child` handle stays here so we keep the
-    // ability to `kill()` on a budget overrun.
-    let stdout_pipe = child.stdout.take();
-    let reader = thread::spawn(move || {
-        let mut buf = Vec::new();
-        if let Some(mut pipe) = stdout_pipe {
-            let _ = pipe.read_to_end(&mut buf);
-        }
-        buf
-    });
+    // Drain stdout and stderr on dedicated threads so a probe that writes more than a
+    // pipe buffer to either can never deadlock against our wait. stderr keeps only its
+    // first `PROBE_STDERR_BOUND` bytes and drains the rest (M54 Inc 2 T2). The `Child`
+    // handle stays here so we keep the ability to `kill()` on a budget overrun.
+    let stdout = drain(child.stdout.take(), None);
+    let stderr = drain(child.stderr.take(), Some(PROBE_STDERR_BOUND));
 
     let deadline = Instant::now() + budget;
     loop {
         match child.try_wait()? {
             Some(status) => {
-                let stdout = reader.join().unwrap_or_default();
                 return Ok(ProbeOutcome {
-                    stdout,
+                    stdout: stdout.join().unwrap_or_default(),
+                    stderr: stderr.join().unwrap_or_default(),
                     status: ProbeStatus::Exited {
                         code: status.code(),
                     },
@@ -147,7 +149,7 @@ pub fn invoke_probe(program: &Path, request: &[u8], budget: Duration) -> io::Res
             }
             None => {
                 if Instant::now() >= deadline {
-                    return Ok(timed_out(child, reader));
+                    return Ok(timed_out(child, [stdout, stderr]));
                 }
                 thread::sleep(POLL_INTERVAL);
             }
@@ -155,17 +157,44 @@ pub fn invoke_probe(program: &Path, request: &[u8], budget: Duration) -> io::Res
     }
 }
 
-/// Kill and reap a child that blew the budget, joining its stdout reader so no thread or
-/// process is leaked, and report [`ProbeStatus::TimedOut`].
-fn timed_out(mut child: Child, reader: thread::JoinHandle<Vec<u8>>) -> ProbeOutcome {
+/// Read `pipe` to its end on a dedicated thread, keeping at most `keep` bytes (all of
+/// them when `None`) and discarding the rest — the rest is still **read**, so the child
+/// never blocks writing to a full pipe.
+fn drain<R: Read + Send + 'static>(
+    pipe: Option<R>,
+    keep: Option<usize>,
+) -> thread::JoinHandle<Vec<u8>> {
+    thread::spawn(move || {
+        let mut buf = Vec::new();
+        if let Some(mut pipe) = pipe {
+            match keep {
+                None => {
+                    let _ = pipe.read_to_end(&mut buf);
+                }
+                Some(bound) => {
+                    let _ = pipe.by_ref().take(bound as u64).read_to_end(&mut buf);
+                    let _ = io::copy(&mut pipe, &mut io::sink());
+                }
+            }
+        }
+        buf
+    })
+}
+
+/// Kill and reap a child that blew the budget, joining its stdout and stderr readers so
+/// no thread or process is leaked, and report [`ProbeStatus::TimedOut`].
+fn timed_out(mut child: Child, readers: [thread::JoinHandle<Vec<u8>>; 2]) -> ProbeOutcome {
     // Kill, then `wait` to reap the zombie (a killed-but-unwaited child leaks). Both may
     // race a just-now-exited child; either way the process is gone after this.
     let _ = child.kill();
     let _ = child.wait();
-    // The reader thread unblocks once the killed child's stdout pipe closes.
-    let _ = reader.join();
+    // The reader threads unblock once the killed child's pipes close.
+    for reader in readers {
+        let _ = reader.join();
+    }
     ProbeOutcome {
         stdout: Vec::new(),
+        stderr: Vec::new(),
         status: ProbeStatus::TimedOut,
     }
 }

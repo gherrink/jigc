@@ -415,6 +415,59 @@ fn validate_injected_probe_failure_exits_non_zero() {
     );
 }
 
+/// A probe that **cannot start** says so (M54 Inc 2 T2; DECISIONS.md → *M54 settled*, S1).
+/// `JIGC_DOC_CODE_PROBE` points at an **existing, non-executable regular file**: it passes
+/// the `is_file` pre-flight, so the sweep runs, and the spawn fails with `EACCES`. The
+/// report carries exactly one `pack-probe-integrity.probe-failure` finding, check `crash`
+/// (no new check id), whose message says *could not start* and carries the io error. Red
+/// before: the spawn failure was mapped to a signal-shaped exit and read *exited non-zero
+/// (exit-code signal)* — the message the gate's `ENOENT` race was misread through.
+#[test]
+fn validate_unstartable_probe_says_could_not_start() {
+    let repo = TempDir::new("could-not-start");
+    seed_clean_store(repo.path());
+
+    let probe_dir = TempDir::new("not-executable");
+    let not_executable = probe_dir.path().join("doc-code");
+    fs::write(&not_executable, "not a program\n").expect("write the non-executable probe");
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&not_executable, fs::Permissions::from_mode(0o644))
+            .expect("clear the exec bits");
+    }
+
+    let out = jigc_with_probe(
+        repo.path(),
+        &["validate", "--format", "json"],
+        &not_executable,
+    );
+    let value: serde_json::Value = stdout_json(&out, &[1], "`jigc validate --format json`");
+    let failures: Vec<&serde_json::Value> = value["findings"]
+        .as_array()
+        .expect("a findings array")
+        .iter()
+        .filter(|f| f["probe"] == "pack-probe-integrity")
+        .collect();
+
+    assert_eq!(
+        failures.len(),
+        1,
+        "exactly one pack-probe-integrity finding for a probe that cannot start; json:\n{value}",
+    );
+    let failure = failures[0];
+    assert_eq!(failure["code"], "pack-probe-integrity.probe-failure");
+    assert_eq!(failure["check"], "crash", "no new check id; json:\n{value}");
+    let message = failure["message"].as_str().expect("a message");
+    assert!(
+        message.contains("could not start") && message.contains("os error"),
+        "the message says the probe could not start and carries the io error: {message}",
+    );
+    assert!(
+        !message.contains("exited non-zero"),
+        "a probe that never ran did not exit: {message}",
+    );
+}
+
 /// A **current (v2-stamped), conformant** `adr` whose `supersedes` names an ADR that is not in
 /// the store — a **dangling committed forward edge**, the store sweep's fourth family. Stamped
 /// at the `adr` manifest's current version so the corpus is *migrated* (no version-currency

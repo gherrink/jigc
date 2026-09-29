@@ -7154,6 +7154,7 @@ Effects.
                 .collect();
             Ok(ProbeRun {
                 stdout: serde_json::to_vec(&ProbeResponse::new(findings)).unwrap(),
+                stderr: Vec::new(),
                 status: ProbeRunStatus::Exited { code: Some(0) },
             })
         }
@@ -7264,6 +7265,7 @@ Effects.
         assert_one_meta("crash", &|_req| {
             Ok(ProbeRun {
                 stdout: Vec::new(),
+                stderr: Vec::new(),
                 status: ProbeRunStatus::Exited { code: Some(2) },
             })
         });
@@ -7271,6 +7273,7 @@ Effects.
         assert_one_meta("timeout", &|_req| {
             Ok(ProbeRun {
                 stdout: Vec::new(),
+                stderr: Vec::new(),
                 status: ProbeRunStatus::TimedOut,
             })
         });
@@ -7278,6 +7281,7 @@ Effects.
         assert_one_meta("malformed-output", &|_req| {
             Ok(ProbeRun {
                 stdout: b"not json".to_vec(),
+                stderr: Vec::new(),
                 status: ProbeRunStatus::Exited { code: Some(0) },
             })
         });
@@ -7422,6 +7426,7 @@ Effects.
         let crashing = |_req: &ProbeRequest| {
             Ok(ProbeRun {
                 stdout: Vec::new(),
+                stderr: Vec::new(),
                 status: ProbeRunStatus::Exited { code: Some(2) },
             })
         };
@@ -8646,6 +8651,7 @@ Effects.
                 .collect();
             Ok(ProbeRun {
                 stdout: serde_json::to_vec(&ProbeResponse::new(findings)).unwrap(),
+                stderr: Vec::new(),
                 status: ProbeRunStatus::Exited { code: Some(0) },
             })
         }
@@ -8819,6 +8825,7 @@ Effects.
                 .collect();
             Ok(ProbeRun {
                 stdout: serde_json::to_vec(&ProbeResponse::new(findings)).unwrap(),
+                stderr: Vec::new(),
                 status: ProbeRunStatus::Exited { code: Some(0) },
             })
         };
@@ -8871,6 +8878,7 @@ Effects.
             if snapshot.working_tree_root == base_path {
                 return Ok(ProbeRun {
                     stdout: Vec::new(),
+                    stderr: Vec::new(),
                     status: ProbeRunStatus::Exited { code: Some(2) },
                 });
             }
@@ -8890,6 +8898,7 @@ Effects.
                 .collect();
             Ok(ProbeRun {
                 stdout: serde_json::to_vec(&ProbeResponse::new(findings)).unwrap(),
+                stderr: Vec::new(),
                 status: ProbeRunStatus::Exited { code: Some(0) },
             })
         };

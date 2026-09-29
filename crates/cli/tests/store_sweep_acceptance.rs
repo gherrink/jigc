@@ -111,10 +111,8 @@ fn build_doc_code_probe() -> PathBuf {
 
 /// Translate the CLI invoker's raw [`ProbeOutcome`] into the engine's [`ProbeRun`] — the
 /// inc-3 seam between the CLI invoker and the engine's ingestion (the same translation
-/// the production CLI does). A spawn failure (an absent program) is mapped to a
-/// signal-shaped non-zero exit, never a silent pass: a probe that could not be invoked
-/// surfaces a `crash` meta-finding, exactly like a non-zero-exit run (`invoke.rs` — a
-/// missing program is "an unresolvable invocation, never a silent pass").
+/// the production CLI does). A spawn failure (an absent program) is handled by
+/// [`real_doc_code_invoker`]'s error arm, never a silent pass.
 fn into_run(outcome: ProbeOutcome) -> ProbeRun {
     let status = match outcome.status {
         ProbeStatus::Exited { code } => ProbeRunStatus::Exited { code },
@@ -122,6 +120,7 @@ fn into_run(outcome: ProbeOutcome) -> ProbeRun {
     };
     ProbeRun {
         stdout: outcome.stdout,
+        stderr: outcome.stderr,
         status,
     }
 }
@@ -137,10 +136,14 @@ fn real_doc_code_invoker(req: &ProbeRequest) -> std::io::Result<ProbeRun> {
         Ok(outcome) => Ok(into_run(outcome)),
         // A spawn failure (e.g. an absent program) is the crash path: no run, no
         // findings, so it must NOT propagate as `Err` (that would abort the sweep with
-        // no report) — it is ingested as a non-zero exit → one `crash` meta-finding.
-        Err(_spawn) => Ok(ProbeRun {
+        // no report) — it is ingested as *could not start* → one `crash` meta-finding
+        // (the production mapping, `task.rs` → `doc_code_invoker`).
+        Err(spawn) => Ok(ProbeRun {
             stdout: Vec::new(),
-            status: ProbeRunStatus::Exited { code: None },
+            stderr: Vec::new(),
+            status: ProbeRunStatus::CouldNotStart {
+                error: spawn.to_string(),
+            },
         }),
     }
 }
@@ -521,6 +524,15 @@ fn real_doc_code_probe_over_committed_store() {
     let report = validate_store(failing.path(), &schemas(), &no_delta_resolved(), &invoker())
         .expect("store sweep runs even when the probe is absent");
     assert_one_meta("absent program", &report);
+    let meta = report
+        .findings
+        .iter()
+        .find(|f| f.code.starts_with("pack-probe-integrity"))
+        .expect("the one meta-finding");
+    assert!(
+        meta.check == "crash" && meta.message.contains("could not start"),
+        "an absent program is a `crash` that says it could not start (M54 Inc 2 T2): {meta:?}",
+    );
 
     // non-zero exit: a real program that drains stdin and exits 2 (a crashing probe).
     let probe_dir = TempDir::new("crasher");

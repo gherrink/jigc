@@ -23,8 +23,14 @@
 //! - **crasher** — exits non-zero, emits no JSON → a non-zero-exit outcome.
 //! - **garbage** — writes non-JSON to stdout, exits 0 → raw unparseable bytes + a
 //!   zero exit (the invoker does NOT parse; malformed-output is T3's call).
+//!
+//! Since M54 Inc 2 T2 the outcome also carries the child's **stderr**, bounded at
+//! [`PROBE_STDERR_BOUND`]: the crasher's stderr rides its outcome, and a **flooder**
+//! writing 1 MiB of stderr neither hangs the invoker on a full pipe nor hands back more
+//! than the bound.
 
 use cli::invoke::{self, ProbeStatus};
+use engine::probe::PROBE_STDERR_BOUND;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -187,6 +193,62 @@ fn main() {
         outcome.stdout.is_empty(),
         "the crasher emitted no stdout: {:?}",
         String::from_utf8_lossy(&outcome.stdout),
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&outcome.stderr),
+        "probe blew up\n",
+        "the outcome carries what the crasher wrote on stderr (M54 Inc 2 T2)",
+    );
+}
+
+/// **Flooder** (M54 Inc 2 T2): a stub that writes **1 MiB** to stderr before answering
+/// cleanly. The invoker drains stderr on its own thread, so the child never blocks on a
+/// full pipe — the run ends on its own, well inside the budget, with its stdout intact —
+/// and the outcome keeps no more than [`PROBE_STDERR_BOUND`] bytes of it. Red before: the
+/// piped-but-unread stderr filled, the child blocked on its write, and the run timed out.
+#[test]
+fn stderr_flooder_neither_hangs_nor_exceeds_the_bound() {
+    let dir = TempDir::new("flooder");
+    let stub = build_stub(
+        dir.path(),
+        "flooder",
+        r##"
+fn main() {
+    use std::io::{Read, Write};
+    let mut buf = String::new();
+    std::io::stdin().read_to_string(&mut buf).ok();
+    let flood = vec![b'e'; 1024 * 1024];
+    std::io::stderr().write_all(&flood).expect("write the flood");
+    print!(r#"{{"findings":[],"schema_version":2}}"#);
+}
+"##,
+    );
+
+    let budget = Duration::from_secs(10);
+    let start = Instant::now();
+    let outcome =
+        invoke::invoke_probe(&stub, &sample_request(), budget).expect("invoker drives the flooder");
+    let elapsed = start.elapsed();
+
+    assert_eq!(
+        outcome.status,
+        ProbeStatus::Exited { code: Some(0) },
+        "a child flooding stderr must still run to its own exit, never block on a full pipe \
+         (elapsed {elapsed:?})",
+    );
+    assert!(
+        elapsed < budget,
+        "the flood is drained, not waited out (elapsed {elapsed:?})",
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&outcome.stdout),
+        r#"{"findings":[],"schema_version":2}"#,
+        "the flooder's stdout is intact",
+    );
+    assert_eq!(
+        outcome.stderr.len(),
+        PROBE_STDERR_BOUND,
+        "the outcome keeps exactly the bound of a 1 MiB flood, never more",
     );
 }
 

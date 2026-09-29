@@ -1645,11 +1645,11 @@ fn run_finalize(
 /// the wall-clock budget via [`crate::invoke::invoke_probe`], and maps the raw outcome
 /// into the engine type the engine ingests.
 ///
-/// A **spawn failure** (the program is missing / not executable) maps to a `crash`
-/// candidate ([`ProbeRunStatus::Exited`] with `code: None`) so a misconfigured probe
-/// surfaces a blocking `pack-probe-integrity.crash` meta-finding rather than silently
-/// passing or aborting the whole validate — an unresolvable invocation is never a clean
-/// run. A serialization failure of the engine-built request is the only `Err` raised (an
+/// A **spawn failure** (the program is missing / not executable) maps to
+/// [`ProbeRunStatus::CouldNotStart`], carrying the io error, so a misconfigured probe
+/// surfaces a blocking `pack-probe-integrity.crash` meta-finding that says *could not
+/// start* rather than silently passing or aborting the whole validate — an unresolvable
+/// invocation is never a clean run (M54 Inc 2 T2). A serialization failure of the engine-built request is the only `Err` raised (an
 /// internal fault, not a probe outcome).
 pub(crate) fn doc_code_invoker(request: &ProbeRequest) -> std::io::Result<ProbeRun> {
     let bytes = serde_json::to_vec(request)
@@ -1658,16 +1658,21 @@ pub(crate) fn doc_code_invoker(request: &ProbeRequest) -> std::io::Result<ProbeR
     match crate::invoke::invoke_probe(&program, &bytes, crate::invoke::DOC_CODE_BUDGET) {
         Ok(outcome) => Ok(ProbeRun {
             stdout: outcome.stdout,
+            stderr: outcome.stderr,
             status: match outcome.status {
                 crate::invoke::ProbeStatus::Exited { code } => ProbeRunStatus::Exited { code },
                 crate::invoke::ProbeStatus::TimedOut => ProbeRunStatus::TimedOut,
             },
         }),
         // The program could not be spawned (absent / not executable) — a crash candidate,
-        // not an orchestration error: the engine synthesizes the blocking meta-finding.
-        Err(_) => Ok(ProbeRun {
+        // not an orchestration error: the engine synthesizes the blocking meta-finding,
+        // and its message carries this error.
+        Err(err) => Ok(ProbeRun {
             stdout: Vec::new(),
-            status: ProbeRunStatus::Exited { code: None },
+            stderr: Vec::new(),
+            status: ProbeRunStatus::CouldNotStart {
+                error: err.to_string(),
+            },
         }),
     }
 }

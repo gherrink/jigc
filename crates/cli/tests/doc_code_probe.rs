@@ -83,6 +83,7 @@ fn into_run(outcome: ProbeOutcome) -> ProbeRun {
     };
     ProbeRun {
         stdout: outcome.stdout,
+        stderr: outcome.stderr,
         status,
     }
 }

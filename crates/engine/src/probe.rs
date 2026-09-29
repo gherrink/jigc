@@ -224,8 +224,9 @@ impl EffectiveStateSnapshot {
 /// shells out** ([finalize.md](../../../design/finalize.md); the engine is shell-free),
 /// so the CLI invoker produces the live outcome and translates it into this engine type
 /// at the inc-5 wiring seam — the synthesis fn ([`ingest_probe_run`]) is proven in
-/// isolation against it here (T3). It mirrors the invoker's shape exactly: an
-/// `Exited { code }` (`None` when terminated by signal with no code) or a `TimedOut`.
+/// isolation against it here (T3). It mirrors the invoker's shape — an `Exited { code }`
+/// (`None` when terminated by signal with no code) or a `TimedOut` — plus the invoker's
+/// spawn error, as `CouldNotStart` (M54 Inc 2 T2).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ProbeRunStatus {
     /// The child exited on its own within the budget, carrying its exit code (`None`
@@ -239,7 +240,23 @@ pub enum ProbeRunStatus {
     /// `timeout` meta-finding ([validation.md](../../../design/validation.md) → Failure
     /// semantics).
     TimedOut,
+    /// The program could not be spawned at all (absent, not executable, …) — no process
+    /// ran, so there is no exit code and no output. It stays the `crash` meta-finding (no
+    /// new check id), but its message says what happened instead of the *exited non-zero
+    /// (exit-code signal)* a spawn failure used to read as (M54 Inc 2 T2; DECISIONS.md →
+    /// *M54 settled*, S1 and S4).
+    CouldNotStart {
+        /// The spawn error's text, verbatim (`io::Error`'s `Display`).
+        error: String,
+    },
 }
+
+/// The most bytes of a probe's **stderr** that ride a finding message (M54 Inc 2 T2 pin):
+/// the invoker keeps no more than this and drains the rest, so a chatty child can never
+/// fill the pipe and deadlock, and [`ingest_probe_run`] cuts at it again, so an invoker
+/// that kept more still yields a bounded message. 4 KiB holds a panic line or a skewed
+/// child's version reason many times over and keeps one finding readable.
+pub const PROBE_STDERR_BOUND: usize = 4096;
 
 /// The raw outcome of one probe invocation as the engine consumes it — the engine-side
 /// mirror of the CLI invoker's `ProbeOutcome`: the child's stdout bytes (verbatim,
@@ -249,6 +266,9 @@ pub enum ProbeRunStatus {
 pub struct ProbeRun {
     /// The bytes the probe wrote to stdout, captured verbatim (empty if it wrote none).
     pub stdout: Vec<u8>,
+    /// The first bytes the probe wrote to stderr (empty if it wrote none, or never
+    /// started) — at most [`PROBE_STDERR_BOUND`] of them are ever rendered.
+    pub stderr: Vec<u8>,
     /// How the process ended.
     pub status: ProbeRunStatus,
 }
@@ -256,7 +276,7 @@ pub struct ProbeRun {
 /// Ingest one probe invocation's raw outcome into the findings the engine carries into
 /// the [`crate::result::ValidationReport`] — the response-ingestion + meta-finding
 /// synthesis step ([validation.md](../../../design/validation.md) → Failure semantics —
-/// meta-findings, lines 114-125). The four outcome shapes the invoker (T2) produces map:
+/// meta-findings, lines 114-125). The five outcome shapes the invoker (T2) produces map:
 ///
 /// - **well-behaved** (exit 0 + parseable [`ProbeResponse`]) → the probe's own
 ///   `findings`, **unchanged** (severity is left for the engine's post-pass — this fn
@@ -264,7 +284,10 @@ pub struct ProbeRun {
 /// - **timed out** → exactly one blocking `timeout` meta-finding (partial stdout is
 ///   discarded — a timed-out probe is untrusted).
 /// - **non-zero exit** (or signal-terminated, `code: None`) → one blocking `crash`
-///   meta-finding (the exit code rides the descriptive message).
+///   meta-finding (the exit code rides the descriptive message, and so does the child's
+///   stderr, cut at [`PROBE_STDERR_BOUND`], when it wrote any).
+/// - **could not start** (the spawn itself failed) → one blocking `crash` meta-finding
+///   too, whose message reads *could not start: `<io error>`* (M54 Inc 2 T2).
 /// - **exit 0 but unparseable** (garbage / empty / valid-JSON-but-not-a-response) → one
 ///   blocking `malformed-output` meta-finding (the parse error rides the message).
 ///
@@ -276,7 +299,7 @@ pub struct ProbeRun {
 /// severity is `Blocking`, the intrinsic floor these checks are locked to (T4); the fn
 /// **never panics** on any stdout shape or status.
 pub fn ingest_probe_run(probe_id: &str, run: &ProbeRun) -> Vec<Finding> {
-    match run.status {
+    match &run.status {
         ProbeRunStatus::TimedOut => vec![meta_finding(
             probe_id,
             "timeout",
@@ -296,17 +319,32 @@ pub fn ingest_probe_run(probe_id: &str, run: &ProbeRun) -> Vec<Finding> {
                 )],
             }
         }
+        ProbeRunStatus::CouldNotStart { error } => vec![meta_finding(
+            probe_id,
+            "crash",
+            format!("probe `{probe_id}` could not start: {error}"),
+        )],
         ProbeRunStatus::Exited { code } => {
             let exit = code.map_or_else(|| "signal".to_string(), |c| c.to_string());
-            vec![meta_finding(
-                probe_id,
-                "crash",
-                format!(
-                    "probe `{probe_id}` exited non-zero (exit-code {exit}) with no usable output"
-                ),
-            )]
+            let mut message = format!(
+                "probe `{probe_id}` exited non-zero (exit-code {exit}) with no usable output"
+            );
+            let stderr = bounded_stderr(&run.stderr);
+            if !stderr.is_empty() {
+                message.push_str("; stderr: ");
+                message.push_str(&stderr);
+            }
+            vec![meta_finding(probe_id, "crash", message)]
         }
     }
+}
+
+/// The child's stderr as a finding carries it: the first [`PROBE_STDERR_BOUND`] bytes,
+/// decoded lossily (a cut through a multi-byte character shows as `U+FFFD`, never a
+/// panic) and trimmed of surrounding whitespace.
+fn bounded_stderr(stderr: &[u8]) -> String {
+    let kept = &stderr[..stderr.len().min(PROBE_STDERR_BOUND)];
+    String::from_utf8_lossy(kept).trim().to_string()
 }
 
 /// Build one intrinsic-blocking `pack-probe-integrity` meta-finding: a descriptive
@@ -760,6 +798,7 @@ mod tests {
             "doc-code",
             &ProbeRun {
                 stdout,
+                stderr: Vec::new(),
                 status: ProbeRunStatus::Exited { code: Some(0) },
             },
         );
@@ -786,6 +825,7 @@ mod tests {
             "doc-code",
             &ProbeRun {
                 stdout,
+                stderr: Vec::new(),
                 status: ProbeRunStatus::Exited { code: Some(0) },
             },
         );
@@ -807,6 +847,7 @@ mod tests {
             "doc-code",
             &ProbeRun {
                 stdout: b"partial junk before the kill".to_vec(),
+                stderr: Vec::new(),
                 status: ProbeRunStatus::TimedOut,
             },
         );
@@ -833,6 +874,7 @@ mod tests {
             "doc-code",
             &ProbeRun {
                 stdout: Vec::new(),
+                stderr: Vec::new(),
                 status: ProbeRunStatus::Exited { code: Some(2) },
             },
         );
@@ -858,6 +900,7 @@ mod tests {
             "doc-code",
             &ProbeRun {
                 stdout: Vec::new(),
+                stderr: Vec::new(),
                 status: ProbeRunStatus::Exited { code: None },
             },
         );
@@ -865,6 +908,99 @@ mod tests {
         assert_eq!(findings.len(), 1, "exactly one meta-finding: {findings:?}");
         assert_eq!(findings[0].probe, "pack-probe-integrity");
         assert_eq!(findings[0].check, "crash");
+    }
+
+    /// **Could not start** (M54 Inc 2 T2): a program that never spawned yields exactly one
+    /// blocking `pack-probe-integrity.probe-failure`, check `crash` — the same finding and
+    /// the same check as a non-zero exit, so the 34-check census does not move — whose
+    /// message says what happened and carries the io error. Red before: the spawn failure
+    /// read as *exited non-zero (exit-code signal)*, which is how the gate's `ENOENT` race
+    /// was misread (DECISIONS.md → *M54 settled*, S1).
+    #[test]
+    fn could_not_start_synthesizes_one_blocking_crash_naming_the_io_error() {
+        let findings = ingest_probe_run(
+            "doc-code",
+            &ProbeRun {
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+                status: ProbeRunStatus::CouldNotStart {
+                    error: "Permission denied (os error 13)".to_string(),
+                },
+            },
+        );
+
+        assert_eq!(findings.len(), 1, "exactly one meta-finding: {findings:?}");
+        let f = &findings[0];
+        assert_eq!(f.severity, Severity::Blocking);
+        assert_eq!(f.code, "pack-probe-integrity.probe-failure");
+        assert_eq!(f.probe, "pack-probe-integrity");
+        assert_eq!(f.check, "crash");
+        assert!(
+            f.message.contains("could not start")
+                && f.message.contains("Permission denied (os error 13)"),
+            "the message says the probe could not start, and why: {}",
+            f.message,
+        );
+        assert!(
+            !f.message.contains("exited non-zero"),
+            "a probe that never ran did not exit: {}",
+            f.message,
+        );
+    }
+
+    /// A **non-zero exit that wrote to stderr** carries that stderr on its `crash`
+    /// message — the channel a skewed child states its reason on (M54 Inc 2 T2; S4).
+    #[test]
+    fn non_zero_exit_carries_its_stderr_on_the_crash_message() {
+        let findings = ingest_probe_run(
+            "doc-code",
+            &ProbeRun {
+                stdout: Vec::new(),
+                stderr: b"doc-code: built for jigc 0.0.0-skew, run by jigc 1.0.0\n".to_vec(),
+                status: ProbeRunStatus::Exited { code: Some(2) },
+            },
+        );
+
+        assert_eq!(findings.len(), 1, "exactly one meta-finding: {findings:?}");
+        assert_eq!(findings[0].check, "crash");
+        assert!(
+            findings[0]
+                .message
+                .contains("doc-code: built for jigc 0.0.0-skew, run by jigc 1.0.0"),
+            "the child's stderr rides the message: {}",
+            findings[0].message,
+        );
+    }
+
+    /// Stderr past [`PROBE_STDERR_BOUND`] is **cut at the bound**: every byte up to it
+    /// rides the message and none after it — so a child that floods stderr still yields
+    /// one readable finding, whatever the invoker handed over.
+    #[test]
+    fn stderr_past_the_bound_is_cut_at_the_bound() {
+        let mut stderr = vec![b'a'; PROBE_STDERR_BOUND];
+        stderr.extend_from_slice(b"PAST-THE-BOUND");
+
+        let findings = ingest_probe_run(
+            "doc-code",
+            &ProbeRun {
+                stdout: Vec::new(),
+                stderr,
+                status: ProbeRunStatus::Exited { code: Some(1) },
+            },
+        );
+
+        assert_eq!(findings.len(), 1, "exactly one meta-finding: {findings:?}");
+        let message = &findings[0].message;
+        assert!(
+            message.contains(&"a".repeat(PROBE_STDERR_BOUND)),
+            "every byte up to the bound rides the message: {} bytes",
+            message.len(),
+        );
+        assert!(
+            !message.contains(&"a".repeat(PROBE_STDERR_BOUND + 1)) && !message.contains("PAST"),
+            "no byte past the bound rides the message: {} bytes",
+            message.len(),
+        );
     }
 
     /// **Malformed output** (zero exit, but stdout is **unparseable** JSON): one
@@ -878,6 +1014,7 @@ mod tests {
             "doc-code",
             &ProbeRun {
                 stdout: b"this is not json {".to_vec(),
+                stderr: Vec::new(),
                 status: ProbeRunStatus::Exited { code: Some(0) },
             },
         );
@@ -898,6 +1035,7 @@ mod tests {
             "doc-code",
             &ProbeRun {
                 stdout: Vec::new(),
+                stderr: Vec::new(),
                 status: ProbeRunStatus::Exited { code: Some(0) },
             },
         );
@@ -924,6 +1062,7 @@ mod tests {
             "doc-code",
             &ProbeRun {
                 stdout: Vec::new(),
+                stderr: Vec::new(),
                 status: ProbeRunStatus::TimedOut,
             },
         );
@@ -931,6 +1070,7 @@ mod tests {
             "commit-msg",
             &ProbeRun {
                 stdout: Vec::new(),
+                stderr: Vec::new(),
                 status: ProbeRunStatus::Exited { code: Some(2) },
             },
         ));
@@ -979,6 +1119,7 @@ mod tests {
             "commit-msg",
             &ProbeRun {
                 stdout: b"not json {".to_vec(),
+                stderr: Vec::new(),
                 status: ProbeRunStatus::Exited { code: Some(0) },
             },
         );
@@ -1011,6 +1152,9 @@ mod tests {
             ProbeRunStatus::Exited { code: Some(1) },
             ProbeRunStatus::Exited { code: None },
             ProbeRunStatus::TimedOut,
+            ProbeRunStatus::CouldNotStart {
+                error: String::new(),
+            },
         ];
         for stdout in &stdouts {
             for status in &statuses {
@@ -1018,6 +1162,7 @@ mod tests {
                     "doc-code",
                     &ProbeRun {
                         stdout: stdout.clone(),
+                        stderr: Vec::new(),
                         status: status.clone(),
                     },
                 );
