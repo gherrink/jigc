@@ -2,6 +2,10 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-09-30 — M54 Inc 8 T1: the before run on the record
+
+**M54 Inc 8 T1: the before run `36549870099` — `success`, 33 min 40 s, nproc `4`, `ubuntu-latest` on `GitHub Actions`** (image `ubuntu-24.04` `20260920.314.1`; `cargo test` step 1927 s; non-cargo steps 23 s, 22 s without the hygiene steps). Every value is recorded beside its command in [ci-runtime.md](completions/artifacts/M54/ci-runtime.md), and each was re-run. **The planning basis's *the run was warm* is corrected there:** `rust-cache` printed `No cache found.`, 93 crates were downloaded and the toolchain was auto-installed. The `test` profile's 44.52 s was warm only on the same job's `cargo build`. So the before run is a **cold-cache** figure, with 108.08 s of cargo compile in all, which is the same footing as T3's cold proxy.
+
 ## 2026-09-30 — M54 Increment 8 planning: decomposition
 
 Cut [Increment 8](implementation/roadmap.md) (*CI reports a green push in ≤ 15 min, and every failure of a red one*) into **5 ordered tasks**, grounded at HEAD `e701423c` (Increment 7's tip, tree clean; `origin/main` is still `d7d3e1ce`, Increment 1's tip). Cross-ref [roadmap.md](implementation/roadmap.md) → Milestone 54 → Increment 8; the M54 Settle below (S8, S10); [planning-gate-record.md](completions/artifacts/M54/planning-gate-record.md) → row 17; [dev-workflow.md](implementation/dev-workflow.md) → Gate; [public-hygiene.md](implementation/public-hygiene.md). **Codes registered: none.**
