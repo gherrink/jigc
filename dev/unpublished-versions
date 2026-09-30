@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+#
+# dev/unpublished-versions — the flag release.yml's check job outputs
+# (implementation/release.md → Publishing).
+#
+# The environment-bound release job must raise its approval prompt only for a push
+# that has something to publish. This script decides that: for every publishable
+# workspace package (`publish` is not `[]` in `cargo metadata`), it asks the
+# crates.io sparse index whether the package's workspace version is already there.
+# A 404 for the crate counts as missing, since a crate the registry has never seen
+# has no version at all.
+#
+# It prints one line per package, sorted by name, then the flag:
+#
+#   jigc@1.0.0-rc.22 missing
+#   jigc-engine@0.1.0-rc.1 published
+#   missing=true
+#
+# and appends the flag line to $GITHUB_OUTPUT when that is set. It fails closed:
+# any fetch error, any HTTP status other than 200 or 404, or any index or metadata
+# it cannot parse exits non-zero before $GITHUB_OUTPUT is touched, so the release
+# job can never run on a guess.
+#
+# Usage:
+#   dev/unpublished-versions [--manifest-path <Cargo.toml>]
+#
+# Exit status: 0 the flag was decided · 1 a fetch or parse failure · 2 usage error.
+
+set -euo pipefail
+
+manifest_args=()
+case "${1:-}" in
+    -h|--help) awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"; exit 0 ;;
+    --manifest-path)
+        if [ $# -ne 2 ]; then
+            printf 'dev/unpublished-versions: usage: dev/unpublished-versions [--manifest-path <Cargo.toml>]\n' >&2
+            exit 2
+        fi
+        manifest_args=(--manifest-path "$2")
+        ;;
+    '') ;;
+    *)
+        printf 'dev/unpublished-versions: usage: dev/unpublished-versions [--manifest-path <Cargo.toml>]\n' >&2
+        exit 2
+        ;;
+esac
+
+fail() {
+    printf 'dev/unpublished-versions: %s\n' "$1" >&2
+    exit 1
+}
+
+# `name version` per publishable package, sorted by name.
+if ! metadata=$(cargo metadata --no-deps --format-version 1 ${manifest_args[@]+"${manifest_args[@]}"}); then
+    fail "cargo metadata failed"
+fi
+if ! packages=$(jq -r '
+        [.packages[] | select(.publish != [])] | sort_by(.name) | .[]
+        | if (.name | type) == "string" and (.version | type) == "string"
+          then "\(.name) \(.version)" else error("a package without a name or version") end
+    ' <<<"$metadata"); then
+    fail "cannot read the publishable packages from cargo metadata"
+fi
+if [ -z "$packages" ]; then
+    fail "cargo metadata reports no publishable package"
+fi
+
+# The sparse index path of a crate: 1/<n>, 2/<n>, 3/<c>/<n>, else <ab>/<cd>/<n>,
+# over the lowercased name.
+index_path() {
+    local n
+    n=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
+    case ${#n} in
+        1) printf '1/%s' "$n" ;;
+        2) printf '2/%s' "$n" ;;
+        3) printf '3/%s/%s' "${n:0:1}" "$n" ;;
+        *) printf '%s/%s/%s' "${n:0:2}" "${n:2:2}" "$n" ;;
+    esac
+}
+
+report=''
+any_missing=false
+while read -r name version; do
+    url="https://index.crates.io/$(index_path "$name")"
+    if ! response=$(curl --silent --show-error --proto '=https' --max-time 60 --retry 3 \
+            --user-agent 'jigc-release-check (https://github.com/gherrink/jigc)' \
+            --write-out '\n%{http_code}' "$url"); then
+        fail "cannot fetch $url"
+    fi
+    status=${response##*$'\n'}
+    body=${response%$'\n'*}
+    case "$status" in
+        200)
+            # One JSON object per line, each naming one published version in `vers`.
+            if ! found=$(jq --arg v "$version" -s '
+                    if length > 0 and all(.[]; (.vers | type) == "string")
+                    then any(.[]; .vers == $v) else error("not an index file") end
+                ' <<<"$body"); then
+                fail "cannot parse the index file at $url"
+            fi
+            ;;
+        404) found=false ;;
+        *) fail "unexpected HTTP status $status from $url" ;;
+    esac
+    if [ "$found" = true ]; then
+        report+="$name@$version published"$'\n'
+    else
+        report+="$name@$version missing"$'\n'
+        any_missing=true
+    fi
+done <<<"$packages"
+
+printf '%s' "$report"
+printf 'missing=%s\n' "$any_missing"
+if [ -n "${GITHUB_OUTPUT:-}" ]; then
+    printf 'missing=%s\n' "$any_missing" >>"$GITHUB_OUTPUT"
+fi
