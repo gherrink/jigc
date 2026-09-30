@@ -2,6 +2,10 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-09-30 — M54 Inc 8 T2: `dev/runner-faithful --cpus <n>`
+
+**M54 Inc 8 T2: the cap is a cpuset, asserted in the container, and a mismatch exits 125.** `--cpus <n>` maps to `--cpuset-cpus 0-<n-1>`. Two elaborations the plan left open. (1) An `nproc` that is not `<n>` exits **125**, the tool's *could not be set up* status, because the run never reached cargo. (2) `<n>` reaches the container **interpolated into the in-container script**, which is safe because only digits without a leading zero pass validation. It is never an environment variable, since that would reach cargo's environment and bend the posture. Driven: `--cpus 4` exits 0 with `cpus      4`; without the option the header reads `cpus      8`; `0`, `x`, `99`, empty and `04` exit 2. A copy whose cpuset was one CPU short printed `nproc is 3, not the 4 --cpus asked for` and exited 125 with no `running   cargo` line.
+
 ## 2026-09-30 — M54 Inc 8 T1: the before run on the record
 
 **M54 Inc 8 T1: the before run `36549870099` — `success`, 33 min 40 s, nproc `4`, `ubuntu-latest` on `GitHub Actions`** (image `ubuntu-24.04` `20260920.314.1`; `cargo test` step 1927 s; non-cargo steps 23 s, 22 s without the hygiene steps). Every value is recorded beside its command in [ci-runtime.md](completions/artifacts/M54/ci-runtime.md), and each was re-run. **The planning basis's *the run was warm* is corrected there:** `rust-cache` printed `No cache found.`, 93 crates were downloaded and the toolchain was auto-installed. The `test` profile's 44.52 s was warm only on the same job's `cargo build`. So the before run is a **cold-cache** figure, with 108.08 s of cargo compile in all, which is the same footing as T3's cold proxy.

@@ -33,9 +33,9 @@
 # container goes via `docker rm`. No path built from variables is removed recursively.
 #
 # Usage:
-#   dev/runner-faithful [--platform <os/arch>] [--commit <rev>] cargo <args...>
-#   dev/runner-faithful [--platform <os/arch>] [--commit <rev>] tarball
-#   dev/runner-faithful [--platform <os/arch>] [--commit <rev>] registry [<requirement>]
+#   dev/runner-faithful [--platform <os/arch>] [--commit <rev>] [--cpus <n>] cargo <args...>
+#   dev/runner-faithful [--platform <os/arch>] [--commit <rev>] [--cpus <n>] tarball
+#   dev/runner-faithful [--platform <os/arch>] [--commit <rev>] [--cpus <n>] registry [<requirement>]
 #
 #   cargo       runs the named cargo command in the clone.
 #   tarball     the pre-publish install acceptance (implementation/release.md -> Verifying
@@ -78,14 +78,20 @@
 #   --commit    the commit that runs (default: HEAD). It must be reachable from HEAD, a
 #               branch or a tag, because only those are bundled. In registry mode it only
 #               names the rust-toolchain.toml the image's toolchain is read from.
+#   --cpus      the CPU count the container sees (default: all of the docker host's), a
+#               positive integer no larger than the host's count. It is a cpuset
+#               (`--cpuset-cpus 0-<n-1>`), never docker's `--cpus`: a CFS quota leaves
+#               nproc, and with it cargo's -j and libtest's thread count, at the host's
+#               count, where a cpuset makes all three read <n>, as on a runner. The cap is
+#               asserted: the container stops before anything runs if nproc is not <n>.
 #
-# It prints its header on stderr -- commit (not in registry mode), platform, toolchain,
-# git -- from inside the container, so the lines describe what actually ran.
+# It prints its header on stderr -- commit (not in registry mode), platform, cpus (nproc),
+# toolchain, git -- from inside the container, so the lines describe what actually ran.
 #
 # Exit status: cargo's, when cargo ran; for `tarball` and `registry`, 0 when every step
 # passed and 1 at the first step that failed. 2 on a usage error; 125 when the run could not be set up
 # (no docker, the image build or its posture assertion failed, the commit is not
-# bundleable, the clone failed).
+# bundleable, the clone failed, nproc in the container is not the --cpus asked for).
 
 set -u
 
@@ -96,15 +102,23 @@ say() { printf 'runner-faithful: %s\n' "$*" >&2; }
 die() { say "$*"; exit 125; }
 usage_error() {
     say "$*"
-    say "usage: dev/runner-faithful [--platform <os/arch>] [--commit <rev>] cargo <args...>"
-    say "       dev/runner-faithful [--platform <os/arch>] [--commit <rev>] tarball"
-    say "       dev/runner-faithful [--platform <os/arch>] [--commit <rev>] registry [<requirement>]"
+    say "usage: dev/runner-faithful [--platform <os/arch>] [--commit <rev>] [--cpus <n>] cargo <args...>"
+    say "       dev/runner-faithful [--platform <os/arch>] [--commit <rev>] [--cpus <n>] tarball"
+    say "       dev/runner-faithful [--platform <os/arch>] [--commit <rev>] [--cpus <n>] registry [<requirement>]"
     exit 2
 }
 
 platform=
 rev=HEAD
+cpus=
 mode=
+# set_cpus <value> -- a positive integer without a leading zero, or a usage error.
+set_cpus() {
+    case "$1" in
+        ''|0*|*[!0-9]*) usage_error "--cpus takes a positive integer, not \"$1\"" ;;
+    esac
+    cpus=$1
+}
 while [ $# -gt 0 ]; do
     case "$1" in
         -h|--help) awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"; exit 0 ;;
@@ -112,6 +126,8 @@ while [ $# -gt 0 ]; do
         --platform=*) platform=${1#--platform=}; shift ;;
         --commit) [ $# -ge 2 ] || usage_error "--commit needs a value"; rev=$2; shift 2 ;;
         --commit=*) rev=${1#--commit=}; shift ;;
+        --cpus) [ $# -ge 2 ] || usage_error "--cpus needs a value"; set_cpus "$2"; shift 2 ;;
+        --cpus=*) set_cpus "${1#--cpus=}"; shift ;;
         cargo) mode=cargo; shift; break ;;
         tarball) mode=tarball; shift; [ $# -eq 0 ] || usage_error "tarball takes no arguments: $*"; break ;;
         registry)
@@ -126,6 +142,14 @@ done
 
 command -v docker >/dev/null 2>&1 || die "docker is not on PATH"
 docker version >/dev/null 2>&1 || die "the docker daemon does not answer (is colima running?)"
+
+# --- the CPU cap ------------------------------------------------------------
+cpuset=()
+if [ -n "$cpus" ]; then
+    host_cpus=$(docker info --format '{{.NCPU}}') || die "cannot read the docker host's CPU count"
+    [ "$cpus" -le "$host_cpus" ] || usage_error "--cpus $cpus exceeds the docker host's $host_cpus CPUs"
+    cpuset=(--cpuset-cpus "0-$((cpus - 1))")
+fi
 
 # --- the commit -------------------------------------------------------------
 sha=$(git -C "$repo_root" rev-parse --verify --quiet "$rev^{commit}") || die "not a commit: $rev"
@@ -316,9 +340,17 @@ say "commit    $(git log -1 --format="%H %s")"
 # The header every mode prints.
 header='
 say "platform  $(uname -s | tr "[:upper:]" "[:lower:]")/$(uname -m)"
+say "cpus      $(nproc)"
 say "toolchain $(rustc --version)"
 say "git       $(git --version)"
 '
+# With --cpus, the cap is asserted before anything runs. $cpus is a validated integer,
+# so interpolating it here is safe; an environment variable would reach cargo too.
+if [ -n "$cpus" ]; then
+    header=$header'
+[ "$(nproc)" = '"$cpus"' ] || { say "nproc is $(nproc), not the '"$cpus"' --cpus asked for; stopping before the run"; exit 125; }
+'
+fi
 
 run_cargo='
 say "running   cargo $*"
@@ -407,7 +439,7 @@ case "$mode" in
     registry) inner=$steps$header$run_registry ;;
 esac
 
-cid=$(docker create --platform "$platform" "$image" bash -c "$inner" runner-faithful "$@") \
+cid=$(docker create --platform "$platform" ${cpuset[@]+"${cpuset[@]}"} "$image" bash -c "$inner" runner-faithful "$@") \
     || die "docker create failed"
 trap 'docker rm -f "$cid" >/dev/null 2>&1' EXIT
 if [ "$mode" != registry ]; then
