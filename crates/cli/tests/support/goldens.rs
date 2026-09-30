@@ -24,8 +24,10 @@
 //!     identity and branch name — with one qualifier, that bare `jigc start` embeds the
 //!     absolute project-config path. That is what `<REPO>` is for, and all it is for.
 //!     The second (M54) is the running `jigc` version, exactly as `CARGO_PKG_VERSION`
-//!     spells it ([`VERSION_TOKEN`]): the release pipeline bumps it, and a bump must move
-//!     no golden. Anything else that varies (a stamped date reaching a golden through a
+//!     spells it ([`VERSION_TOKEN`]) and **only where it is printed as a pack version** —
+//!     the `<pack-id>/<version>` tokens of the `Pack:` header: the release pipeline bumps
+//!     it, and a bump must move no golden, while the same string in a pack's prose is
+//!     content and stays verbatim. Anything else that varies (a stamped date reaching a golden through a
 //!     header-including doc-slice, say) is a **finding** — reproducibility of structure is
 //!     the product claim — never something to quietly normalize away.
 //!   * **Regen is refused under CI** ([`update_mode`]) — the insta convention, so a
@@ -59,8 +61,11 @@ pub const REPO_TOKEN: &str = "<REPO>";
 /// *A bump moves no golden*). **Exactly the string equal to `CARGO_PKG_VERSION`** — this
 /// package's, which is `jigc`'s, since every suite is a test target of the `jigc` package
 /// — and never a version-shaped pattern: a surface that regresses to `0.1.0`, or to the
-/// engine's own `0.1.0-rc.1`, keeps its bytes and diffs. What the token absorbs is only the
-/// release pipeline's bump, which changes that one string and nothing a golden pins.
+/// engine's own `0.1.0-rc.1`, keeps its bytes and diffs. **And only inside a pack-version
+/// token** (`<pack-id>/<version>`, see [`normalize_version`]): the same string anywhere
+/// else — the dev pack's "e.g. `1.0.0` mints `1-0-0`" at the 1.0.0 release — is content and
+/// keeps its bytes. What the token absorbs is only the release pipeline's bump, which
+/// changes the printed pack version and nothing else a golden pins.
 pub const VERSION_TOKEN: &str = "<jigc-version>";
 
 /// The regen route, quoted verbatim in every failure so a red golden always carries
@@ -147,7 +152,8 @@ fn push_stream(text: &mut String, name: &str, body: &str) {
 
 /// Replace absolute paths under `repo` with [`REPO_TOKEN`] — both the path as given
 /// and its canonical form, since a tempdir root can be reached through a symlink —
-/// then the running `jigc` version with [`VERSION_TOKEN`].
+/// then the running `jigc` version, inside a pack-version token only, with
+/// [`VERSION_TOKEN`] ([`normalize_version`]).
 ///
 /// **Longest form first.** On macOS the canonical form of a `$TMPDIR` root is the
 /// *given* one prefixed with `/private`, so replacing the given form first would
@@ -167,7 +173,63 @@ fn normalize(text: &str, repo: &Path) -> String {
     for form in forms {
         out = out.replace(&form, REPO_TOKEN);
     }
-    out.replace(env!("CARGO_PKG_VERSION"), VERSION_TOKEN)
+    normalize_version(&out, env!("CARGO_PKG_VERSION"))
+}
+
+/// Replace `version` with [`VERSION_TOKEN`] **only inside a pack-version token** —
+/// `<pack-id>/<version>`, the segment the `Pack:` header prints per composed pack
+/// (`dev/<v> | methodology/<v>`), which is where the running version reaches a surface.
+///
+/// **Anchored, never a substring replace.** A pack's own prose can name a version —
+/// the dev pack's `author-change` step ships "e.g. `1.0.0` mints `1-0-0`" — and a
+/// whole-capture replace rewrote that example the day the running version became
+/// `1.0.0`, moving twelve goldens on the one bump the rule exists to absorb (M54
+/// Increment 5). An occurrence normalizes only when all three hold:
+///
+///   * it is immediately preceded by `/`;
+///   * the `/` is preceded by a non-empty pack id (`[a-z0-9-]+`) that itself starts the
+///     text or follows a character that cannot continue a path or identifier — so a
+///     path segment `a/dev/<v>` is not a pack token;
+///   * it is not followed by a version continuation — an ASCII alphanumeric, or a
+///     `.`/`-`/`+` that is itself followed by one — so `dev/<v>.9` or
+///     `dev/<v>-rc.1` is a *different* version and keeps its bytes.
+fn normalize_version(text: &str, version: &str) -> String {
+    let bytes = text.as_bytes();
+    let is_id = |b: u8| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-';
+    let continues_path =
+        |b: u8| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.' | b'/' | b'-');
+    let is_token = |at: usize| {
+        let Some(slash) = at.checked_sub(1) else {
+            return false;
+        };
+        if bytes[slash] != b'/' {
+            return false;
+        }
+        let id_start = bytes[..slash]
+            .iter()
+            .rposition(|&b| !is_id(b))
+            .map_or(0, |i| i + 1);
+        if id_start == slash || (id_start > 0 && continues_path(bytes[id_start - 1])) {
+            return false;
+        }
+        let end = at + version.len();
+        match (bytes.get(end), bytes.get(end + 1)) {
+            (Some(b), _) if b.is_ascii_alphanumeric() => false,
+            (Some(b'.' | b'-' | b'+'), Some(next)) if next.is_ascii_alphanumeric() => false,
+            _ => true,
+        }
+    };
+    let mut out = String::with_capacity(text.len());
+    let mut copied = 0;
+    for (at, _) in text.match_indices(version) {
+        if is_token(at) {
+            out.push_str(&text[copied..at]);
+            out.push_str(VERSION_TOKEN);
+            copied = at + version.len();
+        }
+    }
+    out.push_str(&text[copied..]);
+    out
 }
 
 /// One golden's identity: `<root>/compose/<pack>/<surface>--<member>--<state>.txt`.

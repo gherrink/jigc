@@ -44,8 +44,10 @@
 //!
 //! **A capture is the whole invocation** — stdout, stderr **and** the exit code — and
 //! the only normalizations are the repo path → `<REPO>` and the running `jigc` version →
-//! `<jigc-version>` (M54: the ten `start-orient*` goldens' `Pack:` header carries it, and a
-//! release bump must move none of them); the harness owns all three. Regen
+//! `<jigc-version>`, inside the `Pack:` header's `<pack-id>/<version>` tokens only (M54: the
+//! ten `start-orient*` goldens' header carries it, and a release bump must move none of
+//! them — nor the `record-change` goldens whose prose names `1.0.0`); the harness owns all
+//! three. Regen
 //! is one step, refused under CI:
 //! `UPDATE_GOLDENS=1 cargo test -p jigc compose_goldens::` (this suite is a module
 //! inside the `g_compose` group target since the M47 test-target consolidation, so

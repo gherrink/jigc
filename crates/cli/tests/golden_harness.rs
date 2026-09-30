@@ -34,6 +34,10 @@
 //!       else does** (M54 Increment 5 / T3) — so a version bump moves no golden, while a
 //!       surface that prints `0.1.0` or the engine's `0.1.0-rc.1` instead still diffs.
 //!
+//!   (5d) **Only inside a pack-version token** (`<pack-id>/<version>`, the `Pack:`
+//!       header's segment): the running version anywhere else in a capture — a pack's
+//!       prose example — reaches the golden verbatim.
+//!
 //!   (6) **`CI` refuses a regen request** — the insta convention: a regen can never
 //!       green CI. Driven over all four combinations of the two variables.
 //!
@@ -339,7 +343,8 @@ fn a_file_render_capture_is_the_normalized_bytes_alone() {
 }
 
 /// (5c) The **one** version normalization: exactly the string equal to this package's
-/// `CARGO_PKG_VERSION` — `jigc`'s — becomes [`VERSION_TOKEN`], so a bump of `jigc` alone
+/// `CARGO_PKG_VERSION` — `jigc`'s — becomes [`VERSION_TOKEN`] inside a pack-version token
+/// (where it is anchored is arm 5d), so a bump of `jigc` alone
 /// moves no golden. **Narrow by construction** (`implementation/release.md` →
 /// Versioning): the regression shapes a looser rule would swallow — a pack stamped
 /// `0.1.0`, or with the engine's own track start `0.1.0-rc.1` — are left verbatim and
@@ -384,6 +389,39 @@ fn the_running_version_normalizes_and_no_other_version_does() {
             "a surface printing `{other}` instead of `{running}` must redden; got:\n{message}",
         );
     }
+}
+
+/// (5d) The version normalization is **anchored to the pack-version token** — the
+/// `<pack-id>/<version>` segment of the `Pack:` header, where the running version is
+/// actually printed — never a substring replace over the whole capture. The running
+/// version appearing **anywhere else** reaches the golden verbatim: the dev pack's
+/// `author-change` step ships the prose "e.g. `1.0.0` mints `1-0-0`", so at the 1.0.0
+/// release a global replace rewrote that example to `<jigc-version>` and moved twelve
+/// `record-change` goldens (the M54 Increment 5 finding). A pack-version token whose
+/// version merely *starts with* the running one (`dev/<running>.9`) is not the running
+/// version either, and is left verbatim.
+#[test]
+fn the_version_normalizes_only_inside_a_pack_version_token() {
+    let repo = Path::new("/nowhere/that/appears");
+    let running = env!("CARGO_PKG_VERSION");
+    let stdout = format!(
+        "Pack: dev/{running} | methodology/{running} · Project config: x\n\
+         e.g. `{running}` mints `1-0-0`\n\
+         see v{running} and dev/{running}.9\n"
+    );
+    let capture = Capture::of(&synthetic(0, &stdout, ""), repo);
+    assert_eq!(
+        capture.text(),
+        format!(
+            "exit: 0\n--- stdout ---\n\
+             Pack: dev/{VERSION_TOKEN} | methodology/{VERSION_TOKEN} · Project config: x\n\
+             e.g. `{running}` mints `1-0-0`\n\
+             see v{running} and dev/{running}.9\n\
+             --- stderr ---\n"
+        ),
+        "only the `<pack-id>/{running}` tokens may normalize; every other occurrence of \
+         the running version is content and must reach the golden verbatim",
+    );
 }
 
 /// (6) `CI` refuses a regen request, over all four combinations — a regen can never
