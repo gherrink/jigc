@@ -43,7 +43,9 @@
 //! corpus state is a finding no narrower sweep would notice.
 //!
 //! **A capture is the whole invocation** — stdout, stderr **and** the exit code — and
-//! the only normalization is the repo path → `<REPO>` (the harness owns both). Regen
+//! the only normalizations are the repo path → `<REPO>` and the running `jigc` version →
+//! `<jigc-version>` (M54: the ten `start-orient*` goldens' `Pack:` header carries it, and a
+//! release bump must move none of them); the harness owns all three. Regen
 //! is one step, refused under CI:
 //! `UPDATE_GOLDENS=1 cargo test -p jigc compose_goldens::` (this suite is a module
 //! inside the `g_compose` group target since the M47 test-target consolidation, so
@@ -94,7 +96,8 @@ struct Exclusion {
 /// `08b1086` / `5b20483`).
 ///
 /// **Excluded rather than normalized**: `implementation/pinning.md` §1 fixes the
-/// harness's normalization at absolute repo paths and *nothing else*, precisely so a
+/// harness's normalization at absolute repo paths and the running `jigc` version and
+/// *nothing else*, precisely so a
 /// second rule cannot quietly mask a value that varies for a reason nobody checked. A
 /// declared exclusion says the same thing out loud and reaches no other surface.
 ///

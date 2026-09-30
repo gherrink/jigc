@@ -2,7 +2,7 @@ exit: 0
 --- stdout ---
 jigc — orientation
 
-Pack: dev/1.0.0-rc.21 | methodology/1.0.0-rc.21 · Project config: <REPO>/.jigc/config
+Pack: dev/<jigc-version> | methodology/<jigc-version> · Project config: <REPO>/.jigc/config
 
 Available workflows:
   - architecture-documentation — document the architecture of a part of the system, tying its components to the code that implements them

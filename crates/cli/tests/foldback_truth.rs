@@ -66,14 +66,16 @@
 //! target gained a `../`), and `CLAUDE.md` keeps current truth plus a pointer. So the
 //! subject of the claim arm and of the version arm is [`RECORD`], not `CLAUDE.md` — the
 //! fence follows the record, not the filename. `CLAUDE.md` stays inside the version arm
-//! for its own one current-truth claim, which is a **second home for a version string**
-//! and therefore exactly the thing five consecutive waves got wrong.
+//! with the opposite obligation since M54: it may carry **no** built-and-installed claim,
+//! because a second home for a version string is exactly the thing five consecutive waves
+//! got wrong, and a release bump reddened this suite over a file no release writes.
 //!
 //! These are doc-content assertions by nature — the deliverable *is* the prose. The
 //! behaviour the prose describes is proven elsewhere, through the real binary:
 //! `crates/cli/tests/commit_rejected_axis.rs` drives every committing door under a
 //! rejecting hook and re-runs the argv it printed.
 
+use std::cmp::Ordering;
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -265,7 +267,7 @@ fn milestone_span<'a>(body: &'a str, marker: &str) -> &'a str {
 /// *not* outside the suite any more is the **comparison** between the two homes — M51
 /// Increment 7 (T7) added [`the_foldback_names_the_version_cargo_toml_carries`], a
 /// conditional that asserts a named built-and-installed version matches `Cargo.toml` and
-/// passes a claim naming none. The two are complementary and neither subsumes the other:
+/// passes a claim naming none (since M54, one the crate has *reached* — see its section). The two are complementary and neither subsumes the other:
 /// that fence says *if you name one, name the right one*; this one says *say no more about
 /// the audit than the audit found*. A numeral-free M53 span leaves that fence green on both
 /// legs and for two different reasons — its comparison reads the **newest** claim alone, so
@@ -1124,6 +1126,20 @@ fn manifest_kind_all_holds_every_variant_the_enum_declares() {
 // for a version string**, the exact shape that shipped stale in five consecutive waves, so
 // the arm below reads both: the newest span's claim in the record, and **every** claim
 // `CLAUDE.md` makes, since it carries no historical spans and therefore owes no exemption.
+//
+// **Re-cut at M54 (Increment 5 / T3), when the version stopped being a hand edit**
+// ([release.md](../../../implementation/release.md) → Versioning, where the cut is recorded).
+// The release pipeline now bumps `crates/cli/Cargo.toml` in a commit of its own, and that
+// commit must redden nothing — so the equality both homes were held to became two
+// obligations, each keeping the failure this arm exists for:
+//
+//   * **The record's newest claim may not name a version the crate has not reached**
+//     (semver precedence, [`semver_cmp`]). A fold-back announcing a binary the tree does not
+//     carry is still refused; a crate bumped past the newest claim is a release, not a stale
+//     record, and passes.
+//   * **`CLAUDE.md` names no built-and-installed version at all.** Its one current-truth
+//     claim was the second home; it is gone, and the arm asserts it stays gone rather than
+//     comparing it — a comparison would redden on every release.
 
 /// `jigc`'s version — the second home, read from `crates/cli/Cargo.toml`'s `[package]`.
 /// Since M54 each crate carries its own `version` and the engine's is a different track
@@ -1275,15 +1291,71 @@ fn newest_milestone_claim(body: &str) -> &str {
         .expect("splitting a str always yields at least one part")
 }
 
+/// Semver precedence between two tokens [`version_tokens`] reads — `<major>.<minor>.<patch>`
+/// with an optional `-<pre-release>`: the numeric triple first; then a version without a
+/// pre-release follows every one with it; then the pre-release identifiers pairwise, numeric
+/// ones numerically and below alphanumeric ones, a shorter prefix first (semver.org §11).
+fn semver_cmp(a: &str, b: &str) -> Ordering {
+    fn parts(v: &str) -> (Vec<u64>, Option<&str>) {
+        let (core, pre) = match v.split_once('-') {
+            Some((core, pre)) => (core, Some(pre)),
+            None => (v, None),
+        };
+        let core = core
+            .split('.')
+            .map(|n| {
+                n.parse()
+                    .unwrap_or_else(|_| panic!("`{v}` is not a version token"))
+            })
+            .collect();
+        (core, pre)
+    }
+    let (core_a, pre_a) = parts(a);
+    let (core_b, pre_b) = parts(b);
+    core_a.cmp(&core_b).then_with(|| match (pre_a, pre_b) {
+        (None, None) => Ordering::Equal,
+        (None, Some(_)) => Ordering::Greater,
+        (Some(_), None) => Ordering::Less,
+        (Some(pre_a), Some(pre_b)) => {
+            let (ids_a, ids_b): (Vec<&str>, Vec<&str>) =
+                (pre_a.split('.').collect(), pre_b.split('.').collect());
+            ids_a
+                .iter()
+                .zip(&ids_b)
+                .map(|(x, y)| match (x.parse::<u64>(), y.parse::<u64>()) {
+                    (Ok(x), Ok(y)) => x.cmp(&y),
+                    (Ok(_), Err(_)) => Ordering::Less,
+                    (Err(_), Ok(_)) => Ordering::Greater,
+                    (Err(_), Err(_)) => x.cmp(y),
+                })
+                .find(|order| order.is_ne())
+                .unwrap_or_else(|| ids_a.len().cmp(&ids_b.len()))
+        }
+    })
+}
+
 /// **The comparison, as a pure function of `(body, version)`** — so the fence is asserted over
 /// fixtures as well as over today's bytes. Every version the newest wave's claim states as
-/// built and installed, that is not the version `Cargo.toml` carries.
+/// built and installed that `Cargo.toml` has **not reached** — one that follows `version` in
+/// semver precedence.
+///
+/// **Re-cut at M54 (Increment 5 / T3; `implementation/release.md` → Versioning).** Until then
+/// a claim had to *equal* the crate's version, which made every release bump red here: the
+/// release pipeline moves `crates/cli/Cargo.toml` in a commit of its own, before any fold-back
+/// names the new version. The failure this fence exists for is unchanged and still bites — a
+/// fold-back announcing a binary the tree does not yet carry — while a crate that has moved
+/// past the newest claim is a release, not a stale record.
 fn foldback_version_mismatches(body: &str, version: &str) -> Vec<String> {
     let claim = newest_milestone_claim(body);
     built_and_installed_versions(claim)
         .into_iter()
-        .filter(|(_, named)| named != version)
-        .map(|(at, named)| format!("names `{named}` at offset {at} of the newest wave's claim"))
+        .filter(|(_, named)| semver_cmp(named, version).is_gt())
+        .map(|(at, named)| {
+            format!(
+                "names `{named}` at offset {at} of the newest wave's claim, a version the crate \
+                 (`{version}`) has not reached"
+            )
+        })
         .collect()
 }
 
@@ -1295,10 +1367,10 @@ fn the_foldback_names_the_version_cargo_toml_carries() {
     let mismatches = foldback_version_mismatches(&body, &version);
     assert!(
         mismatches.is_empty(),
-        "the record's newest wave claims a version built and installed that `Cargo.toml` does \
-         not carry (`{version}`): {mismatches:?}. Either the bump is owed — the failure five \
-         consecutive waves needed a human to notice — or the fold-back is naming the wrong \
-         binary.",
+        "the record's newest wave claims a version built and installed that `Cargo.toml` \
+         (`{version}`) has not reached: {mismatches:?}. Either the bump is owed — the failure \
+         five consecutive waves needed a human to notice — or the fold-back is naming the \
+         wrong binary.",
     );
 
     // Non-vacuity, scoped to the paragraph rather than to the newest span: a wave that has
@@ -1315,23 +1387,22 @@ fn the_foldback_names_the_version_cargo_toml_carries() {
          paragraph — the phrasing this fence reads moved, and the fence stopped fencing",
     );
 
-    // The second home. `CLAUDE.md` carries current truth only — no historical span — so
-    // **every** built-and-installed claim it makes is a claim about the binary installed
-    // today, and each is held to `Cargo.toml` without any newest-span carve-out. Naming no
-    // version is still allowed: the bump is the completion workflow's obligation, not this
-    // fence's to require (the recorded refusal above).
+    // The second home is gone, and stays gone (M54 Increment 5 / T3). `CLAUDE.md` carried
+    // one built-and-installed claim as current truth, which made it a home for a
+    // pipeline-owned version string: a release bump reddened this fence over a file no
+    // release writes. It now names no installed version, and the fence holds it to that —
+    // the record's newest span is where the version a wave shipped is stated.
     let claude = read_doc("CLAUDE.md");
-    let stale: Vec<String> = built_and_installed_versions(&claude)
+    let named: Vec<String> = built_and_installed_versions(&claude)
         .into_iter()
-        .filter(|(_, named)| named != &version)
         .map(|(at, named)| format!("names `{named}` at offset {at}"))
         .collect();
     assert!(
-        stale.is_empty(),
-        "CLAUDE.md → *Project state* states a built-and-installed version `Cargo.toml` does \
-         not carry (`{version}`): {stale:?}. The record's own claim lives in {RECORD}; this \
-         is the second home, and a second home for a version string is what shipped stale in \
-         five consecutive waves.",
+        named.is_empty(),
+        "CLAUDE.md → *Project state* states a built-and-installed version: {named:?}. It \
+         carries none since M54 — the version a wave shipped is the record's claim \
+         ({RECORD}), and a second home for a version string is what shipped stale in five \
+         consecutive waves and what a release bump reddened.",
     );
 }
 
@@ -1351,17 +1422,35 @@ not before**, with the goldens regenerated). **M51 — the count wave — is com
 ## Build / lint / test
 ";
 
-    // The fence bites when the two homes disagree …
+    // The fence bites when the record claims a version the crate has not reached …
     assert_eq!(
         foldback_version_mismatches(body, "1.0.0-rc.14").len(),
         1,
         "a fold-back naming `1.0.0-rc.15` as built and installed while `Cargo.toml` carries \
          `1.0.0-rc.14` is exactly the failure five consecutive waves shipped",
     );
-    // … and passes when they agree, so it is the comparison biting and not the numeral.
+    // … and passes when they agree, so it is the comparison biting and not the numeral …
     assert!(
         foldback_version_mismatches(body, "1.0.0-rc.15").is_empty(),
         "the fence compares two homes; it chooses no numeral",
+    );
+    // … and when the crate has moved past the claim: a release bump of `jigc` alone lands
+    // before any fold-back names it, and must redden nothing (M54 Increment 5 / T3).
+    assert!(
+        foldback_version_mismatches(body, "1.0.0-rc.16").is_empty(),
+        "a crate bumped past the newest claim is a release, not a stale fold-back",
+    );
+    // Precedence is semver's, not the string's: `rc.9` precedes `rc.10`, and the release
+    // follows every one of its release candidates.
+    let claiming = |v: &str| format!("**M51 — the count wave** (**`{v}` built and installed**).");
+    assert!(
+        foldback_version_mismatches(&claiming("1.0.0-rc.9"), "1.0.0-rc.10").is_empty(),
+        "`1.0.0-rc.9` precedes `1.0.0-rc.10` numerically; a lexical order would reject it",
+    );
+    assert_eq!(
+        foldback_version_mismatches(&claiming("1.0.0"), "1.0.0-rc.22").len(),
+        1,
+        "`1.0.0` follows every `1.0.0-rc.N`: a crate on the rc track has not reached it",
     );
 
     // The settled wave keeps the version it shipped — only the newest claim is bound, which

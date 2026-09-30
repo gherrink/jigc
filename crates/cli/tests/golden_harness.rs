@@ -30,6 +30,10 @@
 //!   (5) **Each of the three channels is pinned independently** — the axis of (4):
 //!       changing *only* the exit code, *only* stdout, or *only* stderr each reddens.
 //!
+//!   (5c) **The running `jigc` version normalizes to `<jigc-version>`, and nothing
+//!       else does** (M54 Increment 5 / T3) — so a version bump moves no golden, while a
+//!       surface that prints `0.1.0` or the engine's `0.1.0-rc.1` instead still diffs.
+//!
 //!   (6) **`CI` refuses a regen request** — the insta convention: a regen can never
 //!       green CI. Driven over all four combinations of the two variables.
 //!
@@ -48,7 +52,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 use std::process::{ExitStatus, Output};
 
-use support::goldens::{Capture, GoldenKey, GoldenSuite, REPO_TOKEN, update_mode};
+use support::goldens::{Capture, GoldenKey, GoldenSuite, REPO_TOKEN, VERSION_TOKEN, update_mode};
 use support::trial_corpus::{State, TrialCorpus};
 
 /// A throwaway golden root that removes itself on drop. Never
@@ -332,6 +336,54 @@ fn a_file_render_capture_is_the_normalized_bytes_alone() {
         message.contains("mismatch"),
         "a changed file render must redden the golden; got:\n{message}",
     );
+}
+
+/// (5c) The **one** version normalization: exactly the string equal to this package's
+/// `CARGO_PKG_VERSION` — `jigc`'s — becomes [`VERSION_TOKEN`], so a bump of `jigc` alone
+/// moves no golden. **Narrow by construction** (`implementation/release.md` →
+/// Versioning): the regression shapes a looser rule would swallow — a pack stamped
+/// `0.1.0`, or with the engine's own track start `0.1.0-rc.1` — are left verbatim and
+/// redden against a golden taken from the running version.
+#[test]
+fn the_running_version_normalizes_and_no_other_version_does() {
+    let root = GoldenRoot::new();
+    let repo = Path::new("/nowhere/that/appears");
+    let key = GoldenKey {
+        pack: "composite",
+        surface: "start-orient",
+        member: "start-orient",
+        state: "fresh",
+    };
+    let header = |version: &str| format!("Pack: dev/{version} | methodology/{version}\n");
+    let running = env!("CARGO_PKG_VERSION");
+
+    let baseline = Capture::of(&synthetic(0, &header(running), ""), repo);
+    assert_eq!(
+        baseline.text(),
+        format!(
+            "exit: 0\n--- stdout ---\n{}--- stderr ---\n",
+            header(VERSION_TOKEN)
+        ),
+        "the running `jigc` version must normalize to `{VERSION_TOKEN}`",
+    );
+    root.regenerating().check(&key, &baseline);
+
+    for other in ["0.1.0", "0.1.0-rc.1"] {
+        assert_ne!(
+            other, running,
+            "the regression shape must differ from the running version"
+        );
+        let regressed = Capture::of(&synthetic(0, &header(other), ""), repo);
+        assert!(
+            regressed.text().contains(other),
+            "`{other}` is not the running version and must reach the golden verbatim",
+        );
+        let message = panic_message(|| root.checking().check(&key, &regressed));
+        assert!(
+            message.contains("mismatch"),
+            "a surface printing `{other}` instead of `{running}` must redden; got:\n{message}",
+        );
+    }
 }
 
 /// (6) `CI` refuses a regen request, over all four combinations — a regen can never

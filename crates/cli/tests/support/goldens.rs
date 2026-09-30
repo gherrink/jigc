@@ -18,14 +18,16 @@
 //!     Not stdout alone: the four `creates-task: false` workflows exit **1** with
 //!     **empty stdout** and carry their entire refusal on stderr, so a stdout-only
 //!     golden would snapshot empty files forever and pin nothing.
-//!   * **`<REPO>` is the only normalization.** Verified empirically at rc.8 across two
-//!     independently created repos: every swept surface was byte-identical *before*
-//!     any normalization, and invariant under TZ, locale, git identity and branch
-//!     name — with one qualifier, that bare `jigc start` embeds the absolute
-//!     project-config path. That is what `<REPO>` is for, and all it is for. Anything
-//!     else that varies (a stamped date reaching a golden through a header-including
-//!     doc-slice, say) is a **finding** — reproducibility of structure is the product
-//!     claim — never something to quietly normalize away.
+//!   * **`<REPO>` and `<jigc-version>` are the only normalizations.** Verified
+//!     empirically at rc.8 across two independently created repos: every swept surface
+//!     was byte-identical *before* any normalization, and invariant under TZ, locale, git
+//!     identity and branch name — with one qualifier, that bare `jigc start` embeds the
+//!     absolute project-config path. That is what `<REPO>` is for, and all it is for.
+//!     The second (M54) is the running `jigc` version, exactly as `CARGO_PKG_VERSION`
+//!     spells it ([`VERSION_TOKEN`]): the release pipeline bumps it, and a bump must move
+//!     no golden. Anything else that varies (a stamped date reaching a golden through a
+//!     header-including doc-slice, say) is a **finding** — reproducibility of structure is
+//!     the product claim — never something to quietly normalize away.
 //!   * **Regen is refused under CI** ([`update_mode`]) — the insta convention, so a
 //!     regen can never green CI.
 //!
@@ -51,6 +53,15 @@ use std::process::Output;
 
 /// The token every absolute repo path normalizes to — the *only* normalization.
 pub const REPO_TOKEN: &str = "<REPO>";
+
+/// The token the running `jigc` version normalizes to — the second normalization, and
+/// the only other one (M54 Increment 5 / T3; `implementation/release.md` → Versioning,
+/// *A bump moves no golden*). **Exactly the string equal to `CARGO_PKG_VERSION`** — this
+/// package's, which is `jigc`'s, since every suite is a test target of the `jigc` package
+/// — and never a version-shaped pattern: a surface that regresses to `0.1.0`, or to the
+/// engine's own `0.1.0-rc.1`, keeps its bytes and diffs. What the token absorbs is only the
+/// release pipeline's bump, which changes that one string and nothing a golden pins.
+pub const VERSION_TOKEN: &str = "<jigc-version>";
 
 /// The regen route, quoted verbatim in every failure so a red golden always carries
 /// its own remedy (the surface contract's route floor, applied to our own tests).
@@ -135,7 +146,8 @@ fn push_stream(text: &mut String, name: &str, body: &str) {
 }
 
 /// Replace absolute paths under `repo` with [`REPO_TOKEN`] — both the path as given
-/// and its canonical form, since a tempdir root can be reached through a symlink.
+/// and its canonical form, since a tempdir root can be reached through a symlink —
+/// then the running `jigc` version with [`VERSION_TOKEN`].
 ///
 /// **Longest form first.** On macOS the canonical form of a `$TMPDIR` root is the
 /// *given* one prefixed with `/private`, so replacing the given form first would
@@ -155,7 +167,7 @@ fn normalize(text: &str, repo: &Path) -> String {
     for form in forms {
         out = out.replace(&form, REPO_TOKEN);
     }
-    out
+    out.replace(env!("CARGO_PKG_VERSION"), VERSION_TOKEN)
 }
 
 /// One golden's identity: `<root>/compose/<pack>/<surface>--<member>--<state>.txt`.
