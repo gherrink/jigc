@@ -177,31 +177,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
-name = "cli"
-version = "1.0.0-rc.21"
-dependencies = [
- "anyhow",
- "clap",
- "engine",
- "include_dir",
- "insta",
- "libc",
- "serde",
- "serde_json",
- "serde_yaml_ng",
- "tree-sitter",
- "tree-sitter-bash",
- "tree-sitter-css",
- "tree-sitter-javascript",
- "tree-sitter-language",
- "tree-sitter-php",
- "tree-sitter-python",
- "tree-sitter-rust",
- "tree-sitter-typescript",
- "tree-sitter-yaml",
-]
-
-[[package]]
 name = "colorchoice"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -238,20 +213,6 @@ name = "encode_unicode"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "34aa73646ffb006b8f5147f3dc182bd4bcb190227ce861fc4a4844bf8e3cb2c0"
-
-[[package]]
-name = "engine"
-version = "1.0.0-rc.21"
-dependencies = [
- "blake3",
- "insta",
- "proptest",
- "pulldown-cmark",
- "serde",
- "serde_json",
- "serde_yaml_ng",
- "thiserror",
-]
 
 [[package]]
 name = "equivalent"
@@ -408,6 +369,45 @@ name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
+
+[[package]]
+name = "jigc"
+version = "1.0.0-rc.21"
+dependencies = [
+ "anyhow",
+ "clap",
+ "include_dir",
+ "insta",
+ "jigc-engine",
+ "libc",
+ "serde",
+ "serde_json",
+ "serde_yaml_ng",
+ "tree-sitter",
+ "tree-sitter-bash",
+ "tree-sitter-css",
+ "tree-sitter-javascript",
+ "tree-sitter-language",
+ "tree-sitter-php",
+ "tree-sitter-python",
+ "tree-sitter-rust",
+ "tree-sitter-typescript",
+ "tree-sitter-yaml",
+]
+
+[[package]]
+name = "jigc-engine"
+version = "1.0.0-rc.21"
+dependencies = [
+ "blake3",
+ "insta",
+ "proptest",
+ "pulldown-cmark",
+ "serde",
+ "serde_json",
+ "serde_yaml_ng",
+ "thiserror",
+]
 
 [[package]]
 name = "leb128fmt"

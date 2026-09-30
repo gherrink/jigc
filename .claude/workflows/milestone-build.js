@@ -415,7 +415,7 @@ function execPrompt(inc, task, all) {
 // cache-key-identical on resume). Appended, never interleaved, so the base prompt is byte-
 // identical to what it has always been.
 function validatePrompt(inc, addendum) {
-  return [milestone + ' — ' + header(inc), '', 'Validate this increment against that roadmap spec per your validator role; exercise every grouped-scope bullet through the real binary or tests.', '', 'GATE IS A FACT, NOT A CLAIM: run the FULL gate yourself with `dev/gate` — never `--quick`, which skips the tests. It runs probe/fmt/clippy/build/test each BARE with its exit code captured, and it accepts no scope arguments at all, so a dev/gate run cannot be the scoped `cargo test` that has landed a red gate before (M23 inc-1). Paste its summary block VERBATIM into `gate_evidence` — at minimum the `tests   passed=… failed=…  (over N test binaries)` totals line AND the `GATE: PASS` line. gate_green=true is INVALID without both pasted lines (a `--quick` run omits the totals line and does not count); any `GATE: FAIL` / any non-zero exit / any `FAILED` is a BLOCKING finding. Do not trust the executor\'s claim — re-run it.'].join('\n') + (addendum ? '\n\n' + addendum : '')
+  return [milestone + ' — ' + header(inc), '', 'Validate this increment against that roadmap spec per your validator role; exercise every grouped-scope bullet through the real binary or tests.', '', 'GATE IS A FACT, NOT A CLAIM: run the FULL gate yourself with `dev/gate` — never `--quick`, which skips the tests. It runs fmt/clippy/build/test each BARE with its exit code captured, and it accepts no scope arguments at all, so a dev/gate run cannot be the scoped `cargo test` that has landed a red gate before (M23 inc-1). Paste its summary block VERBATIM into `gate_evidence` — at minimum the `tests   passed=… failed=…  (over N test binaries)` totals line AND the `GATE: PASS` line. gate_green=true is INVALID without both pasted lines (a `--quick` run omits the totals line and does not count); any `GATE: FAIL` / any non-zero exit / any `FAILED` is a BLOCKING finding. Do not trust the executor\'s claim — re-run it.'].join('\n') + (addendum ? '\n\n' + addendum : '')
 }
 function fixPrompt(inc, f) {
   return [
@@ -635,16 +635,16 @@ for (const inc of increments) {
     // predicate tests PASTED TEXT, not that `dev/gate` ran unscoped. Both lines are
     // assemblable from two sanctioned fast invocations. `dev/gate --report <log>` runs NO
     // cargo at all (dev/gate:139-146) and prints the totals line over ANY log — driven over
-    // a `cargo test -p engine` log it printed `tests   passed=948 failed=0  (over 1 test
+    // a `cargo test -p jigc-engine` log it printed `tests   passed=948 failed=0  (over 1 test
     // binaries)`, which satisfies this regex — and `dev/gate --quick` reaches `GATE: PASS`
     // (dev/gate:282) without running tests. So the check raises the forgery cost from a
     // careless paste to a deliberate two-command assembly; it cannot detect the latter.
     // The OLD predicate, /test result:/ over pasted cargo output, caught NONE of that:
-    //   * a scoped `cargo test -p engine` prints a genuine `test result: ok. …` summary too,
+    //   * a scoped `cargo test -p jigc-engine` prints a genuine `test result: ok. …` summary too,
     //     so it passed on exactly the input it was written to reject; and
     //   * the pattern is UNDELIMITED, so it also matches test NAMES — engine's `pub mod
     //     result` has a `mod tests`, so cargo prints `test result::tests::alpha ... ok`.
-    //     Measured on `cargo test -p engine --lib`: 17 matches, 16 of them names and 1 a
+    //     Measured on `cargo test -p jigc-engine --lib`: 17 matches, 16 of them names and 1 a
     //     real summary — i.e. evidence with zero real summaries could still pass.
     // Same undelimited-match bug, second site: 03abf34 fixed it in dev/gate's own counting
     // awk (33 binaries reported for a 17-binary run) by matching fields instead.

@@ -288,7 +288,7 @@ fn the_eight_hundred_item_document_is_byte_identical_to_the_captured_golden() {
     let expected = fs::read_to_string(&path).unwrap_or_else(|e| {
         panic!(
             "the captured 800-item golden is missing at {path:?}: {e} — regenerate it \
-             with `UPDATE_GOLDENS=1 cargo test -p cli author_batch_scaling::` and review \
+             with `UPDATE_GOLDENS=1 cargo test -p jigc author_batch_scaling::` and review \
              the diff before committing"
         )
     });

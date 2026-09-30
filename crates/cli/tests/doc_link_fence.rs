@@ -879,7 +879,7 @@ fn an_exempt_form_must_close_inside_its_paragraph() {
 #[test]
 fn a_token_outside_the_declared_roots_is_not_a_path() {
     let doc =
-        "`docs/roadmap.md` `.jigc/state/x.json` `~/.claude/x` `cargo test -p cli` `README.md`";
+        "`docs/roadmap.md` `.jigc/state/x.json` `~/.claude/x` `cargo test -p jigc` `README.md`";
     assert!(offences("x.md", doc).is_empty());
 }
 

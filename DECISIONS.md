@@ -2,6 +2,10 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-09-30 — M54 Inc 5 T1: the rename, in one commit
+
+**M54 Inc 5 T1 pins** (S12, row 10). (1) **The alias lives in `jigc`'s own manifest**, `engine = { package = "jigc-engine", version = "=1.0.0-rc.21", path = "../engine" }`; the root `[workspace.dependencies]` entry is gone, so there is one declaration of the engine to re-pin (T2). (2) **The `cli` lib's crate doc says it**: *not an API, no semver promise*, published only because the binary is built from it, then `#![doc(hidden)]`; the engine's crate doc names its package and lib. (3) **The four agent-harness files drop the retired probe prebuild outright**: the gate is four commands, and `build-executor.md`'s *What the probe prebuild is* bullet is deleted rather than bracketed, since an agent prompt is live instruction and [dev-workflow.md](implementation/dev-workflow.md):19 keeps the record. (4) **[release.md](implementation/release.md):14's *~12 self-references move* is corrected in place, dated**, per the planning basis. Red on the parent: `cargo test -p jigc --test g_finalize manifest_freeze_fence::live_wiring` → *package ID specification `jigc` did not match any packages* (exit 101).
+
 ## 2026-09-30 — M54 Increment 5 planning: decomposition
 
 Cut [Increment 5](implementation/roadmap.md) (*names and versions*) into **3 ordered tasks**, grounded at HEAD `76ad6af2` (Increment 4's tip, tree clean). Cross-ref [roadmap.md](implementation/roadmap.md) → Milestone 54 → Increment 5; the M54 Settle below (S3, S12, S17); [planning-gate-record.md](completions/artifacts/M54/planning-gate-record.md) → rows 10–12 and the census row; [release.md](implementation/release.md) → Packages and names, Versioning. **Codes registered: none.**

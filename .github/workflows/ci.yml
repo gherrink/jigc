@@ -136,4 +136,4 @@ jobs:
           FENCE_EVENT_NAME: ${{ github.event_name }}
           FENCE_PUSH_BEFORE: ${{ github.event.before }}
           FENCE_PR_BASE: ${{ github.event.pull_request.base.sha }}
-        run: cargo test -p cli --test g_finalize manifest_freeze_fence::live -- --ignored --exact
+        run: cargo test -p jigc --test g_finalize manifest_freeze_fence::live -- --ignored --exact

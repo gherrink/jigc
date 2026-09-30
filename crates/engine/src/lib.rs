@@ -1,5 +1,9 @@
 //! `engine` — the neutral, domain-empty core of jigc.
 //!
+//! Published as the **`jigc-engine`** package, lib `jigc_engine`; the `jigc` package
+//! declares it back under the name `engine` (`implementation/release.md` → Packages
+//! and names).
+//!
 //! Owns cascade resolution, the document/schema model, parsing & serialization,
 //! the doc registry, workflow composition, the validation engine, task/staging
 //! state, and the edge index. Depends on no frontend and no domain content, and

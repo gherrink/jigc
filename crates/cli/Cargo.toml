@@ -1,11 +1,12 @@
 [package]
-name = "cli"
+name = "jigc"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false
+default-run = "jigc"
 # The ~250 suite files under `tests/` are NOT cargo targets of their own — they are
 # compiled into the 12 group targets declared at the bottom of this file
 # (each group root pulls its suites in with `#[path = "../<name>.rs"] mod <name>;`, the
@@ -28,7 +29,9 @@ name = "jigc"
 path = "src/main.rs"
 
 [dependencies]
-engine = { workspace = true }
+# Published as `jigc-engine`, lib `jigc_engine`, renamed back to `engine` here so no
+# path into the engine moves in this crate (M54 S12, release.md → Packages and names).
+engine = { package = "jigc-engine", version = "=1.0.0-rc.21", path = "../engine" }
 clap = { workspace = true }
 include_dir = { workspace = true }
 anyhow = { workspace = true }

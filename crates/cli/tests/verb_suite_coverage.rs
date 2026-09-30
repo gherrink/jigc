@@ -252,7 +252,7 @@ fn render_map(map: &BTreeMap<String, Vec<String>>, cap: Option<usize>) -> String
 /// anything, run the ignored companion below:
 ///
 /// ```text
-/// cargo test -p cli verb_suite_coverage -- --ignored --nocapture
+/// cargo test -p jigc verb_suite_coverage -- --ignored --nocapture
 /// ```
 ///
 /// An `#[ignore]`d printer rather than a forced failure: it is a normal, repeatable
@@ -282,7 +282,7 @@ fn every_leaf_verb_is_named_by_at_least_one_integration_suite() {
         "these leaf verbs are named by NO integration suite: {holes:?}\n\n\
          A verb with no suite naming it has no coverage to classify — write one, or, \
          if it is genuinely exempt, add it to `EXCLUDED_VERBS` with its reason.\n\n\
-         The whole verb -> naming-suites map (`cargo test -p cli verb_suite_coverage \
+         The whole verb -> naming-suites map (`cargo test -p jigc verb_suite_coverage \
          -- --ignored --nocapture` prints it uncapped):\n{}",
         render_map(&map, Some(4)),
     );

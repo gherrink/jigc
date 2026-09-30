@@ -10,6 +10,13 @@
 //! tree ([`cli`]) for the `CommandFactory` verb sweep, and the exit-code taxonomy
 //! table ([`task::EXIT_CODES`]) the taxonomy suite asserts against. `main.rs` keeps
 //! only `fn main` and the fd-level output tee, reaching everything through `cli::…`.
+//!
+//! **Not an API, no semver promise.** This lib is published inside the `jigc` package
+//! only because the `jigc` binary is built from it; the binary is the product. Nothing
+//! outside this workspace may depend on it, and any release may change it
+//! (`implementation/release.md` → Packages and names).
+
+#![doc(hidden)]
 
 // `adapter` ships the embedded profiles + the typed profile model/loader and the
 // host-file injectors; `setup` orchestrates them into the `jigc setup` install.

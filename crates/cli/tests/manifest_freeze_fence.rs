@@ -2159,7 +2159,7 @@ const CI_STEP_NAME: &str = "manifest-freeze fence";
 /// sub-decision mechanically true in **both** directions: `cargo test` skips the arm
 /// locally, and only this line un-skips it.
 const CI_STEP_RUN: &str =
-    "cargo test -p cli --test g_finalize manifest_freeze_fence::live -- --ignored --exact";
+    "cargo test -p jigc --test g_finalize manifest_freeze_fence::live -- --ignored --exact";
 
 /// This suite's own source, read for the one property no assertion inside it can
 /// reach: that the live arm is still `#[ignore]`d.

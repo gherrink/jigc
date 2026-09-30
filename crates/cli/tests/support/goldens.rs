@@ -60,7 +60,7 @@ pub const REPO_TOKEN: &str = "<REPO>";
 /// the suite by module path instead. Golden writes are per-member files and never
 /// contend ([pinning.md](../../../../implementation/pinning.md) → Golden layout), so
 /// the nextest form — which runs each test in its own process — regenerates safely too.
-const REGEN_ROUTE: &str = "UPDATE_GOLDENS=1 cargo test -p cli <suite>::";
+const REGEN_ROUTE: &str = "UPDATE_GOLDENS=1 cargo test -p jigc <suite>::";
 
 /// One captured invocation, rendered to the exact bytes a golden holds: the exit
 /// code, then stdout, then stderr, with absolute repo paths normalized to
