@@ -1,6 +1,6 @@
 # CI runtime — M54 Increment 8
 
-This file records the **before run**, read back by its id. S8's bound is measured against it, and T3 adds the per-leg proxy here later. Cross-ref [roadmap.md](../../../implementation/roadmap.md) → Milestone 54 → Increment 8; [planning-gate-record.md](planning-gate-record.md) → row 17; [DECISIONS.md](../../../DECISIONS.md) → *M54 Inc 2 T1* (the run id) and *M54 Increment 8 planning*.
+This file records the **before run**, read back by its id. S8's bound is measured against it, and the per-leg proxy (T3) follows it. Cross-ref [roadmap.md](../../../implementation/roadmap.md) → Milestone 54 → Increment 8; [planning-gate-record.md](planning-gate-record.md) → row 17; [DECISIONS.md](../../../DECISIONS.md) → *M54 Inc 2 T1* (the run id) and *M54 Increment 8 planning*.
 
 ## The before run — `36549870099`
 
@@ -144,3 +144,54 @@ C10 counts `93` crates downloaded fresh, and it prints two `Updating crates.io i
 The `test` profile's 44.52 s was warm only **within the job**. It reused the dependency artifacts that step 12 (`cargo build`) had just compiled into the same `target/`. No cache ever warmed it.
 
 So the run's cargo compile time is a **cold-cache** figure: the four compiles sum to 12.20 + 35.71 + 15.65 + 44.52 = **108.08 s**. The 1927 s `cargo test` step splits into 44.52 s of compile and about 1882 s of test execution, which matches the 1881.29 s the binaries sum to. The before run is therefore comparable to T3's cold proxy, which the plan already treats as *the bound a cache-miss push must meet too*.
+
+## The per-leg proxy (T3)
+
+Each leg T4 pins was run as its own `dev/runner-faithful --cpus 4 --commit 2ce0434e26a9d104b20363a4ceec3ffca7dfa646 cargo <argv>` invocation, one at a time, from 2026-09-30 09:58:45Z to 10:26:00Z. Nothing else ran on the docker host meanwhile. Every run was cold: a fresh container, the target directory inside it, and no cache. So each leg downloaded its crates again (65 to 121 per leg) and compiled from nothing, the way a cache-miss push does.
+
+### The platform, and the bound on what it proves
+
+| Value | Read |
+|---|---|
+| Commit | `2ce0434e26a9d104b20363a4ceec3ffca7dfa646`, T2's tip (the container's `commit` header line) |
+| Host | Apple M1 Max, macOS 26.6.2, colima (Ubuntu 24.04.4 LTS, kernel 6.8.0-117-generic, 8 CPUs) |
+| Container | `linux/aarch64`, `rustc 1.95.0 (59807616e 2026-04-14)`, `git version 2.43.0` |
+| CPUs | `cpus      4` in every leg's log, which the tool asserts via `--cpuset-cpus 0-3` |
+
+**The proxy is not the runner.** It runs on arm64 here, where the runner is x86_64. It keeps no cache, which matches a cache miss but not a warm push. Its cores are M1 Max cores, not the runner's vCPUs. The before run is the only runner measurement, and it predates tree-sitter in `jigc`. **The platform gap, measured:** for the same group, the before run's libtest `finished in` time is 1.67× (`g_methodology`) to 2.10× (`g_doc`) this proxy's. `g_flow` is 380.19 s there against 184.22 s here, a ratio of 2.06×. That ratio also absorbs Increment 2's removal of the ~39 nested probe builds the before run still ran inside its tests, so it is not a clean platform factor.
+
+### The budget
+
+A leg's budget is **15 min minus the before run's non-cargo step time: 900 − 22 = 878 s.** The 22 s is what a cargo-only job repeats: Set up job, Checkout, CPU count, Show toolchain, the cache restore, Post cache, Post checkout and Complete job (see *Non-cargo step time* above). Counting the hygiene steps too gives 23 s and 877 s. No leg's verdict changes either way.
+
+### The table
+
+*Wall clock* is `date +%s` before and after the invocation, measured outside the tool. It includes the tool's own set-up: the image cache check, the git bundle, `docker create`/`cp` and the clone. *Compile* is cargo's last `Finished` line. *Tests* is libtest's `finished in`. Both are read from the leg's log.
+
+| Leg | Argv (`cargo …`) | Wall clock | Exit | CPUs | Compile · tests |
+|---|---|---|---|---|---|
+| `fmt` | `fmt --check` | 10 s | 0 | 4 | — |
+| `clippy` | `clippy --all-targets -- -D warnings` | 38 s | 0 | 4 | 29.26 s |
+| `build` | `build` | 33 s | 0 | 4 | 22.78 s |
+| `g_flow` | `test -p jigc --test g_flow --no-fail-fast` | **221 s** | 0 | 4 | 28.97 s · 184.22 s (333 passed) |
+| `g_doc` | `test -p jigc --test g_doc --no-fail-fast` | 167 s | **101** ‡ | 4 | 26.45 s · 131.39 s (258 passed, 1 failed) |
+| `g_milestone` | `test -p jigc --test g_milestone --no-fail-fast` | 174 s | 0 | 4 | 28.24 s · 137.34 s (303 passed) |
+| `g_finalize` | `test -p jigc --test g_finalize --no-fail-fast` | 137 s | 0 | 4 | 27.90 s · 101.35 s (381 passed, 1 ignored) |
+| `g_migrate` | `test -p jigc --test g_migrate --no-fail-fast` | 121 s | 0 | 4 | 27.97 s · 83.50 s (413 passed, 1 ignored) |
+| `g_compose` | `test -p jigc --test g_compose --no-fail-fast` | 120 s | 0 | 4 | 26.27 s · 85.64 s (203 passed) |
+| `g_config` | `test -p jigc --test g_config --no-fail-fast` | 118 s | 0 | 4 | 26.22 s · 83.28 s (236 passed) |
+| `g_methodology` | `test -p jigc --test g_methodology --no-fail-fast` | 92 s | 0 | 4 | 25.11 s · 58.36 s (138 passed) |
+| `g_item` | `test -p jigc --test g_item --no-fail-fast` | 76 s | 0 | 4 | 25.51 s · 41.91 s (173 passed) |
+| `g_solo_trial_corpus` | `test -p jigc --test g_solo_trial_corpus --no-fail-fast` | 59 s | 0 | 4 | 24.41 s · 26.07 s (14 passed) |
+| `g_migration` | `test -p jigc --test g_migration --no-fail-fast` | 55 s | 0 | 4 | 24.82 s · 21.22 s (88 passed) |
+| `g_solo_store_sweep` | `test -p jigc --test g_solo_store_sweep --no-fail-fast` | 35 s | 0 | 4 | 24.09 s · 1.77 s (3 passed) |
+| `unit` | `test --workspace --lib --bins --no-fail-fast` + `test --workspace --doc --no-fail-fast` | 82 s (47 + 35) † | 0, 0 | 4, 4 | 34.15 s · 535 (`cli` lib) + 96 (`jigc` bin) + 991 (`jigc_engine` lib) passed; 24.37 s · 0 doctests in `cli` and `jigc_engine` |
+| `manifest-freeze` | `test -p jigc --test g_finalize manifest_freeze_fence::live -- --ignored --exact` | 38 s | 0 | 4 | 28.57 s · 1 passed |
+| `publish-dry-run` | `publish --workspace --dry-run` | 45 s | 0 | 4 | 14.66 s + 35.90 s (the two verify builds) |
+| `lock-current` | `metadata --locked --format-version 1` (stdout, 539,040 bytes, to a file) | 14 s | 0 | 4 | — |
+
+† `unit`'s two commands ran as two invocations, and each recompiled cold, so their sum **over-estimates** a job that runs both in one checkout.
+
+‡ **A defect, reported rather than recorded as a clean time.** `g_doc` exited 101 in **3 of 4** cold runs at this commit. The first run exited 101, and the re-runs exited 0, 101 and 101, taking 167 s, 168 s and 167 s. Every failure is the same test: `doc_code_probe::jigc_refuses_the_probe_argv_of_another_build` panics at `crates/cli/tests/doc_code_probe.rs:1209` with `write the request: Os { code: 32, kind: BrokenPipe }`. The cause is a race in the test's helper `run_jigc_with_stdin`, which `.expect()`s its `write_all` to the child's stdin. On a skewed `--build`, `jigc` refuses before it reads stdin (`probe_intercept`, `crates/cli/src/main.rs:116-125`) and exits, so the write can find the pipe closed. Production is not affected, because its invoker already discards that write's result (`let _ = stdin.write_all(request)`, `crates/cli/src/invoke.rs:230`). The helper arrived in Increment 2 (`6dfacc4d`), after the before run, so no CI runner has run it yet. As long as it stands, a per-group `g_doc` job can redden a green push. The time still counts for the verdict: the leg's wall clock stayed at 167–168 s across all four runs, passing or failing, so one test's outcome does not move it.
+
+**Verdict: no leg over budget → per-leg compile.** The slowest leg is `g_flow`, at 221 s against the 878 s budget. Scaled whole by the largest runner-to-proxy ratio above (2.10×), it would take about 464 s, which is still inside the budget.
