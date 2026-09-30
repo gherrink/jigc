@@ -13,9 +13,11 @@
 //! Proved red on an applied mutant: with `INSTALL_REQUIREMENT` set to `>=0.0.0`, the
 //! `0.0.0` arm fails (and so does the `1.0.0-rc.22` arm, which a plain range never admits).
 
+use std::path::PathBuf;
+
 use semver::{Version, VersionReq};
 
-use crate::support::install_line::quickstart_install_line;
+use crate::support::install_line::{install_line_in, quickstart_install_line};
 
 /// The requirement the install line carries, held once.
 const INSTALL_REQUIREMENT: &str = "^1.0.0-rc.1";
@@ -60,5 +62,23 @@ fn quickstart_carries_the_requirement_this_suite_proves() {
         "QUICKSTART.md's install line (`{}`) names a requirement other than the one proved \
          here — move them together, and re-prove the matching rule",
         owned.line,
+    );
+}
+
+/// The root README carries **the one allowed copy** of the line (S13): byte-identical to
+/// QUICKSTART's, read out of both docs through the same extractor, so each must hold
+/// exactly one install line under `## Install` and the two must agree to the byte. A
+/// one-byte drift in the copy turns this red (recorded in DECISIONS.md → *M54 Inc 6 T3*).
+#[test]
+fn the_readme_carries_quickstarts_line_byte_identical() {
+    let readme = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../README.md");
+    let text = std::fs::read_to_string(&readme)
+        .unwrap_or_else(|err| panic!("{} must be readable: {err}", readme.display()));
+    let copy = install_line_in(&text, "README.md");
+    let owned = quickstart_install_line();
+    assert_eq!(
+        copy.line, owned.line,
+        "README.md's install line is the one allowed copy of QUICKSTART.md's and must match \
+         it byte-for-byte — change the line in QUICKSTART.md and copy it here",
     );
 }

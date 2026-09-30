@@ -64,6 +64,7 @@ use crate::support::root_walk;
 /// Every live doc the fence reads, repository-relative. Declared, never derived.
 const LIVE_DOCS: &[&str] = &[
     "CLAUDE.md",
+    "README.md",
     "VISION.md",
     "WHY-JIGC.md",
     "crates/cli/guides/MIGRATING.md",
@@ -210,6 +211,7 @@ const ROOT_FILES: &[&str] = &[
     "DECISIONS.md",
     "LICENSE-APACHE",
     "LICENSE-MIT",
+    "README.md",
     "VISION.md",
     "WHY-JIGC.md",
     "rust-toolchain.toml",
@@ -879,7 +881,7 @@ fn an_exempt_form_must_close_inside_its_paragraph() {
 #[test]
 fn a_token_outside_the_declared_roots_is_not_a_path() {
     let doc =
-        "`docs/roadmap.md` `.jigc/state/x.json` `~/.claude/x` `cargo test -p jigc` `README.md`";
+        "`docs/roadmap.md` `.jigc/state/x.json` `~/.claude/x` `cargo test -p jigc` `NOTES.md`";
     assert!(offences("x.md", doc).is_empty());
 }
 
