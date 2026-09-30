@@ -380,6 +380,7 @@ dependencies = [
  "insta",
  "jigc-engine",
  "libc",
+ "semver",
  "serde",
  "serde_json",
  "serde_yaml_ng",

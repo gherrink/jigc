@@ -35,6 +35,8 @@ mod gitignore_writer_acks;
 mod golden_harness;
 #[path = "../home_vacated.rs"]
 mod home_vacated;
+#[path = "../install_line.rs"]
+mod install_line;
 #[path = "../managed_vs_foreign.rs"]
 mod managed_vs_foreign;
 #[path = "../migrate_adr.rs"]

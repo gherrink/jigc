@@ -65,3 +65,8 @@ version = "1"
 
 [workspace.dependencies.proptest]
 version = "1"
+
+# The library cargo matches version requirements with — the install line's requirement
+# is proved on it before any doc relies on it (M54 O6, release.md → Installing).
+[workspace.dependencies.semver]
+version = "1"

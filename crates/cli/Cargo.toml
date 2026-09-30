@@ -55,6 +55,7 @@ tree-sitter-yaml = "=0.7.2"
 
 [dev-dependencies]
 insta = { workspace = true }
+semver = { workspace = true }
 
 [lints]
 workspace = true
