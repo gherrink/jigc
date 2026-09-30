@@ -31,8 +31,16 @@
 //! and `release-plz` both run on the GitHub App's token; **(n)** nothing keys on a commit
 //! subject; **(o)** every `release-plz/action` step pins release-plz `0.3.169`; **(p)** the
 //! dry run and the engine overlay apply off `gherrink/jigc` only.
+//!
+//! The agents' arm, over `.claude/` (release.md → *What agents may not do*): **(q)** this
+//! repository's `.claude/settings.json` denies every pinned form of merging a PR, pushing
+//! a tag, approving a deployment and yanking a crate, and every agent definition under
+//! `.claude/agents/` carries the one *Never* paragraph. The settings are the enforced
+//! layer; a definition can only instruct, because a scoped Bash deny in its frontmatter
+//! removes Bash from the agent wholesale.
 
 use crate::manifest_freeze_fence::repo_root;
+use crate::support::root_walk;
 use crate::support::run_then_parse::stdout_json;
 use serde_yaml_ng::Value as Yaml;
 use std::collections::BTreeMap;
@@ -788,5 +796,98 @@ fn p_the_dry_run_and_the_overlay_apply_off_the_real_repository_only() {
         Some(OFF_THE_REAL_REPO),
         "the overlay verifies `jigc` against the local engine, so it may apply only to the \
          rehearsal's dry run"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// (q) the agents are denied the human's acts
+// ---------------------------------------------------------------------------
+
+/// The agents' permissions and their definitions, repository-relative.
+const AGENT_SETTINGS: &str = ".claude/settings.json";
+const AGENT_DEFINITIONS: &str = ".claude/agents";
+
+/// Every deny entry release.md → *What agents may not do* pins, with the act it stops.
+/// Each was driven with a headless `claude -p --permission-mode bypassPermissions`
+/// (Claude Code 2.1.284), directly and through an Agent-tool subagent, and each reported
+/// a `permission_denials` record; the controls that table names ran under the same list.
+const AGENT_DENY: [(&str, &str); 11] = [
+    ("Bash(gh *pr merge*)", "merge a PR"),
+    ("Bash(gh api *pulls/*/merge*)", "merge a PR (REST)"),
+    ("Bash(gh api *mergePullRequest*)", "merge a PR (GraphQL)"),
+    (
+        "Bash(gh api *enablePullRequestAutoMerge*)",
+        "merge a PR (GraphQL auto-merge)",
+    ),
+    ("Bash(git *push *--tags*)", "push a tag"),
+    ("Bash(git *push *--follow-tags*)", "push a tag"),
+    ("Bash(git *push *refs/tags/*)", "push a tag"),
+    (
+        "Bash(gh *release create*)",
+        "push a tag (a release creates one)",
+    ),
+    ("Bash(gh api *git/refs*)", "push a tag (REST ref creation)"),
+    ("Bash(gh api *pending_deployments*)", "approve a deployment"),
+    ("Bash(cargo *yank *)", "yank a crate"),
+];
+
+/// The paragraph every agent definition carries, verbatim.
+const NEVER_PARAGRAPH: &str = "**Never merge a pull request, push a tag, approve a \
+     deployment or yank a crate.** Those acts are the human's \
+     ([release.md](../../implementation/release.md) → *What agents may not do*). \
+     `.claude/settings.json` denies the commands that perform them; a denial is the answer, \
+     never something to route around.";
+
+#[test]
+fn q_the_agent_settings_deny_every_pinned_act() {
+    let path = repo_root().join(AGENT_SETTINGS);
+    let body = fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("`{AGENT_SETTINGS}` must be readable: {e}"));
+    let settings: serde_json::Value = serde_json::from_str(&body)
+        .unwrap_or_else(|e| panic!("`{AGENT_SETTINGS}` must be valid JSON: {e}"));
+    let deny: Vec<&str> = settings["permissions"]["deny"]
+        .as_array()
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .collect()
+        })
+        .unwrap_or_default();
+    let missing: Vec<&(&str, &str)> = AGENT_DENY
+        .iter()
+        .filter(|(entry, _)| !deny.contains(entry))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "`{AGENT_SETTINGS}` → `permissions.deny` lacks {missing:?}. Agents run `gh`, `git` \
+         and `cargo` with the human's own credentials, so this list is the only thing \
+         between an agent and those acts (release.md → What agents may not do)"
+    );
+}
+
+#[test]
+fn q_every_agent_definition_carries_the_never_paragraph() {
+    let root = repo_root();
+    let definitions = root_walk::files_in(&root.join(AGENT_DEFINITIONS), root_walk::ext("md"));
+    let lacking: Vec<String> = definitions
+        .iter()
+        .filter(|path| {
+            !fs::read_to_string(path)
+                .unwrap_or_else(|e| panic!("`{}` must be readable: {e}", path.display()))
+                .contains(NEVER_PARAGRAPH)
+        })
+        .map(|path| {
+            path.strip_prefix(&root)
+                .unwrap_or(path)
+                .display()
+                .to_string()
+        })
+        .collect();
+    assert!(
+        lacking.is_empty(),
+        "every agent definition must carry the Never paragraph verbatim; these do not: \
+         {lacking:?}. A definition cannot enforce a scoped Bash deny, so the paragraph is \
+         how it names the acts that are the human's"
     );
 }

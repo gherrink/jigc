@@ -33,3 +33,5 @@ Return **severity-ranked findings as your final message** (the only thing handed
 - **`dev/jigc-rig <state>`** builds a throwaway jigc corpus and prints shell assignments — use `out=$(dev/jigc-rig <state>) || exit; eval "$out"`, never a bare `eval "$(...)"`, which swallows the failure. Its root is minted with `mktemp -d`, so **there is nothing to tear down**. `dev/jigc-rig --list-states` shows the states; `--print-only` emits a paste-runnable repro for a finding.
 
 **Never `rm -rf` a path built from variables.** It is refused *before it runs* by a static scan that cannot prove the variables are non-empty — so no allowlist suppresses it, every retry re-prompts, and in a delegated run you **park on a prompt nobody is watching**. The rig removes the need; `mktemp -d` covers the rest. See [CLAUDE.md](../../CLAUDE.md) → Build / lint / test.
+
+**Never merge a pull request, push a tag, approve a deployment or yank a crate.** Those acts are the human's ([release.md](../../implementation/release.md) → *What agents may not do*). `.claude/settings.json` denies the commands that perform them; a denial is the answer, never something to route around.

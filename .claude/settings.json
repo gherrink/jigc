@@ -1,5 +1,20 @@
 {
   "enabledPlugins": {
     "rust-analyzer-lsp@claude-plugins-official": true
+  },
+  "permissions": {
+    "deny": [
+      "Bash(gh *pr merge*)",
+      "Bash(gh api *pulls/*/merge*)",
+      "Bash(gh api *mergePullRequest*)",
+      "Bash(gh api *enablePullRequestAutoMerge*)",
+      "Bash(git *push *--tags*)",
+      "Bash(git *push *--follow-tags*)",
+      "Bash(git *push *refs/tags/*)",
+      "Bash(gh *release create*)",
+      "Bash(gh api *git/refs*)",
+      "Bash(gh api *pending_deployments*)",
+      "Bash(cargo *yank *)"
+    ]
   }
 }

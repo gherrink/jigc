@@ -126,6 +126,35 @@
 
 *Settled:* **agents never merge the release PR, never push a tag, and never approve a deployment**; the deployment-approval API is denied in the agents' permissions (agent definitions and settings). **This is adapter-enforced, not by construction** — agents run `gh` with the human's own credentials, so a permission entry is the only thing between an agent and a merge — the same *adapter-enforced, not sandboxed* bet [VISION.md](../VISION.md) principle #3 names for jigc itself. The real fix is a **restricted agent token** that cannot merge, approve or tag, owed at [decisions-pending.md](decisions-pending.md) → *The road to 1.0.0 and the port* → *The 1.0.0 call*.
 
+**The deny list — pinned by the build** (M54 Increment 9, 2026-09-30). `.claude/settings.json` → `permissions.deny` holds the entries below, and yanking a crate — the H4 act — sits beside the three. **Each entry was driven, not assumed:** Claude Code 2.1.284, `claude -p … --permission-mode bypassPermissions`, in a `mktemp -d` scratch repository holding a copy of the list, once directly and once through an Agent-tool subagent. Every probe command below reported a `permission_denials` record both ways. Each uses `--help` or a remote that does not exist, so nothing could happen had a rule failed.
+
+| Entry | Act | Probe commands |
+|---|---|---|
+| `Bash(gh *pr merge*)` | merge a PR | `gh pr merge --help` · `gh -R gherrink/jigc pr merge --help` |
+| `Bash(gh api *pulls/*/merge*)` | merge a PR (REST) | `gh api -X PUT repos/gherrink/jigc/pulls/1/merge --help` |
+| `Bash(gh api *mergePullRequest*)` | merge a PR (GraphQL) | `gh api graphql -f query='mutation { mergePullRequest(…) … }' --help` |
+| `Bash(gh api *enablePullRequestAutoMerge*)` | merge a PR (GraphQL auto-merge) | the same with `enablePullRequestAutoMerge` |
+| `Bash(git *push *--tags*)` | push a tag | `git push nowhere-remote --tags` · `git -C . push nowhere-remote --tags` |
+| `Bash(git *push *--follow-tags*)` | push a tag | `git push nowhere-remote main --follow-tags` |
+| `Bash(git *push *refs/tags/*)` | push a tag | `git push nowhere-remote refs/tags/jigc-v1.0.0-rc.22` |
+| `Bash(gh *release create*)` | push a tag (a release creates one) | `gh release create --help` · `gh -R gherrink/jigc release create --help` |
+| `Bash(gh api *git/refs*)` | push a tag (REST ref creation) | `gh api -X POST repos/gherrink/jigc/git/refs --help` |
+| `Bash(gh api *pending_deployments*)` | approve a deployment | `gh api -X POST repos/gherrink/jigc/actions/runs/1/pending_deployments --help` |
+| `Bash(cargo *yank *)` | yank a crate | `cargo yank --help` |
+
+- **The controls still run under the same list, both ways.** These are `git push origin main` and `git -C . push origin main` (the orchestrator's push), `gh pr view`, `gh run view`, `gh api repos/gherrink/jigc/releases`, `git ls-remote --tags` (reads Increments 10–12 need) and `cargo publish --workspace --dry-run`. Each reported no denial and ran.
+- **The leading `*` is deliberate.** `gh *pr merge*` also catches `gh -R <repo> pr merge`, and `git *push …` also catches `git -C <dir> push …`. Compound commands (`cd . && gh pr merge …`) and an environment prefix (`GH_PAGER=cat gh pr merge …`) were denied as well: Claude Code matches each subcommand.
+- **The settings are the enforced layer, and an agent definition only instructs.** Every definition under `.claude/agents/` carries one *Never* paragraph naming the four acts and pointing here. A scoped deny cannot live in a definition. Driven through the Agent tool, frontmatter `disallowedTools: Bash(gh pr merge:*)` removed Bash from the subagent **wholesale**, as a scalar and as a list alike; the same definition without it had Bash. (With `--agent`, planning found the scalar ignored.) `release_pipeline_fence` arm (q) holds both: the settings carry every entry above, and every definition carries the paragraph verbatim.
+- **What the list does not stop** — each form either catches a control, or no pattern can see it:
+  - **A command hidden inside another interpreter.** `bash -c 'gh pr merge --help'` ran (driven). So would a script file or a subprocess: the rules match the command line Claude Code sees, not what it spawns.
+  - **A tag pushed by its bare name.** `git push <remote> jigc-v1.0.0-rc.22` reached git (driven), because no pattern tells a tag name from a branch name.
+  - **A release, and its tag, created through REST.** `gh api -X POST repos/gherrink/jigc/releases` ran (driven). A pattern on `releases` would catch the `gh api repos/gherrink/jigc/releases` control, and `gh api` switches to POST on its own when it is given fields.
+  - **A GraphQL mutation read from a file** (`-F query=@merge.graphql`) keeps the mutation's name off the command line. Reasoned, not driven.
+  - **Acts that remove the protection rather than exercise it.** Editing the `release` environment's reviewers through the API, or editing `.claude/settings.json` itself, are outside the pinned set.
+  - **The matcher is Claude Code's.** Arm (q) pins the list, not how a future Claude Code matches it, so an upgrade calls for re-driving the probes.
+
+  The restricted agent token (above) closes every one of these at the credential, which no permission list can.
+
 ## The one-time bootstrap
 
 *Settled — the order inside M54:* a **pre-public audit** whose verdict the human signs off → **the human flips the repository public** and adds himself as the `release` environment's required reviewer, with `can_admins_bypass: false` → the *before* CI measurement → the restructure → the CI rework and the *after* measurement → release-plz, the GitHub App and this bootstrap → the dry-run rehearsal → **the rc.22 publish**.
@@ -139,4 +168,5 @@
 - **A publish whose tag step fails is not re-tagged by a re-run** — release-plz sees the version already on crates.io and skips it. The manual fix is the human's: create `<package>-v<version>` at the release merge commit, push it, and create the GitHub prerelease by hand.
 - **The build id does not see a same-version rebuild.** It is `CARGO_PKG_VERSION`, which catches the realistic skew (an upgrade mid-run) and not a dev rebuild at one version; on Linux, spawning `/proc/self/exe` removes the replaced-binary case outright ([module-layout.md](module-layout.md) → Probe boundary).
 - **The OIDC exchange cannot be rehearsed.** The trusted-publisher configuration names `gherrink/jigc`, so the rehearsal repository cannot exchange its token for a crates.io one and `--dry-run` does not need one: the first exchange is the real rc.22 publish. Acknowledged at M54's planning, not fixable by design.
+- **An agent can publish outside the pipeline.** `~/.cargo/credentials.toml` on the development machine holds a crates.io token that authenticates as the human: it answered the authenticated trusted-publisher API at Increment 9's planning. So `cargo publish` without `--dry-run` would upload from an agent's shell, and a deny pattern matches text, so it cannot require `--dry-run` to be absent without also catching the `cargo publish --workspace --dry-run` control. Whether to remove that token is the human's call at H2.
 - **No semver check runs on the rc track.** What the engine's compatibility promise is once `jigc` leaves the track is owed, not decided ([decisions-pending.md](decisions-pending.md) → *The road to 1.0.0 and the port*).
