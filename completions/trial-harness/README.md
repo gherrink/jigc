@@ -48,7 +48,7 @@ rather than inherited from the operator's `settings.json`.
 
 | Script | What it does |
 |---|---|
-| `build-image.sh <sha> [tag]` | Builds jigc for Linux from a `git archive` of that exact commit, then installs the pinned Claude CLI. Prints sha, version stamp and commit subject **before** building. **Layout-aware:** a tree carrying `crates/cli/probes/doc-code/` builds `separate-probe` (the probe beside `jigc`), any other builds `single-binary`; the image records which at `/usr/local/share/jigc-image/layout`, and the build-time `ldd` gate runs over every executable staged. |
+| `build-image.sh <sha> [tag]` · `build-image.sh --registry <version> [tag]` | **Source mode** builds jigc for Linux from a `git archive` of that exact commit; **registry mode** runs `cargo install jigc --version <version> --locked` from crates.io instead, with no tree of ours in the build context, and refuses anything but one exact version. Either then installs the pinned Claude CLI, prints what it is building (sha, version stamp and commit subject, or the registry version) **before** building, and **asserts** `jigc --version` equals the stamp afterwards, exiting 1 on a mismatch. **Layout-aware:** a tree carrying `crates/cli/probes/doc-code/` builds `separate-probe` (the probe beside `jigc`), any other tree and every registry install builds `single-binary`; the image records which at `/usr/local/share/jigc-image/layout`, and where the binary came from at `…/source` (`sha <sha>` or `registry jigc <version>`), and the build-time `ldd` gate runs over every executable staged. |
 | `verify-image.sh [tag] [version]` | **Seven** assertions that the rig is sound, in six numbered sections (§6 emits two). Run it before trusting any image. Check 2 runs the arm for the layout the image **records**, and fails an image that records none. The list below enumerates five; the script is the authority. |
 | `verify-pair.sh [old] [new]` | Proves the two images are **different trees**, behaviourally. The probe set is **selected per trial** with `PAIR_PROBES` (`m48` rc.10→rc.11 · `m46` rc.11→rc.12 · `m49` rc.12→rc.13, the default), each probe stating what it expects on **both** sides — because the original three-verb set was vacuous on any pair where both sides carried those verbs, which an rc.11/rc.12 pair did. The default tracks the current trial on purpose: a default that is wrong for the trial in front of you is a trap wearing a convenience. |
 | `run-session.sh [opts] <corpus> <out> [tag]` | Drives one session: corpus in, session, everything back out, container destroyed. Options precede the positionals: `--shell` (a plain `bash -l`) · `--exec <script>` · `--headless` with `--prompt-file <f>` · `--home <dir>` and `--arg <v>` (repeatable — how `seed`/`fork` pass `--session-id`/`--resume`/`--fork-session`) · `--cid-file <path>` (written **before** `docker start`, so a plant poller can attach) · `--strict-permissions`. There is **no `--bypass-permissions`**: `bypassPermissions` is the default and an unknown `-*` exits 2. |
@@ -61,7 +61,7 @@ M54 changes what a commit's tree looks like — the `doc-code` probe moves insid
 - **Source mode stays sha-pinned and becomes layout-aware.** A tree that still carries `crates/cli/probes/doc-code/` is built with today's recipe (two executables, the probe beside `jigc`); a tree without it is built as the single binary. The version stamp is read from `crates/cli/Cargo.toml` and falls back to the root manifest for older shas.
 - **`verify-image.sh` checks whichever layout it built** — check 2 below proves the separate `doc-code` loads on an old-layout image, and that `jigc`'s own probe child runs on a new one.
 
-Source mode is built as described (M54 Increment 7, driven on the tip and on `ce3d86bf`); registry mode is not built yet, and until it lands the harness builds shas only.
+Both modes are built as described (M54 Increment 7). Source mode was driven on the tip and on `ce3d86bf`. Registry mode was driven **before the first publish**, when crates.io held only the `0.0.0` placeholder: `--registry 1.0.0-rc.22` exits non-zero before any image is tagged, surfacing cargo's *could not find `jigc` in registry `crates-io` with version `=1.0.0-rc.22`*, and `--registry 0.0.0` builds, then fails the stamp assertion, because the placeholder prints its reservation notice; that image fails `verify-image.sh` at checks 1, 2 and 5. **Declared bound:** the positive registry run is M54 Increment 11's, after the publish.
 
 ## What each check buys, and why it is there
 
@@ -104,13 +104,15 @@ compares rc.11 against itself with nothing in the output to reveal it.
 `describe --workflows` — each of which a genuine pre-M48 tree must lack. Confirmed 3/3 on
 2026-08-15. Later pairs use behavioural sets (`m46`, `m49`), since a wave that changes only
 behaviour has no verb to probe for. Because `build-image.sh` takes a **sha**, there is no version string to search
-for and get wrong: the trap is unreachable rather than documented.
+for and get wrong: the trap is unreachable rather than documented. Registry mode takes a
+version, which is safe for the other reason: crates.io never serves two builds under one version.
 
 ## Running a session
 
 ```sh
 ./build-image.sh HEAD      jigc-gate:rc11    # the binary under test
 ./build-image.sh 1d4f9bc   jigc-gate:rc10    # the upgrade arm's baseline
+./build-image.sh --registry 1.0.0-rc.22      # a published version -> jigc-gate:registry-1.0.0-rc.22
 ./verify-image.sh jigc-gate:rc11 1.0.0-rc.11
 ./verify-pair.sh
 

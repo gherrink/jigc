@@ -2,6 +2,16 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-09-30 — M54 Increment 7 / T6: the trial harness's registry mode
+
+**T6 pins** (S14). The mode is described as built in the [trial-harness README](completions/trial-harness/README.md) → The four scripts and Two ways to build an image.
+
+1. **`build-image.sh --registry <version> [tag]` takes one exact version.** Anything else (a requirement such as `^1.0.0-rc.1`) is refused with exit 2, because the stamp assertion compares against `<version>`. The default tag is `jigc-gate:registry-<version>`. The build context carries an empty `src/`, and the `Dockerfile`'s `JIGC_REGISTRY` build argument selects `cargo install jigc --version <version> --locked --root /stage`.
+2. **The image records `single-binary` and its source.** A new `/usr/local/share/jigc-image/source` holds `registry jigc <version>`, or `sha <sha>` in source mode. Nothing reads it yet: it is what `docker run … cat` answers when someone asks where a trial image's binary came from.
+3. **The arguments are settled before the EXIT trap is set.** A `${2:?usage}` error raised while the trap was set left the script at exit 0.
+
+**Driven on `HEAD` `10c91c93` + this change, `linux/arm64`, colima, crates.io holding only the `0.0.0` placeholder.** Red first: `--registry 1.0.0-rc.22` exited 129, with git reading `--registry` as the sha. Then `--registry 1.0.0-rc.22` exited **1** at the build stage's `cargo install` (101), surfacing *could not find `jigc` in registry `crates-io` with version `=1.0.0-rc.22`*, and `docker image inspect jigc-gate:registry-1.0.0-rc.22` found no image. `--registry 0.0.0` built and tagged the image, then exited **1** at the **stamp assertion**: the placeholder prints its reservation notice, not `jigc 0.0.0`. `verify-image.sh jigc-gate:registry-0.0.0 0.0.0` then reported **2 passed, 3 failed**. Check 1 failed on the notice. Check 2 failed with *clap answered 'jigc __nope' with 0, not 2*. Check 5 failed because `jigc setup` left no `.jigc/AGENT.md`. The image was then removed. `--registry '^1.0.0-rc.1'` exited 2, and so did `--registry` with no version. `build-image.sh HEAD jigc-gate:m54-inc7-t6` exited **0**, printing `layout: single-binary`, `source: sha 10c91c93…` and `jigc 1.0.0-rc.21`, and `check2_single_binary` passed on it. **Declared bound:** the positive registry run is Increment 11's.
+
 ## 2026-09-30 — M54 Increment 7 / T5: the trial harness's layout-aware source mode
 
 **T5 pins** (S14, gate-record row 16). The harness is described as built in the [trial-harness README](completions/trial-harness/README.md) → Two ways to build an image and check 2.

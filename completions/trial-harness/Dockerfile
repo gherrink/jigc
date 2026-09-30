@@ -18,7 +18,7 @@
 # tree that already contains M48 (protocol.md §5 arm 2). The trap becomes unreachable
 # rather than merely documented.
 
-# ---- stage 1: build jigc for linux from the pinned tree -----------------------------
+# ---- stage 1: build jigc for linux from the pinned tree, or install a published one --
 FROM rust:1.95-slim-trixie AS build
 
 # build-essential because the doc-code probe links tree-sitter grammars (C) — beside jigc
@@ -31,7 +31,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /src
 COPY src/ /src/
 
-# The recipe keys on the ARCHIVED TREE, never on a version: M54 moved the doc-code probe
+# Set only by `build-image.sh --registry <version>` (M54 S14), whose build context carries
+# an empty src/. Empty selects source mode, below.
+ARG JIGC_REGISTRY=
+ARG JIGC_SHA=unknown
+
+# Registry mode installs that exact published version from crates.io — a bare version is
+# cargo's exact match — and builds nothing of ours: what an adopter can install is what
+# the session runs. A published jigc carries the probe inside it (M54 put it there before
+# the first publish), so the layout is single-binary. /stage/share/source records where
+# the binary came from, in both modes.
+#
+# Source mode keys on the ARCHIVED TREE, never on a version: M54 moved the doc-code probe
 # inside jigc (one binary, run by self-exec as `jigc __probe doc-code --build <v>`), and
 # this harness keeps building shas from both sides of that change.
 #
@@ -46,17 +57,25 @@ COPY src/ /src/
 #
 # Every executable built is staged to /stage/bin, the ONE directory the session image
 # copies, and /stage/share records what was built: `layout` (read by verify-image.sh
-# check 2) and `executables` (the list the ldd gate below runs over).
+# check 2), `executables` (the list the ldd gate below runs over) and `source` (`sha <sha>`
+# or `registry jigc <version>`).
 RUN set -e; \
     mkdir -p /stage/bin /stage/share; \
-    cargo build --release --locked; \
-    cp target/release/jigc /stage/bin/jigc; \
-    if [ -d crates/cli/probes/doc-code ]; then \
-      (cd crates/cli/probes/doc-code && cargo build --release --locked); \
-      cp crates/cli/probes/doc-code/target/release/doc-code /stage/bin/doc-code; \
-      echo separate-probe > /stage/share/layout; \
-    else \
+    if [ -n "$JIGC_REGISTRY" ]; then \
+      cargo install jigc --version "$JIGC_REGISTRY" --locked --root /stage; \
       echo single-binary > /stage/share/layout; \
+      echo "registry jigc $JIGC_REGISTRY" > /stage/share/source; \
+    else \
+      cargo build --release --locked; \
+      cp target/release/jigc /stage/bin/jigc; \
+      if [ -d crates/cli/probes/doc-code ]; then \
+        (cd crates/cli/probes/doc-code && cargo build --release --locked); \
+        cp crates/cli/probes/doc-code/target/release/doc-code /stage/bin/doc-code; \
+        echo separate-probe > /stage/share/layout; \
+      else \
+        echo single-binary > /stage/share/layout; \
+      fi; \
+      echo "sha $JIGC_SHA" > /stage/share/source; \
     fi; \
     ls /stage/bin > /stage/share/executables
 
@@ -96,6 +115,7 @@ RUN set -e; \
       fi; \
     done; \
     echo "layout: $(cat /usr/local/share/jigc-image/layout)"; \
+    echo "source: $(cat /usr/local/share/jigc-image/source)"; \
     /usr/local/bin/jigc --version
 
 # Interactive mode needs onboarding state that `-p` does not: without it the session
