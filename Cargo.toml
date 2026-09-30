@@ -9,7 +9,6 @@ edition = "2024"
 rust-version = "1.95"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/gherrink/jigc"
-publish = false
 
 # The one `Finding` envelope is the engine's error type, returned by value through
 # many `Result<_, Finding>` signatures (the "one finding shape" contract,

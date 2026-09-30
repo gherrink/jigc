@@ -5,7 +5,12 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-publish = false
+description = "The deterministic, content-empty core of jigc: schema-driven document parsing and byte-stable writes, workflow composition, validation and the edge index."
+keywords = ["coding-agents", "llm", "documentation", "markdown", "schema"]
+categories = ["development-tools", "parser-implementations"]
+# No `readme`: the root README describes the `jigc` package, not this one (release.md →
+# What the package carries). `LICENSE-MIT`/`LICENSE-APACHE` here are symlinks to the root
+# pair, packaged as regular files.
 
 [lib]
 name = "jigc_engine"

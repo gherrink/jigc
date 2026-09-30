@@ -25,6 +25,13 @@
 /// `crates/cli/packs/<pack-id>/`, and each arm names its own directory there.
 /// `crates/cli/tests/pack_path_fence.rs` leaves this macro alone because it is
 /// `#[cfg(test)]`.
+///
+/// **Declared bound (M54 S11):** the packs are not in the `jigc-engine` package, so from
+/// its tarball every expansion of this macro names a file that is not there, and the
+/// crate's **whole lib-test target** fails to compile (`cargo test` in the unpacked
+/// crate: 90 errors, every one an `include_*!` of a `pack_path!`). The unit tests are
+/// published anyway; the published crates are proven by building and installing them
+/// (`implementation/release.md` → What the package carries).
 #[cfg(test)]
 macro_rules! pack_path {
     (dev, $rel:literal) => {
