@@ -34,7 +34,24 @@
 
 **Changelogs.** Each crate keeps its own generated changelog at `crates/<dir>/CHANGELOG.md`. **The root `CHANGELOG.md` is not written by release tooling**: it is reserved for jigc's own `changelog` doctype, and whether this repository's changelog is the generated one or a jigc-authored one is a fork keyed to M56's Settle ([decisions-pending.md](decisions-pending.md) → *The road to 1.0.0 and the port* → M56).
 
-**release-plz knobs — pinned by the build, except what the spike proved.** Proven on the spike's throwaway workspaces: a per-crate `version` field is written and a workspace-inherited one silently is not. Everything else the spike's sketch set — `release_always = false`, `semver_check = false`, `dependencies_update = false`, the `release_commits` filter, per-package `changelog_path`, `git_tag_name`, `git_release_type = "auto"` (an `-rc` version marked prerelease), `publish_timeout`, `protect_breaking_commits`, the `pr_name` template above — is a starting point the build pins and records here, not a settled value.
+**release-plz knobs — pinned by the build** (M54 Increment 9, 2026-09-30). The spike proved one fact on its throwaway workspaces: a per-crate `version` field is written, and a workspace-inherited one silently is not. Everything else is pinned here, in `release-plz.toml` at the repository root, and `crates/cli/tests/release_pipeline_fence.rs` holds each fenced row; the letter is its arm. **The version the proofs ran is release-plz `0.3.169`**, the one `release-plz/action` `v0.5.139` installs by default.
+
+| Knob | Value | Why | Arm |
+|---|---|---|---|
+| `release_always` | `false` | Merging the release PR is the go. `true` would publish from any push that carries an unpublished version. This resolves gate-record O4. | (c) |
+| `release_commits` | `^(feat\|fix\|perf\|refactor\|revert)(\([^)]*\))?!?:` | Docs-only commits never bump anything. The scope-and-`!` group before the `:` stops `fixup!`, `feature…` and `refactoring` from matching. It gates `update` as well as `release-pr`. | (d) |
+| `[[package]] changelog_path` | `crates/<dir>/CHANGELOG.md`, one per publishable package | Each crate keeps its own changelog, and none writes the root `CHANGELOG.md` (above). The fence reads the publishable set from `cargo metadata`, so a new publishable crate without an entry reddens. | (b) |
+| `git_tag_name` | `{{ package }}-v{{ version }}` | The tag form under Publishing. | (e) |
+| `git_release_type` | `auto` | An `-rc` version's GitHub release is marked prerelease. | (f) |
+| `publish_timeout` | `10m` | It bounds the wait for the index after each upload. release-plz mints one trusted-publishing token before the first upload and reuses it, and crates.io gives that token 30 minutes (`rust-lang/crates.io` at `18bce5be`, `src/controllers/trustpub/tokens/exchange/mod.rs:233`: `expires_at: … + Duration::minutes(30)`). The engine's index wait and both verify builds fall before `jigc`'s upload. The fence holds the timeout plus a 5-minute verify margin under 30; the two verify builds took 14.66 s and 35.90 s on the CI runner. | (g) |
+| `semver_check` | `false` | No semver check runs on the rc track (Known gaps). | (h) |
+| `dependencies_update` | `false` | Only workspace members' lock entries move. | (h) |
+| `pr_name` | `chore(release): prepare release{% if package and version %} {{ package }} v{{ version }}{% endif %}` | `{{ package }}` and `{{ version }}` are populated only when one package releases, and an unconditional use fails the run. The `chore` type never matches `release_commits`, whatever the merge strategy makes of the title. | (a) |
+| `[changelog] protect_breaking_commits` | `true` | As the spike sketched: a breaking commit stays in the changelog whatever the commit parsers skip. Not fenced. | — |
+
+**Driven on a scratch clone** (M54 Increment 9 T2), with `--registry-manifest-path` at a clone of the parent commit standing in for rc.21 as released: a `docs:` commit that edits `crates/cli/src/main.rs` changes no file (*"jigc: no commit matches the `release_commits` regex"*), and a following `feat(cli):` commit takes `jigc` `1.0.0-rc.21 → 1.0.0-rc.22`, leaves `jigc-engine` *"already up to date"*, moves `Cargo.lock` and writes `jigc`'s changelog. **Once a release is triggered, the changelog lists every commit that touched the package, not only the ones `release_commits` admits:** the docs commit appeared under *Other*. The filter decides *whether* a version moves, never what its changelog section holds.
+
+**The constraint `release_always = false` leaves the bootstrap (Increment 10):** a publish starts only from the merge of a release PR, so the first versions reach `main` through a release PR, the path the rehearsal exercises — never through a hand-edited version pushed to `main`.
 
 ## Publishing
 

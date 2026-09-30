@@ -1,0 +1,31 @@
+# release-plz's configuration (M54 S9). Every value is pinned, with one line of why, in
+# implementation/release.md → The release PR → release-plz knobs, and fenced by
+# crates/cli/tests/release_pipeline_fence.rs. Proven against release-plz 0.3.169.
+
+[workspace]
+# Merging the release PR is the go: nothing publishes from any other push (gate-record O4).
+release_always = false
+# Only these commits bump a version; docs, test, chore, ci, style and build never do.
+release_commits = "^(feat|fix|perf|refactor|revert)(\\([^)]*\\))?!?:"
+# jigc-v1.0.0-rc.22, jigc-engine-v0.1.0-rc.1.
+git_tag_name = "{{ package }}-v{{ version }}"
+# An -rc version's GitHub release is marked prerelease.
+git_release_type = "auto"
+# The index wait after each upload; both uploads share one 30-minute trusted-publishing token.
+publish_timeout = "10m"
+# No semver check on the rc track; only workspace members' lock entries move.
+semver_check = false
+dependencies_update = false
+# {{ package }} and {{ version }} exist only when one package releases.
+pr_name = "chore(release): prepare release{% if package and version %} {{ package }} v{{ version }}{% endif %}"
+
+[changelog]
+protect_breaking_commits = true
+
+[[package]]
+name = "jigc"
+changelog_path = "crates/cli/CHANGELOG.md"
+
+[[package]]
+name = "jigc-engine"
+changelog_path = "crates/engine/CHANGELOG.md"

@@ -87,6 +87,8 @@ mod probe_self_image;
 mod reconciliation_baseline_contrast;
 #[path = "../ref_edge_guidance.rs"]
 mod ref_edge_guidance;
+#[path = "../release_pipeline_fence.rs"]
+mod release_pipeline_fence;
 #[path = "../rename_rollback_conflict.rs"]
 mod rename_rollback_conflict;
 #[path = "../repo_posture.rs"]

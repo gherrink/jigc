@@ -69,3 +69,8 @@ version = "1"
 # is proved on it before any doc relies on it (M54 O6, release.md → Installing).
 [workspace.dependencies.semver]
 version = "1"
+
+# The parser `release_pipeline_fence` reads `release-plz.toml` with (M54 S9,
+# release.md → The release PR).
+[workspace.dependencies.toml]
+version = "1"
