@@ -397,7 +397,7 @@ dependencies = [
 
 [[package]]
 name = "jigc-engine"
-version = "1.0.0-rc.21"
+version = "0.1.0-rc.1"
 dependencies = [
  "blake3",
  "insta",

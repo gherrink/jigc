@@ -9,12 +9,31 @@
 # wrong. protocol.md §5 arm 2's whole hazard is that two commits stamp 1.0.0-rc.10.
 set -euo pipefail
 
+# stamp_of <repo> <sha> — the version the tree at <sha> stamps into `jigc --version`.
+# From M54 it is `jigc`'s own `[package]` version in crates/cli/Cargo.toml; an older sha
+# carries `version.workspace = true` there, so the root `[workspace.package]` is read
+# instead — and ONLY then, and only inside that section: once the root lost its version,
+# the root's first `version = ` line is a dependency's (insta's "1").
+# Sourcing this file defines the function and runs nothing, so it can be driven without
+# docker: `bash -c '. build-image.sh; stamp_of <repo> <sha>'`.
+stamp_of() {
+  local repo="$1" sha="$2" v
+  v="$({ git -C "$repo" show "${sha}:crates/cli/Cargo.toml" 2>/dev/null || true; } |
+    sed -n '/^\[package\]/,/^\[/s/^version = "\(.*\)"$/\1/p')"
+  if [ -z "$v" ]; then
+    v="$(git -C "$repo" show "${sha}:Cargo.toml" |
+      sed -n '/^\[workspace\.package\]/,/^\[/s/^version = "\(.*\)"$/\1/p')"
+  fi
+  printf '%s\n' "$v"
+}
+if [ "${BASH_SOURCE[0]}" != "$0" ]; then return 0; fi
+
 SHA="${1:?usage: build-image.sh <sha> [tag]}"
 TAG="${2:-jigc-gate:${SHA}}"
 REPO="${JIGC_REPO:-/Users/maurice/projects/gherrink-jigc}"
 
 FULL_SHA="$(git -C "$REPO" rev-parse "$SHA")"
-STAMP="$(git -C "$REPO" show "${FULL_SHA}:Cargo.toml" | sed -n 's/^version = "\(.*\)"/\1/p' | head -1)"
+STAMP="$(stamp_of "$REPO" "$FULL_SHA")"
 
 echo "building ${TAG}"
 echo "  sha     : ${FULL_SHA}"

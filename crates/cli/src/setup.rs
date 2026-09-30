@@ -76,9 +76,9 @@ pub const VERSION_STAMP_PATH: &str = ".jigc/version";
 /// The stamp line's `key:` prefix — the one-line on-disk format is `jigc-version: <semver>`.
 const VERSION_STAMP_KEY: &str = "jigc-version:";
 
-/// The stamp body for the running build: `CARGO_PKG_VERSION` at write time
-/// (`design/storage.md` → the value is the engine's `CARGO_PKG_VERSION`; the whole
-/// workspace shares one version via `version.workspace = true`).
+/// The stamp body for the running build: the `jigc` package's `CARGO_PKG_VERSION` at write
+/// time, never the engine's, which is versioned on its own track (`design/storage.md` → Store
+/// provenance; `implementation/release.md` → Versioning).
 fn version_stamp_body() -> String {
     format!("{VERSION_STAMP_KEY} {}\n", env!("CARGO_PKG_VERSION"))
 }

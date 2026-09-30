@@ -2,8 +2,9 @@
 resolver = "3"
 members = ["crates/engine", "crates/cli"]
 
+# No `version` here: each crate carries its own, because release-plz silently skips an
+# inherited one (implementation/release.md → Versioning).
 [workspace.package]
-version = "1.0.0-rc.21"
 edition = "2024"
 rust-version = "1.95"
 license = "MIT OR Apache-2.0"

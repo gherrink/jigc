@@ -3,7 +3,7 @@
 //! Increment 6 (`implementation/roadmap.md` → Increment 6: *Release build + a
 //! quickstart*; **Proves:** the path of least resistance exists on a real
 //! machine). Three assertions over the *built* binary + the shipped doc:
-//!   1. `jigc --version` reports the workspace version (the artifact identifies
+//!   1. `jigc --version` reports `jigc`'s own version (the artifact identifies
 //!      itself as `jigc <version>`, the settled name — `DECISIONS.md`
 //!      2026-05-31 → Product name);
 //!   2. `jigc setup` in a fresh temp repo exits 0 and leaves *both* adapter
@@ -111,7 +111,7 @@ fn version_reports_the_workspace_version() {
     let expected = format!("jigc {}\n", env!("CARGO_PKG_VERSION"));
     assert_eq!(
         stdout, expected,
-        "`jigc --version` must report the workspace version as `jigc <version>`",
+        "`jigc --version` must report `jigc`'s version as `jigc <version>`",
     );
 }
 

@@ -1125,14 +1125,15 @@ fn manifest_kind_all_holds_every_variant_the_enum_declares() {
 // the arm below reads both: the newest span's claim in the record, and **every** claim
 // `CLAUDE.md` makes, since it carries no historical spans and therefore owes no exemption.
 
-/// The workspace version — the second home, read from `[workspace.package]` rather than from
-/// any crate's inherited `version.workspace = true`.
-fn workspace_version() -> String {
-    let manifest = fs::read_to_string(repo_root().join("Cargo.toml"))
-        .expect("the workspace Cargo.toml must be readable");
+/// `jigc`'s version — the second home, read from `crates/cli/Cargo.toml`'s `[package]`.
+/// Since M54 each crate carries its own `version` and the engine's is a different track
+/// (`implementation/release.md` → Versioning), so the binary a fold-back claims is `jigc`'s.
+fn jigc_version() -> String {
+    let manifest = fs::read_to_string(repo_root().join("crates/cli/Cargo.toml"))
+        .expect("crates/cli/Cargo.toml must be readable");
     let at = manifest
-        .find("[workspace.package]")
-        .expect("Cargo.toml must declare `[workspace.package]`");
+        .find("[package]")
+        .expect("crates/cli/Cargo.toml must declare `[package]`");
     let section = &manifest[at..];
     let end = section[1..]
         .find("\n[")
@@ -1146,7 +1147,7 @@ fn workspace_version() -> String {
             }
         }
     }
-    panic!("`[workspace.package]` must carry a `version = \"…\"` key");
+    panic!("crates/cli/Cargo.toml's `[package]` must carry its own `version = \"…\"` key");
 }
 
 /// Byte spans of every semver-shaped token in `text` — `<major>.<minor>.<patch>` with an
@@ -1289,7 +1290,7 @@ fn foldback_version_mismatches(body: &str, version: &str) -> Vec<String> {
 #[test]
 fn the_foldback_names_the_version_cargo_toml_carries() {
     let body = read_doc(RECORD);
-    let version = workspace_version();
+    let version = jigc_version();
 
     let mismatches = foldback_version_mismatches(&body, &version);
     assert!(

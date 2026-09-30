@@ -46,8 +46,8 @@ impl Drop for TempDir {
 }
 
 /// The running build's version — the value `jigc setup` stamps and `jigc validate`
-/// compares against. The test crate is part of the `cli` crate's build, so this is the
-/// workspace version (`1.0.0-rc.2`).
+/// compares against. The test crate is part of the `jigc` package's build, so this is
+/// `jigc`'s version (`crates/cli/Cargo.toml`), not the engine's.
 const RUNNING_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Run a `git` command in `repo`, asserting success, returning trimmed stdout.
@@ -131,6 +131,69 @@ fn setup_writes_committed_binary_provenance_stamp() {
     assert!(
         tracked.lines().any(|p| p == ".jigc/version"),
         "`.jigc/version` must be committed (tracked), so it travels with the repo; tracked:\n{tracked}",
+    );
+}
+
+/// Each workspace package's version as cargo resolves it — `name → version` from
+/// `cargo metadata --no-deps`, so an inherited `version.workspace = true` and a crate's own
+/// `version` field are both read the way the build reads them, never by a hand parser.
+fn package_versions() -> std::collections::BTreeMap<String, String> {
+    let out = Command::new(env!("CARGO"))
+        .args([
+            "metadata",
+            "--no-deps",
+            "--offline",
+            "--format-version",
+            "1",
+        ])
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .output()
+        .expect("run cargo metadata");
+    let metadata: serde_json::Value = stdout_json(&out, &[0], "`cargo metadata --no-deps`");
+    metadata["packages"]
+        .as_array()
+        .expect("cargo metadata lists packages")
+        .iter()
+        .map(|p| {
+            (
+                p["name"].as_str().expect("package name").to_string(),
+                p["version"].as_str().expect("package version").to_string(),
+            )
+        })
+        .collect()
+}
+
+/// The stamp is **`jigc`'s** version — `crates/cli/Cargo.toml`'s — and not the engine's
+/// (`implementation/release.md` → Versioning: *the version the product reports is
+/// `jigc`'s*). The two crates are versioned independently from M54 (S3), so a stamp that
+/// read the engine's version would name a library the adopter never installed. The arm
+/// is only discriminating while the two versions differ, so it asserts that too.
+#[test]
+fn setup_stamps_jigcs_version_not_the_engines() {
+    let versions = package_versions();
+    let jigc_version = versions
+        .get("jigc")
+        .expect("the workspace has a `jigc` package");
+    let engine_version = versions
+        .get("jigc-engine")
+        .expect("the workspace has a `jigc-engine` package");
+    assert_ne!(
+        jigc_version, engine_version,
+        "`jigc` and `jigc-engine` must carry their own versions (release.md → Versioning); \
+         both resolve to `{jigc_version}`, so the stamp cannot show whose version it records",
+    );
+
+    let repo = TempDir::new("whose");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+
+    let body = fs::read_to_string(repo.path().join(".jigc").join("version"))
+        .expect("`jigc setup` must write `.jigc/version`");
+    assert_eq!(
+        body,
+        format!("jigc-version: {jigc_version}\n"),
+        "the stamp records `jigc`'s version (crates/cli/Cargo.toml), not the engine's \
+         (`{engine_version}`)",
     );
 }
 
