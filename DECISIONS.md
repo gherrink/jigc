@@ -2,6 +2,15 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-09-30 — M54 Increment 7 / T4: the after-publish install acceptance, `dev/runner-faithful registry`
+
+**T4 pins** (S10 · S9's first faithful registry proof, which Increment 11 runs). The values are recorded at [release.md](implementation/release.md) → Verifying a publish.
+
+1. **The mode is `registry [<requirement>]`.** It takes one optional requirement. An omitted one is the unpinned `cargo install jigc --locked`, which Increment 12's entry needs. An explicitly empty one is refused as a usage error, so an unpinned install is never an accident of quoting. No bundle is made or copied in, and `--commit` only picks the toolchain.
+2. **The expected version is what cargo installed**, read from `cargo install --list`, and then the shared `post_install` runs. The placeholder is the proof that the checks bind: it installs, and it fails at `version`.
+
+**Driven, on `HEAD` `b0fe4683` + this change, `linux/arm64`:** red first. `registry '^1.0.0-rc.1'` exited 2 with *unknown argument: registry*. Then `registry '^1.0.0-rc.1'` exited **1** at `FAIL install` (cargo 101, *could not find `jigc` in registry `crates-io` with version `^1.0.0-rc.1`*). `registry '=0.0.0'` exited **1** at `FAIL version` (the placeholder's reservation notice, expected `jigc 0.0.0`). The unpinned `registry` gave the same result. `cargo --version` still exited 0 through the reshaped clone/header.
+
 ## 2026-09-30 — M54 Increment 7 / T3: the pre-publish install acceptance, `dev/runner-faithful tarball`
 
 **T3 pins** (S10 · S9's `--locked` bound, row 15). The values are recorded at [release.md](implementation/release.md) → Verifying a publish.

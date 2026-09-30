@@ -35,6 +35,7 @@
 # Usage:
 #   dev/runner-faithful [--platform <os/arch>] [--commit <rev>] cargo <args...>
 #   dev/runner-faithful [--platform <os/arch>] [--commit <rev>] tarball
+#   dev/runner-faithful [--platform <os/arch>] [--commit <rev>] registry [<requirement>]
 #
 #   cargo       runs the named cargo command in the clone.
 #   tarball     the pre-publish install acceptance (implementation/release.md -> Verifying
@@ -60,17 +61,29 @@
 #                                  doc-code.symbol-exists, with HEAD unchanged.
 #               version .. drift-finalize are one function, post_install, that the
 #               registry mode reuses.
+#   registry    the after-publish install acceptance (implementation/release.md ->
+#               Verifying a publish): no source tree enters the container and nothing is
+#               patched. Its steps:
+#                 install          `cargo install jigc --version <requirement> --locked`
+#                                  against crates.io; with the requirement omitted, the
+#                                  unpinned `cargo install jigc --locked`;
+#                 version .. drift-finalize
+#                                  post_install, against the version `cargo install
+#                                  --list` reports it installed.
+#               A requirement nothing on crates.io matches fails at `install`, with cargo's
+#               error in the log tail; a placeholder that installs fails at `version`.
 #
 #   --platform  the docker platform (default: the docker host's own, e.g. linux/arm64);
 #               passed through to `docker build` and `docker create`.
 #   --commit    the commit that runs (default: HEAD). It must be reachable from HEAD, a
-#               branch or a tag, because only those are bundled.
+#               branch or a tag, because only those are bundled. In registry mode it only
+#               names the rust-toolchain.toml the image's toolchain is read from.
 #
-# It prints its header on stderr -- platform, commit, toolchain, git -- from inside the
-# container, so the lines describe what actually ran.
+# It prints its header on stderr -- commit (not in registry mode), platform, toolchain,
+# git -- from inside the container, so the lines describe what actually ran.
 #
-# Exit status: cargo's, when cargo ran; for `tarball`, 0 when every step passed and 1 at
-# the first step that failed. 2 on a usage error; 125 when the run could not be set up
+# Exit status: cargo's, when cargo ran; for `tarball` and `registry`, 0 when every step
+# passed and 1 at the first step that failed. 2 on a usage error; 125 when the run could not be set up
 # (no docker, the image build or its posture assertion failed, the commit is not
 # bundleable, the clone failed).
 
@@ -85,6 +98,7 @@ usage_error() {
     say "$*"
     say "usage: dev/runner-faithful [--platform <os/arch>] [--commit <rev>] cargo <args...>"
     say "       dev/runner-faithful [--platform <os/arch>] [--commit <rev>] tarball"
+    say "       dev/runner-faithful [--platform <os/arch>] [--commit <rev>] registry [<requirement>]"
     exit 2
 }
 
@@ -100,10 +114,15 @@ while [ $# -gt 0 ]; do
         --commit=*) rev=${1#--commit=}; shift ;;
         cargo) mode=cargo; shift; break ;;
         tarball) mode=tarball; shift; [ $# -eq 0 ] || usage_error "tarball takes no arguments: $*"; break ;;
+        registry)
+            mode=registry; shift
+            [ $# -le 1 ] || usage_error "registry takes at most one requirement: $*"
+            [ $# -eq 0 ] || [ -n "$1" ] || usage_error "an empty requirement; omit it for the unpinned install"
+            break ;;
         *) usage_error "unknown argument: $1" ;;
     esac
 done
-[ -n "$mode" ] || usage_error "name a mode: a cargo command, e.g. \`cargo test -p jigc doc_link_fence::\`, or tarball"
+[ -n "$mode" ] || usage_error "name a mode: a cargo command, e.g. \`cargo test -p jigc doc_link_fence::\`, tarball, or registry"
 
 command -v docker >/dev/null 2>&1 || die "docker is not on PATH"
 docker version >/dev/null 2>&1 || die "the docker daemon does not answer (is colima running?)"
@@ -111,7 +130,9 @@ docker version >/dev/null 2>&1 || die "the docker daemon does not answer (is col
 # --- the commit -------------------------------------------------------------
 sha=$(git -C "$repo_root" rev-parse --verify --quiet "$rev^{commit}") || die "not a commit: $rev"
 dirty=$(git -C "$repo_root" status --porcelain)
-if [ -n "$dirty" ]; then
+if [ "$mode" = registry ]; then
+    say "the toolchain is read from commit $sha; no source tree enters the container"
+elif [ -n "$dirty" ]; then
     say "the working tree has uncommitted changes; they are NOT what runs -- commit $sha is"
 else
     say "runs commit $sha; uncommitted changes are never what runs"
@@ -192,11 +213,14 @@ fi
 # --- the source -------------------------------------------------------------
 # A bare sha is not bundleable (`git bundle` wants refs), so the bundle carries HEAD,
 # the branches and the tags, and the container checks the named commit out of it.
-git -C "$repo_root" bundle create "$work/source.bundle" HEAD --branches --tags 2>"$work/bundle.log" \
-    || { cat "$work/bundle.log" >&2; die "git bundle failed"; }
+if [ "$mode" != registry ]; then
+    git -C "$repo_root" bundle create "$work/source.bundle" HEAD --branches --tags 2>"$work/bundle.log" \
+        || { cat "$work/bundle.log" >&2; die "git bundle failed"; }
+fi
 
 # Everything below runs inside the container, as `runner`. Single-quoted, so nothing in
-# it expands here; it takes the commit as $1 and the mode's arguments after it.
+# it expands here; it takes the commit as $1 (not in registry mode) and the mode's
+# arguments after it.
 steps='
 set -u
 say() { printf "runner-faithful: %s\n" "$*" >&2; }
@@ -278,7 +302,7 @@ post_install() {
 }
 '
 
-# The clone and the header every mode that needs the source runs first.
+# The clone every mode that needs the source runs first.
 clone='
 sha=$1
 shift
@@ -286,8 +310,12 @@ git -c advice.detachedHead=false clone -q /tmp/source.bundle "$HOME/src" || { sa
 cd "$HOME/src" || exit 125
 git -c advice.detachedHead=false checkout -q --detach "$sha" 2>/dev/null \
     || { say "commit $sha is not reachable from HEAD, a branch or a tag, so it was not bundled"; exit 125; }
-say "platform  $(uname -s | tr "[:upper:]" "[:lower:]")/$(uname -m)"
 say "commit    $(git log -1 --format="%H %s")"
+'
+
+# The header every mode prints.
+header='
+say "platform  $(uname -s | tr "[:upper:]" "[:lower:]")/$(uname -m)"
 say "toolchain $(rustc --version)"
 say "git       $(git --version)"
 '
@@ -352,15 +380,39 @@ post_install "$v"
 say "the pre-publish install acceptance passed"
 '
 
+run_registry='
+say "running   the registry install acceptance"
+step=install
+req=${1-}
+if [ -n "$req" ]; then
+    what="cargo install jigc --version $req --locked"
+    cargo install jigc --version "$req" --locked >"$HOME/install.log" 2>&1
+else
+    what="cargo install jigc --locked (unpinned)"
+    cargo install jigc --locked >"$HOME/install.log" 2>&1
+fi
+rc=$?
+[ "$rc" -eq 0 ] || fail "$what exited $rc" "$HOME/install.log"
+v=$(cargo install --list | sed -n "s/^jigc v\(.*\):\$/\1/p")
+[ -n "$v" ] || fail "cargo install --list names no installed jigc"
+pass "$what installed jigc $v"
+
+post_install "$v"
+say "the registry install acceptance passed"
+'
+
 case "$mode" in
-    cargo) inner=$steps$clone$run_cargo ;;
-    tarball) inner=$steps$clone$run_tarball ;;
+    cargo) inner=$steps$clone$header$run_cargo; set -- "$sha" "$@" ;;
+    tarball) inner=$steps$clone$header$run_tarball; set -- "$sha" "$@" ;;
+    registry) inner=$steps$header$run_registry ;;
 esac
 
-cid=$(docker create --platform "$platform" "$image" bash -c "$inner" runner-faithful "$sha" "$@") \
+cid=$(docker create --platform "$platform" "$image" bash -c "$inner" runner-faithful "$@") \
     || die "docker create failed"
 trap 'docker rm -f "$cid" >/dev/null 2>&1' EXIT
-docker cp "$work/source.bundle" "$cid:/tmp/source.bundle" >/dev/null || die "docker cp of the bundle failed"
+if [ "$mode" != registry ]; then
+    docker cp "$work/source.bundle" "$cid:/tmp/source.bundle" >/dev/null || die "docker cp of the bundle failed"
+fi
 
 docker start -a "$cid"
 status=$?
