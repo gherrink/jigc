@@ -21,10 +21,23 @@
 //! of their rules in test code (the masking-test discipline: the scripts are the
 //! artifact a dogfood run executes). The committed fixture pins the v1 log schema:
 //! a tally that stops reading v1 lines goes red here.
+//!
+//! **Declared dependency: `python3` on `PATH`.** The apparatus under test is
+//! Python (`log-event.py`, `tally.py`, `jrun`), so every test here spawns the
+//! interpreter [`PYTHON`] names — the one place a reader or a CI image author
+//! finds it. A host without it fails these tests at spawn (`NotFound`);
+//! `dev/runner-faithful` installs it for exactly that reason. Whether a missing
+//! interpreter should instead skip with a reason, or the apparatus be rewritten
+//! in something the toolchain guarantees, is still owed to M57
+//! (`implementation/decisions-pending.md` → row (I), the `dogfood_apparatus` one).
 
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+
+/// The interpreter every apparatus script runs under — the suite's one declared
+/// external dependency (see the module doc).
+const PYTHON: &str = "python3";
 
 /// A throwaway directory that removes itself on drop.
 struct TempDir(PathBuf);
@@ -83,7 +96,7 @@ fn run_hook_with(log: &Path, payload: &str, project_dir: Option<&Path>) {
         "hook script missing: {}",
         script.display()
     );
-    let mut cmd = Command::new("python3");
+    let mut cmd = Command::new(PYTHON);
     cmd.arg(&script).env("JIGC_DOGFOOD_LOG", log);
     match project_dir {
         Some(root) => {
@@ -141,7 +154,7 @@ fn run_tally_unchecked(log: &Path, managed_prefixes: &[&str]) -> std::process::O
         "tally script missing: {}",
         script.display()
     );
-    let mut cmd = Command::new("python3");
+    let mut cmd = Command::new(PYTHON);
     cmd.arg(&script).arg(log);
     for prefix in managed_prefixes {
         cmd.arg("--managed-prefix").arg(prefix);
@@ -586,7 +599,7 @@ fn jrun_captures_real_exit_into_the_log() {
 
     let jrun = apparatus_dir().join("jrun");
     assert!(jrun.is_file(), "jrun ships: {}", jrun.display());
-    let out = Command::new("python3")
+    let out = Command::new(PYTHON)
         .arg(&jrun)
         .args(["task", "finalize", "t1"])
         .env("JIGC_REAL_BIN", &stub)
@@ -626,7 +639,7 @@ fn jrun_captures_real_exit_into_the_log() {
     // With JIGC_DOGFOOD_LOG unset, jrun is a transparent passthrough: it runs the
     // binary and logs nothing (any non-measured session).
     let off_log = tmp.path().join("unused.jsonl");
-    let off = Command::new("python3")
+    let off = Command::new(PYTHON)
         .arg(&jrun)
         .args(["--version"])
         .env("JIGC_REAL_BIN", &stub)
@@ -646,7 +659,7 @@ fn jrun_captures_real_exit_into_the_log() {
     let blind_log = tmp.path().join("blind.jsonl");
     let empty_home = tmp.path().join("empty-home");
     fs::create_dir_all(&empty_home).expect("empty home dir");
-    let misconfig = Command::new("python3")
+    let misconfig = Command::new(PYTHON)
         .arg(&jrun)
         .args(["task", "finalize", "t1"])
         .env("JIGC_REAL_BIN", &stub)
@@ -693,7 +706,7 @@ fn jrun_logs_before_passthrough_survives_a_closed_pipe() {
     }
 
     let jrun = apparatus_dir().join("jrun");
-    let cmd = format!("python3 {jrun:?} task finalize t1 | head -1");
+    let cmd = format!("{PYTHON} {jrun:?} task finalize t1 | head -1");
     let out = Command::new("bash")
         .arg("-c")
         .arg(&cmd)
