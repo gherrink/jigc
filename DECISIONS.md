@@ -2,6 +2,10 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-09-30 — M54 Inc 9 T1: the provisional after run on the record
+
+**M54 Inc 9 T1: the provisional after `36720872051`: `success`, slowest `test (g_flow)` `448 s`, nproc `4` × 20; TP configs `22294`/`22295` = gherrink/jigc · release.yml · release** (no job over 900 s; every cargo job cold, `No cache found.`; run wall 7 min 33 s against the before run's 33 min 44 s; no `CARGO_REGISTRY_TOKEN` at repository, `release` or Dependabot scope; the environment's only policy is branch `main`, id `61391261`, which release.md and gate-record row 18 still cite as `61320798`). Every value is recorded beside its command in [ci-runtime.md](completions/artifacts/M54/ci-runtime.md) → The provisional after run, and the whole command set was re-run twice with byte-identical output. **The plan's log command is corrected there:** `gh run view --log --job <id>` drops whole steps for 3 of 20 jobs (`unit`, `publish-dry-run`, `test (g_doc)` have no `CPU count` step in it, reproducibly), so nproc was read from `gh api --allow-escape-sequences …/actions/jobs/<id>/logs` redirected to a file, which is whole for all 20. The runner-to-proxy ratio tops out at 2.17× (`g_doc`), above T3's 2.10× scale, while `g_flow` came in at 2.03×.
+
 ## 2026-09-30 — M54 Increment 9 planning: decomposition
 
 Cut [Increment 9](implementation/roadmap.md) (*the release pipeline*) into **5 ordered tasks**, grounded at HEAD `d4554b86` (Increment 8's tip, tree clean, equal to `origin/main`). Cross-ref [roadmap.md](implementation/roadmap.md) → Milestone 54 → Increment 9; the M54 Settle below (S9, S13); [planning-gate-record.md](completions/artifacts/M54/planning-gate-record.md) → row 18 and cell O4; [release.md](implementation/release.md). **Codes registered: none.**

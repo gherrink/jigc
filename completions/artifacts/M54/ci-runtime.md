@@ -1,6 +1,6 @@
-# CI runtime — M54 Increment 8
+# CI runtime — M54 Increments 8 and 9
 
-This file records the **before run**, read back by its id. S8's bound is measured against it, and the per-leg proxy (T3) follows it. Cross-ref [roadmap.md](../../../implementation/roadmap.md) → Milestone 54 → Increment 8; [planning-gate-record.md](planning-gate-record.md) → row 17; [DECISIONS.md](../../../DECISIONS.md) → *M54 Inc 2 T1* (the run id) and *M54 Increment 8 planning*.
+This file records the **before run**, read back by its id. S8's bound is measured against it, and the per-leg proxy (T3) follows it. Increment 9's entry gate adds **the provisional after run** at the end ([planning-gate-record.md](planning-gate-record.md) → row 18). Cross-ref [roadmap.md](../../../implementation/roadmap.md) → Milestone 54 → Increment 8; [planning-gate-record.md](planning-gate-record.md) → row 17; [DECISIONS.md](../../../DECISIONS.md) → *M54 Inc 2 T1* (the run id) and *M54 Increment 8 planning*.
 
 ## The before run — `36549870099`
 
@@ -195,3 +195,136 @@ A leg's budget is **15 min minus the before run's non-cargo step time: 900 − 2
 ‡ **A defect, reported rather than recorded as a clean time.** `g_doc` exited 101 in **3 of 4** cold runs at this commit. The first run exited 101, and the re-runs exited 0, 101 and 101, taking 167 s, 168 s and 167 s. Every failure is the same test: `doc_code_probe::jigc_refuses_the_probe_argv_of_another_build` panics at `crates/cli/tests/doc_code_probe.rs:1209` with `write the request: Os { code: 32, kind: BrokenPipe }`. The cause is a race in the test's helper `run_jigc_with_stdin`, which `.expect()`s its `write_all` to the child's stdin. On a skewed `--build`, `jigc` refuses before it reads stdin (`probe_intercept`, `crates/cli/src/main.rs:116-125`) and exits, so the write can find the pipe closed. Production is not affected, because its invoker already discards that write's result (`let _ = stdin.write_all(request)`, `crates/cli/src/invoke.rs:230`). The helper arrived in Increment 2 (`6dfacc4d`), after the before run, so no CI runner has run it yet. As long as it stands, a per-group `g_doc` job can redden a green push. The time still counts for the verdict: the leg's wall clock stayed at 167–168 s across all four runs, passing or failing, so one test's outcome does not move it.
 
 **Verdict: no leg over budget → per-leg compile.** The slowest leg is `g_flow`, at 221 s against the 878 s budget. Scaled whole by the largest runner-to-proxy ratio above (2.10×), it would take about 464 s, which is still inside the budget.
+
+## The provisional after run — `36720872051` (Increment 9's entry gate)
+
+This is S8's nine-job workflow (Increment 8 T4) on its first push. It ran on the push of `d4554b86`, Increment 8's tip. Read on 2026-09-30 for [planning-gate-record.md](planning-gate-record.md) → row 18. It is *provisional* because Increment 12 reads the final after run at Increment 11's tip against the same bound.
+
+### The commands
+
+Each value below is the output of one of these commands, cited by its id, and each was run twice for this record with the same output. `gh` was authenticated against `gherrink/jigc`. Logs and API bodies went to scratch files first and were read from there.
+
+```sh
+D=$(mktemp -d)
+# A1: the run
+gh run view 36720872051 --json databaseId,workflowName,headBranch,headSha,event,status,conclusion,attempt --jq '"\(.databaseId) \(.workflowName) \(.headBranch) \(.headSha) \(.event) \(.status) \(.conclusion) attempt=\(.attempt)"'
+# A2: the run wall clock
+gh api repos/gherrink/jigc/actions/runs/36720872051 --jq '"\(.run_started_at) \(.updated_at) run_attempt=\(.run_attempt)"'
+# A3: every job's wall clock
+gh run view 36720872051 --json jobs --jq '.jobs[] | "\(.databaseId)\t\(.name)\t\(.startedAt)\t\(.completedAt)\t\((.completedAt|fromdate) - (.startedAt|fromdate))s\t\(.conclusion)"'
+# A4: every job's labels, runner group and runner
+for j in $(gh run view 36720872051 --json jobs --jq '.jobs[].databaseId'); do
+  gh api repos/gherrink/jigc/actions/jobs/$j --jq '"\(.id) \(.name) labels=\(.labels|join(",")) group=\(.runner_group_name) runner=\(.runner_name) \(.status) \(.conclusion)"'
+done
+# A5: every job's log, whole, to a file; then nproc, the line after the `Run nproc` group closes
+for j in $(gh run view 36720872051 --json jobs --jq '.jobs[].databaseId'); do
+  gh api --allow-escape-sequences repos/gherrink/jigc/actions/jobs/$j/logs > "$D/$j.log"
+  printf '%s ' "$j"; awk '/##\[group\]Run nproc/{f=1} f&&/##\[endgroup\]/{getline; print; exit}' "$D/$j.log"
+done
+# A6: the cache state and the runner image, per job log
+command grep -hE 'No cache found|Cache restored from key' "$D/<id>.log"
+command grep -A2 'Runner Image$' "$D/<id>.log"
+# A7: the slowest job's steps, compile and test result
+gh run view 36720872051 --json jobs --jq '.jobs[] | select(.databaseId==109905363354) | .steps[] | "\(.number)\t\(.name)\t\((.completedAt|fromdate) - (.startedAt|fromdate))s\t\(.conclusion)"'
+command grep -E 'Finished `|test result: ' "$D/109905363354.log"
+# A8: the bound, over all jobs
+gh run view 36720872051 --json jobs --jq '[.jobs[] | ((.completedAt|fromdate) - (.startedAt|fromdate))] | "max=\(max) over900=\(map(select(.>900))|length) n=\(length)"'
+```
+
+**Why A5 is the jobs-logs API, not `gh run view --log --job`.** The plan named `gh run view --log --job <id>`. Redirected to a file, it exits 0 but **drops whole steps** for some jobs, and the result is the same on a second fetch (`cmp` → 0). For `unit`, `publish-dry-run` and `test (g_doc)` it has no `CPU count` step at all: `g_doc`'s file holds only 77 `Checkout` lines, against 664 lines from the API. So an nproc read that way silently reports 17 jobs as 20. `gh api …/jobs/<id>/logs` refuses the body's terminal escape sequences unless it is given `--allow-escape-sequences`. Redirected to a file, nothing reaches a terminal, so the flag is safe here. With it, every job's log is whole. GitHub keeps run logs for 90 days by default, so A5 works until about 2026-12-29. The lines it printed are quoted below so this record outlives the log.
+
+### The entry gate
+
+| Check | Halt if | Read | Evidence |
+|---|---|---|---|
+| Run concluded | not `completed` | `completed` / `success` | A1 → `36720872051 CI main d4554b868e433d3f7daaf0e1955b24bf3172fda6 push completed success attempt=1` |
+| Every job inside 15 min | any job over 900 s | **max 448 s**, no job over 900 s | A8 → `max=448 over900=0 n=20` |
+| Trusted-publisher configs | either absent, or naming another repository, workflow or environment | both present and matching | T1 → T2 below |
+| No `CARGO_REGISTRY_TOKEN` | any such secret exists | none | T4 below |
+
+**No halt condition holds, so the gate passes.** The proxy's verdict stands: no leg is over budget on the runner either.
+
+### Identity
+
+| Value | Read | From |
+|---|---|---|
+| Run id · workflow · branch | `36720872051` · `CI` · `main` | A1 |
+| Head sha | `d4554b868e433d3f7daaf0e1955b24bf3172fda6` (Increment 8's tip) | A1 |
+| Event · attempt | `push` · `1` (not a re-run) | A1 |
+| Run, started → updated | 13:20:02Z → 13:27:35Z, **453 s = 7 min 33 s**, against the before run's 2024 s = 33 min 44 s (C4) | A2 → `2026-09-30T13:20:02Z 2026-09-30T13:27:35Z run_attempt=1` |
+| Runner, every job | labels `ubuntu-latest`, group `GitHub Actions`, 20 distinct runners (`GitHub Actions 1000000397`–`1000000416`) | A4 |
+| Image | `ubuntu-24.04`: version `20260920.314.1` on 15 jobs, `20260927.320.1` on 5 (`fmt`, `publish-dry-run`, `g_milestone`, `g_config`, `g_solo_store_sweep`) | A6 |
+| Cache | **cold on every cargo job**: `No cache found.` in all 19 that restore one. `hygiene` restores none | A6 |
+
+So this is a **cold-cache** run, like the before run and T3's proxy. It is the bound a cache-miss push must meet.
+
+### Every job
+
+A3 prints the wall clock, A4 the labels and group, A5 the `nproc` line. Rows are sorted by wall clock. Every job concluded `success`, on `ubuntu-latest` in group `GitHub Actions`, and every `nproc` is **4**. The proxy column is T3's wall clock for the same leg, above.
+
+| Job | Id | Start → end | Wall clock | nproc (A5, its line's time) | Proxy · runner ÷ proxy |
+|---|---|---|---|---|---|
+| `test (g_flow)` | 109905363354 | 13:20:06Z → 13:27:34Z | **448 s** | 4 (13:20:18.84Z) | 221 s · 2.03× |
+| `test (g_doc)` | 109905363824 | 13:20:43Z → 13:26:45Z | 362 s | 4 (13:20:57.85Z) | 167 s · 2.17× |
+| `test (g_milestone)` | 109905363665 | 13:20:42Z → 13:26:21Z | 339 s | 4 (13:20:54.92Z) | 174 s · 1.95× |
+| `test (g_finalize)` | 109905363567 | 13:20:06Z → 13:24:33Z | 267 s | 4 (13:20:20.23Z) | 137 s · 1.95× |
+| `test (g_migrate)` | 109905363547 | 13:20:07Z → 13:24:05Z | 238 s | 4 (13:20:20.90Z) | 121 s · 1.97× |
+| `test (g_compose)` | 109905363579 | 13:20:08Z → 13:23:59Z | 231 s | 4 (13:20:22.09Z) | 120 s · 1.93× |
+| `test (g_config)` | 109905363749 | 13:20:07Z → 13:23:02Z | 175 s | 4 (13:20:19.93Z) | 118 s · 1.48× |
+| `test (g_item)` | 109905363500 | 13:20:07Z → 13:22:40Z | 153 s | 4 (13:20:22.49Z) | 76 s · 2.01× |
+| `test (g_methodology)` | 109905363905 | 13:20:06Z → 13:22:01Z | 115 s | 4 (13:20:18.33Z) | 92 s · 1.25× |
+| `test (g_solo_trial_corpus)` | 109905363108 | 13:20:07Z → 13:21:57Z | 110 s | 4 (13:20:18.09Z) | 59 s · 1.86× |
+| `test (g_migration)` | 109905363849 | 13:20:06Z → 13:21:30Z | 84 s | 4 (13:20:18.84Z) | 55 s · 1.53× |
+| `unit` | 109905363203 | 13:20:07Z → 13:21:26Z | 79 s | 4 (13:20:20.05Z) | 82 s † |
+| `clippy` | 109905363223 | 13:20:06Z → 13:21:18Z | 72 s | 4 (13:20:19.22Z) | 38 s |
+| `publish-dry-run` | 109905363338 | 13:20:06Z → 13:21:13Z | 67 s | 4 (13:20:19.83Z) | 45 s |
+| `manifest-freeze` | 109905363406 | 13:20:06Z → 13:21:09Z | 63 s | 4 (13:20:19.95Z) | 38 s |
+| `build` | 109905363175 | 13:20:07Z → 13:21:03Z | 56 s | 4 (13:20:20.21Z) | 33 s |
+| `test (g_solo_store_sweep)` | 109905363809 | 13:20:06Z → 13:20:56Z | 50 s | 4 (13:20:16.31Z) | 35 s |
+| `fmt` | 109905362831 | 13:20:07Z → 13:20:39Z | 32 s | 4 (13:20:19.93Z) | 10 s |
+| `lock-current` | 109905363465 | 13:20:07Z → 13:20:37Z | 30 s | 4 (13:20:20.76Z) | 14 s |
+| `hygiene` | 109905363422 | 13:20:06Z → 13:20:21Z | 15 s | 4 (13:20:18.52Z) | — |
+
+† T3's `unit` figure is two cold invocations summed, which it flagged as an over-estimate. The job runs both in one checkout.
+
+The timestamps are whole seconds, so each wall clock is ±1 s. The `nproc` times are the output line's own timestamp, inside that job's `CPU count` step.
+
+**The runner-to-proxy ratio** for the twelve `test` rows runs from 1.25× (`g_methodology`) to **2.17× (`g_doc`)**. That top is above the 2.10× T3 used to scale `g_flow` to about 464 s, but `g_flow` itself came in at 2.03×, at 448 s. The ratio includes each side's set-up (the runner's checkout and toolchain install, the tool's clone), so it is not a clean platform factor.
+
+### The slowest job: `test (g_flow)`
+
+A7 prints its steps: Set up job 1 s · Checkout 10 s · CPU count 0 s · Show toolchain 8 s · Cache cargo dependencies 1 s · **`cargo test --test g_flow` 422 s** · Post Cache 4 s · Post Checkout 0 s · Complete job 0 s. Inside the cargo step, ``Finished `test` profile [unoptimized + debuginfo] target(s) in 34.90s`` and `test result: ok. 333 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 386.97s`. Its headroom to 900 s is **452 s**. The lever held in reserve if a later run crosses the bound is S8's: nextest partitioning of the group.
+
+### Trusted Publishing, the `release` environment, the secrets
+
+```sh
+UA='jigc-release-check (https://github.com/gherrink/jigc)'
+# T1: jigc; T2: jigc-engine. The token comes from ~/.cargo/credentials.toml inside the
+# command substitution and is never printed. Without it the API answers 403 (T3).
+curl -sS -o "$D/tp-<crate>.json" -w '%{http_code}' -A "$UA" \
+  -H "Authorization: $(sed -n 's/^token *= *"\(.*\)"/\1/p' ~/.cargo/credentials.toml)" \
+  "https://crates.io/api/v1/trusted_publishing/github_configs?crate=<crate>"
+jq -c '.github_configs[] | {id,crate,repository_owner,repository_name,workflow_filename,environment}' "$D/tp-<crate>.json"
+jq '.github_configs|length' "$D/tp-<crate>.json"
+# T3: the same request without the Authorization header
+curl -sS -o /dev/null -w '%{http_code}' -A "$UA" "https://crates.io/api/v1/trusted_publishing/github_configs?crate=jigc"
+# T4: the secrets
+gh secret list --repo gherrink/jigc
+gh secret list --repo gherrink/jigc --env release
+gh secret list --repo gherrink/jigc --app dependabot
+# T5: the environment, and its deployment policies
+gh api repos/gherrink/jigc/environments/release --jq '"\(.name) can_admins_bypass=\(.can_admins_bypass) reviewers=\([.protection_rules[]|select(.type=="required_reviewers")|.reviewers[]|"\(.type):\(.reviewer.login)"]|join(",")) branch_policy=\(.deployment_branch_policy|tostring)"'
+gh api repos/gherrink/jigc/environments/release/deployment-branch-policies --jq '"total=\(.total_count) " + ([.branch_policies[]|"\(.id):\(.type):\(.name)"]|join(","))'
+```
+
+| Value | Read | From |
+|---|---|---|
+| `jigc` | HTTP 200, one config: `{"id":22294,"crate":"jigc","repository_owner":"gherrink","repository_name":"jigc","workflow_filename":"release.yml","environment":"release"}` | T1 |
+| `jigc-engine` | HTTP 200, one config: `{"id":22295,"crate":"jigc-engine","repository_owner":"gherrink","repository_name":"jigc","workflow_filename":"release.yml","environment":"release"}` | T2 |
+| Unauthenticated | HTTP 403 | T3 |
+| Repository secrets | `JIGC_DENYLIST` only (created 2026-09-29T09:12:50Z) | T4 |
+| `release` environment secrets · Dependabot secrets | none · none | T4 |
+| `release` environment | `can_admins_bypass=false`, reviewers `User:gherrink`, `branch_policy={"custom_branch_policies":true,"protected_branches":false}` | T5 |
+| Deployment policies | `total=1 61391261:branch:main` | T5 |
+
+**No `CARGO_REGISTRY_TOKEN` exists** at any scope an Actions job can read. The owner is a user account, so there are no organisation secrets. **The deployment policy's id is `61391261`**, as the Increment 9 planning read found. [release.md](../../../implementation/release.md) → Publishing and [planning-gate-record.md](planning-gate-record.md) → row 18 still cite `61320798`. The policy itself, branch `main` only, is what they state. Only the id is stale. This task commits only records, so the citation is left for the task that edits release.md's Publishing pins.
