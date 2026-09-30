@@ -2149,16 +2149,16 @@ pub fn repo_root() -> PathBuf {
 }
 
 /// The workflow that runs the fence.
-const CI_WORKFLOW: &str = ".github/workflows/ci.yml";
+pub const CI_WORKFLOW: &str = ".github/workflows/ci.yml";
 
 /// The **named** step — named, because a fence buried inside another step's script is
 /// a fence nobody can find in a red run's log.
-const CI_STEP_NAME: &str = "manifest-freeze fence";
+pub const CI_STEP_NAME: &str = "manifest-freeze fence";
 
 /// The argv that step runs, verbatim. `--ignored --exact` is what makes the CI-only
 /// sub-decision mechanically true in **both** directions: `cargo test` skips the arm
 /// locally, and only this line un-skips it.
-const CI_STEP_RUN: &str =
+pub const CI_STEP_RUN: &str =
     "cargo test -p jigc --test g_finalize manifest_freeze_fence::live -- --ignored --exact";
 
 /// This suite's own source, read for the one property no assertion inside it can

@@ -1,16 +1,31 @@
 name: CI
 
-# The dev-workflow gate on every push and PR: fmt, clippy, build and test — the same
-# four steps `dev/gate` runs locally, in the same order — followed by the CI-only
-# manifest-freeze fence. Ahead of all of it, the public-hygiene guard (gitleaks and the
-# private denylist over the pushed range — implementation/public-hygiene.md).
+# The dev-workflow gate on every push and PR, split into one job per leg so a green
+# push reports in <= 15 min of slowest-job wall clock and a red push reports EVERY
+# failure (M54 S8; implementation/dev-workflow.md -> Gate). The union of the jobs below
+# is the gate `dev/gate` runs locally in one process:
 #
-# External publish is DECIDED and not yet wired: M36 F4's "internal-only, no external
-# publish" was reversed on 2026-09-27 (DECISIONS.md -> the road to the 1.0.0 call, D2),
-# so 1.0.0 is the first real published version. The release workflow, the tag convention
-# and `cargo publish --dry-run` arrive with M54 (implementation/roadmap.md -> M54); until
-# they do, nothing here publishes. Both crates are publishable (no `publish = false`
-# since M54 Increment 6); nothing in this workflow runs `cargo publish`.
+#   hygiene          the public-hygiene guard: gitleaks and the private denylist over
+#                    the pushed range (implementation/public-hygiene.md)
+#   fmt · clippy · build
+#   test             one row per `[[test]]` group target
+#   unit             the lib and bin unit tests of every workspace member, and doctests
+#   manifest-freeze  the CI-only manifest-freeze fence
+#   publish-dry-run  `cargo publish --workspace --dry-run`
+#   lock-current     `Cargo.lock` is current (`cargo metadata --locked`)
+#
+# No job `needs` another and the matrix is `fail-fast: false`, so one red leg never
+# hides or cancels the rest. Every job checks out full history, prints `nproc` in its
+# `CPU count` step, and is bounded by `timeout-minutes` at max(10, 2 x its leg's
+# measured four-CPU proxy) — completions/artifacts/M54/ci-runtime.md. The `test`
+# matrix is fenced to the targets `cargo metadata` reports
+# (crates/cli/tests/ci_matrix_fence.rs), so a group root added to the manifest and not
+# here reddens instead of going unrun.
+#
+# Nothing here publishes. M36 F4's "internal-only, no external publish" was reversed on
+# 2026-09-27 (DECISIONS.md -> the road to the 1.0.0 call, D2), and the only publish
+# command in this file is the `--dry-run`; the release workflow, `release.yml`, arrives
+# with M54 Increment 9 (implementation/roadmap.md -> M54).
 on:
   push:
   pull_request:
@@ -20,26 +35,34 @@ permissions:
   contents: read
 
 jobs:
-  gate:
-    name: dev-workflow gate
+  hygiene:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      # Full history, not the default depth-1 snapshot. The manifest-freeze fence's
-      # own acceptance is THIS REPO'S HISTORY: `manifest_freeze_fence::historical`
-      # replays the window over `2c5eee5~1 -> 7ada302` (M47 Increment 1 re-pinned all
-      # 16 doctype hashes at unchanged schema-versions, 34 first-parent commits from
-      # its push tip) and FAILS — never skips — on a clone that cannot reach them.
-      # Cost: 9.89 MiB over 1800 commits (M48 Increment 11).
+      # Full history, not the default depth-1 snapshot, on every job (S8). The
+      # manifest-freeze fence's own acceptance is THIS REPO'S HISTORY:
+      # `manifest_freeze_fence::historical` (in the `g_finalize` row) replays the window
+      # over `2c5eee5~1 -> 7ada302` (M47 Increment 1 re-pinned all 16 doctype hashes at
+      # unchanged schema-versions) and FAILS — never skips — on a clone that cannot
+      # reach them; the other legs check out the same way, so no leg's result depends on
+      # a clone depth another does not share. Cost: 9.89 MiB over 1800 commits (M48
+      # Increment 11).
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # The public-hygiene guard (implementation/public-hygiene.md), ahead of the cargo
-      # steps so a leak fails in seconds rather than after the test run. Both scans read
-      # the PUSHED RANGE, computed once here: a push's `before..HEAD`, a pull request's
-      # `base..HEAD`, and the whole history when there is no usable base (a branch's
-      # first push reports an all-zero `before`; a force-push's `before` may be gone).
+      # The runner's CPU count, read back by this step's name: M54 Increment 8's
+      # before run was, and the after runs are.
+      - name: CPU count
+        run: nproc
+
+      # The public-hygiene guard (implementation/public-hygiene.md), its own job beside
+      # the cargo jobs, so a leak fails in seconds rather than after the test run. Both
+      # scans read the PUSHED RANGE, computed once here: a push's `before..HEAD`, a pull
+      # request's `base..HEAD`, and the whole history when there is no usable base (a
+      # branch's first push reports an all-zero `before`; a force-push's `before` may be
+      # gone).
       - name: hygiene range
         env:
           HYGIENE_EVENT: ${{ github.event_name }}
@@ -89,10 +112,17 @@ jobs:
           fi
           list=$(mktemp)
           printf '%s\n' "$JIGC_DENYLIST" > "$list"
-          dev/hygiene-scan "$list" $HYGIENE_RANGE
+          dev/hygiene-scan "$list" "$HYGIENE_RANGE"
 
-      # The runner's CPU count, recorded for M54's before/after measurement: the
-      # before run's value is read back by this step's name (M54 Increment 8).
+  fmt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: CPU count
         run: nproc
 
@@ -102,6 +132,7 @@ jobs:
         run: cargo --version && rustc --version
 
       # One cargo workspace, one target dir: the `doc-code` probe is part of `jigc`.
+      # The cache key already carries the job id; a matrix row adds its group.
       - name: Cache cargo dependencies
         uses: Swatinem/rust-cache@v2
         with:
@@ -111,14 +142,144 @@ jobs:
       - name: cargo fmt --check
         run: cargo fmt --check
 
+  clippy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: CPU count
+        run: nproc
+
+      - name: Show toolchain
+        run: cargo --version && rustc --version
+
+      - name: Cache cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+
       - name: cargo clippy --all-targets -- -D warnings
         run: cargo clippy --all-targets -- -D warnings
+
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: CPU count
+        run: nproc
+
+      - name: Show toolchain
+        run: cargo --version && rustc --version
+
+      - name: Cache cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
 
       - name: cargo build
         run: cargo build
 
-      - name: cargo test
-        run: cargo test
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        # Exactly the `[[test]]` targets of crates/cli/Cargo.toml — fenced to
+        # `cargo metadata` by crates/cli/tests/ci_matrix_fence.rs.
+        group:
+          - g_flow
+          - g_migrate
+          - g_finalize
+          - g_migration
+          - g_item
+          - g_compose
+          - g_config
+          - g_milestone
+          - g_methodology
+          - g_doc
+          - g_solo_store_sweep
+          - g_solo_trial_corpus
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: CPU count
+        run: nproc
+
+      - name: Show toolchain
+        run: cargo --version && rustc --version
+
+      - name: Cache cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.group }}
+          workspaces: |
+            . -> target
+
+      - name: cargo test --test ${{ matrix.group }}
+        run: cargo test -p jigc --test ${{ matrix.group }} --no-fail-fast
+
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: CPU count
+        run: nproc
+
+      - name: Show toolchain
+        run: cargo --version && rustc --version
+
+      - name: Cache cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+
+      - name: cargo test --workspace --lib --bins
+        run: cargo test --workspace --lib --bins --no-fail-fast
+
+      - name: cargo test --workspace --doc
+        run: cargo test --workspace --doc --no-fail-fast
+
+  manifest-freeze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: CPU count
+        run: nproc
+
+      - name: Show toolchain
+        run: cargo --version && rustc --version
+
+      - name: Cache cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
 
       # The manifest-freeze fence (M48 Increment 11): a frozen `schema-hash` may move
       # only together with its co-located version field. CI-ONLY, and the arm is
@@ -126,7 +287,7 @@ jobs:
       # (`Manifest-Repin: <entity>`), and the local four-command gate runs before the
       # message exists, so a fence riding it could never be made green for a legitimate
       # re-pin. `--ignored --exact` un-skips exactly this arm; every rule it is built
-      # out of stays in the ordinary `cargo test` above.
+      # out of stays in the `test` job's `g_finalize` row.
       #
       # The event context is forwarded RAW and chosen among in Rust: the ladder
       # (push -> github.event.before, PR -> the base sha, everything else and every
@@ -138,3 +299,54 @@ jobs:
           FENCE_PUSH_BEFORE: ${{ github.event.before }}
           FENCE_PR_BASE: ${{ github.event.pull_request.base.sha }}
         run: cargo test -p jigc --test g_finalize manifest_freeze_fence::live -- --ignored --exact
+
+  publish-dry-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: CPU count
+        run: nproc
+
+      - name: Show toolchain
+        run: cargo --version && rustc --version
+
+      - name: Cache cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+
+      - name: cargo publish --workspace --dry-run
+        run: cargo publish --workspace --dry-run
+
+  lock-current:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: CPU count
+        run: nproc
+
+      - name: Show toolchain
+        run: cargo --version && rustc --version
+
+      - name: Cache cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+
+      # Online and never `--no-deps`: without resolution there is no lock to be stale
+      # against, so a manifest pin `--locked` refuses exits 0 under `--no-deps`
+      # (DECISIONS.md -> M54 Increment 8 planning).
+      - name: cargo metadata --locked
+        run: cargo metadata --locked --format-version 1 > /dev/null
