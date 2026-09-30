@@ -1191,8 +1191,13 @@ fn one_anchor_request(root: &Path, scratch: &Path) -> Vec<u8> {
 }
 
 /// Spawn the built `jigc` with `args`, feed it `request` on stdin, and collect its output.
+///
+/// A **broken pipe** on the write is tolerated, as the production invoker tolerates it
+/// (`invoke.rs`): a refused `__probe` argv exits before it reads stdin, so the write can
+/// meet a closed pipe. That is a fact about the refusal, judged by the caller on its exit
+/// and stderr; any other write error still fails the test.
 fn run_jigc_with_stdin(args: &[String], request: &[u8]) -> std::process::Output {
-    use std::io::Write;
+    use std::io::{ErrorKind, Write};
     use std::process::{Command, Stdio};
     let mut child = Command::new(env!("CARGO_BIN_EXE_jigc"))
         .args(args)
@@ -1201,12 +1206,13 @@ fn run_jigc_with_stdin(args: &[String], request: &[u8]) -> std::process::Output 
         .stderr(Stdio::piped())
         .spawn()
         .expect("spawn the built jigc");
-    child
-        .stdin
-        .take()
-        .expect("stdin piped")
-        .write_all(request)
-        .expect("write the request");
+    let mut stdin = child.stdin.take().expect("stdin piped");
+    match stdin.write_all(request) {
+        Ok(()) => {}
+        Err(e) if e.kind() == ErrorKind::BrokenPipe => {}
+        Err(e) => panic!("write the request: {e:?}"),
+    }
+    drop(stdin);
     child.wait_with_output().expect("wait for jigc")
 }
 
@@ -1259,6 +1265,29 @@ fn jigc_refuses_the_probe_argv_of_another_build() {
         out.stdout.is_empty(),
         "a refused probe prints nothing on stdout: {:?}",
         String::from_utf8_lossy(&out.stdout),
+    );
+    assert!(
+        stderr.contains("0.0.0-skew") && stderr.contains(env!("CARGO_PKG_VERSION")),
+        "the refusal names both versions; stderr:\n{stderr}",
+    );
+}
+
+/// The skewed-build refusal exits **before it reads stdin**, so the request write can meet
+/// a closed pipe. Under a loaded group run that happened to the test above (5 of 6 cold
+/// four-CPU runs of `g_doc`); a request larger than any pipe buffer makes it certain. The
+/// helper tolerates the broken pipe exactly as the production invoker does
+/// (`invoke.rs`: a probe that exits before draining yields a broken-pipe write, which is
+/// expected), so the refusal is judged on its exit and stderr, not on the write.
+#[test]
+fn jigc_refuses_a_skewed_build_whose_request_it_never_reads() {
+    let mut args = invoke::doc_code_probe_args();
+    *args.last_mut().expect("the args end in the build id") = "0.0.0-skew".to_owned();
+    let request = vec![b' '; 4 * 1024 * 1024];
+    let out = run_jigc_with_stdin(&args, &request);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "a skewed build id exits non-zero; stderr:\n{stderr}"
     );
     assert!(
         stderr.contains("0.0.0-skew") && stderr.contains(env!("CARGO_PKG_VERSION")),
