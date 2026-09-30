@@ -11,6 +11,44 @@
 # have certified a machine with no isolation at all.
 set -uo pipefail
 
+# Check 2's two arms, one per build layout (M54 S14). The Dockerfile records which layout
+# it built at LAYOUT_RECORD, keyed on the archived tree; check 2 reads the record and
+# runs that layout's arm. Each arm exits non-zero on the other layout's image, so a
+# mislabelled image cannot pass. Sourcing this file defines them and runs nothing, so an
+# arm can be driven against any tag: `bash -c '. verify-image.sh; check2_single_binary <tag>'`.
+LAYOUT_RECORD=/usr/local/share/jigc-image/layout
+
+# separate-probe (a tree that still carries crates/cli/probes/doc-code/): the separate
+# doc-code executable loads. 127 is the loader's "cannot execute".
+check2_separate_probe() {
+  docker run --rm --entrypoint sh "$1" -c '/usr/local/bin/doc-code --help >/dev/null 2>&1; [ $? -ne 127 ]'
+}
+
+# single-binary (the probe inside jigc): no separate doc-code is installed, AND jigc's own
+# probe child runs — the exact argv jigc spawns itself with, `__probe doc-code --build
+# <its version>`, fed an empty-anchor request, answers with an empty findings response at
+# exit 0. That is the intercept, as distinct from clap, which answers an unknown argv
+# (`jigc __nope`) with exit 2; the arm asserts that too, so the two are told apart in the
+# image under test rather than by assumption. Prints its reason on failure.
+check2_single_binary() {
+  docker run --rm -i --entrypoint sh "$1" -s <<'SH'
+if [ -e /usr/local/bin/doc-code ]; then
+  echo "a separate /usr/local/bin/doc-code is present"; exit 1
+fi
+/usr/local/bin/jigc __nope >/dev/null 2>&1; rc=$?
+if [ "$rc" -ne 2 ]; then echo "clap answered 'jigc __nope' with $rc, not 2"; exit 1; fi
+v="$(/usr/local/bin/jigc --version)"; v="${v#jigc }"
+printf '%s\n' '{"anchors":[],"working_tree_root":"/tmp","root_kind":"working-tree"}' > /tmp/snapshot.json
+printf '%s\n' '{"probe_id":"doc-code","target":"image","effective_state":{"snapshot_path":"/tmp/snapshot.json"},"config":{},"schema_version":3}' > /tmp/request.json
+out="$(/usr/local/bin/jigc __probe doc-code --build "$v" < /tmp/request.json 2>&1)"; rc=$?
+case "$rc:$out" in
+  0:*'"findings":[]'*) exit 0 ;;
+  *) echo "jigc __probe doc-code --build $v exited $rc: $out"; exit 1 ;;
+esac
+SH
+}
+if [ "${BASH_SOURCE[0]}" != "$0" ]; then return 0; fi
+
 TAG="${1:-jigc-gate:rc11}"
 WANT_VERSION="${2:-1.0.0-rc.11}"
 PASS=0; FAIL=0
@@ -38,9 +76,21 @@ echo "== 1. the binary under test reports the version its tree carries"
 GOT="$(docker run --rm --entrypoint /usr/local/bin/jigc "$TAG" --version 2>&1)"
 [ "$GOT" = "jigc $WANT_VERSION" ] && ok "$GOT" || bad "wanted 'jigc $WANT_VERSION', got '$GOT'"
 
-echo "== 2. the doc-code probe loads (a dead probe reads as a validation family finding nothing)"
-docker run --rm --entrypoint sh "$TAG" -c '/usr/local/bin/doc-code --help >/dev/null 2>&1; [ $? -ne 127 ]' \
-  && ok "doc-code executes" || bad "doc-code did not execute"
+echo "== 2. the doc-code probe runs, in the layout the image records (a dead probe reads as a validation family finding nothing)"
+LAYOUT="$(docker run --rm --entrypoint cat "$TAG" "$LAYOUT_RECORD" 2>/dev/null)"
+case "$LAYOUT" in
+  separate-probe)
+    check2_separate_probe "$TAG" && ok "separate-probe: doc-code executes" \
+      || bad "separate-probe: doc-code did not execute" ;;
+  single-binary)
+    WHY="$(check2_single_binary "$TAG")" \
+      && ok "single-binary: no separate doc-code, and jigc's own probe child answers" \
+      || bad "single-binary: $WHY" ;;
+  *)
+    # An image built before M54's harness records nothing. Which arm applies is then
+    # unknown, and guessing is how a probe-less image would pass.
+    bad "the image records no layout at $LAYOUT_RECORD ('$LAYOUT') — rebuild it with build-image.sh" ;;
+esac
 
 echo "== 3. no host INSTRUCTION files are present (the seeded onboarding state is not one)"
 # Deliberately not "the home is empty": the image seeds ~/.claude.json so interactive

@@ -2,6 +2,18 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-09-30 — M54 Increment 7 / T5: the trial harness's layout-aware source mode
+
+**T5 pins** (S14, gate-record row 16). The harness is described as built in the [trial-harness README](completions/trial-harness/README.md) → Two ways to build an image and check 2.
+
+1. **The layout is keyed on the archived tree and recorded in the image.** The build stage builds `jigc`. If `crates/cli/probes/doc-code/` is present it also builds the probe and records `separate-probe`, and otherwise it records `single-binary`. Everything built is staged to `/stage/bin`, the one directory the session image copies. `/usr/local/share/jigc-image/layout` records the layout, and `…/executables` lists what the `ldd` gate runs over.
+2. **Check 2 runs the recorded layout's arm.** `check2_separate_probe` runs `doc-code` and passes unless the result is 127. `check2_single_binary` requires two things. `/usr/local/bin/doc-code` must be absent. `jigc __probe doc-code --build <its --version>`, fed an empty-anchor request, must answer `"findings":[]` at exit 0, and in the same image clap must answer `jigc __nope` with 2. An image with no record fails. `verify-image.sh` can be sourced, and sourcing it defines the arms without running anything (the precedent is `build-image.sh`'s `stamp_of`).
+
+**Driven, on `HEAD` `6dd7dee0` (the image is the tip's binary: `git diff --stat` shows only `completions/trial-harness/{Dockerfile,README.md,verify-image.sh}` and this file, nothing under `crates/` or any manifest), `linux/arm64`, colima.** Red first: `build-image.sh HEAD` with the parent Dockerfile exited **1** at `[build 6/6] RUN cd crates/cli/probes/doc-code …`, with *can't cd to crates/cli/probes/doc-code*. Then `build-image.sh HEAD jigc-gate:m54-inc7` exited **0** and printed `layout: single-binary`. `build-image.sh ce3d86bf jigc-gate:ce3d86bf` exited **0** and printed `layout: separate-probe`. Both builds printed `jigc 1.0.0-rc.21`. `verify-image.sh <tag> 1.0.0-rc.21` reported **7 passed, 0 failed** on each. Check 2 read *single-binary: no separate doc-code, and jigc's own probe child answers* on the first image and *separate-probe: doc-code executes* on the second. Checks 4 and 6 ran with the token set. **Controls:**
+- The separate-probe arm against `m54-inc7` exited 1.
+- The single-binary arm against `ce3d86bf` exited 1 with *a separate /usr/local/bin/doc-code is present*. Its `__probe` leg on its own also fails there: the old `jigc __probe doc-code --build 1.0.0-rc.21` exited 2, which is clap's answer.
+- `verify-image.sh jigc-gate:rc14 1.0.0-rc.14`, an image built before this change, reported **6 passed, 1 failed** at check 2 with *the image records no layout*.
+
 ## 2026-09-30 — M54 Increment 7 / T4: the after-publish install acceptance, `dev/runner-faithful registry`
 
 **T4 pins** (S10 · S9's first faithful registry proof, which Increment 11 runs). The values are recorded at [release.md](implementation/release.md) → Verifying a publish.

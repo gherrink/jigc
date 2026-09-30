@@ -21,7 +21,8 @@
 # ---- stage 1: build jigc for linux from the pinned tree -----------------------------
 FROM rust:1.95-slim-trixie AS build
 
-# build-essential because the doc-code probe links tree-sitter grammars (C).
+# build-essential because the doc-code probe links tree-sitter grammars (C) — beside jigc
+# on an old tree, inside it on a new one; either way a C compiler is needed.
 # git because the build embeds nothing from it but cargo may consult it for deps.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential git ca-certificates \
@@ -30,14 +31,34 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /src
 COPY src/ /src/
 
+# The recipe keys on the ARCHIVED TREE, never on a version: M54 moved the doc-code probe
+# inside jigc (one binary, run by self-exec as `jigc __probe doc-code --build <v>`), and
+# this harness keeps building shas from both sides of that change.
+#
+#   crates/cli/probes/doc-code/ present -> separate-probe: the probe lives OUTSIDE the
+#     workspace by design (root Cargo.toml -> exclude), so it is a second, separate build.
+#     Without it `doc-code` probes cannot bind and a whole validation family is silently
+#     absent from the run.
+#   absent                              -> single-binary: jigc alone carries the probe.
+#
 # --locked: the lockfile is committed, and a build that silently resolves a different
 # dependency set is not the binary the trial claims to be testing.
-RUN cargo build --release --locked
-
-# The probe lives OUTSIDE the workspace by design (root Cargo.toml -> exclude), so it
-# is a second, separate build. Without it `doc-code` probes cannot bind and a whole
-# validation family is silently absent from the run.
-RUN cd crates/cli/probes/doc-code && cargo build --release --locked
+#
+# Every executable built is staged to /stage/bin, the ONE directory the session image
+# copies, and /stage/share records what was built: `layout` (read by verify-image.sh
+# check 2) and `executables` (the list the ldd gate below runs over).
+RUN set -e; \
+    mkdir -p /stage/bin /stage/share; \
+    cargo build --release --locked; \
+    cp target/release/jigc /stage/bin/jigc; \
+    if [ -d crates/cli/probes/doc-code ]; then \
+      (cd crates/cli/probes/doc-code && cargo build --release --locked); \
+      cp crates/cli/probes/doc-code/target/release/doc-code /stage/bin/doc-code; \
+      echo separate-probe > /stage/share/layout; \
+    else \
+      echo single-binary > /stage/share/layout; \
+    fi; \
+    ls /stage/bin > /stage/share/executables
 
 # ---- stage 2: the session image -----------------------------------------------------
 # trixie, matching the build stage. A bookworm runtime links glibc 2.36 and the binary
@@ -60,19 +81,21 @@ RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_VERSION}
 ARG JIGC_SHA=unknown
 ENV JIGC_SHA=${JIGC_SHA}
 
-COPY --from=build /src/target/release/jigc /usr/local/bin/jigc
-COPY --from=build /src/crates/cli/probes/doc-code/target/release/doc-code /usr/local/bin/doc-code
+COPY --from=build /stage/bin/ /usr/local/bin/
+COPY --from=build /stage/share/ /usr/local/share/jigc-image/
 
 # Fail the BUILD, not the trial. A binary that cannot resolve its libc still copies in
-# cleanly and only dies when a session runs it — where a dead `doc-code` reads as a
-# whole validation family finding nothing, which this trial would report as a result
-# about jigc. Assert both binaries actually load, here, once.
+# cleanly and only dies when a session runs it — where a dead probe reads as a whole
+# validation family finding nothing, which this trial would report as a result about
+# jigc. Assert every binary the build stage staged actually loads, here, once.
 RUN set -e; \
-    for b in /usr/local/bin/jigc /usr/local/bin/doc-code; do \
+    for n in $(cat /usr/local/share/jigc-image/executables); do \
+      b="/usr/local/bin/$n"; \
       if ldd "$b" | grep -q "not found"; then \
         echo "unresolved libraries in $b:"; ldd "$b"; exit 1; \
       fi; \
     done; \
+    echo "layout: $(cat /usr/local/share/jigc-image/layout)"; \
     /usr/local/bin/jigc --version
 
 # Interactive mode needs onboarding state that `-p` does not: without it the session

@@ -48,8 +48,8 @@ rather than inherited from the operator's `settings.json`.
 
 | Script | What it does |
 |---|---|
-| `build-image.sh <sha> [tag]` | Builds jigc for Linux from a `git archive` of that exact commit, then installs the pinned Claude CLI. Prints sha, version stamp and commit subject **before** building. |
-| `verify-image.sh [tag] [version]` | **Seven** assertions that the rig is sound, in six numbered sections (§6 emits two). Run it before trusting any image. The list below enumerates five; the script is the authority. |
+| `build-image.sh <sha> [tag]` | Builds jigc for Linux from a `git archive` of that exact commit, then installs the pinned Claude CLI. Prints sha, version stamp and commit subject **before** building. **Layout-aware:** a tree carrying `crates/cli/probes/doc-code/` builds `separate-probe` (the probe beside `jigc`), any other builds `single-binary`; the image records which at `/usr/local/share/jigc-image/layout`, and the build-time `ldd` gate runs over every executable staged. |
+| `verify-image.sh [tag] [version]` | **Seven** assertions that the rig is sound, in six numbered sections (§6 emits two). Run it before trusting any image. Check 2 runs the arm for the layout the image **records**, and fails an image that records none. The list below enumerates five; the script is the authority. |
 | `verify-pair.sh [old] [new]` | Proves the two images are **different trees**, behaviourally. The probe set is **selected per trial** with `PAIR_PROBES` (`m48` rc.10→rc.11 · `m46` rc.11→rc.12 · `m49` rc.12→rc.13, the default), each probe stating what it expects on **both** sides — because the original three-verb set was vacuous on any pair where both sides carried those verbs, which an rc.11/rc.12 pair did. The default tracks the current trial on purpose: a default that is wrong for the trial in front of you is a trap wearing a convenience. |
 | `run-session.sh [opts] <corpus> <out> [tag]` | Drives one session: corpus in, session, everything back out, container destroyed. Options precede the positionals: `--shell` (a plain `bash -l`) · `--exec <script>` · `--headless` with `--prompt-file <f>` · `--home <dir>` and `--arg <v>` (repeatable — how `seed`/`fork` pass `--session-id`/`--resume`/`--fork-session`) · `--cid-file <path>` (written **before** `docker start`, so a plant poller can attach) · `--strict-permissions`. There is **no `--bypass-permissions`**: `bypassPermissions` is the default and an unknown `-*` exits 2. |
 
@@ -61,7 +61,7 @@ M54 changes what a commit's tree looks like — the `doc-code` probe moves insid
 - **Source mode stays sha-pinned and becomes layout-aware.** A tree that still carries `crates/cli/probes/doc-code/` is built with today's recipe (two executables, the probe beside `jigc`); a tree without it is built as the single binary. The version stamp is read from `crates/cli/Cargo.toml` and falls back to the root manifest for older shas.
 - **`verify-image.sh` checks whichever layout it built** — check 2 below proves the separate `doc-code` loads on an old-layout image, and that `jigc`'s own probe child runs on a new one.
 
-Until M54 lands, the harness is the one described below, unchanged.
+Source mode is built as described (M54 Increment 7, driven on the tip and on `ce3d86bf`); registry mode is not built yet, and until it lands the harness builds shas only.
 
 ## What each check buys, and why it is there
 
@@ -69,11 +69,19 @@ Every one of these is a failure this rehearsal actually hit. None is hypothetica
 
 1. **The binary reports the version its tree carries.** Cheap, and it catches a build that
    silently used the wrong source.
-2. **`doc-code` executes.** A probe that cannot load reads as *a whole validation family
-   finding nothing* — which this trial would otherwise write down as a result about jigc.
-   The first image built clean and died at exec: built on trixie, run on bookworm, needing
-   `GLIBC_2.39` against 2.36. The Dockerfile now fences this **at build time** with `ldd`,
-   so an image that cannot run its own binaries does not exist.
+2. **The `doc-code` probe runs, in the layout the image records.** A probe that cannot
+   load reads as *a whole validation family finding nothing* — which this trial would
+   otherwise write down as a result about jigc. The first image built clean and died at
+   exec: built on trixie, run on bookworm, needing `GLIBC_2.39` against 2.36. The
+   Dockerfile now fences this **at build time** with `ldd`, over every executable it
+   staged, so an image that cannot run its own binaries does not exist. On a
+   `separate-probe` image the check is that `doc-code` executes; on a `single-binary`
+   image it is that `/usr/local/bin/doc-code` is **absent** and that `jigc __probe
+   doc-code --build <its version>`, fed an empty-anchor request, answers an empty findings
+   response at exit 0 — the self-exec intercept, told apart from clap, which answers
+   `jigc __nope` with exit 2. Each arm fails on the other layout's image, and an image
+   that records no layout (every image built before M54's harness) fails outright, since
+   guessing the arm is how a probe-less image would pass.
 3. **No instruction files.** Deliberately *not* "the home is empty" — the image seeds a
    minimal `~/.claude.json` so interactive mode does not open on the auth screen. The image
    may contain state that makes a session **start**; never state that makes it **behave
