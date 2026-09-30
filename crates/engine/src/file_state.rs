@@ -159,7 +159,10 @@ impl FileStateRecord {
     pub fn save(&self, jigc_root: &Path) -> std::io::Result<()> {
         let path = Self::path_in(jigc_root);
         crate::state::with_save_lock(&path, || {
-            let theirs = Self::load(jigc_root).unwrap_or_else(|_| self.clone());
+            let theirs = Self::load(jigc_root).unwrap_or_else(|_| {
+                crate::state::tally_save_degrade(crate::state::SaveDegrade::UnreadableTheirs);
+                self.clone()
+            });
             let merged = self.merge_onto(&theirs);
             crate::state::persist(&path, merged.to_bytes().as_bytes())
         })

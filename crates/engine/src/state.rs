@@ -1168,17 +1168,100 @@ pub fn with_save_lock<T>(path: &Path, critical: impl FnOnce() -> T) -> T {
     critical()
 }
 
+/// A tally of the save path's **silent degrades** — the arms that run a shared-cache
+/// save weaker than designed while still reporting `Ok`. **A diagnostic counter, and
+/// nothing else:** tallying changes no return value, no output and no control flow, and
+/// nothing in the product reads it. It exists so a test that observes a lost concurrent
+/// delta can say in its own failure message whether any of its saves ran unlocked
+/// (`crates/cli/tests/file_state_concurrency.rs`; the open flake it serves is in
+/// `implementation/decisions-pending.md` → the CI block).
+///
+/// **Per thread, deliberately.** A save's critical section runs inline on the calling
+/// thread, so a thread's tally is exactly the degrades of the saves it made — and a
+/// test that forces a degrade by design (the spin-ceiling cell) cannot pollute a sibling
+/// test's count in the same process, which a process-global counter would.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SaveDegrades {
+    /// The lock spin exhausted [`SAVE_LOCK_ATTEMPTS`] and the critical section ran
+    /// unlocked — the declared degrade of [`with_save_lock`].
+    pub lock_timeout: usize,
+    /// The lock sibling could not be created or opened, or `try_lock` failed with an
+    /// error other than *would block*; the critical section ran unlocked without spinning.
+    pub lock_error: usize,
+    /// [`crate::file_state::FileStateRecord::save`]'s re-read of the record on disk
+    /// failed, so the merge degraded to `theirs = ours` — the clobbering pre-merge write.
+    pub unreadable_theirs: usize,
+}
+
+impl SaveDegrades {
+    /// The saves whose critical section ran without the lock, for either reason.
+    pub fn unlocked(&self) -> usize {
+        self.lock_timeout + self.lock_error
+    }
+}
+
+/// Which [`SaveDegrades`] arm a degrade is tallied on.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum SaveDegrade {
+    LockTimeout,
+    LockError,
+    UnreadableTheirs,
+}
+
+thread_local! {
+    static SAVE_DEGRADES: std::cell::Cell<SaveDegrades> = const {
+        std::cell::Cell::new(SaveDegrades {
+            lock_timeout: 0,
+            lock_error: 0,
+            unreadable_theirs: 0,
+        })
+    };
+}
+
+/// The calling thread's [`SaveDegrades`] tally since it started. Monotone; read it before
+/// and after the work under measurement and subtract.
+pub fn save_degrades() -> SaveDegrades {
+    SAVE_DEGRADES.with(std::cell::Cell::get)
+}
+
+/// Tally one degrade on the calling thread. Saturating, so the diagnostic can never
+/// panic its way into the save path's behaviour.
+pub(crate) fn tally_save_degrade(arm: SaveDegrade) {
+    SAVE_DEGRADES.with(|cell| {
+        let mut tally = cell.get();
+        let count = match arm {
+            SaveDegrade::LockTimeout => &mut tally.lock_timeout,
+            SaveDegrade::LockError => &mut tally.lock_error,
+            SaveDegrade::UnreadableTheirs => &mut tally.unreadable_theirs,
+        };
+        *count = count.saturating_add(1);
+        cell.set(tally);
+    });
+}
+
 /// An acquired advisory lock, released on drop (including on an unwinding panic out of
 /// the critical section).
 struct SaveLock(std::fs::File);
 
 impl SaveLock {
     /// Take the lock, spinning up to [`SAVE_LOCK_ATTEMPTS`] times. `None` means the
-    /// caller runs unlocked — the stated degrade, not an error to report.
+    /// caller runs unlocked — the stated degrade, not an error to report; each `None` is
+    /// tallied in [`SaveDegrades`] on its arm.
     fn acquire(path: &Path) -> Option<Self> {
+        match Self::try_acquire(path) {
+            Ok(lock) => Some(lock),
+            Err(arm) => {
+                tally_save_degrade(arm);
+                None
+            }
+        }
+    }
+
+    /// [`acquire`](Self::acquire)'s body, naming the degrade arm on failure.
+    fn try_acquire(path: &Path) -> Result<Self, SaveDegrade> {
         let lock_path = lock_sibling(path);
         if let Some(parent) = lock_path.parent() {
-            std::fs::create_dir_all(parent).ok()?;
+            std::fs::create_dir_all(parent).map_err(|_| SaveDegrade::LockError)?;
         }
         let file = std::fs::OpenOptions::new()
             .create(true)
@@ -1186,15 +1269,15 @@ impl SaveLock {
             .write(true)
             .truncate(false)
             .open(&lock_path)
-            .ok()?;
+            .map_err(|_| SaveDegrade::LockError)?;
         for _ in 0..SAVE_LOCK_ATTEMPTS {
             match file.try_lock() {
-                Ok(()) => return Some(SaveLock(file)),
+                Ok(()) => return Ok(SaveLock(file)),
                 Err(std::fs::TryLockError::WouldBlock) => std::thread::sleep(SAVE_LOCK_SPIN),
-                Err(std::fs::TryLockError::Error(_)) => return None,
+                Err(std::fs::TryLockError::Error(_)) => return Err(SaveDegrade::LockError),
             }
         }
-        None
+        Err(SaveDegrade::LockTimeout)
     }
 }
 
