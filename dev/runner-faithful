@@ -34,6 +34,32 @@
 #
 # Usage:
 #   dev/runner-faithful [--platform <os/arch>] [--commit <rev>] cargo <args...>
+#   dev/runner-faithful [--platform <os/arch>] [--commit <rev>] tarball
+#
+#   cargo       runs the named cargo command in the clone.
+#   tarball     the pre-publish install acceptance (implementation/release.md -> Verifying
+#               a publish): `cargo package --workspace` in the clone, both .crate files
+#               unpacked outside any workspace, then these steps, each named on failure:
+#                 lock-compare     the packaged jigc lock, resolved with the install's
+#                                  engine overlay, is byte-equal to itself minus the
+#                                  overlay's one declared rewrite (the jigc-engine entry's
+#                                  source and checksum lines) -- so no entry was missing,
+#                                  stale or re-resolved;
+#                 install          `cargo install --path <jigc> --locked` with that overlay;
+#                 version          `jigc --version` equals `jigc <v>`, <v> being the
+#                                  commit's crates/cli/Cargo.toml [package] version;
+#                 setup            `jigc setup` in a mktemp repository exits 0 and leaves
+#                                  .jigc/AGENT.md (identity from GIT_AUTHOR_*/GIT_COMMITTER_*
+#                                  only, since the image has none);
+#                 probe-override   JIGC_DOC_CODE_PROBE is unset, so the probe is the one
+#                                  inside the installed binary;
+#                 control-finalize an arch-doc whose implemented-by anchor resolves
+#                                  finalizes with exit 0;
+#                 drift-finalize   the symbol renamed away and committed, a task editing
+#                                  that committed arch-doc finalizes with exit 3, naming
+#                                  doc-code.symbol-exists, with HEAD unchanged.
+#               version .. drift-finalize are one function, post_install, that the
+#               registry mode reuses.
 #
 #   --platform  the docker platform (default: the docker host's own, e.g. linux/arm64);
 #               passed through to `docker build` and `docker create`.
@@ -43,8 +69,9 @@
 # It prints its header on stderr -- platform, commit, toolchain, git -- from inside the
 # container, so the lines describe what actually ran.
 #
-# Exit status: cargo's, when cargo ran. 2 on a usage error; 125 when the run could not be
-# set up (no docker, the image build or its posture assertion failed, the commit is not
+# Exit status: cargo's, when cargo ran; for `tarball`, 0 when every step passed and 1 at
+# the first step that failed. 2 on a usage error; 125 when the run could not be set up
+# (no docker, the image build or its posture assertion failed, the commit is not
 # bundleable, the clone failed).
 
 set -u
@@ -57,6 +84,7 @@ die() { say "$*"; exit 125; }
 usage_error() {
     say "$*"
     say "usage: dev/runner-faithful [--platform <os/arch>] [--commit <rev>] cargo <args...>"
+    say "       dev/runner-faithful [--platform <os/arch>] [--commit <rev>] tarball"
     exit 2
 }
 
@@ -71,10 +99,11 @@ while [ $# -gt 0 ]; do
         --commit) [ $# -ge 2 ] || usage_error "--commit needs a value"; rev=$2; shift 2 ;;
         --commit=*) rev=${1#--commit=}; shift ;;
         cargo) mode=cargo; shift; break ;;
+        tarball) mode=tarball; shift; [ $# -eq 0 ] || usage_error "tarball takes no arguments: $*"; break ;;
         *) usage_error "unknown argument: $1" ;;
     esac
 done
-[ "$mode" = cargo ] || usage_error "name a cargo command, e.g. \`cargo test -p jigc doc_link_fence::\`"
+[ -n "$mode" ] || usage_error "name a mode: a cargo command, e.g. \`cargo test -p jigc doc_link_fence::\`, or tarball"
 
 command -v docker >/dev/null 2>&1 || die "docker is not on PATH"
 docker version >/dev/null 2>&1 || die "the docker daemon does not answer (is colima running?)"
@@ -166,11 +195,93 @@ fi
 git -C "$repo_root" bundle create "$work/source.bundle" HEAD --branches --tags 2>"$work/bundle.log" \
     || { cat "$work/bundle.log" >&2; die "git bundle failed"; }
 
-inner='
+# Everything below runs inside the container, as `runner`. Single-quoted, so nothing in
+# it expands here; it takes the commit as $1 and the mode's arguments after it.
+steps='
 set -u
+say() { printf "runner-faithful: %s\n" "$*" >&2; }
+step=
+pass() { say "ok   $step: $*"; }
+# fail <message> [<log>] -- the step that failed, named; the log tail when there is one.
+fail() {
+    say "FAIL $step: $1"
+    if [ $# -ge 2 ] && [ -f "$2" ]; then tail -n 30 "$2" >&2; fi
+    exit 1
+}
+
+# post_install <expected version> -- the checks every install mode runs against the
+# jigc now on PATH: version, setup, probe-override, control-finalize, drift-finalize.
+post_install() {
+    local want=$1 got w log out arch id comp head ed rc
+    step=version
+    got=$(jigc --version 2>&1) || fail "jigc --version exited $?: $got"
+    [ "$got" = "jigc $want" ] || fail "jigc --version printed \"$got\", expected \"jigc $want\""
+    pass "$got ($(command -v jigc))"
+
+    step=setup
+    w=$(mktemp -d /tmp/acceptance.XXXXXX) || fail "mktemp failed"
+    log=$w/jigc.log
+    export GIT_AUTHOR_NAME="Runner Faithful" GIT_AUTHOR_EMAIL="runner@example.invalid"
+    export GIT_COMMITTER_NAME="Runner Faithful" GIT_COMMITTER_EMAIL="runner@example.invalid"
+    mkdir -p "$w/repo/src" && cd "$w/repo" || fail "cannot make the throwaway repository"
+    git init -q -b main . || fail "git init exited $?"
+    printf "export function pad(s: string): string {\n  return s;\n}\n" > src/pad.ts
+    git add src/pad.ts && git commit -q -m "initial: pad helper" || fail "the initial commit failed"
+    jigc setup >>"$log" 2>&1 || fail "jigc setup exited $?" "$log"
+    [ -f .jigc/AGENT.md ] || fail "jigc setup exited 0 but left no .jigc/AGENT.md" "$log"
+    pass "jigc setup exited 0; .jigc/AGENT.md present"
+
+    step=probe-override
+    [ -z "${JIGC_DOC_CODE_PROBE+set}" ] || fail "JIGC_DOC_CODE_PROBE is set, so the probe is not the installed one"
+    pass "JIGC_DOC_CODE_PROBE unset"
+
+    step=control-finalize
+    j() { jigc "$@" >>"$log" 2>&1 || fail "jigc $* exited $?" "$log"; }
+    slot() { jigc doc set-slot "$1" --from-file - --task "$2" <<<"$3" >>"$log" 2>&1 || fail "jigc doc set-slot $1 exited $?" "$log"; }
+    mint() {
+        out=$(jigc start --workflow architecture-documentation "$1" 2>>"$log") || fail "jigc start exited $?" "$log"
+        printf "%s\n" "$out" >>"$log"
+        out=$(printf "%s\n" "$out" | sed -n "s/^task minted: //p" | head -n 1)
+        [ -n "$out" ] || fail "jigc start minted no task" "$log"
+    }
+    commit_doc() {
+        j doc set-field "commit:$1#type" --value docs --task "$1"
+        j doc set-field "commit:$1#scope" --value arch-doc --task "$1"
+        slot "commit:$1#summary" "$1" "$2"
+        slot "commit:$1#body" "$1" "Runner-faithful install acceptance."
+    }
+    mint "document the padding layer"; arch=$out
+    id=$(jigc doc create arch-doc --title "Padding layer" --task "$arch" 2>>"$log") || fail "jigc doc create exited $?" "$log"
+    slot "$id#overview" "$arch" "The padding layer owns string-width normalization."
+    comp=$(jigc doc add-item "$id#components" --title pad --task "$arch" 2>>"$log") || fail "jigc doc add-item exited $?" "$log"
+    slot "$comp/description" "$arch" "Pads a string to the requested width."
+    j doc set-field "$comp/implemented-by" --value "src/pad.ts#pad" --task "$arch"
+    commit_doc "$arch" "document the padding layer"
+    j task finalize "$arch"
+    pass "$id anchored at src/pad.ts#pad finalized with exit 0"
+
+    step=drift-finalize
+    sed -i "s/function pad(/function padString(/" src/pad.ts
+    git add src/pad.ts && git commit -q -m "refactor: rename pad to padString" >>"$log" 2>&1 \
+        || fail "the rename commit failed" "$log"
+    mint "revise the padding layer"; ed=$out
+    slot "$id#overview" "$ed" "The padding layer owns string-width normalization, revised."
+    commit_doc "$ed" "revise the padding layer"
+    head=$(git rev-parse HEAD)
+    jigc task finalize "$ed" >"$w/drift.out" 2>&1
+    rc=$?
+    cat "$w/drift.out" >>"$log"
+    [ "$rc" -eq 3 ] || fail "finalize over the stale anchor exited $rc, expected 3" "$w/drift.out"
+    grep -q "doc-code.symbol-exists" "$w/drift.out" || fail "finalize exited 3 without naming doc-code.symbol-exists" "$w/drift.out"
+    [ "$(git rev-parse HEAD)" = "$head" ] || fail "the blocked finalize moved HEAD" "$w/drift.out"
+    pass "a task editing $id finalized with exit 3, naming doc-code.symbol-exists; HEAD unchanged"
+}
+'
+
+# The clone and the header every mode that needs the source runs first.
+clone='
 sha=$1
 shift
-say() { printf "runner-faithful: %s\n" "$*" >&2; }
 git -c advice.detachedHead=false clone -q /tmp/source.bundle "$HOME/src" || { say "the clone of the bundle failed"; exit 125; }
 cd "$HOME/src" || exit 125
 git -c advice.detachedHead=false checkout -q --detach "$sha" 2>/dev/null \
@@ -179,9 +290,72 @@ say "platform  $(uname -s | tr "[:upper:]" "[:lower:]")/$(uname -m)"
 say "commit    $(git log -1 --format="%H %s")"
 say "toolchain $(rustc --version)"
 say "git       $(git --version)"
+'
+
+run_cargo='
 say "running   cargo $*"
 cargo "$@"
 '
+
+run_tarball='
+say "running   the pre-publish install acceptance"
+manifest_version() { sed -n "/^\[package\]/,/^\[/s/^version = \"\(.*\)\"\$/\1/p" "$1"; }
+
+step=package
+v=$(manifest_version crates/cli/Cargo.toml)
+ev=$(manifest_version crates/engine/Cargo.toml)
+[ -n "$v" ] && [ -n "$ev" ] || fail "no [package] version in crates/cli or crates/engine Cargo.toml"
+cargo package --workspace >"$HOME/package.log" 2>&1 || fail "cargo package --workspace exited $?" "$HOME/package.log"
+u=$HOME/unpacked
+mkdir -p "$u" || fail "mkdir $u failed"
+tar -xzf "$CARGO_TARGET_DIR/package/jigc-$v.crate" -C "$u" || fail "cannot unpack jigc-$v.crate"
+tar -xzf "$CARGO_TARGET_DIR/package/jigc-engine-$ev.crate" -C "$u" || fail "cannot unpack jigc-engine-$ev.crate"
+pass "jigc-$v.crate and jigc-engine-$ev.crate unpacked in $u"
+patch="patch.crates-io.jigc-engine.path=\"$u/jigc-engine-$ev\""
+
+step=lock-compare
+# Expected: the packaged lock minus the one rewrite the overlay declares -- the engine
+# resolves to the patched path, so its entry loses its registry source and checksum.
+# Exactly those two lines, or the lock is not the shape this compare was pinned on.
+expected=$HOME/lock.expected
+: >"$expected"
+in_engine=0
+dropped=0
+while IFS= read -r line; do
+    case "$line" in
+        "[[package]]") in_engine=0 ;;
+        "name = \"jigc-engine\"") in_engine=1 ;;
+    esac
+    if [ "$in_engine" -eq 1 ]; then
+        case "$line" in "source = "*|"checksum = "*) dropped=$((dropped + 1)); continue ;; esac
+    fi
+    printf "%s\n" "$line" >>"$expected"
+done <"$u/jigc-$v/Cargo.lock"
+[ "$dropped" -eq 2 ] || fail "the jigc-engine entry of the packaged lock carried $dropped source/checksum lines, expected 2"
+# Resolve a copy with the same overlay as the install, unlocked, so cargo writes what
+# it resolved.
+cp -R "$u/jigc-$v" "$HOME/resolved" || fail "cannot copy the unpacked jigc"
+( cd "$HOME/resolved" && cargo metadata --format-version 1 --config "$patch" >/dev/null 2>"$HOME/resolve.log" ) \
+    || fail "cargo metadata over the packaged lock exited $?" "$HOME/resolve.log"
+if ! cmp -s "$expected" "$HOME/resolved/Cargo.lock"; then
+    diff "$expected" "$HOME/resolved/Cargo.lock" | head -n 40 >&2
+    fail "the packaged lock re-resolved to different bytes (< packaged, > resolved)"
+fi
+pass "the packaged lock resolves to itself byte-for-byte, the engine rewrite of the overlay aside"
+
+step=install
+cargo install --path "$u/jigc-$v" --locked --config "$patch" >"$HOME/install.log" 2>&1 \
+    || fail "cargo install --locked exited $?" "$HOME/install.log"
+pass "cargo install --path jigc-$v --locked, engine patched to the unpacked jigc-engine-$ev"
+
+post_install "$v"
+say "the pre-publish install acceptance passed"
+'
+
+case "$mode" in
+    cargo) inner=$steps$clone$run_cargo ;;
+    tarball) inner=$steps$clone$run_tarball ;;
+esac
 
 cid=$(docker create --platform "$platform" "$image" bash -c "$inner" runner-faithful "$sha" "$@") \
     || die "docker create failed"
