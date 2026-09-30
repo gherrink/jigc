@@ -220,11 +220,10 @@ const ROOT_FILES: &[&str] = &[
 
 /// Paths a later increment of M54 creates, each with that increment. Each must be absent
 /// today; the increment that creates one deletes its entry. Empty at M54's close.
-const PENDING: &[(&str, &str)] = &[(
-    "dev/runner-faithful",
-    "Increment 7, *a clean machine installs it* — the runner-shaped container that installs \
-     the packaged crates (S10)",
-)];
+///
+/// Its one seeded entry, `dev/runner-faithful` (Increment 7, S10), was deleted by the
+/// commit that created the file.
+const PENDING: &[(&str, &str)] = &[];
 
 /// The tree `jigc setup` installs into an adopter's repository (S15's adopter-path class).
 const ADOPTER_INSTALL_TREE: &str = ".claude/skills/";
@@ -515,13 +514,14 @@ fn resolve_relative(doc_dir: &str, target: &str) -> Option<String> {
     Some(parts.join("/"))
 }
 
-fn pending(path: &str) -> bool {
+fn is_pending(pending: &[(&str, &str)], path: &str) -> bool {
     let path = path.trim_end_matches('/');
-    PENDING.iter().any(|(p, _)| *p == path)
+    pending.iter().any(|(p, _)| *p == path)
 }
 
-/// Every link and path token in one doc that does not resolve against `tree`.
-fn scan(doc: &str, text: &str, tree: &dyn Tree) -> Scan {
+/// Every link and path token in one doc that does not resolve against `tree`, a path on
+/// the `pending` list excepted.
+fn scan(doc: &str, text: &str, tree: &dyn Tree, pending: &[(&str, &str)]) -> Scan {
     let (masked, mut offences) = mask_exempt(text);
     let mut scan = Scan::default();
     let doc_dir = doc.rsplit_once('/').map_or("", |(dir, _)| dir);
@@ -532,7 +532,7 @@ fn scan(doc: &str, text: &str, tree: &dyn Tree) -> Scan {
         };
         scan.tokens += 1;
         for each in expand_braces(&path) {
-            if !pending(&each) && !resolves(tree, &each) {
+            if !is_pending(pending, &each) && !resolves(tree, &each) {
                 offences.push(Offence {
                     line,
                     what: format!("`{}`", raw.trim()),
@@ -626,7 +626,7 @@ fn scan(doc: &str, text: &str, tree: &dyn Tree) -> Scan {
                     what: format!("({target})"),
                     why: "a relative link that climbs out of the repository",
                 }),
-                Some(rel) if !pending(&rel) && !resolves(tree, &rel) => {
+                Some(rel) if !is_pending(pending, &rel) && !resolves(tree, &rel) => {
                     offences.push(Offence {
                         line: line_no,
                         what: format!("({target})"),
@@ -695,7 +695,7 @@ fn every_link_and_path_token_in_a_live_doc_resolves() {
     for doc in LIVE_DOCS {
         let text = fs::read_to_string(root.join(doc))
             .unwrap_or_else(|e| panic!("live doc `{doc}` must be readable: {e}"));
-        let scan = scan(doc, &text, &tree);
+        let scan = scan(doc, &text, &tree, PENDING);
         links += scan.links;
         tokens += scan.tokens;
         offences.extend(
@@ -780,7 +780,7 @@ const FIXTURE: Fixture = Fixture(&[
 ]);
 
 fn offences(doc: &str, text: &str) -> Vec<String> {
-    scan(doc, text, &FIXTURE)
+    scan(doc, text, &FIXTURE, PENDING)
         .offences
         .into_iter()
         .map(|o| o.what)
@@ -860,7 +860,7 @@ fn text_in_the_exempt_forms_is_not_read() {
 fn an_exempt_form_must_close_inside_its_paragraph() {
     let doc = "[Superseded 2026: `packs/a/`\n\nnext paragraph";
     assert_eq!(
-        scan("x.md", doc, &FIXTURE)
+        scan("x.md", doc, &FIXTURE, PENDING)
             .offences
             .iter()
             .map(|o| o.why)
@@ -872,7 +872,7 @@ fn an_exempt_form_must_close_inside_its_paragraph() {
     );
     let strike = "~~`packs/a/`\n\n`packs/b/`~~";
     assert_eq!(
-        scan("x.md", strike, &FIXTURE).offences.len(),
+        scan("x.md", strike, &FIXTURE, PENDING).offences.len(),
         4,
         "an unclosed strike exempts nothing and is itself an offence",
     );
@@ -897,14 +897,24 @@ fn the_two_settled_arms_read_as_not_a_path() {
     assert_eq!(offences("x.md", "`dev/0.3`"), ["`dev/0.3`"]);
 }
 
+/// Driven through a test-local entry, so the rule stays proved while the global list is
+/// empty (its one seeded entry was deleted when `dev/runner-faithful` was created).
 #[test]
 fn a_pending_path_is_accepted_while_absent() {
-    assert!(
-        offences(
-            "design/x.md",
-            "`dev/runner-faithful` [r](../dev/runner-faithful)"
-        )
-        .is_empty()
+    let doc = "`dev/not-yet-built` [r](../dev/not-yet-built)";
+    let local = [("dev/not-yet-built", "a test-local entry")];
+    let whats = |pending: &[(&str, &str)]| -> Vec<String> {
+        scan("design/x.md", doc, &FIXTURE, pending)
+            .offences
+            .into_iter()
+            .map(|o| o.what)
+            .collect()
+    };
+    assert!(whats(&local).is_empty());
+    assert_eq!(
+        whats(&[]),
+        ["`dev/not-yet-built`", "(../dev/not-yet-built)"],
+        "without the entry the same absent path is an offence",
     );
 }
 

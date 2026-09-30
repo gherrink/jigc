@@ -1,0 +1,194 @@
+#!/usr/bin/env bash
+#
+# dev/runner-faithful — run a cargo command in a fresh container shaped like a CI runner.
+#
+# When the question is what the RUNNER sees, a flag on this machine is not the
+# instrument: macOS git reads config no mask removes, the gecos field is populated, and
+# the target directory is shared with every other build here. This tool builds an image
+# faithful to a GitHub-hosted runner and runs one cargo command there, on a clean clone
+# of a named commit (implementation/dev-workflow.md -> Gate; DECISIONS.md -> M54 S10).
+#
+# What the image is faithful TO, each a deliberate choice:
+#   - ubuntu:24.04, the image `ubuntu-latest` runners track, with git from the stock apt
+#     archive (whatever version 24.04 ships), build-essential (tree-sitter's grammars
+#     compile C) and python3 (the dogfood apparatus and the trial driver are Python).
+#   - the toolchain rust-toolchain.toml names, read from THE COMMIT THAT RUNS and passed
+#     as build args, never copied here, so a toolchain bump cannot leave the image behind.
+#     It is rustup's DEFAULT toolchain, because a packaged .crate carries no
+#     rust-toolchain.toml.
+#   - a non-root user `runner`, uid 1000, whose gecos field is EMPTY (the stock `ubuntu`
+#     user is removed so `runner` takes uid 1000). git falls back to the gecos name when
+#     no user.name is set; an empty one makes an unconfigured commit fail instead of
+#     inventing an identity, which is the posture a fresh runner has.
+#   - NO git config at any level (system, global, XDG) and no GIT_CONFIG_* variable: the
+#     absence is real, not masked. A build-time assertion refuses the image otherwise.
+#   - CARGO_HOME, RUSTUP_HOME and CARGO_TARGET_DIR under /home/runner, inside.
+#
+# The source is a git bundle of the named commit's history, docker-cp'd in and cloned
+# there, so the checkout has full history (like CI's fetch-depth: 0), an empty git
+# config and a detached HEAD. It is NEVER a bind mount: colima serves host mounts
+# read-only, silently. So uncommitted changes are NOT what runs -- commit first.
+#
+# There is no teardown to get wrong: the scratch root comes from mktemp -d and the
+# container goes via `docker rm`. No path built from variables is removed recursively.
+#
+# Usage:
+#   dev/runner-faithful [--platform <os/arch>] [--commit <rev>] cargo <args...>
+#
+#   --platform  the docker platform (default: the docker host's own, e.g. linux/arm64);
+#               passed through to `docker build` and `docker create`.
+#   --commit    the commit that runs (default: HEAD). It must be reachable from HEAD, a
+#               branch or a tag, because only those are bundled.
+#
+# It prints its header on stderr -- platform, commit, toolchain, git -- from inside the
+# container, so the lines describe what actually ran.
+#
+# Exit status: cargo's, when cargo ran. 2 on a usage error; 125 when the run could not be
+# set up (no docker, the image build or its posture assertion failed, the commit is not
+# bundleable, the clone failed).
+
+set -u
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P) || exit 2
+repo_root=$(dirname -- "$script_dir")
+
+say() { printf 'runner-faithful: %s\n' "$*" >&2; }
+die() { say "$*"; exit 125; }
+usage_error() {
+    say "$*"
+    say "usage: dev/runner-faithful [--platform <os/arch>] [--commit <rev>] cargo <args...>"
+    exit 2
+}
+
+platform=
+rev=HEAD
+mode=
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -h|--help) awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"; exit 0 ;;
+        --platform) [ $# -ge 2 ] || usage_error "--platform needs a value"; platform=$2; shift 2 ;;
+        --platform=*) platform=${1#--platform=}; shift ;;
+        --commit) [ $# -ge 2 ] || usage_error "--commit needs a value"; rev=$2; shift 2 ;;
+        --commit=*) rev=${1#--commit=}; shift ;;
+        cargo) mode=cargo; shift; break ;;
+        *) usage_error "unknown argument: $1" ;;
+    esac
+done
+[ "$mode" = cargo ] || usage_error "name a cargo command, e.g. \`cargo test -p jigc doc_link_fence::\`"
+
+command -v docker >/dev/null 2>&1 || die "docker is not on PATH"
+docker version >/dev/null 2>&1 || die "the docker daemon does not answer (is colima running?)"
+
+# --- the commit -------------------------------------------------------------
+sha=$(git -C "$repo_root" rev-parse --verify --quiet "$rev^{commit}") || die "not a commit: $rev"
+dirty=$(git -C "$repo_root" status --porcelain)
+if [ -n "$dirty" ]; then
+    say "the working tree has uncommitted changes; they are NOT what runs -- commit $sha is"
+else
+    say "runs commit $sha; uncommitted changes are never what runs"
+fi
+
+# --- the toolchain, read from that commit -----------------------------------
+toolchain_toml=$(git -C "$repo_root" show "$sha:rust-toolchain.toml") \
+    || die "commit $sha has no rust-toolchain.toml to read the toolchain from"
+channel=$(printf '%s\n' "$toolchain_toml" | sed -n 's/^channel[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p')
+components=$(printf '%s\n' "$toolchain_toml" | sed -n 's/^components[[:space:]]*=[[:space:]]*\[\(.*\)\].*/\1/p' | tr -d '" ')
+[ -n "$channel" ] || die "rust-toolchain.toml at $sha names no channel"
+
+# --- the platform -----------------------------------------------------------
+if [ -z "$platform" ]; then
+    platform=$(docker version --format '{{.Server.Os}}/{{.Server.Arch}}') || die "cannot read the docker host's platform"
+fi
+image="jigc-runner-faithful:$channel-$(printf '%s' "$platform" | tr '/' '-')"
+
+tmp_root=${TMPDIR:-/tmp}
+work=$(mktemp -d "${tmp_root%/}/runner-faithful.XXXXXX") || die "mktemp failed"
+
+# --- the image --------------------------------------------------------------
+say "building $image (cached layers are reused); log: $work/build.log"
+docker build --platform "$platform" \
+    --build-arg "RUST_TOOLCHAIN=$channel" \
+    --build-arg "RUST_COMPONENTS=$components" \
+    -t "$image" - >"$work/build.log" 2>&1 <<'DOCKERFILE'
+FROM ubuntu:24.04
+
+ARG RUST_TOOLCHAIN
+ARG RUST_COMPONENTS
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates curl git build-essential python3 \
+ && rm -rf /var/lib/apt/lists/*
+
+RUN userdel --remove ubuntu 2>/dev/null || true
+RUN useradd --create-home --uid 1000 --shell /bin/bash --comment '' runner
+
+USER runner
+WORKDIR /home/runner
+
+ENV CARGO_HOME=/home/runner/.cargo \
+    RUSTUP_HOME=/home/runner/.rustup \
+    CARGO_TARGET_DIR=/home/runner/target \
+    PATH=/home/runner/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Download, then run: a `curl | sh` reports the shell's status, so a failed download
+# would read as a successful install.
+RUN test -n "$RUST_TOOLCHAIN" || { echo 'no RUST_TOOLCHAIN build arg' >&2; exit 1; }; \
+    curl --proto '=https' --tlsv1.2 -sSf -o /tmp/rustup-init.sh https://sh.rustup.rs \
+ && sh /tmp/rustup-init.sh -y --no-modify-path --profile minimal \
+        --default-toolchain "$RUST_TOOLCHAIN" ${RUST_COMPONENTS:+--component "$RUST_COMPONENTS"} \
+ && rm /tmp/rustup-init.sh \
+ && rustc --version && cargo --version
+
+# The posture, asserted at build time so an image that drifted from it never exists.
+RUN set -e; \
+    test -z "$(getent passwd runner | cut -d: -f5)" || { echo 'posture: the gecos field is not empty' >&2; exit 1; }; \
+    for f in /etc/gitconfig "$HOME/.gitconfig" "${XDG_CONFIG_HOME:-$HOME/.config}/git/config"; do \
+        test ! -e "$f" || { echo "posture: git config present: $f" >&2; exit 1; }; \
+    done; \
+    test -z "$(git config --list --show-origin 2>&1)" || { echo 'posture: git config --list is not empty' >&2; exit 1; }; \
+    if git var GIT_COMMITTER_IDENT >/dev/null 2>&1; then echo 'posture: git can invent an identity' >&2; exit 1; fi; \
+    if env | grep -q '^GIT_CONFIG'; then echo 'posture: a GIT_CONFIG_* variable is set' >&2; exit 1; fi; \
+    cc --version >/dev/null; python3 --version; git --version
+DOCKERFILE
+build_status=$?
+if [ "$build_status" -ne 0 ]; then
+    tail -n 30 "$work/build.log" >&2
+    die "the image build failed (exit $build_status); a \`posture:\` line above is the posture assertion refusing it"
+fi
+
+# --- the source -------------------------------------------------------------
+# A bare sha is not bundleable (`git bundle` wants refs), so the bundle carries HEAD,
+# the branches and the tags, and the container checks the named commit out of it.
+git -C "$repo_root" bundle create "$work/source.bundle" HEAD --branches --tags 2>"$work/bundle.log" \
+    || { cat "$work/bundle.log" >&2; die "git bundle failed"; }
+
+inner='
+set -u
+sha=$1
+shift
+say() { printf "runner-faithful: %s\n" "$*" >&2; }
+git -c advice.detachedHead=false clone -q /tmp/source.bundle "$HOME/src" || { say "the clone of the bundle failed"; exit 125; }
+cd "$HOME/src" || exit 125
+git -c advice.detachedHead=false checkout -q --detach "$sha" 2>/dev/null \
+    || { say "commit $sha is not reachable from HEAD, a branch or a tag, so it was not bundled"; exit 125; }
+say "platform  $(uname -s | tr "[:upper:]" "[:lower:]")/$(uname -m)"
+say "commit    $(git log -1 --format="%H %s")"
+say "toolchain $(rustc --version)"
+say "git       $(git --version)"
+say "running   cargo $*"
+cargo "$@"
+'
+
+cid=$(docker create --platform "$platform" "$image" bash -c "$inner" runner-faithful "$sha" "$@") \
+    || die "docker create failed"
+trap 'docker rm -f "$cid" >/dev/null 2>&1' EXIT
+docker cp "$work/source.bundle" "$cid:/tmp/source.bundle" >/dev/null || die "docker cp of the bundle failed"
+
+docker start -a "$cid"
+status=$?
+say "exit $status"
+exit "$status"
