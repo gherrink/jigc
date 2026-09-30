@@ -20,9 +20,21 @@
 //! `publish_timeout` fits inside the crates.io trusted-publishing token's life with a
 //! margin for the verify builds; **(h)** `semver_check` and `dependencies_update` both
 //! `false`.
+//!
+//! The workflow arms, over `.github/workflows/release.yml` (release.md → *Publishing*):
+//! **(i)** no `CARGO_REGISTRY_TOKEN` anywhere under `.github/workflows/`, read as text, so
+//! Trusted Publishing is the only way a crate reaches crates.io; **(j)** the one trigger
+//! is a push to `main`; **(k)** exactly one job is bound to environment `release`, it
+//! `needs` the check job and runs only on its flag, and it is the only holder of
+//! `id-token: write`; **(l)** the check job has no environment, runs
+//! `dev/unpublished-versions` and outputs its flag; **(m)** the release-PR job's checkout
+//! and `release-plz` both run on the GitHub App's token; **(n)** nothing keys on a commit
+//! subject; **(o)** every `release-plz/action` step pins release-plz `0.3.169`; **(p)** the
+//! dry run and the engine overlay apply off `gherrink/jigc` only.
 
 use crate::manifest_freeze_fence::repo_root;
 use crate::support::run_then_parse::stdout_json;
+use serde_yaml_ng::Value as Yaml;
 use std::collections::BTreeMap;
 use std::fs;
 use std::process::Command;
@@ -340,4 +352,441 @@ fn h_no_semver_check_and_no_dependency_update() {
             "`{knob}` must be `false`"
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// The workflow: `.github/workflows/release.yml`
+// ---------------------------------------------------------------------------
+
+/// The workflow directory arm (i) reads as text, and the release workflow in it.
+const WORKFLOWS_DIR: &str = ".github/workflows";
+const RELEASE_YML: &str = ".github/workflows/release.yml";
+
+/// The three jobs, by id.
+const RELEASE_PR_JOB: &str = "release-pr";
+const CHECK_JOB: &str = "check";
+const RELEASE_JOB: &str = "release";
+
+/// The GitHub environment the publish runs in, its reviewer the human.
+const RELEASE_ENVIRONMENT: &str = "release";
+
+/// The check job's output, as `dev/unpublished-versions` writes it to `$GITHUB_OUTPUT`.
+const MISSING_FLAG: &str = "missing";
+const UNPUBLISHED_VERSIONS: &str = "dev/unpublished-versions";
+
+/// The release job's condition: the check job found a workspace version crates.io lacks.
+const RELEASE_JOB_IF: &str = "needs.check.outputs.missing == 'true'";
+
+/// The GitHub App's credentials, as repository secrets (release.md → The release PR).
+const APP_ID_SECRET: &str = "${{ secrets.JIGC_RELEASE_APP_ID }}";
+const APP_KEY_SECRET: &str = "${{ secrets.JIGC_RELEASE_APP_PRIVATE_KEY }}";
+
+const APP_TOKEN_ACTION: &str = "actions/create-github-app-token@";
+const CHECKOUT_ACTION: &str = "actions/checkout@";
+const RELEASE_PLZ_ACTION: &str = "release-plz/action@v0.5";
+
+/// The release-plz version every proof on the record ran (release.md → release-plz knobs).
+const RELEASE_PLZ_VERSION: &str = "0.3.169";
+
+/// Anything off the real repository is a rehearsal.
+const OFF_THE_REAL_REPO: &str = "github.repository != 'gherrink/jigc'";
+
+/// The `dry_run` input. `release-plz/action` adds `--dry-run` when the input is
+/// **non-empty** (`if [[ -n "${{ inputs.dry_run }}" ]]` in its `action.yml`), so the bare
+/// boolean `${{ github.repository != 'gherrink/jigc' }}` would pass the string `false` on
+/// `gherrink/jigc` and dry-run the real publish too. This form is `'true'` off the real
+/// repository and empty on it.
+const DRY_RUN_INPUT: &str = "${{ github.repository != 'gherrink/jigc' && 'true' || '' }}";
+
+/// The contexts that carry a pushed commit's message.
+const COMMIT_MESSAGE_CONTEXTS: [&str; 2] = ["head_commit", "event.commits"];
+
+fn release_workflow() -> Yaml {
+    let path = repo_root().join(RELEASE_YML);
+    let body = fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("`{RELEASE_YML}` must be readable: {e}"));
+    serde_yaml_ng::from_str(&body)
+        .unwrap_or_else(|e| panic!("`{RELEASE_YML}` must be valid YAML: {e}"))
+}
+
+fn workflow_jobs(workflow: &Yaml) -> Vec<(String, &Yaml)> {
+    workflow["jobs"]
+        .as_mapping()
+        .unwrap_or_else(|| panic!("`{RELEASE_YML}` has no `jobs` mapping"))
+        .iter()
+        .map(|(id, job)| (id.as_str().expect("a job id").to_string(), job))
+        .collect()
+}
+
+fn workflow_job<'a>(workflow: &'a Yaml, id: &str) -> &'a Yaml {
+    let job = &workflow["jobs"][id];
+    assert!(
+        job.is_mapping(),
+        "`{RELEASE_YML}` has no `{id}` job. Jobs present: {:?}",
+        workflow_jobs(workflow)
+            .iter()
+            .map(|(id, _)| id)
+            .collect::<Vec<_>>(),
+    );
+    job
+}
+
+fn job_steps(job: &Yaml) -> &[Yaml] {
+    job["steps"].as_sequence().map_or(&[], Vec::as_slice)
+}
+
+/// The steps of `job` whose `uses` starts with `prefix`.
+fn steps_using<'a>(job: &'a Yaml, prefix: &str) -> Vec<&'a Yaml> {
+    job_steps(job)
+        .iter()
+        .filter(|step| step["uses"].as_str().is_some_and(|u| u.starts_with(prefix)))
+        .collect()
+}
+
+/// The one step of `job` whose `uses` starts with `prefix`.
+fn step_using<'a>(job: &'a Yaml, job_id: &str, prefix: &str) -> &'a Yaml {
+    let found = steps_using(job, prefix);
+    assert_eq!(
+        found.len(),
+        1,
+        "job `{job_id}` must have exactly one step using `{prefix}…`"
+    );
+    found[0]
+}
+
+/// An `if:` condition with its optional `${{ … }}` wrapper removed.
+fn condition(value: &Yaml) -> Option<&str> {
+    let text = value.as_str()?.trim();
+    Some(
+        text.strip_prefix("${{")
+            .and_then(|t| t.strip_suffix("}}"))
+            .map_or(text, str::trim),
+    )
+}
+
+/// The environment a job is bound to: `environment: <name>` or `environment: {name: …}`.
+fn environment(job: &Yaml) -> Option<&str> {
+    let env = &job["environment"];
+    env.as_str().or_else(|| env["name"].as_str())
+}
+
+/// `needs:` as a list, whether written as one id or a sequence.
+fn needs(job: &Yaml) -> Vec<&str> {
+    let needs = &job["needs"];
+    needs.as_str().map_or_else(
+        || {
+            needs
+                .as_sequence()
+                .map_or(Vec::new(), |s| s.iter().filter_map(Yaml::as_str).collect())
+        },
+        |one| vec![one],
+    )
+}
+
+// ---------------------------------------------------------------------------
+// (i) no registry token, anywhere under .github/workflows/
+// ---------------------------------------------------------------------------
+
+#[test]
+fn i_no_workflow_names_a_registry_token() {
+    let dir = repo_root().join(WORKFLOWS_DIR);
+    let mut read = Vec::new();
+    for entry in fs::read_dir(&dir).unwrap_or_else(|e| panic!("`{WORKFLOWS_DIR}`: {e}")) {
+        let path = entry.expect("a workflow directory entry").path();
+        if !path.is_file() {
+            continue;
+        }
+        let body = fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("`{}` must be readable: {e}", path.display()));
+        let name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .expect("a UTF-8 file name")
+            .to_string();
+        assert!(
+            !body.contains("CARGO_REGISTRY_TOKEN"),
+            "`{WORKFLOWS_DIR}/{name}` names `CARGO_REGISTRY_TOKEN`. The publish is Trusted \
+             Publishing alone, and no registry token exists (release.md → Publishing)"
+        );
+        read.push(name);
+    }
+    assert!(
+        read.iter().any(|name| RELEASE_YML.ends_with(name.as_str())),
+        "the scan must cover `{RELEASE_YML}`; it read {read:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// (j) the trigger
+// ---------------------------------------------------------------------------
+
+#[test]
+fn j_the_only_trigger_is_a_push_to_main() {
+    let workflow = release_workflow();
+    let trigger = workflow
+        .get("on")
+        .unwrap_or_else(|| panic!("`{RELEASE_YML}` has no `on:`"));
+    let expected: Yaml =
+        serde_yaml_ng::from_str("push:\n  branches: [main]\n").expect("the pinned trigger");
+    assert_eq!(
+        trigger, &expected,
+        "`{RELEASE_YML}` must run on a push to `main` and on nothing else: the release job \
+         runs after the release PR's merge, and the environment admits `main` only"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// (k) the environment-bound release job
+// ---------------------------------------------------------------------------
+
+#[test]
+fn k_one_environment_job_needs_the_check_and_alone_holds_id_token() {
+    let workflow = release_workflow();
+    let bound: Vec<String> = workflow_jobs(&workflow)
+        .into_iter()
+        .filter(|(_, job)| environment(job).is_some())
+        .map(|(id, _)| id)
+        .collect();
+    assert_eq!(
+        bound,
+        [RELEASE_JOB],
+        "exactly the `{RELEASE_JOB}` job is bound to an environment"
+    );
+
+    let release = workflow_job(&workflow, RELEASE_JOB);
+    assert_eq!(environment(release), Some(RELEASE_ENVIRONMENT));
+    assert_eq!(
+        needs(release),
+        [CHECK_JOB],
+        "the `{RELEASE_JOB}` job must `needs: {CHECK_JOB}`, or it raises the approval prompt \
+         on every push, whether or not anything is unpublished"
+    );
+    assert_eq!(
+        condition(&release["if"]),
+        Some(RELEASE_JOB_IF),
+        "the `{RELEASE_JOB}` job runs only on the check job's flag"
+    );
+    let expected: Yaml =
+        serde_yaml_ng::from_str("contents: write\npull-requests: read\nid-token: write\n")
+            .expect("the pinned permissions");
+    assert_eq!(
+        release["permissions"], expected,
+        "the `{RELEASE_JOB}` job's permissions: tags and releases, the release-PR lookup, \
+         and the OIDC token Trusted Publishing exchanges"
+    );
+
+    assert!(
+        workflow["permissions"]["id-token"].is_null(),
+        "the workflow-level `permissions` must grant no `id-token`"
+    );
+    for (id, job) in workflow_jobs(&workflow) {
+        if id != RELEASE_JOB {
+            assert!(
+                job["permissions"]["id-token"].is_null(),
+                "job `{id}` grants `id-token`; only the environment-bound job may"
+            );
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// (l) the check job
+// ---------------------------------------------------------------------------
+
+#[test]
+fn l_the_check_job_runs_outside_the_environment_and_outputs_the_flag() {
+    let workflow = release_workflow();
+    let check = workflow_job(&workflow, CHECK_JOB);
+    assert!(
+        check["environment"].is_null(),
+        "the `{CHECK_JOB}` job must run outside any environment, or deciding whether to \
+         prompt would itself prompt"
+    );
+    let flagging: Vec<&Yaml> = job_steps(check)
+        .iter()
+        .filter(|step| {
+            step["run"]
+                .as_str()
+                .is_some_and(|run| run.contains(UNPUBLISHED_VERSIONS))
+        })
+        .collect();
+    assert_eq!(
+        flagging.len(),
+        1,
+        "the `{CHECK_JOB}` job must run `{UNPUBLISHED_VERSIONS}` in exactly one step"
+    );
+    let step_id = flagging[0]["id"]
+        .as_str()
+        .unwrap_or_else(|| panic!("the step running `{UNPUBLISHED_VERSIONS}` needs an `id`"));
+    assert_eq!(
+        check["outputs"][MISSING_FLAG].as_str(),
+        Some(format!("${{{{ steps.{step_id}.outputs.{MISSING_FLAG} }}}}").as_str()),
+        "the `{CHECK_JOB}` job must output `{MISSING_FLAG}` from that step"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// (m) the release-PR job on the App's token
+// ---------------------------------------------------------------------------
+
+#[test]
+fn m_the_release_pr_job_checks_out_and_runs_on_the_app_token() {
+    let workflow = release_workflow();
+    let job = workflow_job(&workflow, RELEASE_PR_JOB);
+    let mint = step_using(job, RELEASE_PR_JOB, APP_TOKEN_ACTION);
+    assert_eq!(mint["with"]["app-id"].as_str(), Some(APP_ID_SECRET));
+    assert_eq!(mint["with"]["private-key"].as_str(), Some(APP_KEY_SECRET));
+    let mint_id = mint["id"]
+        .as_str()
+        .unwrap_or_else(|| panic!("the `{APP_TOKEN_ACTION}…` step needs an `id`"));
+    let token = format!("${{{{ steps.{mint_id}.outputs.token }}}}");
+
+    let checkout = step_using(job, RELEASE_PR_JOB, CHECKOUT_ACTION);
+    assert_eq!(
+        checkout["with"]["token"].as_str(),
+        Some(token.as_str()),
+        "the `{RELEASE_PR_JOB}` checkout must use the App's token"
+    );
+    let plz = step_using(job, RELEASE_PR_JOB, RELEASE_PLZ_ACTION);
+    assert_eq!(plz["with"]["command"].as_str(), Some("release-pr"));
+    assert_eq!(
+        plz["env"]["GITHUB_TOKEN"].as_str(),
+        Some(token.as_str()),
+        "`release-plz release-pr` must open the PR with the App's token: a PR the \
+         workflow's own token opens triggers no CI run"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// (n) nothing keys on a commit subject
+// ---------------------------------------------------------------------------
+
+/// Every `if:` value, every `run:` body and every `${{ … }}` expression in `value`, with
+/// the path it sits at.
+fn expressions(value: &Yaml, at: &str, out: &mut Vec<(String, String)>) {
+    match value {
+        Yaml::Mapping(map) => {
+            for (key, child) in map {
+                let key = key.as_str().unwrap_or("?");
+                let here = format!("{at}.{key}");
+                if let (Some(text), "if" | "run") = (child.as_str(), key) {
+                    out.push((here.clone(), text.to_string()));
+                }
+                expressions(child, &here, out);
+            }
+        }
+        Yaml::Sequence(items) => {
+            for (i, child) in items.iter().enumerate() {
+                expressions(child, &format!("{at}[{i}]"), out);
+            }
+        }
+        Yaml::String(text) => {
+            let mut rest = text.as_str();
+            while let Some(start) = rest.find("${{") {
+                let after = &rest[start..];
+                let end = after.find("}}").map_or(after.len(), |end| end + 2);
+                out.push((at.to_string(), after[..end].to_string()));
+                rest = &after[end..];
+            }
+        }
+        _ => {}
+    }
+}
+
+#[test]
+fn n_no_condition_or_command_reads_a_commit_message() {
+    let workflow = release_workflow();
+    let mut found = Vec::new();
+    expressions(&workflow, "", &mut found);
+    let keyed: Vec<&(String, String)> = found
+        .iter()
+        .filter(|(_, text)| COMMIT_MESSAGE_CONTEXTS.iter().any(|c| text.contains(c)))
+        .collect();
+    assert!(
+        keyed.is_empty(),
+        "`{RELEASE_YML}` reads a commit message at {keyed:?}. The merge strategy is \
+         unchosen and a default merge commit reads `Merge pull request #N`, so no job may \
+         key on a subject (release.md → Publishing)"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// (o) the release-plz version
+// ---------------------------------------------------------------------------
+
+#[test]
+fn o_every_release_plz_step_pins_the_proven_version() {
+    let workflow = release_workflow();
+    let mut pinned = Vec::new();
+    for (id, job) in workflow_jobs(&workflow) {
+        for step in steps_using(job, "release-plz/") {
+            assert_eq!(
+                step["uses"].as_str(),
+                Some(RELEASE_PLZ_ACTION),
+                "job `{id}`"
+            );
+            assert_eq!(
+                step["with"]["version"].as_str(),
+                Some(RELEASE_PLZ_VERSION),
+                "job `{id}`'s `{RELEASE_PLZ_ACTION}` step must pin `version: \
+                 \"{RELEASE_PLZ_VERSION}\"`, the release-plz every proof on the record ran"
+            );
+            pinned.push(id.clone());
+        }
+    }
+    assert_eq!(
+        pinned,
+        [RELEASE_PR_JOB, RELEASE_JOB],
+        "one `{RELEASE_PLZ_ACTION}` step in each of the two release-plz jobs"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// (p) the rehearsal: dry run and engine overlay off the real repository only
+// ---------------------------------------------------------------------------
+
+#[test]
+fn p_the_dry_run_and_the_overlay_apply_off_the_real_repository_only() {
+    let workflow = release_workflow();
+    let release = workflow_job(&workflow, RELEASE_JOB);
+    let steps = job_steps(release);
+    let plz_at = steps
+        .iter()
+        .position(|s| s["uses"].as_str() == Some(RELEASE_PLZ_ACTION))
+        .unwrap_or_else(|| panic!("the `{RELEASE_JOB}` job runs no `{RELEASE_PLZ_ACTION}`"));
+    let plz = &steps[plz_at];
+    assert_eq!(plz["with"]["command"].as_str(), Some("release"));
+    assert_eq!(
+        plz["with"]["dry_run"].as_str(),
+        Some(DRY_RUN_INPUT),
+        "the release must be dry off `gherrink/jigc` and real on it; the action tests the \
+         input for being non-empty, never for `true`"
+    );
+
+    let overlays: Vec<usize> = steps
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| {
+            s["run"]
+                .as_str()
+                .is_some_and(|run| run.contains("[patch.crates-io]") && run.contains("jigc-engine"))
+        })
+        .map(|(at, _)| at)
+        .collect();
+    assert_eq!(
+        overlays.len(),
+        1,
+        "the `{RELEASE_JOB}` job needs exactly one step writing the `jigc-engine` overlay"
+    );
+    let overlay_at = overlays[0];
+    assert!(
+        overlay_at < plz_at,
+        "the overlay must be written before release-plz runs"
+    );
+    assert_eq!(
+        condition(&steps[overlay_at]["if"]),
+        Some(OFF_THE_REAL_REPO),
+        "the overlay verifies `jigc` against the local engine, so it may apply only to the \
+         rehearsal's dry run"
+    );
 }

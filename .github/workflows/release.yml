@@ -1,0 +1,121 @@
+name: Release
+
+# How a version is proposed and published (M54 S9; implementation/release.md -> The
+# release PR, Publishing). Three jobs on every push to `main`:
+#
+#   release-pr  release-plz opens or updates the one workspace release PR, on the
+#               GitHub App's token, so the PR it opens runs CI (a PR the workflow's own
+#               token opens triggers no workflow).
+#   check       dev/unpublished-versions: is any publishable workspace version missing
+#               from crates.io? Outside any environment, so answering never prompts.
+#   release     environment `release` (the human is its required reviewer), only when
+#               `check` says a version is missing. release-plz publishes only from a
+#               release-PR merge (`release_always = false` in release-plz.toml), engine
+#               first, by crates.io Trusted Publishing: `id-token: write`, and no
+#               registry token exists anywhere in this repository.
+#
+# Merging the release PR is the go, and approving the deployment is the second key.
+# Neither is an agent's (release.md -> What agents may not do). No job reads a commit
+# subject: the merge strategy is unchosen, so the flag, not the message, decides.
+#
+# Off `gherrink/jigc` — the dry-run rehearsal repository — the release runs with
+# `--dry-run` and verifies `jigc` against the local engine through a
+# `[patch.crates-io]` overlay, since crates.io does not yet carry the engine version
+# `jigc` pins. Held by crates/cli/tests/release_pipeline_fence.rs.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  release-pr:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # One release-PR update at a time per ref, never cancelled half-written.
+    concurrency:
+      group: release-pr-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      # The App (Contents and Pull requests read/write) — its ID and private key are
+      # repository secrets (release.md -> The release PR).
+      - name: App token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.JIGC_RELEASE_APP_ID }}
+          private-key: ${{ secrets.JIGC_RELEASE_APP_PRIVATE_KEY }}
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: release-plz release-pr
+        uses: release-plz/action@v0.5
+        with:
+          command: release-pr
+          version: "0.3.169"
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      missing: ${{ steps.unpublished.outputs.missing }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Fails closed: any fetch or parse error exits non-zero before the flag is
+      # written, so the release job never runs on a guess.
+      - name: unpublished versions
+        id: unpublished
+        run: dev/unpublished-versions
+
+  release:
+    needs: check
+    if: needs.check.outputs.missing == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: release
+    permissions:
+      contents: write
+      pull-requests: read
+      id-token: write
+    concurrency:
+      group: release-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # The rehearsal only: `jigc` pins `jigc-engine` with `=`, and the engine version
+      # it pins is not on crates.io until the first real publish, so the dry run's
+      # verify build of `jigc` resolves the engine from this checkout instead. Declared
+      # bound: that verifies against the local engine, not a registry one.
+      - name: engine overlay (rehearsal)
+        if: github.repository != 'gherrink/jigc'
+        run: |
+          cargo_home="${CARGO_HOME:-$HOME/.cargo}"
+          mkdir -p "$cargo_home"
+          printf '[patch.crates-io]\njigc-engine = { path = "%s/crates/engine" }\n' \
+            "$GITHUB_WORKSPACE" >> "$cargo_home/config.toml"
+
+      # `dry_run` is tested for being non-empty, never for `true`, so the input is
+      # `'true'` off gherrink/jigc and empty on it.
+      - name: release-plz release
+        uses: release-plz/action@v0.5
+        with:
+          command: release
+          version: "0.3.169"
+          dry_run: ${{ github.repository != 'gherrink/jigc' && 'true' || '' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

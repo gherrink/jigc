@@ -24,8 +24,9 @@ name: CI
 #
 # Nothing here publishes. M36 F4's "internal-only, no external publish" was reversed on
 # 2026-09-27 (DECISIONS.md -> the road to the 1.0.0 call, D2), and the only publish
-# command in this file is the `--dry-run`; the release workflow, `release.yml`, arrives
-# with M54 Increment 9 (implementation/roadmap.md -> M54).
+# command in this file is the `--dry-run`. Publishing is the release workflow's alone:
+# `release.yml`, behind the human's merge of the release PR and his approval of the
+# `release` environment (implementation/release.md -> Publishing).
 on:
   push:
   pull_request:
