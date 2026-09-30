@@ -40,6 +40,8 @@ Everything above assumes you will upgrade `jigc` again. This is the rule that up
 
 Two things this rule is not about. It does not promise anything about **prose** — the wording of an agent-facing line is free to improve, and only the machine surfaces are pinned. And it says nothing about **your** customizations: those are recorded deltas against a known base version, and `jigc upgrade` is the read that checks them against the pack the new binary ships and reports what it found — it writes nothing itself, under the one jigc-wide exception [QUICKSTART.md](QUICKSTART.md) states (with the opt-in `invocation-log` knob on, every jigc run appends one record to the gitignored `.jigc/logs/invocations.jsonl`).
 
+**One file an older install leaves behind.** Upgrading the binary is [QUICKSTART.md](QUICKSTART.md)'s install line again. An install of `1.0.0-rc.21` or earlier ran the doc↔code probe as a second executable, `doc-code`, which `jigc setup` wrote beside that `jigc` — `~/.cargo/bin/doc-code` after a `cargo install`, `~/.local/bin/doc-code` beside a hand-placed binary. The probe now runs inside `jigc` itself, so nothing reads that file any more, and nothing removes it either: once you have upgraded, delete it yourself.
+
 ## Reconciling and backing out
 
 Nothing in either migration is destructive until you say so. The gates, in the order you meet them (each verified against the shipped binary).

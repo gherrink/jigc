@@ -15,6 +15,8 @@
 
 use semver::{Version, VersionReq};
 
+use crate::support::install_line::quickstart_install_line;
+
 /// The requirement the install line carries, held once.
 const INSTALL_REQUIREMENT: &str = "^1.0.0-rc.1";
 
@@ -43,5 +45,20 @@ fn the_requirement_never_admits_the_name_holding_placeholder() {
         !admits("0.0.0"),
         "`{INSTALL_REQUIREMENT}` must not match 0.0.0 — the placeholder that held the \
          crate name is not jigc"
+    );
+}
+
+/// The requirement this suite proves is the one the owner of the line carries. The
+/// constant above is proved on `semver`; this arm closes the gap between that proof and
+/// the bytes an adopter copies — `QUICKSTART.md`'s own `--version` argument, read through
+/// the one extractor every install-line fence shares.
+#[test]
+fn quickstart_carries_the_requirement_this_suite_proves() {
+    let owned = quickstart_install_line();
+    assert_eq!(
+        owned.requirement, INSTALL_REQUIREMENT,
+        "QUICKSTART.md's install line (`{}`) names a requirement other than the one proved \
+         here — move them together, and re-prove the matching rule",
+        owned.line,
     );
 }

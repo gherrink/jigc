@@ -20,6 +20,7 @@ pub mod composed;
 pub mod frozen_pack;
 pub mod git_state;
 pub mod goldens;
+pub mod install_line;
 pub mod leaf_argv;
 pub mod pack_locator;
 pub mod root_walk;

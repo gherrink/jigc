@@ -12,27 +12,31 @@ project documents. This walks the MVP loop on a real machine —
 
 ## Install
 
-`jigc` ships as a single binary, and there is **one** install command. It is run
-from a **clone of the jigc repository** — `crates/cli` is a path in *that* tree, so
-the line fails from the project you are adopting jigc into, which has no such
-directory. This is the only place this guide states it, so an upgrade is the same
-line again:
+`jigc` is one binary, published on crates.io, and there is **one** install line.
+This is the only place these guides state it, and no release changes it — so an
+upgrade is the same line again (cargo reinstalls whenever the newest version the
+line matches is newer than the one you have):
 
 ```sh
-# cwd: a clone of the jigc repository, not your own project
-cargo install --path crates/cli
+cargo install jigc --version '^1.0.0-rc.1' --locked
 ```
 
-That builds the release binary and puts `jigc` in cargo's own install root —
-`~/.cargo/bin` unless you have moved `CARGO_HOME` — which is already on your
-`PATH` if cargo is. Placing a built binary somewhere else by hand works, but then
-that copy is yours to keep current, and every instruction below to re-run `jigc
-setup` after an upgrade means replacing it first.
+You need **Rust ≥ 1.95** (cargo builds jigc from source), a **C compiler** (the
+doc↔code probe's tree-sitter grammars are C), and a **Unix** host. The
+`--version` requirement admits every `1.0.0` release candidate and every later
+`1.x` release; leave it off and cargo, which never selects a release candidate
+unasked, does not install this one. `--locked` builds against the exact
+dependency versions jigc was released with.
 
-Just `jigc` — nothing else to copy. The doc↔code probe (`doc-code`) is
-embedded in the binary and extracted beside it by `jigc setup` (below), so a
-`cargo install` from a fresh machine is a supported install channel: no manual
-probe copy, and code-anchor finalize / `jigc validate` work out of the box.
+That puts `jigc` in cargo's own install root — `~/.cargo/bin` unless you have
+moved `CARGO_HOME` — which is already on your `PATH` if cargo is. Placing a built
+binary somewhere else by hand works, but then that copy is yours to keep current,
+and every instruction below to re-run `jigc setup` after an upgrade means
+replacing it first.
+
+Just `jigc` — nothing else to install. The doc↔code probe (`doc-code`) runs
+inside the `jigc` binary itself, so code-anchor finalize and `jigc validate` work
+out of the box, with no second file to copy or keep in step.
 
 Confirm it identifies itself:
 
@@ -67,11 +71,7 @@ It does these things:
   edit it**. An edited copy is yours: `setup` leaves it byte-identical, raises the
   `adapter-guide.user-modified` advisory instead of overwriting it, and drops it from
   the rest of the install's commit — the other bullets here still run — so from then on it stops tracking the binary until you delete it and
-  re-run (`jigc upgrade` reports the same state without replacing anything);
-- extracts the embedded `doc-code` probe beside the installed `jigc` (so the
-  doc↔code probe resolves next to the binary — written if no sibling is present
-  **or** if an existing sibling's bytes differ from the embedded copy, so a
-  stale or corrupt probe self-heals; a byte-identical sibling is left untouched); and
+  re-run (`jigc upgrade` reports the same state without replacing anything); and
 - installs a `pre-commit` hook that runs `jigc validate` over the committed
   store and **warns** on doc↔code drift without blocking the commit — a
   backstop for edits made outside the loop, not a gate. It refuses exactly one
@@ -83,9 +83,8 @@ It does these things:
 `setup` **commits its own install** as a dedicated
 `chore(jigc): install jigc workspace config` commit, so the install doesn't land in
 your first feature commit. It stages **only the files it wrote inside the repo** —
-never your working tree — so two of the things above are *not* in that commit: the
-`doc-code` probe (it lives beside the `jigc` binary, not in your repo), and the
-`pre-commit` hook whenever git keeps hooks outside your working tree — the usual
+never your working tree — so one of the things above is *not* in that commit: the
+`pre-commit` hook, whenever git keeps hooks outside your working tree — the usual
 `.git/hooks/`, a `core.hooksPath` pointing elsewhere, or a linked worktree's shared
 hooks dir — because git cannot track a file there. If your repo keeps hooks *in* the
 tree (an in-repo `core.hooksPath`), the hook is an ordinary tracked file and `setup`

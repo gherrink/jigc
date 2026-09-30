@@ -40,6 +40,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use crate::support::install_line::quickstart_install_line;
+
 /// The Claude Code profile's declared guide target — the path this suite asserts against,
 /// stated once here as the fixture's own premise (the profile is the authority; a change
 /// there reddens this constant).
@@ -1030,9 +1032,12 @@ fn batch_facts() -> Vec<GuideFact> {
         },
         GuideFact {
             row: "CX-3",
-            needle: "clone of the jigc repository".to_string(),
-            why: "`cargo install --path crates/cli` exits 101 from an adopter repo — the \
-                  preamble's disclaimer covers *documents*, not this path",
+            // The crates.io story, pinning no version number: the requirement itself is
+            // `install_line.rs`'s, and the whole line is asserted by the arm below.
+            needle: "cargo install jigc --version".to_string(),
+            why: "the guide's old line, `cargo install --path crates/cli`, exits 101 from an \
+                  adopter repo; the registry line runs anywhere, and without `--version` \
+                  cargo never selects a release candidate",
         },
         GuideFact {
             row: "T1's rule, applied to the guides",
@@ -1078,5 +1083,27 @@ fn the_installed_guide_body_carries_every_fact_the_batch_landed() {
         missing.is_empty(),
         "the installed guide must carry every fact the batch landed; missing:\n{}",
         missing.join("\n"),
+    );
+}
+
+/// The installed guide carries the install line **its owner states** (M54 S13): the line is
+/// read out of `QUICKSTART.md` through the shared extractor, never respelled here, and then
+/// looked for in the artifact `setup` wrote — so a line that stops reaching adopters, or a
+/// QUICKSTART that stops owning exactly one, reddens here.
+#[test]
+fn the_installed_guide_carries_quickstart_s_install_line() {
+    let owned = quickstart_install_line();
+
+    let repo = TempDir::new("install-line");
+    mark_repo(repo.path());
+    let home = TempDir::new("install-line-home");
+    assert_clean(&run_setup(repo.path(), home.path(), None), "setup");
+
+    let installed = fs::read_to_string(repo.path().join(GUIDE_PATH)).expect("installed");
+    let (_front, body) = split_artifact(&installed);
+    assert!(
+        body.lines().any(|line| line == owned.line),
+        "the installed guide must carry QUICKSTART's install line `{}` as a line of its own",
+        owned.line,
     );
 }
