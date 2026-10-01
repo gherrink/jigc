@@ -2,6 +2,102 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-01 — M54 Increment 12 planning: decomposition
+
+Cut [Increment 12](implementation/roadmap.md) (*the close*) into **6 ordered tasks**, grounded at HEAD `f36f6bcc` (Increment 11's tip, tree clean). Cross-ref [roadmap.md](implementation/roadmap.md) → Milestone 54 → Increment 12; the M54 Settle below (S8, S13, S15/O1, S18); [planning-gate-record.md](completions/artifacts/M54/planning-gate-record.md) → rows 22–24 and the census row; [milestone-completion-workflow.md](implementation/milestone-completion-workflow.md) → *Where the fold-back lands*. **Codes registered: none.**
+
+**Basis: read or driven here, not carried.**
+
+- **H4 has not happened, and the final after run does not exist yet.** The crates.io API (`/api/v1/crates/<name>/versions`) lists `jigc` `0.0.0` and `jigc-engine` `0.0.0` both `yanked: false`, beside `1.0.0-rc.22` and `0.1.0-rc.1`, also unyanked. `origin/main` is `04b0d207`, so Increment 11's tip is unpushed and no CI run exists for it. **So T1 halts by design on the first run** (the roadmap's *each increment after a halt opens with an entry-gate task*). The orchestrator's push will carry this planning commit on top of `f36f6bcc`, so the run T2 reads may have this commit, and not `f36f6bcc`, as its head. Its tree differs from Increment 11's only in `DECISIONS.md`, which is why T2 accepts it.
+- **The unpinned control's shape is read from the script.** `dev/runner-faithful registry` with no requirement runs `cargo install jigc --locked`. On a non-zero exit it prints `FAIL install: cargo install jigc --locked (unpinned) exited <rc>`, then the install log's tail, then exits 1 (`dev/runner-faithful`, `run_registry` and `fail`). Before the yank it installed `0.0.0` and stopped at `FAIL version` ([publish-proof.md](completions/artifacts/M54/publish-proof.md) → R4, the baseline Increment 11 left for this increment). Whether cargo really resolves nothing once both placeholders are yanked is **T1's red-step assumption**. It is S13's claim, and only a run can show it.
+- **The pending list is already empty, and nothing asserts it.** `PENDING` is `&[]` at `crates/cli/tests/doc_link_fence.rs:226`. Its doc comment and the module doc (:46–50) say *"empty at M54's close (Increment 12)"*. The only test over the list, `every_pending_path_is_still_absent`, passes vacuously on an empty list. So O1's *asserted empty* is a test this increment adds (T3).
+- **The census method reproduces the gate-record's baseline.** That baseline (*M54 appears in 16 live docs*, with per-file counts) was taken on the Settle's tree, `5f730417`, not at `ce3d86bf` (where only 3 docs mention M54). **The census set** is tracked `*.md` minus `DECISIONS.md`, `implementation/roadmap.md`, `implementation/project-history.md` and `completions/artifacts/`. **The count** is matching **lines** per file. At `5f730417` this gives the same 16 files, and 15 of the 16 counts match exactly. The 16th is `release.md`, which reads **8** against the record's 7. The total is **80 lines**. At `f36f6bcc` the count is **114 lines in 19 files**. The three files new to it are `design/bootstrap.md`, `implementation/pinning.md` and `implementation/public-hygiene.md`. **Future-tense markers already found** (the census owes the full sweep):
+  - `release.md:3`, whose header says *"built by M54 … until M54 lands, nothing on this page runs"* and *"which M54 commits"*;
+  - `release.md:5`, *"M54 makes and records here when it lands"*;
+  - `release.md:65`, *"M54 closes with a real publish"*;
+  - `release.md:108`, *"Both are yanked after the first rc publish"* (T1's flip);
+  - `milestone-completion-workflow.md:24`, *"[From M54 — … true when it lands"*;
+  - `dev-workflow.md:42`, *"still a target … the after runs on the runner (M54 Increments 9 and 12) are what measure it"* (T2's flip);
+  - `CLAUDE.md:7`, *"nothing of it is built"* (T4's flip);
+  - `CLAUDE.md:73`, *"built by M54"*;
+  - the trial-harness README:56 heading, *"built by M54"*;
+  - `decisions-pending.md:155`, *"once M54 lands"*, which already carries a *Landed* bracket.
+- **The fold-back's two arms, read in `crates/cli/tests/foldback_truth.rs` (registered in `g_flow`).**
+  - The claim arm, `the_record_names_m53_and_claims_exactly_what_the_build_reached` (:315), is pinned to `**M53 —` in the **post-audit** direction. It is referenced nowhere else.
+  - The version arm derives the newest marker. It fails a claimed *built and installed* version that `crates/cli/Cargo.toml` (`1.0.0-rc.22`) has not reached, and it fails *any* built-and-installed claim in `CLAUDE.md`.
+  - `milestone_span` cuts at the next `**M<digit>` marker, so appending an `**M54 —` span leaves the M53 arm green. A re-aimed arm without the span is red, so span and re-aim are one atomic task (T6).
+  - The record is one line (`implementation/project-history.md:15`), which carries markers `**M50 —` to `**M53 —` and no `M54`.
+  - **The installed `~/.local/bin/jigc` prints `jigc 1.0.0-rc.21`**, so the M54 span may claim `1.0.0-rc.22` *published*, never *built and installed*. Installing from the registry is the completion workflow's act (milestone-completion-workflow.md:24).
+
+**The tasks.**
+
+- **T1: the yank on the record (row 22, the entry gate's first half).**
+  - **Reads.** Read both crates' versions from the crates.io API (`num`, `yanked`, `created_at`, with a `User-Agent` naming the repository). Then, in `dev/runner-faithful` on the host platform, run the unpinned `registry`. In the same session run the positive control, `registry '<requirement>'`, with the requirement read from QUICKSTART's install line and never respelled.
+  - **Expected.** Both `0.0.0` versions show `yanked=true`, and `1.0.0-rc.22` and `0.1.0-rc.1` show `yanked=false`. The unpinned run exits **1 at `FAIL install`**, with cargo's no-match error in the log tail. The control exits **0**, installing `jigc 1.0.0-rc.22` with every step `ok`. The control shows that the unpinned failure comes from the yank, not from the network or the registry.
+  - **Halt with the H4 checklist, repairing nothing,** if a placeholder is unyanked or a published rc is yanked. **Red-step assumption:** the unpinned install resolves nothing. If it installs any version, that is a halt too, because S13's statement would be false and the call is the human's.
+  - **Record.** Append a section `## The yank (Increment 12, row 22)` to `completions/artifacts/M54/publish-proof.md`, holding the commands and verbatim outputs, run whole twice. In the same commit, release.md → Installing's *"Both are yanked after the first rc publish"* becomes the verified fact, citing the record.
+  - *Done:* every recorded value equals a re-run. A DECISIONS.md pin is written. `cargo test -p jigc --test g_config doc_link_fence::` and `dev/gate` are green. Only `publish-proof.md`, `release.md` and DECISIONS.md are committed.
+- **T2: the final after run on the record (row 23, the entry gate's second half).**
+  - **The run.** It is the CI `push` run on `main` whose head is `f36f6bcc`, or a descendant `H` with `git diff --name-only f36f6bcc H` equal to exactly `DECISIONS.md`. If more than one qualifies, take the earliest created. If none exists, halt: the orchestrator's push is owed.
+  - **Reads.** Read the run with ci-runtime.md's commands A1–A8, taking A5's logs from `gh api --allow-escape-sequences …/jobs/<id>/logs`. Do not use `gh run view --log --job`, which that record found drops steps. Record the run's identity, every job's wall clock, its `nproc`, its labels and group, the cache state (warm or cold, stated, because the before run and the provisional after were cold) and the slowest job's steps.
+  - **Record.** Append a section `## The final after run — <id> (Increment 12's entry gate)` to `completions/artifacts/M54/ci-runtime.md`, with a before · provisional · final table beside it (the slowest job, and the run's wall clock).
+  - **Halt to the human, repairing nothing,** if any of these holds: the run is not `completed`/`success`; any job runs over 900 s; any job's `nproc` is not 4; any job's labels or group are not `ubuntu-latest` / `GitHub Actions`. The halt names S8's reserve lever, **nextest partitioning of the group** (the build-once-share archive). The lever is named and not pulled.
+  - **Flip.** In the same commit, dev-workflow.md → Gate's *"still a target, not a measurement … (M54 Increments 9 and 12)"* becomes the measured result, citing ci-runtime.md.
+  - *Done:* every recorded value equals a re-run. A pin is written. `doc_link_fence::` and `dev/gate` are green. Only `ci-runtime.md`, `dev-workflow.md` and DECISIONS.md are committed.
+- **T3: the link fence's pending list, asserted empty (O1).**
+  - **The test.** Add a `#[test]` to `doc_link_fence.rs` asserting `PENDING.is_empty()`. Its failure message names each leftover entry and that entry's increment.
+  - **The comments.** The `PENDING` doc comment and the module doc (:46–50) move from *"must be empty at M54's close"* to the present. They also state that a later milestone seeding an entry lifts this assertion in that same commit and restores it at its own close. The mechanism (`every_pending_path_is_still_absent` and the fixture test `a_pending_path_is_accepted_while_absent`) stays.
+  - **Red step.** Apply one `PENDING` entry as a mutant and confirm the new test fails, then revert it. Record the red in the pin.
+  - *Done:* `cargo test -p jigc --test g_config doc_link_fence::` is green, and the applied mutant was red. `dev/gate` is green. Only `doc_link_fence.rs` and DECISIONS.md are committed.
+- **T4: `CLAUDE.md` → `## Project state` states current truth.**
+  - **Replace** *"M54 is settled, planned and decomposed (2026-09-28), and nothing of it is built"* with what is true now:
+    - M54 is **built and not audited**;
+    - `jigc 1.0.0-rc.22` and `jigc-engine 0.1.0-rc.1` were published to crates.io on 2026-10-01, installable with the line [QUICKSTART](crates/cli/guides/QUICKSTART.md) owns (pointed at, **never copied**, per S13);
+    - both `0.0.0` placeholders are yanked.
+  - **State what comes next:**
+    - M54's completion audit and the partial re-review over S18's eight axes, whose fixes ship in M55's rc (O7);
+    - the crates.io README-link fork, keyed before the next release PR is merged;
+    - then M55, the rc, the blind trial and the call, which is the human's.
+  - **No built-and-installed version** may appear (`foldback_truth`'s `CLAUDE.md` leg), and no milestone claim, since that is the record's. Any numeral it states (gate totals, golden count) is one this task measured; otherwise the numeral is dropped.
+  - *Done:* `command grep -c 'nothing of it is built' CLAUDE.md` prints 0. `cargo test -p jigc --test g_flow foldback_truth::`, `doc_link_fence::` and `dev/gate` are green. Only `CLAUDE.md` and DECISIONS.md are committed.
+- **T5: the census, with every remaining marker flipped or kept with its reason.**
+  - **Before.** `git grep -c 'M54' <rev> -- '*.md' ':!DECISIONS.md' ':!implementation/roadmap.md' ':!implementation/project-history.md' ':!completions/artifacts/'` at `5f730417` (the gate-record's baseline, its one off-by-one `release.md` stated) and at this planning commit.
+  - **After.** `command grep -c 'M54'` over the same set in the working tree.
+  - **Disposition.** Every matching line gets one: **flipped**, with its new wording, or **kept**, with its reason. Past-tense history such as *"since M54"* or *"landed in Increment N"* is true today and is kept. Every marker in the basis is covered, including release.md's header.
+  - **Record.** `completions/artifacts/M54/close-census.md` holds the per-file table (5f730417 · base · after) and the per-line dispositions.
+  - *Done:* the census re-runs equal the record. `command grep -n -E 'until M54 lands|true when it lands|built by M54|once M54 lands'` over the set returns only lines the record keeps, each with its reason. `doc_link_fence::` and `dev/gate` are green. Only the flipped docs, `close-census.md` and DECISIONS.md are committed.
+- **T6: the fold-back span, and `foldback_truth` re-aimed to `**M54 —`. These are atomic, because a re-aimed arm without the span is red.**
+  - **The span.** Append an `**M54 — …**` span to the end of the record's one line in `implementation/project-history.md`. It claims only what the build reached:
+    - the twelve increments;
+    - the publish of rc.22 and rc.1 ([publish-proof.md](completions/artifacts/M54/publish-proof.md));
+    - the yank (T1);
+    - the final after run's slowest job (T2);
+    - the census before and after (T5);
+    - the gate totals this task's `dev/gate` printed;
+    - **built, not audited**: no verdict, no *built and installed*, and the 1.0.0 call left to the human.
+  - **The re-aim.** Rename the arm to `the_record_names_m54_and_claims_exactly_what_the_build_reached` and turn it back to the **pre-audit** direction:
+    - **required:** `implementation/roadmap.md`, `Milestone 54`, `built, not audited`, `1.0.0-rc.22`;
+    - **forbidden:** `built + audited`, `audited clean`, `audit is CLEAN`, `audit ran clean`, `VERDICT`, `1.0.0 is called`, `1.0.0 shipped`;
+    - and `built_and_installed_versions(span)` must be empty.
+  - **Doc comments.** The module doc's *"it now points at M53"* and the arm's re-aim history are updated.
+  - **Red steps.** Run the re-aimed arm before the span is appended, and it fails (`must carry **M54 —`). Apply a mutant `built + audited` inside the span, and it fails. Record both.
+  - *Done:* `cargo test -p jigc --test g_flow foldback_truth::` and `count_fences::` are green, and both reds were seen. `dev/gate` is green. Only `project-history.md`, `foldback_truth.rs` and DECISIONS.md are committed.
+
+**Why this order.** T1 and T2 are the entry gate. Each halts on a fact owned by the human or the orchestrator, so they go first and repair nothing. T3 is the one fence change. T4 moves the last current-truth sentence before T5 counts, so the census's *after* is final: T6 touches only the record, which is excluded from the census, and a test file. T6 goes last because its span claims T1–T5's results and the final gate. Every task is gate-green alone. T6 is the one task that edits a doc and its fence together, because the re-aimed arm cannot be green without the span.
+
+**Every Grouped-scope clause maps to a task.**
+- Row 22, the yank by the crates.io API and the unpinned container install → T1.
+- Row 23, the final after run against ≤ 15 min on a 4-CPU runner, with a miss halting and naming S8's reserve lever → T2.
+- Row 24 → T3–T6:
+  - the census against the baseline, with every marker flipped or kept (release.md's header included) → T5;
+  - the pending list asserted empty → T3;
+  - CLAUDE.md's current truth → T4;
+  - the span and the re-aim → T6.
+
+**Every Proves clause maps too:** the census before and after → T5, `foldback_truth` green → T6, and the gate green → every task. **Beyond the scope bullets, and why:** T1's positive control is the before-control for a negative claim. Without it, *"resolves nothing"* could be a network failure. **Declared bounds:**
+- T1 runs on one platform, because a yank is a registry fact and not a platform fact.
+- The completion audit, its verdict, the install of the published version and the partial re-review over S18's axes are the completion workflow's acts, after this build (O7).
+
 ## 2026-10-01 — M54 Inc 11 T4: the README as crates.io renders it, recorded, and the link-fix fork keyed, not chosen
 
 **M54 Inc 11 T4: crates.io breaks four of the README's six link targets on `1.0.0-rc.22`'s page, as the planning basis read. The fix is keyed to [decisions-pending.md](implementation/decisions-pending.md) → *The crates.io README's relative links* with the trigger *before the next release PR is merged*, and no README is edited.** Recorded in [publish-proof.md](completions/artifacts/M54/publish-proof.md) → The README as crates.io renders it. The read script ran whole twice, the second time from the record's own fenced block, and the outputs were byte-identical. `GET /api/v1/crates/jigc/1.0.0-rc.22/readme` renders 12 `href`s: 7 external, paired in order with the README's 7 relative links, and 5 heading anchors, each matching one `id`. The two `QUICKSTART.md` links and `MIGRATING.md` double the prefix to `crates/cli/crates/cli/guides/…`, and `VISION.md` and `WHY-JIGC.md` re-root under `crates/cli/`. All five answer 404, and each root-relative control answers 200. The license pair answers 200 on the crate-local symlinks. [release.md](implementation/release.md) → What the package carries replaces *unverified until the first publish* with this finding. **Elaborations.** (1) The source links are read from the published `.crate`'s `README.md`, whose sha256 equals the registry checksum and which is byte-equal to the root README at `5dea9476`. So the record pairs what crates.io rendered with what it rendered from, and not with today's tree. (2) A root-relative control is read beside each 404, so the record shows the break comes from the `path_in_vcs` re-rooting and not from GitHub or a moved file. (3) The license links are recorded as **not broken but wrong**: GitHub's symlink page shows `../../LICENSE-*`, read from its `rawLines`. That is the one thing found beyond the basis, and the keyed fork carries it. (4) The fork's options (absolute URLs, a crate-local README, or another shape) are named and not chosen. Each one touches S13 or S15, and none reaches the registry before the next publish.
