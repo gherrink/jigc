@@ -2,6 +2,10 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-01 — An unpublished release-PR merge is a recorded gap, with its recovery (M54 completion audit, finding 4)
+
+**[release.md](implementation/release.md) → Known gaps records that a release-PR merge whose deployment is rejected, expires or fails mid-publish is published by no later push, and that the recovery is the human's `gh run rerun <run-id> --failed` on that merge commit's run, approved again.** *Why:* every later push raises a prompt that publishes nothing (`release_always = false`), and only the failed-tag case was recorded; past the 30-day re-run window the paths (a hand publish, a new release PR) are named as undriven, not prescribed.
+
 ## 2026-10-01 — release-plz is installed against a recorded SHA-256, not through `release-plz/action` (M54 completion audit, finding 2's residual)
 
 **Both credentialed jobs in `release.yml` install release-plz `0.3.169` with `dev/install-release-plz`, which refuses the x86_64 Linux asset unless its SHA-256 is `1455106d…f2840b64d`, then set the git identity with `release-plz/git-config` `v0.1.2` (pinned by SHA, composite, downloads nothing) and run the argv `release-plz/action` `v0.5.139` built, with the dry run read from a `DRY_RUN` env value; `release_pipeline_fence` arms (m), (o) and (p) run those `run:` bodies verbatim against a stub.** *Why:* the composite fetched `cargo-binstall` at `releases/latest` (its `BINSTALL_VERSION: 1.23.0` is overridden by the inner action's empty `version` default, runs `36821202910` and `36843531826`) and release-plz through it, neither checked, in the jobs holding the App key and the OIDC token; the record claiming 1.23.0 was wrong and is corrected in [release.md](implementation/release.md) → Known gaps. The remaining bound is trust on first use of a mutable release asset, not a publisher signature, and the reshaped `release` job's first real run is M55's publish (human-approved, "fix as recommended").
