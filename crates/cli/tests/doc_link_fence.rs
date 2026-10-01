@@ -43,11 +43,14 @@
 //! S15's adopter-path class, beside `.jigc/…` and `docs/…` — which this repository does
 //! not track ([`the_adopter_install_tree_is_not_tracked_here`] keeps that arm honest).
 //!
-//! **The pending list** (O1). A doc may name a path a later increment of this milestone
-//! creates. [`PENDING`] lists each, with the increment, and each is asserted **absent**
-//! ([`every_pending_path_is_still_absent`]), so the increment that creates it must also
-//! delete its entry. The list must be empty at M54's close (Increment 12). A path no
-//! increment creates is a defect to fix, never a pending entry.
+//! **The pending list** (O1). A doc may name a path that a later increment of the milestone
+//! in flight creates. [`PENDING`] lists each, with the increment, and each is asserted
+//! **absent** ([`every_pending_path_is_still_absent`]), so the increment that creates it
+//! also deletes its entry. Between milestones the list is empty, and
+//! [`the_pending_list_is_empty`] asserts it. M54 seeded the list's one entry and closed it
+//! empty. A later milestone that seeds an entry lifts that assertion in the same commit and
+//! restores it at its own close. A path no increment creates is a defect to fix, never a
+//! pending entry.
 //!
 //! **Declared bounds.** The scan is a lexer, not a markdown parser. A code span is read on
 //! one line: a backtick run pairs with the next run of the same length on that line, so a
@@ -218,10 +221,11 @@ const ROOT_FILES: &[&str] = &[
     "rustfmt.toml",
 ];
 
-/// Paths a later increment of M54 creates, each with that increment. Each must be absent
-/// today; the increment that creates one deletes its entry. Empty at M54's close.
+/// Paths a later increment of the milestone in flight creates, each with that increment.
+/// Each is absent until then, and the increment that creates one deletes its entry. Empty
+/// between milestones, which [`the_pending_list_is_empty`] asserts.
 ///
-/// Its one seeded entry, `dev/runner-faithful` (Increment 7, S10), was deleted by the
+/// M54's one seeded entry, `dev/runner-faithful` (Increment 7, S10), was deleted by the
 /// commit that created the file.
 const PENDING: &[(&str, &str)] = &[];
 
@@ -729,6 +733,20 @@ fn every_pending_path_is_still_absent() {
              increment that created it deletes its PENDING entry",
         );
     }
+}
+
+#[test]
+fn the_pending_list_is_empty() {
+    let leftover: Vec<String> = PENDING
+        .iter()
+        .map(|(path, increment)| format!("`{path}` ({increment})"))
+        .collect();
+    assert!(
+        leftover.is_empty(),
+        "the link fence's pending list is not empty between milestones (O1) — create each \
+         path and delete its entry, or fix the doc that names it: {}",
+        leftover.join(", "),
+    );
 }
 
 #[test]
