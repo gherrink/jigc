@@ -330,6 +330,25 @@ fn milestone_span<'a>(body: &'a str, marker: &str) -> &'a str {
 /// **empty**. The version arm below would pass a premature `1.0.0-rc.22 built and installed`
 /// (the crate has reached it); this leg is what refuses it. When M54's audit lands this arm
 /// goes red, which is the fence working rather than failing, and it inverts an eleventh time.
+///
+/// **Inverted 2026-10-01, at the completion fold-back — the eleventh time.** The audit ran:
+/// e2e 15 of 15 scenarios through the real binary, and a code review of five findings, all
+/// fixed in six commits, the sixth a residual a robust-advocate found at triage. So the
+/// pre-audit bound is now the law-1 lie, and the assertions flip: `built + audited` and the
+/// two counts required, `built, not audited` and the clean-audit trio forbidden — five
+/// findings is not clean — and the two 1.0.0-call phrasings forbidden as at every wave.
+///
+/// **One leg did not flip the way it did at every earlier wave, because the record does not
+/// support it.** The post-audit direction used to *require* a citation of
+/// `completions/artifacts/<milestone>/VERDICT.md` and assert the file exists. M54's close
+/// persisted no verdict file, and the span says so as a declared bound; requiring the
+/// citation would have this fence demand a sentence pointing at nothing. So the leg is
+/// conditional: a span citing the verdict path holds the file to existing, and while it does
+/// not exist the span may not carry the token `VERDICT` at all. Persisting the verdict later
+/// needs no edit here — the citation becomes legal the moment the file is there.
+///
+/// **The installed leg stays.** `1.0.0-rc.22` is still published and not installed on the
+/// host, whose binary is still `1.0.0-rc.21`, so the span may name it only as published.
 #[test]
 fn the_record_names_m54_and_claims_exactly_what_the_build_reached() {
     let body = read_doc(RECORD);
@@ -344,10 +363,14 @@ fn the_record_names_m54_and_claims_exactly_what_the_build_reached() {
     for owed in [
         "implementation/roadmap.md",
         "Milestone 54",
-        // Inverted 2026-10-01 at M54's build close — the tenth time. No completion audit
-        // has run over this build, so the bound is required in as many words.
-        "built, not audited",
-        // What the build did reach: the first real publish. Named as published, never as
+        // Inverted 2026-10-01 at M54's completion fold-back — the eleventh time. The audit
+        // ran, and the claim must say what it found, no more and no less: every e2e
+        // scenario green, five review findings, all fixed, none of them clean.
+        "is complete",
+        "built + audited",
+        "15 of 15 scenarios",
+        "five findings, all fixed",
+        // What the build reached: the first real publish. Named as published, never as
         // built and installed — the installed binary is still the one M53 shipped.
         "1.0.0-rc.22",
     ] {
@@ -358,14 +381,12 @@ fn the_record_names_m54_and_claims_exactly_what_the_build_reached() {
     }
 
     for forbidden in [
-        // The post-audit claim is now the lie: no audit has run over this build.
-        "built + audited",
-        // A build cannot pre-announce what its audit will find.
+        // The pre-audit bound is now the lie: the audit has run over this build.
+        "built, not audited",
+        // Five findings were found and fixed; a clean audit is not what the record shows.
         "audited clean",
         "audit is CLEAN",
         "audit ran clean",
-        // No verdict is persisted, so none may be cited.
-        "VERDICT",
         // The 1.0.0 call is the human's, and an rc publish takes it no more than a wave does.
         "1.0.0 is called",
         "1.0.0 shipped",
@@ -376,14 +397,25 @@ fn the_record_names_m54_and_claims_exactly_what_the_build_reached() {
         );
     }
 
-    // `1.0.0-rc.22` is published, and installing it is the completion workflow's act: the
-    // span may name the version only as what crates.io carries.
+    // A verdict may be cited only once it is persisted, and M54's close persisted none.
+    let verdict_path = "completions/artifacts/M54/VERDICT.md";
+    // Once it is persisted, any citation resolves and this leg requires none.
+    if !repo_root().join(verdict_path).is_file() {
+        assert!(
+            !span.contains("VERDICT"),
+            "the M54 claim cites a verdict, and `{verdict_path}` does not exist — the close \
+             persisted none, so the span may not point at one:\n{span}",
+        );
+    }
+
+    // `1.0.0-rc.22` is published and not installed on the host: the span may name the
+    // version only as what crates.io carries.
     let installed = built_and_installed_versions(span);
     assert!(
         installed.is_empty(),
-        "the M54 claim states a version built and installed ({installed:?}); the build \
+        "the M54 claim states a version built and installed ({installed:?}); M54 \
          published `1.0.0-rc.22` and installed nothing — the installed binary is still \
-         `1.0.0-rc.21`, and the install is the completion workflow's act:\n{span}",
+         `1.0.0-rc.21`:\n{span}",
     );
 }
 
