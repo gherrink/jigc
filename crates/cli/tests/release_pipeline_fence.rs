@@ -47,8 +47,9 @@
 //! so a deny added by hand and never recorded in release.md reddens as surely as one
 //! dropped. And because a deny is a text match, the push patterns are driven over a
 //! table of push commands with Claude Code's own wildcard reading: every way of naming
-//! `main` this list claims to stop is matched, and every push the branch model allows
-//! (`milestone/*`, `fix/*`, `work/*`, named) is not.
+//! `main` this list claims to stop is matched, every forced push of any branch is matched,
+//! and every push the branch model allows (`milestone/*`, `fix/*`, `work/*`, named,
+//! unforced) is not.
 
 use crate::manifest_freeze_fence::repo_root;
 use crate::support::root_walk;
@@ -1210,8 +1211,10 @@ const AGENT_DEFINITIONS: &str = ".claude/agents";
 /// `claude -p --permission-mode bypassPermissions` (Claude Code 2.1.284), directly and
 /// through an Agent-tool subagent, and each reported a `permission_denials` record; the
 /// controls that table names ran under the same list. The push-to-`main` entries
-/// (2026-10-01, the branching switch) were driven the same way — release.md records how.
-const AGENT_DENY: [(&str, &str); 21] = [
+/// (2026-10-01, the branching switch) and the force-push entries (2026-10-01, the human's
+/// decision that no agent force-pushes any branch) were driven the same way — release.md
+/// records how.
+const AGENT_DENY: [(&str, &str); 27] = [
     ("Bash(git *push * main*)", "push to main (named as a ref)"),
     (
         "Bash(git *push *:main*)",
@@ -1237,6 +1240,18 @@ const AGENT_DENY: [(&str, &str); 21] = [
         "push to main (the current branch, unnamed)",
     ),
     ("Bash(git *push * HEAD)", "push to main (HEAD, unnamed)"),
+    (
+        "Bash(git *push *--force*)",
+        "force-push any branch (--force, --force-with-lease, --force-if-includes)",
+    ),
+    ("Bash(git *push -f*)", "force-push any branch (-f first)"),
+    ("Bash(git *push * -f*)", "force-push any branch (-f later)"),
+    ("Bash(git *push -uf*)", "force-push any branch (-uf first)"),
+    (
+        "Bash(git *push * -uf*)",
+        "force-push any branch (-uf later)",
+    ),
+    ("Bash(git *push *+*)", "force-push any branch (a + refspec)"),
     ("Bash(gh *pr merge*)", "merge a PR"),
     ("Bash(gh api *pulls/*/merge*)", "merge a PR (REST)"),
     ("Bash(gh api *mergePullRequest*)", "merge a PR (GraphQL)"),
@@ -1260,12 +1275,14 @@ const AGENT_DENY: [(&str, &str); 21] = [
 ];
 
 /// The paragraph every agent definition carries, verbatim.
-const NEVER_PARAGRAPH: &str = "**Never push to or merge into `main`, merge a pull request, \
-     push a tag, approve or reject a deployment, or yank a crate.** Those acts are the \
-     human's ([release.md](../../implementation/release.md) → *What agents may not do*). \
+const NEVER_PARAGRAPH: &str = "**Never push to or merge into `main`, force-push any branch, \
+     merge a pull request, push a tag, approve or reject a deployment, or yank a crate.** \
+     Those acts are the human's ([release.md](../../implementation/release.md) → *What \
+     agents may not do*). \
      You may merge an increment branch into its milestone branch locally, and push \
      `milestone/*`, `fix/*` and `work/*` branches — always by name \
-     (`git push origin <branch>`), never a bare `git push`. `.claude/settings.json` denies \
+     (`git push origin <branch>`), never a bare `git push`, and never forced (no \
+     `--force`, `--force-with-lease`, `-f` or `+` refspec). `.claude/settings.json` denies \
      the commands that perform the human's acts; a denial is the answer, never something \
      to route around.";
 
@@ -1365,6 +1382,34 @@ const ALLOWED_PUSHES: &[&str] = &[
     "git -C /some/repo push origin milestone/findings-channel/main",
     "git push origin HEAD:milestone/findings-channel/main",
     "git push origin HEAD:work/branch-per-milestone",
+    "git push -u origin fix/ci-ok-skipped-result",
+    "git push origin milestone/findings-channel/fix-flaky-gate",
+    "git push origin work/no-force-needed",
+];
+
+/// Forced pushes of a branch an agent may otherwise push (2026-10-01): every force flag
+/// git accepts, each spelling the matcher model can see, and the `+` refspec. A force
+/// flag's every accepted abbreviation begins `--force` (`--forc` is ambiguous to git), so
+/// one `--force` pattern holds all three long options.
+const FORCED_PUSHES: &[&str] = &[
+    "git push --force origin milestone/findings-channel/main",
+    "git push origin milestone/findings-channel/main --force",
+    "git push --force-with-lease origin milestone/findings-channel/main",
+    "git push --force-with-lease=milestone/findings-channel/main:1a2b3c4 origin milestone/findings-channel/main",
+    "git push --force-if-includes --force-with-lease origin work/branch-per-milestone",
+    "git push --force-w origin work/branch-per-milestone",
+    "git push -f origin fix/ci-ok-skipped-result",
+    "git push origin fix/ci-ok-skipped-result -f",
+    "git push -u -f origin work/branch-per-milestone",
+    "git push -fu origin work/branch-per-milestone",
+    "git push -uf origin work/branch-per-milestone",
+    "git push origin work/branch-per-milestone -uf",
+    "git push origin +work/branch-per-milestone",
+    "git push origin \"+work/branch-per-milestone\"",
+    "git push origin +HEAD:milestone/findings-channel/main",
+    "git push origin +refs/heads/fix/ci-ok-skipped-result:refs/heads/fix/ci-ok-skipped-result",
+    "git -C /some/repo push --force origin milestone/findings-channel/main",
+    "git -C /some/repo push -f origin work/branch-per-milestone",
 ];
 
 #[test]
@@ -1419,6 +1464,19 @@ fn q_every_push_to_main_is_denied_and_every_branch_push_is_not() {
         "the push-to-main deny entries must match every way of naming `main` and no push of \
          a named milestone/fix/work branch.\nNot denied (would reach main): {leaked:?}\n\
          Denied (the branch model allows them): {blocked:?}"
+    );
+}
+
+/// The human's decision of 2026-10-01: no agent force-pushes any branch, the ones it may
+/// push included. Every row of the forced table is denied; the allowed table, held by the
+/// test above, still is not.
+#[test]
+fn q_every_forced_push_is_denied_on_every_branch() {
+    let leaked: Vec<&&str> = FORCED_PUSHES.iter().filter(|c| !denied(c)).collect();
+    assert!(
+        leaked.is_empty(),
+        "the force-push deny entries must match every forced push, of a milestone/fix/work \
+         branch as of main.\nNot denied: {leaked:?}"
     );
 }
 

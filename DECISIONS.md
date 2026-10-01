@@ -2,6 +2,10 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-01 — No agent force-pushes any branch (the human's decision)
+
+**`.claude/settings.json` gains six force-push deny patterns — `--force*` (all three long options), `-f` and `-uf` first or later, and any `+` refspec — on every branch, the `milestone/*`, `fix/*` and `work/*` an agent may push included; driven headless (18 forced forms denied, 12 named branch pushes not), named in every agent definition's *Never* paragraph, and held by `release_pipeline_fence` arm (q), with what text cannot catch (`-vf` and its kin, a force set in config) recorded at [release.md](implementation/release.md) → What agents may not do.** *Why:* a forced push rewrites a pushed branch's history under its CI run and the human's review, and until a restricted agent token exists the deny list is all that stands between an agent and it.
+
 ## 2026-10-01 — The branching switch: a branch per milestone and per increment, `main` by pull request only (the human's decisions 1–8)
 
 **Settled by the human between M54 and M55, and landed as a repository convention on `work/branch-per-milestone` — the first PR under the new rules.** The model lives once, at [CLAUDE.md](CLAUDE.md) → Branches; the lifecycle at [increment-workflow.md](implementation/increment-workflow.md) → Branches; `main`'s rules at [release.md](implementation/release.md) → The main branch.
