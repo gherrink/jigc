@@ -333,3 +333,142 @@ jigc 1.0.0-rc.22
 
 - **One platform:** the image is `linux/arm64`, the host's. `build-image.sh` does not take a platform. The `linux/amd64` registry install is T2's R2.
 - **The image is local.** It is not pushed anywhere. A trial session rebuilds it with the same command, and crates.io never serves two builds under one version, so the rebuild installs the same crates. Its dependencies are the published lock's, which T2 showed resolves to itself.
+
+## The README as crates.io renders it (T4)
+
+**Verdict: crates.io breaks four of the README's six link targets.** The README carries seven relative links to six targets, and `QUICKSTART.md` is linked twice. crates.io renders each one as `https://github.com/gherrink/jigc/blob/HEAD/crates/cli/<link>`. It resolves a relative link against the package's `path_in_vcs`, which is `crates/cli`, and not against the repository root that the links are written for. The two guide links double the prefix to `crates/cli/crates/cli/guides/…`. `VISION.md` and `WHY-JIGC.md` land on `crates/cli/VISION.md` and `crates/cli/WHY-JIGC.md`. None of those paths exists, so those five rendered links answer **404**. The two license links answer **200**, because `crates/cli/LICENSE-*` exist, but they are the symlinks the package is built from. GitHub's page for each one shows the one-line target, `../../LICENSE-APACHE` or `../../LICENSE-MIT`, and not the license text. Every source link resolves from the repository root, and each root URL answers 200, so the README is right on GitHub and wrong only where crates.io re-roots it. **Neither README is edited here.** The fix touches settled ground and is the human's to choose. It is keyed at [decisions-pending.md](../../../implementation/decisions-pending.md) → *The road to 1.0.0 and the port* → *The crates.io README's relative links*, with the trigger *before the next release PR is merged*, because only a publish changes what crates.io shows ([release.md](../../../implementation/release.md) → What the package carries).
+
+### The commands
+
+Every value below is one line of this script's output. The script was run whole on 2026-10-01, after T3 and before H4, from the repository root (its `git` reads need the tagged commit `5dea9476`), as `bash readme-links.sh`. A second whole run, executing this fenced block as extracted from this file, gave byte-identical output. Each status is `curl`'s `%{http_code}` for a plain GET, with no redirect followed. The README endpoint is the one exception: it answers 302 to the static HTML, so it is fetched with `-L`. The source links are read from the `README.md` inside the published `.crate`, which is what crates.io rendered. Responses are saved to files first and read from there, never through a pipe whose exit status is read.
+
+```sh
+set -u
+UA='jigc-publish-proof (https://github.com/gherrink/jigc)'
+API=https://crates.io/api/v1/crates/jigc/1.0.0-rc.22
+GH=https://github.com/gherrink/jigc/blob
+D=$(mktemp -d "${TMPDIR:-/tmp}/publish-proof.XXXXXX")
+
+echo "## L1"
+curl -sS -L -A "$UA" -o "$D/readme.html" -w 'readme http=%{http_code} served-from=%{url_effective}\n' "$API/readme"
+curl -sS -L -A "$UA" -o "$D/jigc.crate" "$API/download"; echo "crate rc=$?"
+shasum -a 256 "$D/jigc.crate" > "$D/sum"; echo "crate sha256=$(cut -c1-64 "$D/sum")"
+tar -xzf "$D/jigc.crate" -C "$D" jigc-1.0.0-rc.22/README.md jigc-1.0.0-rc.22/.cargo_vcs_info.json
+jq -r '"path_in_vcs=\(.path_in_vcs) sha1=\(.git.sha1)"' "$D/jigc-1.0.0-rc.22/.cargo_vcs_info.json"
+git show 5dea9476:README.md > "$D/root-readme.md"
+cmp -s "$D/jigc-1.0.0-rc.22/README.md" "$D/root-readme.md"; echo "packaged README == root README at 5dea9476: cmp rc=$?"
+
+echo "## L2"
+grep -o '](\([^)]*\))' "$D/jigc-1.0.0-rc.22/README.md" > "$D/src.raw"
+sed 's/^](//; s/)$//' "$D/src.raw" > "$D/src"
+grep -o 'href="[^"]*"' "$D/readme.html" > "$D/href.raw"
+sed 's/^href="//; s/"$//' "$D/href.raw" > "$D/href.all"
+grep -v '^#' "$D/href.all" > "$D/href.ext"
+grep '^#' "$D/href.all" > "$D/href.anchor"
+echo "source links=$(wc -l < "$D/src" | tr -d ' ') rendered hrefs=$(wc -l < "$D/href.all" | tr -d ' ') external=$(wc -l < "$D/href.ext" | tr -d ' ') anchors=$(wc -l < "$D/href.anchor" | tr -d ' ')"
+paste -d ' ' "$D/src" "$D/href.ext" > "$D/pairs"
+n=0
+while read -r src href; do
+  n=$((n + 1))
+  rendered=$(curl -sS -A "$UA" -o /dev/null -w '%{http_code}' "$href")
+  git cat-file -e "5dea9476:$src" 2> /dev/null && at_root=exists || at_root=absent
+  root=$(curl -sS -A "$UA" -o /dev/null -w '%{http_code}' "$GH/HEAD/$src")
+  echo "$n source=$src"
+  echo "  rendered=$href http=$rendered"
+  echo "  control: $src at the repo root (5dea9476) $at_root; $GH/HEAD/$src http=$root"
+done < "$D/pairs"
+
+echo "## L3"
+while read -r a; do
+  id=${a#\#}
+  echo "$a ids-in-page=$(grep -c "id=\"$id\"" "$D/readme.html")"
+done < "$D/href.anchor"
+
+echo "## L4"
+for f in LICENSE-APACHE LICENSE-MIT; do
+  for p in "crates/cli/$f" "$f"; do
+    curl -sS -A "$UA" -o "$D/page.html" "$GH/HEAD/$p"
+    grep -o '"rawLines":\["[^"]*"' "$D/page.html" > "$D/first"
+    echo "$p first-line=$(sed 's/^"rawLines":\[//; s/  */ /g' "$D/first")"
+  done
+done
+```
+
+The rendered README is fixed by the version: crates.io never re-renders a published version. The GitHub statuses read `HEAD`, so they hold only while `main` keeps the same paths. A `crates/cli/VISION.md` added later would turn its 404 into a 200 without any publish.
+
+### The package the README came from (L1)
+
+```
+readme http=200 served-from=https://static.crates.io/readmes/jigc/jigc-1.0.0-rc.22.html
+crate rc=0
+crate sha256=16e53fa0303ca578751029ff648c884c9d40c98add692f67b172025c41b12081
+path_in_vcs=crates/cli sha1=5dea947687c3b23cb306ffa52395a6007c0e4541
+packaged README == root README at 5dea9476: cmp rc=0
+```
+
+- **The `.crate` is the published one.** Its sha256 equals the registry's `checksum` for `1.0.0-rc.22` (`16e53fa0…`).
+- **`path_in_vcs` is `crates/cli`,** which is the base crates.io resolves relative links against. `sha1` is the tagged head `5dea9476`.
+- **The packaged `README.md` is byte-equal to the root `README.md` at `5dea9476`.** Cargo copied it in through `readme = "../../README.md"`, so the links crates.io rewrote are the root README's own.
+
+### Every rendered link, beside its source and its status (L2)
+
+```
+source links=7 rendered hrefs=12 external=7 anchors=5
+1 source=crates/cli/guides/QUICKSTART.md
+  rendered=https://github.com/gherrink/jigc/blob/HEAD/crates/cli/crates/cli/guides/QUICKSTART.md http=404
+  control: crates/cli/guides/QUICKSTART.md at the repo root (5dea9476) exists; https://github.com/gherrink/jigc/blob/HEAD/crates/cli/guides/QUICKSTART.md http=200
+2 source=crates/cli/guides/QUICKSTART.md
+  rendered=https://github.com/gherrink/jigc/blob/HEAD/crates/cli/crates/cli/guides/QUICKSTART.md http=404
+  control: crates/cli/guides/QUICKSTART.md at the repo root (5dea9476) exists; https://github.com/gherrink/jigc/blob/HEAD/crates/cli/guides/QUICKSTART.md http=200
+3 source=crates/cli/guides/MIGRATING.md
+  rendered=https://github.com/gherrink/jigc/blob/HEAD/crates/cli/crates/cli/guides/MIGRATING.md http=404
+  control: crates/cli/guides/MIGRATING.md at the repo root (5dea9476) exists; https://github.com/gherrink/jigc/blob/HEAD/crates/cli/guides/MIGRATING.md http=200
+4 source=VISION.md
+  rendered=https://github.com/gherrink/jigc/blob/HEAD/crates/cli/VISION.md http=404
+  control: VISION.md at the repo root (5dea9476) exists; https://github.com/gherrink/jigc/blob/HEAD/VISION.md http=200
+5 source=WHY-JIGC.md
+  rendered=https://github.com/gherrink/jigc/blob/HEAD/crates/cli/WHY-JIGC.md http=404
+  control: WHY-JIGC.md at the repo root (5dea9476) exists; https://github.com/gherrink/jigc/blob/HEAD/WHY-JIGC.md http=200
+6 source=LICENSE-APACHE
+  rendered=https://github.com/gherrink/jigc/blob/HEAD/crates/cli/LICENSE-APACHE http=200
+  control: LICENSE-APACHE at the repo root (5dea9476) exists; https://github.com/gherrink/jigc/blob/HEAD/LICENSE-APACHE http=200
+7 source=LICENSE-MIT
+  rendered=https://github.com/gherrink/jigc/blob/HEAD/crates/cli/LICENSE-MIT http=200
+  control: LICENSE-MIT at the repo root (5dea9476) exists; https://github.com/gherrink/jigc/blob/HEAD/LICENSE-MIT http=200
+```
+
+| # | README source link | Rendered `href` (under `https://github.com/gherrink/jigc/blob/HEAD/`) | HTTP | Same link from the repo root |
+|---|---|---|---|---|
+| 1 | `crates/cli/guides/QUICKSTART.md` | `crates/cli/crates/cli/guides/QUICKSTART.md` | **404** | 200 |
+| 2 | `crates/cli/guides/QUICKSTART.md` | `crates/cli/crates/cli/guides/QUICKSTART.md` | **404** | 200 |
+| 3 | `crates/cli/guides/MIGRATING.md` | `crates/cli/crates/cli/guides/MIGRATING.md` | **404** | 200 |
+| 4 | `VISION.md` | `crates/cli/VISION.md` | **404** | 200 |
+| 5 | `WHY-JIGC.md` | `crates/cli/WHY-JIGC.md` | **404** | 200 |
+| 6 | `LICENSE-APACHE` | `crates/cli/LICENSE-APACHE` | 200 (the symlink page) | 200 |
+| 7 | `LICENSE-MIT` | `crates/cli/LICENSE-MIT` | 200 (the symlink page) | 200 |
+
+- **The pairing is by order and is checked by count.** The README has seven links, and the rendered page has seven external `href`s in the same order. Its other five `href`s are heading anchors that crates.io adds (L3).
+- **The controls discriminate.** Every source path exists at `5dea9476`, and every root-relative URL answers 200. So the 404s come from the re-rooting and not from GitHub, the repository's visibility or a moved file.
+
+### The heading anchors crates.io adds (L3)
+
+```
+#user-content-jigc ids-in-page=1
+#user-content-install ids-in-page=1
+#user-content-guides ids-in-page=1
+#user-content-the-cli-library-is-not-an-api ids-in-page=1
+#user-content-license ids-in-page=1
+```
+
+Each anchor is an `href="#user-content-…"` that crates.io adds to a heading. Each matches exactly one `id` on the same page, so none is broken. They have no source link in the README, and `curl` does not apply to them.
+
+### The two license links land on symlink pages (L4)
+
+```
+crates/cli/LICENSE-APACHE first-line="../../LICENSE-APACHE"
+LICENSE-APACHE first-line=" Apache License"
+crates/cli/LICENSE-MIT first-line="../../LICENSE-MIT"
+LICENSE-MIT first-line="MIT License"
+```
+
+The first line of each page's blob view (GitHub's `rawLines`): at `crates/cli/` it is the symlink's target, and at the root it is the license text. So links 6 and 7 do not 404, but a reader who follows them sees a path, not the license.
