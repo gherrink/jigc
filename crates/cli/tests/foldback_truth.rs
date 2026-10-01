@@ -349,6 +349,13 @@ fn milestone_span<'a>(body: &'a str, marker: &str) -> &'a str {
 ///
 /// **The installed leg stays.** `1.0.0-rc.22` is still published and not installed on the
 /// host, whose binary is still `1.0.0-rc.21`, so the span may name it only as published.
+///
+/// **The verdict leg completes its flip the same day, as the design above said it would.**
+/// The audit's record was then persisted from the harness's raw audit output as
+/// `completions/artifacts/M54/VERDICT.md`, so the leg takes the shape every earlier
+/// post-audit wave took: the span must cite the path, and the file must exist. The
+/// conditional is gone rather than kept beside it — with the file on disk it could never
+/// fire again, and a leg that cannot fire is a dead pin.
 #[test]
 fn the_record_names_m54_and_claims_exactly_what_the_build_reached() {
     let body = read_doc(RECORD);
@@ -370,6 +377,8 @@ fn the_record_names_m54_and_claims_exactly_what_the_build_reached() {
         "built + audited",
         "15 of 15 scenarios",
         "five findings, all fixed",
+        // The audit's record is persisted, and the claim must cite it.
+        "completions/artifacts/M54/VERDICT.md",
         // What the build reached: the first real publish. Named as published, never as
         // built and installed — the installed binary is still the one M53 shipped.
         "1.0.0-rc.22",
@@ -397,16 +406,13 @@ fn the_record_names_m54_and_claims_exactly_what_the_build_reached() {
         );
     }
 
-    // A verdict may be cited only once it is persisted, and M54's close persisted none.
-    let verdict_path = "completions/artifacts/M54/VERDICT.md";
-    // Once it is persisted, any citation resolves and this leg requires none.
-    if !repo_root().join(verdict_path).is_file() {
-        assert!(
-            !span.contains("VERDICT"),
-            "the M54 claim cites a verdict, and `{verdict_path}` does not exist — the close \
-             persisted none, so the span may not point at one:\n{span}",
-        );
-    }
+    // The citation required above must point at a file that exists.
+    let verdict = repo_root().join("completions/artifacts/M54/VERDICT.md");
+    assert!(
+        verdict.is_file(),
+        "the M54 claim cites a verdict at {} that must exist",
+        verdict.display()
+    );
 
     // `1.0.0-rc.22` is published and not installed on the host: the span may name the
     // version only as what crates.io carries.
