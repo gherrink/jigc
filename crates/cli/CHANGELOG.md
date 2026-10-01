@@ -1,0 +1,1409 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [1.0.0-rc.22](https://github.com/gherrink/jigc/compare/jigc-v0.0.0...jigc-v1.0.0-rc.22) - 2026-10-01
+
+### Added
+
+- *(dev)* agents are denied the human's acts — the settings deny list, a Never paragraph, fence arm (q)
+- *(dev)* dev/runner-faithful runs a cargo command in a runner-shaped container
+- *(cli)* the embed seam owns both pack embeds, and a fence keeps pack paths out of production code
+- *(cli)* jigc spawns itself as the doc-code probe
+- *(engine)* a probe failure says what happened — could not start, and the child's stderr
+- *(dev)* the public-hygiene rules and their guard — gitleaks and a private denylist
+- *(task)* the amend arm's acceptance — the settle's refusal table as a set, and the three gaps driving it found (F-10, task 3)
+- *(finalize)* the amend arm — `jigc task finalize` over an amend task rewrites HEAD's message, tree untouched (F-10, task 2)
+- *(cli)* `jigc task amend` — the mint door for re-authoring HEAD's commit message
+- *(cli)* the three committing mint doors refuse before any write
+- *(engine)* one producer for the mint class, and the fourth mint door takes it
+- *(cli)* the tenth `InProgress` member — an uncommitted cherry-pick
+- *(engine)* a directory is not a task — the enumerators take the base pin
+- *(cli)* the two compose doors refuse a workflow they cannot bind
+- *(engine)* the `suppressed` block declares the door it is reached through
+- *(cli)* the two doors that re-baseline an out-of-band edit say so
+- *(cli)* every `milestone` door refuses a repository with no `jigc setup`
+- *(cli)* the vacated home flips the store exit, and the record states both halves
+- *(cli)* `schema-conformance.home-vacated` names each vacated declared home
+- *(engine)* a `ValueRemapped` on an `id-from` enum refuses instead of re-minting the item id
+- *(cli)* a missing snapshot blocks at the enumeration, not one doc at a time
+- *(cli)* the corpus walk keys on `from`, over every prior home of every kind
+- *(engine)* a doctype's identity and home are one primitive, and doc schema names them
+- *(cli)* the root knobs ask nameability, and a fold the operator did not type is named
+- *(cli)* the OS name ceiling is asked at the address head, beside the grammar reject
+- *(cli)* the reslug arm asks the identity predicate, and its escape hatch is the schema's
+- *(cli)* the three doors that hold no funnel ask the identity question themselves
+- *(cli)* a slug the doctype cannot have is refused where all nine doors parse it
+- *(engine)* the fixed identity is one predicate, not three that disagree
+- *(cli)* an amend only a success needs is made only by a success
+- *(cli)* config set <root-knob>'s relocation gains a rollback
+- *(cli)* MintedSet removes what this call minted, and nothing else
+- *(cli)* rename's two unguarded arms, and rename.rollback-conflict
+- *(cli)* the fan-out record flip, both squash arms
+- *(cli)* the milestone record's five doors, and the two codes they split into
+- *(cli)* promote and retire stop overwriting a racer, both arms
+- *(cli)* one pre-image entry, and a park that says which file it came from
+- *(cli)* the rollback class becomes a registry with a discipline per row
+- *(cli)* DESTROYING_DOORS says what each door does, over six members
+- *(cli)* the consenting doors refuse over bytes jigc did not write
+- *(cli)* the milestone boundary keeps the sub-task bytes it did not write
+- *(cli)* task finalize keeps the bytes it cannot commit
+- *(engine)* jigc's own writer set becomes one registry, and the destroying subject its complement
+- *(cli)* the stale commit summary is noticed where it happens, and re-raised
+- *(engine)* the pre-rename identity becomes durable task state
+- *(cli)* `write.slug-name-ceiling` — the OS name ceiling becomes a door predicate
+- *(engine)* `schema-conformance.unversioned-doctype` — the store sweep says which check it is not running
+- *(cli)* `jigc doc list` prints the orphaned row, and two pinned keys go nullable
+- *(cli)* `schema-conformance.orphaned-instance` — the store surface stops going green over files it claims nowhere
+- *(cli)* the stated-at fence's subject becomes the packs that ship steps
+- *(cli)* the ambush owe-set becomes a derivation with a stated exclusion rule
+- *(cli)* `ManifestKind::ALL` is minted, and a home that enumerates the manifest vocabulary enumerates all of it
+- *(cli)* the `doc author` payload parse answers with a severity, a code, an `at:` and a route
+- *(cli)* the milestone family joins the findings envelope — one condition, one answer, at all eight milestone doors
+- *(cli)* the unknown work-unit id becomes a typed finding, and 17 task-family doors project its key
+- *(cli)* the `EnvelopeArm` registry, its four proofs, and the `schema_version` partition
+- *(cli)* `task finalize --dry-run` carries the findings the door it forecasts reports
+- *(cli)* `ConfigAck::Set` names the relocation it performed
+- *(cli)* a read verb stops carrying a commit-hook key, and the arm is chosen from VERB_KINDS
+- *(cli)* three constants that duplicate the exit code leave the wire
+- *(cli)* every door that ensures the ignore file names what it appended
+- *(cli)* setup refuses its install commit over bytes it did not write
+- *(cli)* the commit and move seams take a typed subject and re-probe before the act
+- *(cli)* no posture reaches a door that commits or moves on our behalf
+- *(cli)* every clap leaf says whether it commits or moves on our behalf
+- *(cli)* the posture family becomes one probe with three identities
+- *(cli)* the exit-4 review hold names the file --approve will delete
+- *(cli)* the occurrence-keyed path-argument registry, its fence and its axis
+- *(cli)* a root value that does not read back as itself is refused
+- *(cli)* a step source is read as a source, and the handoff family takes its disposition
+- *(cli)* the retire sink re-validates in the same function as the unlink
+- *(cli)* an untracked migrate source refuses, and its route works
+- *(cli)* the jigc migrate door adjudicates its source path before anything mints
+- *(cli)* --dry-run forecasts the composed commit subject
+- *(pack)* the `code-anchor` grammar is stated wherever a field's type is named
+- *(pack)* the Fix phase becomes a fan-out, and §3 stops contradicting it
+- *(pack)* the fixer's walk exists as a composed workflow
+- *(cli)* `jigc doc schema` names a ref's target, in both arms
+- *(pack)* a ref's `to:` names a doctype the loaded composition contains
+- *(engine)* the value remap reaches the third locus, and its refusal names a real key
+- *(engine)* the item-slot reshape takes a locus path, not a section id
+- *(engine)* the added-item-field arm splices at the third locus
+- *(engine)* the schema diff descends into the third locus, and every kind x locus cell says where it lands
+- *(engine)* the schema-change kind space becomes a set, and the wire names come off it
+- *(cli)* the two forms that start work stop being silent about the work already open
+- *(cli)* bare `jigc start` stops calling a repo with a live task clean
+- *(engine)* describe's definitions name what provided them, and the result contract takes the wave's one bump
+- *(cli)* uninstall stops taking the workbench bytes no index has a copy of
+- *(cli)* a root the store cannot describe is refused before it is written
+- *(cli)* jigc's own workbench is not a home for managed docs
+- *(cli)* the safety floor denies the two human-owned destroyers
+- *(cli)* `jigc task discard` refuses over staged prose, and `--force` is the single consent
+- *(cli)* the unmovable destination stops being a code-less bail that prints the host's filesystem
+- *(cli)* the sixth --slug door refuses, and the door set becomes the clap tree's own
+- *(cli)* the slug head of a caller-typed address is checked before it names a path
+- *(cli)* a malformed work-unit id is refused before any door touches the filesystem
+- *(engine)* the snapshot's door set stops being a remembered list
+- *(pack)* the permitted stdin form gets named against `--from-file -`
+- *(pack)* the pack names the two read surfaces it never named
+- *(cli)* `describe` projects the catalog union, and every off-catalog workflow states why
+- *(cli)* the provision → execute handoff reports the real state
+- *(engine)* the milestone id resolves where the task ids already do
+- *(engine)* the spawn line runs each sub-task's recorded workflow
+- *(pack)* the phase steps name the actor and the instrument
+- *(pack)* the planning task cannot finalize on an unfilled gate
+- *(pack)* the planning gates become a doctype — fourteen slots, each required
+- *(engine)* the recorded workflow becomes fresh-clone durable
+- *(pack)* the milestone record carries the workflow each sub-task was minted against
+- *(pack)* the completion record can record the audits we actually run
+- *(cli)* a located finding says where, on every surface that renders one
+- *(cli)* the doc's own stamp rides doc show as a number, cast-free
+- *(cli)* the placement census gets its declared-or-resolved axis, and the door that lied stops
+- *(cli)* a placement-root re-point moves the docs it would otherwise strand
+- *(cli)* a placement home gets the project override a located home always had
+- *(cli)* setup wires the methodology pack over a project's own pack list
+- *(cli)* a project pack composes with the embedded pair, and may not shadow what the freeze governs
+- *(cli)* an item's id can be decoupled from its title
+- *(engine)* the rest of the item filter — nothing rides the residual
+- *(engine)* a repeatable item block can gain prose
+- *(engine)* a repeated declared field bullet stops validating clean
+- *(cli)* the changelog gate previews, and each door routes at verbs that run there
+- *(cli)* the migration report names the set: fields it left unfilled
+- *(cli)* uninstall takes the guide artifact back out, while it is jigc's
+- *(cli)* the guide artifact refuses to clobber a copy the user edited
+- *(cli)* setup installs the guides as a version-stamped artifact jigc owns
+- *(cli)* the menu can be asked for the part it needs
+- *(cli)* the census decides, and the additive-key window is discharged
+- *(cli)* the parity fence stands, and nothing printed stays off the wire
+- *(cli)* the cascade-authoring acks say the write is uncommitted
+- *(cli)* the install envelope says where the hook landed
+- *(cli)* the id-source names the key its value is written under
+- *(cli)* the read-shaped rows — a read intent never lands on a write verb
+- *(cli)* jigc renders the unknown-subcommand block, and the map becomes a table
+- *(cli)* the cascade surface grows its read rung
+- *(cli)* the index read learns that a task has a surface too
+- *(pack)* an authoring step cannot ship without naming the read-back
+- *(pack)* the menu gains its first read verb
+- *(cli)* the write path stops acking success over a title it dropped
+- *(cli)* the in-task title change exists, split on committed-store identity
+- *(cli)* a declared copy-in obligation must still have the schema ref it guards
+- *(cli)* the append half of the copy-in contract is owed wherever items can double
+- *(cli)* a declared constraint code must buy the contract's named facts, in both packs
+- *(cli)* `jigc validate --format json` says which probes blocked, in a shape a shell can bind
+- *(cli)* `task diff` speaks JSON, and its staged-doc id is the address you read it back with
+- *(engine)* no route reaches an agent carrying a placeholder the finding could have filled
+- *(cli)* the six staging-independent owner-artifact causes preview at validate
+- *(cli)* the carryover gate previews at `jigc task validate`
+- *(engine)* the schema-hash becomes a presentation projection
+- *(engine)* the slug rule at generation 3 — the edge-stopword drop becomes word-aware
+- *(engine)* compose-altitude render-once blocks dedupe the shared batch caveat
+- *(cli)* route jigc workflow <id> --preview from describe and orientation
+- *(cli)* state the slug word-cap at the add-item soliciting surface
+- *(cli)* state the --task read inverse in AGENT.md and pin the canonical commit address form
+- *(cli)* B3 task-scope names the deliberate-parallelize affordance
+- *(pack)* state the two-channel fold, worktree runtime-deps, and bookkeeping-commit notices at the milestone-execution surface
+- *(cli)* every doctype-with-refs minting workflow names its ref-edge guidance
+- *(cli)* milestone-execution declares suppressed{reason,expires}, narrated hidden-from-router
+- *(cli)* hook_output on landed-commit envelopes + the JSON-purity suite
+- *(cli)* mint the exit-code taxonomy table, amend the AGENT.md line against it
+- *(cli)* finalize stages the recorded owner-artifact, the gate moves after the stage, and the rollback gains a third scoped index axis
+- *(engine)* owner-artifact paths join the carryover exemption, and the untracked cause routes to git add
+- *(engine)* history-gate the file-state weak-signal rename severity
+- *(cli)* the join surfaces cross-worktree code collisions
+- *(cli)* gate milestone finalize on the merged effective state
+- *(cli)* copy-on-write binds the create-gate role; the gated serial-collision acks existed and binds
+- *(engine)* commit-trailer keys must be well-shaped git trailer tokens, both doors
+- *(engine)* the universal id-from shape guard blocks blank/newline headings at both doors
+- *(cli)* the doc schema projection carries three settability states (contract-version 4)
+- *(cli)* the freeze stamp is unwritable through the doc write verbs
+- *(engine)* the ceiling statement takes its address as a fence input
+- *(engine)* the two dead-end write routes name their exit
+- *(engine)* the read-side diagnosis names the depth, not the anchor
+- *(engine)* one gated slot-write seam — the item paths join the ceiling
+- *(engine)* derive the slot heading-depth ceiling from the address
+- *(cli)* make `cli` a real library crate and open the enumeration seam
+- *(cli)* the ingest json carries a verdict-class + per-directory summary block
+- *(cli)* the item-count additive key on doc show + doc list
+- *(cli)* the migration fidelity summary splits package@version from bare version-like tokens (T2)
+- *(cli)* the {{schema:<singleton>}}-derived per-soliciting-step stated-at fence at pack-load
+- *(cli)* state the copy-in/append constraint on singleton migrate author steps
+- *(cli)* the migrate byte-floor trivial-source advisory (M44 Inc 5 T2)
+- *(cli)* the record-decision from-knowledge adr authoring workflow (M44 Inc 5 T1)
+- *(cli)* the AGENT.md preload tier carries the machine-output facts + the binary-derived-behavior read rule (M44 Inc 4)
+- *(cli)* jigc workflow <id> --preview — read a work-minting workflow before consenting to mint (M44 Inc 3 T2)
+- *(cli)* the compose_core-minus-mint preview path (M44 Inc 3 T1)
+- *(cli)* write.not-present routes to the followable containing section
+- *(cli)* the config write acks — every config verb states its effect (F1)
+- *(cli)* the milestone finalize landing manifest + the contribution-naming join ack
+- *(pack)* the milestone-execution compose becomes state-honest and teaches the full order
+- *(cli)* the exit-4 review hold names itself in the log — migrate.review-pending + the error-code registry
+- *(cli)* the AGENT.md read rule + the per-tier doc-slices scoping
+- *(cli)* B8 — doc --help verbs lead with the one-line common case, contract detail below the fold
+- *(cli)* doc schema contract-version 3 — the settable write addresses join the pinned projection
+- *(pack)* B15 — the fresh-authoring steps model the doc author batch alternative
+- *(cli)* the A8 staying-plain blessing + the doc list empty-set line
+- *(cli)* the composed task-state lines + the finalize steps name what's-left
+- *(engine)* the enum-members line — generated from Field.of, adjacent to the composed Run: line
+- *(engine)* create-or-update for committed non-singletons — the copy-in conjunct drops + the `existed` ack
+- *(cli)* the resume re-feeds the persisted source — the serial-collision route lands on a source-carrying view
+- *(cli)* --slug on jigc migrate — threaded via task state to doc author's gated create
+- *(engine)* the same-path carve-out — the clobber guard's in-place rewrite goes doctype-blind
+- *(engine)* A14 — honest staged-sweep display, the transient file-state skip, the strip retirement
+- *(cli)* the stale-read hint — a task-less read of a staged-elsewhere doc says so on stderr
+- *(cli)* jigc doc show --task <id> — the staged read's CLI surface + the staged marker key
+- *(cli)* describe narrates the suppression reason for hidden workflows
+- *(cli)* the stated-at fence — the ambush-class const + the every-member-has-a-declarer assert + the four contract statements
+- *(cli)* the catalog-shape asserts — when:/description:/usage: presence + the when: mechanical shape
+- *(cli)* the eager workflow-front-matter sweep in make_pack — the suppression fence + the 17 honest reasons
+- *(engine)* the loader fields — suppressed: on workflow front-matter, states-constraints: on step front-matter
+- *(pack)* decided-task flips selectable: true; the catalog one-liners rewrite on the decision axes
+- *(pack)* the methodology pack's 7 migrate author-templates rewritten onto the generated {{schema:}} projection
+- *(pack)* the dev pack's 5 migrate author-templates rewritten onto the generated {{schema:}} projection
+- *(engine)* workflow-refs.schema-ref-resolves joins the store sweep against the composed doctype set
+- *(engine)* the {{schema:<doctype>}} projection — the law-1 generation seam at compose scope
+- *(cli)* the labeled manifest — carried-over at all four finalize render sites
+- *(cli)* milestone finalize refuses pre-milestone staged carryover; --carry-staged declares it
+- *(cli)* task finalize refuses pre-task staged carryover; --carry-staged declares it deliberate
+- *(cli)* every task-minting door snapshots the pre-task staged state
+- *(cli)* unknown-subcommand guesses get the honest sibling tip, never a silent alias
+- *(engine)* the route floor widens to blocking findings, asserted at the finding-key seam
+- *(cli)* the Route::mechanical parse fence at the CLI seam
+- *(engine)* the internal Route value — kind-carrying, byte-identical on the wire
+- *(pack)* the planning walk sanctions the checklist reading, the Settle gate still binds
+- *(cli)* a hook-rejected finalize names itself in the invocation log
+- *(cli)* a store-scope finding says where it gates, on its own row
+- *(cli)* the agent schema listing names each field's owning section
+- *(cli)* a composed task announces the id it minted
+- *(cli)* a composed task names the gates it grants
+- *(cli)* finalize names what it leaves out, and a rejected commit says so
+- *(pack)* the spec loop demands the test anchor and stops lying about the slice
+- *(cli)* a granted-but-unused changelog gate advises at the task
+- *(pack)* the methodology pack states the git-add staging contract
+- *(engine)* `/` and `.` are separators, at slug-rule-version 2
+- *(engine)* recognition gets its own rule, so a frozen id is read, not re-minted
+- *(engine)* the slug rule is declared, and a pack-load fence asserts it
+- *(engine)* the closure claim is a check at the seam, not a promise in a doc
+- *(cli)* a bind and a discard say what they did — silence was never a posture
+- *(cli)* the store answers which docs it holds, and which of them it never adopted
+- *(cli)* a singleton answers to its own name, on every doc verb
+- *(cli)* the item id joins the pinned json, so a driver can address what it reads
+- *(cli)* abandoning a milestone settles the record and never destroys work silently
+- *(pack)* milestone-record v2 — the status enum widens, and the corpus migrates
+- *(engine)* an added item field classifies — through the insert-capable primitive
+- *(engine)* a wholly-new repeatable section mints its empty heading
+- *(engine)* field removal classifies — and is refused, never stripped
+- *(engine)* the `optional` flag deltas classify — a tighten blocks only where the gate would
+- *(engine)* the existing-leaf card/of deltas classify by direction, at both loci
+- *(engine)* the empty-diff backstop — a bump without a kind refuses, never strands
+- *(engine)* the version-currency check joins the keyed severity surface
+- *(cli)* migrate-corpus gains --no-commit and --dry-run
+- *(cli)* migrate-corpus lands its own migration in a pathspec-limited commit
+- *(pack)* warn on committed-first cites ordering in author-arch-doc
+- *(cli)* collapse unmanaged ingest rows into per-directory counts (V9)
+- *(cli)* make bare-slug rename discoverable (V12)
+- *(engine)* slug-cap word-boundary retreat + F5 edge-stopword drop
+- *(engine)* reject a [] value on a non-ref scalar (N2)
+- *(engine)* set-field --unset — byte-stable field-line splice-remove + eligibility guard
+- *(doc-code)* Vue SFC grammar arm — <script> extract + filename-component unit
+- *(cli)* thread the authored D->Decision/I->Idea value-remap map through migrate-corpus
+- *(pack)* rename deferral-ledger kind D/I to Decision/Idea (schema-version 2)
+- *(cli)* show the author payload grammar in doc author long help
+- *(cli)* project enum members + field->section in doc schema, contract-version 1->2
+- *(cli)* emit surplus-sections-absent as write-ack findings-as-data
+- *(cli)* bring create/add-item/author into the DocAck envelope
+- *(cli)* decompose the DocAck address into op + target{doctype,slug,section?,item?,leaf?} + findings
+- *(engine)* surface the minted task id on ComposedWorkflow in --format json
+- *(cli)* invocation-log records carry the running binary_version (M40 A3)
+- *(pack)* the GSD work-doc quartet migrates — the migratable set completes at 12
+- *(pack)* the design-altitude trio migrates — vision/idea/research workflows with decision-tree author templates
+- *(cli)* nested content joins the pinned doc show json contract
+- *(pack)* the methodology schema-manifest — ten schemas frozen v1, stamp injection + freeze gate live (M40 A1)
+- *(pack)* display-title for roadmap/decisions-log/deferral-ledger — fresh mints carry title-cased H1s (M40 A4.3)
+- *(cli)* jigc doc schema <doctype> — the separately-pinned contract-version-1 json projection (M40 F1)
+- *(engine)* the create skeleton pre-stamps author-required header fields via the shared pub predicate (M40 F1)
+- *(cli)* the two-tier orphan route — registered strands keep unmanage, never-adopted files route migrate-or-ignore (M40 F3)
+- *(cli)* adopt-time hollow/surplus triage annotations, row-carried in every ingest format (M40 F4)
+- *(engine)* the schema-conformance.surplus-sections-absent trailing-surplus advisory + its severity key (M40 F4)
+- *(engine)* the schema-conformance.repeatable-populated hollow-adoption advisory + its exempt string knob (M40 F4)
+- *(cli)* ingest candidate set from git ls-files, gitignored files excluded (M40 F8)
+- *(engine)* the doc-code.title-names-symbol cascade severity knob — keyed, demoted to advisory, route names doc retitle-item
+- *(cli)* the set-field id-from guard — heading-derived field writes reject with a type-aware route
+- *(cli)* doc retitle-item — the item-level retitle verb with the unconditional enum-id-from refusal
+- *(cli)* form-vision advises do-research when the research store is empty
+- *(cli)* add the --slug override on jigc start + doc create
+- *(engine)* cap minted slugs at ~5 words, re-pin dependent id goldens
+- *(cli)* fd-level output-size tee on the invocation log
+- *(cli)* relocate foreign squatters into the .jigc workbench
+- *(cli)* jigc relocate — the parallel freeze-exempt relocation path
+- *(cli)* config set docs-root detect+routes+moves stranded docs
+- *(cli)* re-key orphan detector onto a prior-home/current-home strand discriminator
+- *(cli)* route a stale milestone base pin to the human (M39 T7)
+- *(cli)* reconcile preflight before a milestone-record on-transition overwrite
+- *(cli)* reseed the milestone cache from the committed record on the read path
+- *(cli)* milestone finalize folds the record join-flip into the single commit
+- *(cli)* milestone add-task appends to + path-scoped-commits the record
+- *(cli)* milestone create materializes + path-scoped-commits the record
+- *(engine)* milestone-record schema + fresh-record materialize arm
+- *(engine)* compose fans out ALL grounded sources, not the first
+- *(cli)* jigc doc show + pinned --format json read surface
+- *(adapter)* AGENT.md gains the context-compiler framing, drops the exit-code table
+- *(pack)* relocate changelog to root CHANGELOG.md (placement v2)
+- *(cli)* git-free relocation move-arm in migrate-corpus
+- *(pack)* relocate methodology singletons to docs/*.md via placement
+- *(engine)* retire root-render, manage vision at root VISION.md via placement
+- *(cli)* own a placement doctype's literal path in the CLI census sites
+- *(methodology)* add the form-vision re-entry driving workflow
+- *(methodology)* add the park-idea driving workflow
+- *(methodology)* add the do-research driving workflow
+- *(methodology)* add the vision singleton + grounded-in → research ref
+- *(methodology)* add ref-free research + idea doctype schemas
+- *(cli)* render managed docs to a root path at finalize, non-destructively
+- *(cli)* teach verify-before-finalize, the exit-code contract, and spec/ADR hints in the pack and bootstrap
+- *(cli)* seed a secrets-floor root .gitignore on the fresh-repo setup path
+- *(cli)* merge the deny safety floor into settings.json at setup
+- *(pack)* ship the embedded adr.v1 snapshot + prove the first v1->v2 corpus migration
+- *(pack)* bump adr to schema-version 2 with the optional options slot
+- *(cli)* make jigc uninstall symmetric — tear down both hooks + the deny floor
+- *(cli)* detect docs-root orphans in validate + warn on config-set re-point
+- *(cli)* opt-in in-repo invocation log + Outcome exit-code refactor
+- *(cli)* stamp store binary provenance + binary-mismatch advisory
+- *(cli)* pre-commit hook blocks a this-commit OOB managed-doc rename
+- *(cli)* exit-flip jigc validate on the store-scope OOB-rename finding
+- *(engine)* read-only OOB-rename detection at store scope + scope-subtraction dedup
+- *(cli)* jigc rename advisory prose/unmanaged-mention report (word-boundary)
+- *(cli)* jigc rename up-front validation gate — collision blocks, no-op reslug retitles, mid-fan-out guard
+- *(cli)* jigc rename verb + the committed-in-place atomic transaction
+- *(cli)* source migrate-corpus prior schema per doc by stamp + value-bump
+- *(pack)* add schema-snapshots resource kind + load_prior_schema reader
+- *(cli)* add the jigc migrate-corpus verb + the live v0->v1 stamp dogfood
+- *(engine)* version-aware migrate-vs-corrupt routing in the store-scope conformance detector
+- *(cli)* inject the per-doc schema-version stamp into persisted frozen doctypes
+- *(engine)* store-scope schema-conformance re-parse (the fifth content family)
+- *(cli)* enforce the schema freeze at pack-load (runtime gate + real-binary acceptance)
+- *(pack)* ship frozen-v1 schema-manifest + build-time freeze gate
+- *(engine)* schema-fragment include + changelog change-group de-dup
+- *(engine)* store-scope schema-conformance.mention-resolves advisory check
+- *(engine)* add store-scope schema-completeness.inverse-cardinality family
+- *(pack)* add spec.derived-from -> prd ref + finalize ref-resolves coverage
+- *(validate)* arch-doc title-names-symbol — close the prose blind spot the long-horizon study found
+- *(validate)* universal finalize floor — the code-anchor blast radius
+- *(pack)* sharpen quick-fix selection hint toward the safety axis (Phase 1 hygiene)
+- *(cli)* squash:false fan-out commits per-sub-task code, hooks on each
+- *(cli)* combine worktree code into the squash:true milestone finalize
+- *(cli)* off-line worktree combine engine — rename-aware collision block + temp-index disjoint-apply
+- *(cli)* tear down fan-out worktrees on milestone finalize success + abort
+- *(cli)* reopen the spawn-template rule + bind each spawn to its worktree
+- *(cli)* emit the worktree-provisioning Run: step in milestone-execution
+- *(cli)* add milestone provision verb (detached base-pin worktrees, idempotent)
+- *(cli)* bind .jigc + committed doc-store to jigc_home, code/HEAD to the worktree
+- *(cli)* add the jigc_home resolver (worktree-aware, layered over the walk-up)
+- *(pack)* instruct the agent to stage its code edits before finalize (M30 Inc 4 T1)
+- *(cli)* validate the finalize-scope doc-code gate against the materialized git index
+- *(cli)* name the landed finalize left-out residual symmetric with dry-run
+- *(cli)* split finalize --dry-run manifest into included vs left-out
+- *(cli)* narrow per-task finalize to the staged index (M30 Inc 1 T2)
+- *(doc)* confirm silent single-write verbs (set-field/set-slot/remove-item)
+- *(doc-code)* add YAML mapping-key extractor + activate .yaml/.yml
+- *(doc-code)* activate CSS by extension + re-point the test-flip census
+- *(doc-code)* generalize item_names to per-grammar extractor; add CSS addressable-unit extractor
+- *(doc-code)* non-Rust criterion-maps-to-test advises on present, blocks on absent
+- *(doc-code)* un-grammared #symbol emits unsupported-language advisory
+- *(doc-code)* bash grammar + shebang-sniff dispatch (M27 inc-2 T4)
+- *(probe)* doc-code resolves PHP symbols (.php/.phtml)
+- *(probe)* doc-code resolves Python symbols (.py/.pyi)
+- *(probe)* doc-code resolves JavaScript/JSX, reusing the TS allowlist
+- *(doc-code)* grammar_for dispatch + TS/TSX node-kind allowlist (Rust preserved)
+- *(cli)* finalize surfaces a pre-commit manifest + --dry-run (B1 dirty-tree sweep)
+- *(cli)* docs-root `""` canonicalizes to the flat sentinel `.` (smooth the override)
+- *(pack)* nest managed docs under docs-root (default docs/), a cascade knob
+- *(cli)* jigc setup commits its own install so it doesn't land in the first feature commit
+- *(cli)* jigc task list + enumerate active task ids in the ambiguous-task error
+- *(cli)* finalize reports the landed commit + promoted docs on success
+- *(pack)* migrate-arch-doc workflow + author-migration-arch-doc guidance
+- *(cli)* add migrate-prd workflow + prd author-migration guidance step
+- *(cli)* add migrate-spec workflow + spec author-migration guidance step
+- *(pack)* prd repeatable-requirements + greenfield Flow-1 rewrite
+- *(engine)* block finalize-promote clobber of a committed managed doc
+- *(cli)* adr migration supersedes edge guidance (ordering contract + out-of-set drop)
+- *(engine)* widen adr.supersedes 0..1 -> 0..*
+- *(cli)* add migrate-adr workflow + adr author-migration step
+- *(cli)* derive a per-file migration task id from the source path
+- *(cli)* less-terse setup/ingest output (#9c)
+- *(migrate)* drive the changelog migration through the doc-author batch
+- *(migrate)* surface the structural fidelity release-delta at the review gate
+- *(migrate)* narrow the migration finalize git add to its own changes
+- *(migrate)* auto-provision the migration commit doc filled
+- *(cli)* suppress the on-create date stamp in migration mode
+- *(cli)* add the `doc remove-item` recovery verb
+- *(engine)* reject malformed item-field values at the set-field write verb
+- *(cli)* reject foreign id-from enum categories at the add-item write verb
+- *(cli)* roll back the batch-author create on a mid-chain leaf failure
+- *(cli)* doc author verb chains batch leaves over one buffer
+- *(cli)* parse the doc-author batch payload into an ordered leaf-write plan
+- *(cli)* retire the foreign original + adopt on an approved migration finalize
+- *(cli)* the migration finalize review gate — --approve + fidelity-diff block
+- *(cli)* the migrate-changelog workflow + author-migration step (dev pack)
+- *(cli)* the jigc migrate verb — off-router mint + foreign-bytes staging + source-seam feed
+- *(engine)* the migration source seam — {{source}} read-only context placeholder
+- *(cli)* fold {type: changelog, as: change} into single-task's create-gate
+- *(cli)* ship the changelog doctype + record-change driver (cold-create proof)
+- *(cli)* materialize adr doc-level status/date at create
+- *(engine)* thread additive clock-free on_create seed seam into create/create_gated/provision_doc
+- *(engine)* parent-scoped path locator + nested item addressing through the binary
+- *(cli)* jigc uninstall — repo-local teardown, machine-global probe intact
+- *(cli)* un-manage a doc — jigc unmanage drops one doc from index/state, file bytes intact
+- *(engine)* recursive ingest scan from repo root, pruning .jigc/ + .git/
+- *(engine)* gate store-sweep baseline-adopt behind a conformance check
+- *(cli)* name present off-catalog verbs in clean orientation (G6)
+- *(cli)* pin an unborn HEAD to the empty-tree sentinel across mint + finalize
+- *(cli)* jigc setup writes the compose-embedded-methodology marker
+- *(cli)* compose embedded [dev ▸ methodology] dev-highest on the marker
+- *(cli)* field-carrying EmbeddedPack + embed the methodology tree
+- *(engine)* host three families in validate_store under the uniform exit rule
+- *(cli)* embed the doc-code probe and extract it at jigc setup
+- *(cli)* relay only the aggregate commit's hook output at the milestone finalize sites
+- *(cli)* relay hook output to the agent on a successful per-task finalize
+- *(cli)* capture git_commit hook output on success, thread it up the finalize channel
+- *(cli)* install the warn-only pre-commit hook in setup + binary acceptance
+- *(cli)* resolve the real git hooks dir + idempotent non-destructive pre-commit write
+- *(cli)* render the warn-only pre-commit hook body + output-discipline contract
+- *(cli)* jigc validate two-class exit rule + headline acceptance flow
+- *(cli)* pre-flight the doc-code probe in jigc validate
+- *(cli)* jigc validate store-scope sweep (clean path)
+- *(methodology)* add decided-task workflow for sub-milestone decisions
+- *(dogfood)* jrun exit-capturing wrapper for the no-exit-code harness payload
+- *(dogfood)* the measurement apparatus — hook logger, pinned v1 log schema, tally
+- *(methodology)* the record-dogfood workflow and authoring spine
+- *(methodology)* the dogfood-record per-run schema
+- *(cli)* re-pin task finalize over disjoint moved history
+- *(cli)* route operational errors through a shared format-honoring renderer
+- *(cli)* exit 3 on validation-blocked validate/finalize, operational error stays 1
+- *(cli)* emit the findings envelope on a landed task finalize
+- *(pack)* methodology completion workflow + audit/triage/fix/re-verify spine + completion-record authoring (M16 inc-5 T2)
+- *(methodology)* the completion-record per-milestone schema
+- *(engine)* multi-slot-per-repeatable-item with #### sub-label rendering
+- *(pack)* methodology planning workflow + phase-walk + running-doc authoring (M16 inc-4 T2)
+- *(pack)* the three methodology running-doc schemas (roadmap / deferral-ledger / decisions-log)
+- *(engine)* register owner-artifact.present — the four-list severity sync (27/18/9)
+- *(engine)* the #5 owner-artifact presence gate (intrinsic, fire-and-block on a fixture)
+- *(engine)* idempotent create — committed-singleton collision copies-in, gated to singleton
+- *(pack)* the methodology increment workflow + its six task-ref-free steps
+- *(engine)* checkpoint-marker-not-shadowed conformance at both gate sites
+- *(cli)* --explain surfaces each composed pack's path + blake3 content-hash
+- *(cli)* per-pack provenance accessor — resolving path + blake3 content-hash
+- *(cli)* --explain names the winning pack per top-level cross-pack collision
+- *(cli)* resolve schema field-types pack-locally in all_schemas
+- *(cli)* pack-local command-refs — a workflow's {{cli.X}} resolves in its own pack
+- *(cli)* pack-local step includes — a workflow's {{include: step:X}} resolves in its own pack
+- *(engine)* add PackSource::origin_pack pack-of-origin seam
+- *(cli)* multi-pack Pack: orientation header — composed set, highest-first
+- *(cli)* assemble the composite pack-set behind the zero-arg make_pack factory
+- *(cli)* CompositePack — precedence-winner read, dedup-then-sort-union list
+- *(cli)* read_pack_list — the optional .jigc/config/packs.yaml pre-cascade reader
+- *(pack)* architecture-documentation workflow + author-arch-doc step + create-arch-doc command-ref
+- *(pack)* ship the arch-doc doctype schema with the cites -> adr edge
+- *(cli)* item-leaf addressing for set-slot/set-field
+- *(cli)* add the doc add-item mint verb + canonical EOF-append insert
+- *(engine)* select the doc-code predicate from check:, not section position
+- *(engine)* widen field-type carriers by a per-field check predicate
+- *(pack)* methodology dev-task spine + four prose steps
+- *(cli)* methodology pack cascade substrate — the enum-rewrite trap proven
+- *(cli)* route the describe enumerator through file_owner so the projection reflects the cascade
+- *(cli)* route compose workflow/schema reads through cascade file_owner
+- *(cli)* feed project workflows/+schemas/ shadow dirs into the cascade files surface
+- *(cli)* jigc describe free-prose renderer + subcommand, wired pack-only
+- *(pack)* author description/usage on every shipped workflow and doctype
+- *(engine)* carry optional description/usage on workflow definitions
+- *(engine)* schedule doc-code at the live validate/finalize gate
+- *(engine)* land the two tunable doc-code.* inventory + knob rows
+- *(pack)* doc-code criterion-maps-to-test is-a-test predicate + determinism
+- *(pack)* resolve doc-code #symbol against the file AST via tree-sitter
+- *(pack)* add doc-code probe executable skeleton with file-existence resolution
+- *(engine)* lock pack-probe-integrity meta-findings intrinsic + floored
+- *(cli)* subprocess probe invoker over real adversarial stub processes
+- *(engine)* reshape Probe seam to check(target, ctx); migrate override-default
+- *(cli)* prove set-field populates an absent adr.cites-code header through the binary
+- *(pack)* declare code-anchor as the first pack-declared field type
+- *(pack)* ingest-existing orient/route workflow + steps
+- *(cli)* wire schema-gated adopt-conformant through jigc ingest
+- *(cli)* jigc ingest command spine — discover, classify, triage report (read-only)
+- *(cli)* ship the project-setup workflow + prd-authoring steps + create-prd ref
+- *(pack)* ship prd schema with fixed single-word prose slots
+- *(cli)* JIGC_ADAPTERS_DIR adapter-source seam — make the spawn-template reject binary-observable
+- *(cli)* finalize.fan-out.squash knob + per-sub-task commit mode
+- *(cli)* ship the milestone-execution pack workflow + its fan-out/join/finalize steps
+- *(cli)* ship the fan-out-free sub-task pack workflow + author-commit step
+- *(cli)* jigc milestone execute <id> feeds the id-sorted task list into the fan-out compose
+- *(cli)* gate jigc setup install on a valid spawn launch template
+- *(cli)* decidable install-time spawn-template validation as a pure fn
+- *(cli)* AdapterProfile gains a spawn field + render_spawn launch-template render
+- *(cli)* wire copy-on-first-touch into the production --task edit path
+- *(engine)* write-once sticky-created provenance + provision_commit_doc records created
+- *(cli)* refuse a jigc doc staging write whose destination escapes the task area
+- *(cli)* add the --task <id> selector + explicit-wins resolution to jigc doc verbs
+- *(cli)* provision the write-ready area on first jigc workflow re-entry
+- *(cli)* add jigc workflow <W> --task <id> re-entry verb with W-equality guard
+- *(cli)* add-task/add-from-spec gain --workflow (default sub-task)
+- *(engine)* add spawn-marker-not-shadowed + fan-out-join-paired workflow-refs checks
+- *(engine)* parse and honor fan-out/join step kinds in load_step_def
+- *(engine)* add the milestone data-value root (.tasks collection leaf)
+- *(cli)* jigc milestone finalize — one commit through the binary
+- *(cli)* add jigc milestone join verb reporting the by-task-id merge
+- *(cli)* jigc milestone add-from-spec — seed a task list from a committed spec
+- *(cli)* surface id-sorted milestone task enumeration via `list-tasks`
+- *(cli)* add jigc milestone create + add-task front door
+- *(engine)* require intrinsic checks declared+floored at pack-load
+- *(engine)* stand up the non-task Probe seam; route override-default through it
+- *(engine)* --explain rejected-demotion line + ResolutionTree.rejected_demotions + SCHEMA_VERSION bump
+- *(engine)* KnobDecl.floor + load-time intrinsic-floored assertion
+- *(pack)* declare the full per-check severity knob surface
+- *(cli)* thread the real project cascade into validate/finalize/upgrade
+- *(engine)* engine-owned severity post-pass in ValidationReport::new
+- *(engine)* Finding carries structured (probe, check); reconcile emitted codes to inventory
+- *(upgrade)* classify scalar-set and insert existence in override-default
+- *(cli)* wire Command::Upgrade — render override-default findings, gate on has_blocking
+- *(cli)* the upgrade assembly seam — load deltas + classify into a ValidationReport (report-and-route only)
+- *(cli)* route every production pack source through the JIGC_PACK_DIR factory
+- *(cli)* FilesystemPack PackSource over a directory
+- *(cli)* record the displaced pack unit's pack-direct basis on replace/remove
+- *(engine)* carry replace/remove base-hash basis in a separate target-keyed record
+- *(cli)* wire jigc start --explain live — resolution tree, no mint
+- *(engine)* resolution-tree model + structural/file-owner provenance
+- *(cli)* add the jigc config fork tracked-fork verb
+- *(cli)* recognize and round-trip the tracked-fork delta kind in the manifest loader
+- *(pack)* ship the {{fill: extra-guidance}} point + end-to-end proof
+- *(cli)* add the jigc config fill slot-fill verb
+- *(cli)* wire phase-5 slot-fill + the fill checks live into compose
+- *(cli)* add config replace-step / remove-step structural-op verbs
+- *(cli)* add config insert-step structural-op verb
+- *(cli)* add write-time collision + anchor-presence checks for structural-op verbs
+- *(cli)* write structural deltas into the project manifest
+- *(engine)* resolution-time cycle/orphan over the post-phase-4 include list
+- *(cli)* wire phases 2+4 live into compose; no-override stays byte-identical
+- *(cli)* layer-aware CascadeStepSource consulting Resolved::file_owner
+- *(cli)* add `jigc config set <key> <value>` writing the project scalar block
+- *(cli)* wire the resolved cascade live into the bare-start compose read
+- *(cli)* manifest scalar:-block loader -> populated OverrideLayer
+- *(engine)* knob loader seeds the pack-default scalar surface from knobs.yaml
+- *(cli)* pack ships config/knobs.yaml declaring the closed knob surface
+- *(cli)* implement-from-spec joins the router catalog with a non-overlapping when
+- *(pack)* ship implement-from-spec workflow + locate-from-spec step + spec command-refs
+- *(engine)* store.<doctype-id> data-value root resolves to committed instances as a Content list
+- *(cli)* surface plan in the router catalog with a non-overlapping when
+- *(pack)* ship the plan workflow + author-spec step + create-spec command-ref
+- *(cli)* jigc task bind <role> <addr> <id> with five-step enforcement
+- *(cli)* seed reads roles into the compose map
+- *(pack)* add commit.implements ref + pin its section-qualified address
+- *(pack)* ship spec schema + pin its parsed projection
+- *(cli)* post-flip orientation — route to the router, list only selectable workflows
+- *(cli)* flip default-workflow to router; route bare intent model-free
+- *(cli)* persist + resume the task's own minting workflow id
+- *(cli)* add the router workflow + selection steps over {{catalog}}
+- *(cli)* add the quick-fix work-workflow (commit-only, no ADR)
+- *(cli)* wire the Form-D dispatch arm — jigc start --workflow <X> <intent>
+- *(cli)* compose a named workflow; reject an unknown --workflow id before minting
+- *(cli)* jigc start --workflow <X>, conflicting with --task
+- *(cli)* gate compose_in_repo on creates-task; no-task compose contract
+- *(engine)* catalog data-value root + Resolution::Catalog
+- *(engine)* no-task compose contract — ComposeContext.task is Option
+- *(cli)* adapter install — SessionStart hook + bootstrap-by-reference
+- *(engine)* wire committed-store OOB reconciliation into validate_task
+- *(cli)* `jigc setup` orchestrates the adapter install, reports via finding
+- *(cli)* idempotent jigc allowlist merge into .claude/settings.json
+- *(cli)* idempotent injection of the bootstrap block into CLAUDE.md
+- *(cli)* generate the marker-fenced bootstrap block (pure)
+- *(cli)* embed Claude Code adapter profile + typed model and loader
+- *(cli)* pack declares its own id; orientation reads it, not a constant
+- *(engine,cli)* gate finalize on ref-resolves; invalidate edge-index stamp post-commit
+- *(engine,cli)* finalize promote phase — stage managed docs to canonical paths
+- *(engine,cli)* bind gate-admitted create to task.<role> via roles.json
+- *(cli)* task finalize — validate → render → stage → git commit → post-commit
+- *(cli)* task subcommand — diff / validate / discard
+- *(cli)* doc subcommand — create / set-field / set-slot with stdin handoff
+- *(cli)* wire `jigc start "<intent>"` end-to-end — mint + compose + gate + render
+- *(engine)* mint a task — slug intent, serial-reject, open working area + base pin
+- *(engine)* compose a full workflow into the four-class view
+- *(engine)* doc-type schema model + commit/adr schema YAML
+- *(cli)* honor --format for orientation (agent/human text · json)
+- *(cli)* bare `jigc start` orientation end-to-end (unset + clean-no-task)
+- *(cli)* jigc command tree skeleton + --format selector
+- *(cli)* render Orientation to agent-text (routing footer) + generic JSON
+- *(cli)* locate cascade layers — repo-root discovery + the three layer paths
+- *(cli)* embed dev pack + EmbeddedPack PackSource impl
+
+### Fixed
+
+- *(cli)* setup refuses a settings file it cannot merge into before its first write
+- *(cli)* a setup that fails after its first write records and stages what it wrote
+- *(tests)* the replace-not-truncate witness holds the file open while it reads it
+- *(tests)* every repo a fixture builds names its own initial branch
+- *(setup)* the two install tests give their throwaway repo a git identity
+- *(posture)* a reader already standing in the worktree is routed at the act, not at a `cd` to their own cwd
+- *(task)* the `--dry-run` out-of-set set is derived from its refusal producers, not reasoned about in prose
+- *(amend)* the mint refusal names the exit only this door has, and its locus takes a declared spelling
+- *(task)* `--dry-run`'s help names every gate it refuses on, and says which are outside the preview
+- *(posture)* the preview takes the seam's subject, and the detached route runs in a fan-out worktree
+- *(task)* the amend arm's three smalls (F-10 review, LOW-5 · LOW-6 · LOW-7)
+- *(pack)* two fences that read the ambush set by format and by count (F-10 review, MEDIUM-4 follow-on)
+- *(pack)* the amend arm's two contracts join the ambush registry and buy their facts (F-10 review, MEDIUM-4)
+- *(finalize)* the amend arm's shared surfaces take the commit model (F-10 review, MEDIUM-3 + LOW-8)
+- *(start)* every compose of an amend task names the commit it repairs (F-10 review, MEDIUM-2)
+- *(finalize)* an amend task carries no doc that promotes (F-10 review, HIGH-1)
+- *(task)* the displacement surfaces spell workbench paths against the workbench root
+- *(task)* `finalize.stage-failed`'s route is a copy-runnable argv, flags and all
+- *(doc)* `doc show` over a relocated doc routes at the repair the store sweep gives
+- *(help)* the two rename verbs name each other, and one shipped route stops naming the wrong one
+- *(orient)* a live task's findings carry the repository posture finalize refuses under
+- *(setup)* the pre-commit hook stops announcing a rename that is not there, and reaches the placement family
+- *(setup)* uninstall prunes git's worktree admin, and says it did
+- *(render)* the install-site line stops telling a fan-out worktree it was not the subject
+- *(hook)* the rename backstop reads its operands as shell words, so a spaced store key blocks
+- *(route)* the migrate carve-out exempts one operand, and all four span predicates read a composite
+- *(setup)* both install doors bind jigc_home, from every cwd
+- *(milestone)* the door that sets the base pin binds the root the boundary gates on
+- *(hook)* the pre-commit rename backstop survives a repository path with a space
+- *(fence)* the aim fence reads every `git` command in a span, and stops guessing at three verbs
+- *(route)* an emitted `jigc migrate` names a path that resolves from anywhere
+- *(fan-out)* the emitted `cd` is one shell word, at both sites that render it
+- *(route)* every operator-facing `git` span names the checkout it runs in
+- *(bootstrap)* the preload states where printed paths are rooted and where jigc may be run
+- *(migrate)* a path argument resolves against your current directory, and every occurrence states its base
+- *(fan-out)* the one `cd` jigc emits is absolute, and the refusal that sends you there matches it
+- *(task)* finalize names the checkout it commits in, when that is not the workbench's
+- *(milestone)* the boundary's subject is jigc_home, so it lands — and gates — from every cwd
+- *(repo)* the site clause leads the posture message instead of landing after a preposition
+- *(contract)* one code, two sites, one declared form each — and the preview answers on the door's arm
+- *(milestone)* a workbench path is spelled against the workbench's own root, not the cwd's checkout
+- *(milestone)* the leftover classifier asks whether a worktree is concluded, not only whether it is clean
+- *(milestone)* the boundary asks every provisioned worktree's posture, not only the main checkout's
+- *(repo)* the five pinned abort routes say what they do to unrelated staged work
+- *(milestone)* the conformance gate's paths, and the fence that could not see them
+- *(repo)* every abandon route says what it does to unrelated staged work
+- *(milestone)* a pin-less milestone area claims no task
+- *(finalize)* jigc's own commit-message transient joins both working-area registry rows
+- *(cli)* a leftover directory is a milestone at no by-id door
+- *(cli)* the kept pin-read producers stop printing the host filesystem
+- *(engine)* the mint names the leftover instead of claiming a live work unit
+- *(cli)* a leftover directory is a task at no by-id door
+- *(engine)* a settled sub-task's leftover area is not live work
+- *(cli)* the removal is conditioned on the move, and every area left standing is named
+- *(cli)* the displacement reports what it could not move, and the narration counts the area
+- *(engine)* the staging walks that act ask the shape leg the probes ask
+- *(cli)* the landed milestone boundary answers for the area it removes
+- *(engine)* `unwind_area`'s milestone arm honours the same walk as the probe
+- *(engine)* the milestone area's complement includes `merged/`, and `staged_doc_id` alone decides inside it
+- *(engine)* the join's staging area clears what jigc wrote, and the boundary gate asks the predicate its siblings ask
+- *(validate)* the vacated home's route is a function of the removal's state
+- *(relocate)* a door's refusal set is an axis, and six of relocate's ten carried no code
+- *(render)* a store code the contract keys owes the envelope at every producer, not at each door
+- *(render)* the survivable frame's state clause is a function of the rollback's outcome
+- *(validate)* the store sweep's subject is every home a doctype has declared
+- *(validate)* home-vacated asks what the history carries, not that it carries something
+- *(cli)* the catalog offers only what the composing door will bind
+- *(cli)* `jigc task bind`'s two refusals join the route floor
+- *(engine)* the dangling-baseline advisory never routes a sub-task at its own milestone record
+- *(cli)* the milestone boundary names the shared-checkout work it did not commit
+- *(cli)* the sub-task resume line discriminates the posture it is composed in
+- *(cli)* the agent/human arm renders every finding its JSON sibling carries
+- *(cli)* every committing door says it commits, in --help and in its ack
+- *(cli)* the three no-write claims state the one exception they have
+- *(cli)* the door-shape fence looks at every layer that serves a workflow
+- *(cli)* the recorded workflow resolves through the cascade, not the pack
+- *(cli)* the exit-4 review hold fires wherever the composed body promises it
+- *(cli)* the two empty renders state their empty case
+- *(cli)* the refusal's `git mv` creates the home it moves into
+- *(cli)* `relocate --from` refuses jigc's own installed roots
+- *(cli)* `relocate` asks the predicate `ingest` asks, about the destination
+- *(cli)* a fixed-identity doctype has one identity, minted once
+- *(cli)* the orphan finding says what its producer computed
+- *(cli)* an unreadable `.jigc/` names the read fault, not "isn't set up"
+- *(cli)* a guard that reads the tree before the run is no guard inside it
+- *(cli)* a rollback step that could not complete is named, not noted
+- *(engine)* a staged doc is the name jigc's writer emits, not any .md
+- *(cli)* the foreign-byte family answers on the arm it was registered on
+- *(cli)* the four siblings the rows named — two dead routes, an ack, a path
+- *(cli)* the three on-disk classifiers stop guessing about shape and readability
+- *(cli)* task validate refuses the posture finalize refuses
+- *(cli)* a commit git itself refused stops being a hook's complaint
+- *(cli)* the squatter displacement re-probes before it frees the index slot
+- *(cli)* the posture guard refuses a working directory it cannot read
+- *(cli)* the posture family names every operation git can leave un-concluded
+- *(cli)* the envelope registry stops mis-declaring its own surface
+- *(cli)* one pre-dispatch funnel, and the faults become a registry
+- *(cli)* setup and uninstall reject on the declared findings arm
+- *(cli)* a reject that carries a finding is one JSON document
+- *(record)* three M51 audit LOWs — two record truths corrected, one made true in the binary
+- *(setup)* the dirty-install guard asks once, before the first write
+- *(validate)* the orphan sweep speaks for jigc's homes, not the repository
+- *(routes)* a route's command span is bytes that run, over the whole class
+- *(cli)* two help texts mint the set they had been restating
+- *(cli)* two help texts render the code-side set that already exists
+- *(cli)* `jigc task discard` names the commit it landed, on both surfaces
+- *(engine)* the token a write reject echoes is a token the caller typed
+- *(cli)* the join's doc-less set is derived from what each sub-task staged
+- *(cli)* the relocation ack's subject becomes the set the sweep walks
+- *(cli)* `jigc ingest` stops adopting a file no address reaches
+- *(cli)* one leftover shape, read once, at every destroying door
+- *(cli)* a sub-task's `resume:` names the door that provisions its area
+- *(engine)* the `--task` read miss names the copy it looked in and keeps `--task` in its route
+- *(cli)* a failed finalize puts back the two files it rewrote, without overwriting a concurrent edit
+- *(cli)* `gitignore::ensure` amends `.jigc/.gitignore` to the union instead of replacing it
+- *(setup)* the install-commit guard asks about untracked bytes too
+- *(setup)* a refused install commit stops bricking the next `jigc setup`
+- *(cli)* a non-hook boundary refusal keeps the frame that was built for it
+- *(migrate)* git pathspec magic is refused as a class, not as one spelling
+- *(finalize)* every rollback pre-image is captured before every failure point
+- *(foldback)* the fence inverts when the audit lands, as its own doc says it must
+- *(milestone)* the abandon refuses over its sub-tasks' staged prose, not only over dirty worktrees
+- *(surface)* law 1 binds the shared predicate and the pinned read contract, not just the four doors
+- *(cli)* a refusal that names itself on the surface names itself in the log, at every door
+- *(cli)* the address slug-head guard reaches every address door, and the registry stops being a name allowlist
+- *(cli)* a door narrates the removal it performed, not the one it attempted
+- *(cli)* one pack is named one way on every surface that names one
+- *(cli)* the anchor miss names the grammar instead of asserting an absence
+- *(cli)* `setup` says what the next door will refuse, and still refuses nothing
+- *(cli)* a non-directory leftover is answered honestly at every destroying door
+- *(cli)* a finding's path is repo-relative, and every absolute one that stays says why
+- *(cli)* the landing ack names every commit the boundary made
+- *(cli)* the front door joins the pack-resource-miss family it was named first in
+- *(cli)* a pack-resource miss names the pack it searched, with a code and a route
+- *(cli)* a blocked join stops narrating a success it did not have
+- *(cli)* every text render of a finding reaches the house renderer
+- *(cli)* the two section-level resolvers' remaining bare arms adjudicate
+- *(cli)* the two item-address resolvers adjudicate their own misses
+- *(pack)* the ref-target fence's subject is the schema set the doors resolve
+- *(engine)* no item-field write re-renders a committed region, at any locus
+- *(engine)* the missing-sub-label finding names the depth the writer actually emits
+- *(engine)* the nested repeatable's own hop joins every finding raised inside it
+- *(migrate-corpus)* the unfilled advisory emits commands that run, at every item locus
+- *(cli)* the value rule's file-shape arm asks every component, not the leaf
+- *(cli)* a root knob lands the one spelling every reader resolves
+- *(cli)* the workbench guard asks the index for bytes, not for the path
+- *(cli)* the workbench home rule reads where the value lands, not how it is typed
+- *(harness)* the gate is `dev/gate`, and the evidence that proves it is fenced
+- *(harness)* the planning gate set has one home, and the fence now reaches the file that forces it
+- *(cli)* the milestone boundary gates the commit docs it commits
+- *(dev)* the rig stops emitting shell it was handed, the gate stops counting names
+- *(m49)* the rc.13 bump regenerates its goldens, and the fold-back fence flips
+- *(m49)* a refusal answers in the contract's own terms — a resolvable target, a coded route
+- *(engine)* the item region ends at the reserved depth, not at any deeper heading
+- *(m49)* a home git cannot record is refused, not moved to and called a success
+- *(m49)* a wrapped message literal stops shipping its source indentation
+- *(m49)* the leg-2 refusal is homed, not punted at a task that did not run
+- *(cli)* the argv read is a class of two, and the log half still panicked
+- *(cli)* the `finalize.*` family stops being a hand count
+- *(cli)* the clap seam covers its error-kind axis, and the identity pair stops misdirecting
+- *(cli)* every refusal at `jigc rename` carries an identity and an exit
+- *(cli)* an undeclared section is `write.unknown-section` at every write verb
+- *(cli)* running jigc outside a git repository answers once, with one text and a route
+- *(cli)* one unknown doctype, one answer, at every door that takes one
+- *(engine)* the render tells an absent commit doc from a read fault
+- *(pack)* the copy-in clause states the collision, not a doubling
+- *(cli)* the exit-flip count points at the table instead of counting it
+- *(engine)* the route exemption is an enumeration, not a namespace
+- *(cli)* a gate block's repair route names the task it has to run in
+- *(engine)* one nested-section miss, one code, at every item-addressing door
+- *(pack)* six surfaces that named a placement home stop lying once it can move
+- *(cli)* --explain names the pack that actually provided the thing
+- *(docs)* two live homes stop selling nesting past the cap as a capability
+- *(cli)* the collision route probes the doc the reject leaves behind
+- *(cli)* the collision route stops naming a doc the batch just discarded
+- *(engine)* the batch stops re-reading the whole document once per leaf per parse site
+- *(cli)* the collision route stops giving advice you cannot take
+- *(cli)* the address reject names its own fault and routes where the answer is
+- *(engine)* the nesting ceiling becomes one derived number
+- *(m49)* the added-item-slot re-render refuses unmodelled bytes instead of destroying them
+- *(cli)* the freeze block's only exit runs from a path with a space
+- *(engine)* a mis-keyed schema leaf is refused, not absorbed
+- *(cli)* one schema resolution, so no two doors answer differently
+- *(cli)* the freeze binds every layer that can change a schema
+- *(cli)* a settled sub-task leaves the operating doors' enumeration
+- *(cli)* an unreadable milestone record refuses the discard, never clears it
+- *(cli)* no `VerbKind::Read` leaf acts, and the rows and the comment agree
+- *(cli)* a discarded sub-task stops being `active` in the record
+- *(cli)* `--workflow` is checked against the loaded packs before anything mints
+- *(engine)* `set:` becomes a closed vocabulary, refused at schema load
+- *(engine)* the item-field write paths join validate-after
+- *(engine)* `--unset` of an absent field acks the no-op
+- *(engine)* the parse seam admits multi-slot ∧ nested
+- *(engine)* the item's leaf region is schema-keyed, not depth-keyed
+- *(engine)* every shared milestone-area write replaces the file instead of truncating it
+- *(cli)* the invocation log carries what a migrate-corpus run decided
+- *(cli)* the unfilled-leaf advisory routes at the locus the leaf lives in
+- *(cli)* the router promises a reason only where the fence buys one
+- *(cli)* the read-back stops promising a write the step sanctions leaving off
+- *(cli)* the router names what sits outside its catalog
+- *(cli)* the foreclosed describe positional names the answer already on record
+- *(cli)* the sub-task base-pin refusal routes at the worktree its work happens in
+- *(cli)* the absent-instance refusal stops routing to a create the gate forbids
+- *(cli)* the milestone boundary's help names the code it commits
+- *(cli)* the rejection frame names the area the task's work survives in
+- *(cli)* the second soliciting step gets the closure caveat, and the owe-set stops being hand-listed
+- *(cli)* the non-resolution diagnosis states the comparison, and the repairs fit the cell
+- *(cli)* the changelog gate keys on the write, not on the item count
+- *(engine)* the migration-source route stops promising a review it does not get
+- *(engine)* the conflict route gains the exit that runs from where the corruption happened
+- *(engine)* the unanchored-heading diagnosis stops naming a verb the state refuses
+- *(cli)* a halted doc is told what actually halted it
+- *(engine)* the migration stops refusing an absence that already conforms
+- *(design)* the retired exit-0 leaves the doc that owns the property
+- *(cli)* migrate-corpus asks the shipped discriminator before the fold
+- *(cli)* the store sweep's exit stops calling a never-adopted file harmless
+- *(cli)* the abandon door names the authored prose it destroys
+- *(cli)* the two silent destroying doors name the bytes they take
+- *(cli)* the teardown narration names the ignored bytes it destroys
+- *(cli)* the milestone boundary's worktree subject becomes the on-disk path
+- *(engine)* the milestone task list persists atomically, and its merge exclusion is on the record
+- *(engine)* a save-scoped lock closes the read-modify-write window the merge leaves open
+- *(engine)* file-state save merges base-relative instead of discarding a concurrent writer's delta
+- *(cli)* the install summary says when the pre-commit hook is local only
+- *(cli)* a re-slug's destination is free in both homes, or it is refused
+- *(cli)* a refused provision really does leave every path as it found it
+- *(cli)* a role binding whose doc is gone is not an incumbent
+- *(setup)* the guide-ownership check fails closed on a file it cannot read
+- *(pack)* planning's finalize names the milestone verbs it does not run
+- *(pack)* the catalog names the changelog gate single-task bundles
+- *(cli)* the migration headline states its run mode, not the scan
+- *(cli)* the pre-commit header states the intent, not the deed
+- *(engine)* the mint statement names the hyphen it splits on
+- *(pack)* the optional-slot guidance stops promising an omission
+- *(cli)* an idempotent rename stops asserting a rejection that never happened
+- *(cli)* a read intent lands on a read verb over the whole verb axis
+- *(cli)* the hook asks the index too, and costs only itself when git refuses
+- *(cli)* the install commit's pathspec asks who owns the hook, not just where it sits
+- *(cli)* the install commit's pathspec is derived from where the hook landed
+- *(engine)* the managed advisory routes on the stamp, never at adoption
+- *(engine)* one foreign file, one code, one route at every door
+- *(cli)* a route's title token is shell bytes, not a Debug span
+- *(cli)* the retitle-only ack names the cell it is in, not one cell's reason
+- *(cli)* the rename refusal keys on the singleton rule, not the knobs beside it
+- *(cli)* the title guard compares titles, not the bytes around them
+- *(cli)* milestone discard --help states the widened refusal it now performs
+- *(uninstall)* the abandon arm is offered only where an abandon can clear the block
+- *(uninstall)* the staged-doc refusal claims staging, not authorship
+- *(milestone)* discard stops asking whether the path is ours
+- *(cli)* uninstall refuses the two things it had just promised to keep
+- *(milestone)* provision refuses a leftover it cannot prove is junk
+- *(tests,docs)* the fold-back fence moves with the world, and the acceptance keeps only what no suite fences
+- *(cli)* the teardown verb's help stops promising a destruction it now refuses
+- *(cli)* the teardown verb stops destroying the state the wave promised to keep
+- *(cli)* the preload's exit-flip class covers the whole axis, and its fence iterates it
+- *(cli,pack)* the one-shot clause dies on all 14 surfaces, and the sentence states the repeat
+- *(cli,engine,pack)* the release-id worked example states the mint that ships, not the one generation 1 minted
+- *(cli,pack)* a young changelog is not a hollow one, and both `create` verbs state the convention
+- *(engine,cli)* the mint rule states itself where it mints, not just its caps
+- *(cli,pack)* the authoring surfaces state the whole write contract, not the append half
+- *(cli)* the orientation surfaces stop overstating what they offer
+- *(cli)* the read surfaces name their own shapes
+- *(engine,cli)* the findings state only what they checked, and their routes are followable
+- *(cli)* the five edit verbs state the copy-in the create door already states
+- *(cli)* `jigc setup` names the hooks dir git resolved, not the one it assumes
+- *(cli)* the preloaded output contract names the exception that flips the store sweep's exit
+- *(cli)* the pin rule is keyed on the task's unit kind, so a sub-task's read doors stay as strict as its only commit door
+- *(cli)* `jigc milestone create` names the commit it landed, the record it wrote, and the step that follows
+- *(cli)* the store trailer counts by severity and names every door that gates
+- *(pack)* following the changelog step yields a real entry, not an empty doc that validates clean
+- *(cli,pack)* the two surfaces that promise the multi-task sequence describe the one the binary runs
+- *(cli)* the read-only resume door tests the pin exactly as the commit door does
+- *(cli)* the pre-commit hook warns on blocking doc-code drift, not on any doc-code finding
+- *(engine)* an undeclared section is `write.unknown-section` at every write door, not four codes and a route that exits 1
+- *(cli,engine)* a rejected batch author restores what the create found, never removes a file it did not create
+- *(cli,engine)* item presence outranks every schema-only pre-check, so no write describes an item that was never minted
+- *(engine)* no write lands at an undeclared slot leaf
+- *(engine)* no write lands at an undeclared item field
+- *(cli)* every item-id miss routes the containing section
+- *(engine)* an item-id miss stops calling itself a shape question
+- *(pack)* the methodology pack carries the same split, and its 7 migrate workflows stop double-soliciting
+- *(pack)* the dev pack's commit-doc solicit becomes one step, composed by every workflow whose gate demands it
+- *(cli)* `--dry-run`'s help enumerates the gates it forecasts
+- *(cli)* the printed promise surfaces are scoped to what validate covers
+- *(cli)* `finalize --dry-run` stops forecasting a green it will refuse
+- *(cli)* the rejection frame's re-run is shell-safe over author-owned prose
+- *(cli)* the survivable frame sweeps the whole committing-door axis, one error code per door
+- *(cli)* migrate-corpus's re-run recovers instead of reporting "already current"
+- *(cli)* the record pathspec joins the captured-pre-image discipline as the fifth axis
+- *(cli)* the landed teardown names the work it discards
+- *(engine)* the fresh-clone reseed rebuilds the sub-task working areas
+- *(cli)* a milestone finalize that would land no work is refused, and the manifest names who could not contribute
+- *(cli)* an aborted fan-out finalize keeps the code it never committed
+- *(engine)* the resume skip set is the record's, and the mint abort unwinds too
+- *(engine)* the conflict route belongs to the caller, not the classifier
+- *(cli)* add-from-spec's mid-loop becomes atomic and resumable
+- *(cli)* the mint unwinds with its record — create and add-task become atomic
+- *(cli)* the record-commit transaction — the four record-only doors restore the record's pre-image on a rejected commit
+- *(tests)* the temp-mint seam — a throwaway path is unique by construction, not by clock
+- *(cli)* rollback captures survive a mid-promote/mid-retire finalize failure
+- *(cli)* restore a displaced same-path untracked foreign on finalize rollback
+- *(cli)* trailer key-shape rule reaches the retitle-item write door (class: trailer)
+- *(cli)* sweep the hook_output producer axis — every hook-capable commit surfaces its hook stream (class: JSON purity / hook_output)
+- *(engine)* fence allows-create type-uniqueness at the workflow parse (class: role-binding)
+- *(finalize)* the promotions rollback joins the pre-finalize index capture/restore (class: rollback axes)
+- *(engine,cli)* detect and block the above-current schema-version stamp (class: freeze-stamp)
+- *(finalize)* roll back jigc's staged version-stamp/config on a rejected finalize — the M45 Inc 8 sibling axis
+- *(cli)* singleton doc author defaults title, non-singleton reject is enriched
+- *(doc-code)* distinct is-a-test-unverifiable advisory for a resolved non-Rust maps-to-test symbol
+- *(pack)* locate-from-spec states the maps-to-test file-only fallback + staged-index lifecycle
+- *(cli)* the revise-safe create sentence ported to author-vision/-arch-doc/-adr
+- *(cli)* author-arch-doc names the staged index (not the working tree) + repo-relative anchor base
+- *(engine)* process-unique atomic temp sibling + route FileStateRecord::save through persist
+- *(engine)* trailer_lines reads the key from item.title, proven through the verbs
+- *(cli)* the fidelity version-scan keeps v-prefixed versions while still dropping slug-glued runs
+- *(cli)* the trivial-source migrate advisory stops misdirecting non-adr migrations to the adr workflow
+- *(cli)* fidelity version-scan rejects a slug-glued dotted run (T1)
+- *(cli)* fold a blake3(source-path) disambiguator into every migration task id
+- *(cli)* route the clean jigc-span sites through the checked constructor (F4)
+- *(cli)* config.undeclared-key names the settable knobs in the error (F3)
+- *(cli)* migrate-corpus --dry-run stops lying past-tense — the three run modes distinguish (F2)
+- *(pack)* the bind address form, the prd write address, and the payload-skeleton rules
+- route repairs — the milestone finding key, the executable no-criteria arm, the honest create-gate route, the sanctioned hand-edit
+- *(cli)* operator-surface honesty — unmanage-at-home, the docs-root relocation solicit, the upgrade clean noun
+- *(cli)* the sub-task finalize guard — `jigc task finalize <sub-id>` refuses on a milestone sub-task
+- *(cli)* the sub-task finalize contract — the record routes stop naming `jigc task finalize`
+- *(cli)* AGENT.md truth edges + the exit-code line — B4
+- *(cli)* the discard ack states what it threw away — B3
+- *(engine)* the pre-trial surface polish, batch B route half — B1/B2
+- *(cli)* the pre-trial surface polish, batch A route half — A6
+- *(cli)* the pre-trial surface polish, batch A help half — A3/A4/A7
+- *(pack)* the pre-trial surface polish, batch A pack-prose half — A1/A2/A3/A5
+- *(cli)* the ambush-class const tells the truth about finalize.left-out
+- *(engine)* route the delta-target parse and project-step-missing blocks (the route floor)
+- *(cli)* the orientation footer stops claiming `start` routes — presents, agent picks, --workflow composes
+- *(cli)* every anyhow-embedded jigc span rides the checked Route constructor
+- *(cli)* the three wrong-task-id rejects converge on `jigc task list` via one helper
+- *(cli)* a settled milestone stays settled — the terminal is a guard, not a snapshot
+- *(cli)* a refused migration exits non-zero, and says why in the findings envelope
+- *(cli)* the relocation walk unions every prior home, not just the last one
+- *(engine)* an omitted slug-rule block is an omission, not an opt-out
+- *(cli)* a v0 doc of a bumped doctype migrates, instead of dead-ending forever
+- *(cli)* a rejected milestone finalize names itself in the log, like its per-task sibling
+- *(engine)* the anchor finding names the root it read, and routes to `git add`
+- *(cli)* describe breaks a paragraph per definition, not a wall
+- *(cli)* the two help texts stop lying about how a task is minted
+- *(cli)* the left-out forecast stops naming the config layer jigc stages itself
+- *(pack)* the changelog prompt composes only where its gate is granted
+- *(engine)* the seam rides the serialization, so there is no funnel to forget
+- *(engine)* a repeated field key is one defect, so it reports once
+- *(engine)* a pristine ADR's three empty slots no longer collide on one key
+- *(engine)* two bad refs in one step no longer collide with the whole corpus on one key
+- *(engine)* two orphaned deltas in one report no longer collide on one key
+- *(engine)* a blocked finalize names the unit — or the file — it blocked on
+- *(cli)* a failed write keys at the doc it failed on, not at null
+- *(engine)* two blocked creates in one task no longer collide on one key
+- *(cli)* the file jigc never wrote is adopted, not hand-repaired
+- *(engine)* a read item hands back the id you address it by
+- *(engine)* a fields-only section answers with its fields, not the empty string
+- *(engine)* the read path resolves the leaf address the tool itself emits
+- *(cli)* the committed milestone record refuses every jigc doc write verb
+- *(engine)* the base-mismatch route is unit-aware, so a milestone gets real options
+- *(cli)* another milestone's record is not code, so it stops wedging the base-guard
+- *(cli)* a listed pack the loader cannot honor blocks, so setup's topology gates too
+- *(cli)* the freeze assert fires in the pack factory, so every door blocks
+- *(cli)* the empty-diff backstop fires at the shipped default docs-root
+- *(cli)* the idempotency guard generalizes to every heading-minting kind
+- *(cli)* the gate claim turns on the doc's baseline, not on the finding's code
+- *(cli)* the report-only trailer claims a gate only where one exists
+- *(cli)* `jigc validate` exits non-zero over an unmigrated managed corpus
+- *(cli)* the binary-mismatch route stops handing out a false all-clear
+- *(engine)* family 3 stops calling a foreign squatter un-baselined
+- *(engine)* a stale managed doc states its staleness as data, under its own check id
+- *(engine)* a squatter at a managed home is an adoption case, not an unmigrated corpus
+- *(cli)* the compose-time store resolver sees the placement class — {{store.changelog}} resolves
+- *(engine)* the read-only file-state twin sees the placement class — an OOB edit to CHANGELOG.md is DETECTED
+- *(engine)* family 5 enumerates every committed instance — the placement class is DETECTED
+- *(migrate-corpus)* adjudicate a destination collision against the run's own claims, not disk
+- *(cli)* the corpus walk's placement branches become a union
+- *(engine)* carry the full target identity in the ref-resolves finding key (M41 audit LOW-2)
+- route the doc-code uncheckable-by-design advisories
+- give the store-version.binary-mismatch advisory a repair route
+- route the file-state advisories so the JSON floor holds (never null)
+- *(pack)* author-migration slot prose as block scalars, fold-safe
+- *(doc)* refuse retitle-item on a milestone-record — the A4.4 guard's item-level mirror
+- *(engine)* scan stray field groups on field-less repeatable items
+- *(pack)* the implement step enumerates all four adr slot set-slot commands (M40 A4)
+- *(cli)* rename reslug guards — placement states the real rule, milestone-record refuses always
+- *(cli)* help fold-ins — migrate --help de-enumerated, ingest<->migrate cross-pointers, staged docs route to task diff
+- *(cli)* fidelity kept-set scans the whole rewrite text; trailing sentence-dot no longer escapes the version scan
+- *(milestone)* stamp schema-version into the fresh milestone-record mint (M40 A1)
+- *(pack)* mirror the M36-M40 dev-knob mints into the methodology knobs.yaml — the whole-file shadow drift
+- *(cli)* NUL-terminated ls-files so non-ASCII .md filenames survive ingest and the orphan sweep (M40 F8)
+- *(engine)* reject anchor-pattern titles in retitle-item and add-item
+- *(cli)* route stage-phase git failures as a blocking finding, hook rejections stay raw
+- *(cli)* scope the migration rollback to what jigc itself retired or staged
+- *(cli)* discriminate the retirement pathspec on the index, not HEAD
+- *(cli)* render milestone-record base as structured {sha,short} in doc show json
+- *(cli)* doc show rejects a non-canonical slug for a placement singleton
+- *(engine)* resolve field-leaf slices of a committed doc through read_slice
+- *(milestone)* wire add-from-spec through the committed record
+- *(engine)* milestone-finalize advances base over a record-only range
+- *(render)* route-less advisories say '(no action needed)'
+- *(adapter)* permit rules use the Claude Code allow-rule shape
+- migrate-corpus relocates the placement changelog through the real verb
+- *(engine)* teach the create-side squatter guard the placement destination
+- *(methodology)* make commit scope + body optional (GF5)
+- *(cli)* report every artifact jigc uninstall removes in its summary
+- *(cli)* drop the inline comment so the .gitignore .env.example negation fires
+- *(engine)* route weak-signal rename finding to jigc unmanage
+- *(cli)* route the four bad-verb errors to real recovery, drop os-error tail
+- *(engine)* attribute every schema-conformance finding to its owning doc
+- *(cli)* block jigc rename on a dirty working tree
+- *(cli)* scope jigc rename's integrity gate to dangles it introduces
+- *(cli)* skip front matter when rewriting the rename H1
+- *(engine)* flip the reconciliation rename route-hint to advertise jigc rename
+- *(cli)* derive the schema-version stamp from each doctype's manifest version (M34 audit)
+- *(cli)* persist migrate-corpus file-state baseline per doc (M34 audit)
+- *(engine)* emit version-mismatch as a store-scope conformance break (M34 Inc-3)
+- *(validate)* floor remediation round 2 — close 3 defects a 2nd Codex pass found
+- *(validate)* floor remediation — newly-dangled comparison + path/symlink/doc honesty
+- *(cli)* provision the commit doc on creates-task, not selectable
+- *(finalize)* squash:false fan-out abort is WIP-safe — never reset --hard the main checkout
+- *(finalize)* land squash:true combine via ff-only merge, not destructive reset
+- *(cli)* run user hooks on the squash:true fan-out combine commit
+- *(finalize)* the manifest reports a staged-new file as added, not swept (M30 audit)
+- *(setup)* commit the install footprint on a cold-start unborn HEAD (M30 audit)
+- *(compose)* name the unbound author slot, de-dangle the supersedes block
+- *(cli)* clarify store `validate` content findings are report-only
+- *(setup)* fail loudly when the install commit is rejected
+- *(migrate)* validate --as before minting so a rejected migrate strands no task
+- *(write)* block silent last-write-wins on a populated 0..* ref
+- *(cli)* reject 'start --workflow X' for a creates-task workflow with no intent
+- *(cli)* emit --format json finalize report on stdout even when blocking
+- *(doc-code)* tighten language-resolution allowlist (M27 audit precision)
+- *(cli)* reject an intent with no sluggable content instead of minting a fallback-named task
+- *(pack)* commit scope/body optional + guide the required type, ending the finalize wall
+- *(pack)* greenfield arch-doc cites must use a bracketed list, not repeated set-field
+- *(cli)* deterministic migration task-id for paths that slug to empty
+- *(pack)* migrate-adr guidance must transcribe a dated source's date, not drop it
+- *(cli)* suppress the doc-level on-create date stamp in migration mode
+- *(cli)* always render the migration release-delta summary, affirmatively when empty
+- *(cli)* guard migration-stage fixed pathspecs on existence
+- *(cli)* scope migration on-create suppression to the date stamp only
+- *(cli)* reject batch-payload slot/field marker mismatches loudly
+- *(migrate)* name the off-router migration task migrate-<doctype>
+- *(migrate)* harden the byte-destructive retire path against data loss
+- *(cli)* roll back the retired foreign original on a failed migration commit
+- *(cli)* pack inventory for migrate-changelog workflow + author-migration step
+- *(cli)* complete on_create materialization — per-section routing + nested add-item symmetry
+- *(engine)* section-qualified nested-repeatable addressing — consistent across add-item/set-slot/set-field
+- *(engine)* top-level item field-write lands in parent's own region, not its nested child's field block
+- *(cli)* make CLAUDE.md inject/unwire round-trip byte-identical without a trailing newline
+- *(cli)* gate the finalize post-commit baseline-adopt with the G4 conformance check
+- *(engine)* validate store-sweep resolves command-refs pack-locally via origin_pack
+- *(cli)* JIGC_PACK_DIR supersedes the compose-embedded-methodology marker
+- *(cli)* resolve store-sweep schemas through the cascade, not pack-only
+- *(cli)* heal/upgrade the doc-code probe at setup (overwrite if bytes differ)
+- *(cli)* pre-flight the doc-code probe on the task path (one error, not N crashes)
+- *(cli)* drop the trailing blank line after the finalize hook-output relay
+- *(cli)* preserve a foreign pre-commit carrying jigc's start-sentinel without an end-marker
+- *(cli)* match the doc-code finding regardless of JSON spacing in the pre-commit hook
+- *(m19)* run wrapped pre-commit backstop before the foreign hook so it fires past a foreign `exit`
+- *(dogfood)* jrun logs before passthrough — a closed pipe can't drop the event
+- *(dogfood)* jrun warns loudly when log-event.py is unreachable
+- *(dogfood)* extract every jigc invocation, path-qualified included, from a Bash command
+- *(compose)* never rewrite slot-fill prose with inline data-value substitution
+- *(file-state)* discriminate staged keys from docs/-located committed baselines
+- *(dogfood)* refuse a tally over jigc events with exit:null instead of emitting zeros
+- *(dogfood)* record Write|Edit file_ops repo-relative so both OOB channels corroborate
+- *(compose)* leave unresolvable inline data-value tokens verbatim in prose
+- *(pack)* carry the minted task id on every composed doc-verb command
+- *(methodology)* compose the finalize tail into the planning workflow
+- *(finalize)* pass --no-renames so a renamed footprint path blocks the re-pin
+- *(engine)* classify a baselined path missing only when absent from disk
+- *(cli)* persist the absorb baseline-advance at landed task finalize only
+- *(cli)* route config-verb operational errors through the shared --format funnel
+- *(cli)* route doc-verb operational errors through the shared --format funnel
+- *(validate)* block a gitignored owner-artifact in the #5 presence gate
+- *(doc)* stamp set:on-create item fields when add-item mints an entry
+- *(methodology)* emit set-field for the string `evidence` finding field
+- *(cli)* pack-local body-refs on the resume/re-entry spine (compose_task_workflow)
+- *(engine)* leading-Simple-slot set_slot byte-stability via canonical section re-render
+- *(m11)* de-fragilize the describe weave + correct the stale describe --help
+- *(pack)* author usage fields as bare clauses so describe's woven lead is not doubled
+- *(pack)* doc-code resolver descends into mod/impl; de-mask flow-13 fixture
+- *(cli)* ship the doc-code probe in the build tree so production resolution works
+- *(engine)* make empty-slot fill reparseable regardless of trailing newline
+- *(cli)* correct D1 unset-project orientation over-promise copy
+- *(cli)* clean up sub-task working areas on a landed milestone finalize
+- *(cli)* exclude the finalize-less sub-task from the selectable router catalog
+- *(cli)* roll back per-sub-task commits when squash:false aggregate fails
+- *(explain)* make overrides_applied the total so JSON matches the text header
+- *(compose)* make {{fill:}} machinery token-based so mid-line nested fills can't leak
+- *(compose)* expand nested step-body includes in place, not hoisted to end
+- *(compose)* key slot-fill-orphan on the target step, not the composed workflow
+- *(explain)* wire per-knob scalar override provenance into --explain
+- *(pack)* emit a runnable jigc task bind line (append the task-id positional)
+- drop bind-spec test-fixture workflow leaking into the live router catalog
+- *(cli)* create-gate reads the task's bound workflow + drop spec title field
+- *(cli)* honor --format for jigc doc blocking findings
+- *(cli)* count untracked files in the empty-commit guard
+
+### Other
+
+- the bootstrap bump, jigc 1.0.0-rc.21 → 1.0.0-rc.22
+- *(engine)* the save-lock survival cells name their own save degrades
+- release.yml, the S9 release workflow, fenced by release_pipeline_fence arms (i)-(p)
+- release-plz.toml pins every S9 knob, fenced by release_pipeline_fence
+- *(cli)* the doc-code probe's stdin helper tolerates a broken pipe, as the invoker does
+- the S8 job matrix — one job per leg, fenced to the targets cargo metadata reports
+- *(cli)* dogfood_apparatus declares its python3 dependency at the suite
+- both crates publishable, jigc carrying exactly its include allowlist and the license pair
+- the root README, carrying the install line's one byte-identical copy
+- *(guides)* QUICKSTART owns the one crates.io install line
+- *(cli)* the install line's requirement is proved on the semver crate
+- *(cli)* the <jigc-version> normalization is anchored to the pack-version token
+- *(cli)* a jigc version bump moves no golden and reddens no fence
+- each crate carries its own version, jigc 1.0.0-rc.21 and jigc-engine 0.1.0-rc.1
+- the packages are jigc and jigc-engine, the engine lib aliased back to engine
+- *(cli)* a link fence reads every live doc's links and repository paths
+- *(cli)* the guides move into the crate, at crates/cli/guides, with no root copies
+- *(cli)* the packs move into the crate, at crates/cli/packs/{dev,methodology}
+- *(cli)* the cli's tests take pack paths from the seam's macro
+- *(cli)* every root-walking fence panics on a missing or empty root
+- *(cli)* the no-quiet-re-pin arm locates each pack's manifest in the working tree
+- *(cli)* the manifest freeze fence finds each pack's manifest per revision by pack identity
+- *(cli)* on Linux a replaced jigc still spawns its own image as the doc-code probe
+- *(cli)* every door that spawns the probe reports could-not-start and the child's skew reason
+- *(cli)* the two probe-boundary fences — the probe imports neither engine nor cli, and a probe spawn is never logged
+- *(cli)* the probe build machinery retires — no build.rs, no detached workspace, no setup extract
+- *(cli)* no suite builds the doc-code probe — the 39 suites drive the real jigc
+- *(history)* translate every cited commit sha through the rewrite's commit map
+- *(cli)* one run-then-parse helper at every process-output JSON parse site
+- *(record)* the project-state record leaves CLAUDE.md for implementation/project-history.md
+- *(release)* 1.0.0-rc.21 — the fifth M53 stamp, after the last batch and its review's fixes
+- *(review)* the verbatim claim swept over the suites that make it — and the batch's review on the record
+- *(m53)* the settle row the verification falsified, struck with its datum — and the batch on the record
+- *(release)* 1.0.0-rc.20 — the fourth M53 stamp, after the usability batch and F-10's review fixes
+- *(f10)* the amend arm on the record — its design home, the declared key, and the one guide paragraph (F-10, task 4)
+- *(record)* the pre-v1 usability batch on the record, with the two pieces of fallout its fixes caused
+- *(release)* 1.0.0-rc.19 — the third M53 stamp, after the cwd-dependence arc
+- *(record)* the confirmation pass — the golden follows the hook, and two records take their measurement
+- *(cli)* the two dispatch doc-comments name the root their doors resolve
+- *(route)* the law-1 carve-out and the count fences follow the based `jigc migrate` span
+- *(test)* the migrate-span table's wrapped literals end with `\`
+- *(route)* the four remaining migrate-route assertions expect the based operand
+- *(route)* the placement-override arm expects the based `jigc migrate` operand
+- *(surface)* the preload states the absolute-path rule instead of counting it, and three stale things go
+- *(fan-out)* the spawn-line and refusal expectations follow the absolute `cd`
+- *(repo)* one walk-up, not six — collapse the private `discover_repo_root` copies
+- *(release)* 1.0.0-rc.18 — the second M53 stamp, after the post-review fix and its review's seven fixes
+- *(posture)* the one-worktree-per-repository bound is a refusal at the door, not a paragraph
+- *(posture)* one axis cell runs the topology production actually presents — a detached worktree carrying an operation
+- *(posture)* the count goes, in all six homes — and the fence that missed it stops reading one spelling of prose
+- *(release)* 1.0.0-rc.17 — stamped after the M53 audit's seven fixes, not before
+- *(m53)* completion audit closed — seven findings, seven fixed, the fold-back inverted to cite the verdict
+- *(engine)* the mint class's finding producer is private to its module
+- *(flow54)* arm 5's mid-loop unwind cell stops being vacuous
+- *(record)* the project state names M53, and the fold-back fence is re-aimed and inverted twice
+- *(cli)* flow 54 — the pass's composite done-picture, every arm naming its set
+- *(cli)* the spike — the milestone doors' default reject arm is the flattened one
+- *(cli)* the family's own crate stops stating a count of it
+- *(cli)* the route's two qualifiers become the member's own
+- *(cli)* the posture family's prose homes stop stating a count
+- *(cli)* the spike — `git reset` abandons an uncommitted cherry-pick in every cell
+- *(cli)* the spike — every minted area carries its pin, and a directory is not one
+- *(cli)* the guide batch — the milestone's own area, and the byte that cannot be moved
+- *(cli)* the unwind's zero-false-fire controls, and the transient the transaction writes into the area
+- *(m52)* completion audit closed — seven findings, seven fixed, rc.16 stamped after
+- *(record)* the rollback registry's row count is fenced, and the three homes stop saying twelve
+- *(record)* the project state names M52, and the fold-back fence is re-aimed and inverted twice
+- *(cli)* flow 53 — the wave's composite done-picture, every arm naming its set
+- *(cli)* the counts this wave moved are fenced, and the record homes say what the source says
+- *(cli)* every adopter-facing byte lands in one batch and one hash move
+- *(cli)* every route naming `migrate-corpus` fires in a state `migrate-corpus` answers
+- *(pack)* the author steps stop calling doc schema the authority on a fixed identity's addresses
+- *(design)* the record says what the registry says
+- *(cli)* every row's discipline is a checked fact, and the promise reads every jigc transaction
+- *(design)* the posture family is stated as any un-concluded operation
+- *(cli)* every acting door adjudicates every un-concluded operation
+- *(cli)* the git-state axis gets a shell front door, fenced against the enum
+- *(cli)* the posture axis is a fixture builder, asserted by the marker git writes
+- *(dev)* the build litter is cleaned, packed and watched — the gate measures what the tests cost
+- *(m51)* completion audit closed — five findings, five fixed, rc.15 stamped after
+- *(m51)* the project state names M51, and the fence is re-aimed and inverted twice
+- *(flow52)* the wave's done-picture — nine arms, each naming the kind of set it iterates
+- *(record)* the conversion ledger closes, and the re-read finds a fourth row
+- *(guides)* the adopter guides move once, and every sentence is walked
+- *(cli)* the fold-back names the version `Cargo.toml` carries, and the fence says so
+- *(cli)* the residue counts are disposed by kind, and the pack-step fence is re-keyed
+- *(cli)* the invocation log is declared unversioned and additive-only, and its key set is closed by an exhaustive destructure
+- *(cli)* fence the 1.0 read contract's conformance witness against the shape it witnesses
+- *(cli)* the door count and the error-code mirror stop being hand-written numerals
+- *(cli)* close the migrate-corpus report's key set by exhaustive destructure
+- *(design)* the contract sentence splits, and the reshape gets the rule it was taken under
+- *(design)* the versioning policy binds the binary, and a pre-pin removal gets its rule
+- *(design)* the promise is named as the promise and the inventory registers the rollback-conflict
+- *(design)* the design docs state what shipped and the inventory registers the three codes
+- *(migrate)* the colon half of the pathspec class asks its own question
+- *(design)* the design docs and the finding inventory state what shipped
+- *(cli)* the deny-floor e2e test can see the whole floor
+- *(m50)* completion audit closed — four findings, four fixed, rc.14 stamped after
+- *(m50)* flow51 arm 3 walks the locus domain `1..=LOCI`, not an index set of the right size
+- *(m50)* the project state names M50, and the owed build is named not performed
+- *(cli)* flow 51 — the wave's done picture, every arm naming the kind of set it iterates
+- *(m50)* the shipped guides stop calling a refusing door safe
+- *(cli)* the conversion ledger closes, and the row nothing asserted gets its test
+- *(cli)* the write-miss fence gains the address-shape × declaredness cross
+- *(engine)* the transient un-built surface is retired, and a route with it
+- *(engine)* the record stops saying the migration has two loci
+- *(cli)* the two root knobs get one home — ROOT_KNOBS
+- *(cli)* the staged-prose probe gets one home and can answer for a single task
+- *(design)* the resolve half joins the minting discipline, and the grammar sentence gets one source
+- *(cli)* the work-unit-id door set becomes the clap tree's own
+- *(dev)* the removal scanner catches the two spellings it was missing
+- *(dev)* give the hand-built rig and its forbidden teardown one front door
+- *(m49)* the freeze door axis is the verb tree, and setup's exit-0 is declared
+- *(m49)* the project state names M49, and the owed bump is named not performed
+- *(cli)* flow 50 — the wave's done-picture, every arm naming its set kind
+- *(design)* the illustrative disclaimer says what it disclaims
+- *(design)* the stale reasons die, each with its falsifying datum
+- *(implementation)* the registration checklist names every pack-load fence
+- *(cli)* the CLI stops asserting the bound T3 reversed, at every home
+- *(m49)* the gate set gets one home, and the home is fenced
+- *(cli)* the snapshot store's first two-snapshot doctype, driven at both stamps
+- *(m49)* the orphan predicate of record follows the arm that shipped
+- *(m49)* the census gains its declared-or-resolved axis, and two rows are distinguished
+- *(m49)* the four docs stop stating a cap the tool does not enforce
+- *(m49)* the matrix stops presenting an exhaustive table with no row
+- *(engine)* the item-leaf-region rule is stated where it lives
+- *(engine)* the eighteen-cell item-region shape space, manufactured
+- *(m46)* the project state names M46, and claims the build and nothing beyond it
+- *(cli)* flow 49 — six arms, and each one says which kind of set it iterates
+- *(m46)* the M48 adjudication's falsified rows are re-disposed in place
+- *(m46)* no ledger entry is left keyed at the fired M46 Settle
+- *(m46)* ledger entry 12 is discharged, and its stale bound is struck
+- *(m46)* the doctype map states each doctype's shipped schema-version
+- *(cli)* the coverage enumeration gets one source, and moves not one byte
+- *(pending)* ledger entry 7 records what discharged it, and the fork it left open closed
+- *(design)* the record stops stating the set: splice as fact
+- *(design)* the key T2 minted is declared where every sibling is declared
+- *(design)* the record gains the foreign arm, and drops the exit it retired
+- *(design)* the door rule stops being a universal, and the withdrawn warrant is named
+- *(cli)* the arm-A/arm-B pair pins what a file-state baseline is worth
+- *(m48)* the wave closes — the verdict, the fold-back, and a fence that flips
+- *(release)* 1.0.0-rc.11 — the wave ships after its audit, not before
+- *(m48)* the project state names M48, and claims the build and nothing more
+- *(cli)* flow 48 — the wave's done-picture, every arm iterating a registry
+- *(cli)* the registration fence reads the manifest, not the disk
+- *(m48)* the pack-step count was never 69, and the one that survives names its binary
+- *(cli)* the fence goes live, and the record stops saying it is unfenced
+- *(cli)* the fence's window is the pushed range, proven on the push that broke it
+- *(cli)* the re-pin escape names one entity, and names it out loud
+- *(cli)* a frozen hash may move only with its co-located version
+- *(cli)* the class sweep — every committing door × the empty-commit outcome
+- *(cli)* the latent-surface sweep — relocate gets the one arm the derivation earned
+- *(pinning)* the trial's refuted set closes on existing pins, not new duplicates
+- *(cli,docs)* a coverage classification is a claim about the code, and it gets a floor under it
+- *(release)* 1.0.0-rc.10 — the version is a surface, and the surfaces that print it move with it
+- *(record)* the fold-back states the recovery a rejected hook leaves, and claims only the build
+- *(cli)* flow 47 — the wave's claim through the real binary, each arm iterating its class axis
+- *(cli)* the refuted facts become standing pins, and the ledger dispositions all 31 rows
+- *(cli)* all 44 leaf verbs driven to a real success under `--format json`, bijected against the clap tree
+- the ~250 test files become twelve targets — the gate was paying a Gatekeeper scan per binary, not running slow tests
+- github hygiene for the 1.0 call — remote, license, templates, metadata
+- bump 1.0.0-rc.8 -> rc.9 for the M45 + confidence-audit waves / final trial
+- kill the confidence-audit mutation survivors — the 7 (a) test gaps closed, the flaky promote proptest fixed
+- *(cli)* pin the three cross-order byte-determinism audit witnesses (back-sweep c2)
+- *(cli)* pin concurrent N-process fan-out → join determinism (back-sweep c1)
+- *(cli)* the pinned-facts ledger carries the §3/§5 disposition pointer
+- *(cli)* provoke the unborn-HEAD conservative history default
+- *(cli)* fence the pinning substrate — parity-list union, dedup collisions, JSON parse gate
+- *(cli)* pin the index-only rollback residue; rollback-assert the post-stage gate block
+- *(cli)* the history-gate op axis driven as real git ops; sparse-checkout bound declared (class: history-gate)
+- *(cli)* golden tree sweeps the creates-task:false surfaces — 558 → 612 cells (class: goldens)
+- *(cli)* pin the rejected-write-exits-1 one-way door; milestone join block derives EXIT_ERROR (class: exit codes)
+- *(cli)* flow 46 — the wave's claim end-to-end, each arm iterating its class axis
+- *(cli)* the pinned-facts module — refuted trial claims become standing tests
+- *(cli)* the compose-golden sweep suite + the first full generation
+- *(cli)* doc author --help shows the section-own-slot payload form
+- *(cli)* the address-grammar round-trip + settability-parity suite
+- *(cli)* green the unscoped gate — reconcile create-collision contracts, UTC-align date flake
+- *(cli)* the round-trip completeness fence goes registry-derived
+- *(cli)* the corruption class swept on its axis, through both doors
+- *(cli)* the golden harness and the safe state copy — no goldens generated
+- *(cli)* shape-class coverage — the fixture states populate every schema cell
+- *(cli)* the two repo-furniture fixture states, `chatty-hooks` and `vendored`
+- *(cli)* the three managed-corpus fixture states, built by driving the binary
+- *(cli)* open `tests/support/` — the trial-corpus builder and the `fresh` state
+- *(cli)* flow 45 — the M44 rc.8-wave composite done-picture through the real binary
+- command-output-contract §1 names migrate as an id-carrying producer + the assertion proving it
+- *(cli)* flow 44 — the M43 rc.7-wave composite done-picture through the real binary
+- *(cli)* flow43 — the M42 rc.6 done-picture acceptance suite + worked-examples flow
+- *(cli)* prove fold-safe slot fidelity for every author-migration template (M41 audit LOW-1)
+- *(cli)* flow42 — the M41 rc.5 done-picture acceptance suite + worked-examples flow
+- *(cli)* flow41 — the M40 done-picture acceptance suite
+- *(cli)* flow24 nested round-trip acceptance — every emitted address reads back in both formats
+- *(cli)* the v0->stamped methodology corpus e2e; fix the placement-born in-place migration arm (M40 A1)
+- *(pack)* unify manifest resolution per-origin-pack — origin_packs walk, governed union, freeze asserts every manifest (M40 A1)
+- *(cli)* flow40 — the M39 done-picture acceptance suite
+- *(cli)* extract the standalone move primitive from rename
+- *(cli)* collapse the 3 divergent .jigc/.gitignore writers to one source of truth
+- bump workspace version to 1.0.0-rc.2
+- *(cli)* composite [dev ▸ methodology] placement-layout acceptance
+- *(cli)* acceptance for placement reconciliation + exact-path ownership
+- *(cli)* placement singleton round-trips to its literal home end-to-end
+- *(cli)* consolidated design-altitude acceptance suite (M37 §7 six arms)
+- *(cli)* tighten flow36 migrate-route assertion + correct detector comment (M34 audit)
+- *(cli)* real-binary v1->v2 structural corpus migration acceptance (flow 36)
+- *(test)* correct migrate-guard comment — FALLBACK_TYPE == schema.ty, not schema.scope
+- *(cli)* guard selectable:false migrate resume + four-sibling provisioning census
+- *(cli)* guard re-entered filled migrate-* commit survives byte-untouched
+- *(cli)* flow 33 — squash:true combine keystone on the real binary
+- *(finalize)* flow 32 — finalize commits only the declared change-set, surfaces the rest (M30 Inc 4 T3)
+- *(finalize)* stage authored code in sweep-reliant finalize fixtures (M30 Inc 1 T1)
+- *(doc-code)* reserve the `:` code-anchor namespace for the deferred `#kind:name` qualifier
+- *(validation)* pin CHECK_INVENTORY count + fix stale knobs check-count comments
+- *(cli)* correct size-guard comment for the eight-grammar (YAML) debug binary
+- *(doc-code)* flow 31 — YAML compose service-key citations validated against compose.yaml
+- *(cli)* correct size-guard comment for the seven-grammar (CSS) debug binary
+- *(doc-code)* flow 30 — CSS selector citations validated against the stylesheet
+- *(doc-code)* gate-enforce the M27 multi-language probe guarantees
+- *(M27)* re-pin binary + correct grammar-count comment (post-audit)
+- *(cli)* tighten cargo-install size guard to 90MB so grammar bloat trips it
+- *(cli)* flow 29 — doc-code blocks on a vanished TS and Python symbol
+- docs-root flat sentinel is `.` not `""` (empty is rejected by string-knob validation)
+- *(cli)* clarify insert-step addressing (B6) + when to use doc author vs primitives, fill vs set-slot (B7)
+- *(cli)* doc author --from → --from-file for flag parity with set-slot
+- *(cli)* user-facing help cleanup — enumerate group verbs, drop design-doc cruft, tighten summaries
+- *(cli)* clarify the <<…>> slot-marker syntax, the SessionStart hook, and store-validate wording
+- *(cli)* migrate --help reflects all five migratable doctypes, not just changelog
+- *(cli)* flow28 marquee — hybrid arch-doc migration corpus + C2 per-item red
+- *(cli)* flow-27 marquee — cross-referencing ADR corpus + spec + prd, six reds
+- *(cli)* multi-requirement prd via doc author --from round-trips
+- *(cli)* end-to-end finalize-promote clobber-guard acceptance
+- *(cli)* end-to-end dateless adr migration acceptance
+- *(cli)* author a multi-element arch-doc.cites bracket-list through doc author
+- *(cli)* end-to-end adr migration acceptance + fix migrate-adr guidance skeleton
+- *(cli)* flow-26 marquee — full batch changelog migration + hardening reds
+- *(cli)* the in-location squatter seeds blank, authors, finalizes byte-stable
+- *(cli)* verify the doc-author batch inherits the id-from enum reject mid-chain
+- *(cli)* cold/empty spike for doc-author batch — single-release + create-only
+- *(cli)* flow-25 marquee e2e — migrate->review->approve->adopt + both reds
+- *(cli)* flow-25 staged-only acceptance — migrate spine e2e, byte-stable
+- *(cli)* flow-24 acceptance — changelog cold-create -> warm-append byte-stable, the reds + fold-in
+- *(cli)* end-to-end acceptance for embedded [dev ▸ methodology] compose-at-setup
+- *(cli)* size guard stats the copied install, not the harness binary
+- *(cli)* real-binary acceptance for the completed validate envelope
+- *(cli)* end-to-end no-override cargo-install probe acceptance
+- *(cli)* relocate doc-code probe source out of the embedded pack/ tree
+- *(cli)* drive arch-doc through the jigc validate store sweep (M18 audit)
+- *(cli)* real doc-code probe over a committed-store fixture (M18 inc-2 acceptance)
+- *(cli)* seal the flow-21 measured-run loop end-to-end through the real binary
+- *(cli)* extend off-router + build-honesty guards for the record-dogfood workflow
+- *(cli)* seal the completion-shaped serial finalize end-to-end
+- *(cli)* seal the outcome discrimination matrix across both renderer families
+- *(cli)* flow-20 completion-encode e2e — the #5 gate block/pass through the real completion workflow
+- *(cli)* extend off-router + build-honesty guards for the completion workflow
+- *(cli)* flow-19 planning-encode two-run e2e + the three reds over the real binary
+- *(cli)* extend off-router + build-honesty guards for the planning workflow
+- *(cli)* running-singleton substrate — cold/warm/drift acceptance over a fixture doctype
+- *(cli)* flow-18 seven-part increment-workflow acceptance over the real binary
+- *(cli)* increment stays off the methodology router — the M8 catalog-leak guard
+- *(cli)* real-binary checkpoint acceptance over a fixture pack
+- *(cli)* consolidated real-binary flow-17 acceptance over dev × methodology
+- *(cli)* real-binary pack-local body-reference acceptance over dev × methodology
+- *(cli)* real-binary acceptance — multi-pack floor, two-pack load, top-level winner
+- *(cli)* flow-16 acceptance — repeatable-item symbol-exists block + per-item disambiguation + dangling cites, fix->one commit
+- *(cli)* assert arch-doc `## Components` materializes after `## Overview` in schema order
+- *(cli)* arch-doc cites->adr edge pass+block + promotion to architecture/ e2e
+- *(cli)* describe surface guards the arch-doc doctype + architecture-documentation workflow prose
+- *(cli)* e2e byte-stable item authoring on the shipped spec doctype
+- *(cli)* guard the scope step against hollowing (M12 audit LOW)
+- *(cli)* flow 15 Half A — deterministic dogfood walk on a /tmp galey copy
+- *(cli)* the methodology honesty artifact — authored steps match the self-hosting sort + trigger list
+- *(cli)* byte-identical --task recompose + methodology orientation surface
+- *(cli)* flow 14 e2e — the override walk through the binary
+- *(cli)* describe format predicate — provably hostile-to-parsing, both directions
+- *(cli)* flow 13 e2e — meta-finding firing (floor-locked) + severity demotion
+- *(cli)* flow 13 e2e — doc-code passing + blocking walks at finalize
+- *(cli)* correct the `jigc ingest` read-only mislabel to honest register-only adopt
+- *(cli)* flow-12 e2e — four-candidate brownfield ingest through the binary
+- *(cli)* flow 11 e2e — new-project arc lands one docs(prd) commit
+- *(cli)* binary no-clobber + idempotency acceptance for jigc setup
+- *(cli)* flow10 Half-A step 3 — byte-identical finalize across divergent feed orders
+- *(cli)* flow-10 Half-A seam — N-process writes feed the milestone join, no hand-staging
+- *(cli)* flow10 Half-A step 1 — real-binary id-sorted Spawn emit + L1 launch guard
+- *(cli)* #4 face — execute the rendered spawn line, assert it reaches the real --task verb
+- *(cli)* seam — real --task writes feed the M7 join; mixed overlap blocks same-doc-clash
+- *(cli)* #7-barrier face — out-of-bounds write refused, sibling area byte-unchanged
+- *(cli)* flow-9 permutation acceptance through the real binary
+- *(milestone)* correct misleading comments on the e2e task-list order
+- *(cli)* flow 8 acceptance — demoted override-default conflict warns instead of blocks (exit 0)
+- *(cli)* warning live-tier produce->render->exit coverage + bare --explain M2 confirm
+- *(cli)* e2e severity tuning both tiers; wire demotion-lock floors into resolve
+- *(cli)* no-delta byte-identity goldens over the validate/finalize + upgrade paths
+- *(cli)* genuine v1->v2 jigc upgrade e2e + re-pin->clean loop (flow 7)
+- *(cli)* JIGC_PACK_DIR determinism guard — no-env byte-identical + env-loaded + distinct versions
+- *(cli)* compose byte-identical golden — the replace base-hash basis never perturbs compose
+- *(cli)* cross-kind override acceptance through the real binary
+- *(cli)* prove config fork composes as faithful copy then diverges with pinned basis
+- *(cli)* two-task plan -> implement-from-spec arc with implements-edge pass + dangling block
+- *(cli)* spec-only code-less task finalizes into one docs commit
+- *(cli)* e2e acceptance — the M2 routing loop end-to-end
+- *(cli)* release-smoke over the built binary + ship QUICKSTART
+- *(cli)* headline acceptance — the superseding-decision flow end-to-end
+- *(pack)* bring the commit schema to the finalize rendering contract
+- *(cli)* ship the real single-task pack content
+- scaffold cargo workspace (engine + cli)
