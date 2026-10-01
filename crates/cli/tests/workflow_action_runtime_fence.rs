@@ -1,18 +1,38 @@
-//! **Every action a workflow uses runs on a Node.js runtime GitHub still supports**
-//! (2026-10-01, the human's finding on run `36821202910`).
+//! **Every action a workflow uses is pinned to a vetted commit, and that commit runs on a
+//! Node.js runtime GitHub still supports** (2026-10-01: the human's finding on run
+//! `36821202910`, then the M54 completion audit's floating-tag finding).
 //!
-//! GitHub deprecated the `node20` action runtime and forces such actions onto `node24`
-//! with a warning on every job that uses one — `actions/checkout@v4` printed it on the
-//! `check`, `release-pr` and `release` jobs. Nothing local reddens on that: the gate never
-//! runs a workflow, and a pin's runtime is a fact about the action's `action.yml` at that
-//! ref, upstream. So the fact is read once, by hand, and pinned here: every `uses:` under
-//! `.github/workflows/` must name an action in [`VETTED`] at exactly its vetted ref. A new
-//! action, or a pin moved to another ref, reddens until someone reads that ref's
-//! `action.yml` and records its `runs.using` — never `node20` or older.
+//! Two facts about a pin, both upstream, so nothing local reddens when either changes:
 //!
-//! How a row is vetted: `gh api 'repos/<owner>/<repo>/contents/action.yml?ref=<ref>'
-//! --jq .content`, base64-decoded, `runs.using`. A floating major (`v5`) is re-read at
-//! its current tag. A `composite` action is vetted through the actions its steps use.
+//! - **Its code.** A tag is a movable name: a moved or compromised `v5` runs new code under
+//!   the same line, and `release.yml`'s jobs hold the crates.io OIDC token (`release`) and
+//!   the GitHub App's private key (`release-pr`). So every `uses:` under
+//!   `.github/workflows/` names its action at a full 40-hex commit SHA, with the release
+//!   tag that SHA was read from as a trailing comment — `uses: actions/checkout@<sha> #
+//!   v5.1.0`. `ci.yml` holds no publish rights; it is pinned the same way so there is one
+//!   convention to fence.
+//! - **Its runtime.** GitHub deprecated the `node20` action runtime and forces such actions
+//!   onto `node24` with a warning on every job that uses one — `actions/checkout@v4`
+//!   printed it on the `check`, `release-pr` and `release` jobs.
+//!
+//! So both are read once, by hand, and pinned here: every `uses:` must name an action in
+//! [`VETTED`] at exactly its vetted SHA, commented with exactly its vetted tag. A new
+//! action, or a pin moved to another commit, reddens until someone vets that commit.
+//!
+//! How a row is vetted (implementation/release.md → *Action pins*):
+//! 1. `gh api repos/<owner>/<repo>/git/ref/tags/<tag>` — the latest release tag within
+//!    the major in use. An `object.type` of `tag` is an annotated tag: dereference it with
+//!    `gh api repos/<owner>/<repo>/git/tags/<sha>` until the object is a `commit`.
+//! 2. `gh api 'repos/<owner>/<repo>/contents/action.yml?ref=<commit>' --jq .content`,
+//!    base64-decoded, `runs.using` — never `node20` or older.
+//! 3. A `composite` action is vetted through the actions its steps use, read at the same
+//!    commit.
+//!
+//! **The bound this fence does not close** (release.md → Known gaps): a pinned SHA fixes
+//! the action's *code*, and `release-plz/action` at its pinned commit already names its
+//! three inner actions by SHA, so their code is fixed too. What that code *downloads* at
+//! run time is not: `cargo-binstall` 1.23.0 and release-plz 0.3.169 are fetched from
+//! GitHub release assets by version, with no checksum.
 
 use crate::manifest_freeze_fence::repo_root;
 use serde_yaml_ng::Value;
@@ -21,53 +41,90 @@ use std::fs;
 
 const WORKFLOWS_DIR: &str = ".github/workflows";
 
-/// One vetted pin: the action, the ref every workflow must use, and that ref's
-/// `runs.using` as read on the date in the module docs.
-struct Vetted {
-    action: &'static str,
-    pinned: &'static str,
-    runs_using: &'static str,
+/// One vetted pin: the action, the commit every workflow must use, the release tag that
+/// commit was resolved from (the trailing comment on every `uses:` line), and that
+/// commit's `runs.using` as read on the date in the module docs.
+pub struct Vetted {
+    pub action: &'static str,
+    pub sha: &'static str,
+    pub tag: &'static str,
+    pub runs_using: &'static str,
 }
 
 /// Runtimes GitHub no longer runs as declared.
 const RETIRED_RUNTIMES: [&str; 3] = ["node12", "node16", "node20"];
 
-/// Every action the workflows may use. `checkout` and `create-github-app-token` are at
-/// the lowest major whose `action.yml` declares `node24` (`v4` and `v2` declared
-/// `node20`). `create-github-app-token` from `v3.1.0` deprecates its `app-id` input for
-/// `client-id`; both feed one variable, so the release workflow passes the same secret
-/// as `client-id`. `rust-cache`'s `v2` tag already declares `node24`. `release-plz/action`
-/// is `composite`, and the three actions its `v0.5` steps use
-/// (`taiki-e/install-action`, `cargo-bins/cargo-binstall`, `release-plz/git-config`) are
-/// `composite` too, so no Node runtime is involved.
-const VETTED: [Vetted; 4] = [
+/// Every action the workflows may use, read 2026-10-01. Each is the latest release within
+/// the major the workflows used before the SHA pin, and each major's floating tag pointed
+/// at the same commit that day. `checkout` and `create-github-app-token` are at the lowest
+/// major whose `action.yml` declares `node24` (`v4` and `v2` declared `node20`).
+/// `create-github-app-token` from `v3.1.0` deprecates its `app-id` input for `client-id`;
+/// both feed one variable, so the release workflow passes the same secret as `client-id`.
+/// `release-plz/action` is `composite`, and at this commit its steps use
+/// `taiki-e/install-action@9114bf4d891761788c546334fd37538eae1bf8b3` (v2.87.16),
+/// `cargo-bins/cargo-binstall@b874e25ea559687bec77e281e9b271aa1367b624` (v1.23.0) and
+/// `release-plz/git-config@59144859caf016f8b817a2ac9b051578729173c4` — each by SHA, each
+/// `composite`, so no Node runtime is involved.
+pub const VETTED: [Vetted; 4] = [
     Vetted {
         action: "actions/checkout",
-        pinned: "v5",
+        sha: "fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
+        tag: "v5.1.0",
         runs_using: "node24",
     },
     Vetted {
         action: "actions/create-github-app-token",
-        pinned: "v3",
+        sha: "bcd2ba49218906704ab6c1aa796996da409d3eb1",
+        tag: "v3.2.0",
         runs_using: "node24",
     },
     Vetted {
         action: "Swatinem/rust-cache",
-        pinned: "v2",
+        sha: "6323deb102c322ba6fcbdcafc7e3dddab59af2b6",
+        tag: "v2.9.2",
         runs_using: "node24",
     },
     Vetted {
         action: "release-plz/action",
-        pinned: "v0.5",
+        sha: "b8d6b54b02889ff2ae2bb82e8b57c3a8fc1683a5",
+        tag: "v0.5.139",
         runs_using: "composite",
     },
 ];
 
-/// Every `uses:` in every workflow file, as `(file, job, uses)`. A job-level `uses:`
-/// (a reusable workflow) counts as well as a step's.
-fn every_uses() -> Vec<(String, String, String)> {
+/// The exact `uses:` value every workflow must carry for `action`: `<action>@<sha>`. The
+/// one home other workflow fences read a pin from.
+pub fn vetted_uses(action: &str) -> String {
+    let row = VETTED
+        .iter()
+        .find(|row| row.action == action)
+        .unwrap_or_else(|| panic!("`{action}` has no vetted row"));
+    format!("{}@{}", row.action, row.sha)
+}
+
+fn is_commit_sha(reference: &str) -> bool {
+    reference.len() == 40
+        && reference
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
+/// A full release tag, `v<major>.<minor>.<patch>` — never a floating `v5` or `v0.5`.
+fn is_full_release_tag(tag: &str) -> bool {
+    let Some(version) = tag.strip_prefix('v') else {
+        return false;
+    };
+    let parts: Vec<_> = version.split('.').collect();
+    parts.len() == 3
+        && parts
+            .iter()
+            .all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// The workflow files, sorted, as `(file name, body)`.
+fn workflow_files() -> Vec<(String, String)> {
     let dir = repo_root().join(WORKFLOWS_DIR);
-    let mut files: Vec<_> = fs::read_dir(&dir)
+    let mut paths: Vec<_> = fs::read_dir(&dir)
         .unwrap_or_else(|e| panic!("{WORKFLOWS_DIR} is readable: {e}"))
         .map(|entry| entry.expect("a workflow directory entry").path())
         .filter(|path| {
@@ -75,17 +132,27 @@ fn every_uses() -> Vec<(String, String, String)> {
                 .is_some_and(|ext| ext == "yml" || ext == "yaml")
         })
         .collect();
-    files.sort();
-    assert!(!files.is_empty(), "{WORKFLOWS_DIR} holds no workflow file");
+    paths.sort();
+    assert!(!paths.is_empty(), "{WORKFLOWS_DIR} holds no workflow file");
+    paths
+        .into_iter()
+        .map(|path| {
+            let name = path
+                .file_name()
+                .expect("a workflow file name")
+                .to_string_lossy()
+                .into_owned();
+            let body = fs::read_to_string(&path).expect("the workflow file is readable");
+            (name, body)
+        })
+        .collect()
+}
 
+/// Every `uses:` in every workflow file, as `(file, job, uses)`, read through the YAML
+/// parser. A job-level `uses:` (a reusable workflow) counts as well as a step's.
+fn every_uses() -> Vec<(String, String, String)> {
     let mut found = Vec::new();
-    for path in files {
-        let name = path
-            .file_name()
-            .expect("a workflow file name")
-            .to_string_lossy()
-            .into_owned();
-        let body = fs::read_to_string(&path).expect("the workflow file is readable");
+    for (name, body) in workflow_files() {
         let workflow: Value =
             serde_yaml_ng::from_str(&body).unwrap_or_else(|e| panic!("{name} is YAML: {e}"));
         let jobs = workflow["jobs"]
@@ -106,21 +173,63 @@ fn every_uses() -> Vec<(String, String, String)> {
     found
 }
 
+/// Every `uses:` line in every workflow file, read as text because the parser drops the
+/// trailing tag comment, as `(file, line number, value, comment)`.
+fn every_uses_line() -> Vec<(String, usize, String, Option<String>)> {
+    let mut found = Vec::new();
+    for (name, body) in workflow_files() {
+        for (index, line) in body.lines().enumerate() {
+            let trimmed = line.trim_start();
+            let trimmed = trimmed.strip_prefix("- ").unwrap_or(trimmed);
+            let Some(rest) = trimmed.strip_prefix("uses:") else {
+                continue;
+            };
+            let (value, comment) = match rest.split_once(" #") {
+                Some((value, comment)) => (value, Some(comment.trim().to_owned())),
+                None => (rest, None),
+            };
+            found.push((name.clone(), index + 1, value.trim().to_owned(), comment));
+        }
+    }
+    found
+}
+
 #[test]
 fn every_vetted_runtime_is_a_supported_one() {
     for row in &VETTED {
         assert!(
             !RETIRED_RUNTIMES.contains(&row.runs_using),
-            "`{}@{}` is vetted at `runs.using: {}`, a retired runtime",
+            "`{}@{}` ({}) is vetted at `runs.using: {}`, a retired runtime",
             row.action,
-            row.pinned,
+            row.sha,
+            row.tag,
             row.runs_using,
         );
     }
 }
 
 #[test]
-fn every_workflow_action_is_pinned_at_its_vetted_ref() {
+fn every_vetted_row_is_a_commit_sha_read_from_a_full_release_tag() {
+    let mut wrong = Vec::new();
+    for row in &VETTED {
+        if !is_commit_sha(row.sha) {
+            wrong.push(format!(
+                "`{}`: `{}` is not a full 40-hex lowercase commit SHA",
+                row.action, row.sha
+            ));
+        }
+        if !is_full_release_tag(row.tag) {
+            wrong.push(format!(
+                "`{}`: `{}` is not a full `v<major>.<minor>.<patch>` release tag",
+                row.action, row.tag
+            ));
+        }
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+#[test]
+fn every_workflow_action_is_pinned_at_its_vetted_sha() {
     let mut wrong = Vec::new();
     for (file, job, uses) in every_uses() {
         let Some((action, reference)) = uses.split_once('@') else {
@@ -129,15 +238,47 @@ fn every_workflow_action_is_pinned_at_its_vetted_ref() {
         };
         match VETTED.iter().find(|row| row.action == action) {
             None => wrong.push(format!(
-                "{file} `{job}`: `{uses}` is not vetted — read its `action.yml` at that ref \
-                 and add a row whose `runs.using` is not node20 or older"
+                "{file} `{job}`: `{uses}` is not vetted — resolve the latest release tag's \
+                 commit, read its `action.yml` there, and add a row whose `runs.using` is \
+                 not node20 or older"
             )),
-            Some(row) if row.pinned != reference => wrong.push(format!(
-                "{file} `{job}`: `{uses}` is not the vetted `{action}@{}` ({}) — re-read \
-                 `action.yml` at `{reference}` and move the row with the pin",
-                row.pinned, row.runs_using,
+            Some(row) if row.sha != reference => wrong.push(format!(
+                "{file} `{job}`: `{uses}` is not the vetted `{action}@{}` ({}, {}) — a pin \
+                 is a full commit SHA, never a tag; re-vet the commit at `{reference}` and \
+                 move the row with the pin",
+                row.sha, row.tag, row.runs_using,
             )),
             Some(_) => {}
+        }
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+#[test]
+fn every_uses_line_carries_its_vetted_tag_as_a_trailing_comment() {
+    let lines = every_uses_line();
+    // The text scan must see every `uses:` the parser sees, or a form it does not
+    // recognise (quoted, flow-style) would slip past the comment check.
+    assert_eq!(
+        lines.len(),
+        every_uses().len(),
+        "the line scan and the YAML parse disagree on how many `uses:` there are"
+    );
+    let mut wrong = Vec::new();
+    for (file, line, value, comment) in lines {
+        let Some(row) = VETTED
+            .iter()
+            .find(|row| value.split_once('@').is_some_and(|(a, _)| a == row.action))
+        else {
+            // Unvetted actions are the pin arm's finding; nothing to compare a comment to.
+            continue;
+        };
+        if comment.as_deref() != Some(row.tag) {
+            wrong.push(format!(
+                "{file}:{line}: `uses: {value}` must end `# {}` (the tag its SHA was read \
+                 from), found {comment:?}",
+                row.tag
+            ));
         }
     }
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));

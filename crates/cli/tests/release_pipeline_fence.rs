@@ -29,8 +29,9 @@
 //! `id-token: write`; **(l)** the check job has no environment, runs
 //! `dev/unpublished-versions` and outputs its flag; **(m)** the release-PR job's checkout
 //! and `release-plz` both run on the GitHub App's token; **(n)** nothing keys on a commit
-//! subject; **(o)** every `release-plz/action` step pins release-plz `0.3.169`; **(p)** the
-//! dry run and the engine overlay apply off `gherrink/jigc` only.
+//! subject; **(o)** every `release-plz/action` step is the vetted commit and pins
+//! release-plz `0.3.169`; **(p)** the dry run and the engine overlay apply off
+//! `gherrink/jigc` only.
 //!
 //! The agents' arm, over `.claude/` (release.md → *What agents may not do*): **(q)** this
 //! repository's `.claude/settings.json` denies every pinned form of merging a PR, pushing
@@ -42,6 +43,7 @@
 use crate::manifest_freeze_fence::repo_root;
 use crate::support::root_walk;
 use crate::support::run_then_parse::stdout_json;
+use crate::workflow_action_runtime_fence::vetted_uses;
 use serde_yaml_ng::Value as Yaml;
 use std::collections::BTreeMap;
 use std::fs;
@@ -391,7 +393,9 @@ const APP_KEY_SECRET: &str = "${{ secrets.JIGC_RELEASE_APP_PRIVATE_KEY }}";
 
 const APP_TOKEN_ACTION: &str = "actions/create-github-app-token@";
 const CHECKOUT_ACTION: &str = "actions/checkout@";
-const RELEASE_PLZ_ACTION: &str = "release-plz/action@v0.5";
+/// The action, by name; its pinned commit has one home,
+/// `workflow_action_runtime_fence::VETTED`.
+const RELEASE_PLZ_ACTION: &str = "release-plz/action@";
 
 /// The release-plz version every proof on the record ran (release.md → release-plz knobs).
 const RELEASE_PLZ_VERSION: &str = "0.3.169";
@@ -736,13 +740,13 @@ fn o_every_release_plz_step_pins_the_proven_version() {
         for step in steps_using(job, "release-plz/") {
             assert_eq!(
                 step["uses"].as_str(),
-                Some(RELEASE_PLZ_ACTION),
+                Some(vetted_uses("release-plz/action").as_str()),
                 "job `{id}`"
             );
             assert_eq!(
                 step["with"]["version"].as_str(),
                 Some(RELEASE_PLZ_VERSION),
-                "job `{id}`'s `{RELEASE_PLZ_ACTION}` step must pin `version: \
+                "job `{id}`'s `{RELEASE_PLZ_ACTION}…` step must pin `version: \
                  \"{RELEASE_PLZ_VERSION}\"`, the release-plz every proof on the record ran"
             );
             pinned.push(id.clone());
@@ -751,7 +755,7 @@ fn o_every_release_plz_step_pins_the_proven_version() {
     assert_eq!(
         pinned,
         [RELEASE_PR_JOB, RELEASE_JOB],
-        "one `{RELEASE_PLZ_ACTION}` step in each of the two release-plz jobs"
+        "one `{RELEASE_PLZ_ACTION}…` step in each of the two release-plz jobs"
     );
 }
 
@@ -766,8 +770,12 @@ fn p_the_dry_run_and_the_overlay_apply_off_the_real_repository_only() {
     let steps = job_steps(release);
     let plz_at = steps
         .iter()
-        .position(|s| s["uses"].as_str() == Some(RELEASE_PLZ_ACTION))
-        .unwrap_or_else(|| panic!("the `{RELEASE_JOB}` job runs no `{RELEASE_PLZ_ACTION}`"));
+        .position(|s| {
+            s["uses"]
+                .as_str()
+                .is_some_and(|u| u.starts_with(RELEASE_PLZ_ACTION))
+        })
+        .unwrap_or_else(|| panic!("the `{RELEASE_JOB}` job runs no `{RELEASE_PLZ_ACTION}…`"));
     let plz = &steps[plz_at];
     assert_eq!(plz["with"]["command"].as_str(), Some("release"));
     assert_eq!(
