@@ -17,8 +17,9 @@
 # crates/cli/tests/branch_name_fence.rs drives this script over a table of names
 # against an oracle built on `is_slug` itself, so the two cannot drift apart.
 #
-# CI runs it in the hygiene job on every branch push and pull request
-# (.github/workflows/ci.yml -> `branch name`).
+# CI runs it in the hygiene job on every branch push and on every pull request but one
+# from a fork, whose branch is its contributor's to name (.github/workflows/ci.yml ->
+# `branch name`; CLAUDE.md -> Branches).
 #
 # Usage:
 #   dev/branch-name <branch>

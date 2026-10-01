@@ -66,7 +66,10 @@ jobs:
       # The branch model's name rule (CLAUDE.md -> Branches): a push to, or a pull
       # request from, a branch outside the closed set fails here, in seconds, with the
       # allowed patterns listed. A pull request is checked by its head branch; a tag
-      # push has no branch and is not checked. The rule is dev/branch-name, and
+      # push has no branch and is not checked; and a pull request from a fork (its head
+      # repository is not this one, or null once the fork is deleted) is exempt, because
+      # its branch is the contributor's to name — the rest of this job runs on it
+      # unchanged, and a push is always checked. The rule is dev/branch-name, and
       # crates/cli/tests/branch_name_fence.rs holds it to jigc's slug grammar and
       # drives this body for each event.
       - name: branch name
@@ -75,8 +78,13 @@ jobs:
           BRANCH_REF_TYPE: ${{ github.ref_type }}
           BRANCH_REF_NAME: ${{ github.ref_name }}
           BRANCH_HEAD_REF: ${{ github.head_ref }}
+          BRANCH_REPO: ${{ github.repository }}
+          BRANCH_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
         run: |
-          if [ "$BRANCH_EVENT" = pull_request ]; then
+          if [ "$BRANCH_EVENT" = pull_request ] && [ "$BRANCH_HEAD_REPO" != "$BRANCH_REPO" ]; then
+            echo "branch name: a pull request from the fork ${BRANCH_HEAD_REPO:-(deleted)}, exempt: its branch is its contributor's to name"
+            exit 0
+          elif [ "$BRANCH_EVENT" = pull_request ]; then
             branch="$BRANCH_HEAD_REF"
           elif [ "$BRANCH_REF_TYPE" = branch ]; then
             branch="$BRANCH_REF_NAME"
