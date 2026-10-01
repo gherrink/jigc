@@ -1,6 +1,6 @@
 # The release rehearsal — M54 Increment 10
 
-This file records the **dry-run rehearsal** of the release pipeline, read back by run id. It is the entry gate of Increment 10 ([planning-gate-record.md](planning-gate-record.md) → row 19; S5). The rehearsal ran at H2 in the private `gherrink/jigc-release-rehearsal`, a mirror push of `main` with the same GitHub App installed. The last section records `gherrink/jigc` as it stood when the rehearsal closed. Cross-ref [release.md](../../../implementation/release.md) → Publishing (*Rehearsed dry*, *The workflow*) and Known gaps; [DECISIONS.md](../../../DECISIONS.md) → *M54 Increment 10 planning* (the basis each read was checked against) and *M54 Inc 10 T1*.
+This file records the **dry-run rehearsal** of the release pipeline, read back by run id. It is the entry gate of Increment 10 ([planning-gate-record.md](planning-gate-record.md) → row 19; S5). The rehearsal ran at H2 in the private `gherrink/jigc-release-rehearsal`, a mirror push of `main` with the same GitHub App installed. The section *The real repository at the rehearsal's close* records `gherrink/jigc` as it stood when the rehearsal closed, and the last section, *The bootstrap*, records Increment 10 T2's version bump (row 20). Cross-ref [release.md](../../../implementation/release.md) → Publishing (*Rehearsed dry*, *The workflow*) and Known gaps; [DECISIONS.md](../../../DECISIONS.md) → *M54 Increment 10 planning* (the basis each read was checked against) and *M54 Inc 10 T1*.
 
 **Verdict: the rehearsal ran the whole wiring, and every read equals the planning basis.** One release PR opened under the conditional title and carried only the two generated changelogs. The check job's flag read `missing=true` on both pushes. After the merge, the environment-bound job ran release-plz with `dry_run: true`, behind the overlay step, and reached `jigc-engine` before `jigc`, naming both tags it would create. The rehearsal repository holds no tag and no release. Nothing is missing or failed, so no fix lands here and no re-run is owed.
 
@@ -237,3 +237,56 @@ The mirror also ran `ci.yml`. The rehearsal repository is private, so its runner
 - **A job waiting at the prompt holds its concurrency group.** Both `release` jobs share group `release-refs/heads/main`. The older one has waited at the approval prompt since 17:45:37Z. The newer one is `pending` behind it and did not replace it. Meanwhile `36785068612`'s `release-pr`, in its own group, ran to `success`. So a release waiting at the prompt does not hold up the release PR.
 - **The real PR #1** (G3): `#1 chore(release): prepare release`, by `app/gherrink-jigc-release`, `OPEN`. Its head is `release-plz-2026-09-30T22-26-58Z` at `b75cde5b8124e2acc688f4d6a32b7d7088480715`, and its base is `main` at `2e7493c513ecbfce2059181b352fc182d985fb1c`. It is `+2066 -0` over `files=2`: `crates/cli/CHANGELOG.md +1408 -0` and `crates/engine/CHANGELOG.md +658 -0`. At its head, `crates/cli/Cargo.toml` reads `version = "1.0.0-rc.21"`. The changelogs head `## [Unreleased]`, then `## [1.0.0-rc.21](https://github.com/gherrink/jigc/compare/jigc-v0.0.0...jigc-v1.0.0-rc.21) - 2026-09-30` and `## [0.1.0-rc.1](https://github.com/gherrink/jigc/compare/jigc-engine-v0.0.0...jigc-engine-v0.1.0-rc.1) - 2026-09-30`. **This PR carries rc.21, in the same shape as the rehearsal's PR.** G5 diffs each changelog against the rehearsal PR's (`ca34c8b0`): the only differences are the compare links' repository in the version heading and one added line, `- *(engine)* the save-lock survival cells name their own save degrades`. That is `048bde93`, which touches both crates and landed after the rehearsal's `39980394`. Merging it as it stands would publish rc.21, not rc.22. The bootstrap bump (Increment 10 T2) and the regenerated PR come first, and T3 writes the human's checks for H3.
 - **The environment and the secrets** (G4): `release can_admins_bypass=false protection_rules=required_reviewers:gherrink,branch_policy`, and the repository secrets are `JIGC_DENYLIST,JIGC_RELEASE_APP_ID,JIGC_RELEASE_APP_PRIVATE_KEY`. No `CARGO_REGISTRY_TOKEN` exists.
+
+## The bootstrap
+
+Gate-record row 20 (S9, S5, S17), landed as **`db465baa2e5de83c6ed11c25a6e6ff2060959d01`**, `build: the bootstrap bump, jigc 1.0.0-rc.21 → 1.0.0-rc.22`, on parent `92cae68e`. Every value in this section is transcribed from that commit's body, apart from the re-reads at its end. The commit carries only the version bump. The record lives here because the settled shape (the human's option 3, [DECISIONS.md](../../../DECISIONS.md) → *the bootstrap drops its hand-seeded changelogs*) keeps anything else out of it.
+
+**The commit.** `git show --stat db465baa` lists exactly `Cargo.lock | 2 +-` and `crates/cli/Cargo.toml | 2 +-`, `2 files changed, 2 insertions(+), 2 deletions(-)`. `jigc` moves `1.0.0-rc.21 → 1.0.0-rc.22` in its manifest and in its `Cargo.lock` entry. `jigc-engine` is already `0.1.0-rc.1`, and `jigc`'s `=0.1.0-rc.1` pin does not move. **No changelog file is committed.**
+
+**Red, at the parent `92cae68e`:** `dev/unpublished-versions` printed `jigc@1.0.0-rc.21 missing`, `jigc-engine@0.1.0-rc.1 missing`, `missing=true`.
+
+### The changelog finding: none
+
+The finding was driven on a `mktemp -d` scratch clone of `92cae68e`, with the bump committed under T2's subject. `release-plz --version` read `release-plz 0.3.169`, the prebuilt `aarch64-apple-darwin` tarball from GitHub release `release-plz-v0.3.169`. It ran `release-plz update` against live crates.io, with the repository's `release-plz.toml` and no `--registry-manifest-path`. It **exited 0 after ~13.4 min** (22:59:14Z → 23:12:37Z, 2026-09-30). The log's key lines:
+
+```
+INFO using release-plz config file release-plz.toml
+INFO jigc-engine: local version (0.1.0-rc.1) > registry version (0.0.0). Only changelog will be updated.
+INFO jigc: local version (1.0.0-rc.22) > registry version (0.0.0). Only changelog will be updated.
+INFO jigc-engine: updating changelog for version 0.1.0-rc.1
+INFO jigc: updating changelog for version 1.0.0-rc.22
+* `jigc-engine`: 0.0.0 -> 0.1.0-rc.1
+* `jigc`: 0.0.0 -> 1.0.0-rc.22
+```
+
+It also logged **2009 WARN lines**: one *"Cannot determine repo url. The changelog won't contain the release link"*, because the clone's origin is a local path, and the history walk's *"cannot read package metadata of jigc in <old commit>"*.
+
+**The scratch-clone diff.** Afterwards `git status --porcelain` read exactly
+
+```
+?? crates/cli/CHANGELOG.md
+?? crates/engine/CHANGELOG.md
+```
+
+with no diff to either manifest, to `Cargo.lock` or to the root `CHANGELOG.md`. **The versions are unchanged** and the root changelog is untouched. The generated changelogs have **1409 lines (`jigc`) and 658 (`jigc-engine`)**. Each opens with the Keep a Changelog header and an empty `## [Unreleased]`, then `## [1.0.0-rc.22] - 2026-09-30` (`jigc`) and `## [0.1.0-rc.1] - 2026-09-30` (`jigc-engine`).
+
+**Why "none".** The hand-set local versions sit above the `0.0.0` placeholders on crates.io, so release-plz keeps them, writes only the changelogs, and creates both files from nothing. That leaves a diff for the release PR to carry, which is what opens it. So the bootstrap needs no changelog file, and **the header-only variant was not driven**. This is the path the rehearsal's PR #1 took (*The release PR*, above), and the path O4 requires ([planning-gate-record.md](planning-gate-record.md) → O4). *Not analysed here:* the clone's `jigc` changelog is 1409 lines, while the real PR #1 adds 1408 at rc.21 over a different base (G3). No read in this record explains the one line.
+
+### The gates
+
+- **The clone's gate, on the post-update tree** (the tree the release PR will carry): `<clone>/dev/gate --private-target` printed `GATE: PASS`, `tests passed=4192 failed=0 (over 17 test binaries)`, with fmt, clippy, build and test all at `exit=0`, and the clone's status was unchanged afterwards. So the link fence, and the `g_flow`, `g_milestone` and `g_doc` groups the rehearsal's 2-CPU CI never finished, are green over the generated changelogs.
+- **The publish dry run, in this tree:** `cargo publish --workspace --dry-run --allow-dirty` (run before the commit, hence `--allow-dirty`) exited 0. It packaged and verified `jigc-engine v0.1.0-rc.1`, then `jigc v1.0.0-rc.22`, and ended each with `warning: aborting upload due to dry run`.
+- **`dev/unpublished-versions`, at the bump:** `jigc@1.0.0-rc.22 missing`, `jigc-engine@0.1.0-rc.1 missing`, `missing=true`.
+- **`dev/gate`, at the bump:** `GATE: PASS`, `tests passed=4192 failed=0 (over 17 test binaries)`. Afterwards `git status --porcelain` showed only ` M Cargo.lock` and ` M crates/cli/Cargo.toml`, so **no golden moved (S17, on the real bump)**.
+- **The link fence:** `cargo test -p jigc --test g_config doc_link_fence::` gave 16 passed, 0 failed.
+
+### Re-read on 2026-10-01 (Increment 10 T3)
+
+Three cheap reads, re-run at HEAD `db465baa`, each equal to the value above or in G3:
+
+- `git show --stat db465baa`: `Cargo.lock | 2 +-`, `crates/cli/Cargo.toml | 2 +-`, `2 files changed, 2 insertions(+), 2 deletions(-)`.
+- `dev/unpublished-versions`: `jigc@1.0.0-rc.22 missing`, `jigc-engine@0.1.0-rc.1 missing`, `missing=true`, exit 0.
+- `gh pr view 1 -R gherrink/jigc --json headRefOid,files`: head `b75cde5b8124e2acc688f4d6a32b7d7088480715`, files `crates/cli/CHANGELOG.md` +1408 -0 and `crates/engine/CHANGELOG.md` +658 -0, both `ADDED`. **The open PR #1 still carries rc.21**, because the bump is not yet pushed.
+
+`gh run view --json jobs` on `gherrink/jigc` read the two stale `release` jobs unchanged from G1: `110018437350` (run `36753643562`) `waiting` since 2026-09-30T17:45:37Z, and `110124548582` (run `36785068612`) `pending` behind it. `origin/main` was still `2e7493c5`. These two facts are why release.md → The one-time bootstrap carries the two H3 checks.
