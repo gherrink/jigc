@@ -9,14 +9,18 @@
 //! targets from **`cargo metadata`**, never from `tests/groups/` on disk or from a parse
 //! of `Cargo.toml`, because what cargo reports is what `cargo test` compiles.
 //!
-//! Six properties, one arm each: **(a)** the `test` matrix equals the metadata's
+//! Eight properties, one arm each: **(a)** the `test` matrix equals the metadata's
 //! `test`-kind targets; **(b)** every other tested target is covered by the `unit` job;
 //! **(c)** every job S8 names exists and runs its pinned command; **(d)** every job
-//! carries `timeout-minutes`, a full-history checkout and the `CPU count` step; **(e)**
-//! every `cargo test` runs `--no-fail-fast` except the manifest-freeze fence's pinned
-//! argv; **(f)** nothing stops the other legs when one fails — `fail-fast: false` and no
-//! `needs`. The design is [dev-workflow.md](../../../implementation/dev-workflow.md) →
-//! Gate; the measurement behind each `timeout-minutes` is
+//! carries `timeout-minutes`, and every leg a full-history checkout and the `CPU count`
+//! step; **(e)** every `cargo test` runs `--no-fail-fast` except the manifest-freeze
+//! fence's pinned argv; **(f)** nothing stops the other legs when one fails —
+//! `fail-fast: false` and no `needs` on any leg; **(g)** the one aggregate, `ci-ok`,
+//! `needs` exactly every other job and runs `if: always()`; **(h)** its body is green
+//! only when every needed job's result is `success`, driven over each result GitHub
+//! reports. The design is [dev-workflow.md](../../../implementation/dev-workflow.md) →
+//! Gate, the required check [release.md](../../../implementation/release.md) → The main
+//! branch; the measurement behind each `timeout-minutes` is
 //! `completions/artifacts/M54/ci-runtime.md`.
 
 use crate::manifest_freeze_fence::{CI_STEP_NAME, CI_STEP_RUN, CI_WORKFLOW, repo_root};
@@ -65,8 +69,17 @@ fn pinned_jobs() -> Vec<(&'static str, Vec<&'static str>)> {
     ]
 }
 
-/// The public-hygiene guard's three steps, by name.
-const HYGIENE_STEPS: [&str; 3] = ["hygiene range", "gitleaks", "denylist"];
+/// The public-hygiene guard's steps, by name: the branch-name rule
+/// (`branch_name_fence.rs` holds its body), then the two scans over the pushed range.
+const HYGIENE_STEPS: [&str; 4] = ["branch name", "hygiene range", "gitleaks", "denylist"];
+
+/// The one aggregate job — the only check `main`'s ruleset requires — and the step that
+/// decides it.
+const AGGREGATE_JOB: &str = "ci-ok";
+const AGGREGATE_STEP: &str = "every job succeeded";
+/// The env var the aggregate's step reads `toJSON(needs)` from, and its expression.
+const AGGREGATE_ENV: &str = "CI_NEEDS";
+const AGGREGATE_ENV_VALUE: &str = "${{ toJSON(needs) }}";
 
 fn workflow() -> Value {
     let path = repo_root().join(CI_WORKFLOW);
@@ -283,9 +296,11 @@ fn every_job_s8_names_exists_and_runs_its_pinned_command() {
     );
 }
 
-/// **(d)** Every job is bounded, sees the whole history, and prints its CPU count. The
-/// history is not only the freeze fence's need: every leg checks out the same way, so no
-/// job's result depends on a clone depth another job does not share.
+/// **(d)** Every job is bounded, and every leg sees the whole history and prints its CPU
+/// count. The history is not only the freeze fence's need: every leg checks out the same
+/// way, so no job's result depends on a clone depth another job does not share. The
+/// aggregate is bounded too, but it checks nothing out and runs no cargo — it reads the
+/// `needs` context alone — so the checkout and the CPU count are not asked of it.
 #[test]
 fn every_job_is_bounded_checks_out_full_history_and_prints_its_cpu_count() {
     let workflow = workflow();
@@ -296,6 +311,9 @@ fn every_job_is_bounded_checks_out_full_history_and_prints_its_cpu_count() {
                 "`{id}`: `timeout-minutes` is not a positive integer ({:?})",
                 job["timeout-minutes"]
             ));
+        }
+        if id == AGGREGATE_JOB {
+            continue;
         }
         let full_history = steps(job).iter().any(|step| {
             step["uses"]
@@ -349,8 +367,9 @@ fn every_cargo_test_runs_no_fail_fast_except_the_pinned_freeze_argv() {
 }
 
 /// **(f)** No leg stops another: the matrix is `fail-fast: false` (GitHub's default
-/// cancels every sibling row on the first red one), and no job `needs` another (a red
-/// `fmt` would skip every test).
+/// cancels every sibling row on the first red one), and no leg `needs` another (a red
+/// `fmt` would skip every test). The aggregate is the one job that waits, and it waits
+/// on all of them — arm (g).
 #[test]
 fn no_leg_stops_another() {
     let workflow = workflow();
@@ -363,11 +382,168 @@ fn no_leg_stops_another() {
     );
     let chained: Vec<String> = jobs(&workflow)
         .into_iter()
-        .filter(|(_, job)| !job["needs"].is_null())
+        .filter(|(id, job)| id != AGGREGATE_JOB && !job["needs"].is_null())
         .map(|(id, job)| format!("`{id}` needs {:?}", job["needs"]))
         .collect();
     assert!(
         chained.is_empty(),
         "no job waits on another, so a red leg never hides the rest: {chained:?}",
+    );
+}
+
+/// The aggregate's `needs`, as a list of job ids.
+fn aggregate_needs(workflow: &Value) -> Vec<String> {
+    let needs = &job(workflow, AGGREGATE_JOB)["needs"];
+    match needs {
+        Value::String(one) => vec![one.clone()],
+        Value::Sequence(many) => many
+            .iter()
+            .map(|id| {
+                id.as_str()
+                    .expect("a `needs` entry is a job id")
+                    .to_string()
+            })
+            .collect(),
+        other => panic!("`{AGGREGATE_JOB}`'s `needs` must be a job id or a list, found {other:?}"),
+    }
+}
+
+/// **(g)** `ci-ok` waits on every other job and reports whatever they did. Its `needs` is
+/// exactly the set of every other job — a job added to the workflow and not here would
+/// run without being required, and its red would merge — and it runs `if: always()`,
+/// without which GitHub *skips* a job whose needs failed, and a skipped job reports
+/// `Success` to a required status check (GitHub's docs, *Using jobs* → *Using
+/// conditions to control job execution*), so a red leg would merge.
+#[test]
+fn g_the_aggregate_needs_every_other_job_and_always_runs() {
+    let workflow = workflow();
+    let others: BTreeSet<String> = jobs(&workflow)
+        .into_iter()
+        .map(|(id, _)| id)
+        .filter(|id| id != AGGREGATE_JOB)
+        .collect();
+    let needs: Vec<String> = aggregate_needs(&workflow);
+    let needed: BTreeSet<String> = needs.iter().cloned().collect();
+    assert_eq!(
+        needs.len(),
+        needed.len(),
+        "`{AGGREGATE_JOB}` names a job twice in `needs`: {needs:?}"
+    );
+    let missing: Vec<&String> = others.difference(&needed).collect();
+    let extra: Vec<&String> = needed.difference(&others).collect();
+    assert!(
+        missing.is_empty() && extra.is_empty(),
+        "`{AGGREGATE_JOB}` must need exactly every other job in {CI_WORKFLOW}, because it is \
+         the only check `main` requires.\nJobs it does not need (their red would merge): \
+         {missing:?}\nNeeds naming no job: {extra:?}",
+    );
+    let aggregate = job(&workflow, AGGREGATE_JOB);
+    assert_eq!(
+        aggregate["if"].as_str().map(str::trim),
+        Some("always()"),
+        "`{AGGREGATE_JOB}` must run `if: always()`; without it GitHub skips the job when a \
+         needed one fails, and a skipped required check reports success (found {:?})",
+        aggregate["if"]
+    );
+}
+
+/// The aggregate's deciding step: its `run:` body, with its env asserted to carry the
+/// whole `needs` context.
+fn aggregate_body(workflow: &Value) -> String {
+    let step = steps(job(workflow, AGGREGATE_JOB))
+        .iter()
+        .find(|step| step["name"].as_str() == Some(AGGREGATE_STEP))
+        .unwrap_or_else(|| panic!("`{AGGREGATE_JOB}` has no step named `{AGGREGATE_STEP}`"));
+    assert_eq!(
+        step["env"][AGGREGATE_ENV].as_str(),
+        Some(AGGREGATE_ENV_VALUE),
+        "`{AGGREGATE_STEP}` must read the whole `needs` context from `{AGGREGATE_ENV}`"
+    );
+    let body = step["run"].as_str().expect("the aggregate step has a body");
+    assert!(
+        !body.contains("${{"),
+        "the aggregate body splices an expression into the script; pass it through `env:`"
+    );
+    body.to_string()
+}
+
+/// Run the aggregate's body as GitHub's default `shell: bash` does, with `CI_NEEDS` set.
+fn run_aggregate(body: &str, needs_json: &str) -> std::process::Output {
+    let dir = std::env::temp_dir().join(format!(
+        "jigc-ci-ok-{}-{:?}",
+        std::process::id(),
+        engine::tempname::unique_nanos(),
+    ));
+    fs::create_dir_all(&dir).expect("create the body's temp dir");
+    let script = dir.join("step.sh");
+    fs::write(&script, body).expect("write the aggregate body");
+    let out = Command::new("bash")
+        .args(["--noprofile", "--norc", "-e", "-o", "pipefail"])
+        .arg(&script)
+        .env(AGGREGATE_ENV, needs_json)
+        .output()
+        .expect("run bash over the aggregate body");
+    let _ = fs::remove_dir_all(&dir);
+    out
+}
+
+/// The `needs` context GitHub would pass, every job given `result`, one job overridden.
+fn needs_context(jobs: &[String], odd_one: Option<(&str, &str)>) -> String {
+    let entries: Vec<String> = jobs
+        .iter()
+        .map(|id| {
+            let result = match odd_one {
+                Some((odd, result)) if odd == id => result,
+                _ => "success",
+            };
+            format!("{id:?}: {{\"result\": {result:?}, \"outputs\": {{}}}}")
+        })
+        .collect();
+    format!("{{{}}}", entries.join(", "))
+}
+
+/// **(h)** The aggregate is green only when every needed job succeeded. Driven verbatim
+/// over each result a job can report: all `success` passes; one `failure`, `cancelled` or
+/// `skipped` — for every needed job in turn — fails and names that job; an empty context
+/// and one that does not parse fail too, so the step fails closed rather than passing
+/// over nothing.
+#[test]
+fn h_the_aggregate_is_green_only_when_every_needed_job_succeeded() {
+    let workflow = workflow();
+    let body = aggregate_body(&workflow);
+    let needs = aggregate_needs(&workflow);
+
+    let out = run_aggregate(&body, &needs_context(&needs, None));
+    assert!(
+        out.status.success(),
+        "every needed job succeeded, so `{AGGREGATE_JOB}` must pass:\n{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+
+    let mut wrong = Vec::new();
+    for odd in &needs {
+        for result in ["failure", "cancelled", "skipped"] {
+            let out = run_aggregate(&body, &needs_context(&needs, Some((odd, result))));
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            if out.status.success() || !stdout.contains(&format!("{odd}: {result}")) {
+                wrong.push(format!(
+                    "`{odd}` = {result}: exit {:?}, stdout {stdout:?}",
+                    out.status.code()
+                ));
+            }
+        }
+    }
+    for (what, context) in [
+        ("an empty context", "{}"),
+        ("a context that does not parse", "{"),
+    ] {
+        if run_aggregate(&body, context).status.success() {
+            wrong.push(format!("{what} passed"));
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "`{AGGREGATE_JOB}` must fail, naming the job, whenever a needed job did not succeed:\n{}",
+        wrong.join("\n")
     );
 }

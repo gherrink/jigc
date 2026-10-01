@@ -148,6 +148,23 @@ Each is the latest release within the major in use on 2026-10-01, and each major
   - **Driven before the first publish** (2026-09-30, crates.io listing only the `0.0.0` placeholders, `linux/arm64`): `registry '^1.0.0-rc.1'` exits **1** at `FAIL install`, surfacing cargo's *could not find `jigc` in registry `crates-io` with version `^1.0.0-rc.1`*. `registry '=0.0.0'` and the unpinned `registry` each install the placeholder and exit **1** at `FAIL version`, because the placeholder prints its reservation notice, not `jigc 0.0.0`. So the positive proof was Increment 11's.
   - **Driven after the first publish** (2026-10-01, before H4, so both `0.0.0` placeholders were still unyanked): `registry '^1.0.0-rc.1'` exits **0** on `linux/arm64` (32 s) and on `--platform linux/amd64` (90 s), every step `ok`. It installs `jigc 1.0.0-rc.22` and `jigc --version` prints `jigc 1.0.0-rc.22`. `jigc setup` exits 0 and leaves `.jigc/AGENT.md`. `JIGC_DOC_CODE_PROBE` is unset. The control finalize exits 0, and the drift finalize exits 3 naming `doc-code.symbol-exists` with `HEAD` unchanged. The package declares a single `[[bin]]`, `jigc`, so the blocking probe is that binary's self-exec child. In the same session `registry '=0.0.0'` and the unpinned `registry` each exit **1** at `FAIL version`, so the line resolves `1.0.0-rc.22` and not the placeholder. **S9's bound is closed for this publish:** the published `Cargo.lock`, re-resolved against crates.io without an overlay, is byte-equal to itself, and its `jigc-engine 0.1.0-rc.1` checksum equals the registry's ([publish-proof.md](../completions/artifacts/M54/publish-proof.md) → The registry install).
 
+## The main branch
+
+*Settled 2026-10-01* ([DECISIONS.md](../DECISIONS.md) → *the branching switch*, decision 4). `main` is the trunk and changes **only through pull requests**; the branches that feed it are [CLAUDE.md](../CLAUDE.md) → Branches. Ruleset **24313429** (*main: no force-push, no deletion*) is extended to:
+
+| Rule | Setting | Why |
+|---|---|---|
+| Pull request required | yes | Every change reaches `main` as a reviewed unit: a milestone, a fix, a work branch, a release PR. |
+| Required status checks | **`ci-ok` only** | One aggregate that `needs` every CI job (below), so adding a job never means editing the ruleset, and a job left out of `ci-ok` reddens a fence instead of going unrequired. |
+| Branch must be up to date | **no** | A milestone branch is not rebased onto every release-PR merge; the merge commit carries the integration, and CI runs on the PR's merge ref anyway. |
+| Merge method | **merge commits only** — squash and rebase off | release-plz computes versions and changelogs from the conventional commits of the merged history ([Versioning](#versioning)); a squash would collapse a milestone into one subject. |
+| Required approvals | none | The human is the only reviewer; his merge is the approval. |
+| Bypass | **none, the human included** | A bypass the human holds is a bypass every agent holding his credentials holds (What agents may not do, below). |
+
+**Applied at the end of the switch, by the human** — after the switch's own PR is open and green, so that PR is the first one under the rules; if the ruleset lands before the merge, the switch PR is simply merged through it. **Until it is applied, the ruleset blocks only force-push and deletion**, and the deny list below is the only thing between an agent and a push to `main`.
+
+**`ci-ok`** is the last job of [ci.yml](../.github/workflows/ci.yml): `needs` every other job, `if: always()` — without it GitHub *skips* the job when a leg fails, and a skipped job reports success to a required check — and a body that is green only when every needed job's result is `success`. `crates/cli/tests/ci_matrix_fence.rs` arms (g) and (h) hold both halves ([dev-workflow.md](dev-workflow.md) → Gate).
+
 ## What agents may not do
 
 *Settled:* **agents never merge the release PR, never push a tag, and never approve a deployment**; the deployment-approval API is denied in the agents' permissions (agent definitions and settings). **This is adapter-enforced, not by construction** — agents run `gh` with the human's own credentials, so a permission entry is the only thing between an agent and a merge — the same *adapter-enforced, not sandboxed* bet [VISION.md](../VISION.md) principle #3 names for jigc itself. The real fix is a **restricted agent token** that cannot merge, approve or tag, owed at [decisions-pending.md](decisions-pending.md) → *The road to 1.0.0 and the port* → *The 1.0.0 call*.

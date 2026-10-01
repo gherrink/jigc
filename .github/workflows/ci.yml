@@ -5,17 +5,22 @@ name: CI
 # failure (M54 S8; implementation/dev-workflow.md -> Gate). The union of the jobs below
 # is the gate `dev/gate` runs locally in one process:
 #
-#   hygiene          the public-hygiene guard: gitleaks and the private denylist over
-#                    the pushed range (implementation/public-hygiene.md)
+#   hygiene          the public-hygiene guard: the branch-name rule, then gitleaks and
+#                    the private denylist over the pushed range
+#                    (implementation/public-hygiene.md)
 #   fmt · clippy · build
 #   test             one row per `[[test]]` group target
 #   unit             the lib and bin unit tests of every workspace member, and doctests
 #   manifest-freeze  the CI-only manifest-freeze fence
 #   publish-dry-run  `cargo publish --workspace --dry-run`
 #   lock-current     `Cargo.lock` is current (`cargo metadata --locked`)
+#   ci-ok            the one aggregate: green only when every job above succeeded
 #
-# No job `needs` another and the matrix is `fail-fast: false`, so one red leg never
-# hides or cancels the rest. Every job checks out full history, prints `nproc` in its
+# No leg `needs` another and the matrix is `fail-fast: false`, so one red leg never
+# hides or cancels the rest. Only `ci-ok` waits, on all of them, and it is the one
+# check `main`'s ruleset requires (implementation/release.md -> The main branch), so a
+# job added here and not to its `needs` reddens crates/cli/tests/ci_matrix_fence.rs
+# instead of going unrequired. Every leg checks out full history, prints `nproc` in its
 # `CPU count` step, and is bounded by `timeout-minutes` at max(10, 2 x its leg's
 # measured four-CPU proxy) — completions/artifacts/M54/ci-runtime.md. The `test`
 # matrix is fenced to the targets `cargo metadata` reports
@@ -57,6 +62,30 @@ jobs:
       # before run was, and the after runs are.
       - name: CPU count
         run: nproc
+
+      # The branch model's name rule (CLAUDE.md -> Branches): a push to, or a pull
+      # request from, a branch outside the closed set fails here, in seconds, with the
+      # allowed patterns listed. A pull request is checked by its head branch; a tag
+      # push has no branch and is not checked. The rule is dev/branch-name, and
+      # crates/cli/tests/branch_name_fence.rs holds it to jigc's slug grammar and
+      # drives this body for each event.
+      - name: branch name
+        env:
+          BRANCH_EVENT: ${{ github.event_name }}
+          BRANCH_REF_TYPE: ${{ github.ref_type }}
+          BRANCH_REF_NAME: ${{ github.ref_name }}
+          BRANCH_HEAD_REF: ${{ github.head_ref }}
+        run: |
+          if [ "$BRANCH_EVENT" = pull_request ]; then
+            branch="$BRANCH_HEAD_REF"
+          elif [ "$BRANCH_REF_TYPE" = branch ]; then
+            branch="$BRANCH_REF_NAME"
+          else
+            echo "branch name: a $BRANCH_EVENT on a ${BRANCH_REF_TYPE:-non-branch} ref, no branch to check"
+            exit 0
+          fi
+          echo "branch name: $branch"
+          dev/branch-name "$branch"
 
       # The public-hygiene guard (implementation/public-hygiene.md), its own job beside
       # the cargo jobs, so a leak fails in seconds rather than after the test run. Both
@@ -351,3 +380,42 @@ jobs:
       # (DECISIONS.md -> M54 Increment 8 planning).
       - name: cargo metadata --locked
         run: cargo metadata --locked --format-version 1 > /dev/null
+
+  # The one aggregate, and the only check `main`'s ruleset requires
+  # (implementation/release.md -> The main branch). It `needs` every other job and runs
+  # `if: always()`, so it reports even when a leg fails, and it is green only when
+  # every needed job's result is `success`: a failure, a cancellation and a skip all
+  # turn it red. No checkout and no cargo: it reads the `needs` context and nothing
+  # else. crates/cli/tests/ci_matrix_fence.rs holds `needs` to every other job and runs
+  # this body over each result.
+  ci-ok:
+    needs:
+      - hygiene
+      - fmt
+      - clippy
+      - build
+      - test
+      - unit
+      - manifest-freeze
+      - publish-dry-run
+      - lock-current
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: every job succeeded
+        env:
+          CI_NEEDS: ${{ toJSON(needs) }}
+        run: |
+          total=$(printf '%s' "$CI_NEEDS" | jq 'length')
+          if [ "$total" -eq 0 ]; then
+            echo "ci-ok: the needs context is empty, so nothing was checked"
+            exit 1
+          fi
+          failed=$(printf '%s' "$CI_NEEDS" | jq -r 'to_entries[] | select(.value.result != "success") | "  \(.key): \(.value.result)"')
+          if [ -n "$failed" ]; then
+            echo "ci-ok: not every job succeeded:"
+            printf '%s\n' "$failed"
+            exit 1
+          fi
+          echo "ci-ok: all $total jobs succeeded"
