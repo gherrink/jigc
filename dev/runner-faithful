@@ -11,7 +11,9 @@
 # What the image is faithful TO, each a deliberate choice:
 #   - ubuntu:24.04, the image `ubuntu-latest` runners track, with git from the stock apt
 #     archive (whatever version 24.04 ships), build-essential (tree-sitter's grammars
-#     compile C) and python3 (the dogfood apparatus and the trial driver are Python).
+#     compile C), python3 (the dogfood apparatus and the trial driver are Python) and jq
+#     (the `ci-ok` aggregate step calls it, and `ci_matrix_fence` drives that step's body
+#     verbatim; GitHub's ubuntu-latest image ships it).
 #   - the toolchain rust-toolchain.toml names, read from THE COMMIT THAT RUNS and passed
 #     as build args, never copied here, so a toolchain bump cannot leave the image behind.
 #     It is rustup's DEFAULT toolchain, because a packaged .crate carries no
@@ -194,7 +196,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LC_ALL=C.UTF-8
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl git build-essential python3 \
+ && apt-get install -y --no-install-recommends ca-certificates curl git build-essential python3 jq \
  && rm -rf /var/lib/apt/lists/*
 
 RUN userdel --remove ubuntu 2>/dev/null || true
@@ -226,7 +228,7 @@ RUN set -e; \
     test -z "$(git config --list --show-origin 2>&1)" || { echo 'posture: git config --list is not empty' >&2; exit 1; }; \
     if git var GIT_COMMITTER_IDENT >/dev/null 2>&1; then echo 'posture: git can invent an identity' >&2; exit 1; fi; \
     if env | grep -q '^GIT_CONFIG'; then echo 'posture: a GIT_CONFIG_* variable is set' >&2; exit 1; fi; \
-    cc --version >/dev/null; python3 --version; git --version
+    cc --version >/dev/null; python3 --version; jq --version; git --version
 DOCKERFILE
 build_status=$?
 if [ "$build_status" -ne 0 ]; then
