@@ -2,6 +2,10 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-01 — Planning forks go to the human after the gap pass, each with the option that removes the drifting artifact (the human's decision)
+
+**[milestone-planning-workflow.md](implementation/milestone-planning-workflow.md) → Settle now holds two rules, with a one-line pointer in `/milestone-plan` step 3. First, no design fork goes to the human before the baseline ledger and the four gap-detectors are back, except one the human asks to take first, and that one is flagged as possibly re-opening. Second, every fork's option list includes the option that removes the second artifact before a recommendation is made.** *Why:* at M54 the probe-packaging fork was put to the human before the gap pass (the human's brief had asked for one fork first, and the orchestrator settled several early), the human took the second `[[bin]]`, and the docs gap-detector then surfaced self-exec, which no option had listed, so the taken decision re-opened (2026-09-28 *M54 settled* → S4).
+
 ## 2026-10-01 — Pull requests from forks are exempt from the branch-name check (the human's decision)
 
 **On a `pull_request` whose head repository (`github.event.pull_request.head.repo.full_name`) is not `github.repository` — a null one, a deleted fork's, included — the hygiene job's `branch name` step exits 0 with a notice instead of judging the head branch; pushes are always checked, a fork's own CI included, and every other check runs on a fork's pull request unchanged, the denylist skipping with its existing notice because a fork receives no secrets (both driven by `branch_name_fence` (c) and (d)).** *Why:* a contributor's `patch-1` lives in their repository, outside this one's branch model, and refusing it would only make an outside pull request fail for a name the contributor never had to follow.
