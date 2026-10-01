@@ -1180,6 +1180,11 @@ pub fn with_save_lock<T>(path: &Path, critical: impl FnOnce() -> T) -> T {
 /// thread, so a thread's tally is exactly the degrades of the saves it made — and a
 /// test that forces a degrade by design (the spin-ceiling cell) cannot pollute a sibling
 /// test's count in the same process, which a process-global counter would.
+///
+/// **Not part of `jigc-engine`'s API.** It is `pub` only so `jigc`'s integration suite
+/// can read it across the crate boundary; it is a test diagnostic, hidden from the docs,
+/// and carries no stability promise of any kind.
+#[doc(hidden)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct SaveDegrades {
     /// The lock spin exhausted [`SAVE_LOCK_ATTEMPTS`] and the critical section ran
@@ -1220,6 +1225,10 @@ thread_local! {
 
 /// The calling thread's [`SaveDegrades`] tally since it started. Monotone; read it before
 /// and after the work under measurement and subtract.
+///
+/// **Not part of `jigc-engine`'s API**, like [`SaveDegrades`]: a test diagnostic, `pub`
+/// only for `jigc`'s integration suite, hidden from the docs, with no stability promise.
+#[doc(hidden)]
 pub fn save_degrades() -> SaveDegrades {
     SAVE_DEGRADES.with(std::cell::Cell::get)
 }
@@ -2661,6 +2670,34 @@ mod tests {
     use super::*;
     use crate::finding::Route;
     use proptest::prelude::*;
+
+    /// **The save-degrade tally is hidden from the published crate's docs.** [`SaveDegrades`]
+    /// and [`save_degrades`] are `pub` only so `jigc`'s integration suite can read them
+    /// across the crate boundary; they are a test diagnostic, not `jigc-engine` API. This
+    /// reddens if either item loses its `#[doc(hidden)]` (M54 completion audit, finding 5).
+    #[test]
+    fn the_save_degrade_diagnostic_is_doc_hidden() {
+        let source = include_str!("state.rs");
+        for item in [
+            "pub struct SaveDegrades {",
+            "pub fn save_degrades() -> SaveDegrades {",
+        ] {
+            let at = source
+                .find(item)
+                .unwrap_or_else(|| panic!("`{item}` must be in state.rs"));
+            let attrs: Vec<&str> = source[..at]
+                .lines()
+                .rev()
+                .map(str::trim)
+                .take_while(|line| line.starts_with("#[") || line.starts_with("///"))
+                .collect();
+            assert!(
+                attrs.contains(&"#[doc(hidden)]"),
+                "`{item}` is a test diagnostic and must carry `#[doc(hidden)]`; its attributes \
+                 and doc lines read {attrs:?}",
+            );
+        }
+    }
 
     /// **Both writer-registry rows lead with the base pin, and it is [`BASE_PIN_FILE`]** —
     /// so [`WorkArea::base_pin`]'s positional read is true rather than remembered, the task

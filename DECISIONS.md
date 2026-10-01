@@ -2,6 +2,10 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-01 — The save-degrade tally is `#[doc(hidden)]`, not `jigc-engine` API (M54 completion audit, finding 5)
+
+**`engine::state::SaveDegrades` and `save_degrades()` carry `#[doc(hidden)]` and a doc line declaring them a test diagnostic with no stability promise; `state::tests::the_save_degrade_diagnostic_is_doc_hidden` reddens if either loses it.** *Why:* they are `pub` only so `jigc`'s `file_state_concurrency` suite can read the save-lock flake's tally across the crate boundary, and publishing made them visible API of `jigc-engine`; visibility is unchanged (the suite needs it) and no cargo feature was added, as the finding's fix specified. rustdoc no longer lists either item, and its warning set is unchanged (170 before and after).
+
 ## 2026-10-01 — An unpublished release-PR merge is a recorded gap, with its recovery (M54 completion audit, finding 4)
 
 **[release.md](implementation/release.md) → Known gaps records that a release-PR merge whose deployment is rejected, expires or fails mid-publish is published by no later push, and that the recovery is the human's `gh run rerun <run-id> --failed` on that merge commit's run, approved again.** *Why:* every later push raises a prompt that publishes nothing (`release_always = false`), and only the failed-tag case was recorded; past the 30-day re-run window the paths (a hand publish, a new release PR) are named as undriven, not prescribed.
