@@ -642,7 +642,13 @@ fn m_the_release_pr_job_checks_out_and_runs_on_the_app_token() {
     let workflow = release_workflow();
     let job = workflow_job(&workflow, RELEASE_PR_JOB);
     let mint = step_using(job, RELEASE_PR_JOB, APP_TOKEN_ACTION);
-    assert_eq!(mint["with"]["app-id"].as_str(), Some(APP_ID_SECRET));
+    // `client-id`, never the `app-id` that `v3.1.0` deprecated: the action reads
+    // `client-id || app-id` into one variable, so the App ID secret serves either.
+    assert_eq!(mint["with"]["client-id"].as_str(), Some(APP_ID_SECRET));
+    assert!(
+        mint["with"]["app-id"].is_null(),
+        "the `{APP_TOKEN_ACTION}…` step passes the deprecated `app-id` input"
+    );
     assert_eq!(mint["with"]["private-key"].as_str(), Some(APP_KEY_SECRET));
     let mint_id = mint["id"]
         .as_str()

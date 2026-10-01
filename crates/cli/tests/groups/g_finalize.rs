@@ -107,6 +107,8 @@ mod temp_mint_fence;
 mod unreadable_project_layer;
 #[path = "../validate_previews_posture.rs"]
 mod validate_previews_posture;
+#[path = "../workflow_action_runtime_fence.rs"]
+mod workflow_action_runtime_fence;
 #[path = "../write_finding_keys.rs"]
 mod write_finding_keys;
 #[path = "../write_miss_shape_axis.rs"]

@@ -1,0 +1,10 @@
+# actionlint's bundled metadata for actions/create-github-app-token@v3 is the v3.0.0
+# action.yml (app-id required, no client-id), as of actionlint 1.7.12. The v3 tag is
+# v3.2.0, whose action.yml adds client-id and deprecates app-id (since v3.1.0), and
+# release.yml passes client-id. These two ignores cover exactly that mismatch; drop
+# them once actionlint's metadata carries client-id.
+paths:
+  .github/workflows/release.yml:
+    ignore:
+      - 'missing input "app-id" which is required by action "actions/create-github-app-token@v3"'
+      - 'input "client-id" is not defined in action "actions/create-github-app-token@v3"'
