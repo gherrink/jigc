@@ -86,7 +86,7 @@
 //!
 //! **The declared proof split.** Each arm proves the wave's claim at the *done-picture*
 //! altitude; the per-fix mechanism clauses stay with the dedicated axis suites and are not
-//! re-proven here: the merge's forced interleave and its lock's spin ceiling are
+//! re-proven here: the merge's forced interleave and its lock's wait budget are
 //! `engine::file_state`'s unit axis and `file_state_concurrency.rs`'s, the hand-off's
 //! non-vacuity `file_state_merge_hand_off.rs`'s and the contrast's applied mutant
 //! `reconciliation_baseline_contrast.rs`'s; the per-verdict leftover fixtures and the

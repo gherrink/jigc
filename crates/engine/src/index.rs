@@ -109,6 +109,11 @@ impl EdgeIndex {
     /// base-relative merge semantics would be gold-plating. The `file-state` record has
     /// no such self-healing read — its map *is* the last-known-good baseline — which is
     /// why the merge lives there and not here.
+    ///
+    /// Like the record's save, this one **never runs unlocked**: a lock not taken within
+    /// [`crate::state::SAVE_LOCK_BUDGET`] fails it with nothing written (2026-10-01). The
+    /// one caller that discards the error, [`load_committed`]'s cache write-back, still
+    /// returns the index it rebuilt, so there a timed-out save costs a later rebuild.
     pub fn save(&self, jigc_root: &Path) -> std::io::Result<()> {
         let path = Self::path_in(jigc_root);
         crate::state::with_save_lock(&path, || {

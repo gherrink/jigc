@@ -153,9 +153,10 @@ impl FileStateRecord {
     /// and its delta is overwritten by a save that returned `Ok` — is closed by running
     /// the whole re-read + merge + persist under [`crate::state::with_save_lock`] (M46
     /// Increment 1, T2). The critical section spawns no subprocess, so it cannot
-    /// deadlock against the `pre-commit` hook's nested `jigc` process; the exclusion
-    /// degrades to running unlocked rather than blocking, since this record is a
-    /// rebuildable cache.
+    /// deadlock against the `pre-commit` hook's nested `jigc` process. The save **never
+    /// runs unlocked**: a lock not taken within [`crate::state::SAVE_LOCK_BUDGET`] fails
+    /// it with nothing written (2026-10-01), because an unlocked save on this record is
+    /// exactly the lost concurrent delta the lock exists to prevent.
     pub fn save(&self, jigc_root: &Path) -> std::io::Result<()> {
         let path = Self::path_in(jigc_root);
         crate::state::with_save_lock(&path, || {

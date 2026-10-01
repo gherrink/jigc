@@ -1113,13 +1113,27 @@ fn temp_sibling(path: &Path) -> PathBuf {
     }
 }
 
-/// The bounded spin the save-scoped lock takes before it **degrades to running the
-/// critical section anyway**. A rebuildable cache must never wedge a command behind a
-/// lock a crashed or wedged sibling still holds, so exclusion here is best-effort with
-/// a stated ceiling — `ATTEMPTS × SPIN` ≈ one second, three orders of magnitude above a
-/// real critical section (one small read, one merge, one write + `rename`).
-pub const SAVE_LOCK_ATTEMPTS: u32 = 1_000;
-/// The pause between two [`SAVE_LOCK_ATTEMPTS`].
+/// How long a save waits for the save-scoped lock before it **fails** — wall-clock, not
+/// a count of sleeps, so the ceiling is the time it states however late the scheduler
+/// wakes the waiter (2026-10-01; `DECISIONS.md` → that date).
+///
+/// **Ten seconds, from the measured contention.** A waiter's wait is the sum of the
+/// critical sections queued ahead of it — one small read, one merge, one write +
+/// `rename`, a millisecond or two each — and `try_lock` polling is not fair, so a waiter
+/// can lose several releases in a row. Driven: the two survival cells of
+/// `file_state_concurrency.rs`, run as twelve concurrent copies beside 24 CPU hogs on a
+/// 10-core host (unoptimized build): of the 12,585 acquisitions that waited 20 ms or
+/// more, the median waited 169 ms, p99 917 ms and the worst 1.37 s. The 1,000 × 1 ms
+/// attempt budget this replaces ran out on a loaded 4-vCPU CI runner. Ten seconds is
+/// seven times the worst wait observed and ten times the budget that expired.
+///
+/// **What a long budget costs, and why that is the only cost.** The lock is an OS
+/// advisory lock (`flock` on Unix), which the kernel releases when its holder's process
+/// exits, crash or `kill -9` included — so a *dead* holder never blocks a save, and the
+/// budget only ever runs out behind a holder that is alive and stuck. Generosity costs
+/// that case ten seconds before it reports; it costs every other case nothing.
+pub const SAVE_LOCK_BUDGET: std::time::Duration = std::time::Duration::from_secs(10);
+/// The pause between two `try_lock` attempts inside [`SAVE_LOCK_BUDGET`].
 pub const SAVE_LOCK_SPIN: std::time::Duration = std::time::Duration::from_millis(1);
 
 /// The **stable** lock sibling for a shared `.jigc/` cache file: `<filename>.lock` in
@@ -1147,7 +1161,7 @@ pub fn lock_sibling(path: &Path) -> PathBuf {
 /// Run `critical` under an advisory lock on [`lock_sibling`] of `path` — the
 /// **save-scoped exclusion** that closes the read-modify-write window a base-relative
 /// merge alone leaves open (M46 Increment 1; `DECISIONS.md` 2026-08-18 M46 planned,
-/// N-3). Returns whatever `critical` returns, locked or degraded.
+/// N-3). Returns whatever `critical` returns.
 ///
 /// **Scope, deliberately narrow — this wraps [`crate::file_state::FileStateRecord::save`]
 /// and [`crate::index::EdgeIndex::save`] only, never [`persist`] itself**, which is also
@@ -1159,27 +1173,40 @@ pub fn lock_sibling(path: &Path) -> PathBuf {
 /// two locks are **per target and never nested**: the paired call sites (`cli/ingest.rs`,
 /// `cli/unmanage.rs`) save the index and the record sequentially.
 ///
-/// Degrades rather than blocks: if the lock cannot be taken within the ceiling — or
-/// cannot be opened at all — `critical` runs unlocked, which is exactly the pre-lock
-/// behaviour (the merge still runs; only the narrow window reopens). A cache is worth a
-/// best-effort exclusion, never a hang.
-pub fn with_save_lock<T>(path: &Path, critical: impl FnOnce() -> T) -> T {
-    let _guard = SaveLock::acquire(path);
+/// **A save never runs unlocked** (2026-10-01). If the lock is not taken within
+/// [`SAVE_LOCK_BUDGET`], or the lock sibling cannot be opened or locked at all,
+/// `critical` does not run and the save fails with an error naming the lock file and a
+/// route — nothing is written. Until then the save ran its critical section anyway (the
+/// M46 degrade); on `file-state.json` that loses a concurrent writer's key, and a lost
+/// baseline silently switches off `reconciliation.conflict-block` (`storage.md` →
+/// Concurrent writers). The budget is what keeps "never unlocked" from becoming "may
+/// hang".
+pub fn with_save_lock<T>(
+    path: &Path,
+    critical: impl FnOnce() -> std::io::Result<T>,
+) -> std::io::Result<T> {
+    let _guard = SaveLock::acquire(path)?;
     critical()
 }
 
-/// A tally of the save path's **silent degrades** — the arms that run a shared-cache
-/// save weaker than designed while still reporting `Ok`. **A diagnostic counter, and
-/// nothing else:** tallying changes no return value, no output and no control flow, and
-/// nothing in the product reads it. It exists so a test that observes a lost concurrent
-/// delta can say in its own failure message whether any of its saves ran unlocked
-/// (`crates/cli/tests/file_state_concurrency.rs`; the open flake it serves is in
-/// `implementation/decisions-pending.md` → the CI block).
+/// A tally of the save path's **silent degrade** — the arm that runs a shared-cache save
+/// weaker than designed while still reporting `Ok`. **A diagnostic counter, and nothing
+/// else:** tallying changes no return value, no output and no control flow, and nothing
+/// in the product reads it. It exists so a test that observes a lost concurrent delta can
+/// say in its own failure message whether any of its saves clobbered an unreadable record
+/// (`crates/cli/tests/file_state_concurrency.rs`).
+///
+/// **The lock arms are retired, not zero (2026-10-01).** It also counted the saves that
+/// ran *unlocked* — a spin that ran out, or a lock that could not be opened — and the
+/// first CI red that counted one (PR #5's run `36927086957`: *1 ran unlocked (lock
+/// timeout 1)*) is what retired them: both arms now fail the save instead
+/// ([`with_save_lock`]), so there is no silent outcome left to count, and a survival cell
+/// whose save fails says so in its own panic.
 ///
 /// **Per thread, deliberately.** A save's critical section runs inline on the calling
 /// thread, so a thread's tally is exactly the degrades of the saves it made — and a
-/// test that forces a degrade by design (the spin-ceiling cell) cannot pollute a sibling
-/// test's count in the same process, which a process-global counter would.
+/// test that forces a degrade by design cannot pollute a sibling test's count in the same
+/// process, which a process-global counter would.
 ///
 /// **Not part of `jigc-engine`'s API.** It is `pub` only so `jigc`'s integration suite
 /// can read it across the crate boundary; it is a test diagnostic, hidden from the docs,
@@ -1187,37 +1214,20 @@ pub fn with_save_lock<T>(path: &Path, critical: impl FnOnce() -> T) -> T {
 #[doc(hidden)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct SaveDegrades {
-    /// The lock spin exhausted [`SAVE_LOCK_ATTEMPTS`] and the critical section ran
-    /// unlocked — the declared degrade of [`with_save_lock`].
-    pub lock_timeout: usize,
-    /// The lock sibling could not be created or opened, or `try_lock` failed with an
-    /// error other than *would block*; the critical section ran unlocked without spinning.
-    pub lock_error: usize,
     /// [`crate::file_state::FileStateRecord::save`]'s re-read of the record on disk
     /// failed, so the merge degraded to `theirs = ours` — the clobbering pre-merge write.
     pub unreadable_theirs: usize,
 }
 
-impl SaveDegrades {
-    /// The saves whose critical section ran without the lock, for either reason.
-    pub fn unlocked(&self) -> usize {
-        self.lock_timeout + self.lock_error
-    }
-}
-
 /// Which [`SaveDegrades`] arm a degrade is tallied on.
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum SaveDegrade {
-    LockTimeout,
-    LockError,
     UnreadableTheirs,
 }
 
 thread_local! {
     static SAVE_DEGRADES: std::cell::Cell<SaveDegrades> = const {
         std::cell::Cell::new(SaveDegrades {
-            lock_timeout: 0,
-            lock_error: 0,
             unreadable_theirs: 0,
         })
     };
@@ -1239,8 +1249,6 @@ pub(crate) fn tally_save_degrade(arm: SaveDegrade) {
     SAVE_DEGRADES.with(|cell| {
         let mut tally = cell.get();
         let count = match arm {
-            SaveDegrade::LockTimeout => &mut tally.lock_timeout,
-            SaveDegrade::LockError => &mut tally.lock_error,
             SaveDegrade::UnreadableTheirs => &mut tally.unreadable_theirs,
         };
         *count = count.saturating_add(1);
@@ -1253,24 +1261,30 @@ pub(crate) fn tally_save_degrade(arm: SaveDegrade) {
 struct SaveLock(std::fs::File);
 
 impl SaveLock {
-    /// Take the lock, spinning up to [`SAVE_LOCK_ATTEMPTS`] times. `None` means the
-    /// caller runs unlocked — the stated degrade, not an error to report; each `None` is
-    /// tallied in [`SaveDegrades`] on its arm.
-    fn acquire(path: &Path) -> Option<Self> {
-        match Self::try_acquire(path) {
-            Ok(lock) => Some(lock),
-            Err(arm) => {
-                tally_save_degrade(arm);
-                None
-            }
-        }
-    }
-
-    /// [`acquire`](Self::acquire)'s body, naming the degrade arm on failure.
-    fn try_acquire(path: &Path) -> Result<Self, SaveDegrade> {
+    /// Take the lock, polling every [`SAVE_LOCK_SPIN`] until [`SAVE_LOCK_BUDGET`] has
+    /// passed. Every failure is an error the save returns — there is no unlocked arm:
+    ///
+    /// - the budget runs out behind a live holder → [`std::io::ErrorKind::TimedOut`];
+    /// - the lock sibling (or its directory) cannot be created or opened, or `try_lock`
+    ///   fails with anything but *would block* → that error's own kind.
+    ///
+    /// Each message names the lock file, says nothing was written, and carries the route.
+    fn acquire(path: &Path) -> std::io::Result<Self> {
         let lock_path = lock_sibling(path);
+        let failed = |doing: &str, err: std::io::Error| {
+            std::io::Error::new(
+                err.kind(),
+                format!(
+                    "could not {doing} the save lock `{}`: {err}, so nothing was written — \
+                     resolve the I/O condition (a disk or permissions problem under \
+                     `.jigc/`), then retry",
+                    lock_path.display(),
+                ),
+            )
+        };
         if let Some(parent) = lock_path.parent() {
-            std::fs::create_dir_all(parent).map_err(|_| SaveDegrade::LockError)?;
+            std::fs::create_dir_all(parent)
+                .map_err(|err| failed("create the directory of", err))?;
         }
         let file = std::fs::OpenOptions::new()
             .create(true)
@@ -1278,15 +1292,28 @@ impl SaveLock {
             .write(true)
             .truncate(false)
             .open(&lock_path)
-            .map_err(|_| SaveDegrade::LockError)?;
-        for _ in 0..SAVE_LOCK_ATTEMPTS {
+            .map_err(|err| failed("open", err))?;
+        let started = std::time::Instant::now();
+        loop {
             match file.try_lock() {
                 Ok(()) => return Ok(SaveLock(file)),
-                Err(std::fs::TryLockError::WouldBlock) => std::thread::sleep(SAVE_LOCK_SPIN),
-                Err(std::fs::TryLockError::Error(_)) => return Err(SaveDegrade::LockError),
+                Err(std::fs::TryLockError::WouldBlock) => {}
+                Err(std::fs::TryLockError::Error(err)) => return Err(failed("take", err)),
             }
+            if started.elapsed() >= SAVE_LOCK_BUDGET {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    format!(
+                        "timed out after {}s waiting for the save lock `{}`: another jigc \
+                         process holds it and has not released it, so nothing was written — \
+                         retry once that process has finished",
+                        SAVE_LOCK_BUDGET.as_secs(),
+                        lock_path.display(),
+                    ),
+                ));
+            }
+            std::thread::sleep(SAVE_LOCK_SPIN);
         }
-        Err(SaveDegrade::LockTimeout)
     }
 }
 
