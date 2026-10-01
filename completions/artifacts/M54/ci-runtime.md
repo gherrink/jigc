@@ -1,6 +1,6 @@
-# CI runtime — M54 Increments 8 and 9
+# CI runtime — M54 Increments 8, 9 and 12
 
-This file records the **before run**, read back by its id. S8's bound is measured against it, and the per-leg proxy (T3) follows it. Increment 9's entry gate adds **the provisional after run** at the end ([planning-gate-record.md](planning-gate-record.md) → row 18). Cross-ref [roadmap.md](../../../implementation/roadmap.md) → Milestone 54 → Increment 8; [planning-gate-record.md](planning-gate-record.md) → row 17; [DECISIONS.md](../../../DECISIONS.md) → *M54 Inc 2 T1* (the run id) and *M54 Increment 8 planning*.
+This file records the **before run**, read back by its id. S8's bound is measured against it, and the per-leg proxy (T3) follows it. Increment 9's entry gate adds **the provisional after run** ([planning-gate-record.md](planning-gate-record.md) → row 18), and Increment 12's adds **the final after run** at the end (row 23). Cross-ref [roadmap.md](../../../implementation/roadmap.md) → Milestone 54 → Increment 8; [planning-gate-record.md](planning-gate-record.md) → row 17; [DECISIONS.md](../../../DECISIONS.md) → *M54 Inc 2 T1* (the run id) and *M54 Increment 8 planning*.
 
 ## The before run — `36549870099`
 
@@ -328,3 +328,118 @@ gh api repos/gherrink/jigc/environments/release/deployment-branch-policies --jq 
 | Deployment policies | `total=1 61391261:branch:main` | T5 |
 
 **No `CARGO_REGISTRY_TOKEN` exists** at any scope an Actions job can read. The owner is a user account, so there are no organisation secrets. **The deployment policy's id is `61391261`**, as the Increment 9 planning read found. [release.md](../../../implementation/release.md) → Publishing and [planning-gate-record.md](planning-gate-record.md) → row 18 still cite `61320798`. The policy itself, branch `main` only, is what they state. Only the id is stale. This task commits only records, so the citation is left for the task that edits release.md's Publishing pins.
+
+## The final after run — 36843531774 (Increment 12's entry gate)
+
+This is the same nine-job-kind, twenty-job workflow, on the tree Increment 11 left. Read on 2026-10-01 for [planning-gate-record.md](planning-gate-record.md) → row 23. It is the *final* after run that the provisional one above was waiting for.
+
+**Why this run.** The rule (DECISIONS.md → *M54 Increment 12 planning*, T2) takes the CI `push` run on `main` whose head is `f36f6bcc`, Increment 11's tip, or a descendant `H` with `git diff --name-only f36f6bcc H` equal to exactly `DECISIONS.md`. If several qualify, it takes the earliest created. No run has `f36f6bcc` as its head. `gh run list --branch main --event push` lists `36843531774` with head `f7db572a`, created 2026-10-01T09:33:46Z. `git diff --name-only f36f6bcc f7db572a` prints `DECISIONS.md` and nothing else. No later qualifying commit has a CI run yet. So this run is the earliest that qualifies, and the only one. `36843531826`, the `Release` workflow on the same push, is not a CI run.
+
+### The commands
+
+These are ci-runtime.md's A1–A8 with the run id substituted, plus one change, to A6. The whole set ran as one script, twice, to two files. The files compared equal (`cmp` → 0). A5's logs come from `gh api --allow-escape-sequences …/jobs/<id>/logs`, never `gh run view --log --job`, for the reason given above.
+
+```sh
+R=36843531774
+D=$(mktemp -d)
+# A1: the run
+gh run view $R --repo gherrink/jigc --json databaseId,workflowName,headBranch,headSha,event,status,conclusion,attempt --jq '"\(.databaseId) \(.workflowName) \(.headBranch) \(.headSha) \(.event) \(.status) \(.conclusion) attempt=\(.attempt)"'
+# A2: the run wall clock
+gh api repos/gherrink/jigc/actions/runs/$R --jq '"\(.run_started_at) \(.updated_at) run_attempt=\(.run_attempt)"'
+# A3: every job's wall clock
+gh run view $R --repo gherrink/jigc --json jobs --jq '.jobs[] | "\(.databaseId)\t\(.name)\t\(.startedAt)\t\(.completedAt)\t\((.completedAt|fromdate) - (.startedAt|fromdate))s\t\(.conclusion)"'
+# A4: every job's labels, runner group and runner
+for j in $(gh run view $R --repo gherrink/jigc --json jobs --jq '.jobs[].databaseId'); do
+  gh api repos/gherrink/jigc/actions/jobs/$j --jq '"\(.id) \(.name) labels=\(.labels|join(",")) group=\(.runner_group_name) runner=\(.runner_name) \(.status) \(.conclusion)"'
+done
+# A5: every job's log, whole, to a file; then nproc, the line after the `Run nproc` group closes
+for j in $(gh run view $R --repo gherrink/jigc --json jobs --jq '.jobs[].databaseId'); do
+  gh api --allow-escape-sequences repos/gherrink/jigc/actions/jobs/$j/logs > "$D/$j.log"
+  printf '%s ' "$j"; awk '/##\[group\]Run nproc/{f=1} f&&/##\[endgroup\]/{getline; print; exit}' "$D/$j.log"
+done
+# A6: the cache state and the runner image, per job log (the pattern widened; see below)
+for j in $(gh run view $R --repo gherrink/jigc --json jobs --jq '.jobs[].databaseId'); do
+  printf '%s ' "$j"; command grep -hE 'No cache found|Restored from cache key|Cache up-to-date|Failed to save' "$D/$j.log" | sed -E 's/^[^ ]+ //' | tr '\n' '|'
+  command grep -A2 'Runner Image$' "$D/$j.log" | command grep -o 'Version: .*'
+done
+# A7: the slowest job's steps, compile and test result
+gh run view $R --repo gherrink/jigc --json jobs --jq '.jobs[] | select(.databaseId==110308073104) | .steps[] | "\(.number)\t\(.name)\t\((.completedAt|fromdate) - (.startedAt|fromdate))s\t\(.conclusion)"'
+command grep -E 'Finished `|test result: ' "$D/110308073104.log"
+# A8: the bound, over all jobs
+gh run view $R --repo gherrink/jigc --json jobs --jq '[.jobs[] | ((.completedAt|fromdate) - (.startedAt|fromdate))] | "max=\(max) over900=\(map(select(.>900))|length) n=\(length)"'
+```
+
+**Why A6 is widened.** The provisional run's pattern, `No cache found|Cache restored from key`, printed **nothing at all** for this run. `rust-cache` spells a hit `Restored from cache key "<key>" full match: true.`, and the provisional run never had one to show. Left as it was, A6 would have reported a warm run as no cache line at all, which reads like a missing step. The widened pattern catches both spellings, plus the save outcome, so the cache state is read and never inferred from silence. GitHub keeps run logs for 90 days by default, so A5 works until about 2026-12-30. The lines it printed are quoted below.
+
+### The entry gate
+
+| Check | Halt if | Read | Evidence |
+|---|---|---|---|
+| Run concluded | not `completed` / `success` | `completed` / `success` | A1 → `36843531774 CI main f7db572afee40ed8d84ee29c00199e30905c88c2 push completed success attempt=1` |
+| Every job inside 15 min | any job over 900 s | **max 430 s**, no job over 900 s | A8 → `max=430 over900=0 n=20` |
+| CPUs | any job's `nproc` not 4 | **4 on all 20 jobs** | A5, every row below |
+| Standard public runner | any job's labels or group not `ubuntu-latest` / `GitHub Actions` | `ubuntu-latest` / `GitHub Actions` on all 20 | A4, every row below |
+
+**No halt condition holds, so the gate passes.** S8's reserve lever, nextest partitioning of the group (the build-once-share archive), stays **named and not pulled**.
+
+### Identity
+
+| Value | Read | From |
+|---|---|---|
+| Run id · workflow · branch | `36843531774` · `CI` · `main` | A1 |
+| Head sha | `f7db572afee40ed8d84ee29c00199e30905c88c2`, whose tree differs from Increment 11's tip `f36f6bcc` only in `DECISIONS.md` | A1; `git diff --name-only` |
+| Event · attempt | `push` · `1` (not a re-run) | A1 |
+| Run, started → updated | 09:33:46Z → 09:41:01Z, **435 s = 7 min 15 s** | A2 → `2026-10-01T09:33:46Z 2026-10-01T09:41:01Z run_attempt=1` |
+| Runner, every job | labels `ubuntu-latest`, group `GitHub Actions`, 20 distinct runners, numbered between `GitHub Actions 1000000774` and `1000000795` (not contiguous: `…779` and `…794` are absent) | A4 |
+| Image | `ubuntu-24.04`: version `20260927.320.1` on 12 jobs, `20260920.314.1` on 8 (`build`, `manifest-freeze`, `hygiene`, `g_solo_store_sweep`, `g_milestone`, `g_item`, `g_solo_trial_corpus`, `g_migrate`) | A6 |
+| Cache | **warm on every cargo job.** All 19 that restore one print `Restored from cache key "v0-rust-<job>-Linux-x64-0f490d39-6e1205a9" full match: true.`, then `Cache up-to-date.` at the post step, so none saves. `hygiene` restores none | A6 |
+
+So **this is a warm-cache run**, unlike the before run and the provisional after run, which were both cold. It is the time a push takes when its cache key holds. The cold bound, the one a cache-miss push must meet, is still the provisional run's 448 s at Increment 8's tip. *The before · provisional · final table* below shows what the cache is worth on the slowest job.
+
+### Every job
+
+A3 prints the wall clock, A4 the labels and group, A5 the `nproc` line. Rows are sorted by wall clock. Every job concluded `success`, on `ubuntu-latest` in group `GitHub Actions`, and every `nproc` is **4**. The provisional column is the same job's wall clock in `36720872051`, above.
+
+| Job | Id | Start → end | Wall clock | nproc (A5, its line's time) | Provisional |
+|---|---|---|---|---|---|
+| `test (g_flow)` | 110308073104 | 09:33:50Z → 09:41:00Z | **430 s** | 4 (09:34:04.19Z) | 448 s |
+| `test (g_milestone)` | 110308072969 | 09:33:50Z → 09:39:30Z | 340 s | 4 (09:34:05.21Z) | 339 s |
+| `test (g_doc)` | 110308072937 | 09:33:49Z → 09:39:09Z | 320 s | 4 (09:34:02.56Z) | 362 s |
+| `test (g_migrate)` | 110308073142 | 09:33:50Z → 09:37:28Z | 218 s | 4 (09:34:03.82Z) | 238 s |
+| `test (g_finalize)` | 110308072904 | 09:33:50Z → 09:37:04Z | 194 s | 4 (09:34:02.37Z) | 267 s |
+| `test (g_config)` | 110308073307 | 09:34:17Z → 09:36:53Z | 156 s | 4 (09:34:30.78Z) | 175 s |
+| `test (g_item)` | 110308072972 | 09:33:50Z → 09:35:59Z | 129 s | 4 (09:34:03.97Z) | 153 s |
+| `test (g_compose)` | 110308073072 | 09:33:50Z → 09:35:59Z | 129 s | 4 (09:34:00.49Z) | 231 s |
+| `test (g_methodology)` | 110308072824 | 09:33:50Z → 09:35:48Z | 118 s | 4 (09:34:02.95Z) | 115 s |
+| `test (g_solo_trial_corpus)` | 110308073003 | 09:33:50Z → 09:35:12Z | 82 s | 4 (09:34:03.88Z) | 110 s |
+| `test (g_migration)` | 110308072541 | 09:33:50Z → 09:34:47Z | 57 s | 4 (09:34:01.33Z) | 84 s |
+| `unit` | 110308072855 | 09:33:50Z → 09:34:41Z | 51 s | 4 (09:34:02.74Z) | 79 s |
+| `clippy` | 110308072559 | 09:33:50Z → 09:34:34Z | 44 s | 4 (09:34:02.50Z) | 72 s |
+| `publish-dry-run` | 110308072776 | 09:33:50Z → 09:34:32Z | 42 s | 4 (09:34:01.65Z) | 67 s |
+| `build` | 110308072420 | 09:33:51Z → 09:34:32Z | 41 s | 4 (09:34:04.47Z) | 56 s |
+| `manifest-freeze` | 110308072493 | 09:33:50Z → 09:34:31Z | 41 s | 4 (09:34:02.57Z) | 63 s |
+| `test (g_solo_store_sweep)` | 110308072881 | 09:33:50Z → 09:34:28Z | 38 s | 4 (09:34:01.54Z) | 50 s |
+| `fmt` | 110308072489 | 09:33:49Z → 09:34:17Z | 28 s | 4 (09:34:02.15Z) | 32 s |
+| `lock-current` | 110308072691 | 09:33:49Z → 09:34:16Z | 27 s | 4 (09:34:02.55Z) | 30 s |
+| `hygiene` | 110308072737 | 09:33:50Z → 09:34:05Z | 15 s | 4 (09:34:02.83Z) | 15 s |
+
+The timestamps are whole seconds, so each wall clock is ±1 s. `test (g_config)` started 27 s after the rest, at 09:34:17Z, the same second `fmt` ended. A job's wall clock starts when the job starts, so that wait counts in the run's 435 s and not in the job's 156 s. The provisional run shows the same pattern: `g_doc` and `g_milestone` started about 36 s late.
+
+### The slowest job: `test (g_flow)`
+
+A7 prints its steps: Set up job 1 s · Checkout 12 s · CPU count 0 s · Show toolchain 8 s · Cache cargo dependencies 4 s · **`cargo test --test g_flow` 401 s** · Post Cache 0 s · Post Checkout 0 s · Complete job 0 s. Inside the cargo step, ``Finished `test` profile [unoptimized + debuginfo] target(s) in 16.35s`` and `test result: ok. 333 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 384.88s`. Its headroom to 900 s is **470 s**.
+
+### Before · provisional · final
+
+| | Before — `36549870099` | Provisional after — `36720872051` | **Final after — `36843531774`** |
+|---|---|---|---|
+| Head | `d7d3e1ce` (Increment 1's tip) | `d4554b86` (Increment 8's tip) | `f7db572a` (Increment 11's tree) |
+| Shape | one job | 20 jobs | 20 jobs |
+| Cache | cold (`No cache found.`) | cold on all 19 cargo jobs | **warm** on all 19 cargo jobs (full match) |
+| nproc | 4 | 4 on all 20 | 4 on all 20 |
+| **Slowest job** | `dev-workflow gate`, **2020 s** | `test (g_flow)`, **448 s** | `test (g_flow)`, **430 s** |
+| Its cargo step | `cargo test` 1927 s | 422 s: compile 34.90 s · tests 386.97 s | 401 s: compile 16.35 s · tests 384.88 s |
+| Headroom to 900 s | −1120 s | 452 s | 470 s |
+| Run, started → updated | 2024 s (C4) | 453 s (A2) | 435 s (A2) |
+
+**What the cache is worth, and what it is not.** On `g_flow`, the warm restore cut the compile from 34.90 s to 16.35 s. Test execution stayed at about 385 s, within 2.1 s of the cold run, over the same 333 tests. So the 18 s gain is compile, and the job is test-bound either way. The cold figure at this tree was not measured: no cache-miss push has run on it. The gap between the cold and warm compile is 18.55 s, against 470 s of headroom, so no plausible cold figure changes the verdict. **Verdict: the bound holds on the runner.** The slowest job takes 430 s warm at Increment 11's tree and took 448 s cold at Increment 8's, both against 900 s, with `nproc` 4 on every job. **The red-push half of S8 was not measured by any run, because all three runs here are green.** It is held by the workflow's shape: `fail-fast: false`, `--no-fail-fast` on every `cargo test` except the freeze leg's pinned argv, and no job `needs` another. `crates/cli/tests/ci_matrix_fence.rs` fences that shape.
