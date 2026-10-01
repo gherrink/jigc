@@ -38,11 +38,17 @@
 //! executed against the stub for each value.
 //!
 //! The agents' arm, over `.claude/` (release.md → *What agents may not do*): **(q)** this
-//! repository's `.claude/settings.json` denies every pinned form of merging a PR, pushing
-//! a tag, approving a deployment and yanking a crate, and every agent definition under
-//! `.claude/agents/` carries the one *Never* paragraph. The settings are the enforced
-//! layer; a definition can only instruct, because a scoped Bash deny in its frontmatter
-//! removes Bash from the agent wholesale.
+//! repository's `.claude/settings.json` denies every pinned form of pushing to `main`,
+//! merging a PR, pushing a tag, approving or rejecting a deployment and yanking a crate,
+//! and every agent definition under `.claude/agents/` carries the one *Never* paragraph.
+//! The settings are the enforced layer; a definition can only instruct, because a scoped
+//! Bash deny in its frontmatter removes Bash from the agent wholesale. The list is held
+//! from both sides: every pinned entry is present, and every entry present is pinned,
+//! so a deny added by hand and never recorded in release.md reddens as surely as one
+//! dropped. And because a deny is a text match, the push patterns are driven over a
+//! table of push commands with Claude Code's own wildcard reading: every way of naming
+//! `main` this list claims to stop is matched, and every push the branch model allows
+//! (`milestone/*`, `fix/*`, `work/*`, named) is not.
 
 use crate::manifest_freeze_fence::repo_root;
 use crate::support::root_walk;
@@ -1200,10 +1206,37 @@ const AGENT_SETTINGS: &str = ".claude/settings.json";
 const AGENT_DEFINITIONS: &str = ".claude/agents";
 
 /// Every deny entry release.md → *What agents may not do* pins, with the act it stops.
-/// Each was driven with a headless `claude -p --permission-mode bypassPermissions`
-/// (Claude Code 2.1.284), directly and through an Agent-tool subagent, and each reported
-/// a `permission_denials` record; the controls that table names ran under the same list.
-const AGENT_DENY: [(&str, &str); 11] = [
+/// The PR, tag, deployment and yank entries were each driven with a headless
+/// `claude -p --permission-mode bypassPermissions` (Claude Code 2.1.284), directly and
+/// through an Agent-tool subagent, and each reported a `permission_denials` record; the
+/// controls that table names ran under the same list. The push-to-`main` entries
+/// (2026-10-01, the branching switch) were driven the same way — release.md records how.
+const AGENT_DENY: [(&str, &str); 21] = [
+    ("Bash(git *push * main*)", "push to main (named as a ref)"),
+    (
+        "Bash(git *push *:main*)",
+        "push to main (as a refspec destination)",
+    ),
+    ("Bash(git *push *+main*)", "push to main (a forced refspec)"),
+    (
+        "Bash(git *push *refs/heads/main*)",
+        "push to main (its full ref)",
+    ),
+    ("Bash(git *push *--all*)", "push to main (every branch)"),
+    ("Bash(git *push *--mirror*)", "push to main (every ref)"),
+    (
+        "Bash(git *push)",
+        "push to main (the current branch, unnamed)",
+    ),
+    (
+        "Bash(git *push origin)",
+        "push to main (the current branch, unnamed)",
+    ),
+    (
+        "Bash(git *push * origin)",
+        "push to main (the current branch, unnamed)",
+    ),
+    ("Bash(git *push * HEAD)", "push to main (HEAD, unnamed)"),
     ("Bash(gh *pr merge*)", "merge a PR"),
     ("Bash(gh api *pulls/*/merge*)", "merge a PR (REST)"),
     ("Bash(gh api *mergePullRequest*)", "merge a PR (GraphQL)"),
@@ -1219,42 +1252,173 @@ const AGENT_DENY: [(&str, &str); 11] = [
         "push a tag (a release creates one)",
     ),
     ("Bash(gh api *git/refs*)", "push a tag (REST ref creation)"),
-    ("Bash(gh api *pending_deployments*)", "approve a deployment"),
+    (
+        "Bash(gh api *pending_deployments*)",
+        "approve or reject a deployment",
+    ),
     ("Bash(cargo *yank *)", "yank a crate"),
 ];
 
 /// The paragraph every agent definition carries, verbatim.
-const NEVER_PARAGRAPH: &str = "**Never merge a pull request, push a tag, approve a \
-     deployment or yank a crate.** Those acts are the human's \
-     ([release.md](../../implementation/release.md) → *What agents may not do*). \
-     `.claude/settings.json` denies the commands that perform them; a denial is the answer, \
-     never something to route around.";
+const NEVER_PARAGRAPH: &str = "**Never push to or merge into `main`, merge a pull request, \
+     push a tag, approve or reject a deployment, or yank a crate.** Those acts are the \
+     human's ([release.md](../../implementation/release.md) → *What agents may not do*). \
+     You may merge an increment branch into its milestone branch locally, and push \
+     `milestone/*`, `fix/*` and `work/*` branches — always by name \
+     (`git push origin <branch>`), never a bare `git push`. `.claude/settings.json` denies \
+     the commands that perform the human's acts; a denial is the answer, never something \
+     to route around.";
 
-#[test]
-fn q_the_agent_settings_deny_every_pinned_act() {
+/// The deny entries `.claude/settings.json` carries.
+fn settings_deny() -> Vec<String> {
     let path = repo_root().join(AGENT_SETTINGS);
     let body = fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("`{AGENT_SETTINGS}` must be readable: {e}"));
     let settings: serde_json::Value = serde_json::from_str(&body)
         .unwrap_or_else(|e| panic!("`{AGENT_SETTINGS}` must be valid JSON: {e}"));
-    let deny: Vec<&str> = settings["permissions"]["deny"]
+    settings["permissions"]["deny"]
         .as_array()
         .map(|entries| {
             entries
                 .iter()
                 .filter_map(serde_json::Value::as_str)
+                .map(str::to_owned)
                 .collect()
         })
-        .unwrap_or_default();
+        .unwrap_or_default()
+}
+
+/// Claude Code's reading of a `Bash(<pattern>)` rule, as release.md records it was
+/// driven: the pattern matches the **whole** command, and each `*` matches any run of
+/// characters, the empty one and spaces included. This is the model the tables below
+/// are written against — not Claude Code's matcher, which is why release.md asks for
+/// the probes to be re-driven on an upgrade.
+fn glob_matches(pattern: &str, command: &str) -> bool {
+    let parts: Vec<&str> = pattern.split('*').collect();
+    let (first, rest) = parts.split_first().expect("split yields one part");
+    let Some(mut tail) = command.strip_prefix(first) else {
+        return false;
+    };
+    let Some((last, middle)) = rest.split_last() else {
+        return tail.is_empty();
+    };
+    for part in middle {
+        match tail.find(part) {
+            Some(at) => tail = &tail[at + part.len()..],
+            None => return false,
+        }
+    }
+    tail.len() >= last.len() && tail.ends_with(last)
+}
+
+/// Whether any pinned `Bash(…)` deny entry matches `command`.
+fn denied(command: &str) -> bool {
+    AGENT_DENY.iter().any(|(entry, _)| {
+        let pattern = entry
+            .strip_prefix("Bash(")
+            .and_then(|p| p.strip_suffix(')'))
+            .expect("every pinned entry is a Bash(…) rule");
+        glob_matches(pattern, command)
+    })
+}
+
+/// Pushes that land on `main`, each a way of naming it the list claims to stop.
+const PUSHES_TO_MAIN: &[&str] = &[
+    "git push origin main",
+    "git push -f origin main",
+    "git push --force origin main",
+    "git push origin main --force",
+    "git push --force-with-lease origin main",
+    "git push -u origin main",
+    "git push origin main:main",
+    "git push origin main~0",
+    "git push origin HEAD:main",
+    "git push origin milestone/findings-channel/main:main",
+    "git push origin 1a2b3c4:main",
+    "git push origin :main",
+    "git push origin --delete main",
+    "git push origin +main",
+    "git push origin +HEAD:main",
+    "git push origin HEAD:refs/heads/main",
+    "git push origin refs/heads/main",
+    "git push --all origin",
+    "git push origin --all",
+    "git push --mirror origin",
+    "git push",
+    "git push origin",
+    "git push -u origin",
+    "git push --force origin",
+    "git push origin HEAD",
+    "git -C /some/repo push origin main",
+    "git -C /some/repo push origin HEAD:main",
+    "git -c push.default=current push",
+];
+
+/// Pushes the branch model allows an agent, each naming its branch.
+const ALLOWED_PUSHES: &[&str] = &[
+    "git push origin milestone/findings-channel/main",
+    "git push -u origin milestone/findings-channel/main",
+    "git push origin milestone/main-line/main",
+    "git push origin fix/ci-ok-skipped-result",
+    "git push origin work/branch-per-milestone",
+    "git push -u origin work/branch-per-milestone",
+    "git -C /some/repo push origin milestone/findings-channel/main",
+    "git push origin HEAD:milestone/findings-channel/main",
+    "git push origin HEAD:work/branch-per-milestone",
+];
+
+#[test]
+fn q_the_agent_settings_deny_every_pinned_act() {
+    let deny = settings_deny();
     let missing: Vec<&(&str, &str)> = AGENT_DENY
         .iter()
-        .filter(|(entry, _)| !deny.contains(entry))
+        .filter(|(entry, _)| !deny.iter().any(|d| d == entry))
         .collect();
     assert!(
         missing.is_empty(),
         "`{AGENT_SETTINGS}` → `permissions.deny` lacks {missing:?}. Agents run `gh`, `git` \
          and `cargo` with the human's own credentials, so this list is the only thing \
          between an agent and those acts (release.md → What agents may not do)"
+    );
+    let unpinned: Vec<&String> = deny
+        .iter()
+        .filter(|entry| !AGENT_DENY.iter().any(|(pinned, _)| pinned == entry))
+        .collect();
+    assert!(
+        unpinned.is_empty(),
+        "`{AGENT_SETTINGS}` → `permissions.deny` carries {unpinned:?}, which neither this \
+         arm nor release.md → What agents may not do records. Pin it with the act it \
+         stops, or remove it"
+    );
+}
+
+/// The wildcard reading the tables rely on, over its own edge cases: `*` takes the
+/// empty run and spaces, and the pattern binds the whole command at both ends.
+#[test]
+fn q_the_wildcard_reading_binds_the_whole_command() {
+    assert!(glob_matches("git *push * main*", "git push origin main"));
+    assert!(glob_matches("git *push", "git push"));
+    assert!(glob_matches("git *push", "git -C . push"));
+    assert!(!glob_matches("git *push", "git push origin x"));
+    assert!(!glob_matches("git *push origin", "git push origin x"));
+    assert!(!glob_matches(
+        "git *push * main*",
+        "git push origin milestone/x/main"
+    ));
+    assert!(!glob_matches("gh *pr merge*", "git push origin main"));
+    assert!(glob_matches("a*b*c", "abc"));
+    assert!(!glob_matches("a*b*c", "acb"));
+}
+
+#[test]
+fn q_every_push_to_main_is_denied_and_every_branch_push_is_not() {
+    let leaked: Vec<&&str> = PUSHES_TO_MAIN.iter().filter(|c| !denied(c)).collect();
+    let blocked: Vec<&&str> = ALLOWED_PUSHES.iter().filter(|c| denied(c)).collect();
+    assert!(
+        leaked.is_empty() && blocked.is_empty(),
+        "the push-to-main deny entries must match every way of naming `main` and no push of \
+         a named milestone/fix/work branch.\nNot denied (would reach main): {leaked:?}\n\
+         Denied (the branch model allows them): {blocked:?}"
     );
 }
 

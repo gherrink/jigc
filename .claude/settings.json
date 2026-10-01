@@ -4,6 +4,16 @@
   },
   "permissions": {
     "deny": [
+      "Bash(git *push * main*)",
+      "Bash(git *push *:main*)",
+      "Bash(git *push *+main*)",
+      "Bash(git *push *refs/heads/main*)",
+      "Bash(git *push *--all*)",
+      "Bash(git *push *--mirror*)",
+      "Bash(git *push)",
+      "Bash(git *push origin)",
+      "Bash(git *push * origin)",
+      "Bash(git *push * HEAD)",
       "Bash(gh *pr merge*)",
       "Bash(gh api *pulls/*/merge*)",
       "Bash(gh api *mergePullRequest*)",
