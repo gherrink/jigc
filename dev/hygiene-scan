@@ -22,7 +22,9 @@
 #   dev/hygiene-scan --tree ~/.config/jigc/denylist HEAD --not --remotes
 #   dev/hygiene-scan <file> HEAD           # the whole history reachable from HEAD
 #
-# Exit status: 0 no hit · 1 at least one hit · 2 usage or setup error.
+# Exit status: 0 no hit · 1 at least one hit · 2 usage or setup error -- a denylist
+# pattern a matcher rejects is a setup error, never a clean scan, and is named by its
+# line number only.
 
 set -u
 
@@ -61,11 +63,41 @@ work=$(mktemp -d "$tmp_root/jigc-hygiene-XXXXXX") || exit 2
 # A blank line in a `grep -f` file matches EVERY line, so the patterns are normalised
 # first: CR stripped, blank and comment lines dropped.
 pats="$work/patterns"
-tr -d '\r' <"$denylist" | awk 'NF && $1 !~ /^#/' >"$pats"
+# Each kept pattern's line number in the denylist goes beside it, so a bad pattern can
+# be named by where it is.
+tr -d '\r' <"$denylist" | awk -v lines="$work/pattern-lines" 'NF && $1 !~ /^#/ { print NR >lines; print }' >"$pats"
 if [ ! -s "$pats" ]; then
     printf 'dev/hygiene-scan: denylist %s holds no pattern\n' "$denylist" >&2
     exit 2
 fi
+
+# A pattern grep rejects makes every `grep -f` below exit 2 with no output, and an
+# empty hits file reads as clean -- one typo in the secret would switch the whole guard
+# off while CI stays green. So each pattern is compiled on its own first, and a bad one
+# is named by its line in the denylist, never by its text: matcher diagnostics quote
+# the pattern, so their stderr is discarded.
+nth=0
+while IFS= read -r pat; do
+    nth=$((nth + 1))
+    printf '%s\n' "$pat" >"$work/one-pattern"
+    grep -i -E -f "$work/one-pattern" </dev/null >/dev/null 2>&1
+    if [ "$?" -gt 1 ]; then
+        printf 'dev/hygiene-scan: denylist %s line %s is not a valid extended regex -- the scan did not run\n' \
+            "$denylist" "$(sed -n "${nth}p" "$work/pattern-lines")" >&2
+        exit 2
+    fi
+done <"$pats"
+
+# Every matcher below exits 0 on a hit, 1 on none, and 2 or more when it could not
+# run; the last must never fall through to `denylist clean`. Its stderr is kept out of
+# the output, because a matcher's error can quote the pattern it choked on.
+matched() {
+    if [ "$1" -gt 1 ]; then
+        printf 'dev/hygiene-scan: the %s scan failed (exit %s) -- a denylist pattern this matcher rejects? the scan did not complete\n' \
+            "$2" "$1" >&2
+        exit 2
+    fi
+}
 
 hits="$work/hits"
 : >"$hits"
@@ -81,7 +113,8 @@ if [ "$rc" -ne 0 ]; then
     exit 2
 fi
 awk '/^\001/ { sha = substr($0, 2); next } { print sha "\t" $0 }' "$work/msgs" >"$work/msg-lines"
-grep -i -E -f "$pats" "$work/msg-lines" >"$work/msg-hits"
+grep -i -E -f "$pats" "$work/msg-lines" >"$work/msg-hits" 2>/dev/null
+matched "$?" "commit-message"
 awk -F'\t' '{ print "message  " substr($1, 1, 12) }' "$work/msg-hits" | sort -u >>"$hits"
 
 # --- added lines ---------------------------------------------------------------
@@ -89,10 +122,17 @@ awk -F'\t' '{ print "message  " substr($1, 1, 12) }' "$work/msg-hits" | sort -u 
 # destination path would never be scanned. Without it a rename is a delete plus an
 # add, and every line of the new path is scanned under the new path.
 #
+# --remerge-diff: `git log -p` shows NO diff for a merge commit by default, so a line
+# typed while resolving a conflict (or added to a merge by amending it) is in no
+# scanned diff at all. A remerge diff is the merge against git's own re-run of it, so
+# it shows exactly what the merge introduced -- the resolution -- and not the second
+# parent's lines again (those are scanned at their own commits, or were already
+# pushed). It needs git 2.36; an older git fails `git log` and the scan exits 2.
+#
 # `commit <sha>` / `+++ b/<path>` / `@@ … +<start>[,<n>] @@` / `+<line>`, flattened to
 # `<sha> TAB <path> TAB <lineno> TAB <line>`. The path is part of the scanned record,
 # because a path can leak a name as surely as a line can.
-git log --no-color --no-ext-diff --no-renames --unified=0 --format='%x01%H' -p "$@" >"$work/diff" 2>"$work/git.err"
+git log --no-color --no-ext-diff --no-renames --remerge-diff --unified=0 --format='%x01%H' -p "$@" >"$work/diff" 2>"$work/git.err"
 rc=$?
 if [ "$rc" -ne 0 ]; then
     printf 'dev/hygiene-scan: git log -p failed (%s):\n' "$rc" >&2
@@ -105,14 +145,25 @@ awk '
     /^@@ /                 { split($3, a, ","); ln = substr(a[1], 2) + 0; next }
     /^\+/ && path != ""    { print sha "\t" path "\t" ln "\t" substr($0, 2); ln++ }
 ' "$work/diff" >"$work/added"
-grep -i -E -f "$pats" "$work/added" >"$work/added-hits"
+grep -i -E -f "$pats" "$work/added" >"$work/added-hits" 2>/dev/null
+matched "$?" "added-line"
 awk -F'\t' '{ print "added    " substr($1, 1, 12) "  " $2 ":" $3 }' "$work/added-hits" | sort -u >>"$hits"
 
 # --- the working tree ----------------------------------------------------------
 if [ "$tree" -eq 1 ]; then
-    git grep -I -i -n -E -f "$pats" >"$work/tree-hits"
+    git grep -I -i -n -E -f "$pats" >"$work/tree-hits" 2>/dev/null
+    matched "$?" "working-tree"
     awk -F: '{ print "tree     " $1 ":" $2 }' "$work/tree-hits" | sort -u >>"$hits"
-    git ls-files | grep -i -E -f "$pats" | sed 's/^/path     /' >>"$hits"
+    git ls-files >"$work/paths" 2>"$work/git.err"
+    rc=$?
+    if [ "$rc" -ne 0 ]; then
+        printf 'dev/hygiene-scan: git ls-files failed (%s):\n' "$rc" >&2
+        cat "$work/git.err" >&2
+        exit 2
+    fi
+    grep -i -E -f "$pats" "$work/paths" >"$work/path-hits" 2>/dev/null
+    matched "$?" "tracked-path"
+    sed 's/^/path     /' "$work/path-hits" >>"$hits"
 fi
 
 count=$(wc -l <"$hits")

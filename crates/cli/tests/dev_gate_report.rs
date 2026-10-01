@@ -575,3 +575,192 @@ fn an_absent_denylist_is_named_as_skipped() {
          was looked for — the denylist is private, so every clone starts without one.\n{text}",
     );
 }
+
+#[test]
+fn a_malformed_denylist_is_a_setup_error_never_a_clean_scan() {
+    // `[` opens a bracket expression it never closes: no extended-regex matcher accepts
+    // it. Before the fix every `grep -f` exited 2 with no output, the empty hits file
+    // read as zero, and the gate printed `denylist clean` — one typo in the private list
+    // switched the whole guard off.
+    let text = quick_gate_with_denylist(
+        "gate-hygiene-malformed",
+        Some("zq[9]x7kw-no-such-term\nzq[unclosed\n"),
+    );
+    assert!(
+        text.lines()
+            .any(|l| l.starts_with("gate: HYGIENE  the denylist scan could not run (exit 2)")),
+        "a denylist the scan cannot compile must read as a scan that did not run.\n{text}",
+    );
+    assert!(
+        !text.contains("denylist clean"),
+        "a scan that never ran must not say clean.\n{text}",
+    );
+}
+
+// ---------------------------------------------------------------------------
+// `dev/hygiene-scan` itself, over a throwaway history.
+// ---------------------------------------------------------------------------
+//
+// The scan `cd`s to the repository its own file sits in, so each fixture repo carries a
+// copy of the script at `dev/hygiene-scan` and runs that copy. Git runs with no ambient
+// config (`GIT_CONFIG_NOSYSTEM`, a null global file, a fixture `HOME`), so a developer
+// machine and a CI runner build the same history.
+
+struct ScanRepo {
+    dir: PathBuf,
+}
+
+impl ScanRepo {
+    fn new(label: &str) -> Self {
+        let dir = support::trial_corpus::unique_root(label);
+        std::fs::create_dir_all(dir.join("dev")).expect("create the fixture repo");
+        std::fs::copy(
+            repo_root().join("dev/hygiene-scan"),
+            dir.join("dev/hygiene-scan"),
+        )
+        .expect("copy dev/hygiene-scan into the fixture repo");
+        let repo = ScanRepo { dir };
+        repo.git_ok(&["init", "-q", "-b", "main", "."]);
+        repo.git_ok(&["config", "user.email", "fixture@example.invalid"]);
+        repo.git_ok(&["config", "user.name", "fixture"]);
+        repo
+    }
+
+    fn cmd(&self, program: &Path) -> Command {
+        let mut c = Command::new(program);
+        c.current_dir(&self.dir)
+            .env("HOME", &self.dir)
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_CONFIG_GLOBAL", "/dev/null");
+        c
+    }
+
+    fn git(&self, args: &[&str]) -> std::process::Output {
+        self.cmd(Path::new("git"))
+            .args(args)
+            .output()
+            .expect("spawn git")
+    }
+
+    fn git_ok(&self, args: &[&str]) -> String {
+        let out = self.git(args);
+        assert!(
+            out.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&out.stderr),
+        );
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    }
+
+    fn write(&self, rel: &str, body: &str) {
+        std::fs::write(self.dir.join(rel), body).expect("write a fixture file");
+    }
+
+    fn commit_all(&self, msg: &str) {
+        self.git_ok(&["add", "-A"]);
+        self.git_ok(&["commit", "-q", "-m", msg]);
+    }
+
+    /// Run the copied scan (`--tree` when `tree`) with a denylist body; return (exit
+    /// code, stdout, stderr).
+    /// The denylist sits outside the fixture repo, so it is never part of the scanned
+    /// history.
+    fn scan(&self, denylist: &str, tree: bool, args: &[&str]) -> (i32, String, String) {
+        let list = self.dir.with_extension("denylist");
+        std::fs::write(&list, denylist).expect("write the fixture denylist");
+        let mut scan = self.cmd(&self.dir.join("dev/hygiene-scan"));
+        if tree {
+            scan.arg("--tree");
+        }
+        let out = scan
+            .arg(&list)
+            .args(args)
+            .output()
+            .expect("spawn dev/hygiene-scan");
+        (
+            out.status.code().expect("the scan exits, not a signal"),
+            String::from_utf8_lossy(&out.stdout).to_string(),
+            String::from_utf8_lossy(&out.stderr).to_string(),
+        )
+    }
+}
+
+#[test]
+fn hygiene_scan_rejects_a_malformed_pattern_by_line_and_never_prints_it() {
+    let repo = ScanRepo::new("hygiene-scan-malformed");
+    repo.write("f", "a zebrafixture line\n");
+    repo.commit_all("base");
+
+    // The well-formed half of this list hits: with the bad line it must still be exit 2,
+    // because a scan that skipped one pattern is not a scan of the list.
+    let list = "# fixture\n\nzebrafixture\n\nqx[unclosed\n";
+    for tree in [false, true] {
+        let (code, stdout, stderr) = repo.scan(list, tree, &["HEAD"]);
+        let args = if tree { "--tree HEAD" } else { "HEAD" };
+        assert_eq!(
+            code, 2,
+            "{args}: a pattern no matcher accepts is a setup error (exit 2).\n\
+             stdout: {stdout}\nstderr: {stderr}",
+        );
+        assert!(
+            !stdout.contains("clean"),
+            "{args}: a scan that never ran must not say clean.\nstdout: {stdout}",
+        );
+        assert!(
+            stderr.contains("line 5 is not a valid extended regex"),
+            "{args}: the bad pattern is named by its line in the denylist, blank and \
+             comment lines counted, so it can be found and fixed.\nstderr: {stderr}",
+        );
+        assert!(
+            !stdout.contains("unclosed") && !stderr.contains("unclosed"),
+            "{args}: the denylist is private and CI logs are public: no output may quote \
+             a pattern, and a matcher's own diagnostic does (git grep's names it).\n\
+             stdout: {stdout}\nstderr: {stderr}",
+        );
+    }
+
+    let (code, stdout, _) = repo.scan("zebrafixture\n", false, &["HEAD"]);
+    assert_eq!(
+        code, 1,
+        "the well-formed list alone hits.\nstdout: {stdout}"
+    );
+}
+
+#[test]
+fn hygiene_scan_reports_a_line_introduced_only_by_a_merge_resolution() {
+    let repo = ScanRepo::new("hygiene-scan-merge");
+    repo.write("f", "a\nb\nc\n");
+    repo.commit_all("base");
+    repo.git_ok(&["switch", "-q", "-c", "side"]);
+    repo.write("f", "a\nside\nc\n");
+    repo.commit_all("side");
+    repo.git_ok(&["switch", "-q", "main"]);
+    repo.write("f", "a\nmain\nc\n");
+    repo.commit_all("main");
+    let merge = repo.git(&["merge", "-q", "side"]);
+    assert!(
+        !merge.status.success(),
+        "the fixture needs a conflict, so the resolution is the merge's own content",
+    );
+    // Neither parent carries the term: only the person resolving the conflict typed it.
+    repo.write("f", "a\nresolved zebrafixture\nc\n");
+    repo.commit_all("merge side");
+    let merge_sha = repo.git_ok(&["rev-parse", "HEAD"]);
+
+    let (code, stdout, stderr) = repo.scan("zebrafixture\n", false, &["HEAD"]);
+    assert_eq!(
+        code, 1,
+        "a line typed while resolving a merge is new exposure like any added line; \
+         `git log -p` shows no diff for a merge unless asked.\n\
+         stdout: {stdout}\nstderr: {stderr}",
+    );
+    let want = format!("  added    {}  f:2", &merge_sha[..12]);
+    assert!(
+        stdout.lines().any(|l| l == want),
+        "the hit is named at the merge commit, by path and line.\nwant: {want}\nstdout: {stdout}",
+    );
+    assert!(
+        !stdout.contains("zebrafixture"),
+        "a hit is reported by location only.\nstdout: {stdout}",
+    );
+}
