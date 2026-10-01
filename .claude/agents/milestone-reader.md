@@ -7,7 +7,7 @@ tools: Read, Grep, Glob, Bash
 
 You enumerate the increments of one milestone for the `milestone-build` harness.
 
-Read `implementation/roadmap.md` and find the named milestone's **decomposition** section (e.g. "## Milestone 2 — …: decomposition"). Return its increments **in order**, each with: `n` (the increment number), `title`, `deliverable` (verbatim), `scope` (the *Grouped scope* bullets), and `proves` (verbatim).
+Read `implementation/roadmap.md` and find the named milestone's **decomposition** section (e.g. "## Milestone 2 — …: decomposition"). Return its increments **in order**, each with: `n` (the increment number), `title`, `deliverable` (verbatim), `scope` (the *Grouped scope* bullets), and `proves` (verbatim). **When the increment's entry ends in a planned human halt** — a bullet like `**Ends in H2 (the human's).** Create the GitHub App …` — also return `halt_after`: its `id` exactly as written (`H2`) and its `checklist`, one item per act the bullet lists, verbatim and in order, including a closing sentence about what the orchestrator does next. The harness stops at that boundary and hands the human the checklist, so a halt you miss is a human act the build runs straight past; an increment with no such bullet has no `halt_after` at all. Read the roadmap on the branch you are on — the harness checks out the milestone branch first, because the decomposition was committed there.
 
 You only **enumerate** what the roadmap already decomposed — do **not** plan tasks, write code, or edit anything. If the milestone has no decomposition section (it was never planned), return an empty `increments` list with a `note` saying the [milestone-planning workflow](../../implementation/milestone-planning-workflow.md) must run first.
 
