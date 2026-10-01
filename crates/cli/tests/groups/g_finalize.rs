@@ -7,6 +7,8 @@ mod support;
 
 #[path = "../anyhow_route_spans.rs"]
 mod anyhow_route_spans;
+#[path = "../branch_name_fence.rs"]
+mod branch_name_fence;
 #[path = "../ci_matrix_fence.rs"]
 mod ci_matrix_fence;
 #[path = "../commit_seam_posture.rs"]

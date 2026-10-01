@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+#
+# dev/branch-name — the branch-name rule of this repository's branch model
+# (CLAUDE.md -> Branches; DECISIONS.md -> 2026-10-01, the branching switch).
+#
+# Accepts a branch name when it is one of the closed set:
+#
+#   main                              the trunk, changed only through pull requests
+#   milestone/<slug>/main             a milestone's branch
+#   milestone/<slug>/<slug>           one increment of that milestone
+#   fix/<slug>                        a fix outside a milestone
+#   work/<slug>                       any other change outside a milestone
+#   release-plz-<anything>            release-plz's own release-PR branch, never made by hand
+#
+# <slug> is jigc's slug grammar, `is_slug` in crates/engine/src/slug.rs: one or more
+# runs of [a-z0-9] joined by single `-`, so no leading, trailing or doubled `-`.
+# crates/cli/tests/branch_name_fence.rs drives this script over a table of names
+# against an oracle built on `is_slug` itself, so the two cannot drift apart.
+#
+# CI runs it in the hygiene job on every branch push and pull request
+# (.github/workflows/ci.yml -> `branch name`).
+#
+# Usage:
+#   dev/branch-name <branch>
+#
+# Exit status: 0 the name conforms · 1 it does not (the allowed patterns are printed
+# to stderr) · 2 usage error.
+
+set -u
+
+case "${1:-}" in
+    -h|--help) awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"; exit 0 ;;
+esac
+if [ $# -ne 1 ] || [ -z "$1" ]; then
+    printf 'dev/branch-name: usage: dev/branch-name <branch>\n' >&2
+    exit 2
+fi
+
+branch=$1
+slug='[a-z0-9]+(-[a-z0-9]+)*'
+rule="^(main|milestone/${slug}/${slug}|fix/${slug}|work/${slug}|release-plz-.+)\$"
+
+if printf '%s\n' "$branch" | LC_ALL=C grep -Eq -- "$rule" && [ "$(printf '%s' "$branch" | wc -l)" -eq 0 ]; then
+    exit 0
+fi
+
+{
+    printf 'branch %s does not follow the branch model. Allowed:\n' "'$branch'"
+    printf '  main\n'
+    printf '  milestone/<slug>/main\n'
+    printf '  milestone/<slug>/<increment-slug>\n'
+    printf '  fix/<slug>\n'
+    printf '  work/<slug>\n'
+    printf '  release-plz-*   (release-plz only, never by hand)\n'
+    printf '<slug> is lowercase a-z0-9 words joined by single dashes, e.g. findings-channel.\n'
+    printf 'Rename it: git branch -m <new-name>, then push the new name.\n'
+} >&2
+exit 1

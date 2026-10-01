@@ -45,6 +45,17 @@ The evidence: the first milestone's external audit found a reachable parser pani
 
 The milestone is **done** when every confirmed finding is closed (or consciously tracked), the gate is green, and the deliverable holds under the re-run end-to-end flows.
 
+## Close — the pull request, the human's merge, the release PR
+
+*Since the branching switch, 2026-10-01* ([CLAUDE.md](../CLAUDE.md) → Branches). The whole loop above runs on the milestone branch `milestone/<slug>/main`: the audit reads it from its fork point, and every triage fix commits there. Then, in order:
+
+1. **The milestone branch is pushed by name**, and its CI run is green — `ci-ok`, the one required check ([release.md](release.md) → The main branch).
+2. **The orchestrator opens the pull request** `milestone/<slug>/main → main` (`gh pr create --base main --head milestone/<slug>/main`), titled for the milestone, its body pointing at the completion entry and the `VERDICT.md`. Opening it is an agent's act; **merging it is the human's alone**, by a merge commit — no squash, because release-plz reads the conventional commits the milestone carries.
+3. **The human merges it**, and the release PR updates from that merge on `main`.
+4. **The release PR is the release boundary, and it is not the milestone's.** It accumulates every milestone merge since the last release; the human merges it **when the planned set is in** — one milestone or several — and nothing publishes before that merge. When the version release-plz derived differs from the one the plan named (a planned rc number, the 1.0.0 call), the human runs `release-plz set-version` on the release PR before merging it ([release.md](release.md) → The release PR). So an rc-chartered wave's *ships the version it is named for* (step 1, above) is honoured at the release PR's merge, not at the milestone PR's.
+
+The fold-back and the `VERDICT.md` ride the milestone branch like any other close commit, so they reach `main` in the same pull request.
+
 **Where the fold-back lands (2026-09-27).** The completion entry's prose half — the wave's `**M<nn> — …**` span — appends to [project-history.md](project-history.md), the running record, and its two `crates/cli/tests/foldback_truth.rs` arms are re-aimed onto the new span in the same edit (that suite's module doc carries the inversion rule: *say no more about the audit than the audit found*). It does **not** go in `CLAUDE.md`, whose `## Project state` carries current truth and a pointer; touch that only when current truth moved — the instrument still owed, what comes next. **It names no installed version** (since M54): the version a wave shipped is its record span's claim, and `foldback_truth` fails a built-and-installed claim in `CLAUDE.md` ([release.md](release.md) → Versioning). The record left `CLAUDE.md` because one paragraph had reached 157 KB, preloaded whole by every session.
 
 ## Why this shape

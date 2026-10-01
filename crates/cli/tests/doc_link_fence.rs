@@ -120,6 +120,7 @@ const LIVE_DOCS: &[&str] = &[
     "ideas/adr-lifecycle-extensions.md",
     "ideas/assumption-register.md",
     "ideas/batch-authoring-ergonomics.md",
+    "ideas/branches-and-planned-releases.md",
     "ideas/brownfield-baseline-capture.md",
     "ideas/bulk-onboarding-flow.md",
     "ideas/cascade-profile-knobs.md",

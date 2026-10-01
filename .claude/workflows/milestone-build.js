@@ -4,28 +4,73 @@
 // orchestration (the by-hand process, promoted from interpreted docs). Each
 // phase is its own agent role, defined under .claude/agents/:
 //   build-planner · build-executor · increment-validator · build-fixer ·
-//   milestone-code-reviewer · milestone-e2e-tester · milestone-reader.
+//   milestone-code-reviewer · milestone-e2e-tester · milestone-reader · build-git.
 //
-// Per increment (just-in-time, after the prior one lands): plan -> execute
-// (one agent per task, full dev-workflow, one commit) -> validate (independent,
-// read-only) -> fix (one agent per blocking finding, bounded 3 rounds). Then the
-// milestone-completion audit (code review + e2e, parallel) — its findings come
-// back for HUMAN TRIAGE; fixes + re-verify run after triage.
+// BRANCHES (the branching switch, 2026-10-01 — CLAUDE.md -> Branches is the model;
+// implementation/increment-workflow.md -> Branches carries the lifecycle). The milestone
+// is built on `milestone/<slug>/main`, forked from `main`; each increment on its own
+// `milestone/<slug>/<increment-slug>`, forked from the milestone branch. Every git act is
+// a small `build-git` agent step with a schema — this script has no shell — and no build
+// agent creates, switches, merges or pushes a branch:
+//   milestone branch  ensure `milestone/<slug>/main` (reuse a local or pushed one, else
+//                     create it from `origin/main`), check it out; its fork point from
+//                     `origin/main` is the audit base. Runs BEFORE the reader, because the
+//                     decomposition the reader enumerates lives on that branch.
+//   per increment     open `milestone/<slug>/<increment-slug>` from the milestone branch ->
+//                     plan -> execute (one agent per task, full dev-workflow, one commit,
+//                     all on the increment branch) -> validate (independent, read-only) ->
+//                     fix (one agent per blocking finding, bounded 3 rounds) -> LAND:
+//                     merge it back `--no-ff`, delete it locally, then PUSH the milestone
+//                     branch (one CI run per increment; increment branches stay local).
+//   planned halt      an increment whose roadmap entry ends in a human halt (`Ends in H2
+//                     (the human's)`) is a STAGE BOUNDARY: once it has landed and been
+//                     pushed, the run RETURNS `{status:'planned-halt'}` with the human's
+//                     checklist. Workflows take no mid-run input, so the halt is a return,
+//                     never an agent waiting. Resume per PLANNED HALTS below.
+//   close             the milestone-completion audit (code review + e2e, parallel) over
+//                     `<fork point>..milestone/<slug>/main`; its findings come back for
+//                     triage, the fixes land on the milestone branch, and then the
+//                     ORCHESTRATOR opens the PR `milestone/<slug>/main -> main`. The human
+//                     merges it; agents never do (release.md -> What agents may not do).
+// The increment slug is derived here, deterministically, from the roadmap increment
+// title (`incrementSlug`, below); the ORDER of increments comes from the roadmap, never
+// from the name.
 //
-// Halts (a new fork at plan, a blocked task at execute, still-blocking after 3
-// rounds at validate) stop the run and surface a structured reason — prior
-// committed work stands.
+// Halts (a new fork at plan, a blocked task at execute, still-blocking after 3 rounds at
+// validate, a git step that refuses) stop the run and surface a structured reason —
+// prior committed work stands.
+//
+// RUNS STARTED BEFORE THE BRANCHING SWITCH ARE NOT RESUMABLE UNDER THIS SCRIPT. Every
+// build prompt now names its branch and the reader returns planned halts, so every
+// agent call's cache key changed; and a pre-switch run built on `main`, which agents may
+// no longer push. Finish such a run on its own script snapshot, or start a fresh run of
+// this one with `skipThrough`.
 //
 // RESUMING — RULE 0 (the M13 root cause, get this right or nothing replays): ALWAYS
-//   re-pass the SAME `args` ({ milestone, base }) on EVERY resume invocation. The
+//   re-pass the SAME `args` ({ milestone, slug, model? }) on EVERY resume invocation. The
 //   agent-call cache key is a CONTENT HASH that includes each call's prompt, and the
-//   very first agent (the milestone-reader) embeds the milestone id in its prompt. Omit
-//   `args` and `args` is undefined → `milestone` defaults to 'the next milestone' → the
-//   reader's prompt changes → its hash misses the cache at call #1 → the ENTIRE prefix
-//   re-runs live (and the first increment's planner then halts on already-built work).
-//   On M13 this looked like "resume won't fast-forward"; it was actually a dropped-args
-//   cache miss. So every resume below is `Workflow({ scriptPath, args: { milestone, base },
-//   resumeFromRunId })` — args ALWAYS present. (resumeFromRunId does NOT restore args.)
+//   very first agents (the milestone-branch step and the milestone-reader) embed the slug
+//   and the milestone id in their prompts. Omit `args` and `slug` is missing → the run is
+//   REFUSED before any agent; omit only `milestone` and it defaults to 'the next
+//   milestone' → the reader's prompt changes → its hash misses the cache → the ENTIRE
+//   prefix re-runs live (and the first increment's planner then halts on already-built
+//   work). On M13 this looked like "resume won't fast-forward"; it was actually a
+//   dropped-args cache miss. So every resume below is `Workflow({ scriptPath, args: {
+//   milestone, slug, cleared? }, resumeFromRunId })` — args ALWAYS present
+//   (resumeFromRunId does NOT restore args). `cleared` is the one arg that GROWS across
+//   resumes (PLANNED HALTS); no prompt embeds it, so growing it misses no cache entry.
+//   `base` is no longer an arg: the audit base is the milestone branch's fork point, and
+//   a passed `base` is ignored with a log line.
+//
+// PLANNED HALTS — the DEFAULT resume is resumeFromRunId. After the human has done the
+//   checklist, re-invoke `Workflow({ scriptPath: <the snapshot>, args: { milestone, slug,
+//   cleared: [<every halt cleared so far>, '<this halt id>'] }, resumeFromRunId: <this
+//   run id> })`. Every agent call before the boundary replays from cache, the boundary is
+//   passed because its id is in `cleared`, and the next increment's branch step, planner
+//   and builders run live — its planner opens with the entry-gate task that verifies the
+//   human's act by API (roadmap convention). The FALLBACK, cache-independent: a fresh run
+//   (no resumeFromRunId) with `skipThrough: <the increment the halt ended>` and the same
+//   `cleared`. Each halt return prints both lines, ready to paste.
 //
 // RESUMING — FIRST distinguish a HALT from an INTERRUPTION (they resume differently):
 //   - INTERRUPTION (the run was killed mid-flight — process died, session dropped):
@@ -40,30 +85,35 @@
 //     M52 (2026-09-20) datum: a killed run can stay REGISTERED as running — TaskStop reports
 //     it killed but its loop never exits, and every resume is refused ("would run two copies
 //     against the same journal"). Do not wait it out: finish the interrupted increment outside
-//     the harness (executors → validator → fixers, one at a time) and start a FRESH run with
-//     skipThrough (rule 6 below). increment-workflow.md → Halt and resume carries the same note.
+//     the harness (executors → validator → fixers, one at a time, on its increment branch,
+//     then land it by hand per note 6(a)) and start a FRESH run with skipThrough (rule 6
+//     below). increment-workflow.md → Halt and resume carries the same note.
 //     So CLASSIFY before acting: (a) does it build, (b) does the halted task's own
 //     done-criterion pass, (c) does the FULL unscoped gate pass (`dev/gate`). All three =>
-//     the work is FINISHED and only the commit is owed — COMMIT IT, and say in the message
-//     that it was recovered rather than authored. Any of the three failing (or an obvious
-//     half-write, e.g. a planner's uncommitted DECISIONS entry) => revert it and let the
-//     agent re-do it from a clean base. Then plain-resume
-//     `Workflow({scriptPath: <snapshot>, args: { milestone, base }, resumeFromRunId})`
+//     the work is FINISHED and only the commit is owed — COMMIT IT on the increment branch,
+//     and say in the message that it was recovered rather than authored. Any of the three
+//     failing (or an obvious half-write, e.g. a planner's uncommitted DECISIONS entry) =>
+//     revert it and let the agent re-do it from a clean base. Then plain-resume
+//     `Workflow({scriptPath: <snapshot>, args: { milestone, slug }, resumeFromRunId})`
 //     (args per RULE 0) — NO script surgery (the killed call cache-misses on its own;
-//     the committed prefix replays from cache).
+//     the committed prefix replays from cache). Leave the increment branch checked out:
+//     every build prompt names its branch and refuses to commit anywhere else.
 //   - HALT (the run returned `{status:'halted'}` cleanly, tree CLEAN): the halted call
 //     COMPLETED and its halt-result IS cached — a plain resume replays the cached halt
 //     and re-halts. This case needs the script-snapshot surgery in steps 1–5 below.
 //   (Tell them apart: a halt left a clean tree + a returned halt report; an interruption
 //   left no return value and often a dirty tree. M8 hit both — an interruption mid-inc-5
 //   planner, then later a genuine halt at inc-5 Plan.)
+//   A PLANNED halt (`{status:'planned-halt'}`) is neither: nothing is wrong and nothing is
+//   cached as a halt — see PLANNED HALTS above.
 //
 // RESUMING AFTER A HALT (read this before re-invoking — there is a sharp edge):
-//   1. Resolve the blocker ON MAIN, outside the workflow, but DELEGATE — the
-//      orchestrator decides, it does not code. The orchestrator (with the human)
-//      owns only the JUDGMENT: diagnose the fork, pick the approach. Executing it
-//      — edit, full gate green, COMMIT — goes to a `build-fixer` SUBAGENT (Agent
-//      tool, agentType 'build-fixer'), a sibling of the workflow; for a genuine
+//   1. Resolve the blocker ON THE HALTED INCREMENT'S BRANCH (`milestone/<slug>/<increment-
+//      slug>`, still checked out — the halt return names it), outside the workflow, but
+//      DELEGATE — the orchestrator decides, it does not code. The orchestrator (with the
+//      human) owns only the JUDGMENT: diagnose the fork, pick the approach. Executing it
+//      — edit, full gate green, COMMIT on that branch — goes to a `build-fixer` SUBAGENT
+//      (Agent tool, agentType 'build-fixer'), a sibling of the workflow; for a genuine
 //      fork, surface its options to the human first, then have it apply the choice.
 //      The fixer's report carries the commit sha + gate/emitted-command evidence,
 //      so the orchestrator resumes from the report WITHOUT re-reading code — keeping
@@ -71,7 +121,9 @@
 //      diagnosis can be a subagent that returns a tight root-cause summary.) Coding
 //      inline here is the mistake to avoid: it bloats the orchestrator's context and
 //      can exhaust it before the milestone finishes. (The halted agent left a clean
-//      tree, so the fixer starts from a known base.)
+//      tree, so the fixer starts from a known base.) A halt in a GIT step (phase
+//      'branch', 'land' or 'push') has no code blocker: its report says what git refused —
+//      a moved milestone branch, a rejected push — and the human reconciles the branches.
 //   2. A naive resume REPLAYS THE CACHED HALT. resumeFromRunId returns each prior
 //      agent() call's cached result for an unchanged (prompt, opts) — and the
 //      halted executor's cached result *is* the halt, so it re-halts immediately
@@ -82,8 +134,8 @@
 //      a short RESUME note to ONLY the halted call's prompt, via a condition keyed
 //      on its increment+task, e.g.:
 //        const resumeNote = (inc.n === 4 && task.id === 'T5')
-//          ? '\n\nRESUME — <what was fixed on main, with commit sha>; <verified how>; '
-//            + 'write the test for this proven path and commit; do NOT re-diagnose.'
+//          ? '\n\nRESUME — <what was fixed on the increment branch, with commit sha>; '
+//            + '<verified how>; write the test for this proven path and commit; do NOT re-diagnose.'
 //          : ''
 //        await agent(execPrompt(inc, task, plan.tasks) + resumeNote, { ... })
 //      The changed call (and everything after, which never ran) goes live; the
@@ -92,7 +144,7 @@
 //      halt's note must stay unchanged or that call cache-misses too and re-runs
 //      (risking re-doing already-committed work). Add the new condition; never edit
 //      the old one. Then (args per RULE 0):
-//      Workflow({ scriptPath: <snapshot>, args: { milestone, base }, resumeFromRunId: <id> }).
+//      Workflow({ scriptPath: <snapshot>, args: { milestone, slug }, resumeFromRunId: <id> }).
 //   5. The RESUME note must state what was fixed (with the commit sha), how it was
 //      verified, and "do NOT re-diagnose" — so the re-run executor writes the test
 //      for the now-working path instead of re-halting on the same diagnosis.
@@ -102,55 +154,71 @@
 //      culprit; the resume had been invoked without `args`, so the milestone-reader's
 //      prompt changed and missed the cache at call #1). If args are correctly re-passed
 //      and it STILL won't replay, fall back to the DETERMINISTIC, cache-independent path:
-//      (a) if the halted increment is only PARTLY done, finish its remaining tasks on
-//      `main` with direct `build-executor` subagents (Agent tool) + one `increment-
-//      validator`, exactly as the harness would — bringing that increment to fully-
-//      built + validated-clean; (b) then re-invoke a FRESH run (NO resumeFromRunId)
-//      with `args: { milestone, base, skipThrough: <highest fully-done+validated
-//      increment> }`. The harness skips the done prefix (no re-plan, so no spurious
-//      already-built halt) and builds only the remainder; the audit still diffs from
-//      `base` (whole milestone). This needs NO script surgery and does not depend on the
-//      agent-call cache at all. Prefer steps 1–5 (cheaper) once RULE 0 is honored;
-//      this skipThrough path is the reliable fallback if cache-replay still misbehaves.
+//      (a) if the halted increment is only PARTLY done, finish its remaining tasks on its
+//      increment branch with direct `build-executor` subagents (Agent tool) + one
+//      `increment-validator`, exactly as the harness would — bringing that increment to
+//      fully-built + validated-clean — then LAND it by hand, the three git acts the harness
+//      would run: `git switch milestone/<slug>/main && git merge --no-ff --no-edit
+//      <increment branch> && git branch -d <increment branch> && git push origin
+//      milestone/<slug>/main`; (b) then re-invoke a FRESH run (NO resumeFromRunId) with
+//      `args: { milestone, slug, skipThrough: <highest increment built, validated AND
+//      merged into the milestone branch>, cleared }`. The harness skips the done prefix
+//      (no re-plan, so no spurious already-built halt) and builds only the remainder; the
+//      audit still diffs from the fork point (whole milestone). This needs NO script
+//      surgery and does not depend on the agent-call cache at all. Prefer steps 1–5
+//      (cheaper) once RULE 0 is honored; this skipThrough path is the reliable fallback if
+//      cache-replay still misbehaves.
 //
 //   7. THE RUN DIED WITH THE PROCESS (rate limit, crash, closed shell) — do these IN ORDER,
 //      derived by hand twice on 2026-08-09 and written down so the third time is cheap:
-//      (a) `git push origin main` FIRST, before diagnosing anything. A killed run leaves
-//          committed work unpushed (the 2026-08-09 rate limit stranded 26 commits), and
-//          diagnosis is worthless if the disk dies while you do it.
+//      (a) `git push origin milestone/<slug>/main` FIRST, before diagnosing anything — the
+//          branch named in full (a bare `git push` is denied). Since the switch the harness
+//          pushes after every landed increment, so this is usually a no-op; but the
+//          in-flight increment's commits live on its LOCAL increment branch, unpushed by
+//          design (increment branches stay local), and diagnosis is worthless if the disk
+//          dies while you do it — say so to the human rather than assuming it is safe.
 //      (b) `git status --porcelain` — a NON-empty tree is a killed agent's in-flight work.
 //          Do NOT assume it is junk and do NOT assume it is finished: run the full gate
 //          over it. Green + coherent => commit it (this recovered a complete fix on
 //          2026-08-09); red or half-written => discard it and let its task re-run.
-//      (c) Establish the last FULLY-BUILT AND VALIDATED increment — the two are different.
-//          `git log --oneline <base>..HEAD` shows the `design(mNN): increment N task
-//          decomposition` markers and the task commits; the run journal
+//      (c) Establish the last FULLY-BUILT, VALIDATED AND MERGED increment — three different
+//          facts. `git log --oneline --first-parent <fork point>..milestone/<slug>/main`
+//          shows one merge commit per landed increment (`Merge branch 'milestone/<slug>/
+//          <increment-slug>'`); an unmerged increment branch (`git branch --list
+//          'milestone/<slug>/*'`) is an increment that did not land. The run journal
 //          (`<transcriptDir>/journal.jsonl`, one {type:'result'} per agent) shows which
 //          increments a validator actually returned CLEAN for. An increment whose commits
 //          all landed but whose validator never ran, or ran BEFORE its fixes landed, is
-//          NOT validated — validate it with one `increment-validator` before counting it.
-//      (d) Resume with `args: { milestone, base, skipThrough: <that number> }`.
+//          NOT validated — validate it with one `increment-validator` before counting it,
+//          and land it per 6(a).
+//      (d) Resume with `args: { milestone, slug, skipThrough: <that number>, cleared }`.
 //      Diagnosing a mass agent death: many agents failing inside a few SECONDS of each
 //      other is an account-level usage limit, not a code fault — grep the transcript dir
 //      for '"error":"rate_limit"' / apiErrorStatus 429. Nothing in the run is wrong; wait
 //      for the window and resume. A genuine blocker fails ONE agent, repeatedly.
 //
-// Usage:  Workflow({ name: 'milestone-build', args: { milestone: 'M3', base: '<sha>' } })
-//   milestone — the roadmap milestone id whose decomposition to build (e.g. 'M3').
-//   base      — the commit immediately before this milestone's first increment,
-//               used as the audit diff base. Optional; omit and the auditors find it.
+// Usage:  Workflow({ name: 'milestone-build', args: { milestone: 'M55', slug: 'findings-channel' } })
+//   milestone — the roadmap milestone id whose decomposition to build (e.g. 'M55').
+//   slug      — REQUIRED: the milestone's branch slug (jigc's slug grammar, lowercase a-z0-9
+//               words joined by single `-`), chosen at planning and recorded in the
+//               roadmap decomposition (milestone-planning-workflow.md -> Decompose). The
+//               milestone branch is `milestone/<slug>/main`. A run without it is REFUSED
+//               before any agent is spawned.
 //   skipThrough — OPTIONAL deterministic resume (note 6): the highest increment number
-//               already built + independently validated CLEAN on `main`. The harness
-//               skips increments 1..skipThrough and starts at skipThrough+1; the audit
-//               still covers the whole milestone via `base`. Use a fresh run (no
-//               resumeFromRunId). Default 0 (build everything).
+//               already built, independently validated CLEAN and merged into the milestone
+//               branch. The harness skips increments 1..skipThrough and starts at
+//               skipThrough+1; the audit still covers the whole milestone from the fork
+//               point. Use a fresh run (no resumeFromRunId). Default 0 (build everything).
+//   cleared   — OPTIONAL list of planned-halt ids the human has cleared (e.g. ['H1']); a
+//               planned halt whose id is listed is passed instead of returned.
 //   model     — OPTIONAL model class pinned onto every agent() call ('opus' by default).
 //               Part of each call's cache key: re-pass the same value on every resume.
 
 export const meta = {
   name: 'milestone-build',
-  description: 'Build a whole milestone from its roadmap decomposition: per increment plan -> execute (one agent/task) -> validate -> fix (bounded 3 rounds); then the milestone-completion audit. Args: { milestone, base, skipThrough? }.',
+  description: 'Build a whole milestone on milestone/<slug>/main from its roadmap decomposition: per increment, on milestone/<slug>/<increment-slug>, plan -> execute (one agent/task) -> validate -> fix (bounded 3 rounds) -> merge back --no-ff and push the milestone branch; return at each planned human halt; then the milestone-completion audit. Args: { milestone, slug, skipThrough?, cleared?, model? }.',
   phases: [
+    { title: 'Milestone branch' },
     { title: 'Read milestone' },
     { title: 'Build increments' },
     { title: 'Milestone audit' },
@@ -177,12 +245,20 @@ if (typeof args === 'string') {
 }
 const a = typeof parsedArgs === 'string' ? { milestone: parsedArgs } : (parsedArgs || {})
 const milestone = a.milestone ? String(a.milestone) : 'the next milestone'
-const base = a.base ? String(a.base) : null
+// slug — the milestone's branch slug, REQUIRED (see Usage). jigc's slug grammar, the same
+// one dev/branch-name and CI hold every branch to: runs of [a-z0-9] joined by single `-`.
+const SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/
+const slug = a.slug != null ? String(a.slug) : null
+const milestoneBranch = slug ? 'milestone/' + slug + '/main' : null
+// cleared — the planned-halt ids the human has cleared (PLANNED HALTS). Accepts a list or
+// a comma-separated string. No prompt embeds it, so growing it misses no cache entry.
+const cleared = (Array.isArray(a.cleared) ? a.cleared : a.cleared != null ? String(a.cleared).split(',') : [])
+  .map((id) => String(id).trim()).filter(Boolean)
 // skipThrough — the deterministic, cache-independent resume (see RESUMING note 6).
-// The highest increment number ALREADY built AND independently validated CLEAN on
-// `main`; the harness skips plan/execute/validate for increments 1..skipThrough and
-// starts real work at skipThrough+1. The audit still diffs from `base` (whole
-// milestone). Use a FRESH run (no resumeFromRunId) — this path does not rely on the
+// The highest increment number ALREADY built, independently validated CLEAN AND merged
+// into the milestone branch; the harness skips open/plan/execute/validate/land for
+// increments 1..skipThrough (and their planned halts) and starts real work at
+// skipThrough+1. The audit still diffs from the fork point (whole milestone). Use a FRESH run (no resumeFromRunId) — this path does not rely on the
 // agent-call cache at all, so it is immune to a cache-replay that won't fast-forward.
 const skipThrough = a.skipThrough != null ? Number(a.skipThrough) : 0
 // model — the model class EVERY agent call in this run is pinned to. Default 'opus'.
@@ -192,6 +268,76 @@ const skipThrough = a.skipThrough != null ? Number(a.skipThrough) : 0
 // so the pin has to ride the agent() opts. It is part of the (prompt, opts) cache key, so a
 // resume must re-pass the same value (RULE 0 applies to `model` exactly as to `milestone`).
 const model = a.model ? String(a.model) : 'opus'
+
+// The two refusals that run BEFORE any agent: no slug (a fresh run that forgot it, or a
+// resume of a run started before the branching switch, whose args had none), or a slug
+// outside the grammar (the branch would fail CI's branch-name check on its first push).
+if (!slug || !SLUG_RE.test(slug)) {
+  return {
+    status: 'refused',
+    message: (slug
+      ? 'args.slug ' + JSON.stringify(slug) + ' is not a slug: it must be lowercase a-z0-9 words joined by single dashes (jigc\'s slug grammar), because the milestone branch is milestone/<slug>/main and CI refuses any other shape. '
+      : 'args.slug is missing, and it is REQUIRED: the milestone is built on milestone/<slug>/main. Pass the slug the roadmap decomposition records for ' + milestone + ' (e.g. M55 -> findings-channel). ')
+      + 'Nothing was run. A resume of a run started BEFORE the branching switch (2026-10-01) lands here too — those runs are not resumable under this script (see its header); finish one on its own snapshot, or start a fresh run of this script with slug and skipThrough.',
+  }
+}
+// `base` is no longer read: the audit base is the milestone branch's fork point from
+// origin/main, which the milestone-branch step reports. Said once, so a caller still
+// passing it is not left believing it took effect.
+if (a.base != null) log('args.base (' + String(a.base) + ') is ignored since the branching switch: the audit base is the fork point of ' + milestoneBranch + ' from origin/main.')
+
+// ---- branch names ----
+// incrementSlug — the increment's branch slug, derived from its roadmap TITLE alone, so
+// the same decomposition always yields the same branches (the reader's result is cached,
+// so a resume derives them again identically). It yields jigc's slug GRAMMAR (`is_slug`:
+// the shape dev/branch-name and CI accept) by construction, and borrows the mint rule's
+// legibility moves — a five-word cap, edge filler dropped — without claiming to be the
+// engine's `slugify` (no transliteration table, no hyphen-glue provenance):
+//   1. fold accents (NFKD, combining marks dropped) and case;
+//   2. delete apostrophes and code ticks, which join a word (`run's` -> `runs`) rather
+//      than split it;
+//   3. split on every other non-[a-z0-9] run;
+//   4. drop leading and trailing filler words, cap at five words, drop trailing filler
+//      again (the cap can expose some) — so `the pre-public audit, and the before run's
+//      instruments` is `pre-public-audit`, `the close` is `close`;
+//   5. cap at 50 characters on a word boundary.
+// An empty result is `increment-<n>`. Uniqueness within the milestone is the caller's
+// (`incrementBranches`): `main` is reserved for the milestone branch itself.
+const SLUG_FILLER = ['a', 'an', 'the', 'of', 'to', 'in', 'on', 'at', 'by', 'for', 'and', 'or']
+const SLUG_MAX_WORDS = 5
+const SLUG_MAX_CHARS = 50
+function incrementSlug(title) {
+  let words = String(title || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    .replace(/['\u2019`]/g, '')
+    .split(/[^a-z0-9]+/).filter(Boolean)
+  const trim = (w) => {
+    while (w.length && SLUG_FILLER.includes(w[0])) w.shift()
+    while (w.length && SLUG_FILLER.includes(w[w.length - 1])) w.pop()
+    return w
+  }
+  words = trim(words).slice(0, SLUG_MAX_WORDS)
+  words = trim(words)
+  while (words.length > 1 && words.join('-').length > SLUG_MAX_CHARS) words.pop()
+  let out = words.join('-')
+  if (out.length > SLUG_MAX_CHARS) out = out.slice(0, SLUG_MAX_CHARS).replace(/-+$/, '')
+  return out
+}
+// incrementBranches — n -> `milestone/<slug>/<increment-slug>`, unique within the
+// milestone in ROADMAP ORDER: the first increment to claim a slug keeps it bare, each later
+// one takes `-2`, `-3`, … (jigc's collision-suffix convention), and `main` is pre-claimed
+// by the milestone branch.
+function incrementBranches(incs) {
+  const taken = new Set(['main'])
+  const byN = {}
+  for (const inc of incs) {
+    const bare = incrementSlug(inc.title) || ('increment-' + inc.n)
+    let candidate = bare
+    for (let k = 2; taken.has(candidate); k++) candidate = bare + '-' + k
+    taken.add(candidate)
+    byN[inc.n] = 'milestone/' + slug + '/' + candidate
+  }
+  return byN
+}
 
 // resumeLine — the EXACT correct resume invocation, surfaced IN every halt return so the
 // operator sees it at the moment they need it (not buried in the RULE 0 header they won't
@@ -242,6 +388,9 @@ function haltMode(transient) {
 // It states what to do to the TREE and never when to resume — the caller owns the timing
 // (the breaker's is "not until the window resets", everyone else's is "now").
 function treeGuidance(haltPhase) {
+  if (haltPhase === 'branch' || haltPhase === 'land' || haltPhase === 'push') {
+    return 'The git steps edit no file and commit nothing but a merge, and each checks the tree is clean before it acts, so a dirty tree here is not theirs — explain it before anything else. If `git status` reports a merge in progress, the land step stopped inside one: `git merge --abort` returns the milestone branch to where it was. Never resume onto a dirty tree or a half-done merge. '
+  }
   if (haltPhase === 'read') {
     return 'The milestone-reader is READ-ONLY, so nothing in the tree is its work: a dirty tree here predates this run and is yours to explain — the harness has nothing to commit or revert on its behalf. '
   }
@@ -258,7 +407,7 @@ function treeGuidance(haltPhase) {
 // (the read-phase return included, which used to carry no `message` key at all).
 function haltMessage(id, mode, haltPhase) {
   if (mode === 'breaker') {
-    return id + ' build STOPPED by the rate-limit breaker: two different agents exhausted their retries (' + exhaustedLabels.join(', ') + '), so the run stopped spawning rather than thrash through the limit window. THIS IS NOT A CODE FAULT and there is no blocker to resolve — confirm by grepping the run transcript dir for \'"error":"rate_limit"\' / apiErrorStatus 429. Prior committed work stands (it may be UNPUSHED — push before diagnosing). ' + treeGuidance(haltPhase) + 'THEN WAIT for the window to reset before resuming — a resume inside it just re-spends it — and resume with args: { milestone, base, skipThrough: <highest increment that is both built AND validated clean> } — note those are different: an increment whose validator ran before its fixes landed is not validated.'
+    return id + ' build STOPPED by the rate-limit breaker: two different agents exhausted their retries (' + exhaustedLabels.join(', ') + '), so the run stopped spawning rather than thrash through the limit window. THIS IS NOT A CODE FAULT and there is no blocker to resolve — confirm by grepping the run transcript dir for \'"error":"rate_limit"\' / apiErrorStatus 429. Prior committed work stands (the in-flight increment\'s commits are on its LOCAL increment branch, unpushed by design; `git push origin ' + milestoneBranch + '` before diagnosing if a landed increment was not pushed). ' + treeGuidance(haltPhase) + 'THEN WAIT for the window to reset before resuming — a resume inside it just re-spends it — and resume with args: { milestone, slug, skipThrough: <highest increment that is built, validated clean AND merged into ' + milestoneBranch + '>, cleared } — note those are different: an increment whose validator ran before its fixes landed is not validated, and one not merged did not land.'
   }
   if (mode === 'transient') {
     return id + ' build HALTED on a transient infrastructure failure (an agent returned no result after retries). Prior committed work stands and there is no blocker to resolve. ' + treeGuidance(haltPhase)
@@ -266,22 +415,43 @@ function haltMessage(id, mode, haltPhase) {
   return id + ' build HALTED — human attention needed before continuing. Prior committed work stands.'
 }
 
-function resumeLine(id, baseRef, mode, haltPhase) {
-  const argsObj = "{ milestone: '" + id + "'" + (baseRef ? ", base: '" + baseRef + "'" : '') + ' }'
+// argsLiteral — the run's args as a copy-paste-ready literal: the SAME milestone, slug and
+// model (RULE 0), `cleared` as given (plus `extraCleared`, for a planned halt), and
+// `skipThrough` only on the fallback line.
+function argsLiteral(id, extraCleared, skip) {
+  const ids = cleared.concat(extraCleared ? [extraCleared] : [])
+  return "{ milestone: '" + id + "', slug: '" + slug + "'"
+    + (a.model ? ", model: '" + model + "'" : '')
+    + (skip != null ? ', skipThrough: ' + skip : '')
+    + (ids.length ? ', cleared: [' + ids.map((c) => "'" + c + "'").join(', ') + ']' : '')
+    + ' }'
+}
+
+function resumeLine(id, mode, haltPhase, branch) {
+  const argsObj = argsLiteral(id, null, null)
+  // A git step's refusal is a CACHED result like any halt, so a plain resume replays it and
+  // refuses again; and there is no agent call to cache-bust, because the fix is the
+  // human's, on the branches. So the deterministic path is the primary one here.
+  if (mode === 'blocker' && (haltPhase === 'branch' || haltPhase === 'land' || haltPhase === 'push')) {
+    return (
+      'TO RESUME — there is no CODE blocker and a `build-fixer` is the wrong instrument: a git step refused (its halt report says what — a dirty tree, a moved or diverged branch, a rejected push), and reconciling the branches is the human\'s. A plain resumeFromRunId would REPLAY this cached refusal. So: reconcile, leave the tree CLEAN; if the halted increment is validated but not yet merged, land it by hand (header note 6(a)); push ' + milestoneBranch + ' by name; then start a FRESH run (no resumeFromRunId) with args: '
+      + argsLiteral(id, null, '<highest increment built, validated AND merged into ' + milestoneBranch + '>') + ' — the same milestone, slug and cleared (RULE 0).'
+    )
+  }
   const prep = mode === 'breaker'
-    ? 'The rate-limit breaker is tripped, so this is NOT a blocker and there is nothing to resolve — but do NOT resume yet: a resume inside the usage window just re-spends it. `git push origin main` FIRST (prior committed work may be UNPUSHED). ' + treeGuidance(haltPhase) + 'Then, once the window has reset and the tree is clean: '
+    ? 'The rate-limit breaker is tripped, so this is NOT a blocker and there is nothing to resolve — but do NOT resume yet: a resume inside the usage window just re-spends it. ' + treeGuidance(haltPhase) + 'Then, once the window has reset and the tree is clean: '
     : mode === 'transient'
     ? 'This halt is transient-infrastructure-shaped (an agent returned no result after retries — API overload/kill, not a design blocker), so there is no blocker to resolve. ' + treeGuidance(haltPhase) + 'The failed call cache-misses and re-runs live while completed work replays from cache. Then, with the tree clean: '
     : haltPhase === 'read'
-    ? 'There is no CODE blocker here and a `build-fixer` is the wrong instrument: the roadmap simply carries no decomposition for this milestone, so run the MILESTONE-PLANNING workflow to produce one (or re-invoke with the correct milestone id), leave the tree CLEAN, then: '
-    : 'First resolve the blocker on `main` via a build-fixer subagent and leave the tree CLEAN, then: '
+    ? 'There is no CODE blocker here and a `build-fixer` is the wrong instrument: the roadmap on ' + milestoneBranch + ' simply carries no decomposition for this milestone, so run the MILESTONE-PLANNING workflow to produce one there (or re-invoke with the correct milestone id), leave the tree CLEAN, then: '
+    : 'First resolve the blocker on ' + (branch ? '`' + branch + '`' : 'the halted increment\'s branch') + ' (still checked out) via a build-fixer subagent, committing there, and leave the tree CLEAN, then: '
   return (
-    'TO RESUME — re-pass args ALWAYS (RULE 0: resumeFromRunId does NOT restore args; omit them and ' +
-    "`milestone` resets to 'the next milestone' and the resume dies at the read phase). " +
+    'TO RESUME — re-pass args ALWAYS (RULE 0: resumeFromRunId does NOT restore args; omit them and the run is ' +
+    "REFUSED for want of a slug, and drop only `milestone` and it resets to 'the next milestone' and every cached call misses). " +
     prep +
     'Workflow({ scriptPath: <the snapshot path printed at launch>, args: ' + argsObj + ', resumeFromRunId: <this run id> }). ' +
     'If cache-replay will not fast-forward, use the deterministic fallback — a FRESH run (no resumeFromRunId) with ' +
-    'args: { milestone: ' + "'" + id + "'" + ', base, skipThrough: <highest fully-built+validated increment> }.'
+    'args: ' + argsLiteral(id, null, '<highest increment built, validated AND merged into ' + milestoneBranch + '>') + '.'
   )
 }
 
@@ -302,6 +472,15 @@ const INCREMENTS_SCHEMA = {
           deliverable: { type: 'string' },
           scope: { type: 'array', items: { type: 'string' } },
           proves: { type: 'string' },
+          halt_after: {
+            type: 'object',
+            description: 'ONLY when the roadmap ends this increment in a planned human halt (a bullet like `**Ends in H2 (the human\'s).**`): the halt, so the harness can stop at it. Omit the field entirely for an increment with no such bullet.',
+            required: ['id', 'checklist'],
+            properties: {
+              id: { type: 'string', description: 'the halt id exactly as the roadmap names it, e.g. "H2"' },
+              checklist: { type: 'array', items: { type: 'string' }, description: 'the human\'s acts the bullet lists, one item per act, verbatim, in order — including any closing sentence about what the orchestrator does next' },
+            },
+          },
         },
       },
     },
@@ -316,6 +495,39 @@ const HALT = {
     evidence: { type: 'string', description: 'concrete proof: failing tests/commands, file:line, or the specific design gap' },
     tree_state: { type: 'string', description: 'the working-tree + commit state you leave: which commits landed; confirm the tree is CLEAN (you reverted your uncommitted changes)' },
     recommendation: { type: 'string', description: 'the suggested resolution — e.g. a task to insert before this one, or the decision the human must make' },
+  },
+}
+// The three git steps' reports. `status: 'halted'` carries the HALT report like any other
+// role; the git steps halt rather than improvise whenever the branches are not in the shape
+// the step expects.
+const BRANCH_SCHEMA = {
+  type: 'object',
+  required: ['status', 'branch', 'head'],
+  properties: {
+    status: { type: 'string', enum: ['ready', 'halted'] },
+    halt: HALT,
+    branch: { type: 'string', description: 'the output of `git branch --show-current` after the step' },
+    head: { type: 'string', description: 'the full sha of HEAD after the step' },
+    created: { type: 'boolean', description: 'true when this step created the branch, false when it reused an existing one' },
+    fork_point: { type: 'string', description: 'milestone-branch step only: the full sha `git merge-base origin/main HEAD` printed' },
+  },
+}
+const LAND_SCHEMA = {
+  type: 'object',
+  required: ['status'],
+  properties: {
+    status: { type: 'string', enum: ['merged', 'halted'] },
+    halt: HALT,
+    merge_commit: { type: 'string', description: 'the full sha of the --no-ff merge commit (empty if halted)' },
+  },
+}
+const PUSH_SCHEMA = {
+  type: 'object',
+  required: ['status'],
+  properties: {
+    status: { type: 'string', enum: ['pushed', 'halted'] },
+    halt: HALT,
+    remote_head: { type: 'string', description: 'the full sha `git ls-remote` reports for the pushed branch (empty if halted)' },
   },
 }
 const PLAN_SCHEMA = {
@@ -387,9 +599,70 @@ const E2E_SCHEMA = {
 }
 
 // ---- thin prompts (the role + project knowledge live in the agent defs) ----
+// `branches` is filled once the reader has returned (incrementBranches); every build prompt
+// names its increment's branch through `header`, so an agent can refuse to commit anywhere
+// else even after a resume replayed the step that checked the branch out.
+let branches = {}
 function header(inc) {
   const bullets = (inc.scope || []).map((s) => '  - ' + s).join('\n')
-  return ['Increment ' + inc.n + ': ' + inc.title, 'Deliverable: ' + inc.deliverable, 'Grouped scope:', bullets, 'Proves: ' + inc.proves].join('\n')
+  return ['Increment ' + inc.n + ': ' + inc.title, 'Deliverable: ' + inc.deliverable, 'Grouped scope:', bullets, 'Proves: ' + inc.proves, '', branchLine(branches[inc.n])].join('\n')
+}
+function branchLine(branch) {
+  return 'BRANCH: ' + branch + ' (forked from ' + milestoneBranch + '), already checked out by the harness. Every commit of this increment lands on it: before you commit, `git branch --show-current` must print exactly `' + branch + '` — if it does not, commit nothing and halt. Never create, switch, merge or push a branch; the harness\'s git steps own them. `git log --oneline ' + milestoneBranch + '..' + branch + '` is this increment\'s work so far.'
+}
+
+// ---- the git steps (build-git) — exact command sequences, nothing improvised ----
+const GIT_RULES = 'Run exactly the commands below, in order, and nothing else: no other branch, no commit beyond the merge a step names, no file edit, no `git stash`, no reset, never `--force`, and `main` is never checked out, merged into or pushed (reading `origin/main` is all a step does with it). Any check that fails, or any command that fails, is a HALT: stop, leave everything as it is, and fill the halt report (root_cause = which check, evidence = the command and its output, tree_state = `git status` and `git branch --show-current`).'
+function milestoneBranchPrompt() {
+  const b = milestoneBranch
+  return [
+    'GIT STEP — the milestone branch `' + b + '` for ' + milestone + '. ' + GIT_RULES,
+    '1. `git status --porcelain` must print nothing (a dirty tree is never carried across a branch switch).',
+    '2. `git fetch origin main`.',
+    '3. Find the branch: local = `git rev-parse --verify --quiet refs/heads/' + b + '` succeeds; remote = `git ls-remote --exit-code --heads origin ' + b + '` exits 0 (exit 2 means absent).',
+    '   - local exists: `git switch ' + b + '`. If remote exists too, `git fetch origin ' + b + '`, then `git merge-base --is-ancestor origin/' + b + ' ' + b + '` must succeed (else the pushed branch has commits the local one lacks — HALT; never pull, merge or rebase it here). created = false.',
+    '   - only remote exists: `git fetch origin ' + b + '` then `git switch --track -c ' + b + ' origin/' + b + '`. created = false.',
+    '   - neither exists: `git switch --no-track -c ' + b + ' origin/main`. created = true. Do NOT push it; the harness pushes it after its first landed increment.',
+    '4. `git branch --show-current` must print `' + b + '`.',
+    '5. Report branch, head = `git rev-parse HEAD`, fork_point = `git merge-base origin/main HEAD`, created.',
+  ].join('\n')
+}
+function openIncrementPrompt(inc) {
+  const m = milestoneBranch
+  const b = branches[inc.n]
+  return [
+    'GIT STEP — open increment ' + inc.n + ' (' + inc.title + ') of ' + milestone + ' on `' + b + '`, forked from `' + m + '`. ' + GIT_RULES,
+    '1. `git status --porcelain` must print nothing.',
+    '2. `git switch ' + m + '`.',
+    '3. If `git rev-parse --verify --quiet refs/heads/' + b + '` succeeds (a resumed increment): `git merge-base --is-ancestor ' + m + ' ' + b + '` must succeed, then `git switch ' + b + '`; created = false. Otherwise: `git switch --no-track -c ' + b + ' ' + m + '`; created = true.',
+    '4. `git branch --show-current` must print `' + b + '`. Never push it: increment branches stay local.',
+    '5. Report branch, head = `git rev-parse HEAD`, created.',
+  ].join('\n')
+}
+function landPrompt(inc) {
+  const m = milestoneBranch
+  const b = branches[inc.n]
+  return [
+    'GIT STEP — land increment ' + inc.n + ' (' + inc.title + ') of ' + milestone + ': merge `' + b + '` into `' + m + '` with a merge commit, then delete it. It has been validated clean. ' + GIT_RULES,
+    '1. `git status --porcelain` must print nothing.',
+    '2. `git switch ' + m + '`.',
+    '3. `git merge-base --is-ancestor ' + m + ' ' + b + '` must succeed — the increment was built on the milestone branch\'s current tip, so the merge cannot conflict; if it fails, the milestone branch moved under the increment and the human reconciles it.',
+    '4. `git rev-list --count ' + m + '..' + b + '` must print a number above 0.',
+    '5. `git merge --no-ff --no-edit ' + b + '`. If it fails: `git merge --abort`, then HALT.',
+    '6. Check the merge: `git rev-parse \'HEAD^{tree}\'` must equal `git rev-parse \'' + b + '^{tree}\'`, and `git rev-list --parents -n 1 HEAD` must list exactly two parents, the second equal to `git rev-parse ' + b + '`. On a mismatch HALT and undo nothing.',
+    '7. `git branch -d ' + b + '` — the safe delete, which refuses an unmerged branch; never `-D`.',
+    '8. Report merge_commit = `git rev-parse HEAD`.',
+  ].join('\n')
+}
+function pushPrompt(inc) {
+  const m = milestoneBranch
+  return [
+    'GIT STEP — push `' + m + '` after increment ' + inc.n + ' of ' + milestone + ' landed. ' + GIT_RULES,
+    '1. `git branch --show-current` must print `' + m + '` and `git status --porcelain` must print nothing.',
+    '2. `git push origin ' + m + '` — the branch named in full, exactly so: a bare `git push`, `HEAD`, `main` or any force flag is denied or forbidden. A rejected push (someone else pushed the branch) is a HALT — never force, pull or rebase.',
+    '3. `git ls-remote --exit-code --heads origin ' + m + '` must report the sha `git rev-parse ' + m + '` prints.',
+    '4. Report remote_head.',
+  ].join('\n')
 }
 function planPrompt(inc) {
   return [milestone + ' — ' + header(inc), '', 'Read the milestone settled decisions in DECISIONS.md + the roadmap and the design sections the scope names, ground the cut in the current code, then produce the ordered single-concern task cut and record it to DECISIONS.md per your role.'].join('\n')
@@ -424,14 +697,19 @@ function fixPrompt(inc, f) {
     'EVIDENCE: ' + f.evidence,
     f.fix_hint ? 'HINT: ' + f.fix_hint : '',
     '',
+    branchLine(branches[inc.n]),
+    '',
     'Resolve it via your fixer role (red reproduces the defect -> minimal green -> full gate -> one commit).',
   ].join('\n')
 }
+function auditBranchLine() {
+  return 'The milestone is `' + milestoneBranch + '`. Confirm `git branch --show-current` prints it; if it does not and `git status --porcelain` prints nothing, `git switch ' + milestoneBranch + '` first (that is the one git act you may perform). Commit nothing.'
+}
 function reviewPrompt(baseRef) {
-  return ['Milestone: ' + milestone + '. Review everything after the base commit: ' + baseRef + '.', '', 'Review the whole milestone diff per your code-reviewer role.'].join('\n')
+  return ['Milestone: ' + milestone + '. Review everything on `' + milestoneBranch + '` after its fork point from main, the base commit: ' + baseRef + ' (`git log --oneline ' + baseRef + '..' + milestoneBranch + '`).', '', auditBranchLine(), '', 'Review the whole milestone diff per your code-reviewer role.'].join('\n')
 }
 function e2ePrompt() {
-  return ['Milestone: ' + milestone + '.', '', 'Drive the milestone acceptance flows end-to-end through the real binary in throwaway repos per your e2e role.'].join('\n')
+  return ['Milestone: ' + milestone + '.', '', auditBranchLine(), '', 'Drive the milestone acceptance flows end-to-end through the real binary in throwaway repos per your e2e role.'].join('\n')
 }
 
 // agentR — run an agent() call, retrying on a TRANSIENT failure (API overload /
@@ -529,10 +807,35 @@ async function agentR(prompt, opts) {
   return null
 }
 
+// ---- the milestone branch: ensured and checked out BEFORE the reader ----
+// The decomposition the reader enumerates was committed on this branch at planning
+// (milestone-planning-workflow.md -> Decompose), so the reader must read it here, not on
+// main. Its fork point from origin/main is the audit base.
+phase('Milestone branch')
+log('Ensuring ' + milestoneBranch + ' (reused if it exists locally or on origin, else created from origin/main)')
+const mb = await agentR(milestoneBranchPrompt(), { label: 'git:milestone-branch', phase: 'Milestone branch', agentType: 'build-git', schema: BRANCH_SCHEMA })
+if (!mb || mb.status !== 'ready' || mb.branch !== milestoneBranch || !mb.fork_point) {
+  const transient = !mb
+  const mode = haltMode(transient)
+  return {
+    status: 'halted',
+    halted: {
+      phase: 'branch',
+      transient,
+      branch: milestoneBranch,
+      halt: mb && mb.halt ? mb.halt : { root_cause: mb ? 'the milestone-branch step reported ' + JSON.stringify({ status: mb.status, branch: mb.branch, fork_point: mb.fork_point }) + ' — not the ready ' + milestoneBranch + ' with a fork point' : 'the milestone-branch step returned no result' },
+    },
+    message: haltMessage(milestone, mode, 'branch'),
+    resume: resumeLine(milestone, mode, 'branch', milestoneBranch),
+  }
+}
+const forkPoint = String(mb.fork_point)
+log(milestoneBranch + (mb.created ? ' created' : ' reused') + ' at ' + mb.head + '; fork point from origin/main ' + forkPoint)
+
 // ---- read the milestone's increments from the roadmap ----
 phase('Read milestone')
 log('Reading ' + milestone + ' increment decomposition from implementation/roadmap.md')
-const read = await agentR('Enumerate the ordered increments of milestone "' + milestone + '" from implementation/roadmap.md. If the request is "the next milestone", resolve it to the next milestone whose decomposition is present but status is planned-not-built, and return its canonical id (e.g. "M11") in the `milestone` field.', { label: 'read:' + milestone, phase: 'Read milestone', agentType: 'milestone-reader', schema: INCREMENTS_SCHEMA })
+const read = await agentR('Enumerate the ordered increments of milestone "' + milestone + '" from implementation/roadmap.md, as it stands on the checked-out branch `' + milestoneBranch + '`. If the request is "the next milestone", resolve it to the next milestone whose decomposition is present but status is planned-not-built, and return its canonical id (e.g. "M11") in the `milestone` field. For every increment the roadmap ends in a planned human halt, return it as `halt_after`.', { label: 'read:' + milestone, phase: 'Read milestone', agentType: 'milestone-reader', schema: INCREMENTS_SCHEMA })
 const increments = read && read.increments ? read.increments : []
 // The id the reader actually resolved — so the result names what was built even
 // when the caller passed no args and the workflow auto-selected the next milestone.
@@ -567,11 +870,12 @@ if (increments.length === 0) {
               : 'run the milestone-planning workflow first.'),
     },
     message: haltMessage(milestone, mode, 'read'),
-    resume: resumeLine(milestone, base, mode, 'read'),
+    resume: resumeLine(milestone, mode, 'read', milestoneBranch),
     note: read ? read.note : null,
   }
 }
-log(builtMilestone + ' has ' + increments.length + ' increment(s): ' + increments.map((i) => 'I' + i.n).join(', '))
+branches = incrementBranches(increments)
+log(builtMilestone + ' has ' + increments.length + ' increment(s): ' + increments.map((i) => 'I' + i.n + ' -> ' + branches[i.n] + (i.halt_after && i.halt_after.id ? ' [then ' + i.halt_after.id + ']' : '')).join(', '))
 
 // ---- per increment: plan -> execute(per task) -> validate -> fix(bounded 3) ----
 let halted = null
@@ -579,13 +883,24 @@ const incrementReports = []
 for (const inc of increments) {
   phase('Build increments')
 
-  // Deterministic resume: skip increments already built + validated CLEAN on `main`
-  // (see RESUMING note 6). Cache-independent — the skipped increments never re-plan,
+  // Deterministic resume: skip increments already built, validated CLEAN and merged into
+  // the milestone branch (see RESUMING note 6). Cache-independent — the skipped increments never re-plan,
   // so the planner can't halt on already-built work.
   if (skipThrough && inc.n <= skipThrough) {
-    log('Increment ' + inc.n + ' — already built + validated on main; skipping (skipThrough=' + skipThrough + ').')
+    log('Increment ' + inc.n + ' — already built, validated and merged into ' + milestoneBranch + '; skipping (skipThrough=' + skipThrough + ').')
     continue
   }
+
+  // Open the increment's branch. For a never-run increment this call is new, so it runs
+  // live even on a resume — which is what puts a resumed run back on the right branch
+  // after a planned halt, whatever the human had checked out in between.
+  const ob = await agentR(openIncrementPrompt(inc), { label: 'git:open:inc' + inc.n, phase: 'Build increments', agentType: 'build-git', schema: BRANCH_SCHEMA })
+  if (!ob || ob.status !== 'ready' || ob.branch !== branches[inc.n]) {
+    halted = { increment: inc.n, phase: 'branch', transient: !ob, branch: branches[inc.n], halt: ob && ob.halt ? ob.halt : { root_cause: ob ? 'the open-increment step reported branch ' + JSON.stringify(ob.branch) + ', status ' + ob.status + ' — not ' + branches[inc.n] : 'the open-increment step returned no result' } }
+    incrementReports.push({ increment: inc.n, branch: ob })
+    break
+  }
+  log('Increment ' + inc.n + ' — on ' + branches[inc.n] + (ob.created ? ' (created)' : ' (reused: a resumed increment)'))
 
   log('Increment ' + inc.n + ' — planning (' + inc.title + ')')
   const plan = await agentR(planPrompt(inc), { label: 'plan:inc' + inc.n, phase: 'Build increments', agentType: 'build-planner', schema: PLAN_SCHEMA })
@@ -593,7 +908,7 @@ for (const inc of increments) {
     // `transient` is set HERE, by the harness, on the one condition that means it
     // (agentR exhausted its retries and returned null) — never re-derived downstream
     // from `halt.root_cause`, which is agent-written prose.
-    halted = { increment: inc.n, phase: 'plan', transient: !plan, halt: plan && plan.halt ? plan.halt : { root_cause: plan ? 'planner produced no tasks' : 'planner returned no result', tree_state: 'clean (planner writes only the DECISIONS entry, nothing on halt)' } }
+    halted = { increment: inc.n, phase: 'plan', transient: !plan, branch: branches[inc.n], halt: plan && plan.halt ? plan.halt : { root_cause: plan ? 'planner produced no tasks' : 'planner returned no result', tree_state: 'clean (planner writes only the DECISIONS entry, nothing on halt)' } }
     incrementReports.push({ increment: inc.n, plan })
     break
   }
@@ -605,7 +920,7 @@ for (const inc of increments) {
     const r = await agentR(execPrompt(inc, task, plan.tasks), { label: 'exec:inc' + inc.n + ':' + task.id, phase: 'Build increments', agentType: 'build-executor', schema: EXEC_TASK_SCHEMA })
     execResults.push({ task: task.id, result: r })
     if (!r || r.status === 'halted') {
-      halted = { increment: inc.n, phase: 'execute', task: task.id, transient: !r, halt: r && r.halt ? r.halt : { root_cause: r ? 'executor halted without detail' : 'executor returned no result' } }
+      halted = { increment: inc.n, phase: 'execute', task: task.id, transient: !r, branch: branches[inc.n], halt: r && r.halt ? r.halt : { root_cause: r ? 'executor halted without detail' : 'executor returned no result' } }
       break
     }
   }
@@ -702,7 +1017,7 @@ for (const inc of increments) {
         : !v.gate_green
         ? 'the validator reported gate_green=FALSE on the last of 4 rounds while filing ZERO blocking findings — so the real cause is a RED GATE recorded as advisory (or not recorded at all), NOT missing evidence and NOT the code being unfixable: no fixer ever spawned, because a fixer only spawns for a blocking finding. Run `dev/gate` by hand, read its failing step and test names, and fix that.'
         : 'gate green could not be verified after 3 validation rounds (gate_evidence never carried both `GATE: PASS` and the full-run `tests … (over N test binaries)` totals line from one `dev/gate` run) — verify the gate by hand'
-      halted = { increment: inc.n, phase: 'validate', transient: !v && blocking.length === 0, reason, blocking }
+      halted = { increment: inc.n, phase: 'validate', transient: !v && blocking.length === 0, branch: branches[inc.n], reason, blocking }
       break
     }
     round++
@@ -734,8 +1049,47 @@ for (const inc of increments) {
     }
   }
 
-  incrementReports.push({ increment: inc.n, plan, execResults, validation: lastValidation, fixRounds: round })
-  if (halted) break
+  if (halted) {
+    incrementReports.push({ increment: inc.n, plan, execResults, validation: lastValidation, fixRounds: round })
+    break
+  }
+
+  // ---- land: merge back --no-ff, delete the increment branch, push the milestone branch ----
+  log('Increment ' + inc.n + ' — landing ' + branches[inc.n] + ' on ' + milestoneBranch + ' (--no-ff)')
+  const landed = await agentR(landPrompt(inc), { label: 'git:land:inc' + inc.n, phase: 'Build increments', agentType: 'build-git', schema: LAND_SCHEMA })
+  if (!landed || landed.status !== 'merged' || !landed.merge_commit) {
+    halted = { increment: inc.n, phase: 'land', transient: !landed, branch: branches[inc.n], halt: landed && landed.halt ? landed.halt : { root_cause: landed ? 'the land step reported status ' + landed.status + ' with no merge commit' : 'the land step returned no result' } }
+    incrementReports.push({ increment: inc.n, plan, execResults, validation: lastValidation, fixRounds: round, land: landed })
+    break
+  }
+  const pushed = await agentR(pushPrompt(inc), { label: 'git:push:inc' + inc.n, phase: 'Build increments', agentType: 'build-git', schema: PUSH_SCHEMA })
+  if (!pushed || pushed.status !== 'pushed' || pushed.remote_head !== landed.merge_commit) {
+    halted = { increment: inc.n, phase: 'push', transient: !pushed, branch: milestoneBranch, halt: pushed && pushed.halt ? pushed.halt : { root_cause: pushed ? 'the push step reported status ' + pushed.status + ', remote head ' + JSON.stringify(pushed.remote_head) + ' against merge commit ' + landed.merge_commit : 'the push step returned no result', recommendation: 'increment ' + inc.n + ' IS merged into ' + milestoneBranch + ' (' + landed.merge_commit + '); push it by name and resume with skipThrough: ' + inc.n } }
+    incrementReports.push({ increment: inc.n, plan, execResults, validation: lastValidation, fixRounds: round, land: landed, push: pushed })
+    break
+  }
+  log('Increment ' + inc.n + ' — landed as ' + landed.merge_commit + ' and pushed ' + milestoneBranch)
+  incrementReports.push({ increment: inc.n, branch: branches[inc.n], plan, execResults, validation: lastValidation, fixRounds: round, merge_commit: landed.merge_commit })
+
+  // ---- a planned human halt is a stage boundary: return, with the human's checklist ----
+  const h = inc.halt_after
+  if (h && h.id) {
+    if (cleared.includes(String(h.id))) {
+      log('Increment ' + inc.n + ' — planned halt ' + h.id + ' is cleared (args.cleared); carrying on')
+    } else {
+      return {
+        status: 'planned-halt',
+        halt: { id: String(h.id), after_increment: inc.n, checklist: h.checklist || [] },
+        message: builtMilestone + ' increment ' + inc.n + ' is built, validated clean, merged into ' + milestoneBranch + ' (' + landed.merge_commit + ') and pushed. The roadmap ends it in ' + h.id + ', the human\'s: the run stops here BY DESIGN, not on a fault. Nothing is owed by an agent. The human works the checklist; then resume, and the next increment\'s planner opens with the entry-gate task that verifies it.',
+        checklist: h.checklist || [],
+        resume: 'TO RESUME once the checklist is done (the default, per the script header → PLANNED HALTS): Workflow({ scriptPath: <the snapshot path printed at launch>, args: ' + argsLiteral(builtMilestone, String(h.id), null) + ', resumeFromRunId: <this run id> }) — every call so far replays from cache and the boundary is passed because ' + h.id + ' is in `cleared`. Fallback, cache-independent: a FRESH run with args: ' + argsLiteral(builtMilestone, String(h.id), inc.n) + '.',
+        milestone: builtMilestone,
+        branch: milestoneBranch,
+        forkPoint,
+        incrementReports,
+      }
+    }
+  }
 }
 
 if (halted) {
@@ -752,13 +1106,13 @@ if (halted) {
   // `transient` (they are simultaneously true whenever the breaker trips on a null return),
   // and the tree rule comes from the single phase-aware `treeGuidance` in both.
   const mode = haltMode(halted.transient)
-  return { status: 'halted', halted, message: haltMessage(builtMilestone, mode, halted.phase), resume: resumeLine(builtMilestone, base, mode, halted.phase), milestone: builtMilestone, incrementReports }
+  return { status: 'halted', halted, message: haltMessage(builtMilestone, mode, halted.phase), resume: resumeLine(builtMilestone, mode, halted.phase, halted.branch), milestone: builtMilestone, branch: milestoneBranch, incrementReports }
 }
 
 // ---- milestone-completion audit (independent, adversarial, parallel) ----
 phase('Milestone audit')
-const baseRef = base || "the commit immediately before this milestone's first increment (find it via git log)"
-log('All increments validated clean — running the milestone-completion audit (code review + e2e)')
+const baseRef = forkPoint
+log('All increments validated clean and landed on ' + milestoneBranch + ' — running the milestone-completion audit (code review + e2e) over ' + baseRef + '..' + milestoneBranch)
 const audit = await parallel([
   () => agentR(reviewPrompt(baseRef), { label: 'audit:code-review', phase: 'Milestone audit', agentType: 'milestone-code-reviewer', schema: REVIEW_SCHEMA }),
   () => agentR(e2ePrompt(), { label: 'audit:e2e', phase: 'Milestone audit', agentType: 'milestone-e2e-tester', schema: E2E_SCHEMA }),
@@ -766,9 +1120,10 @@ const audit = await parallel([
 
 return {
   status: 'built-and-audited',
-  message: builtMilestone + ' fully built and independently validated clean. Milestone-completion audit complete. NOW: verify each finding is real (reproduce it), then AUTO-FIX every confirmed finding — delegate each to a `build-fixer` subagent (dev-workflow, one commit), the SAME autonomy the build phase has. Do NOT ask the human per finding and do NOT present a fix-vs-defer menu: leaving a confirmed finding unfixed degrades the milestone, so "defer / known-limitation" is NOT a default disposition. The human gate fires for EXACTLY two cases, and only after you have confirmed the finding: (a) too-big — the fix genuinely warrants its own increment (still scheduled, never dropped); (b) contested — the fix would revise a settled decision or change intended behavior. Size, not severity, decides the lane: a HIGH that is a bounded fix is still fix-now, and a pre-existing defect the milestone’s own flow exercises + a builder test masked is fix-now (not defer). CHEAP-VS-ROBUST FIRES AT TRIAGE TOO: a defer that leaves a KNOWN HOLE in the milestone declared/goal-complete surface (a capability reachable only through the engine/tests, not the shipped verb/CLI — the deliverable-reachable lens), or trips a ONE-WAY-DOOR tell, is NOT a valid defer even when large — it means the declared deliverable is hollow and the milestone IS NOT DONE, so the robust fix is fix-now (or, if genuinely huge, the milestone is BLOCKED, never quietly shipped hollow). Two rationalizations are BARRED: "no live case to test" is NOT "not needed" (a reconstructed/synthetic case proves a now-needed capability), and "premature generality" holds only if the trajectory does not commit. AND this fork is NEVER self-framed: before you surface any too-big->defer OR contested->document-it recommendation, spawn a `robust-advocate` subagent (Agent tool, agentType robust-advocate) to argue the vision-robust case at full strength, and present ITS case beside the cheap one — never your lone cheap recommendation (the M34 failure: the orchestrator self-framed the fork and led the human to defer the milestone declared deliverable). Everything else is a tested commit the human reviews AFTER. See milestone-completion-workflow.md → Plan (triage); methodology-docs.md → the independent robust-case advocate.',
+  message: builtMilestone + ' fully built and independently validated clean, every increment merged into ' + milestoneBranch + ' and pushed. Milestone-completion audit complete. THE CLOSE (milestone-completion-workflow.md → The loop, and → Close): the triage fixes below land on ' + milestoneBranch + ' — each fixer is told that branch and commits there — then push it by name (`git push origin ' + milestoneBranch + '`), and only then does the ORCHESTRATOR open the pull request: `gh pr create --base main --head ' + milestoneBranch + '`. The human merges it (agents never merge a PR or push main); the release PR updates from that merge. NOW: verify each finding is real (reproduce it), then AUTO-FIX every confirmed finding — delegate each to a `build-fixer` subagent (dev-workflow, one commit), the SAME autonomy the build phase has. Do NOT ask the human per finding and do NOT present a fix-vs-defer menu: leaving a confirmed finding unfixed degrades the milestone, so "defer / known-limitation" is NOT a default disposition. The human gate fires for EXACTLY two cases, and only after you have confirmed the finding: (a) too-big — the fix genuinely warrants its own increment (still scheduled, never dropped); (b) contested — the fix would revise a settled decision or change intended behavior. Size, not severity, decides the lane: a HIGH that is a bounded fix is still fix-now, and a pre-existing defect the milestone’s own flow exercises + a builder test masked is fix-now (not defer). CHEAP-VS-ROBUST FIRES AT TRIAGE TOO: a defer that leaves a KNOWN HOLE in the milestone declared/goal-complete surface (a capability reachable only through the engine/tests, not the shipped verb/CLI — the deliverable-reachable lens), or trips a ONE-WAY-DOOR tell, is NOT a valid defer even when large — it means the declared deliverable is hollow and the milestone IS NOT DONE, so the robust fix is fix-now (or, if genuinely huge, the milestone is BLOCKED, never quietly shipped hollow). Two rationalizations are BARRED: "no live case to test" is NOT "not needed" (a reconstructed/synthetic case proves a now-needed capability), and "premature generality" holds only if the trajectory does not commit. AND this fork is NEVER self-framed: before you surface any too-big->defer OR contested->document-it recommendation, spawn a `robust-advocate` subagent (Agent tool, agentType robust-advocate) to argue the vision-robust case at full strength, and present ITS case beside the cheap one — never your lone cheap recommendation (the M34 failure: the orchestrator self-framed the fork and led the human to defer the milestone declared deliverable). Everything else is a tested commit the human reviews AFTER. See milestone-completion-workflow.md → Plan (triage); methodology-docs.md → the independent robust-case advocate.',
   milestone: builtMilestone,
-  base: base || '(omitted — the auditors auto-discovered it from git log)',
+  branch: milestoneBranch,
+  base: forkPoint,
   incrementReports,
   audit: { code_review: audit[0], e2e: audit[1] },
 }
