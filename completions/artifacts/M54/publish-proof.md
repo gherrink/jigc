@@ -1,6 +1,6 @@
 # The publish, proved from the registry — M54 Increment 11
 
-This file records the first publish read back from the registry and from GitHub. Its first section is the **entry gate** of Increment 11 ([planning-gate-record.md](planning-gate-record.md) → row 21; S5, S9, S13), as amended by the human's option A on 2026-10-01. The tasks after T1 append their own sections: the registry install in `dev/runner-faithful` (T2), the trial harness's registry image (T3) and the README as crates.io renders it (T4). Cross-ref [release.md](../../../implementation/release.md) → Verifying a publish, Known gaps; [DECISIONS.md](../../../DECISIONS.md) → *M54 Increment 11 planning* (the basis each read is checked against), *Increment 11's installation leg is proved by three reads* (option A) and *M54 Inc 11 T1*.
+This file records the first publish read back from the registry and from GitHub. Its first section is the **entry gate** of Increment 11 ([planning-gate-record.md](planning-gate-record.md) → row 21; S5, S9, S13), as amended by the human's option A on 2026-10-01. The tasks after T1 append their own sections: the registry install in `dev/runner-faithful` (T2), the trial harness's registry image (T3) and the README as crates.io renders it (T4). Increment 12's T1 appends the last section, the yank (row 22). Cross-ref [release.md](../../../implementation/release.md) → Verifying a publish, Known gaps; [DECISIONS.md](../../../DECISIONS.md) → *M54 Increment 11 planning* (the basis each read is checked against), *Increment 11's installation leg is proved by three reads* (option A) and *M54 Inc 11 T1*.
 
 ## The entry gate (row 21)
 
@@ -472,3 +472,99 @@ LICENSE-MIT first-line="MIT License"
 ```
 
 The first line of each page's blob view (GitHub's `rawLines`): at `crates/cli/` it is the symlink's target, and at the root it is the license text. So links 6 and 7 do not 404, but a reader who follows them sees a path, not the license.
+
+## The yank (Increment 12, row 22)
+
+**Verdict: H4 is on the record, and S13's claim holds in the container.** crates.io shows `jigc 0.0.0` and `jigc-engine 0.0.0` both `yanked=true`, and `jigc 1.0.0-rc.22` and `jigc-engine 0.1.0-rc.1` both `yanked=false`. In `dev/runner-faithful`, the unpinned `registry` exits **1 at `FAIL install`**: cargo exits 101 with `` error: could not find `jigc` in registry `crates-io` with version `*` ``, so it resolves nothing. In the same session the positive control, `registry '^1.0.0-rc.1'` with the requirement read from QUICKSTART's install line, exits **0** with every step `ok` and installs `jigc 1.0.0-rc.22`. The control is what rules out the network or the registry as the cause of the unpinned failure. Every read holds, so the halt checklist is clear and nothing was repaired. This is the entry gate's first half ([planning-gate-record.md](planning-gate-record.md) → row 22; S13). Cross-ref [release.md](../../../implementation/release.md) → Installing; R4 above, the before-yank baseline, where the same unpinned command installed `0.0.0` and stopped at `FAIL version`.
+
+### The commands
+
+Every value below is one line of this script's output, cited by its id. The script was run whole on 2026-10-01 from the repository root at `9fa82126` (tree clean), as `bash yank.sh`, in 35 s (09:47:26Z–09:48:01Z), on `linux/arm64`, the host. A second whole run, executing this fenced block as extracted from this file, gave identical output apart from one line per container run, the `mktemp` path of the image build log. The container runs' output (stdout and stderr) goes to a file, and each exit status is read bare. The requirement is extracted from `crates/cli/guides/QUICKSTART.md`, never respelled. One platform is enough, because a yank is a registry fact and not a platform fact.
+
+```sh
+set -u
+UA='jigc-publish-proof (https://github.com/gherrink/jigc)'
+D=$(mktemp -d "${TMPDIR:-/tmp}/publish-proof.XXXXXX")
+
+echo "## Y1"
+for c in jigc jigc-engine; do
+  curl -sS -A "$UA" "https://crates.io/api/v1/crates/$c/versions" > "$D/$c.json"; echo "$c rc=$?"
+  jq -r '.versions[] | "  \(.crate) \(.num) yanked=\(.yanked) created_at=\(.created_at)"' "$D/$c.json"
+done
+echo "## Y2"
+dev/runner-faithful registry > "$D/y2.out" 2>&1; echo "rc=$?"
+cat "$D/y2.out"
+echo "## Y3"
+REQ=$(sed -n "s/^cargo install jigc --version '\(.*\)' --locked\$/\1/p" crates/cli/guides/QUICKSTART.md)
+echo "requirement=$REQ"
+dev/runner-faithful registry "$REQ" > "$D/y3.out" 2>&1; echo "rc=$?"
+cat "$D/y3.out"
+```
+
+### Both placeholders are yanked, and both rcs are not (Y1)
+
+```
+jigc rc=0
+  jigc 1.0.0-rc.22 yanked=false created_at=2026-10-01T06:14:50.942770Z
+  jigc 0.0.0 yanked=true created_at=2026-07-25T07:05:47.711285Z
+jigc-engine rc=0
+  jigc-engine 0.1.0-rc.1 yanked=false created_at=2026-10-01T06:14:20.618164Z
+  jigc-engine 0.0.0 yanked=true created_at=2026-09-28T11:48:58.816966Z
+```
+
+- **Both `0.0.0` placeholders are `yanked=true`.** Before H4 they read `yanked=false` (E1 above).
+- **Both published rcs are `yanked=false`**, with the same `created_at` as E1, so the yank touched only the placeholders.
+- **Each crate lists exactly two versions**, so no other version could be selected.
+
+### The unpinned install resolves nothing (Y2)
+
+```
+rc=1
+runner-faithful: the toolchain is read from commit 9fa821269caa65bdc6fdb81cebf810c5197547f9; no source tree enters the container
+runner-faithful: building jigc-runner-faithful:1.95.0-linux-arm64 (cached layers are reused); log: /var/folders/nj/dq5nt8bj72xc0ppkm69y_ckh0000gn/T/runner-faithful.ezDBE7/build.log
+runner-faithful: platform  linux/aarch64
+runner-faithful: cpus      8
+runner-faithful: toolchain rustc 1.95.0 (59807616e 2026-04-14)
+runner-faithful: git       git version 2.43.0
+runner-faithful: running   the registry install acceptance
+runner-faithful: FAIL install: cargo install jigc --locked (unpinned) exited 101
+    Updating crates.io index
+error: could not find `jigc` in registry `crates-io` with version `*`
+runner-faithful: exit 1
+```
+
+- **It stops at `install`, not at `version`.** R4 installed the placeholder; with it yanked, cargo finds no version it may select unasked, because the only unyanked one is a prerelease.
+- **cargo's own error is the no-match error**, with ``version `*` ``, the unpinned requirement. It reached the index (`Updating crates.io index`), so this is not a network failure.
+
+### The install line still installs `1.0.0-rc.22` (Y3, the positive control)
+
+```
+requirement=^1.0.0-rc.1
+rc=0
+runner-faithful: the toolchain is read from commit 9fa821269caa65bdc6fdb81cebf810c5197547f9; no source tree enters the container
+runner-faithful: building jigc-runner-faithful:1.95.0-linux-arm64 (cached layers are reused); log: /var/folders/nj/dq5nt8bj72xc0ppkm69y_ckh0000gn/T/runner-faithful.N17dBx/build.log
+runner-faithful: platform  linux/aarch64
+runner-faithful: cpus      8
+runner-faithful: toolchain rustc 1.95.0 (59807616e 2026-04-14)
+runner-faithful: git       git version 2.43.0
+runner-faithful: running   the registry install acceptance
+runner-faithful: ok   install: cargo install jigc --version ^1.0.0-rc.1 --locked installed jigc 1.0.0-rc.22
+runner-faithful: ok   version: jigc 1.0.0-rc.22 (/home/runner/.cargo/bin/jigc)
+runner-faithful: ok   setup: jigc setup exited 0; .jigc/AGENT.md present
+runner-faithful: ok   probe-override: JIGC_DOC_CODE_PROBE unset
+runner-faithful: ok   control-finalize: arch-doc:padding-layer anchored at src/pad.ts#pad finalized with exit 0
+runner-faithful: ok   drift-finalize: a task editing arch-doc:padding-layer finalized with exit 3, naming doc-code.symbol-exists; HEAD unchanged
+runner-faithful: the registry install acceptance passed
+runner-faithful: exit 0
+```
+
+The same image, in the same session and seconds later, installs from the same index when the requirement names a prerelease. Every step matches R1. So the unpinned failure in Y2 comes from the yank, not from the container, the network or the registry.
+
+### The halt checklist
+
+| Halt if | Read | Holds |
+|---|---|---|
+| a placeholder is unyanked | Y1: `jigc 0.0.0 yanked=true`, `jigc-engine 0.0.0 yanked=true` | yes |
+| a published rc is yanked | Y1: `jigc 1.0.0-rc.22 yanked=false`, `jigc-engine 0.1.0-rc.1 yanked=false` | yes |
+| the unpinned install resolves anything | Y2: `FAIL install … exited 101`, ``could not find … with version `*` `` | yes |
+| the positive control fails | Y3: `rc=0`, `installed jigc 1.0.0-rc.22`, every step `ok` | yes |
