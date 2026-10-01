@@ -12,8 +12,12 @@
 //! table states its own expected verdict too, so neither the script nor the oracle can
 //! move alone. **(b)** a refused name prints the allowed patterns, and a usage error is
 //! not a verdict. **(c)** the hygiene job's `branch name` step reads the head branch on
-//! a pull request, the pushed branch on a push, and checks nothing on a tag push —
-//! its body driven verbatim for each event.
+//! a pull request, the pushed branch on a push, and checks nothing on a tag push or on
+//! a pull request from a fork (the human's decision of 2026-10-01: a fork's branch is
+//! its contributor's to name; pushes are always checked) — its body driven verbatim for
+//! each event. **(d)** the fork is exempt from the name rule and nothing else: no
+//! hygiene step is conditional, so gitleaks runs, and the denylist step, without the
+//! secret a fork's pull request never receives, skips with its notice and exit 0.
 
 use crate::manifest_freeze_fence::{CI_WORKFLOW, repo_root};
 use serde_yaml_ng::Value;
@@ -156,38 +160,74 @@ fn b_a_refusal_lists_the_allowed_patterns_and_usage_is_not_a_verdict() {
     }
 }
 
-/// The hygiene job's `branch name` step.
-fn branch_step() -> Value {
+/// The CI workflow's hygiene job.
+fn hygiene_job() -> Value {
     let body = fs::read_to_string(repo_root().join(CI_WORKFLOW)).expect("read the CI workflow");
     let workflow: Value = serde_yaml_ng::from_str(&body).expect("the CI workflow is YAML");
-    let steps = workflow["jobs"]["hygiene"]["steps"]
+    workflow["jobs"]["hygiene"].clone()
+}
+
+/// The hygiene job's step named `name`.
+fn hygiene_step(name: &str) -> Value {
+    hygiene_job()["steps"]
         .as_sequence()
-        .expect("the hygiene job has steps");
-    steps
+        .expect("the hygiene job has steps")
         .iter()
-        .find(|step| step["name"].as_str() == Some(STEP))
-        .unwrap_or_else(|| panic!("the hygiene job has no step named `{STEP}`"))
+        .find(|step| step["name"].as_str() == Some(name))
+        .unwrap_or_else(|| panic!("the hygiene job has no step named `{name}`"))
         .clone()
 }
 
-/// Run the step's body verbatim, as GitHub's default `shell: bash` does, from the
-/// repository root (the body calls `dev/branch-name` relative to the checkout).
-fn run_step(body: &str, event: &str, ref_type: &str, ref_name: &str, head_ref: &str) -> Output {
-    Command::new("bash")
+/// The hygiene job's `branch name` step.
+fn branch_step() -> Value {
+    hygiene_step(STEP)
+}
+
+/// Bash as GitHub's default `shell: bash` runs a step body, from the repository root
+/// (the bodies call `dev/…` relative to the checkout).
+fn step_shell(body: &str) -> Command {
+    let mut shell = Command::new("bash");
+    shell
         .args(["--noprofile", "--norc", "-e", "-o", "pipefail", "-c", body])
-        .current_dir(repo_root())
-        .env("BRANCH_EVENT", event)
-        .env("BRANCH_REF_TYPE", ref_type)
-        .env("BRANCH_REF_NAME", ref_name)
-        .env("BRANCH_HEAD_REF", head_ref)
+        .current_dir(repo_root());
+    shell
+}
+
+/// The event fields the `branch name` step reads, one case's worth.
+struct Event<'a> {
+    event: &'a str,
+    ref_type: &'a str,
+    ref_name: &'a str,
+    head_ref: &'a str,
+    repo: &'a str,
+    head_repo: &'a str,
+}
+
+/// Run the step's body verbatim over one event.
+fn run_step(body: &str, e: &Event) -> Output {
+    step_shell(body)
+        .env("BRANCH_EVENT", e.event)
+        .env("BRANCH_REF_TYPE", e.ref_type)
+        .env("BRANCH_REF_NAME", e.ref_name)
+        .env("BRANCH_HEAD_REF", e.head_ref)
+        .env("BRANCH_REPO", e.repo)
+        .env("BRANCH_HEAD_REPO", e.head_repo)
         .output()
         .expect("run bash over the step body")
 }
 
+/// This repository, as `github.repository` names it.
+const REPO: &str = "gherrink/jigc";
+/// A fork of it, as `github.event.pull_request.head.repo.full_name` names one.
+const FORK: &str = "contributor/jigc";
+
 /// **(c)** The step reads the right ref per event and runs the script on it. Its env
-/// carries the four event fields, never spliced into the body; a pull request is judged
+/// carries the six event fields, never spliced into the body; a pull request is judged
 /// by its head branch (its `ref_name` is the `<n>/merge` ref), a push and a manual run by
-/// the branch, and a tag push is not judged at all.
+/// the branch, and a tag push is not judged at all. A pull request whose head repository
+/// is not this one is a fork's and is not judged either — a deleted fork's head
+/// repository is null, so an empty one is a fork too — while a push is judged whatever
+/// repository it runs in, a fork's own CI included.
 #[test]
 fn c_the_ci_step_checks_the_head_branch_of_a_pr_and_the_pushed_branch_and_skips_tags() {
     let step = branch_step();
@@ -196,6 +236,11 @@ fn c_the_ci_step_checks_the_head_branch_of_a_pr_and_the_pushed_branch_and_skips_
         ("BRANCH_REF_TYPE", "${{ github.ref_type }}"),
         ("BRANCH_REF_NAME", "${{ github.ref_name }}"),
         ("BRANCH_HEAD_REF", "${{ github.head_ref }}"),
+        ("BRANCH_REPO", "${{ github.repository }}"),
+        (
+            "BRANCH_HEAD_REPO",
+            "${{ github.event.pull_request.head.repo.full_name }}",
+        ),
     ] {
         assert_eq!(
             step["env"][key].as_str(),
@@ -208,24 +253,39 @@ fn c_the_ci_step_checks_the_head_branch_of_a_pr_and_the_pushed_branch_and_skips_
         !body.contains("${{"),
         "the `{STEP}` body splices an expression into the script; pass it through `env:`"
     );
-    // (event, ref_type, ref_name, head_ref, passes)
+    // (event, ref_type, ref_name, head_ref, repo, head_repo, passes)
     let cases = [
         (
             "push",
             "branch",
             "milestone/findings-channel/main",
             "",
+            REPO,
+            "",
             true,
         ),
-        ("push", "branch", "feat/x", "", false),
-        ("push", "tag", "jigc-v1.0.0-rc.22", "", true),
-        ("workflow_dispatch", "branch", "work/x", "", true),
-        ("workflow_dispatch", "branch", "Feature", "", false),
+        ("push", "branch", "feat/x", "", REPO, "", false),
+        ("push", "branch", "patch-1", "", REPO, "", false),
+        // a fork's own CI, on a push to the fork: still judged
+        ("push", "branch", "patch-1", "", FORK, "", false),
+        ("push", "tag", "jigc-v1.0.0-rc.22", "", REPO, "", true),
+        ("workflow_dispatch", "branch", "work/x", "", REPO, "", true),
+        (
+            "workflow_dispatch",
+            "branch",
+            "Feature",
+            "",
+            REPO,
+            "",
+            false,
+        ),
         (
             "pull_request",
             "branch",
             "7/merge",
             "milestone/findings-channel/main",
+            REPO,
+            REPO,
             true,
         ),
         (
@@ -233,16 +293,73 @@ fn c_the_ci_step_checks_the_head_branch_of_a_pr_and_the_pushed_branch_and_skips_
             "branch",
             "7/merge",
             "release-plz-2026-10-01T10-41-19Z",
+            REPO,
+            REPO,
             true,
         ),
-        ("pull_request", "branch", "7/merge", "feat/x", false),
+        (
+            "pull_request",
+            "branch",
+            "7/merge",
+            "feat/x",
+            REPO,
+            REPO,
+            false,
+        ),
+        // the same head branch, from this repository and from a fork
+        (
+            "pull_request",
+            "branch",
+            "9/merge",
+            "patch-1",
+            REPO,
+            REPO,
+            false,
+        ),
+        (
+            "pull_request",
+            "branch",
+            "9/merge",
+            "patch-1",
+            REPO,
+            FORK,
+            true,
+        ),
+        (
+            "pull_request",
+            "branch",
+            "9/merge",
+            "main",
+            REPO,
+            FORK,
+            true,
+        ),
+        // a deleted fork: GitHub reports its head repository as null
+        (
+            "pull_request",
+            "branch",
+            "9/merge",
+            "patch-1",
+            REPO,
+            "",
+            true,
+        ),
     ];
     let mut wrong = Vec::new();
-    for (event, ref_type, ref_name, head_ref, passes) in cases {
-        let out = run_step(body, event, ref_type, ref_name, head_ref);
+    for (event, ref_type, ref_name, head_ref, repo, head_repo, passes) in cases {
+        let e = Event {
+            event,
+            ref_type,
+            ref_name,
+            head_ref,
+            repo,
+            head_repo,
+        };
+        let out = run_step(body, &e);
         if out.status.success() != passes {
             wrong.push(format!(
-                "{event} {ref_type} {ref_name:?} (head {head_ref:?}): expected {}, exit {:?}\n{}",
+                "{event} {ref_type} {ref_name:?} (head {head_ref:?} of {head_repo:?}, in \
+                 {repo:?}): expected {}, exit {:?}\n{}",
                 if passes { "pass" } else { "refusal" },
                 out.status.code(),
                 String::from_utf8_lossy(&out.stderr)
@@ -250,4 +367,60 @@ fn c_the_ci_step_checks_the_head_branch_of_a_pr_and_the_pushed_branch_and_skips_
         }
     }
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+/// **(d)** A fork's pull request is exempt from the name rule and from nothing else.
+/// Neither the job nor any hygiene step carries an `if:`, so gitleaks runs once the name
+/// step passes; gitleaks reads no secret; and the denylist step, with `JIGC_DENYLIST`
+/// empty — what a fork's pull request receives — or unset, exits 0 with its notice
+/// rather than failing or passing silently.
+#[test]
+fn d_a_fork_pull_request_still_gets_gitleaks_and_a_clean_denylist_skip() {
+    let job = hygiene_job();
+    assert!(
+        job.get("if").is_none(),
+        "the hygiene job must not be conditional"
+    );
+    let conditional: Vec<String> = job["steps"]
+        .as_sequence()
+        .expect("the hygiene job has steps")
+        .iter()
+        .filter(|step| step.get("if").is_some())
+        .map(|step| format!("{:?}", step["name"]))
+        .collect();
+    assert!(
+        conditional.is_empty(),
+        "no hygiene step may be conditional, or a fork's pull request could skip it: \
+         {conditional:?}"
+    );
+    let gitleaks = serde_yaml_ng::to_string(&hygiene_step("gitleaks")).expect("re-serialize");
+    assert!(
+        !gitleaks.contains("secrets."),
+        "the gitleaks step must read no secret, so it runs the same on a fork's pull request"
+    );
+    let denylist = hygiene_step("denylist");
+    assert_eq!(
+        denylist["env"]["JIGC_DENYLIST"].as_str(),
+        Some("${{ secrets.JIGC_DENYLIST }}")
+    );
+    let body = denylist["run"]
+        .as_str()
+        .expect("the denylist step has a body");
+    for secret in [Some(""), None] {
+        let mut shell = step_shell(body);
+        shell.env("HYGIENE_RANGE", "HEAD");
+        match secret {
+            Some(value) => shell.env("JIGC_DENYLIST", value),
+            None => shell.env_remove("JIGC_DENYLIST"),
+        };
+        let out = shell.output().expect("run bash over the denylist body");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            out.status.success() && stdout.contains("::notice title=denylist skipped::"),
+            "with JIGC_DENYLIST {secret:?} the denylist step must skip with its notice and \
+             exit 0; exit {:?}\n{stdout}{}",
+            out.status.code(),
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
 }
