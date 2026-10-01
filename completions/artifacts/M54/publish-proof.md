@@ -246,3 +246,90 @@ cmp jigc-1.0.0-rc.22/Cargo.lock resolved/Cargo.lock                      # rc=0
 - **The compare discriminates.** As a control, the `anyhow` entry was dropped from a copy of the lock and the same resolution was run. Cargo re-added `anyhow` at `1.0.104`, the index's newest, where the published lock pins `1.0.102`. The resolved lock then differed from the planted one (`cmp` rc=1).
 
 The install log itself is not kept on success: the container is removed, and the script prints only the step lines.
+
+## The trial harness's registry image (T3)
+
+**Verdict: `build-image.sh --registry 1.0.0-rc.22` builds the image from crates.io and exits 0, and `verify-image.sh` passes all seven checks on it, with check 2 on the `single-binary` arm.** The build installs `jigc 1.0.0-rc.22` and its engine `0.1.0-rc.1` from the registry. It records the layout `single-binary` and the source `registry jigc 1.0.0-rc.22`, and the binary prints the stamp `jigc 1.0.0-rc.22`. No source tree of ours enters the build context. Nothing failed, so the harness is unchanged. This is S14's positive run. The blind trial's instrument now exists for the published version ([trial-harness README](../../trial-harness/README.md) → Two ways to build an image; [release.md](../../../implementation/release.md) → Verifying a publish).
+
+### The commands
+
+Both runs were made on 2026-10-01, after T2 and before H4, from `completions/trial-harness/` on a clean tree at `afa899b0`. The host is macOS/arm64 under colima (Docker 29.5.2), so the image is `linux/arm64`. Each run's output (stdout and stderr) went to a file, and its exit status was read bare. `CLAUDE_CODE_OAUTH_TOKEN_FOR_TESTING` was set, so `verify-image.sh` did not refuse.
+
+```sh
+./build-image.sh --registry 1.0.0-rc.22                          # B1
+./verify-image.sh jigc-gate:registry-1.0.0-rc.22 1.0.0-rc.22     # V1
+```
+
+| Run | Started (UTC) | Exit | Wall clock | Result |
+|---|---|---|---|---|
+| B1 | 07:56:59Z | **0** | 35 s | image `jigc-gate:registry-1.0.0-rc.22`, `sha256:04ae7455f965…`, `arm64` |
+| V1 | 07:57:44Z | **0** | 18 s | `7 passed, 0 failed` |
+
+### B1 — the build
+
+The script's own header, printed before the build:
+
+```
+building jigc-gate:registry-1.0.0-rc.22
+  source  : crates.io, jigc 1.0.0-rc.22 (cargo install --locked)
+  stamped : 1.0.0-rc.22
+```
+
+The install step, from the build log (BuildKit's step `#11`, the `build` stage's `cargo install jigc --version "1.0.0-rc.22" --locked --root /stage`):
+
+```
+#11 1.529   Downloaded jigc v1.0.0-rc.22
+#11 1.669   Installing jigc v1.0.0-rc.22
+#11 5.784   Downloaded jigc-engine v0.1.0-rc.1
+#11 31.69     Finished `release` profile [optimized] target(s) in 31.39s
+#11 31.72   Installing /stage/bin/jigc
+#11 31.72    Installed package `jigc v1.0.0-rc.22` (executable `jigc`)
+#11 DONE 32.0s
+```
+
+The build-time `ldd` gate over every staged executable, which also prints the image's records (step `#16`):
+
+```
+#16 0.159 layout: single-binary
+#16 0.159 source: registry jigc 1.0.0-rc.22
+#16 0.164 jigc 1.0.0-rc.22
+```
+
+The script's stamp assertion, after the image is tagged:
+
+```
+built jigc-gate:registry-1.0.0-rc.22 — verifying the binary reports the stamp its source carries
+jigc 1.0.0-rc.22
+```
+
+- **The install fetched both published crates:** `jigc v1.0.0-rc.22` and `jigc-engine v0.1.0-rc.1`. The release build took 31.39 s. The other build steps were cached layers (the base image, its packages and the pinned Claude CLI).
+- **The install staged exactly one executable, `jigc`.** A read of the finished image afterwards shows `/usr/local/share/jigc-image/executables` lists only `jigc`. `layout` reads `single-binary` and `source` reads `registry jigc 1.0.0-rc.22`. The Claude CLI is `2.1.233 (Claude Code)`, and `/usr/local/bin` holds no `doc-code`.
+
+### V1 — the verification
+
+```
+== 1. the binary under test reports the version its tree carries
+  PASS  jigc 1.0.0-rc.22
+== 2. the doc-code probe runs, in the layout the image records (a dead probe reads as a validation family finding nothing)
+  PASS  single-binary: no separate doc-code, and jigc's own probe child answers
+== 3. no host INSTRUCTION files are present (the seeded onboarding state is not one)
+  PASS  no CLAUDE.md, no memory, no skills, no agents
+== 4. the discriminating probe flips (must be YES on the host, NO in here)
+  PASS  host YES / container NO — host instructions are absent
+== 5. a corpus round-trips with its git history intact
+  PASS  history descends from 910005855d6a4a82efbf6ce923e72fa7880443d5 -> 7769e09545bfc3728533cd7fb72a49477fc00699, and jigc setup landed inside the container
+== 6. the workspace is trusted, so jigc's allowlist is honoured — and a transcript survives
+  PASS  workspace trusted; jigc's allowlist is honoured
+  PASS  a session transcript is recoverable (1 jsonl)
+
+== 7 passed, 0 failed
+```
+
+- **Check 2 ran the `single-binary` arm, because that is the layout the image records.** The arm asserts three things. No `/usr/local/bin/doc-code` is present. `jigc __nope` exits 2, which is clap's answer to an unknown argv. `jigc __probe doc-code --build 1.0.0-rc.22`, fed an empty-anchor request, answers `"findings":[]` at exit 0. So the self-exec probe child of the published binary runs in the image.
+- **Check 5 ran `jigc setup` with the published binary**, inside a container that a corpus was copied into and back out of, and the corpus's history came back intact.
+- **This is the opposite of Increment 7's pre-publish run.** Then, `--registry 1.0.0-rc.22` stopped before tagging, because cargo could not find the version, and the `0.0.0` image failed checks 1, 2 and 5.
+
+### Bounds
+
+- **One platform:** the image is `linux/arm64`, the host's. `build-image.sh` does not take a platform. The `linux/amd64` registry install is T2's R2.
+- **The image is local.** It is not pushed anywhere. A trial session rebuilds it with the same command, and crates.io never serves two builds under one version, so the rebuild installs the same crates. Its dependencies are the published lock's, which T2 showed resolves to itself.
