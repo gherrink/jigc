@@ -4,6 +4,34 @@ Running log of what we decided and **why**, dated. Short and punchy — this rot
 
 ## 2026-10-01 — M54 Increment 12 planning: decomposition
 
+Planning re-ran for [Increment 12](implementation/roadmap.md) (*the close*). No task of the entry below has committed. This run is grounded at HEAD `f7db572a` (tree clean, `main` equal to `origin/main`). **The six-task cut of the entry below stands unchanged.** This entry records the basis facts that changed and re-checks the rest. Cross-ref [roadmap.md](implementation/roadmap.md) → Milestone 54 → Increment 12; [planning-gate-record.md](completions/artifacts/M54/planning-gate-record.md) → rows 22–24 and the census row. **Codes registered: none.**
+
+**Basis: re-read here, not carried.**
+
+- **H4 has happened.** The crates.io API (`/api/v1/crates/<name>/versions`) now lists `jigc` `0.0.0` and `jigc-engine` `0.0.0` both `yanked: true`, and `1.0.0-rc.22` and `0.1.0-rc.1` both `yanked: false`. So T1 is no longer expected to halt on the yank.
+- **S13's claim holds on the host.** `cargo install jigc --locked --root <mktemp>` on macOS (cargo 1.97.1) exits **101** with `` error: could not find `jigc` in registry `crates-io` with version `*` ``. The container run is still T1's to record, together with its positive control.
+- **The final after run exists.** CI run `36843531774` is a `push` on `main` with head `f7db572a`, created 2026-10-01T09:33:46Z, `completed`/`success`. `git diff --name-only f36f6bcc f7db572a` is exactly `DECISIONS.md`, so the run qualifies under T2's rule, and it is the earliest that does. Twenty jobs, all `ubuntu-latest` / `GitHub Actions`. The slowest is `test (g_flow)` at **430 s**, against the 900 s bound. Each job's `nproc` is still T2's to read from the logs. **This planning commit is a later qualifying descendant, so T2's *earliest created* rule still picks `36843531774`.**
+- **Unchanged, re-checked at `f7db572a`:**
+  - `PENDING` is `&[]` (`doc_link_fence.rs`), and nothing asserts that it is empty.
+  - The `foldback_truth` claim arm is still `the_record_names_m53_and_claims_exactly_what_the_build_reached` (:315).
+  - `crates/cli/Cargo.toml` is `1.0.0-rc.22`, and the installed `~/.local/bin/jigc` prints `1.0.0-rc.21`.
+  - `doc_link_fence` is registered in `g_config`, and `foldback_truth` and `count_fences` in `g_flow`.
+  - CLAUDE.md:7 still says *"nothing of it is built"*.
+  - The census at HEAD is **114 lines in 19 files**, as the entry below found at `f36f6bcc`, because this entry's file is excluded from the census set.
+
+**The tasks** (each one's full pin is in the entry below):
+
+- **T1: the yank on the record (row 22).** *Done:* `publish-proof.md` → *The yank* shows both `0.0.0` yanked, the unpinned container install exiting 1 at `FAIL install`, and the pinned control exiting 0 with every step `ok`. release.md's *"Both are yanked after the first rc publish"* is flipped to the verified fact. `doc_link_fence::` and `dev/gate` are green.
+- **T2: the final after run on the record (row 23).** *Done:* `ci-runtime.md` → *The final after run — 36843531774* has the before · provisional · final table. The slowest job is ≤ 900 s, with `nproc` 4 on every job. A miss halts to the human and names S8's reserve lever, nextest partitioning. dev-workflow.md → Gate's *"still a target"* is flipped. `dev/gate` is green.
+- **T3: the link fence's pending list, asserted empty (O1).** *Done:* a new test asserts `PENDING.is_empty()`. It was red under an applied mutant entry, and `doc_link_fence::` and `dev/gate` are green.
+- **T4: CLAUDE.md → `## Project state` states current truth.** *Done:* `command grep -c 'nothing of it is built' CLAUDE.md` prints 0. No version is claimed as built and installed, and no numeral appears that the task did not measure. `foldback_truth::` and `dev/gate` are green.
+- **T5: the census.** *Done:* `completions/artifacts/M54/close-census.md` holds the counts (5f730417 · base · after) and a disposition for every line. The marker grep returns only lines the record keeps, each with its reason. `dev/gate` is green.
+- **T6: the fold-back span plus the `foldback_truth` re-aim to `**M54 —` (atomic).** *Done:* `foldback_truth::` and `count_fences::` are green. Both reds were seen: the arm without the span, and a `built + audited` mutant. `dev/gate` is green.
+
+**Why it stands.** The entry below predicted that T1 would halt on the first run, because the yank was owed by the human and the push by the orchestrator. Both are now on the record, and nothing they changed touches a task's shape, order or done-criterion. Every Grouped-scope clause still maps as the entry below states (row 22 → T1, row 23 → T2, row 24 → T3–T6).
+
+## 2026-10-01 — M54 Increment 12 planning: decomposition
+
 Cut [Increment 12](implementation/roadmap.md) (*the close*) into **6 ordered tasks**, grounded at HEAD `f36f6bcc` (Increment 11's tip, tree clean). Cross-ref [roadmap.md](implementation/roadmap.md) → Milestone 54 → Increment 12; the M54 Settle below (S8, S13, S15/O1, S18); [planning-gate-record.md](completions/artifacts/M54/planning-gate-record.md) → rows 22–24 and the census row; [milestone-completion-workflow.md](implementation/milestone-completion-workflow.md) → *Where the fold-back lands*. **Codes registered: none.**
 
 **Basis: read or driven here, not carried.**
