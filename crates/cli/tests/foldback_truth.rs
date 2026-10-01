@@ -24,7 +24,7 @@
 //!      the law-1 lie, the completed claim is required, and the cited verdict artifact must
 //!      actually exist. It has run in both directions at every wave since M47, and at each
 //!      new wave's close it is **re-aimed rather than duplicated**, so the suite carries one
-//!      live pin rather than one dead pin per wave — it now points at M53.
+//!      live pin rather than one dead pin per wave — it now points at M54.
 //!
 //! A fourth claim joined at M48 Increment 12 (T1):
 //!
@@ -311,57 +311,79 @@ fn milestone_span<'a>(body: &'a str, marker: &str) -> &'a str {
 /// 1.0.0-call phrasings forbidden as they have been in both directions at every wave since
 /// M47 — that call is the human's, and it is the call this whole pass exists to make
 /// reachable, which is exactly why the paragraph may not take it.
+///
+/// **At M54 Increment 12 (T6) it moves forward again, and is inverted for the tenth time**
+/// ([roadmap.md](../../../implementation/roadmap.md) → Milestone 54, Increment 12). M53's
+/// claim is settled prose: its audit ran, its verdict is persisted, `1.0.0-rc.21` is built and
+/// installed, and the paragraphs above are that arm's history. M54's twelve build increments
+/// have landed and no completion act has: no audit, no persisted verdict, no partial
+/// re-review over S18's axes, no install. So the marker moves to `**M54 —` and the
+/// assertions flip back to the pre-audit direction in the same edit — `built, not audited`
+/// required, `built + audited`, the clean-audit trio and any `VERDICT` citation forbidden,
+/// and the two 1.0.0-call phrasings forbidden as at every wave.
+///
+/// **One leg is new, because M54 is the first wave whose build reached a version.** It
+/// published `1.0.0-rc.22` to crates.io, so the span must name it — an omission would hide
+/// the one permanent thing the build did — but **published is not installed**: the host's
+/// binary is still `1.0.0-rc.21`, and installing the release is the completion workflow's
+/// act. So the arm also requires [`built_and_installed_versions`] over the span to be
+/// **empty**. The version arm below would pass a premature `1.0.0-rc.22 built and installed`
+/// (the crate has reached it); this leg is what refuses it. When M54's audit lands this arm
+/// goes red, which is the fence working rather than failing, and it inverts an eleventh time.
 #[test]
-fn the_record_names_m53_and_claims_exactly_what_the_build_reached() {
+fn the_record_names_m54_and_claims_exactly_what_the_build_reached() {
     let body = read_doc(RECORD);
     // The project-state record is a single line; the header above it is not a milestone
-    // claim, and M53 is the last marker on the line — so the span is bounded at the
+    // claim, and M54 is the last marker on the line — so the span is bounded at the
     // paragraph's own end rather than running to EOF and forbidding these words to the
     // whole file.
-    let span = milestone_span(&body, "**M53 —")
+    let span = milestone_span(&body, "**M54 —")
         .split('\n')
         .next()
         .expect("splitting a str always yields at least one part");
     for owed in [
         "implementation/roadmap.md",
-        "Milestone 53",
-        "flow 54",
-        "flow54_acceptance.rs",
-        // Inverted 2026-09-22 at the completion fold-back — the ninth time. The audit
-        // ran, its verdict is persisted, and the claim must now cite it and say what it
-        // found, no more and no less: seven findings, all fixed, none of them clean.
-        "completions/artifacts/M53/VERDICT.md",
-        "built + audited",
+        "Milestone 54",
+        // Inverted 2026-10-01 at M54's build close — the tenth time. No completion audit
+        // has run over this build, so the bound is required in as many words.
+        "built, not audited",
+        // What the build did reach: the first real publish. Named as published, never as
+        // built and installed — the installed binary is still the one M53 shipped.
+        "1.0.0-rc.22",
     ] {
         assert!(
             span.contains(owed),
-            "the M53 project-state claim must name `{owed}`; it reads:\n{span}",
+            "the M54 project-state claim must name `{owed}`; it reads:\n{span}",
         );
     }
 
     for forbidden in [
-        // The pre-audit bound is now the lie: the audit has run over this build.
-        "built, not audited",
-        // Seven findings were found and fixed; a clean audit is not what the record shows.
+        // The post-audit claim is now the lie: no audit has run over this build.
+        "built + audited",
+        // A build cannot pre-announce what its audit will find.
         "audited clean",
         "audit is CLEAN",
         "audit ran clean",
-        // The 1.0.0 call is the human's, and a fix pass takes it no more than a wave does:
-        // the exit rule's leg is the partial re-review, which this fold-back precedes.
+        // No verdict is persisted, so none may be cited.
+        "VERDICT",
+        // The 1.0.0 call is the human's, and an rc publish takes it no more than a wave does.
         "1.0.0 is called",
         "1.0.0 shipped",
     ] {
         assert!(
             !span.contains(forbidden),
-            "the M53 claim may not say `{forbidden}`:\n{span}",
+            "the M54 claim may not say `{forbidden}`:\n{span}",
         );
     }
 
-    let verdict = repo_root().join("completions/artifacts/M53/VERDICT.md");
+    // `1.0.0-rc.22` is published, and installing it is the completion workflow's act: the
+    // span may name the version only as what crates.io carries.
+    let installed = built_and_installed_versions(span);
     assert!(
-        verdict.is_file(),
-        "the M53 claim cites a verdict at {} that must exist",
-        verdict.display()
+        installed.is_empty(),
+        "the M54 claim states a version built and installed ({installed:?}); the build \
+         published `1.0.0-rc.22` and installed nothing — the installed binary is still \
+         `1.0.0-rc.21`, and the install is the completion workflow's act:\n{span}",
     );
 }
 
