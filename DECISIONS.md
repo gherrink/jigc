@@ -2,6 +2,10 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-01 — A probe that fails says why: the probe's own failure arms and *could not start* name their reason (M54 completion audit, completes S4)
+
+**`doc_code_probe::run`'s five failure arms each write one `doc-code probe: <reason>` line on stderr (stdout empty, exit 1, wire contract unchanged), and `ProbeRunStatus::CouldNotStart` carries the program, so the finding reads *could not start `<program>`: `<io error>`*.** *Why:* S4 promised a probe that cannot start or runs at another version says so in the finding, but the probe's own failures wrote nothing — the bounded stderr the invoker carries was always empty, and the finding read *"exited non-zero (exit-code 1) with no usable output"* — and a mode-644 `JIGC_DOC_CODE_PROBE` read *Permission denied* without naming the file. Check id and code unchanged (`pack-probe-integrity.probe-failure`, `crash`).
+
 ## 2026-10-01 — Every workflow action pinned by commit SHA, not by tag (M54 completion audit)
 
 **Every `uses:` in `release.yml` and `ci.yml` names its action at a full 40-hex commit SHA with its release tag as a trailing comment, and `workflow_action_runtime_fence.rs` now vets `(action, sha, tag, runs.using)` per row.** *Why:* a moved or compromised tag would run new code in jobs holding the crates.io OIDC token and the App's private key; `ci.yml` follows for one fenced convention. Bumps are deliberate and hand-vetted, no Dependabot; `.github/actionlint.yaml` is deleted because its two ignores no longer match at a SHA ref. **Declared bound** ([release.md](implementation/release.md) → Known gaps): `release-plz/action` pins its inner actions by SHA, but downloads `cargo-binstall` and release-plz by version without a checksum; dropping the composite is a workflow re-shape, not taken here.

@@ -244,8 +244,14 @@ pub enum ProbeRunStatus {
     /// ran, so there is no exit code and no output. It stays the `crash` meta-finding (no
     /// new check id), but its message says what happened instead of the *exited non-zero
     /// (exit-code signal)* a spawn failure used to read as (M54 Inc 2 T2; DECISIONS.md →
-    /// *M54 settled*, S1 and S4).
+    /// *M54 settled*, S1 and S4). The message names the program that could not start, so a
+    /// bare *Permission denied* says which file to repair (the M54 audit finding that
+    /// completes S4).
     CouldNotStart {
+        /// The program the invoker tried to spawn, as it would be displayed — `None` only
+        /// when the program itself could not be resolved (the running `jigc`'s own image
+        /// path was unreadable), which `error` then says.
+        program: Option<String>,
         /// The spawn error's text, verbatim (`io::Error`'s `Display`).
         error: String,
     },
@@ -287,7 +293,9 @@ pub struct ProbeRun {
 ///   meta-finding (the exit code rides the descriptive message, and so does the child's
 ///   stderr, cut at [`PROBE_STDERR_BOUND`], when it wrote any).
 /// - **could not start** (the spawn itself failed) → one blocking `crash` meta-finding
-///   too, whose message reads *could not start: `<io error>`* (M54 Inc 2 T2).
+///   too, whose message reads *could not start `<program>`: `<io error>`* (M54 Inc 2 T2;
+///   the program named since the M54 audit), or *could not start: `<error>`* when the
+///   program itself could not be resolved.
 /// - **exit 0 but unparseable** (garbage / empty / valid-JSON-but-not-a-response) → one
 ///   blocking `malformed-output` meta-finding (the parse error rides the message).
 ///
@@ -319,10 +327,15 @@ pub fn ingest_probe_run(probe_id: &str, run: &ProbeRun) -> Vec<Finding> {
                 )],
             }
         }
-        ProbeRunStatus::CouldNotStart { error } => vec![meta_finding(
+        ProbeRunStatus::CouldNotStart { program, error } => vec![meta_finding(
             probe_id,
             "crash",
-            format!("probe `{probe_id}` could not start: {error}"),
+            match program {
+                Some(program) => {
+                    format!("probe `{probe_id}` could not start `{program}`: {error}")
+                }
+                None => format!("probe `{probe_id}` could not start: {error}"),
+            },
         )],
         ProbeRunStatus::Exited { code } => {
             let exit = code.map_or_else(|| "signal".to_string(), |c| c.to_string());
@@ -924,6 +937,7 @@ mod tests {
                 stdout: Vec::new(),
                 stderr: Vec::new(),
                 status: ProbeRunStatus::CouldNotStart {
+                    program: Some("/opt/probes/doc-code".to_string()),
                     error: "Permission denied (os error 13)".to_string(),
                 },
             },
@@ -935,11 +949,11 @@ mod tests {
         assert_eq!(f.code, "pack-probe-integrity.probe-failure");
         assert_eq!(f.probe, "pack-probe-integrity");
         assert_eq!(f.check, "crash");
-        assert!(
-            f.message.contains("could not start")
-                && f.message.contains("Permission denied (os error 13)"),
-            "the message says the probe could not start, and why: {}",
+        assert_eq!(
             f.message,
+            "probe `doc-code` could not start `/opt/probes/doc-code`: Permission denied (os \
+             error 13)",
+            "the message says the probe could not start, which program, and why",
         );
         assert!(
             !f.message.contains("exited non-zero"),
@@ -1153,6 +1167,11 @@ mod tests {
             ProbeRunStatus::Exited { code: None },
             ProbeRunStatus::TimedOut,
             ProbeRunStatus::CouldNotStart {
+                program: None,
+                error: String::new(),
+            },
+            ProbeRunStatus::CouldNotStart {
+                program: Some(String::new()),
                 error: String::new(),
             },
         ];

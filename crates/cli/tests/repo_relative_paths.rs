@@ -1133,8 +1133,13 @@ const UNSWEPT_PRODUCERS: &[(&str, usize, &str)] = &[
     ),
     (
         "crates/cli/src/task.rs",
-        2,
-        "**[Corrected 2026-09-18 (M52 Increment 4, T7).** This row read `3` and gave the \
+        3,
+        "**[Re-counted 2026-10-01 (M54 completion audit, completes S4).** 2 → 3: \
+         `doc_code_invoker`'s *could not start* now names the program it tried to spawn. \
+         Absolute BY ITS SUBJECT, the `locate.rs` reason: the program is the operator's \
+         `JIGC_DOC_CODE_PROBE` override or the running `jigc`'s own image, neither a repo \
+         path, so there is no repo to be relative to.] \
+         **[Corrected 2026-09-18 (M52 Increment 4, T7).** This row read `3` and gave the \
          reason *\"two `with_context` promote/probe faults and one `git archive --prefix=`\"*. \
          Falsifying datum, measured against the source: the three sites were \
          `staged_task_prose`'s `docs/` fault, `git archive --prefix=` and **one** \
@@ -1143,7 +1148,8 @@ const UNSWEPT_PRODUCERS: &[(&str, usize, &str)] = &[
          than an error channel. That site now reaches `repo_relative` and is disposed \
          `Relative` above, so the remainder is two.**] \
          Two: one `with_context` promote fault, and the `git archive --prefix=`, which is an \
-         argument handed to a subprocess (the `dirty_worktrees` precedent)",
+         argument handed to a subprocess (the `dirty_worktrees` precedent); the third is the \
+         probe program above",
     ),
     (
         "crates/cli/src/locate.rs",

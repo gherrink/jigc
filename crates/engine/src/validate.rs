@@ -8962,6 +8962,7 @@ Effects.
                 stdout: Vec::new(),
                 stderr: Vec::new(),
                 status: ProbeRunStatus::CouldNotStart {
+                    program: Some("/opt/probes/doc-code".to_string()),
                     error: "Permission denied (os error 13)".to_string(),
                 },
             })

@@ -611,22 +611,39 @@ fn check_anchors(snapshot: &EffectiveStateSnapshot) -> Vec<Finding> {
 
 /// The probe's entry: read the request from stdin, the snapshot it names, and print the
 /// response on stdout. `jigc`'s `main` calls it for the self-exec argv.
+///
+/// Each failure arm writes **one** reason line on stderr, leaves stdout empty and exits 1.
+/// The wire contract is unchanged — a non-zero exit is the invoker's `crash` candidate —
+/// but the invoker carries the probe's bounded stderr into that finding's message, so the
+/// reason is what an operator reads instead of a bare *"with no usable output"* (the M54
+/// audit finding that completes S4).
 pub fn run() -> ExitCode {
     let mut input = String::new();
-    if std::io::stdin().read_to_string(&mut input).is_err() {
-        return ExitCode::FAILURE;
+    if let Err(err) = std::io::stdin().read_to_string(&mut input) {
+        return refuse(format_args!("cannot read the request from stdin: {err}"));
     }
     let request: ProbeRequest = match serde_json::from_str(&input) {
         Ok(request) => request,
-        Err(_) => return ExitCode::FAILURE,
+        Err(err) => return refuse(format_args!("cannot parse the request: {err}")),
     };
-    let snapshot_bytes = match std::fs::read(&request.effective_state.snapshot_path) {
+    let snapshot_path = &request.effective_state.snapshot_path;
+    let snapshot_bytes = match std::fs::read(snapshot_path) {
         Ok(bytes) => bytes,
-        Err(_) => return ExitCode::FAILURE,
+        Err(err) => {
+            return refuse(format_args!(
+                "cannot read the snapshot `{}`: {err}",
+                snapshot_path.display()
+            ));
+        }
     };
     let snapshot: EffectiveStateSnapshot = match serde_json::from_slice(&snapshot_bytes) {
         Ok(snapshot) => snapshot,
-        Err(_) => return ExitCode::FAILURE,
+        Err(err) => {
+            return refuse(format_args!(
+                "cannot parse the snapshot `{}`: {err}",
+                snapshot_path.display()
+            ));
+        }
     };
 
     let response = ProbeResponse {
@@ -638,8 +655,14 @@ pub fn run() -> ExitCode {
             print!("{json}");
             ExitCode::SUCCESS
         }
-        Err(_) => ExitCode::FAILURE,
+        Err(err) => refuse(format_args!("cannot serialize the response: {err}")),
     }
+}
+
+/// A failure arm of [`run`]: one reason line on stderr, nothing on stdout, exit 1.
+fn refuse(reason: std::fmt::Arguments<'_>) -> ExitCode {
+    eprintln!("doc-code probe: {reason}");
+    ExitCode::FAILURE
 }
 
 #[cfg(test)]

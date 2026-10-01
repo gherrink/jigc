@@ -307,17 +307,19 @@ fn a_probe_spawn_adds_zero_invocation_log_records() {
     let argv = cli::invoke::doc_code_probe_args();
     let argv: Vec<&str> = argv.iter().map(String::as_str).collect();
     let run = corpus.jigc(&argv);
+    let run_err = String::from_utf8_lossy(&run.stderr);
     assert_eq!(
         run.status.code(),
         Some(1),
-        "an empty request makes the probe exit 1, silently — not clap's usage exit 2; \
-         stderr:\n{}",
-        String::from_utf8_lossy(&run.stderr),
+        "an empty request makes the probe exit 1 — not clap's usage exit 2; stderr:\n{run_err}",
     );
+    // The probe arm ran, not clap: its stderr is the probe's own one-line reason for the
+    // empty request (since the M54 audit, which completes S4, a probe failure says why).
     assert!(
-        run.stderr.is_empty(),
-        "the probe arm ran, not clap: its empty-request failure is silent; stderr:\n{}",
-        String::from_utf8_lossy(&run.stderr),
+        run_err.starts_with("doc-code probe: cannot parse the request: ")
+            && run_err.lines().count() == 1,
+        "the probe arm ran, not clap: its empty-request failure is the probe's one reason \
+         line; stderr:\n{run_err}",
     );
 
     let mut skewed: Vec<&str> = argv.clone();

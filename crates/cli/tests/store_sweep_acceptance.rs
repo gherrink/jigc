@@ -135,6 +135,7 @@ fn real_doc_code_invoker(req: &ProbeRequest) -> std::io::Result<ProbeRun> {
             stdout: Vec::new(),
             stderr: Vec::new(),
             status: ProbeRunStatus::CouldNotStart {
+                program: Some(program.display().to_string()),
                 error: spawn.to_string(),
             },
         }),

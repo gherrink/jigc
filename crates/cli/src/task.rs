@@ -1646,18 +1646,27 @@ fn run_finalize(
 /// into the engine type the engine ingests.
 ///
 /// A **spawn failure** (the program is missing / not executable) maps to
-/// [`ProbeRunStatus::CouldNotStart`], carrying the io error, so a misconfigured probe
-/// surfaces a blocking `pack-probe-integrity.crash` meta-finding that says *could not
-/// start* rather than silently passing or aborting the whole validate — an unresolvable
-/// invocation is never a clean run (M54 Inc 2 T2). A serialization failure of the engine-built request is the only `Err` raised (an
-/// internal fault, not a probe outcome).
+/// [`ProbeRunStatus::CouldNotStart`], carrying the program it tried and the io error, so a
+/// misconfigured probe surfaces a blocking `pack-probe-integrity.crash` meta-finding that
+/// says *could not start `<program>`* rather than silently passing or aborting the whole
+/// validate — an unresolvable invocation is never a clean run (M54 Inc 2 T2; the program
+/// named since the M54 audit, which completes S4). When the program itself cannot be
+/// resolved — the running `jigc`'s own image path is unreadable — there is no program to
+/// name, and the error says so. A serialization failure of the engine-built request is the
+/// only `Err` raised (an internal fault, not a probe outcome).
 pub(crate) fn doc_code_invoker(request: &ProbeRequest) -> std::io::Result<ProbeRun> {
     let bytes = serde_json::to_vec(request)
         .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
-    let outcome = crate::invoke::doc_code_command().and_then(|(program, args)| {
-        crate::invoke::invoke_probe(&program, &args, &bytes, crate::invoke::DOC_CODE_BUDGET)
-    });
-    match outcome {
+    let (program, args) = match crate::invoke::doc_code_command() {
+        Ok(command) => command,
+        Err(err) => {
+            return Ok(could_not_start(
+                None,
+                format!("the running `jigc` image's path is unreadable: {err}"),
+            ));
+        }
+    };
+    match crate::invoke::invoke_probe(&program, &args, &bytes, crate::invoke::DOC_CODE_BUDGET) {
         Ok(outcome) => Ok(ProbeRun {
             stdout: outcome.stdout,
             stderr: outcome.stderr,
@@ -1668,14 +1677,20 @@ pub(crate) fn doc_code_invoker(request: &ProbeRequest) -> std::io::Result<ProbeR
         }),
         // The program could not be spawned (absent / not executable) — a crash candidate,
         // not an orchestration error: the engine synthesizes the blocking meta-finding,
-        // and its message carries this error.
-        Err(err) => Ok(ProbeRun {
-            stdout: Vec::new(),
-            stderr: Vec::new(),
-            status: ProbeRunStatus::CouldNotStart {
-                error: err.to_string(),
-            },
-        }),
+        // and its message names the program and carries this error.
+        Err(err) => Ok(could_not_start(
+            Some(program.display().to_string()),
+            err.to_string(),
+        )),
+    }
+}
+
+/// The [`ProbeRun`] of a probe that never ran: no output, and why it could not start.
+fn could_not_start(program: Option<String>, error: String) -> ProbeRun {
+    ProbeRun {
+        stdout: Vec::new(),
+        stderr: Vec::new(),
+        status: ProbeRunStatus::CouldNotStart { program, error },
     }
 }
 

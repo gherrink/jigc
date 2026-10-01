@@ -132,7 +132,7 @@ impl FailingProbes {
                 label: "could not start (non-executable override)",
                 probe: Some(&self.not_executable),
                 expect: Expect::ProbeFailure(vec![
-                    "could not start".to_string(),
+                    format!("could not start `{}`: ", self.not_executable.display()),
                     "os error".to_string(),
                 ]),
             },

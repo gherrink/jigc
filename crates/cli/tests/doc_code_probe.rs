@@ -1294,3 +1294,101 @@ fn jigc_refuses_a_skewed_build_whose_request_it_never_reads() {
         "the refusal names both versions; stderr:\n{stderr}",
     );
 }
+
+// ----- M54 audit finding (completes S4): the probe's own failures say why -----
+
+/// Drive the real self-exec probe over `stdin`, through the production invoker, and ingest
+/// the outcome — returning the raw outcome and the one meta-finding's message.
+fn failing_probe_run(stdin: &[u8]) -> (ProbeOutcome, String) {
+    let outcome = invoke::invoke_probe(
+        &doc_code_probe(),
+        &invoke::doc_code_probe_args(),
+        stdin,
+        Duration::from_secs(60),
+    )
+    .expect("the invoker spawns the probe");
+    let findings = ingest_probe_run("doc-code", &into_run(outcome.clone()));
+    assert_eq!(findings.len(), 1, "one meta-finding: {findings:?}");
+    assert_eq!(findings[0].code, "pack-probe-integrity.probe-failure");
+    assert_eq!(findings[0].check, "crash");
+    (outcome, findings[0].message.clone())
+}
+
+/// Every drivable failure arm of `doc_code_probe::run` writes **one** reason line on stderr,
+/// leaves stdout empty and exits 1 — and the invoker carries that reason into the
+/// `probe-failure` finding, so it no longer reads *"with no usable output"* and nothing else.
+/// (The fifth arm, a response that fails to serialize, cannot be driven: the response is
+/// strings and integers.)
+#[test]
+fn every_probe_failure_arm_names_its_reason_on_stderr_and_in_the_finding() {
+    let scratch = TempDir::new("probe-fail");
+    let absent = scratch.path().join("absent-snapshot.json");
+    let garbage = scratch.path().join("garbage-snapshot.json");
+    fs::write(&garbage, b"not a snapshot").expect("write the garbage snapshot");
+    let request_naming = |snapshot: &Path| {
+        serde_json::to_vec(&ProbeRequest::new(
+            "doc-code",
+            "adr:x#status/cites-code",
+            snapshot.to_path_buf(),
+            serde_json::Map::new(),
+        ))
+        .expect("serialize request")
+    };
+
+    let cases: Vec<(&str, Vec<u8>, String)> = vec![
+        (
+            "stdin is not UTF-8",
+            vec![0xff, 0xfe, 0xfd],
+            "doc-code probe: cannot read the request from stdin: ".to_string(),
+        ),
+        (
+            "the request is not JSON",
+            b"garbage\n".to_vec(),
+            "doc-code probe: cannot parse the request: ".to_string(),
+        ),
+        (
+            "the snapshot the request names is absent",
+            request_naming(&absent),
+            format!(
+                "doc-code probe: cannot read the snapshot `{}`: ",
+                absent.display()
+            ),
+        ),
+        (
+            "the snapshot the request names is not a snapshot",
+            request_naming(&garbage),
+            format!(
+                "doc-code probe: cannot parse the snapshot `{}`: ",
+                garbage.display()
+            ),
+        ),
+    ];
+
+    for (label, stdin, reason) in cases {
+        let (outcome, message) = failing_probe_run(&stdin);
+        assert_eq!(
+            outcome.status,
+            ProbeStatus::Exited { code: Some(1) },
+            "{label}: the probe exits 1",
+        );
+        assert!(
+            outcome.stdout.is_empty(),
+            "{label}: stdout stays empty (the wire contract carries no partial response): {}",
+            String::from_utf8_lossy(&outcome.stdout),
+        );
+        let stderr = String::from_utf8_lossy(&outcome.stderr);
+        assert_eq!(
+            stderr.lines().count(),
+            1,
+            "{label}: exactly one reason line on stderr: {stderr:?}",
+        );
+        assert!(
+            stderr.starts_with(&reason),
+            "{label}: stderr names the reason `{reason}`: {stderr:?}",
+        );
+        assert!(
+            message.contains(&format!("; stderr: {reason}")),
+            "{label}: the finding carries the reason: {message}",
+        );
+    }
+}

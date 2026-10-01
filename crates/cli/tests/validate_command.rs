@@ -436,6 +436,13 @@ fn validate_unstartable_probe_says_could_not_start() {
         message.contains("could not start") && message.contains("os error"),
         "the message says the probe could not start and carries the io error: {message}",
     );
+    // The program that could not start is named (the M54 audit finding that completes
+    // S4): a bare `Permission denied` does not say which file to repair.
+    let named = format!("could not start `{}`: ", not_executable.display());
+    assert!(
+        message.contains(&named),
+        "the message names the program that could not start (`{named}`): {message}",
+    );
     assert!(
         !message.contains("exited non-zero"),
         "a probe that never ran did not exit: {message}",
