@@ -27,11 +27,15 @@
 //! is a push to `main`; **(k)** exactly one job is bound to environment `release`, it
 //! `needs` the check job and runs only on its flag, and it is the only holder of
 //! `id-token: write`; **(l)** the check job has no environment, runs
-//! `dev/unpublished-versions` and outputs its flag; **(m)** the release-PR job's checkout
-//! and `release-plz` both run on the GitHub App's token; **(n)** nothing keys on a commit
-//! subject; **(o)** every `release-plz/action` step is the vetted commit and pins
-//! release-plz `0.3.169`; **(p)** the dry run and the engine overlay apply off
-//! `gherrink/jigc` only.
+//! `dev/unpublished-versions` and outputs its flag; **(m)** the release-PR job's checkout,
+//! its git identity and `release-plz release-pr` all run on the GitHub App's token, and
+//! the `run:` body, executed against a stub, passes exactly the argv `release-plz/action`
+//! built; **(n)** nothing keys on a commit subject; **(o)** each release-plz job installs
+//! release-plz through `dev/install-release-plz`, which pins `0.3.169` and its asset's
+//! SHA-256 as `release.md` records them, refuses a mismatching archive, and no workflow
+//! names `release-plz/action` any more; **(p)** the dry run and the engine overlay apply
+//! off `gherrink/jigc` only, the `release` body read from an environment variable and
+//! executed against the stub for each value.
 //!
 //! The agents' arm, over `.claude/` (release.md → *What agents may not do*): **(q)** this
 //! repository's `.claude/settings.json` denies every pinned form of merging a PR, pushing
@@ -393,9 +397,24 @@ const APP_KEY_SECRET: &str = "${{ secrets.JIGC_RELEASE_APP_PRIVATE_KEY }}";
 
 const APP_TOKEN_ACTION: &str = "actions/create-github-app-token@";
 const CHECKOUT_ACTION: &str = "actions/checkout@";
-/// The action, by name; its pinned commit has one home,
+/// The git-identity action, by name; its pinned commit has one home,
 /// `workflow_action_runtime_fence::VETTED`.
-const RELEASE_PLZ_ACTION: &str = "release-plz/action@";
+const GIT_CONFIG_ACTION: &str = "release-plz/git-config";
+
+/// The composite the two jobs no longer use: it fetched `cargo-binstall` at `latest` and
+/// release-plz through it, neither against a checksum (release.md → Publishing → The
+/// release-plz binary). Any pinned reference to it, even a commented-out one, reddens.
+const RETIRED_RELEASE_PLZ_ACTION: &str = "release-plz/action@";
+
+/// The script that installs release-plz against its recorded digest, and the two lines
+/// of it that pin the version and the digest.
+const INSTALL_RELEASE_PLZ: &str = "dev/install-release-plz";
+const INSTALL_VERSION_LINE: &str = "RELEASE_PLZ_VERSION=";
+const INSTALL_SHA256_LINE: &str = "RELEASE_PLZ_SHA256=";
+
+/// The one asset the script fetches, and the doc that records its version and digest.
+const RELEASE_PLZ_ASSET: &str = "release-plz-x86_64-unknown-linux-gnu.tar.gz";
+const RELEASE_MD: &str = "implementation/release.md";
 
 /// The release-plz version every proof on the record ran (release.md → release-plz knobs).
 const RELEASE_PLZ_VERSION: &str = "0.3.169";
@@ -403,12 +422,39 @@ const RELEASE_PLZ_VERSION: &str = "0.3.169";
 /// Anything off the real repository is a rehearsal.
 const OFF_THE_REAL_REPO: &str = "github.repository != 'gherrink/jigc'";
 
-/// The `dry_run` input. `release-plz/action` adds `--dry-run` when the input is
-/// **non-empty** (`if [[ -n "${{ inputs.dry_run }}" ]]` in its `action.yml`), so the bare
-/// boolean `${{ github.repository != 'gherrink/jigc' }}` would pass the string `false` on
-/// `gherrink/jigc` and dry-run the real publish too. This form is `'true'` off the real
-/// repository and empty on it.
-const DRY_RUN_INPUT: &str = "${{ github.repository != 'gherrink/jigc' && 'true' || '' }}";
+/// The `DRY_RUN` environment value of the `release` run step: `'true'` off the real
+/// repository and empty on it. The body maps exactly those two values and refuses any
+/// other, so the bare boolean's string `false` could not reach release-plz as a dry run
+/// of the real publish, as it would have through `release-plz/action`'s non-empty test.
+const DRY_RUN_ENV: &str = "${{ github.repository != 'gherrink/jigc' && 'true' || '' }}";
+
+/// The argv `release-plz/action` `v0.5.139` built for each command with only `command`
+/// (and, for `release`, `dry_run`) set, with `$GITHUB_TOKEN` = [`STUB_TOKEN`] and the
+/// repository URL from [`STUB_SERVER`]/[`STUB_REPOSITORY`] (its `action.yml`, *Run
+/// release-plz*). The run bodies must reproduce them exactly.
+const STUB_TOKEN: &str = "stub-token";
+const STUB_SERVER: &str = "https://github.example";
+const STUB_REPOSITORY: &str = "owner/repo";
+const RELEASE_PR_ARGV: [&str; 9] = [
+    "release-pr",
+    "--git-token",
+    STUB_TOKEN,
+    "--repo-url",
+    "https://github.example/owner/repo",
+    "--forge",
+    "github",
+    "-o",
+    "json",
+];
+const RELEASE_ARGV: [&str; 7] = [
+    "release",
+    "--git-token",
+    STUB_TOKEN,
+    "--forge",
+    "github",
+    "-o",
+    "json",
+];
 
 /// The contexts that carry a pushed commit's message.
 const COMMIT_MESSAGE_CONTEXTS: [&str; 2] = ["head_commit", "event.commits"];
@@ -638,6 +684,168 @@ fn l_the_check_job_runs_outside_the_environment_and_outputs_the_flag() {
 }
 
 // ---------------------------------------------------------------------------
+// The release-plz steps, shared by (m), (o) and (p)
+// ---------------------------------------------------------------------------
+
+/// The `run:` body of a step, if it has one.
+fn run_body(step: &Yaml) -> Option<&str> {
+    step["run"].as_str()
+}
+
+/// Whether `body` invokes `release-plz <command>`: a line whose first two words are
+/// exactly those, so `release` never matches `release-pr`.
+fn invokes_release_plz(body: &str, command: &str) -> bool {
+    body.lines().any(|line| {
+        let mut words = line.split_whitespace();
+        words.next() == Some("release-plz") && words.next() == Some(command)
+    })
+}
+
+/// The three steps a release-plz job runs, by index into its steps: the checksummed
+/// install, the git identity, and the `release-plz <command>` run.
+struct ReleasePlzSteps<'a> {
+    identity: &'a Yaml,
+    run: &'a Yaml,
+    run_at: usize,
+}
+
+/// The release-plz steps of `job`, each asserted to occur exactly once and in the order
+/// checkout → install → identity → run: the install script lives in the checkout, and
+/// release-plz commits under the identity the step before it writes.
+fn release_plz_steps<'a>(job: &'a Yaml, job_id: &str, command: &str) -> ReleasePlzSteps<'a> {
+    let steps = job_steps(job);
+    let one = |what: &str, matches: &dyn Fn(&Yaml) -> bool| -> usize {
+        let found: Vec<usize> = steps
+            .iter()
+            .enumerate()
+            .filter(|(_, step)| matches(step))
+            .map(|(at, _)| at)
+            .collect();
+        assert_eq!(
+            found.len(),
+            1,
+            "job `{job_id}` must have exactly one {what} step, found {}",
+            found.len()
+        );
+        found[0]
+    };
+    let checkout_at = one("checkout", &|s| {
+        s["uses"]
+            .as_str()
+            .is_some_and(|u| u.starts_with(CHECKOUT_ACTION))
+    });
+    let install_at = one(&format!("`run: {INSTALL_RELEASE_PLZ}`"), &|s| {
+        run_body(s).is_some_and(|run| run.trim() == INSTALL_RELEASE_PLZ)
+    });
+    let identity_at = one(&format!("`{GIT_CONFIG_ACTION}`"), &|s| {
+        s["uses"]
+            .as_str()
+            .is_some_and(|u| u.starts_with(&format!("{GIT_CONFIG_ACTION}@")))
+    });
+    let run_at = one(&format!("`release-plz {command}`"), &|s| {
+        run_body(s).is_some_and(|run| invokes_release_plz(run, command))
+    });
+    assert!(
+        checkout_at < install_at && install_at < identity_at && identity_at < run_at,
+        "job `{job_id}` must run checkout ({checkout_at}) → `{INSTALL_RELEASE_PLZ}` \
+         ({install_at}) → `{GIT_CONFIG_ACTION}` ({identity_at}) → `release-plz {command}` \
+         ({run_at}), in that order"
+    );
+    let run = &steps[run_at];
+    let body = run_body(run).expect("the run step has a body");
+    assert!(
+        !body.contains("${{"),
+        "job `{job_id}`'s `release-plz {command}` body splices a `${{{{ … }}}}` \
+         expression into the script; pass it through `env:` instead:\n{body}"
+    );
+    ReleasePlzSteps {
+        identity: &steps[identity_at],
+        run,
+        run_at,
+    }
+}
+
+/// A throwaway directory that removes itself on drop.
+struct TempDir(std::path::PathBuf);
+
+impl TempDir {
+    fn new(tag: &str) -> Self {
+        let path = std::env::temp_dir().join(format!(
+            "jigc-release-pipeline-{tag}-{}-{:?}",
+            std::process::id(),
+            engine::tempname::unique_nanos(),
+        ));
+        fs::create_dir_all(&path).expect("create temp dir");
+        TempDir(path)
+    }
+
+    fn path(&self) -> &std::path::Path {
+        &self.0
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+/// Execute a step's `run:` body verbatim, as GitHub's default `shell: bash` does
+/// (`bash --noprofile --norc -e -o pipefail <file>`), with a stub `release-plz` first on
+/// `PATH` that records its argv. Returns the process output and the argv the stub saw,
+/// `None` when the body never reached it.
+fn run_against_stub(
+    body: &str,
+    env: &[(&str, &str)],
+) -> (std::process::Output, Option<Vec<String>>) {
+    let dir = TempDir::new("stub");
+    let bin = dir.path().join("bin");
+    fs::create_dir_all(&bin).expect("create the stub's bin");
+    let argv_file = dir.path().join("argv");
+    let stub = bin.join("release-plz");
+    fs::write(&stub, "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$STUB_ARGV\"\n").expect("write stub");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).expect("chmod stub");
+    }
+    let script = dir.path().join("step.sh");
+    fs::write(&script, body).expect("write the step body");
+    let path = format!(
+        "{}:{}",
+        bin.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let mut command = Command::new("bash");
+    command
+        .args(["--noprofile", "--norc", "-e", "-o", "pipefail"])
+        .arg(&script)
+        .env("PATH", path)
+        .env("STUB_ARGV", &argv_file)
+        .env("GITHUB_TOKEN", STUB_TOKEN)
+        .env("GITHUB_SERVER_URL", STUB_SERVER)
+        .env("GITHUB_REPOSITORY", STUB_REPOSITORY)
+        .env_remove("DRY_RUN");
+    for (key, value) in env {
+        command.env(key, value);
+    }
+    let out = command.output().expect("run bash");
+    let argv = fs::read_to_string(&argv_file)
+        .ok()
+        .map(|text| text.lines().map(str::to_owned).collect());
+    (out, argv)
+}
+
+fn describe(out: &std::process::Output) -> String {
+    format!(
+        "{:?}\n--- stdout ---\n{}\n--- stderr ---\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    )
+}
+
+// ---------------------------------------------------------------------------
 // (m) the release-PR job on the App's token
 // ---------------------------------------------------------------------------
 
@@ -665,13 +873,29 @@ fn m_the_release_pr_job_checks_out_and_runs_on_the_app_token() {
         Some(token.as_str()),
         "the `{RELEASE_PR_JOB}` checkout must use the App's token"
     );
-    let plz = step_using(job, RELEASE_PR_JOB, RELEASE_PLZ_ACTION);
-    assert_eq!(plz["with"]["command"].as_str(), Some("release-pr"));
+    let plz = release_plz_steps(job, RELEASE_PR_JOB, "release-pr");
     assert_eq!(
-        plz["env"]["GITHUB_TOKEN"].as_str(),
+        plz.identity["env"]["GITHUB_TOKEN"].as_str(),
+        Some(token.as_str()),
+        "the release PR's commits must carry the App's identity, read from its token"
+    );
+    assert_eq!(
+        plz.run["env"]["GITHUB_TOKEN"].as_str(),
         Some(token.as_str()),
         "`release-plz release-pr` must open the PR with the App's token: a PR the \
          workflow's own token opens triggers no CI run"
+    );
+    let body = run_body(plz.run).expect("a run body");
+    let (out, argv) = run_against_stub(body, &[]);
+    assert!(
+        out.status.success(),
+        "the release-pr body failed: {}",
+        describe(&out)
+    );
+    assert_eq!(
+        argv.as_deref(),
+        Some(RELEASE_PR_ARGV.map(str::to_owned).as_slice()),
+        "the release-pr body must pass exactly the argv `release-plz/action` built"
     );
 }
 
@@ -729,34 +953,174 @@ fn n_no_condition_or_command_reads_a_commit_message() {
 }
 
 // ---------------------------------------------------------------------------
-// (o) the release-plz version
+// (o) the release-plz binary: one version, one digest, no composite
 // ---------------------------------------------------------------------------
 
 #[test]
-fn o_every_release_plz_step_pins_the_proven_version() {
+fn o_each_release_plz_job_installs_the_checksummed_binary_and_none_uses_the_composite() {
     let workflow = release_workflow();
-    let mut pinned = Vec::new();
+    let mut installing = Vec::new();
     for (id, job) in workflow_jobs(&workflow) {
         for step in steps_using(job, "release-plz/") {
             assert_eq!(
                 step["uses"].as_str(),
-                Some(vetted_uses("release-plz/action").as_str()),
-                "job `{id}`"
+                Some(vetted_uses(GIT_CONFIG_ACTION).as_str()),
+                "job `{id}`: the only release-plz action a workflow may use is the git \
+                 identity, at its vetted commit"
             );
-            assert_eq!(
-                step["with"]["version"].as_str(),
-                Some(RELEASE_PLZ_VERSION),
-                "job `{id}`'s `{RELEASE_PLZ_ACTION}…` step must pin `version: \
-                 \"{RELEASE_PLZ_VERSION}\"`, the release-plz every proof on the record ran"
-            );
-            pinned.push(id.clone());
+        }
+        if job_steps(job)
+            .iter()
+            .any(|s| run_body(s).is_some_and(|run| run.trim() == INSTALL_RELEASE_PLZ))
+        {
+            installing.push(id.clone());
         }
     }
     assert_eq!(
-        pinned,
+        installing,
         [RELEASE_PR_JOB, RELEASE_JOB],
-        "one `{RELEASE_PLZ_ACTION}…` step in each of the two release-plz jobs"
+        "each of the two release-plz jobs installs release-plz through `{INSTALL_RELEASE_PLZ}`"
     );
+    release_plz_steps(
+        workflow_job(&workflow, RELEASE_PR_JOB),
+        RELEASE_PR_JOB,
+        "release-pr",
+    );
+    release_plz_steps(workflow_job(&workflow, RELEASE_JOB), RELEASE_JOB, "release");
+
+    let dir = repo_root().join(WORKFLOWS_DIR);
+    for entry in fs::read_dir(&dir).expect("the workflow directory is readable") {
+        let path = entry.expect("a workflow directory entry").path();
+        let body = fs::read_to_string(&path).expect("a workflow file is readable");
+        assert!(
+            !body.contains(RETIRED_RELEASE_PLZ_ACTION),
+            "{} names `{RETIRED_RELEASE_PLZ_ACTION}…`, which downloads cargo-binstall at \
+             `latest` and release-plz through it, neither checked (release.md → Publishing → The release-plz binary)",
+            path.display()
+        );
+    }
+}
+
+/// The value after `prefix` on the one line of `text` that starts with it.
+fn pinned_line<'a>(text: &'a str, prefix: &str) -> &'a str {
+    let found: Vec<&str> = text
+        .lines()
+        .filter_map(|line| line.strip_prefix(prefix))
+        .collect();
+    assert_eq!(
+        found.len(),
+        1,
+        "`{INSTALL_RELEASE_PLZ}` must carry exactly one `{prefix}` line"
+    );
+    found[0].trim()
+}
+
+#[test]
+fn o_the_install_script_pins_the_version_and_digest_release_md_records() {
+    let script = fs::read_to_string(repo_root().join(INSTALL_RELEASE_PLZ))
+        .unwrap_or_else(|e| panic!("`{INSTALL_RELEASE_PLZ}` must be readable: {e}"));
+    let version = pinned_line(&script, INSTALL_VERSION_LINE);
+    let digest = pinned_line(&script, INSTALL_SHA256_LINE);
+    assert_eq!(
+        version, RELEASE_PLZ_VERSION,
+        "`{INSTALL_RELEASE_PLZ}` must install release-plz `{RELEASE_PLZ_VERSION}`, the \
+         one every proof on the record ran"
+    );
+    assert!(
+        digest.len() == 64
+            && digest
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)),
+        "`{INSTALL_SHA256_LINE}{digest}` is not a 64-character lowercase hex SHA-256"
+    );
+    assert!(
+        script.contains(RELEASE_PLZ_ASSET),
+        "`{INSTALL_RELEASE_PLZ}` must fetch `{RELEASE_PLZ_ASSET}`"
+    );
+
+    let doc = fs::read_to_string(repo_root().join(RELEASE_MD))
+        .unwrap_or_else(|e| panic!("`{RELEASE_MD}` must be readable: {e}"));
+    let rows: Vec<&str> = doc
+        .lines()
+        .filter(|line| line.starts_with('|') && line.contains(RELEASE_PLZ_ASSET))
+        .collect();
+    assert!(
+        !rows.is_empty(),
+        "`{RELEASE_MD}` must record `{RELEASE_PLZ_ASSET}` in a table row (Publishing → The release-plz binary)"
+    );
+    for row in rows {
+        assert!(
+            row.contains(&format!("`{version}`")) && row.contains(&format!("`{digest}`")),
+            "`{RELEASE_MD}` records `{RELEASE_PLZ_ASSET}` as\n{row}\nbut \
+             `{INSTALL_RELEASE_PLZ}` pins `{version}` at `{digest}`; move the two together"
+        );
+    }
+}
+
+#[test]
+fn o_the_install_script_refuses_an_archive_whose_digest_differs() {
+    let dir = TempDir::new("install");
+    let scratch = dir.path().join("scratch");
+    let staging = dir.path().join("staging");
+    let dest = dir.path().join("dest");
+    let github_path = dir.path().join("github_path");
+    fs::create_dir_all(&scratch).expect("create scratch");
+    fs::create_dir_all(&staging).expect("create staging");
+    fs::write(&github_path, "").expect("create GITHUB_PATH");
+
+    // A well-formed archive carrying a `release-plz` that would pass the script's own
+    // version check, so only the digest stands between it and the install.
+    fs::write(
+        staging.join("release-plz"),
+        format!("#!/bin/sh\necho release-plz {RELEASE_PLZ_VERSION}\n"),
+    )
+    .expect("write the impostor");
+    let impostor = dir.path().join("impostor.tar.gz");
+    let tar = Command::new("tar")
+        .arg("-czf")
+        .arg(&impostor)
+        .arg("-C")
+        .arg(&staging)
+        .arg("release-plz")
+        .output()
+        .expect("run tar");
+    assert!(tar.status.success(), "tar failed: {}", describe(&tar));
+    let garbage = dir.path().join("garbage.tar.gz");
+    fs::write(&garbage, "not an archive").expect("write garbage");
+
+    for archive in [&impostor, &garbage] {
+        let out = Command::new(repo_root().join(INSTALL_RELEASE_PLZ))
+            .arg("--archive")
+            .arg(archive)
+            .arg("--dest")
+            .arg(&dest)
+            .env("TMPDIR", &scratch)
+            .env("GITHUB_PATH", &github_path)
+            .output()
+            .expect("run the install script");
+        assert_eq!(
+            out.status.code(),
+            Some(1),
+            "`{INSTALL_RELEASE_PLZ} --archive {}` must fail closed: {}",
+            archive.display(),
+            describe(&out)
+        );
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            stderr.contains("SHA-256 mismatch") && stderr.contains("not installed"),
+            "the refusal must name the digest mismatch: {}",
+            describe(&out)
+        );
+        assert!(
+            !dest.join("release-plz").exists(),
+            "a mismatching archive must place no binary"
+        );
+        assert_eq!(
+            fs::read_to_string(&github_path).expect("read GITHUB_PATH"),
+            "",
+            "a mismatching archive must put nothing on the job's PATH"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -768,21 +1132,35 @@ fn p_the_dry_run_and_the_overlay_apply_off_the_real_repository_only() {
     let workflow = release_workflow();
     let release = workflow_job(&workflow, RELEASE_JOB);
     let steps = job_steps(release);
-    let plz_at = steps
-        .iter()
-        .position(|s| {
-            s["uses"]
-                .as_str()
-                .is_some_and(|u| u.starts_with(RELEASE_PLZ_ACTION))
-        })
-        .unwrap_or_else(|| panic!("the `{RELEASE_JOB}` job runs no `{RELEASE_PLZ_ACTION}…`"));
-    let plz = &steps[plz_at];
-    assert_eq!(plz["with"]["command"].as_str(), Some("release"));
+    let plz = release_plz_steps(release, RELEASE_JOB, "release");
     assert_eq!(
-        plz["with"]["dry_run"].as_str(),
-        Some(DRY_RUN_INPUT),
-        "the release must be dry off `gherrink/jigc` and real on it; the action tests the \
-         input for being non-empty, never for `true`"
+        plz.run["env"]["DRY_RUN"].as_str(),
+        Some(DRY_RUN_ENV),
+        "the release must be dry off `gherrink/jigc` and real on it"
+    );
+
+    // The body itself, run for each value the expression can produce and one it cannot.
+    let body = run_body(plz.run).expect("a run body");
+    let mut dry = RELEASE_ARGV.map(str::to_owned).to_vec();
+    dry.insert(dry.len() - 2, "--dry-run".to_owned());
+    for (value, expected) in [
+        ("true", Some(dry)),
+        ("", Some(RELEASE_ARGV.map(str::to_owned).to_vec())),
+    ] {
+        let (out, argv) = run_against_stub(body, &[("DRY_RUN", value)]);
+        assert!(
+            out.status.success(),
+            "the release body failed for DRY_RUN={value:?}: {}",
+            describe(&out)
+        );
+        assert_eq!(argv, expected, "the release argv for DRY_RUN={value:?}");
+    }
+    let (out, argv) = run_against_stub(body, &[("DRY_RUN", "false")]);
+    assert!(
+        !out.status.success() && argv.is_none(),
+        "DRY_RUN=\"false\" must stop the job before release-plz runs, never pass as a real \
+         or a dry release: {}",
+        describe(&out)
     );
 
     let overlays: Vec<usize> = steps
@@ -802,7 +1180,7 @@ fn p_the_dry_run_and_the_overlay_apply_off_the_real_repository_only() {
     );
     let overlay_at = overlays[0];
     assert!(
-        overlay_at < plz_at,
+        overlay_at < plz.run_at,
         "the overlay must be written before release-plz runs"
     );
     assert_eq!(

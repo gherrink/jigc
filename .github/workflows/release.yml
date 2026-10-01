@@ -55,13 +55,30 @@ jobs:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
 
-      - name: release-plz release-pr
-        uses: release-plz/action@b8d6b54b02889ff2ae2bb82e8b57c3a8fc1683a5 # v0.5.139
-        with:
-          command: release-pr
-          version: "0.3.169"
+      # release-plz is installed and run here, not through `release-plz/action`: the
+      # action fetched cargo-binstall at `latest` and release-plz through it, neither
+      # checked. dev/install-release-plz verifies the pinned asset's SHA-256 first
+      # (release.md -> Publishing -> The release-plz binary).
+      - name: install release-plz
+        run: dev/install-release-plz
+
+      # The commit identity release-plz writes the release PR under: the App's, read
+      # from its token. The step `release-plz/action` ran at the same commit.
+      - name: git identity
+        uses: release-plz/git-config@59144859caf016f8b817a2ac9b051578729173c4 # v0.1.2
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+
+      # The argv `release-plz/action` built for `command: release-pr` with no other input.
+      - name: release-plz release-pr
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          release-plz release-pr \
+            --git-token "$GITHUB_TOKEN" \
+            --repo-url "${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY}" \
+            --forge github \
+            -o json
 
   check:
     runs-on: ubuntu-latest
@@ -111,13 +128,29 @@ jobs:
           printf '[patch.crates-io]\njigc-engine = { path = "%s/crates/engine" }\n' \
             "$GITHUB_WORKSPACE" >> "$cargo_home/config.toml"
 
-      # `dry_run` is tested for being non-empty, never for `true`, so the input is
-      # `'true'` off gherrink/jigc and empty on it.
-      - name: release-plz release
-        uses: release-plz/action@b8d6b54b02889ff2ae2bb82e8b57c3a8fc1683a5 # v0.5.139
-        with:
-          command: release
-          version: "0.3.169"
-          dry_run: ${{ github.repository != 'gherrink/jigc' && 'true' || '' }}
+      - name: install release-plz
+        run: dev/install-release-plz
+
+      - name: git identity
+        uses: release-plz/git-config@59144859caf016f8b817a2ac9b051578729173c4 # v0.1.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # The argv `release-plz/action` built for `command: release`. DRY_RUN is `true`
+      # off gherrink/jigc and empty on it, read from the environment, never spliced
+      # into the script; any other value stops the job before release-plz runs.
+      - name: release-plz release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DRY_RUN: ${{ github.repository != 'gherrink/jigc' && 'true' || '' }}
+        run: |
+          case "$DRY_RUN" in
+            true) dry_run=(--dry-run) ;;
+            '') dry_run=() ;;
+            *) echo "DRY_RUN is '$DRY_RUN', neither 'true' nor empty" >&2; exit 1 ;;
+          esac
+          release-plz release \
+            --git-token "$GITHUB_TOKEN" \
+            --forge github \
+            "${dry_run[@]}" \
+            -o json

@@ -28,11 +28,16 @@
 //! 3. A `composite` action is vetted through the actions its steps use, read at the same
 //!    commit.
 //!
-//! **The bound this fence does not close** (release.md → Known gaps): a pinned SHA fixes
-//! the action's *code*, and `release-plz/action` at its pinned commit already names its
-//! three inner actions by SHA, so their code is fixed too. What that code *downloads* at
-//! run time is not: `cargo-binstall` 1.23.0 and release-plz 0.3.169 are fetched from
-//! GitHub release assets by version, with no checksum.
+//! **What a pin does not reach** (release.md → Publishing → The release-plz binary): a
+//! pinned SHA fixes an action's *code*, never what that code downloads at run time. So no
+//! vetted action downloads a binary into a credentialed job: release-plz itself is
+//! installed by `dev/install-release-plz` against a recorded SHA-256, and
+//! `release_pipeline_fence.rs` arm (o) holds that script, its digest and the absence of
+//! `release-plz/action`. *Corrected 2026-10-01:* this paragraph said the composite
+//! `release-plz/action` fetched `cargo-binstall` at 1.23.0. It did not: its
+//! `BINSTALL_VERSION: 1.23.0` is overridden by the inner `cargo-bins/cargo-binstall`
+//! action's empty `version` input, so runs `36821202910` and `36843531826` fetched
+//! `releases/latest`.
 
 use crate::manifest_freeze_fence::repo_root;
 use serde_yaml_ng::Value;
@@ -60,11 +65,11 @@ const RETIRED_RUNTIMES: [&str; 3] = ["node12", "node16", "node20"];
 /// major whose `action.yml` declares `node24` (`v4` and `v2` declared `node20`).
 /// `create-github-app-token` from `v3.1.0` deprecates its `app-id` input for `client-id`;
 /// both feed one variable, so the release workflow passes the same secret as `client-id`.
-/// `release-plz/action` is `composite`, and at this commit its steps use
-/// `taiki-e/install-action@9114bf4d891761788c546334fd37538eae1bf8b3` (v2.87.16),
-/// `cargo-bins/cargo-binstall@b874e25ea559687bec77e281e9b271aa1367b624` (v1.23.0) and
-/// `release-plz/git-config@59144859caf016f8b817a2ac9b051578729173c4` — each by SHA, each
-/// `composite`, so no Node runtime is involved.
+/// `release-plz/git-config` is `composite`: one `bash` step that asks `gh api graphql`
+/// for the token's viewer and writes `git config --global user.name`/`user.email`. It
+/// uses no other action and downloads nothing; `gh` and `jq` are the runner's own. It is
+/// the step `release-plz/action` `v0.5.139` ran at this same commit, and the latest
+/// release, `v0.1.2` (the floating `v0.1` points at it too).
 pub const VETTED: [Vetted; 4] = [
     Vetted {
         action: "actions/checkout",
@@ -85,9 +90,9 @@ pub const VETTED: [Vetted; 4] = [
         runs_using: "node24",
     },
     Vetted {
-        action: "release-plz/action",
-        sha: "b8d6b54b02889ff2ae2bb82e8b57c3a8fc1683a5",
-        tag: "v0.5.139",
+        action: "release-plz/git-config",
+        sha: "59144859caf016f8b817a2ac9b051578729173c4",
+        tag: "v0.1.2",
         runs_using: "composite",
     },
 ];

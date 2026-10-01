@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+#
+# dev/install-release-plz — install the one release-plz the release workflow runs,
+# checked against the SHA-256 recorded here (implementation/release.md -> Publishing
+# -> The release-plz binary).
+#
+# Both credentialed jobs in release.yml run release-plz: `release-pr` on the GitHub
+# App's token, `release` with the crates.io OIDC token. `release-plz/action` installed
+# it through cargo-binstall, which itself came from cargo-binstall's `releases/latest`,
+# and neither download was checked against anything. This script replaces that
+# install: it fetches release-plz's own x86_64 Linux release asset, refuses it unless
+# its SHA-256 is the one below, and only then unpacks it.
+#
+# It fails closed. A fetch error, a digest mismatch, a missing checksum tool, an
+# archive without the binary, or a binary reporting another version exits 1, and the
+# binary is placed only after the digest matched. Nothing is appended to $GITHUB_PATH
+# unless every check passed.
+#
+# The bound it does not close: the digest was read once, 2026-10-01, from the asset's
+# GitHub release, and a release asset can be replaced. The pin turns a replaced asset
+# into a red job instead of a silent run, but it is trust on first use, not a
+# publisher signature — release-plz publishes none.
+#
+# Usage:
+#   dev/install-release-plz [--archive <file>] [--dest <dir>]
+#
+#   --archive  verify and install this local file instead of downloading the asset
+#              (the digest check is the same; it is how the fence drives a mismatch)
+#   --dest     the directory the binary goes in; default a fresh `mktemp -d`
+#
+# On success it prints the binary's path, and appends its directory to $GITHUB_PATH
+# when that is set, so later steps of the job find `release-plz` on PATH.
+#
+# Exit status: 0 installed · 1 a fetch, verify or install failure · 2 usage error.
+
+set -euo pipefail
+
+# The pin. Moved only together with the row in release.md -> Publishing -> The
+# release-plz binary, which crates/cli/tests/release_pipeline_fence.rs holds to these
+# two lines.
+RELEASE_PLZ_VERSION=0.3.169
+RELEASE_PLZ_SHA256=1455106d3263712dd796ee04869eaee98b274e1e2e18011f67682b1f2840b64d
+
+asset="release-plz-x86_64-unknown-linux-gnu.tar.gz"
+url="https://github.com/release-plz/release-plz/releases/download/release-plz-v${RELEASE_PLZ_VERSION}/${asset}"
+
+usage() {
+    printf 'dev/install-release-plz: usage: dev/install-release-plz [--archive <file>] [--dest <dir>]\n' >&2
+    exit 2
+}
+
+fail() {
+    printf 'dev/install-release-plz: %s\n' "$1" >&2
+    exit 1
+}
+
+archive=''
+dest=''
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -h|--help) awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"; exit 0 ;;
+        --archive) [ $# -ge 2 ] || usage; archive=$2; shift 2 ;;
+        --dest) [ $# -ge 2 ] || usage; dest=$2; shift 2 ;;
+        *) usage ;;
+    esac
+done
+
+# A fresh directory for the download: nothing to remove afterwards.
+work=$(mktemp -d "${TMPDIR:-/tmp}/install-release-plz.XXXXXX") || fail "cannot create a scratch directory"
+
+if [ -z "$archive" ]; then
+    archive="$work/$asset"
+    if ! curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+            --retry 3 --max-time 300 --output "$archive" "$url"; then
+        fail "cannot fetch $url"
+    fi
+fi
+[ -f "$archive" ] || fail "no archive at $archive"
+
+# The digest, by whichever SHA-256 tool the machine has; no tool is a failure, never a
+# skipped check.
+if command -v sha256sum >/dev/null 2>&1; then
+    actual=$(sha256sum -- "$archive") || fail "sha256sum failed on $archive"
+elif command -v shasum >/dev/null 2>&1; then
+    actual=$(shasum -a 256 -- "$archive") || fail "shasum failed on $archive"
+else
+    fail "no sha256sum or shasum on PATH: refusing to install an unchecked binary"
+fi
+actual=${actual%% *}
+if [ "$actual" != "$RELEASE_PLZ_SHA256" ]; then
+    fail "SHA-256 mismatch for $asset: expected $RELEASE_PLZ_SHA256, got $actual — not installed"
+fi
+
+# Unpack into the scratch directory first, then place the one binary.
+unpacked="$work/unpacked"
+mkdir -p "$unpacked"
+tar -xzf "$archive" -C "$unpacked" release-plz || fail "the archive carries no release-plz binary"
+[ -f "$unpacked/release-plz" ] || fail "the archive carries no release-plz binary"
+
+if [ -z "$dest" ]; then
+    dest="$work/bin"
+fi
+mkdir -p "$dest" || fail "cannot create $dest"
+install -m 755 "$unpacked/release-plz" "$dest/release-plz" || fail "cannot install into $dest"
+
+reported=$("$dest/release-plz" --version) || fail "$dest/release-plz does not run"
+if [ "$reported" != "release-plz $RELEASE_PLZ_VERSION" ]; then
+    fail "$dest/release-plz reports '$reported', not release-plz $RELEASE_PLZ_VERSION"
+fi
+
+printf 'release-plz %s (sha256 %s) installed at %s/release-plz\n' \
+    "$RELEASE_PLZ_VERSION" "$RELEASE_PLZ_SHA256" "$dest"
+if [ -n "${GITHUB_PATH:-}" ]; then
+    printf '%s\n' "$dest" >>"$GITHUB_PATH"
+fi
