@@ -20,6 +20,8 @@ mod child_stdin_feed;
 mod clap_error_kind_axis;
 #[path = "../copy_in_ack.rs"]
 mod copy_in_ack;
+#[path = "../create_only_gate.rs"]
+mod create_only_gate;
 #[path = "../doc_author.rs"]
 mod doc_author;
 #[path = "../doc_author_help.rs"]

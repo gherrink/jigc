@@ -48,7 +48,13 @@ pub(crate) fn blocking_workflow_refs(
 /// `AllowsCreate { doc_type: "adr", as_role: "decision" }`). See
 /// `workflow-dialect.md` → On-disk definition format and `write-commands.md` →
 /// The create-gate.
+///
+/// The entry's keys are **closed** (M55 O3): an unknown key — a misspelt flag the
+/// gate would otherwise silently ignore — fails the front-matter parse, so
+/// [`load_workflow_def`] refuses it with `workflow-refs.malformed-front-matter`
+/// naming the key, at every door that loads a workflow.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AllowsCreate {
     /// The doctype id the create-gate admits (e.g. `adr`).
     #[serde(rename = "type")]
@@ -5975,6 +5981,25 @@ allows-create: [{type: adr, as: decision}]
         assert!(
             err.message.contains("adr"),
             "the finding names the duplicated doctype; got: {}",
+            err.message
+        );
+    }
+
+    /// Strict entry keys (M55 O3): an `allows-create` entry carrying a key outside
+    /// its closed set — a misspelt `nwe` for `new`, say — is a blocking load finding
+    /// naming the key, never a silently-ignored flag. It reuses the front-matter
+    /// envelope every load door already refuses with (M55 pin P1).
+    #[test]
+    fn unknown_allows_create_key_is_blocking_finding() {
+        let err = load_workflow_def(
+            b"---\nwhen: x\nallows-create: [{type: adr, as: decision, nwe: true}]\n---\n{{ include: step:locate }}\n",
+        )
+        .expect_err("an unknown allows-create entry key is rejected at load");
+        assert_eq!(err.code, "workflow-refs.malformed-front-matter");
+        assert_eq!(err.severity, Severity::Blocking);
+        assert!(
+            err.message.contains("nwe"),
+            "the finding names the unknown key; got: {}",
             err.message
         );
     }
