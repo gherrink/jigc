@@ -29,4 +29,4 @@ Measured before the M55 build, on a fresh worktree of `origin/main` at `62c76009
 
 ## Decision
 
-Land real git + nextest + deps `opt-level = 2`, with the two flaky tests and the TMPDIR leak fixed alongside ([planning-findings.md](planning-findings.md) → T1–T4), as the `work/gate-speed` PR before the M55 build (the human, 2026-10-02). The full suite stays the done-check of every task.
+Land real git + nextest + deps `opt-level = 2`, with the two flaky tests and the TMPDIR leak fixed alongside (recorded in the M55 planning register as T1–T4), as the `work/gate-speed` PR before the M55 build (the human, 2026-10-02). The full suite stays the done-check of every task.
