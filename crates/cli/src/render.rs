@@ -555,6 +555,7 @@ fn task_state_lines(view: &Composition) -> String {
     // bytes do not move.
     let coverage = crate::gate_coverage::whats_left_coverage(CommitModel::of(
         view.amend.as_ref().map(|target| target.short.as_str()),
+        view.doc_only,
     ));
     format!(
         "{resume}\n\
@@ -2181,7 +2182,8 @@ pub struct Landed {
     /// `git add` to include. Rendered identically to the dry-run forecast's `left_out`
     /// (the measurement envelope's dry-run/landed symmetry). A staged-then-further-modified
     /// (`MM`) path lands its staged side in `manifest` and its worktree residual here, so it
-    /// appears in **both**.
+    /// appears in **both**. On the doc-only model it is **every** post-commit porcelain
+    /// entry, staged ones included, one entry per path ([`CommitModel::DocOnly`]).
     pub left_out: Vec<ManifestEntry>,
     /// The captured non-blocking hook output the landed commit's hooks emitted
     /// (`design/command-output-contract.md` → Stream discipline — the M45 `hook_output`
@@ -2243,6 +2245,13 @@ pub struct Landed {
     /// this is `#[serde(skip)]` rather than a key.
     #[serde(skip)]
     pub site: Option<CommitSite>,
+    /// **Whether this commit was the doc-only model's path-scoped one** (M55) — the second
+    /// input [`CommitModel::of`] reads beside [`amended`](Landed::amended), so the landed
+    /// left-out section is spelled on the model the commit was made on. `#[serde(skip)]` on
+    /// [`site`](Landed::site)'s precedent: it selects a sentence and adds no key to the
+    /// pinned `committed` object.
+    #[serde(skip)]
+    pub doc_only: bool,
 }
 
 /// One entry a displacing door **moved aside** instead of destroying, both halves
@@ -2397,16 +2406,25 @@ pub enum CommitModel {
     /// **empty**, with the committed tree unchanged. Nothing in the worktree can join this
     /// commit, so naming `git add` there is not guidance but misdirection.
     Amend,
+    /// The doc-only model (M55; `design/finalize.md` → The doc-only arm): a **path-scoped**
+    /// commit of this task's own docs and recorded owner-artifacts, never the index. Every
+    /// other path — staged ones included — stays where it is, for the task it belongs to, so
+    /// no `git add` can bring it into this commit and naming one would be misdirection too.
+    DocOnly,
 }
 
 impl CommitModel {
-    /// The model a surface is on, from the pinned/superseded sha only the amend arm carries —
-    /// the landed ack's [`Landed::amended`], the committing path's own `amend` marker read. One
-    /// producer, so no caller decides this twice.
-    pub(crate) fn of(amended: Option<&str>) -> Self {
-        match amended {
-            Some(_) => CommitModel::Amend,
-            None => CommitModel::Index,
+    /// The model a surface is on, from its two inputs: the pinned/superseded sha only the
+    /// amend arm carries — the landed ack's [`Landed::amended`], the committing path's own
+    /// `amend` marker read, the composed view's `amending:` target — and whether the task's
+    /// composed workflow takes the doc-only commit (`cli::task`'s one predicate, already
+    /// asked under the arm precedence at the committing door). The amend sha wins, as it does
+    /// there. One producer, so no caller decides this twice.
+    pub(crate) fn of(amended: Option<&str>, doc_only: bool) -> Self {
+        match (amended, doc_only) {
+            (Some(_), _) => CommitModel::Amend,
+            (None, true) => CommitModel::DocOnly,
+            (None, false) => CommitModel::Index,
         }
     }
 }
@@ -2422,15 +2440,27 @@ impl CommitModel {
 /// model it is not: the arm's contract is that the committed tree does not move and its own
 /// gate refuses any staged path, so the honest clause says the set cannot join rather than
 /// naming the verb that would be refused for trying.
+///
+/// On the doc-only model the set is wider and the clause says so: the commit takes this
+/// task's docs alone, so a **staged** path is left out too, and it stays staged for the task
+/// it belongs to (`design/findings-channel.md` §3). *"unstaged/untracked"* would be false of
+/// it and *"git add to include"* a verb that brings nothing into a path-scoped commit.
 fn left_out_lines(left_out: &[ManifestEntry], model: CommitModel) -> Vec<String> {
     if left_out.is_empty() {
         return Vec::new();
     }
-    let guidance = match model {
-        CommitModel::Index => "git add to include",
-        CommitModel::Amend => "an amend commits no tree change, so none of it can join",
+    let header = match model {
+        CommitModel::Index => "  left-out (unstaged/untracked — git add to include):",
+        CommitModel::Amend => {
+            "  left-out (unstaged/untracked — an amend commits no tree change, so none of it can \
+             join):"
+        }
+        CommitModel::DocOnly => {
+            "  left-out (this commit takes only this task's docs and the artifacts they record \
+             — a staged path stays staged for the task it belongs to):"
+        }
     };
-    let mut lines = vec![format!("  left-out (unstaged/untracked — {guidance}):")];
+    let mut lines = vec![header.to_string()];
     lines.extend(left_out.iter().map(|entry| format!("    {}", entry.path)));
     lines
 }
@@ -2452,8 +2482,9 @@ fn left_out_lines(left_out: &[ManifestEntry], model: CommitModel) -> Vec<String>
 ///
 /// **And it states the intent of the model it is on** (the F-10 review's MEDIUM-3): *"about to
 /// commit the index"* is doubly false on the amend arm, which commits no tree change and has
-/// already refused unless that index is **empty**. The stem is therefore the model's, like the
-/// section's guidance below it.
+/// already refused unless that index is **empty**, and false on the doc-only arm, which
+/// commits named paths and leaves the index's other entries staged. The stem is therefore the
+/// model's, like the section's guidance below it.
 pub fn left_out_advisory(left_out: &[ManifestEntry], model: CommitModel) -> String {
     let lines = left_out_lines(left_out, model);
     if lines.is_empty() {
@@ -2464,6 +2495,9 @@ pub fn left_out_advisory(left_out: &[ManifestEntry], model: CommitModel) -> Stri
         CommitModel::Amend => {
             "finalize — about to rewrite HEAD's message; the committed tree does not move, so \
              it leaves out:\n"
+        }
+        CommitModel::DocOnly => {
+            "finalize — about to commit only this task's docs, path-scoped; leaving out:\n"
         }
     });
     for line in lines {
@@ -2755,6 +2789,10 @@ fn code_fence(content: &str) -> String {
 pub enum ForecastSubject<'a> {
     /// The ordinary commit model — the subject of the commit this finalize would add.
     Adds(&'a str),
+    /// The doc-only model (M55) — the subject of the **path-scoped** commit this finalize
+    /// would add. It adds a commit as the ordinary model does, so the headline is the same
+    /// sentence; what differs is the left-out section below it, which is this model's.
+    AddsPathScoped(&'a str),
     /// The amend model — the abbreviated sha of the commit at `HEAD`, the subject it carries
     /// now, and the subject it would carry after.
     Rewrites {
@@ -2770,6 +2808,7 @@ impl<'a> ForecastSubject<'a> {
     fn model(&self) -> CommitModel {
         match self {
             ForecastSubject::Adds(_) => CommitModel::Index,
+            ForecastSubject::AddsPathScoped(_) => CommitModel::DocOnly,
             ForecastSubject::Rewrites { .. } => CommitModel::Amend,
         }
     }
@@ -2778,7 +2817,7 @@ impl<'a> ForecastSubject<'a> {
     /// both models.
     fn rendered(&self) -> &'a str {
         match self {
-            ForecastSubject::Adds(subject) => subject,
+            ForecastSubject::Adds(subject) | ForecastSubject::AddsPathScoped(subject) => subject,
             ForecastSubject::Rewrites { to, .. } => to,
         }
     }
@@ -2789,7 +2828,9 @@ impl<'a> ForecastSubject<'a> {
     /// construction rather than because there is nothing to commit.
     fn forecast_lines(&self) -> Vec<String> {
         match self {
-            ForecastSubject::Adds(subject) => vec![format!("would commit — {subject}")],
+            ForecastSubject::Adds(subject) | ForecastSubject::AddsPathScoped(subject) => {
+                vec![format!("would commit — {subject}")]
+            }
             ForecastSubject::Rewrites { sha, from, to } => vec![
                 format!("would rewrite {sha} \"{from}\" → \"{to}\""),
                 AMEND_REWRITES.to_string(),
@@ -2943,7 +2984,8 @@ fn landed_summary(landed: &Landed) -> String {
         out.push('\n');
         out.push_str(&commit_site_line("committed", site));
     }
-    for line in left_out_lines(&landed.left_out, CommitModel::of(landed.amended.as_deref())) {
+    let model = CommitModel::of(landed.amended.as_deref(), landed.doc_only);
+    for line in left_out_lines(&landed.left_out, model) {
         out.push('\n');
         out.push_str(&line);
     }
@@ -7760,6 +7802,7 @@ mod tests {
         let granting = Composition {
             view: view.clone(),
             gates: vec!["adr".to_string(), "changelog".to_string()],
+            doc_only: false,
             minted: true,
             sub_task_of: None,
             also_open: Vec::new(),
@@ -7784,6 +7827,7 @@ mod tests {
         let gateless = Composition {
             view: view.clone(),
             gates: Vec::new(),
+            doc_only: false,
             minted: true,
             sub_task_of: None,
             also_open: Vec::new(),
@@ -7853,6 +7897,7 @@ mod tests {
                 text: text.clone(),
             },
             gates: Vec::new(),
+            doc_only: false,
             minted: true,
             sub_task_of: None,
             also_open: Vec::new(),
@@ -7874,6 +7919,7 @@ mod tests {
                 text: text.clone(),
             },
             gates: Vec::new(),
+            doc_only: false,
             minted: false,
             sub_task_of: None,
             also_open: Vec::new(),
@@ -7887,6 +7933,7 @@ mod tests {
         let router = Composition {
             view: ComposedWorkflow { task: None, text },
             gates: Vec::new(),
+            doc_only: false,
             minted: false,
             sub_task_of: None,
             also_open: Vec::new(),
@@ -7918,6 +7965,7 @@ mod tests {
                 text: text.clone(),
             },
             gates: vec!["adr".to_string()],
+            doc_only: false,
             minted: true,
             sub_task_of: None,
             also_open: Vec::new(),
@@ -7984,6 +8032,7 @@ mod tests {
                 text: text.clone(),
             },
             gates: Vec::new(),
+            doc_only: false,
             minted: false,
             sub_task_of: None,
             also_open: Vec::new(),
@@ -8007,6 +8056,7 @@ mod tests {
                 text: text.clone(),
             },
             gates: Vec::new(),
+            doc_only: false,
             minted: false,
             sub_task_of: Some(crate::start::SubTaskOf {
                 milestone: "rework".to_string(),
@@ -8106,6 +8156,7 @@ mod tests {
                 text: text.clone(),
             },
             gates: Vec::new(),
+            doc_only: false,
             minted: false,
             sub_task_of: None,
             also_open: Vec::new(),
@@ -8146,6 +8197,7 @@ mod tests {
                 text: "Reason about the change.\n".to_string(),
             },
             gates: Vec::new(),
+            doc_only: false,
             minted: true,
             sub_task_of: None,
             also_open: Vec::new(),
@@ -8191,6 +8243,7 @@ mod tests {
                 text: "Pick a workflow.\n".to_string(),
             },
             gates: Vec::new(),
+            doc_only: false,
             minted: false,
             sub_task_of: None,
             also_open: Vec::new(),
@@ -10394,6 +10447,88 @@ mod tests {
         assert_eq!(value["manifest"][0]["kind"], "added");
     }
 
+    /// **The left-out spelling is the commit model's** (M55 Increment 1 / T2): the doc-only
+    /// model's section header and pre-commit stem never name `git add` — no `git add` brings a
+    /// path into a path-scoped commit, and a staged path stays staged for its own task — while
+    /// the ordinary and amend models' bytes are exactly what they were. `CommitModel::of`
+    /// gives the amend sha precedence over the doc-only answer, as the committing door does.
+    #[test]
+    fn left_out_spelling_is_the_commit_models_and_doc_only_never_routes_at_git_add() {
+        let left_out = vec![
+            ManifestEntry {
+                path: "src/lib.rs".to_string(),
+                kind: ManifestKind::Modified,
+            },
+            ManifestEntry {
+                path: "src/new.rs".to_string(),
+                kind: ManifestKind::Added,
+            },
+        ];
+
+        assert_eq!(
+            left_out_advisory(&left_out, CommitModel::Index),
+            "finalize — about to commit the index; leaving out:\n\
+             \x20 left-out (unstaged/untracked — git add to include):\n\
+             \x20   src/lib.rs\n\
+             \x20   src/new.rs\n",
+            "the ordinary model's bytes are unmoved",
+        );
+        assert_eq!(
+            left_out_advisory(&left_out, CommitModel::Amend),
+            "finalize — about to rewrite HEAD's message; the committed tree does not move, so \
+             it leaves out:\n\
+             \x20 left-out (unstaged/untracked — an amend commits no tree change, so none of it \
+             can join):\n\
+             \x20   src/lib.rs\n\
+             \x20   src/new.rs\n",
+            "the amend model's bytes are unmoved",
+        );
+
+        let doc_only = left_out_advisory(&left_out, CommitModel::DocOnly);
+        let (stem, section) = doc_only.split_once('\n').expect("a stem line");
+        assert!(
+            !stem.contains("git add") && stem.contains("path-scoped"),
+            "the stem states a path-scoped commit and no `git add`; got: {stem}",
+        );
+        let header = section.lines().next().expect("a section header");
+        assert!(
+            !header.contains("git add") && header.contains("stays staged"),
+            "the header says a staged path stays staged and never routes at `git add`; got: \
+             {header}",
+        );
+        assert!(
+            section.ends_with("    src/lib.rs\n    src/new.rs\n"),
+            "one indented line per left-out path; got:\n{section}",
+        );
+        assert_eq!(
+            left_out_advisory(&[], CommitModel::DocOnly),
+            "",
+            "nothing left out ⇒ no bytes at all, on this model too",
+        );
+
+        // The forecast spells the section on the variant's model; the headline is the
+        // ordinary one, since the doc-only arm adds a commit too.
+        let forecast = finalize_manifest(
+            Format::Agent,
+            ForecastSubject::AddsPathScoped("docs(ideas): file a finding"),
+            &[],
+            &left_out,
+            &Findings::default(),
+            None,
+        );
+        assert!(
+            forecast.contains("would commit — docs(ideas): file a finding")
+                && forecast.contains(header)
+                && !forecast.contains("git add"),
+            "the forecast carries the doc-only header; got:\n{forecast}",
+        );
+
+        assert_eq!(CommitModel::of(None, false), CommitModel::Index);
+        assert_eq!(CommitModel::of(None, true), CommitModel::DocOnly);
+        assert_eq!(CommitModel::of(Some("abc1234"), true), CommitModel::Amend);
+        assert_eq!(CommitModel::of(Some("abc1234"), false), CommitModel::Amend);
+    }
+
     /// A carried entry renders `carried-over <path>` in the manifest text, serializes the
     /// kebab-case JSON kind `carried-over` (the M43 additive enum value,
     /// `design/command-output-contract.md` → Evolution posture), and the pre-commit
@@ -10452,6 +10587,7 @@ mod tests {
         let report = ValidationReport::new(Vec::new(), &resolved);
         let landed = Landed {
             site: None,
+            doc_only: false,
             amended: None,
             hash: "abc1234".to_string(),
             subject: "feat: surface the manifest".to_string(),

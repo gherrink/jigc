@@ -21,6 +21,12 @@
 //! over the same three states it behaves as it always has — state 2 refuses
 //! `finalize.carried-staged` at exit 3, and state 3's commit carries the code files.
 //!
+//! **What stayed out is narrated on this commit model's spelling** (T2,
+//! `cli::render::CommitModel::DocOnly`): in every state the landed left-out section and
+//! `committed.left_out` name each of the code task's paths — staged ones included, one entry
+//! per path — the pre-commit advisory says the commit is path-scoped and never *git add*, and
+//! the `--dry-run` forecast is the path set, not the index.
+//!
 //! Every arm asserts on the landed git commit and the binary's emitted bytes, never on a
 //! reconstruction.
 
@@ -28,6 +34,7 @@ use crate::support;
 
 use std::fs;
 
+use support::run_then_parse::stdout_json;
 use support::trial_corpus::{State, TrialCorpus};
 
 /// The fixture report workflow: code-less, granting `idea`, composing the shipped
@@ -68,6 +75,59 @@ enum Staging {
 }
 
 const STATES: [Staging; 3] = [Staging::Unstaged, Staging::Before, Staging::After];
+
+/// Flow B's three states, and state 2 again under `--carry-staged` (inert on this arm).
+fn cells() -> impl Iterator<Item = (Staging, bool)> {
+    STATES
+        .iter()
+        .map(|staging| (*staging, false))
+        .chain([(Staging::Before, true)])
+}
+
+/// The doc-only model's pre-commit advisory stem, as the binary prints it.
+const DOC_ONLY_STEM: &str = "finalize — about to commit only this task's docs, path-scoped; \
+                             leaving out:";
+
+/// The ordinary model's stem — what the omitting context still prints.
+const INDEX_STEM: &str = "finalize — about to commit the index; leaving out:";
+
+/// The paths of a manifest-entry array, in order.
+fn entry_paths(entries: &serde_json::Value) -> Vec<String> {
+    entries
+        .as_array()
+        .unwrap_or_else(|| panic!("a manifest-entry array; got {entries}"))
+        .iter()
+        .map(|entry| {
+            entry["path"]
+                .as_str()
+                .unwrap_or_else(|| panic!("an entry path; got {entry}"))
+                .to_owned()
+        })
+        .collect()
+}
+
+/// The paths the **landed** text's left-out section lists — the indented lines under the
+/// `  left-out (` header that follows the `finalized ` line, read off the emitted bytes.
+fn landed_left_out_section(stdout: &str) -> Vec<String> {
+    let landed = stdout
+        .split_once("\nfinalized ")
+        .unwrap_or_else(|| panic!("a landed summary; got:\n{stdout}"))
+        .1;
+    let mut lines = landed
+        .lines()
+        .skip_while(|line| !line.starts_with("  left-out ("));
+    let header = lines
+        .next()
+        .unwrap_or_else(|| panic!("a left-out section; got:\n{landed}"));
+    assert!(
+        !header.contains("git add"),
+        "the doc-only left-out header never routes at `git add`; got: {header}",
+    );
+    lines
+        .map_while(|line| line.strip_prefix("    "))
+        .map(str::to_owned)
+        .collect()
+}
 
 /// A corpus with the fixture workflow and the code task's tracked file committed, jigc's
 /// own `pre-commit` hook asserted installed.
@@ -211,11 +271,7 @@ fn arrange(staging: Staging) -> (TrialCorpus, String, String, String) {
 /// code task's index unchanged, and the code task then lands its own files.
 #[test]
 fn every_flow_b_state_lands_the_report_doc_alone() {
-    let cells = STATES
-        .iter()
-        .map(|staging| (*staging, false))
-        .chain([(Staging::Before, true)]);
-    for (staging, carry) in cells {
+    for (staging, carry) in cells() {
         let (corpus, code, report, doc) = arrange(staging);
         let before_index = cached(&corpus);
         let before_count = commit_count(&corpus);
@@ -245,7 +301,79 @@ fn every_flow_b_state_lands_the_report_doc_alone() {
             before_index,
             "[{staging:?}, carry={carry}] the code task's index is what it was",
         );
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            stdout.contains(DOC_ONLY_STEM),
+            "[{staging:?}, carry={carry}] the pre-commit advisory states the path-scoped \
+             commit; {}",
+            text(&out),
+        );
+        assert_eq!(
+            landed_left_out_section(&stdout),
+            vec![TRACKED.to_owned(), NEW_FILE.to_owned()],
+            "[{staging:?}, carry={carry}] the landed left-out section names each of the code \
+             task's paths, staged or not, once; {}",
+            text(&out),
+        );
         code_task_lands_its_own_files(&corpus, &code, staging);
+    }
+}
+
+/// **(1b)** The same states under `--format json`, each forecast first: `committed.left_out`
+/// names each of the code task's paths once, the pre-commit advisory prints on stderr, and
+/// the `--dry-run` forecast is the path set — its `manifest` paths are the landed commit's
+/// paths and its `left_out` is the landed `committed.left_out`, entry for entry.
+#[test]
+fn every_flow_b_state_forecasts_the_path_set_and_narrates_what_stays() {
+    for (staging, carry) in cells() {
+        let (corpus, _code, report, _doc) = arrange(staging);
+        let label = format!("[{staging:?}, carry={carry}]");
+        let mut args = vec!["task", "finalize", report.as_str(), "--format", "json"];
+        if carry {
+            args.push("--carry-staged");
+        }
+        let mut dry = args.clone();
+        dry.push("--dry-run");
+        let forecast: serde_json::Value =
+            stdout_json(&corpus.jigc(&dry), &[0], &format!("{label} the forecast"));
+
+        let out = corpus.jigc(&args);
+        let landed: serde_json::Value =
+            stdout_json(&out, &[0], &format!("{label} the landed finalize"));
+        let committed = &landed["committed"];
+        let left_out = entry_paths(&committed["left_out"]);
+        for path in [TRACKED, NEW_FILE] {
+            assert_eq!(
+                left_out.iter().filter(|p| *p == path).count(),
+                1,
+                "{label} committed.left_out names `{path}` exactly once; got {left_out:?}",
+            );
+        }
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        let advisory = stderr
+            .split_once(DOC_ONLY_STEM)
+            .unwrap_or_else(|| panic!("{label} the advisory prints on stderr; {}", text(&out)))
+            .1;
+        assert!(
+            !advisory.contains("git add")
+                && advisory.contains(TRACKED)
+                && advisory.contains(NEW_FILE),
+            "{label} the advisory names each path and never routes at `git add`; {}",
+            text(&out),
+        );
+
+        let mut forecast_paths = entry_paths(&forecast["manifest"]);
+        forecast_paths.sort();
+        let mut landed_paths = head_files(&corpus);
+        landed_paths.sort();
+        assert_eq!(
+            forecast_paths, landed_paths,
+            "{label} the forecast manifest is the path set the commit took",
+        );
+        assert_eq!(
+            forecast["left_out"], committed["left_out"],
+            "{label} the forecast's left-out set is the landed one",
+        );
     }
 }
 
@@ -359,6 +487,12 @@ fn park_idea_over_the_same_states_behaves_as_today() {
             Staging::Unstaged => {
                 assert!(out.status.success(), "[{staging:?}] lands; {}", text(&out));
                 assert_eq!(head_files(&corpus), vec![doc]);
+                let stderr = String::from_utf8_lossy(&out.stderr);
+                assert!(
+                    stderr.contains(INDEX_STEM) && !stderr.contains(DOC_ONLY_STEM),
+                    "[{staging:?}] the ordinary model's advisory, on its own spelling; {}",
+                    text(&out),
+                );
             }
             Staging::Before => {
                 assert_eq!(

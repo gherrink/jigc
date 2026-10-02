@@ -2,6 +2,14 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-02 — M55 Increment 1 / T2: `CommitModel::DocOnly`, three build pins
+
+Built as decomposed below ([finalize.md](design/finalize.md) → Surfaced, not prevented; the `left-out` advisory). Three elaborations the plan left open:
+
+- **`Landed` carries the doc-only answer (`doc_only: bool`, `#[serde(skip)]`), not the model.** The amend fact already rides `Landed::amended`, so a model field beside it would state one fact twice, and `CommitModel::of(amended, doc_only)` stays the one producer at all three call sites. *Why:* two fields that can disagree are the defect `of` exists to prevent.
+- **The forecast's model is a third `ForecastSubject` variant (`AddsPathScoped`), whose headline is the ordinary `would commit — <subject>`.** *Why:* the type's rule is *"the variant is the model"*, and the arm does add a commit; what differs is the left-out section, which is spelled on the model.
+- **The forecast includes an owner-artifact by pathspec coverage** (`pathspec_covers`: the path itself, or anything under a directory spec), the same test the index-honoring forecast already applied to jigc's config layer, now one function for both. *Why:* `git add -- <dir>` stages every dirty file under it, so a per-path equality test would forecast a directory artifact's files as left out while the commit takes them.
+
 ## 2026-10-02 — M55 Increment 1 / T1: the doc-only arm's commit, three build pins
 
 Built as decomposed below ([finalize.md](design/finalize.md) → The doc-only arm). Three elaborations the plan left open, pinned here:

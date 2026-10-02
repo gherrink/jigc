@@ -1388,7 +1388,7 @@ const DOC_ONLY_FINALIZE_STEP: &str = "finalize-doc-only";
 /// [`DOC_ONLY_FINALIZE_STEP`]. The **one** predicate every door asks of a definition, so
 /// the arm a committing door takes and the arm a preview describes cannot be decided by two
 /// different readings of the same workflow.
-fn composes_doc_only_finalize(def: &WorkflowDef) -> bool {
+pub(crate) fn composes_doc_only_finalize(def: &WorkflowDef) -> bool {
     def.includes
         .iter()
         .any(|step| step == DOC_ONLY_FINALIZE_STEP)
@@ -3309,7 +3309,8 @@ impl TaskArea {
             if !carry_staged && !carried_findings.is_empty() {
                 return self.blocked(carried_findings, format);
             }
-            let (mut included, left_out) = self.predict_manifest(&plan, staged_migration)?;
+            let (mut included, left_out) =
+                self.predict_manifest(&plan, staged_migration, doc_only)?;
             // Reached only under a declared `--carry-staged` or an empty carried set, so
             // the label can no longer claim a consent this run never carried.
             relabel_carried(&mut included, &carried_paths);
@@ -3364,6 +3365,9 @@ impl TaskArea {
                             from,
                             to: plan.subject(),
                         },
+                        // The doc-only arm adds a commit too, path-scoped (M55): the
+                        // variant carries the model the left-out section is spelled on.
+                        None if doc_only => render::ForecastSubject::AddsPathScoped(plan.subject()),
                         None => render::ForecastSubject::Adds(plan.subject()),
                     },
                     &included,
@@ -3467,16 +3471,16 @@ impl TaskArea {
         // which stream carries this run's document is not known until the commit has been
         // attempted, and on a reject the document is stderr's ([`emit_or_defer`]).
         let mut deferred_advisories = String::new();
-        let (_, pending_left_out) = self.predict_manifest(&plan, staged_migration)?;
+        let (_, pending_left_out) = self.predict_manifest(&plan, staged_migration, doc_only)?;
         // The model this run is on, so the print describes the commit it is about to make
         // rather than the ordinary one (the F-10 review's MEDIUM-3). Read off the same `amend`
-        // marker `stage` is chosen from three statements below, so the sentence and the act
-        // cannot disagree.
+        // marker and `doc_only` answer `stage` is chosen from three statements below, so the
+        // sentence and the act cannot disagree.
         emit_left_out_advisory(
             format,
             &mut deferred_advisories,
             &pending_left_out,
-            render::CommitModel::of(amend.as_deref()),
+            render::CommitModel::of(amend.as_deref(), doc_only),
         );
 
         // M43 — the carried-over half of the pre-commit print: a `--carry-staged` run
@@ -3572,6 +3576,7 @@ impl TaskArea {
                         git_commit_name_status(&self.repo_root)?,
                         git_status_entries(&self.repo_root)?,
                         &promoted_dests,
+                        doc_only,
                     )
                 };
                 // M43 — label the landed carried entries from the PRE-commit-computed
@@ -3616,6 +3621,9 @@ impl TaskArea {
                     // M53 — the cwd census, C2-09: the checkout this commit landed in, when
                     // it is not the one the workbench binds to. Text-only by declared bound.
                     site: self.commit_site(),
+                    // M55 — the doc-only model's left-out spelling on the landed text, from
+                    // the same answer the stage policy was chosen from.
+                    doc_only,
                 };
                 // M53 Increment 2 / T3 — the working area(s) phase 7 could not tear down,
                 // folded into the landed envelope's own `findings` array. `Findings::push`
@@ -3802,6 +3810,11 @@ impl TaskArea {
     /// - **Migration** (`stage_migration`'s narrowed pathspec): exactly its set — promotions
     ///   (`promoted`), tracked retirements (`deleted`), and the jigc-tracked config layer
     ///   `.jigc/config` / `.jigc/.gitignore` (`modified`). No user WIP.
+    /// - **Doc-only** (`stage_doc_only`'s path set, M55): the path set, never the index —
+    ///   each promotion `destination` (`promoted`) and each dirty path under a stageable
+    ///   recorded owner-artifact (by the rule jigc's own stage uses). Every other porcelain
+    ///   entry is `left_out`, **staged ones included**, one entry per path
+    ///   ([`left_out_entry`]): the path-scoped commit leaves it where it is.
     ///
     /// Accepted prediction bound: on a first-ever finalize, the transaction's
     /// `crate::gitignore::ensure` may create `.jigc/.gitignore` that `git add --all` would
@@ -3811,6 +3824,7 @@ impl TaskArea {
         &self,
         plan: &engine::finalize::FinalizePlan,
         staged_migration: bool,
+        doc_only: bool,
     ) -> Result<(Vec<render::ManifestEntry>, Vec<render::ManifestEntry>)> {
         use render::{ManifestEntry, ManifestKind};
 
@@ -3851,6 +3865,34 @@ impl TaskArea {
             return Ok((entries, Vec::new()));
         }
 
+        if doc_only {
+            // The doc-only arm commits its path set alone (M55): the promotions, added below,
+            // and whatever its owner-artifact stage adds. Nothing else is included, whichever
+            // column is dirty — and nothing else is staged by jigc either (no config layer, no
+            // version stamp), so every remaining entry is left where it is.
+            let owner_specs = owner_artifact_stage_specs(&self.repo_root, plan);
+            let mut included: Vec<ManifestEntry> = Vec::new();
+            let mut left_out: Vec<ManifestEntry> = Vec::new();
+            for (code, path) in git_status_entries(&self.repo_root)? {
+                if promoted.contains(&path) {
+                    continue;
+                }
+                if owner_specs.iter().any(|spec| pathspec_covers(spec, &path)) {
+                    included.push(ManifestEntry {
+                        kind: self_staged_kind(&code),
+                        path,
+                    });
+                    continue;
+                }
+                left_out.extend(left_out_entry(&code, path, true));
+            }
+            included.extend(promoted.into_iter().map(|path| ManifestEntry {
+                path,
+                kind: ManifestKind::Promoted,
+            }));
+            return Ok((included, left_out));
+        }
+
         // Non-migration `IndexHonoring`: the commit lands the INDEX, so split each dirty
         // path by its porcelain column (M30 G3) — the X (index) column is **included** in
         // the commit, the Y (worktree) column is **left out** (unstaged/untracked WIP the
@@ -3878,23 +3920,16 @@ impl TaskArea {
             if promoted_set.contains(path.as_str()) {
                 continue;
             }
-            let mut columns = code.chars();
-            let x = columns.next().unwrap_or(' ');
-            let y = columns.next().unwrap_or(' ');
+            let x = code.chars().next().unwrap_or(' ');
             // jigc stages this one itself (a `git add -- <spec>` matches the file and, for a
             // directory spec like `.jigc/config`, everything under it) — so it rides the
             // commit whichever column is dirty: an untracked one is `added`, otherwise the
             // index column when it is already staged, else the worktree column jigc will stage.
-            if jigc_staged
-                .iter()
-                .any(|spec| path == *spec || path.starts_with(&format!("{spec}/")))
-            {
-                let kind = match (x, y) {
-                    ('?', _) => ManifestKind::Added,
-                    (' ', _) => column_kind(y),
-                    _ => column_kind(x),
-                };
-                included.push(ManifestEntry { path, kind });
+            if jigc_staged.iter().any(|spec| pathspec_covers(spec, &path)) {
+                included.push(ManifestEntry {
+                    kind: self_staged_kind(&code),
+                    path,
+                });
                 continue;
             }
             // X names the staged change the commit carries. `?` (untracked) is not in the
@@ -3906,12 +3941,7 @@ impl TaskArea {
                 });
             }
             // Y names the un-staged worktree residual left out of the commit.
-            if y != ' ' {
-                left_out.push(ManifestEntry {
-                    path,
-                    kind: column_kind(y),
-                });
-            }
+            left_out.extend(left_out_entry(&code, path, false));
         }
         for path in &promoted {
             included.push(ManifestEntry {
@@ -8330,11 +8360,15 @@ fn git_commit_name_status(repo_root: &Path) -> Result<Vec<(char, String)>> {
 ///   the index commit landed the staged set, so each entry's **Y (worktree) column** names the
 ///   unstaged/untracked WIP it left behind (the agent `git add`s to include it), classified by
 ///   [`column_kind`]. A staged-then-further-modified (`MM`) path commits its staged side into
-///   `included` and shows its worktree residual here, so it appears in **both**.
+///   `included` and shows its worktree residual here, so it appears in **both**. On the
+///   doc-only arm (`doc_only`, M55) the commit took named paths and left the index's other
+///   entries staged, so **every** residual entry is left out, one per path
+///   ([`left_out_entry`]) — the same rule the forecast applies, so the two sets are one.
 fn classify_landed_manifest(
     name_status: Vec<(char, String)>,
     porcelain: Vec<(String, String)>,
     promoted: &std::collections::HashSet<String>,
+    doc_only: bool,
 ) -> (Vec<render::ManifestEntry>, Vec<render::ManifestEntry>) {
     let included = name_status
         .into_iter()
@@ -8351,19 +8385,65 @@ fn classify_landed_manifest(
             render::ManifestEntry { path, kind }
         })
         .collect();
-    let mut left_out = Vec::new();
-    for (code, path) in porcelain {
-        // The Y (worktree) column names the residual the index commit left behind; a blank
-        // Y means the worktree matches the index (nothing left out for that path).
-        let y = code.chars().nth(1).unwrap_or(' ');
-        if y != ' ' {
-            left_out.push(render::ManifestEntry {
-                path,
-                kind: column_kind(y),
-            });
-        }
-    }
+    let left_out = porcelain
+        .into_iter()
+        .filter_map(|(code, path)| left_out_entry(&code, path, doc_only))
+        .collect();
     (included, left_out)
+}
+
+/// The **left-out** entry one porcelain line contributes, or none — the one rule the
+/// `--dry-run` forecast ([`TaskArea::predict_manifest`]) and the landed residual
+/// ([`classify_landed_manifest`]) share, so the two sets cannot be classified two ways.
+///
+/// On the index-committing models only the **Y (worktree)** column is left out: the commit
+/// took the index, so a blank Y means the path matches what was committed. On the
+/// **doc-only** model (`doc_only`, M55) the commit took named paths, so every entry outside
+/// them is left out — **one entry per path**, staged ones included — tagged by its **X
+/// (index)** column when the path is staged (the fact this arm keeps intact for the task it
+/// belongs to) and by its Y column otherwise.
+fn left_out_entry(code: &str, path: String, doc_only: bool) -> Option<render::ManifestEntry> {
+    let mut columns = code.chars();
+    let x = columns.next().unwrap_or(' ');
+    let y = columns.next().unwrap_or(' ');
+    let column = if doc_only && x != ' ' && x != '?' {
+        x
+    } else if y != ' ' {
+        y
+    } else {
+        return None;
+    };
+    Some(render::ManifestEntry {
+        path,
+        kind: column_kind(column),
+    })
+}
+
+/// Whether the pathspec `spec` jigc hands `git add` covers the repo-relative `path` — the
+/// file itself, or anything under it when `spec` names a directory (with or without its
+/// trailing `/`). The membership test of the two stages that `git add` paths of their own:
+/// the index-honoring stage's config layer and stamp, and the doc-only stage's
+/// owner-artifacts.
+fn pathspec_covers(spec: &str, path: &str) -> bool {
+    let spec = spec.trim_end_matches('/');
+    path == spec
+        || path
+            .strip_prefix(spec)
+            .is_some_and(|rest| rest.starts_with('/'))
+}
+
+/// The manifest kind of a dirty path **jigc's own stage** will `git add` — it rides the
+/// commit whichever porcelain column is dirty: an untracked one is `added`, otherwise the
+/// index column when it is already staged, else the worktree column the stage will stage.
+fn self_staged_kind(code: &str) -> render::ManifestKind {
+    let mut columns = code.chars();
+    let x = columns.next().unwrap_or(' ');
+    let y = columns.next().unwrap_or(' ');
+    match (x, y) {
+        ('?', _) => render::ManifestKind::Added,
+        (' ', _) => column_kind(y),
+        _ => column_kind(x),
+    }
 }
 
 /// Whether `path` (repo-relative) is in the **index** (`git ls-files -- <path>` prints
