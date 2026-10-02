@@ -71,6 +71,8 @@ mod leg_two_refusal_homed;
 mod manifest_freeze_fence;
 #[path = "../mention_resolves.rs"]
 mod mention_resolves;
+#[path = "../merge_logs_fence.rs"]
+mod merge_logs_fence;
 #[path = "../message_whitespace_fence.rs"]
 mod message_whitespace_fence;
 #[path = "../not_in_repo_axis.rs"]

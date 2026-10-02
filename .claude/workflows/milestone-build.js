@@ -29,9 +29,19 @@
 //                     never an agent waiting. Resume per PLANNED HALTS below.
 //   close             the milestone-completion audit (code review + e2e, parallel) over
 //                     `<fork point>..milestone/<slug>/main`; its findings come back for
-//                     triage, the fixes land on the milestone branch, and then the
-//                     ORCHESTRATOR opens the PR `milestone/<slug>/main -> main`. The human
-//                     merges it; agents never do (release.md -> What agents may not do).
+//                     triage, the fixes land on the milestone branch, and then, in order:
+//                     the SYNC step merges `origin/main` into the milestone branch (a merge
+//                     commit, never a rebase; a conflict confined to the append-only logs is
+//                     resolved keeping both sides by `dev/merge-logs`, any other conflict
+//                     halts to the human) ->
+//                     `dev/gate` green on the merged tree -> push by name -> the ORCHESTRATOR
+//                     opens the PR `milestone/<slug>/main -> main`. The sync runs AFTER triage,
+//                     which happens outside this script, so the script does not run it: it
+//                     RETURNS the step (`close.sync` — a build-git prompt with its exact
+//                     command list, and its schema) for the orchestrator to spawn verbatim
+//                     (implementation/dev-workflow.md -> Before a pull request to main). The
+//                     human merges the PR; agents never do (release.md -> What agents may not
+//                     do).
 // The increment slug is derived here, deterministically, from the roadmap increment
 // title (`incrementSlug`, below); the ORDER of increments comes from the roadmap, never
 // from the name.
@@ -45,6 +55,12 @@
 // agent call's cache key changed; and a pre-switch run built on `main`, which agents may
 // no longer push. Finish such a run on its own script snapshot, or start a fresh run of
 // this one with `skipThrough`.
+//
+// THE MILESTONE-BRANCH STEP'S PROMPT CHANGED ON 2026-10-02 (a new branch starts from the
+// current remote main; a diverged local main halts). Its cache key changed with it, so a run
+// started before that change misses at its first call: resume such a run with the fresh-run
+// `skipThrough` fallback (note 6), not resumeFromRunId. The close's sync step, added the same
+// day, is returned rather than run and changed no other call's prompt.
 //
 // RESUMING — RULE 0 (the M13 root cause, get this right or nothing replays): ALWAYS
 //   re-pass the SAME `args` ({ milestone, slug, model? }) on EVERY resume invocation. The
@@ -530,6 +546,19 @@ const PUSH_SCHEMA = {
     remote_head: { type: 'string', description: 'the full sha `git ls-remote` reports for the pushed branch (empty if halted)' },
   },
 }
+// The close's sync step (syncMainPrompt) — returned to the orchestrator in `close.sync`, not
+// run here, because it follows the triage that happens after this script returns.
+const SYNC_SCHEMA = {
+  type: 'object',
+  required: ['status'],
+  properties: {
+    status: { type: 'string', enum: ['merged', 'up-to-date', 'halted'] },
+    halt: HALT,
+    head: { type: 'string', description: 'the full sha `git rev-parse HEAD` prints after the step — the merge commit when status is merged' },
+    origin_main: { type: 'string', description: 'the full sha `git rev-parse origin/main` prints after the fetch' },
+    resolved_logs: { type: 'array', items: { type: 'string' }, description: 'the append-only logs whose conflict the step resolved by keeping both sides (empty when the merge was clean)' },
+  },
+}
 const PLAN_SCHEMA = {
   type: 'object',
   required: ['status', 'tasks'],
@@ -618,11 +647,11 @@ function milestoneBranchPrompt() {
   return [
     'GIT STEP — the milestone branch `' + b + '` for ' + milestone + '. ' + GIT_RULES,
     '1. `git status --porcelain` must print nothing (a dirty tree is never carried across a branch switch).',
-    '2. `git fetch origin main`.',
+    '2. `git fetch origin main`. A new branch starts from the CURRENT remote `main`, never from a stale local one: if `git rev-parse --verify --quiet refs/heads/main` succeeds, `git merge-base --is-ancestor main origin/main` must succeed too — else local `main` has diverged from `origin/main`: HALT, and never reset, merge or rebase it (it is the human\'s to reconcile).',
     '3. Find the branch: local = `git rev-parse --verify --quiet refs/heads/' + b + '` succeeds; remote = `git ls-remote --exit-code --heads origin ' + b + '` exits 0 (exit 2 means absent).',
     '   - local exists: `git switch ' + b + '`. If remote exists too, `git fetch origin ' + b + '`, then `git merge-base --is-ancestor origin/' + b + ' ' + b + '` must succeed (else the pushed branch has commits the local one lacks — HALT; never pull, merge or rebase it here). created = false.',
     '   - only remote exists: `git fetch origin ' + b + '` then `git switch --track -c ' + b + ' origin/' + b + '`. created = false.',
-    '   - neither exists: `git switch --no-track -c ' + b + ' origin/main`. created = true. Do NOT push it; the harness pushes it after its first landed increment.',
+    '   - neither exists: `git switch --no-track -c ' + b + ' origin/main`, then `git rev-parse HEAD` and `git merge-base origin/main HEAD` must both equal `git rev-parse origin/main` — the new branch starts exactly at the remote `main` just fetched. created = true. Do NOT push it; the harness pushes it after its first landed increment.',
     '4. `git branch --show-current` must print `' + b + '`.',
     '5. Report branch, head = `git rev-parse HEAD`, fork_point = `git merge-base origin/main HEAD`, created.',
   ].join('\n')
@@ -662,6 +691,31 @@ function pushPrompt(inc) {
     '2. `git push origin ' + m + '` — the branch named in full, exactly so: a bare `git push`, `HEAD`, `main` or any force flag is denied or forbidden. A rejected push (someone else pushed the branch) is a HALT — never force, pull or rebase.',
     '3. `git ls-remote --exit-code --heads origin ' + m + '` must report the sha `git rev-parse ' + m + '` prints.',
     '4. Report remote_head.',
+  ].join('\n')
+}
+// The close's SYNC step — the fixed step before any pull request to main (the human's
+// decision of 2026-10-02; implementation/dev-workflow.md -> Before a pull request to main is
+// its home). It has its own rules line rather than GIT_RULES, because it merges `origin/main`
+// INTO the branch; GIT_RULES is left byte-identical, so no other step's prompt — or
+// cache key — moves with it. A conflict confined to the append-only logs is resolved by
+// `dev/merge-logs`, deterministically (both sides kept, in the file's date order; anything
+// but a pure append refused), never by the agent's own edit. SYNC_LOGS mirrors that tool's
+// LOGS, and crates/cli/tests/merge_logs_fence.rs holds the two equal.
+const SYNC_LOGS = ['DECISIONS.md', 'implementation/project-history.md']
+const SYNC_RULES = 'Run exactly the commands below, in order, and nothing else: no other branch, no commit beyond the merge this step names, no file edit (step 6\'s `dev/merge-logs` is the only thing that writes a file), no `git stash`, no reset, no rebase, never `--force`, and `main` is never checked out, merged into or pushed — `origin/main` is merged INTO the branch, which is all this step does with it. Any check that fails, or any command that fails, is a HALT: stop, leave everything as the step says, and fill the halt report (root_cause = which check, evidence = the command and its output, tree_state = `git status` and `git branch --show-current`).'
+function syncMainPrompt() {
+  const m = milestoneBranch
+  const logs = SYNC_LOGS.map((p) => '`' + p + '`').join(' or ')
+  return [
+    'GIT STEP — merge `origin/main` into `' + m + '` before its pull request to `main` is opened (the close of ' + milestone + '). ' + SYNC_RULES,
+    '1. `git branch --show-current` must print `' + m + '` and `git status --porcelain` must print nothing; pre = `git rev-parse HEAD`.',
+    '2. `git fetch origin main`, then origin_main = `git rev-parse origin/main`.',
+    '3. If `git merge-base --is-ancestor origin/main ' + m + '` succeeds, `main` has nothing the branch lacks: status = up-to-date, head = `git rev-parse HEAD`, and stop — steps 4–8 do not run.',
+    '4. `git merge --no-ff --no-edit origin/main` — a merge commit, never a rebase. If it exits 0, go to step 7.',
+    '5. It stopped. `git diff --name-only --diff-filter=U` lists the conflicted paths. If that list is empty, or names any path other than ' + logs + ': `git merge --abort`, then HALT — a conflict outside the append-only logs is the human\'s, never resolved here.',
+    '6. `dev/merge-logs` — it resolves each conflicted log by keeping both sides\' entries whole in the file\'s date order, and stages it; it refuses, writing nothing, a hunk where either side changed text that was already there. If it exits non-zero: `git merge --abort`, then HALT with its stderr as evidence. If it exits 0: `git diff --name-only --diff-filter=U` must print nothing, then `git commit --no-edit`; resolved_logs = the paths step 5 listed.',
+    '7. Check the merge: `git rev-list --parents -n 1 HEAD` must list exactly two parents, the first equal to pre and the second equal to `git rev-parse origin/main`; `git status --porcelain` must print nothing. On a mismatch HALT and undo nothing.',
+    '8. Report status = merged, head = `git rev-parse HEAD`, origin_main, resolved_logs (empty after a clean merge). Do NOT push and do NOT open the pull request: the gate runs on the merged tree first.',
   ].join('\n')
 }
 function planPrompt(inc) {
@@ -1120,10 +1174,14 @@ const audit = await parallel([
 
 return {
   status: 'built-and-audited',
-  message: builtMilestone + ' fully built and independently validated clean, every increment merged into ' + milestoneBranch + ' and pushed. Milestone-completion audit complete. THE CLOSE (milestone-completion-workflow.md → The loop, and → Close): the triage fixes below land on ' + milestoneBranch + ' — each fixer is told that branch and commits there — then push it by name (`git push origin ' + milestoneBranch + '`), and only then does the ORCHESTRATOR open the pull request: `gh pr create --base main --head ' + milestoneBranch + '`. The human merges it (agents never merge a PR or push main); the release PR updates from that merge. NOW: verify each finding is real (reproduce it), then AUTO-FIX every confirmed finding — delegate each to a `build-fixer` subagent (dev-workflow, one commit), the SAME autonomy the build phase has. Do NOT ask the human per finding and do NOT present a fix-vs-defer menu: leaving a confirmed finding unfixed degrades the milestone, so "defer / known-limitation" is NOT a default disposition. The human gate fires for EXACTLY two cases, and only after you have confirmed the finding: (a) too-big — the fix genuinely warrants its own increment (still scheduled, never dropped); (b) contested — the fix would revise a settled decision or change intended behavior. Size, not severity, decides the lane: a HIGH that is a bounded fix is still fix-now, and a pre-existing defect the milestone’s own flow exercises + a builder test masked is fix-now (not defer). CHEAP-VS-ROBUST FIRES AT TRIAGE TOO: a defer that leaves a KNOWN HOLE in the milestone declared/goal-complete surface (a capability reachable only through the engine/tests, not the shipped verb/CLI — the deliverable-reachable lens), or trips a ONE-WAY-DOOR tell, is NOT a valid defer even when large — it means the declared deliverable is hollow and the milestone IS NOT DONE, so the robust fix is fix-now (or, if genuinely huge, the milestone is BLOCKED, never quietly shipped hollow). Two rationalizations are BARRED: "no live case to test" is NOT "not needed" (a reconstructed/synthetic case proves a now-needed capability), and "premature generality" holds only if the trajectory does not commit. AND this fork is NEVER self-framed: before you surface any too-big->defer OR contested->document-it recommendation, spawn a `robust-advocate` subagent (Agent tool, agentType robust-advocate) to argue the vision-robust case at full strength, and present ITS case beside the cheap one — never your lone cheap recommendation (the M34 failure: the orchestrator self-framed the fork and led the human to defer the milestone declared deliverable). Everything else is a tested commit the human reviews AFTER. See milestone-completion-workflow.md → Plan (triage); methodology-docs.md → the independent robust-case advocate.',
+  message: builtMilestone + ' fully built and independently validated clean, every increment merged into ' + milestoneBranch + ' and pushed. Milestone-completion audit complete. THE CLOSE (milestone-completion-workflow.md → The loop, and → Close): the triage fixes below land on ' + milestoneBranch + ' — each fixer is told that branch and commits there. THEN, IN THIS ORDER, before any pull request (implementation/dev-workflow.md → Before a pull request to main): (1) SYNC — spawn a `build-git` subagent (Agent tool, agentType build-git) with `close.sync.prompt` VERBATIM; it merges `origin/main` into ' + milestoneBranch + ' with a merge commit (never a rebase — agents may not force-push), resolving a conflict confined to the append-only logs by keeping both sides (`dev/merge-logs`), and its report has the shape of `close.sync.schema`. A sync that HALTS (a conflict outside the logs) goes to the human — open no PR. (2) GATE — `dev/gate` green on the merged tree (a red one is a defect `main` brought in: a `build-fixer`, committing on ' + milestoneBranch + '). (3) PUSH it by name (`git push origin ' + milestoneBranch + '`). (4) Only then does the ORCHESTRATOR open the pull request: `gh pr create --base main --head ' + milestoneBranch + '`. While that PR touches the shared logs, start no second branch that touches them (CLAUDE.md → Branches). The human merges it (agents never merge a PR or push main); the release PR updates from that merge. NOW: verify each finding is real (reproduce it), then AUTO-FIX every confirmed finding — delegate each to a `build-fixer` subagent (dev-workflow, one commit), the SAME autonomy the build phase has. Do NOT ask the human per finding and do NOT present a fix-vs-defer menu: leaving a confirmed finding unfixed degrades the milestone, so "defer / known-limitation" is NOT a default disposition. The human gate fires for EXACTLY two cases, and only after you have confirmed the finding: (a) too-big — the fix genuinely warrants its own increment (still scheduled, never dropped); (b) contested — the fix would revise a settled decision or change intended behavior. Size, not severity, decides the lane: a HIGH that is a bounded fix is still fix-now, and a pre-existing defect the milestone’s own flow exercises + a builder test masked is fix-now (not defer). CHEAP-VS-ROBUST FIRES AT TRIAGE TOO: a defer that leaves a KNOWN HOLE in the milestone declared/goal-complete surface (a capability reachable only through the engine/tests, not the shipped verb/CLI — the deliverable-reachable lens), or trips a ONE-WAY-DOOR tell, is NOT a valid defer even when large — it means the declared deliverable is hollow and the milestone IS NOT DONE, so the robust fix is fix-now (or, if genuinely huge, the milestone is BLOCKED, never quietly shipped hollow). Two rationalizations are BARRED: "no live case to test" is NOT "not needed" (a reconstructed/synthetic case proves a now-needed capability), and "premature generality" holds only if the trajectory does not commit. AND this fork is NEVER self-framed: before you surface any too-big->defer OR contested->document-it recommendation, spawn a `robust-advocate` subagent (Agent tool, agentType robust-advocate) to argue the vision-robust case at full strength, and present ITS case beside the cheap one — never your lone cheap recommendation (the M34 failure: the orchestrator self-framed the fork and led the human to defer the milestone declared deliverable). Everything else is a tested commit the human reviews AFTER. See milestone-completion-workflow.md → Plan (triage); methodology-docs.md → the independent robust-case advocate.',
   milestone: builtMilestone,
   branch: milestoneBranch,
   base: forkPoint,
   incrementReports,
   audit: { code_review: audit[0], e2e: audit[1] },
+  close: {
+    order: ['triage fixes on ' + milestoneBranch, 'sync: close.sync, spawned verbatim', 'dev/gate green on the merged tree', 'git push origin ' + milestoneBranch, 'gh pr create --base main --head ' + milestoneBranch],
+    sync: { agentType: 'build-git', label: 'git:sync-main', prompt: syncMainPrompt(), schema: SYNC_SCHEMA },
+  },
 }
