@@ -2,6 +2,14 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-03 — M55 Increment 2 / T2: `new: true` and `create.already-exists`, built
+
+Built on pins P3–P6 below ([write-commands.md](design/write-commands.md) → The create-gate). Three elaborations the plan left open:
+
+- **`new` serializes only when `true`** (`skip_serializing_if`), so every entry without it projects byte-identically — the inline snapshot and any JSON projection of a shipped workflow are unchanged, rather than re-pinned.
+- **The probe is its own function, `state::create_occupied`, not a field on `create_incumbent`.** The incumbent probe answers the staged copy first, which is exactly what P3 must not do, and it is read below the fixed-title rank, which the new check precedes (P4); one more `mint_instance` caller keeps the slug identical.
+- **`create.serial-collision` joins the URI form's Members list beside `create.already-exists`.** It has keyed at its instance address since M42 and sat in no form's row; naming the pair is the statement P6 makes, and the fence in `create_only_gate::` holds the new member to it.
+
 ## 2026-10-03 — M55 Increment 2 planning: decomposition
 
 Cut [Increment 2](implementation/roadmap.md) (*the create-only gate, and the `write.title-ignored` route*) into **3 ordered tasks**, grounded at HEAD `5ac7443c` on `milestone/findings-channel/create-only-gate` (tree clean). Cross-ref [roadmap.md](implementation/roadmap.md) → Milestone 55 → Increment 2; the M55 Settle below (S7 as revised by R2, O3 resolved by R5); [findings-channel.md](design/findings-channel.md) → 4, 10, 11 (flow C); [planning-gate-record.md](completions/artifacts/M55/planning-gate-record.md) → row 7 and O3. **Codes registered: one** — `create.already-exists` (T2). **The strict-key refusal mints none** (below).

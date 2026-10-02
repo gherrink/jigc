@@ -62,6 +62,13 @@ pub struct AllowsCreate {
     /// The context role the created instance binds to (e.g. `decision`).
     #[serde(rename = "as")]
     pub as_role: String,
+    /// **Create-only** (M55, key `new`): `true` refuses a create whose minted identity
+    /// already exists **on disk** at the doctype's home — `create.already-exists`,
+    /// adjudicated before anything is copied in — where an entry without it keeps
+    /// create-or-update. Serialized only when set, so an entry that omits it projects
+    /// exactly as before. See `write-commands.md` → The create-gate.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub new: bool,
 }
 
 /// One `reads` entry: a context role bound from an existing committed doc via
@@ -5709,6 +5716,7 @@ allows-create: [{type: adr, as: decision}]
             vec![AllowsCreate {
                 doc_type: "adr".to_owned(),
                 as_role: "decision".to_owned(),
+                new: false,
             }]
         );
         assert_eq!(

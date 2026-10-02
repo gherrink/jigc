@@ -477,6 +477,25 @@ fn both_minting_verbs_state_the_title_contract_before_the_write() {
     }
 }
 
+/// M55 Increment 2, T2 — **the create-or-update sentence names its exception.** Both
+/// minting helps state that a create over a committed doc is a create-or-update; under an
+/// `allows-create` entry carrying `new: true` it is refused instead
+/// (`create.already-exists`), so a help that stated the rule without the exception would be
+/// false for that entry (law 3, the ambush class). Both helps name the code and the key.
+#[test]
+fn both_minting_verbs_state_the_create_only_entry() {
+    for verb in ["create", "author"] {
+        let help = help_stdout(&["doc", verb, "--help"]);
+        for fact in ["create.already-exists", "new: true"] {
+            assert!(
+                help.contains(fact),
+                "`doc {verb} --help` must state \"{fact}\" — an entry carrying `new: true` \
+                 refuses the create-or-update; got:\n{help}"
+            );
+        }
+    }
+}
+
 /// M46 Increment 8, T2 (B2-3) — `jigc milestone finalize --help` stops contradicting
 /// itself. Its `about` enumerated only what the join produces (*"materialize its
 /// suffix-resolved **doc bodies** … and commit **them**"*), while `--carry-staged`,
