@@ -128,7 +128,9 @@ fn orientation_active(
         // divergence the arm's own gates exist to prevent. Putting the marker on this view
         // is an additive key on a **pinned** envelope (`OrientationView`'s
         // `SCHEMA_VERSION`, moved at M50), which the pre-1.0 window closed at M48: a 2.0
-        // act, not a wording fix.
+        // act, not a wording fix. The doc-only model (M55) sits under the same bound: it is
+        // read off the task's resolved composed definition, which this view carries none
+        // of either (`design/finalize.md` → Every surface of the arm is the arm's).
         out.push_str(&format!(
             "Run: `jigc task validate {id}`   — {}\n",
             crate::gate_coverage::whats_left_coverage(CommitModel::Index)

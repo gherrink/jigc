@@ -2,6 +2,13 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-02 — M55 Increment 1 / T3: the index gate's third spelling, two build pins
+
+Built as decomposed below ([finalize.md](design/finalize.md) → Every surface of the arm is the arm's). Two elaborations the plan left open:
+
+- **`amend: Option<AmendSpelling>` becomes `respelled: Respelled { amend, doc_only }`, read through one exhaustive `GateCoverage::spelling(model)` match, and `Respelled` has no `Default` and no shared "none" constant.** Every row spells both fields out. *Why:* a wildcard or a shared constant would let a fourth `CommitModel` inherit the ordinary names at every row unasked. Now the model fails to compile at the match, and its new field fails to compile at all thirteen rows until each one answers.
+- **The doc-only spelling is *"the path scope that leaves every other staged path staged"*, token `path scope`.** *Why:* §3 names the replacement as the path scope itself, and the fragment states the arm's one effect on the index (nothing refused, nothing taken). The token is two words that the ordinary and amend sentences never carry, so a site respelled *carryover* reddens the fence.
+
 ## 2026-10-02 — M55 Increment 1 / T2: `CommitModel::DocOnly`, three build pins
 
 Built as decomposed below ([finalize.md](design/finalize.md) → Surfaced, not prevented; the `left-out` advisory). Three elaborations the plan left open:

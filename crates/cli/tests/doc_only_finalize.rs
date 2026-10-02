@@ -656,3 +656,103 @@ fn task_validate_in_state_two_previews_no_carryover() {
         text(&control),
     );
 }
+
+/// **(9) The index-gate member in this arm's spelling** (T3, `cli::gate_coverage`). The
+/// composed `what's-left:` line of a doc-only task — read off the emitted bytes — carries the
+/// table's sentence on [`CommitModel::DocOnly`] and never names the carryover gate, which is
+/// skipped here; and in state 2 both previews, `jigc task validate` and `--dry-run`, decide the
+/// member as the committing door does: no `finalize.carried-staged`, exit 0.
+///
+/// **The omitting context:** a `park-idea` task over the same pre-staged index composes the
+/// ordinary sentence, and its `--dry-run` still refuses at the carryover gate.
+#[test]
+fn the_composed_line_and_both_previews_state_this_arms_index_gate() {
+    use cli::gate_coverage::{GATE_COVERAGE, whats_left_coverage};
+    use cli::render::CommitModel;
+
+    let index_gate = GATE_COVERAGE
+        .iter()
+        .find(|row| row.id == "carryover")
+        .expect("the index-gate member");
+    let whats_left = |composed: &str| -> String {
+        composed
+            .lines()
+            .find(|line| line.starts_with("what's-left: "))
+            .unwrap_or_else(|| panic!("a composed what's-left line; got:\n{composed}"))
+            .to_owned()
+    };
+    let minted = |composed: &str| -> String {
+        composed
+            .lines()
+            .find_map(|line| line.strip_prefix("task minted: "))
+            .unwrap_or_else(|| panic!("a minted task id; got:\n{composed}"))
+            .trim()
+            .to_owned()
+    };
+
+    let corpus = corpus();
+    let _code = open_code_task(&corpus);
+    stage_code(&corpus);
+
+    let composed = corpus.jigc_ok(&["start", "--workflow", REPORT_WORKFLOW_ID, "file a finding"]);
+    let line = whats_left(&composed);
+    assert!(
+        line.contains(&whats_left_coverage(CommitModel::DocOnly))
+            && line.contains(index_gate.token(CommitModel::DocOnly)),
+        "the doc-only task's composed line states the table's sentence on its own model:\n  \
+         line: {line}",
+    );
+    assert!(
+        !line.contains("carryover"),
+        "…and never names the carryover gate this arm skips:\n  line: {line}",
+    );
+    let report = minted(&composed);
+    author_idea(&corpus, &report, "Previews Agree");
+
+    for (door, args) in [
+        (
+            "task validate",
+            vec!["task", "validate", report.as_str(), "--format", "json"],
+        ),
+        (
+            "--dry-run",
+            vec![
+                "task",
+                "finalize",
+                report.as_str(),
+                "--dry-run",
+                "--format",
+                "json",
+            ],
+        ),
+    ] {
+        let out = corpus.jigc(&args);
+        assert!(
+            out.status.success() && !text(&out).contains("finalize.carried-staged"),
+            "[{door}] state 2 previews no carryover finding on the doc-only arm, exit 0; {}",
+            text(&out),
+        );
+    }
+
+    let park = corpus.jigc_ok(&["start", "--workflow", "park-idea", "park a thought"]);
+    assert!(
+        whats_left(&park).contains(&whats_left_coverage(CommitModel::Index)),
+        "the control: an ordinary task composes the ordinary sentence:\n{}",
+        whats_left(&park),
+    );
+    let park_task = minted(&park);
+    author_idea(&corpus, &park_task, "A Parked Thought");
+    let control = corpus.jigc(&[
+        "task",
+        "finalize",
+        &park_task,
+        "--dry-run",
+        "--format",
+        "json",
+    ]);
+    assert!(
+        control.status.code() == Some(3) && text(&control).contains("finalize.carried-staged"),
+        "the control: an ordinary task's --dry-run still refuses at the carryover gate; {}",
+        text(&control),
+    );
+}
