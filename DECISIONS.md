@@ -2,6 +2,103 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-02 — M55 Increment 1 planning: decomposition
+
+Cut [Increment 1](implementation/roadmap.md) (*the doc-only finalize, and a report that lands its doc and nothing else*) into **4 ordered tasks**, grounded at HEAD `bea46dd8` on `milestone/findings-channel/doc-only-finalize` (tree clean). Cross-ref [roadmap.md](implementation/roadmap.md) → Milestone 55 → Increment 1; the M55 Settle below (S4 as revised by R1, R5's sizing); [findings-channel.md](design/findings-channel.md) → 3, 10, Open questions; [planning-gate-record.md](completions/artifacts/M55/planning-gate-record.md) → rows 5 and 6. **Codes registered: none.** **One contract spend:** an additive `left_out[].kind` value (T4), on the M43 `carried-over` mold.
+
+**Basis: read at HEAD here, not carried.**
+
+- **The mold.** `composes_review_hold` (`crates/cli/src/task.rs:4125`) asks `recorded_workflow(id)` (cascade-resolved since M52) whether `def.includes` holds `MIGRATION_FINALIZE_STEP` (`"migration-finalize"`, a bare step id). The compose sites in `start.rs` (`:1637`, `:1970`, `:3064`) already hold the composing `def`, from which they compute `create_gates(&def)`.
+- **The commit seams.** `git_commit_pathspec` (`milestone.rs:1350`) takes **one** pathspec through `git_commit_capture`. `commit_record_only` stages one. `StagePolicy` (`task.rs:4409`) has `MigrationFixed · IndexHonoring · Amend · Combine · ChainPerSubtask`, and `live_index_record_pathspecs` matches it exhaustively. `stage_index_honoring` stages the promotions, refreshes `.jigc/version`, re-stages the config layer and adds `owner_artifact_stage_specs`. **`git commit -F <msg> --` with no path commits the whole index**, so an empty path list must never reach git.
+- **Neither the diff signal nor the empty-commit recolor fits the arm.** `has_diff` (`task.rs:~3120`) counts `git diff --cached` (anyone's staged code) and pending `.jigc/config`. The `finalize.empty-commit` → `finalize.nothing-staged` recolor routes at `git add`, which can bring nothing into a path-scoped commit (§3's own sentence).
+- **The carryover gate is decided at three positions:** the committing door (`:3218`), the `--dry-run` refusal branch (`:3258`) and `preview_gates` (`:2724`). The amend arm skips the last on `amending`.
+- **The model and its surfaces.** `CommitModel::of(amended)` (`render.rs:2406`) has three call sites: compose `:556`, landed `:2946` and pre-commit `task.rs:3430`. The forecast's model comes from `ForecastSubject::model()`. `GateCoverage.amend: Option<AmendSpelling>` is matched two-armed (`gate_coverage.rs:189–201`). `Landed` serializes as the pinned `committed` object, and `site` is its `#[serde(skip)]` precedent. Orientation's `what's-left` line hard-codes `CommitModel::Index` (`render.rs:134`) under a declared amend bound.
+- **Left-out is the Y column today.** `predict_manifest` and `classify_landed_manifest` send X → included and Y → left-out, so a fully staged path is never left out. `ManifestKind` declares `added` as *"a staged new file … an **included** add"* (`render.rs:2263`).
+- **The rejection frame holds on the arm.** It reads *"anything you had `git add`-ed is still in git's index"* (`task.rs:3716`), and that stays true under the existing promotion and owner-artifact rollback axes. So no new error identity and no `COMMITTING_DOORS` row are needed.
+- **Relayed from the gate-record, driven there and not re-driven here:** a pathspec commit with jigc's hook installed committed exactly the two named paths (row 6), and an edited committed doc is in the promote plan (row 5). T1's tests re-drive both.
+
+**Open question 1, settled here (the increment the roadmap assigns it to): yes, an additive value `left-staged`.** *Measured against what a driver filters on.* No in-repo driver acts on a left-out kind. The two that read `kind` (`flow52_acceptance::every_manifest_kind_reaches_the_wire_from_one_finalize` and `foldback_truth`'s vocabulary fence) filter on the **in-commit / left-out partition**. Under the existing values, a staged path left out by this arm would be tagged `added`, `modified` or `deleted`. That makes `added` contradict its declared meaning (an included add). It also makes a staged `modified` indistinguishable on the wire from an unstaged one, while staged-ness is exactly the fact this arm exists to keep (the code task's staging is untouched). The pre-1.0 window is open, and a later value would be a versioned extension (the mechanism line). The new value is a label over left-out membership, never a membership change. Its `in_commit` is `false`, and there is one entry per path.
+
+**The tasks** (suite `crates/cli/tests/doc_only_finalize.rs`, registered in `g_finalize`, created by T1 and grown by T2–T4). The fixture is a project-layer code-less workflow over `[dev ▸ methodology]` (`compose-embedded-methodology: true`) that grants `idea`, includes `step:author-commit` and `step:finalize-doc-only`, and is committed before each state. It runs after `jigc setup`, with the setup hook asserted present. Beside it sits an open `dev-task` holding an edit to a tracked file and a new file.
+
+- **T1 · The arm's commit: the step, the predicate, the multi-path helper, the path-scoped stage, and the carryover exemption.**
+  - **The step.** `crates/cli/packs/methodology/steps/finalize-doc-only.yaml` wires `{{ cli.finalize-task }}` and declares `states-constraints: [finalize.left-out]` with its tokens. Its text states only what is true at T1: the commit lands this task's own docs and recorded owner-artifacts, path-scoped; every other staged path stays staged; the carryover gate does not fire; and unstaged and untracked work is left out. T2 adds the narration sentence and T3 adds the coverage paragraph.
+  - **The predicate.** `DOC_ONLY_FINALIZE_STEP = "finalize-doc-only"`, with **one** predicate over a composed `WorkflowDef`'s `includes` on the `composes_review_hold` mold. The precedence is **amend marker > staged migration seam > doc-only > ordinary**. That shipped migrate workflows never compose the step is stated, not fenced.
+  - **The helper.** A new multi-path helper beside `git_commit_pathspec` commits `git commit -F <msg> -- <p1> <p2> …` through `git_commit_capture`, and **refuses an empty list** before git runs.
+  - **The stage.** `StagePolicy::DocOnly` runs `git add --` over the promotion destinations (created *or* copied-in-and-edited) plus `owner_artifact_stage_specs`. Then comes `gate_owner_artifacts_post_stage`, and the commit takes those paths alone. There is no config-layer stage and **no `.jigc/version` refresh**: §3's *"exactly"* puts both outside the set, and storage.md's *"store-writing ops refresh it"* gains this arm's exception in the same commit. `live_index_record_pathspecs` returns empty for the arm.
+  - **The diff signal.** On the arm `has_diff` is *a promotable staged doc or a recorded owner-artifact* (never staged code, never pending config), and the `nothing-staged` recolor is skipped, so an empty doc-only task gets `finalize.empty-commit`.
+  - **The carryover exemption.** It applies at all three positions, the amend precedent, so `--carry-staged` is inert. The transaction (validate · render · promote · rollback) and the rejection frame are unchanged.
+  - *Done:* `cargo test -p jigc doc_only_finalize::` is green on these tests:
+    - **States 1, 2 (with and without `--carry-staged`) and 3** each land one commit whose `git show --name-only HEAD` is the report doc alone, at exit 0. State 2 was exit 3 `finalize.carried-staged` before this task and state 3 swept the code files. The `dev-task`'s `git diff --cached --name-status` is byte-identical before and after, and that task then finalizes its own files at exit 0.
+    - **A pending `.jigc/config` delta** is absent from the report's commit.
+    - **An edit to a committed `idea`** made through `doc set-slot` (the triage shape) lands that doc alone.
+    - **The omitting context:** `park-idea` (`step:finalize`) over the same three states behaves as today. State 2 exits 3, and state 3's commit carries the code files.
+    - **A pre-commit hook exiting 1** commits nothing, leaves the code task's index unchanged and frames `finalize.commit-rejected`.
+    - **An un-concluded merge** refuses at the existing posture code, committing nothing.
+    - **A milestone sub-task** composed from the fixture still refuses `jigc task finalize <sub>` with `finalize.milestone-sub-task` at exit 3, so `jigc milestone finalize` never reaches the arm.
+    - **`task validate`** in state 2 reports no `finalize.carried-staged`.
+    - **A unit test** shows the helper commits exactly the listed paths, leaves another staged path staged, and refuses an empty list.
+    - finalize.md → the commit models gains the path-scoped commit (mechanism, precedence, diff signal, carryover exemption).
+    - **Red-step assumption:** every step-iterating fence (`read_surface_naming`, `maps_to_test_caveat_fence`, `stdin_form_naming` and the rest) stays green with the new step. Any fence it reddens is repaired in T1.
+    - `dev/gate` is green.
+- **T2 · `CommitModel::DocOnly`, and the surfaces it keys: the left-out set and guidance, the pre-commit stem, the `--dry-run` forecast.**
+  - **The model.** A third case on `cli::render::CommitModel`, not a flag. `CommitModel::of` takes a second input, the composed workflow's doc-only answer from T1's one predicate, at **all three** call sites. The compose site reads it from the `def` it already holds (a new `Composition` field beside `gates`). `Landed` carries it `#[serde(skip)]`, and the forecast's `ForecastSubject` carries it. **No JSON key moves.**
+  - **The left-out set.** On the arm it is every `git status --porcelain` entry outside the path set, **one entry per path**, staged ones included. A staged path is tagged by its X column until T4 relabels it.
+  - **The wording.** The guidance never says *git add to include*: a staged path stays staged for the task it belongs to. The advisory stem states a path-scoped commit of this task's docs. The step gains the narration sentence.
+  - **The forecast.** The `--dry-run` manifest is the path set, not the index.
+  - *Done:*
+    - **Render unit tests:** the arm's left-out header and stem contain no `git add`, and the `Index` and `Amend` bytes are unmoved.
+    - **`doc_only_finalize::`** in every state names each staged path in the landed text's left-out section and in `committed.left_out`, and prints the pre-commit advisory, on stderr under `--format json`.
+    - **The `--dry-run` forecast** has `manifest` paths equal to the landed commit's paths and `left_out` equal to the landed `committed.left_out`.
+    - **The existing suites stay green unedited:** `finalize_manifest`, `carryover_gate`, `task_amend` and the compose goldens.
+    - finalize.md → Surfaced, not prevented and the left-out advisory gain this model's spelling.
+    - `dev/gate` is green.
+- **T3 · The index-gate member's third spelling, rendered on the composed `what's-left:` line and stated in the step.**
+  - **The table.** `cli::gate_coverage`'s per-model spelling becomes an exhaustive three-arm match over `CommitModel`. The `amend: Option<AmendSpelling>` field is generalized so that a fourth model cannot compile unclassified. The `carryover` row gains the doc-only fragment and token. Its token is not *carryover*: the replacement is the path scope itself. Every other row is unchanged.
+  - **The step.** It gains the coverage paragraph in this spelling.
+  - **The orientation block's `Run: jigc task validate` line keeps the ordinary spelling, as a declared bound beside the amend one.** `ActiveTask` carries no resolved definition, and putting one on that pinned view is a 2.0 act.
+  - *Done:* the `gate_coverage` unit tests cover three models. `gate_coverage_fence::every_site_names_every_member_of_the_tiers_it_enumerates` is green with two new `CommitModel::DocOnly` sites (the composed `what's-left:` line of a fixture doc-only task, and the doc-only step's composed coverage paragraph), and is red when either site is respelled *carryover*. On a doc-only task, `doc_only_finalize::` shows `jigc task validate` and `--dry-run` previewing no carryover finding in state 2, and the composed line naming the arm's spelling. finalize.md → *Every surface of the arm is the arm's* gains the third spelling and the bound. `dev/gate` is green.
+- **T4 · Open question 1: `left-staged`, declared as it ships.**
+  - **The value.** `ManifestKind::LeftStaged`, tag `left-staged`, with `in_commit() == false`. `ALL` grows to seven, and the `ManifestKind` doc names the label.
+  - **The tagging.** On the arm, every left-out entry with a non-blank, non-`?` X column carries it, so a staged-and-further-modified path is one `left-staged` entry. Ordinary and amend never produce it.
+  - **The atomic repairs.** `flow52_acceptance::every_manifest_kind_reaches_the_wire_from_one_finalize` also drives a doc-only forecast, so the whole vocabulary still reaches the wire. Every `foldback_truth` `VOCABULARY_HOMES` unit that speaks the whole vocabulary names `left-staged`: finalize.md, command-output-contract.md (a declared additive value on the M43 paragraph's mold) and `MIGRATING.md`. findings-channel.md → Open questions marks question 1 settled, pointing here.
+  - *Done:* `doc_only_finalize::` asserts `left-staged` on each staged left-out path in the forecast and in `committed.left_out`, with the paths unchanged from T2. `flow52_acceptance::`, `foldback_truth::` and `text_json_parity_axis::` are green. `dev/gate` is green.
+
+**Why this order and these seams.** T1 is the risk and the claim: what lands and what refuses. It is gate-green alone because the surfaces it leaves on the ordinary spelling are true of no test yet and false of no ordinary task. T2 needs T1's arm to have something to narrate. T3's spelling needs T2's `CommitModel::DocOnly`. T4's value is reachable only once T2 puts staged paths into the left-out set, and its vocabulary fences (`ALL`, flow52, the three homes) go red together with it, so they are one task. No task leaves a fence for a later one to repair.
+
+**Every Grouped-scope clause maps to a task.**
+
+| Grouped-scope clause | Task |
+|---|---|
+| The step and its `{{ cli.finalize-task }}` wiring | T1 |
+| The predicate on the `composes_review_hold` mold | T1 |
+| The path set: created or edited docs plus owner-artifacts | T1 |
+| The new multi-path helper, never the index | T1 |
+| The transaction unchanged | T1 |
+| `.jigc/config` outside the set (G8) | T1 |
+| The third `CommitModel` case, and `of` with a second input at every call site, the compose site included | T2 |
+| The left-out spelling, the advisory stem and the `--dry-run` path-set forecast | T2 |
+| `decide_carryover` silent and `--carry-staged` inert | T1 |
+| The index-gate member's spelling, three-arm, previewed by `task validate` and `--dry-run` | T3 (the preview exemption itself is T1) |
+| Never from `jigc milestone finalize` | T1 |
+| The mid-merge posture | T1 |
+| Open question 1 | T4 |
+
+**Every Proves clause maps too.**
+
+| Proves clause | Task |
+|---|---|
+| Flow B's three states with the hook, plus `--carry-staged` | T1 |
+| The doc alone in every state, the code task's index unchanged, and its own finalize clean | T1 |
+| The config delta absent | T1 |
+| The triage-shape edit | T1 |
+| The omitting context | T1 |
+| The left-out section naming each staged path | T2 |
+| `--dry-run` forecasting the path set | T2 |
+| `jigc task validate` previewing in the arm's spelling | T3 |
+
+**Beyond the bullets, and why:** storage.md's version-stamp exception (T1) and the orientation bound (T3) are clauses the arm makes false where they stand. Each is revised in the commit that makes it so.
+
 ## 2026-10-02 — M55 decomposed: eleven increments on `milestone/findings-channel/main`, 1–6 and 10 declared independent, no build halts
 
 **The cut, approved by the human in this order** ([roadmap](implementation/roadmap.md) → *Milestone 55 — the findings channel: decomposition*), risk-first: **1** the doc-only finalize (S4) · **2** the create-only gate, strict entry keys and the `title-ignored` route (S7) · **3** sub-task composition over the derived omission set, Open question 2 settled there (S13's S2) · **4** L1 · **5** L2, one route at both scopes · **6** the read keys (S10) · **7** the two doctypes and the registration census · **8** the four workflows · **9** the seed, filed by a rig fan-out · **10** the generated crate README and the `cheap-vs-robust` hint fold (S15, S14) · **11** the close. Branch slug `findings-channel`; each increment's slug derives from its title and is listed beside the cut. **Declared independent:** 1–6 of each other, 10 of every increment; 7 builds on 1–6, 8 on 7, 9 on 8, 11 last. *Why:* 1–6 each change one door and prove it on today's packs through fixtures; 10 touches nothing 1–9 read. The harness still builds serially, so the declaration means no increment among them may assume another has landed. **No planned human halts in the build:** the milestone PR, release PR #2's merge (`1.0.0-rc.23`) and the crates.io page re-read all follow it. Every gate-record row (1–15) lands in exactly one increment; row 3's workflow half is met at 8, stated there.
