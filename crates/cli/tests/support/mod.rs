@@ -27,6 +27,7 @@ pub mod root_walk;
 pub mod route_spans;
 pub mod run_then_parse;
 pub mod rust_source;
+pub mod scratch;
 pub mod shape_space;
 pub mod trial_corpus;
 pub mod write_miss_cells;

@@ -436,14 +436,15 @@ fn a_readable_pack_file() -> PathBuf {
 
 /// Drive the rig, always against the freshly built binary and an absolute scratch root.
 fn run_rig(args: &[&str]) -> std::process::Output {
-    let scratch = support::trial_corpus::unique_root("rig-fence");
-    std::fs::create_dir_all(&scratch).expect("create the fence scratch root");
+    // Removed on return: the rig mints its roots under `$SCRATCH`, and this runs once per
+    // adversarial name, flag and state — the largest single leak a gate run left behind.
+    let scratch = support::scratch::ScratchDir::new("rig-fence");
     Command::new(dev_dir().join("jigc-rig"))
         .args(args)
         .arg("--binary")
         .arg(env!("CARGO_BIN_EXE_jigc"))
         .current_dir(repo_root())
-        .env("SCRATCH", &scratch)
+        .env("SCRATCH", scratch.path())
         .output()
         .expect("spawn dev/jigc-rig")
 }

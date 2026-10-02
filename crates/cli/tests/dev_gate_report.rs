@@ -68,7 +68,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::support;
+use crate::support::scratch::ScratchDir;
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -82,16 +82,25 @@ fn gate() -> PathBuf {
     repo_root().join("dev/gate")
 }
 
+/// `dev/gate`, run from the repo root with its `$TMPDIR` inside `tmp`.
+///
+/// A real run keeps its log, its step file and its hygiene logs in `$TMPDIR` on purpose —
+/// the log path is what it prints — so every run this suite drives would leave them
+/// behind; pointed into a [`ScratchDir`], they go when the guard does.
+fn gate_in(tmp: &ScratchDir) -> Command {
+    let mut cmd = Command::new(gate());
+    cmd.current_dir(repo_root()).env("TMPDIR", tmp.path());
+    cmd
+}
+
 /// Write `body` to a throwaway log and hand `dev/gate --report` its path.
 fn report_over(label: &str, body: &str) -> String {
-    let dir = support::trial_corpus::unique_root(label);
-    std::fs::create_dir_all(&dir).expect("create the fixture log dir");
-    let log = dir.join("gate.log");
+    let dir = ScratchDir::new(label);
+    let log = dir.path().join("gate.log");
     std::fs::write(&log, body).expect("write the fixture log");
-    let out = Command::new(gate())
+    let out = gate_in(&dir)
         .arg("--report")
         .arg(&log)
-        .current_dir(repo_root())
         .output()
         .expect("spawn dev/gate --report");
     assert!(
@@ -250,9 +259,9 @@ fn compiler_error_lines_are_surfaced_distinctly() {
 /// missing, or the operator reads a vacuous red as a real one.
 #[test]
 fn a_step_that_could_not_run_says_so_and_names_the_missing_binary() {
-    let out = Command::new(gate())
+    let tmp = ScratchDir::new("gate-did-not-run");
+    let out = gate_in(&tmp)
         .arg("--quick")
-        .current_dir(repo_root())
         .env("PATH", "/usr/bin:/bin")
         .output()
         .expect("spawn dev/gate --quick");
@@ -398,9 +407,9 @@ fn dev_gate_produces_the_two_literals_the_build_harness_reads() {
 /// Run `dev/gate --quick` with `CARGO_TARGET_DIR` pointed at `target_dir` and cargo
 /// absent from `PATH`, returning its stdout.
 fn quick_gate_over(target_dir: &Path, warn_at: Option<&str>) -> String {
-    let mut cmd = Command::new(gate());
+    let tmp = ScratchDir::new("gate-quick-tmp");
+    let mut cmd = gate_in(&tmp);
     cmd.arg("--quick")
-        .current_dir(repo_root())
         .env("PATH", "/usr/bin:/bin")
         .env("CARGO_TARGET_DIR", target_dir);
     if let Some(n) = warn_at {
@@ -411,9 +420,9 @@ fn quick_gate_over(target_dir: &Path, warn_at: Option<&str>) -> String {
 }
 
 /// A `<root>/debug/deps` holding `n` files, and the root to hand `CARGO_TARGET_DIR`.
-fn target_dir_with_deps(label: &str, n: usize) -> PathBuf {
-    let root = support::trial_corpus::unique_root(label);
-    let deps = root.join("debug/deps");
+fn target_dir_with_deps(label: &str, n: usize) -> ScratchDir {
+    let root = ScratchDir::new(label);
+    let deps = root.path().join("debug/deps");
     std::fs::create_dir_all(&deps).expect("create the fixture deps dir");
     for i in 0..n {
         std::fs::write(deps.join(format!("litter-{i}.rcgu.o")), b"").expect("write a fixture file");
@@ -424,7 +433,7 @@ fn target_dir_with_deps(label: &str, n: usize) -> PathBuf {
 #[test]
 fn the_gate_counts_the_deps_directory_it_is_about_to_build_into() {
     let root = target_dir_with_deps("gate-deps-count", 3);
-    let text = quick_gate_over(&root, None);
+    let text = quick_gate_over(root.path(), None);
     assert!(
         text.lines().any(|l| l == "gate: deps   3 entries"),
         "every run must say how much litter it is building on top of — the growth is \
@@ -442,7 +451,7 @@ fn the_gate_counts_the_deps_directory_it_is_about_to_build_into() {
     // number measured from the right one is worse than no line.
     assert!(
         text.lines()
-            .any(|l| l == format!("gate: target {}", root.display())),
+            .any(|l| l == format!("gate: target {}", root.path().display())),
         "the header must name the target dir the run will actually use, including one \
          inherited from `CARGO_TARGET_DIR`.\n{text}",
     );
@@ -451,7 +460,7 @@ fn the_gate_counts_the_deps_directory_it_is_about_to_build_into() {
 #[test]
 fn a_deps_directory_over_the_threshold_warns_and_names_the_cleanup() {
     let root = target_dir_with_deps("gate-deps-warn", 3);
-    let text = quick_gate_over(&root, Some("2"));
+    let text = quick_gate_over(root.path(), Some("2"));
     assert!(
         text.contains("WARNING"),
         "above the threshold the count must be a warning, not a statistic.\n{text}",
@@ -476,9 +485,8 @@ fn a_deps_directory_over_the_threshold_warns_and_names_the_cleanup() {
 #[test]
 fn an_absent_deps_directory_counts_zero_rather_than_erroring() {
     // The state immediately after `cargo clean`, and in every fresh clone.
-    let root = support::trial_corpus::unique_root("gate-deps-absent");
-    std::fs::create_dir_all(&root).expect("create the fixture target dir");
-    let text = quick_gate_over(&root, None);
+    let root = ScratchDir::new("gate-deps-absent");
+    let text = quick_gate_over(root.path(), None);
     assert!(
         text.lines().any(|l| l == "gate: deps   0 entries"),
         "a target dir with no `debug/deps` is the post-clean state, not an error.\n{text}",
@@ -505,17 +513,15 @@ fn an_absent_deps_directory_counts_zero_rather_than_erroring() {
 
 /// Run `dev/gate --quick` with cargo absent, a fixture denylist, and a one-commit range.
 fn quick_gate_with_denylist(label: &str, denylist: Option<&str>) -> String {
-    let dir = support::trial_corpus::unique_root(label);
-    std::fs::create_dir_all(&dir).expect("create the fixture dir");
-    let list = dir.join("denylist");
+    let dir = ScratchDir::new(label);
+    let list = dir.path().join("denylist");
     if let Some(body) = denylist {
         std::fs::write(&list, body).expect("write the fixture denylist");
     }
-    let out = Command::new(gate())
+    let out = gate_in(&dir)
         .arg("--quick")
-        .current_dir(repo_root())
         .env("PATH", "/usr/bin:/bin")
-        .env("CARGO_TARGET_DIR", &dir)
+        .env("CARGO_TARGET_DIR", dir.path())
         .env("JIGC_DENYLIST_FILE", &list)
         .env("JIGC_GATE_HYGIENE_RANGE", "HEAD^!")
         .output()
@@ -608,18 +614,29 @@ fn a_malformed_denylist_is_a_setup_error_never_a_clean_scan() {
 
 struct ScanRepo {
     dir: PathBuf,
+    /// The fixture repo's root, removed on drop.
+    _root: ScratchDir,
+    /// Beside the repo, never in it: the denylist (so it is never part of the scanned
+    /// history) and the scan's own `$TMPDIR` (its work dir stays there by design).
+    aux: ScratchDir,
 }
 
 impl ScanRepo {
     fn new(label: &str) -> Self {
-        let dir = support::trial_corpus::unique_root(label);
+        let root = ScratchDir::new(label);
+        let aux = ScratchDir::new(&format!("{label}-aux"));
+        let dir = root.path().to_path_buf();
         std::fs::create_dir_all(dir.join("dev")).expect("create the fixture repo");
         std::fs::copy(
             repo_root().join("dev/hygiene-scan"),
             dir.join("dev/hygiene-scan"),
         )
         .expect("copy dev/hygiene-scan into the fixture repo");
-        let repo = ScanRepo { dir };
+        let repo = ScanRepo {
+            dir,
+            _root: root,
+            aux,
+        };
         repo.git_ok(&["init", "-q", "-b", "main", "."]);
         repo.git_ok(&["config", "user.email", "fixture@example.invalid"]);
         repo.git_ok(&["config", "user.name", "fixture"]);
@@ -630,6 +647,7 @@ impl ScanRepo {
         let mut c = Command::new(program);
         c.current_dir(&self.dir)
             .env("HOME", &self.dir)
+            .env("TMPDIR", self.aux.path())
             .env("GIT_CONFIG_NOSYSTEM", "1")
             .env("GIT_CONFIG_GLOBAL", "/dev/null");
         c
@@ -666,7 +684,7 @@ impl ScanRepo {
     /// The denylist sits outside the fixture repo, so it is never part of the scanned
     /// history.
     fn scan(&self, denylist: &str, tree: bool, args: &[&str]) -> (i32, String, String) {
-        let list = self.dir.with_extension("denylist");
+        let list = self.aux.path().join("denylist");
         std::fs::write(&list, denylist).expect("write the fixture denylist");
         let mut scan = self.cmd(&self.dir.join("dev/hygiene-scan"));
         if tree {
