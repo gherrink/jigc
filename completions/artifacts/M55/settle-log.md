@@ -84,3 +84,11 @@ R4 — Remaining review findings, all accepted (human, 2026-10-02):
 - I3: seed fence = zero findings from a rig `ingest` + `validate --format json`; layout seed/jigc-feedback/ + seed/inconsistencies/; the seed (~75 re-driven rows) is its own increment.
 - I4: closed by R1.  I5: `fields` reports the effective value (projected default), stated; F9 seeded open.
 - M1: report-inconsistency's step uses `add-item --slug` for sides.  M2: `about` grammar gains `dev:<tool>` / `test:<module>`; jigc-version = version in use when seen.  M3: new triage steps get distinct names (not `triage`).  M4: DECISIONS entry written in the planning commit.  M5: no `promoted` status now (cheap enum widening later) — noted in the design.
+
+R5 — Gate-record halts resolved (human, 2026-10-02, on the orchestrator's recommendations):
+- O1: L2's route changes at BOTH scopes — task-scope `rename_dangling_baseline_finding` and the store scope name the branch switch, offer switching back, never an index drop (`unmanage`); storage.md:313 and validation.md:621 join the revised-docs table.
+- O2: S2's omission set is DERIVED, not hand-listed — every step that carries a finalize command or authors the commit doc (incl. step:amend-message, step:migration-finalize's wrapper text, step:planning-finalize, step:author-commit), with a test that keeps the set in step with the packs.
+- O3: unknown keys on an `allows-create` entry are rejected at pack-load (a misspelt `new` must not silently switch the guard off).
+- O4: the second robust-advocate argued the "record-only commit" fork (S4), later revised to path-scoped by R1.
+- O5: L1's store-scope arm reuses `file-state.hash-matches` at advisory; the arm also covers a hand edit committed with plain git, so the absorb runs the conformance check before treating it as clean.
+Sizing/record corrections: registration census = 19 reds (two from inconsistency.sides' item-slot needing migrate-* coverage); goldens moved = 28; path-scoped reuse needs a multi-path commit helper + a third commit-model case; triage intent form named in its step (address-shaped intents mangle the task id); design §7 pointer → decisions-pending.md:446; add a decisions-pending row keyed to M56 for adopting the seed.
