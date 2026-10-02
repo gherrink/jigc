@@ -14,7 +14,6 @@
 //! binary (`CARGO_BIN_EXE_jigc`) mold as `owner_artifact_gate.rs`.
 
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -91,12 +90,7 @@ fn jigc_doc(repo: &Path, home: &Path, args: &[&str], stdin: Option<&[u8]>) -> st
     command.stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut child = command.spawn().expect("spawn jigc");
     if let Some(bytes) = stdin {
-        child
-            .stdin
-            .take()
-            .expect("stdin piped")
-            .write_all(bytes)
-            .expect("write stdin");
+        crate::support::child_stdin::feed(&mut child, bytes);
     }
     child.wait_with_output().expect("wait for jigc")
 }

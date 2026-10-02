@@ -399,7 +399,6 @@ fn fresh_methodology_mint_carries_schema_version_1() {
         );
     };
     let set_slot = |addr: &str, prose: &[u8]| {
-        use std::io::Write;
         let mut child = Command::new(env!("CARGO_BIN_EXE_jigc"))
             .args(["doc", "set-slot", addr, "--from-file", "-"])
             .current_dir(repo.path())
@@ -410,12 +409,7 @@ fn fresh_methodology_mint_carries_schema_version_1() {
             .stderr(std::process::Stdio::piped())
             .spawn()
             .expect("spawn jigc set-slot");
-        child
-            .stdin
-            .take()
-            .expect("stdin piped")
-            .write_all(prose)
-            .expect("write stdin");
+        crate::support::child_stdin::feed(&mut child, prose);
         let out = child.wait_with_output().expect("wait for jigc");
         assert!(
             out.status.success(),

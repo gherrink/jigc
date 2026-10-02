@@ -14,7 +14,6 @@
 //! Drives the built `jigc` binary against throwaway `git init` repos over the dev pack.
 
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -112,12 +111,7 @@ fn run_jigc_stdin(
         .stderr(Stdio::piped())
         .spawn()
         .expect("spawn jigc");
-    child
-        .stdin
-        .take()
-        .expect("stdin piped")
-        .write_all(stdin)
-        .expect("write stdin");
+    crate::support::child_stdin::feed(&mut child, stdin);
     child.wait_with_output().expect("wait for jigc")
 }
 

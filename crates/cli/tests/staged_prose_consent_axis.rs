@@ -218,12 +218,7 @@ fn workbench(tag: &str) -> (TempDir, TempDir) {
         .stderr(Stdio::piped())
         .spawn()
         .and_then(|mut child| {
-            use std::io::Write;
-            child
-                .stdin
-                .as_mut()
-                .expect("stdin")
-                .write_all(AUTHORED.as_bytes())?;
+            crate::support::child_stdin::feed(&mut child, AUTHORED.as_bytes());
             child.wait_with_output()
         })
         .expect("run doc set-slot");

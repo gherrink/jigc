@@ -542,12 +542,7 @@ fn uninstall_refuses_while_an_open_tasks_authored_prose_lives_only_in_the_workbe
         .stderr(std::process::Stdio::piped())
         .spawn()
         .and_then(|mut child| {
-            use std::io::Write;
-            child
-                .stdin
-                .as_mut()
-                .expect("stdin pipe")
-                .write_all(prose.as_bytes())?;
+            crate::support::child_stdin::feed(&mut child, prose.as_bytes());
             child.wait_with_output()
         })
         .expect("run `jigc doc set-slot`");

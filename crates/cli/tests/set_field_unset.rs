@@ -13,7 +13,6 @@
 //!   `jigc doc set-field <addr> --unset`.
 
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -376,12 +375,7 @@ fn authoring_a_forged_schema_version_stamp_is_refused() {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     let mut child = command.spawn().expect("spawn jigc");
-    child
-        .stdin
-        .take()
-        .expect("stdin piped")
-        .write_all(payload.as_bytes())
-        .expect("write payload");
+    crate::support::child_stdin::feed(&mut child, payload.as_bytes());
     let out = child.wait_with_output().expect("wait for jigc");
     assert!(
         !out.status.success(),

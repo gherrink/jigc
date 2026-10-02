@@ -1192,12 +1192,11 @@ fn one_anchor_request(root: &Path, scratch: &Path) -> Vec<u8> {
 
 /// Spawn the built `jigc` with `args`, feed it `request` on stdin, and collect its output.
 ///
-/// A **broken pipe** on the write is tolerated, as the production invoker tolerates it
-/// (`invoke.rs`): a refused `__probe` argv exits before it reads stdin, so the write can
-/// meet a closed pipe. That is a fact about the refusal, judged by the caller on its exit
+/// A **broken pipe** on the write is tolerated ([`crate::support::child_stdin::feed`]), as
+/// the production invoker tolerates it (`invoke.rs`): a refused `__probe` argv exits
+/// before it reads stdin, so the write can meet a closed pipe. That is a fact about the refusal, judged by the caller on its exit
 /// and stderr; any other write error still fails the test.
 fn run_jigc_with_stdin(args: &[String], request: &[u8]) -> std::process::Output {
-    use std::io::{ErrorKind, Write};
     use std::process::{Command, Stdio};
     let mut child = Command::new(env!("CARGO_BIN_EXE_jigc"))
         .args(args)
@@ -1206,13 +1205,7 @@ fn run_jigc_with_stdin(args: &[String], request: &[u8]) -> std::process::Output 
         .stderr(Stdio::piped())
         .spawn()
         .expect("spawn the built jigc");
-    let mut stdin = child.stdin.take().expect("stdin piped");
-    match stdin.write_all(request) {
-        Ok(()) => {}
-        Err(e) if e.kind() == ErrorKind::BrokenPipe => {}
-        Err(e) => panic!("write the request: {e:?}"),
-    }
-    drop(stdin);
+    crate::support::child_stdin::feed(&mut child, request);
     child.wait_with_output().expect("wait for jigc")
 }
 

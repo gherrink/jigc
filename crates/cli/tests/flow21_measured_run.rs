@@ -38,7 +38,6 @@
 //! exactly as the run orchestrator would.
 
 use std::fs;
-use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -194,12 +193,7 @@ impl Flow {
         }
         let mut child = command.spawn().expect("spawn jigc");
         if let Some(bytes) = stdin {
-            child
-                .stdin
-                .take()
-                .expect("stdin piped")
-                .write_all(bytes)
-                .expect("write stdin");
+            crate::support::child_stdin::feed(&mut child, bytes);
         }
         let out = child.wait_with_output().expect("wait for jigc");
         self.observe(args, &out);
@@ -236,12 +230,7 @@ impl Flow {
             .stderr(Stdio::piped())
             .spawn()
             .expect("spawn the hook script");
-        child
-            .stdin
-            .take()
-            .expect("hook stdin")
-            .write_all(payload.to_string().as_bytes())
-            .expect("write hook payload");
+        crate::support::child_stdin::feed(&mut child, payload.to_string().as_bytes());
         let hook = child.wait_with_output().expect("hook exits");
         assert!(
             hook.status.success(),

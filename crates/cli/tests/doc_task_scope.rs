@@ -12,7 +12,6 @@
 //! commit doc and only subA's.
 
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -63,12 +62,7 @@ fn run_doc_stdin(repo: &Path, home: &Path, args: &[&str], stdin: &[u8]) -> std::
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     let mut child = command.spawn().expect("spawn the jigc binary");
-    child
-        .stdin
-        .take()
-        .expect("stdin piped")
-        .write_all(stdin)
-        .expect("write stdin");
+    crate::support::child_stdin::feed(&mut child, stdin);
     child.wait_with_output().expect("wait for jigc")
 }
 

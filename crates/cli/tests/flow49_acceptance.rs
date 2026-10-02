@@ -137,7 +137,6 @@ use engine::transform::{HaltReason, TransformError};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
@@ -274,12 +273,7 @@ fn run_jigc_stdin(repo: &Path, home: &Path, args: &[&str], stdin: &[u8]) -> Outp
         .stdin(Stdio::piped())
         .spawn()
         .expect("spawn jigc");
-    child
-        .stdin
-        .take()
-        .expect("stdin piped")
-        .write_all(stdin)
-        .expect("write jigc stdin");
+    crate::support::child_stdin::feed(&mut child, stdin);
     child.wait_with_output().expect("wait for jigc")
 }
 

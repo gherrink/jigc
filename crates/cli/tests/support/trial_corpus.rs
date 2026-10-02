@@ -61,7 +61,6 @@
 //! that starts expressing an unpopulated class reddens the assertion.
 
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
@@ -512,12 +511,7 @@ impl TrialCorpus {
             .stderr(Stdio::piped());
         self.select_pack(&mut command);
         let mut child = command.spawn().expect("spawn jigc");
-        child
-            .stdin
-            .take()
-            .expect("stdin piped")
-            .write_all(stdin.as_bytes())
-            .expect("write jigc stdin");
+        crate::support::child_stdin::feed(&mut child, stdin.as_bytes());
         child.wait_with_output().expect("wait for jigc")
     }
 

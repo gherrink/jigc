@@ -98,7 +98,6 @@ fn jigc(repo: &Path, home: &Path, args: &[&str]) -> std::process::Output {
 
 /// Run `jigc doc <args>`, piping `stdin`.
 fn jigc_doc_stdin(repo: &Path, home: &Path, args: &[&str], stdin: &[u8]) -> std::process::Output {
-    use std::io::Write;
     use std::process::Stdio;
     let mut command = Command::new(env!("CARGO_BIN_EXE_jigc"));
     command
@@ -111,12 +110,7 @@ fn jigc_doc_stdin(repo: &Path, home: &Path, args: &[&str], stdin: &[u8]) -> std:
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     let mut child = command.spawn().expect("spawn jigc");
-    child
-        .stdin
-        .take()
-        .expect("stdin piped")
-        .write_all(stdin)
-        .expect("write stdin");
+    crate::support::child_stdin::feed(&mut child, stdin);
     child.wait_with_output().expect("wait for jigc")
 }
 

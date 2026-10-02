@@ -14,6 +14,8 @@ mod address_slug_head_axis;
 mod author_batch_scaling;
 #[path = "../author_payload_floor.rs"]
 mod author_payload_floor;
+#[path = "../child_stdin_feed.rs"]
+mod child_stdin_feed;
 #[path = "../clap_error_kind_axis.rs"]
 mod clap_error_kind_axis;
 #[path = "../copy_in_ack.rs"]

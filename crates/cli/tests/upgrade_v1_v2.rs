@@ -39,7 +39,6 @@
 //! upgrade` again asserts **all-clean, exit zero** — a clean re-run is the verification.
 
 use std::fs;
-use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -148,12 +147,7 @@ fn run_config(
         command.stdin(Stdio::piped());
         command.stdout(Stdio::piped()).stderr(Stdio::piped());
         let mut child = command.spawn().expect("spawn jigc config");
-        child
-            .stdin
-            .take()
-            .expect("stdin piped")
-            .write_all(input.as_bytes())
-            .expect("write stdin");
+        crate::support::child_stdin::feed(&mut child, input.as_bytes());
         child.wait_with_output().expect("wait jigc config")
     } else {
         command.output().expect("run the jigc binary")

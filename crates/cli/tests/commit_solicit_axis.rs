@@ -62,7 +62,6 @@
 //! are also the registry this suite enumerates — surface and enumeration cannot
 //! drift.
 
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
@@ -676,12 +675,7 @@ fn run_composed(repo: &Path, home: &Path, command: &str, commit_type: &str, pros
         .stderr(Stdio::piped())
         .spawn()
         .expect("spawn the composed command");
-    child
-        .stdin
-        .take()
-        .expect("stdin piped")
-        .write_all(prose.as_bytes())
-        .expect("write the authored prose");
+    crate::support::child_stdin::feed(&mut child, prose.as_bytes());
     let out = child
         .wait_with_output()
         .expect("wait for the composed command");

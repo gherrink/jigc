@@ -42,7 +42,6 @@
 
 use crate::support::run_then_parse::stdout_json;
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -137,12 +136,7 @@ fn jigc(repo: &Path, home: &Path, args: &[&str], stdin: Option<&[u8]>) -> std::p
     }
     let mut child = command.spawn().expect("spawn jigc");
     if let Some(bytes) = stdin {
-        child
-            .stdin
-            .take()
-            .expect("stdin piped")
-            .write_all(bytes)
-            .expect("write stdin");
+        crate::support::child_stdin::feed(&mut child, bytes);
     }
     child.wait_with_output().expect("wait for jigc")
 }

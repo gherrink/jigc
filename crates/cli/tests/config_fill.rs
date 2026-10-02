@@ -21,7 +21,6 @@
 //!     compose by the `fill-survivor` gate.
 
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -95,12 +94,7 @@ fn run_fill(repo: &Path, home: &Path, target: &str, content: &str) -> std::proce
         .stderr(Stdio::piped())
         .spawn()
         .expect("spawn the jigc binary");
-    child
-        .stdin
-        .take()
-        .expect("stdin piped")
-        .write_all(content.as_bytes())
-        .expect("write stdin");
+    crate::support::child_stdin::feed(&mut child, content.as_bytes());
     child.wait_with_output().expect("wait for the jigc binary")
 }
 

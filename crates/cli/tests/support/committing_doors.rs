@@ -15,7 +15,6 @@
 //! door's own re-run and its state-truth clause).
 
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -81,12 +80,7 @@ pub fn jigc(repo: &Path, home: &Path, args: &[&str], stdin: Option<&[u8]>) -> st
     }
     let mut child = command.spawn().expect("spawn the jigc binary");
     if let Some(bytes) = stdin {
-        child
-            .stdin
-            .take()
-            .expect("stdin piped")
-            .write_all(bytes)
-            .expect("write stdin");
+        crate::support::child_stdin::feed(&mut child, bytes);
     }
     child.wait_with_output().expect("wait for jigc")
 }

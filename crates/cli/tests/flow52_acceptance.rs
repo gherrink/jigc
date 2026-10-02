@@ -1375,12 +1375,7 @@ fn refused_finalize(race: Race) -> RefusedFinalize {
             .stderr(std::process::Stdio::piped())
             .spawn()
             .and_then(|mut child| {
-                use std::io::Write;
-                child
-                    .stdin
-                    .as_mut()
-                    .expect("stdin")
-                    .write_all(prose.as_bytes())?;
+                crate::support::child_stdin::feed(&mut child, prose.as_bytes());
                 child.wait_with_output()
             })
             .expect("drive set-slot");
