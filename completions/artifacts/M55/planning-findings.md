@@ -37,6 +37,7 @@ Columns: **id** (planning-local) · **what** · **evidence** · **planning dispo
 | T2 | **BrokenPipe panic** — `trial_corpus.rs:520` `expect`s writing jigc's stdin; panics when jigc exits before reading. Same pattern at 143 sites; faster runs trigger it more. | gate-speed measurement | Fix in the `work/gate-speed` PR. |
 | T3 | **`$TMPDIR` leak** — every gate run leaks ~249 entries (`jigc-trial-rig-fence*` dominant: 54k of ~111k entries, ~38 GB accumulated). | gate-speed measurement | Fix in the `work/gate-speed` PR. |
 | T4 | `/usr/bin/git` (xcrun trampoline) costs ~11 ms per call × ~174k calls per gate; real git on PATH first breaks tree-sitter's C build unless `SDKROOT` is exported. | gate-speed measurement | Fixed by the `work/gate-speed` PR. |
+| T5 | **Timing flake** `author_batch_scaling::the_batch_apply_growth_ratio_stays_within_its_stated_bound` measured a growth ratio of 6.16 against its 5.5 bound under full-suite load; passed alone and on the re-run. | R5 fold's first gate run, 2026-10-02 | Open — seed as jigc-feedback (test tooling). |
 
 ## Stale or contradicting records (inconsistency candidates)
 
