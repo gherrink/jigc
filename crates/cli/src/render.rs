@@ -2285,6 +2285,14 @@ pub struct Displaced {
 /// identically at all four sites (dry-run forecast, pre-commit print, landed text,
 /// landed JSON). The JSON value `carried-over` is a pre-1.0 additive enum extension,
 /// declared in `design/command-output-contract.md` → Evolution posture.
+///
+/// `LeftStaged` (M55, `design/findings-channel.md` → Open question 1, settled) tags a
+/// **left-out** path that is **staged** — reachable only on the doc-only commit model, whose
+/// path-scoped commit leaves the index's other entries staged for the task they belong to.
+/// One entry per path, whichever change it stages. Under the other kinds such a path would
+/// read as `added` (declared above as an *included* add) or as a `modified` a driver could
+/// not tell from an unstaged one. The same pre-1.0 additive posture as `carried-over`,
+/// declared in `design/command-output-contract.md` → The M55 additive kind.
 #[derive(Serialize, Clone, Copy, PartialEq, Eq, Debug)]
 #[serde(rename_all = "kebab-case")]
 pub enum ManifestKind {
@@ -2294,6 +2302,7 @@ pub enum ManifestKind {
     Added,
     Untracked,
     CarriedOver,
+    LeftStaged,
 }
 
 impl ManifestKind {
@@ -2301,14 +2310,15 @@ impl ManifestKind {
     /// what the JSON `kind` key can carry (`design/command-output-contract.md` → The M43
     /// additive kind). Its completeness is fenced against the enum's own declaration by
     /// `crates/cli/tests/foldback_truth.rs`, because the exhaustive matches below force a
-    /// seventh member to be *classified* and not to *join this array*.
-    pub const ALL: [ManifestKind; 6] = [
+    /// new member to be *classified* and not to *join this array*.
+    pub const ALL: [ManifestKind; 7] = [
         ManifestKind::Promoted,
         ManifestKind::Modified,
         ManifestKind::Deleted,
         ManifestKind::Added,
         ManifestKind::Untracked,
         ManifestKind::CarriedOver,
+        ManifestKind::LeftStaged,
     ];
 
     /// The kind's **wire tag** — one home for the spelling every surface prints: the agent
@@ -2323,17 +2333,18 @@ impl ManifestKind {
             ManifestKind::Added => "added",
             ManifestKind::Untracked => "untracked",
             ManifestKind::CarriedOver => "carried-over",
+            ManifestKind::LeftStaged => "left-staged",
         }
     }
 
     /// Whether this kind can tag a path the commit **included** — the partition the enum's
-    /// doc-comment above already states (`Untracked` only ever tags a left-out file), as
-    /// code-side data rather than a second hand list. It is what makes the vocabulary's two
-    /// true sentences both sayable: `design/finalize.md` names the **committed set**'s five,
-    /// `design/command-output-contract.md` the JSON value space's six, and a prose fence
-    /// owing all six everywhere would force `untracked` into the committed-set sentence.
+    /// doc-comment above already states (`Untracked` and `LeftStaged` only ever tag a
+    /// left-out file), as code-side data rather than a second hand list. It is what makes the
+    /// vocabulary's two true sentences both sayable: the **committed set**'s five, and the
+    /// JSON value space's seven — a prose fence owing all seven everywhere would force the
+    /// two left-out-only tags into the committed-set sentence.
     ///
-    /// Exhaustive by construction: a seventh member does not compile without an arm here.
+    /// Exhaustive by construction: an eighth member does not compile without an arm here.
     pub const fn in_commit(self) -> bool {
         match self {
             ManifestKind::Promoted
@@ -2341,7 +2352,7 @@ impl ManifestKind {
             | ManifestKind::Deleted
             | ManifestKind::Added
             | ManifestKind::CarriedOver => true,
-            ManifestKind::Untracked => false,
+            ManifestKind::Untracked | ManifestKind::LeftStaged => false,
         }
     }
 }
@@ -2361,8 +2372,8 @@ pub struct ManifestEntry {
 /// file) / `  carried-over <path>` (a pre-task staged entry riding under `--carry-staged`).
 /// No trailing newline — the caller joins / closes it. The label is
 /// [`ManifestKind::tag`], the one home for the spelling this line and the JSON `kind`
-/// value both put on the wire — never a second list here. `Untracked` never reaches the
-/// included path (it tags only left-out files, rendered by [`left_out_lines`]); reaching
+/// value both put on the wire — never a second list here. `Untracked` and `LeftStaged` never
+/// reach the included path (they tag only left-out files, rendered by [`left_out_lines`]); reaching
 /// it anyway renders its own tag rather than the retired "swept".
 fn manifest_line(entry: &ManifestEntry) -> String {
     format!("  {} {}", entry.kind.tag(), entry.path)

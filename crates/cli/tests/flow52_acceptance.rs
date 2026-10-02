@@ -84,11 +84,13 @@
 //!
 //!   (7) **[`ManifestKind::ALL`]** — the class's **defining case-set, matched
 //!       exhaustively**: each variant is mapped through a compiler-checked `match` to the
-//!       fixture act that produces it, so a seventh kind cannot compile until someone
-//!       decides how to drive it. *Adds over `count_fences.rs` and `finalize_manifest.rs`:*
-//!       those fence the *numerals prose states* and the manifest's own arms; this arm puts
-//!       **every kind of the vocabulary on the wire at once**, from one finalize, on both
-//!       the agent text and the `--format json` document.
+//!       fixture act that produces it and the commit model whose forecast carries it, so a
+//!       new kind cannot compile until someone decides how to drive it. *Adds over
+//!       `count_fences.rs` and `finalize_manifest.rs`:* those fence the *numerals prose
+//!       states* and the manifest's own arms; this arm puts **every kind of the vocabulary
+//!       on the wire at once**, from one checkout — the ordinary finalize, and since M55 the
+//!       doc-only forecast beside it that `left-staged` is reachable on — on both the agent
+//!       text and the `--format json` document.
 //!
 //!   (8) **The derived ambush owe-set** — a **derivation stated as one**, with a stated
 //!       exclusion rule: *blocking codes minted by a door in the commit-on-behalf class*,
@@ -2016,14 +2018,62 @@ enum Phase {
     AfterMint,
 }
 
-/// The fixture act that puts one manifest kind on the wire.
+/// Which commit model's finalize a kind reaches the wire on.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Model {
+    /// The ordinary index commit — the `single-task` the arm mints.
+    Index,
+    /// The doc-only, path-scoped commit (M55; `design/finalize.md` → The doc-only arm) — the
+    /// fixture report task the arm mints beside it, [`DOC_ONLY_WORKFLOW`].
+    DocOnly,
+}
+
+/// A fixture code-less workflow composing the shipped `step:finalize-doc-only` — the only
+/// commit model whose left-out list can carry `left-staged`. A project-layer definition over
+/// the default `[dev ▸ methodology]` cascade (the composers the methodology pack ships land
+/// at M55 Increment 8; until then a fixture is the arm's way in).
+const DOC_ONLY_WORKFLOW: &str = "\
+---
+when: file one doc while other work is staged in the checkout
+description: A fixture code-less report workflow — one idea doc, committed path-scoped.
+usage: the flow 52 arm 7 cell for the doc-only forecast, reached by name.
+creates-task: true
+selectable: false
+suppressed:
+  reason: fixture-only — the doc-only manifest cell, reached by name
+  expires: never
+allows-create:
+  - { type: idea, as: idea }
+---
+{{ include: step:author-commit }}
+{{ include: step:finalize-doc-only }}
+";
+
+const DOC_ONLY_WORKFLOW_ID: &str = "flow52-report";
+
+/// The path [`ManifestKind::LeftStaged`]'s act stages — named for nothing in the
+/// vocabulary, so the agent text's mention of it is never mistaken for a tag.
+const LEFT_STAGED_PATH: &str = "elsewhere.txt";
+
+/// The fixture act that puts one manifest kind on the wire, and the commit model whose
+/// finalize carries it there.
 ///
-/// **Exhaustive by construction:** a seventh [`ManifestKind`] does not compile until someone
+/// **Exhaustive by construction:** a new [`ManifestKind`] does not compile until someone
 /// decides how a finalize is driven into producing it — which is the difference between a
 /// case-set matched exhaustively and a list that happens to be right today.
-fn manifest_act(kind: ManifestKind) -> (Phase, fn(&TrialCorpus, &str)) {
+fn manifest_act(kind: ManifestKind) -> (Model, Phase, fn(&TrialCorpus, &str)) {
     match kind {
-        ManifestKind::CarriedOver => (Phase::BeforeMint, |corpus, _task| {
+        // A path staged in the checkout — for the ordinary task an `added`, and for the
+        // doc-only task beside it a path its path-scoped commit leaves staged.
+        ManifestKind::LeftStaged => (Model::DocOnly, Phase::AfterMint, |corpus, _task| {
+            fs::write(
+                corpus.repo().join(LEFT_STAGED_PATH),
+                "staged for another task\n",
+            )
+            .expect("write the staged path");
+            corpus.git(&["add", LEFT_STAGED_PATH]);
+        }),
+        ManifestKind::CarriedOver => (Model::Index, Phase::BeforeMint, |corpus, _task| {
             fs::write(
                 corpus.repo().join("carried.txt"),
                 "staged before the mint\n",
@@ -2031,7 +2081,7 @@ fn manifest_act(kind: ManifestKind) -> (Phase, fn(&TrialCorpus, &str)) {
             .expect("write the carryover");
             corpus.git(&["add", "carried.txt"]);
         }),
-        ManifestKind::Promoted => (Phase::AfterMint, |corpus, task| {
+        ManifestKind::Promoted => (Model::Index, Phase::AfterMint, |corpus, task| {
             corpus.jigc_ok(&[
                 "doc",
                 "create",
@@ -2058,29 +2108,52 @@ fn manifest_act(kind: ManifestKind) -> (Phase, fn(&TrialCorpus, &str)) {
                 );
             }
         }),
-        ManifestKind::Modified => (Phase::AfterMint, |corpus, _task| {
+        ManifestKind::Modified => (Model::Index, Phase::AfterMint, |corpus, _task| {
             fs::write(corpus.repo().join("keep.md"), "edited\n").expect("edit the tracked file");
             corpus.git(&["add", "keep.md"]);
         }),
-        ManifestKind::Deleted => (Phase::AfterMint, |corpus, _task| {
+        ManifestKind::Deleted => (Model::Index, Phase::AfterMint, |corpus, _task| {
             corpus.git(&["rm", "-q", "doomed.md"]);
         }),
-        ManifestKind::Added => (Phase::AfterMint, |corpus, _task| {
+        ManifestKind::Added => (Model::Index, Phase::AfterMint, |corpus, _task| {
             fs::write(corpus.repo().join("added.txt"), "a new file\n").expect("write the new file");
             corpus.git(&["add", "added.txt"]);
         }),
-        ManifestKind::Untracked => (Phase::AfterMint, |corpus, _task| {
+        ManifestKind::Untracked => (Model::Index, Phase::AfterMint, |corpus, _task| {
             fs::write(corpus.repo().join("stray.txt"), "never staged\n").expect("write the stray");
         }),
     }
 }
 
-/// **Arm 7** — every kind of the manifest vocabulary, on one wire, from one finalize.
+/// Author the doc-only task's one `idea` and its commit doc, so its forecast has a path set.
+fn author_report(corpus: &TrialCorpus, task: &str) {
+    let address = corpus
+        .jigc_ok(&[
+            "doc",
+            "create",
+            "idea",
+            "--title",
+            "Flow 52 Report",
+            "--task",
+            task,
+        ])
+        .trim()
+        .to_owned();
+    corpus.set_field(&format!("{address}#trigger"), task, "a report comes back");
+    corpus.set_slot(
+        &format!("{address}#description"),
+        task,
+        "Filed by the flow 52 acceptance suite.",
+    );
+    fill_commit_doc(corpus, task);
+}
+
+/// **Arm 7** — every kind of the manifest vocabulary, on one wire, from one checkout.
 ///
 /// **The kind of set: the class's defining case-set, matched exhaustively.**
 /// [`ManifestKind::ALL`] is the whole value space the JSON `kind` key can carry, and
-/// [`manifest_act`] maps each variant through a compiler-checked `match` — so a seventh kind
-/// cannot be added without deciding what act produces it here.
+/// [`manifest_act`] maps each variant through a compiler-checked `match` — so a new kind
+/// cannot be added without deciding what act produces it here, and on which commit model.
 ///
 /// **What this adds over `count_fences.rs` and `finalize_manifest.rs`.** `count_fences.rs`
 /// fences the **numerals prose states** about sets the code can move — the committing-door
@@ -2088,23 +2161,37 @@ fn manifest_act(kind: ManifestKind) -> (Phase, fn(&TrialCorpus, &str)) {
 /// and asserting the prose; `finalize_manifest.rs` owns the manifest's own arms and the
 /// dry-run forecast's honesty. Neither puts the **whole vocabulary on the wire at once**.
 /// This arm does, on **both** surfaces the tag reaches — the agent text's manifest lines and
-/// the pinned `--format json` `kind` values — from a single task, so a kind that is
-/// reachable only in principle reddens here.
+/// the pinned `--format json` `kind` values — so a kind that is reachable only in principle
+/// reddens here.
+///
+/// **Two finalizes, because one kind lives on another commit model (M55).** `left-staged`
+/// tags a staged path the **doc-only** arm's path-scoped commit leaves where it is; the
+/// ordinary commit is the index and takes every staged path, so no index finalize can carry
+/// it. The arm therefore mints a fixture doc-only task beside the ordinary one, in the same
+/// checkout over the same staged state, and drives both forecasts: the vocabulary is their
+/// union, and each kind must appear on the forecast of the model [`manifest_act`] names.
 ///
 /// The partition [`ManifestKind::in_commit`] states is asserted as an *outcome*, not
-/// restated: `untracked` tags a **left-out** file and never a committed one, which is why
-/// the vocabulary has two true sentences (`design/finalize.md` names the committed set's
-/// five; `design/command-output-contract.md` the JSON value space's six).
+/// restated: `untracked` and `left-staged` tag a **left-out** file and never a committed one,
+/// which is why the vocabulary has two true sentences (`design/finalize.md` names the
+/// committed set's five; `design/command-output-contract.md` the JSON value space's seven).
 #[test]
 fn every_manifest_kind_reaches_the_wire_from_one_finalize() {
     let corpus = TrialCorpus::build(State::Fresh);
     fs::write(corpus.repo().join("keep.md"), "kept\n").expect("write the tracked file");
     fs::write(corpus.repo().join("doomed.md"), "doomed\n").expect("write the doomed file");
+    let workflows = corpus.repo().join(".jigc/config/workflows");
+    fs::create_dir_all(&workflows).expect("mk the project workflows dir");
+    fs::write(
+        workflows.join(format!("{DOC_ONLY_WORKFLOW_ID}.yaml")),
+        DOC_ONLY_WORKFLOW,
+    )
+    .expect("write the doc-only fixture workflow");
     corpus.git(&["add", "-A"]);
     corpus.git(&["commit", "-qm", "the arm's tracked files"]);
 
     for kind in ManifestKind::ALL {
-        let (phase, act) = manifest_act(kind);
+        let (_, phase, act) = manifest_act(kind);
         if phase == Phase::BeforeMint {
             act(&corpus, "");
         }
@@ -2112,24 +2199,26 @@ fn every_manifest_kind_reaches_the_wire_from_one_finalize() {
     let task = corpus.start_workflow("single-task", "put every manifest kind on the wire");
     fill_commit_doc(&corpus, &task);
     for kind in ManifestKind::ALL {
-        let (phase, act) = manifest_act(kind);
+        let (_, phase, act) = manifest_act(kind);
         if phase == Phase::AfterMint {
             act(&corpus, &task);
         }
     }
+    let report = corpus.start_workflow(DOC_ONLY_WORKFLOW_ID, "file a report beside it");
+    author_report(&corpus, &report);
 
     // The machine surface first: the forecast is the arm that carries the manifest as data.
-    let forecast = corpus.jigc(&[
-        "task",
-        "finalize",
-        &task,
-        "--carry-staged",
-        "--dry-run",
-        "--format",
-        "json",
-    ]);
-    let document = assert_wire(&forecast, &["task", "finalize"], "Forecast");
-    let kinds_at = |key: &str| -> BTreeSet<String> {
+    let forecast_of = |model: Model| -> Value {
+        let mut args = vec!["task", "finalize"];
+        match model {
+            Model::Index => args.extend([task.as_str(), "--carry-staged"]),
+            // `--carry-staged` is inert on the doc-only arm, so it is not passed.
+            Model::DocOnly => args.push(report.as_str()),
+        }
+        args.extend(["--dry-run", "--format", "json"]);
+        assert_wire(&corpus.jigc(&args), &["task", "finalize"], "Forecast")
+    };
+    let kinds_at = |document: &Value, key: &str| -> BTreeSet<String> {
         document[key]
             .as_array()
             .unwrap_or_else(|| panic!("the forecast carries a `{key}` array; got:\n{document:#}"))
@@ -2137,36 +2226,66 @@ fn every_manifest_kind_reaches_the_wire_from_one_finalize() {
             .filter_map(|entry| entry["kind"].as_str().map(str::to_owned))
             .collect()
     };
-    let committed = kinds_at("manifest");
-    let left_out = kinds_at("left_out");
-    let on_the_wire: BTreeSet<String> = committed.union(&left_out).cloned().collect();
+    let mut sides: BTreeMap<&str, (BTreeSet<String>, BTreeSet<String>)> = BTreeMap::new();
+    for (name, model) in [("index", Model::Index), ("doc-only", Model::DocOnly)] {
+        let document = forecast_of(model);
+        sides.insert(
+            name,
+            (
+                kinds_at(&document, "manifest"),
+                kinds_at(&document, "left_out"),
+            ),
+        );
+    }
+    let side = |model: Model| match model {
+        Model::Index => &sides["index"],
+        Model::DocOnly => &sides["doc-only"],
+    };
+    let on_the_wire: BTreeSet<String> = sides
+        .values()
+        .flat_map(|(committed, left_out)| committed.union(left_out).cloned())
+        .collect();
     let vocabulary: BTreeSet<String> = ManifestKind::ALL
         .iter()
         .map(|kind| kind.tag().to_owned())
         .collect();
     assert_eq!(
         on_the_wire, vocabulary,
-        "one finalize puts the whole vocabulary on the wire — a kind reachable only in \
-         principle is a value space nothing drives\nmanifest: {committed:?}\nleft_out: \
-         {left_out:?}",
+        "one checkout's two forecasts put the whole vocabulary on the wire — a kind \
+         reachable only in principle is a value space nothing drives\n{sides:#?}",
     );
     for kind in ManifestKind::ALL {
+        let (model, _, _) = manifest_act(kind);
+        let (committed, left_out) = side(model);
         let where_it_landed = if kind.in_commit() {
-            &committed
+            committed
         } else {
-            &left_out
+            left_out
         };
         assert!(
             where_it_landed.contains(kind.tag()),
-            "`{}` is declared {} the commit, and that is where it must appear — the \
-             partition is why the vocabulary has two true sentences\nmanifest: \
-             {committed:?}\nleft_out: {left_out:?}",
+            "`{}` is declared {} the commit, on the {model:?} model's forecast, and that is \
+             where it must appear — the partition is why the vocabulary has two true \
+             sentences\n{sides:#?}",
             kind.tag(),
             if kind.in_commit() { "in" } else { "outside" },
         );
     }
+    assert!(
+        !side(Model::Index)
+            .1
+            .contains(ManifestKind::LeftStaged.tag()),
+        "the ordinary model never produces `left-staged` — its commit is the index\n{sides:#?}",
+    );
 
-    // …and the agent text, where the same tag is the label a reader sees.
+    // …and the agent text, where the same tag is the label a reader sees. The doc-only task
+    // lands first, so the ordinary one's commit still finds every staged path in the index.
+    let report_landed = corpus.jigc(&["task", "finalize", &report]);
+    let report_text = surface(&report_landed);
+    assert!(
+        report_landed.status.success(),
+        "the doc-only finalize this arm forecast actually lands\n{report_text}",
+    );
     let landed = corpus.jigc(&["task", "finalize", &task, "--carry-staged"]);
     let text = surface(&landed);
     assert!(
@@ -2174,12 +2293,33 @@ fn every_manifest_kind_reaches_the_wire_from_one_finalize() {
         "the finalize this arm forecast actually lands\n{text}",
     );
     for kind in ManifestKind::ALL {
-        assert!(
-            text.contains(kind.tag()),
-            "the agent text names `{}` with the same spelling the JSON `kind` carries — one \
-             home for the label, never a second list\n{text}",
-            kind.tag(),
-        );
+        match manifest_act(kind).0 {
+            Model::Index => assert!(
+                text.contains(kind.tag()),
+                "the agent text names `{}` with the same spelling the JSON `kind` carries — \
+                 one home for the label, never a second list\n{text}",
+                kind.tag(),
+            ),
+            // The text's left-out section is **path-only on every model** (`left_out_lines`):
+            // the kind is the JSON's discriminator, and the doc-only header states the class
+            // in words (a staged path stays staged for the task it belongs to). So what the
+            // text owes a `left-staged` path is the path, under that section.
+            Model::DocOnly => {
+                let section = report_text
+                    .split_once("  left-out (")
+                    .unwrap_or_else(|| panic!("a left-out section\n{report_text}"))
+                    .1;
+                assert!(
+                    section.contains("a staged path stays staged")
+                        && section
+                            .lines()
+                            .any(|line| line == format!("    {LEFT_STAGED_PATH}")),
+                    "the doc-only text names the path `{}` tags under its own left-out \
+                     section\n{report_text}",
+                    kind.tag(),
+                );
+            }
+        }
     }
 }
 

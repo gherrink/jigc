@@ -3813,7 +3813,7 @@ impl TaskArea {
     /// - **Doc-only** (`stage_doc_only`'s path set, M55): the path set, never the index —
     ///   each promotion `destination` (`promoted`) and each dirty path under a stageable
     ///   recorded owner-artifact (by the rule jigc's own stage uses). Every other porcelain
-    ///   entry is `left_out`, **staged ones included**, one entry per path
+    ///   entry is `left_out`, **staged ones included** (`left-staged`), one entry per path
     ///   ([`left_out_entry`]): the path-scoped commit leaves it where it is.
     ///
     /// Accepted prediction bound: on a first-ever finalize, the transaction's
@@ -8399,24 +8399,23 @@ fn classify_landed_manifest(
 /// On the index-committing models only the **Y (worktree)** column is left out: the commit
 /// took the index, so a blank Y means the path matches what was committed. On the
 /// **doc-only** model (`doc_only`, M55) the commit took named paths, so every entry outside
-/// them is left out — **one entry per path**, staged ones included — tagged by its **X
-/// (index)** column when the path is staged (the fact this arm keeps intact for the task it
-/// belongs to) and by its Y column otherwise.
+/// them is left out — **one entry per path**, staged ones included. A path whose **X
+/// (index)** column is staged is [`render::ManifestKind::LeftStaged`], whichever change it
+/// stages and whatever its worktree adds on top — the fact this arm keeps intact for the task
+/// it belongs to, and the one a driver filters on (`design/findings-channel.md` → Open
+/// question 1, settled); any other entry is tagged by its Y column.
 fn left_out_entry(code: &str, path: String, doc_only: bool) -> Option<render::ManifestEntry> {
     let mut columns = code.chars();
     let x = columns.next().unwrap_or(' ');
     let y = columns.next().unwrap_or(' ');
-    let column = if doc_only && x != ' ' && x != '?' {
-        x
+    let kind = if doc_only && x != ' ' && x != '?' {
+        render::ManifestKind::LeftStaged
     } else if y != ' ' {
-        y
+        column_kind(y)
     } else {
         return None;
     };
-    Some(render::ManifestEntry {
-        path,
-        kind: column_kind(column),
-    })
+    Some(render::ManifestEntry { path, kind })
 }
 
 /// Whether the pathspec `spec` jigc hands `git add` covers the repo-relative `path` — the

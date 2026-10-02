@@ -2,6 +2,13 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-02 — M55 Increment 1 / T4: `left-staged`, Open question 1 settled, two build pins
+
+Built as decomposed below ([command-output-contract.md](design/command-output-contract.md) → The M55 additive kind; [findings-channel.md](design/findings-channel.md) → Open questions, 1). Two elaborations the plan left open:
+
+- **The agent text gains no per-path tag; `left-staged` reaches the text as its path, under the doc-only left-out header.** The left-out section is path-only on every model (`left_out_lines`), and the header already states the class in words (*a staged path stays staged for the task it belongs to*). `flow52_acceptance` arm 7 asserts exactly that for the doc-only model, and the tag for the ordinary model's kinds as before. *Why:* a per-line tag on one model alone would split one section's shape by model, and the discriminator a driver filters on is the JSON `kind`, which carries it.
+- **Arm 7's case-set map gains the commit model (`Model::Index` / `Model::DocOnly`) beside the phase, and the arm mints a fixture doc-only task beside its `single-task` in the same checkout.** The vocabulary is the union of the two forecasts, and each kind must appear on the forecast of the model the exhaustive match names. *Why:* no index finalize can carry `left-staged`, so a single-finalize arm would have to drop the kind or fake it; the doc-only task lands first so the ordinary commit still finds every staged path.
+
 ## 2026-10-02 — M55 Increment 1 / T3: the index gate's third spelling, two build pins
 
 Built as decomposed below ([finalize.md](design/finalize.md) → Every surface of the arm is the arm's). Two elaborations the plan left open:

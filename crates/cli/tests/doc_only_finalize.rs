@@ -25,7 +25,9 @@
 //! `cli::render::CommitModel::DocOnly`): in every state the landed left-out section and
 //! `committed.left_out` name each of the code task's paths — staged ones included, one entry
 //! per path — the pre-commit advisory says the commit is path-scoped and never *git add*, and
-//! the `--dry-run` forecast is the path set, not the index.
+//! the `--dry-run` forecast is the path set, not the index. **Each staged one is tagged
+//! `left-staged`** (T4) in the forecast and in `committed.left_out`; an unstaged one keeps
+//! its worktree kind, and the ordinary model never produces the value.
 //!
 //! Every arm asserts on the landed git commit and the binary's emitted bytes, never on a
 //! reconstruction.
@@ -90,6 +92,36 @@ const DOC_ONLY_STEM: &str = "finalize — about to commit only this task's docs,
 
 /// The ordinary model's stem — what the omitting context still prints.
 const INDEX_STEM: &str = "finalize — about to commit the index; leaving out:";
+
+/// The `(path, kind)` pairs of a manifest-entry array, in order.
+fn entry_kinds(entries: &serde_json::Value) -> Vec<(String, String)> {
+    entries
+        .as_array()
+        .unwrap_or_else(|| panic!("a manifest-entry array; got {entries}"))
+        .iter()
+        .map(|entry| {
+            (
+                entry["path"].as_str().unwrap_or_default().to_owned(),
+                entry["kind"].as_str().unwrap_or_default().to_owned(),
+            )
+        })
+        .collect()
+}
+
+/// What the doc-only arm's left-out set tags each of the code task's paths with (T4,
+/// `design/findings-channel.md` → Open question 1): a path **staged** for the code task is
+/// `left-staged`, whichever change it stages; an unstaged one keeps the worktree column's
+/// kind (`modified` for the tracked edit, `untracked` for the new file).
+fn expected_left_out_kinds(staging: Staging) -> Vec<(String, String)> {
+    let (tracked, new_file) = match staging {
+        Staging::Unstaged => ("modified", "untracked"),
+        Staging::Before | Staging::After => ("left-staged", "left-staged"),
+    };
+    vec![
+        (TRACKED.to_owned(), tracked.to_owned()),
+        (NEW_FILE.to_owned(), new_file.to_owned()),
+    ]
+}
 
 /// The paths of a manifest-entry array, in order.
 fn entry_paths(entries: &serde_json::Value) -> Vec<String> {
@@ -374,6 +406,19 @@ fn every_flow_b_state_forecasts_the_path_set_and_narrates_what_stays() {
             forecast["left_out"], committed["left_out"],
             "{label} the forecast's left-out set is the landed one",
         );
+        // T4 — the kinds, on the same paths T2 put there: a staged path is `left-staged` in
+        // the forecast and in `committed.left_out`, so a driver can tell a path left staged
+        // for its own task from an unstaged one without re-running `git status`.
+        for (surface, entries) in [
+            ("the forecast's left_out", &forecast["left_out"]),
+            ("committed.left_out", &committed["left_out"]),
+        ] {
+            assert_eq!(
+                entry_kinds(entries),
+                expected_left_out_kinds(staging),
+                "{label} {surface} tags each staged path `left-staged`",
+            );
+        }
     }
 }
 
@@ -487,6 +532,14 @@ fn park_idea_over_the_same_states_behaves_as_today() {
             Staging::Unstaged => {
                 assert!(out.status.success(), "[{staging:?}] lands; {}", text(&out));
                 assert_eq!(head_files(&corpus), vec![doc]);
+                let landed: serde_json::Value =
+                    stdout_json(&out, &[0], &format!("[{staging:?}] the landed finalize"));
+                assert_eq!(
+                    entry_kinds(&landed["committed"]["left_out"]),
+                    expected_left_out_kinds(Staging::Unstaged),
+                    "[{staging:?}] the ordinary model's left-out set keeps its kinds — \
+                     `left-staged` is the doc-only arm's alone",
+                );
                 let stderr = String::from_utf8_lossy(&out.stderr);
                 assert!(
                     stderr.contains(INDEX_STEM) && !stderr.contains(DOC_ONLY_STEM),

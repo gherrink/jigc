@@ -874,17 +874,18 @@ fn the_shipped_guides_name_the_discard_refusal_and_its_consent() {
 // a fresh law-1 lie** (M51 Increment 7 / T1; `completions/artifacts/M51/settle-record.md`
 // → D8; the charter's EC-22).
 //
-// [`ManifestKind`] has six members, and `manifest_line`'s own doc-comment states the split
-// the prose has to respect: `Untracked` never reaches the **included** path — it tags only
-// files the commit left out. So the two docs of record are saying two different true
+// [`ManifestKind`] has seven members (six until M55 added `left-staged`), and
+// `manifest_line`'s own doc-comment states the split the prose has to respect: `Untracked`
+// and `LeftStaged` never reach the **included** path — they tag only files the commit left
+// out. So the two docs of record are saying two different true
 // things, and both are correct as written: `design/finalize.md` names the **committed
 // set**'s five (`promoted` / `modified` / `deleted` / `added` / `carried-over`), and
-// `design/command-output-contract.md` names the **JSON `kind`** value space's six. A fence
-// owing all six everywhere would force `untracked` into the committed-set sentence — a new
+// `design/command-output-contract.md` names the **JSON `kind`** value space's seven. A fence
+// owing all seven everywhere would force `untracked` into the committed-set sentence — a new
 // falsehood, shipped by the fence built to stop falsehoods.
 //
 // Hence the mint is [`ManifestKind::ALL`] **plus** the in-commit/left-out partition as
-// code-side data ([`ManifestKind::in_commit`], an exhaustive match, so a seventh member
+// code-side data ([`ManifestKind::in_commit`], an exhaustive match, so a new member
 // cannot compile until it is classified), and the owe-set is **chosen by which vocabulary
 // the unit is speaking** — read off the partition itself, never hand-assigned per home.
 //
@@ -897,8 +898,8 @@ fn the_shipped_guides_name_the_discard_refusal_and_its_consent() {
 enum Vocabulary {
     /// The **committed set**: the tags a path *in the commit* can carry. Five members.
     Committed,
-    /// The whole JSON `kind` value space — the committed set plus the left-out-only tag.
-    /// Six members.
+    /// The whole JSON `kind` value space — the committed set plus the left-out-only tags.
+    /// Seven members.
     Whole,
 }
 
@@ -1029,7 +1030,7 @@ fn every_prose_unit_that_enumerates_the_manifest_vocabulary_names_all_of_it() {
     assert!(
         short.is_empty(),
         "a home that enumerates the manifest vocabulary enumerates all of the vocabulary \
-         it is speaking — the committed set's five, or the JSON `kind` space's six; \
+         it is speaking — the committed set's five, or the JSON `kind` space's seven; \
          short at: {short:#?}",
     );
     assert_eq!(
@@ -1059,7 +1060,7 @@ fn a_unit_naming_a_strict_subset_of_its_vocabulary_is_caught() {
         "the committed set's fifth tag is missing and the fence must say so",
     );
 
-    // The same sentence completed is clean — the fence owes the partition, never all six.
+    // The same sentence completed is clean — the fence owes the partition, never all seven.
     let whole = short.replace("`deleted`", "`deleted` / `added`");
     assert_eq!(
         missing_tags(&whole),
@@ -1073,8 +1074,9 @@ fn a_unit_naming_a_strict_subset_of_its_vocabulary_is_caught() {
     assert_eq!(vocabulary_spoken(json), Some(Vocabulary::Whole));
     assert_eq!(
         missing_tags(json),
-        vec!["carried-over"],
-        "a unit naming the JSON value space owes every value, `carried-over` included",
+        vec!["carried-over", "left-staged"],
+        "a unit naming the JSON value space owes every value, `carried-over` and \
+         `left-staged` included",
     );
 
     // Ordinary prose that merely uses the words is not an enumeration.
