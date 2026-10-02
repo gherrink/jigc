@@ -2,6 +2,13 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-03 — M55 Increment 2 / T3: the `write.title-ignored` committed arm re-routed, built
+
+Built on P5 below: `title_ignored_refusal`'s committed arm routes through `distinct_identity_route`; the staged arm keeps its mechanical `jigc doc rename … --task`. Two facts the build found:
+
+- **No existing test pinned the committed arm's route.** The planned red-step assumption (`write_title_divergence`, `write_miss_shape_axis`'s title-miss cells, `flow48_acceptance` redden) was false: every one of those cells drives the **staged** arm, which is unchanged, and they stayed green untouched. The committed arm was reached by no test before `create_only_gate::` — so its new pins (create, author, and the staged control, each following the emitted route) are the first.
+- **`help_truth` is repaired by strengthening, not by deletion.** `jigc doc rename` stays a true token of both helps (identity-change and the staged arm still route there); the split sentence adds *someone else's doc*, now fenced at both verbs.
+
 ## 2026-10-03 — M55 Increment 2 / T2: `new: true` and `create.already-exists`, built
 
 Built on pins P3–P6 below ([write-commands.md](design/write-commands.md) → The create-gate). Three elaborations the plan left open:

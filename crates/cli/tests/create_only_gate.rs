@@ -27,6 +27,12 @@
 //! copied in, and an untracked file at the home, are refused too; fan-out suffixing is
 //! unchanged. **The omitting context** is the shipped `park-idea`, whose entry carries no
 //! `new`: create-or-update, unchanged.
+//!
+//! **T3 — the `write.title-ignored` route (F3).** Under the shipped `park-idea`, a different
+//! title that slugs onto a *committed* idea is still `write.title-ignored`, but its route
+//! names a distinct title or `--slug` (P5's builder) instead of `jigc doc rename` of someone
+//! else's doc — followed, it lands a second idea. The staged arm, whose subject is the
+//! task's own doc, keeps its in-task rename route, and that route runs.
 
 use crate::support;
 
@@ -194,6 +200,11 @@ fn land_idea(corpus: &TrialCorpus, task: &str, title: &str, extra: &[&str]) -> L
     args.extend_from_slice(extra);
     args.extend_from_slice(&["--task", task]);
     let address = corpus.jigc_ok(&args).trim().to_string();
+    fill_and_finalize(corpus, task, address)
+}
+
+/// Fill the staged idea at `address` and the commit doc, and finalize `task`.
+fn fill_and_finalize(corpus: &TrialCorpus, task: &str, address: String) -> Landed {
     corpus.set_field(&format!("{address}#trigger"), task, "a report comes back");
     corpus.set_slot(
         &format!("{address}#description"),
@@ -282,6 +293,13 @@ fn assert_already_exists(out: &Output, verb: &str, target: &str, what: &str) {
         finding["severity"], "blocking",
         "{what}: blocking; {finding:#}"
     );
+    assert_distinct_identity_route(&finding, verb, what);
+}
+
+/// Assert `finding`'s route is P5's distinct-identity route for `verb`: `create` names a
+/// distinct `--title` or `--slug`, `author` the payload's `title:` and never a `--slug`;
+/// neither routes at renaming the existing doc.
+fn assert_distinct_identity_route(finding: &serde_json::Value, verb: &str, what: &str) {
     let route = finding["route"].as_str().unwrap_or_default();
     match verb {
         "create" => assert!(
@@ -627,5 +645,166 @@ fn the_contract_lists_already_exists_under_the_uri_form() {
     assert!(
         row.contains(ALREADY_EXISTS),
         "the URI form's Members list must name `{ALREADY_EXISTS}`; row:\n{row}",
+    );
+}
+
+// ───────────────────── T3 — the `write.title-ignored` route (F3) ─────────────────────
+
+const TITLE_IGNORED: &str = "write.title-ignored";
+
+/// The first backticked span in `route` that starts with `lead` — the command the route
+/// hands back, as emitted.
+fn backticked_command<'a>(route: &'a str, lead: &str, what: &str) -> &'a str {
+    route
+        .split('`')
+        .skip(1)
+        .step_by(2)
+        .find(|span| span.starts_with(lead))
+        .unwrap_or_else(|| panic!("{what}: the route carries a backticked `{lead}…`; got: {route}"))
+}
+
+/// Run an emitted command through a real `sh` split (`support::shell_words`), so its own
+/// quoting is adjudicated by the thing that will parse it.
+fn run_emitted(corpus: &TrialCorpus, command: &str, stdin: Option<&str>) -> Output {
+    let argv = support::shell_words(command, &corpus.repo(), &corpus.home());
+    assert_eq!(argv.first().map(String::as_str), Some("jigc"), "{command}");
+    let args: Vec<&str> = argv.iter().skip(1).map(String::as_str).collect();
+    match stdin {
+        Some(input) => corpus.jigc_stdin(&args, input),
+        None => corpus.jigc(&args),
+    }
+}
+
+/// Assert `out` is `write.title-ignored` at `target`, blocking; returns the finding.
+fn assert_title_ignored(out: &Output, target: &str, what: &str) -> serde_json::Value {
+    let finding = refusal(out, what);
+    assert_eq!(
+        (
+            finding["key"]["code"].as_str(),
+            finding["key"]["target"].as_str()
+        ),
+        (Some(TITLE_IGNORED), Some(target)),
+        "{what}: keyed {{{TITLE_IGNORED}, {target}}}; {finding:#}",
+    );
+    assert_eq!(
+        finding["severity"], "blocking",
+        "{what}: blocking; {finding:#}"
+    );
+    finding
+}
+
+/// **The committed arm, `doc create` (F3).** Under the shipped `park-idea`, a different
+/// title that slugs onto the committed idea is `write.title-ignored`, exit 1, keyed at the
+/// idea — and its route names a distinct `--title` or `--slug`, never `jigc doc rename` of
+/// someone else's doc. Following it with a `--slug` lands a second idea beside the first.
+#[test]
+fn without_new_a_different_title_onto_a_committed_id_routes_at_a_distinct_identity() {
+    let (corpus, landed) = arrange(None);
+    let different = "Parked Thought!";
+    let task = corpus.start_workflow("park-idea", "retitle the thought");
+    let out = mint(&corpus, "create", different, &task);
+    let what = format!(
+        "`doc create` of a different title onto `{}`",
+        landed.address
+    );
+    let finding = assert_title_ignored(&out, &landed.address, &what);
+    assert_distinct_identity_route(&finding, "create", &what);
+    assert_eq!(
+        staged_ideas(&corpus, &task),
+        Vec::<String>::new(),
+        "{what}: nothing staged"
+    );
+
+    // Follow the emitted route, filling only its two author-owned placeholders.
+    let route = finding["route"].as_str().unwrap_or_default();
+    let beside = format!("{}-retitled", landed.slug());
+    let command = backticked_command(route, "jigc doc create", &what)
+        .replace("<title>", &format!("'{different}'"))
+        .replace("<slug>", &beside);
+    let followed = run_emitted(&corpus, &command, None);
+    assert_eq!(
+        followed.status.code(),
+        Some(0),
+        "the followed route lands; {command}\n{}",
+        text(&followed),
+    );
+    let second = fill_and_finalize(
+        &corpus,
+        &task,
+        String::from_utf8_lossy(&followed.stdout).trim().to_string(),
+    );
+    assert_eq!(second.address, format!("idea:{beside}"));
+    for address in [&landed.address, &second.address] {
+        corpus.jigc_ok(&["doc", "show", address]);
+    }
+}
+
+/// **The committed arm, `doc author` (F3).** The same case through `doc author` routes at
+/// the payload's `title:` and never at a `--slug` the verb does not take; re-running the
+/// emitted command with a distinct `title:` lands.
+#[test]
+fn without_new_author_onto_a_committed_id_routes_at_the_payload_title() {
+    let (corpus, landed) = arrange(None);
+    let task = corpus.start_workflow("park-idea", "re-author the thought");
+    let out = mint(&corpus, "author", "Parked Thought!", &task);
+    let what = format!(
+        "`doc author` of a different title onto `{}`",
+        landed.address
+    );
+    let finding = assert_title_ignored(&out, &landed.address, &what);
+    assert_distinct_identity_route(&finding, "author", &what);
+
+    let route = finding["route"].as_str().unwrap_or_default();
+    let command = backticked_command(route, "jigc doc author", &what).replace("<payload>", "-");
+    let followed = run_emitted(&corpus, &command, Some(&payload("Distinct Thought")));
+    assert_eq!(
+        followed.status.code(),
+        Some(0),
+        "the re-run with a distinct `title:` lands; {command}\n{}",
+        text(&followed),
+    );
+    assert_eq!(
+        staged_ideas(&corpus, &task),
+        vec!["idea:distinct-thought.md".to_owned()]
+    );
+}
+
+/// **The staged arm keeps its route.** Its subject is the task's own doc, so a different
+/// title slugging onto it still routes `jigc doc rename … --task <id>` — and that route,
+/// run verbatim, lands the requested title.
+#[test]
+fn the_staged_arm_still_routes_at_the_in_task_rename() {
+    let (corpus, _landed) = arrange(None);
+    let task = corpus.start_workflow("park-idea", "file and retitle");
+    corpus.jigc_ok(&[
+        "doc",
+        "create",
+        "idea",
+        "--title",
+        "Fresh Thought",
+        "--task",
+        &task,
+    ]);
+    let out = mint(&corpus, "create", "Fresh Thought!", &task);
+    let what = "`doc create` of a different title onto the task's own staged idea";
+    let finding = assert_title_ignored(&out, "idea:fresh-thought", what);
+    let route = finding["route"].as_str().unwrap_or_default();
+    let command = backticked_command(route, "jigc doc rename", what);
+    assert!(
+        command.starts_with("jigc doc rename idea:fresh-thought ")
+            && command.ends_with(&format!("--task {task}")),
+        "{what}: routed at the in-task rename of the task's own doc; got: {route}",
+    );
+    let followed = run_emitted(&corpus, command, None);
+    assert_eq!(
+        followed.status.code(),
+        Some(0),
+        "the rename route lands; {command}\n{}",
+        text(&followed),
+    );
+    let shown = corpus.jigc_ok(&["doc", "show", "idea:fresh-thought", "--task", &task]);
+    assert!(
+        shown.contains("# Fresh Thought!"),
+        "the route's rename lands the requested title; got:\n{shown}",
     );
 }

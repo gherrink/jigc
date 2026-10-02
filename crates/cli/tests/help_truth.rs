@@ -465,13 +465,15 @@ fn both_minting_verbs_state_the_title_contract_before_the_write() {
             "write.identity-change",
             "jigc doc rename",
             "second document",
+            "someone else's doc",
         ] {
             assert!(
                 help.contains(fact),
                 "`doc {verb} --help` must state \"{fact}\" — the title contract (a title \
                  that would be silently dropped is refused · one that mints a different \
-                 identity is a second document, not a correction · both route at the \
-                 in-task title change); got:\n{help}"
+                 identity is a second document, not a correction · over the task's own doc \
+                 both route at the in-task title change, over a committed one — someone \
+                 else's doc — at a distinct title); got:\n{help}"
             );
         }
     }
