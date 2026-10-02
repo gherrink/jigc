@@ -1,0 +1,23 @@
+---
+states-constraints: [finalize.left-out]
+---
+Land this task's docs as exactly one commit. This finalize commits path-scoped:
+it stages and commits only the docs this task created or edited, plus any
+owner-artifact paths those docs record — never the whole git index. Anything else
+staged in this checkout, by another task and whether before or after this one was
+minted, stays staged and stays out of this commit, so the carryover gate does not
+fire here and `--carry-staged` changes nothing. Unstaged edits and untracked files
+are left out of the commit too. The finalize names every path it leaves out —
+staged ones included — before it commits and again once it lands: a staged path
+stays staged for the task it belongs to.
+
+To see what's left before committing, run `jigc task validate {{task.id}}` — it
+previews part of what finalize gates on (the repository posture finalize refuses
+under, this task's content findings, the path scope that leaves every other staged
+path staged, the owner-artifact causes that need no staging, and the
+granted-but-unused changelog gate), without committing anything; the staged set,
+promotion and the commit itself are decided at finalize.
+
+Then validate and commit:
+
+{{ cli.finalize-task }}

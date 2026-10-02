@@ -917,6 +917,13 @@ pub struct Composition {
     /// (the `create-gates:` presentation line). Empty for a gate-less workflow
     /// (`quick-fix`, a `creates-task: false` router) — which renders no line at all.
     pub gates: Vec<String>,
+    /// Whether the composing workflow's finalize is the **doc-only** commit — its `includes`
+    /// name `step:finalize-doc-only`, read off the `def` the compose already holds through
+    /// `cli::task`'s one predicate (M55). The compose-time input to
+    /// [`crate::render::CommitModel::of`], so the `what's-left:` line states this task's own
+    /// commit model; a presentation fact like [`gates`](Composition::gates), never a key on
+    /// the pinned `{task, text}` JSON.
+    pub doc_only: bool,
     /// Whether **this invocation** minted [`view.task`](ComposedWorkflow::task) — the fact
     /// the `task minted: <id>` header states. It is *not* `view.task.is_some()`: a resume
     /// / sub-agent re-entry carries the **given** id (minted by an earlier invocation), and
@@ -1635,6 +1642,10 @@ pub(crate) fn compose_minted_in_repo(
             ..composed
         },
         gates: create_gates(&def),
+        // Whether this workflow's finalize is the doc-only commit — the compose-time input
+        // to the `what's-left:` line's commit model, asked of the same `def` through
+        // `cli::task`'s one predicate (M55).
+        doc_only: crate::task::composes_doc_only_finalize(&def),
         // The calling verb minted this task in *this* invocation (just above the compose),
         // so the announcement is true here exactly as on the front door.
         minted: true,
@@ -1968,6 +1979,10 @@ fn compose_core(
         // The composing workflow's create-gates — the CLI-side presentation fact the
         // renderer names on the `create-gates:` line (never the pinned JSON).
         gates: create_gates(&def),
+        // Whether this workflow's finalize is the doc-only commit — the compose-time input
+        // to the `what's-left:` line's commit model, asked of the same `def` through
+        // `cli::task`'s one predicate (M55).
+        doc_only: crate::task::composes_doc_only_finalize(&def),
         // The fresh front door either mints a brand-new task or composes none at all;
         // either way this compose is never a milestone sub-task's (membership is
         // `jigc milestone add-task`'s alone, and it does not compose).
@@ -3062,6 +3077,10 @@ fn compose_task_workflow(
         // A resumed task carries the same gates its workflow granted at mint — the
         // announcement re-shows on every re-compose, exactly like the routing footer.
         gates: create_gates(&def),
+        // Whether this workflow's finalize is the doc-only commit — the compose-time input
+        // to the `what's-left:` line's commit model, asked of the same `def` through
+        // `cli::task`'s one predicate (M55).
+        doc_only: crate::task::composes_doc_only_finalize(&def),
         // ...but the *mint* announcement does not: an earlier invocation minted this id,
         // and the caller supplied it. A `task minted:` header here would state a mint that
         // did not happen (`design/workflow-dialect.md` → The `task minted:` header).
