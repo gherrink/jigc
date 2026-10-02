@@ -1384,12 +1384,19 @@ pub(crate) fn git_commit_paths(
              commits the whole index"
         );
     }
+    // Each path as the file it names, never a pattern (`crate::task::literal_pathspec`): a
+    // `*` or `[…]` in a recorded owner-artifact would otherwise commit every staged path it
+    // matches, which is the sweep this scope exists to prevent.
+    let literals: Vec<String> = paths
+        .iter()
+        .map(|path| crate::task::literal_pathspec(path))
+        .collect();
     let mut args = vec![
         std::ffi::OsStr::new("-F"),
         message_file.as_os_str(),
         std::ffi::OsStr::new("--"),
     ];
-    args.extend(paths.iter().map(std::ffi::OsStr::new));
+    args.extend(literals.iter().map(std::ffi::OsStr::new));
     crate::task::git_commit_capture(subject, &args)
 }
 

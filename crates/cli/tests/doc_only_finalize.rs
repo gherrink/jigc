@@ -809,3 +809,225 @@ fn the_composed_line_and_both_previews_state_this_arms_index_gate() {
         text(&control),
     );
 }
+
+// --- an owner-artifact whose name carries a glob byte ------------------------------------
+
+/// The fixture owner-artifact workflows: code-less, granting `dogfood-record` (whose
+/// `meta/owner-artifact` is an `owned-location`), one composing the doc-only finalize and
+/// one the ordinary `step:finalize` — the two stage sites that hand a recorded
+/// owner-artifact to git.
+const OWNER_WORKFLOWS: [(&str, &str); 2] = [
+    ("file-dogfood", "finalize-doc-only"),
+    ("file-dogfood-index", "finalize"),
+];
+
+/// An owner-artifact name carrying a glob byte, beside a foreign file the name matches
+/// **as a pattern** and does not name: `*` and `[…]`, the two the finding drove.
+const GLOB_CELLS: [(&str, &str); 2] = [("c*.md", "cother.md"), ("capture[1].md", "capture1.md")];
+
+/// The corpus, with both owner-artifact workflows committed beside the report one.
+fn owner_corpus() -> TrialCorpus {
+    let corpus = corpus();
+    let workflows = corpus.repo().join(".jigc/config/workflows");
+    for (id, finalize) in OWNER_WORKFLOWS {
+        fs::write(
+            workflows.join(format!("{id}.yaml")),
+            format!(
+                "---\n\
+                 when: record one dogfood run with its capture artifact\n\
+                 description: A fixture code-less workflow — one dogfood-record and its \
+                 owner-artifact.\n\
+                 usage: the fixture cell for an owner-artifact name git would read as a \
+                 pattern.\n\
+                 creates-task: true\n\
+                 selectable: false\n\
+                 suppressed:\n\
+                 \x20 reason: fixture-only — the literal owner-artifact cell, reached by name\n\
+                 \x20 expires: never\n\
+                 allows-create:\n\
+                 \x20 - {{ type: dogfood-record, as: record }}\n\
+                 ---\n\
+                 {{{{ include: step:author-commit }}}}\n\
+                 {{{{ include: step:{finalize} }}}}\n"
+            ),
+        )
+        .expect("write an owner-artifact workflow");
+    }
+    corpus.git(&["add", "--", ".jigc/config/workflows"]);
+    corpus.git(&["commit", "-q", "-m", "chore: the owner-artifact workflows"]);
+    corpus
+}
+
+/// Mint `workflow`'s task and author a complete `dogfood-record` whose owner-artifact is
+/// `name` under the task's owned home; returns `(task, doc path, artifact path)`. The
+/// artifact file is written, never staged.
+fn author_dogfood(corpus: &TrialCorpus, workflow: &str, name: &str) -> (String, String, String) {
+    let task = corpus.start_workflow(workflow, "glob run");
+    let address = corpus
+        .jigc_ok(&[
+            "doc",
+            "create",
+            "dogfood-record",
+            "--title",
+            "glob run",
+            "--task",
+            &task,
+        ])
+        .trim()
+        .to_string();
+    for (field, value) in [
+        ("case", "pilot"),
+        ("binary-sha", "abc1234"),
+        ("adapter-writes", "0"),
+        ("oob-edits", "0"),
+        ("drift-caught", "0"),
+        ("validate-blocks", "0"),
+        ("halts-expected", "0"),
+        ("halts-unplanned", "0"),
+        ("fix-rounds", "0"),
+        ("audit-findings", "0"),
+        ("seeded-oob", "0"),
+        ("seeded-blocks", "0"),
+        ("verdict", "green"),
+    ] {
+        corpus.set_field(&format!("{address}#meta/{field}"), &task, value);
+    }
+    corpus.set_slot(&format!("{address}#judgment"), &task, "The run held.");
+    let home = format!("completions/artifacts/{task}");
+    fs::create_dir_all(corpus.repo().join(&home)).expect("mk the owned artifact home");
+    let artifact = format!("{home}/{name}");
+    fs::write(corpus.repo().join(&artifact), "capture\n").expect("write the artifact");
+    corpus.set_field(&format!("{address}#meta/owner-artifact"), &task, &artifact);
+    fill_commit(corpus, &task);
+    let slug = address
+        .strip_prefix("dogfood-record:")
+        .unwrap_or_else(|| panic!("a dogfood-record address; got {address}"));
+    // `dogfood-record`'s `location: dogfood/` resolves under the `docs-root` knob.
+    (task, format!("docs/dogfood/{slug}.md"), artifact)
+}
+
+/// Write the foreign file beside the artifact — matched by the artifact's name read as a
+/// pattern, named by nothing this task records — staged (for some other task) when `stage`.
+fn plant_foreign(corpus: &TrialCorpus, task: &str, foreign: &str, stage: bool) -> String {
+    let path = format!("completions/artifacts/{task}/{foreign}");
+    fs::write(corpus.repo().join(&path), "not this task's\n").expect("write the foreign file");
+    if stage {
+        corpus.git(&["add", "--", &path]);
+    }
+    path
+}
+
+/// **(8)** A recorded owner-artifact whose name carries a glob byte reaches git as the file
+/// it names, never as a pattern: on the doc-only arm the commit holds the doc and that one
+/// file — a staged foreign file the name matches as a pattern stays staged, as the
+/// `--dry-run` forecast said it would, entry for entry.
+#[test]
+fn a_glob_byte_in_an_owner_artifact_names_one_file_on_the_doc_only_arm() {
+    for (name, foreign) in GLOB_CELLS {
+        let corpus = owner_corpus();
+        let (task, doc, artifact) = author_dogfood(&corpus, "file-dogfood", name);
+        let foreign = plant_foreign(&corpus, &task, foreign, true);
+        let label = format!("[{name} beside {foreign}]");
+        let args = ["task", "finalize", task.as_str(), "--format", "json"];
+        let mut dry = args.to_vec();
+        dry.push("--dry-run");
+        let forecast: serde_json::Value =
+            stdout_json(&corpus.jigc(&dry), &[0], &format!("{label} the forecast"));
+
+        let landed: serde_json::Value =
+            stdout_json(&corpus.jigc(&args), &[0], &format!("{label} the finalize"));
+        let mut files = head_files(&corpus);
+        files.sort();
+        let mut expected = vec![artifact.clone(), doc.clone()];
+        expected.sort();
+        assert_eq!(
+            files, expected,
+            "{label} the commit holds the doc and the one file the owner-artifact names",
+        );
+        assert_eq!(
+            corpus.git(&["diff", "--cached", "--name-only"]).trim(),
+            foreign,
+            "{label} the foreign file stays staged for the task it belongs to",
+        );
+        let mut forecast_paths = entry_paths(&forecast["manifest"]);
+        forecast_paths.sort();
+        assert_eq!(
+            forecast_paths, files,
+            "{label} the forecast manifest is the path set the commit took",
+        );
+        assert_eq!(
+            forecast["left_out"], landed["committed"]["left_out"],
+            "{label} the forecast's left-out set is the landed one",
+        );
+    }
+}
+
+/// **(9)** The same name on the ordinary arm, whose stage `git add`s the recorded
+/// owner-artifact before a whole-index commit: an **unstaged, untracked** foreign file the
+/// name matches as a pattern is not swept into the index, and so not into the commit.
+#[test]
+fn a_glob_byte_in_an_owner_artifact_sweeps_nothing_on_the_ordinary_arm() {
+    for (name, foreign) in GLOB_CELLS {
+        let corpus = owner_corpus();
+        let (task, doc, artifact) = author_dogfood(&corpus, "file-dogfood-index", name);
+        let foreign = plant_foreign(&corpus, &task, foreign, false);
+        let label = format!("[{name} beside {foreign}]");
+        let out = corpus.jigc(&["task", "finalize", &task]);
+        assert!(
+            out.status.success(),
+            "{label} lands at exit 0; {}",
+            text(&out)
+        );
+        let files = head_files(&corpus);
+        assert!(
+            files.contains(&artifact) && files.contains(&doc) && !files.contains(&foreign),
+            "{label} the commit holds the named file and never the foreign one; got {files:?}",
+        );
+        assert_eq!(
+            corpus
+                .git(&[
+                    "status",
+                    "--porcelain",
+                    "--untracked-files=all",
+                    "--",
+                    &foreign
+                ])
+                .trim(),
+            format!("?? {foreign}"),
+            "{label} the foreign file is still untracked",
+        );
+    }
+}
+
+/// **(10)** A rejected commit restores the index the owner-artifact found: the stage's
+/// pre-image of a glob-byte name is the entry for **that** name (absent), never the entry
+/// of a staged foreign file the name matches as a pattern — so the rollback leaves no
+/// index entry under the artifact's name carrying the foreign file's blob.
+#[test]
+fn a_rejected_commit_restores_the_index_a_glob_byte_owner_artifact_found() {
+    use std::os::unix::fs::PermissionsExt;
+
+    for (name, foreign) in GLOB_CELLS {
+        let corpus = owner_corpus();
+        let (task, _doc, _artifact) = author_dogfood(&corpus, "file-dogfood", name);
+        let foreign = plant_foreign(&corpus, &task, foreign, true);
+        let label = format!("[{name} beside {foreign}]");
+        let hook = corpus.repo().join(".git/hooks/pre-commit");
+        fs::write(&hook, "#!/bin/sh\nexit 1\n").expect("write the rejecting hook");
+        fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).expect("chmod the hook");
+        let before = corpus.git(&["ls-files", "--stage"]);
+
+        let out = corpus.jigc(&["task", "finalize", &task]);
+        assert_eq!(
+            out.status.code(),
+            Some(1),
+            "{label} rejected; {}",
+            text(&out)
+        );
+        assert_eq!(
+            corpus.git(&["ls-files", "--stage"]),
+            before,
+            "{label} the index is exactly what the finalize found",
+        );
+    }
+}

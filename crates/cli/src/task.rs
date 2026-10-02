@@ -5371,8 +5371,12 @@ fn stage_migration(
     // is never un-staged by the retire index axis; its own rollback is the executor's third
     // axis (the pre-finalize index capture/restore).
     pathspecs.extend(owner_artifact_stage_specs(repo_root, plan));
+    let literals: Vec<String> = pathspecs
+        .iter()
+        .map(|spec| literal_pathspec(spec))
+        .collect();
     let mut args: Vec<&str> = vec!["add", "--"];
-    args.extend(pathspecs.iter().map(String::as_str));
+    args.extend(literals.iter().map(String::as_str));
     git_run(repo_root, &args).map_err(mark_stage_failure)?;
     Ok(pathspecs)
 }
@@ -5522,7 +5526,8 @@ pub(crate) fn capture_owner_artifact_index(
         if !owner_artifact_is_stageable_shape(path) {
             continue;
         }
-        let line = git_capture(repo_root, &["ls-files", "--stage", "--", path])?;
+        let literal = literal_pathspec(path);
+        let line = git_capture(repo_root, &["ls-files", "--stage", "--", literal.as_str()])?;
         let fields: Vec<&str> = line.split_whitespace().collect();
         let entry = if fields.len() >= 2 {
             Some((fields[0].to_owned(), fields[1].to_owned()))
@@ -5921,8 +5926,12 @@ fn stage_index_honoring(
     if pathspecs.is_empty() {
         return Ok(());
     }
+    let literals: Vec<String> = pathspecs
+        .iter()
+        .map(|spec| literal_pathspec(spec))
+        .collect();
     let mut args: Vec<&str> = vec!["add", "--"];
-    args.extend(pathspecs.iter().map(String::as_str));
+    args.extend(literals.iter().map(String::as_str));
     git_run(repo_root, &args).map_err(mark_stage_failure)
 }
 
@@ -5945,8 +5954,9 @@ fn stage_doc_only(repo_root: &Path, plan: &engine::finalize::FinalizePlan) -> Re
     if paths.is_empty() {
         return Ok(paths);
     }
+    let literals: Vec<String> = paths.iter().map(|path| literal_pathspec(path)).collect();
     let mut args: Vec<&str> = vec!["add", "--"];
-    args.extend(paths.iter().map(String::as_str));
+    args.extend(literals.iter().map(String::as_str));
     git_run(repo_root, &args).map_err(mark_stage_failure)?;
     Ok(paths)
 }
@@ -8445,6 +8455,24 @@ fn self_staged_kind(code: &str) -> render::ManifestKind {
     }
 }
 
+/// `path` as the pathspec that names **that file and nothing else** — `:(literal)<path>`.
+///
+/// `--` stops option parsing and nothing more: git still wildmatches a bare pathspec, so a
+/// recorded name carrying `*`, `?`, `[` or `\` — a legal file name — answers for every path
+/// it matches as a pattern. Driven at M55 Increment 1: an owner-artifact named `c*.md` swept
+/// a staged `cother.md` belonging to another task into a doc-only commit whose `--dry-run`
+/// forecast had said it stayed staged, and the stage's index pre-image read `cother.md`'s
+/// blob as the artifact's, so a rejected commit restored a wrong entry. The finalize
+/// transaction's pathspec sites go through here — the three stages' `git add`
+/// ([`stage_index_honoring`], [`stage_migration`], [`stage_doc_only`]), the path-scoped
+/// commit (`crate::milestone::git_commit_paths`), the owner-artifact index pre-image
+/// ([`capture_owner_artifact_index`]) and [`path_in_index`]. Commands that take paths rather
+/// than pathspecs (`check-ignore`, `update-index`) already read them literally and refuse
+/// the magic, so they do not.
+pub(crate) fn literal_pathspec(path: &str) -> String {
+    format!(":(literal){path}")
+}
+
 /// Whether `path` (repo-relative) is in the **index** (`git ls-files -- <path>` prints
 /// it). The staging discriminator for a retirement pathspec (M40 F7): a user who
 /// pre-staged the deletion (`git rm` before finalize) has removed the index entry —
@@ -8466,7 +8494,7 @@ fn self_staged_kind(code: &str) -> render::ManifestKind {
 /// here; the magic prefix is the belt to that pair of braces, so a caller that has not asked —
 /// including a future one — gets an answer about the file it named.
 pub(crate) fn path_in_index(repo_root: &Path, path: &str) -> bool {
-    let literal = format!(":(literal){path}");
+    let literal = literal_pathspec(path);
     Command::new("git")
         .args(["ls-files", "--", literal.as_str()])
         .current_dir(repo_root)
