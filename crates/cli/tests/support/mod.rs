@@ -15,6 +15,7 @@
 //! shape, not a licence for dead code in the suites themselves.
 #![allow(dead_code)]
 
+pub mod child_stdin;
 pub mod committing_doors;
 pub mod composed;
 pub mod frozen_pack;
@@ -27,6 +28,7 @@ pub mod root_walk;
 pub mod route_spans;
 pub mod run_then_parse;
 pub mod rust_source;
+pub mod scratch;
 pub mod shape_space;
 pub mod trial_corpus;
 pub mod write_miss_cells;

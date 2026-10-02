@@ -50,6 +50,8 @@ impl TempDir {
             "jigc-id-from-remap-{tag}-{}-{:?}",
             std::process::id(),
             engine::tempname::unique_nanos(),
+            // A `/` in the tag would nest this under a parent the drop never removes.
+            tag = tag.replace('/', "-"),
         ));
         fs::create_dir_all(&path).expect("create temp dir");
         TempDir(path)

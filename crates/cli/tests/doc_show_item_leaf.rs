@@ -198,7 +198,6 @@ fn run_fixture(
     args: &[&str],
     stdin: Option<&str>,
 ) -> std::process::Output {
-    use std::io::Write;
     use std::process::Stdio;
     let mut command = Command::new(env!("CARGO_BIN_EXE_jigc"));
     command
@@ -213,12 +212,7 @@ fn run_fixture(
     }
     let mut child = command.spawn().expect("spawn the jigc binary");
     if let Some(text) = stdin {
-        child
-            .stdin
-            .take()
-            .expect("stdin piped")
-            .write_all(text.as_bytes())
-            .expect("write stdin");
+        crate::support::child_stdin::feed(&mut child, text.as_bytes());
     }
     child.wait_with_output().expect("wait for jigc")
 }

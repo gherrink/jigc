@@ -112,13 +112,8 @@ fn run_hook_with(log: &Path, payload: &str, project_dir: Option<&Path>) {
         .stderr(Stdio::piped())
         .spawn()
         .expect("spawn hook script");
-    use std::io::Write as _;
-    child
-        .stdin
-        .take()
-        .expect("hook stdin")
-        .write_all(payload.as_bytes())
-        .expect("write payload");
+
+    crate::support::child_stdin::feed(&mut child, payload.as_bytes());
     let out = child.wait_with_output().expect("hook exits");
     assert!(
         out.status.success(),

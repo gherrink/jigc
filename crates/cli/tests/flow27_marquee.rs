@@ -42,7 +42,6 @@
 //! (`CARGO_BIN_EXE_jigc`) over the shipped dev pack (`JIGC_PACK_DIR`).
 
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -130,12 +129,7 @@ fn run_jigc(
     }
     let mut child = command.spawn().expect("spawn the jigc binary");
     if let Some(bytes) = stdin {
-        child
-            .stdin
-            .take()
-            .expect("stdin piped")
-            .write_all(bytes)
-            .expect("write stdin");
+        crate::support::child_stdin::feed(&mut child, bytes);
     }
     child.wait_with_output().expect("wait for jigc")
 }

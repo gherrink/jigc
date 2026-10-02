@@ -2,8 +2,10 @@
 #
 # dev/gate — run this project's dev-workflow gate and report it honestly.
 #
-# The gate is four commands (implementation/dev-workflow.md -> Gate). Running them
-# by hand is where the two standing shell rules get broken:
+# The gate is four commands (implementation/dev-workflow.md -> Gate) -- the test one
+# run as `cargo nextest run` and then `cargo test --doc`, or as `cargo test` when
+# nextest is not installed. Running them by hand is where the two standing shell rules
+# get broken:
 #
 #   * `cargo test 2>&1 | tail -5` reports *tail's* exit status, so a red gate reads
 #     as green. A scan of 139 subagent transcripts in one session recorded 215
@@ -16,7 +18,8 @@
 # It writes only to the repo's own target/ (via cargo) and to $TMPDIR. Never ~/.local.
 #
 # Usage:
-#   dev/gate                     # full gate: fmt, clippy, build, test
+#   dev/gate                     # full gate: fmt, clippy, build, test (cargo nextest,
+#                                #   then the doctests; `cargo test` without nextest)
 #   dev/gate --quick             # fmt, clippy, build only -- a fast pre-check
 #   dev/gate --private-target    # build in a private CARGO_TARGET_DIR (no lock
 #                                #   contention with a concurrent gate in this tree).
@@ -40,6 +43,11 @@
 # JIGC_GATE_HYGIENE=off skips it; JIGC_GATE_HYGIENE_RANGE=<rev-list args> scans that
 # range instead of the unpushed commits.
 #
+# On macOS, when `git` is the /usr/bin/git xcrun trampoline, the run puts the real git
+# first on PATH and exports SDKROOT (the C build needs it then), and prints
+# `gate: git <path>` either way: the suite makes ~174 k git calls, and the trampoline
+# cost a full gate 29 % of its time (completions/artifacts/M55/gate-speed-measurement.md).
+#
 # A step that exits 127 DID NOT RUN -- the command was not found -- and is reported as
 # that rather than as a failure, because the two are indistinguishable otherwise and
 # only one of them is a verdict about this repo.
@@ -62,36 +70,72 @@ tmp_root=${tmp_root%/}
 # Pure text over a log file, in three functions, so `--report <log>` runs exactly
 # what a real gate run's tail runs and a fixture log can fence it without cargo.
 
-# `passed failed binaries`, summed over the per-target summary lines.
+# `passed failed binaries`, summed over what the test steps printed. Two shapes:
 #
-# The match is on the first two FIELDS, not on /^test result:/. Undelimited, that
-# pattern also matches every test NAMED `result::...` -- cargo prints
-# `test result::tests::alpha ... ok` for engine/src/result.rs's `mod tests` -- so the
-# binary count read 33 for a 17-binary run (`passed=`/`failed=` were unaffected: those
-# lines carry no `passed;` field). The count exists to prove the run measured
-# something, so an inflated one is exactly the lie it was added to prevent.
+#   * cargo test (the doctest step, and the whole suite when nextest is absent) prints one
+#     `test result: ok. N passed; M failed; …` line per target, at COLUMN 0. The match is
+#     anchored there and on the space after the colon. Undelimited, `test result:` also
+#     matches every test NAMED `result::...` -- cargo prints
+#     `test result::tests::alpha ... ok` for engine/src/result.rs's `mod tests` -- so the
+#     binary count once read 33 for a 17-binary run. Unanchored, it would match the
+#     INDENTED `    test result: FAILED. …` nextest echoes from each failing test's
+#     captured output, and count every failing test as one more binary.
+#   * cargo nextest prints `Starting N tests across B binaries` once and
+#     `Summary [ <t>s] R tests run: P passed, …` once (R reads `R/T` on a run cut short).
+#     Failed is R - P: nextest splits the rest over `failed`, `timed out`, `exec failed`
+#     and more, and none of them passed.
+#
+# The count exists to prove the run measured something, so an inflated one is exactly the
+# lie it was added to prevent.
 gate_totals() {
     awk '
-        $1 == "test" && $2 == "result:" {
-            for (i = 2; i <= NF; i++) {
+        /^test result: / {
+            for (i = 3; i <= NF; i++) {
                 if ($i == "passed;") p += $(i-1)
                 if ($i == "failed;") f += $(i-1)
             }
             n++
+            next
+        }
+        $1 == "Starting" && / tests? across [0-9]+ binar/ {
+            for (i = 2; i <= NF; i++) if ($i == "across") n += $(i+1)
+            next
+        }
+        $1 == "Summary" && $2 == "[" || $1 == "Summary" && $2 ~ /^\[/ {
+            run = ""; pass = ""
+            for (i = 2; i <= NF; i++) {
+                if ($i == "run:" && $(i-1) == "tests") { run = $(i-2); sub(/\/.*/, "", run) }
+                if ($i == "passed," || $i == "passed") { if (pass == "") pass = $(i-1) }
+            }
+            if (run != "") { p += pass; f += run - pass }
+            next
         }
         END { printf "%d %d %d", p+0, f+0, n+0 }
     ' "$1"
 }
 
-# Failing test names, from the "failures:" list block cargo prints after the per-test
-# stdout. The first such block is followed by "---- <name> stdout ----", which does
-# not match the indented-name shape, so only the list block is read.
+# Failing test names. Two shapes:
+#
+#   * cargo test: the "failures:" list block printed after the per-test stdout. The first
+#     such block is followed by "---- <name> stdout ----", which does not match the
+#     indented-name shape, so only the list block is read. Anchored at column 0, so the
+#     indented copy nextest echoes from a failing test's output is not read here.
+#   * cargo nextest: a status line `<STATUS> [ <t>s] (i/n) <binary> <test>` for every
+#     test that did not pass -- FAIL, TIMEOUT, ABORT, SIG<x>, LEAK-FAIL -- printed as it
+#     happens and again in the final summary, so the name is `<binary> <test>` with the
+#     duration and the progress counter cut, and the duplicates fold in the sort.
 gate_failing_names() {
     awk '
         /^failures:$/   { inblk = 1; next }
         inblk && /^$/   { next }
         inblk && /^    [^ ]/ { print substr($0, 5); next }
         inblk           { inblk = 0 }
+        /^ +(FAIL|TIMEOUT|ABORT|LEAK-FAIL|SIG[A-Z]+) \[ *[0-9.]+s\] / {
+            line = $0
+            sub(/^[^]]*\] +/, "", line)
+            sub(/^\( *[0-9]+\/[0-9]+\) +/, "", line)
+            print line
+        }
     ' "$1" | sort -u
 }
 
@@ -189,6 +233,33 @@ if [ "$quick" -eq 1 ]; then
     printf 'gate: mode   quick (fmt, clippy, build -- NOT the full gate, do not commit on it)\n'
 else
     printf 'gate: mode   full\n'
+fi
+
+# --- the git every suite drives ---------------------------------------------
+# Nearly every suite builds a throwaway repo and drives the binary through git in it: a
+# full gate makes ~174 k git calls. On macOS `/usr/bin/git` is an xcrun trampoline that
+# resolves the developer directory on every call, ~11 ms each, most of it kernel time --
+# the suite measured 29 % faster with the real binary first on PATH
+# (completions/artifacts/M55/gate-speed-measurement.md). The same xcrun is what tells
+# the C compiler where the SDK is, so tree-sitter's C build fails with the real git's
+# directory (which carries its own `cc`) first on PATH -- unless SDKROOT names the SDK.
+# An SDKROOT already in the environment is kept. Everywhere else -- Linux, CI, a git
+# that is not the trampoline -- this changes nothing and only names the git.
+git_path=$(command -v git 2>/dev/null || true)
+sdk_note=""
+if [ "$(uname -s)" = Darwin ] && [ "$git_path" = /usr/bin/git ] \
+    && real_git=$(xcrun --find git 2>/dev/null) && [ -x "$real_git" ]; then
+    PATH="$(dirname "$real_git"):$PATH"
+    export PATH
+    if [ -z "${SDKROOT:-}" ]; then
+        SDKROOT=$(xcrun --show-sdk-path 2>/dev/null) && export SDKROOT
+    fi
+    git_path=$real_git
+    sdk_note="SDKROOT ${SDKROOT:-(xcrun could not name the SDK)} -- the real git, not the /usr/bin/git xcrun trampoline"
+fi
+printf 'gate: git    %s\n' "${git_path:-(not found on PATH)}"
+if [ -n "$sdk_note" ]; then
+    printf 'gate:        %s\n' "$sdk_note"
 fi
 
 # --- the deps advisory ------------------------------------------------------
@@ -327,8 +398,21 @@ run_step() {
 run_step fmt cargo fmt --check
 run_step clippy cargo clippy --all-targets -- -D warnings
 run_step build cargo build
+# The suite is nextest -- one process per test over one pool, measurably faster than
+# `cargo test`'s binary-after-binary -- and then the doctests, which nextest does not
+# run. Without nextest the gate is still the FULL suite: `cargo test`, which runs the
+# doctests itself, with a note that says why it is slower.
 if [ "$quick" -eq 0 ]; then
-    run_step test cargo test
+    if cargo nextest --version >/dev/null 2>&1; then
+        run_step test cargo nextest run --workspace --no-fail-fast
+        run_step doctest cargo test --workspace --doc
+    else
+        printf '==> NOTE    cargo-nextest is not installed: the test step runs `cargo test`\n'
+        printf '            instead -- the same full suite, slower. Install it with:\n'
+        printf '                cargo install cargo-nextest --locked\n'
+        printf '            (implementation/machine-setup.md)\n'
+        run_step test cargo test --workspace --no-fail-fast
+    fi
 fi
 
 # --- what the run actually measured ----------------------------------------

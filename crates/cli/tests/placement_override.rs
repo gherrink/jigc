@@ -715,7 +715,6 @@ const RESOLVED_HOME: &str = "notes/roadmap.md";
 impl Corpus {
     /// `jigc <args>` with `stdin` piped — the prose write path (`--from-file -`).
     fn jigc_stdin(&self, args: &[&str], stdin: &[u8]) -> std::process::Output {
-        use std::io::Write;
         use std::process::Stdio;
         let mut child = Command::new(env!("CARGO_BIN_EXE_jigc"))
             .args(args)
@@ -727,12 +726,7 @@ impl Corpus {
             .stderr(Stdio::piped())
             .spawn()
             .expect("spawn the jigc binary");
-        child
-            .stdin
-            .take()
-            .expect("stdin piped")
-            .write_all(stdin)
-            .expect("write stdin");
+        crate::support::child_stdin::feed(&mut child, stdin);
         child.wait_with_output().expect("wait for jigc")
     }
 

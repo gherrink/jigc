@@ -42,6 +42,16 @@ result_large_err = "allow"
 debug = "line-tables-only"
 split-debuginfo = "packed"
 
+# Dependencies — every crate outside the workspace — build optimized; `jigc` and
+# `jigc-engine` stay at opt-level 0 and keep their debuggability. `debug-assertions` and
+# `overflow-checks` are separate keys, left at their dev defaults: the rig drives the
+# debug binary precisely for its debug-only panics. Measured 2026-10-02
+# (completions/artifacts/M55/gate-speed-measurement.md): a full `dev/gate` 16 % faster
+# alone, 8.9 min against 19.1 with the real git and nextest; +40 s on a cold build and
+# +2.5 s on an incremental one. `[profile.test]` inherits it, CI's cold builds included.
+[profile.dev.package."*"]
+opt-level = 2
+
 # Load-bearing crates (language-runtime.md). Declared centrally; each member
 # opts in per-increment with `<crate>.workspace = true` when it actually needs them.
 [workspace.dependencies]

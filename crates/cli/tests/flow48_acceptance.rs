@@ -2036,7 +2036,6 @@ fn config_drive(verb: &str, repo: &Path) -> (Vec<String>, Option<&'static str>) 
 
 /// Run `jigc <args>` with `cwd`/`$HOME` set, feeding `stdin`.
 fn run_jigc_stdin(repo: &Path, home: &Path, args: &[&str], stdin: &str) -> Output {
-    use std::io::Write;
     use std::process::Stdio;
     let mut child = Command::new(env!("CARGO_BIN_EXE_jigc"))
         .args(args)
@@ -2048,12 +2047,7 @@ fn run_jigc_stdin(repo: &Path, home: &Path, args: &[&str], stdin: &str) -> Outpu
         .stderr(Stdio::piped())
         .spawn()
         .expect("spawn the jigc binary");
-    child
-        .stdin
-        .take()
-        .expect("stdin is piped")
-        .write_all(stdin.as_bytes())
-        .expect("write stdin");
+    crate::support::child_stdin::feed(&mut child, stdin.as_bytes());
     child.wait_with_output().expect("collect the jigc output")
 }
 

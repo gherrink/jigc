@@ -1,27 +1,22 @@
-# cargo-nextest configuration.
+# cargo-nextest configuration — the test runner `dev/gate` uses.
 #
-# **nextest is NOT the gate.** The gate is `cargo test`
-# (`implementation/dev-workflow.md` → Gate). This config exists because nextest is
-# measurably faster on this suite — 1265 tests in 92 s against `cargo test`'s ~7 min,
-# roughly 4–5× — and because it will become usable once the blocker below is fixed.
+# **nextest is the gate's test step** (since 2026-10-02; `implementation/dev-workflow.md`
+# → Gate): `dev/gate` runs `cargo nextest run --workspace --no-fail-fast` and then
+# `cargo test --workspace --doc`, because nextest does not run doctests, so the two
+# together are the full suite. Where nextest is not installed, `dev/gate` runs
+# `cargo test` instead and says so; install it with `cargo install cargo-nextest --locked`
+# (`implementation/machine-setup.md`). CI does not use nextest: each `[[test]]` group is
+# its own `cargo test` leg (`.github/workflows/ci.yml`).
 #
-# **The blocker, measured 2026-08-05.** ~30 integration suites shell out to cargo for
-# the detached `doc-code` probe workspace (`crates/cli/probes/doc-code`), and every one
-# of them drives the *same* `probes/doc-code/target/` directory — some with an explicit
-# `--target-dir`, the rest via the manifest default. `doc_code_probe_suite` runs
-# `cargo test` there, which rebuilds and replaces `target/debug/doc-code`. While each
-# suite owned its own test binary this was serialized by construction; consolidating
-# into group targets made suites co-resident, and nextest's process-per-test pool makes
-# them maximally concurrent. The result is reproducible: a run dies on
-# `anchor_root_truth` with *"`doc-code` probe not found"* while another suite is
-# mid-rebuild. `cargo test` survives it because it runs the group binaries one after
-# another, and the gate's probe prebuild makes each in-test build an up-to-date no-op.
-#
-# Fixing it properly means giving each probe-building suite its own `--target-dir` (or
-# routing them all through one built-once shared path that nothing rebuilds). That is a
-# real change across ~30 suites and was deliberately not taken mid-milestone.
-#
-# Until then: use nextest for scoped, exploratory runs, never to certify a gate green.
+# **Why it is the gate now, when this file used to say it must not be.** Until M54 about
+# thirty suites shelled out to cargo to build the detached `doc-code` probe workspace, all
+# into one `target/`, and nextest's process-per-test pool made those builds concurrent: a
+# run died on `anchor_root_truth` with *"`doc-code` probe not found"* while another suite
+# was mid-rebuild. M54 moved the probe into the `jigc` binary (self-exec), so no suite
+# builds a probe and nothing is left to race on. Measured on 2026-10-02, all 4222 of the
+# suite's tests ran under nextest in every row of
+# `completions/artifacts/M55/gate-speed-measurement.md`, and nextest alone made a full
+# gate 9 % faster.
 
 [profile.default]
 # Most tests drive the real binary through git in a throwaway repo, so they idle far more

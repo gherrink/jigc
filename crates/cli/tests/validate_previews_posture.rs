@@ -600,7 +600,7 @@ fn an_ordinary_task_in_a_fan_out_worktree_is_previewed_as_the_door_refuses_it() 
             argv.join(" "),
         );
         assert!(
-            !stderr.contains("cd "),
+            !offers_a_cd(&stderr),
             "the refusal must not offer a `cd` to the directory the reader is standing in — \
              a route whose first clause is a no-op; stderr:\n{stderr}",
         );
@@ -649,6 +649,44 @@ fn an_ordinary_task_in_a_fan_out_worktree_is_previewed_as_the_door_refuses_it() 
         landed_sha,
         "the branch the route created still holds the commit the ordinary finalize landed",
     );
+}
+
+/// Does `text` offer a `cd` — the command, not the two letters?
+///
+/// The refusal above names its pin by short SHA (`is pinned to base d80f6cd but …`), and a
+/// raw `contains("cd ")` reads every SHA ending in `cd` as a route: one run in 256 failed
+/// on exactly that. A `cd` the reader could run starts a word — the start of the text, or
+/// after whitespace or the backtick/quote/separator a route is printed inside — never in
+/// the middle of a hex string or a path component.
+fn offers_a_cd(text: &str) -> bool {
+    text.match_indices("cd ").any(|(at, _)| {
+        text[..at]
+            .chars()
+            .next_back()
+            .is_none_or(|c| !(c.is_alphanumeric() || matches!(c, '_' | '-' | '.' | '/')))
+    })
+}
+
+#[test]
+fn the_cd_detector_reads_a_command_not_a_short_sha() {
+    // The flake: a short SHA whose last two hex digits are `cd`, followed by a space.
+    assert!(
+        !offers_a_cd("`jigc workflow` is pinned to base d80f6cd but HEAD is 1a2b3c4"),
+        "a short SHA ending in `cd` is not a `cd` route",
+    );
+    assert!(
+        !offers_a_cd("the worktree at /tmp/jigc-abcd is gone"),
+        "a path component ending in `cd` is not a `cd` route",
+    );
+    // The shapes the refusal's provisioned arm prints, and a bare one: all routes.
+    assert!(offers_a_cd(
+        "run this from that worktree — `cd /tmp/wt`, then re-run"
+    ));
+    assert!(offers_a_cd("then cd /tmp/wt and re-run"));
+    assert!(offers_a_cd("cd /tmp/wt"));
+    assert!(offers_a_cd(
+        "run: `jigc milestone provision m` && cd '/tmp/wt'"
+    ));
 }
 
 /// One trimmed line of `git <args>` in `cwd`, asserting git succeeded.

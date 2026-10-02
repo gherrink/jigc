@@ -668,16 +668,34 @@ fn refuse(reason: std::fmt::Arguments<'_>) -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
     use std::sync::atomic::{AtomicU32, Ordering};
 
-    /// A throwaway working-tree dir under the OS temp dir, unique per call.
-    fn temp_root() -> PathBuf {
+    /// A throwaway working-tree dir under the OS temp dir, unique per call, removed when
+    /// the returned guard drops — it once outlived every test, ~70 per gate run.
+    fn temp_root() -> TempRoot {
         static COUNTER: AtomicU32 = AtomicU32::new(0);
         let n = COUNTER.fetch_add(1, Ordering::Relaxed);
         let dir =
             std::env::temp_dir().join(format!("doc-code-shebang-test-{}-{n}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        dir
+        TempRoot(dir)
+    }
+
+    /// [`temp_root`]'s directory, removed on drop; derefs to its path.
+    struct TempRoot(PathBuf);
+
+    impl std::ops::Deref for TempRoot {
+        type Target = Path;
+        fn deref(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for TempRoot {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
     }
 
     fn anchor(value: &str) -> TargetAnchor {
@@ -710,7 +728,7 @@ mod tests {
         std::fs::write(root.join(file), contents).unwrap();
         let snapshot = EffectiveStateSnapshot {
             anchors: vec![anchor_with_check(&format!("{file}#{symbol}"), check_id)],
-            working_tree_root: root,
+            working_tree_root: root.to_path_buf(),
             root_kind: RootKind::WorkingTree,
         };
         check_anchors(&snapshot)
@@ -750,7 +768,7 @@ deploy() {
         std::os::unix::fs::symlink("target.rs", root.join("link.rs")).unwrap();
         let snapshot = EffectiveStateSnapshot {
             anchors: vec![anchor("link.rs#real")],
-            working_tree_root: root,
+            working_tree_root: root.to_path_buf(),
             root_kind: RootKind::WorkingTree,
         };
         let findings = check_anchors(&snapshot);
@@ -818,7 +836,7 @@ deploy() {
         std::fs::write(root.join("script.pl"), "sub thing { }\n").unwrap();
         let snapshot = EffectiveStateSnapshot {
             anchors: vec![anchor("script.pl")],
-            working_tree_root: root,
+            working_tree_root: root.to_path_buf(),
             root_kind: RootKind::WorkingTree,
         };
         assert!(check_anchors(&snapshot).is_empty());
@@ -831,7 +849,7 @@ deploy() {
         let root = temp_root();
         let snapshot = EffectiveStateSnapshot {
             anchors: vec![anchor("ghost.pl#thing")],
-            working_tree_root: root,
+            working_tree_root: root.to_path_buf(),
             root_kind: RootKind::WorkingTree,
         };
         let findings = check_anchors(&snapshot);
@@ -846,7 +864,7 @@ deploy() {
         let root = temp_root();
         let snapshot = EffectiveStateSnapshot {
             anchors: vec![anchor("ghost#deploy")],
-            working_tree_root: root,
+            working_tree_root: root.to_path_buf(),
             root_kind: RootKind::WorkingTree,
         };
         assert_eq!(check_anchors(&snapshot).len(), 1);
@@ -865,7 +883,7 @@ deploy() {
             let root = temp_root();
             let snapshot = EffectiveStateSnapshot {
                 anchors: vec![anchor("src/feature.rs#feature")],
-                working_tree_root: root,
+                working_tree_root: root.to_path_buf(),
                 root_kind,
             };
             let mut findings = check_anchors(&snapshot);
@@ -1183,7 +1201,7 @@ it('rejects a burst beyond the cap', () => {
                 &format!("{CLOSURE_FILE}#{symbol}"),
                 check_id,
             )],
-            working_tree_root: root,
+            working_tree_root: root.to_path_buf(),
             root_kind,
         };
         let mut findings = check_anchors(&snapshot);
@@ -1312,7 +1330,7 @@ export function pad(n: number): string {
         std::fs::write(root.join("src").join("pad.ts"), PAD_TS).unwrap();
         let snapshot = EffectiveStateSnapshot {
             anchors: vec![anchor_with_check(anchor_value, check_id)],
-            working_tree_root: root,
+            working_tree_root: root.to_path_buf(),
             root_kind,
         };
         check_anchors(&snapshot)
@@ -1419,7 +1437,7 @@ export function pad(n: number): string {
         std::fs::write(root.join("a:b.ts"), PAD_TS).unwrap();
         let snapshot = EffectiveStateSnapshot {
             anchors: vec![anchor("a:b.ts:5")],
-            working_tree_root: root,
+            working_tree_root: root.to_path_buf(),
             root_kind: RootKind::WorkingTree,
         };
         let finding = only(check_anchors(&snapshot));

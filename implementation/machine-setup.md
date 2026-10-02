@@ -18,16 +18,25 @@ The trade-off is real and it is yours to make: binaries launched from that termi
 
 **Linux / other:** nothing to do — this is macOS-specific.
 
-## Sanity check
-
-A full gate from a warm build should be **~5 minutes** (measured 4m34s–5m18s):
+## cargo-nextest — the gate's test runner
 
 ```sh
-cargo fmt --check
-cargo clippy --all-targets -- -D warnings
-cargo test
-cargo build
+cargo install cargo-nextest --locked
 ```
+
+`dev/gate` runs the suite as `cargo nextest run --workspace --no-fail-fast` and then the doctests with `cargo test --workspace --doc` ([dev-workflow.md](dev-workflow.md) → Gate). Without nextest the gate still runs the full suite — as `cargo test`, and it says so — but slower: measured on 2026-10-02, nextest alone made a full gate 9 % faster ([gate-speed-measurement.md](../completions/artifacts/M55/gate-speed-measurement.md)). Its configuration is [`.config/nextest.toml`](../.config/nextest.toml).
+
+**On macOS, nothing to install for git**, but know what the gate does with it: when `git` resolves to `/usr/bin/git` — an `xcrun` trampoline costing ~11 ms a call, over ~174 k calls a gate — `dev/gate` puts the real git from `xcrun --find git` first on `PATH` and exports `SDKROOT`, and its `gate: git <path>` header line says which git ran. A hand-run `cargo test` gets neither.
+
+## Sanity check
+
+A full gate from a warm build should take **~9 minutes** (measured 532–546 s on a 10-core M1 Max, 2026-10-02 — [gate-speed-measurement.md](../completions/artifacts/M55/gate-speed-measurement.md)):
+
+```sh
+dev/gate
+```
+
+~~A full gate from a warm build should be **~5 minutes** (measured 4m34s–5m18s), over `cargo fmt --check` · `cargo clippy --all-targets -- -D warnings` · `cargo test` · `cargo build`.~~ **[Superseded 2026-10-02: the suite has grown since that figure; the same four commands measured 19.1 min before the gate-speed levers.]**
 
 **[Retired 2026-09-29 (M54 Increment 2): this block carried a fifth line, the probe prebuild `cargo build --quiet --manifest-path crates/cli/probes/doc-code/Cargo.toml`. The `doc-code` probe runs inside `jigc` by self-exec, so there is no separate probe to build ([module-layout.md](module-layout.md) → Probe boundary).]**
 

@@ -100,7 +100,6 @@ fn run_jigc_stdin(
     args: &[&str],
     stdin: &str,
 ) -> std::process::Output {
-    use std::io::Write;
     let mut child = Command::new(env!("CARGO_BIN_EXE_jigc"))
         .args(args)
         .current_dir(repo)
@@ -111,12 +110,7 @@ fn run_jigc_stdin(
         .stderr(std::process::Stdio::piped())
         .spawn()
         .expect("spawn the jigc binary");
-    child
-        .stdin
-        .take()
-        .expect("stdin piped")
-        .write_all(stdin.as_bytes())
-        .expect("write stdin");
+    crate::support::child_stdin::feed(&mut child, stdin.as_bytes());
     child.wait_with_output().expect("wait for the jigc binary")
 }
 
