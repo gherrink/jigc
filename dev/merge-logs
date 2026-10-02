@@ -1,0 +1,240 @@
+#!/usr/bin/env python3
+#
+# dev/merge-logs — resolve a merge's conflict in this repository's append-only logs by
+# keeping both sides' entries, in the file's date order (the human's decision of
+# 2026-10-02; implementation/dev-workflow.md -> Before a pull request to main).
+#
+# Every pull request to `main` first merges `origin/main` into its branch. Two branches
+# that each add an entry to DECISIONS.md, or a fold-back span to project-history.md,
+# conflict there and nowhere else — PR #6 against PR #5, 2026-10-02. That conflict has one
+# right answer, so it is resolved here deterministically instead of by hand:
+#
+#   DECISIONS.md                       newest first — the entries of both sides are ordered
+#                                      by their `## YYYY-MM-DD` headings, and on one date
+#                                      the branch's (ours) sit above main's (theirs)
+#   implementation/project-history.md  newest last — main's addition first, then the
+#                                      branch's, each side's text unchanged
+#
+# Each conflict hunk is read from git's own three stages, never from the conflict markers
+# in the working tree. A hunk is resolved only when it is a PURE APPEND: each side's text
+# begins with the merge base's text and only adds after it (two entries inserted at the
+# same place have an empty base; two fold-backs appended to the record's one line share
+# that line as base). A hunk where either side changed text that was already there is a
+# conflict over content, which is the human's, and is refused.
+#
+# All or nothing: every conflicted path must be one of the two logs and every hunk a pure
+# append, or nothing is written. On success each log is written and staged (`git add`);
+# the caller concludes the merge (`git commit --no-edit`). The build harness's close step
+# runs this (.claude/workflows/milestone-build.js, syncMainPrompt);
+# crates/cli/tests/merge_logs_fence.rs drives it.
+#
+# Usage:
+#   dev/merge-logs          (from the repository root, inside a merge stopped on conflicts)
+#
+# Exit status: 0 resolved and staged · 1 refused, nothing written (a conflicted path
+# outside the logs, or a hunk that is not a pure append; the reason on stderr) · 2 usage
+# error, or not inside a stopped merge.
+
+import os
+import re
+import subprocess
+import sys
+import tempfile
+
+# path -> order. Mirrored by SYNC_LOGS in .claude/workflows/milestone-build.js; the fence
+# holds the two lists equal.
+LOGS = {
+    "DECISIONS.md": "newest-first",
+    "implementation/project-history.md": "newest-last",
+}
+MARK = 40  # conflict-marker width: wider than any run of `<`, `|`, `=` or `>` in a log
+HEADING = re.compile(r"^## (\d{4}-\d{2}-\d{2})\b")
+
+
+def usage_help():
+    lines = open(__file__, encoding="utf-8").read().split("\n")[1:]
+    for line in lines:
+        if not line.startswith("#"):
+            break
+        print(re.sub(r"^# ?", "", line))
+
+
+def git(*args, check=True):
+    out = subprocess.run(["git", *args], capture_output=True)
+    if check and out.returncode != 0:
+        sys.stderr.write("dev/merge-logs: git %s failed: %s" % (" ".join(args), out.stderr.decode("utf-8", "replace")))
+        sys.exit(2)
+    return out
+
+
+def refuse(msg):
+    sys.stderr.write("dev/merge-logs: refused, nothing written — %s\n" % msg)
+    sys.exit(1)
+
+
+def stage(path, n):
+    out = git("show", ":%d:%s" % (n, path), check=False)
+    return out.stdout.decode("utf-8") if out.returncode == 0 else None
+
+
+def three_way(ours, base, theirs):
+    """git merge-file's diff3 rendering of the three stages, as lines with their endings."""
+    with tempfile.TemporaryDirectory(prefix="merge-logs.") as d:
+        paths = []
+        for name, text in (("ours", ours), ("base", base), ("theirs", theirs)):
+            p = os.path.join(d, name)
+            with open(p, "w", encoding="utf-8", newline="") as f:
+                f.write(text)
+            paths.append(p)
+        out = subprocess.run(
+            ["git", "merge-file", "-p", "--diff3", "--marker-size=%d" % MARK,
+             "-L", "ours", "-L", "base", "-L", "theirs", *paths],
+            capture_output=True,
+        )
+        if out.returncode < 0 or out.returncode > 127:
+            sys.stderr.write("dev/merge-logs: git merge-file failed: %s" % out.stderr.decode("utf-8", "replace"))
+            sys.exit(2)
+        return out.stdout.decode("utf-8").splitlines(keepends=True)
+
+
+def chomp(text):
+    return (text[:-1], True) if text.endswith("\n") else (text, False)
+
+
+def entries(block):
+    """Split a block of whole lines into dated `## YYYY-MM-DD` entries, or None if it does
+    not open with one. Each entry keeps its lines, trailing blank lines dropped."""
+    lines = block.split("\n")
+    if not lines or not HEADING.match(lines[0]):
+        return None
+    out = []
+    for line in lines:
+        m = HEADING.match(line)
+        if m:
+            out.append((m.group(1), [line]))
+        else:
+            out[-1][1].append(line)
+    result = []
+    for date, body in out:
+        while body and body[-1] == "":
+            body.pop()
+        result.append((date, "\n".join(body)))
+    return result
+
+
+def strip_blank_edges(block):
+    lines = block.split("\n")
+    lead = 0
+    while lead < len(lines) and lines[lead] == "":
+        lead += 1
+    trail = 0
+    while trail < len(lines) - lead and lines[len(lines) - 1 - trail] == "":
+        trail += 1
+    return "\n".join(lines[lead:len(lines) - trail]), lead, trail
+
+
+def resolve_hunk(path, order, n, o, b, t):
+    """The union of one pure-append hunk, or a refusal."""
+    o, o_nl = chomp(o)
+    b, _ = chomp(b)
+    t, t_nl = chomp(t)
+    if not (o.startswith(b) and t.startswith(b)):
+        refuse("%s, conflict %d: a side changed text that was already there, so this is not "
+               "two appends but a conflict over content, which is the human's" % (path, n))
+    o_add, t_add = o[len(b):], t[len(b):]
+    if b == "":
+        # Two blocks of whole lines inserted at one place.
+        o_core, o_lead, o_trail = strip_blank_edges(o_add)
+        t_core, t_lead, t_trail = strip_blank_edges(t_add)
+        dated = None
+        if order == "newest-first":
+            o_e, t_e = entries(o_core), entries(t_core)
+            if o_e is not None and t_e is not None:
+                tagged = [(d, 0, i, e) for i, (d, e) in enumerate(o_e)] + [(d, 1, i, e) for i, (d, e) in enumerate(t_e)]
+                # newest date first; on one date the branch's (ours, 0) before main's
+                tagged.sort(key=lambda x: (x[1], x[2]))
+                tagged.sort(key=lambda x: x[0], reverse=True)
+                dated = [e for _, _, _, e in tagged]
+        if dated is None:
+            pair = [o_core, t_core] if order == "newest-first" else [t_core, o_core]
+            dated = [p for p in pair if p != ""]
+        lead, trail = min(o_lead, t_lead), min(o_trail, t_trail)
+        text = "\n" * lead + "\n\n".join(dated) + "\n" * trail
+    else:
+        # Both sides add after shared text: whole lines (each addition opens with a
+        # newline) or onto the shared line itself. A mix is refused: the order would decide
+        # which addition lands on which line.
+        if o_add.startswith("\n") != t_add.startswith("\n"):
+            refuse("%s, conflict %d: one side adds whole lines and the other extends the "
+                   "shared line, so no order keeps both intact" % (path, n))
+        first, second = (o_add, t_add) if order == "newest-first" else (t_add, o_add)
+        text = b + first + second
+    if o_nl or t_nl:
+        text += "\n"
+    for side, add in (("ours", o_add), ("theirs", t_add)):
+        for piece in add.split("\n"):
+            if piece and piece not in text:
+                refuse("%s, conflict %d: %s's text did not survive the union (internal error)" % (path, n, side))
+    return text
+
+
+def resolve(path, order):
+    ours, base, theirs = stage(path, 2), stage(path, 1), stage(path, 3)
+    if ours is None or theirs is None:
+        refuse("%s: one side deleted it, so there is nothing to append to" % path)
+    lines = three_way(ours, base or "", theirs)
+    open_m, base_m, sep_m, close_m = "<" * MARK + " ours", "|" * MARK + " base", "=" * MARK, ">" * MARK + " theirs"
+    out, part, buf, n = [], None, {"o": "", "b": "", "t": ""}, 0
+    for line in lines:
+        bare = line.rstrip("\n")
+        if bare == open_m:
+            part, buf, n = "o", {"o": "", "b": "", "t": ""}, n + 1
+        elif bare == base_m and part == "o":
+            part = "b"
+        elif bare == sep_m and part == "b":
+            part = "t"
+        elif bare == close_m and part == "t":
+            out.append(resolve_hunk(path, order, n, buf["o"], buf["b"], buf["t"]))
+            part = None
+        elif part is None:
+            out.append(line)
+        else:
+            buf[part] += line
+    if part is not None:
+        refuse("%s: an unterminated conflict hunk (internal error)" % path)
+    return "".join(out), n
+
+
+def main():
+    if len(sys.argv) > 1 and sys.argv[1] in ("-h", "--help"):
+        usage_help()
+        return 0
+    if len(sys.argv) != 1:
+        sys.stderr.write("dev/merge-logs: usage: dev/merge-logs (no arguments)\n")
+        return 2
+    if git("rev-parse", "-q", "--verify", "MERGE_HEAD", check=False).returncode != 0:
+        sys.stderr.write("dev/merge-logs: not inside a merge (no MERGE_HEAD)\n")
+        return 2
+    top = git("rev-parse", "--show-toplevel").stdout.decode("utf-8").strip()
+    os.chdir(top)
+    conflicted = [p for p in git("diff", "--name-only", "--diff-filter=U").stdout.decode("utf-8").split("\n") if p]
+    if not conflicted:
+        sys.stderr.write("dev/merge-logs: the merge has no conflicted path\n")
+        return 2
+    outside = [p for p in conflicted if p not in LOGS]
+    if outside:
+        refuse("conflicted outside the append-only logs: %s — a conflict there is the human's" % ", ".join(outside))
+    resolved = []
+    for path in conflicted:
+        text, hunks = resolve(path, LOGS[path])
+        resolved.append((path, text, hunks))
+    for path, text, hunks in resolved:
+        with open(path, "w", encoding="utf-8", newline="") as f:
+            f.write(text)
+        git("add", "--", path)
+        print("dev/merge-logs: %s — %d conflict(s), both sides kept (%s), staged" % (path, hunks, LOGS[path]))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

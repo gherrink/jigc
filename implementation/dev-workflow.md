@@ -56,6 +56,26 @@ The loop is shaped as named, ordered steps on purpose: each maps onto a future j
    **A green gate does not prove a proptest-guarded invariant holds** (see *A proptest is not a gate*, below). If your change touches behavior an existing property test guards, **pin the invariant with a deterministic case in the same commit** — and if you mean to *retire* an invariant, reconcile its proptest explicitly and state a rationale you have actually checked.
 6. **Commit** — one logical change, conventional message. One task = one focused concern = one commit. **It lands on the branch the work belongs to, never on `main`** ([CLAUDE.md](../CLAUDE.md) → Branches): inside a milestone build, the increment branch the harness checked out and named in the task's prompt (check `git branch --show-current` against that name before committing); outside one, a `fix/<slug>` or `work/<slug>` branch. `main` changes only through a pull request the human merges, so a commit here is never also a push to it — branches are pushed by name, the milestone branch by the harness after each landed increment.
 
+## Starting a branch from `main`
+
+*The human's decision, 2026-10-02* ([DECISIONS.md](../DECISIONS.md) → *Merge `main` into the branch before every pull request*). **This is the rule's one home**, beside its twin below. Every new branch — a `milestone/`, `fix/` or `work/` branch ([CLAUDE.md](../CLAUDE.md) → Branches) — starts from the **current remote `main`**, never from whatever local `main` last saw:
+
+1. `git fetch origin`, then `git switch --no-track -c <branch> origin/main` — the branch's first commit's parent is the `origin/main` just fetched.
+2. Or, to bring local `main` along first: `git switch main && git merge --ff-only origin/main`, then branch from it. **If the fast-forward refuses, local `main` has diverged from `origin/main`: halt and hand it to the human — never reset it**, because what it carries that the remote lacks is unknown.
+
+The build harness's milestone-branch step does step 1 when it creates `milestone/<slug>/main`, checks that the new branch's tip and fork point both equal `origin/main`, and halts on a local `main` that is not an ancestor of `origin/main` ([milestone-build.js](../.claude/workflows/milestone-build.js) → `milestoneBranchPrompt`).
+
+## Before a pull request to `main`
+
+*The human's decision, 2026-10-02* ([DECISIONS.md](../DECISIONS.md) → *Merge `main` into the branch before every pull request*). **This is the step's one home**: the milestone close ([milestone-completion-workflow.md](milestone-completion-workflow.md) → Close), the build harness and [CLAUDE.md](../CLAUDE.md) → Branches point here. Every pull request to `main` — a milestone's, a `fix/` branch's, a `work/` branch's — is opened only after these, in order:
+
+1. **Merge `main` in** — `git fetch origin && git merge origin/main` on the branch: a merge commit, **never a rebase**, which would rewrite pushed commits and need the force-push no agent may make.
+2. **Resolve only what is the logs'.** A conflict confined to the append-only logs — `DECISIONS.md` and `implementation/project-history.md` — is resolved by keeping both sides' entries in date order: run [`dev/merge-logs`](../dev/merge-logs), which does exactly that (`DECISIONS.md` newest first, the branch's entry above `main`'s on one date; the record newest last) and refuses, writing nothing, any hunk where a side changed text that was already there; then `git commit --no-edit`. **Any other conflict, or a refusal, goes to the human**: `git merge --abort`, and stop.
+3. **Gate** — `dev/gate` green on the merged tree, because `main` may have brought in a change the branch's own gate never saw.
+4. **Push** the branch by name, then **open the pull request** (`gh pr create --base main --head <branch>`).
+
+A milestone build carries steps 1–2 as the close's `build-git` **sync** step, which the harness returns to the orchestrator in `close.sync` instead of running, because it follows the triage ([milestone-build.js](../.claude/workflows/milestone-build.js) → `syncMainPrompt`). *Why the step exists:* PR #6 conflicted with PR #5 on `DECISIONS.md` — each had added a top entry — and the conflict was resolved by hand in `adeb53e7`; `dev/merge-logs` reproduces that resolution byte for byte.
+
 ## Why this shape
 
 Two framing notes, not extra steps:
