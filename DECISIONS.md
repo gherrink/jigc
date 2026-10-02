@@ -2,6 +2,14 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-02 — M55 Increment 1 / T1: the doc-only arm's commit, three build pins
+
+Built as decomposed below ([finalize.md](design/finalize.md) → The doc-only arm). Three elaborations the plan left open, pinned here:
+
+- **Precedence lives in one method.** `TaskArea::commits_doc_only` reads the amend marker and the source seam itself and only then asks the one predicate (`composes_doc_only_finalize`), so the committing door, `--dry-run` and `preview_gates` cannot rank the arms differently. *Why:* the preview sits in a different call path from the door, and a second spelling of the precedence there is the M52 posture class again.
+- **The path set is sorted and de-duplicated before `git add` and the commit** — the promotion destinations plus `owner_artifact_stage_specs`. *Why:* the pathspec then depends on the plan alone, and a doc whose home is also a recorded owner-artifact is named once.
+- **The transaction's shared `.jigc/.gitignore` writer still runs on this arm, and what it writes is not committed.** It belongs to the config layer, which §3 puts outside the path set, so it waits for the next ordinary finalize like a pending `.jigc/config` delta. The worktree rollback axis still restores it on a refused commit. *Why:* skipping the writer would fork the shared executor for one arm, and committing its output would break *"exactly its docs"*.
+
 ## 2026-10-02 — M55 Increment 1 planning: decomposition
 
 Cut [Increment 1](implementation/roadmap.md) (*the doc-only finalize, and a report that lands its doc and nothing else*) into **4 ordered tasks**, grounded at HEAD `bea46dd8` on `milestone/findings-channel/doc-only-finalize` (tree clean). Cross-ref [roadmap.md](implementation/roadmap.md) → Milestone 55 → Increment 1; the M55 Settle below (S4 as revised by R1, R5's sizing); [findings-channel.md](design/findings-channel.md) → 3, 10, Open questions; [planning-gate-record.md](completions/artifacts/M55/planning-gate-record.md) → rows 5 and 6. **Codes registered: none.** **One contract spend:** an additive `left_out[].kind` value (T4), on the M43 `carried-over` mold.

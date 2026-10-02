@@ -1,0 +1,14 @@
+---
+states-constraints: [finalize.left-out]
+---
+Land this task's docs as exactly one commit. This finalize commits path-scoped:
+it stages and commits only the docs this task created or edited, plus any
+owner-artifact paths those docs record — never the whole git index. Anything else
+staged in this checkout, by another task and whether before or after this one was
+minted, stays staged and stays out of this commit, so the carryover gate does not
+fire here and `--carry-staged` changes nothing. Unstaged edits and untracked files
+are left out of the commit too.
+
+Then validate and commit:
+
+{{ cli.finalize-task }}
