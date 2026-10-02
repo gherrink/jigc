@@ -1,6 +1,6 @@
 # The findings channel — `jigc-feedback` · `inconsistency` (M55)
 
-**M55 design of record.** The place a finding goes, shipped before the port that fills it ([roadmap.md](../implementation/roadmap.md) → M55). Two methodology-pack doctypes, one doc per finding, each filed — and later triaged — through a code-less workflow that can land nothing but its own doc; the read surface that makes a populated store triageable; the three latent defects the port would hit on every branch; and the seed that turns a new doctype into a populated ledger on the day the port adopts it. Settled at M55 planning, every fork by the human ([DECISIONS.md](../DECISIONS.md) → 2026-10-02 M55 settled; the working settle log, with ids S1–S17 cited below and the design-draft resolutions at its end, is [completions/artifacts/M55/settle-log.md](../completions/artifacts/M55/settle-log.md); the evidence is [planning-findings.md](../completions/artifacts/M55/planning-findings.md), [baseline-ledger.md](../completions/artifacts/M55/baseline-ledger.md) and [gap-list.md](../completions/artifacts/M55/gap-list.md); the field set is Revision 1 of [doctype-proposal.md](../completions/artifacts/M55/doctype-proposal.md), cross-reviewed in [review-doctypes-codex.md](../completions/artifacts/M55/review-doctypes-codex.md)).
+**M55 design of record.** The place a finding goes, shipped before the port that fills it ([roadmap.md](../implementation/roadmap.md) → M55). Two methodology-pack doctypes, one doc per finding, each filed — and later triaged — through a code-less workflow that can land nothing but its own doc; the read surface that makes a populated store triageable; the three latent defects the port would hit on every branch; and the seed that turns a new doctype into a populated ledger on the day the port adopts it. Settled at M55 planning, every fork by the human ([DECISIONS.md](../DECISIONS.md) → 2026-10-02 M55 settled; the working settle log, with ids S1–S17 cited below and the design-draft resolutions at its end, is [completions/artifacts/M55/settle-log.md](../completions/artifacts/M55/settle-log.md); the evidence is [planning-findings.md](../completions/artifacts/M55/planning-findings.md), [baseline-ledger.md](../completions/artifacts/M55/baseline-ledger.md) and [gap-list.md](../completions/artifacts/M55/gap-list.md); the field set began as Revision 1 of [doctype-proposal.md](../completions/artifacts/M55/doctype-proposal.md), cross-reviewed in [review-doctypes-codex.md](../completions/artifacts/M55/review-doctypes-codex.md), and superseded by this doc). **Revised at the design review the same day** — an independent adversarial read of the written Settle, every finding accepted by the human (settle log → Review phase, R1–R4): R1 revised S4 (§3), R2 revised S7 (§4), R3 settled S2's mechanism (§6), and R4's findings are folded where they land, the revision list among them (§13).
 
 Reads after [team-ready-state.md](team-ready-state.md) (the methodology pack's work-doc surface it extends) and before [measurement.md](measurement.md). Notation is **illustrative** ([what that disclaims](../CLAUDE.md#how-we-work-together)): the YAML, argv and output sketches below are shapes, and the schema files the build ships are their source of truth.
 
@@ -11,17 +11,17 @@ Reads after [team-ready-state.md](team-ready-state.md) (the methodology pack's w
 | S1 | **One doc per finding** — a located, multi-instance doctype; reporters only create | 1 |
 | S2 | **Two doctypes by purpose** — `inconsistency` (what a project's own docs and code disagree on; generic, adopter-facing) and `jigc-feedback` (findings *about* jigc; internal for now) | 1 |
 | S3 | `jigc-feedback` ships in the methodology pack with its workflow **hidden**; `report-inconsistency` is router-visible | 2 |
-| S4 | A new pack step **`step:finalize-doc-only`** + a new blocking finding **`finalize.foreign-staged`** — a report lands its doc and nothing else | 3 |
+| S4 | A new pack step **`step:finalize-doc-only`** whose commit is **path-scoped** — a report lands its doc and nothing else, and every other staged path stays staged (revised by R1) | 3 |
 | Mechanism line | Build new mechanism now when that is cheaper than reworking it or being blocked later | below |
-| S5 | **Append-only by convention**, stated; the engine does not enforce it | 1.5 |
+| S5 | **Append-only by convention**, stated; the engine does not enforce it; after filing only `status` · `resolution` · `duplicate-of` · `pinned-by` change (widened by R4) | 1.5 |
 | S6 | `pinned-by` is a plain string in [pinning.md](../implementation/pinning.md) §3's grammar | 1.3 |
-| S7 | **`jigc doc create --new`** refuses an existing doc; the `write.title-ignored` route is corrected | 4 |
+| S7 | **Create-only on the create-gate entry** — `allows-create: [{type, as, new: true}]` — refuses an existing doc at `doc create` and `doc author` alike; the `write.title-ignored` route is corrected (revised by R2) | 4 |
 | S8 | Gate speed lands as its own `work/gate-speed` PR before the build — not part of this design | 12 |
 | S9 | The field sets — Revision 1 | 1.1–1.2 |
-| S10 | Read surface: `title` on `doc show`; `title` + header `fields` on `doc list` rows; an absent defaulted field projects its default | 5 |
+| S10 | Read surface: `title` on `doc show`; `title` + header `fields` on `doc list` rows; an absent defaulted field projects its default — the effective value (row values fixed by R4) | 5 |
 | S11 | This repo's feedback before the port: a **seed** generated in M55, adopted at M56 | 7 |
 | S12 | The seed set and its rules | 7 |
-| S13 | Fix **L1**, **L2**, **S2**; declare **L3** and **two code tasks in one checkout** as bounds | 6 |
+| S13 | Fix **L1** (with a store-scope arm, R4), **L2**, **S2** (by the CLI-emitted composition mold, R3); declare **L3** and **two code tasks in one checkout** as bounds | 6 |
 | S14 | Fold "every fork lists the option that removes the artifact that can drift" into the `cheap-vs-robust` gate | 9 |
 | S15 | A committed, generated crate README with absolute links | 8 |
 | S16 | M55's partial re-review axes, merged with M54's | 12 |
@@ -33,10 +33,10 @@ M53's *"no new mechanism — registry rows and guard conditions only"* was a fix
 
 | New | Kind | Why now rather than later |
 |---|---|---|
-| `step:finalize-doc-only` + `finalize.foreign-staged` | pack step + guard in an existing door + a finding code | the port runs report tasks beside code tasks in one checkout; without it, a report silently commits a teammate's code (§3) |
-| `doc create --new` + its refusal | CLI flag + write reject | one doc per finding makes a same-title create a silent overwrite of an earlier finding (§4) |
+| `step:finalize-doc-only` + its path-scoped commit | pack step + a commit model inside an existing door, on the milestone-record door's mechanism | the port runs report tasks beside code tasks in one checkout; without it, a report silently commits a teammate's code (§3) |
+| `new: true` on the create-gate entry + its refusal | one optional key on the workflow front-matter's `allows-create` entry + a write reject at the gate | one doc per finding makes a same-title create a silent overwrite of an earlier finding (§4) |
 | `title` / `fields` on the read surfaces | additive read keys | free inside the pre-1.0 window, a versioned extension after the pin (§5) |
-| L1 / L2 / S2 | conditions on existing arms, a composed-text fix | the port's branch-per-milestone model hits all three constantly (§6) |
+| L1 / L2 / S2 | conditions on existing arms; a composition rule on an existing CLI-emitted mold | the port's branch-per-milestone model hits all three constantly (§6) |
 | the crate README generator | `dev/` tooling + a fence | owed before release PR #2 merges, and a publish-time rewrite would ship untested bytes (§8) |
 
 Not admitted, each parked with its trigger (→ Parked): a split/merge transform between one file and many, an edit gate, a code anchor, server-side filtering, a per-worktree store root, per-task path claims.
@@ -60,7 +60,7 @@ Methodology pack · `location: jigc-feedback/` (resolved through `docs-root`, so
 | `kind` | enum `bug · inconvenience · feedback` | yes | **bug** — the binary does something wrong (a false statement, a lost byte, a refused correct act, a wrong exit); **inconvenience** — it does what it says, at a cost an agent or human should not pay; **feedback** — an observation or suggestion that names no defect. Each member is defined in the schema's `usage` (the circular `feedback`-in-`jigc-feedback` is called out there) |
 | `found-in` | string, `<kind>:<label>` (§1.3) | yes | **where it was found** — the human's context reference, so feedback can be sorted, grouped and filtered by origin |
 | `about` | string (§1.3) | no | the surface it concerns |
-| `jigc-version` | string, `<semver>[+<short-sha>]` | yes | the jigc version it was seen on. Not `version`: that collides with the injected `schema-version` in `doc show` json |
+| `jigc-version` | string, `<semver>[+<short-sha>]` | yes | the jigc version in use when it was seen. Not `version`: that collides with the injected `schema-version` in `doc show` json |
 | `status` | enum `open · resolved · declined · duplicate · refuted`, default `open` | yes | §1.5 |
 | `tier` | enum `tier-1 · tier-2 · tier-3` | no | the consequence grade (§1.4). Numerals were refused at pack-load (`expected a string`) |
 | `duplicate-of` | ref → `jigc-feedback`, card 0..1 | no | the row this one duplicates; resolves at finalize, dangling blocks |
@@ -93,8 +93,8 @@ All four are **plain strings with a convention**, validated by nothing — a typ
 | Field | Grammar | Examples |
 |---|---|---|
 | `found-in` | `<kind>:<label>` — kind one of `milestone` · `task` · `workflow` · `review` · `trial`; the label is **free text, not a slug** | `milestone:findings-channel` · `review:M52-per-axis/(2,DEFECT C)` · `review:M55-completion/F3` |
-| `about` | `jigc <verb>` · `workflow:<id>` · `step:<id>` · `doctype:<id>` · `<finding-code>` · `guide:<file>` | `jigc task finalize` · `finalize.foreign-staged` · `guide:QUICKSTART.md` |
-| `jigc-version` | `<semver>[+<short-sha>]` | `1.0.0-rc.23` · `1.0.0-rc.23+0a1b2c3d` |
+| `about` | `jigc <verb>` · `workflow:<id>` · `step:<id>` · `doctype:<id>` · `<finding-code>` · `guide:<file>` · `dev:<tool>` · `test:<module>` | `jigc task finalize` · `finalize.carried-staged` · `guide:QUICKSTART.md` · `dev:jigc-rig` · `test:doc_link_fence` |
+| `jigc-version` | `<semver>[+<short-sha>]` — the version in use when the finding was seen | `1.0.0-rc.23` · `1.0.0-rc.23+0a1b2c3d` |
 | `pinned-by` | `<module>::<test_name>` or `UNPINNED: <why>` — [pinning.md](../implementation/pinning.md) §3 is its one home; a repro block points at the field rather than repeating it | `doc_read_surface::bare_single_hop_alias_resolves` |
 
 ### 1.4 The tier scale
@@ -108,7 +108,9 @@ All four are **plain strings with a convention**, validated by nothing — a typ
 | `jigc-feedback` | `resolved` (fixed, improved, documented — the how goes in `resolution`) · `declined` (the razor's *we counted and still say no, because…*, M57) · `duplicate` (+ `duplicate-of`) · `refuted` (re-driven, does not reproduce) | the task that fixes it, or `triage-jigc-feedback` |
 | `inconsistency` | `resolved` (one side corrected) · `intended` (the difference is deliberate) · `refuted` | the task that reconciles it, or `triage-inconsistency` |
 
-**The convention, stated in each doctype's `usage` and here:** a finding is append-only — **after filing, only `status`, `resolution`, `duplicate-of` and `pinned-by` change**; a non-`open` status carries a `resolution`. **The engine does not enforce it.** Doc-level append-only is free (no doc-delete verb), the report workflows only create, and the triage workflows (S17, §2) are the one guided door for the status change — they set `status` and author `resolution`, nothing else. What is not free is the field level: any task can `set-field`/`set-slot`/`remove-item` on any committed doc whatever its workflow's `allows-create` (baseline C7, F14). An edit gate would close that for every doctype; it is not cheaper now than later and blocks nothing, so it is parked ([ideas/committed-doc-edit-gate.md](../ideas/committed-doc-edit-gate.md)) and filed as a `jigc-feedback` seed row.
+**The convention, stated in each doctype's `usage` and here:** a finding is append-only — **after filing, only `status`, `resolution`, `duplicate-of` and `pinned-by` change** (`inconsistency` carries only the first two); a non-`open` status carries a `resolution`. **The engine does not enforce it.** Doc-level append-only is free (no doc-delete verb), the report workflows only create, and the triage workflows (S17, §2) are the one guided door for the change — their step sets those four and nothing else, and its text says so (R4, I2).
+
+**No `promoted` status (R4, M5).** A finding whose work is accepted onto the roadmap gets no status of its own now; if triage needs one, widening the enum is a cheap later change. What is not free is the field level: any task can `set-field`/`set-slot`/`remove-item` on any committed doc whatever its workflow's `allows-create` (baseline C7, F14). An edit gate would close that for every doctype; it is not cheaper now than later and blocks nothing, so it is parked ([ideas/committed-doc-edit-gate.md](../ideas/committed-doc-edit-gate.md)) and filed as a `jigc-feedback` seed row.
 
 ### 1.6 Routing — where a finding goes
 
@@ -124,12 +126,12 @@ Both schemas are listed in `crates/cli/packs/methodology/config/schema-manifest.
 
 All four are `creates-task: true` and code-less, and all four end in `step:finalize-doc-only` (§3), so each lands one finding's doc and nothing else.
 
-**Filing.** Both report workflows create with `--new` (§4) and allow exactly one create, so a report task files exactly one finding.
+**Filing.** Both report workflows' create-gate entries carry `new: true` (§4) and allow exactly one create, so a report task files exactly one **new** finding.
 
 | | `report-jigc-feedback` | `report-inconsistency` |
 |---|---|---|
 | Router | **hidden** — `selectable: false` + `suppressed: {reason, expires: never}`, no `door` key, so callable by name (`jigc start --workflow report-jigc-feedback "<what>"`) — the `record-dogfood` precedent | **visible** — `selectable: true` + a `when:` hint (the `park-idea` precedent) |
-| `allows-create` | `{type: jigc-feedback, as: feedback}` | `{type: inconsistency, as: inconsistency}` |
+| `allows-create` | `{type: jigc-feedback, as: feedback, new: true}` | `{type: inconsistency, as: inconsistency, new: true}` |
 | Body | `step:author-jigc-feedback` · `step:author-commit` · `step:finalize-doc-only` | `step:author-inconsistency` · `step:author-commit` · `step:finalize-doc-only` |
 | Opens up | when a feedback web service exists (S3) | — |
 
@@ -141,46 +143,56 @@ suppressed:
   expires: never
 ```
 
-**Triage (S17).** Two small workflows, `triage-jigc-feedback` and `triage-inconsistency`, move a filed finding off `open`: the intent names the finding's address, one step sets `status` (and `duplicate-of` for a `duplicate`) and authors `resolution` through `jigc doc set-field`/`set-slot --task`, then `step:author-commit` and `step:finalize-doc-only`. They allow no create. Both are **hidden** on the `report-jigc-feedback` mold — `selectable: false` + `suppressed: {…, expires: never}`, called by name (`jigc start --workflow triage-inconsistency "<address>: <why>"`) — because triage is a maintainer's act, not a catalog entry. They close the declared lifecycle (§1.5): append-only except `status` and `resolution`. The step names are illustrative.
+**Triage (S17).** Two small workflows, `triage-jigc-feedback` and `triage-inconsistency`, move a filed finding off `open`: the intent names the finding's address, one step sets `status`, `duplicate-of` (for a `duplicate`) and `pinned-by` (for a fix a test pins) and authors `resolution` through `jigc doc set-field`/`set-slot --task`, then `step:author-commit` and `step:finalize-doc-only`. They allow no create. Both are **hidden** on the `report-jigc-feedback` mold — `selectable: false` + `suppressed: {…, expires: never}`, called by name (`jigc start --workflow triage-inconsistency "<address>: <why>"`) — because triage is a maintainer's act, not a catalog entry. They close the declared lifecycle (§1.5): append-only except the four fields it names, and the step text says which four. **The triage steps get distinct names** (R4, M3) — `step:triage` is already the methodology pack's completion-workflow step, so the new ones are named for their doctype (`step:author-jigc-feedback-triage`, `step:author-inconsistency-triage`; illustrative).
 
 **Why hidden, and why that is enough.** `jigc-feedback`'s vocabulary (`tier`, `about`'s finding codes) is jigc-internal, and a "report a bug in jigc" entry in every adopter's router catalog would invite reports into a repository the maintainers never see. The doctype stays in `describe`; the workflow leaves the catalog. A per-doctype visibility knob or a third embedded pack would be new composition plumbing — parked ([ideas/pack-doctype-visibility.md](../ideas/pack-doctype-visibility.md), the 2026-10-02 addendum).
 
 **Why `report-inconsistency` is visible.** An adopter migrating onto jigc is exactly who finds code↔doc disagreements, and parking a finding must cost less than losing it (the `park-idea` argument). It is also the new router-visible workflow the blind trial's justification cites. Cost: the router-visible compose-golden blast (~58 goldens, G4).
 
-**The author steps** read the schema through `jigc doc schema <ty>`, set fields and slots with `--task`, read the write back with `doc show --task`, and say to fence `repro`. They **do not offer the `doc author` batch alternative**: `--new` is `doc create`'s alone (§4), so the batch door would re-open the overwrite §4 closes.
+**The author steps** read the schema through `jigc doc schema <ty>`, set fields and slots with `--task`, read the write back with `doc show --task`, and say to fence `repro`. `step:author-inconsistency` adds each side with **`jigc doc add-item … --slug <slug>`** (R4, M1): a side's title is a path or an address, which slugs into a long, unstable item id, so the step names a short one. Either create door is safe in a report task — `doc create` and the `doc author` batch alike consult the gate entry's `new: true` (§4) — so the draft's reason for withholding the batch alternative is gone.
 
-## 3. `step:finalize-doc-only` and `finalize.foreign-staged` (S4)
+## 3. `step:finalize-doc-only` — the path-scoped doc-only commit (S4, revised by R1)
 
 **The defect it closes** (F1, driven in the S4 spike over three states): a code-less task's `jigc task finalize` commits **anything staged during the task**. With a code task open in the same checkout and its files staged *after* the report task started, the report's finalize exits 0 and commits the code task's files under `docs(…)`; the code task then fails `finalize.empty-commit`, whose only route is discard. `finalize.carried-staged` catches only paths staged *before* the report started.
 
-**The mechanism.** A new pack step, `step:finalize-doc-only`, composed by the report and triage workflows (§2) in place of `step:finalize`. Its text states the constraint (`states-constraints: [finalize.foreign-staged, …]`) and wires the same `{{ cli.finalize-task }}` ref. `jigc task finalize` of a task **whose recorded composed workflow includes the step** refuses every staged path other than the doc the task wrote through jigc (created or, for triage, edited) and its recorded owner-artifacts — one blocking `finalize.foreign-staged` per path, routed `git restore --staged <path>`. **There is no waiver** — not `--carry-staged`, not a new flag — on the `--amend` arm's precedent, whose index-dirty gate has none either. A report task cannot carry code; a task that means to commit code is a code task.
+**The mechanism — a path-scoped commit.** A new pack step, `step:finalize-doc-only`, composed by the report and triage workflows (§2) in place of `step:finalize`, wiring the same `{{ cli.finalize-task }}` ref. `jigc task finalize` of a task **whose recorded composed workflow includes the step** commits **path-scoped**: it stages exactly the task's promoted docs — the doc it created, or for triage the doc it edited — and its recorded owner-artifacts, and commits those paths alone (`git add <paths> && git commit -- <paths>`), never the index. That is the milestone-record door's mechanism ([team-ready-state.md](team-ready-state.md) → The commit model — path-scoped commit at each milestone op), *"never sweeping the agent's in-flight index"*. **There is no refusal.** Whatever else is staged — by a code task open in the same checkout, before or after the report started — stays staged, and the code task keeps its staging and finalizes its own files later. Pending `.jigc/config` deltas, which an ordinary code-less finalize commits beside the doc (gap G8), are outside the path set by construction and wait for the next ordinary finalize. The finalize transaction around the commit — validate, render, promote, rollback — is the ordinary one.
 
-**Beside `finalize.carried-staged`.** Both codes stay. `carried-staged` catches paths staged *before* the task started, `foreign-staged` any staged path outside the allowed set, so a path staged before a doc-only task started fires both; in a doc-only task `--carry-staged` waives the former and never the latter, so the refusal stands until the path is unstaged (flow B, state 2).
+**Why not the Settle's refusal.** The Settle had the step refuse every foreign staged path with a blocking finding routed `git restore --staged <path>`. Driven at the design review, following that route un-staged the code task's work, which then failed `finalize.nothing-staged`: the refusal moved the harm from the report to the code task. A path-scoped commit leaves nothing to route, so the refusal is withdrawn and its code is never minted.
+
+**What stayed staged is narrated, not refused.** The finalize ack names every staged path the commit left out — the existing **left-out** section ([finalize.md](finalize.md) → Surfaced, not prevented), on this commit model's spelling. On the ordinary model a left-out path is a choice (*"git add to include"*); here it is not, because no `git add` can bring a path into a path-scoped commit, so the guidance says the path stays staged for the task it belongs to. Narration only: no finding, no new code, exit unchanged.
+
+**A third commit model, on the existing axis.** `cli::render::CommitModel` already keys every surface the amend arm shares with the ordinary model ([finalize.md](finalize.md) → *Every surface of the arm is the arm's*). The doc-only commit joins that axis rather than branching surfaces one at a time: the left-out guidance, the pre-commit advisory's stem, the `--dry-run` manifest (it forecasts the path set, not the index) and the index-gate member's spelling in `cli::gate_coverage` (next paragraph).
+
+**Beside `finalize.carried-staged` — re-derived.** The carryover gate (`engine::finalize::decide_carryover`) compares the pre-task staged snapshot with the index at finalize and refuses each path staged before the task existed, because the ordinary commit **is** the index and such a path would cross the boundary undeclared. A path-scoped commit never takes a path outside its set, so a path staged before a doc-only task started cannot cross this boundary, declared or not: it is not committed, and the left-out narration names it like any other staged path. So on a doc-only task **the carryover gate does not fire** and **`--carry-staged` is inert in every state** — the amend arm's precedent, where the gate is exempt and the arm's own index gate replaces it. Here the replacement is the path scope itself, so the previewed `carryover` member (the *index gate*, `cli::gate_coverage::GATE_COVERAGE`) gains this arm's spelling, as it gained `AmendSpelling` for the amend arm: one member, previewed by `jigc task validate` and `--dry-run` as the committing door decides it. A task that means to commit code is a code task.
+
+**In a fan-out sub-task the step is never composed** (S2, §6): a sub-task has no per-task commit, and the join commit is the milestone's.
 
 **Where it sits — on existing molds, no new seam:**
 
 | Part | Mold |
 |---|---|
 | Keyed on the composed workflow's steps | `composes_review_hold` / `MIGRATION_FINALIZE_STEP` in `crates/cli/src/task.rs` |
-| Body: staged set vs `HEAD`, one finding per path | `amend_index_findings` in `crates/cli/src/task.rs` |
-| Asked at both positions — the committing door ahead of `plan_finalize`, and `preview_gates` | the same method at both, so *same check, same severity, same exit* holds (`crate::gate_coverage::Door::Previewed`) |
-| Registry rows | the finalize family (`cli::render::FINALIZE_FAMILY`, fenced by `finalize_family_registry`) · the `gate_coverage` door row (previewed) · the contract's code registry in [command-output-contract.md](command-output-contract.md) |
+| The path-scoped commit | the milestone-record doors' `git commit -- <record>` ([team-ready-state.md](team-ready-state.md) → The commit model) |
+| The surfaces it shares with the ordinary model | the `cli::render::CommitModel` axis and the left-out section it keys |
+| The carryover gate on this arm | the amend arm's exemption — gate exempt, `--carry-staged` inert, the index-gate member respelled in `cli::gate_coverage` |
 
 **The name.** Never *record-only*: that term stays with the milestone-record's commit doors and their rollback registry (`cli::rollback::ROLLBACK_POPULATIONS`, count-fenced). This is **the doc-only finalize step** (D1).
 
 **Declared bound — two code tasks in one checkout.** Two open *code* tasks still mis-attribute each other's staged files; the fix is per-task path claims, a new mechanism with no cheaper-now argument. Filed as an open `jigc-feedback` seed row (S13).
 
-## 4. `doc create --new`, its refusal, and the `write.title-ignored` route (S7)
+## 4. Create-only on the create-gate entry, its refusal, and the `write.title-ignored` route (S7, revised by R2)
 
 **The defect** (F2): `jigc doc create <ty> --title X` where a committed doc already carries X's slug acks `(already existed — copied in for update)` at exit 0, and the next `set-slot` overwrites the earlier finding; `validate` stays clean. Create-or-update is the default and stays so ([write-commands.md](write-commands.md) → The verbs, the title pre-check; → Instance provisioning) — planning's idempotent singleton create depends on it.
 
-**Proposal — no code exists for either name yet.** A flag `--new` on `jigc doc create` makes the create **create-only**: when the minted identity already exists, the call is refused before anything is staged, with a new finding — working name **`create.already-exists`** — routed *"choose a distinct title, or pass `--slug <slug>`."* Both report workflows' command refs always pass it (`crates/cli/packs/methodology/config/commands.yaml`, a `create-<ty>` entry per doctype on the `create-idea` mold). Other per-doc creates (`park-idea`, `do-research`, …) may opt in later.
+**The mechanism — a key on the create-gate entry, not a flag.** A workflow's `allows-create` entry gains one optional key, **`new: true`** — `allows-create: [{ type: jigc-feedback, as: feedback, new: true }]`, and `{ type: inconsistency, as: inconsistency, new: true }`. A create under that entry is **create-only**: when the minted identity already exists, the create-gate refuses it **before copy-in**, so nothing is staged, with a new finding — working name **`create.already-exists`** — routed *"choose a distinct title, or pass `--slug <slug>`."* Both create doors already consult the entry — `jigc doc create`, and `jigc doc author`, which mints from its payload's `title:` ([write-commands.md](write-commands.md) → The create-gate) — so a task whose entry carries `new: true` cannot overwrite an existing doc by either path, and the command refs pass no flag (a `create-<ty>` entry per doctype in `crates/cli/packs/methodology/config/commands.yaml`, on the `create-idea` mold). Both report workflows' entries carry it; other workflows may opt in later. **No `--new` flag is pinned at 1.0.** Cost: one optional key in the workflow front-matter format, which no manifest gates.
 
-**Scope.** `--new` is a `doc create` flag only — `doc author`, which mints from its payload's `title:`, does not take it (§2). *Already exists* means the committed store: re-running the create in the same task over its own staged doc stays idempotent, so a create retried after a crash does not refuse itself.
+**Scope.** *Already exists* means the committed store: re-running the create in the same task over its own staged doc stays idempotent, so a create retried after a crash does not refuse itself. An entry without `new: true` keeps today's create-or-update.
 
-**The family.** `create.*` is already a minted finding family — `create.gate-blocked`, `create.unknown-doctype`, `create.empty-title`, the doctype-scoped blocks of [command-output-contract.md](command-output-contract.md) → The stable finding key, whose `target` is the bare doctype id. `create.already-exists` joins it as its first **instance**-scoped member: an identity exists, so its `target` is that doc's `type:slug` address. The code name stays a working name until the build mints it. `--new` does not change fan-out join suffixing: two sub-tasks that mint one slug in isolation still land `-2` at the join, ordered by task id.
+**Precedence — the gate refusal comes first.** The gate refuses before copy-in, ahead of every write check, so inside a task whose entry carries `new: true` neither the overwrite nor the `write.title-ignored` misroute can arise: a report whose *different* title slugs onto an existing id is refused `create.already-exists`, never `write.title-ignored` (flow C).
 
-**The route fix, same increment** (F3): a different title that slugs onto an existing id is refused `write.title-ignored`, whose route tells the reporter to `jigc doc rename` the **existing** doc — someone else's finding. The route instead names a distinct title or `--slug`. No new code; severity and exit unchanged.
+**The family.** `create.*` is already a minted finding family — `create.gate-blocked`, `create.unknown-doctype` and `create.empty-title` are the doctype-scoped blocks of [command-output-contract.md](command-output-contract.md) → The stable finding key, whose `target` is the bare doctype id, and **`create.serial-collision` is already instance-scoped**: it keys at the colliding instance's address (`instance_collision_finding` in `crates/engine/src/state.rs`). `create.already-exists` joins the family beside that sibling — an identity exists, so its `target` is that doc's `type:slug` address. The code name stays a working name until the build mints it. `new: true` does not change fan-out join suffixing: two sub-tasks that mint one slug in isolation still land `-2` at the join, ordered by task id.
+
+**The route fix, same increment** (F3) — the general case. Under an entry **without** `new: true`, a different title that slugs onto an existing id is refused `write.title-ignored`, whose route tells the reporter to `jigc doc rename` the **existing** doc — someone else's work. The route instead names a distinct title or `--slug`. No new code; severity and exit unchanged. Inside a report task this arm cannot arise (precedence, above); it stays in scope for every other create.
 
 ## 5. The read surface (S10)
 
@@ -193,6 +205,19 @@ suppressed:
 | `jigc doc show --format json`, whole-doc serve (committed and staged) | top-level **`title`** — the doc's `# H1` |
 | `jigc doc list --format json`, each row | **`title`** + **`fields`** — the header fields, in `doc show`'s `fields` shape |
 | both | an **absent defaulted field projects its schema default** — the read-side fix of F10; the stored bytes are untouched |
+
+**The row values, in every state (R4, B5)** — declared in [doc-read-surface.md](doc-read-surface.md) beside `item-count`, whose additive-key precedent this follows:
+
+| Row | `title` | `fields` |
+|---|---|---|
+| `managed`, parses | the `# H1` | the header fields |
+| `managed`, does not parse | the `# H1`, or `null` | `null` |
+| `unregistered` · `orphaned` | the `# H1`, or `null` | `null` |
+| `--task` (the staged copy) | read from the staged copy | read from the staged copy, by the rules above |
+
+`title` is the H1 or `null` on every row; `fields` is present only on a managed row that parses and `null` otherwise — **never `{}`**, which would read as *a doc with no header fields*.
+
+**`fields` reports the effective value (R4, I5).** A projected default is not distinguishable from a stored value on either surface, and that is the statement, not an omission: a reader filtering `status == "open"` wants the value the doctype gives the doc, which is what a defaulted absent field means. The store-side sibling — a `set: on-create` `date` deletable with no conformance finding (F9) — is not addressed here; it is seeded open.
 
 **No version integer moves.** `doc show` and `doc list` carry no in-band version integer and evolve by additive keys pre-1.0 ([doc-read-surface.md](doc-read-surface.md) → Evolution posture) — M49's top-level `schema-version` key on `doc show` landed the same way, with no bump. `contract-version` is `doc schema`'s, whose projection S10 does not touch; S10's *"contract-version bump"* is corrected accordingly.
 
@@ -211,9 +236,9 @@ The port runs on 1.0.0 with a branch per milestone, `origin/main` merged before 
 
 | Row | Defect | Fix |
 |---|---|---|
-| **L1** (F4) | After a pull or merge changed a committed doc, the next task that edits it is blocked `reconciliation.conflict-block` — `start`'s absorb is in-memory only — and the route says to revert the external edit, i.e. the teammate's commit | in the DRIFTED + TOUCHED arm of the task-gate reconcile (`crates/engine/src/file_state.rs`): **absorb when the on-disk bytes equal the blob at the task's base pin** — the change predates the task, so its copy already carries it. A change made during the task still conflict-blocks. ~50–100 lines. Bears on [reconciliation.md](reconciliation.md)'s *"start is a pure reader"* (D10) |
+| **L1** (F4) | After a pull or merge changed a committed doc, the next task that edits it is blocked `reconciliation.conflict-block` — `start`'s absorb is in-memory only — and the route says to revert the external edit, i.e. the teammate's commit | in the DRIFTED + TOUCHED arm of the task-gate reconcile (`crates/engine/src/file_state.rs`): **absorb when the on-disk bytes equal the blob at the task's base pin** — the change predates the task, so its copy already carries it. A change made during the task still conflict-blocks. ~50–100 lines. Bears on [reconciliation.md](reconciliation.md)'s *"start is a pure reader"* (D10). **And a store-scope arm (R4, B4):** at `jigc validate`, a drifted doc whose on-disk bytes equal its blob at `HEAD` is **advisory**, routed *"the baseline lags `HEAD`; absorbed at the next finalize"* — a pull, not an out-of-band edit |
 | **L2** (F5) | after a branch switch, store-scope `jigc validate` exits **1** with a blocking `reconciliation.rename … missing` for a doc that exists only on the other branch, and routes `jigc unmanage` | thread M45 Decision 7's history predicate (`git log HEAD -1 -- <path>` empty → advisory) through the read-only store twin instead of its always-present stub, so store scope agrees with task scope; narrow the `oob-rename` member of `cli::render::STORE_EXIT_FLIPS`, which matches on the code, to the blocking arm. **The route** names the branch switch and offers switching back; it never offers an index drop (`jigc unmanage`) — its exact text is the L2 increment's build detail |
-| **S2** (F7) | a fan-out sub-task composed from a workflow carrying a finalize step is told `Run: jigc task finalize <sub>`, which exits 3 `finalize.milestone-sub-task` — orientation already names the milestone door (`crates/cli/src/render.rs`), the composed `{{ cli.finalize-task }}` ref does not | a **sub-task-aware command ref**: in a fan-out sub-task, the composed finalize step — `step:finalize` and `step:finalize-doc-only` alike — says *stop; the orchestrator joins* (`jigc milestone finalize`) instead of `jigc task finalize <sub>`. One ref fix, not a sibling workflow per workflow; the seed fan-out (§7) composes `step:finalize-doc-only` into every sub-task |
+| **S2** (F7) | a fan-out sub-task composed from a workflow carrying a finalize step is told `Run: jigc task finalize <sub>`, which exits 3 `finalize.milestone-sub-task` — orientation already names the milestone door (`crates/cli/src/render.rs`), the composed `{{ cli.finalize-task }}` ref does not | **the CLI-emitted mold** (R3): when the CLI composes for a fan-out sub-task it **omits the commit-boundary steps** — a named CLI constant set, `step:finalize` and `step:finalize-doc-only`, on the `MIGRATION_FINALIZE_STEP` mold — and emits its existing sub-task trailer in their place (the composed task-state footer, `task_state_lines` in `crates/cli/src/render.rs`: *"this task is a sub-task of milestone `<m>`, whose `jigc milestone finalize <m>` is its only commit boundary"*). It removes every false line the omitted step carried, not only its `Run:`; it is CLI-emitted text after step content, the mold of the `create-gates:` line and the `task minted:` header ([workflow-dialect.md](workflow-dialect.md) → Emitted format); it adds no conditional to the dialect ([command-catalog.md](command-catalog.md) → What the catalog does NOT do stands) and changes no catalog entry. One composition rule, not a sibling workflow per workflow; the seed fan-out (§7) composes report workflows into every sub-task with no finalize step in them. **Not taken:** an engine data value `{{task.commit-door}}` — it fixes only the command line and leaves the rest of the step's text false |
 
 **L2 revises a recorded decision, and engages it.** The store/task severity split was set at [DECISIONS.md](../DECISIONS.md) → 2026-07-24 M45 Increment 7 planning: only the task path had been measured, so the store twin was kept *byte-identical to today* — a scoping-by-evidence choice whose own text called the store follow-up *"a cheap, non-one-way-door change, deferred."* The branch model of 2026-10-01 made a branch switch the ordinary case in this repository and the port's, which is the trigger that deferral lacked. The pinned test `file_state_history_gate::store_scope_stays_blocking_where_task_scope_is_advisory` flips with the decision, in the same commit.
 
@@ -223,7 +248,9 @@ The port runs on 1.0.0 with a branch per milestone, `origin/main` merged before 
 
 **Why a seed and not adoption now (S11).** This repository has no `.jigc/`; running `jigc setup` here before the call would be the port's first act taken early, and L1/L2 would hit every branch switch. No seed would leave the channel empty on the day the port opens it. So M55 **generates the seed through the real binary and commits it as a plain record**; M56 adopts it.
 
-**Generation.** One increment drives the M55 build in a rig ([`dev/jigc-rig`](../dev/jigc-rig)) as **a fan-out with several reporters into one store** — one sub-task per row, each `--workflow report-jigc-feedback` or `report-inconsistency`, joined by `jigc milestone finalize` — which is the *two reporters* acceptance configuration (§11). It commits the conformant files under `completions/artifacts/M55/seed/`, fenced by a test that every file parses and validates against the shipped schemas at their current schema-version. The re-review and blind trial before the call record their rows as today, in their READMEs.
+**Generation — its own increment (R4, I3).** The seed (~75 rows, each re-driven) is one increment of its own, which drives the M55 build in a rig ([`dev/jigc-rig`](../dev/jigc-rig)) as **a fan-out with several reporters into one store** — one sub-task per row, each `--workflow report-jigc-feedback` or `report-inconsistency`, joined by `jigc milestone finalize` — which is the *two reporters* acceptance configuration (§11). It commits the conformant files under `completions/artifacts/M55/seed/`, one directory per doctype as the doctypes' own homes lay them out — `seed/jigc-feedback/` and `seed/inconsistencies/` — so M56 places the tree under its `docs-root` unchanged.
+
+**The seed fence.** A test copies the committed seed into a fresh rig under its `docs-root`, runs `jigc ingest` and then `jigc validate --format json`, and **passes iff the report carries zero findings** — the real binary adopting the real files, which is M56's first act rehearsed, not a parse-only check. The re-review and blind trial before the call record their rows as today, in their READMEs.
 
 **The set (S12):**
 
@@ -262,35 +289,38 @@ The port runs on 1.0.0 with a branch per milestone, `origin/main` merged before 
 
 | Check | Door | Fires when | Reads | Workflows | Severity · exit |
 |---|---|---|---|---|---|
-| `finalize.foreign-staged` (new) | `jigc task finalize <id>` and its `--dry-run`; previewed by `jigc task validate <id>` | the task is **not** a fan-out sub-task, its recorded composed workflow includes `step:finalize-doc-only`, and a path is staged that is neither the doc the task wrote through jigc (its promote destination — created, or edited by triage) nor a recorded owner-artifact | the git index vs `HEAD` | `report-jigc-feedback`, `report-inconsistency`, `triage-jigc-feedback`, `triage-inconsistency`, and any later workflow composing the step | **blocking · exit 3**, one per path; no waiver — `--carry-staged` waives only `finalize.carried-staged`, which still fires beside it for a path staged before the task. Never at `jigc milestone finalize` (sub-task code is worktree-isolated and the join commit is the milestone's), never at store scope |
-| `create.already-exists` (working name, new; joins `create.*`) | `jigc doc create … --new` only | the minted identity already exists in the committed store | the committed store — the task's own staged copy is not *existing*, so a re-run stays idempotent | both report workflows always; others opt in | **blocked write · exit 1**, nothing staged — the write family's exit ([command-output-contract.md](command-output-contract.md) → The exit-code taxonomy) |
-| `write.title-ignored` route | `jigc doc create`, `jigc doc author` | unchanged | unchanged | all | unchanged (exit 1); route text only |
+| the doc-only commit (not a check — a commit model) | `jigc task finalize <id>` and its `--dry-run` | the task is **not** a fan-out sub-task and its recorded composed workflow includes `step:finalize-doc-only` | the task's promoted docs and recorded owner-artifacts | `report-jigc-feedback`, `report-inconsistency`, `triage-jigc-feedback`, `triage-inconsistency`, and any later workflow composing the step | **no finding, no refusal**: the commit is path-scoped, every other staged path stays staged and is narrated in the left-out section; the carryover gate does not fire and `--carry-staged` is inert. Never at `jigc milestone finalize` (a sub-task never composes the step), never at store scope |
+| `create.already-exists` (working name, new; joins `create.*`) | `jigc doc create` and `jigc doc author`, at the create-gate, before copy-in | the task's create-gate entry for the doctype carries `new: true` **and** the minted identity already exists in the committed store | the committed store — the task's own staged copy is not *existing*, so a re-run stays idempotent | both report workflows; others opt in on their entry | **blocked write · exit 1**, nothing staged — the write family's exit ([command-output-contract.md](command-output-contract.md) → The exit-code taxonomy); it precedes `write.title-ignored` |
+| `write.title-ignored` route | `jigc doc create`, `jigc doc author` | unchanged — reachable only under an entry without `new: true` | unchanged | all but the report workflows | unchanged (exit 1); route text only |
 | L1 absorb | the task-scope gates — `jigc task validate`, `jigc task finalize`, `jigc milestone finalize` | a committed doc the task touched has drifted from its file-state record **and** its on-disk bytes equal the blob at the task's base pin | committed store vs the file-state record | all | the existing advisory absorb in place of a blocking `reconciliation.conflict-block`; no new code |
+| L1 store-scope arm | `jigc validate` (store scope) | a recorded doc has drifted from its file-state record **and** its on-disk bytes equal its blob at `HEAD` | the committed store vs the file-state record and `HEAD` | — | **advisory · exit 0**, routed *"the baseline lags `HEAD`; absorbed at the next finalize"* |
 | L2 downgrade | `jigc validate` (store scope) | a recorded doc is missing from the worktree **and** has no history at `HEAD` | the committed store | — | **advisory · exit 0**, routed at the branch switch, never at `unmanage`; the `oob-rename` exit flip keeps only the blocking arm; the genuine-deletion arm still blocks · exit 1 |
-| S2 | `jigc start` / `jigc workflow` / `jigc milestone execute` composing a sub-task | the task is a fan-out sub-task | — | every workflow composing `step:finalize` or `step:finalize-doc-only` | composed text only (the sub-task-aware ref); no finding |
-| absent-default projection | `jigc doc show` (whole doc), `jigc doc list` | a defaulted header field is absent from the stored doc | committed or staged copy | — | read shape only |
-| seed fence | `cargo test` | a file under `completions/artifacts/M55/seed/` fails to parse or validate against the shipped schema | the committed seed | — | test red |
+| S2 | `jigc start` / `jigc workflow` / `jigc milestone execute` composing a sub-task | the task is a fan-out sub-task | — | every workflow composing `step:finalize` or `step:finalize-doc-only` | composed text only — the commit-boundary steps omitted, the sub-task trailer in their place; no finding |
+| absent-default projection | `jigc doc show` (whole doc), `jigc doc list` | a defaulted header field is absent from the stored doc | committed or staged copy | — | read shape only; `fields` reports the effective value |
+| seed fence | `cargo test` | `jigc ingest` then `jigc validate --format json` over the committed seed, copied into a fresh rig, reports any finding | the committed seed | — | test red |
 | README fence | `cargo test` | `crates/cli/README.md` ≠ transform(root `README.md`) | both files | — | test red |
 
 ## 11. Acceptance flows
 
 Driven through the real binary in throwaway repos ([worked-examples.md](worked-examples.md); the next free flow numbers at planning are 55 onward). Sketches, illustrative:
 
-**A · Report and read back.** In a `[dev ▸ methodology]` repo: `jigc start --workflow report-jigc-feedback "<what>"` → create with `--new` → set `kind`, `found-in`, `jigc-version`, `description`, `repro` → finalize lands one commit containing only the doc. `jigc doc list jigc-feedback --format json` shows the row with `title` and `fields.status == "open"`; `jigc doc show jigc-feedback:<slug> --format json` carries `title`. Hand-delete `status:` and commit → both surfaces still project `"open"`. The same arm for `report-inconsistency` with three `sides`, reached from the router catalog; `report-jigc-feedback` absent from it, reachable by name. Then `jigc start --workflow triage-jigc-feedback` on the filed row → `status: resolved` + a `resolution` → finalize lands that doc alone; both triage workflows absent from the catalog.
+**A · Report and read back.** In a `[dev ▸ methodology]` repo: `jigc start --workflow report-jigc-feedback "<what>"` → `jigc doc create` (the gate entry carries `new: true`; no flag) → set `kind`, `found-in`, `jigc-version`, `description`, `repro` → finalize lands one commit containing only the doc. `jigc doc list jigc-feedback --format json` shows the row with `title` and `fields.status == "open"`; `jigc doc show jigc-feedback:<slug> --format json` carries `title`. Hand-delete `status:` and commit → both surfaces still project `"open"`. The same arm for `report-inconsistency` with three `sides`, each added with `add-item --slug`, reached from the router catalog; `report-jigc-feedback` absent from it, reachable by name. Then `jigc start --workflow triage-jigc-feedback` on the filed row → `status: resolved` + a `resolution` + a `pinned-by` → finalize lands that doc alone; both triage workflows absent from the catalog.
 
 **B · Mid-code-task reporting — the S4 spike's three states.** A `dev-task` is open with an edit to a tracked file and a new file:
 
 | State | Code task's files | Report finalize, after M55 |
 |---|---|---|
 | 1 | unstaged throughout | lands the report doc only, exit 0 (as today) |
-| 2 | staged **before** the report started | refused, exit 3 — `finalize.carried-staged` as today **and** `finalize.foreign-staged`; `--carry-staged` does not waive the latter |
-| 3 | staged **after** the report started | refused, exit 3, `finalize.foreign-staged` per path (today: exit 0, swept); after `git restore --staged`, the report lands its doc alone and the code task then finalizes its own files cleanly |
+| 2 | staged **before** the report started | lands the report doc only, exit 0 (today: refused, exit 3, `finalize.carried-staged`) — the carryover gate does not fire on the doc-only commit, the code task's files stay staged and are named in the left-out narration; with `--carry-staged`, the same (inert) |
+| 3 | staged **after** the report started | lands the report doc only, exit 0 (today: exit 0, the code task's files swept into the report's commit) — the code task's files stay staged, named in the left-out narration |
 
-**C · Overwrite refused.** A second report with the first's title → `create.already-exists`, exit 1, nothing staged; with `--slug` it lands beside the first, both readable. A different title slugging onto the first's id → `write.title-ignored` routed at a distinct title or `--slug`, never at renaming the existing doc.
+In every state the report's commit holds its doc alone, the code task's index is what it was before the report finalized, and the code task then finalizes its own files cleanly. Also asserted: a pending `.jigc/config` delta is not in the report's commit.
 
-**D · The seed fan-out — several reporters into one store.** A milestone with ≥2 report sub-tasks (the seed increment runs the full set) → each sub-task's composed text names `jigc milestone finalize`, never the refused `task finalize` (S2) → the join lands every doc; `jigc doc list` lists them all; the seed fence passes on the committed copy.
+**C · Overwrite refused.** A second report with the first's title → `create.already-exists`, exit 1, nothing staged — by `doc create` and by `doc author` alike; with `--slug` it lands beside the first, both readable. A second report whose **different** title slugs onto the first's id → the same gate refusal, `create.already-exists` — never `write.title-ignored`, which cannot arise under a `new: true` entry. The general case, in a workflow whose entry carries no `new: true`: a different title slugging onto an existing id → `write.title-ignored`, routed at a distinct title or `--slug`, never at renaming the existing doc.
 
-**E · Branch and pull (L1, L2).** Pull a teammate's change to a committed doc, then edit it in a new task → finalize lands (absorb), where today it conflict-blocks. Create a doc on a milestone branch, switch to `main` → `jigc validate` exits 0 with an advisory row; delete a managed doc with history and commit → still blocks.
+**D · The seed fan-out — several reporters into one store.** A milestone with ≥2 report sub-tasks (the seed increment runs the full set) → each sub-task's composed text carries no finalize step and ends in the sub-task trailer naming `jigc milestone finalize`, and nowhere names the refused `task finalize` (S2) → the join lands every doc; `jigc doc list` lists them all; the seed fence passes on the committed copy.
+
+**E · Branch and pull (L1, L2).** Pull a teammate's change to a committed doc → store-scope `jigc validate` reports it advisory at exit 0, routed *"the baseline lags `HEAD`"*; then edit it in a new task → finalize lands (absorb), where today it conflict-blocks. Create a doc on a milestone branch, switch to `main` → `jigc validate` exits 0 with an advisory row; delete a managed doc with history and commit → still blocks.
 
 ## 12. Around M55
 
@@ -308,11 +338,29 @@ Owed on the release candidate carrying M54 and M55, beside the blind trial and b
 | probe integrity · measurement / the invocation log | ✓ | — |
 | store exit codes / reconciliation | ✓ | L1, L2 and the `unmanage` route |
 | pack-load / manifest freeze · migration | ✓ | the two new doctypes at v1, the `cheap-vs-robust` hint |
-| finalize / transaction | — | the doc-only step, `finalize.foreign-staged` |
-| write surface | — | `create --new`, the `title-ignored` route |
+| finalize / transaction | — | the doc-only step's path-scoped commit, its left-out narration and the carryover gate's exemption |
+| write surface | — | the `new: true` create-gate entry at both create doors, the `title-ignored` route |
 | pinned read contracts | — | `title` + `fields` keys, the default projection |
-| composed surfaces | — | the S2 fix; the two report workflows, hidden and visible (and, since S17, the two hidden triage workflows) |
+| composed surfaces | — | the S2 fix (commit-boundary steps omitted for a sub-task); the two report workflows, hidden and visible (and, since S17, the two hidden triage workflows) |
 | adopter docs & help | — | the generated crate README; `report-inconsistency` in the router |
+
+## 13. Docs this milestone revises (R4, B2)
+
+Each row is a rule a shipped doc states that M55 changes; the doc is revised **by the increment that changes the rule**, in the same commit, so no doc states the old rule over the new binary. This design is their pointer until then, never their replacement. This doc itself joined `doc_link_fence`'s live-doc list in the planning commit.
+
+| Doc | The rule it changes | § |
+|---|---|---|
+| [reconciliation.md](reconciliation.md) | the `DRIFTED` + `TOUCHED` row and its *"block at file level"* paragraph gain L1's absorb when the on-disk bytes equal the base-pin blob; the store scope gains L1's advisory arm when they equal `HEAD`; *"start is a pure reader"* (D10) is engaged where it stands | 6 |
+| [validation.md](validation.md) | *Exit semantics*: L2 narrows the `oob-rename` exit-flip exception to its blocking arm — a doc with no history at `HEAD` is advisory at store scope, as at task scope | 6 |
+| [finalize.md](finalize.md) | the code-less census grows by the four new code-less workflows; the path-scoped doc-only commit joins the commit models beside the ordinary and the amend arm — its left-out guidance, its pre-commit advisory, its `--dry-run` manifest, and its carryover-gate exemption; `cli::gate_coverage`'s index-gate member gains its spelling | 3 |
+| [write-commands.md](write-commands.md) | → The create-gate: an `allows-create` entry may carry `new: true`, consulted by `doc create` and `doc author` before copy-in; the `write.title-ignored` route names a distinct title or `--slug` | 4 |
+| [workflow-dialect.md](workflow-dialect.md) | → Emitted format: composing for a fan-out sub-task omits the commit-boundary steps and emits the sub-task trailer in their place — an M55 revision on the `create-gates:` line's mold; → On-disk definition format: the `allows-create` entry's optional `new` key | 4, 6 |
+| [command-output-contract.md](command-output-contract.md) | → The stable finding key: `create.already-exists` (its build name) joins the `create.*` rows at an instance address | 4 |
+| [doc-read-surface.md](doc-read-surface.md) | `title` on `doc show`; `title` + `fields` on `doc list` rows with their per-state values, beside `item-count`; the effective-value projection, stated | 5 |
+| [methodology-docs.md](methodology-docs.md) | the two doctypes and four workflows join the pack's work-doc surface; → The planning gate-record: the `cheap-vs-robust` row's text (S14) | 1, 2, 9 |
+| [pinning.md](../implementation/pinning.md) | §3 stays the one home of the `pinned-by` grammar and names the `jigc-feedback` field as its second consumer | 1.3 |
+| [doctype-map.md](../implementation/doctype-map.md) | a row per new doctype (the `doctype_map_versions` fence); → Deliberate outs: why neither is the excluded backlog doctype | 1 |
+| [worked-examples.md](worked-examples.md) | flows A–E, numbered from 55 | 11 |
 
 ## Parked by this Settle
 
@@ -320,8 +368,6 @@ Each in one file with its trigger, indexed from [VISION.md](../VISION.md) → Op
 
 ## Open questions
 
-Found while writing this design; none is settled here. The rest of the draft's questions were resolved by S17 and the design-draft resolutions at the end of the [settle log](../completions/artifacts/M55/settle-log.md).
+Found while writing this design and its review revision; none is settled here. The draft's three questions are resolved — `doc list`'s per-state values by R4 (B5, §5), the projected default's indistinguishability by R4 (I5, §5), and finalize's own `.jigc/config` deltas by R1's path scope (§3) — and the rest by S17 and the design-draft resolutions at the end of the [settle log](../completions/artifacts/M55/settle-log.md).
 
-1. **What do `title` and `fields` carry on an `unregistered` or `orphaned` `doc list` row**, and on a `--task` row? An instance that does not parse counts `item-count` 0 today; `null`, absent or best-effort is the same kind of call.
-2. **Is the projected default distinguishable from a stored value?** S10 projects silently; the cross-review suggested flagging a missing stored field. F9 (a `set: on-create` date deletable with no conformance finding) is a store-side sibling neither addresses.
-3. **What finalize adds itself.** Code-less finalize also commits unstaged `.jigc/config` deltas (gap G8); whether those paths sit inside `finalize.foreign-staged`'s allowed set is unsettled.
+1. **How the doc-only arm's left-out section tags a path left *staged*.** The agent text's guidance is keyed on the commit model (§3), but the JSON `left_out[]` entry's `kind` today describes how a path differs from the commit (`modified`, `added`, `untracked`, …), not that it sits staged for another task. Whether this arm needs a further additive value — the M43 `carried-over` precedent, declared as it ships ([command-output-contract.md](command-output-contract.md)) — or reads correctly under the existing ones is the finalize increment's call, measured against what a driver filters on.

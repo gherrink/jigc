@@ -1,5 +1,7 @@
 # M55 — the two findings-channel doctypes: proposal for cross-review (2026-10-02)
 
+> **[Superseded 2026-10-02 by [design/findings-channel.md](../../../design/findings-channel.md) — the design of record, which took this proposal's Revision 1 as its field set and was then revised at the design review (R1–R4, [settle-log.md](settle-log.md) → Review phase): among others, the doc-only finalize commits path-scoped and no longer refuses (`finalize.foreign-staged` withdrawn), and create-only lives on the create-gate entry (`new: true`), not a `doc create --new` flag. The body below is kept as written, the record of what was cross-reviewed.]**
+
 Status: **proposal, generally agreed by the human; under cross-review** (Codex + an independent agent). Settled context: [settle-log.md](settle-log.md) S1–S8; evidence: [baseline-ledger.md](baseline-ledger.md), [gap-list.md](gap-list.md), [planning-findings.md](planning-findings.md).
 
 ## Settled constraints the proposal must respect
