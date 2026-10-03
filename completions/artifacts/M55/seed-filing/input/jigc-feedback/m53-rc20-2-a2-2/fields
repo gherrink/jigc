@@ -1,0 +1,7 @@
+kind bug
+found-in review:M53-per-axis-rc20/(2,A2-2)
+about repo.head-detached
+jigc-version 1.0.0-rc.20
+tier tier-2
+status resolved
+pinned-by validate_previews_posture::an_ordinary_task_in_a_fan_out_worktree_is_previewed_as_the_door_refuses_it

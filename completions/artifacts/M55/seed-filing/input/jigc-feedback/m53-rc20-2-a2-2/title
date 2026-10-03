@@ -1,0 +1,1 @@
+Previews call a fan-out worktree clean while task finalize refuses it

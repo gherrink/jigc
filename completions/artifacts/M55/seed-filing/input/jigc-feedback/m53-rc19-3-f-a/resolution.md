@@ -1,0 +1,3 @@
+Fixed in M53's pre-v1 usability batch (`d556b887`, *the displacement surfaces spell workbench paths against the workbench root*), stamped `1.0.0-rc.20`. The class was eight sites, not three. The rc.20 re-review recorded it *CLOSED* in both cells, with no host-absolute path over stdout and stderr.
+
+Re-driven on this build (`jigc 1.0.0-rc.22`, the debug binary built from `47e6d8a9`). From a linked worktree on branch `feat`, a quick-fix task with a planted `.jigc/tasks/tidy-the-readme/notes.txt` finalizes at exit 0. `committed.displaced` is `[{"from": ".jigc/tasks/tidy-the-readme/notes.txt", "to": ".jigc/displaced/tidy-the-readme/notes.txt"}]`, the stderr note names the same two repo-relative paths, and the parked file holds `KEEPHP`.

@@ -1,0 +1,6 @@
+kind bug
+found-in review:M53-per-axis-rc17/(3,F-1)
+about jigc task discard
+jigc-version 1.0.0-rc.17
+tier tier-3
+status open

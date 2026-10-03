@@ -55,31 +55,31 @@ The count of record for the M55 seed ([roadmap.md](../../../implementation/roadm
 | `rc16-7-a7-f2` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(7, A7-F2)` | open | |
 | `rc16-8-n-1` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(8, N-1)` | open | |
 | `rc16-8-n-2` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(8, N-2)` | open | |
-| `m53-settle-a` | `jigc-feedback` | [M53 Settle](../../../implementation/decisions-pending.md) **(D) (a)** | | |
-| `m53-settle-b` | `jigc-feedback` | [M53 Settle](../../../implementation/decisions-pending.md) **(D) (b)** | | |
-| `m53-settle-c` | `jigc-feedback` | [M53 Settle](../../../implementation/decisions-pending.md) **(D) (c)** | | |
-| `m53-settle-d` | `jigc-feedback` | [M53 Settle](../../../implementation/decisions-pending.md) **(D) (d)** | | |
-| `m53-settle-e` | `jigc-feedback` | [M53 Settle](../../../implementation/decisions-pending.md) **(D) (e)** | | |
-| `m53-settle-f` | `jigc-feedback` | [M53 Settle](../../../implementation/decisions-pending.md) **(D) (f)** | | |
-| `m53-rc17-3-f-1` | `jigc-feedback` | [rc.17](../M53/per-axis-review/README.md) `(3, F-1)` | | |
-| `m53-rc17-3-f-2` | `jigc-feedback` | [rc.17](../M53/per-axis-review/README.md) `(3, F-2)` | | |
-| `m53-rc17-5-defect-a` | `jigc-feedback` | [rc.17](../M53/per-axis-review/README.md) `(5, DEFECT A)` | | |
-| `m53-rc18-2-f-1` | `jigc-feedback` | [rc.18](../M53/per-axis-review-rc18/README.md) `(2, F-1)` | | |
-| `m53-rc18-3-f-3` | `jigc-feedback` | [rc.18](../M53/per-axis-review-rc18/README.md) `(3, F-3)` | | |
-| `m53-rc18-2-f-2` | `jigc-feedback` | [rc.18](../M53/per-axis-review-rc18/README.md) `(2, F-2)` | | |
-| `m53-rc18-3-f-4` | `jigc-feedback` | [rc.18](../M53/per-axis-review-rc18/README.md) `(3, F-4)` | | |
-| `m53-rc18-3-f-5` | `jigc-feedback` | [rc.18](../M53/per-axis-review-rc18/README.md) `(3, F-5)` | | |
-| `m53-rc19-3-f-a` | `jigc-feedback` | [rc.19](../M53/per-axis-review-rc19/README.md) `(3, F-A)` | | |
-| `m53-rc19-2-n-1` | `jigc-feedback` | [rc.19](../M53/per-axis-review-rc19/README.md) `(2, N-1)` | | |
-| `m53-rc19-2-n-2` | `jigc-feedback` | [rc.19](../M53/per-axis-review-rc19/README.md) `(2, N-2)` | | |
-| `m53-rc19-2-n-3` | `jigc-feedback` | [rc.19](../M53/per-axis-review-rc19/README.md) `(2, N-3)` | | |
-| `m53-rc19-2-n-4` | `jigc-feedback` | [rc.19](../M53/per-axis-review-rc19/README.md) `(2, N-4)` | | |
-| `m53-rc19-3-f-b` | `jigc-feedback` | [rc.19](../M53/per-axis-review-rc19/README.md) `(3, F-B)` | | |
-| `m53-rc20-2-a2-2` | `jigc-feedback` | [rc.20](../M53/per-axis-review-rc20/README.md) `(2, A2-2)` | | |
-| `m53-rc20-2-a2-3` | `jigc-feedback` | [rc.20](../M53/per-axis-review-rc20/README.md) `(2, A2-3)` | | |
-| `m53-rc20-2-a2-1` | `jigc-feedback` | [rc.20](../M53/per-axis-review-rc20/README.md) `(2, A2-1)` | | |
-| `m53-rc20-3-f-c` | `jigc-feedback` | [rc.20](../M53/per-axis-review-rc20/README.md) `(3, F-C)` | | |
-| `m53-rc20-5-defect-2` | `jigc-feedback` | [rc.20](../M53/per-axis-review-rc20/README.md) `(5, DEFECT 2 · rc.20)` | | |
+| `m53-settle-a` | `jigc-feedback` | [M53 Settle](../../../implementation/decisions-pending.md) **(D) (a)** | open | |
+| `m53-settle-b` | `jigc-feedback` | [M53 Settle](../../../implementation/decisions-pending.md) **(D) (b)** | open | |
+| `m53-settle-c` | `jigc-feedback` | [M53 Settle](../../../implementation/decisions-pending.md) **(D) (c)** | open | |
+| `m53-settle-d` | `jigc-feedback` | [M53 Settle](../../../implementation/decisions-pending.md) **(D) (d)** | open | |
+| `m53-settle-e` | `jigc-feedback` | [M53 Settle](../../../implementation/decisions-pending.md) **(D) (e)** | open | |
+| `m53-settle-f` | `jigc-feedback` | [M53 Settle](../../../implementation/decisions-pending.md) **(D) (f)** | open | |
+| `m53-rc17-3-f-1` | `jigc-feedback` | [rc.17](../M53/per-axis-review/README.md) `(3, F-1)` | open | |
+| `m53-rc17-3-f-2` | `jigc-feedback` | [rc.17](../M53/per-axis-review/README.md) `(3, F-2)` | open | |
+| `m53-rc17-5-defect-a` | `jigc-feedback` | [rc.17](../M53/per-axis-review/README.md) `(5, DEFECT A)` | open | |
+| `m53-rc18-2-f-1` | `jigc-feedback` | [rc.18](../M53/per-axis-review-rc18/README.md) `(2, F-1)` | resolved | |
+| `m53-rc18-3-f-3` | `jigc-feedback` | [rc.18](../M53/per-axis-review-rc18/README.md) `(3, F-3)` | resolved | |
+| `m53-rc18-2-f-2` | `jigc-feedback` | [rc.18](../M53/per-axis-review-rc18/README.md) `(2, F-2)` | open | |
+| `m53-rc18-3-f-4` | `jigc-feedback` | [rc.18](../M53/per-axis-review-rc18/README.md) `(3, F-4)` | open | |
+| `m53-rc18-3-f-5` | `jigc-feedback` | [rc.18](../M53/per-axis-review-rc18/README.md) `(3, F-5)` | open | |
+| `m53-rc19-3-f-a` | `jigc-feedback` | [rc.19](../M53/per-axis-review-rc19/README.md) `(3, F-A)` | resolved | |
+| `m53-rc19-2-n-1` | `jigc-feedback` | [rc.19](../M53/per-axis-review-rc19/README.md) `(2, N-1)` | resolved | |
+| `m53-rc19-2-n-2` | `jigc-feedback` | [rc.19](../M53/per-axis-review-rc19/README.md) `(2, N-2)` | resolved | |
+| `m53-rc19-2-n-3` | `jigc-feedback` | [rc.19](../M53/per-axis-review-rc19/README.md) `(2, N-3)` | open | |
+| `m53-rc19-2-n-4` | `jigc-feedback` | [rc.19](../M53/per-axis-review-rc19/README.md) `(2, N-4)` | open | |
+| `m53-rc19-3-f-b` | `jigc-feedback` | [rc.19](../M53/per-axis-review-rc19/README.md) `(3, F-B)` | open | |
+| `m53-rc20-2-a2-2` | `jigc-feedback` | [rc.20](../M53/per-axis-review-rc20/README.md) `(2, A2-2)` | resolved | |
+| `m53-rc20-2-a2-3` | `jigc-feedback` | [rc.20](../M53/per-axis-review-rc20/README.md) `(2, A2-3)` | resolved | |
+| `m53-rc20-2-a2-1` | `jigc-feedback` | [rc.20](../M53/per-axis-review-rc20/README.md) `(2, A2-1)` | resolved | |
+| `m53-rc20-3-f-c` | `jigc-feedback` | [rc.20](../M53/per-axis-review-rc20/README.md) `(3, F-C)` | resolved | |
+| `m53-rc20-5-defect-2` | `jigc-feedback` | [rc.20](../M53/per-axis-review-rc20/README.md) `(5, DEFECT 2 · rc.20)` | resolved | |
 | `owed-rig-eval-capture` | `jigc-feedback` | [owed](../../../implementation/decisions-pending.md) **`dev/jigc-rig` emits its assignments as text the caller must `eval`, and a capture that folds stderr in half-applies.** | | |
 | `owed-private-target-litter` | `jigc-feedback` | [owed](../../../implementation/decisions-pending.md) **`dev/gate --private-target` mints a fresh `$TMPDIR/jigc-gate-target-*` per run and `clean-litter` never sees them** | | |
 | `ci-git-marker-contract` | `jigc-feedback` | [CI](../../../implementation/decisions-pending.md) **The git 2.54.0 marker contract deferral was put on a live trigger — and the trigger did not fire.** | | |

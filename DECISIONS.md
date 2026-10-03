@@ -2,6 +2,27 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-03 — M55 Increment 9 / T4: the M53 rows re-driven — 10 resolved, 15 open, 0 refuted
+
+All 25 `m53-*` rows were re-driven on `jigc 1.0.0-rc.22`, the debug binary built from `47e6d8a9`, each in a `dev/jigc-rig` rig. Their verdicts are in [seed-ledger.md](completions/artifacts/M55/seed-ledger.md), and their inputs are under [seed-filing/input/jigc-feedback/](completions/artifacts/M55/seed-filing/input/jigc-feedback/). `file-seed` over the batch exits 0 and prints `filed 25 docs (25 jigc-feedback, 0 inconsistency) in one commit`, and over `rc16-*` and `m53-*` together it files 48 docs with no slug collision.
+
+**Resolved: every row a later M53 stamp fixed, re-driven rather than assumed, each pinned by the test that pins its fix.**
+- rc.18 `(2, F-1)` (`git_span_aim::the_fan_out_posture_site_keys_repo_relative_and_routes_absolute`) and `(3, F-3)` (`cwd_verb_subject::uninstall_removes_the_workbench_home_install_from_every_cwd`), fixed by the cwd arc in rc.19.
+- rc.19 `(3, F-A)` (`finalize_displacement::every_displace_surface_is_repo_relative_from_a_linked_worktree`), `(2, N-1)` (`precommit_hook_acceptance::commit_deleting_a_managed_placement_doc_announces_no_rename`) and `(2, N-2)` (`precommit_hook_acceptance::commit_blocks_on_this_commit_oob_rename_of_a_placement_doc`), fixed by the usability batch in rc.20.
+- All five rc.20 rows, fixed by the last batch in rc.21: `(2, A2-2)` (`validate_previews_posture::an_ordinary_task_in_a_fan_out_worktree_is_previewed_as_the_door_refuses_it`), `(2, A2-1)` (`dry_run_findings_equal_set::the_forecast_names_every_gate_it_refuses_on_that_the_preview_does_not_report`), `(3, F-C)` (`work_unit_id_axis::a_mint_door_whose_title_is_optional_routes_at_the_exit_that_omits_it`), `(5, DEFECT 2 · rc.20)` (`task_amend::the_head_shape_refusal_names_the_id_the_mint_would_have_taken`), and `(2, A2-3)`, which is `UNPINNED`: its fix struck a sentence in `f10-amend-settle.md`, which no test reads.
+
+**Open.** The Settle's six, rc.17's three, rc.18's `(2, F-2)`, `(3, F-4)` and `(3, F-5)`, and rc.19's `(2, N-3)`, `(2, N-4)` and `(3, F-B)` still reproduce. Each `description` ends with what the re-drive showed.
+
+**Pins.**
+1. **`jigc-version` is the stamp whose review first drove the row:** `1.0.0-rc.17` through `rc.20` for the re-review rows. The Settle's six take `1.0.0-rc.16`, because the M53 baseline that surfaced them drove the installed rc.16.
+2. **`found-in` names the review by its stamp:** `review:M53-per-axis-rc17/(3,F-1)` through `review:M53-per-axis-rc20/…`, the rc.17 run's directory being `per-axis-review` with no suffix. A head with two ids (`(2, A2-2)` = `(5, DEFECT 1 · rc.20)`, `(2, N-1)` = `(6, A6-R1)`, `(2, A2-3)` = `(3, F-D)`) is found-in its first id, and the other is named in the `description`. The Settle's rows are `milestone:M53-settle/(D)(a)` through `(D)(f)`.
+3. **`tier` is carried only where the source grades the row by itself.** rc.19's `(3, F-A)` is graded *tier 2 / 3*, and the review declined to collapse it, so its doc carries none and says why. The Settle graded its six *tier-2/3* as a set, so only `(D) (b)`, which grades itself tier 3, carries one.
+4. **`kind`.** The two record rows, `(2, A2-3)` and `(D) (f)`, are `feedback`: the binary does nothing wrong in either, as both sources say. So is `(D) (e)`, an asymmetry no racer has driven. `(3, F-C)` is `inconvenience`, because its route says nothing false and the reader pays for the exit it leaves out. Every other row is `bug`.
+5. **`(D) (d)` and `(D) (e)` were re-driven by reading the source**, as the Settle found them, and their repros say so. Nothing drove the unbounded walk or a torn read of the pin.
+6. **Every repro was run verbatim from its input file before the batch was filed.** That run caught `(5, DEFECT A)`'s envelope going to stderr, not stdout. It also caught `(D) (f)`'s plant: `.jigc/` itself is not ignored, only its work areas are, so the plant moved to `.jigc/tasks/`.
+
+**Observed, not seeded.** rc.19 `(2, N-4)` is open with a different false diagnosis, and the new one is **M55 Increment 4's own new code** (`2c284c48`). Main's `jigc validate` no longer names an out-of-band edit. It grades the drift advisory and routes it *the baseline lags `HEAD`*, while the baseline holds a commit that `HEAD` is an ancestor of. The row carries this in its `description`. It is a tier-3 surface sentence, not a retired invariant, so it is recorded here for the completion audit rather than halted on.
+
 ## 2026-10-03 — M55 Increment 9 / T3: the rc.16 rows re-driven — 4 resolved, 19 open, 0 refuted
 
 All 23 `rc16-*` rows were re-driven on `jigc 1.0.0-rc.22`, the debug binary built from `a768fe75`, each in a `dev/jigc-rig` rig. Their verdicts are in [seed-ledger.md](completions/artifacts/M55/seed-ledger.md), and their inputs are under [seed-filing/input/jigc-feedback/](completions/artifacts/M55/seed-filing/input/jigc-feedback/). `file-seed` over the batch exits 0 and prints `filed 23 docs (23 jigc-feedback, 0 inconsistency) in one commit`.
