@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-rc.2](https://github.com/gherrink/jigc/compare/jigc-engine-v0.1.0-rc.1...jigc-engine-v0.1.0-rc.2) - 2026-10-03
+
+### Added
+
+- *(engine)* store scope grades a history-less baseline as the task gate does
+- *(engine)* a dangling baseline routes at the branch switch, never at unmanage
+- *(engine)* a store sweep grades a baseline that lags HEAD advisory
+- *(engine)* a touched doc whose drift is a pull lands instead of conflict-blocking
+- *(cli)* a fan-out sub-task's composed text omits the per-task finalize door
+- *(cli)* an allows-create entry carrying `new: true` refuses an id already on disk
+- *(engine)* allows-create entry keys are closed, a misspelt key refused at load
+
+### Fixed
+
+- *(engine)* a history-less baseline no branch carries routes at unmanage, not at a branch switch
+- *(engine)* a shared-cache save never runs without its lock
+- *(engine)* hide the save-degrade test diagnostic from jigc-engine's API docs
+- *(probe)* a probe that fails says why, and could-not-start names the program
+
+### Other
+
+- *(engine)* the methodology byte-stability census covers jigc-feedback and inconsistency
+
 ## [0.1.0-rc.1](https://github.com/gherrink/jigc/compare/jigc-engine-v0.0.0...jigc-engine-v0.1.0-rc.1) - 2026-10-01
 
 ### Added
