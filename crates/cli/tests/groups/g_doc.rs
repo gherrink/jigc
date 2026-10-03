@@ -62,6 +62,8 @@ mod doc_task_scope;
 mod doc_write;
 #[path = "../doc_write_milestone_record.rs"]
 mod doc_write_milestone_record;
+#[path = "../findings_doctypes.rs"]
+mod findings_doctypes;
 #[path = "../fixed_identity_axis.rs"]
 mod fixed_identity_axis;
 #[path = "../flow30_acceptance.rs"]

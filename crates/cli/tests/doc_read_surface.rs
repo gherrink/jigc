@@ -96,10 +96,10 @@ allows-create:
 {{ include: step:finalize }}
 ";
 
-const FINDINGS_FIXTURE_WORKFLOW_ID: &str = "file-finding-fixture";
+pub(crate) const FINDINGS_FIXTURE_WORKFLOW_ID: &str = "file-finding-fixture";
 
 /// Write and commit [`FINDINGS_FIXTURE_WORKFLOW`] into `corpus`'s project layer.
-fn install_findings_fixture_workflow(corpus: &TrialCorpus) {
+pub(crate) fn install_findings_fixture_workflow(corpus: &TrialCorpus) {
     let workflows = corpus.repo().join(".jigc/config/workflows");
     std::fs::create_dir_all(&workflows).expect("mk the project workflows dir");
     std::fs::write(
