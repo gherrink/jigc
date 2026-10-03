@@ -4758,12 +4758,12 @@ fn run_list_staged(
         .with_context(|| format!("listing the docs staged in task `{}`", task.id))?;
     let mut docs = Vec::new();
     for id in staged {
-        let Some((ty, slug)) = id.split_once(':') else {
-            continue; // not the `<type>:<slug>` layout: nothing this projection can key on.
-        };
-        if doctype.is_some_and(|want| want != ty) {
+        if !staged_row_listed(&id, doctype) {
             continue;
         }
+        let Some((ty, slug)) = id.split_once(':') else {
+            continue; // unreachable: `staged_row_listed` admits only the `<type>:<slug>` layout.
+        };
         let schema = schemas.get(ty);
         let path = schema
             .and_then(|schema| engine::store::canonical_path(Path::new(""), schema, slug))
@@ -4857,7 +4857,9 @@ fn unknown_doctype_block(doctype: &str) -> DocFailure {
 /// listing — empty-set line included — are byte-identical with and without an open task.
 /// Existence check only, over [`state::list_active_task_ids`] (the single task enumeration
 /// source) + the CLI's one staged-doc enumerator: no doc is parsed and no content is read,
-/// so the note claims only that the task stages *something*.
+/// so the note claims only that the task stages *something the route's listing lists* —
+/// a doc of the narrowed doctype when the reader narrowed, any doc otherwise, by the
+/// staged arm's own row predicate ([`staged_row_listed`]).
 ///
 /// **The reader's scope survives into the route** — a `doc list <doctype>` routes at the
 /// same doctype's staged listing, never a wider one — and the sentence is phrased for a
@@ -4871,8 +4873,11 @@ fn staged_listing_hint(jigc_home: &Path, doctype: Option<&str>) {
     let staging: Vec<String> = state::list_active_task_ids(&jigc_root)
         .into_iter()
         .filter(|id| {
-            crate::task::staged_doc_ids(&tasks.join(id).join("docs"))
-                .is_ok_and(|staged| !staged.is_empty())
+            crate::task::staged_doc_ids(&tasks.join(id).join("docs")).is_ok_and(|staged| {
+                staged
+                    .iter()
+                    .any(|staged| staged_row_listed(staged, doctype))
+            })
         })
         .collect();
     let task_arg = match staging.as_slice() {
@@ -4890,12 +4895,25 @@ fn staged_listing_hint(jigc_home: &Path, doctype: Option<&str>) {
         argv.push(ty);
     }
     argv.extend(["--task", task_arg]);
+    let what = doctype.map_or_else(|| "docs".to_string(), |ty| format!("`{ty}` docs"));
     eprintln!(
-        "note: docs are also staged in open task{plural} {} — this listing is the committed \
+        "note: {what} are also staged in open task{plural} {} — this listing is the committed \
          store; {whose}, list what it stages: {}",
         staging.join(", "),
         engine::finding::Route::mechanical(argv, ""),
     );
+}
+
+/// Does the staged identity `id` make a row of `jigc doc list [<doctype>] --task <id>`? —
+/// the **one predicate** both the staged arm ([`run_list_staged`]) and the task-less note
+/// ([`staged_listing_hint`]) read, so the note can name a task only when the listing its
+/// route hands over is non-empty (M55 audit O24: `doc list adr` named a task staging only
+/// its commit doc and an idea, and the route it handed over answered *"no `adr` docs
+/// staged"*). A row is the `<type>:<slug>` layout, of the narrowed doctype when there is
+/// one.
+fn staged_row_listed(id: &str, doctype: Option<&str>) -> bool {
+    id.split_once(':')
+        .is_some_and(|(ty, _)| doctype.is_none_or(|want| want == ty))
 }
 
 /// The `jigc doc list --format json` shape — **pinned at ship** with its posture declared

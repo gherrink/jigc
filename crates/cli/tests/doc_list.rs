@@ -1232,14 +1232,119 @@ fn a_task_less_listing_routes_at_the_staged_read() {
     );
 
     // (6) The doctype scope the reader asked for survives into the route — a narrowed
-    //     listing routes at the narrowed staged listing, not a wider one.
-    let narrowed = jigc(repo.path(), home.path(), &["doc", "list", "adr"]);
-    assert_ok(&narrowed, "`jigc doc list adr` with an open staging task");
+    //     listing routes at the narrowed staged listing, not a wider one. The task stages
+    //     its `commit` doc, so `doc list commit` is the narrowing it answers to (a doctype
+    //     it stages nothing of is `a_narrowed_listing_names_only_tasks_staging_that_doctype`).
+    let narrowed = jigc(repo.path(), home.path(), &["doc", "list", "commit"]);
+    assert_ok(
+        &narrowed,
+        "`jigc doc list commit` with an open staging task",
+    );
     assert_eq!(
         lift_route(&stderr_of(&narrowed)),
-        vec!["jigc", "doc", "list", "adr", "--task", "harden-the-cache"],
+        vec![
+            "jigc",
+            "doc",
+            "list",
+            "commit",
+            "--task",
+            "harden-the-cache"
+        ],
         "the route carries the doctype the reader scoped the listing to",
     );
+}
+
+/// (M55 audit O24) **A narrowed listing names only the tasks that stage that doctype.**
+/// The note's claim is *"`<doctype>` docs are also staged in open task …"* and its route is
+/// that task's narrowed staged listing — so a task staging nothing of the doctype is not
+/// named: before the fix, `doc list adr` named a task staging only its commit doc, and the
+/// route it handed over answered *"no `adr` docs staged"*. The note reads the staged arm's
+/// own row predicate, so the route it hands over, **run verbatim**, lists a row.
+///
+/// Over two open tasks — one staging only its `commit` skeleton, one an `adr` beside its
+/// own — on both arms (the note rides stderr on `--format json` too, stdout untouched):
+/// `doc list adr` names the adr-staging task alone; with that task discarded it is silent;
+/// `doc list commit` and the unfiltered `doc list` keep naming every staging task.
+#[test]
+fn a_narrowed_listing_names_only_tasks_staging_that_doctype() {
+    let repo = TempDir::new("narrowed");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    seed_store(repo.path());
+    start_task(repo.path(), home.path(), "harden the cache");
+    start_task(repo.path(), home.path(), "trim the cache");
+    assert_ok(
+        &jigc(
+            repo.path(),
+            home.path(),
+            &[
+                "doc",
+                "create",
+                "adr",
+                "--title",
+                "Cache eviction",
+                "--task",
+                "trim-the-cache",
+            ],
+        ),
+        "`jigc doc create adr` in the second task",
+    );
+
+    for format in [&[][..], &["--format", "json"][..]] {
+        let mut args = vec!["doc", "list", "adr"];
+        args.extend_from_slice(format);
+        let out = jigc(repo.path(), home.path(), &args);
+        assert_ok(&out, "`jigc doc list adr` with two open tasks");
+        let stderr = stderr_of(&out);
+        assert!(
+            stderr.contains("`adr` docs are also staged in open task trim-the-cache ")
+                && !stderr.contains("harden-the-cache"),
+            "{args:?}: only the task staging an adr is named; got:\n{stderr}",
+        );
+        let route = lift_route(&stderr);
+        assert_eq!(
+            route,
+            vec!["jigc", "doc", "list", "adr", "--task", "trim-the-cache"]
+        );
+        let run: Vec<&str> = route[1..].iter().map(String::as_str).collect();
+        let followed = jigc(repo.path(), home.path(), &run);
+        assert_ok(&followed, "the emitted route, run verbatim");
+        assert!(
+            stdout_of(&followed).contains("adr:cache-eviction"),
+            "{args:?}: the route lands on a listing with a row; got:\n{}",
+            stdout_of(&followed),
+        );
+    }
+
+    // The unfiltered listing and a doctype both tasks stage keep naming both.
+    for args in [&["doc", "list"][..], &["doc", "list", "commit"][..]] {
+        let stderr = stderr_of(&jigc(repo.path(), home.path(), args));
+        assert!(
+            stderr.contains("open tasks harden-the-cache, trim-the-cache"),
+            "{args:?}: every task staging a listed doc is named; got:\n{stderr}",
+        );
+    }
+
+    // With the adr-staging task gone, `doc list adr` has nothing staged to point at.
+    assert_ok(
+        &jigc(
+            repo.path(),
+            home.path(),
+            &["task", "discard", "trim-the-cache", "--force"],
+        ),
+        "`jigc task discard`",
+    );
+    for format in [&[][..], &["--format", "json"][..]] {
+        let mut args = vec!["doc", "list", "adr"];
+        args.extend_from_slice(format);
+        let out = jigc(repo.path(), home.path(), &args);
+        assert_ok(&out, "`jigc doc list adr` with no adr staged");
+        assert_eq!(
+            stderr_of(&out),
+            "",
+            "{args:?}: a task staging no `adr` is not named"
+        );
+    }
 }
 
 /// (M48 inc-3 T3) The advisory's **plural branch** — two open tasks staging docs. Both
