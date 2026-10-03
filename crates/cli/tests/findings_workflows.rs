@@ -20,10 +20,18 @@
 //! - **(d)** Flow C's first arm: a second report with the first's title is refused
 //!   `create.already-exists` at exit 1 by the create gate's `new: true` entry, nothing staged
 //!   and the committed finding byte-unchanged (§4).
+//! - **(e)** `triage-jigc-feedback`, on a finding filed through (a)'s arm and named in plain
+//!   words, sets `resolved` + `pinned-by` + `resolution` — the first write acking its copy-in
+//!   — and lands that doc alone, every filed line kept but `status:`. Its composed text names
+//!   the four leaves, says nothing else changes, and names the intent form (§1.5, §2 → R5).
+//! - **(f)** `triage-inconsistency` does the same for a filed record: `intended` + a
+//!   `resolution`, its three sides kept, the two leaves and the intent form stated.
+//! - **(g)** A triage task allows no create: a `doc create` in one is `create.gate-blocked`.
 //!
 //! **Red** is the mutant the doc-only step exists against: with `report-jigc-feedback`'s body
 //! on `step:finalize` instead of `step:finalize-doc-only`, the report's commit sweeps the
-//! foreign staged path in and (a)'s one-doc assertion fails.
+//! foreign staged path in and (a)'s one-doc assertion fails. For (e), the triage step
+//! shadowed without its four-leaves sentence fails the composed-text assertion.
 
 use crate::support;
 
@@ -53,6 +61,9 @@ const FOREIGN: &str = "src/foreign.rs";
 /// A fenced repro whose `#`-led line would be refused unfenced (the author step says so).
 const REPRO: &str =
     "```sh\n# stage a file, then finalize the report\ngit add src/foreign.rs\n```\n";
+
+/// The inconsistency every arm files.
+const INCONSISTENCY: &str = "Cache eviction disagrees";
 
 /// The three sides of the inconsistency: `(title, --slug, says)`.
 const SIDES: [(&str, &str, &str); 3] = [
@@ -319,6 +330,57 @@ fn author_jigc_feedback(corpus: &TrialCorpus, title: &str) -> (Composed, String)
     (composed, address)
 }
 
+/// Author the inconsistency titled [`INCONSISTENCY`] with its three [`SIDES`] in the
+/// composed `report-inconsistency` task, every write through the composed text's emitted
+/// lines; the commit doc is filled too, so only the finalize is left. Returns its address.
+fn author_inconsistency(corpus: &TrialCorpus, composed: &Composed) -> String {
+    let address = create(corpus, composed, "inconsistency", INCONSISTENCY);
+    let slug = slug_of(&address);
+    run_emitted(
+        corpus,
+        composed,
+        "jigc doc set-field inconsistency:<slug>#meta/kind ",
+        &[("<slug>", &slug), ("<code-doc|doc-doc>", "code-doc")],
+        None,
+    );
+    for (side_title, side, says) in SIDES {
+        run_emitted(
+            corpus,
+            composed,
+            "jigc doc add-item inconsistency:<slug>#sides ",
+            &[
+                ("<slug>", &slug),
+                ("<path or address>", side_title),
+                ("<side>", side),
+            ],
+            None,
+        );
+        run_emitted(
+            corpus,
+            composed,
+            "jigc doc set-slot inconsistency:<slug>#sides/<side>/says ",
+            &[("<slug>", &slug), ("<side>", side)],
+            Some(says),
+        );
+    }
+    run_emitted(
+        corpus,
+        composed,
+        "jigc doc set-slot inconsistency:<slug>#description ",
+        &[("<slug>", &slug)],
+        Some("The code, the decision and the guide each state a different eviction rule."),
+    );
+    run_emitted(
+        corpus,
+        composed,
+        "jigc doc set-slot inconsistency:<slug>#evidence ",
+        &[("<slug>", &slug)],
+        Some("Read all three side by side."),
+    );
+    fill_commit(corpus, composed, "inconsistencies");
+    address
+}
+
 /// Run the composed text's emitted finalize line.
 fn finalize(corpus: &TrialCorpus, composed: &Composed) -> Output {
     run_emitted_raw(
@@ -523,55 +585,7 @@ fn report_inconsistency_is_reached_from_the_catalog_with_three_sides() {
         composed.text,
     );
 
-    let address = create(
-        &corpus,
-        &composed,
-        "inconsistency",
-        "Cache eviction disagrees",
-    );
-    let slug = slug_of(&address);
-    run_emitted(
-        &corpus,
-        &composed,
-        "jigc doc set-field inconsistency:<slug>#meta/kind ",
-        &[("<slug>", &slug), ("<code-doc|doc-doc>", "code-doc")],
-        None,
-    );
-    for (side_title, side, says) in SIDES {
-        run_emitted(
-            &corpus,
-            &composed,
-            "jigc doc add-item inconsistency:<slug>#sides ",
-            &[
-                ("<slug>", &slug),
-                ("<path or address>", side_title),
-                ("<side>", side),
-            ],
-            None,
-        );
-        run_emitted(
-            &corpus,
-            &composed,
-            "jigc doc set-slot inconsistency:<slug>#sides/<side>/says ",
-            &[("<slug>", &slug), ("<side>", side)],
-            Some(says),
-        );
-    }
-    run_emitted(
-        &corpus,
-        &composed,
-        "jigc doc set-slot inconsistency:<slug>#description ",
-        &[("<slug>", &slug)],
-        Some("The code, the decision and the guide each state a different eviction rule."),
-    );
-    run_emitted(
-        &corpus,
-        &composed,
-        "jigc doc set-slot inconsistency:<slug>#evidence ",
-        &[("<slug>", &slug)],
-        Some("Read all three side by side."),
-    );
-    fill_commit(&corpus, &composed, "inconsistencies");
+    let address = author_inconsistency(&corpus, &composed);
 
     let before = commit_count(&corpus);
     let out = finalize(&corpus, &composed);
@@ -677,4 +691,307 @@ fn a_same_title_second_report_is_refused_with_nothing_staged() {
         committed,
         "the committed finding is byte-unchanged",
     );
+}
+
+/// The test `triage-jigc-feedback` names as pinning the fix it resolves.
+const PINNED_BY: &str =
+    "findings_workflows::report_jigc_feedback_lands_its_doc_alone_and_reads_back_open";
+
+/// The `resolution` a triage authors.
+const RESOLUTION: &str = "Fixed: the report's finalize commits its doc alone.";
+
+/// `text` with every whitespace run folded to one space — composed prose wraps its lines,
+/// so a sentence is asserted on its words, not on where the step file broke it.
+fn prose(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Assert the composed triage text states the leaves it changes and the intent form for `ty`.
+fn assert_triage_text(composed: &Composed, ty: &str, leaves: &str) {
+    let words = prose(&composed.text);
+    for sentence in [
+        format!("This step changes {leaves} — and nothing else"),
+        format!(
+            "Name the {} in the intent in plain words — its slug, without the `{ty}:` prefix \
+             and its colon.",
+            match ty {
+                "jigc-feedback" => "finding",
+                _ => "record",
+            },
+        ),
+        format!(
+            "the address, `{ty}:<slug>`, goes to the `doc` verbs below and never to `jigc start`."
+        ),
+    ] {
+        assert!(
+            words.contains(&sentence),
+            "the composed triage text says `{sentence}`; got:\n{}",
+            composed.text,
+        );
+    }
+}
+
+/// Start `workflow` the way its step says to — the finding named in plain words, its slug
+/// alone — and assert the task id is minted from that slug, unmangled.
+fn start_triage(corpus: &TrialCorpus, workflow: &str, address: &str) -> Composed {
+    let slug = slug_of(address);
+    let composed = start(corpus, workflow, &slug);
+    assert!(
+        composed.task.starts_with(&slug),
+        "a plain-words intent mints the task id from the slug `{slug}`; got `{}`",
+        composed.task,
+    );
+    composed
+}
+
+/// Finalize the report task `composed` through its emitted line and return the path of
+/// the doc it filed at `address` (in `ty`'s store), read back off `doc list`.
+fn land_report(corpus: &TrialCorpus, composed: &Composed, ty: &str, address: &str) -> String {
+    let out = finalize(corpus, composed);
+    assert!(out.status.success(), "the report lands; {}", text(&out));
+    listed_row(corpus, ty, address)["path"]
+        .as_str()
+        .expect("a row has a path")
+        .to_owned()
+}
+
+/// Stage a foreign path, run the triage task's emitted finalize, and assert it lands one
+/// commit holding `path` alone, the foreign path left staged.
+fn assert_lands_alone(corpus: &TrialCorpus, composed: &Composed, path: &str) {
+    fs::create_dir_all(corpus.repo().join("src")).expect("mk src/");
+    fs::write(corpus.repo().join(FOREIGN), "pub fn other_task() {}\n").expect("foreign file");
+    corpus.git(&["add", "--", FOREIGN]);
+    let before = commit_count(corpus);
+    let out = finalize(corpus, composed);
+    assert!(
+        out.status.success(),
+        "the triage's emitted finalize lands at exit 0; {}",
+        text(&out),
+    );
+    assert_eq!(commit_count(corpus), before + 1, "exactly one commit");
+    assert_eq!(
+        head_files(corpus),
+        vec![path.to_owned()],
+        "the triage's commit holds the finding alone; {}",
+        text(&out),
+    );
+    assert_eq!(
+        corpus.git(&["diff", "--cached", "--name-only"]),
+        FOREIGN,
+        "the foreign path stays staged for the task it belongs to",
+    );
+}
+
+/// The lines of `filed` the triage removed — append-only means only the `status:` line.
+fn removed_lines(filed: &str, triaged: &str) -> Vec<String> {
+    filed
+        .lines()
+        .filter(|line| !triaged.lines().any(|kept| kept == *line))
+        .map(str::to_owned)
+        .collect()
+}
+
+/// **(e)** `triage-jigc-feedback` moves a filed finding off `open` — `resolved`, a
+/// `pinned-by` and a `resolution`, the first write acking its copy-in — and lands that doc
+/// alone, every other line as filed. Its composed text names the four leaves, says nothing
+/// else changes, and names the plain-words intent form.
+#[test]
+fn triage_jigc_feedback_resolves_a_filed_finding_and_lands_it_alone() {
+    let corpus = TrialCorpus::build(State::Fresh);
+    let (report, address) = author_jigc_feedback(&corpus, TITLE);
+    let path = land_report(&corpus, &report, "jigc-feedback", &address);
+    let filed = fs::read_to_string(corpus.repo().join(&path)).expect("read the finding");
+
+    let triage = start_triage(&corpus, "triage-jigc-feedback", &address);
+    assert_triage_text(
+        &triage,
+        "jigc-feedback",
+        "four leaves — `status`, `duplicate-of`, `pinned-by` and `resolution`",
+    );
+
+    let slug = slug_of(&address);
+    let first = run_emitted(
+        &corpus,
+        &triage,
+        "jigc doc set-field jigc-feedback:<slug>#meta/status ",
+        &[
+            ("<slug>", &slug),
+            ("<resolved|declined|duplicate|refuted>", "resolved"),
+        ],
+        None,
+    );
+    assert!(
+        first.contains("copied in for update"),
+        "the first write acks the committed finding's copy-in; got:\n{first}",
+    );
+    let pin = run_emitted(
+        &corpus,
+        &triage,
+        "jigc doc set-field jigc-feedback:<slug>#meta/pinned-by ",
+        &[("<slug>", &slug), ("<module>::<test_name>", PINNED_BY)],
+        None,
+    );
+    assert!(
+        !pin.contains("copied in for update"),
+        "a later write edits the staged copy; got:\n{pin}",
+    );
+    run_emitted(
+        &corpus,
+        &triage,
+        "jigc doc set-slot jigc-feedback:<slug>#resolution ",
+        &[("<slug>", &slug)],
+        Some(RESOLUTION),
+    );
+    let read_back = run_emitted(
+        &corpus,
+        &triage,
+        "jigc doc show jigc-feedback:<slug> ",
+        &[("<slug>", &slug)],
+        None,
+    );
+    assert!(
+        read_back.contains(RESOLUTION),
+        "the emitted read-back serves the staged resolution; got:\n{read_back}",
+    );
+    fill_commit(&corpus, &triage, "feedback");
+
+    assert_lands_alone(&corpus, &triage, &path);
+    let row = listed_row(&corpus, "jigc-feedback", &address);
+    assert_eq!(
+        (&row["fields"]["status"], &row["fields"]["pinned-by"]),
+        (&json!("resolved"), &json!(PINNED_BY)),
+        "the committed row is resolved and pinned; row:\n{row:#}",
+    );
+    assert!(
+        shown(&corpus, &address).to_string().contains(RESOLUTION),
+        "the committed finding carries its resolution",
+    );
+    let triaged = fs::read_to_string(corpus.repo().join(&path)).expect("re-read");
+    assert_eq!(
+        removed_lines(&filed, &triaged),
+        vec!["status: open".to_owned()],
+        "only the status line left the filed finding; triaged:\n{triaged}",
+    );
+}
+
+/// **(f)** `triage-inconsistency` moves a filed record off `open` — `intended` and a
+/// `resolution` — and lands that doc alone, its three sides as filed. Its composed text
+/// names the two leaves and the plain-words intent form.
+#[test]
+fn triage_inconsistency_marks_a_filed_record_intended_and_lands_it_alone() {
+    let corpus = TrialCorpus::build(State::Fresh);
+    let report = start(&corpus, VISIBLE, "the cache docs disagree on eviction");
+    let address = author_inconsistency(&corpus, &report);
+    let path = land_report(&corpus, &report, "inconsistency", &address);
+    let filed = fs::read_to_string(corpus.repo().join(&path)).expect("read the record");
+
+    let triage = start_triage(&corpus, "triage-inconsistency", &address);
+    assert_triage_text(
+        &triage,
+        "inconsistency",
+        "two leaves — `status` and `resolution`",
+    );
+
+    let slug = slug_of(&address);
+    let first = run_emitted(
+        &corpus,
+        &triage,
+        "jigc doc set-field inconsistency:<slug>#meta/status ",
+        &[
+            ("<slug>", &slug),
+            ("<resolved|intended|refuted>", "intended"),
+        ],
+        None,
+    );
+    assert!(
+        first.contains("copied in for update"),
+        "the first write acks the committed record's copy-in; got:\n{first}",
+    );
+    let resolution = "Intended: the guide describes the planned eviction rule.";
+    run_emitted(
+        &corpus,
+        &triage,
+        "jigc doc set-slot inconsistency:<slug>#resolution ",
+        &[("<slug>", &slug)],
+        Some(resolution),
+    );
+    let read_back = run_emitted(
+        &corpus,
+        &triage,
+        "jigc doc show inconsistency:<slug> ",
+        &[("<slug>", &slug)],
+        None,
+    );
+    assert!(
+        read_back.contains(resolution),
+        "the emitted read-back serves the staged resolution; got:\n{read_back}",
+    );
+    fill_commit(&corpus, &triage, "inconsistencies");
+
+    assert_lands_alone(&corpus, &triage, &path);
+    let row = listed_row(&corpus, "inconsistency", &address);
+    assert_eq!(
+        (&row["fields"]["status"], &row["item-count"]),
+        (&json!("intended"), &json!(3)),
+        "the committed record is intended, its three sides kept; row:\n{row:#}",
+    );
+    assert!(
+        shown(&corpus, &address).to_string().contains(resolution),
+        "the committed record carries its resolution",
+    );
+    let triaged = fs::read_to_string(corpus.repo().join(&path)).expect("re-read");
+    assert_eq!(
+        removed_lines(&filed, &triaged),
+        vec!["status: open".to_owned()],
+        "only the status line left the filed record; triaged:\n{triaged}",
+    );
+}
+
+/// **(g)** A triage task allows no create: its composed text emits no `doc create` line,
+/// and a `doc create` of its own doctype inside it is refused `create.gate-blocked`, with
+/// nothing staged.
+#[test]
+fn a_create_inside_a_triage_task_is_gate_blocked() {
+    let corpus = TrialCorpus::build(State::Fresh);
+    for (workflow, ty) in [
+        ("triage-jigc-feedback", "jigc-feedback"),
+        ("triage-inconsistency", "inconsistency"),
+    ] {
+        let triage = start(&corpus, workflow, &format!("no create under {workflow}"));
+        assert!(
+            !triage.text.contains("jigc doc create"),
+            "`{workflow}` emits no create; got:\n{}",
+            triage.text,
+        );
+        let out = corpus.jigc(&[
+            "doc",
+            "create",
+            ty,
+            "--title",
+            "A new finding",
+            "--task",
+            &triage.task,
+        ]);
+        assert!(
+            !out.status.success()
+                && String::from_utf8_lossy(&out.stderr).contains("create.gate-blocked"),
+            "a `{ty}` create in a `{workflow}` task is refused `create.gate-blocked`; {}",
+            text(&out),
+        );
+        let docs = corpus
+            .repo()
+            .join(".jigc/tasks")
+            .join(&triage.task)
+            .join("docs");
+        let staged: Vec<String> = fs::read_dir(&docs)
+            .map(|entries| {
+                entries
+                    .filter_map(Result::ok)
+                    .map(|entry| entry.file_name().to_string_lossy().into_owned())
+                    .filter(|name| name.starts_with(&format!("{ty}:")))
+                    .collect()
+            })
+            .unwrap_or_default();
+        assert_eq!(staged, Vec::<String>::new(), "`{workflow}`: nothing staged");
+    }
 }
