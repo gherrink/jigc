@@ -2,6 +2,130 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-03 — M55 Increment 4 planning: decomposition
+
+Cut [Increment 4](implementation/roadmap.md) (*L1 pull absorption, at the task scope and the store's*) into **2 ordered tasks**, grounded at HEAD `317b4f24` on `milestone/findings-channel/l1-pull-absorption` (tree clean), with Increments 1–3 landed. Cross-ref [roadmap.md](implementation/roadmap.md) → Milestone 55 → Increment 4; the M55 Settle below (S13's L1, R4 B4, O5 resolved by R5); [findings-channel.md](design/findings-channel.md) → 6, 10, 13; [planning-gate-record.md](completions/artifacts/M55/planning-gate-record.md) → row 9 and O5. **Codes registered: none.** `file-state.hash-matches` changes severity on one store arm, and its `(code, target)` key does not move. **No contract moves.**
+
+**Basis. Each item was read at HEAD, or driven on the debug binary in a `dev/jigc-rig committed-singletons` rig where marked.**
+
+- **Driven, the defect at both scopes.** A conformant line appended to the baselined `VISION.md` and committed with plain git gives these results:
+  - `jigc validate` exits 0 with `blocking (gates at finalize) · file-state.hash-matches`, routed *"review the out-of-band edit … re-author it through the owning workflow"*.
+  - A `single-task` minted afterwards runs `doc set-slot vision:vision#open-questions` (*"copied in for update"*). Its `task validate` then exits 3 with `reconciliation.conflict-block`, routed at `task discard` or *"revert the external edit on disk"*.
+  - `.jigc/state/file-state.json` is unchanged throughout.
+- **The three production callers of `reconcile_committed`** are `file_state.rs:701` (the placement arm) and `:739` (the located arm), both inside `reconcile_committed_store`, and `milestone.rs:1521`. The first two are reached through `validate::validate_task` from two CLI doors:
+  - **The per-task gate**, `task.rs:2462`, shared by `task validate`, `task finalize`'s preflight and `start`'s orientation. The committed-store reads bind to `jigc_home`, and the pin is `base.json` read by `TaskArea::base`.
+  - **The milestone join gate**, `milestone.rs:6582`, which already holds the milestone's `base.sha`.
+
+  The third caller is the milestone-record preflight. It calls `reconcile_committed` with `task_touched: true` on purpose, under the F3 rule: an edited record is *"detected + conflict-blocked, **not** absorbed"* ([team-ready-state.md](design/team-ready-state.md) → No-silent-overwrite discipline).
+- **A sub-task's pin is the milestone's.** `engine::milestone::add_task` mints with `read_base_pin` of the milestone area (*"never a fresh HEAD"*, `milestone.rs:374`).
+- **The drift hash is blake3** (`hash_bytes`), not git's blob id. So the seam has to hand the engine **bytes**, never a git object id. `git cat-file blob <rev>:<path>` is the CLI's existing idiom (`task::materialize_treeish_subset`).
+- **The store twin.** `detect_committed_store` (`file_state.rs:869`) is the only store-scope `hash-matches` producer. Its single production caller is `validate_store_families` (`validate.rs:648`), which `cli::validate_store_in_repo` calls at `jigc_home`. The store sweep runs no git today. A blocking content finding at store scope already exits 0 (no `STORE_EXIT_FLIPS` member matches `file-state`), so this arm changes the row's severity and the `blocking_probes` array, not the exit.
+- **An advisory emission survives the severity post-pass.** `result::assign_severity` re-grades an inventory check only on an **explicit** `scalar-set` (`Resolved::overridden_scalar`), so the pack default `blocking` in `knobs.yaml` does not re-grade it. A project delta on `validation.file-state.hash-matches.severity` grades both arms alike. That is the knob's documented semantics, and it is kept.
+- **The finalize clobber guard is not on this path.** `finalize::plan_clobber_guard` gates only `Provenance::Created`, and a copied-in `VISION.md` is `EditedFromBase`.
+- **Existing suites model "DRIFTED + TOUCHED" by committing the edit *before* the warm task is minted.** That is exactly L1's case, chosen so that `finalize.base-mismatch` does not pre-empt the reconcile gate. Read at HEAD, this is true of:
+  - `flow19_planning_encode` (warm drift)
+  - `singleton_running_doc` (c)
+  - `reconciliation_baseline_contrast` arm A
+  - `flow49_acceptance`'s lost-baseline contrast
+
+  Each of these flips under the task arm, so its repair is part of T1.
+
+**Build pins. Each is a verified fact above, or a decision taken here from the locked docs:**
+
+- **P1 · Pin-equal but non-conformant keeps today's conflict-block.** In the DRIFTED + TOUCHED arm, when the on-disk bytes equal the pin's blob, the arm runs the UNTOUCHED arm's absorb body: `conformance_gate` → `record.record` → `index.absorb_doc` → `absorb_finding`. When the conformance gate fails, the arm returns the **caller's `conflict_block_finding`, byte-identical to today**, never `conformance_block_finding`.
+  - *Why:* the roadmap and §6 spell the whole body as its success path, and their stated purpose is that a non-conformant edit is never baselined. P1 keeps that.
+  - Grading the failure as a conformance-block would silently retire M46's path-keyed third exit ([reconciliation.md](design/reconciliation.md) → *the migration source gets a third exit*). That exit exists for *"a managed doc that was hand-broken out of band"* and then migrated. When the break was committed before `jigc migrate`, its bytes equal the pin, and the migration would meet the hand-repair sanction with no `unmanage` exit.
+  - The gate-record's foreclosed-by-doc row engages D10 and M45 Inc 7, not M46. So this increment keeps M46.
+- **P2 · One seam, two pins.** A lazy engine type `Fn(&str) -> Option<Vec<u8>>` returns the committed bytes of a repo-relative path at the caller's pin, on the `HistoryPredicate` mold. The engine hashes the bytes with `hash_bytes`.
+  - It is consulted **only on a drifted path**, so a clean sweep shells out zero times.
+  - The task arm's callers bind it to the task's or the milestone's base pin. The store arm binds it to `HEAD`.
+  - Any git failure or absent blob answers `None`, which keeps today's verdict. That is conservative, the `history … unwrap_or(true)` precedent.
+- **P3 · The record preflight passes an always-`None` lookup.** F3 stays byte-identical, and the record door keeps conflict-blocking every drift.
+- **P4 · The store arm.** It applies when the bytes equal the `HEAD` blob **and** `conformance_gate` passes. It emits `file-state.hash-matches` at **Advisory**, keyed and messaged as today, with a `Route::informational` route carrying the design's words *"the baseline lags `HEAD`; absorbed at the next finalize"*.
+  - In every other drifted case, including a non-conformant committed edit, it emits today's blocking finding unchanged. Family 5's conformance finding over the same doc stands as it is. Read-only as before: no record write.
+- **P5 · Pure readers stay pure (D10).** `start`, `task validate` and `jigc validate` write no baseline. The absorb reaches `file-state.json` only through a landed finalize's existing persistence path, which this increment does not touch.
+
+**The tasks.** Both grow one new suite, `crates/cli/tests/l1_pull_absorption.rs`, registered in `g_finalize`. T1 creates it. Its "pulled" fixture is real: a local bare origin with two clones, where clone B commits the `VISION.md` edit and pushes, and clone A `git pull`s it. Clone A is a `[dev ▸ methodology]` repo whose `VISION.md` a landed finalize has baselined.
+
+- **T1 · The task arm: absorb at the base pin, at the three callers, plus the fixture repairs it forces.**
+  - **The change.** P1–P3: the seam threaded through `reconcile_committed`, `reconcile_committed_store` and `validate_task`. Every engine test caller passes the no-pin lookup, so its bytes are unchanged.
+  - **The fixture repairs.** In the same commit, each existing suite whose conflict fixture commits the edit before the mint (the four above, plus any the gate names) is **re-aimed**, not weakened:
+    - The edit is written to disk **uncommitted, after the mint**, so HEAD still equals the pin and the bytes differ from its blob.
+    - It is written before the task's first touch wherever that test's other assertions depend on the copy-in carrying the edit (flow49's arm B: *"a commit carrying both sides' prose"*).
+    - No assertion is deleted or loosened. If a test's asserted outcome cannot survive the re-aim, that is a halt, not a rewrite.
+  - **The docs.**
+    - [reconciliation.md](design/reconciliation.md): the DRIFTED + TOUCHED row and *Conflict — block at file level* gain the pin-equal absorb, P1's non-conformant arm and P3's record door. *Persistence of the shifted baseline* (D10) is engaged where it stands.
+    - [findings-channel.md](design/findings-channel.md): §6's and §10's L1 rows gain P1.
+  - *Done:* `cargo test -p jigc-engine file_state::` is green with new unit tests:
+    - **(i)** pin-equal and conformant → `reconciliation.absorb`, with the record and index advanced;
+    - **(ii)** pin-equal and non-conformant → today's `reconciliation.conflict-block` carrying the caller's presentation, including a migration `ConflictBlock`'s path-keyed exit, with the record untouched;
+    - **(iii)** bytes ≠ pin → conflict-block;
+    - **(iv)** a `None` lookup → today's verdict in every arm.
+
+    `cargo test -p jigc l1_pull_absorption::` is green on:
+    - **(a)** After the pull, a `single-task` editing `vision#open-questions` reports advisory `reconciliation.absorb` at `VISION.md` and no conflict-block from `task validate`. `task finalize` then lands at exit 0, and the commit carries both the teammate's line and the task's prose. This test is red at HEAD with `reconciliation.conflict-block`.
+    - **(b)** `file-state.json` is byte-identical before and after `start` and `task validate` (P5).
+    - **(c)** The control: an uncommitted edit to `VISION.md` made after the mint still conflict-blocks `task finalize`, exit 3, with no commit.
+    - **(d)** The sub-task arm, at the join:
+      - A pull **after** `milestone create`, with a sub-task touching `VISION.md`, is refused by `jigc milestone finalize` with `reconciliation.conflict-block`.
+      - A pull **before** `milestone create` lands. Red-step assumption, proved here and not trusted: the join persists or re-baselines as the per-task finalize does, so the next `jigc validate` carries no `VISION.md` drift.
+    - **(e)** The record door: an edit committed to a milestone record still conflict-blocks the next `add-task` (F3). `milestone_record_reconcile::` stays green unedited.
+
+    The re-aimed suites are green, and `dev/gate` is green.
+- **T2 · The store arm: advisory when the baseline lags `HEAD`, behind the conformance check, plus Flow E's L1 half end to end.**
+  - **The change.** P2's seam bound to `HEAD` at `cli::validate_store_in_repo`, threaded through `validate_store_families` into `detect_committed_store` (P4). Every engine test caller passes the no-pin lookup.
+  - **The docs.**
+    - [reconciliation.md](design/reconciliation.md): the store-scope arm, under the existing code at advisory (§13).
+    - [validation.md](design/validation.md): the *"reused `hash-matches` id carries a store-scope route"* bullet gains the lag arm, and the inventory row notes it.
+    - [worked-examples.md](design/worked-examples.md): flow 43's *What it asserts* item 3 is annotated in place. Its fixture's edit is committed, so it now reads advisory with the lag route.
+  - *Done:* `cargo test -p jigc-engine file_state::` is green with new unit tests:
+    - **(i)** `HEAD`-equal and conformant → one advisory `file-state.hash-matches` with the informational lag route;
+    - **(ii)** `HEAD`-equal and non-conformant → today's blocking finding;
+    - **(iii)** an uncommitted edit → today's blocking finding;
+    - **(iv)** the record is borrowed `&` and unchanged.
+
+    `cargo test -p jigc l1_pull_absorption::` is green on Flow E's L1 half (§11), through the real binary:
+    - **(f)** After the pull, `jigc validate --format json` exits 0. The `VISION.md` row is `file-state.hash-matches` at `advisory`, routed with the lag words. `blocking_probes` lacks `file-state`. This is red at HEAD (blocking).
+    - **(g)** T1 (a)'s finalize lands, and the next `jigc validate` carries no `file-state.hash-matches` row for `VISION.md`.
+    - **(h)** The control: a hand edit that breaks `VISION.md`'s conformance, committed with plain git, keeps its family-5 conformance finding and its **blocking** `hash-matches`. `file-state.json` is byte-identical across the sweep, so it is not baselined.
+    - **(i)** An uncommitted edit stays blocking.
+
+    `flow43_acceptance::`, `validate_envelope::`, `absorb_surface::` and `severity_tuning::` are green, and `dev/gate` is green.
+
+**Why this order and this seam.** T1 and T2 change different signatures (`validate_task` and `validate_store_families`), and each is gate-green alone. T1 goes first because T2's end-to-end Proves, *"after the landed finalize the next `jigc validate` is clean"*, needs T1's finalize to land. T1's fixture repairs are its own: the arm change reddens exactly those suites, so splitting them out would leave T1 with no green commit.
+
+**Every Grouped-scope clause maps to a task.**
+
+| Grouped-scope clause | Task |
+|---|---|
+| DRIFTED + TOUCHED absorbs when the on-disk bytes equal the base-pin blob | T1 (P1) |
+| The blob as a new caller-supplied input at the three production callers | T1 (P2, P3) |
+| The UNTOUCHED arm's whole body, never only the re-hash | T1 (P1; (i) asserts record + index + finding) |
+| A change made during the task still conflict-blocks | T1 (c, iii) |
+| A sub-task's pin is the milestone's: a pull after `milestone create` still blocks | T1 (d) |
+| Store: drifted + `HEAD`-equal → `file-state.hash-matches` advisory, the lag route, no new id | T2 (P4, f) |
+| …behind the conformance check, so a plain-git non-conformant edit keeps its finding | T2 (h, ii) |
+| *start is a pure reader* (D10) kept: no baseline before a landed finalize | T1 (b), T2 (iv, h) |
+
+**Every Proves clause maps too.**
+
+| Proves clause | Task |
+|---|---|
+| A teammate's committed `VISION.md` edit, pulled → `jigc validate` exits 0 with the advisory row and its route | T2 (f) |
+| A task editing `vision#open-questions` → `task finalize` lands, where today it is refused | T1 (a) |
+| After the landed finalize, the next `jigc validate` is clean | T2 (g) |
+| Control: an out-of-band edit made during the task still conflict-blocks | T1 (c) |
+| Control: a non-conformant plain-git edit keeps its conformance finding and is not baselined | T2 (h) |
+
+**Beyond the bullets, and why.** The `validation.md` bullet and inventory note, and flow 43's item 3, are statements T2's arm makes false where they stand, so each is revised in the commit that falsifies it. §6's L1 row gains P1 for the same reason.
+
+**Declared bounds, recorded and not fixed:**
+
+- **L3** (a user-created git worktree) is untouched, as the roadmap says.
+- An edit committed to a **milestone record**, pulled, still conflict-blocks at the record door (P3, F3's).
+- A **pulled non-conformant** edit still conflict-blocks a task that touches it, routed as today (P1).
+- A project that explicitly sets `validation.file-state.hash-matches.severity` re-grades the advisory arm too.
+
 ## 2026-10-03 — M55 Increment 3 / T2: the commit-doc-author clause, keyed on `finalize.fan-out.squash`, built
 
 Built on P1's author clause, P4, P5 and P6's author arm below; Open question 2 is marked settled in [findings-channel.md](design/findings-channel.md), and [workflow-dialect.md](design/workflow-dialect.md) and [worked-examples.md](design/worked-examples.md) scope *"sub-agents author their own commit doc"* to `squash: false`. What the build adds to the plan:
