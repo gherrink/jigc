@@ -2,6 +2,107 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-03 — M55 Increment 6 planning: decomposition
+
+Cut [Increment 6](implementation/roadmap.md) (*the read surface — `title` and `fields` on the rows a triage reads*) into **3 ordered tasks**, grounded at HEAD `f6616865` on `milestone/findings-channel/read-surface-title-and-fields` (tree clean), with Increments 1–5 landed. Cross-ref [roadmap.md](implementation/roadmap.md) → Milestone 55 → Increment 6; the M55 Settle below (S10 as corrected, R4 B5 · I5); [findings-channel.md](design/findings-channel.md) → 5, 10, 13; [planning-gate-record.md](completions/artifacts/M55/planning-gate-record.md) → row 8 and acceptance row A; [planning-findings.md](completions/artifacts/M55/planning-findings.md) → F10, F18. **Codes registered: none. No version integer moves:** `doc show` and `doc list` carry none, and `doc schema` with its `contract-version` is not touched.
+
+**Basis. Each item was read at HEAD, or driven on the debug binary in a `dev/jigc-rig` rig where marked.**
+
+- **The two serializers.** `whole_doc_json` (`crates/cli/src/doc.rs:5622`) has one call site, `show_json` (`:5512`), which serves both the committed read (`read_slice`) and the staged one (`read_slice_staged`) and then inserts `staged`. It builds `fields` by flattening every `SectionBody::Simple` section's parsed fields through `header_field_json`, and nothing projects a default. `DocRow` (`:4832`) is `{id, path, state, item-count}`, and it is built at three committed sites (a parsing arm at `:4549` that computes `item-count` best-effort, prior-home rows on the same loop, and orphan rows at `:4613` that read no bytes) and at one staged site (`run_list_staged`, `:4693`, which reads no bytes for a type the cascade no longer defines).
+- **The H1 reader exists.** `crate::rename::read_h1` (`rename.rs:1271`) is a textual scan that skips front matter, a BOM and code fences, and returns `None` when there is no H1. It is already shared by `doc rename`, the title pre-check and `task.rs`. It needs no parse, so it answers on a row that does not parse.
+- **Where the key set is declared.** `WHOLE_DOC_KEYS` (`doc.rs:5592`) is the one home: `doc show --help` renders it, `doc_show.rs` drives it against the emitted bytes, and `help_truth.rs` drives it against the help. `cli::render::ENVELOPE_ARMS` declares `WholeDoc::Committed` and `WholeDoc::Staged` key sets literally (`render.rs:6935`, `:6951`). The `doc list` arm declares only `docs`. Three docs enumerate the whole-doc keys: [doc-read-surface.md](design/doc-read-surface.md) `:59`/`:62`, [command-output-contract.md](design/command-output-contract.md) `:179`, and [team-ready-state.md](design/team-ready-state.md) `:213`, the milestone-record witness that `read_contract_witness.rs` fences. The `doc list` help pins its row shape in prose (`doc.rs:501`, *"`{"docs":[{id, path, state, item-count}]}`"*).
+- **`adr.status` is the one shipped default** (`command grep -n "default:"` over both packs' schemas: one hit). The injected stamp field carries `default: None` (`schema.rs`, `schema_version_stamp_field`), so the projection can never synthesize a `schema-version`. No shipped doctype has a body-trailing field group or an item field with a default. `--unset` on `adr.status` is refused, so hand-deletion is the only way to make the field absent.
+- **Driven: F10 and the row states on `adr`** (`committed-singletons`; an ADR made by `record-decision` and finalized):
+  - Delete `status:` by hand and commit. `doc show --format json` then exits 0 with `fields` = `{date, schema-version}`. The row is `managed`.
+  - The `#status` fields-only slice also omits `status`, and the `#status/status` leaf slice blocks. The plain show prints the bytes as committed.
+  - A committed ADR with its H1 deleted still parses and serves at exit 0. So `title: null` can be reached on `doc show` and is not only theoretical.
+  - An unstamped foreign file at the ADR home lists as `unregistered`. A stamped file whose body does not parse lists as `managed`, `item-count` 0, and its `doc show` blocks.
+- **Driven: a fixture doctype loads and files.** A dev-pack copy without its manifest (`dev/jigc-rig fresh --schema finding … --workflow log-finding …`, the same construction as `FixturePack::from_dev_pack` + `write_schema`/`write_workflow`) took a new `finding` doctype: header `status` enum `[open, resolved]` `default: open`, `found-in` string, `location: findings/`. With a workflow `allows-create: [{type: finding, as: finding}]`, three findings were created, set and finalized, and `doc list finding --format json` listed them `managed`. The doctype is unversioned, so it can never be `unregistered` (the precondition of `is_unadopted_foreign`). The other states come from `adr` and from `doc_list.rs`'s existing orphan store.
+- **`jq` is on every runner.** `ci_matrix_fence` already drives a `jq` body, and `dev/runner-faithful` installs it (2026-10-02, the human's decision).
+
+**Build pins. Each one is a verified fact above, or a decision taken here from the locked docs:**
+
+- **P1 · `title`.** `title` is `read_h1` over the bytes that were served or listed, and `null` when there is no H1. There is one reader on both surfaces, and a row that does not parse still gets its title. The whole-doc `doc show` object is a sorted map, so `title` sorts among its keys. `WHOLE_DOC_KEYS` gains `title`, so the help follows. Fragment slices carry no `title`: a slice is a bare value, the same bound as `item-count` and `staged`.
+- **P2 · The effective value, with one home.** `fields` is built by one helper, which `whole_doc_json` and every `DocRow` call. The helper flattens exactly what `fields` flattens today. Then, for each declared field of a simple section that carries `default:` and is absent from the parsed doc, it inserts the declared literal as a JSON string, the form `field_json` gives every scalar. "Header fields" in [findings-channel.md](design/findings-channel.md) → 5 names that map, so one rule governs one map. Stored bytes are never written. `stamped_schema_version` keeps reading the map unchanged.
+- **P3 · Row values by state** ([findings-channel.md](design/findings-channel.md) → 5, verbatim):
+  - `title` is the H1 or `null` on every row. Orphan rows and staged unknown-type rows now read their bytes in order to get it.
+  - `fields` is P2's map only when the row is `managed` and its parse succeeded. In every other case it is `null`, never `{}`. That covers `unregistered` even where the bytes parse.
+  - `--task` rows apply the same rules to the staged copy.
+  - `DocRow` appends `title` and `fields` after `item-count`, as plain `Option`s with no `skip_serializing_if`, so every row carries both keys. The plain arms (`id  path  state` and the `doc show` render) are byte-identical.
+- **P4 · What stays as it is,** from [findings-channel.md](design/findings-channel.md) → 10, whose projection row names *`doc show` (whole doc)*:
+  - The `#section` fields-only slice and the `#section/leaf` slice keep today's answer on an absent defaulted field: they omit it and block on it, as driven above.
+  - Item objects get no projection, and none ships a default.
+  - `doc schema` is unchanged.
+
+**The tasks.**
+
+- **T1 · `doc show --format json` carries `title`, committed and staged, plus the repairs this forces.**
+  - **The change.** P1 in `whole_doc_json`. `WHOLE_DOC_KEYS` and both `WholeDoc` rows of `ENVELOPE_ARMS` gain `title`.
+  - **The repairs, in the same commit.** Every golden and key-set assertion that the seventh key turns red is re-pinned to it, never loosened: `doc_show.rs`'s `VISION_JSON`/`PRD_JSON`, `doc_show_staged.rs`'s two key sets, `read_contract_witness.rs`, and any other suite the full run reddens.
+  - **The docs.** [doc-read-surface.md](design/doc-read-surface.md): `:59`/`:62` gain the key and a `title` bullet beside `item-count`, and the Evolution-posture ledger gets M55's spend. [command-output-contract.md](design/command-output-contract.md) `:179`'s index and [team-ready-state.md](design/team-ready-state.md) `:213`'s witness enumeration also change.
+  - *Done:*
+    - A new `doc_show.rs` test passes, which was red at HEAD. A committed `adr` serves `"title": "<its H1>"`, the same doc staged serves the same `title` beside `staged`, and a committed `adr` whose H1 was hand-deleted serves `"title": null` at exit 0.
+    - `cargo test -p jigc doc_show:: doc_show_staged:: read_contract_witness:: help_truth::` is green.
+    - `dev/gate` is green.
+- **T2 · The whole-doc `fields` reports the effective value, plus the repairs this forces.**
+  - **The change.** P2: the shared `fields` helper is extracted from `whole_doc_json`, with the default projection.
+  - **The docs.** [doc-read-surface.md](design/doc-read-surface.md) states the effective-value projection: indistinguishable from a stored value by design, the stored bytes untouched, and P4's bounds. The `whole_doc_json` doc comment changes with it.
+  - *Done:*
+    - A new test passes, which was red at HEAD. A committed `adr` whose `status:` was hand-deleted and committed serves `fields.status == "proposed"` on `doc show --format json`. The file is byte-identical to `git show HEAD:<path>` and contains no `status:` line. The `#status` slice still omits `status`, and the plain show still prints the committed bytes (P4, asserted).
+    - A staged copy that lacks the field projects it the same way.
+    - `dev/gate` is green.
+- **T3 · Every `doc list --format json` row carries `title` and `fields`, plus the acceptance, the property sweep and the repairs this forces.**
+  - **The change.** P3 in `run_list` (the parsing arm, the prior-home rows, the orphan rows) and in `run_list_staged`, reusing T1's reader and T2's helper. The `List` help's pinned-shape sentence names both keys.
+  - **The repairs, in the same commit.** `doc_list.rs`'s `STORE_JSON`, `STORE_WITH_ITEMS_JSON`, `STORE_WITH_ORPHANS_JSON` and `STAGED_JSON`, `orphaned_instance.rs`'s row literal, and every other row assertion the full run reddens are re-pinned to the new row.
+  - **`doc_read_surface.rs` moves.** Both pack walks gain the cross-surface property, swept over every doctype in both packs: on each created instance, the `doc list --task` row's `fields` and `title` equal the `doc show --task` whole-doc `fields` and `title`.
+  - **The docs.** [doc-read-surface.md](design/doc-read-surface.md) → `jigc doc list`:
+    - The two row keys, with the per-state table beside `item-count`.
+    - The `--task` paragraph's *"adds no key"* is revised: the staged rows carry the two keys from the staged copy.
+    - The index framing at `:188` is engaged where it stands: header fields are typed structure, not authored prose, and the parse M49's refusal lacked is now paid for.
+    - The ledger entry.
+  - *Done:*
+    - `cargo test -p jigc doc_list:: doc_read_surface:: orphaned_instance::` is green, including a new `doc_list.rs` test. Red at HEAD, it asserts `title` and `fields` for each row state:
+      - managed and parsing: the H1, and the doc's fields;
+      - managed and not parsing: the H1, and `null`;
+      - unregistered: the H1, and `null`;
+      - orphaned: the H1, and `null`;
+      - `--task`: values read from a staged copy whose field differs from the committed one.
+    - A new suite, `crates/cli/tests/doc_list_triage.rs`, registered in `g_doc`, passes on the **fixture `finding` doctype** above, which carries a defaulted `status` and a `found-in` string, on a `FixturePack` corpus. Three findings are filed in `v1, v1, v2`, one is set `resolved`, and one has its `status:` hand-deleted and committed. Then one `jigc doc list finding --format json` is piped through `jq '[.docs[] | select(.fields.status == "open")] | group_by(.fields["found-in"])'`, and the result is the two open groups, with the hand-deleted row counted as open. That is one command and no `doc show`. At HEAD the result is empty.
+    - On `adr`, the hand-deleted committed `status:` reads `"proposed"` on the `doc list` row as T2 made it read on `doc show`, and the file's bytes are as committed.
+    - `doc_schema::` is green unedited.
+    - `dev/gate` is green.
+
+**Why this order and this seam.** Each task changes one serializer fact and repairs only what that fact turns red. T1 adds a key. T2 changes values and adds no key. T3 builds the row from T1's reader and T2's helper, so the row cannot form a second opinion about a title or a field. None of them turns the gate red for a later task to fix.
+
+**Every Grouped-scope clause maps to a task.**
+
+| Grouped-scope clause | Task |
+|---|---|
+| `doc show`'s whole-doc serve, committed and staged through `whole_doc_json`'s one call site, gains a top-level `title` (the `# H1`) | T1 |
+| Each `doc list --format json` row gains `title` and `fields` in `doc show`'s shape, from the parse `run_list` already pays for | T3 (P3; the property in `doc_read_surface.rs`) |
+| The per-state values: `title` the H1 or `null`; `fields` only on a managed row that parses, else `null`, never `{}`; `--task` rows read the staged copy | T3 (the per-state test) |
+| An absent defaulted header field projects its schema default on both surfaces, stated as indistinguishable from a stored value, and the stored bytes are untouched | T2 (`doc show`), T3 (`doc list`, through T2's helper) |
+| No version integer moves; `doc schema` and its `contract-version` are untouched | T1–T3 (none touches either; T3's `doc_schema::` is green unedited) |
+| The read-surface goldens and `doc_read_surface.rs` move | T1 (`doc show` goldens), T3 (`doc list` goldens, `doc_read_surface.rs`) |
+| [doc-read-surface.md](design/doc-read-surface.md) revised (findings-channel.md §13) | T1 (`title`), T2 (effective value), T3 (row keys, per-state values, index framing) |
+
+**Every Proves clause maps too.**
+
+| Proves clause | Task |
+|---|---|
+| On a fixture doctype with a defaulted `status` and a `found-in` string, one `doc list --format json` through `jq` groups the open rows by `fields.found-in`, with no `doc show` | T3 (`doc_list_triage.rs`) |
+| Each row state (managed and parsing, managed and not parsing, unregistered, orphaned, `--task`) carries its declared `title` and `fields` | T3 (the per-state test) |
+| On `adr`, a hand-deleted committed `status:` reads `"proposed"` on both surfaces, and the bytes stay as committed | T2 (`doc show`), T3 (`doc list`) |
+
+**Beyond the bullets, and why.** The `ENVELOPE_ARMS` rows, the `List` help sentence, and the [command-output-contract.md](design/command-output-contract.md) and [team-ready-state.md](design/team-ready-state.md) enumerations are statements each change makes false where they stand, so each is revised in the commit that falsifies it (§13's rule).
+
+**Declared bounds, recorded and not fixed:**
+
+- Filtering stays client-side; `doc list --where` is parked.
+- F9 (a deletable `set: on-create` date) is not addressed and is seeded open.
+- P4's fragment, item and plain arms keep today's answers, per §10's *whole doc*.
+- A default declared on a list-cardinality field would project as its literal string. No shipped or fixture field has one.
+
 ## 2026-10-03 — M55 Increment 5 / T2: store scope agrees with task scope on a history-less baseline, built
 
 Built on P2–P5 below; [validation.md](design/validation.md) (→ Exit semantics, and the M45 row of the registrations), [reconciliation.md](design/reconciliation.md) (→ Component B's store-scope bullets, and the summary) and [storage.md](design/storage.md) (→ Derived caches: *at both scopes*) carry it. **It revises M45 Increment 7's store/task split by name** ([DECISIONS.md](DECISIONS.md) → 2026-07-24 M45 Increment 7 planning, the *"only the task path is decided"* basis bullet, which carries the bracketed pointer): the store twin `detect_committed_store_renames` no longer passes `&|_| true` but the CLI's `git_path_has_history(&jigc_home, path).unwrap_or(true)`, threaded through `validate_store_families` after `head`, so `jigc validate` over a branch switch reports the T1 route at **advisory** and exits 0. What the build adds to the plan:
