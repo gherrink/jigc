@@ -2,6 +2,16 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-03 — M55 Increment 3 / T1: the per-task finalize-door clause of the sub-task omission set, built
+
+Built on P1's door clause, P2, P3 and P6 below ([workflow-dialect.md](design/workflow-dialect.md) → Emitted format). Three elaborations the plan left open:
+
+- **The CLI walks with the engine's own recognizers.** `compose::command_ref_ids_in` and `compose::include_ids_in` are new, pure, and public beside `fill_ids_in` — the lone-line `{{cli.<id>}}` and `{{include: step:<id>}}` readers phase 8 and phase 7 already use — so `start::sub_task_omission_set` reads a body exactly as the compose does. The engine still names no step and reads no catalog; the classification (`runs_task_finalize`, the entry's `jigc` command and leading `task finalize` literals) is the CLI's.
+- **"The first leaf a step emits" counts emitted leaves.** An omitted child in first position no longer clears `expand_step`'s `first`, so the parent's following prose stays a step boundary instead of gluing onto the previous step. With the empty set every segment emits at least one leaf, so no existing composition moves; T2's `sub-task-commit` (an include of `author-commit` in first position) is the first case it reaches.
+- **An all-omitted composition renders no blank line.** `render::composed` terminated the empty text with `\n`, so an `amend` sub-task — whose only step is the door's — opened on a blank line before `resume:`; it now opens on `resume:`. No non-empty text is affected.
+
+The red-step assumptions held: `workflow_reentry::` stayed green unedited, and no existing suite pinned a sub-task's per-task `Run:` line.
+
 ## 2026-10-03 — M55 Increment 3 planning: decomposition
 
 Cut [Increment 3](implementation/roadmap.md) (*sub-task composition, and the commit-boundary steps a sub-task omits*) into **2 ordered tasks**, grounded at HEAD `4fdf8ff7` on `milestone/findings-channel/sub-task-composition` (tree clean), with Increments 1 and 2 landed. Cross-ref [roadmap.md](implementation/roadmap.md) → Milestone 55 → Increment 3; the M55 Settle below (S13's S2 as revised by R3, O2 resolved by R5); [findings-channel.md](design/findings-channel.md) → 6, 10, Open questions; [planning-gate-record.md](completions/artifacts/M55/planning-gate-record.md) → row 11, O2 and residual R1. **Codes registered: none.** **No contract moves:** the `--format json` shape stays `{task, text}`, and only a sub-task's `text` changes.
