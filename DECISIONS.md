@@ -2,6 +2,184 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-03 — M55 Increment 7 planning: decomposition
+
+Cut [Increment 7](implementation/roadmap.md) (*the two doctypes, `jigc-feedback` and `inconsistency`*) into **5 ordered tasks**, grounded at HEAD `61695ed0` on `milestone/findings-channel/two-doctypes-jigc-feedback` (tree clean), with Increments 1–6 landed. Cross-ref [roadmap.md](implementation/roadmap.md) → Milestone 55 → Increment 7; the M55 Settle below (S1–S3, S5, S6, S9; R4 M2 · M5; R5); [findings-channel.md](design/findings-channel.md) → 1, 1.1–1.7, 13; [planning-gate-record.md](completions/artifacts/M55/planning-gate-record.md) → rows 1–3. **Codes registered: none. No version integer moves except the two new entries at 1.**
+
+**Basis. Each item was read at HEAD, or driven where marked — on a doctype-only spike: a clone of `61695ed0` carrying the planning spike's two schemas and their two manifest entries and nothing else (no workflow, step or command ref), built and run under `dev/gate`.**
+
+- **The planning spike's shapes still load at HEAD.** With `inverse: duplicated-by` on `duplicate-of`, pack-load is clean over `[dev ▸ methodology]` at the planning spike's hashes, `inconsistency` `6b83fd12278eaa769b645d2dc77a7e0195a4ed03fa92d859d509ed235374ac8f` and `jigc-feedback` `7e16fb98352da83768a9ab5751162826af59a6e94e161213cf90ff4b8604305b`. `jigc doc schema` serves both in all three formats (`agent`, `json`, `human` — the verb's whole `--format` set). `status` is `default: open` and not author-required. `kind`, `found-in` and `jigc-version` carry the author-required star. `date` is `set: on-create`, and `duplicate-of` is an un-starred `ref -> jigc-feedback`. `inconsistency.sides` projects as a repeatable with an `add-item` title and an optional `says` slot.
+- **Driven: the cold-ingest predicate holds for both shapes.** In a fresh rig on the spike binary, hand-placed and committed with plain git:
+  - `docs/inconsistencies/sides-disagree.md`: three `sides` items, one with `says` prose, and item titles `src/side1.rs`, `docs/a.md` and `adr:foo#decision`;
+  - four `docs/jigc-feedback/*.md`, each with a `repro` holding a fenced block whose first line is `# a hash-led line`, and two of them with no `status:` line.
+
+  `jigc ingest` classified all five `adoptable` (indexed and baselined, no file moved). `jigc validate --format json` then reported `"findings": []` at exit 0. Increment 6's query, `doc list jigc-feedback --format json | jq '[.docs[] | select(.fields.status == "open")] | group_by(.fields["found-in"])'`, returned the two open groups, and the two rows with no `status:` were counted as open by projection. The hand-placed file must carry `schema-version: 1` in its front matter: an unstamped one is `schema-conformance.unadopted-instance` (driven on `idea`).
+- **Driven: the doctype half of the census is 15 reds, not 8.** The spike's full gate ran 4309 tests, with 4294 passing and 15 failing. These are the eight the roadmap names, plus seven the gate-record booked to the workflow half because its spike registered both halves at once:
+  - **`registry_seam::composite_registry_enumerates_workflows_and_doctypes`** also hard-codes the doctype count (`16`, *"17 shipped schemas dedup to 16"*). Doctypes alone redden it. Its workflow count (35) stays Increment 8's.
+  - **`compose_goldens::sweep_*` ×6** sweep `describe` and `doc schema` (agent and json) over every composite doctype. Regenerating them on the spike with `UPDATE_GOLDENS=1` produced exactly **24 new goldens** (`doc-schema` and `doc-schema-json` × 2 doctypes × 6 states) and **6 moved** (`describe--describe--<state>`, +4 lines each: the two catalog entries). Nothing else moved.
+
+  The total of 19 stands. Workflow registration still turns the same `registry_seam` and `compose_goldens` tests red for its own reasons at Increment 8, and only the attribution changes. `doctype_map_versions::the_freeze_scope_pin_states_the_current_methodology_state` stayed green. It fences above-v1 members only.
+- **The two new item-slot facts.** `item_slot_ceiling_axis`'s drive loop iterates every swept item-slot doctype and runs `jigc migrate --as <doctype>` on it (`item_slot_ceiling_axis.rs:461`). An `UNREACHABLE` entry alone is therefore not enough: the loop must also skip the named doctypes, which it has never needed to do because the set has always been empty. Separately, `doc_read_surface.rs`'s `create_instance` panics on a doctype it has no workflow for (`:162`), and no shipped workflow grants `jigc-feedback` or `inconsistency` until Increment 8. Its walk corpus can take a project-layer workflow at `.jigc/config/workflows/<id>.yaml`. That was driven on the spike: a fixture front matter of `when`/`description`/`usage`/`creates-task: true`/`allows-create` for both types, plus `{{ include: step:finalize }}`, minted the task and created both doctypes; it also took three `add-item`s on `#sides`, `says` at `#sides/src-side1-rs/says` and a fenced `repro`. `doc_only_finalize.rs` uses the same door.
+- **The roundtrip snapshot fence has a stated precondition.** `roundtrip_registry_fence.rs` tells the reviewer to *"add its byte-round-trip proof and update EXPECTED_ROUND_TRIP_REQUIRED"*. For the methodology doctypes that proof is `engine::write`'s `methodology_roundtrip` module (`write.rs:10091`, `schema_for` at `:10128`, `arb_doc` at `:10667`, `methodology_fixtures` at `:11132`), and no test reddens when it is missing. A repeatable followed by slot sections has a shipped precedent: `prd`'s `requirements`, then `context`.
+- **The freeze's own messages, and its CI fence.** `engine::manifest` refuses with *"doctype `<ty>` is shipped but absent from the freeze manifest"* (`manifest.rs:218`) and *"doctype `<ty>`: schema-hash mismatch (manifest declares `…`, recomputed `…`)"* (`:205`). `freeze_enforcement.rs`'s `methodology_pack_copy` + `list_pack` + `run_listed` mold drives a mutated methodology copy through the real binary (`methodology_schema_shape_drift_without_manifest_bump_is_blocked`, `:312`). The CI `manifest_freeze_fence` classes an entity absent at base as clean (its cell table, `manifest_freeze_fence.rs:33`), so adding the two entries needs no `Manifest-Repin:` trailer. `dev/jigc-rig --binary <path>` drives any binary.
+- **`describe` weaves `usage` after "Reach for it when"** (the spike's capture: *"Reach for it when while working with jigc…"*). The `usage` text sits outside the hash (M47), so its wording moves no pin.
+- **The unfenced count prose:**
+  - `doctype-map.md:42` (scope pin, *eleven*/*ten persisted*);
+  - `doctype-authoring.md:22` (*eleven*/*ten persisted*);
+  - the methodology manifest header (*ELEVEN*/*TEN persisted*);
+  - `pack.rs:3955`/`:3966`/`:4001`/`:4034` (*eleven*);
+  - `CLAUDE.md:16` (*"all ten shipped schemas"*, already stale at eleven).
+
+  `CLAUDE.md:69`'s *"ten schemas listed"* records the M40 adoption and is history, not a count. The fenced count is [corpus-migration.md](design/corpus-migration.md) `:285` (*6/6 · 11/11 · 17 entries over 16*), which `count_fences` reads.
+
+**Build pins. Each one is a verified fact above, or a decision taken here from the locked docs:**
+
+- **P1 · `jigc-feedback`** (`crates/cli/packs/methodology/schemas/jigc-feedback.yaml`) is the planning spike's shape exactly.
+  - `location: jigc-feedback/`, `id-from: title`.
+  - One `meta` header section, with fields in this order:
+    - `kind` enum `[bug, inconvenience, feedback]`;
+    - `found-in` string;
+    - `about` string `optional: true`;
+    - `jigc-version` string;
+    - `status` enum `[open, resolved, declined, duplicate, refuted]` `default: open`;
+    - `tier` enum `[tier-1, tier-2, tier-3]` `optional: true`;
+    - `duplicate-of` `ref` `to: jigc-feedback` `card: "0..1"` **`inverse: duplicated-by`** (the gate-record's build pin, chosen here on the `superseded-by`/`grounds` mold and frozen with v1);
+    - `pinned-by` string `optional: true`;
+    - `date` `set: on-create`.
+  - Then the slots `description` (required), `repro` (optional) and `resolution` (optional).
+  - No `promoted` member.
+- **P2 · `inconsistency`** (`…/schemas/inconsistency.yaml`) is likewise exact.
+  - `location: inconsistencies/`, `id-from: title`.
+  - The `meta` header carries `kind` enum `[code-doc, doc-doc]`, `status` enum `[open, resolved, intended, refuted]` `default: open`, and `date` `set: on-create`.
+  - Then `sides` as a repeatable: `id-from: title`, block `{id: title, type: string}` plus `{id: says, slot: {optional: true}}`.
+  - Then the slots `description` (required), `evidence` (optional) and `resolution` (optional).
+- **P3 · The prose, outside the hash.** Each `usage` must read grammatically after *"Reach for it when"*, and it carries the statements [findings-channel.md](design/findings-channel.md) → 1.1/1.3/1.5 put there.
+  - **`jigc-feedback`'s `usage`:**
+    - each `kind` member defined, with the circular `feedback` called out;
+    - the four grammars of 1.3: `found-in` as `<kind>:<label>` over `milestone · task · workflow · review · trial`, with a free-text label; the `about` forms including `dev:<tool>` and `test:<module>`; `jigc-version` as `<semver>[+<short-sha>]`, the version in use when seen; `pinned-by` in [pinning.md](implementation/pinning.md) §3's grammar, which is its home;
+    - the append-only convention: after filing only `status`, `resolution`, `duplicate-of` and `pinned-by` change, a non-`open` status carries a `resolution`, and the engine does not enforce this.
+  - **`inconsistency`'s `usage`:** its convention (only `status` and `resolution` change after filing), and *≥2 `sides` by convention, unenforced*.
+  - **Slot hints:** the `repro` hint says to fence the block.
+  - If a fence refuses prose the locked design puts in `usage`, that is a halt, not a trim.
+- **P4 · The manifest entries.** Both entries go in alphabetical position at `schema-version: 1`, with the hash the binary's freeze message recomputes; the planning spike's values above are what P1/P2 yield. There is no snapshot and no migration.
+- **P5 · `inconsistency.sides`'s item-slot context is settled as an `UNREACHABLE` entry.** No `migrate-inconsistency` ships.
+  - **Why:** no foreign corpus of this doctype exists to migrate ([doctype-authoring.md](implementation/doctype-authoring.md): ship `migrate-<ty>` only when foreign instances are plausible in the wild). The doctype's create door is Increment 8's `report-inconsistency`, which the `migrate-*`-keyed sweep does not read. A `migrate-*` workflow would also be a fifth workflow registration inside a doctype increment.
+  - **The cost, and how it is paid:** the `says` slot's heading-depth gate leaves the shipped-verb sweep. T4 drives it through the binary, and T4 makes the entry's reason cite that test.
+- **P6 · The parity walk reaches the two doctypes through a project-layer fixture workflow,** written into the walk's own corpus. No shipped workflow grants their create until Increment 8, and an exclusion that expires at Increment 8 is a punt Increment 8's scope does not carry. This way the walk runs on the new schemas in the commit that registers them.
+
+**The tasks.**
+
+- **T1 · Register both doctypes in the methodology pack at schema-version 1, with every fence and statement the registration turns false, in one commit.**
+  - **The change.** P1–P4.
+  - **The 15 measured reds, repaired in the same commit and never loosened:**
+    - `pack.rs`'s declared set, eleven → thirteen, with its doc comments;
+    - `doc_read_surface.rs`'s `METHODOLOGY_DOCTYPES` and `create_instance`, per P6;
+    - `roundtrip_registry_fence.rs`'s `EXPECTED_ROUND_TRIP_REQUIRED` and its counts (the byte proof lands in T2);
+    - `schema_load_strictness.rs`, 23 → 25 (*19 schemas + 6 snapshots*);
+    - `doctype_map_versions` (two [doctype-map.md](implementation/doctype-map.md) rows at **v1**, persistence `→ docs/jigc-feedback/<slug>.md` / `docs/inconsistencies/<slug>.md`, driver M55);
+    - `count_fences` ([corpus-migration.md](design/corpus-migration.md) `:285` → *6/6 · 13/13 · 19 entries over 18*);
+    - `item_slot_ceiling_axis`: `expected()` gains `("inconsistency.sides", (3, 4))` (the single-slot item ceiling `completion-record.findings` derives), and P5's `UNREACHABLE` entry with its reason. The drive loop skips `UNREACHABLE` members, and its *"Empty today"* comment is revised;
+    - `registry_seam`'s doctype count, 16 → 18. Its workflow count stays at 35, for Increment 8;
+    - `compose_goldens`: the 24 new goldens and the 6 `describe` goldens, regenerated with `UPDATE_GOLDENS=1`, never hand-edited.
+  - **The statements it makes false or newly true, revised in the same commit:**
+    - the unfenced count prose above, *eleven* → *thirteen* and *ten persisted* → *twelve persisted* (`CLAUDE.md:16` → *thirteen*);
+    - [doctype-map.md](implementation/doctype-map.md): the scope pin, the `jigc-feedback —duplicate-of→ jigc-feedback` edge (inverse `duplicated-by`), and → Deliberate outs, which says why neither is the excluded backlog doctype ([findings-channel.md](design/findings-channel.md) → 1, *Neither is a backlog*);
+    - [pinning.md](implementation/pinning.md) §3, which names `jigc-feedback.pinned-by` as its second consumer;
+    - [methodology-docs.md](design/methodology-docs.md), where the two doctypes join the work-doc surface by pointer to findings-channel.md §1. The four workflows are Increment 8's.
+  - *Red at HEAD:* adding the schemas fails pack-load, and the 15 tests fail as measured.
+  - *Done:*
+    - `cargo test -p jigc methodology_schema_manifest_matches_the_frozen_doctype_set doc_read_surface:: roundtrip_registry_fence:: schema_load_strictness:: doctype_map_versions:: count_fences:: item_slot_ceiling_axis:: registry_seam:: compose_goldens::` is green.
+    - `git status` shows exactly 24 added goldens and 6 modified ones under `crates/cli/tests/goldens/`. Any other moved golden is a finding, not a regeneration.
+    - `jigc doc schema jigc-feedback --format json` serves `status` with `"default": "open"`.
+    - `dev/gate` is green.
+- **T2 · The byte-stability census covers both doctypes,** which is the proof T1's snapshot entry requires.
+  - **The change.** `engine::write`'s `methodology_roundtrip` gains:
+    - `include_bytes!` constants and `schema_for` arms for both doctypes;
+    - one `arb_doc()` generator arm each: `jigc-feedback` with an optional fenced `repro`, and `inconsistency` with 0..n `sides`, some with `says`;
+    - one `methodology_fixtures()` row each: a `jigc-feedback` whose `repro` is a fenced block containing a `#`-led line, and an `inconsistency` with three sides, one of them carrying `says`.
+  - The module comment's *"all ten load bare"* count is revised.
+  - The surgical-edit property runs on a settable header scalar: `found-in` and `kind`.
+  - *Done:*
+    - `cargo test -p jigc-engine methodology_roundtrip::` is green, with the four existing properties (`methodology_no_op_write_is_byte_identical_modulo_ledger`, `methodology_single_field_edit_changes_only_that_field`, `methodology_canonical_fixtures_round_trip_byte_identically`, `methodology_canonical_fixtures_canonicalize_from_the_ledger_deviations`) now generating and including both doctypes.
+    - A named test asserts the fenced `#`-led `repro` line survives the no-op write byte-identically.
+    - `dev/gate` is green.
+- **T3 · The freeze binds the new entries, and nothing else moved.**
+  - **The change.** Two `freeze_enforcement.rs` tests on the `methodology_pack_copy` mold, each an applied mutant through the real binary:
+    - with the copy's `jigc-feedback` entry deleted, `jigc start` exits non-zero and stderr carries *"doctype `jigc-feedback` is shipped but absent from the freeze manifest"*;
+    - with the copy's `inconsistency` `schema-hash` altered, it exits non-zero and stderr carries `schema-hash mismatch` and `inconsistency`.
+  - *Done:*
+    - Both tests pass, plus `cargo test -p jigc freeze_enforcement::`.
+    - `git diff -U0 milestone/findings-channel/main -- crates/cli/packs/dev/config/schema-manifest.yaml crates/cli/packs/methodology/config/schema-manifest.yaml > <scratch>/m.diff` shows no removed line under `doctypes:`. This is checked with `command grep -nE '^-[[:space:]]+(- type|schema-version|schema-hash)' <scratch>/m.diff` exiting 1, read bare and never through a pipe. Every shipped doctype's hash and version is therefore unchanged.
+    - **Before/after on an existing corpus.** Extract the base with `git archive milestone/findings-channel/main | tar -x -C "$B"` into `B=$(mktemp -d …)`, and build its `jigc` with `--target-dir "$B/target"`. Build `out=$(dev/jigc-rig committed-singletons --binary "$B/target/debug/jigc") || exit; eval "$out"`. Then `jigc validate --format json` in `$REPO` under the base binary and under this tree's `target/debug/jigc` gives two captures, and `cmp` exits 0. The two command outputs are recorded in the build entry.
+    - `dev/gate` is green.
+- **T4 · The acceptance: cold ingest, the seed fence's predicate, and the triage query on real instances.**
+  - **The change.** A new suite, `crates/cli/tests/findings_doctypes.rs`, registered in exactly one group root (`g_doc`), on `TrialCorpus::build(State::Fresh)`, driving the real binary:
+    - **(a)** `jigc doc schema` for both doctypes in `agent`, `json` and `human` exits 0 and states `schema-version 1`. `status` reads `default: open` in each: `"default": "open"` in the json, `(default: open)` in the text.
+    - **(b)** `docs/jigc-feedback/` and `docs/inconsistencies/` are absent before. A hand-placed, stamped, conformant instance of each is committed with plain git: a `repro` holding a fenced `#`-led line, and three `sides` with one `says`. `jigc ingest` classifies both `adoptable`. `jigc validate --format json` then reports zero findings at exit 0, and both files are byte-identical to the placed bytes.
+    - **(c)** Increment 6's grouped query, re-driven on real `jigc-feedback` instances. Four are hand-placed over two `found-in` values: one `resolved`, and one with no `status:` line. One `doc list jigc-feedback --format json` is run through a real `jq` with `doc_list_triage.rs`'s filter, and the result is the two open groups, with the unstamped-status row counted open.
+    - **(d)** P5's cost paid: through a project-layer fixture workflow, a `says` write carrying an H3 is refused `write.slot-heading-depth` and an H4 lands. `item_slot_ceiling_axis.rs`'s `UNREACHABLE` reason is amended to cite this test.
+  - *Done:*
+    - `cargo test -p jigc findings_doctypes:: item_slot_ceiling_axis:: test_target_registration::` is green.
+    - `dev/gate` is green.
+- **T5 · [doctype-authoring.md](implementation/doctype-authoring.md)'s checklist names every fence of the registration census (D9).**
+  - **The change.** A section of its own, listing each fence with what reddens it and what satisfies it.
+  - **The doctype half,** the 15 measured above:
+    - the 8 the roadmap names;
+    - `registry_seam`'s doctype count;
+    - `compose_goldens::sweep_*` ×6, with its new `doc-schema`/`doc-schema-json` goldens and moved `describe` goldens;
+    - plus the obligations no test reddens: the `methodology_roundtrip` arms behind the snapshot fence's precondition, `doc_read_surface`'s create mapping, and the count prose homes.
+  - **The workflow half**, which Increment 8 meets:
+    - `registry_seam`'s workflow count;
+    - `methodology_increment_off_router::bare_start_over_methodology_lists_the_selectables_never_increment`;
+    - `compose_goldens`' `workflow-preview`/`start` goldens per state, and the moved goldens of a router-visible catalog line;
+    - `methodology_staging_contract`'s `COMMITTING_WORKFLOWS`, which a doc-only workflow is held to the opposite of;
+    - [finalize.md](design/finalize.md)'s code-less census.
+  - **The step-text half:** `read_surface_naming`'s arms, which a soliciting step reddens. Each is named by its real test fn, read from the suite.
+  - **The `migrate-<ty>` bullet** gains P5's consequence: an item-slot doctype without one owes an `UNREACHABLE` entry with its reason.
+  - *Done:*
+    - A shell loop over every fence name above runs `command grep -qF "<name>" implementation/doctype-authoring.md` and exits 0 (no name missing).
+    - `cargo test -p jigc doctype_authoring_fences:: doc_link_fence::` is green.
+    - `dev/gate` is green.
+
+**Why this order and this seam.** T1 is the atomic unit: the two schema files turn 15 tests red, and only their repairs turn them green, so they are one commit. The docs that the registration makes false or newly true ride with it. T2–T5 each add one proof or one statement over T1's shapes, and none reddens the gate for a later task.
+
+**Every Grouped-scope clause maps to a task.**
+
+| Grouped-scope clause | Task |
+|---|---|
+| Row 1 — `jigc-feedback`: home, `id-from`, multi-instance, the twelve leaves, `tier` a string enum, `status` default `open`, `date` `set: on-create`, `duplicate-of` 0..1 with its `inverse:` frozen at v1 | T1 (P1) |
+| Row 1 — the four grammars (R4 M2's `dev:`/`test:`, *the version in use when seen*), the append-only convention, each `kind` member defined in `usage`; no `promoted` (R4 M5) | T1 (P1, P3) |
+| Row 2 — `inconsistency`: home, the leaves of 1.2, repeatable `sides` (title + optional `says`), *≥2 by convention* stated and unenforced, the plain id kept | T1 (P2, P3) |
+| Row 3 — both schemas in the methodology manifest at v1, no snapshot, no migration | T1 (P4); T3 (the freeze binds them) |
+| Row 3 — the eight doctype-registration fences, `item_slot_ceiling_axis`'s two arms with the `sides` context settled and the choice recorded | T1 (P5 recorded here) |
+| Row 3 — the unfenced count prose (doctype-map, doctype-authoring, manifest header, CLAUDE.md) | T1 |
+| Row 3 — doctype-authoring.md's checklist completed with every census fence, the workflow-registration and step-text ones included | T5 |
+
+**Every Proves clause maps too.**
+
+| Proves clause | Task |
+|---|---|
+| Pack-load clean over `[dev ▸ methodology]` | T1 (`dev/gate`) |
+| `doc schema` for both in every format, `status` defaulted `open` | T4 (a) |
+| A hand-placed conformant instance of each (fenced `#`-led `repro`, three `sides`) ingests cold into empty homes; `validate --format json` zero findings | T4 (b) |
+| An absent and a mismatched manifest entry each fail pack-load with the freeze check's own message (applied) | T3 |
+| Every shipped doctype's `schema-hash`/`schema-version` unchanged; `committed-singletons` validates byte-identically before and after | T3 |
+| Increment 6's grouped query re-driven on real `jigc-feedback` instances | T4 (c) |
+
+**Beyond the bullets, and why.**
+
+- `registry_seam` and `compose_goldens` are in T1 because doctypes alone redden them (measured above).
+- The `methodology_roundtrip` arms (T2) are the stated precondition of the snapshot fence that T1 must move.
+- T4 (d) pays for P5.
+- [doctype-map.md](implementation/doctype-map.md)'s edge and Deliberate outs, [pinning.md](implementation/pinning.md) §3 and [methodology-docs.md](design/methodology-docs.md) are §13 rows that T1 makes true.
+
+**Declared bounds:**
+
+- Both doctypes appear in every adopter's `jigc describe` (S3, accepted).
+- Append-only stays a convention any task can break. The edit gate is parked, and C7 · F14 is seeded at Increment 9.
+- `inconsistency`'s plain id can shadow an adopter's same-named doctype. F13 is the general defect, seeded at Increment 9.
+- Until Increment 8, the only create door for either doctype is a project-layer workflow. The walk and T4 use one, and nothing shipped does.
+
 ## 2026-10-03 — M55 Increment 6 / T3: every `doc list` row carries `title` and `fields`, built
 
 Built on P3 below: `DocRow` appends `title` (`rename::read_h1` over the listed bytes) and `fields` (T2's `header_fields_json`, over the parse `item-count` already makes) after `item-count`, both plain `Option`s, so every row carries both keys. `fields` is the map on a `managed` row that parses and `null` otherwise; orphan rows and every staged row now read their bytes, so the H1 answers there too. The plain arms are unchanged. `doc_list.rs` drives each row state on the emitted json, `doc_list_triage.rs` (in `g_doc`) runs the triage filter through a real `jq` over one listing of a `FixturePack` `finding` doctype and the hand-deleted `adr` `status:`, and both `doc_read_surface.rs` pack walks assert the `doc list --task` row equals the `doc show --task` serve on `title` and `fields`. **One elaboration:** paths in the triage suite are read off the listing's own rows, since the corpus's `docs-root` puts the homes under `docs/`.
