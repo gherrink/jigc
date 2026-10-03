@@ -31,6 +31,8 @@ mod flow25_migrate_changelog;
 mod flow29_acceptance;
 #[path = "../flow32_acceptance.rs"]
 mod flow32_acceptance;
+#[path = "../flow55_report_and_read_back.rs"]
+mod flow55_report_and_read_back;
 #[path = "../hook_output_axis.rs"]
 mod hook_output_axis;
 #[path = "../invocation_log.rs"]
