@@ -2,7 +2,7 @@
 
 The count of record for the M55 seed ([roadmap.md](../../../implementation/roadmap.md) → Milestone 55 → Increment 9; [findings-channel.md](../../../design/findings-channel.md) → 7; [DECISIONS.md](../../../DECISIONS.md) → *2026-10-03 — M55 Increment 9 planning*, P1 and P2). **One row per distinct finding, recorded with every source row before anything is filed.** Each row becomes one seed doc, filed through the real binary by one fan-out. `crates/cli/tests/seed_ledger.rs` reads the sources themselves and holds this table to them: each source row sits in exactly one row's sources, and the keys are unique.
 
-**The count: 91 rows** (79 `jigc-feedback`, 12 `inconsistency`) from 92 source entries. The one dedupe is the declared bound **L3**, which is register row F6 and joins `m55-f6`'s sources.
+**The count: 92 rows** (80 `jigc-feedback`, 12 `inconsistency`) from 93 source entries. The one dedupe is the declared bound **L3**, which is register row F6 and joins `m55-f6`'s sources. Register row F21 was recorded at the M55 completion audit, after the seed was first filed, and joined it by the same procedure: its row re-driven and its input written, then the driver run again over every input as one fan-out, which re-filed the other 91 docs byte for byte.
 
 | Source | Rows | Tag |
 |---|---|---|
@@ -11,7 +11,7 @@ The count of record for the M55 seed ([roadmap.md](../../../implementation/roadm
 | the tier-2/3 heads of M53's four re-reviews: [rc.17](../M53/per-axis-review/README.md) 3 · [rc.18](../M53/per-axis-review-rc18/README.md) 5 · [rc.19](../M53/per-axis-review-rc19/README.md) 6 · [rc.20](../M53/per-axis-review-rc20/README.md) 5 | 19 | `m53-rc17-` … `m53-rc20-` |
 | decisions-pending → *Owed after M53's post-review arcs*, the two `dev/` rows | 2 | `owed-` |
 | decisions-pending → the 2026-09-27 CI rows under *The road to 1.0.0 and the port* | 3 | `ci-` |
-| the [planning register](planning-findings.md)'s F1–F20 and T1–T5 | 25 | `m55-f` · `m55-t` |
+| the [planning register](planning-findings.md)'s F1–F21 and T1–T5 | 26 | `m55-f` · `m55-t` |
 | the declared bound *two code tasks in one checkout* ([findings-channel.md](../../../design/findings-channel.md) → 6, *Declared bounds*) | 1 | `m55-bound-` |
 | the register's D1–D12, as `inconsistency` | 12 | `m55-d` |
 
@@ -105,6 +105,7 @@ The count of record for the M55 seed ([roadmap.md](../../../implementation/roadm
 | `m55-f18` | `jigc-feedback` | [register](planning-findings.md) F18 | resolved | [jigc-feedback/listing-open-findings-costs.md](seed/jigc-feedback/listing-open-findings-costs.md) |
 | `m55-f19` | `jigc-feedback` | [register](planning-findings.md) F19 | open | [jigc-feedback/task-can-create-only.md](seed/jigc-feedback/task-can-create-only.md) |
 | `m55-f20` | `jigc-feedback` | [register](planning-findings.md) F20 | open | [jigc-feedback/ingest-adopts-files-and-leaves.md](seed/jigc-feedback/ingest-adopts-files-and-leaves.md) |
+| `m55-f21` | `jigc-feedback` | [register](planning-findings.md) F21 | open | [jigc-feedback/validate-misses-a-workflow-ref.md](seed/jigc-feedback/validate-misses-a-workflow-ref.md) |
 | `m55-t1` | `jigc-feedback` | [register](planning-findings.md) T1 | resolved | [jigc-feedback/no-cd-assertion-trips.md](seed/jigc-feedback/no-cd-assertion-trips.md) |
 | `m55-t2` | `jigc-feedback` | [register](planning-findings.md) T2 | resolved | [jigc-feedback/test-helpers-panic-when-jigc.md](seed/jigc-feedback/test-helpers-panic-when-jigc.md) |
 | `m55-t3` | `jigc-feedback` | [register](planning-findings.md) T3 | resolved | [jigc-feedback/every-gate-run-leaks-scratch.md](seed/jigc-feedback/every-gate-run-leaks-scratch.md) |

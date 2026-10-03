@@ -264,7 +264,7 @@ The port runs on 1.0.0 with a branch per milestone, `origin/main` merged before 
 | the M53 Settle's six — [decisions-pending.md](../implementation/decisions-pending.md) → *Deferred at the M53 Settle — the 1.x ledger rows* (`implementation/decisions-pending.md:446`), rows (a)–(f) (pointer corrected at the gate-record, R5) | 6 | `jigc-feedback` |
 | M53's four re-reviews' tier-2/3 rows sent *"to the ledger for 1.x"* — `completions/artifacts/M53/per-axis-review{,-rc18,-rc19,-rc20}/README.md` | counted in the [seed ledger](../completions/artifacts/M55/seed-ledger.md) | `jigc-feedback` |
 | decisions-pending → *Owed after M53's post-review arcs* (the rig's `eval` capture, `--private-target` litter; the blind trial is an owed act, excluded) + the 2026-09-27 CI rows (GPG-signed test commits, undeclared `python3`, the git-marker contract) | 5 | `jigc-feedback` |
-| this planning's register F1–F20 + T1–T5 — [planning-findings.md](../completions/artifacts/M55/planning-findings.md) (T5 added at the R5 fold, whose disposition routes it here) | 25 | `jigc-feedback` |
+| this planning's register F1–F20 + T1–T5 — [planning-findings.md](../completions/artifacts/M55/planning-findings.md) (T5 added at the R5 fold, whose disposition routes it here) — and F21, recorded in the same register at the M55 completion audit | 26 | `jigc-feedback` |
 | the declared bound *two code tasks in one checkout* (§6; the bound L3 is F6, a register row already) | 1 | `jigc-feedback` |
 | the register's D1–D12 | 12 | `inconsistency` |
 
