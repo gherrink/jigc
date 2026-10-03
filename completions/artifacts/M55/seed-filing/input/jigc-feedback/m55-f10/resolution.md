@@ -1,0 +1,3 @@
+Fixed in M55 Increment 6 (`03ecc2ba`, *doc show's whole-doc fields report an absent defaulted field's default*). The whole-doc serve reports an absent defaulted field at its default, and M55 Increment 6's `doc list --format json` rows, which carry fields (`7976d7fa`), do the same.
+
+Re-driven on this build (`jigc 1.0.0-rc.22`, the debug binary built from `982f910f`). With `status:` deleted by hand from a committed `jigc-feedback` doc, `jigc doc show jigc-feedback:probe-finding --format json` exits 0 and its `fields.status` is `open`, and the `jigc doc list jigc-feedback --format json` row also reads `open`.

@@ -1,0 +1,6 @@
+kind bug
+found-in milestone:M55-planning/T1
+about test:validate_previews_posture
+jigc-version 1.0.0-rc.22
+status resolved
+pinned-by validate_previews_posture::the_cd_detector_reads_a_command_not_a_short_sha

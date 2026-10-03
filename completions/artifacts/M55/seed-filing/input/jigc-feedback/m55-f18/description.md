@@ -1,0 +1,1 @@
+`jigc doc show --format json` on a per-instance doc had no title key, and `jigc doc list` carried no field values. So *all open findings* cost a `doc list`, then one `doc show` per doc, then parsing the markdown for each title. The doctypes gap-detector found it, and the Settle took it as the read surface for the new doctypes (S10).

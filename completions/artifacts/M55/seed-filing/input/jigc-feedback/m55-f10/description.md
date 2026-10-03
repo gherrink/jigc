@@ -1,0 +1,1 @@
+A defaulted field deleted by hand was omitted from `jigc doc show --format json`, so a client filtering on it, for example `status == "open"`, silently missed the row. The capabilities gap-detector found it. For the findings channel, whose `status` defaults to `open`, that is a finding dropped from every open-findings query.

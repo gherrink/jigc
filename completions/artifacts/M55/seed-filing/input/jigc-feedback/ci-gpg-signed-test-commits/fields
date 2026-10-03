@@ -1,0 +1,4 @@
+kind bug
+found-in milestone:road-to-1.0.0/CI-gpg-signed-test-commits
+jigc-version 1.0.0-rc.21
+status open

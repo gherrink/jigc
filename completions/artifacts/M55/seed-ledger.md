@@ -80,37 +80,37 @@ The count of record for the M55 seed ([roadmap.md](../../../implementation/roadm
 | `m53-rc20-2-a2-1` | `jigc-feedback` | [rc.20](../M53/per-axis-review-rc20/README.md) `(2, A2-1)` | resolved | |
 | `m53-rc20-3-f-c` | `jigc-feedback` | [rc.20](../M53/per-axis-review-rc20/README.md) `(3, F-C)` | resolved | |
 | `m53-rc20-5-defect-2` | `jigc-feedback` | [rc.20](../M53/per-axis-review-rc20/README.md) `(5, DEFECT 2 · rc.20)` | resolved | |
-| `owed-rig-eval-capture` | `jigc-feedback` | [owed](../../../implementation/decisions-pending.md) **`dev/jigc-rig` emits its assignments as text the caller must `eval`, and a capture that folds stderr in half-applies.** | | |
-| `owed-private-target-litter` | `jigc-feedback` | [owed](../../../implementation/decisions-pending.md) **`dev/gate --private-target` mints a fresh `$TMPDIR/jigc-gate-target-*` per run and `clean-litter` never sees them** | | |
-| `ci-git-marker-contract` | `jigc-feedback` | [CI](../../../implementation/decisions-pending.md) **The git 2.54.0 marker contract deferral was put on a live trigger — and the trigger did not fire.** | | |
-| `ci-gpg-signed-test-commits` | `jigc-feedback` | [CI](../../../implementation/decisions-pending.md) **(I) Test commits are signed with the developer's real GPG key.** | | |
-| `ci-undeclared-python3` | `jigc-feedback` | [CI](../../../implementation/decisions-pending.md) **(I) Eight `dogfood_apparatus::*` tests need `python3` and do not declare it.** | | |
-| `m55-f1` | `jigc-feedback` | [register](planning-findings.md) F1 | | |
-| `m55-f2` | `jigc-feedback` | [register](planning-findings.md) F2 | | |
-| `m55-f3` | `jigc-feedback` | [register](planning-findings.md) F3 | | |
-| `m55-f4` | `jigc-feedback` | [register](planning-findings.md) F4 | | |
-| `m55-f5` | `jigc-feedback` | [register](planning-findings.md) F5 | | |
-| `m55-f6` | `jigc-feedback` | [register](planning-findings.md) F6<br>[bound](../../../design/findings-channel.md) **L3** | | |
-| `m55-f7` | `jigc-feedback` | [register](planning-findings.md) F7 | | |
-| `m55-f8` | `jigc-feedback` | [register](planning-findings.md) F8 | | |
-| `m55-f9` | `jigc-feedback` | [register](planning-findings.md) F9 | | |
-| `m55-f10` | `jigc-feedback` | [register](planning-findings.md) F10 | | |
-| `m55-f11` | `jigc-feedback` | [register](planning-findings.md) F11 | | |
-| `m55-f12` | `jigc-feedback` | [register](planning-findings.md) F12 | | |
-| `m55-f13` | `jigc-feedback` | [register](planning-findings.md) F13 | | |
-| `m55-f14` | `jigc-feedback` | [register](planning-findings.md) F14 | | |
-| `m55-f15` | `jigc-feedback` | [register](planning-findings.md) F15 | | |
-| `m55-f16` | `jigc-feedback` | [register](planning-findings.md) F16 | | |
-| `m55-f17` | `jigc-feedback` | [register](planning-findings.md) F17 | | |
-| `m55-f18` | `jigc-feedback` | [register](planning-findings.md) F18 | | |
-| `m55-f19` | `jigc-feedback` | [register](planning-findings.md) F19 | | |
-| `m55-f20` | `jigc-feedback` | [register](planning-findings.md) F20 | | |
-| `m55-t1` | `jigc-feedback` | [register](planning-findings.md) T1 | | |
-| `m55-t2` | `jigc-feedback` | [register](planning-findings.md) T2 | | |
-| `m55-t3` | `jigc-feedback` | [register](planning-findings.md) T3 | | |
-| `m55-t4` | `jigc-feedback` | [register](planning-findings.md) T4 | | |
-| `m55-t5` | `jigc-feedback` | [register](planning-findings.md) T5 | | |
-| `m55-bound-two-code-tasks` | `jigc-feedback` | [bound](../../../design/findings-channel.md) **Two code tasks in one checkout** | | |
+| `owed-rig-eval-capture` | `jigc-feedback` | [owed](../../../implementation/decisions-pending.md) **`dev/jigc-rig` emits its assignments as text the caller must `eval`, and a capture that folds stderr in half-applies.** | open | |
+| `owed-private-target-litter` | `jigc-feedback` | [owed](../../../implementation/decisions-pending.md) **`dev/gate --private-target` mints a fresh `$TMPDIR/jigc-gate-target-*` per run and `clean-litter` never sees them** | open | |
+| `ci-git-marker-contract` | `jigc-feedback` | [CI](../../../implementation/decisions-pending.md) **The git 2.54.0 marker contract deferral was put on a live trigger — and the trigger did not fire.** | open | |
+| `ci-gpg-signed-test-commits` | `jigc-feedback` | [CI](../../../implementation/decisions-pending.md) **(I) Test commits are signed with the developer's real GPG key.** | open | |
+| `ci-undeclared-python3` | `jigc-feedback` | [CI](../../../implementation/decisions-pending.md) **(I) Eight `dogfood_apparatus::*` tests need `python3` and do not declare it.** | open | |
+| `m55-f1` | `jigc-feedback` | [register](planning-findings.md) F1 | resolved | |
+| `m55-f2` | `jigc-feedback` | [register](planning-findings.md) F2 | resolved | |
+| `m55-f3` | `jigc-feedback` | [register](planning-findings.md) F3 | resolved | |
+| `m55-f4` | `jigc-feedback` | [register](planning-findings.md) F4 | resolved | |
+| `m55-f5` | `jigc-feedback` | [register](planning-findings.md) F5 | resolved | |
+| `m55-f6` | `jigc-feedback` | [register](planning-findings.md) F6<br>[bound](../../../design/findings-channel.md) **L3** | open | |
+| `m55-f7` | `jigc-feedback` | [register](planning-findings.md) F7 | resolved | |
+| `m55-f8` | `jigc-feedback` | [register](planning-findings.md) F8 | open | |
+| `m55-f9` | `jigc-feedback` | [register](planning-findings.md) F9 | open | |
+| `m55-f10` | `jigc-feedback` | [register](planning-findings.md) F10 | resolved | |
+| `m55-f11` | `jigc-feedback` | [register](planning-findings.md) F11 | open | |
+| `m55-f12` | `jigc-feedback` | [register](planning-findings.md) F12 | open | |
+| `m55-f13` | `jigc-feedback` | [register](planning-findings.md) F13 | open | |
+| `m55-f14` | `jigc-feedback` | [register](planning-findings.md) F14 | open | |
+| `m55-f15` | `jigc-feedback` | [register](planning-findings.md) F15 | open | |
+| `m55-f16` | `jigc-feedback` | [register](planning-findings.md) F16 | open | |
+| `m55-f17` | `jigc-feedback` | [register](planning-findings.md) F17 | open | |
+| `m55-f18` | `jigc-feedback` | [register](planning-findings.md) F18 | resolved | |
+| `m55-f19` | `jigc-feedback` | [register](planning-findings.md) F19 | open | |
+| `m55-f20` | `jigc-feedback` | [register](planning-findings.md) F20 | open | |
+| `m55-t1` | `jigc-feedback` | [register](planning-findings.md) T1 | resolved | |
+| `m55-t2` | `jigc-feedback` | [register](planning-findings.md) T2 | resolved | |
+| `m55-t3` | `jigc-feedback` | [register](planning-findings.md) T3 | resolved | |
+| `m55-t4` | `jigc-feedback` | [register](planning-findings.md) T4 | resolved | |
+| `m55-t5` | `jigc-feedback` | [register](planning-findings.md) T5 | open | |
+| `m55-bound-two-code-tasks` | `jigc-feedback` | [bound](../../../design/findings-channel.md) **Two code tasks in one checkout** | open | |
 | `m55-d1` | `inconsistency` | [register](planning-findings.md) D1 | | |
 | `m55-d2` | `inconsistency` | [register](planning-findings.md) D2 | | |
 | `m55-d3` | `inconsistency` | [register](planning-findings.md) D3 | | |

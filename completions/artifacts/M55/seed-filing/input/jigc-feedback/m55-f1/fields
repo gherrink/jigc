@@ -1,0 +1,6 @@
+kind bug
+found-in milestone:M55-planning/F1
+about jigc task finalize
+jigc-version 1.0.0-rc.22
+status resolved
+pinned-by doc_only_finalize::every_flow_b_state_lands_the_report_doc_alone

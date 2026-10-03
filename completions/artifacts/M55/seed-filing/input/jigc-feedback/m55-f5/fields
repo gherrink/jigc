@@ -1,0 +1,6 @@
+kind bug
+found-in milestone:M55-planning/F5
+about jigc validate
+jigc-version 1.0.0-rc.22
+status resolved
+pinned-by l2_branch_switch::after_a_branch_switch_both_scopes_report_the_same_advisory_row
