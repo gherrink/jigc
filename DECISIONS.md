@@ -2,6 +2,28 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-03 — M55 Increment 9 / T6: the D rows re-driven as `inconsistency` — 7 resolved, 5 open, 0 refuted
+
+All 12 `m55-d*` rows were re-driven at `a7a742d3`. Each side was read in the checkout, and a side that is the binary was driven on the `jigc 1.0.0-rc.22` debug build from that commit, in a `dev/jigc-rig` rig. Their verdicts are in [seed-ledger.md](completions/artifacts/M55/seed-ledger.md), and their inputs are under [seed-filing/input/inconsistency/](completions/artifacts/M55/seed-filing/input/inconsistency/). `file-seed` over the batch exits 0 and prints `filed 12 docs (0 jigc-feedback, 12 inconsistency) in one commit`.
+
+**Resolved, each by the commit that corrected a side.**
+- D1 (*record-only*), D2 (`pinned-by`) and D3 (the finding vocabularies and *tier*) were settled at the M55 Settle (`9fd644b7`) and registered by Increment 7 (`9dcb664d`).
+- D4 (the charter's seed count) was resolved by T1's ledger (`914df03d`), D7 (CLAUDE.md's schema count) by `9dcb664d`, and D9 (the registration checklist) by `582f045a` and `524f7dec`.
+- D12 (the deployment-policy id) was resolved by M54 Increment 9 (`e9e52ee4`), two days before the register recorded it.
+
+**Open.** D5 (`remove-item` called unwired), D6 (the deferral-ledger `kind` shown as `D/I`), D8 (`COMMITTING_WORKFLOWS` hand-lists four), D10 (*start is a pure reader*) and D11 (the worked-examples index lists 16 of 54) still read as recorded. Each `description` ends with what the re-drive showed.
+
+**Pins.**
+1. **A resolved row's pin goes in `resolution`.** `inconsistency` has no `pinned-by` leaf (findings-channel.md → 1.2), so `resolution` names the pinning test in pinning.md's grammar or says `UNPINNED: <why>`. D4 names `seed_ledger::the_ledger_carries_every_source_row_exactly_once` and `seed_ledger::the_ledger_states_its_own_count`, as planned. The other six are `UNPINNED`: each corrected side is prose that no test reads.
+2. **`kind` is `code-doc` when any side is shipped code, a pack file or a live setting**, and `doc-doc` otherwise. That makes D3 `code-doc`, because one vocabulary is `completion-record`'s schema, and D12 `code-doc`, because the other side is the `release` environment.
+3. **A side's title is its `path:line` at the re-drive**, and its `says` quotes it, so a line that moves still leaves a quote to find. A side that spans a directory names the directory (D8, D9). D12's live side is its API address.
+4. **D3 is `resolved`, with one residue stated in its `resolution`.** `decisions-pending.md:213` still uses *Tier* for M50's work batches. It is a dated record, and the field's meaning now has one home.
+5. **D12 is `resolved`, not `refuted`.** The disagreement was real until `e9e52ee4`. The register recorded it after the fix, from notes taken before it.
+6. **D8 is `open`, not `intended`.** doctype-authoring.md reads the list as *workflows that carry a task to a code commit*, which would exclude the four code-less workflows on `step:finalize`. The test's own comment says *a commit*. Which reading holds is for triage to decide.
+7. **Every evidence block was run verbatim from its input file before filing.** That run caught D10's `start` printing the whole composed workflow, so that line now redirects its output.
+
+**Observed, not seeded.** M55 Increment 4 (`8b4f012f`) answered findings-channel.md → 13's *"start is a pure reader" (D10) is engaged where it stands* by restating it at reconciliation.md:82 (*`start` … write nothing*). D10's `description` records that. It is a prose sentence, not a retired invariant, so it is recorded here for the completion audit rather than halted on.
+
 ## 2026-10-03 — M55 Increment 9 / T5: the owed, CI, F, T and bound rows re-driven — 12 resolved, 19 open, 0 refuted
 
 All 31 rows (`owed-*` 2 · `ci-*` 3 · `m55-f*` 20 · `m55-t*` 5 · `m55-bound-*` 1) were re-driven on `jigc 1.0.0-rc.22`, the debug binary built from `982f910f`, each in a `dev/jigc-rig` rig or, for a tooling row, from the checkout. Their verdicts are in [seed-ledger.md](completions/artifacts/M55/seed-ledger.md), and their inputs are under [seed-filing/input/jigc-feedback/](completions/artifacts/M55/seed-filing/input/jigc-feedback/). `file-seed` over the five globs exits 0 and prints `filed 31 docs (31 jigc-feedback, 0 inconsistency) in one commit`, and over every `jigc-feedback` input it files 79 docs with no slug collision.

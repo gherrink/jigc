@@ -1,0 +1,1 @@
+`implementation/release.md` cited the `release` environment's `main` deployment policy as 61320798, the figure M54's planning gate-record carries. The environment's one policy is 61391261. The planning register took the row from the M54 build.

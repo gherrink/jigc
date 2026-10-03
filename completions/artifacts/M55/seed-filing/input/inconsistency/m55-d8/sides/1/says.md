@@ -1,0 +1,1 @@
+`COMMITTING_WORKFLOWS`, documented as *the four methodology work-workflows that carry a task to a commit — every one of them composes `step:finalize`*: `dev-task`, `decided-task`, `planning`, `completion`.

@@ -1,0 +1,1 @@
+The same field had two shapes. `implementation/pinning.md` §3 defines `pinned-by` as a plain string naming a test, and refuses a symbol parser. The parked finding-doctype idea makes the pin a code anchor, which `validate` would report when its target vanished. The `jigc-feedback` doctype needed one of them. The planning register recorded it.

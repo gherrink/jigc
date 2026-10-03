@@ -1,0 +1,3 @@
+`design/methodology-docs.md` lists the `remove-item` and `reorder` CLI verbs under *What stays deferred*, and says the engine's `remove_item` exists but is unwired. `jigc doc remove-item` has shipped since `b6f6843d`, a week after the M16 planning that wrote the line. The section is maintained: its multi-level-repetition bullet was updated when that capability shipped. The decisions gap-detector found it.
+
+Re-driven on this build (`jigc 1.0.0-rc.22`, the debug binary built from `a7a742d3`): **still open**. The line moved from `:108` to `:112` and is unchanged. `jigc doc remove-item` removes an item at exit 0. `reorder` is still no verb (`jigc doc reorder --help` exits 2), so that half of the bullet stands.

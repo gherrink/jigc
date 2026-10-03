@@ -111,15 +111,15 @@ The count of record for the M55 seed ([roadmap.md](../../../implementation/roadm
 | `m55-t4` | `jigc-feedback` | [register](planning-findings.md) T4 | resolved | |
 | `m55-t5` | `jigc-feedback` | [register](planning-findings.md) T5 | open | |
 | `m55-bound-two-code-tasks` | `jigc-feedback` | [bound](../../../design/findings-channel.md) **Two code tasks in one checkout** | open | |
-| `m55-d1` | `inconsistency` | [register](planning-findings.md) D1 | | |
-| `m55-d2` | `inconsistency` | [register](planning-findings.md) D2 | | |
-| `m55-d3` | `inconsistency` | [register](planning-findings.md) D3 | | |
-| `m55-d4` | `inconsistency` | [register](planning-findings.md) D4 | | |
-| `m55-d5` | `inconsistency` | [register](planning-findings.md) D5 | | |
-| `m55-d6` | `inconsistency` | [register](planning-findings.md) D6 | | |
-| `m55-d7` | `inconsistency` | [register](planning-findings.md) D7 | | |
-| `m55-d8` | `inconsistency` | [register](planning-findings.md) D8 | | |
-| `m55-d9` | `inconsistency` | [register](planning-findings.md) D9 | | |
-| `m55-d10` | `inconsistency` | [register](planning-findings.md) D10 | | |
-| `m55-d11` | `inconsistency` | [register](planning-findings.md) D11 | | |
-| `m55-d12` | `inconsistency` | [register](planning-findings.md) D12 | | |
+| `m55-d1` | `inconsistency` | [register](planning-findings.md) D1 | resolved | |
+| `m55-d2` | `inconsistency` | [register](planning-findings.md) D2 | resolved | |
+| `m55-d3` | `inconsistency` | [register](planning-findings.md) D3 | resolved | |
+| `m55-d4` | `inconsistency` | [register](planning-findings.md) D4 | resolved | |
+| `m55-d5` | `inconsistency` | [register](planning-findings.md) D5 | open | |
+| `m55-d6` | `inconsistency` | [register](planning-findings.md) D6 | open | |
+| `m55-d7` | `inconsistency` | [register](planning-findings.md) D7 | resolved | |
+| `m55-d8` | `inconsistency` | [register](planning-findings.md) D8 | open | |
+| `m55-d9` | `inconsistency` | [register](planning-findings.md) D9 | resolved | |
+| `m55-d10` | `inconsistency` | [register](planning-findings.md) D10 | open | |
+| `m55-d11` | `inconsistency` | [register](planning-findings.md) D11 | open | |
+| `m55-d12` | `inconsistency` | [register](planning-findings.md) D12 | resolved | |
