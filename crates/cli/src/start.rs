@@ -3098,8 +3098,13 @@ fn compose_task_workflow(
         gates: create_gates(&def),
         // Whether this workflow's finalize is the doc-only commit — the compose-time input
         // to the `what's-left:` line's commit model, asked of the same `def` through
-        // `cli::task`'s one predicate (M55).
-        doc_only: crate::task::composes_doc_only_finalize(&def),
+        // `cli::task`'s one predicate (M55). **Never for a fan-out sub-task** (the M55
+        // completion audit, E1): the doc-only model applies only when the task is not one
+        // (`design/findings-channel.md` → the doc-only commit row) — its boundary is the
+        // join, which commits whatever its worktree staged, and S2 omits the very
+        // `step:finalize-doc-only` the predicate reads off `def.includes`. This is the one
+        // compose site that can see a sub-task; the mint and fresh-compose sites cannot.
+        doc_only: owning_milestone.is_none() && crate::task::composes_doc_only_finalize(&def),
         // ...but the *mint* announcement does not: an earlier invocation minted this id,
         // and the caller supplied it. A `task minted:` header here would state a mint that
         // did not happen (`design/workflow-dialect.md` → The `task minted:` header).

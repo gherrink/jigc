@@ -1365,3 +1365,88 @@ fn t2_e_a_knob_flipped_after_compose_meets_the_routed_join_block() {
         "re-composed under `squash: false`, the sub-task shows its author step; got:\n{after}",
     );
 }
+
+/// The four shipped workflows whose `includes` name `step:finalize-doc-only` — the doc-only
+/// commit model's composers (`design/findings-channel.md` → the doc-only commit row).
+const DOC_ONLY_WORKFLOWS: [&str; 4] = [
+    "report-jigc-feedback",
+    "report-inconsistency",
+    "triage-jigc-feedback",
+    "triage-inconsistency",
+];
+
+/// The `what's-left:` line of a composed view, with `task`'s id replaced by `<id>` so two
+/// tasks' lines compare as the same sentence.
+fn whats_left(view: &str, task: &str) -> String {
+    view.lines()
+        .find(|line| line.starts_with("what's-left: "))
+        .unwrap_or_else(|| panic!("the composed view carries a `what's-left:` line; got:\n{view}"))
+        .replace(task, "<id>")
+}
+
+/// **M55 completion audit, E1** — a doc-only workflow composed for a **fan-out sub-task** never
+/// promises the path-scoped doc-only commit. The doc-only model applies only when the task is
+/// *not* a sub-task (`design/findings-channel.md` → the doc-only commit row): a sub-task's
+/// boundary is the join, which commits whatever its worktree staged, so *"the path scope that
+/// leaves every other staged path staged"* is a law-1 lie there. Each of the four doc-only
+/// workflows, composed through its emitted `Spawn:` line, carries the same `what's-left:`
+/// sentence as an ordinary-model sub-task (`park-idea`) beside it — and the same workflow
+/// composed as an **ordinary** task keeps the path scope, so the discriminator is the unit kind.
+#[cfg(unix)]
+#[test]
+fn e1_a_doc_only_workflow_composed_for_a_sub_task_never_promises_the_path_scope() {
+    let fx = Fixture::new("doc-only-sub-task");
+    let repo = fx.repo();
+    let home = fx.home();
+    let mut workflows: Vec<&str> = DOC_ONLY_WORKFLOWS.to_vec();
+    workflows.push("park-idea");
+    let subs = fan_out(&fx, &workflows);
+    let shim_bin = install_jigc_shim(fx.root.path());
+
+    let lines: BTreeMap<String, String> = subs
+        .iter()
+        .map(|(sub, (workflow, span))| {
+            let view = ok(
+                &run_span(&repo, &home, &shim_bin, span),
+                &format!("the span `{span}`"),
+            );
+            (workflow.clone(), whats_left(&view, sub))
+        })
+        .collect();
+    let control = &lines["park-idea"];
+    assert!(
+        control.contains("the carryover gate"),
+        "the premise: an ordinary-model sub-task names the carryover gate; got:\n{control}",
+    );
+    for workflow in DOC_ONLY_WORKFLOWS {
+        let line = &lines[workflow];
+        assert!(
+            !line.contains("path scope"),
+            "the `{workflow}` sub-task's boundary is the join, so its `what's-left:` line never \
+             promises the doc-only path scope; got:\n{line}",
+        );
+        assert_eq!(
+            line, control,
+            "the `{workflow}` sub-task states the same coverage as every other sub-task",
+        );
+    }
+
+    // The discriminating control: the same workflows composed as ordinary tasks are on the
+    // doc-only model, and say so.
+    for workflow in ["report-jigc-feedback", "report-inconsistency"] {
+        let view = fx.jigc_ok(
+            &repo,
+            &[
+                "start",
+                "--workflow",
+                workflow,
+                &format!("compose {workflow}"),
+            ],
+        );
+        let line = whats_left(&view, &Fixture::minted(&view));
+        assert!(
+            line.contains("the path scope that leaves every other staged path staged"),
+            "an ordinary `{workflow}` task is on the doc-only model; got:\n{line}",
+        );
+    }
+}
