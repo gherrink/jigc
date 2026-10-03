@@ -65,6 +65,8 @@ mod freeze_enforcement;
 mod git_span_aim;
 #[path = "../l1_pull_absorption.rs"]
 mod l1_pull_absorption;
+#[path = "../l2_branch_switch.rs"]
+mod l2_branch_switch;
 #[path = "../ledger_entry_seven_discharged.rs"]
 mod ledger_entry_seven_discharged;
 #[path = "../ledger_record_truth.rs"]

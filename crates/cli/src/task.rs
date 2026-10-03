@@ -2831,7 +2831,7 @@ impl TaskArea {
     /// then removed) reads history-present → the weak finding keeps blocking; a checkout that
     /// moved underneath the gitignored file-state cache (`git reset --hard` / branch switch /
     /// rebase past the creating commit) leaves the path history-less → the baseline downgrades
-    /// to advisory. The query runs only inside the already-cold recorded-but-missing arm, so a
+    /// to advisory, routed at the branch switch. The query runs only inside the already-cold recorded-but-missing arm, so a
     /// healthy task never shells out for it. A `git log` failure (a broken/unborn HEAD) is
     /// treated as **history-present** — the conservative default that keeps blocking rather
     /// than silently downgrading a possible deletion.
@@ -2849,14 +2849,15 @@ impl TaskArea {
     /// record commit that `jigc milestone create` lands. So wherever the checkout stands at
     /// that pin — the provisioned worktree does by construction, the shared checkout whenever
     /// it is put there — the record is absent on disk with no HEAD history: the
-    /// dangling-baseline cell exactly, whose shipped route prunes the baseline with `jigc
-    /// unmanage`. Followed, that unmanages the record the milestone is run from. The engine
-    /// cannot see the membership, so the fact is supplied here, from the two enumerators that
+    /// dangling-baseline cell exactly, whose route says a branch switch left the baseline
+    /// behind (until M55 Increment 5 / T1 it pruned the baseline with `jigc unmanage`, which,
+    /// followed, unmanaged the record the milestone is run from). The engine cannot see the
+    /// membership, so the fact is supplied here, from the two enumerators that
     /// already own it: [`engine::milestone::owning_milestone`] and
     /// [`crate::milestone::record_key`] (the same string the sweep keys the baseline under).
     ///
     /// Path-keyed, never blanket: a record of some *other* milestone, and every non-record
-    /// managed doc, keep the shipped advisory and its prune route byte-identically — and
+    /// managed doc, keep the shipped advisory and its branch-switch route byte-identically — and
     /// M45's history gate is untouched above this arm, so a genuine deletion of the record
     /// (history present) still blocks.
     fn live_milestone_record(
@@ -7557,7 +7558,7 @@ pub(crate) fn git_untracked_all(repo_root: &Path) -> Result<String> {
 /// least one line. The M45 file-state history gate ([`engine::validate::HistoryPredicate`],
 /// Decision 7) consults this to distinguish a genuine deletion (path has history, still gone
 /// → block) from a dangling baseline the checkout moved out from under the gitignored
-/// file-state cache (no history → advisory + `jigc unmanage` prune route). `-1` bounds the
+/// file-state cache (no history → advisory, routed at the branch switch). `-1` bounds the
 /// walk to the first touching commit (presence is all the gate needs).
 pub(crate) fn git_path_has_history(repo_root: &Path, path: &str) -> Result<bool> {
     let out = Command::new("git")
