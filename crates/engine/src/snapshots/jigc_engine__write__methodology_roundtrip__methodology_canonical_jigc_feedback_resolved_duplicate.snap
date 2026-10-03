@@ -1,0 +1,34 @@
+---
+source: crates/engine/src/write.rs
+expression: rendered
+---
+---
+kind: bug
+found-in: trial:rc.22 blind adoption
+about: jigc doc show
+jigc-version: 1.0.0-rc.22+fab91e9
+status: duplicate
+tier: tier-2
+duplicate-of: jigc-feedback:doc-show-drops-crlf
+pinned-by: UNPINNED: the original carries the pin
+date: 2026-10-03
+---
+
+# Doc show drops a trailing CR
+
+## Description
+
+`jigc doc show` printed the slot without its last line under CRLF.
+
+## Repro
+
+Run it on a CRLF corpus:
+
+```sh
+# a hash-led line inside the fence is prose, never a heading
+jigc doc show adr:cache#decision
+```
+
+## Resolution
+
+The same defect as the earlier finding, filed from the same trial.

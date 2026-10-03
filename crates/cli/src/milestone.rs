@@ -1359,6 +1359,47 @@ fn git_commit_pathspec(repo_root: &Path, message_file: &Path, pathspec: &str) ->
     )
 }
 
+/// `git commit -F <message_file> -- <p1> <p2> …` in the checkout `subject` names — the
+/// **multi-path** sibling of [`git_commit_pathspec`], recording exactly the listed paths and
+/// leaving every other staged or untracked change where it was (M55; the doc-only finalize,
+/// `design/findings-channel.md` §3, sized at R5). The record doors commit one path; a
+/// doc-only task commits its docs plus their recorded owner-artifacts, so it needs several.
+/// Same seam ([`crate::task::git_commit_capture`]): the user's hooks run, a rejection is
+/// git's bytes verbatim with nothing committed, and a success returns the captured
+/// non-blocking hook stream.
+///
+/// **An empty list is refused before git runs**, and the refusal is the helper's reason to
+/// exist rather than a nicety: `git commit -F <msg> --` with no path after the separator
+/// commits the **whole index**, which is precisely the sweep the path scope exists to
+/// prevent. The callers never reach here with nothing to commit (the empty-commit guard
+/// precedes the transaction), so this is the backstop, not a route.
+pub(crate) fn git_commit_paths(
+    subject: &crate::repo::SeamSubject,
+    message_file: &Path,
+    paths: &[String],
+) -> Result<String> {
+    if paths.is_empty() {
+        anyhow::bail!(
+            "refusing a path-scoped commit over no paths — `git commit --` with no path \
+             commits the whole index"
+        );
+    }
+    // Each path as the file it names, never a pattern (`crate::task::literal_pathspec`): a
+    // `*` or `[…]` in a recorded owner-artifact would otherwise commit every staged path it
+    // matches, which is the sweep this scope exists to prevent.
+    let literals: Vec<String> = paths
+        .iter()
+        .map(|path| crate::task::literal_pathspec(path))
+        .collect();
+    let mut args = vec![
+        std::ffi::OsStr::new("-F"),
+        message_file.as_os_str(),
+        std::ffi::OsStr::new("--"),
+    ];
+    args.extend(literals.iter().map(std::ffi::OsStr::new));
+    crate::task::git_commit_capture(subject, &args)
+}
+
 /// The committed record's **file-state key** — the repo-relative `<location><id>.md` path
 /// [`reconcile_committed_store`](engine::file_state::reconcile_committed_store) keys the
 /// baseline hash under (`format!("{location}{slug}.md")`). The `location:` here is already
@@ -1439,7 +1480,8 @@ fn record_conflict_block(jigc_home: &Path, key: &str) -> engine::file_state::Con
 /// — the silent clobber F3 forbids — and would sweep sibling records / unrelated committed
 /// docs the milestone op has no business gating on. The per-doc primitive is scoped exactly to
 /// this record (`DECISIONS.md` 2026-07-07 M39 T6). No edge-index mutation reaches disk — the
-/// only mutator (absorb) is unreachable under `task_touched: true` — so a throwaway index
+/// only mutator (absorb) is unreachable under `task_touched: true` with no pin (M55 Increment
+/// 4, P3: this door passes an always-`None` lookup) — so a throwaway index
 /// suffices; a first-encounter baseline-adopt is persisted so detection binds on the next op.
 ///
 /// Inert where there is nothing to guard: dev-only (no `milestone-record` schema) never calls
@@ -1464,7 +1506,7 @@ fn reconcile_record_preflight(
     let mut fs_record = FileStateRecord::load(jigc_root)
         .with_context(|| format!("could not load the file-state record under {jigc_root:?}"))?;
     // No edge is ever written: absorb (the sole index mutator) is unreachable with
-    // `task_touched: true`, so a throwaway index is never persisted.
+    // `task_touched: true` and no pin, so a throwaway index is never persisted.
     let mut index = EdgeIndex {
         stamp: String::new(),
         edges: Vec::new(),
@@ -1485,6 +1527,10 @@ fn reconcile_record_preflight(
         &from,
         &bytes,
         /* task_touched = */ true,
+        // No pin at the record door (M55 Increment 4, P3): every drift of the machine-owned
+        // record conflict-blocks here, a pulled one included — F3's "detected +
+        // conflict-blocked, **not** absorbed" holds byte-identically.
+        &|_| None,
         &record_conflict_block(jigc_home, &key),
         &engine::validate::AdoptionInputs::new(&versions, &priors, &migratable, jigc_home),
     );
@@ -6316,6 +6362,14 @@ fn resolve_squash(repo_root: &Path) -> Result<bool> {
     let project_config = repo_root.join(".jigc").join("config");
     let pack = make_pack()?;
     let resolved = crate::start::resolve_severity_cascade(pack.as_ref(), &project_config)?;
+    squash_of(&resolved)
+}
+
+/// Read `finalize.fan-out.squash` off a resolved cascade — the **one reader** the join
+/// ([`resolve_squash`]) and the sub-task compose share (M55 Increment 3, P4), so the
+/// compose that decides whether a sub-task is asked for its commit doc and the boundary
+/// that decides whether to read it cannot answer from different layers.
+pub(crate) fn squash_of(resolved: &engine::cascade::Resolved) -> Result<bool> {
     // The knob is a declared `bool`; the closed surface guarantees it resolves. Anything
     // other than `true` is the opt-in `false` (the knob's enum-of-bool is `true`/`false`).
     Ok(resolved.scalar_required("finalize.fan-out.squash")? == "true")
@@ -6519,6 +6573,20 @@ fn milestone_boundary_gate(
     let history = move |path: &str| {
         crate::task::git_path_has_history(&repo_root_for_history, path).unwrap_or(true)
     };
+    // Its route seam (M55 completion triage, CR2), the per-task gate's own: a history-less
+    // missing doc a branch tip still carries routes at switching back, one no branch carries
+    // at `jigc unmanage`; a git failure reads *carried*.
+    let repo_root_for_branches = repo_root.to_path_buf();
+    let other_refs = move |path: &str| {
+        crate::task::git_path_on_a_branch(&repo_root_for_branches, path).unwrap_or(true)
+    };
+    // The L1 pull-absorption seam (M55 Increment 4, P2), bound to the milestone's shared base
+    // — the pin every sub-task inherited — so a pull before `milestone create` is absorbed at
+    // the join and a pull after it (the bytes no longer equal the base's blob) still
+    // conflict-blocks. Any git failure answers `None`, keeping the conflict-block.
+    let pin_home = jigc_home.to_path_buf();
+    let pin = base.sha.clone();
+    let pinned = move |path: &str| crate::task::git_blob_at(&pin_home, &pin, path);
     // The managed-vs-foreign discriminator's three pack facts (M48 Inc 4 / T1) — the merged
     // gate drives the same committed-store sweep the per-task door does, so a foreign
     // squatter must draw the store door's code and route here too.
@@ -6542,8 +6610,10 @@ fn milestone_boundary_gate(
         &crate::task::doc_code_invoker,
         &tracked,
         &history,
+        &other_refs,
         &changed_code,
         base_tree.path(),
+        &pinned,
         // The merged gate area belongs to no single task, so the conflict route cannot name
         // one (M47 inc-2 / T4): it routes at the sub-task listing the human picks from,
         // never at a `<task-id>` placeholder.
@@ -7708,5 +7778,63 @@ mod tests {
         drop(held_open_by_a_reader);
 
         let _ = std::fs::remove_dir_all(&area);
+    }
+
+    /// The multi-path commit helper (M55 Increment 1 / T1): it commits **exactly** the listed
+    /// paths, leaves another staged path staged and out of the commit, and refuses an empty
+    /// list before git runs — `git commit --` with no path would commit the whole index.
+    #[test]
+    fn git_commit_paths_commits_exactly_the_listed_paths_and_refuses_none() {
+        let dir = std::env::temp_dir().join(format!(
+            "jigc-commit-paths-{}-{}",
+            std::process::id(),
+            engine::tempname::unique_nanos(),
+        ));
+        std::fs::create_dir_all(&dir).expect("mk temp repo");
+        let git = |args: &[&str]| -> String {
+            let out = std::process::Command::new("git")
+                .args(args)
+                .current_dir(&dir)
+                .output()
+                .expect("git runs");
+            assert!(out.status.success(), "git {args:?} should succeed");
+            String::from_utf8(out.stdout).expect("utf-8 git stdout")
+        };
+        git(&["init", "-q"]);
+        git(&["config", "user.email", "t@example.com"]);
+        git(&["config", "user.name", "Test"]);
+        git(&["config", "commit.gpgsign", "false"]);
+        git(&["commit", "-q", "--allow-empty", "--no-verify", "-m", "init"]);
+        for name in ["a.txt", "b.txt", "other.txt"] {
+            std::fs::write(dir.join(name), format!("{name}\n")).expect("write a file");
+        }
+        git(&["add", "--", "a.txt", "b.txt", "other.txt"]);
+        let msg = dir.join("msg.txt");
+        std::fs::write(&msg, "docs: two paths\n").expect("write msg");
+        let subject = crate::repo::SeamSubject::live(&dir);
+
+        let head = git(&["rev-parse", "HEAD"]);
+        let refused = super::git_commit_paths(&subject, &msg, &[]);
+        assert!(refused.is_err(), "an empty path list is refused");
+        assert_eq!(
+            git(&["rev-parse", "HEAD"]),
+            head,
+            "the refusal committed nothing — the whole index stayed staged",
+        );
+
+        super::git_commit_paths(&subject, &msg, &["a.txt".to_owned(), "b.txt".to_owned()])
+            .expect("the path-scoped commit lands");
+        assert_eq!(
+            git(&["show", "--name-only", "--pretty=format:", "HEAD"]).trim(),
+            "a.txt\nb.txt",
+            "the commit holds exactly the listed paths",
+        );
+        assert_eq!(
+            git(&["diff", "--cached", "--name-only"]).trim(),
+            "other.txt",
+            "the unlisted staged path stays staged",
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

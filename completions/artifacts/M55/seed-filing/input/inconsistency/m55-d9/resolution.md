@@ -1,0 +1,3 @@
+Fixed while the new doctypes were registered, as planned. M55 Increment 7 (`582f045a`) added *Registration-census fences — the hand-listed tests a registration turns red*: a doctype half, a workflow half, a step-text half, and the obligations no list fence names. Increment 8 (`524f7dec`) added what registering the four workflows measured. UNPINNED: the checklist is prose, and no test holds it to the fences it lists.
+
+Re-driven at `a7a742d3`: the section is present, and it names each fence that `findings-channel.md` → 1.7 lists, `item_slot_ceiling_axis`'s two tests and `schema_load_strictness` among them.

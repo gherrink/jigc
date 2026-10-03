@@ -1,0 +1,58 @@
+---
+states-constraints: [read.staged-read-back]
+---
+File the disagreement on a fresh inconsistency doc. Create it — the slug is minted
+from the title you give (a short name for what disagrees):
+
+{{ cli.create-inconsistency }}
+
+This task files exactly one NEW record. A title whose slug a doc on disk already
+holds is refused `create.already-exists`, with nothing staged — choose a distinct
+title, or keep it and pass `--slug <slug>` to the same create.
+
+The `inconsistency` schema is the authority on what you write into it — its
+required slots and fields, each field's enum members, and every address a write
+can take:
+
+jigc doc schema inconsistency
+
+Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
+directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which
+jigc itself accepts but an agent harness that statically analyses shell commands
+can refuse to run:
+
+jigc doc set-slot inconsistency:<slug>#description --from-file - --task {{task.id}} <<'EOF'
+<what disagrees — the claim each side makes, and why both cannot hold>
+EOF
+
+Set the `kind` — `code-doc` when code and a doc disagree, `doc-doc` when two docs
+do. The `status` defaults to `open`, and the `date` is CLI-set on create:
+
+jigc doc set-field inconsistency:<slug>#meta/kind --value <code-doc|doc-doc> --task {{task.id}}
+
+Add each artifact in the disagreement as one item under `sides`, its title the
+side's path or address (`src/cache.rs`, `adr:cache-strategy#decision`). Give each
+a short `--slug` of your own: a path or an address slugs into a long item id that
+changes with the path, and the slug is the id every later write to that side
+addresses. A disagreement has two or more sides by convention, so add one item
+per side:
+
+jigc doc add-item inconsistency:<slug>#sides --title "<path or address>" --slug <side> --task {{task.id}}
+
+Say what each side states in its `says` slot, then author the `description` —
+what disagrees — and, when you have it, the `evidence` — how it was established:
+
+jigc doc set-slot inconsistency:<slug>#sides/<side>/says --from-file - --task {{task.id}}
+jigc doc set-slot inconsistency:<slug>#description --from-file - --task {{task.id}}
+jigc doc set-slot inconsistency:<slug>#evidence --from-file - --task {{task.id}}
+
+`<slug>` is the slug the title minted, and this task's own index names it back —
+every doc the task stages, each by the `<type>:<slug>` identity the read takes:
+
+jigc doc list inconsistency --task {{task.id}}
+
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show inconsistency:<slug> --task {{task.id}}

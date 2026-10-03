@@ -192,9 +192,15 @@ rewrite its `# H1`. So a title that would be silently dropped is refused \
 (`write.title-ignored`), as is a singleton's, whose `# H1` is the schema's own \
 `display-title`. And a title (or `--slug`) that would mint a DIFFERENT identity beside \
 the one this task's create-gate role already binds is refused as well \
-(`write.identity-change`) — that is a second document, not a correction. Both refusals \
-route at `jigc doc rename`, the in-task title change; a genuinely separate second \
-document is its own task.";
+(`write.identity-change`) — that is a second document, not a correction. \
+`write.identity-change`, and a dropped title over a doc this task stages, route at \
+`jigc doc rename`, the in-task title change; a genuinely separate second document is its \
+own task. A dropped title over a COMMITTED doc is someone else's doc, so it routes at a \
+distinct `--title` instead, or `--slug <slug>` to mint beside it. Under a create-gate \
+entry carrying `new: true` there is no create-or-update: an id already on disk at the \
+doctype's home is refused before anything is copied in (`create.already-exists`) — \
+choose a distinct `--title`, or pass `--slug <slug>`; once this task already holds its \
+doc, the next one is its own task.";
 
 /// The `doc rename` long help. The fourth soliciting surface that mints a slug, so
 /// it earns the same stated-at fence as `create` / `add-item` / the `{{schema:}}`
@@ -417,8 +423,15 @@ pub enum DocCommand {
     /// silently dropped is refused (`write.title-ignored`) — as is a singleton's, whose
     /// `# H1` is the schema's own `display-title`. A `title:` that mints a DIFFERENT id
     /// is refused too (`write.identity-change`): that is a second document, not a
-    /// correction. Both reject the whole payload with nothing staged, and both route at
-    /// `jigc doc rename`, the in-task title change.
+    /// correction. Both reject the whole payload with nothing staged.
+    /// `write.identity-change`, and a dropped title over a doc this task stages, route at
+    /// `jigc doc rename`, the in-task title change; a dropped title over a COMMITTED doc is
+    /// someone else's doc, so it routes at a distinct `title:` instead.
+    ///
+    /// Under a create-gate entry carrying `new: true` there is no create-or-update at all:
+    /// a `title:` whose id is already on disk at the doctype's home is refused before
+    /// anything is copied in (`create.already-exists`) — set a distinct `title:`; once
+    /// this task already holds its doc, the next one is its own task.
     ///
     /// Payload shape (YAML; `--from-file`), mirroring the document's structure:
     ///
@@ -487,8 +500,10 @@ pub enum DocCommand {
     /// --as <doctype>`), or `orphaned` (stamped by jigc and claimed by no
     /// resolved doctype — it lists with a null identity and no item count, and
     /// `jigc validate` blocks on it). `--format json` is the pinned shape
-    /// `{"docs":[{id, path, state, item-count}]}` (no in-band version integer —
-    /// `design/doc-read-surface.md` → the fourth read surface).
+    /// `{"docs":[{id, path, state, item-count, title, fields}]}` (no in-band version
+    /// integer — `design/doc-read-surface.md` → the fourth read surface): `title` is the
+    /// doc's `# H1` or null, and `fields` its header fields as `doc show` serves them on a
+    /// managed row that parses, else null.
     ///
     /// **`--task <id>` lists what that task stages instead** — staged-only, the two
     /// views are never merged. Every staged row is `managed` (a staged working copy
@@ -3389,7 +3404,10 @@ fn ref_relations(schema: &Schema) -> Vec<String> {
 ///
 /// **Ranking:** doctype admission (unknown / gate-blocked, [`state::create_admission`])
 /// outranks all of it — a title complaint about a doctype this workflow cannot create is
-/// a misdirection — and the payload-shape parse outranks that, unchanged.
+/// a misdirection — and the payload-shape parse outranks that, unchanged. Inside the
+/// pre-check the **create-only gate** comes first (M55): an entry carrying `new: true`
+/// refuses a minted identity already on disk at its home ([`state::create_occupied`]) with
+/// `create.already-exists`, ahead of the fixed-title arm and of both instance arms.
 fn title_pre_check(
     task: &ActiveTask,
     schema: &Schema,
@@ -3399,6 +3417,29 @@ fn title_pre_check(
     slug_override: Option<&str>,
 ) -> Result<(), DocFailure> {
     let ty = schema.ty.as_str();
+    // Rank 0 — the create-only gate (M55): an entry carrying `new: true` creates and never
+    // updates, so a minted identity already on disk at its home is refused before anything
+    // is copied in. It outranks every arm below (pin P4): under it neither the overwrite
+    // nor a title complaint can arise, and when this task's role is also bound elsewhere,
+    // `write.identity-change`'s route would move the task's doc onto an id that is taken.
+    if entry.new
+        && let Some(address) =
+            state::create_occupied(&task.dir, schema, ty, title, slug_override, &task.jigc_home)
+                .map_err(|f| block(&f, verb, ty))?
+    {
+        // Which correction is open depends on whether this task already holds its doc. A
+        // bound role means every distinct identity the agent could choose is a *second*
+        // document, which rank 2 refuses (`write.identity-change`) — so routing at one
+        // would hand over a command that refuses again (M55 audit O23).
+        let route = match held_instance(task, schema, entry)? {
+            Some(held) => one_doc_per_task_route(task, verb, &held, &entry.as_role),
+            None => distinct_identity_route(task, verb, schema, slug_override)?,
+        };
+        return Err(DocFailure::block(state::already_exists_finding(
+            &address, route,
+        )));
+    }
+
     // Rank 1 — the doctype-wide refusal: a singleton's `# H1` is the schema's own.
     if let Some(fixed) = schema.fixed_title() {
         if title != fixed {
@@ -3424,24 +3465,18 @@ fn title_pre_check(
     // orphan as an incumbent refused the retry with a sentence naming a doc that is not
     // there and a `jigc doc rename` route that could not run. A binding whose document is
     // in neither home is stale, so the mint proceeds and re-points it.
-    if !entry.as_role.is_empty() {
-        let roles =
-            state::RolesRecord::load(&task.dir).context("could not read the task's bound roles")?;
-        if let Some(bound) = roles.get(&entry.as_role)
-            && bound.starts_with(&format!("{ty}:"))
-            && bound != incumbent.address
-            && state::bound_instance_present(&task.dir, schema, bound, &task.jigc_home)
-        {
-            return Err(DocFailure::block(identity_divergence_refusal(
-                task,
-                verb,
-                bound,
-                &incumbent.address,
-                &entry.as_role,
-                title,
-                slug_override,
-            )));
-        }
+    if let Some(bound) = held_instance(task, schema, entry)?
+        && bound != incumbent.address
+    {
+        return Err(DocFailure::block(identity_divergence_refusal(
+            task,
+            verb,
+            &bound,
+            &incumbent.address,
+            &entry.as_role,
+            title,
+            slug_override,
+        )));
     }
 
     // Rank 3 — the silent no-op: an incumbent body means the create writes no title.
@@ -3463,14 +3498,158 @@ fn title_pre_check(
             return Err(DocFailure::block(title_ignored_refusal(
                 task,
                 verb,
+                schema,
+                slug_override,
                 &incumbent.address,
                 current.trim(),
                 title,
                 staged,
-            )));
+            )?));
         }
     }
     Ok(())
+}
+
+/// The doc this task's create-gate role **holds** — the bound `<type>:<slug>` of this
+/// entry's `as:` role, when it names this doctype and that doc is actually there
+/// ([`state::bound_instance_present`]; a stale binding holds nothing). The premise rank 2
+/// refuses on, read once for rank 0's route.
+fn held_instance(
+    task: &ActiveTask,
+    schema: &Schema,
+    entry: &engine::compose::AllowsCreate,
+) -> Result<Option<String>> {
+    if entry.as_role.is_empty() {
+        return Ok(None);
+    }
+    let roles =
+        state::RolesRecord::load(&task.dir).context("could not read the task's bound roles")?;
+    Ok(roles
+        .get(&entry.as_role)
+        .filter(|bound| bound.starts_with(&format!("{}:", schema.ty)))
+        .filter(|bound| state::bound_instance_present(&task.dir, schema, bound, &task.jigc_home))
+        .map(str::to_owned))
+}
+
+/// The route when the id a create mints is taken **and this task already holds its doc**
+/// (M55 audit O23). A distinct `--title`, a `--slug` or a distinct payload `title:` would
+/// each mint a second doc beside `held`, which the one-doc-per-role rule refuses
+/// (`write.identity-change`) — so [`distinct_identity_route`] would be a route that cannot
+/// be satisfied. What is true is that this task has filed its doc: the route says so, and
+/// names the exits that end this task (the sub-task discriminator asked here, at the
+/// construction site, as `task discard`'s staged-doc refusal asks it — a milestone
+/// sub-task is landed by its milestone's boundary, never by `jigc task finalize`) and the
+/// start of the task the next doc belongs in. A human route: the next task's intent is the
+/// agent's.
+fn one_doc_per_task_route(
+    task: &ActiveTask,
+    verb: &str,
+    held: &str,
+    role: &str,
+) -> engine::finding::Route {
+    let id = &task.id;
+    let distinct = if verb == "create" {
+        "a distinct `--title` or a `--slug`"
+    } else {
+        "a distinct payload `title:`"
+    };
+    let land = match engine::milestone::owning_milestone(&task.jigc_home.join(".jigc"), id) {
+        Some(milestone) => format!(
+            "land it with `jigc milestone finalize {milestone}` (this task is a sub-task of \
+             milestone `{milestone}`, whose boundary is the only one that commits it)"
+        ),
+        None => format!("land it with `jigc task finalize {id}`"),
+    };
+    let workflow = state::read_workflow_id(&task.dir)
+        .ok()
+        .flatten()
+        .map(|id| id.trim().to_string())
+        .unwrap_or_else(|| "<workflow>".to_string());
+    engine::finding::Route::human(format!(
+        "this task already holds `{held}` (its `{role}`), and a task carries one doc per role — \
+         {distinct} would mint a second one beside it, and a second doc in one task is \
+         refused too. Finish this task first: {land}, or abandon it with \
+         `jigc task discard {id} --force`; then file the next one in its own task: \
+         `jigc start --workflow {workflow} \"<intent>\"`"
+    ))
+}
+
+/// The route at a **distinct identity** — the correction when the id a create mints is
+/// someone else's doc (M55 pin P5): `create.already-exists`'s route, and
+/// `write.title-ignored`'s over a committed doc (F3). A human route: the new identity is
+/// the agent's choice.
+/// It splits by **where the id comes from**, because a route at an input the id does not
+/// come from is one that cannot be satisfied — followed, it hands back the same refusal
+/// forever (`design/surface-contract.md` law 1 — `fixed_title_refusal` is the precedent).
+/// Four sources, each its own correction:
+///
+/// - a **fixed identity** (a singleton / `placement` doctype): one instance at one home,
+///   whatever the title or `--slug`, so no distinct identity exists to route at — the
+///   route says so instead of naming a create that would refuse again;
+/// - `author` under a **migration's recorded `--slug`** ([`state::read_slug_override`]):
+///   the id is that override, not the payload's `title:`, and no in-task verb moves an
+///   override whose doc is not staged — so the route is discarding this task (its id is
+///   derived from the source path, so a re-migrate collides with it while it lives) and
+///   re-running `jigc migrate` with a distinct `--slug`;
+/// - `create` with a **`--slug`** in force: the id is that slug, so a distinct `--title`
+///   alone changes nothing — the route is a distinct `--slug`;
+/// - otherwise the id is the title's slug: `create` takes a distinct `--title`, or a
+///   `--slug` that mints beside the existing doc; `author` mints from its payload's
+///   `title:` and has no `--slug`, so naming one would be a route that cannot run.
+fn distinct_identity_route(
+    task: &ActiveTask,
+    verb: &str,
+    schema: &Schema,
+    slug_override: Option<&str>,
+) -> Result<engine::finding::Route> {
+    let ty = schema.ty.as_str();
+    if schema.has_fixed_identity() {
+        return Ok(engine::finding::Route::human(format!(
+            "`{ty}` has a fixed identity — one instance at one home, whatever the title or \
+             `--slug` — so no distinct identity exists for this create to mint, and this \
+             workflow creates a new `{ty}` only; changing the existing one is the work of a \
+             workflow whose `allows-create` entry for `{ty}` does not carry `new: true`. If \
+             this task holds nothing else, `jigc task discard {}` abandons it",
+            task.id,
+        )));
+    }
+    if let Some(slug) = slug_override {
+        if verb == "create" {
+            return Ok(engine::finding::Route::human(format!(
+                "the id comes from `--slug {slug}`, not the title, so pass a distinct \
+                 `--slug`: `jigc doc create {ty} --title <title> --slug <slug> --task {}`",
+                task.id,
+            )));
+        }
+        let source = state::read_migration_source(&task.dir)
+            .context("could not read the task's migration source path")?;
+        let migrate = match &source {
+            Some(source) => engine::finding::migrate_at(&task.jigc_home, source.recorded()),
+            None => "jigc migrate <path>".to_string(),
+        };
+        return Ok(engine::finding::Route::human(format!(
+            "the id comes from this migration's recorded `--slug {slug}`, not the payload's \
+             `title:`, so no payload changes it — discard this task with `jigc task discard \
+             {} --force` (it removes the working area, including the commit doc the re-run \
+             provisions again), then re-migrate under a distinct slug: `{migrate} --as {ty} \
+             --slug <slug>`",
+            task.id,
+        )));
+    }
+    Ok(if verb == "create" {
+        engine::finding::Route::human(format!(
+            "choose a distinct `--title`, or keep this one and pass `--slug <slug>` to mint \
+             beside the existing doc: `jigc doc create {ty} --title <title> --slug <slug> \
+             --task {}`",
+            task.id,
+        ))
+    } else {
+        engine::finding::Route::human(format!(
+            "set the payload's `title:` to a distinct title (its slug becomes the doc id) \
+             and re-run the same `jigc doc author {ty} --from-file <payload> --task {}`",
+            task.id,
+        ))
+    })
 }
 
 /// The **fixed-title refusal**: a `placement` / `display-title` singleton carries the
@@ -3575,22 +3754,55 @@ fn identity_divergence_refusal(
 /// The **silent-no-op refusal**: the call lands on an identity that already has a body,
 /// so the create hands that body back and the supplied title is never written. Not an
 /// identity change (the id does not move — `design/storage.md` → Identity), hence its own
-/// code; the route is the verb that *does* move a staged doc's title, after which this
-/// very write re-runs unchanged.
+/// code. The route splits by arm (M55 F3): over the task's **own staged** doc it is the
+/// verb that *does* move a staged doc's title, after which this very write re-runs
+/// unchanged (carrying a `--slug` in force, so the rename keeps the id the re-run mints);
+/// over a **committed** doc that doc is someone else's work, so renaming it is the wrong
+/// correction and the route is P5's distinct identity ([`distinct_identity_route`]), split
+/// by where the id comes from.
+#[allow(clippy::too_many_arguments)]
 fn title_ignored_refusal(
     task: &ActiveTask,
     verb: &str,
+    schema: &Schema,
+    slug_override: Option<&str>,
     address: &str,
     current: &str,
     title: &str,
     staged: bool,
-) -> Finding {
+) -> Result<Finding> {
     let held = if staged {
         "is already staged in this task"
     } else {
         "is already committed and would be copied in for update"
     };
-    Finding::graded(
+    let route = if staged {
+        // A `--slug` in force (`create`'s, or a migration's recorded one under `author`) is
+        // carried through: a bare `--to` re-slugs the doc from the title, so the re-run —
+        // which still mints the override — would meet `write.identity-change` instead of
+        // landing (the [`identity_divergence_refusal`] precedent).
+        let mut argv = vec![
+            "jigc".to_string(),
+            "doc".to_string(),
+            "rename".to_string(),
+            address.to_string(),
+            "--to".to_string(),
+            crate::task::shell_token(title),
+        ];
+        if let Some(slug) = slug_override {
+            argv.push("--slug".to_string());
+            argv.push(slug.to_string());
+        }
+        argv.push("--task".to_string());
+        argv.push(task.id.clone());
+        engine::finding::Route::mechanical(
+            argv,
+            " retitles the doc in place; then re-run this write unchanged",
+        )
+    } else {
+        distinct_identity_route(task, verb, schema, slug_override)?
+    };
+    Ok(Finding::graded(
         Severity::Blocking,
         "write.title-ignored",
         format!(
@@ -3599,20 +3811,8 @@ fn title_ignored_refusal(
              a retitle that did not happen"
         ),
         Some(Location::addressed(address, 1, 1)),
-        Some(engine::finding::Route::mechanical(
-            [
-                "jigc",
-                "doc",
-                "rename",
-                address,
-                "--to",
-                &crate::task::shell_token(title),
-                "--task",
-                &task.id,
-            ],
-            " retitles the doc in place; then re-run this write unchanged",
-        )),
-    )
+        Some(route),
+    ))
 }
 
 /// The `--slug` grammar reject the three `jigc doc` mint doors share — `create`,
@@ -4411,13 +4611,17 @@ fn run_list(
             } else {
                 "managed"
             };
-            // Best-effort item count: parse against the current schema and sum top-level
-            // repeatable items; a foreign/unregistered or stale-shape instance that does not
-            // parse counts 0 (never a block — `doc list` is a report, and the row already
-            // carries `state` to tell an agent the file is not adopted).
-            let item_count = engine::parse::parse_sections(schema, &source)
-                .map(|doc| item_count(&doc))
-                .unwrap_or(0);
+            // One best-effort parse against the current schema, two reads of it. The item
+            // count sums top-level repeatable items, and an instance that does not parse (a
+            // foreign/unregistered or stale-shape one) counts 0 — never a block: `doc list`
+            // is a report, and the row already carries `state` to tell an agent the file is
+            // not adopted. `fields` is the same map `doc show` serves, on a `managed` row
+            // that parses and `null` on every other (M55; `design/findings-channel.md` → 5).
+            let parsed = engine::parse::parse_sections(schema, &source).ok();
+            let fields = parsed
+                .as_ref()
+                .filter(|_| state == "managed")
+                .map(|doc| header_fields_json(schema, doc));
             docs.push(DocRow {
                 id: Some(id),
                 path: path
@@ -4426,7 +4630,9 @@ fn run_list(
                     .to_string_lossy()
                     .into_owned(),
                 state,
-                item_count: Some(item_count),
+                item_count: Some(parsed.as_ref().map_or(0, item_count)),
+                title: crate::rename::read_h1(&source).map(str::to_owned),
+                fields,
             });
         }
     }
@@ -4476,11 +4682,18 @@ fn run_list(
         );
         for rel in crate::orphan::orphaned_instances(&jigc_home, &schemas, &territory, &spoken_for)
         {
+            // No schema to parse against, so no `fields` — but the H1 needs none, and the
+            // row reads its bytes for it (`design/findings-channel.md` → 5).
+            let path = jigc_home.join(&rel);
+            let bytes = std::fs::read(&path)
+                .with_context(|| format!("reading the orphaned doc at {path:?}"))?;
             docs.push(DocRow {
                 id: None,
                 path: rel,
                 state: "orphaned",
                 item_count: None,
+                title: crate::rename::read_h1(&String::from_utf8_lossy(&bytes)).map(str::to_owned),
+                fields: None,
             });
         }
     }
@@ -4521,6 +4734,9 @@ fn run_list(
 ///   identity — the second of law 1's two legal forms.
 /// - **`item-count` is the same best-effort parse** the committed arm makes; an
 ///   unknown-type instance has no schema to parse against and counts 0.
+/// - **`title` and `fields` are the committed arm's rules over the staged copy** (M55):
+///   the H1 on every row, an unknown-type one included, and `fields` wherever that copy
+///   parses — every staged row being `managed` — else `null`.
 fn run_list_staged(
     cwd: &Path,
     doctype: Option<&str>,
@@ -4542,32 +4758,35 @@ fn run_list_staged(
         .with_context(|| format!("listing the docs staged in task `{}`", task.id))?;
     let mut docs = Vec::new();
     for id in staged {
-        let Some((ty, slug)) = id.split_once(':') else {
-            continue; // not the `<type>:<slug>` layout: nothing this projection can key on.
-        };
-        if doctype.is_some_and(|want| want != ty) {
+        if !staged_row_listed(&id, doctype) {
             continue;
         }
+        let Some((ty, slug)) = id.split_once(':') else {
+            continue; // unreachable: `staged_row_listed` admits only the `<type>:<slug>` layout.
+        };
         let schema = schemas.get(ty);
         let path = schema
             .and_then(|schema| engine::store::canonical_path(Path::new(""), schema, slug))
             .map(|path| path.to_string_lossy().into_owned())
             .unwrap_or_else(|| id.clone());
-        let mut count = 0;
-        if let Some(schema) = schema {
-            let file = state::instance_path(&task.dir, ty, slug);
-            let bytes = std::fs::read(&file)
-                .with_context(|| format!("reading the staged doc at {file:?}"))?;
-            let source = String::from_utf8_lossy(&bytes);
-            count = engine::parse::parse_sections(schema, &source)
-                .map(|doc| item_count(&doc))
-                .unwrap_or(0);
-        }
+        let file = state::instance_path(&task.dir, ty, slug);
+        let bytes =
+            std::fs::read(&file).with_context(|| format!("reading the staged doc at {file:?}"))?;
+        let source = String::from_utf8_lossy(&bytes);
+        let parsed = schema.and_then(|schema| {
+            engine::parse::parse_sections(schema, &source)
+                .ok()
+                .map(|doc| (schema, doc))
+        });
         docs.push(DocRow {
             id: Some(id),
             path,
             state: "managed",
-            item_count: Some(count),
+            item_count: Some(parsed.as_ref().map_or(0, |(_, doc)| item_count(doc))),
+            title: crate::rename::read_h1(&source).map(str::to_owned),
+            fields: parsed
+                .as_ref()
+                .map(|(schema, doc)| header_fields_json(schema, doc)),
         });
     }
     let empty_line = match doctype {
@@ -4638,7 +4857,9 @@ fn unknown_doctype_block(doctype: &str) -> DocFailure {
 /// listing — empty-set line included — are byte-identical with and without an open task.
 /// Existence check only, over [`state::list_active_task_ids`] (the single task enumeration
 /// source) + the CLI's one staged-doc enumerator: no doc is parsed and no content is read,
-/// so the note claims only that the task stages *something*.
+/// so the note claims only that the task stages *something the route's listing lists* —
+/// a doc of the narrowed doctype when the reader narrowed, any doc otherwise, by the
+/// staged arm's own row predicate ([`staged_row_listed`]).
 ///
 /// **The reader's scope survives into the route** — a `doc list <doctype>` routes at the
 /// same doctype's staged listing, never a wider one — and the sentence is phrased for a
@@ -4652,8 +4873,11 @@ fn staged_listing_hint(jigc_home: &Path, doctype: Option<&str>) {
     let staging: Vec<String> = state::list_active_task_ids(&jigc_root)
         .into_iter()
         .filter(|id| {
-            crate::task::staged_doc_ids(&tasks.join(id).join("docs"))
-                .is_ok_and(|staged| !staged.is_empty())
+            crate::task::staged_doc_ids(&tasks.join(id).join("docs")).is_ok_and(|staged| {
+                staged
+                    .iter()
+                    .any(|staged| staged_row_listed(staged, doctype))
+            })
         })
         .collect();
     let task_arg = match staging.as_slice() {
@@ -4671,12 +4895,25 @@ fn staged_listing_hint(jigc_home: &Path, doctype: Option<&str>) {
         argv.push(ty);
     }
     argv.extend(["--task", task_arg]);
+    let what = doctype.map_or_else(|| "docs".to_string(), |ty| format!("`{ty}` docs"));
     eprintln!(
-        "note: docs are also staged in open task{plural} {} — this listing is the committed \
+        "note: {what} are also staged in open task{plural} {} — this listing is the committed \
          store; {whose}, list what it stages: {}",
         staging.join(", "),
         engine::finding::Route::mechanical(argv, ""),
     );
+}
+
+/// Does the staged identity `id` make a row of `jigc doc list [<doctype>] --task <id>`? —
+/// the **one predicate** both the staged arm ([`run_list_staged`]) and the task-less note
+/// ([`staged_listing_hint`]) read, so the note can name a task only when the listing its
+/// route hands over is non-empty (M55 audit O24: `doc list adr` named a task staging only
+/// its commit doc and an idea, and the route it handed over answered *"no `adr` docs
+/// staged"*). A row is the `<type>:<slug>` layout, of the narrowed doctype when there is
+/// one.
+fn staged_row_listed(id: &str, doctype: Option<&str>) -> bool {
+    id.split_once(':')
+        .is_some_and(|(ty, _)| doctype.is_none_or(|want| want == ty))
 }
 
 /// The `jigc doc list --format json` shape — **pinned at ship** with its posture declared
@@ -4726,6 +4963,18 @@ struct DocRow {
     /// would be indistinguishable from *parsed, and empty*.
     #[serde(rename = "item-count")]
     item_count: Option<usize>,
+    /// The additive **`title`** key (M55 — `design/findings-channel.md` → 5): the doc's
+    /// `# H1`, read by [`crate::rename::read_h1`] — the reader `doc show`'s whole-doc
+    /// `title` uses — over the listed bytes (the staged copy on `--task`). It needs no
+    /// parse, so it answers on **every** row, `orphaned` and unparseable ones included,
+    /// and is `null` only where the file carries no H1.
+    title: Option<String>,
+    /// The additive **`fields`** key (M55): the header fields in `doc show`'s `fields`
+    /// shape, from the same helper ([`header_fields_json`], an absent defaulted field at
+    /// its default) over the parse `item-count` already pays for. **Only** on a `managed`
+    /// row that parses — every staged row is `managed` — and **`null`** on every other:
+    /// never `{}`, which would read as *a doc with no header fields*.
+    fields: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 /// The `jigc doc schema --format json` shape — the **separately-pinned, explicitly
@@ -5461,6 +5710,7 @@ fn show_long_about() -> String {
 pub const WHOLE_DOC_KEYS: &[&str] = &[
     "type",
     "slug",
+    "title",
     "item-count",
     "schema-version",
     "fields",
@@ -5476,38 +5726,31 @@ pub const STAGED_KEY: &str = "staged";
 /// The whole-doc json wrapper, keyed by [`WHOLE_DOC_KEYS`] (the set `jigc doc show
 /// --help` renders and `crates/cli/tests/doc_show.rs` drives against these bytes — it
 /// is not restated here, which is what let the help's copy go two keys stale).
-/// `fields` flattens
-/// every simple section's fields (the header's front-matter + any body trailing group)
-/// keyed by leaf id; `sections` carries one entry per slot section (its prose string)
+/// `fields` is [`header_fields_json`] — every simple section's fields keyed by leaf id,
+/// an absent defaulted field at its schema default; `sections` carries one entry per slot section (its prose string)
 /// and per repeatable section (its item array) — a header/fields-only section
 /// contributes to `fields` alone. A scalar field serializes as its string, a list-
 /// cardinality field as a json array; slot prose is trimmed (the clean machine value —
 /// the byte-exact form stays the plain path).
 ///
-/// Two additive top-level keys ride beside them, both on **every** whole-doc serve and
+/// Three additive top-level keys ride beside them, all on **every** whole-doc serve and
 /// on **no** fragment slice (a slice is a bare value with no object to hang a key on):
-/// [`item_count`], and the doc's own **`schema-version`** stamp as a json **number**
-/// ([`stamped_schema_version`]).
+/// [`item_count`], the doc's own **`schema-version`** stamp as a json **number**
+/// ([`stamped_schema_version`]), and **`title`** — the `# H1` of the served bytes, read
+/// by [`crate::rename::read_h1`] (the one H1 reader `doc rename` and the title pre-check
+/// share), `null` when the doc has none (M55; `design/findings-channel.md` → 5).
 fn whole_doc_json(
     schema: &Schema,
     doc: &engine::parse::Document,
     source: &str,
     address: &Address,
 ) -> serde_json::Value {
-    let mut fields = serde_json::Map::new();
+    let fields = header_fields_json(schema, doc);
     let mut sections = serde_json::Map::new();
     for section in &schema.sections {
         let parsed = doc.sections.iter().find(|s| s.id == section.id);
         match &section.body {
             SectionBody::Simple { slot, .. } => {
-                if let Some(parsed) = parsed {
-                    for field in &parsed.fields {
-                        fields.insert(
-                            field.key.clone(),
-                            header_field_json(schema, &field.key, &field.value),
-                        );
-                    }
-                }
                 if slot.is_some() {
                     sections.insert(
                         section.id.clone(),
@@ -5525,11 +5768,56 @@ fn whole_doc_json(
     serde_json::json!({
         "type": schema.ty,
         "slug": address.slug.as_str(),
+        "title": crate::rename::read_h1(source),
         "item-count": item_count(doc),
         "schema-version": schema_version,
         "fields": serde_json::Value::Object(fields),
         "sections": serde_json::Value::Object(sections),
     })
+}
+
+/// The whole-doc **`fields`** map — the one home of its rule, which `doc show`'s whole-doc
+/// serve and every parsing `doc list` row share (M55; `design/findings-channel.md` → 5).
+///
+/// It flattens every simple section's parsed fields (the header's front matter and any
+/// body trailing group) keyed by leaf id, through [`header_field_json`]. Then each
+/// declared field of a simple section that carries a `default:` and is **absent** from the
+/// parsed doc is inserted as its declared literal, a json string — the **effective value**
+/// (R4 I5): a reader filtering on a defaulted field wants the value the doctype gives the
+/// doc, so a projected default is indistinguishable from a stored one by design. The
+/// stored bytes are never written. The injected stamp field declares no default, so a
+/// missing `schema-version` is never synthesized. The `#section` fields-only and leaf
+/// slices, item objects and the plain render stay the stored view (`design/
+/// findings-channel.md` → 10, the projection row names the whole doc alone).
+fn header_fields_json(
+    schema: &Schema,
+    doc: &engine::parse::Document,
+) -> serde_json::Map<String, serde_json::Value> {
+    let mut fields = serde_json::Map::new();
+    for section in &schema.sections {
+        let SectionBody::Simple {
+            fields: declared, ..
+        } = &section.body
+        else {
+            continue;
+        };
+        if let Some(parsed) = doc.sections.iter().find(|s| s.id == section.id) {
+            for field in &parsed.fields {
+                fields.insert(
+                    field.key.clone(),
+                    header_field_json(schema, &field.key, &field.value),
+                );
+            }
+        }
+        for field in declared {
+            if let Some(default) = &field.default {
+                fields
+                    .entry(field.id.clone())
+                    .or_insert_with(|| serde_json::Value::String(default.clone()));
+            }
+        }
+    }
+    fields
 }
 
 /// The doc's **own schema-version stamp** as a json **number** — the additive top-level

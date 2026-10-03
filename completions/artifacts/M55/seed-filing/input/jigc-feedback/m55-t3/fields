@@ -1,0 +1,6 @@
+kind bug
+found-in milestone:M55-planning/T3
+about dev:gate
+jigc-version 1.0.0-rc.22
+status resolved
+pinned-by UNPINNED: a measurement over one full gate run; no test counts what a run leaves in $TMPDIR, and support::scratch::ScratchDir's drop is what removes it

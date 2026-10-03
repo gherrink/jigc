@@ -1,0 +1,6 @@
+kind bug
+found-in review:M53-per-axis-rc18/(2,F-2)
+about jigc milestone finalize
+jigc-version 1.0.0-rc.18
+tier tier-3
+status open

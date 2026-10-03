@@ -420,3 +420,63 @@ fn a_project_layer_only_migrate_shaped_workflow_holds_rather_than_dying_unreadab
         "`--approve` promotes the canonical doc",
     );
 }
+
+/// A **project-layer step that wraps** `step:migration-finalize` one include down — the
+/// hold's promise composed at depth two rather than as a top-level include.
+const HOLD_WRAPPER_STEP: &str = "{{ include: step:migration-finalize }}\n";
+
+/// The project-layer-only migrate shape again, its last include the wrapper rather than the
+/// step itself.
+const WRAPPED_HOLD_WORKFLOW: &str = "\
+---
+when: migrate a decision record through a wrapping finalize step
+description: A migrate-shaped workflow whose hold step sits one include down.
+usage: the nested-include cell of the review hold.
+creates-task: true
+allows-create: [{type: adr, as: decision}]
+---
+{{ include: step:author-migration-adr }}
+{{ include: step:wrap-the-hold }}
+";
+
+/// Cell `(composes: yes — at depth two, staged source: no, layer: project cascade layer)`
+/// — the M55 completion audit, CR1.
+///
+/// Composition expands includes at every depth, so a workflow whose body reaches
+/// `step:migration-finalize` through a wrapping step composes the exit-4 promise exactly as
+/// one that names it directly. The hold's predicate read the workflow's **top-level**
+/// includes only, so it never saw the step and the plain finalize landed a commit at exit 0
+/// beneath a composed body promising it would not.
+#[test]
+fn a_hold_step_reached_through_a_wrapping_step_still_holds() {
+    let corpus = TrialCorpus::build(State::Fresh);
+    let steps = corpus.repo().join(".jigc/config/steps");
+    std::fs::create_dir_all(&steps).expect("create the project layer's steps dir");
+    std::fs::write(steps.join("wrap-the-hold.yaml"), HOLD_WRAPPER_STEP)
+        .expect("write the wrapping step");
+    write_project_layer_workflow(&corpus, "wrapped-hold", WRAPPED_HOLD_WORKFLOW);
+    let task = corpus.start_workflow("wrapped-hold", "wrapped hold");
+
+    let composed = corpus.jigc_ok(&["start", "--task", &task]);
+    assert!(
+        composed.contains("commits NOTHING"),
+        "the wrapped step composes the exit-4 promise:\n{composed}",
+    );
+
+    author_adr(&corpus, &task, "Wrapped Decision");
+    author_commit(&corpus, &task, "wrapped hold");
+
+    let before = head_sha(&corpus);
+    let held = corpus.jigc(&["task", "finalize", &task]);
+    assert_eq!(
+        held.status.code(),
+        Some(4),
+        "a promise composed one include down is still a promise; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&held.stdout),
+        String::from_utf8_lossy(&held.stderr),
+    );
+    assert_eq!(before, head_sha(&corpus), "the hold commits nothing");
+
+    corpus.jigc_ok(&["task", "finalize", &task, "--approve"]);
+    assert_ne!(before, head_sha(&corpus), "`--approve` lands the commit");
+}

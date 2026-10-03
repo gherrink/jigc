@@ -366,6 +366,110 @@ fn a_reworded_methodology_hint_composes_clean_with_no_bump() {
     );
 }
 
+/// Rewrite the copied methodology `schema-manifest.yaml` through `edit`, asserting the
+/// edit changed something — a mutator that matches nothing would leave the gate
+/// nothing to catch and the test below it passing for the wrong reason.
+fn edit_methodology_manifest(pack: &Path, what: &str, edit: impl FnOnce(&str) -> String) {
+    let path = pack.join("config").join("schema-manifest.yaml");
+    let body = fs::read_to_string(&path).expect("read the copied schema-manifest.yaml");
+    let edited = edit(&body);
+    assert_ne!(
+        body, edited,
+        "the manifest edit ({what}) must change the file"
+    );
+    fs::write(&path, edited).expect("write the edited schema-manifest.yaml");
+}
+
+/// Compose `[dev ▸ methodology-copy]` with `mutate` applied to the copy's manifest and
+/// return the `jigc start` output — the composing door the drift arm above drives.
+fn start_over_mutated_methodology_manifest(
+    tag: &str,
+    mutate: impl FnOnce(&Path),
+) -> std::process::Output {
+    let repo = TempDir::new(&format!("{tag}-repo"));
+    let home = TempDir::new(&format!("{tag}-home"));
+    let pack = methodology_pack_copy(&format!("{tag}-pack"));
+    init_repo(repo.path());
+    list_pack(repo.path(), pack.path());
+    mutate(pack.path());
+    run_listed(
+        repo.path(),
+        home.path(),
+        &["start", "--workflow", "single-task", "freeze-gate probe"],
+    )
+}
+
+/// M55 Increment 7: `jigc-feedback` is **bound** by the freeze, not merely listed. With
+/// its manifest entry deleted the shipped schema is undeclared, and pack-load blocks
+/// with the freeze check's own `ExtraEntry` message (`engine::manifest`).
+#[test]
+fn a_methodology_manifest_missing_the_jigc_feedback_entry_is_blocked() {
+    let out = start_over_mutated_methodology_manifest("m-no-feedback", |pack| {
+        edit_methodology_manifest(pack, "delete the jigc-feedback entry", |body| {
+            let mut out = String::new();
+            let mut lines = body.lines().peekable();
+            while let Some(line) = lines.next() {
+                if line == "  - type: jigc-feedback" {
+                    // The entry's two indented members follow it.
+                    while lines.peek().is_some_and(|l| l.starts_with("    ")) {
+                        lines.next();
+                    }
+                    continue;
+                }
+                out.push_str(line);
+                out.push('\n');
+            }
+            out
+        });
+    });
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "a manifest without the jigc-feedback entry must make `jigc start` exit non-zero; stdout:\n{}\nstderr:\n{stderr}",
+        String::from_utf8_lossy(&out.stdout),
+    );
+    assert!(
+        stderr.contains("doctype `jigc-feedback` is shipped but absent from the freeze manifest"),
+        "stderr must carry the freeze check's absent-entry message; got:\n{stderr}",
+    );
+}
+
+/// The mismatched-entry sibling: an altered `inconsistency` `schema-hash` makes pack-load
+/// block with the freeze check's `HashMismatch` message naming the doctype.
+#[test]
+fn a_methodology_manifest_with_a_mismatched_inconsistency_hash_is_blocked() {
+    let out = start_over_mutated_methodology_manifest("m-bad-inconsistency", |pack| {
+        edit_methodology_manifest(pack, "alter the inconsistency hash", |body| {
+            let mut out = String::new();
+            let mut in_entry = false;
+            for line in body.lines() {
+                if line.starts_with("  - type:") {
+                    in_entry = line == "  - type: inconsistency";
+                }
+                if in_entry && line.starts_with("    schema-hash: ") {
+                    out.push_str(&format!("    schema-hash: {}\n", "0".repeat(64)));
+                } else {
+                    out.push_str(line);
+                    out.push('\n');
+                }
+            }
+            out
+        });
+    });
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "a mismatched inconsistency hash must make `jigc start` exit non-zero; stdout:\n{}\nstderr:\n{stderr}",
+        String::from_utf8_lossy(&out.stdout),
+    );
+    for needle in ["schema-hash mismatch", "inconsistency"] {
+        assert!(
+            stderr.contains(needle),
+            "stderr must contain `{needle}`; got:\n{stderr}",
+        );
+    }
+}
+
 /// The stamp goes live with the manifest (one atomic unit): a **fresh methodology
 /// mint** through the real `do-research` workflow carries `schema-version: 1` in
 /// its committed front matter — the value the validate side's version-aware

@@ -1,0 +1,6 @@
+kind bug
+found-in review:M53-per-axis-rc19/(2,N-4)
+about file-state.hash-matches
+jigc-version 1.0.0-rc.19
+tier tier-3
+status open

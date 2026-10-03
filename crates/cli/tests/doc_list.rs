@@ -17,9 +17,13 @@
 //! additive key), sorted by (type, slug).
 //!
 //! **M48 Increment 3 / T3 — a task has a surface too.** `--task <id>` lists what that
-//! task **stages** (the same identity/path/state/item-count row shape, staged-only), and
-//! a task-less listing served while an open task stages docs routes at it on **stderr**
-//! — the `stale_read_hint` mold, stdout byte-identical.
+//! task **stages** (the same row shape, staged-only), and a task-less listing served while
+//! an open task stages docs routes at it on **stderr** — the `stale_read_hint` mold, stdout
+//! byte-identical.
+//!
+//! **M55 Increment 6 / T3 — the row a triage reads.** Every row carries `title` (the `# H1`,
+//! or `null`) and `fields` (`doc show`'s header-field map on a `managed` row that parses,
+//! `null` on every other), each state driven by `doc_list_rows_carry_title_and_fields_by_state`.
 //!
 //! Everything is asserted on the EMITTED bytes of the real binary (`CARGO_BIN_EXE_jigc`).
 //! No external test crates.
@@ -195,13 +199,21 @@ const STORE_JSON: &str = r#"{
       "id": "adr:single-node-cache",
       "path": "decisions/single-node-cache.md",
       "state": "managed",
-      "item-count": 0
+      "item-count": 0,
+      "title": "Single-node cache",
+      "fields": {
+        "date": "2026-05-23",
+        "schema-version": "2",
+        "status": "accepted"
+      }
     },
     {
       "id": "changelog:changelog",
       "path": "CHANGELOG.md",
       "state": "unregistered",
-      "item-count": 0
+      "item-count": 0,
+      "title": "Changelog",
+      "fields": null
     }
   ]
 }"#;
@@ -246,13 +258,23 @@ const STORE_WITH_ITEMS_JSON: &str = r#"{
       "id": "adr:single-node-cache",
       "path": "decisions/single-node-cache.md",
       "state": "managed",
-      "item-count": 0
+      "item-count": 0,
+      "title": "Single-node cache",
+      "fields": {
+        "date": "2026-05-23",
+        "schema-version": "2",
+        "status": "accepted"
+      }
     },
     {
       "id": "prd:habit-tracker",
       "path": "prds/habit-tracker.md",
       "state": "managed",
-      "item-count": 2
+      "item-count": 2,
+      "title": "Habit tracker",
+      "fields": {
+        "schema-version": "1"
+      }
     }
   ]
 }"#;
@@ -286,25 +308,37 @@ const STORE_WITH_ORPHANS_JSON: &str = r#"{
       "id": "adr:single-node-cache",
       "path": "decisions/single-node-cache.md",
       "state": "managed",
-      "item-count": 0
+      "item-count": 0,
+      "title": "Single-node cache",
+      "fields": {
+        "date": "2026-05-23",
+        "schema-version": "2",
+        "status": "accepted"
+      }
     },
     {
       "id": "changelog:changelog",
       "path": "CHANGELOG.md",
       "state": "unregistered",
-      "item-count": 0
+      "item-count": 0,
+      "title": "Changelog",
+      "fields": null
     },
     {
       "id": null,
       "path": "decisions/archive/old.md",
       "state": "orphaned",
-      "item-count": null
+      "item-count": null,
+      "title": "An orphan",
+      "fields": null
     },
     {
       "id": null,
       "path": "decisions/notes/later.md",
       "state": "orphaned",
-      "item-count": null
+      "item-count": null,
+      "title": "An orphan",
+      "fields": null
     }
   ]
 }"#;
@@ -627,6 +661,197 @@ fn doc_list_prints_the_orphaned_row_with_a_null_identity_and_no_item_count() {
     );
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// M55 Increment 6 / T3 — `title` and `fields` on every row
+// ═════════════════════════════════════════════════════════════════════════════
+
+/// A committed doc at the `adr` home, **stamped** — so the discriminator reads it `managed` —
+/// whose body declares no section the `adr` schema does, so it does not parse. Its H1 is
+/// still there, and the row's `title` needs no parse to read it.
+const UNPARSEABLE_ADR: &str = "\
+---
+schema-version: 2
+---
+
+# Half an ADR
+
+## Nonsense
+
+No section the adr declares.
+";
+
+/// A stamped orphan with **no H1** — the one row state in which `title` reads `null`.
+const UNTITLED_ORPHAN: &str = "\
+---
+schema-version: 1
+---
+
+Prose with no heading at all.
+";
+
+/// The one row whose `path` is `rel`, out of a parsed `doc list --format json` listing.
+fn row_at<'a>(listing: &'a serde_json::Value, rel: &str) -> &'a serde_json::Value {
+    listing["docs"]
+        .as_array()
+        .expect("`docs` is an array")
+        .iter()
+        .find(|row| row["path"] == rel)
+        .unwrap_or_else(|| panic!("a row at `{rel}`; listing:\n{listing:#}"))
+}
+
+/// The value of `key` on `row`, asserting the key is **present** — a `null` that is really an
+/// absent key would let a row that never grew the key pass every `null` assertion below.
+fn key<'a>(row: &'a serde_json::Value, key: &str) -> &'a serde_json::Value {
+    row.get(key)
+        .unwrap_or_else(|| panic!("every row carries `{key}`; row:\n{row:#}"))
+}
+
+/// Parse an invocation's stdout as json.
+fn json_of(out: &std::process::Output) -> serde_json::Value {
+    serde_json::from_str(&stdout_of(out)).expect("the json arm parses")
+}
+
+/// (M55 inc-6 T3) **Every `doc list --format json` row carries `title` and `fields`, with the
+/// value its state declares** (`design/findings-channel.md` → 5, R4 B5;
+/// `design/doc-read-surface.md` → `jigc doc list`). `title` is the doc's `# H1`, or `null`
+/// where it has none, on every row; `fields` is the header-field map `doc show` serves on a
+/// `managed` row that parses, and `null` — never `{}` — on every other. Red at the base: no row
+/// carried either key.
+///
+/// The states, each driven on the emitted bytes:
+///
+/// - **managed, parsing** — the H1, and the doc's fields, equal to `doc show`'s;
+/// - **managed, not parsing** — the H1, and `null`;
+/// - **unregistered** — the H1, and `null`;
+/// - **orphaned** — the H1, and `null`; with no H1, `null` and `null`;
+/// - **`--task`** — read from the staged copy, whose `status` differs from the committed one.
+#[test]
+fn doc_list_rows_carry_title_and_fields_by_state() {
+    let repo = TempDir::new("title-fields");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    seed_store(repo.path());
+    let decisions = repo.path().join("decisions");
+    fs::write(decisions.join("half-an-adr.md"), UNPARSEABLE_ADR).expect("write the unparseable");
+    fs::create_dir_all(decisions.join("archive")).expect("mk the orphans' dir");
+    fs::write(decisions.join("archive").join("old.md"), STAMPED_ORPHAN).expect("write orphan");
+    fs::write(
+        decisions.join("archive").join("untitled.md"),
+        UNTITLED_ORPHAN,
+    )
+    .expect("write the untitled orphan");
+    git(repo.path(), &["add", "decisions"]);
+    git(repo.path(), &["commit", "-q", "-m", "every row state"]);
+
+    let listed = jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "list", "--format", "json"],
+    );
+    assert_ok(&listed, "`jigc doc list --format json`");
+    let listing = json_of(&listed);
+
+    // Managed, parsing: the H1, and the very fields `doc show` serves for the same doc.
+    let managed = row_at(&listing, "decisions/single-node-cache.md");
+    assert_eq!(managed["state"], "managed");
+    assert_eq!(key(managed, "title"), "Single-node cache");
+    assert_eq!(
+        key(managed, "fields"),
+        &serde_json::json!({"date": "2026-05-23", "schema-version": "2", "status": "accepted"}),
+    );
+    let shown = jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "show", "adr:single-node-cache", "--format", "json"],
+    );
+    assert_ok(
+        &shown,
+        "`jigc doc show adr:single-node-cache --format json`",
+    );
+    let shown = json_of(&shown);
+    assert_eq!(
+        (key(managed, "title"), key(managed, "fields")),
+        (&shown["title"], &shown["fields"]),
+        "a managed row that parses carries `doc show`'s own `title` and `fields`",
+    );
+
+    // Managed, not parsing: stamped, so managed — the H1 still read, `fields` null.
+    let broken = row_at(&listing, "decisions/half-an-adr.md");
+    assert_eq!(broken["state"], "managed");
+    assert_eq!(key(broken, "title"), "Half an ADR");
+    assert_eq!(key(broken, "fields"), &serde_json::Value::Null);
+
+    // Unregistered: the H1, `fields` null — not adopted, whatever its bytes parse as.
+    let foreign = row_at(&listing, "CHANGELOG.md");
+    assert_eq!(foreign["state"], "unregistered");
+    assert_eq!(key(foreign, "title"), "Changelog");
+    assert_eq!(key(foreign, "fields"), &serde_json::Value::Null);
+
+    // Orphaned: no schema to parse against, but the H1 needs none.
+    let orphan = row_at(&listing, "decisions/archive/old.md");
+    assert_eq!(orphan["state"], "orphaned");
+    assert_eq!(key(orphan, "title"), "An orphan");
+    assert_eq!(key(orphan, "fields"), &serde_json::Value::Null);
+    let untitled = row_at(&listing, "decisions/archive/untitled.md");
+    assert_eq!(untitled["state"], "orphaned");
+    assert_eq!(key(untitled, "title"), &serde_json::Value::Null);
+    assert_eq!(key(untitled, "fields"), &serde_json::Value::Null);
+
+    // `--task`: the staged copy's values, which differ from the committed doc's.
+    start_task(repo.path(), home.path(), "harden the cache");
+    assert_ok(
+        &jigc(
+            repo.path(),
+            home.path(),
+            &[
+                "doc",
+                "set-field",
+                "adr:single-node-cache#status",
+                "--value",
+                "superseded",
+                "--task",
+                "harden-the-cache",
+            ],
+        ),
+        "`jigc doc set-field` — the staged copy diverges",
+    );
+    let staged = jigc(
+        repo.path(),
+        home.path(),
+        &[
+            "doc",
+            "list",
+            "adr",
+            "--task",
+            "harden-the-cache",
+            "--format",
+            "json",
+        ],
+    );
+    assert_ok(&staged, "`jigc doc list adr --task … --format json`");
+    let staged = json_of(&staged);
+    let copy = row_at(&staged, "decisions/single-node-cache.md");
+    assert_eq!(key(copy, "title"), "Single-node cache");
+    assert_eq!(
+        key(copy, "fields")["status"],
+        "superseded",
+        "the staged row reads the staged copy; row:\n{copy:#}",
+    );
+    let committed = json_of(&jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "list", "adr", "--format", "json"],
+    ));
+    assert_eq!(
+        key(
+            row_at(&committed, "decisions/single-node-cache.md"),
+            "fields"
+        )["status"],
+        "accepted",
+        "the committed row still reads the committed doc",
+    );
+}
+
 /// (M42 inc-8 T6) An **unknown doctype blocks** `store.unknown-type`, routed at
 /// `jigc describe` — the same routed block the read-side `doc show` / `doc schema` raise.
 #[test]
@@ -667,25 +892,47 @@ fn doc_list_blocks_an_unknown_doctype_routed_at_describe() {
 ///   display rule, so a printed path is repo-real rather than a working-area fiction;
 ///   a **transient** doctype (`commit:<task-id>`, sink = the git message) has no
 ///   committed home and therefore lists at its typed `<type>:<slug>` identity.
+///
+/// **`title` and `fields` are read from the staged copy** (M55): the copied-in adr carries
+/// its staged `status: superseded`, never the committed `accepted`, the created adr its
+/// `set: on-create` date — `<DATE>`, interpolated from the doc's own leaf read — and the
+/// provisioned commit skeleton its H1 (the task id) and its two still-empty header fields.
 const STAGED_JSON: &str = r#"{
   "docs": [
     {
       "id": "adr:cache-eviction",
       "path": "decisions/cache-eviction.md",
       "state": "managed",
-      "item-count": 0
+      "item-count": 0,
+      "title": "Cache eviction",
+      "fields": {
+        "date": "<DATE>",
+        "schema-version": "2",
+        "status": "proposed"
+      }
     },
     {
       "id": "adr:single-node-cache",
       "path": "decisions/single-node-cache.md",
       "state": "managed",
-      "item-count": 0
+      "item-count": 0,
+      "title": "Single-node cache",
+      "fields": {
+        "date": "2026-05-23",
+        "schema-version": "2",
+        "status": "superseded"
+      }
     },
     {
       "id": "commit:harden-the-cache",
       "path": "commit:harden-the-cache",
       "state": "managed",
-      "item-count": 0
+      "item-count": 0,
+      "title": "harden-the-cache",
+      "fields": {
+        "scope": "",
+        "type": ""
+      }
     }
   ]
 }"#;
@@ -781,9 +1028,21 @@ fn doc_list_task_lists_what_the_task_stages() {
         ],
     );
     assert_ok(&json, "`jigc doc list --task … --format json`");
+    let date = jigc(
+        repo.path(),
+        home.path(),
+        &[
+            "doc",
+            "show",
+            "adr:cache-eviction#status/date",
+            "--task",
+            "harden-the-cache",
+        ],
+    );
+    assert_ok(&date, "`jigc doc show adr:cache-eviction#status/date`");
     assert_eq!(
         stdout_of(&json).trim_end(),
-        STAGED_JSON,
+        STAGED_JSON.replace("<DATE>", stdout_of(&date).trim()),
         "the staged listing's pinned shape",
     );
 
@@ -973,14 +1232,119 @@ fn a_task_less_listing_routes_at_the_staged_read() {
     );
 
     // (6) The doctype scope the reader asked for survives into the route — a narrowed
-    //     listing routes at the narrowed staged listing, not a wider one.
-    let narrowed = jigc(repo.path(), home.path(), &["doc", "list", "adr"]);
-    assert_ok(&narrowed, "`jigc doc list adr` with an open staging task");
+    //     listing routes at the narrowed staged listing, not a wider one. The task stages
+    //     its `commit` doc, so `doc list commit` is the narrowing it answers to (a doctype
+    //     it stages nothing of is `a_narrowed_listing_names_only_tasks_staging_that_doctype`).
+    let narrowed = jigc(repo.path(), home.path(), &["doc", "list", "commit"]);
+    assert_ok(
+        &narrowed,
+        "`jigc doc list commit` with an open staging task",
+    );
     assert_eq!(
         lift_route(&stderr_of(&narrowed)),
-        vec!["jigc", "doc", "list", "adr", "--task", "harden-the-cache"],
+        vec![
+            "jigc",
+            "doc",
+            "list",
+            "commit",
+            "--task",
+            "harden-the-cache"
+        ],
         "the route carries the doctype the reader scoped the listing to",
     );
+}
+
+/// (M55 audit O24) **A narrowed listing names only the tasks that stage that doctype.**
+/// The note's claim is *"`<doctype>` docs are also staged in open task …"* and its route is
+/// that task's narrowed staged listing — so a task staging nothing of the doctype is not
+/// named: before the fix, `doc list adr` named a task staging only its commit doc, and the
+/// route it handed over answered *"no `adr` docs staged"*. The note reads the staged arm's
+/// own row predicate, so the route it hands over, **run verbatim**, lists a row.
+///
+/// Over two open tasks — one staging only its `commit` skeleton, one an `adr` beside its
+/// own — on both arms (the note rides stderr on `--format json` too, stdout untouched):
+/// `doc list adr` names the adr-staging task alone; with that task discarded it is silent;
+/// `doc list commit` and the unfiltered `doc list` keep naming every staging task.
+#[test]
+fn a_narrowed_listing_names_only_tasks_staging_that_doctype() {
+    let repo = TempDir::new("narrowed");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    seed_store(repo.path());
+    start_task(repo.path(), home.path(), "harden the cache");
+    start_task(repo.path(), home.path(), "trim the cache");
+    assert_ok(
+        &jigc(
+            repo.path(),
+            home.path(),
+            &[
+                "doc",
+                "create",
+                "adr",
+                "--title",
+                "Cache eviction",
+                "--task",
+                "trim-the-cache",
+            ],
+        ),
+        "`jigc doc create adr` in the second task",
+    );
+
+    for format in [&[][..], &["--format", "json"][..]] {
+        let mut args = vec!["doc", "list", "adr"];
+        args.extend_from_slice(format);
+        let out = jigc(repo.path(), home.path(), &args);
+        assert_ok(&out, "`jigc doc list adr` with two open tasks");
+        let stderr = stderr_of(&out);
+        assert!(
+            stderr.contains("`adr` docs are also staged in open task trim-the-cache ")
+                && !stderr.contains("harden-the-cache"),
+            "{args:?}: only the task staging an adr is named; got:\n{stderr}",
+        );
+        let route = lift_route(&stderr);
+        assert_eq!(
+            route,
+            vec!["jigc", "doc", "list", "adr", "--task", "trim-the-cache"]
+        );
+        let run: Vec<&str> = route[1..].iter().map(String::as_str).collect();
+        let followed = jigc(repo.path(), home.path(), &run);
+        assert_ok(&followed, "the emitted route, run verbatim");
+        assert!(
+            stdout_of(&followed).contains("adr:cache-eviction"),
+            "{args:?}: the route lands on a listing with a row; got:\n{}",
+            stdout_of(&followed),
+        );
+    }
+
+    // The unfiltered listing and a doctype both tasks stage keep naming both.
+    for args in [&["doc", "list"][..], &["doc", "list", "commit"][..]] {
+        let stderr = stderr_of(&jigc(repo.path(), home.path(), args));
+        assert!(
+            stderr.contains("open tasks harden-the-cache, trim-the-cache"),
+            "{args:?}: every task staging a listed doc is named; got:\n{stderr}",
+        );
+    }
+
+    // With the adr-staging task gone, `doc list adr` has nothing staged to point at.
+    assert_ok(
+        &jigc(
+            repo.path(),
+            home.path(),
+            &["task", "discard", "trim-the-cache", "--force"],
+        ),
+        "`jigc task discard`",
+    );
+    for format in [&[][..], &["--format", "json"][..]] {
+        let mut args = vec!["doc", "list", "adr"];
+        args.extend_from_slice(format);
+        let out = jigc(repo.path(), home.path(), &args);
+        assert_ok(&out, "`jigc doc list adr` with no adr staged");
+        assert_eq!(
+            stderr_of(&out),
+            "",
+            "{args:?}: a task staging no `adr` is not named"
+        );
+    }
 }
 
 /// (M48 inc-3 T3) The advisory's **plural branch** — two open tasks staging docs. Both

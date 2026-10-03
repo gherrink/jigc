@@ -35,7 +35,7 @@ use crate::repo::discover_repo_root;
 use crate::repo::{SeamAct, SeamSubject};
 use anyhow::{Context, Result, bail};
 use engine::address::Address;
-use engine::compose::{WorkflowDef, load_workflow_def};
+use engine::compose::{StepSource, WorkflowDef, load_workflow_def};
 use engine::file_state::{self, FileStateRecord};
 use engine::finalize::{
     CarryoverBoundary, Promotion, RepinDecision, decide_base_repin, decide_carryover, plan_finalize,
@@ -1378,6 +1378,35 @@ const CHANGELOG_TYPE: &str = "changelog";
 /// ([`TaskArea::composes_review_hold`]; `design/auto-migration.md` → The review gate).
 const MIGRATION_FINALIZE_STEP: &str = "migration-finalize";
 
+/// The step whose composed body states the **path-scoped doc-only commit** (M55;
+/// `design/findings-channel.md` §3): a task whose recorded composed workflow includes it
+/// commits exactly its own docs and recorded owner-artifacts, and every other staged path
+/// stays staged. Keyed on the composed contract, on [`MIGRATION_FINALIZE_STEP`]'s mold.
+const DOC_ONLY_FINALIZE_STEP: &str = "finalize-doc-only";
+
+/// Whether a composed workflow takes the doc-only commit — its composition reaches
+/// [`DOC_ONLY_FINALIZE_STEP`] **at any depth** of its include tree, through `source`, and
+/// the task is not a fan-out sub-task. The **one** predicate every door asks of a
+/// definition, so the arm a committing door takes and the arm a composed `what's-left:`
+/// line or a preview describes cannot be decided by two different readings of the same
+/// workflow.
+///
+/// **Over the expanded tree, not the top-level `includes`** (the M55 completion audit,
+/// CR1): composition expands includes at every depth, so a workflow reaching the step
+/// through a wrapping step composed the path-scoped promise while this predicate — then a
+/// scan of `def.includes` — answered `false`, and the finalize swept the index. The walk is
+/// [`crate::start::composes_step`], the one the sub-task omission set walks too; `source`
+/// is the cascade-resolved, origin-scoped, filled step source the compose expands. **Keyed
+/// on the step id, never its body:** a project shadow rewriting the step's text keeps the
+/// arm (`design/finalize.md` → Which arm, decided once).
+///
+/// **`sub_task`** carries the fan-out exclusion here, in the one place (E1): a sub-task's
+/// commit boundary is the milestone join, never this arm (`design/findings-channel.md` →
+/// the doc-only commit row).
+pub(crate) fn doc_only_commit(def: &WorkflowDef, source: &dyn StepSource, sub_task: bool) -> bool {
+    !sub_task && crate::start::composes_step(def, source, DOC_ONLY_FINALIZE_STEP)
+}
+
 /// The changelog-gate advisory's finding code — one source for the finding it grades,
 /// the cascade key its route names as the not-user-facing exit, and the severity probe
 /// that decides which route that is ([`TaskArea::changelog_gate_refuses`]).
@@ -2413,6 +2442,15 @@ impl TaskArea {
         })?;
         let tracked = self.tracked_predicate()?;
         let history = self.history_predicate();
+        let other_refs = self.other_refs_predicate();
+        // The L1 pull-absorption seam (M55 Increment 4, P2): a committed doc's bytes at this
+        // task's base pin — a sub-task's pin is its milestone's (engine `add_task`) — read at
+        // `jigc_home`, the checkout the committed-store sweep reads. Consulted only on a
+        // drifted path the task touched; an unreadable pin answers `None` for every path,
+        // which keeps the conflict-block the arm raised before.
+        let pin = self.base().ok().map(|base| base.sha);
+        let pin_home = self.jigc_home.clone();
+        let pinned = move |path: &str| git_blob_at(&pin_home, pin.as_deref()?, path);
         // Materialize the current git index into a self-cleaning temp tree and resolve
         // cited code anchors against it (M30 Inc 3, G4): the `doc-code` probe validates
         // what *commits*, not the ambient working tree, so a symbol present on disk but
@@ -2457,8 +2495,10 @@ impl TaskArea {
             &doc_code_invoker,
             &tracked,
             &history,
+            &other_refs,
             &changed_code,
             base_tree.path(),
+            &pinned,
             // The conflict route is the caller's, and this caller is a named task: a
             // `DRIFTED + TOUCHED` block routes at the REAL id (M47 inc-2 / T4). A
             // **migration** task also holds the one path whose general route cannot be
@@ -2711,7 +2751,11 @@ impl TaskArea {
             // task, for a check that is inert on every one of them.
             previewed.extend(self.amend_staged_doc_findings(schemas)?);
         }
-        if !carry_staged && !amending {
+        // The doc-only arm is the carryover gate's second exemption (M55), and the preview
+        // asks the same precedence the committing door does ([`Self::commits_doc_only`]): a
+        // path-scoped commit takes no path outside its set, so a path staged before the task
+        // existed cannot cross the boundary and there is nothing for the gate to decide.
+        if !carry_staged && !amending && !self.commits_doc_only(&self.id)? {
             let snapshot = state::read_staged_snapshot(&self.dir).with_context(|| {
                 format!(
                     "could not read the staged snapshot for task at {:?}",
@@ -2802,13 +2846,25 @@ impl TaskArea {
     /// then removed) reads history-present → the weak finding keeps blocking; a checkout that
     /// moved underneath the gitignored file-state cache (`git reset --hard` / branch switch /
     /// rebase past the creating commit) leaves the path history-less → the baseline downgrades
-    /// to advisory. The query runs only inside the already-cold recorded-but-missing arm, so a
+    /// to advisory, routed at the branch switch. The query runs only inside the already-cold recorded-but-missing arm, so a
     /// healthy task never shells out for it. A `git log` failure (a broken/unborn HEAD) is
     /// treated as **history-present** — the conservative default that keeps blocking rather
     /// than silently downgrading a possible deletion.
     fn history_predicate(&self) -> impl Fn(&str) -> bool {
         let repo_root = self.repo_root.clone();
         move |path: &str| git_path_has_history(&repo_root, path).unwrap_or(true)
+    }
+
+    /// Build the **other-branch** predicate that routes the advisory a history-less baseline
+    /// draws ([`engine::validate::OtherRefsPredicate`]; M55 completion triage, CR2): whether
+    /// some branch tip, local or remote-tracking, carries the path ([`git_path_on_a_branch`]).
+    /// Carried routes at switching back; not carried routes at `jigc unmanage`. Asked only
+    /// after [`Self::history_predicate`] read empty for a missing path, so a healthy task never
+    /// shells out for it, and a git failure answers **carried** — the conservative default that
+    /// never offers the index drop on a guess.
+    fn other_refs_predicate(&self) -> impl Fn(&str) -> bool {
+        let repo_root = self.repo_root.clone();
+        move |path: &str| git_path_on_a_branch(&repo_root, path).unwrap_or(true)
     }
 
     /// The **live milestone record** the committed-store sweep's dangling-baseline arm
@@ -2820,14 +2876,15 @@ impl TaskArea {
     /// record commit that `jigc milestone create` lands. So wherever the checkout stands at
     /// that pin — the provisioned worktree does by construction, the shared checkout whenever
     /// it is put there — the record is absent on disk with no HEAD history: the
-    /// dangling-baseline cell exactly, whose shipped route prunes the baseline with `jigc
-    /// unmanage`. Followed, that unmanages the record the milestone is run from. The engine
-    /// cannot see the membership, so the fact is supplied here, from the two enumerators that
+    /// dangling-baseline cell exactly, whose route says a branch switch left the baseline
+    /// behind (until M55 Increment 5 / T1 it pruned the baseline with `jigc unmanage`, which,
+    /// followed, unmanaged the record the milestone is run from). The engine cannot see the
+    /// membership, so the fact is supplied here, from the two enumerators that
     /// already own it: [`engine::milestone::owning_milestone`] and
     /// [`crate::milestone::record_key`] (the same string the sweep keys the baseline under).
     ///
     /// Path-keyed, never blanket: a record of some *other* milestone, and every non-record
-    /// managed doc, keep the shipped advisory and its prune route byte-identically — and
+    /// managed doc, keep the shipped advisory and its branch-switch route byte-identically — and
     /// M45's history gate is untouched above this arm, so a genuine deletion of the record
     /// (history present) still blocks.
     fn live_milestone_record(
@@ -3103,6 +3160,12 @@ impl TaskArea {
         // the one thing the hold below has to say out loud.
         let holds_for_review = staged_migration || self.composes_review_hold(id)?;
 
+        // **The doc-only commit model** (M55; `design/findings-channel.md` §3), decided once
+        // under the arm precedence [`Self::commits_doc_only`] owns, and read by the diff
+        // signal, the empty-commit recolor, the carryover decision and the stage policy below
+        // — so no two of them can disagree about which commit this task makes.
+        let doc_only = self.commits_doc_only(id)?;
+
         // The diff-presence signal the planner's empty-commit guard needs. On the per-task
         // `IndexHonoring` path it is the NARROWED stage set the commit actually lands (M30
         // G2; `design/finalize.md` → Dirty-tree policy) — never the ambient dirty tree: the
@@ -3125,32 +3188,63 @@ impl TaskArea {
                 || !self.staged_docs()?.is_empty()
                 || !git_untracked(&self.repo_root)?.trim().is_empty()
         } else {
-            let staged_code = !git_capture(&self.repo_root, &["diff", "--cached"])?.is_empty();
-            // A staged doc counts toward the diff exactly when it will PROMOTE — mirroring
-            // `plan_promotions`' promotability: a `location:` doctype OR a **placement**
-            // doctype (`design/storage.md` → Placement, `location: None`). Testing only
-            // `location` here would drop a placement singleton (e.g. the `vision` managed at
-            // root `VISION.md`) through the transient arm, tripping the empty-commit guard on
-            // a doc-only task whose sole diff IS that promotion. The transient commit doc
-            // (neither location nor placement) is still excluded.
+            // A staged doc counts toward the diff exactly when its PROMOTION CHANGES A BYTE —
+            // its destination is the planner's own ([`engine::finalize::promote_destination`]:
+            // a `location:` doctype, or a **placement** doctype at its literal file, so the
+            // `vision` managed at root `VISION.md` is counted; the transient commit doc has
+            // neither and never is), and its would-be-committed blob differs from `HEAD`'s
+            // there ([`promotion_changes_head`]). Promotability alone is not a diff (M55
+            // completion audit CR3): a task that copied a committed doc in and wrote it back
+            // unchanged — a triage re-setting the `status` it was filed with — would reach
+            // `git commit`, meet git's own "nothing to commit", and be routed as a hook's
+            // rejection, though nothing rejected it. Asked here, it is the honest empty commit.
             let staged_promotable = self.staged_docs()?.iter().any(|(name, _)| {
                 name.strip_suffix(".md")
                     .and_then(|stem| stem.split_once(':'))
-                    .and_then(|(ty, _)| schemas.get(ty))
-                    .is_some_and(|schema| schema.location.is_some() || schema.placement.is_some())
+                    .is_some_and(|(ty, slug)| {
+                        schemas
+                            .get(ty)
+                            .and_then(|schema| engine::finalize::promote_destination(schema, slug))
+                            .is_some_and(|destination| {
+                                promotion_changes_head(
+                                    &self.repo_root,
+                                    &state::instance_path(&self.dir, ty, slug),
+                                    &destination,
+                                )
+                            })
+                    })
             });
-            let config_pending = !git_capture(
+            // The recorded owner-artifacts both arms stage, on the same byte question: one
+            // counts when git sees it differ from `HEAD` ([`owner_artifacts_change_head`]).
+            // Until CR3 the ordinary arm never asked — every owner-artifact is recorded by a
+            // promotable doc, which the byte-blind term above always counted — so a recording
+            // doc written back unchanged beside a re-captured artifact must still read as a
+            // diff, here, rather than now reading empty.
+            let owner_changed = owner_artifacts_change_head(
                 &self.repo_root,
-                &[
-                    "status",
-                    "--porcelain",
-                    "--",
-                    ".jigc/config",
-                    ".jigc/.gitignore",
-                ],
-            )?
-            .is_empty();
-            staged_code || staged_promotable || config_pending
+                &engine::finalize::plan_owner_artifacts(&self.dir, &schemas),
+            );
+            // **The doc-only arm's diff is its path set and nothing else** (M55): a doc that
+            // promotes, or a recorded owner-artifact. Anyone's staged code and a pending
+            // `.jigc/config` delta are outside the set the commit takes, so counting them would
+            // let a task with no doc of its own reach a path-scoped commit over nothing.
+            if doc_only {
+                staged_promotable || owner_changed
+            } else {
+                let staged_code = !git_capture(&self.repo_root, &["diff", "--cached"])?.is_empty();
+                let config_pending = !git_capture(
+                    &self.repo_root,
+                    &[
+                        "status",
+                        "--porcelain",
+                        "--",
+                        ".jigc/config",
+                        ".jigc/.gitignore",
+                    ],
+                )?
+                .is_empty();
+                staged_code || staged_promotable || config_pending || owner_changed
+            }
         };
 
         let commit_schema = schemas
@@ -3179,8 +3273,13 @@ impl TaskArea {
             // untouched (it also serves the whole-tree milestone planner). Validation /
             // forward-ref / base-mismatch blocks keep their precedence (plan_finalize
             // surfaces them ahead of the empty-commit guard, so they fall through here).
+            //
+            // Skipped on the doc-only arm (M55): its route is `git add`, and no `git add` can
+            // bring a path into a path-scoped commit, so an empty doc-only task keeps the
+            // engine's own `finalize.empty-commit`.
             Err(findings)
-                if findings.iter().any(|f| f.code == "finalize.empty-commit")
+                if !doc_only
+                    && findings.iter().any(|f| f.code == "finalize.empty-commit")
                     && !git_dirty_paths(&self.repo_root)?.is_empty() =>
             {
                 return self.blocked(vec![nothing_staged_finding(id)], format);
@@ -3205,7 +3304,16 @@ impl TaskArea {
         // persisted, the same probe re-run now, and the migration's recorded retire
         // pathspec (that deletion is the task's own work, exempt). A task minted before
         // the snapshot existed reads `None` and fails open (the declared bound).
-        let carried_findings = {
+        //
+        // **Not on the doc-only arm** (M55; `design/findings-channel.md` §3), the amend
+        // arm's precedent: the gate exists because the ordinary commit IS the index, and a
+        // path-scoped commit never takes a path outside its set, so a path staged before
+        // this task existed cannot cross the boundary — declared or not. The decision is
+        // empty there, so the `--dry-run` refusal and the committing refusal below never
+        // fire and `--carry-staged` carries nothing: it is inert in every state.
+        let carried_findings = if doc_only {
+            Vec::new()
+        } else {
             let snapshot = state::read_staged_snapshot(&self.dir).with_context(|| {
                 format!(
                     "could not read the staged snapshot for task at {:?}",
@@ -3260,7 +3368,8 @@ impl TaskArea {
             if !carry_staged && !carried_findings.is_empty() {
                 return self.blocked(carried_findings, format);
             }
-            let (mut included, left_out) = self.predict_manifest(&plan, staged_migration)?;
+            let (mut included, left_out) =
+                self.predict_manifest(&plan, staged_migration, doc_only)?;
             // Reached only under a declared `--carry-staged` or an empty carried set, so
             // the label can no longer claim a consent this run never carried.
             relabel_carried(&mut included, &carried_paths);
@@ -3315,6 +3424,9 @@ impl TaskArea {
                             from,
                             to: plan.subject(),
                         },
+                        // The doc-only arm adds a commit too, path-scoped (M55): the
+                        // variant carries the model the left-out section is spelled on.
+                        None if doc_only => render::ForecastSubject::AddsPathScoped(plan.subject()),
                         None => render::ForecastSubject::Adds(plan.subject()),
                     },
                     &included,
@@ -3418,16 +3530,16 @@ impl TaskArea {
         // which stream carries this run's document is not known until the commit has been
         // attempted, and on a reject the document is stderr's ([`emit_or_defer`]).
         let mut deferred_advisories = String::new();
-        let (_, pending_left_out) = self.predict_manifest(&plan, staged_migration)?;
+        let (_, pending_left_out) = self.predict_manifest(&plan, staged_migration, doc_only)?;
         // The model this run is on, so the print describes the commit it is about to make
         // rather than the ordinary one (the F-10 review's MEDIUM-3). Read off the same `amend`
-        // marker `stage` is chosen from three statements below, so the sentence and the act
-        // cannot disagree.
+        // marker and `doc_only` answer `stage` is chosen from three statements below, so the
+        // sentence and the act cannot disagree.
         emit_left_out_advisory(
             format,
             &mut deferred_advisories,
             &pending_left_out,
-            render::CommitModel::of(amend.as_deref()),
+            render::CommitModel::of(amend.as_deref(), doc_only),
         );
 
         // M43 — the carried-over half of the pre-commit print: a `--carry-staged` run
@@ -3447,6 +3559,8 @@ impl TaskArea {
             StagePolicy::Amend
         } else if staged_migration {
             StagePolicy::MigrationFixed
+        } else if doc_only {
+            StagePolicy::DocOnly
         } else {
             StagePolicy::IndexHonoring
         };
@@ -3521,6 +3635,7 @@ impl TaskArea {
                         git_commit_name_status(&self.repo_root)?,
                         git_status_entries(&self.repo_root)?,
                         &promoted_dests,
+                        doc_only,
                     )
                 };
                 // M43 — label the landed carried entries from the PRE-commit-computed
@@ -3565,6 +3680,9 @@ impl TaskArea {
                     // M53 — the cwd census, C2-09: the checkout this commit landed in, when
                     // it is not the one the workbench binds to. Text-only by declared bound.
                     site: self.commit_site(),
+                    // M55 — the doc-only model's left-out spelling on the landed text, from
+                    // the same answer the stage policy was chosen from.
+                    doc_only,
                 };
                 // M53 Increment 2 / T3 — the working area(s) phase 7 could not tear down,
                 // folded into the landed envelope's own `findings` array. `Findings::push`
@@ -3751,6 +3869,11 @@ impl TaskArea {
     /// - **Migration** (`stage_migration`'s narrowed pathspec): exactly its set — promotions
     ///   (`promoted`), tracked retirements (`deleted`), and the jigc-tracked config layer
     ///   `.jigc/config` / `.jigc/.gitignore` (`modified`). No user WIP.
+    /// - **Doc-only** (`stage_doc_only`'s path set, M55): the path set, never the index —
+    ///   each promotion `destination` (`promoted`) and each dirty path under a stageable
+    ///   recorded owner-artifact (by the rule jigc's own stage uses). Every other porcelain
+    ///   entry is `left_out`, **staged ones included** (`left-staged`), one entry per path
+    ///   ([`left_out_entry`]): the path-scoped commit leaves it where it is.
     ///
     /// Accepted prediction bound: on a first-ever finalize, the transaction's
     /// `crate::gitignore::ensure` may create `.jigc/.gitignore` that `git add --all` would
@@ -3760,6 +3883,7 @@ impl TaskArea {
         &self,
         plan: &engine::finalize::FinalizePlan,
         staged_migration: bool,
+        doc_only: bool,
     ) -> Result<(Vec<render::ManifestEntry>, Vec<render::ManifestEntry>)> {
         use render::{ManifestEntry, ManifestKind};
 
@@ -3800,6 +3924,34 @@ impl TaskArea {
             return Ok((entries, Vec::new()));
         }
 
+        if doc_only {
+            // The doc-only arm commits its path set alone (M55): the promotions, added below,
+            // and whatever its owner-artifact stage adds. Nothing else is included, whichever
+            // column is dirty — and nothing else is staged by jigc either (no config layer, no
+            // version stamp), so every remaining entry is left where it is.
+            let owner_specs = owner_artifact_stage_specs(&self.repo_root, plan);
+            let mut included: Vec<ManifestEntry> = Vec::new();
+            let mut left_out: Vec<ManifestEntry> = Vec::new();
+            for (code, path) in git_status_entries(&self.repo_root)? {
+                if promoted.contains(&path) {
+                    continue;
+                }
+                if owner_specs.iter().any(|spec| pathspec_covers(spec, &path)) {
+                    included.push(ManifestEntry {
+                        kind: self_staged_kind(&code),
+                        path,
+                    });
+                    continue;
+                }
+                left_out.extend(left_out_entry(&code, path, true));
+            }
+            included.extend(promoted.into_iter().map(|path| ManifestEntry {
+                path,
+                kind: ManifestKind::Promoted,
+            }));
+            return Ok((included, left_out));
+        }
+
         // Non-migration `IndexHonoring`: the commit lands the INDEX, so split each dirty
         // path by its porcelain column (M30 G3) — the X (index) column is **included** in
         // the commit, the Y (worktree) column is **left out** (unstaged/untracked WIP the
@@ -3827,23 +3979,16 @@ impl TaskArea {
             if promoted_set.contains(path.as_str()) {
                 continue;
             }
-            let mut columns = code.chars();
-            let x = columns.next().unwrap_or(' ');
-            let y = columns.next().unwrap_or(' ');
+            let x = code.chars().next().unwrap_or(' ');
             // jigc stages this one itself (a `git add -- <spec>` matches the file and, for a
             // directory spec like `.jigc/config`, everything under it) — so it rides the
             // commit whichever column is dirty: an untracked one is `added`, otherwise the
             // index column when it is already staged, else the worktree column jigc will stage.
-            if jigc_staged
-                .iter()
-                .any(|spec| path == *spec || path.starts_with(&format!("{spec}/")))
-            {
-                let kind = match (x, y) {
-                    ('?', _) => ManifestKind::Added,
-                    (' ', _) => column_kind(y),
-                    _ => column_kind(x),
-                };
-                included.push(ManifestEntry { path, kind });
+            if jigc_staged.iter().any(|spec| pathspec_covers(spec, &path)) {
+                included.push(ManifestEntry {
+                    kind: self_staged_kind(&code),
+                    path,
+                });
                 continue;
             }
             // X names the staged change the commit carries. `?` (untracked) is not in the
@@ -3855,12 +4000,7 @@ impl TaskArea {
                 });
             }
             // Y names the un-staged worktree residual left out of the commit.
-            if y != ' ' {
-                left_out.push(ManifestEntry {
-                    path,
-                    kind: column_kind(y),
-                });
-            }
+            left_out.extend(left_out_entry(&code, path, false));
         }
         for path in &promoted {
             included.push(ManifestEntry {
@@ -4122,12 +4262,56 @@ impl TaskArea {
     ///
     /// A task that recorded no workflow composes no such promise — `false`, never a
     /// fault.
+    ///
+    /// **At any depth** (the M55 completion audit, CR1): the step is looked for over the
+    /// recorded workflow's expanded include tree ([`crate::start::composes_step`]), because
+    /// a body reaching it through a wrapping step composes the same promise.
     fn composes_review_hold(&self, id: &str) -> Result<bool> {
-        Ok(self.recorded_workflow(id)?.is_some_and(|(_, def)| {
-            def.includes
-                .iter()
-                .any(|step| step == MIGRATION_FINALIZE_STEP)
-        }))
+        let Some((workflow_id, def)) = self.recorded_workflow(id)? else {
+            return Ok(false);
+        };
+        crate::start::with_composing_step_source(
+            self.pack.as_ref(),
+            &self.project_config(),
+            &workflow_id,
+            &def,
+            |def, source| crate::start::composes_step(def, source, MIGRATION_FINALIZE_STEP),
+        )
+    }
+
+    /// Whether this task's finalize takes the **doc-only commit** (M55;
+    /// `design/findings-channel.md` §3; `design/finalize.md` → The doc-only arm) — the one
+    /// place the arm's **precedence** is decided, asked by the committing door and by the
+    /// preview alike: **the amend marker, then a staged migration seam, then the doc-only
+    /// step, then the ordinary model.** An amend task commits no tree change and a staged
+    /// migration stages its own fixed set, so neither can also be path-scoped to its docs;
+    /// the shipped migrate workflows never compose the step, so the second clause is a
+    /// precedence statement rather than a reachable conflict.
+    ///
+    /// The subject is the composed contract, as for [`Self::composes_review_hold`]: the
+    /// recorded workflow, cascade-resolved, reaches [`DOC_ONLY_FINALIZE_STEP`] at any depth
+    /// of its include tree, asked through [`doc_only_commit`] with the step source the
+    /// re-compose expands and the task's own sub-task membership. A task that recorded no
+    /// workflow composes no such promise — `false`, never a fault.
+    fn commits_doc_only(&self, id: &str) -> Result<bool> {
+        if state::read_amend_pin(&self.dir)
+            .with_context(|| format!("could not read the amend marker for task `{id}`"))?
+            .is_some()
+            || self.dir.join(engine::state::SOURCE_FILE).exists()
+        {
+            return Ok(false);
+        }
+        let Some((workflow_id, def)) = self.recorded_workflow(id)? else {
+            return Ok(false);
+        };
+        let sub_task = engine::milestone::owning_milestone(&self.jigc_root, id).is_some();
+        crate::start::with_composing_step_source(
+            self.pack.as_ref(),
+            &self.project_config(),
+            &workflow_id,
+            &def,
+            |def, source| doc_only_commit(def, source, sub_task),
+        )
     }
 
     /// The **granted-and-unused changelog gate** finding (M42 Settle fork 6;
@@ -4423,6 +4607,14 @@ pub(crate) enum StagePolicy {
     /// leave alone. An amend task promotes nothing anyway — the only doc it stages is the
     /// transient `commit`, which never promotes.
     Amend,
+    /// The **doc-only** arm (M55; `design/findings-channel.md` §3) — stage exactly the
+    /// task's promoted docs (created, or copied in and edited) and its stageable recorded
+    /// owner-artifacts ([`stage_doc_only`]), and commit **those paths alone** through
+    /// [`crate::milestone::git_commit_paths`], never the index. Whatever else is staged in the
+    /// checkout stays staged. No config-layer stage and no `.jigc/version` refresh: both sit
+    /// outside the path set by construction and wait for the next ordinary finalize (gap G8;
+    /// `design/storage.md` → the version stamp's doc-only exception).
+    DocOnly,
     /// The `squash: true` fan-out boundary (M31 Inc 4) — the id-ordered list of the
     /// milestone's still-provisioned worktree paths, plus the optional repo-relative
     /// `milestone-record` pathspec to path-add into the same commit (M39 T4: the `join`
@@ -4480,9 +4672,10 @@ impl StagePolicy {
     fn live_index_record_pathspecs(&self) -> Vec<String> {
         match self {
             // The per-task stages touch no milestone record.
-            StagePolicy::MigrationFixed | StagePolicy::IndexHonoring | StagePolicy::Amend => {
-                Vec::new()
-            }
+            StagePolicy::MigrationFixed
+            | StagePolicy::IndexHonoring
+            | StagePolicy::Amend
+            | StagePolicy::DocOnly => Vec::new(),
             StagePolicy::Combine(_, record) | StagePolicy::ChainPerSubtask { record, .. } => {
                 record.iter().cloned().collect()
             }
@@ -4748,6 +4941,15 @@ pub(crate) fn try_execute_finalize_plan(
             // either — that gate adjudicates what a stage put in the commit, and this arm
             // stages nothing.
             StagePolicy::Amend => git_commit_amend(&live, &msg_path),
+            // The doc-only arm (M55): stage the task's own path set, run the same post-stage
+            // owner-artifact gate the index-honoring arm runs, and commit exactly that set —
+            // every other staged path stays staged, and the rollback axes above (promotions,
+            // owner-artifacts) restore exactly what this stage touched.
+            StagePolicy::DocOnly => {
+                let paths = stage_doc_only(repo_root, plan)?;
+                gate_owner_artifacts_post_stage(repo_root, cleanup_dir, schemas, plan)?;
+                crate::milestone::git_commit_paths(&live, &msg_path, &paths)
+            }
             // The `squash: true` fan-out boundary (M31 Inc 4 / Inc 5): fold the N
             // worktree-staged code-sets onto the base tree off-line, overlay the promoted docs
             // + config, and commit the combined tree with the user's hooks running from a
@@ -5247,8 +5449,12 @@ fn stage_migration(
     // is never un-staged by the retire index axis; its own rollback is the executor's third
     // axis (the pre-finalize index capture/restore).
     pathspecs.extend(owner_artifact_stage_specs(repo_root, plan));
+    let literals: Vec<String> = pathspecs
+        .iter()
+        .map(|spec| literal_pathspec(spec))
+        .collect();
     let mut args: Vec<&str> = vec!["add", "--"];
-    args.extend(pathspecs.iter().map(String::as_str));
+    args.extend(literals.iter().map(String::as_str));
     git_run(repo_root, &args).map_err(mark_stage_failure)?;
     Ok(pathspecs)
 }
@@ -5265,7 +5471,14 @@ fn owner_artifact_stage_specs(
     repo_root: &Path,
     plan: &engine::finalize::FinalizePlan,
 ) -> Vec<String> {
-    plan.owner_artifacts
+    stageable_owner_artifacts(repo_root, &plan.owner_artifacts)
+}
+
+/// [`owner_artifact_stage_specs`]' filter over a bare path list — the one predicate for
+/// *which recorded owner-artifacts a stage hands to git*, shared with the empty-commit
+/// signal ([`owner_artifacts_change_head`]), which runs before any plan exists.
+fn stageable_owner_artifacts(repo_root: &Path, paths: &[String]) -> Vec<String> {
+    paths
         .iter()
         .filter(|path| {
             owner_artifact_is_stageable_shape(path)
@@ -5274,6 +5487,58 @@ fn owner_artifact_stage_specs(
         })
         .cloned()
         .collect()
+}
+
+/// Whether **promoting** the staged doc at `source` to the repo-relative `destination` would
+/// change what `HEAD` records there — the empty-commit signal's per-doc question (M55
+/// completion audit CR3). The would-be-committed bytes are the staged bytes (promotion is a
+/// byte-stable copy), hashed as `git add` would hash them at `destination`
+/// (`git hash-object --path=<destination>`, so that path's clean filters apply); `HEAD`'s side
+/// is the blob `HEAD:<destination>` names. A destination `HEAD` has no blob at is a change.
+///
+/// **Fails toward "changed"**: a git that cannot answer reads `true`, so the commit runs and git
+/// decides — the behaviour before this question existed — and never a claimed no-op.
+fn promotion_changes_head(repo_root: &Path, source: &Path, destination: &str) -> bool {
+    let Ok(committed) = git_capture(
+        repo_root,
+        &[
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            &format!("HEAD:{destination}"),
+        ],
+    ) else {
+        return true;
+    };
+    let Some(source) = source.to_str() else {
+        return true;
+    };
+    let path = format!("--path={destination}");
+    git_capture(repo_root, &["hash-object", &path, "--", source])
+        .map_or(true, |staged| staged != committed)
+}
+
+/// Whether any recorded owner-artifact a stage would hand to git
+/// ([`stageable_owner_artifacts`]) differs from `HEAD` — modified, staged or untracked, as
+/// `git status --porcelain` reports it over the literal path. An unchanged artifact is no diff:
+/// the stage re-adds the bytes `HEAD` already has. Fails toward "changed", as
+/// [`promotion_changes_head`] does.
+fn owner_artifacts_change_head(repo_root: &Path, paths: &[String]) -> bool {
+    stageable_owner_artifacts(repo_root, paths)
+        .iter()
+        .any(|path| {
+            git_capture(
+                repo_root,
+                &[
+                    "status",
+                    "--porcelain",
+                    "--untracked-files=all",
+                    "--",
+                    &literal_pathspec(path),
+                ],
+            )
+            .map_or(true, |status| !status.is_empty())
+        })
 }
 
 /// Whether an owner-artifact path is shaped for a safe `git add` / index probe — **repo-
@@ -5398,7 +5663,8 @@ pub(crate) fn capture_owner_artifact_index(
         if !owner_artifact_is_stageable_shape(path) {
             continue;
         }
-        let line = git_capture(repo_root, &["ls-files", "--stage", "--", path])?;
+        let literal = literal_pathspec(path);
+        let line = git_capture(repo_root, &["ls-files", "--stage", "--", literal.as_str()])?;
         let fields: Vec<&str> = line.split_whitespace().collect();
         let entry = if fields.len() >= 2 {
             Some((fields[0].to_owned(), fields[1].to_owned()))
@@ -5797,9 +6063,39 @@ fn stage_index_honoring(
     if pathspecs.is_empty() {
         return Ok(());
     }
+    let literals: Vec<String> = pathspecs
+        .iter()
+        .map(|spec| literal_pathspec(spec))
+        .collect();
     let mut args: Vec<&str> = vec!["add", "--"];
-    args.extend(pathspecs.iter().map(String::as_str));
+    args.extend(literals.iter().map(String::as_str));
     git_run(repo_root, &args).map_err(mark_stage_failure)
+}
+
+/// The doc-only stage (M55; `design/findings-channel.md` §3): `git add` exactly the task's
+/// promotion destinations and its stageable recorded owner-artifacts
+/// ([`owner_artifact_stage_specs`]), and return that path set — sorted and de-duplicated, so
+/// the pathspec the commit takes is a function of the plan alone. Unlike
+/// [`stage_index_honoring`] it refreshes no `.jigc/version` stamp and stages no config
+/// layer: the commit is path-scoped, and those paths are not this task's docs. An empty set
+/// stages nothing and is returned empty for the commit helper to refuse.
+fn stage_doc_only(repo_root: &Path, plan: &engine::finalize::FinalizePlan) -> Result<Vec<String>> {
+    let mut paths: Vec<String> = plan
+        .promotions
+        .iter()
+        .map(|promotion| promotion.destination.clone())
+        .collect();
+    paths.extend(owner_artifact_stage_specs(repo_root, plan));
+    paths.sort();
+    paths.dedup();
+    if paths.is_empty() {
+        return Ok(paths);
+    }
+    let literals: Vec<String> = paths.iter().map(|path| literal_pathspec(path)).collect();
+    let mut args: Vec<&str> = vec!["add", "--"];
+    args.extend(literals.iter().map(String::as_str));
+    git_run(repo_root, &args).map_err(mark_stage_failure)?;
+    Ok(paths)
 }
 
 /// Typed marker for a git failure during jigc's **own stage phase** — the `git add` in
@@ -7389,7 +7685,7 @@ pub(crate) fn git_untracked_all(repo_root: &Path) -> Result<String> {
 /// least one line. The M45 file-state history gate ([`engine::validate::HistoryPredicate`],
 /// Decision 7) consults this to distinguish a genuine deletion (path has history, still gone
 /// → block) from a dangling baseline the checkout moved out from under the gitignored
-/// file-state cache (no history → advisory + `jigc unmanage` prune route). `-1` bounds the
+/// file-state cache (no history → advisory, routed at the branch switch). `-1` bounds the
 /// walk to the first touching commit (presence is all the gate needs).
 pub(crate) fn git_path_has_history(repo_root: &Path, path: &str) -> Result<bool> {
     let out = Command::new("git")
@@ -7404,6 +7700,102 @@ pub(crate) fn git_path_has_history(repo_root: &Path, path: &str) -> Result<bool>
         );
     }
     Ok(!String::from_utf8_lossy(&out.stdout).trim().is_empty())
+}
+
+/// Whether the tip of some **branch** — a local branch (`refs/heads/*`) or a remote-tracking
+/// one (`refs/remotes/*`) — carries `path` as a file: the other-branch half of the dangling-
+/// baseline cell ([`engine::validate::OtherRefsPredicate`]; M55 completion triage, CR2),
+/// asked only after [`git_path_has_history`] read empty for the path.
+///
+/// **Which refs, and why.** The two routes it chooses between each make one claim, and the
+/// ref set is exactly the one that makes each claim true. *Carried* routes at switching back
+/// to a branch, so it counts every ref one can switch back to: local branches, and
+/// remote-tracking branches (a branch deleted locally after its push is still a `git switch`
+/// away). *Not carried* routes at `jigc unmanage`, and must never fire where a switch would
+/// bring the doc back. Left out, deliberately: the **reflog and `ORIG_HEAD`**, which are
+/// precisely what a `git reset --hard` or a rebase leaves behind — counting them would read
+/// every reset as "lives elsewhere" and leave the advisory with no way out, the defect this
+/// splits; **tags**, which mark a release rather than a line of work one switches back to;
+/// and **the stash**, which no switch reaches. A doc a tag or the stash still holds is
+/// therefore routed at `unmanage`, which drops a cache entry, never bytes: checking the tag
+/// out or popping the stash brings the file back as an un-baselined doc the next author or
+/// finalize baselines again. It reads the **tip**, never history — `git log --all` would also
+/// count a branch that created the path and later deleted it, where switching back brings
+/// nothing back.
+///
+/// Two git reads: `git for-each-ref` lists the branches, and one `git cat-file --batch-check`
+/// asks `<ref>:<path>` for each. Errors are returned for the caller to default — the
+/// predicate answers *carried* on any failure, so the index drop is never offered on a guess.
+pub(crate) fn git_path_on_a_branch(repo_root: &Path, path: &str) -> Result<bool> {
+    if path.contains('\n') {
+        bail!("a path carrying a newline cannot be asked of `git cat-file --batch-check`");
+    }
+    let refs = Command::new("git")
+        .args([
+            "for-each-ref",
+            "--format=%(refname)",
+            "refs/heads",
+            "refs/remotes",
+        ])
+        .current_dir(repo_root)
+        .output()
+        .context("could not run `git` (is it on PATH?)")?;
+    if !refs.status.success() {
+        bail!(
+            "`git for-each-ref` failed: {}",
+            String::from_utf8_lossy(&refs.stderr).trim()
+        );
+    }
+    let queries: String = String::from_utf8_lossy(&refs.stdout)
+        .lines()
+        .map(str::trim)
+        .filter(|refname| !refname.is_empty())
+        .map(|refname| format!("{refname}:{path}\n"))
+        .collect();
+    if queries.is_empty() {
+        return Ok(false);
+    }
+    let mut child = Command::new("git")
+        .args(["cat-file", "--batch-check=%(objecttype)"])
+        .current_dir(repo_root)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("could not run `git cat-file` (is git on PATH?)")?;
+    let mut stdin = child.stdin.take().expect("stdin was piped");
+    // Written from its own thread while this one drains stdout, so a repository with more
+    // branches than a pipe buffer holds cannot deadlock the two ends against each other.
+    let out = std::thread::scope(|scope| {
+        let writer = scope.spawn(move || stdin.write_all(queries.as_bytes()));
+        let out = child.wait_with_output();
+        let written = writer.join().expect("the stdin writer does not panic");
+        out.and_then(|out| written.map(|()| out))
+    })
+    .context("could not ask `git cat-file --batch-check` for the branch tips")?;
+    if !out.status.success() {
+        bail!(
+            "`git cat-file --batch-check` failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    Ok(String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .any(|line| line.trim() == "blob"))
+}
+
+/// The committed bytes of `path` (repo-relative) **at `pin`** — `git cat-file blob
+/// <pin>:<path>` — or `None` when the pin carries no blob there or git fails in any way.
+/// The L1 pull-absorption seam ([`engine::validate::PinnedBlob`]; M55 Increment 4, P2): the
+/// engine hashes the bytes against the drifted doc on disk, so a failure answering `None`
+/// keeps the conflict-block it would have raised anyway — never an absorb on a guess.
+pub(crate) fn git_blob_at(repo_root: &Path, pin: &str, path: &str) -> Option<Vec<u8>> {
+    let out = Command::new("git")
+        .args(["cat-file", "blob", &format!("{pin}:{path}")])
+        .current_dir(repo_root)
+        .output()
+        .ok()?;
+    out.status.success().then_some(out.stdout)
 }
 
 /// The bytes of the **last committed version** of `path`, or `None` when HEAD carries no
@@ -8211,11 +8603,15 @@ fn git_commit_name_status(repo_root: &Path) -> Result<Vec<(char, String)>> {
 ///   the index commit landed the staged set, so each entry's **Y (worktree) column** names the
 ///   unstaged/untracked WIP it left behind (the agent `git add`s to include it), classified by
 ///   [`column_kind`]. A staged-then-further-modified (`MM`) path commits its staged side into
-///   `included` and shows its worktree residual here, so it appears in **both**.
+///   `included` and shows its worktree residual here, so it appears in **both**. On the
+///   doc-only arm (`doc_only`, M55) the commit took named paths and left the index's other
+///   entries staged, so **every** residual entry is left out, one per path
+///   ([`left_out_entry`]) — the same rule the forecast applies, so the two sets are one.
 fn classify_landed_manifest(
     name_status: Vec<(char, String)>,
     porcelain: Vec<(String, String)>,
     promoted: &std::collections::HashSet<String>,
+    doc_only: bool,
 ) -> (Vec<render::ManifestEntry>, Vec<render::ManifestEntry>) {
     let included = name_status
         .into_iter()
@@ -8232,19 +8628,82 @@ fn classify_landed_manifest(
             render::ManifestEntry { path, kind }
         })
         .collect();
-    let mut left_out = Vec::new();
-    for (code, path) in porcelain {
-        // The Y (worktree) column names the residual the index commit left behind; a blank
-        // Y means the worktree matches the index (nothing left out for that path).
-        let y = code.chars().nth(1).unwrap_or(' ');
-        if y != ' ' {
-            left_out.push(render::ManifestEntry {
-                path,
-                kind: column_kind(y),
-            });
-        }
-    }
+    let left_out = porcelain
+        .into_iter()
+        .filter_map(|(code, path)| left_out_entry(&code, path, doc_only))
+        .collect();
     (included, left_out)
+}
+
+/// The **left-out** entry one porcelain line contributes, or none — the one rule the
+/// `--dry-run` forecast ([`TaskArea::predict_manifest`]) and the landed residual
+/// ([`classify_landed_manifest`]) share, so the two sets cannot be classified two ways.
+///
+/// On the index-committing models only the **Y (worktree)** column is left out: the commit
+/// took the index, so a blank Y means the path matches what was committed. On the
+/// **doc-only** model (`doc_only`, M55) the commit took named paths, so every entry outside
+/// them is left out — **one entry per path**, staged ones included. A path whose **X
+/// (index)** column is staged is [`render::ManifestKind::LeftStaged`], whichever change it
+/// stages and whatever its worktree adds on top — the fact this arm keeps intact for the task
+/// it belongs to, and the one a driver filters on (`design/findings-channel.md` → Open
+/// question 1, settled); any other entry is tagged by its Y column.
+fn left_out_entry(code: &str, path: String, doc_only: bool) -> Option<render::ManifestEntry> {
+    let mut columns = code.chars();
+    let x = columns.next().unwrap_or(' ');
+    let y = columns.next().unwrap_or(' ');
+    let kind = if doc_only && x != ' ' && x != '?' {
+        render::ManifestKind::LeftStaged
+    } else if y != ' ' {
+        column_kind(y)
+    } else {
+        return None;
+    };
+    Some(render::ManifestEntry { path, kind })
+}
+
+/// Whether the pathspec `spec` jigc hands `git add` covers the repo-relative `path` — the
+/// file itself, or anything under it when `spec` names a directory (with or without its
+/// trailing `/`). The membership test of the two stages that `git add` paths of their own:
+/// the index-honoring stage's config layer and stamp, and the doc-only stage's
+/// owner-artifacts.
+fn pathspec_covers(spec: &str, path: &str) -> bool {
+    let spec = spec.trim_end_matches('/');
+    path == spec
+        || path
+            .strip_prefix(spec)
+            .is_some_and(|rest| rest.starts_with('/'))
+}
+
+/// The manifest kind of a dirty path **jigc's own stage** will `git add` — it rides the
+/// commit whichever porcelain column is dirty: an untracked one is `added`, otherwise the
+/// index column when it is already staged, else the worktree column the stage will stage.
+fn self_staged_kind(code: &str) -> render::ManifestKind {
+    let mut columns = code.chars();
+    let x = columns.next().unwrap_or(' ');
+    let y = columns.next().unwrap_or(' ');
+    match (x, y) {
+        ('?', _) => render::ManifestKind::Added,
+        (' ', _) => column_kind(y),
+        _ => column_kind(x),
+    }
+}
+
+/// `path` as the pathspec that names **that file and nothing else** — `:(literal)<path>`.
+///
+/// `--` stops option parsing and nothing more: git still wildmatches a bare pathspec, so a
+/// recorded name carrying `*`, `?`, `[` or `\` — a legal file name — answers for every path
+/// it matches as a pattern. Driven at M55 Increment 1: an owner-artifact named `c*.md` swept
+/// a staged `cother.md` belonging to another task into a doc-only commit whose `--dry-run`
+/// forecast had said it stayed staged, and the stage's index pre-image read `cother.md`'s
+/// blob as the artifact's, so a rejected commit restored a wrong entry. The finalize
+/// transaction's pathspec sites go through here — the three stages' `git add`
+/// ([`stage_index_honoring`], [`stage_migration`], [`stage_doc_only`]), the path-scoped
+/// commit (`crate::milestone::git_commit_paths`), the owner-artifact index pre-image
+/// ([`capture_owner_artifact_index`]) and [`path_in_index`]. Commands that take paths rather
+/// than pathspecs (`check-ignore`, `update-index`) already read them literally and refuse
+/// the magic, so they do not.
+pub(crate) fn literal_pathspec(path: &str) -> String {
+    format!(":(literal){path}")
 }
 
 /// Whether `path` (repo-relative) is in the **index** (`git ls-files -- <path>` prints
@@ -8268,7 +8727,7 @@ fn classify_landed_manifest(
 /// here; the magic prefix is the belt to that pair of braces, so a caller that has not asked —
 /// including a future one — gets an answer about the file it named.
 pub(crate) fn path_in_index(repo_root: &Path, path: &str) -> bool {
-    let literal = format!(":(literal){path}");
+    let literal = literal_pathspec(path);
     Command::new("git")
         .args(["ls-files", "--", literal.as_str()])
         .current_dir(repo_root)

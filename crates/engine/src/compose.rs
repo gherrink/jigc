@@ -48,7 +48,13 @@ pub(crate) fn blocking_workflow_refs(
 /// `AllowsCreate { doc_type: "adr", as_role: "decision" }`). See
 /// `workflow-dialect.md` → On-disk definition format and `write-commands.md` →
 /// The create-gate.
+///
+/// The entry's keys are **closed** (M55 O3): an unknown key — a misspelt flag the
+/// gate would otherwise silently ignore — fails the front-matter parse, so
+/// [`load_workflow_def`] refuses it with `workflow-refs.malformed-front-matter`
+/// naming the key, at every door that loads a workflow.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AllowsCreate {
     /// The doctype id the create-gate admits (e.g. `adr`).
     #[serde(rename = "type")]
@@ -56,6 +62,13 @@ pub struct AllowsCreate {
     /// The context role the created instance binds to (e.g. `decision`).
     #[serde(rename = "as")]
     pub as_role: String,
+    /// **Create-only** (M55, key `new`): `true` refuses a create whose minted identity
+    /// already exists **on disk** at the doctype's home — `create.already-exists`,
+    /// adjudicated before anything is copied in — where an entry without it keeps
+    /// create-or-update. Serialized only when set, so an entry that omits it projects
+    /// exactly as before. See `write-commands.md` → The create-gate.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub new: bool,
 }
 
 /// One `reads` entry: a context role bound from an existing committed doc via
@@ -2666,6 +2679,25 @@ pub fn fill_ids_in(body: &str) -> Vec<&str> {
     ids
 }
 
+/// The `<id>` of every lone `{{cli.<id>}}` command-ref line in a step body, in order —
+/// the same recognizer phase 8 emits a `Run:` line from, so a caller classifying a
+/// step by the commands it runs reads the body exactly as composition does. Pure: no
+/// catalog consulted (what an id resolves to is the caller's question).
+pub fn command_ref_ids_in(body: &str) -> Vec<&str> {
+    body.lines()
+        .filter_map(|line| parse_cli_placeholder(line.trim()))
+        .collect()
+}
+
+/// The `<id>` of every `{{include: step:<id>}}` line in a step body, in order — the
+/// same recognizer include expansion splits a body at ([`expand_includes`]). Pure: no
+/// step source consulted.
+pub fn include_ids_in(body: &str) -> Vec<String> {
+    body.lines()
+        .filter_map(|line| parse_include_line(line.trim()))
+        .collect()
+}
+
 /// If `trimmed` is a lone `{{ fill: <id> }}` placeholder, return `<id>`; else
 /// `None`. The id is the bare fill-id (no further whitespace) — the
 /// fourth read-path placeholder kind (`workflow-dialect.md` → Leaves).
@@ -2736,13 +2768,26 @@ fn next_fill_token(s: &str) -> Option<(std::ops::Range<usize>, &str)> {
 /// [`Finding`]. Both reuse the settled block envelope (`DECISIONS.md`
 /// 2026-05-31).
 ///
-/// Expansion is a **pure function** of `(def, source)` — same resolved cascade
+/// `omit` is the set of step ids the caller withholds from this composition (M55, the
+/// sub-task omission set — `workflow-dialect.md` → Emitted format): an omitted id, at
+/// any depth, emits **neither its prose nor its subtree**, and the leaves around it
+/// keep their step boundaries as if it had never been included. The engine names no
+/// step and reads no catalog here — *which* ids are omitted is the caller's decision,
+/// fed in as data. Every caller that omits nothing passes the empty set, and its
+/// composition is unchanged. The `workflow-refs` gate never omits: it validates the
+/// whole workflow.
+///
+/// Expansion is a **pure function** of `(def, source, omit)` — same resolved cascade
 /// in → same composition out (the determinism boundary; no I/O, clock, or LLM).
-pub fn expand_includes(def: &WorkflowDef, source: &dyn StepSource) -> Result<Composition, Finding> {
+pub fn expand_includes(
+    def: &WorkflowDef,
+    source: &dyn StepSource,
+    omit: &std::collections::BTreeSet<String>,
+) -> Result<Composition, Finding> {
     let mut steps = Vec::new();
     let mut on_path = Vec::new();
     for id in &def.includes {
-        expand_step(id, source, &mut steps, &mut on_path, true)?;
+        expand_step(id, source, omit, &mut steps, &mut on_path, true)?;
     }
     Ok(Composition { steps })
 }
@@ -2765,13 +2810,22 @@ pub fn expand_includes(def: &WorkflowDef, source: &dyn StepSource) -> Result<Com
 /// position — is a **continuation** (`continues = true`), concatenated with no
 /// injected blank line so the spliced body stays contiguous. A plain step (no
 /// nested includes — every MVP step) emits exactly one leaf, its body verbatim.
+///
+/// An id in `omit` emits nothing and expands nothing ([`expand_includes`]). So "the
+/// first leaf this step emits" is counted in leaves actually emitted: an omitted child
+/// in first position leaves the boundary to whatever this step emits next, rather than
+/// gluing that prose onto the previous step as a continuation.
 fn expand_step(
     id: &str,
     source: &dyn StepSource,
+    omit: &std::collections::BTreeSet<String>,
     out: &mut Vec<ComposedStep>,
     on_path: &mut Vec<String>,
     boundary: bool,
 ) -> Result<(), Finding> {
+    if omit.contains(id) {
+        return Ok(());
+    }
     if on_path.iter().any(|p| p == id) {
         let cycle = on_path
             .iter()
@@ -2796,7 +2850,9 @@ fn expand_step(
 
     on_path.push(id.to_owned());
     // `first` tracks whether the next leaf this step emits is its very first — only
-    // that one inherits the caller's `boundary`; all later leaves continue.
+    // that one inherits the caller's `boundary`; all later leaves continue. It clears
+    // once a leaf has actually been emitted, so an omitted child emits no "first".
+    let emitted_before = out.len();
     let mut first = true;
     for segment in body_segments(&step.body) {
         let continues = if first { !boundary } else { true };
@@ -2817,10 +2873,10 @@ fn expand_step(
             // this body — its subtree's first leaf must not start a new blank-line
             // boundary. The first segment inherits this step's own `boundary`.
             BodySegment::Include(child) => {
-                expand_step(&child, source, out, on_path, first && boundary)?;
+                expand_step(&child, source, omit, out, on_path, first && boundary)?;
             }
         }
-        first = false;
+        first = out.len() == emitted_before;
     }
     on_path.pop();
     Ok(())
@@ -2919,7 +2975,14 @@ pub fn compose(
     catalog: &CommandCatalog,
     ctx: &crate::data_value::ComposeContext,
 ) -> Result<ComposedWorkflow, Finding> {
-    compose_with_store(def, source, catalog, ctx, None)
+    compose_with_store(
+        def,
+        source,
+        catalog,
+        ctx,
+        None,
+        &std::collections::BTreeSet::new(),
+    )
 }
 
 /// Compose a workflow end-to-end, dereferencing `{{@<path>}}` Content lines through
@@ -2928,17 +2991,20 @@ pub fn compose(
 /// With a `store`, the superseding-decision `{{@task.decision.supersedes#decision}}`
 /// is dereferenced to the superseded ADR's `#decision` prose, emitted as a `> `
 /// Content blockquote (`worked-examples.md` → Superseding decision); without one,
-/// Content lines carry the resolved address handle (the structural path). Everything
-/// else is [`compose`]'s behavior. Still a pure function of its inputs once `store`'s
-/// reads are fixed — the engine never reaches outside the fed-in surfaces.
+/// Content lines carry the resolved address handle (the structural path). `omit` is
+/// the step-id set include expansion withholds ([`expand_includes`]); the empty set
+/// composes every step. Everything else is [`compose`]'s behavior. Still a pure
+/// function of its inputs once `store`'s reads are fixed — the engine never reaches
+/// outside the fed-in surfaces.
 pub fn compose_with_store(
     def: &WorkflowDef,
     source: &dyn StepSource,
     catalog: &CommandCatalog,
     ctx: &crate::data_value::ComposeContext,
     store: Option<&dyn ContentStore>,
+    omit: &std::collections::BTreeSet<String>,
 ) -> Result<ComposedWorkflow, Finding> {
-    let composition = expand_includes(def, source)?;
+    let composition = expand_includes(def, source, omit)?;
     let mut emitted_steps = Vec::with_capacity(composition.steps.len());
     // Composition-scoped render-once keys: a `<!-- once:<key> -->` block renders on
     // its first occurrence across the walk and is dropped on every later one
@@ -3156,7 +3222,7 @@ pub fn workflow_refs_with_deltas(
 
     // include-resolves / include-cycle-absent: a tree that does not expand cannot
     // be emitted. Run over the **post-phase-4** include list.
-    let composition = match expand_includes(&def, source) {
+    let composition = match expand_includes(&def, source, &std::collections::BTreeSet::new()) {
         Ok(composition) => composition,
         Err(finding) => return vec![finding],
     };
@@ -3251,7 +3317,7 @@ pub fn workflow_refs_store(
 
     // include-resolves / include-cycle-absent: a tree that does not expand cannot be
     // emitted.
-    let composition = match expand_includes(&def, source) {
+    let composition = match expand_includes(&def, source, &std::collections::BTreeSet::new()) {
         Ok(composition) => composition,
         Err(finding) => return vec![at_resource(finding, &workflow_ref)],
     };
@@ -3444,7 +3510,7 @@ pub fn workflow_refs_with_fills(
     };
 
     // Phase 7 — include expansion (and phase 6 cycle detection).
-    let composition = match expand_includes(&def, source) {
+    let composition = match expand_includes(&def, source, &std::collections::BTreeSet::new()) {
         Ok(composition) => composition,
         Err(finding) => return vec![finding],
     };
@@ -4969,6 +5035,7 @@ A failed charge retries with exponential backoff, capped at five attempts.
             &catalog,
             &reads_ctx(&def, &bound),
             Some(&store),
+            &std::collections::BTreeSet::new(),
         )
         .expect("composes");
 
@@ -5016,6 +5083,7 @@ A failed charge retries with exponential backoff, capped at five attempts.
             &catalog,
             &reads_ctx(&def, &bound),
             Some(&store),
+            &std::collections::BTreeSet::new(),
         )
         .expect("composes");
 
@@ -5703,6 +5771,7 @@ allows-create: [{type: adr, as: decision}]
             vec![AllowsCreate {
                 doc_type: "adr".to_owned(),
                 as_role: "decision".to_owned(),
+                new: false,
             }]
         );
         assert_eq!(
@@ -5975,6 +6044,25 @@ allows-create: [{type: adr, as: decision}]
         assert!(
             err.message.contains("adr"),
             "the finding names the duplicated doctype; got: {}",
+            err.message
+        );
+    }
+
+    /// Strict entry keys (M55 O3): an `allows-create` entry carrying a key outside
+    /// its closed set — a misspelt `nwe` for `new`, say — is a blocking load finding
+    /// naming the key, never a silently-ignored flag. It reuses the front-matter
+    /// envelope every load door already refuses with (M55 pin P1).
+    #[test]
+    fn unknown_allows_create_key_is_blocking_finding() {
+        let err = load_workflow_def(
+            b"---\nwhen: x\nallows-create: [{type: adr, as: decision, nwe: true}]\n---\n{{ include: step:locate }}\n",
+        )
+        .expect_err("an unknown allows-create entry key is rejected at load");
+        assert_eq!(err.code, "workflow-refs.malformed-front-matter");
+        assert_eq!(err.severity, Severity::Blocking);
+        assert!(
+            err.message.contains("nwe"),
+            "the finding names the unknown key; got: {}",
             err.message
         );
     }
@@ -6653,7 +6741,8 @@ explain what changes (nothing appears if it supersedes none).
         let def = load_workflow_def(SINGLE_TASK.as_bytes()).expect("loads");
         let source = single_task_source();
 
-        let composition = expand_includes(&def, &source).expect("expands");
+        let composition =
+            expand_includes(&def, &source, &std::collections::BTreeSet::new()).expect("expands");
 
         // The flattened step-id order is exactly the include-list order.
         assert_eq!(
@@ -6686,7 +6775,8 @@ explain what changes (nothing appears if it supersedes none).
             reads: vec![],
             includes: vec!["locate".to_owned(), "not-a-step".to_owned()],
         };
-        let err = expand_includes(&dangling, &source).expect_err("dangling include rejects");
+        let err = expand_includes(&dangling, &source, &std::collections::BTreeSet::new())
+            .expect_err("dangling include rejects");
         assert_eq!(err.code, "workflow-refs.include-resolves");
         assert_eq!(err.severity, crate::finding::Severity::Blocking);
 
@@ -6706,7 +6796,8 @@ explain what changes (nothing appears if it supersedes none).
             reads: vec![],
             includes: vec!["a".to_owned()],
         };
-        let err = expand_includes(&cyclic, &cyclic_source).expect_err("cycle rejects");
+        let err = expand_includes(&cyclic, &cyclic_source, &std::collections::BTreeSet::new())
+            .expect_err("cycle rejects");
         assert_eq!(err.code, "workflow-refs.include-cycle-absent");
         assert_eq!(err.severity, crate::finding::Severity::Blocking);
     }
@@ -6749,7 +6840,8 @@ explain what changes (nothing appears if it supersedes none).
             reads: vec![],
             includes: vec!["fan".to_owned(), "join".to_owned(), "plain".to_owned()],
         };
-        let composition = expand_includes(&def, &source).expect("expands");
+        let composition =
+            expand_includes(&def, &source, &std::collections::BTreeSet::new()).expect("expands");
         assert_eq!(
             composition.steps[0].kind,
             StepKind::FanOut {
@@ -6798,7 +6890,8 @@ explain what changes (nothing appears if it supersedes none).
             reads: vec![],
             includes: vec!["outer".to_owned()],
         };
-        let composition = expand_includes(&def, &source).expect("expands");
+        let composition =
+            expand_includes(&def, &source, &std::collections::BTreeSet::new()).expect("expands");
         // [ outer("before", boundary, Join), inner(Plain), outer("after", continuation, Plain) ]
         assert_eq!(composition.steps[0].id, "outer");
         assert_eq!(composition.steps[0].kind, StepKind::Join);
@@ -6834,7 +6927,8 @@ explain what changes (nothing appears if it supersedes none).
             includes: vec!["parent".to_owned()],
         };
 
-        let composition = expand_includes(&def, &source).expect("expands");
+        let composition =
+            expand_includes(&def, &source, &std::collections::BTreeSet::new()).expect("expands");
 
         // The child is spliced *between* the parent's prose segments — not appended
         // after the whole parent body. Both prose leaves keep the parent id.
@@ -6886,7 +6980,8 @@ explain what changes (nothing appears if it supersedes none).
 
         // The flattened leaves carry the same ids, the child spliced *between* the
         // parent's prose segments (not appended after the whole parent body).
-        let composition = expand_includes(&def, &source).expect("expands");
+        let composition =
+            expand_includes(&def, &source, &std::collections::BTreeSet::new()).expect("expands");
         assert_eq!(composition.step_ids(), vec!["parent", "child", "parent"]);
         assert_eq!(composition.steps[0].body, "LINE-BEFORE-INCLUDE\n");
         assert_eq!(composition.steps[1].body, "CHILD-BODY\n");
@@ -6952,7 +7047,8 @@ explain what changes (nothing appears if it supersedes none).
             reads: vec![],
             includes: vec!["a".to_owned()],
         };
-        let err = expand_includes(&def, &source).expect_err("self-cycle rejects");
+        let err = expand_includes(&def, &source, &std::collections::BTreeSet::new())
+            .expect_err("self-cycle rejects");
         assert_eq!(err.code, "workflow-refs.include-cycle-absent");
     }
 
@@ -6983,7 +7079,8 @@ explain what changes (nothing appears if it supersedes none).
             reads: vec![],
             includes: vec!["a".to_owned()],
         };
-        let composition = expand_includes(&def, &source).expect("diamond expands");
+        let composition = expand_includes(&def, &source, &std::collections::BTreeSet::new())
+            .expect("diamond expands");
         // Only the prose-bearing leaf `d` remains, once per inclusion in pre-order.
         assert_eq!(composition.step_ids(), vec!["d", "d"]);
         // `a`'s body is two *adjacent* include lines (no blank between), so the
@@ -6993,6 +7090,66 @@ explain what changes (nothing appears if it supersedes none).
         let ctx = compose_ctx();
         let composed = compose(&def, &source, &catalog, &ctx).expect("composes");
         assert_eq!(composed.text, "leaf\nleaf\n");
+    }
+
+    /// The omission input (M55, P2): an omitted id emits neither its prose nor its
+    /// subtree — at the top level and nested at any depth — and the surviving leaves
+    /// keep the step boundaries they would have had. An omitted child in **first**
+    /// position leaves the boundary to its parent's next prose, which must not be
+    /// glued onto the previous step as a continuation. The empty set composes
+    /// everything, byte-identically to the pre-omission expansion.
+    #[test]
+    fn omitted_steps_emit_neither_prose_nor_subtree() {
+        let source = MapSource::new(&[
+            ("lead", "lead prose\n"),
+            ("wrap", "{{ include: step:door }}\nafter the door\n"),
+            ("door", "the door\n{{ include: step:deeper }}\n"),
+            ("deeper", "deeper prose\n"),
+            ("tail", "tail prose\n"),
+        ]);
+        let def = WorkflowDef {
+            when: None,
+            description: None,
+            usage: None,
+            creates_task: true,
+            selectable: true,
+            suppressed: None,
+            allows_create: vec![],
+            reads: vec![],
+            includes: vec!["lead".to_owned(), "wrap".to_owned(), "tail".to_owned()],
+        };
+        let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
+        let ctx = compose_ctx();
+        let compose_omitting = |omit: &[&str]| {
+            let omit: std::collections::BTreeSet<String> =
+                omit.iter().map(|id| (*id).to_owned()).collect();
+            compose_with_store(&def, &source, &catalog, &ctx, None, &omit)
+                .expect("composes")
+                .text
+        };
+
+        // Nothing omitted: the whole tree, `door` spliced in place at `wrap`'s head.
+        assert_eq!(
+            compose_omitting(&[]),
+            "lead prose\n\nthe door\ndeeper prose\nafter the door\n\ntail prose\n"
+        );
+        // A nested id omitted: its prose and its subtree (`deeper`) both go, and
+        // `wrap`'s own prose still opens a step boundary of its own.
+        assert_eq!(
+            compose_omitting(&["door"]),
+            "lead prose\n\nafter the door\n\ntail prose\n"
+        );
+        let expanded = expand_includes(&def, &source, &["door".to_owned()].into_iter().collect())
+            .expect("expands");
+        assert_eq!(expanded.step_ids(), vec!["lead", "wrap", "tail"]);
+        assert!(
+            !expanded.steps[1].continues,
+            "the parent's prose after an omitted first child is a step boundary"
+        );
+        // A top-level id omitted, subtree and all.
+        assert_eq!(compose_omitting(&["wrap"]), "lead prose\n\ntail prose\n");
+        // Every step omitted: an empty composition, never an error.
+        assert_eq!(compose_omitting(&["lead", "wrap", "tail"]), "");
     }
 
     proptest::proptest! {
@@ -7025,7 +7182,7 @@ explain what changes (nothing appears if it supersedes none).
                 includes: ids.clone(),
             };
 
-            let composition = expand_includes(&def, &source).expect("acyclic forest expands");
+            let composition = expand_includes(&def, &source, &std::collections::BTreeSet::new()).expect("acyclic forest expands");
             let flattened: Vec<String> = composition.steps.iter().map(|s| s.id.clone()).collect();
             proptest::prop_assert_eq!(flattened, ids);
         }

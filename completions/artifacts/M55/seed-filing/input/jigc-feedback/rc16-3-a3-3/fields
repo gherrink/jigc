@@ -1,0 +1,7 @@
+kind bug
+found-in review:M52-per-axis/(3,A3-3)
+about test:milestone_boundary_displacement
+jigc-version 1.0.0-rc.16
+tier tier-3
+status resolved
+pinned-by milestone_boundary_displacement::a_landed_milestone_boundary_keeps_every_byte_of_its_own_area_it_did_not_write

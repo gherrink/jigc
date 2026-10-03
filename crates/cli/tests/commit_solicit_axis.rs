@@ -35,6 +35,14 @@
 //!     *pre-fills* the commit doc from a deterministic template
 //!     (`crates/cli/src/start.rs` → `provision_migration_commit_doc`), so it too
 //!     must solicit **zero** times;
+//!   * a **fan-out sub-task** workflow (its declared `door:` re-enters a provisioned
+//!     `--task <task-id>`) under a `finalize.fan-out.squash` that resolves `true` → the
+//!     milestone's boundary synthesizes one aggregate message and reads no sub-task's
+//!     commit doc, so the sub-task compose omits the author step and it must solicit
+//!     **zero** times (M55 Increment 3, Open question 2 — `design/findings-channel.md`
+//!     §6). The knob is read from the composite's winning pack default, which is what the
+//!     fixture's plain `jigc setup` resolves; `squash: false`'s followability is
+//!     `sub_task_composition::`'s;
 //!   * every other task-minting workflow → **exactly once** per required leaf.
 //!
 //! **The required leaves come from each origin pack's own `commit` schema**, not from
@@ -243,10 +251,41 @@ struct Workflow {
 }
 
 impl Workflow {
-    /// The number of times each required `commit` leaf must be solicited.
-    fn expected_solicits(&self) -> usize {
-        usize::from(self.creates_task && !self.migrate)
+    /// Whether the declared door composes this workflow as a fan-out sub-task — it
+    /// re-enters a provisioned `<task-id>`.
+    fn fan_out_sub_task(&self) -> bool {
+        self.door.as_deref().is_some_and(|door| {
+            engine::compose::Suppressed::door_argv(door)
+                .iter()
+                .any(|token| token == "<task-id>")
+        })
     }
+
+    /// The number of times each required `commit` leaf must be solicited, given the
+    /// resolved `finalize.fan-out.squash`.
+    fn expected_solicits(&self, squash: bool) -> usize {
+        usize::from(self.creates_task && !self.migrate && !(squash && self.fan_out_sub_task()))
+    }
+}
+
+/// The `finalize.fan-out.squash` default of the composite's **winning** pack — what the
+/// fixture's plain `jigc setup` (no project scalar) resolves, read from the pack's own
+/// `config/knobs` rather than typed here.
+fn default_squash() -> bool {
+    let winner = embedded_packs()
+        .into_iter()
+        .next()
+        .expect("the composite ships a precedence winner")
+        .1;
+    let bytes = winner
+        .read(PackResourceKind::Config, &ResourceId::from("knobs"))
+        .expect("the pack ships `config/knobs`");
+    let knobs = engine::knobs::load_knobs(&bytes).expect("`config/knobs` loads");
+    knobs
+        .base_scalars()
+        .get("finalize.fan-out.squash")
+        .expect("the pack declares `finalize.fan-out.squash`")
+        == "true"
 }
 
 /// The two embedded packs, in the precedence order the marker installs (dev first).
@@ -567,8 +606,9 @@ fn every_workflow_solicits_each_required_commit_leaf_exactly_as_its_gate_demands
     let (mut expecting_one, mut expecting_zero) = (0usize, 0usize);
     let mut packs_at_one: Vec<&str> = Vec::new();
     let mut packs_at_zero: Vec<&str> = Vec::new();
+    let squash = default_squash();
     for workflow in &workflows {
-        let expected = workflow.expected_solicits();
+        let expected = workflow.expected_solicits(squash);
         if expected == 1 {
             expecting_one += 1;
             if !packs_at_one.contains(&workflow.pack) {
@@ -622,8 +662,8 @@ fn every_workflow_solicits_each_required_commit_leaf_exactly_as_its_gate_demands
     assert!(
         wrong.is_empty(),
         "every shipped workflow must solicit each required `commit` leaf exactly as many \
-         times as its gate demands (once when it mints a task and does not pre-fill \
-         the commit doc, zero otherwise); offenders:\n{}",
+         times as its gate demands (once when it mints a task, does not pre-fill \
+         the commit doc, and its boundary reads it; zero otherwise); offenders:\n{}",
         wrong.join("\n"),
     );
 }
@@ -699,7 +739,7 @@ fn following_the_composed_text_leaves_no_commit_finding() {
     let commit_type = first_commit_type(&winner);
     let workflows: Vec<Workflow> = composite_workflows()
         .into_iter()
-        .filter(|w| w.expected_solicits() == 1)
+        .filter(|w| w.expected_solicits(default_squash()) == 1)
         .collect();
     let packs: Vec<&str> = {
         let mut packs: Vec<&str> = workflows.iter().map(|w| w.pack).collect();

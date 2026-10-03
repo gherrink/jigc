@@ -313,6 +313,7 @@ const VISION_JSON: &str = r#"{
     "thesis": "A deterministic context compiler for coding agents."
   },
   "slug": "vision",
+  "title": "Vision",
   "type": "vision"
 }"#;
 
@@ -339,6 +340,7 @@ const PRD_JSON: &str = r#"{
     "vision": "A tracker that turns intentions into daily streaks."
   },
   "slug": "habit-tracker",
+  "title": "Habit tracker",
   "type": "prd"
 }"#;
 
@@ -1149,5 +1151,332 @@ fn the_driven_whole_doc_key_set_is_the_pinned_const() {
         "the staged whole-doc serve's top-level keys must be the pinned set plus the \
          one `{}` marker — the committed/staged discriminator",
         cli::doc::STAGED_KEY,
+    );
+}
+
+/// M55 Increment 6 / T1 — **the whole-doc serve carries the doc's `# H1` as a top-level
+/// `title`**, committed and staged alike, and `null` when the doc has no H1
+/// (`design/findings-channel.md` → 5; `design/doc-read-surface.md` → The pinned
+/// `--format json` contract).
+///
+/// Before it, a per-instance doc's title reached a driver only through the markdown. The
+/// value is the H1 of the **served** bytes, so the staged serve reads the staged copy's.
+/// The `null` arm is reachable, not theoretical: an ADR with its H1 hand-deleted still
+/// parses and serves at exit 0, and its `title` is the honest absence — present as `null`,
+/// never an absent key. A `#fragment` slice is a bare value and carries no `title`, the
+/// same bound `item-count` and `staged` state.
+#[test]
+fn the_whole_doc_serve_carries_the_h1_as_title() {
+    let repo = TempDir::new("title");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    let decisions = repo.path().join("decisions");
+    fs::create_dir_all(&decisions).expect("mk decisions/");
+    fs::write(decisions.join("single-node-cache.md"), COMMITTED_ADR).expect("write committed adr");
+    let untitled = COMMITTED_ADR.replace("# Single-node cache\n\n", "");
+    assert_ne!(untitled, COMMITTED_ADR, "the fixture's H1 was deleted");
+    fs::write(decisions.join("untitled-cache.md"), untitled).expect("write the H1-less adr");
+    git(repo.path(), &["add", "decisions"]);
+    git(repo.path(), &["commit", "-q", "-m", "adrs"]);
+
+    let json_of = |args: &[&str], what: &str| -> serde_json::Value {
+        let out = jigc(repo.path(), home.path(), args, None);
+        assert_ok(&out, what);
+        serde_json::from_str(&stdout_of(&out)).expect("the `--format json` serve is json")
+    };
+
+    // (1) Committed: the H1 rides the whole-doc serve as `title`.
+    let committed = json_of(
+        &["doc", "show", "adr:single-node-cache", "--format", "json"],
+        "`jigc doc show adr:single-node-cache --format json`",
+    );
+    assert_eq!(
+        committed["title"],
+        serde_json::json!("Single-node cache"),
+        "the committed whole-doc serve carries the doc's H1 as `title`; got:\n{committed}",
+    );
+
+    // (2) Committed, H1 hand-deleted: the doc still serves at exit 0, `title` is null.
+    let untitled = json_of(
+        &["doc", "show", "adr:untitled-cache", "--format", "json"],
+        "`jigc doc show adr:untitled-cache --format json` (no H1)",
+    );
+    assert!(
+        untitled
+            .as_object()
+            .expect("a whole-doc serve is an object")
+            .get("title")
+            .is_some_and(serde_json::Value::is_null),
+        "an H1-less doc serves `\"title\": null` — present, never absent; got:\n{untitled}",
+    );
+
+    // (3) Staged: the same doc, staged into a task, serves the same title beside `staged`.
+    assert_ok(
+        &jigc(
+            repo.path(),
+            home.path(),
+            &[
+                "start",
+                "--workflow",
+                "single-task",
+                "revise the cache decision",
+            ],
+            None,
+        ),
+        "`jigc start --workflow single-task` (the revision task)",
+    );
+    let task = only_task(repo.path());
+    assert_ok(
+        &jigc(
+            repo.path(),
+            home.path(),
+            &[
+                "doc",
+                "set-slot",
+                "adr:single-node-cache#decision",
+                "--from-file",
+                "-",
+                "--task",
+                &task,
+            ],
+            Some(b"Two in-memory nodes.\n"),
+        ),
+        "`jigc doc set-slot adr:single-node-cache#decision` (stage the doc)",
+    );
+    let staged = json_of(
+        &[
+            "doc",
+            "show",
+            "adr:single-node-cache",
+            "--format",
+            "json",
+            "--task",
+            &task,
+        ],
+        "`jigc doc show adr:single-node-cache --format json --task`",
+    );
+    assert_eq!(
+        staged[cli::doc::STAGED_KEY],
+        serde_json::json!(task),
+        "the staged serve carries its marker; got:\n{staged}",
+    );
+    assert_eq!(
+        staged["sections"]["decision"], "Two in-memory nodes.",
+        "the serve came from the staged copy; got:\n{staged}",
+    );
+    assert_eq!(
+        staged["title"],
+        serde_json::json!("Single-node cache"),
+        "the staged whole-doc serve carries the staged copy's H1 as `title`; got:\n{staged}",
+    );
+
+    // (4) The omitting context: a `#fragment` slice is a bare value and carries no title.
+    let slice = json_of(
+        &[
+            "doc",
+            "show",
+            "adr:single-node-cache#status",
+            "--format",
+            "json",
+        ],
+        "`jigc doc show adr:single-node-cache#status --format json`",
+    );
+    assert!(
+        slice.get("title").is_none(),
+        "a fields-only slice is the section's leaves alone — no `title`; got:\n{slice}",
+    );
+}
+
+/// M55 Increment 6 / T2 — **the whole-doc `fields` reports the effective value**: a
+/// defaulted header field that is absent from the stored doc projects its schema default,
+/// committed and staged alike, and the stored bytes are never touched
+/// (`design/findings-channel.md` → 5, R4 I5, and → 10's projection row;
+/// `design/doc-read-surface.md` → The pinned `--format json` contract).
+///
+/// The gap (F10): `adr.status` carries `default: proposed`, `--unset` on it is refused, but
+/// a hand-deleted, committed `status:` still parses and serves at exit 0 — and before this
+/// the key simply vanished from `fields`, so a client filtering on `status` missed the row
+/// silently. The projected value is indistinguishable from a stored one by design: it is
+/// the value the doctype gives the doc.
+///
+/// The omitting contexts are driven beside it: a stored value wins over the default (the
+/// committed `accepted` ADR), the `#status` fields-only slice keeps omitting the absent
+/// field and the plain show keeps serving the bytes as committed (P4 — the projection is
+/// the whole-doc serve's alone), and the file stays byte-identical to its `HEAD` blob.
+#[test]
+fn an_absent_defaulted_field_projects_its_default_on_the_whole_doc_serve() {
+    let repo = TempDir::new("effective-default");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    let decisions = repo.path().join("decisions");
+    fs::create_dir_all(&decisions).expect("mk decisions/");
+    fs::write(decisions.join("single-node-cache.md"), COMMITTED_ADR).expect("write committed adr");
+    let statusless = COMMITTED_ADR.replace("status: accepted\n", "");
+    assert_ne!(
+        statusless, COMMITTED_ADR,
+        "the fixture's `status:` was deleted"
+    );
+    let rel = "decisions/statusless-cache.md";
+    fs::write(repo.path().join(rel), &statusless).expect("write the status-less adr");
+    git(repo.path(), &["add", "decisions"]);
+    git(repo.path(), &["commit", "-q", "-m", "adrs"]);
+
+    let json_of = |args: &[&str], what: &str| -> serde_json::Value {
+        let out = jigc(repo.path(), home.path(), args, None);
+        assert_ok(&out, what);
+        serde_json::from_str(&stdout_of(&out)).expect("the `--format json` serve is json")
+    };
+    let plain_of = |args: &[&str], what: &str| -> String {
+        let out = jigc(repo.path(), home.path(), args, None);
+        assert_ok(&out, what);
+        stdout_of(&out)
+    };
+
+    // (1) Committed: the absent `status` reads as its schema default, beside the stored
+    //     leaves, and the stamp is still the doc's own (the stamp field has no default).
+    let committed = json_of(
+        &["doc", "show", "adr:statusless-cache", "--format", "json"],
+        "`jigc doc show adr:statusless-cache --format json`",
+    );
+    assert_eq!(
+        committed["fields"],
+        serde_json::json!({
+            "date": "2026-05-23",
+            "schema-version": "2",
+            "status": "proposed",
+        }),
+        "an absent defaulted field projects its schema default into `fields`; got:\n{committed}",
+    );
+    assert_eq!(committed["schema-version"], serde_json::json!(2));
+
+    // (2) The omitting context: a stored value is served as stored, never the default.
+    let stored = json_of(
+        &["doc", "show", "adr:single-node-cache", "--format", "json"],
+        "`jigc doc show adr:single-node-cache --format json`",
+    );
+    assert_eq!(
+        stored["fields"]["status"],
+        serde_json::json!("accepted"),
+        "a stored value wins over the default; got:\n{stored}",
+    );
+
+    // (3) P4: the `#status` fields-only slice keeps today's answer — the absent field is
+    //     omitted — on both arms, and the plain whole-doc show is the bytes as committed.
+    let slice = json_of(
+        &[
+            "doc",
+            "show",
+            "adr:statusless-cache#status",
+            "--format",
+            "json",
+        ],
+        "`jigc doc show adr:statusless-cache#status --format json`",
+    );
+    assert_eq!(
+        slice,
+        serde_json::json!({"date": "2026-05-23", "schema-version": "2"}),
+        "the fields-only slice projects no default; got:\n{slice}",
+    );
+    assert_eq!(
+        plain_of(
+            &["doc", "show", "adr:statusless-cache#status"],
+            "`jigc doc show adr:statusless-cache#status`",
+        )
+        .trim_end(),
+        "date: 2026-05-23\nschema-version: 2",
+        "the plain fields-only slice serves the stored field lines alone",
+    );
+    assert_eq!(
+        plain_of(
+            &["doc", "show", "adr:statusless-cache"],
+            "`jigc doc show adr:statusless-cache`",
+        )
+        .trim_end(),
+        statusless.trim_end(),
+        "the plain show serves the doc as committed — no default written into it",
+    );
+
+    // (4) The stored bytes are untouched: the file is still its `HEAD` blob, status-less.
+    let head_blob = Command::new("git")
+        .args(["show", &format!("HEAD:{rel}")])
+        .current_dir(repo.path())
+        .output()
+        .expect("git show HEAD:<path>");
+    assert!(head_blob.status.success(), "git show HEAD:{rel}");
+    let on_disk = fs::read(repo.path().join(rel)).expect("read the adr back");
+    assert_eq!(
+        on_disk, head_blob.stdout,
+        "the read never writes: the file is byte-identical to its committed blob",
+    );
+    assert!(
+        !String::from_utf8_lossy(&on_disk)
+            .lines()
+            .any(|line| line.starts_with("status:")),
+        "the projected default never reaches the stored bytes",
+    );
+
+    // (5) Staged: a staged copy that lacks the field projects it the same way.
+    assert_ok(
+        &jigc(
+            repo.path(),
+            home.path(),
+            &[
+                "start",
+                "--workflow",
+                "single-task",
+                "revise the cache decision",
+            ],
+            None,
+        ),
+        "`jigc start --workflow single-task` (the revision task)",
+    );
+    let task = only_task(repo.path());
+    assert_ok(
+        &jigc(
+            repo.path(),
+            home.path(),
+            &[
+                "doc",
+                "set-slot",
+                "adr:statusless-cache#decision",
+                "--from-file",
+                "-",
+                "--task",
+                &task,
+            ],
+            Some(b"Two in-memory nodes.\n"),
+        ),
+        "`jigc doc set-slot adr:statusless-cache#decision` (stage the doc)",
+    );
+    let staged_plain = plain_of(
+        &["doc", "show", "adr:statusless-cache", "--task", &task],
+        "`jigc doc show adr:statusless-cache --task`",
+    );
+    assert!(
+        !staged_plain.lines().any(|line| line.starts_with("status:")),
+        "the staged copy still lacks the field; got:\n{staged_plain}",
+    );
+    let staged = json_of(
+        &[
+            "doc",
+            "show",
+            "adr:statusless-cache",
+            "--format",
+            "json",
+            "--task",
+            &task,
+        ],
+        "`jigc doc show adr:statusless-cache --format json --task`",
+    );
+    assert_eq!(
+        staged["sections"]["decision"], "Two in-memory nodes.",
+        "the serve came from the staged copy; got:\n{staged}",
+    );
+    assert_eq!(
+        staged["fields"]["status"],
+        serde_json::json!("proposed"),
+        "the staged serve projects the absent default the same way; got:\n{staged}",
     );
 }

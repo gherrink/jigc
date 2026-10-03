@@ -623,7 +623,7 @@ Spawn: `jigc workflow sub-task --task add-cache-strategy-adr`
 Spawn: `jigc workflow sub-task --task document-the-cache-strategy`
 ```
 
-The adapter launches them as **concurrent Task-tool sub-agents**. Each sub-agent runs `jigc workflow sub-task --task <sub>` — which provisions its write-ready area on first entry — implements, authors its own `commit` doc, creates any ADR through the create-gate, **writes its managed docs only into its own `tasks/<sub>/` area** (the **write-time `--task` barrier** refuses anything else), and `git add`s its code in its **own git worktree** (`.jigc/worktrees/<sub>`). A sub-agent **never commits** — the parent's `finalize` is the only commit boundary, combining the worktree-isolated code and joining the `tasks/<sub>/` docs by task-id ([finalize.md](finalize.md#fan-out-finalize)). It acks `status + task_id`; the orchestrator re-derives all state from the CLI, never the message (the blackboard). Then the barrier-join-finalize sequence from flow 9 runs, gated by `finalize.fan-out.squash` (default `true` → one aggregate commit).
+The adapter launches them as **concurrent Task-tool sub-agents**. Each sub-agent runs `jigc workflow sub-task --task <sub>` — which provisions its write-ready area on first entry — implements, authors its own `commit` doc when `finalize.fan-out.squash` is `false` (under the default `true` the join synthesizes the message and the composed text asks for none — [workflow-dialect.md](workflow-dialect.md#emitted-format)), creates any ADR through the create-gate, **writes its managed docs only into its own `tasks/<sub>/` area** (the **write-time `--task` barrier** refuses anything else), and `git add`s its code in its **own git worktree** (`.jigc/worktrees/<sub>`). A sub-agent **never commits** — the parent's `finalize` is the only commit boundary, combining the worktree-isolated code and joining the `tasks/<sub>/` docs by task-id ([finalize.md](finalize.md#fan-out-finalize)). It acks `status + task_id`; the orchestrator re-derives all state from the CLI, never the message (the blackboard). Then the barrier-join-finalize sequence from flow 9 runs, gated by `finalize.fan-out.squash` (default `true` → one aggregate commit).
 
 ### Half A — the automated determinism + payload gate (a `cargo test`)
 
@@ -647,7 +647,7 @@ Half B is the once-per-milestone proof that the real assistant launch reaches th
 
 1. **Stand up the same fixture.** In a fresh throwaway repo, run the Half-A T3 fixture's setup verbatim: `jigc milestone create "<same intent>"` then `jigc milestone add-from-spec <milestone> <same spec>`, yielding the same ≥2 sub-tasks. Confirm the sub-task id set equals Half A's before spawning.
 2. **Compose the fan-out and read the emitted directives.** `jigc milestone execute <milestone>` composes `milestone-execution`; its `fan-out` emits one `Spawn: \`jigc workflow sub-task --task <sub>\`` directive per sub-task (the same lines Half A extracts). The orchestrator launches from **these emitted lines**, not hand-written commands — the rendered launch line is the contract.
-3. **Genuinely spawn ≥2 concurrent sub-agents.** The orchestrator's **Task tool launches the sub-agents concurrently**, one per emitted directive. Each sub-agent re-enters via `jigc workflow sub-task --task <sub>` (which provisions its write-ready `tasks/<sub>/` area on first entry), implements, authors its own `commit` doc, creates any ADR through the create-gate, **writes its managed docs only through `jigc` into its own `tasks/<sub>/` area** (the write-time `--task` barrier refuses anything else), and `git add`s its code in its **own git worktree**. A sub-agent **never commits** and never reads a sibling's area; it acks `status + task_id` only.
+3. **Genuinely spawn ≥2 concurrent sub-agents.** The orchestrator's **Task tool launches the sub-agents concurrently**, one per emitted directive. Each sub-agent re-enters via `jigc workflow sub-task --task <sub>` (which provisions its write-ready `tasks/<sub>/` area on first entry), implements, authors its own `commit` doc under `squash: false` (none is asked for under the default), creates any ADR through the create-gate, **writes its managed docs only through `jigc` into its own `tasks/<sub>/` area** (the write-time `--task` barrier refuses anything else), and `git add`s its code in its **own git worktree**. A sub-agent **never commits** and never reads a sibling's area; it acks `status + task_id` only.
 4. **Re-derive, join, finalize.** The orchestrator re-derives all state **from the CLI**, never from the ack messages (the blackboard), then runs the barrier → join → `jigc milestone finalize` (gated by `finalize.fan-out.squash` default `true` → one aggregate commit).
 5. **Assert the tree-hash match.** Capture the committed tree-hash (`git rev-parse HEAD^{tree}`) and assert it equals **Half A's T3 golden tree-hash byte-for-byte**. A match proves the real launch reached the same CLI payload + join the sim exercises.
 6. **Witness the blackboard invariant from the transcript.** Record the run transcript and confirm each sub-agent reached state **via `jigc` calls only** — no direct read of a sibling's `tasks/<other>/` area, no out-of-band file access — a property no permutation test can see (its "sub-agents" are CLI calls by construction).
@@ -2727,8 +2727,10 @@ $ jigc doc show changelog:changelog
 # ── Arm 3 · an OOB edit to the managed VISION.md is DETECTED (the placement class). ──
 $ git commit -m "human edits VISION.md out of band"    # a placement doctype: managed AT the literal root file
 $ jigc validate
-> blocking (gates at finalize) · file-state.hash-matches — on-disk content of `VISION.md` differs from the recorded state
->   route: review the out-of-band edit … and re-author it through the owning workflow   # rc.5: invisible, exit 0
+> advisory · file-state.hash-matches — on-disk content of `VISION.md` differs from the recorded state
+>   route: the baseline lags `HEAD`; absorbed at the next finalize   # rc.5: invisible, exit 0
+#   (M42–M54: blocking, routed at a human review; since M55 an edit committed at HEAD that conforms is
+#    a lagging baseline — left uncommitted, or non-conformant, it is still the blocking review route)
 
 # ── Arm 4 · a doc that ALREADY carries the optional section migrates (rc.5: stranded forever). ──
 $ jigc migrate-corpus       # a v1-stamped adr carrying a hand-authored `## Options`
@@ -2776,7 +2778,7 @@ $ jigc doc create adr --title "Probe Decision" --task work-the-arm  # the emitte
 
 1. **The trial's probe-1 upgrade, re-run against a stale-stamped corpus (HEADLINE).** Over a committed **v1** `deferral-ledger` (the exact-inverse downgrade of a v2 canonical oracle rendered through the binary) under an older-binary store stamp: `jigc validate` **exits non-zero** with a blocking `schema-conformance.schema-version-current` keyed at the doc and routed at **`jigc migrate-corpus`** (rc.5 printed *"the committed store validates clean"*); the `store-version.binary-mismatch` advisory names **`migrate-corpus` first** (rc.5's *"re-run `jigc setup`"* re-stamps `.jigc/version` and **self-clears the advisory while the corpus stays stale** — the false all-clear); `--dry-run` reports the pending migration and writes **nothing** (bytes and commit count unchanged); the run migrates **byte-faithful to the oracle** and **self-commits**, pathspec-limited to the migrated path (no raw `git add` drive-around); and the re-validate is **green**, with the mismatch route falling back to plain align-or-re-stamp (naming `migrate-corpus` over a current corpus would command a verb with nothing to do).
 2. **A stock brownfield `CHANGELOG.md` is an adoption case, on all three surfaces.** A real Keep-a-Changelog file plus `jigc setup` and nothing else: `validate` raises **zero** blocking findings and exactly **one** `schema-conformance.unadopted-instance` advisory routed at `jigc ingest` / `jigc migrate CHANGELOG.md --as changelog` and **never** at `migrate-corpus` — and since **M46** the sweep **exits non-zero** over it, the sweep's verdict on its own run rather than a gate the advisory carries ([validation.md](validation.md) → Exit semantics; the M42 exit-0 this arm asserted is withdrawn where it was written); `doc list` names it `unregistered` (omitting the very file jigc is telling the agent to adopt would send it straight to `cat`); `doc show` blocks — it has no managed content to read back — carrying the **same** adoption route.
-3. **An OOB edit to the managed `VISION.md` is detected at store scope.** A placement doctype is managed *at* its literal repo-root file; the read-only file↔CLI-state twin now walks that class, so a human's out-of-band edit to a baselined `VISION.md` surfaces one `file-state.hash-matches` drift naming the file and routing a human review — report-only at store scope (exit 0). Red before the census: silently invisible, voiding *"out-of-band edits are detected and routed"* for the whole placement class.
+3. **An OOB edit to the managed `VISION.md` is detected at store scope.** A placement doctype is managed *at* its literal repo-root file; the read-only file↔CLI-state twin now walks that class, so a human's out-of-band edit to a baselined `VISION.md` surfaces one `file-state.hash-matches` drift naming the file and routing a human review — report-only at store scope (exit 0). Red before the census: silently invisible, voiding *"out-of-band edits are detected and routed"* for the whole placement class. **Since M55 (L1's store arm, [reconciliation.md](reconciliation.md) → A pulled edit is not a conflict)** this fixture's edit — conformant, and committed — reads **advisory**, routed *"the baseline lags `HEAD`; absorbed at the next finalize"*, so the arm's claim is detection, which holds; the blocking human-review route is now the uncommitted or non-conformant edit's (`l1_pull_absorption.rs` (h), (i)).
 4. **A doc that already carries the optional section migrates cleanly.** A v1-stamped ADR carrying a hand-authored `## Options` migrates (`1 migrated`, `0 blocked`), the heading survives **exactly once**, and the only byte that moves is the stamp digit `1`→`2`. Red on rc.5 — and *shipped*: the heading re-splice was refused, the doc halted, and the route was a dead end (author the new required prose — for a section that is optional and already authored), stranding every such adopter permanently.
 5. **A schema bump with no transform kind blocks the migration.** A dev-pack copy bumps `adr` 2→3 with a change no kind classifies (a field's `type:`, inside the conformance-relevant structural projection): the migration reports `0 migrated, 1 blocked`, routes at *build the transform kind*, and leaves the doc **byte-identical** — never the silent stamp-bump that strands the corpus at *v3-failing-its-own-gate*.
 6. **Abandoning a milestone settles the record — and the terminal holds.** `jigc milestone discard --force` flips the record header and every **non-joined** item to `discarded` in exactly **one record-only commit** and tears the workbench down (`.jigc/milestones/<id>/` had no reachable remover at all). Red on rc.5: `status: active` forever, with no verb that could settle it. **And the settled milestone stays settled** — every milestone verb refuses it, routed to the record's read surface. Red on the M42 build itself (the completion-audit HIGH): the teardown was not a guard, because the fresh-clone reseed rebuilt the workbench **from the discarded record**, so `provision` re-provisioned worktrees and `add-task` appended an `active` sub-task to a `discarded` record, both at exit 0 — the lying record restored by the tool. The same hole sat at the `joined` terminal; one predicate closes both ([team-ready-state.md](team-ready-state.md) → The terminal is terminal).
@@ -2978,7 +2980,10 @@ $ jigc task finalize record-the-completion
 # ── Arm 5 · the dangling baseline is history-gated across the corpus-state axis. ──
 $ git reset --hard <root>   (past the ADR's creating commit; HEAD has no history for the path)
 $ jigc task validate <next> --format json
-> advisory · reconciliation.rename · route: jigc unmanage docs/decisions/single-node-cache.md   # exit 0
+> advisory · reconciliation.rename · route: no branch, local or remote-tracking, can bring … back … `jigc unmanage <path>`   # exit 0
+#   (M45–M54: routed prune-first at `jigc unmanage <path>`; M55's build routed every such row at the branch
+#    switch; since the M55 completion triage (CR2) the route asks whether a branch still carries the doc —
+#    here none does, the repo has one branch — and only a carried doc is routed at switching back)
 $ git rm docs/decisions/single-node-cache.md && git commit   (HEAD now HAS history for the path)
 $ jigc task validate <next> --format json
 > blocking · reconciliation.rename                          # exit 3 — a genuine deletion still blocks
@@ -2990,7 +2995,7 @@ $ jigc task validate <next> --format json
 2. **A forged freeze stamp is refused in every stamp-bearing doctype, while an on-create default stays writable.** The machine-maintained-absolute class, **swept over the stamp-bearing set** (every doctype the engine-injected `schema-version` stamp lands on, with a create-gate door — 12 today): forging `#…/schema-version` through `jigc doc set-field` is refused with `write.machine-maintained-field` and the forged value never reaches the staged bytes, while an author-overridable `on-create` default — an ADR's `date` — stays writable on the same task. These are the two poles of the parity the `doc schema` projection advertises. Red on rc.8: `--value 99` on `#…/schema-version` committed a forged freeze stamp that `migrate-corpus` then skipped forever.
 3. **A copy-on-write binds the role in every object-form create-gate pair, and the grounding renders.** The copy-on-write create-gate class, **swept over the registry's object-form `{type, as:}` pairs** (31 today, spanning both symptom shapes — the silent-empty `@`-slice and the slug-less `<<author:>>` address): for *every* pair, a second `doc create` over the already-staged same-identity copy acks `existed` rather than routing away with `create.serial-collision`. The headline symptom is then cured concretely — `form-vision` on the set-field-first (revise) path binds `task.vision`, so its `{{ @task.vision.grounded-in#findings }}` slice renders the grounding research's findings. Red on rc.8: a copy-on-write left the role unbound (the slice resolved empty) and the re-create rejected.
 4. **The natural pre-staged authoring order lands for the owned-location class.** The `owner-artifact` presence gate's members are registry-derived (every doctype declaring an `owned-location` field). The natural order an orchestrator follows — produce the audit artifact, `git add` it *before* minting the recording task, author the completion-record naming it, `finalize` — lands at exit 0: the pre-staged artifact is exempt from the M43 carryover gate (no `finalize.carried-staged`), the presence gate is satisfied (no `owner-artifact.present` finding), and the artifact + the promoted record commit together. Red on rc.8: the pre-mint `git add` tripped `finalize.carried-staged`, whose route said to un-stage, which then tripped the presence gate — a closed route cycle that never named `git add`.
-5. **The dangling baseline is history-gated across the corpus-state axis.** The dangling-baseline severity, **swept over the two poles of the corpus-state axis** distinguished purely by whether HEAD carries history for the path: a `git reset --hard` past a doc's creating commit (history-absent) downgrades to an **advisory** with a `jigc unmanage` prune route and does **not** block (`task validate` exit 0), while a `git rm` + commit (history-present) keeps the same finding **blocking** (exit 3) — a genuine deletion detected and routed, never silently downgraded. One fix, re-derived across the whole axis rather than the single reset-hard repro. Red on rc.8: a history-less dangling baseline blocked every subsequent task, wedging the corpus.
+5. **The dangling baseline is history-gated across the corpus-state axis.** The dangling-baseline severity, **swept over the two poles of the corpus-state axis** distinguished purely by whether HEAD carries history for the path: a `git reset --hard` past a doc's creating commit (history-absent) downgrades to an **advisory** and does **not** block (`task validate` exit 0) — routed at the branch switch, never at `jigc unmanage` (M55: M45's prune route retired, [findings-channel.md](findings-channel.md) → 6, L2), while a `git rm` + commit (history-present) keeps the same finding **blocking** (exit 3) — a genuine deletion detected and routed, never silently downgraded. One fix, re-derived across the whole axis rather than the single reset-hard repro. Red on rc.8: a history-less dangling baseline blocked every subsequent task, wedging the corpus.
 
 ## 47. The M47 rc.10 wave, end-to-end — every surface `jigc` prints about itself is true (M47)
 
@@ -3774,3 +3779,260 @@ $ cd /not/a/repo && jigc milestone create ""
 3. **A directory that holds no base pin is a work unit at no door.** Three sets: the shape triple is **manufactured** — an empty directory, one foreign file at the area root, and one `docs/<ty>:<slug>.md` wearing a name jigc's own writer *could* have produced, which is the worst cell precisely because the foreign-bytes probe does not name it and the pin is then the only thing distinguishing it from a live task's staged area — crossed with the three placements a residual can occupy (a plain id, a sub-task of an open milestone, a sub-task of a **joined** one) and with `cli::cli::WORK_UNIT_ID_DOORS`, a **code-side registry** fenced ⇔ against the clap tree whose rows carry their own runnable argv. The enumerating doors are a **derivation stated as one**, off the production callers of `engine::state::list_active_task_ids` — the single enumeration source of truth — and none of the roster, the orientation view in either format, or the `also open:` block a work-starting `jigc start` appends may name a residual, with the roster's own *emptiness* asserted too, since a surface that printed nothing at all would satisfy a bare absence check. Every by-id row must answer on the **findings envelope** with its own **family's** shipped pair — `(finalize.no-task, task:<id>)` at the seventeen task rows, `(milestone.unknown, milestone:<id>)` at the eight milestone rows, the key unchanged because a residual is the same absence as an unknown id — carrying the residual sentence and the route from their one home, naming the repo-relative area, and printing **no host-absolute path** anywhere (law 1). The two families are asserted to **partition** the registry, so a row in neither reddens. Two riders: the same-slug mint refuses with the residual sentence under its shipped code rather than minting over the leftover, and `jigc rename` **proceeds** — its `first_dir_name` now asks the pin, so a leftover no longer wedges an unrelated verb. And the named cell: a bare `mkdir` under a **joined** milestone followed by `jigc task discard <sub>` is refused with **no record commit**, `git log` unchanged and the directory untouched — D2.6's false-flip path closed one layer earlier, at resolution. Red at the pass's base: four doors gave four different answers over the same residual, none of them *there is no such task*, and one of them settled a record for it.
 4. **An un-concluded cherry-pick is nobody else's to conclude, in any of the four states it can be left in.** The set is the four `support::git_state::GitState` cells Increment 4 minted — a clean one-commit pick, the same pick over a range, a conflicted one, and a conflicted one the user resolved with `git add` — read off the fixture enum rather than written down, crossed with `cli::cli::BEHALF_DOORS`' acting rows, a **total classification** of every clap leaf in which a verb added anywhere reddens until someone answers what it acts on. Four states are one posture member rather than four, because what differs across them is what a route *claims*, not what the disk holds: `--no-commit` writes **no `CHERRY_PICK_HEAD`**, so every marker-keyed member of the family missed the state entirely, and the only file that says the pick is un-concluded is `MERGE_MSG`. What this adds over `repo_posture.rs` and `posture_door_axis.rs` — which own the probe's members and the state × door refusal sweep — is the **damage** half, asserted at every acting door of every state in one table: `MERGE_MSG` — located through `git rev-parse --absolute-git-dir` rather than assumed at `.git/`, so the helper is correct in a linked worktree too, though the cells here are driven in a plain repository — is **byte-unchanged**, the index is **byte-unchanged**, and HEAD has not moved — the *swallow*, the *message-only kill* and the *index contamination* closed in one assertion each rather than three suites. On the three cells with no conflict the conclude phrase must **not** carry *"once its conflicts are resolved"*, which the shipped qualifier said and which is false there. Every door's abandon route is asserted byte-identical — one producer, so the doors cannot disagree — and then **run verbatim**: git must accept it, `cli::repo::posture` must come back empty, and the picked changes must still be in the working tree, because `git reset` unstages and does not discard. Red at the pass's base: the state answered as a bare `UnmergedIndex` and routed at `git reset --merge`, the one command that throws the picked bytes away.
 5. **No door mints — or commits — a work unit at a fabricated identity.** The set is `engine::state::MINT_DOORS`, a **code-side registry** whose membership is a source-level completeness fence over both crates, **unioned** with `jigc milestone add-from-spec` as a **derivation stated as one**: that door reaches the same `engine::milestone::add_task` site and no registry row names it, so a union that left it out would ship a mint the arm never asked about. Each row is dispatched by `site` with a hard panic for an unclassified member, so a sixth mint door has to answer this question before it can ship, exactly as it already has to answer `Snapshot`. The three rows whose id is slugged from the caller's prose are driven over **all five** degenerate titles — `""`, whitespace, punctuation, a title in another script, and a title of stopwords alone — and only the first three read as abuse: the last two are things a person types on purpose, which is why the refusal's sentence has to be true of all five and why asserting on it is not decoration. Each must refuse `write.unslugable-title` **before any write**, with three observables that a guard placed after the door's first write would fail: HEAD unmoved (the record commit included), the working-area set unchanged, and `git status` clean. The two rows whose id comes from somewhere else owe no degenerate cell — there is no title to degenerate — so what they are asked instead is that they still mint the id they derive, **driven** rather than asserted: `jigc migrate` from a `blake3` of the repo-relative source path, and the record-driven re-seed rebuilding the *recorded* id's area, pin and all, in the fresh-clone shape. And §12's boundary cell: outside a repository `jigc milestone create ""` must still answer the **one** not-in-repo answer and not this guard's, because a door that refused the title first would have answered a question about the repository with a question about the caller's prose. Red at the pass's base: `jigc milestone create "日本語"` minted `milestone:milestone` and **committed a record** for it at exit 0, and `jigc milestone add-task <m> "日本語"` committed `task:task` — an identity nobody typed, that the next such call then serial-collides.
+
+## 55. Report and read back, then triage — one corpus, the whole lifecycle (M55)
+
+**The claim:** *a finding filed through the shipped `report-jigc-feedback` lands as one commit holding its doc alone, reads back through `doc list` and `doc show` with its title and an `open` status that survives a hand edit, and is the very row the shipped `triage-jigc-feedback` then moves to `resolved` — while the router-visible `report-inconsistency` is reached from the catalog and lands the same way, in the same corpus.* This is flow A of [findings-channel.md](findings-channel.md) → 11, driven over the shipped methodology workflows rather than a fixture. Every write is a line the composed workflow emitted, run verbatim but for its `<…>` fills, so what is proven is what an agent following the composed text would run.
+
+**What it adds over `findings_workflows`.** That suite (M55 Increment 8, `crates/cli/tests/findings_workflows.rs`) proves each step of this walk in a corpus of its own: arm (a) the report and its read-back, (b) the catalog, (c) `report-inconsistency` from it, (e) a triage over a row filed in that arm. This flow is the **one-corpus composition**: the triage reads the row the report filed, through the real read surface between them and over the hand edit the read-back step committed, and the foreign path staged after the first report stays staged through every landing of the walk. It claims no first proof.
+
+**Bounds.** One `State::Fresh` corpus on the embedded packs; the foreign path is staged by plain git, so it stands in for another task's work without a second jigc task. The hand edit is committed by plain git, so the triage's finalize also runs over a doc whose file-state record lags `HEAD`. `triage-inconsistency` is composed by name and not driven; `findings_workflows` (f) drives it.
+
+The designs of record live elsewhere and are not restated here: the two doctypes and the append-only lifecycle in [findings-channel.md](findings-channel.md) → 1; the four workflows, hidden and visible, in → 2; the path-scoped doc-only commit in → 3 and [finalize.md](finalize.md); the `new: true` create-gate entry in → 4 and [write-commands.md](write-commands.md); the `title` and `fields` read keys and the effective-value projection in → 5 and [doc-read-surface.md](doc-read-surface.md). Notation illustrative.
+
+### The walk
+
+```text
+$ jigc start --workflow report-jigc-feedback "the finalize sweeps a staged path"
+> task minted: finalize-sweeps-a-staged
+> Run: `jigc doc create jigc-feedback --title <TITLE> --task finalize-sweeps-a-staged`
+#   no create-only flag: the gate entry's `new: true` does that work
+$ jigc doc create jigc-feedback --title "Finalize sweeps a staged path" --task …
+$ jigc doc set-field jigc-feedback:<slug>#meta/kind --value bug --task …
+#   …found-in, jigc-version, about · description · a FENCED repro with a `#` line
+$ git add src/foreign.rs                  # another task's work, staged after the start
+$ jigc task finalize finalize-sweeps-a-staged
+> … one commit: docs/jigc-feedback/<slug>.md alone · src/foreign.rs still staged
+$ jigc doc list jigc-feedback --format json   /   jigc doc show jigc-feedback:<slug> --format json
+> "title": "Finalize sweeps a staged path" … "fields": {"status": "open", …}
+$ (delete the `status:` line by hand) && git commit -- docs/jigc-feedback/<slug>.md
+$ jigc doc list … / jigc doc show …       # both still project "status": "open"
+
+$ jigc start "a disagreement turned up mid-work"
+> - report-inconsistency — …              # and none of the three hidden workflows
+$ jigc start --workflow report-inconsistency "the cache docs disagree on eviction"
+$ jigc doc add-item inconsistency:<slug>#sides --title src/cache.rs --slug code …
+#   …three sides, each by --slug · finalize: the record alone · foreign still staged
+$ jigc start --workflow triage-inconsistency "…"   # composes by name
+
+$ jigc start --workflow triage-jigc-feedback "finalize-sweeps-a-staged-path"
+$ jigc doc set-field jigc-feedback:<slug>#meta/status --value resolved --task …
+> … copied in for update
+$ jigc doc set-field …#meta/pinned-by --value "flow55_report_and_read_back::…"
+$ jigc doc set-slot …#resolution --from-file - …
+$ jigc task finalize <triage>
+> … one commit: docs/jigc-feedback/<slug>.md alone · src/foreign.rs still staged
+$ jigc doc list jigc-feedback --format json
+> … "fields": {"status": "resolved", "pinned-by": "flow55_report_and_read_back::…"}
+```
+
+### What it asserts (flow A on the shipped workflows — flow55_report_and_read_back.rs)
+
+1. **The report's create line carries no flag** beyond `--title` and `--task`, read off the emitted line, and `kind`, `found-in`, `jigc-version`, `description` and a fenced `repro` whose `#`-led line would be refused unfenced are written through the emitted lines, the repro read back from the staged copy.
+2. **The report lands its doc alone.** A foreign path staged with plain git after the report started does not ride the commit: one commit, its file list exactly the doc's committed path, and `git diff --cached` still naming the foreign path.
+3. **Both read surfaces carry the title and `fields.status == "open"`**, and still project `"open"` once the `status:` line is hand-deleted and committed.
+4. **`report-inconsistency` is reached from the bare `jigc start` catalog** — its id read off the catalog line and filled into the router's emitted `jigc start --workflow <chosen>` line — and lands its record alone, three sides each added by `add-item --slug`, filed `open`, the foreign path still staged. The catalog lists none of `report-jigc-feedback`, `triage-jigc-feedback` and `triage-inconsistency`; the first and the second are driven by name in the walk, and the third composes by name to a finalizing task.
+5. **`triage-jigc-feedback` moves the row this corpus filed.** Started with the finding's slug as a plain-words intent, its composed text names the four leaves it changes and the intent form; the first write acks the copy-in; `resolved`, `pinned-by` and `resolution` land as one commit holding that doc alone, the foreign path still staged. The `doc list` row then carries the title, `resolved` and the pin, `doc show` the resolution, and every line of the hand-edited finding is kept.
+
+**Red** is the mutant the doc-only step exists against: a project shadow of `report-jigc-feedback` at `.jigc/config/workflows/report-jigc-feedback.yaml` whose body includes `step:finalize` in place of `step:finalize-doc-only` sweeps the foreign path into the report's commit, and assertion 2 fails naming it.
+
+## 56. Mid-code-task reporting — the three staging states, on the shipped report workflow (M55)
+
+**The claim:** *with a code task open in the same checkout — an edit to a tracked file and a new file — a finding filed through the shipped `report-jigc-feedback` lands as one commit holding its doc alone, whether the code task's files are unstaged, staged before the report started, or staged after it; the code task's index is what it was, and the code task then lands its own files.* This is flow B of [findings-channel.md](findings-channel.md) → 11, the S4 spike's three states, driven over the shipped report and triage workflows rather than a fixture. Every write the report and triage tasks make is a line their composed workflow emitted, run verbatim but for its `<…>` fills.
+
+| State | The code task's files | The report's finalize |
+|---|---|---|
+| 1 | unstaged throughout | the doc alone, exit 0 |
+| 2 | staged **before** the report started | the doc alone, exit 0 — and again with `--carry-staged`, which is inert on this arm |
+| 3 | staged **after** the report started | the doc alone, exit 0 |
+
+**What it adds over `doc_only_finalize`.** That suite (M55 Increment 1, `crates/cli/tests/doc_only_finalize.rs`) proves the same three states, the left-out kinds, the `--dry-run` forecast and the rollback cells, through a fixture workflow composing the shipped `step:finalize-doc-only` and writes built by hand. This flow re-drives the states on the shipped `report-jigc-feedback` and `triage-jigc-feedback` through their emitted lines. It claims no first proof.
+
+**Bounds.** One `State::Fresh` corpus per state, on the embedded packs, jigc's own `pre-commit` hook asserted installed. The code task is the shipped `dev-task`, its files written and staged by plain git. `--carry-staged` is appended to the report's emitted finalize line, since the composed text names it only as a route. `triage-inconsistency` composes the same step and is not driven here.
+
+The designs of record live elsewhere and are not restated here: the path-scoped doc-only commit, its left-out narration and the carryover gate's exemption in [findings-channel.md](findings-channel.md) → 3 and [finalize.md](finalize.md); the report and triage workflows in → 2. Notation illustrative.
+
+### The walk
+
+```text
+$ jigc start --workflow dev-task "change the code"
+$ (edit src/lib.rs; write src/new.rs)
+$ git add src/lib.rs src/new.rs              # state 2: before the report starts
+$ jigc start --workflow report-jigc-feedback "the finalize sweeps a staged path"
+$ jigc doc create jigc-feedback --title "Finalize sweeps a staged path" --task …
+#   …kind, found-in, jigc-version, about · description · a fenced repro · the commit doc
+$ git add src/lib.rs src/new.rs              # state 3: after the report started
+$ jigc task finalize finalize-sweeps-a-staged [--carry-staged]
+> … one commit: docs/jigc-feedback/<slug>.md alone
+>   left-out (…)
+>     src/lib.rs
+>     src/new.rs
+$ git diff --cached --name-status            # what it was before the finalize
+$ jigc task finalize change-the-code
+> … one commit: src/lib.rs · src/new.rs
+
+$ jigc start --workflow triage-jigc-feedback "finalize-sweeps-a-staged-path"
+$ jigc doc set-field jigc-feedback:<slug>#meta/status --value resolved --task …
+$ jigc doc set-slot …#resolution --from-file - --task …
+$ jigc task finalize <triage>
+> … one commit: docs/jigc-feedback/<slug>.md alone
+
+$ jigc start --workflow park-idea "park a thought"     # the omitting context, state 2
+$ jigc task finalize park-a-thought
+> blocking · finalize.carried-staged — `src/lib.rs` was already staged before this task existed …
+```
+
+### What it asserts (flow B on the shipped workflows — flow56_mid_task_report.rs)
+
+1. **Every state lands the report's doc alone.** In states 1, 2 and 3, and state 2 again with `--carry-staged`, the report's emitted finalize exits 0 with exactly one commit whose file list is the finding's committed path; `git diff --cached --name-status` is byte-identical before and after; the landed text's left-out section names both of the code task's paths; and the code task's emitted finalize then lands a commit holding its own two files.
+2. **A pending `.jigc/config` delta stays out.** A `jigc config set` written before the report's finalize, in state 3, is not in the report's commit and is still pending after it.
+3. **The triage edit shape.** In each of the three states, the shipped `triage-jigc-feedback` moves the committed finding to `resolved` with a `resolution` through its emitted lines and lands one commit holding that doc alone, the edit landed and the code task's index unchanged; the code task then lands its own files.
+4. **The omitting context.** The shipped `park-idea`, which composes the ordinary `step:finalize`, behaves as it always has over the same three states, driven through its emitted lines: state 1 lands its idea alone, state 2 is refused `finalize.carried-staged` at exit 3 with nothing committed, and state 3's commit carries the idea and both of the code task's files.
+
+**Red** is the mutant the doc-only step exists against: with `report-jigc-feedback`'s body on `step:finalize` in place of `step:finalize-doc-only`, state 2's finalize is refused `finalize.carried-staged` at exit 3, and assertion 1 fails naming it.
+
+## 57. Overwrite refused — the create-only entry, on the shipped report workflow (M55)
+
+**The claim:** *a second report whose create mints the id of a finding already filed is refused before anything is copied in — by `doc create` and by `doc author`, whether it reuses the first's title or a different one that slugs onto the same id — and the route it hands back, followed with a `--slug`, files the second finding beside the first; a workflow whose entry does not carry `new: true` keeps its create-or-update, its different-title misroute now routed at a distinct identity; and an entry misspelling the key is refused at load.* This is flow C of [findings-channel.md](findings-channel.md) → 11, driven over the shipped `report-jigc-feedback` and `park-idea` rather than a fixture shadow. Every write is a line the composed workflow emitted, or the command a refusal's route handed back, run verbatim but for its `<…>` fills.
+
+**What it adds over `create_only_gate`.** That suite (M55 Increment 2, `crates/cli/tests/create_only_gate.rs`) proves every arm — both doors, `--slug`, the different title, the precedence over `write.title-ignored`, the misspelt key, the route fix — on a project shadow of `park-idea` carrying `new: true`, through hand-built commands; `findings_workflows` (d) drives the same-title `doc create` alone on the shipped report. This flow re-drives the `doc author`, different-title, `--slug` and misspelt-key arms on the shipped report workflow, through its emitted lines. It claims no first proof.
+
+**Bounds.** One `State::Fresh` corpus per arm, on the embedded packs. The `doc author` payload is the minimal one — a `title:` and the required `description` — since the refusal precedes every leaf. The misspelt key and the dropped key are project-layer shadows of the shipped report, each its bytes with one entry changed. `report-inconsistency`'s entry carries the same key and is not driven here.
+
+The designs of record live elsewhere and are not restated here: the `new: true` entry, `create.already-exists`, its precedence and the strict entry keys in [findings-channel.md](findings-channel.md) → 4 and [write-commands.md](write-commands.md) → The create-gate; the `write.title-ignored` route in → 4 (F3). Notation illustrative.
+
+### The walk
+
+```text
+$ jigc start --workflow report-jigc-feedback "the finalize sweeps a staged path"
+$ jigc doc create jigc-feedback --title "Finalize sweeps a staged path" --task …
+#   …the fields, the description, the commit doc · finalize: the finding lands
+$ jigc start --workflow report-jigc-feedback "the same thing again"
+$ jigc doc create jigc-feedback --title "Finalize sweeps a staged path" --task same-thing-again
+> blocking · create.already-exists — `jigc-feedback:finalize-sweeps-a-staged-path` already exists on disk at its home, …
+>   at: jigc-feedback:finalize-sweeps-a-staged-path
+>   route: choose a distinct `--title`, or keep this one and pass `--slug <slug>` … `jigc doc create jigc-feedback --title <title> --slug <slug> --task same-thing-again`
+$ jigc doc author jigc-feedback --from-file - --task same-thing-again   # title: the same
+> blocking · create.already-exists — … route: set the payload's `title:` to a distinct title …
+#   …and "Finalize sweeps a staged path!" by both doors: the same refusal, never write.title-ignored
+$ jigc doc create jigc-feedback --title "Finalize sweeps a staged path" --slug finalize-sweeps-a-staged-path-again --task …
+> jigc-feedback:finalize-sweeps-a-staged-path-again
+#   …filled · finalize: both findings read back
+
+$ jigc start --workflow park-idea "retitle the thought"     # no `new: true` on its entry
+$ jigc doc create idea --title "A Parked Thought!" --task …
+> blocking · write.title-ignored — …   route: … `jigc doc create idea --title <title> --slug <slug> --task …`
+$ jigc doc create idea --title "A Parked Thought" --task …   # in a third task
+> idea:parked-thought (already existed — copied in for update)
+
+$ (shadow report-jigc-feedback with `{ type: jigc-feedback, as: feedback, nwe: true }`)
+$ jigc start --workflow report-jigc-feedback "file a third"
+> blocking · workflow-refs.malformed-front-matter — … allows-create[0]: unknown field `nwe`, expected one of `type`, `as`, `new` …
+```
+
+### What it asserts (flow C on the shipped workflows — flow57_overwrite_refused.rs)
+
+1. **Every re-file onto a filed id is refused before copy-in.** In a second `report-jigc-feedback` task, the emitted `doc create` and the emitted `doc author`, each with the first's title and with a different title slugging onto its id, exit 1 refused `create.already-exists` at the first finding's address — never `write.title-ignored` — routed at a distinct identity and never at renaming the existing doc; nothing is staged in the task, the checkout's status is unchanged, and the committed finding is byte-unchanged.
+2. **The route lands beside.** The same-title create's route, its `jigc doc create … --slug <slug>` followed with the title kept and a distinct slug, mints that slug; filled through the emitted lines, it lands, both findings read back with the shared title, and the first is still byte-unchanged.
+3. **The general case.** Under the shipped `park-idea`, whose entry carries no `new: true`, a different title onto a committed idea is refused `write.title-ignored` at exit 1, routed at a distinct `--title` or `--slug` and never at `jigc doc rename`; that route followed lands a second idea beside the first, unchanged. The same title is the create-or-update it always was: `copied in for update`, exit 0.
+4. **The key is the guard, and it is validated.** A committed shadow of `report-jigc-feedback` whose entry drops `new: true` turns the same-title create into the copy-in at exit 0; one whose entry misspells it `nwe: true` is refused at load, `workflow-refs.malformed-front-matter` naming `nwe`, by `jigc start` (nothing minted) and by the emitted `doc create` of a task minted before the typo.
+
+**Red** is the shipped `report-jigc-feedback` with `new: true` dropped from its entry: the second report's same-title create acks `copied in for update` at exit 0, and assertion 1 fails.
+
+## 58. Several reporters into one store — the report fan-out, one join (M55)
+
+**The claim:** *a milestone whose sub-tasks are report workflows composes each sub-task without a step of the derived omission set — no per-task finalize, no commit-doc authoring — and with the trailer naming `jigc milestone finalize` as its only boundary; the join lands every report as one commit, two reporters that minted the same id land side by side by task id whichever order they filed in, and what the join landed is adoptable exactly as the committed seed is.* This is flow D of [findings-channel.md](findings-channel.md) → 11, driven over the shipped `report-jigc-feedback` and `report-inconsistency` as sub-tasks. Every compose is a `Spawn:` line `jigc milestone execute` printed, run verbatim through a `jigc` shim, and every write a line the composed text emitted, run verbatim but for its `<…>` fills.
+
+**What it adds over `findings_workflows` (h) and (i).** Those arms (M55 Increment 8, `crates/cli/tests/findings_workflows.rs`) drive three report sub-tasks to one join commit and check each composed text against two omitted steps named by hand; `sub_task_composition` (M55 Increment 3) proves the omission set's derivation equal to a raw scan of the shipped steps. This flow checks the composed text against the **derived** set itself, under the `finalize.fan-out.squash` value the corpus resolves; it makes two reporters collide on one id and runs the walk under two filing orders; and it runs the seed fence's predicate over the join's output. It claims no first proof.
+
+**Bounds.** One `State::Fresh` corpus per filing order, on the embedded packs, under the default knob. The two colliding findings differ only in their title's trailing `!`, so the collision is the join's colliding-new-instance rule and never the create gate's — neither finding exists at its home when the other is created. The order axis is the filing order; the `add-task` order, which the milestone record keeps, is held fixed.
+
+The designs of record live elsewhere and are not restated here: the derived omission set and the sub-task trailer in [findings-channel.md](findings-channel.md) → 6 (S2) and [workflow-dialect.md](workflow-dialect.md) → Emitted format; the colliding-new-instance suffix in [storage.md](storage.md) → The by-task-id join; the seed fence in [findings-channel.md](findings-channel.md) → 7. Notation illustrative.
+
+### The walk
+
+```text
+$ jigc milestone create "File the findings together"
+$ jigc milestone add-task file-the-findings-together "Report the staged sweep" --workflow report-jigc-feedback
+$ jigc milestone add-task file-the-findings-together "Report the sweep again" --workflow report-jigc-feedback
+$ jigc milestone add-task file-the-findings-together "Report the eviction disagreement" --workflow report-inconsistency
+$ jigc milestone provision file-the-findings-together
+$ jigc milestone execute file-the-findings-together
+> Spawn: `cd …/.jigc/worktrees/report-the-staged-sweep && jigc workflow report-jigc-feedback --task report-the-staged-sweep`
+> …one per sub-task
+$ (run each Spawn: line)
+> …the author step's lines; no `step:author-commit`, no `step:finalize-doc-only`
+> resume: `jigc workflow report-jigc-feedback --task report-the-staged-sweep` …
+> task scope: … whose `jigc milestone finalize file-the-findings-together` is its only commit boundary
+$ jigc doc create jigc-feedback --title "Finalize sweeps a staged path" --task report-the-staged-sweep
+$ jigc doc create jigc-feedback --title "Finalize sweeps a staged path!" --task report-the-sweep-again
+#   both mint jigc-feedback:finalize-sweeps-a-staged-path · …the fields, the slots, the sides
+$ jigc milestone finalize file-the-findings-together
+> finalized … — Finalize milestone file-the-findings-together (3 sub-tasks)
+>   promoted docs/jigc-feedback/finalize-sweeps-a-staged-path-2.md
+>   promoted docs/jigc-feedback/finalize-sweeps-a-staged-path.md
+>   promoted docs/inconsistencies/cache-eviction-disagrees.md
+#   the lower task id keeps the bare slug · the same bytes when the sub-tasks file in reverse
+
+$ (copy docs/jigc-feedback/ and docs/inconsistencies/ into a fresh corpus's docs/)
+$ jigc ingest && jigc validate --format json
+> "findings": []
+```
+
+### What it asserts (flow D on the shipped workflows — flow58_several_reporters.rs)
+
+1. **Each sub-task composes no step of the derived omission set.** For each sub-task, the set is read from the production derivation (`sub_task_composition::derive_embedded`) under the knob value `jigc config get` resolves, never a hand list; the composed text carries no line of any member's own, names no `jigc task finalize`, asks for no `commit:<sub>` write, and carries the `task scope:` line naming `jigc milestone finalize <m>` as its only commit boundary.
+2. **One join commit lands every report.** `jigc milestone finalize` exits 0 with exactly one commit, its file list exactly the three landed docs and the milestone record, and `doc list` lists every landed doc of both doctypes.
+3. **Colliding reporters land by task id.** The two `jigc-feedback` reporters minted one id; the lower task id's finding keeps it and the higher's lands at `-2`, each read back with its own reporter's title.
+4. **Filing order does not reach the output.** The walk runs with the sub-tasks filing in task-id order and in reverse, and every landed doc is byte-identical path for path, the join committing the same paths.
+5. **The join's output is adoptable as the seed is.** The landed docs, copied into a fresh corpus under its `docs-root`, `jigc ingest` then `jigc validate --format json` carry zero findings, and `doc list` lists exactly those docs, each `managed` — `seed_fence`'s own predicate (`assert_adoptable`).
+
+**Red** is the discriminating control: each report workflow composed as an **ordinary** task fails every one of assertion 1's checks — it names the per-task door, asks for the commit-doc writes, carries each derived member's own lines, and has no milestone trailer.
+
+## 59. Branch and pull — a pulled edit absorbed, a branch switch advisory, in one history (M55)
+
+**The claim:** *a teammate's committed edit to a managed doc, pulled, is a baseline that lags `HEAD` — advisory at store scope, absorbed by the next task that edits the doc, which lands both sides — and after that task lands, a doc created on a milestone branch and left behind by `git switch main` is advisory at both scopes under one route that names the branch switch and never `jigc unmanage`; an edit made while the task is open still conflict-blocks, and a doc deleted with history still blocks.* This is flow E of [findings-channel.md](findings-channel.md) → 11, driven over the shipped `single-task` in a `[dev ▸ methodology]` corpus wired to a local bare `origin` and a teammate's clone — the pull is a real `git pull --ff-only`. Every finding is read off `--format json`.
+
+**What it adds over `l1_pull_absorption` and `l2_branch_switch`.** Those suites (M55 Increments 4 and 5, `crates/cli/tests/l1_pull_absorption.rs` and `crates/cli/tests/l2_branch_switch.rs`) prove each half from its own fresh corpus. This flow runs both halves in one corpus's history, so the branch switch is graded over the baseline the absorb wrote, and the store sweep after it differs from the sweep before the pull by the branch switch's row alone. The pull, the milestone branch and the row readers are theirs, moved to `crates/cli/tests/support/branch_and_pull.rs` and shared. It claims no first proof.
+
+**Bounds.** One `State::CommittedSingletons` corpus per test, on the embedded packs. The corpus's own residue — an advisory on its empty `decisions-log` — is read before the pull and is the reference "clean" returns to. The milestone branch is a plain git branch named on the branch model's grammar; no `jigc milestone` is minted, since L2 is a property of the checkout, not of the milestone. Flow E files no report: L1 and L2 are reconcile arms.
+
+The designs of record live elsewhere and are not restated here: the absorb at the task's base pin and the store arm's reused `file-state.hash-matches` in [findings-channel.md](findings-channel.md) → 6 (L1) and [reconciliation.md](reconciliation.md); the history predicate at store scope and the one route at both scopes in → 6 (L2) and [validation.md](validation.md) → Exit semantics. Notation illustrative.
+
+### The walk
+
+```text
+$ git pull --ff-only                       # the teammate's VISION.md edit
+$ jigc validate
+> advisory · file-state.hash-matches — VISION.md …
+>   route: the baseline lags `HEAD`; absorbed at the next finalize
+$ jigc start --workflow single-task "sharpen the open questions"
+$ jigc doc set-slot vision:vision#open-questions --from-file - --task sharpen-the-open-questions
+$ jigc task validate sharpen-the-open-questions
+> advisory · reconciliation.absorb — VISION.md …
+$ jigc task finalize sharpen-the-open-questions
+#   one commit: the teammate's line and the task's prose
+$ jigc validate
+#   the findings it carried before the pull, and no more
+
+$ git switch -c milestone/x/main
+$ jigc start --workflow single-task "record the cache decision"
+$ jigc doc create adr --title "Single-node cache" --task record-the-cache-decision
+#   …the slots, the commit doc · finalize: docs/decisions/single-node-cache.md lands
+$ git switch main
+$ jigc validate                            # exit 0
+> advisory · reconciliation.rename — … docs/decisions/single-node-cache.md …
+>   route: nothing on this checkout needs to change — a branch switch left this baseline behind, … switch back to that branch to work on it again
+$ jigc start --workflow single-task "warm the read cache"
+$ jigc task validate warm-the-read-cache
+#   the same row: key, severity, message and route
+```
+
+### What it asserts (flow E on the shipped single-task — flow59_branch_and_pull.rs)
+
+1. **The pull reads as a lag.** After the pull, `jigc validate` exits 0 with one `file-state.hash-matches` row at `VISION.md`, advisory, routed *the baseline lags `HEAD`; absorbed at the next finalize*, and `file-state` is not a blocking probe.
+2. **The next task absorbs it.** A `single-task` writing `vision#open-questions` reads an advisory `reconciliation.absorb` at `VISION.md` from `task validate` and no conflict-block; its finalize exits 0 with one commit whose `VISION.md` carries the teammate's line and the task's prose; the next sweep's findings are exactly the pre-pull sweep's.
+3. **The branch switch is advisory at both scopes, over that baseline.** After an ADR is finalized on `milestone/x/main` and the checkout switches to `main`, `jigc validate` exits 0, `report_only: true`, with one advisory `reconciliation.rename` row at the ADR's path routed at the branch switch, and no other row beyond the pre-pull residue; its agent view exits 0 and names no `jigc unmanage`. A task's `task validate` carries the same row, its key, severity, message and route equal to the store's.
+4. **The controls block.** After the same pull, an out-of-band `VISION.md` edit made while the task is open fails the absorb predicate: finalize exits 3 with one blocking `reconciliation.conflict-block` at `VISION.md` and commits nothing. After the same L1 half, the ADR `git rm`'d and committed on its own branch fails the branch-switch predicate: `jigc validate` exits 1, `report_only: false`, its `reconciliation.rename` row blocking.
+
+**Red** is the controls themselves: assertion 2's absorb predicate, run over the during-task edit's finalize, fails on its conflict-block, and assertion 3's branch-switch predicate, run over the deleted-with-history sweep, fails on its blocking row.

@@ -20,6 +20,8 @@ mod child_stdin_feed;
 mod clap_error_kind_axis;
 #[path = "../copy_in_ack.rs"]
 mod copy_in_ack;
+#[path = "../create_only_gate.rs"]
+mod create_only_gate;
 #[path = "../doc_author.rs"]
 mod doc_author;
 #[path = "../doc_author_help.rs"]
@@ -34,6 +36,8 @@ mod doc_code_probe;
 mod doc_copy_in;
 #[path = "../doc_list.rs"]
 mod doc_list;
+#[path = "../doc_list_triage.rs"]
+mod doc_list_triage;
 #[path = "../doc_read_surface.rs"]
 mod doc_read_surface;
 #[path = "../doc_remove_item.rs"]
@@ -58,6 +62,8 @@ mod doc_task_scope;
 mod doc_write;
 #[path = "../doc_write_milestone_record.rs"]
 mod doc_write_milestone_record;
+#[path = "../findings_doctypes.rs"]
+mod findings_doctypes;
 #[path = "../fixed_identity_axis.rs"]
 mod fixed_identity_axis;
 #[path = "../flow30_acceptance.rs"]

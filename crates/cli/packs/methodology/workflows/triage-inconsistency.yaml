@@ -1,0 +1,12 @@
+---
+description: Move one filed inconsistency off `open` — set its status and author its resolution, and land that doc alone as one commit.
+usage: a filed disagreement has been reconciled, declared intended or refuted, and its record should say so through the binary.
+creates-task: true
+selectable: false
+suppressed:
+  reason: invoked by name with the record named in plain words (`jigc start --workflow triage-inconsistency "<record in plain words>"`) — triage is a maintainer's act, not a catalog entry
+  expires: never
+---
+{{ include: step:author-inconsistency-triage }}
+{{ include: step:author-commit }}
+{{ include: step:finalize-doc-only }}

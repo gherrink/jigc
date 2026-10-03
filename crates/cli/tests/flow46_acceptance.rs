@@ -45,9 +45,10 @@
 //!
 //!   (5) **File-state history-gating** — the dangling-baseline severity swept over
 //!       the corpus-state axis (history-absent vs history-present): a `git reset
-//!       --hard` past a doc's creating commit downgrades to an **advisory** with a
-//!       `jigc unmanage` prune route and does not block, while a `git rm` + commit
-//!       (history present) still **blocks** (exit 3) (Inc 7).
+//!       --hard` past a doc's creating commit downgrades to an **advisory**, routed at
+//!       the branch switch and never at `jigc unmanage` (M55 Increment 5 / T1), and does
+//!       not block, while a `git rm` + commit (history present) still **blocks** (exit 3)
+//!       (Inc 7).
 //!
 //! Every arm asserts on the EMITTED bytes / exit codes / committed files of the real
 //! binary (`CARGO_BIN_EXE_jigc`). The registry is read through the M45 enumeration
@@ -1339,8 +1340,11 @@ fn adr_repo(tag: &str) -> (TempDir, TempDir) {
 /// carries history for the path:
 ///
 ///   * **history-absent** (`git reset --hard` past the ADR's creating commit) → the
-///     dangling baseline downgrades to an **advisory** with a `jigc unmanage` prune
-///     route, and the next task's `task validate` does **not** block (exit 0);
+///     dangling baseline downgrades to an **advisory** and the next task's `task validate`
+///     does **not** block (exit 0). The repo has one branch, so no branch carries the doc
+///     and the route offers `jigc unmanage` — never the switch back to a branch that does
+///     not exist (M55 completion triage, CR2; the branch-switch arm, which never offers the
+///     drop, is `file_state_history_gate`'s and `l2_branch_switch`'s);
 ///   * **history-present** (`git rm` + commit) → the same weak finding still
 ///     **blocks** (exit 3), a genuine deletion detected and routed.
 ///
@@ -1381,12 +1385,22 @@ fn file_state_history_gates_the_dangling_baseline_over_the_corpus_state_axis() {
             rename["severity"], "advisory",
             "the history-less dangling baseline downgrades to advisory; got:\n{rename:#?}",
         );
+        let route = rename["route"]
+            .as_str()
+            .expect("the advisory carries a route");
         assert!(
-            rename["route"]
-                .as_str()
-                .expect("the advisory carries a route")
-                .contains(&format!("jigc unmanage {ADR_PATH}")),
-            "the advisory routes prune-first to `jigc unmanage {ADR_PATH}`; got:\n{rename:#?}",
+            !route.contains("switch back"),
+            "no branch carries the doc, so no switch back is offered; got:\n{rename:#?}",
+        );
+        assert_eq!(
+            route,
+            format!(
+                "no branch, local or remote-tracking, can bring {ADR_PATH} back — a hard \
+                 reset or a rebase past its creating commit, or deleting it before it was \
+                 ever committed, leaves this baseline behind: drop it with `jigc unmanage \
+                 {ADR_PATH}`"
+            ),
+            "the advisory routes at `jigc unmanage`; got:\n{rename:#?}",
         );
     }
 

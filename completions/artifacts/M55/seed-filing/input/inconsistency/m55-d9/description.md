@@ -1,0 +1,1 @@
+`implementation/doctype-authoring.md` is the checklist that a new or reshaped doctype is walked through. At planning it named none of the hand-listed tests that registering a methodology doctype turns red, so an author following it met each one at the gate. The doctypes gap-detector's census measured 14 real reds on a spike, and the gate-record re-measured 19 (R5).

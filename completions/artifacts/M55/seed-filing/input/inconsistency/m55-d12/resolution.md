@@ -1,0 +1,3 @@
+Corrected in `release.md` by M54 Increment 9 / T4 (`e9e52ee4`, 2026-09-30), with a dated bracket: *[Corrected 2026-09-30, M54 Increment 9: this cited the `main` policy as 61320798; the environment's only policy, read by the API, is 61391261]*. The correction predates the register, which recorded the row as open on 2026-10-02 from notes the M54 build took before the fix. The gate-record keeps 61320798, because it is a dated record. UNPINNED: no test reads the policy id, because it lives in GitHub's settings and not in the repository.
+
+Re-driven on 2026-10-03: the API lists one policy, `61391261:branch:main`, and `release.md:62` cites 61391261.

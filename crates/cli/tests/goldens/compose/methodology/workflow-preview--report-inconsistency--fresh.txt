@@ -1,0 +1,130 @@
+exit: 0
+--- stdout ---
+preview: workflow `report-inconsistency` — no task minted. This shows what it will ask before you commit to running it.
+To run it for real: `jigc start --workflow report-inconsistency "<intent>"`   — mints the task and composes this.
+Below, `--task your-task-id` marks where the minted id goes.
+
+File the disagreement on a fresh inconsistency doc. Create it — the slug is minted
+from the title you give (a short name for what disagrees):
+
+Run: `jigc doc create inconsistency --title <TITLE> --task your-task-id`
+
+This task files exactly one NEW record. A title whose slug a doc on disk already
+holds is refused `create.already-exists`, with nothing staged — choose a distinct
+title, or keep it and pass `--slug <slug>` to the same create.
+
+The `inconsistency` schema is the authority on what you write into it — its
+required slots and fields, each field's enum members, and every address a write
+can take:
+
+jigc doc schema inconsistency
+
+Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
+directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which
+jigc itself accepts but an agent harness that statically analyses shell commands
+can refuse to run:
+
+jigc doc set-slot inconsistency:<slug>#description --from-file - --task your-task-id <<'EOF'
+<what disagrees — the claim each side makes, and why both cannot hold>
+EOF
+
+Set the `kind` — `code-doc` when code and a doc disagree, `doc-doc` when two docs
+do. The `status` defaults to `open`, and the `date` is CLI-set on create:
+
+jigc doc set-field inconsistency:<slug>#meta/kind --value <code-doc|doc-doc> --task your-task-id
+
+Add each artifact in the disagreement as one item under `sides`, its title the
+side's path or address (`src/cache.rs`, `adr:cache-strategy#decision`). Give each
+a short `--slug` of your own: a path or an address slugs into a long item id that
+changes with the path, and the slug is the id every later write to that side
+addresses. A disagreement has two or more sides by convention, so add one item
+per side:
+
+jigc doc add-item inconsistency:<slug>#sides --title "<path or address>" --slug <side> --task your-task-id
+
+Say what each side states in its `says` slot, then author the `description` —
+what disagrees — and, when you have it, the `evidence` — how it was established:
+
+jigc doc set-slot inconsistency:<slug>#sides/<side>/says --from-file - --task your-task-id
+jigc doc set-slot inconsistency:<slug>#description --from-file - --task your-task-id
+jigc doc set-slot inconsistency:<slug>#evidence --from-file - --task your-task-id
+
+`<slug>` is the slug the title minted, and this task's own index names it back —
+every doc the task stages, each by the `<type>:<slug>` identity the read takes:
+
+jigc doc list inconsistency --task your-task-id
+
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show inconsistency:<slug> --task your-task-id
+
+finalize renders the commit doc; it does not fill it, so set its header and prose
+first. Inside slot prose, the reserved heading depths are schema-relative to the
+address you write — the CLI owns the section, item, and sub-label heading levels
+there, so your headings sit below them; Setext headings are rejected at every
+depth, and a rejected write names the shallowest depth free at that address.
+
+Set the Conventional-Commits type:
+
+Run: `jigc doc set-field commit:your-task-id#type --value <TYPE> --task your-task-id`
+The `type` value is one of: feat | fix | docs | style | refactor | perf | test | build | ci | chore | revert
+
+The `commit` schema is the authority on what you write into it — its required
+slots and fields, each field's enum members, and every address a write can take:
+
+jigc doc schema commit
+
+Set the scope — the area this change touches:
+
+Run: `jigc doc set-field commit:your-task-id#scope --value <SCOPE> --task your-task-id`
+
+Set the subject line — it renders as `<type>(<scope>): <summary>`, so write the
+summary without a type or scope prefix of its own (the `type` field already
+carries it):
+
+Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
+directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which
+jigc itself accepts but an agent harness that statically analyses shell commands
+can refuse to run:
+
+jigc doc set-slot commit:your-task-id#summary --from-file - --task your-task-id <<'EOF'
+<one line saying what changed>
+EOF
+
+Run: `jigc doc set-slot commit:your-task-id#summary --from-file - --task your-task-id`
+
+Set the body — why this change:
+
+Run: `jigc doc set-slot commit:your-task-id#body --from-file - --task your-task-id`
+
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show commit:your-task-id --task your-task-id
+
+Land this task's docs as exactly one commit. This finalize commits path-scoped:
+it stages and commits only the docs this task created or edited, plus any
+owner-artifact paths those docs record — never the whole git index. Anything else
+staged in this checkout, by another task and whether before or after this one was
+minted, stays staged and stays out of this commit, so the carryover gate does not
+fire here and `--carry-staged` changes nothing. Unstaged edits and untracked files
+are left out of the commit too. The finalize names every path it leaves out —
+staged ones included — before it commits and again once it lands: a staged path
+stays staged for the task it belongs to.
+
+To see what's left before committing, run `jigc task validate your-task-id` — it
+previews part of what finalize gates on (the repository posture finalize refuses
+under, this task's content findings, the path scope that leaves every other staged
+path staged, the owner-artifact causes that need no staging, and the
+granted-but-unused changelog gate), without committing anything; the staged set,
+promotion and the commit itself are decided at finalize.
+
+Then validate and commit:
+
+Run: `jigc task finalize your-task-id`
+create-gates: inconsistency   — the doc-types this task is allowed to create; any other type is refused
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+--- stderr ---

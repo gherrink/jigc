@@ -3,7 +3,7 @@
 //! so the enumeration cannot go stale again"*).
 //!
 //! What `jigc task validate` previews — and what only `jigc task finalize` decides —
-//! is stated on eight surfaces, and every one of those enumerations was written by
+//! is stated on nine surfaces, and every one of those enumerations was written by
 //! hand. `cli::gate_coverage::GATE_COVERAGE` is now the single source; this suite is
 //! what makes it binding: each site declares the **tiers** it enumerates, and must
 //! carry every member of them.
@@ -16,12 +16,13 @@
 //! unrepresentable drift"* once one statement varied by context. So this is the M48
 //! named-fact-guard shape (`cli::pack::CONSTRAINT_REQUIRED_TOKENS`), one table over.
 //!
-//! **Emitted bytes where a surface emits.** Four of the eight sites are read out of
+//! **Emitted bytes where a surface emits.** Eight of the eleven sites are read out of
 //! the **real binary's** stdout rather than out of the source that produces it — the
-//! composed `what's-left:` line and both packs' `finalize` step bodies through
-//! `jigc start`, the `task` tip through a read-shaped guess, the `validate-task`
-//! catalog hint through `jigc describe`. A fence over the source file would pass
-//! while the bytes an agent reads were broken. The remaining four are documents, and
+//! composed `what's-left:` line on each of the three commit models and the three
+//! `finalize`/`finalize-doc-only` step bodies through `jigc start` (or `jigc task amend`),
+//! the `task` tip through a read-shaped guess, the `validate-task` catalog hint through
+//! `jigc describe`. A fence over the source file would pass while the bytes an agent
+//! reads were broken. The remaining three are documents, and
 //! are read as documents — each through a **region** anchored at its own paragraph,
 //! so a token living elsewhere in the file cannot satisfy it.
 //!
@@ -175,19 +176,47 @@ impl Site {
     }
 }
 
+/// A project-layer code-less workflow composing the shipped `step:finalize-doc-only` — the
+/// fixture that puts a composed task on the **doc-only** commit model (M55; the
+/// `doc_only_finalize` suite's own fixture, minus nothing the compose reads).
+const DOC_ONLY_WORKFLOW: &str = "\
+---
+when: file one finding as a doc while other work is open in the checkout
+description: A fixture code-less report workflow — one idea doc, committed path-scoped.
+usage: the fixture cell for the doc-only coverage sites, reached by name.
+creates-task: true
+selectable: false
+suppressed:
+  reason: fixture-only — the doc-only coverage sites, reached by name
+  expires: never
+allows-create:
+  - { type: idea, as: idea }
+---
+{{ include: step:author-commit }}
+{{ include: step:finalize-doc-only }}
+";
+
 /// Every coverage site, its text taken from the surface that actually emits it.
 ///
-/// Five binary runs: one dev-pack compose (which carries **two** sites — the composed
+/// Six binary runs: one dev-pack compose (which carries **two** sites — the composed
 /// `what's-left:` line and the dev `finalize` step body), one `jigc task amend` mint (the
 /// same composed line on the **amend** commit model), one methodology compose, one
-/// read-shaped `task` guess, one `describe`.
+/// compose of a fixture workflow including `step:finalize-doc-only` (two sites again — the
+/// composed line and the step's coverage paragraph, both on the **doc-only** commit model),
+/// one read-shaped `task` guess, one `describe`.
 fn sites() -> Vec<Site> {
     let root = repo_root();
     let home = TempDir::new("home");
     let dev = TempDir::new("dev");
     let meth = TempDir::new("meth");
+    let doc_only_repo = TempDir::new("doc-only");
     init_repo(dev.path());
     init_repo(meth.path());
+    init_repo(doc_only_repo.path());
+    let workflows = doc_only_repo.path().join(".jigc/config/workflows");
+    fs::create_dir_all(&workflows).expect("create the project workflows dir");
+    fs::write(workflows.join("file-report.yaml"), DOC_ONLY_WORKFLOW)
+        .expect("write the doc-only fixture workflow");
     // `jigc task amend` refuses a **root** HEAD (`amend.head-shape`), and `init_repo` leaves
     // exactly one commit — so the amend site needs a second one before it can be composed.
     second_commit(dev.path());
@@ -209,6 +238,12 @@ fn sites() -> Vec<Site> {
         home.path(),
         Some(Path::new(cli::pack_path!(methodology))),
         &["start", "--workflow", "dev-task", "add a thing"],
+    );
+    let doc_only = run(
+        doc_only_repo.path(),
+        home.path(),
+        Some(Path::new(cli::pack_path!(methodology))),
+        &["start", "--workflow", "file-report", "file a finding"],
     );
     let tip = run(dev.path(), home.path(), None, &["task", "status"]);
     let describe = run(dev.path(), home.path(), None, &["describe"]);
@@ -264,6 +299,32 @@ fn sites() -> Vec<Site> {
                 "methodology finalize step",
             ),
             model: CommitModel::Index,
+        },
+        Site {
+            // The same generated sentence on the **doc-only** commit model (M55): the path-
+            // scoped commit takes no staged path outside its set, so the index gate on this
+            // arm is the path scope itself — no pre-task snapshot, no `--carry-staged` — and
+            // naming it *"the carryover gate"* would name a check that is skipped here.
+            name: "the composed `what's-left:` line of a DOC-ONLY task (render.rs, generated)",
+            tiers: &[Tier::Previewed, Tier::LaterSummary],
+            text: region(
+                &doc_only,
+                "what's-left: `jigc task validate",
+                "\n",
+                "what's-left (doc-only)",
+            ),
+            model: CommitModel::DocOnly,
+        },
+        Site {
+            name: "the methodology pack's `finalize-doc-only` step (composed)",
+            tiers: &[Tier::Previewed, Tier::LaterSummary],
+            text: region(
+                &doc_only,
+                "To see what's left before committing",
+                "at finalize.",
+                "methodology finalize-doc-only step",
+            ),
+            model: CommitModel::DocOnly,
         },
         Site {
             name: "the `task` unknown-subcommand tip (cli.rs)",
@@ -376,14 +437,59 @@ fn the_fence_reddens_when_a_site_drops_a_member() {
             checked += 1;
         }
     }
-    // The axis today is 66 cells (9 sites × the tiers each owes) — 45 before the
+    // The axis today is 82 cells (11 sites × the tiers each owes) — 45 before the
     // changelog gate joined [`Tier::Previewed`], 51 before the repository posture did
-    // (M52 Increment 3 / T6), and 58 before the amend model's own composed line became a
+    // (M52 Increment 3 / T6), 58 before the amend model's own composed line became a
     // site of its own (the F-10 review's MEDIUM-3, +8: five previewed members and three
-    // later-summary ones). Each is one cell per site owing that tier. The floor guards
+    // later-summary ones), and 66 before the doc-only model's composed line and step
+    // paragraph did (M55, +16). Each is one cell per site owing that tier. The floor guards
     // against the axis silently collapsing — a site whose region stopped resolving, or a
     // tier that lost its members, would otherwise pass as a vacuous green.
-    assert!(checked >= 66, "the mutation axis ran only {checked} cells");
+    assert!(checked >= 82, "the mutation axis ran only {checked} cells");
+}
+
+/// **A doc-only site respelled *carryover* reddens** (M55). The generic mutation above cuts
+/// a token out; this one puts the **ordinary** model's name back in its place — the exact
+/// regression a copy of `step:finalize`'s paragraph, or a model input dropped at the compose
+/// site, would produce — and the fence must report the index-gate member.
+#[test]
+fn a_doc_only_site_respelled_carryover_reddens() {
+    let carryover = gate_coverage::GATE_COVERAGE
+        .iter()
+        .find(|row| row.id == "carryover")
+        .expect("the index-gate member");
+    let doc_only_token = carryover.token(CommitModel::DocOnly);
+    assert_ne!(
+        doc_only_token,
+        carryover.token(CommitModel::Index),
+        "the doc-only arm's index gate is not spelled `carryover`",
+    );
+    let mut checked = 0usize;
+    for site in sites()
+        .into_iter()
+        .filter(|site| site.model == CommitModel::DocOnly)
+    {
+        let respelled = normalized(&site.text).replace(doc_only_token, "carryover");
+        assert_ne!(
+            respelled,
+            normalized(&site.text),
+            "{}: the doc-only token {doc_only_token:?} was not present to respell",
+            site.name,
+        );
+        let reported: Vec<&str> =
+            gate_coverage::unmet_in(&respelled, site.owed(), CommitModel::DocOnly)
+                .iter()
+                .map(|row| row.id)
+                .collect();
+        assert_eq!(
+            reported,
+            vec!["carryover"],
+            "{}: respelled `carryover`, the index-gate member must be reported",
+            site.name,
+        );
+        checked += 1;
+    }
+    assert_eq!(checked, 2, "both doc-only sites were checked");
 }
 
 /// Remove **every** occurrence of `token` from the normalized view's perspective:

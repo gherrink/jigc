@@ -1,0 +1,1 @@
+Read at planning (`pinning.md:51,106`). Re-read at `a7a742d3`: `pinning.md:51` and `:56`, `ideas/finding-doctype.md:5` and `:23`, and the `pinned-by` leaf in `crates/cli/packs/methodology/schemas/jigc-feedback.yaml:42`.

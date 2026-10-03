@@ -1,0 +1,5 @@
+kind bug
+found-in milestone:M53-settle/(D)(a)
+about jigc doc add-item
+jigc-version 1.0.0-rc.16
+status open

@@ -355,3 +355,126 @@ fn docs_root_repoint_carries_the_unmanaged_file_and_the_surfaces_say_so() {
         "the clean line must count the recorded delta(s); got:\n{stdout}",
     );
 }
+
+/// Run the one backticked command of an emitted route **verbatim** (`sh -c`, with the
+/// binary under test first on `PATH`) in `repo` — the bytes an operator copies, never a
+/// reconstruction of them.
+fn run_route_command(repo: &Path, home: &Path, route: &str) -> std::process::Output {
+    let command = route
+        .split('`')
+        .nth(1)
+        .unwrap_or_else(|| panic!("the route carries one backticked command: {route:?}"));
+    let bin_dir = Path::new(env!("CARGO_BIN_EXE_jigc"))
+        .parent()
+        .expect("the binary sits in a directory");
+    let path = format!(
+        "{}:{}",
+        bin_dir.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    Command::new("sh")
+        .args(["-c", command])
+        .current_dir(repo)
+        .env("HOME", home)
+        .env("PATH", path)
+        .output()
+        .expect("run the route's command")
+}
+
+/// (M55 completion triage, after CR2) **The detach report is true whether or not the file
+/// is still there.** Since CR2, a baseline that outlived its doc — no history at `HEAD`, no
+/// branch carrying it — routes at `jigc unmanage <path>`, so the verb's ordinary subject is
+/// now a path with **no file** at it. Its ack used to say *"the file is left on disk. It
+/// still sits at the managed home"* unconditionally: false in exactly the case the route
+/// sends an operator into.
+///
+/// Drives the real cell — ingest a conformant doc, delete it, read the store sweep's
+/// `reconciliation.rename` route and run its backticked command **verbatim** — and asserts
+/// the ack claims no file on disk and says there was none to leave. The file-present ack
+/// stays byte-identical to what it printed before (pinned here whole).
+#[test]
+fn unmanage_of_a_missing_file_does_not_claim_it_is_left_on_disk() {
+    let repo = TempDir::new("missing");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    let out = jigc(repo.path(), home.path(), &["setup"]);
+    assert!(out.status.success(), "`jigc setup` must succeed");
+
+    // Two conformant ADRs, both adopted: one is deleted (the route's subject), the other
+    // stays (the file-present control).
+    let gone = "docs/decisions/rate-limit.md";
+    let kept = "docs/decisions/burst-limit.md";
+    fs::create_dir_all(repo.path().join("docs/decisions")).expect("mk docs/decisions/");
+    fs::write(repo.path().join(gone), CONFORMANT_ADR).expect("write the adr to delete");
+    fs::write(repo.path().join(kept), CONFORMANT_ADR).expect("write the adr to keep");
+    let out = jigc(repo.path(), home.path(), &["ingest"]);
+    assert!(
+        out.status.success(),
+        "`jigc ingest` must succeed; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    fs::remove_file(repo.path().join(gone)).expect("delete the adopted adr");
+
+    // The route the store sweep hands the operator for the baseline that outlived its doc.
+    let out = jigc(repo.path(), home.path(), &["validate", "--format", "json"]);
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    let envelope: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|err| panic!("validate --format json must parse ({err}):\n{stdout}"));
+    let route = envelope["findings"]
+        .as_array()
+        .expect("the envelope carries findings")
+        .iter()
+        .find(|f| {
+            f["code"] == "reconciliation.rename"
+                && f["message"].as_str().is_some_and(|m| m.contains(gone))
+        })
+        .and_then(|f| f["route"].as_str())
+        .unwrap_or_else(|| panic!("a routed `reconciliation.rename` names {gone}:\n{stdout}"))
+        .to_owned();
+    assert!(
+        route.contains(&format!("`jigc unmanage {gone}`")),
+        "precondition: the route offers `jigc unmanage {gone}`; got {route:?}",
+    );
+
+    // Follow it, verbatim.
+    let out = run_route_command(repo.path(), home.path(), &route);
+    let ack = String::from_utf8_lossy(&out.stdout).into_owned();
+    assert!(
+        out.status.success(),
+        "the route's own `jigc unmanage` must exit 0; stdout:\n{ack}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert!(
+        ack.starts_with(&format!("unmanaged {gone} (adr:rate-limit) — dropped")),
+        "the ack reports a real drop; got:\n{ack}",
+    );
+    assert!(
+        !ack.contains("left on disk") && !ack.contains("still sits"),
+        "there is no file at {gone}, so the ack must not claim one is left on disk; got:\n{ack}",
+    );
+    assert!(
+        ack.contains(&format!("there was no file at {gone} to leave on disk")),
+        "the ack must say there was no file to leave; got:\n{ack}",
+    );
+
+    // The file-present control: byte-identical to the ack the verb has always printed.
+    let out = jigc(repo.path(), home.path(), &["unmanage", kept]);
+    assert!(out.status.success(), "`jigc unmanage {kept}` must exit 0");
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout),
+        format!(
+            "unmanaged {kept} (adr:burst-limit) — dropped its file-state baseline + forward \
+             edges; the file is left on disk. It still sits at the managed home, so the op \
+             that relocates that home — a `docs-root` re-point for a `location:` doctype, a \
+             `placement-root` re-point for a placement one — still carries it, managed or \
+             not; move it out of the managed location to fully detach it\n\
+             — jigc · run `jigc start` for orientation; all writes through `jigc`.\n"
+        ),
+        "the file-present ack is unchanged",
+    );
+    assert!(
+        repo.path().join(kept).is_file(),
+        "the kept doc really is on disk"
+    );
+}

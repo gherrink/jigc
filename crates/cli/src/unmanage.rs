@@ -36,6 +36,19 @@ pub struct UnmanageReport {
     /// Whether either surface (edges / baseline) actually changed. `false` on a
     /// re-run / a path that was never managed — a clean no-op.
     pub dropped: bool,
+    /// Whether a real drop **observed no file** at `path` — the cell CR2's orphaned-baseline
+    /// route sends here (a baseline that outlived its doc), where the text ack's *"the file
+    /// is left on disk"* clause would be false. `true` only on a real drop whose `path` is a
+    /// contained repo-relative spelling (every component a normal name — no `..`, no root)
+    /// with no directory entry at it under the repo root; the entry is read without
+    /// following a symlink, so the check never leaves the repository. Every other case is
+    /// `false`, and the ack keeps the left-on-disk wording it has always printed. **Off the
+    /// wire** — the envelope is keys-only and pins no message; whether a repo-relative path
+    /// exists is the driver's own stat, re-derivable state
+    /// (`design/command-output-contract.md` → `jigc unmanage`; the parity fence's declared
+    /// exclusion in `crates/cli/tests/text_json_parity_axis.rs`).
+    #[serde(skip)]
+    pub file_absent: bool,
 }
 
 /// Run `jigc unmanage <rel_path>` against `cwd`: load the un-manage substrate (the
@@ -79,11 +92,35 @@ pub(crate) fn run(cwd: &Path, rel_path: &str) -> Result<UnmanageReport> {
             .with_context(|| format!("could not save the file-state record under {jigc_root:?}"))?;
     }
 
+    // Only a real drop asks, and only of a contained spelling: the ack's left-on-disk clause
+    // is false of a baseline that outlived its doc (M55 completion triage, after CR2).
+    let file_absent = dropped && observed_absent(&repo_root, rel_path);
+
     Ok(UnmanageReport {
         path: rel_path.to_string(),
         identity,
         dropped,
+        file_absent,
     })
+}
+
+/// Whether `rel_path` is a **contained** repo-relative spelling with **no directory entry**
+/// at it under `repo_root`. A spelling with any non-normal component (`..`, `.`, a root or
+/// prefix) answers `false` without touching the filesystem, and the entry is read with
+/// `symlink_metadata`, which never follows a link — so the question is never asked of a
+/// path outside the repository. Any read error other than not-found also answers `false`:
+/// the ack then keeps its left-on-disk wording rather than claim an absence it did not see.
+fn observed_absent(repo_root: &Path, rel_path: &str) -> bool {
+    let rel = Path::new(rel_path);
+    let contained = rel.components().next().is_some()
+        && rel
+            .components()
+            .all(|c| matches!(c, std::path::Component::Normal(_)));
+    contained
+        && matches!(
+            repo_root.join(rel).symlink_metadata(),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound
+        )
 }
 
 /// The `<type>:<slug>` identity for a managed-doc path — either the persisted schema

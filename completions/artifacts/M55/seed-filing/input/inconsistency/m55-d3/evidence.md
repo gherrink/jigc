@@ -1,0 +1,1 @@
+Read at planning (`gap-list.md`, G9). Re-read at `a7a742d3`: the five sides, `design/findings-channel.md` → 1.1, 1.4 and 1.6, and the `tier` leaf in `crates/cli/packs/methodology/schemas/jigc-feedback.yaml:40`.

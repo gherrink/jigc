@@ -281,9 +281,10 @@ fn staged_read_serves_plain_json_and_slice() {
             "sections",
             "slug",
             "staged",
+            "title",
             "type"
         ],
-        "exactly the pinned keys + item-count + schema-version + the one marker key"
+        "exactly the pinned keys + item-count + schema-version + title + the one marker key"
     );
 
     // (3) A `#section` slice serves the staged prose — plain and json (a fragment
@@ -364,7 +365,7 @@ fn committed_json_carries_no_marker_and_not_staged_routes_task_less() {
         "`jigc task finalize` — the committed adr",
     );
 
-    // (1) The committed whole-doc json: exactly the four pinned keys, no marker.
+    // (1) The committed whole-doc json: exactly the pinned keys, no marker.
     let json = jigc(
         repo.path(),
         home.path(),
@@ -395,6 +396,7 @@ fn committed_json_carries_no_marker_and_not_staged_routes_task_less() {
             "schema-version",
             "sections",
             "slug",
+            "title",
             "type"
         ],
         "a committed serve differs from the staged serve by exactly the `staged` key"

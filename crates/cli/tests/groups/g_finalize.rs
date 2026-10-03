@@ -13,6 +13,8 @@ mod branch_name_fence;
 mod ci_matrix_fence;
 #[path = "../commit_seam_posture.rs"]
 mod commit_seam_posture;
+#[path = "../doc_only_finalize.rs"]
+mod doc_only_finalize;
 #[path = "../docs_root.rs"]
 mod docs_root;
 #[path = "../doctype_map_versions.rs"]
@@ -61,6 +63,10 @@ mod flow37_rename;
 mod freeze_enforcement;
 #[path = "../git_span_aim.rs"]
 mod git_span_aim;
+#[path = "../l1_pull_absorption.rs"]
+mod l1_pull_absorption;
+#[path = "../l2_branch_switch.rs"]
+mod l2_branch_switch;
 #[path = "../ledger_entry_seven_discharged.rs"]
 mod ledger_entry_seven_discharged;
 #[path = "../ledger_record_truth.rs"]

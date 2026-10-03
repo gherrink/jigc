@@ -338,6 +338,7 @@ const WHOLE_DOC_JSON: &str = r#"{
     "unreleased-changes": []
   },
   "slug": "changelog",
+  "title": "Changelog",
   "type": "changelog"
 }"#;
 

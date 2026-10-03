@@ -1,0 +1,6 @@
+kind bug
+found-in milestone:M55-planning/F3
+about write.title-ignored
+jigc-version 1.0.0-rc.22
+status resolved
+pinned-by create_only_gate::without_new_a_different_title_onto_a_committed_id_routes_at_a_distinct_identity

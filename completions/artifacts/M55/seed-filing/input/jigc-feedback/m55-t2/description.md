@@ -1,0 +1,1 @@
+`trial_corpus.rs:520` called `expect` on writing jigc's stdin, so it panicked with `BrokenPipe` whenever jigc exited before reading. The same pattern stood at 143 sites, and faster runs triggered it more often. The gate-speed measurement found it.

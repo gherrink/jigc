@@ -41,8 +41,8 @@ fn composite_registry_enumerates_workflows_and_doctypes() {
     let workflows = ids(&pack, PackResourceKind::Workflows);
     assert_eq!(
         workflows.len(),
-        35,
-        "the composed pack-set ships 35 workflows: {workflows:?}"
+        39,
+        "the composed pack-set ships 39 workflows: {workflows:?}"
     );
     assert!(
         is_sorted_and_deduped(&workflows),
@@ -52,8 +52,8 @@ fn composite_registry_enumerates_workflows_and_doctypes() {
     let doctypes = ids(&pack, PackResourceKind::Schemas);
     assert_eq!(
         doctypes.len(),
-        16,
-        "17 shipped schemas dedup to 16 — `commit` ships in both packs: {doctypes:?}"
+        18,
+        "19 shipped schemas dedup to 18 — `commit` ships in both packs: {doctypes:?}"
     );
     assert!(
         is_sorted_and_deduped(&doctypes),

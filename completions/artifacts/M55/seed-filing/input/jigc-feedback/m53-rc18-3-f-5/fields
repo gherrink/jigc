@@ -1,0 +1,6 @@
+kind bug
+found-in review:M53-per-axis-rc18/(3,F-5)
+about jigc task list
+jigc-version 1.0.0-rc.18
+tier tier-3
+status open

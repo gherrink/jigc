@@ -1,0 +1,7 @@
+kind feedback
+found-in review:M53-per-axis-rc20/(2,A2-3)
+about jigc task amend
+jigc-version 1.0.0-rc.20
+tier tier-3
+status resolved
+pinned-by UNPINNED: a record row; the fix struck a sentence in completions/artifacts/M53/f10-amend-settle.md, which no test reads, and the binary's side was already the text_json_parity_axis census row's DeclaredOut

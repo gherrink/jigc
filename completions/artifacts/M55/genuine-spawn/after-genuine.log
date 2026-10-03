@@ -1,0 +1,46 @@
+== binary: jigc 1.0.0-rc.22  sha256 771116a4afbebf1c…
+== UTC date now: 2026-10-03
+== pre-join witness
+  report-the-staged-sweep worktree: clean
+  report-the-staged-sweep staged:
+    id  path  state
+    jigc-feedback:finalize-sweeps-a-staged-path  docs/jigc-feedback/finalize-sweeps-a-staged-path.md  managed
+  report-the-sweep-again worktree: clean
+  report-the-sweep-again staged:
+    id  path  state
+    jigc-feedback:finalize-sweeps-a-staged-path  docs/jigc-feedback/finalize-sweeps-a-staged-path.md  managed
+  report-the-eviction-disagreement worktree: clean
+  report-the-eviction-disagreement staged:
+    id  path  state
+    inconsistency:cache-eviction-disagrees  docs/inconsistencies/cache-eviction-disagrees.md  managed
+== join
+  joined milestone:file-the-findings-together — 6 doc(s) merged
+    - commit:report-the-eviction-disagreement  (created · from report-the-eviction-disagreement)
+    - commit:report-the-staged-sweep  (created · from report-the-staged-sweep)
+    - commit:report-the-sweep-again  (created · from report-the-sweep-again)
+    - inconsistency:cache-eviction-disagrees  (created · from report-the-eviction-disagreement)
+    - jigc-feedback:finalize-sweeps-a-staged-path  (created · from report-the-staged-sweep)
+    - jigc-feedback:finalize-sweeps-a-staged-path-2  (created · from report-the-sweep-again)  ← suffixed -2 on collision
+  — jigc · run `jigc start` for orientation; all writes through `jigc`.
+== finalize
+  finalized fc70901 — Finalize milestone file-the-findings-together (3 sub-tasks)
+    promoted docs/inconsistencies/cache-eviction-disagrees.md
+    promoted docs/jigc-feedback/finalize-sweeps-a-staged-path-2.md
+    promoted docs/jigc-feedback/finalize-sweeps-a-staged-path.md
+    modified docs/milestone-records/file-the-findings-together.md
+    4 files committed
+    sub-tasks: report-the-eviction-disagreement: 2 docs · report-the-staged-sweep: 2 docs · report-the-sweep-again: 2 docs
+  — jigc · run `jigc start` for orientation; all writes through `jigc`.
+== join commit: fc70901 Finalize milestone file-the-findings-together (3 sub-tasks)
+== join commit files:
+  docs/inconsistencies/cache-eviction-disagrees.md
+  docs/jigc-feedback/finalize-sweeps-a-staged-path-2.md
+  docs/jigc-feedback/finalize-sweeps-a-staged-path.md
+  docs/milestone-records/file-the-findings-together.md
+== main checkout status (expect empty):
+== re-deriving the golden now (sim.sh by-id exact join, fresh rig)…
+
+genuine-spawn tree      = d30d6110b5b4ec4eb9fed298f4db51942503122e
+sim tree (re-derived)   = d30d6110b5b4ec4eb9fed298f4db51942503122e
+sim tree (golden.txt)   = d30d6110b5b4ec4eb9fed298f4db51942503122e
+MATCH

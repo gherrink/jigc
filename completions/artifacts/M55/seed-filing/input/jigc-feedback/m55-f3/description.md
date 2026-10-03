@@ -1,0 +1,1 @@
+A different title that slugs to an existing committed doc's id was refused `write.title-ignored`, which is right, but the route told the reporter to `jigc doc rename` the **existing** doc: someone else's work. The route the reporter needed was a distinct title, or a `--slug` beside the existing doc. The M55 doctypes gap-detector found it.

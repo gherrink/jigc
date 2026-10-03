@@ -240,7 +240,7 @@ The load-bearing rule: **phases 1–6 produce a fully-resolved, cycle-free compo
 
 ### Why structural deltas precede expansion
 
-An `insert-step --after locate` operates on the workflow's **include list** — the ordered step references — not on already-expanded content. If `locate` itself was `replace`d earlier in the same cascade, the `insert` sees the replaced reference because phase 4 applies deltas in order. A reader scanning the manifest can predict the post-cascade include list without reasoning about what each step expands to.
+An `insert-step --after locate` operates on the workflow's **include list** — the ordered step references — not on already-expanded content. If `locate` itself was `replace`d earlier in the same cascade, the `insert` sees the replaced reference because phase 4 applies deltas in order. A reader scanning the manifest can predict the post-cascade include list without reasoning about what each step expands to. **Every door resolves that same post-phase-4 list** — the fresh compose, the resume and sub-agent re-entry, the verb-minted compose (`jigc task amend`, `jigc migrate`) and the finalize arms keyed on a composed step ([finalize.md](finalize.md) → Which arm, decided once) — so a resumed task composes its minted text, and its finalize takes the commit model that text states (the M55 completion audit).
 
 The alternative — applying deltas to already-expanded content — would have made `insert-step --after locate` land somewhere inside `locate`'s expanded body if the expansion happened to contain another step's name. That's exactly the kind of structural non-determinism the system exists to kill.
 

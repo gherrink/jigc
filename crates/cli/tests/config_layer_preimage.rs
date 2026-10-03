@@ -780,7 +780,20 @@ fn every_config_layer_pathspec_carries_a_disposition() {
     });
     let rest = &run.rendered[at + marker.len()..];
     let argv = &rest[..rest.find('`').expect("the quoted argv is closed")];
-    let staged: Vec<&str> = argv.split_whitespace().collect();
+    // Each pathspec reaches git as `:(literal)<path>` — the name, never a pattern (M55
+    // Increment 1, `cli::task::literal_pathspec`) — so the set compared is the paths under
+    // that magic, and a bare one is a pathspec that escaped it.
+    let staged: Vec<&str> = argv
+        .split_whitespace()
+        .map(|spec| {
+            spec.strip_prefix(":(literal)").unwrap_or_else(|| {
+                panic!(
+                    "the stage hands git every path as `:(literal)`; `{spec}` is bare:\n{}",
+                    run.rendered
+                )
+            })
+        })
+        .collect();
     let declared: Vec<&str> = CONFIG_LAYER_SPECS.iter().map(|row| row.spec).collect();
     assert_eq!(
         staged, declared,

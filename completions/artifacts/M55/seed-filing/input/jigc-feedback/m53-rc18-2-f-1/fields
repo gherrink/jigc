@@ -1,0 +1,7 @@
+kind bug
+found-in review:M53-per-axis-rc18/(2,F-1)
+about repo.operation-in-progress
+jigc-version 1.0.0-rc.18
+tier tier-2
+status resolved
+pinned-by git_span_aim::the_fan_out_posture_site_keys_repo_relative_and_routes_absolute

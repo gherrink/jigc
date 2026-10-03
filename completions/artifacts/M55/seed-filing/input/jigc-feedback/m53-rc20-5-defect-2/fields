@@ -1,0 +1,7 @@
+kind bug
+found-in review:M53-per-axis-rc20/(5,DEFECT 2 · rc.20)
+about amend.head-shape
+jigc-version 1.0.0-rc.20
+tier tier-3
+status resolved
+pinned-by task_amend::the_head_shape_refusal_names_the_id_the_mint_would_have_taken

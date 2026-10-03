@@ -1,0 +1,1 @@
+The census in `gap-list.md` and `planning-gate-record.md` → row 3. Re-read at `a7a742d3`: `doctype-authoring.md` → *Registration-census fences*, against the fences `design/findings-channel.md` → 1.7 lists.

@@ -1,0 +1,3 @@
+`jigc setup` reverts a hand opt-out of the methodology pack: it always rewrites `compose-embedded-methodology` to `true` in `.jigc/config/packs.yaml`, and there is no opt-out flag. The baseline router auditor found it.
+
+Re-driven on this build (`jigc 1.0.0-rc.22`, the debug binary built from `982f910f`): **still open**. With `compose-embedded-methodology: false` committed, `jigc doc schema vision` is refused, as the opt-out intends. A second `jigc setup` exits 0 and commits `.jigc/config/packs.yaml` back to `compose-embedded-methodology: true`, as its own install commit, `chore(jigc): install jigc workspace config`. Its ack names neither the file nor the methodology pack. `jigc setup --help` names no methodology flag.

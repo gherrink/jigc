@@ -1,0 +1,27 @@
+---
+kind: feedback
+found-in: milestone:road-to-1.0.0/CI-git-marker-contract
+about: test:git_state_fixtures
+jigc-version: 1.0.0-rc.21
+status: open
+date: 2026-10-03
+schema-version: 1
+---
+
+# The git marker contract still waits on a divergence report
+
+## Description
+
+The posture fixtures in `crates/cli/tests/support/git_state.rs` pin every `EXPECTATIONS` marker cell to git 2.54.0 (Apple Git-157). The M52 Settle's deferral (a), whose text and trigger stand at its own row, keys the contract to *the first CI or adopter report on another git major/minor where a marker cell diverges*. D4 made a green GitHub run on `main` a precondition of the call, so that run was expected to make the trigger live. On the run that discharged D4, on 2026-09-27, no cell diverged. Every cell held on git 2.43.0, `ubuntu:24.04`'s stock git driven in the runner-faithful container, and on the GitHub runner's own git, whose version the log does not print. The fixtures are proven on three gits, and the deferral stays open on its original trigger, because a trigger that has not fired is not one that cannot. Nothing in the binary is wrong, so its kind is `feedback`.
+
+Re-driven on this build (`jigc 1.0.0-rc.22`, the checkout at `982f910f`): **still open**. `git_state_fixtures::` passes 3 of 3 on git 2.54.0, the git it is pinned to, and the full gate run of this re-drive passed under the same git. No divergence report has arrived from any other git.
+
+## Repro
+
+```sh
+# from the jigc checkout
+git --version                                         # the git this run drives
+cargo test -p jigc --test g_migrate git_state_fixtures::   # 3 passed: every marker cell holds
+```
+
+## Resolution

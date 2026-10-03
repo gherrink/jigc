@@ -1,0 +1,7 @@
+kind bug
+found-in review:M53-per-axis-rc18/(3,F-3)
+about jigc uninstall
+jigc-version 1.0.0-rc.18
+tier tier-2
+status resolved
+pinned-by cwd_verb_subject::uninstall_removes_the_workbench_home_install_from_every_cwd

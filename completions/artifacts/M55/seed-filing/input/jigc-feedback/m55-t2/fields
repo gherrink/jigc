@@ -1,0 +1,6 @@
+kind bug
+found-in milestone:M55-planning/T2
+about test:trial_corpus
+jigc-version 1.0.0-rc.22
+status resolved
+pinned-by child_stdin_feed::a_child_that_exits_without_reading_its_stdin_is_judged_on_its_exit

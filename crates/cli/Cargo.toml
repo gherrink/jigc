@@ -8,9 +8,11 @@ repository.workspace = true
 description = "A context compiler for coding agents: a deterministic CLI that composes each task's instructions and owns every structural write to a project's managed docs."
 keywords = ["cli", "coding-agents", "llm", "documentation", "workflow"]
 categories = ["command-line-utilities", "development-tools"]
-# The root README. Cargo copies a `readme` from outside the package into the package
-# root as `README.md` whatever `include` says, so the allowlist below does not name it.
-readme = "../../README.md"
+# The crate README `dev/crate-readme` generates from the root README, every relative link
+# made absolute so it lands on crates.io where it lands on GitHub (M55 S15). Cargo packages
+# a `readme` whatever `include` says, so the allowlist below does not name it;
+# `tests/package_contents.rs` holds the packaged bytes equal to the committed file.
+readme = "README.md"
 # The published allowlist — never the directory, and never `tests/` (M54 S11;
 # implementation/release.md → What the package carries). `LICENSE-MIT`/`LICENSE-APACHE`
 # here are symlinks to the root pair, packaged as regular files;

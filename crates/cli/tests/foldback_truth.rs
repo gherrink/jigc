@@ -24,7 +24,7 @@
 //!      the law-1 lie, the completed claim is required, and the cited verdict artifact must
 //!      actually exist. It has run in both directions at every wave since M47, and at each
 //!      new wave's close it is **re-aimed rather than duplicated**, so the suite carries one
-//!      live pin rather than one dead pin per wave — it now points at M54.
+//!      live pin rather than one dead pin per wave — it now points at M55.
 //!
 //! A fourth claim joined at M48 Increment 12 (T1):
 //!
@@ -356,36 +356,64 @@ fn milestone_span<'a>(body: &'a str, marker: &str) -> &'a str {
 /// post-audit wave took: the span must cite the path, and the file must exist. The
 /// conditional is gone rather than kept beside it — with the file on disk it could never
 /// fire again, and a leg that cannot fire is a dead pin.
+///
+/// **At M55 Increment 11 (T9) it moves forward again, and is inverted for the twelfth time**
+/// ([roadmap.md](../../../implementation/roadmap.md) → Milestone 55, Increment 11). M54's
+/// claim is settled prose: its audit ran, its verdict is persisted, `1.0.0-rc.22` is
+/// published, and the paragraphs above are that arm's history. M55's eleven build increments
+/// have landed and no completion act has: no audit, no persisted verdict, no `1.0.0-rc.23`
+/// release, no crates.io re-read, no partial re-review over the merged M54 + M55 axes. So the
+/// marker moves to `**M55 —` and the assertions flip back to the pre-audit direction in the
+/// same edit — `built, not audited` required, `built + audited`, the clean-audit trio and any
+/// `VERDICT` citation forbidden, and the two 1.0.0-call phrasings forbidden as at every wave.
+///
+/// **The installed leg stays, and binds for a different reason.** M55 builds no version: the
+/// crate is still `1.0.0-rc.22`, and its next release is release PR #2, the human's merge and
+/// deployment approval. So the span may name `1.0.0-rc.23` only as the release still owed, and
+/// [`built_and_installed_versions`] over the span must be **empty**. The version arm below
+/// already refuses a premature `1.0.0-rc.23 built and installed` (the crate has not reached
+/// it); this leg also refuses `1.0.0-rc.22 built and installed`, which the version arm would
+/// pass and which this build did not do. When M55's audit lands this arm goes red, which is
+/// the fence working rather than failing, and it inverts a thirteenth time.
+///
+/// **Inverted 2026-10-03, at the completion fold-back — the thirteenth time.** The audit ran:
+/// e2e 22 of 24 scenarios green, the other two defects, and a code review of three findings —
+/// five audit findings, all fixed, one commit each, plus two the fixers surfaced, fixed, and
+/// one report-only gap, F21, filed open; the genuine spawn matched the sim's golden. So the
+/// pre-audit bound is now the law-1 lie, and the assertions flip: `built + audited`, the
+/// counts and the persisted verdict's path required, the file held to existing, and `built,
+/// not audited` and the clean-audit trio forbidden — five findings is not clean — with the
+/// two 1.0.0-call phrasings forbidden as at every wave. **The installed leg stays**: M55
+/// still built no version, and `1.0.0-rc.23` is release PR #2's.
 #[test]
-fn the_record_names_m54_and_claims_exactly_what_the_build_reached() {
+fn the_record_names_m55_and_claims_exactly_what_the_build_reached() {
     let body = read_doc(RECORD);
     // The project-state record is a single line; the header above it is not a milestone
-    // claim, and M54 is the last marker on the line — so the span is bounded at the
+    // claim, and M55 is the last marker on the line — so the span is bounded at the
     // paragraph's own end rather than running to EOF and forbidding these words to the
     // whole file.
-    let span = milestone_span(&body, "**M54 —")
+    let span = milestone_span(&body, "**M55 —")
         .split('\n')
         .next()
         .expect("splitting a str always yields at least one part");
     for owed in [
         "implementation/roadmap.md",
-        "Milestone 54",
-        // Inverted 2026-10-01 at M54's completion fold-back — the eleventh time. The audit
-        // ran, and the claim must say what it found, no more and no less: every e2e
-        // scenario green, five review findings, all fixed, none of them clean.
+        "Milestone 55",
+        // Inverted 2026-10-03 at M55's completion fold-back — the thirteenth time. The audit
+        // ran, and the claim must say what it found, no more and no less: two e2e scenarios
+        // failed, five audit findings were fixed, F21 is open, and the genuine spawn matched.
         "is complete",
         "built + audited",
-        "15 of 15 scenarios",
-        "five findings, all fixed",
+        "22 of 24 scenarios",
+        "five audit findings, all fixed",
+        "one filed open",
+        "MATCH",
         // The audit's record is persisted, and the claim must cite it.
-        "completions/artifacts/M54/VERDICT.md",
-        // What the build reached: the first real publish. Named as published, never as
-        // built and installed — the installed binary is still the one M53 shipped.
-        "1.0.0-rc.22",
+        "completions/artifacts/M55/VERDICT.md",
     ] {
         assert!(
             span.contains(owed),
-            "the M54 project-state claim must name `{owed}`; it reads:\n{span}",
+            "the M55 project-state claim must name `{owed}`; it reads:\n{span}",
         );
     }
 
@@ -396,32 +424,32 @@ fn the_record_names_m54_and_claims_exactly_what_the_build_reached() {
         "audited clean",
         "audit is CLEAN",
         "audit ran clean",
-        // The 1.0.0 call is the human's, and an rc publish takes it no more than a wave does.
+        // The 1.0.0 call is the human's, and a completed wave takes it no more than a build does.
         "1.0.0 is called",
         "1.0.0 shipped",
     ] {
         assert!(
             !span.contains(forbidden),
-            "the M54 claim may not say `{forbidden}`:\n{span}",
+            "the M55 claim may not say `{forbidden}`:\n{span}",
         );
     }
 
     // The citation required above must point at a file that exists.
-    let verdict = repo_root().join("completions/artifacts/M54/VERDICT.md");
+    let verdict = repo_root().join("completions/artifacts/M55/VERDICT.md");
     assert!(
         verdict.is_file(),
-        "the M54 claim cites a verdict at {} that must exist",
+        "the M55 claim cites a verdict at {} that must exist",
         verdict.display()
     );
 
-    // `1.0.0-rc.22` is published and not installed on the host: the span may name the
-    // version only as what crates.io carries.
+    // M55 built no version and installed none: the span may name a version only as what
+    // crates.io carries or what the owed release will publish.
     let installed = built_and_installed_versions(span);
     assert!(
         installed.is_empty(),
-        "the M54 claim states a version built and installed ({installed:?}); M54 \
-         published `1.0.0-rc.22` and installed nothing — the installed binary is still \
-         `1.0.0-rc.21`:\n{span}",
+        "the M55 claim states a version built and installed ({installed:?}); M55 built no \
+         version — the crate is still `1.0.0-rc.22`, and `1.0.0-rc.23` is release PR #2's, \
+         the human's merge and deployment approval:\n{span}",
     );
 }
 
@@ -874,17 +902,18 @@ fn the_shipped_guides_name_the_discard_refusal_and_its_consent() {
 // a fresh law-1 lie** (M51 Increment 7 / T1; `completions/artifacts/M51/settle-record.md`
 // → D8; the charter's EC-22).
 //
-// [`ManifestKind`] has six members, and `manifest_line`'s own doc-comment states the split
-// the prose has to respect: `Untracked` never reaches the **included** path — it tags only
-// files the commit left out. So the two docs of record are saying two different true
+// [`ManifestKind`] has seven members (six until M55 added `left-staged`), and
+// `manifest_line`'s own doc-comment states the split the prose has to respect: `Untracked`
+// and `LeftStaged` never reach the **included** path — they tag only files the commit left
+// out. So the two docs of record are saying two different true
 // things, and both are correct as written: `design/finalize.md` names the **committed
 // set**'s five (`promoted` / `modified` / `deleted` / `added` / `carried-over`), and
-// `design/command-output-contract.md` names the **JSON `kind`** value space's six. A fence
-// owing all six everywhere would force `untracked` into the committed-set sentence — a new
+// `design/command-output-contract.md` names the **JSON `kind`** value space's seven. A fence
+// owing all seven everywhere would force `untracked` into the committed-set sentence — a new
 // falsehood, shipped by the fence built to stop falsehoods.
 //
 // Hence the mint is [`ManifestKind::ALL`] **plus** the in-commit/left-out partition as
-// code-side data ([`ManifestKind::in_commit`], an exhaustive match, so a seventh member
+// code-side data ([`ManifestKind::in_commit`], an exhaustive match, so a new member
 // cannot compile until it is classified), and the owe-set is **chosen by which vocabulary
 // the unit is speaking** — read off the partition itself, never hand-assigned per home.
 //
@@ -897,8 +926,8 @@ fn the_shipped_guides_name_the_discard_refusal_and_its_consent() {
 enum Vocabulary {
     /// The **committed set**: the tags a path *in the commit* can carry. Five members.
     Committed,
-    /// The whole JSON `kind` value space — the committed set plus the left-out-only tag.
-    /// Six members.
+    /// The whole JSON `kind` value space — the committed set plus the left-out-only tags.
+    /// Seven members.
     Whole,
 }
 
@@ -1029,7 +1058,7 @@ fn every_prose_unit_that_enumerates_the_manifest_vocabulary_names_all_of_it() {
     assert!(
         short.is_empty(),
         "a home that enumerates the manifest vocabulary enumerates all of the vocabulary \
-         it is speaking — the committed set's five, or the JSON `kind` space's six; \
+         it is speaking — the committed set's five, or the JSON `kind` space's seven; \
          short at: {short:#?}",
     );
     assert_eq!(
@@ -1059,7 +1088,7 @@ fn a_unit_naming_a_strict_subset_of_its_vocabulary_is_caught() {
         "the committed set's fifth tag is missing and the fence must say so",
     );
 
-    // The same sentence completed is clean — the fence owes the partition, never all six.
+    // The same sentence completed is clean — the fence owes the partition, never all seven.
     let whole = short.replace("`deleted`", "`deleted` / `added`");
     assert_eq!(
         missing_tags(&whole),
@@ -1073,8 +1102,9 @@ fn a_unit_naming_a_strict_subset_of_its_vocabulary_is_caught() {
     assert_eq!(vocabulary_spoken(json), Some(Vocabulary::Whole));
     assert_eq!(
         missing_tags(json),
-        vec!["carried-over"],
-        "a unit naming the JSON value space owes every value, `carried-over` included",
+        vec!["carried-over", "left-staged"],
+        "a unit naming the JSON value space owes every value, `carried-over` and \
+         `left-staged` included",
     );
 
     // Ordinary prose that merely uses the words is not an enumeration.

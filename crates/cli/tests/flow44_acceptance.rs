@@ -727,9 +727,10 @@ fn an_in_task_write_round_trips_through_the_staged_read() {
             "sections",
             "slug",
             "staged",
+            "title",
             "type"
         ],
-        "exactly the pinned keys + item-count + schema-version + the one marker key",
+        "exactly the pinned keys + item-count + schema-version + title + the one marker key",
     );
 
     // After finalize, the committed serve is UNMARKED — the pin holds byte-shape.
@@ -762,6 +763,7 @@ fn an_in_task_write_round_trips_through_the_staged_read() {
             "schema-version",
             "sections",
             "slug",
+            "title",
             "type"
         ],
         "a committed serve differs from the staged serve by exactly the `staged` key",

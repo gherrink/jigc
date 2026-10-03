@@ -38,7 +38,7 @@ use engine::packsource::{PackResourceKind, PackSource, ResourceId};
 use engine::result::CatalogEntry;
 use engine::schema::Schema;
 use engine::state::{self, BasePin, MintedTask, RolesRecord};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -917,6 +917,13 @@ pub struct Composition {
     /// (the `create-gates:` presentation line). Empty for a gate-less workflow
     /// (`quick-fix`, a `creates-task: false` router) — which renders no line at all.
     pub gates: Vec<String>,
+    /// Whether the composing workflow's finalize is the **doc-only** commit — its `includes`
+    /// name `step:finalize-doc-only`, read off the `def` the compose already holds through
+    /// `cli::task`'s one predicate (M55). The compose-time input to
+    /// [`crate::render::CommitModel::of`], so the `what's-left:` line states this task's own
+    /// commit model; a presentation fact like [`gates`](Composition::gates), never a key on
+    /// the pinned `{task, text}` JSON.
+    pub doc_only: bool,
     /// Whether **this invocation** minted [`view.task`](ComposedWorkflow::task) — the fact
     /// the `task minted: <id>` header states. It is *not* `view.task.is_some()`: a resume
     /// / sub-agent re-entry carries the **given** id (minted by an earlier invocation), and
@@ -1579,7 +1586,14 @@ pub(crate) fn compose_minted_in_repo(
     let (resolved, overrides) = resolve_cascade(pack, project_config)?;
     let defs = CascadeDefs::new(&resolved, project_config);
     let workflow_bytes = defs.read_workflow(pack, workflow_id)?;
-    let def = load_workflow_def(&workflow_bytes).map_err(finding_to_err)?;
+    // The project's phase-4 `structural-op` deltas apply here as at the fresh front door
+    // ([`apply_project_structure`]), so the verb-minted text is the one a resume and the
+    // finalize-time arms read.
+    let (def, scoped) = apply_project_structure(
+        load_workflow_def(&workflow_bytes).map_err(finding_to_err)?,
+        workflow_id,
+        &overrides.deltas,
+    )?;
 
     let origin = pack.origin_pack(PackResourceKind::Workflows, &ResourceId::from(workflow_id));
     let commands = load_catalog(origin)?;
@@ -1599,7 +1613,7 @@ pub(crate) fn compose_minted_in_repo(
     stepsource.scope_to_workflow(workflow_id);
     let findings = compose::workflow_refs_with_fills(
         &workflow_bytes,
-        &[],
+        &scoped,
         &overrides.slot_fills,
         &overrides.fills,
         &stepsource,
@@ -1635,6 +1649,11 @@ pub(crate) fn compose_minted_in_repo(
             ..composed
         },
         gates: create_gates(&def),
+        // Whether this workflow's finalize is the doc-only commit — the compose-time input
+        // to the `what's-left:` line's commit model, asked of the same `def` and the same
+        // filled step source the compose above expanded, through `cli::task`'s one
+        // predicate (M55; at any include depth since the completion audit's CR1).
+        doc_only: crate::task::doc_only_commit(&def, &filled, false),
         // The calling verb minted this task in *this* invocation (just above the compose),
         // so the announcement is true here exactly as on the front door.
         minted: true,
@@ -1790,19 +1809,18 @@ fn compose_core(
     slug_override: Option<&str>,
     preview: bool,
 ) -> Result<Composition> {
+    // Phase 4 — the workflow as the project's cascade resolves it: the definition (a
+    // whole-file shadow wins) with the scoped `structural-op` deltas applied to its
+    // include id list, through the one seam every door that composes or decides from a
+    // workflow shares ([`apply_project_structure`]). The gate below re-runs the same
+    // pass over `scoped` to validate the post-phase-4 list for delta-introduced
+    // cycles/dangles.
     let workflow_bytes = defs.read_workflow(pack, workflow_id)?;
-    let mut def = load_workflow_def(&workflow_bytes).map_err(finding_to_err)?;
-    // The manifest's `structural-op` deltas scoped to *this* workflow id — a
-    // manifest may carry deltas for several workflows; only these apply here.
-    let scoped = scoped_deltas(workflow_id, &overrides.deltas);
-    // Phase 4 — apply the scoped deltas to the include id list, before include
-    // expansion. A `replace-step` swaps a pack step id for a project-shadowed one,
-    // so the layer-aware source resolves the new id to the project body. An
-    // orphaned anchor (a delta whose anchor a same-manifest delta removed) surfaces
-    // here as a blocking, routed finding (`overrides.md` → Within-layer manifest
-    // order); the gate below re-runs the same pass to validate the post-phase-4
-    // list for delta-introduced cycles/dangles.
-    def.includes = apply_structural_deltas(&def.includes, &scoped).map_err(finding_to_err)?;
+    let (def, scoped) = apply_project_structure(
+        load_workflow_def(&workflow_bytes).map_err(finding_to_err)?,
+        workflow_id,
+        &overrides.deltas,
+    )?;
     // The command catalog is read against the composing workflow's **origin pack**
     // — the constituent that defines `workflow_id`'s top-level id — so a loser-pack
     // workflow's `{{cli.X}}` resolves against ITS OWN pack's `commands.yaml`, never
@@ -1968,6 +1986,11 @@ fn compose_core(
         // The composing workflow's create-gates — the CLI-side presentation fact the
         // renderer names on the `create-gates:` line (never the pinned JSON).
         gates: create_gates(&def),
+        // Whether this workflow's finalize is the doc-only commit — the compose-time input
+        // to the `what's-left:` line's commit model, asked of the same `def` and the same
+        // filled step source the compose above expanded, through `cli::task`'s one
+        // predicate (M55; at any include depth since the completion audit's CR1).
+        doc_only: crate::task::doc_only_commit(&def, &filled, false),
         // The fresh front door either mints a brand-new task or composes none at all;
         // either way this compose is never a milestone sub-task's (membership is
         // `jigc milestone add-task`'s alone, and it does not compose).
@@ -1978,6 +2001,35 @@ fn compose_core(
         also_open: Vec::new(),
         amend: None,
     })
+}
+
+/// **Phase 4 over a workflow definition** — `def` as the project's cascade resolves it:
+/// the manifest's `structural-op` deltas [`scoped_deltas`]-filtered to `workflow_id`,
+/// applied to its include id list **before** include expansion (`overrides.md` →
+/// Resolution algorithm phase 4 / Why structural deltas precede expansion). Returns the
+/// resolved definition and the scoped deltas, which the `workflow-refs` gate re-validates
+/// over the same list.
+///
+/// **The one seam**, because a delta decides *which steps a workflow composes*: the fresh
+/// compose ([`compose_core`]), the verb-minted compose ([`compose_minted_in_repo`]), the
+/// re-compose spine ([`compose_task_workflow`]) and the finalize-time arms keyed on a
+/// composed step ([`with_composing_step_source`]) all resolve through it. Until the M55
+/// completion audit only the fresh compose did, so a project `replace-step` of
+/// `step:finalize-doc-only` composed the minted text on one commit model and finalized on
+/// the other, and a resumed task's text was not its minted text.
+///
+/// A `replace-step` swaps a pack step id for a project-shadowed one, so the layer-aware
+/// source resolves the new id to the project body. An orphaned anchor (a delta whose
+/// anchor a same-manifest delta removed) surfaces as a blocking, routed finding
+/// (`overrides.md` → Within-layer manifest order). A no-delta cascade is the identity.
+fn apply_project_structure(
+    mut def: WorkflowDef,
+    workflow_id: &str,
+    deltas: &[StructuralDelta],
+) -> Result<(WorkflowDef, Vec<StructuralDelta>)> {
+    let scoped = scoped_deltas(workflow_id, deltas);
+    def.includes = apply_structural_deltas(&def.includes, &scoped).map_err(finding_to_err)?;
+    Ok((def, scoped))
 }
 
 /// The manifest's `structural-op` deltas scoped to `workflow_id` — a
@@ -2940,7 +2992,13 @@ fn compose_task_workflow(
     // workflow` block (not a generic "pack is missing" — the recorded/named id may
     // be a not-yet-shipped pack workflow, e.g. `sub-task` before increment 5).
     let workflow_bytes = defs.read_workflow(pack, workflow_id)?;
-    let def = load_workflow_def(&workflow_bytes).map_err(finding_to_err)?;
+    // The project's phase-4 `structural-op` deltas apply on re-compose exactly as at the
+    // mint ([`apply_project_structure`]), so a resumed task's text is its minted text.
+    let (def, scoped) = apply_project_structure(
+        load_workflow_def(&workflow_bytes).map_err(finding_to_err)?,
+        workflow_id,
+        &overrides.deltas,
+    )?;
     // Provision-on-first-entry — the sub-agent re-entry's deferred mirror of mint-time
     // provisioning. Gated on `provision` (re-entry only) and idempotent inside (first
     // entry only, `creates-task`-gated), so a resume / a `creates-task: false` `<W>` /
@@ -3012,7 +3070,7 @@ fn compose_task_workflow(
     // The `{{fill:}}` placeholder); a no-fill cascade is the identity.
     let findings = compose::workflow_refs_with_fills(
         &workflow_bytes,
-        &[],
+        &scoped,
         &overrides.slot_fills,
         &overrides.fills,
         &source,
@@ -3050,7 +3108,26 @@ fn compose_task_workflow(
         fills: &overrides.fills,
         ctx: &ctx,
     };
-    let composed = compose::compose_with_store(&def, &filled, &commands, &ctx, Some(&store))
+    // The unit kind of the id being re-composed, read once at this **shared** spine so
+    // both re-compose doors (resume and sub-agent re-entry) decide the sub-task rules
+    // below from one membership test — the same `owning_milestone` test the sub-task
+    // finalize refusal is minted from, never a second rule.
+    let owning_milestone = engine::milestone::owning_milestone(&jigc_root, id);
+    // A fan-out sub-task's commit boundary is the milestone's, so its composed text
+    // omits the steps that send it to a per-task one (M55, S2;
+    // `design/workflow-dialect.md` → Emitted format). Decided here, iff the id is a
+    // sub-task, over the same filled, origin-scoped step source and catalog the
+    // compose below expands — so a project-layer step shadow is classified as composed.
+    // The commit-doc-author clause is keyed on `finalize.fan-out.squash`, read through the
+    // join's own reader off this same resolved cascade — the main checkout's project layer,
+    // the one `jigc milestone finalize` resolves (`jigc_home`, never the worktree's).
+    let omit = if owning_milestone.is_some() {
+        let squash = crate::milestone::squash_of(&resolved)?;
+        sub_task_omission_set(&def, &filled, &commands, squash)
+    } else {
+        BTreeSet::new()
+    };
+    let composed = compose::compose_with_store(&def, &filled, &commands, &ctx, Some(&store), &omit)
         .map_err(finding_to_err)?;
     Ok(Composition {
         view: ComposedWorkflow {
@@ -3062,18 +3139,27 @@ fn compose_task_workflow(
         // A resumed task carries the same gates its workflow granted at mint — the
         // announcement re-shows on every re-compose, exactly like the routing footer.
         gates: create_gates(&def),
+        // Whether this workflow's finalize is the doc-only commit — the compose-time input
+        // to the `what's-left:` line's commit model, asked of the same `def` through
+        // `cli::task`'s one predicate (M55), over the filled step source the compose above
+        // expanded (CR1). **Never for a fan-out sub-task** (the M55 completion audit, E1):
+        // the doc-only model applies only when the task is not one
+        // (`design/findings-channel.md` → the doc-only commit row) — its boundary is the
+        // join, which commits whatever its worktree staged, and S2 omits the very
+        // `step:finalize-doc-only` the predicate looks for. The predicate owns that
+        // condition; this is the one compose site that can see a sub-task, so it is the one
+        // that passes `true`.
+        doc_only: crate::task::doc_only_commit(&def, &filled, owning_milestone.is_some()),
         // ...but the *mint* announcement does not: an earlier invocation minted this id,
         // and the caller supplied it. A `task minted:` header here would state a mint that
         // did not happen (`design/workflow-dialect.md` → The `task minted:` header).
         minted: false,
-        // The unit kind of the id being re-composed, read at the **shared** spine so both
-        // re-compose doors (resume and sub-agent re-entry) carry it — the same
-        // `owning_milestone` membership test the sub-task finalize refusal is minted from,
-        // never a second rule. The `task scope:` footer scopes its parallel-work claim on
+        // The unit kind of the id being re-composed ([`owning_milestone`], read once
+        // above). The `task scope:` footer scopes its parallel-work claim on
         // it: a sub-task's commit boundary is the milestone's, so the top-level
         // "resuming or finalizing here blocks and names the overlapping paths" would be a
         // law-1 lie there (M47 Inc 8 / N7; `design/surface-contract.md` → law 1).
-        sub_task_of: engine::milestone::owning_milestone(&jigc_root, id).map(|milestone| {
+        sub_task_of: owning_milestone.map(|milestone| {
             SubTaskOf {
                 milestone,
                 // The composed workflow id — the recorded one on both doors (see
@@ -3094,6 +3180,192 @@ fn compose_task_workflow(
         // repaired, exactly as the mint does, and neither can drift from the other.
         amend: amend_target_of(repo_root, task_dir, None)?,
     })
+}
+
+/// **The sub-task omission set** (M55, S2; `design/workflow-dialect.md` → Emitted
+/// format): the ids of the steps a fan-out sub-task's composed text withholds, derived
+/// from the composed packs rather than listed.
+///
+/// A sub-task has no per-task commit — `jigc task finalize <sub>` refuses
+/// (`finalize.milestone-sub-task`) and `jigc milestone finalize <m>` is its only
+/// boundary — so a step that sends it to the per-task door states a falsehood there, and
+/// so does every step wrapped around one. **The finalize-door clause:** a step is a
+/// member when its own body carries a lone `{{cli.<id>}}` whose entry in `catalog`
+/// runs `jigc task finalize`, or when it includes a member at any depth. A step is
+/// classified by the **catalog entry** its ref resolves to, never by the ref's spelling,
+/// and a door merely *named* in prose is a mention, not a member.
+///
+/// **The commit-doc-author clause, iff `squash`** (M55 Increment 3, Open question 2): a
+/// step is also a member when its own body carries a `{{cli.<id>}}` whose catalog entry
+/// writes the commit doc — an argument `from: task.commit#…`. `squash` is the resolved
+/// `finalize.fan-out.squash` ([`crate::milestone::squash_of`], the join's own reader): under
+/// `true` the boundary synthesizes one aggregate message and reads no sub-task's commit doc,
+/// so asking for one is asking for prose nothing reads; under `false` the join renders and
+/// gates every code-carrying sub-task's, so the author stays. This clause is **not** closed
+/// under inclusion — a step that merely includes an author keeps its own text, and only the
+/// author leaves.
+///
+/// The walk is [`walk_include_tree`] over `def`'s include tree through `source` — the
+/// caller passes the cascade-resolved, origin-scoped, filled step source its compose
+/// expands, and the origin pack's `catalog` — so a project-layer step shadow is classified
+/// exactly as it composes. Every reachable step is classified, so the set is the whole tree's, not
+/// only its outermost members. A cycle or a dangling include classifies as a
+/// non-member here; the `workflow-refs` gate reports both before any compose.
+pub fn sub_task_omission_set(
+    def: &WorkflowDef,
+    source: &dyn StepSource,
+    catalog: &CommandCatalog,
+    squash: bool,
+) -> BTreeSet<String> {
+    /// One classified step: `door` is the closed finalize-door clause, `author` the step's
+    /// own commit-doc writes.
+    #[derive(Clone, Copy)]
+    struct Class {
+        door: bool,
+        author: bool,
+    }
+
+    let tree = walk_include_tree(def, source, |_, step, children: Vec<Class>| {
+        let Some(step) = step else {
+            return Class {
+                door: false,
+                author: false,
+            };
+        };
+        let entries: Vec<&compose::CommandRef> = compose::command_ref_ids_in(&step.body)
+            .into_iter()
+            .filter_map(|cli| catalog.get(cli))
+            .collect();
+        Class {
+            author: entries.iter().any(|entry| writes_commit_doc(entry)),
+            door: entries.iter().any(|entry| runs_task_finalize(entry))
+                || children.iter().any(|child| child.door),
+        }
+    });
+    tree.into_iter()
+        .filter_map(|(id, class)| (class.door || (squash && class.author)).then_some(id))
+        .collect()
+}
+
+/// **The composed include tree** — every step a workflow's composition reaches, at any
+/// depth, each visited once, **post-order**: `visit` sees a step's id, its definition
+/// (`None` for an include no layer resolves) and the values its own children produced.
+///
+/// The **one walker** over what the compose expands (`engine::compose`'s `expand_step`
+/// recurses through every `{{include: step:<id>}}`), so a reading of *which steps a
+/// workflow composes* is never a second rule beside the compose's: the sub-task omission
+/// set ([`sub_task_omission_set`]) and the finalize arms' step predicates
+/// ([`composes_step`]) both walk it. It reads bodies with the engine's own recognizer
+/// ([`compose::include_ids_in`]) through the `source` the caller composes with — the
+/// cascade-resolved, origin-scoped, filled source — so a project-layer step, or a shadow
+/// that adds or drops an include, is walked exactly as it composes.
+///
+/// A cycle's back edge is skipped and a dangling include is visited with `None`; the
+/// `workflow-refs` gate reports both before any compose.
+fn walk_include_tree<T: Clone>(
+    def: &WorkflowDef,
+    source: &dyn StepSource,
+    mut visit: impl FnMut(&str, Option<&StepDef>, Vec<T>) -> T,
+) -> BTreeMap<String, T> {
+    type Visit<'v, T> = dyn FnMut(&str, Option<&StepDef>, Vec<T>) -> T + 'v;
+
+    fn walk<T: Clone>(
+        id: &str,
+        source: &dyn StepSource,
+        visit: &mut Visit<'_, T>,
+        memo: &mut BTreeMap<String, T>,
+        on_path: &mut Vec<String>,
+    ) -> Option<T> {
+        if let Some(known) = memo.get(id) {
+            return Some(known.clone());
+        }
+        if on_path.iter().any(|step| step == id) {
+            return None;
+        }
+        let step = source.step(id);
+        on_path.push(id.to_owned());
+        let children = step
+            .as_ref()
+            .map(|step| compose::include_ids_in(&step.body))
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|child| walk(child, source, visit, memo, on_path))
+            .collect();
+        on_path.pop();
+        let value = visit(id, step.as_ref(), children);
+        memo.insert(id.to_owned(), value.clone());
+        Some(value)
+    }
+
+    let mut memo = BTreeMap::new();
+    for id in &def.includes {
+        walk(id, source, &mut visit, &mut memo, &mut Vec::new());
+    }
+    memo
+}
+
+/// Whether `def`'s composition reaches the step `step_id` **at any depth** of its include
+/// tree ([`walk_include_tree`]) — the question every finalize arm keyed on a composed step
+/// asks (`cli::task`'s review hold and doc-only commit; `design/finalize.md` → Which arm,
+/// decided once). Keyed on the step's **id**, never its body: a project shadow that
+/// rewrites `step_id`'s text still composes `step_id`.
+pub(crate) fn composes_step(def: &WorkflowDef, source: &dyn StepSource, step_id: &str) -> bool {
+    walk_include_tree(def, source, |_, _, _: Vec<()>| ()).contains_key(step_id)
+}
+
+/// Run `read` over a **recorded** workflow as it composes — `def` with the project's
+/// phase-4 `structural-op` deltas applied ([`apply_project_structure`]), and the step source
+/// it composes through: the live cascade's layer-aware source, scoped to `workflow_id`'s
+/// origin pack and carrying the project's slot-fills — both exactly as the re-compose spine
+/// ([`compose_task_workflow`]) builds them, so a door that decides finalize behaviour from a
+/// task's recorded workflow walks the include tree its composed text was expanded from. No
+/// task context is bound: the inline data-value pass substitutes prose tokens and never adds
+/// an include.
+pub(crate) fn with_composing_step_source<R>(
+    pack: &dyn PackSource,
+    project_config: &Path,
+    workflow_id: &str,
+    def: &WorkflowDef,
+    read: impl FnOnce(&WorkflowDef, &dyn StepSource) -> R,
+) -> Result<R> {
+    let (resolved, overrides) = resolve_cascade(pack, project_config)?;
+    let (def, _) = apply_project_structure(def.clone(), workflow_id, &overrides.deltas)?;
+    let source = CascadeStepSource::new(pack, &resolved, project_config);
+    source.scope_to_workflow(workflow_id);
+    let ctx = ComposeContext::default();
+    let filled = FillStepSource {
+        inner: &source,
+        fills: &overrides.fills,
+        ctx: &ctx,
+    };
+    Ok(read(&def, &filled))
+}
+
+/// Whether a catalog entry **writes the commit doc** — one of its arguments is a `from:`
+/// data value under `task.commit#`. Read off the entry's argv, so a ref is classified by
+/// what it writes, never by its id.
+fn writes_commit_doc(entry: &compose::CommandRef) -> bool {
+    use compose::CommandArg::{Agent, From};
+    entry.args.iter().any(|arg| match arg {
+        From { from }
+        | Agent {
+            from: Some(from), ..
+        } => from.starts_with("task.commit#"),
+        _ => false,
+    })
+}
+
+/// Whether a catalog entry is the **per-task finalize door** — it runs `jigc task
+/// finalize`. Read off the entry's command and leading literal argv, so a ref is
+/// classified by what it runs, never by its id.
+fn runs_task_finalize(entry: &compose::CommandRef) -> bool {
+    use compose::CommandArg::Literal;
+    entry.command == "jigc"
+        && matches!(
+            entry.args.as_slice(),
+            [Literal { literal: verb }, Literal { literal: sub }, ..]
+                if verb == "task" && sub == "finalize"
+        )
 }
 
 /// Decide a sub-task compose's [`SubTaskPosture`]: is `composed_in` — the checkout the

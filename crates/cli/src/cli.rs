@@ -1465,6 +1465,24 @@ fn validate_store_in_repo(cwd: &Path) -> Result<StoreSweep> {
         })
         .collect();
 
+    // The L1 store arm's seam (M55 Increment 4, P2/P4): a drifted doc's committed bytes at
+    // `HEAD`. The twin asks it only about a recorded doc that has drifted, so a clean store
+    // shells out zero times; any git failure answers `None`, which keeps the blocking drift.
+    let head = |path: &str| crate::task::git_blob_at(&jigc_home, "HEAD", path);
+
+    // The rename twin's history seam (M55 Increment 5 / T2, P2): the task scope's own
+    // predicate and its conservative default — a `git log` failure reads history-present, so
+    // a possible deletion keeps blocking. Asked only of a recorded doc missing on disk with
+    // no content-matching candidate, so a store with no missing baseline shells out zero
+    // more times.
+    let history = |path: &str| crate::task::git_path_has_history(&jigc_home, path).unwrap_or(true);
+    // Its route seam (M55 completion triage, CR2): whether a branch tip still carries a
+    // history-less missing doc — the switch-back route if so, `jigc unmanage` if not — with
+    // the same conservative default the task gate uses (a git failure reads *carried*, so the
+    // index drop is never offered on a guess).
+    let other_refs =
+        |path: &str| crate::task::git_path_on_a_branch(&jigc_home, path).unwrap_or(true);
+
     let mut report = engine::validate::validate_store_families(
         &jigc_home,
         &schemas,
@@ -1473,6 +1491,9 @@ fn validate_store_in_repo(cwd: &Path) -> Result<StoreSweep> {
         &workflows,
         &workflow_source,
         &record,
+        &head,
+        &history,
+        &other_refs,
         &versions,
         &priors,
         &at_prior_homes,
@@ -3289,7 +3310,10 @@ pub const PATH_ARG_OCCURRENCES: &[PathArgOccurrence] = &[
                       never joined onto a path jigc reads, writes or unlinks — `unmanage` \
                       leaves the bytes on disk by definition, which is the whole verb. A \
                       spelling no record carries selects nothing and earns the idempotent \
-                      no-op the verb documents.",
+                      no-op the verb documents. Its one filesystem touch is after a real \
+                      drop: a no-follow existence check (`symlink_metadata`) of the \
+                      spelling under the repo root, asked only when every component is a \
+                      normal name, so the ack does not claim a file that is not there.",
             },
         }],
     },

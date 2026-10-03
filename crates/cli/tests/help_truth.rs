@@ -465,13 +465,34 @@ fn both_minting_verbs_state_the_title_contract_before_the_write() {
             "write.identity-change",
             "jigc doc rename",
             "second document",
+            "someone else's doc",
         ] {
             assert!(
                 help.contains(fact),
                 "`doc {verb} --help` must state \"{fact}\" — the title contract (a title \
                  that would be silently dropped is refused · one that mints a different \
-                 identity is a second document, not a correction · both route at the \
-                 in-task title change); got:\n{help}"
+                 identity is a second document, not a correction · over the task's own doc \
+                 both route at the in-task title change, over a committed one — someone \
+                 else's doc — at a distinct title); got:\n{help}"
+            );
+        }
+    }
+}
+
+/// M55 Increment 2, T2 — **the create-or-update sentence names its exception.** Both
+/// minting helps state that a create over a committed doc is a create-or-update; under an
+/// `allows-create` entry carrying `new: true` it is refused instead
+/// (`create.already-exists`), so a help that stated the rule without the exception would be
+/// false for that entry (law 3, the ambush class). Both helps name the code and the key.
+#[test]
+fn both_minting_verbs_state_the_create_only_entry() {
+    for verb in ["create", "author"] {
+        let help = help_stdout(&["doc", verb, "--help"]);
+        for fact in ["create.already-exists", "new: true"] {
+            assert!(
+                help.contains(fact),
+                "`doc {verb} --help` must state \"{fact}\" — an entry carrying `new: true` \
+                 refuses the create-or-update; got:\n{help}"
             );
         }
     }

@@ -1,0 +1,1 @@
+Eight workflows compose `step:finalize` and carry a task to a commit: the four, plus `park-idea`, `form-vision`, `do-research` and `record-dogfood`. `planning` composes it through `step:planning-finalize`.

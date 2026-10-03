@@ -48,9 +48,9 @@
 //! **absent** ([`every_pending_path_is_still_absent`]), so the increment that creates it
 //! also deletes its entry. Between milestones the list is empty, and
 //! [`the_pending_list_is_empty`] asserts it. M54 seeded the list's one entry and closed it
-//! empty. A later milestone that seeds an entry lifts that assertion in the same commit and
-//! restores it at its own close. A path no increment creates is a defect to fix, never a
-//! pending entry.
+//! empty; M55 seeded two and closed it empty too. A later milestone that seeds an entry
+//! lifts that assertion in the same commit and restores it at its own close. A path no
+//! increment creates is a defect to fix, never a pending entry.
 //!
 //! **Declared bounds.** The scan is a lexer, not a markdown parser. A code span is read on
 //! one line: a backtick run pairs with the next run of the same length on that line, so a
@@ -84,6 +84,7 @@ const LIVE_DOCS: &[&str] = &[
     "design/doc-read-surface.md",
     "design/document-type-schema.md",
     "design/finalize.md",
+    "design/findings-channel.md",
     "design/introspection.md",
     "design/measurement.md",
     "design/methodology-docs.md",
@@ -123,17 +124,21 @@ const LIVE_DOCS: &[&str] = &[
     "ideas/branches-and-planned-releases.md",
     "ideas/brownfield-baseline-capture.md",
     "ideas/bulk-onboarding-flow.md",
+    "ideas/cardinality-split-merge-transform.md",
     "ideas/cascade-profile-knobs.md",
     "ideas/cli-owned-rename.md",
     "ideas/commit-scope-vocabulary.md",
+    "ideas/committed-doc-edit-gate.md",
     "ideas/composed-context-token-budget.md",
     "ideas/compounding-lessons-grounding.md",
     "ideas/conflict-free-parallel-writing.md",
     "ideas/cost-of-enforcement.md",
     "ideas/derived-doc-staleness.md",
     "ideas/differentiator-pilot.md",
+    "ideas/doc-list-field-filter.md",
     "ideas/doc-read-surface.md",
     "ideas/doc-search.md",
+    "ideas/feedback-web-service.md",
     "ideas/finding-doctype.md",
     "ideas/flow-doctype.md",
     "ideas/form-vision-research-routing.md",
@@ -148,6 +153,7 @@ const LIVE_DOCS: &[&str] = &[
     "ideas/output-language-directives.md",
     "ideas/pack-doctype-visibility.md",
     "ideas/postmortem-and-runbook-doctypes.md",
+    "ideas/project-authored-doctype-packs.md",
     "ideas/reference-doctype.md",
     "ideas/root-changelog-render.md",
     "ideas/scheduled-staleness-sweep.md",
@@ -161,6 +167,7 @@ const LIVE_DOCS: &[&str] = &[
     "ideas/symbol-mention-sweep.md",
     "ideas/task-record-graduation.md",
     "ideas/team-ready-state-externalization.md",
+    "ideas/version-pinned-readme-links.md",
 ];
 
 /// The markdown files under the [`HOMES`] the fence does not read, each with its reason.
@@ -228,6 +235,14 @@ const ROOT_FILES: &[&str] = &[
 ///
 /// M54's one seeded entry, `dev/runner-faithful` (Increment 7, S10), was deleted by the
 /// commit that created the file.
+///
+/// M55 seeded two, both named by `design/findings-channel.md` (and the crate README by
+/// `implementation/decisions-pending.md`) at the planning commit, ahead of the increments
+/// that created them; `the_pending_list_is_empty` was lifted for M55's build in the same
+/// commit and restored at its close (Increment 11). The seed's entry,
+/// `completions/artifacts/M55/seed` (Increment 9, S11), was deleted by the commit that
+/// created the directory, and the crate README's, `crates/cli/README.md` (Increment 10,
+/// S15), by the commit that generated the file.
 const PENDING: &[(&str, &str)] = &[];
 
 /// The tree `jigc setup` installs into an adopter's repository (S15's adopter-path class).

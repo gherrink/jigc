@@ -3952,8 +3952,8 @@ mod tests {
 
     /// The **methodology sibling** of the build-time freeze gate (M40 A1 —
     /// `design/corpus-migration.md` → M40 revises the dichotomy): the methodology
-    /// pack now ships its **own** `config/schema-manifest.yaml` listing all **eleven**
-    /// shipped schemas — the ten persisted work-doc/design-altitude doctypes plus
+    /// pack now ships its **own** `config/schema-manifest.yaml` listing all **thirteen**
+    /// shipped schemas — the twelve persisted work-doc/design-altitude doctypes plus
     /// the transient `commit` shadow (the freeze assert is strict set-equality; the
     /// dev precedent lists its transient `commit`) — every one frozen at
     /// schema-version 1 (the v1 baseline) except the three bumped since:
@@ -3965,8 +3965,9 @@ mod tests {
     /// one `schema-snapshots/<ty>.v1.yaml` each — with every recomputed hash matching. The
     /// eleventh member, `planning-record` (M49 Inc-9 / T5), is the **new**-doctype shape of
     /// this gate: it joins the declared set at schema-version 1 and owes no snapshot at
-    /// all. A methodology schema-shape change that bumps no version fails **here,
-    /// loudly**, at build time.
+    /// all — and so do the twelfth and thirteenth, `jigc-feedback` and `inconsistency`
+    /// (M55 Increment 7, `design/findings-channel.md` → 1.7). A methodology schema-shape
+    /// change that bumps no version fails **here, loudly**, at build time.
     #[test]
     fn methodology_schema_manifest_matches_the_frozen_doctype_set() {
         use std::collections::BTreeMap;
@@ -3974,7 +3975,7 @@ mod tests {
         let pack = EmbeddedPack::methodology();
 
         // Every shipped methodology doctype, loaded through the production
-        // field-type-resolving loader against its own pack (so the persisted nine
+        // field-type-resolving loader against its own pack (so the persisted twelve
         // carry the injected stamp, exactly what the pack-load gate recomputes).
         let schemas: BTreeMap<String, Schema> = pack
             .list(PackResourceKind::Schemas)
@@ -3998,7 +3999,7 @@ mod tests {
         let manifest: engine::manifest::Manifest = serde_yaml_ng::from_slice(&manifest_bytes)
             .expect("config/schema-manifest.yaml parses as a freeze manifest");
 
-        // The frozen set is exactly the eleven shipped methodology schemas, each at
+        // The frozen set is exactly the thirteen shipped methodology schemas, each at
         // schema-version 1 (the crystallizing v1 baseline) except three: `deferral-ledger`,
         // bumped to 2 by the M41 F4 v1→v2 `kind` enum-member rename (D/I → Decision/Idea
         // — the first methodology v1→v2 migration; `design/corpus-migration.md` → the
@@ -4013,7 +4014,8 @@ mod tests {
         // `[blocking, advisory, HIGH, MEDIUM, LOW]` plus an optional `detail` prose slot on
         // the findings item block — an `EnumWidened` + `AddedItemSlot` pair, both byte
         // no-ops; `completions/artifacts/M49/settle-record.md` → D10 · Tier 3).
-        // `planning-record` (M49 Inc-9 / T5) joins the set NEW, at 1 — free at the freeze.
+        // `planning-record` (M49 Inc-9 / T5) joins the set NEW, at 1 — free at the freeze —
+        // and so do `jigc-feedback` and `inconsistency` (M55 Increment 7).
         let mut declared: Vec<&str> = manifest.doctypes.iter().map(|e| e.ty.as_str()).collect();
         declared.sort_unstable();
         assert_eq!(
@@ -4025,13 +4027,15 @@ mod tests {
                 "deferral-ledger",
                 "dogfood-record",
                 "idea",
+                "inconsistency",
+                "jigc-feedback",
                 "milestone-record",
                 "planning-record",
                 "research",
                 "roadmap",
                 "vision",
             ],
-            "the methodology freeze manifest must enumerate exactly the eleven shipped schemas",
+            "the methodology freeze manifest must enumerate exactly the thirteen shipped schemas",
         );
         for entry in &manifest.doctypes {
             let expected = match entry.ty.as_str() {
@@ -4070,6 +4074,8 @@ mod tests {
             "deferral-ledger",
             "dogfood-record",
             "idea",
+            "inconsistency",
+            "jigc-feedback",
             "milestone-record",
             "planning-record",
             "research",

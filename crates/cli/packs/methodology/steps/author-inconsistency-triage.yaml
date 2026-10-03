@@ -1,0 +1,49 @@
+Move one filed inconsistency off `open`. The intent is:
+{{ task.intent }}
+
+Name the record in the intent in plain words — its slug, without the
+`inconsistency:` prefix and its colon. The task id is minted from the intent, so
+an address-shaped intent mangles it; the address, `inconsistency:<slug>`, goes to
+the `doc` verbs below and never to `jigc start`. The committed records, each by
+its slug and its `status`:
+
+jigc doc list inconsistency
+
+The `inconsistency` schema is the authority on what you write into it — each
+field's enum members and every address a write can take:
+
+jigc doc schema inconsistency
+
+A filed record is append-only by convention. This step changes two leaves —
+`status` and `resolution` — and nothing else: its sides and every other field and
+slot stay as they were filed. The first write copies the committed record into
+this task for update; each later write edits that staged copy.
+
+Set the `status` it leaves `open` for — `resolved` (one side was corrected),
+`intended` (the difference is deliberate) or `refuted`:
+
+jigc doc set-field inconsistency:<slug>#meta/status --value <resolved|intended|refuted> --task {{task.id}}
+
+Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
+directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which
+jigc itself accepts but an agent harness that statically analyses shell commands
+can refuse to run:
+
+jigc doc set-slot inconsistency:<slug>#resolution --from-file - --task {{task.id}} <<'EOF'
+<why the status left open — which side was corrected, or why the difference is intended or the record refuted>
+EOF
+
+Author the `resolution` — a status other than `open` carries one:
+
+jigc doc set-slot inconsistency:<slug>#resolution --from-file - --task {{task.id}}
+
+This task's own index names the record back once the first write has copied it
+in:
+
+jigc doc list inconsistency --task {{task.id}}
+
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show inconsistency:<slug> --task {{task.id}}
