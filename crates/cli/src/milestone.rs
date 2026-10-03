@@ -1480,7 +1480,8 @@ fn record_conflict_block(jigc_home: &Path, key: &str) -> engine::file_state::Con
 /// — the silent clobber F3 forbids — and would sweep sibling records / unrelated committed
 /// docs the milestone op has no business gating on. The per-doc primitive is scoped exactly to
 /// this record (`DECISIONS.md` 2026-07-07 M39 T6). No edge-index mutation reaches disk — the
-/// only mutator (absorb) is unreachable under `task_touched: true` — so a throwaway index
+/// only mutator (absorb) is unreachable under `task_touched: true` with no pin (M55 Increment
+/// 4, P3: this door passes an always-`None` lookup) — so a throwaway index
 /// suffices; a first-encounter baseline-adopt is persisted so detection binds on the next op.
 ///
 /// Inert where there is nothing to guard: dev-only (no `milestone-record` schema) never calls
@@ -1505,7 +1506,7 @@ fn reconcile_record_preflight(
     let mut fs_record = FileStateRecord::load(jigc_root)
         .with_context(|| format!("could not load the file-state record under {jigc_root:?}"))?;
     // No edge is ever written: absorb (the sole index mutator) is unreachable with
-    // `task_touched: true`, so a throwaway index is never persisted.
+    // `task_touched: true` and no pin, so a throwaway index is never persisted.
     let mut index = EdgeIndex {
         stamp: String::new(),
         edges: Vec::new(),
@@ -1526,6 +1527,10 @@ fn reconcile_record_preflight(
         &from,
         &bytes,
         /* task_touched = */ true,
+        // No pin at the record door (M55 Increment 4, P3): every drift of the machine-owned
+        // record conflict-blocks here, a pulled one included — F3's "detected +
+        // conflict-blocked, **not** absorbed" holds byte-identically.
+        &|_| None,
         &record_conflict_block(jigc_home, &key),
         &engine::validate::AdoptionInputs::new(&versions, &priors, &migratable, jigc_home),
     );
@@ -6568,6 +6573,13 @@ fn milestone_boundary_gate(
     let history = move |path: &str| {
         crate::task::git_path_has_history(&repo_root_for_history, path).unwrap_or(true)
     };
+    // The L1 pull-absorption seam (M55 Increment 4, P2), bound to the milestone's shared base
+    // — the pin every sub-task inherited — so a pull before `milestone create` is absorbed at
+    // the join and a pull after it (the bytes no longer equal the base's blob) still
+    // conflict-blocks. Any git failure answers `None`, keeping the conflict-block.
+    let pin_home = jigc_home.to_path_buf();
+    let pin = base.sha.clone();
+    let pinned = move |path: &str| crate::task::git_blob_at(&pin_home, &pin, path);
     // The managed-vs-foreign discriminator's three pack facts (M48 Inc 4 / T1) — the merged
     // gate drives the same committed-store sweep the per-task door does, so a foreign
     // squatter must draw the store door's code and route here too.
@@ -6593,6 +6605,7 @@ fn milestone_boundary_gate(
         &history,
         &changed_code,
         base_tree.path(),
+        &pinned,
         // The merged gate area belongs to no single task, so the conflict route cannot name
         // one (M47 inc-2 / T4): it routes at the sub-task listing the human picks from,
         // never at a `<task-id>` placeholder.

@@ -2,6 +2,16 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-03 — M55 Increment 4 / T1: the task arm of L1 pull absorption, built
+
+Built on P1–P3 below; [reconciliation.md](design/reconciliation.md) (the `DRIFTED + TOUCHED` row and *Conflict — block at file level*) and [findings-channel.md](design/findings-channel.md) (§6 and §10's L1 rows) carry it. What the build adds to the plan:
+
+- **The seam is `engine::validate::PinnedBlob`**, beside `HistoryPredicate`. It is threaded as a parameter placed immediately before `conflict` in `validate_task`, `reconcile_committed_store` and `reconcile_committed`, because it is the fact the conflict arm consults. Every engine test caller passes `&|_| None`.
+- **The pinned arm and the untouched arm share one `absorb` body** (record → index → finding). So "the whole body, never only the re-hash" holds by construction, not by two copies agreeing.
+- **The per-task pin is read leniently.** `TaskArea::validate` reads `base.json` with `.ok()`. An unreadable pin answers `None` for every path, which keeps today's verdict, and the sweep gains no new failure. The lookup is `task::git_blob_at`, `git cat-file blob <pin>:<path>` at `jigc_home`.
+- **The re-aimed suites are exactly the four the plan named.** The full suite run reddened `flow19_planning_encode`'s warm drift, `singleton_running_doc` (c), `reconciliation_baseline_contrast` and `flow49_acceptance`'s lost-baseline contrast, and nothing else. In each, the out-of-band edit is now written uncommitted after the warm mint and before the first touch, so arm B's copy-in still carries it. No assertion moved.
+- **(d)'s red-step assumption held, driven.** A pull before `milestone create` lands at the join, and the next `jigc validate` carries no `VISION.md` drift, because the boundary's post-commit re-baselines the promoted doc. The pull after create is refused by the boundary gate before the base-guard is reached.
+
 ## 2026-10-03 — M55 Increment 4 planning: decomposition
 
 Cut [Increment 4](implementation/roadmap.md) (*L1 pull absorption, at the task scope and the store's*) into **2 ordered tasks**, grounded at HEAD `317b4f24` on `milestone/findings-channel/l1-pull-absorption` (tree clean), with Increments 1–3 landed. Cross-ref [roadmap.md](implementation/roadmap.md) → Milestone 55 → Increment 4; the M55 Settle below (S13's L1, R4 B4, O5 resolved by R5); [findings-channel.md](design/findings-channel.md) → 6, 10, 13; [planning-gate-record.md](completions/artifacts/M55/planning-gate-record.md) → row 9 and O5. **Codes registered: none.** `file-state.hash-matches` changes severity on one store arm, and its `(code, target)` key does not move. **No contract moves.**

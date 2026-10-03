@@ -31,7 +31,7 @@ The classifier reads the pair and routes:
 | `IN_SYNC` | `UNTOUCHED` | **clean** (no-op) |
 | `IN_SYNC` | `TOUCHED` | **task-only change** (proceed normally) |
 | `DRIFTED` | `UNTOUCHED` | **OOB edit** — see parse classifier below |
-| `DRIFTED` | `TOUCHED` | **conflict** — block at file level |
+| `DRIFTED` | `TOUCHED` | **conflict** — block at file level; **absorb** when the on-disk bytes equal the doc's blob at the task's base pin (a pulled edit, M55 — see below) |
 
 ### Baseline adoption
 
@@ -73,6 +73,13 @@ blocking · reconciliation.conflict-block — conflict on `decisions/rate-limit-
 ```
 
 **The conflict route belongs to the caller, not the classifier (M47).** The classifier sees a path, a hash and a *touched* flag — it has no task id, and at one of its callers there is no task at all. It used to hard-code the presentation above, so the **milestone-record doors** (the CLI writing a machine-owned record, [team-ready-state.md](team-ready-state.md) → No-silent-overwrite discipline) blocked with an **inapplicable verb** carrying an **unsubstituted `<task-id>`** — the pair the M43 route floor exists to prevent on a *blocking* finding ([surface-contract.md](surface-contract.md) → The route fence). So the mover clause **and** the route are now supplied per caller, from what that caller actually holds: the task-scope sweep passes the **real task id** (no placeholder survives the print), the milestone join gate routes at the sub-task listing (the merged area belongs to no single task), and the record door names the *record* and routes a human revert to what jigc last wrote — an external edit to a machine-maintained record is never merged and never clobbered. The frame the classifier still owns is only `` conflict on `<path>`: `` + the location.
+
+**A pulled edit is not a conflict — the base pin decides (M55, L1).** A teammate's committed edit reaches a clone by `git pull`, which moves the file and leaves the gitignored baseline where the last landed finalize put it — so the doc reads `DRIFTED`, and the next task to edit it read `DRIFTED + TOUCHED` and was refused, routed at reverting the teammate's edit ([findings-channel.md](findings-channel.md) → §6, L1). Both sides had *not* moved: the drift predates the task. The arm now asks one more fact, the doc's **blob at the caller's base pin** — a caller-supplied lookup the engine hashes with the drift hash, since the engine shells out to nothing — and when the on-disk bytes equal it, runs the `DRIFTED + UNTOUCHED` **absorb** above whole: the conformance gate, the re-hash, the edge-index update, the `reconciliation.absorb` advisory. Never only the re-hash.
+
+- **A change made during the task still conflict-blocks.** The pin is fixed at mint, so an edit landed after it — on disk, or committed and pulled after the mint — differs from the pin's blob, and the route above is unchanged.
+- **A pinned edit that does not conform keeps the caller's conflict-block, byte-identical — never a conformance-block.** A non-conformant edit is never baselined, and the conflict presentation is the caller's: re-grading it would silently retire the migration source's path-keyed third exit below, whose subject — a managed doc hand-broken out of band, then migrated — is exactly an edit committed before `jigc migrate`, and so exactly at the pin.
+- **The pin is the caller's.** The per-task gate binds the task's base pin; a sub-task's pin is its milestone's, so a pull **before** `milestone create` is absorbed at the join, while a pull **after** it moved the doc past the pin every sub-task inherited and still blocks. The **milestone-record door passes no pin** — every drift of the machine-owned record conflict-blocks there, pulled or not ([team-ready-state.md](team-ready-state.md) → No-silent-overwrite discipline, F3). A pin with no blob for the path, and any git failure, keep the conflict-block.
+- **The absorb is in memory, like every sweep's.** *Persistence of the shifted baseline* above stands as it is: `start` and `task validate` report the absorb and write nothing; the baseline advances only when the task's finalize lands, and that finalize re-promotes the task's staged copy over the pulled bytes it carried in.
 
 **The revert exit carries its sanction, and the migration source gets a third exit (M46).** Two repairs to the same route, both from the pre-guard repair audit ([roadmap](../implementation/roadmap.md) → Milestone 46, Increment 5).
 

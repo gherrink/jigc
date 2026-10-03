@@ -120,6 +120,23 @@ pub type TrackedPredicate<'a> = dyn Fn(&str) -> bool + 'a;
 /// and keeps blocking.
 pub type HistoryPredicate<'a> = dyn Fn(&str) -> bool + 'a;
 
+/// The CLI-supplied **committed bytes at a pin** — a `Fn(&str) -> Option<Vec<u8>>` taking a
+/// **repo-relative** path and answering its blob at the caller's base pin (`git cat-file blob
+/// <pin>:<path>`), threaded through [`validate_task`] into
+/// [`crate::file_state::reconcile_committed_store`] → [`crate::file_state::reconcile_committed`]
+/// (M55 Increment 4, P2). Built on the [`HistoryPredicate`] mold: the CLI owns the shell-out,
+/// the engine hashes the bytes with [`crate::file_state::hash_bytes`] — the drift hash is
+/// blake3, never git's blob id, so the seam hands over bytes.
+///
+/// It is the **L1 pull-absorption** input (`design/reconciliation.md` → the `DRIFTED + TOUCHED`
+/// row): a committed doc drifted from its recorded baseline whose on-disk bytes equal its blob
+/// at the task's pin was moved by a pull *before* the task began, not during it, so a task that
+/// touches it absorbs the pulled edit instead of conflict-blocking. Consulted **only** on a
+/// drifted, touched path, so a clean sweep shells out zero times. `None` — an absent blob, an
+/// unborn pin, any git failure, or a caller that holds no pin (the milestone-record door, P3) —
+/// keeps today's conflict-block, the conservative default.
+pub type PinnedBlob<'a> = dyn Fn(&str) -> Option<Vec<u8>> + 'a;
+
 /// Validate one task working area — the single engine both `task validate` and
 /// `finalize` phase 2 call (`validation.md` → How it gates `finalize`: one engine,
 /// two entry points, so what `validate` reports and what `finalize` blocks on can
@@ -183,6 +200,13 @@ pub type HistoryPredicate<'a> = dyn Fn(&str) -> bool + 'a;
 /// [`ConflictBlock::task`](crate::file_state::ConflictBlock::task) with the real task id, the
 /// milestone join gate passes its own (no single task owns the merged area) — so the naming
 /// and the way out come from the caller that knows, never a placeholder minted here.
+///
+/// `pinned` is the CLI-supplied [`PinnedBlob`] that same `DRIFTED + TOUCHED` classifier
+/// consults before conflict-blocking (M55 Increment 4): a drifted doc whose on-disk bytes
+/// equal its blob at the caller's base pin was moved before the task began — a pull — and is
+/// absorbed instead. The per-task gate binds it to the task's base pin (a sub-task's is its
+/// milestone's), the milestone join to the milestone's `base.sha`; `&|_| None` leaves the arm
+/// byte-identical to its pre-M55 behaviour.
 ///
 /// `adoption` is the CLI-supplied [`AdoptionInputs`] the same committed-store sweep hands to
 /// its `UNKNOWN` + non-conformant classifier (M48 Inc 4 / T1), so a **never-adopted foreign**
@@ -269,6 +293,7 @@ pub fn validate_task(
     history: &HistoryPredicate<'_>,
     changed_code: &BTreeSet<String>,
     base_code_tree_root: &Path,
+    pinned: &PinnedBlob<'_>,
     conflict: &crate::file_state::ConflictBlock,
     adoption: &AdoptionInputs<'_>,
     live_record: &crate::file_state::LiveRecord,
@@ -331,6 +356,7 @@ pub fn validate_task(
         repo_root,
         dir,
         history,
+        pinned,
         conflict,
         adoption,
         live_record,
@@ -5297,6 +5323,7 @@ kind: memo
             &|_| true,
             &BTreeSet::new(),
             area.dir(),
+            &|_| None,
             &test_conflict(),
             &AdoptionInputs::inert(),
             &crate::file_state::LiveRecord::none(),
@@ -5338,6 +5365,7 @@ kind: memo
             &|_| true,
             &BTreeSet::new(),
             clean.dir(),
+            &|_| None,
             &test_conflict(),
             &AdoptionInputs::inert(),
             &crate::file_state::LiveRecord::none(),
@@ -5449,6 +5477,7 @@ Bursty-but-honest clients see occasional 429s.
             &|_| true,
             &BTreeSet::new(),
             area.dir(),
+            &|_| None,
             &test_conflict(),
             &AdoptionInputs::inert(),
             &crate::file_state::LiveRecord::none(),
@@ -5555,6 +5584,7 @@ Bursty-but-honest clients see occasional 429s.
             &|_| true,
             &BTreeSet::new(),
             area.dir(),
+            &|_| None,
             &test_conflict(),
             &AdoptionInputs::inert(),
             &crate::file_state::LiveRecord::none(),
@@ -5607,6 +5637,7 @@ Bursty-but-honest clients see occasional 429s.
             &|_| true,
             &BTreeSet::new(),
             area.dir(),
+            &|_| None,
             &test_conflict(),
             &AdoptionInputs::inert(),
             &crate::file_state::LiveRecord::none(),
@@ -5661,6 +5692,7 @@ Bursty-but-honest clients see occasional 429s.
             &|_| true,
             &BTreeSet::new(),
             area.dir(),
+            &|_| None,
             &test_conflict(),
             &AdoptionInputs::inert(),
             &crate::file_state::LiveRecord::none(),
@@ -5721,6 +5753,7 @@ Bursty-but-honest clients see occasional 429s.
             &|_| true,
             &BTreeSet::new(),
             area.dir(),
+            &|_| None,
             &test_conflict(),
             &AdoptionInputs::inert(),
             &crate::file_state::LiveRecord::none(),
@@ -5782,6 +5815,7 @@ sections:
             &|_| true,
             &BTreeSet::new(),
             area.dir(),
+            &|_| None,
             &test_conflict(),
             &AdoptionInputs::inert(),
             &crate::file_state::LiveRecord::none(),
@@ -6019,6 +6053,7 @@ A failed node's sessions are re-routed on next request.
             &|_| true,
             &BTreeSet::new(),
             repo.path(),
+            &|_| None,
             &test_conflict(),
             &AdoptionInputs::inert(),
             &crate::file_state::LiveRecord::none(),
@@ -6079,6 +6114,7 @@ A failed node's sessions are re-routed on next request.
             &|_| true,
             &BTreeSet::new(),
             repo.path(),
+            &|_| None,
             &test_conflict(),
             &AdoptionInputs::inert(),
             &crate::file_state::LiveRecord::none(),
@@ -6135,6 +6171,7 @@ A failed node's sessions are re-routed on next request.
             &|_| true,
             &BTreeSet::new(),
             repo.path(),
+            &|_| None,
             &test_conflict(),
             &AdoptionInputs::inert(),
             &crate::file_state::LiveRecord::none(),
@@ -6189,6 +6226,7 @@ A failed node's sessions are re-routed on next request.
             &|_| true,
             &BTreeSet::new(),
             repo.path(),
+            &|_| None,
             &test_conflict(),
             &AdoptionInputs::inert(),
             &crate::file_state::LiveRecord::none(),
@@ -6613,6 +6651,7 @@ The audit landed green.
             &|_| true,
             &BTreeSet::new(),
             repo.path(),
+            &|_| None,
             &test_conflict(),
             &AdoptionInputs::inert(),
             &crate::file_state::LiveRecord::none(),
@@ -8706,6 +8745,7 @@ Effects.
                 &|_| true,
                 changed,
                 base,
+                &|_| None,
                 &test_conflict(),
                 &AdoptionInputs::inert(),
                 &crate::file_state::LiveRecord::none(),
@@ -8777,6 +8817,7 @@ Effects.
             &|_| true,
             &change_set(&["src/foo.rs"]),
             base.path(),
+            &|_| None,
             &test_conflict(),
             &AdoptionInputs::inert(),
             &crate::file_state::LiveRecord::none(),
@@ -8850,6 +8891,7 @@ Effects.
             &|_| true,
             &change_set(&["src/foo.rs"]),
             base.path(),
+            &|_| None,
             &test_conflict(),
             &AdoptionInputs::inert(),
             &crate::file_state::LiveRecord::none(),
@@ -8923,6 +8965,7 @@ Effects.
             &|_| true,
             &change_set(&["src/foo.rs"]),
             base.path(),
+            &|_| None,
             &test_conflict(),
             &AdoptionInputs::inert(),
             &crate::file_state::LiveRecord::none(),
@@ -8981,6 +9024,7 @@ Effects.
             &|_| true,
             &change_set(&["src/foo.rs"]),
             base.path(),
+            &|_| None,
             &test_conflict(),
             &AdoptionInputs::inert(),
             &crate::file_state::LiveRecord::none(),

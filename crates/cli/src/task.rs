@@ -2429,6 +2429,14 @@ impl TaskArea {
         })?;
         let tracked = self.tracked_predicate()?;
         let history = self.history_predicate();
+        // The L1 pull-absorption seam (M55 Increment 4, P2): a committed doc's bytes at this
+        // task's base pin — a sub-task's pin is its milestone's (engine `add_task`) — read at
+        // `jigc_home`, the checkout the committed-store sweep reads. Consulted only on a
+        // drifted path the task touched; an unreadable pin answers `None` for every path,
+        // which keeps the conflict-block the arm raised before.
+        let pin = self.base().ok().map(|base| base.sha);
+        let pin_home = self.jigc_home.clone();
+        let pinned = move |path: &str| git_blob_at(&pin_home, pin.as_deref()?, path);
         // Materialize the current git index into a self-cleaning temp tree and resolve
         // cited code anchors against it (M30 Inc 3, G4): the `doc-code` probe validates
         // what *commits*, not the ambient working tree, so a symbol present on disk but
@@ -2475,6 +2483,7 @@ impl TaskArea {
             &history,
             &changed_code,
             base_tree.path(),
+            &pinned,
             // The conflict route is the caller's, and this caller is a named task: a
             // `DRIFTED + TOUCHED` block routes at the REAL id (M47 inc-2 / T4). A
             // **migration** task also holds the one path whose general route cannot be
@@ -7563,6 +7572,20 @@ pub(crate) fn git_path_has_history(repo_root: &Path, path: &str) -> Result<bool>
         );
     }
     Ok(!String::from_utf8_lossy(&out.stdout).trim().is_empty())
+}
+
+/// The committed bytes of `path` (repo-relative) **at `pin`** — `git cat-file blob
+/// <pin>:<path>` — or `None` when the pin carries no blob there or git fails in any way.
+/// The L1 pull-absorption seam ([`engine::validate::PinnedBlob`]; M55 Increment 4, P2): the
+/// engine hashes the bytes against the drifted doc on disk, so a failure answering `None`
+/// keeps the conflict-block it would have raised anyway — never an absorb on a guess.
+pub(crate) fn git_blob_at(repo_root: &Path, pin: &str, path: &str) -> Option<Vec<u8>> {
+    let out = Command::new("git")
+        .args(["cat-file", "blob", &format!("{pin}:{path}")])
+        .current_dir(repo_root)
+        .output()
+        .ok()?;
+    out.status.success().then_some(out.stdout)
 }
 
 /// The bytes of the **last committed version** of `path`, or `None` when HEAD carries no
