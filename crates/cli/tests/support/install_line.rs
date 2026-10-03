@@ -14,11 +14,21 @@
 //! requirement as `--version '<req>'`. A second install line, a line wrapped in a comment
 //! telling the reader where to run it, or a line with no requirement is an extraction
 //! failure, which is the point — each of those is a doc that no longer has *one* line.
+//!
+//! **Which docs carry it at all** is a second question, answered by [`install_line_carriers`]:
+//! every markdown file git tracks *or* would track (untracked but not ignored), with a line
+//! that, trimmed, starts [`INSTALL_COMMAND`]. Since M55 S15 that census has three members —
+//! the owner, the copy, and the crate README `dev/crate-readme` derives from the copy.
 
-use std::path::PathBuf;
+use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 /// The heading the install line lives under, in every doc that carries it.
 pub const INSTALL_HEADING: &str = "## Install";
+
+/// What a line starts with, once trimmed, to count as carrying the install line.
+pub const INSTALL_COMMAND: &str = "cargo install jigc";
 
 /// The install line as a doc states it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -127,4 +137,43 @@ fn install_section<'a>(markdown: &'a str, origin: &str) -> &'a str {
     let rest = &markdown[start..];
     let end = rest.find("\n## ").map_or(rest.len(), |at| at + 1);
     &rest[..end]
+}
+
+/// Every markdown file under `root` — tracked, or untracked and not ignored
+/// (`git ls-files -co --exclude-standard`) — holding a line that, trimmed, starts
+/// [`INSTALL_COMMAND`], repository-relative and sorted. Untracked files count, so a scratch
+/// doc carrying the line is a carrier before anyone stages it. A listed path that is not on
+/// disk (tracked, deleted in the working tree) carries nothing.
+///
+/// # Panics
+///
+/// When git cannot list the files, or a listed file cannot be read.
+pub fn install_line_carriers(root: &Path) -> BTreeSet<String> {
+    let out = Command::new("git")
+        .args(["ls-files", "-co", "--exclude-standard", "-z", "--", "*.md"])
+        .current_dir(root)
+        .output()
+        .unwrap_or_else(|e| panic!("run git ls-files in {}: {e}", root.display()));
+    assert!(
+        out.status.success(),
+        "git ls-files exited {:?}: {}",
+        out.status.code(),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    String::from_utf8(out.stdout)
+        .expect("git ls-files prints UTF-8 paths")
+        .split('\0')
+        .filter(|path| !path.is_empty())
+        .filter(|path| {
+            let full = root.join(path);
+            full.is_file()
+                && String::from_utf8_lossy(
+                    &std::fs::read(&full)
+                        .unwrap_or_else(|e| panic!("{} must be readable: {e}", full.display())),
+                )
+                .lines()
+                .any(|line| line.trim().starts_with(INSTALL_COMMAND))
+        })
+        .map(str::to_owned)
+        .collect()
 }

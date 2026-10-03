@@ -2,6 +2,12 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-03 — M55 Increment 10 / T3: the install-line fence admits the crate README as derived, not a second copy
+
+`install_line::the_install_line_has_one_owner_one_copy_and_one_derived_file` is the first fence that counts copies of the install line. It scans `git ls-files -co --exclude-standard '*.md'`, so an untracked file counts, and holds the files with a trimmed line starting `cargo install jigc` to exactly three: `QUICKSTART.md` (the owner), `README.md` (the one allowed copy), and `crates/cli/README.md`. The crate README is admitted only while its bytes equal `dev/crate-readme --stdout` and its extracted line equals QUICKSTART's. The census helper is `support::install_line::install_line_carriers`. [release.md](implementation/release.md) → Installing names the derived file and keeps *no release tooling touches a doc*. The [decisions-pending.md](implementation/decisions-pending.md) row *The crates.io README's relative links* is marked built; the post-publish 200-check stays owed, keyed to the `1.0.0-rc.23` publish.
+
+**Mutants, each applied and reverted:** an untracked `design/scratch.md` with the line in a ```` ```sh ```` block, red, the census naming it; `--locked` → `--lockee` in `crates/cli/README.md`, red on the derivation assertion.
+
 ## 2026-10-03 — M55 Increment 10 / T2: `jigc`'s `readme` names the generated crate README, proved on the packaged bytes
 
 `crates/cli/Cargo.toml` now says `readme = "README.md"`, the file `dev/crate-readme` writes; `jigc-engine` stays readme-less. `package_contents::the_packaged_readme_is_the_generated_one` runs `cargo package --no-verify -p jigc-engine -p jigc --offline --allow-dirty` into a `CARGO_TARGET_DIR` it owns, reads `README.md` out of `jigc-<CARGO_PKG_VERSION>.crate` with `tar -xzOf`, and asserts the `jigc-engine` tarball lists no root `README.md`. [release.md](implementation/release.md) → What the package carries describes the generated README and keeps the rc.22 finding as history.
