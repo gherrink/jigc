@@ -808,3 +808,249 @@ fn the_staged_arm_still_routes_at_the_in_task_rename() {
         "the route's rename lands the requested title; got:\n{shown}",
     );
 }
+
+// ──────── The distinct-identity route follows where the id comes from (M55 inc 2 fix) ────────
+//
+// P5's route names a distinct *title* — correct only while the id is the title's slug. Three
+// other sources exist, and a route at the title under any of them is one that cannot be
+// satisfied: followed verbatim, it hands back the same refusal forever. Each test below
+// follows the emitted route and proves it lands, or (a fixed identity) that it names no
+// create to loop on.
+
+/// The foreign note a migration adopts as an idea.
+const FOREIGN_NOTE: &str = "notes/foreign.md";
+const FOREIGN_TITLE: &str = "Some Foreign Note";
+
+/// The id a `jigc migrate` printed as `task minted: <id>`.
+fn migrate_task(stdout: &str) -> String {
+    stdout
+        .lines()
+        .find_map(|line| line.strip_prefix("task minted: "))
+        .unwrap_or_else(|| panic!("`jigc migrate` prints `task minted: <id>`; got:\n{stdout}"))
+        .trim()
+        .to_string()
+}
+
+/// **The migration's recorded `--slug` (`doc author`).** A migration minted with `--slug`
+/// onto a committed idea's id authors under that override whatever the payload's `title:`
+/// says, so the route must not send the agent back to the payload title — it did, and
+/// following it re-raised the same `write.title-ignored` at the same id. The route is
+/// discarding the task and re-migrating under a distinct slug; run verbatim, the author
+/// then lands at that slug.
+#[test]
+fn a_migration_slug_onto_a_committed_id_routes_at_a_re_migrate_not_the_payload_title() {
+    let (corpus, landed) = arrange(None);
+    let foreign = corpus.repo().join(FOREIGN_NOTE);
+    fs::create_dir_all(foreign.parent().expect("a parent")).expect("mk notes/");
+    fs::write(&foreign, format!("# {FOREIGN_TITLE}\n\nbody\n")).expect("write the note");
+    corpus.git(&["add", "--", FOREIGN_NOTE]);
+    corpus.git(&["commit", "-q", "-m", "chore: a foreign note"]);
+    let task = migrate_task(&corpus.jigc_ok(&[
+        "migrate",
+        FOREIGN_NOTE,
+        "--as",
+        "idea",
+        "--slug",
+        landed.slug(),
+    ]));
+
+    let author = [
+        "doc",
+        "author",
+        "idea",
+        "--from-file",
+        "-",
+        "--task",
+        &task,
+        "--format",
+        "json",
+    ];
+    let out = corpus.jigc_stdin(&author, &payload(FOREIGN_TITLE));
+    let what = format!("a migration's `--slug` authoring onto `{}`", landed.address);
+    let finding = assert_title_ignored(&out, &landed.address, &what);
+    let route = finding["route"].as_str().unwrap_or_default().to_owned();
+    assert!(
+        !route.contains("set the payload's `title:`") && !route.contains("jigc doc author"),
+        "{what}: the id is the override, so no payload title changes it — the route must \
+         not send the agent back to the payload; got: {route}",
+    );
+
+    // Follow the route verbatim: the discard, then the re-migrate with its one placeholder.
+    let discard = backticked_command(&route, "jigc task discard", &what);
+    let discarded = run_emitted(&corpus, discard, None);
+    assert_eq!(
+        discarded.status.code(),
+        Some(0),
+        "the route's discard runs; {discard}\n{}",
+        text(&discarded),
+    );
+    let distinct = format!("{}-migrated", landed.slug());
+    let remigrate = backticked_command(&route, "jigc migrate", &what).replace("<slug>", &distinct);
+    let remigrated = run_emitted(&corpus, &remigrate, None);
+    assert_eq!(
+        remigrated.status.code(),
+        Some(0),
+        "the route's re-migrate runs; {remigrate}\n{}",
+        text(&remigrated),
+    );
+    let task = migrate_task(&String::from_utf8_lossy(&remigrated.stdout));
+    let author = [
+        "doc",
+        "author",
+        "idea",
+        "--from-file",
+        "-",
+        "--task",
+        &task,
+        "--format",
+        "json",
+    ];
+    let landed_again = corpus.jigc_stdin(&author, &payload(FOREIGN_TITLE));
+    let ack: serde_json::Value = stdout_json(&landed_again, &[0], "the re-run `doc author`");
+    assert_eq!(
+        ack["target"]["slug"], distinct,
+        "the author lands at the distinct slug"
+    );
+}
+
+/// **A `--slug` in force (`doc create`).** The id is the slug, so the route must not offer
+/// a distinct `--title` as a correction; its command, followed with a distinct `--slug`
+/// and the same title, lands beside the committed idea.
+#[test]
+fn a_create_slug_onto_an_occupied_id_routes_at_a_distinct_slug() {
+    let (corpus, landed) = arrange(Some(NEW_ENTRY));
+    let task = corpus.start_workflow("park-idea", "re-file under a taken slug");
+    let title = "Totally Distinct Title";
+    let out = corpus.jigc(&[
+        "doc",
+        "create",
+        "idea",
+        "--title",
+        title,
+        "--slug",
+        landed.slug(),
+        "--task",
+        &task,
+        "--format",
+        "json",
+    ]);
+    let what = format!("`doc create --slug {}`", landed.slug());
+    assert_already_exists(&out, "create", &landed.address, &what);
+    let finding = refusal(&out, &what);
+    let route = finding["route"].as_str().unwrap_or_default();
+    assert!(
+        !route.contains("distinct `--title`"),
+        "{what}: the id is the `--slug`, so a distinct `--title` changes nothing; got: {route}",
+    );
+    let beside = format!("{}-beside", landed.slug());
+    let command = backticked_command(route, "jigc doc create", &what)
+        .replace("<title>", &format!("'{title}'"))
+        .replace("<slug>", &beside);
+    let followed = run_emitted(&corpus, &command, None);
+    assert_eq!(
+        followed.status.code(),
+        Some(0),
+        "the followed route lands; {command}\n{}",
+        text(&followed),
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&followed.stdout).trim(),
+        format!("idea:{beside}")
+    );
+}
+
+/// **A fixed identity (a singleton under `new: true`).** `vision` mints `vision:vision`
+/// whatever the title or `--slug`, so a distinct identity does not exist: the route must say
+/// so and name no `--title`/`--slug` create — every such command re-raises this refusal.
+#[test]
+fn a_singleton_under_new_routes_at_no_distinct_identity() {
+    const FORM_VISION: &str = include_str!("../packs/methodology/workflows/form-vision.yaml");
+    const VISION_ENTRY: &str = "{ type: vision, as: vision }";
+    assert!(
+        FORM_VISION.contains(VISION_ENTRY),
+        "the premise: form-vision grants `{VISION_ENTRY}`"
+    );
+    let corpus = TrialCorpus::build(State::CommittedSingletons);
+    let shadow = ".jigc/config/workflows/form-vision.yaml";
+    let path = corpus.repo().join(shadow);
+    fs::create_dir_all(path.parent().expect("a parent")).expect("mk the workflows dir");
+    fs::write(
+        &path,
+        FORM_VISION.replace(VISION_ENTRY, "{ type: vision, as: vision, new: true }"),
+    )
+    .expect("write the shadow");
+    corpus.git(&["add", "--", shadow]);
+    corpus.git(&["commit", "-q", "-m", "chore: shadow form-vision"]);
+
+    let task = corpus.start_workflow("form-vision", "revise the vision");
+    for (args, what) in [
+        (
+            vec!["--title", "Vision"],
+            "`doc create vision` under `new: true`",
+        ),
+        (
+            vec!["--title", "Vision Two", "--slug", "vision-two"],
+            "`doc create vision --slug` under `new: true`",
+        ),
+    ] {
+        let mut argv = vec!["doc", "create", "vision"];
+        argv.extend(args);
+        argv.extend(["--task", &task, "--format", "json"]);
+        let out = corpus.jigc(&argv);
+        let finding = refusal(&out, what);
+        assert_eq!(
+            (
+                finding["key"]["code"].as_str(),
+                finding["key"]["target"].as_str()
+            ),
+            (Some(ALREADY_EXISTS), Some("vision:vision")),
+            "{what}: keyed at the singleton; {finding:#}",
+        );
+        let route = finding["route"].as_str().unwrap_or_default();
+        assert!(
+            route.contains("fixed identity") && !route.contains("jigc doc create"),
+            "{what}: the route states that no distinct identity exists and names no create \
+             that would refuse again; got: {route}",
+        );
+    }
+}
+
+/// **The staged arm under a `--slug`.** The in-task rename route must carry the slug in
+/// force: a bare `--to` re-slugs the task's doc from the title, and the route's own promise —
+/// *re-run this write unchanged* — then met `write.identity-change`, because the re-run still
+/// mints the slug. Followed verbatim, the rename keeps the id and the re-run lands.
+#[test]
+fn the_staged_arm_under_a_slug_keeps_the_id_and_the_rerun_lands() {
+    let (corpus, _landed) = arrange(None);
+    let task = corpus.start_workflow("park-idea", "file under a slug and retitle");
+    let create = |title: &str| {
+        corpus.jigc(&[
+            "doc", "create", "idea", "--title", title, "--slug", "keep-me", "--task", &task,
+            "--format", "json",
+        ])
+    };
+    let first = create("First Title");
+    assert_eq!(first.status.code(), Some(0), "{}", text(&first));
+    let out = create("Second Title");
+    let what = "`doc create --slug keep-me` of a different title onto the task's own staged idea";
+    let finding = assert_title_ignored(&out, "idea:keep-me", what);
+    let route = finding["route"].as_str().unwrap_or_default();
+    let command = backticked_command(route, "jigc doc rename", what);
+    let followed = run_emitted(&corpus, command, None);
+    assert_eq!(
+        followed.status.code(),
+        Some(0),
+        "the rename route runs; {command}\n{}",
+        text(&followed),
+    );
+    let rerun = create("Second Title");
+    let ack: serde_json::Value = stdout_json(&rerun, &[0], "the unchanged re-run");
+    assert_eq!(
+        ack["target"]["slug"], "keep-me",
+        "the re-run lands on the same id"
+    );
+    assert_eq!(
+        staged_ideas(&corpus, &task),
+        vec!["idea:keep-me.md".to_owned()]
+    );
+}
