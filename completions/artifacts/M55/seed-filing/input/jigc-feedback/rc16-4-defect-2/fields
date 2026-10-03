@@ -1,0 +1,6 @@
+kind bug
+found-in review:M52-per-axis/(4,DEFECT 2)
+about config.repoint-failed
+jigc-version 1.0.0-rc.16
+tier tier-3
+status open

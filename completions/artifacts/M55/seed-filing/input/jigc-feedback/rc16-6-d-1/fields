@@ -1,0 +1,7 @@
+kind bug
+found-in review:M52-per-axis/(6,D-1)
+about jigc start
+jigc-version 1.0.0-rc.16
+tier tier-2
+status resolved
+pinned-by validate_previews_posture::orientation_reports_every_posture_finalize_refuses_without_refusing

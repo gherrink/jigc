@@ -32,29 +32,29 @@ The count of record for the M55 seed ([roadmap.md](../../../implementation/roadm
 
 | key | doctype | sources | verdict | seed doc |
 |---|---|---|---|---|
-| `rc16-1-a1-n1` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(1, A1-N1)` | | |
-| `rc16-1-a1-n2` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(1, A1-N2)` | | |
-| `rc16-2-defect-c` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(2, DEFECT C)` | | |
-| `rc16-4-defect-1` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(4, DEFECT 1)` | | |
-| `rc16-5-defect-2` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(5, DEFECT 2)` | | |
-| `rc16-6-d-1` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(6, D-1)` | | |
-| `rc16-6-d-2` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(6, D-2)` | | |
-| `rc16-7-a7-f3` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(7, A7-F3)` | | |
-| `rc16-1-a1-n3` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(1, A1-N3)` | | |
-| `rc16-2-defect-b` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(2, DEFECT B)` | | |
-| `rc16-3-a3-3` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(3, A3-3)` | | |
-| `rc16-4-defect-2` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(4, DEFECT 2)` | | |
-| `rc16-4-defect-3` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(4, DEFECT 3)` | | |
-| `rc16-5-defect-3` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(5, DEFECT 3)` | | |
-| `rc16-5-defect-4` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(5, DEFECT 4)` | | |
-| `rc16-5-c1` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(5, C1)` | | |
-| `rc16-5-d1` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(5, D1)` | | |
-| `rc16-6-d-3` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(6, D-3)` | | |
-| `rc16-6-d-4` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(6, D-4)` | | |
-| `rc16-7-a7-f1` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(7, A7-F1)` | | |
-| `rc16-7-a7-f2` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(7, A7-F2)` | | |
-| `rc16-8-n-1` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(8, N-1)` | | |
-| `rc16-8-n-2` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(8, N-2)` | | |
+| `rc16-1-a1-n1` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(1, A1-N1)` | open | |
+| `rc16-1-a1-n2` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(1, A1-N2)` | open | |
+| `rc16-2-defect-c` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(2, DEFECT C)` | open | |
+| `rc16-4-defect-1` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(4, DEFECT 1)` | resolved | |
+| `rc16-5-defect-2` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(5, DEFECT 2)` | open | |
+| `rc16-6-d-1` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(6, D-1)` | resolved | |
+| `rc16-6-d-2` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(6, D-2)` | open | |
+| `rc16-7-a7-f3` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(7, A7-F3)` | resolved | |
+| `rc16-1-a1-n3` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(1, A1-N3)` | open | |
+| `rc16-2-defect-b` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(2, DEFECT B)` | open | |
+| `rc16-3-a3-3` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(3, A3-3)` | resolved | |
+| `rc16-4-defect-2` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(4, DEFECT 2)` | open | |
+| `rc16-4-defect-3` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(4, DEFECT 3)` | open | |
+| `rc16-5-defect-3` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(5, DEFECT 3)` | open | |
+| `rc16-5-defect-4` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(5, DEFECT 4)` | open | |
+| `rc16-5-c1` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(5, C1)` | open | |
+| `rc16-5-d1` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(5, D1)` | open | |
+| `rc16-6-d-3` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(6, D-3)` | open | |
+| `rc16-6-d-4` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(6, D-4)` | open | |
+| `rc16-7-a7-f1` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(7, A7-F1)` | open | |
+| `rc16-7-a7-f2` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(7, A7-F2)` | open | |
+| `rc16-8-n-1` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(8, N-1)` | open | |
+| `rc16-8-n-2` | `jigc-feedback` | [M52](../M52/per-axis-review/README.md) `(8, N-2)` | open | |
 | `m53-settle-a` | `jigc-feedback` | [M53 Settle](../../../implementation/decisions-pending.md) **(D) (a)** | | |
 | `m53-settle-b` | `jigc-feedback` | [M53 Settle](../../../implementation/decisions-pending.md) **(D) (b)** | | |
 | `m53-settle-c` | `jigc-feedback` | [M53 Settle](../../../implementation/decisions-pending.md) **(D) (c)** | | |

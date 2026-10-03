@@ -1,0 +1,6 @@
+kind bug
+found-in review:M52-per-axis/(2,DEFECT C)
+about jigc task finalize
+jigc-version 1.0.0-rc.16
+tier tier-2
+status open

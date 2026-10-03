@@ -2,6 +2,24 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-03 — M55 Increment 9 / T3: the rc.16 rows re-driven — 4 resolved, 19 open, 0 refuted
+
+All 23 `rc16-*` rows were re-driven on `jigc 1.0.0-rc.22`, the debug binary built from `a768fe75`, each in a `dev/jigc-rig` rig. Their verdicts are in [seed-ledger.md](completions/artifacts/M55/seed-ledger.md), and their inputs are under [seed-filing/input/jigc-feedback/](completions/artifacts/M55/seed-filing/input/jigc-feedback/). `file-seed` over the batch exits 0 and prints `filed 23 docs (23 jigc-feedback, 0 inconsistency) in one commit`.
+
+**Resolved, each pinned by the test that pins its fix.**
+- The three names fixed in the 2026-09-23 batch were re-driven, not assumed fixed: `(4, DEFECT 1)` (`migrate_rollback::stage_phase_git_failure_yields_a_routed_finding_and_rolls_back`), `(6, D-1)` (`validate_previews_posture::orientation_reports_every_posture_finalize_refuses_without_refusing`) and `(7, A7-F3)` (`doc_show_relocated::a_doc_at_a_recorded_prior_home_is_routed_at_the_migration`).
+- `(3, A3-3)` was closed by M53 Increment 1 / T4 (`0afc1295`), pinned by `milestone_boundary_displacement::a_landed_milestone_boundary_keeps_every_byte_of_its_own_area_it_did_not_write`.
+
+**Open.** The other 19 still reproduce. Each `description` ends with what the re-drive showed.
+
+**Pins.**
+1. **`jigc-version` is the first version a row's own symptom was driven on.** That is `1.0.0-rc.16` for 22 rows. `(7, A7-F2)` takes `1.0.0-rc.15`, because the M52 record names it half 2 of M51's lead `(7, D-4)`, which was driven on rc.15. `(4, DEFECT 3)`'s M51 ancestor, C4, was a different cell (a refused `provision`), so that row keeps rc.16.
+2. **`found-in` copies the review's head without the space after the comma**, as in `review:M52-per-axis/(4,DEFECT 1)`, §1.3's example.
+3. **`kind` follows §1.1's members.** A false statement, a wrong route or a false registry claim is `bug`. `(6, D-4)` is `inconvenience`: the empty walk says nothing false, and the reader pays for the missing sentence.
+4. **Every repro was run verbatim from the input file before the batch was filed.** That run caught `rc16-1-a1-n1`'s second `dev/jigc-rig`, which failed with exit 127 because the first rig's `eval` had changed directory into `$REPO`. The repro now records the checkout as `src=$PWD` first.
+
+**Observed, not seeded.** At `(1, A1-N1)`'s `migrate` producer, a source typed `-- -dash-note.md` makes the debug binary's route fence panic at exit 101. The fence is doing its job by catching the unrunnable span, so this is the row's own symptom. A release binary has no such fence. The panic is recorded in that row's `description`.
+
 ## 2026-10-03 — M55 Increment 9 / T2: the filing driver, proved on a two-row sample
 
 [`file-seed`](completions/artifacts/M55/seed-filing/file-seed) and [its README](completions/artifacts/M55/seed-filing/README.md) are P4 and P5 as written. Over a scratch two-row input (not committed), it exits 0 and prints `filed 2 docs (1 jigc-feedback, 1 inconsistency) in one commit`, and `--out` holds both docs with every leaf set: a `resolved` `jigc-feedback` with `tier`, `pinned-by`, a fenced `#`-led `repro` and a `resolution`, and an `open` `inconsistency` with three sides, two of them with `says`. A scratch row with `status fixed` stops it at exit 1, naming the row and printing the binary's `write.malformed-value`, and `--out` is never created. **Mutants, each applied and reverted, each red:** the driver with one omitted-line signature swapped for a line the composed text carries, and with the boundary naming another milestone, refuses the row and names both checks; `seed_ledger::every_redriven_row_has_an_input_carrying_its_verdict` reddens on an input whose row has no verdict, a verdict with no input, an input whose `status` differs from the verdict, a verdict outside its doctype's set, and an input under a key its doctype lacks.

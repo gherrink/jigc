@@ -1,0 +1,6 @@
+kind bug
+found-in review:M52-per-axis/(5,D1)
+about jigc start
+jigc-version 1.0.0-rc.16
+tier tier-3
+status open
