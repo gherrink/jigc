@@ -1,0 +1,159 @@
+#!/usr/bin/env bash
+#
+# dev/crate-readme — generate crates/cli/README.md, the README crates.io shows for `jigc`,
+# from the root README.md (M55 S15; design/findings-channel.md -> 8).
+#
+# crates.io resolves a README's relative links against the package's path in the
+# repository (blob/HEAD/crates/cli/<link>), so the root README published as-is sends its
+# readers to paths that do not exist. The crate README is the root README with every
+# relative link made absolute at the base crates.io itself uses:
+#
+#   [Guide](crates/cli/guides/QUICKSTART.md#install)
+#   -> [Guide](<repository>/blob/HEAD/crates/cli/guides/QUICKSTART.md#install)
+#
+# where <repository> is `repository` in the root Cargo.toml's [workspace.package], read
+# here and never spelled. So a link means on crates.io what it means on GitHub.
+#
+# The transform, and nothing else:
+#   - one first line, an HTML comment saying the file is generated (GitHub hides it,
+#     crates.io strips it);
+#   - outside fenced code blocks, every inline link or image target `](target)` with no
+#     scheme, no leading `/` and not only an `#anchor` becomes <repository>/blob/HEAD/target,
+#     its anchor kept;
+#   - every other byte unchanged.
+# It never guesses: a link form it does not rewrite is refused, naming the line — a
+# reference-style definition with a relative target, a target that starts `./` or `../`
+# or `<`, an empty target, or a relative HTML `href`/`src`. Write the link as a plain
+# repository-root-relative inline link instead.
+#
+# The file is committed and fenced byte-for-byte against this script's output
+# (crates/cli/tests/crate_readme.rs), so edit the root README.md and regenerate; never
+# edit crates/cli/README.md. On a merge conflict in it: resolve the root README.md, then
+# regenerate (implementation/dev-workflow.md -> Before a pull request to main).
+#
+# Usage:
+#   dev/crate-readme             write crates/cli/README.md
+#   dev/crate-readme --stdout    print the transform, write nothing
+#
+# Exit status: 0 done · 1 refused, nothing written (a link form it does not rewrite, or
+# no `repository` in [workspace.package]; the reason on stderr) · 2 usage error.
+
+set -u
+
+stdout=0
+case "${1:-}" in
+    -h|--help) awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"; exit 0 ;;
+    --stdout) [ $# -eq 1 ] && stdout=1 ;;
+    '') [ $# -eq 0 ] ;;
+    *) false ;;
+esac || {
+    printf 'dev/crate-readme: usage: dev/crate-readme [--stdout]\n' >&2
+    exit 2
+}
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P) || exit 2
+repo_root=$(dirname -- "$script_dir")
+src="$repo_root/README.md"
+dest="$repo_root/crates/cli/README.md"
+
+repository=$(awk '
+    /^[ \t]*\[/ { in_section = ($0 ~ /^[ \t]*\[workspace\.package\][ \t]*(#.*)?$/); next }
+    in_section && /^[ \t]*repository[ \t]*=[ \t]*"/ {
+        value = $0
+        sub(/^[^"]*"/, "", value)
+        sub(/".*$/, "", value)
+        print value
+        exit
+    }
+' "$repo_root/Cargo.toml")
+while [ "${repository%/}" != "$repository" ]; do repository=${repository%/}; done
+if [ -z "$repository" ]; then
+    printf 'dev/crate-readme: refused, nothing written — no `repository` in [workspace.package] of %s\n' \
+        "$repo_root/Cargo.toml" >&2
+    exit 1
+fi
+
+# The source's last byte is a newline (or the file is empty) iff this is empty, because
+# command substitution strips one trailing newline.
+trailing_newline=1
+[ -n "$(tail -c 1 "$src")" ] && trailing_newline=0
+
+transform() {
+    awk -v base="$repository/blob/HEAD/" -v trailing_newline="$trailing_newline" -v quote="'" '
+        function refuse(why) {
+            printf "dev/crate-readme: refused, nothing written — README.md:%d: %s\n  %s\n", NR, why, $0 > "/dev/stderr"
+            failed = 1
+            exit 1
+        }
+        function absolute(t) { return t ~ /^[A-Za-z][A-Za-z0-9+.-]*:/ || t ~ /^\// || t ~ /^#/ }
+        # The run of `c` that opens `s`.
+        function run(s, c,    n) { n = 0; while (substr(s, n + 1, 1) == c) n++; return n }
+        function emit(s) { out = out (NR > 1 ? "\n" : "") s }
+
+        BEGIN { failed = 0; fence = "" }
+        {
+            line = $0
+            body = line
+            sub(/^ ? ? ?/, "", body)   # a fence line is indented at most three spaces
+            if (fence != "") {
+                if (run(body, fence) >= fence_len && substr(body, run(body, fence) + 1) ~ /^[ \t]*$/)
+                    fence = ""
+                emit(line)
+                next
+            }
+            if ((run(body, "`") >= 3 || run(body, "~") >= 3)) {
+                fence = run(body, "`") >= 3 ? "`" : "~"
+                fence_len = run(body, fence)
+                emit(line)
+                next
+            }
+
+            if (line ~ /^ ? ? ?\[[^]^][^]]*\]:/) {
+                target = line
+                sub(/^[^]]*\]:[ \t]*/, "", target)
+                sub(/^</, "", target)
+                sub(/[ \t>].*$/, "", target)
+                if (!absolute(target))
+                    refuse("a reference-style definition with a relative target is not rewritten; use an inline link")
+            }
+            probe = line
+            while (match(probe, "(href|src)[ \t]*=[ \t]*[\"" quote "]")) {
+                probe = substr(probe, RSTART + RLENGTH)
+                if (!absolute(probe))
+                    refuse("a relative HTML href/src is not rewritten; use an inline markdown link")
+            }
+
+            result = ""
+            rest = line
+            while ((at = index(rest, "](")) > 0) {
+                result = result substr(rest, 1, at + 1)
+                rest = substr(rest, at + 2)
+                match(rest, /^[^) \t]*/)
+                target = substr(rest, 1, RLENGTH)
+                rest = substr(rest, RLENGTH + 1)
+                if (target == "" || target == "." || target == ".." || target ~ /^</ || target ~ /^\.\.?\//)
+                    refuse("link target \"" target "\" is not rewritten; write it repository-root-relative, without ./ or ../")
+                result = result (absolute(target) ? target : base target)
+            }
+            emit(result rest)
+        }
+        END {
+            if (failed) exit 1
+            printf "%s", "<!-- Generated from the root README.md by dev/crate-readme; do not edit: edit README.md and regenerate. -->\n"
+            printf "%s", out
+            if (NR > 0 && trailing_newline) printf "\n"
+        }
+    ' "$src"
+}
+
+if [ "$stdout" -eq 1 ]; then
+    transform
+    exit $?
+fi
+
+tmp=$(mktemp "$dest.XXXXXX") || exit 1
+if ! transform > "$tmp"; then
+    rm -f -- "$tmp"
+    exit 1
+fi
+chmod 0644 "$tmp" && mv -f -- "$tmp" "$dest"

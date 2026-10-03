@@ -240,11 +240,10 @@ const ROOT_FILES: &[&str] = &[
 /// `implementation/decisions-pending.md`) at the planning commit, ahead of the increments
 /// that create them; `the_pending_list_is_empty` is lifted for M55's build in the same
 /// commit and restored at its close. The seed's entry, `completions/artifacts/M55/seed`
-/// (Increment 9, S11), was deleted by the commit that created the directory.
-const PENDING: &[(&str, &str)] = &[(
-    "crates/cli/README.md",
-    "M55, the crate README increment (S15): generated from the root README",
-)];
+/// (Increment 9, S11), was deleted by the commit that created the directory, and the crate
+/// README's, `crates/cli/README.md` (Increment 10, S15), by the commit that generated the
+/// file.
+const PENDING: &[(&str, &str)] = &[];
 
 /// The tree `jigc setup` installs into an adopter's repository (S15's adopter-path class).
 const ADOPTER_INSTALL_TREE: &str = ".claude/skills/";

@@ -18,6 +18,7 @@
 pub mod child_stdin;
 pub mod committing_doors;
 pub mod composed;
+pub mod crate_readme;
 pub mod frozen_pack;
 pub mod git_state;
 pub mod goldens;
