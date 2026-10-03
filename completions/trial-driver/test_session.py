@@ -12,11 +12,15 @@ Run: python3 completions/trial-driver/test_session.py
 """
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import pathlib
+import shutil
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
@@ -124,6 +128,112 @@ class SeedRefusals(unittest.TestCase):
             with self.assertRaises(SystemExit) as caught:
                 session.seed(pathlib.Path(d), ["t"], frozen)
             self.assertIn("force", str(caught.exception))
+
+
+#: A subagent is named by its `agentId`, never by the session id.
+_SUBAGENT = "agent-a0b447359ae72c2bd.jsonl"
+
+
+def _fake_drive(calls: list, *, main: bool = True, subagent: bool = True):
+    """Stand in for `_drive`: leave what `run-session.sh` leaves, with no container.
+
+    The out-dir gets the corpus, the rig's evidence, and the CLI's store copied to
+    `.session-transcript/projects/-work/` — the main transcript as `<id>.jsonl` and
+    a subagent's under `<id>/subagents/`. A resumed turn EXTENDS the transcript it
+    was staged with, as `--resume` does, so what reaches the freeze is only a whole
+    conversation if every turn was staged from the one before it.
+    """
+    def drive(corpus, out, prompt, *, tag, extra, home, strict):
+        session_id = extra[1]
+        staged = None
+        if home is not None:
+            staged = (home / ".claude" / "projects" / session.CONTAINER_SLUG
+                      / f"{session_id}.jsonl").read_text()
+        calls.append({"extra": list(extra), "staged": staged})
+
+        shutil.copytree(corpus, out)
+        (out / "PROVENANCE.txt").write_text("exit-code 0\n")
+        store = out / ".session-transcript" / "projects" / session.CONTAINER_SLUG
+        store.mkdir(parents=True)
+        if main:
+            if staged is None:
+                _write_transcript(store / f"{session_id}.jsonl", session_id, prompt)
+            else:
+                row = {"type": "user", "sessionId": session_id,
+                       "message": {"role": "user", "content": prompt}}
+                (store / f"{session_id}.jsonl").write_text(staged + json.dumps(row) + "\n")
+        if subagent:
+            (store / session_id / "subagents").mkdir(parents=True)
+            _write_transcript(store / session_id / "subagents" / _SUBAGENT,
+                              session_id, "a delegated prompt")
+        return 0
+    return drive
+
+
+class ASeedCarriesTheMainTranscriptBetweenTurns(unittest.TestCase):
+    """`_find_transcript` returns a LIST since 2026-09-10 — the main transcript, then
+    the subagents' — and `seed` went on treating it as one optional path. `is None`
+    is never true of a list, so the loud "produced no transcript" refusal could not
+    fire, turn 2 was staged from a list, and the freeze copied one. Nothing drove
+    the turn loop, so the only headless multi-turn mechanism here was dead and green.
+    """
+
+    TURNS = ["the opening turn", "the second turn"]
+
+    def _seed(self, d: pathlib.Path, calls: list, **shape) -> session.Frozen:
+        """Drive the real turn loop over a stubbed `_drive`; `calls` fills as it goes."""
+        corpus = d / "corpus"
+        corpus.mkdir()
+        (corpus / "README.md").write_text("# corpus\n")
+        with mock.patch.object(session, "_drive", _fake_drive(calls, **shape)), \
+                contextlib.redirect_stdout(io.StringIO()):
+            return session.seed(corpus, self.TURNS, d / "frozen")
+
+    def test_two_turns_freeze_as_one_conversation(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            d = pathlib.Path(d)
+            calls: list = []
+            fixture = self._seed(d, calls)
+            sid = fixture.session_id
+            store = pathlib.Path(".session-transcript") / "projects" / "-work"
+            work = d / "frozen-work"
+
+            self.assertEqual([c["extra"] for c in calls],
+                             [["--session-id", sid], ["--resume", sid]])
+            self.assertEqual(
+                calls[1]["staged"], (work / "turn01" / store / f"{sid}.jsonl").read_text(),
+                "turn 2 must resume turn 1's MAIN transcript, not a subagent's")
+            self.assertEqual(
+                fixture.transcript.read_bytes(),
+                (work / "turn02" / store / f"{sid}.jsonl").read_bytes(),
+                "the frozen conversation is the last turn's main transcript")
+            frozen_text = fixture.transcript.read_text()
+            self.assertIn("the opening turn", frozen_text)
+            self.assertIn("the second turn", frozen_text)
+            self.assertNotIn("a delegated prompt", frozen_text)
+            self.assertEqual(fixture.manifest["turns"], 2)
+            self.assertEqual(fixture.verify(), [])
+
+    def test_a_turn_that_produced_no_transcript_stops_the_seed_there(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            d = pathlib.Path(d)
+            calls: list = []
+            with self.assertRaises(SystemExit) as caught:
+                self._seed(d, calls, main=False, subagent=False)
+            self.assertIn("turn 1 produced no transcript", str(caught.exception))
+            self.assertEqual(len(calls), 1, "the next turn would have resumed nothing")
+            self.assertFalse((d / "frozen").exists(), "a void seed freezes nothing")
+
+    def test_a_subagent_transcript_is_not_mistaken_for_the_conversation(self) -> None:
+        """The list is non-empty here, so emptiness alone would let it through."""
+        with tempfile.TemporaryDirectory() as d:
+            d = pathlib.Path(d)
+            calls: list = []
+            with self.assertRaises(SystemExit) as caught:
+                self._seed(d, calls, main=False, subagent=True)
+            self.assertIn("turn 1 produced no transcript", str(caught.exception))
+            self.assertEqual(len(calls), 1)
+            self.assertFalse((d / "frozen").exists())
 
 
 class AColdForkIsVoidedNotScored(unittest.TestCase):
