@@ -2,6 +2,131 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-03 — M55 Increment 10 planning: decomposition
+
+Cut [Increment 10](implementation/roadmap.md) (*the crate README, generated — and the `cheap-vs-robust` hint fold*) into **4 ordered tasks**, grounded at HEAD `08bc85c9` on `milestone/findings-channel/crate-readme-generated` (tree clean), Increments 1–9 landed. Cross-ref [roadmap.md](implementation/roadmap.md) → Milestone 55 → Increment 10; the M55 Settle below (S14, S15); [findings-channel.md](design/findings-channel.md) → 8, 9, 10 (*README fence*); [planning-gate-record.md](completions/artifacts/M55/planning-gate-record.md) → rows 13–14. **Codes registered: none.** No schema shape, manifest, version integer, contract or production code moves: the increment adds one `dev/` script, one generated doc, one `readme` value, test arms, doc text and one slot hint.
+
+**Basis. Each item was driven at HEAD or read where marked.**
+
+- **Driven: an in-package `readme` is packaged whatever `include` says, byte-unchanged.** A scratch crate with `include = ["src/**"]` and `readme = "README.md"` beside a different root `README.md`: `cargo package --list` lists `README.md`, and the `.crate` holds the in-crate file's bytes. So flipping `jigc`'s `readme` to `README.md` needs no `include` edit, and `package_contents`'s `PUBLISHED_FILES` stays as it is.
+- **Driven: the packaged bytes can be read in a test, but only by packaging both crates.** `cargo package --no-verify -p jigc --offline --allow-dirty` into a private `CARGO_TARGET_DIR` exits 0 here, but under a `CARGO_HOME` whose index lacks the `jigc`/`jigc-engine` entries, which is a fresh CI runner's state, it exits 101: *no matching package named `jigc-engine`*. `cargo package --no-verify -p jigc-engine -p jigc --offline --allow-dirty` under that same `CARGO_HOME` exits 0 through cargo's local overlay. `tar -xzOf <target>/package/jigc-<v>.crate jigc-<v>/README.md` then yields the packaged README, which today `cmp`s equal to the root `README.md`. `--list` alone is unaffected, which is why `package_contents` is green on CI today.
+- **Driven: `dev_rig_parity`'s scan already covers a new `dev/` file.** `dev_files()` is `root_walk::files(dev/, |_| true)`, recursive, so `no_dev_script_removes_a_variable_path_recursively` reads the generator without any registration.
+- **Driven: the link fence binds the file's creation.** `PENDING` holds one entry, `crates/cli/README.md` (`doc_link_fence.rs:244`). `every_pending_path_is_still_absent` reddens the moment the file exists, so the commit that creates it deletes the entry, leaving `PENDING` empty. `the_pending_list_is_empty` stays `#[ignore]`d until Increment 11. `crates/cli/` is not under `HOMES`, so the generated file is not itself a live doc of that fence.
+- **Driven: the install-line census today.** Tracked markdown lines that start (after whitespace) with `cargo install jigc` appear in exactly two files: `README.md:19` and `crates/cli/guides/QUICKSTART.md:21`. Prose mentions such as `release.md`'s backticked line never start a line. **No fence counts copies today.** `install_line.rs` asserts only that the root README's line equals QUICKSTART's, so *treated as derived, not a second copy* needs a new census arm.
+- **Read: the root README's links.** It has 7 inline relative links to 6 targets: `crates/cli/guides/QUICKSTART.md` (×2), `crates/cli/guides/MIGRATING.md`, `VISION.md`, `WHY-JIGC.md`, `LICENSE-APACHE` and `LICENSE-MIT`. There are no reference-style definitions, images, anchors or `./`/`../` prefixes. `repository = "https://github.com/gherrink/jigc"` is `[workspace.package]` in the root `Cargo.toml`.
+- **Read: the hint is outside the hash.** `engine::manifest::schema_hash` hashes `erase_presentation(schema)`, which sets every `Slot.hint` to `None` (`manifest.rs:52`). `planning-record` is freeze-asserted at `schema-version: 1` and hash `0ba7ebb9…` (`methodology/config/schema-manifest.yaml:134`). The gate-record's row-14 spike drove the project-shadow half.
+- **Driven: the hint fold moves exactly 12 goldens.** `git grep -l "Two rationalizations barred"` hits the YAML, `methodology-docs.md` and twelve compose goldens: `start--planning--<state>` and `workflow-preview--planning--<state>` × 6 states. No `describe` or `doc schema` golden carries hints.
+- **Read: a link inside a gate cell is precedented.** The `census` cell carries `[dev-workflow.md](../implementation/dev-workflow.md) → …` verbatim into its hint, and `planning_record_schema` holds cell == hint byte-for-byte through the composed `{{ schema:planning-record }}`.
+- **Read: [release.md](implementation/release.md) states the rules this increment changes.** `:119`/`:121` say the README enters through `readme = "../../README.md"` and *the fix is keyed, not made*. `:131` says *the root README carries the one allowed copy … every other place points at QUICKSTART*. Neither is in §13's table, but by M51's rule each doc moves in the commit that makes it false, so they are revised there (T2, T3). The `jigc-engine` paragraph (`:123`) stays true.
+
+**Build pins — each a verified fact above, or a decision taken here from the locked docs:**
+
+- **P1 · The generator is `dev/crate-readme`, in bash** (eight of the nine `dev/` tools are bash; it adds no `python3` need to the gate, cf. the open seeded row (I)).
+  - Run with no argument, it writes `crates/cli/README.md`. With `--stdout`, it prints the transform and writes nothing. Any other argument is a usage error, exit 2 (the `dev/merge-logs` convention).
+  - It reads `repository` from the root `Cargo.toml`'s `[workspace.package]`, never a literal. It refuses with exit 1 when the key is absent.
+- **P2 · The transform, defined once in the script:**
+  - it prepends one HTML comment line saying the file is generated from the root `README.md` by `dev/crate-readme` and must not be edited (GitHub hides it and crates.io strips it);
+  - outside fenced code blocks, every inline link or image target with no scheme, no leading `/` and not anchor-only becomes `<repository>/blob/HEAD/<target>`, with any `#anchor` kept;
+  - every other byte is unchanged;
+  - it **refuses** (exit 1, naming the line) a link form it does not rewrite: a reference-style definition with a relative target, or a target starting with `./` or `../`. It never guesses.
+- **P3 · One reading of the transform in the tests.** `crates/cli/tests/support/crate_readme.rs` (registered in `support/mod.rs`) runs `dev/crate-readme --stdout` and returns its bytes, panicking on a non-zero exit. The byte fence (T1) and the install-line census (T3) both read it, so no test reimplements the transform.
+- **P4 · Suites.** The new `crates/cli/tests/crate_readme.rs` is registered in `groups/g_migrate.rs`, beside `install_line` and `package_contents`. The packaging arm grows `package_contents.rs`, and the census arm grows `install_line.rs`.
+
+**The tasks.**
+
+- **T1 · `dev/crate-readme`, the generated `crates/cli/README.md`, and its two fences.**
+  - **The change.**
+    - The script (P1, P2), and its output committed as `crates/cli/README.md`.
+    - `crate_readme::the_crate_readme_is_the_generated_transform_of_the_root`, the byte fence: the committed file == `support::crate_readme` output. Its failure message names `dev/crate-readme` as the fix.
+    - `crate_readme::every_crate_readme_link_lands_on_its_root_target`. It reads the root README's relative inline links itself (non-vacuous: at least one), then asserts:
+      - the crate README carries no relative link;
+      - its links in order are `<repository>/blob/HEAD/<root target>`, one per root link, with the repository read from `Cargo.toml` through the `toml` dev-dependency;
+      - each root target exists in the tree.
+    - `doc_link_fence.rs`: `PENDING` becomes empty, and its doc comment records the deletion on the seed entry's mold.
+    - [dev-workflow.md](implementation/dev-workflow.md) → Before a pull request to `main`, step 2, gains the merge note. `crates/cli/README.md` is never resolved in place. Its conflict goes to the human with every non-log conflict, and the resolution is *resolve the root `README.md`, regenerate with `dev/crate-readme`*. What an agent resolves is not widened, and `merge_logs_fence` (g) is unchanged.
+    - [findings-channel.md](design/findings-channel.md) → 8's first bullet names `dev/crate-readme`.
+  - *Red:* both suite arms fail at HEAD (no script, no file).
+  - *Done:*
+    - `cargo nextest run -p jigc -E 'test(/^(crate_readme|doc_link_fence|dev_rig_parity|test_target_registration)::/)'` is green.
+    - **Mutants, each applied and reverted, each red:**
+      - one byte changed in `crates/cli/README.md` reddens the byte fence;
+      - one byte changed in the root `README.md` prose reddens the byte fence;
+      - a `rm -rf "$X"` line in `dev/crate-readme` reddens `dev_rig_parity::no_dev_script_removes_a_variable_path_recursively`;
+      - a reference-style relative link added to the root makes `dev/crate-readme --stdout` exit 1 naming it.
+    - `dev/gate` is green.
+- **T2 · `jigc`'s `readme` names the generated file, proved on the packaged bytes.**
+  - **The change.**
+    - `crates/cli/Cargo.toml`: `readme = "README.md"`, its comment rewritten (in-package, so cargo packages it whatever `include` says). `crates/engine/Cargo.toml` is untouched.
+    - `package_contents::the_packaged_readme_is_the_generated_one`. It runs `cargo package --no-verify -p jigc-engine -p jigc --offline --allow-dirty` into a test-owned temp `CARGO_TARGET_DIR`, then:
+      - asserts the `jigc-<CARGO_PKG_VERSION>.crate`'s `README.md` (read by `tar -xzOf`) equals `crates/cli/README.md` byte-for-byte;
+      - asserts the `jigc-engine` crate's listing (`tar -tzf`) carries no `README.md`.
+    - `package_contents.rs`'s doc comments and the `the_readme_and_the_license_pair_are_published` message stop saying *root README*.
+    - [release.md](implementation/release.md) → What the package carries (`:119`, `:121`) states the generated crate README, its generator and its fence, with the rc.22 finding kept as history.
+  - *Red:* the new arm fails at HEAD + T1, because the packaged README is the root one.
+  - **Red-step assumption to prove:** the `cargo package` child runs green *inside* the gate's `cargo test`/`nextest` process, under the outer cargo's locks. It was verified standalone only. If it cannot, halt; never fall back to `--list`.
+  - *Done:*
+    - `cargo nextest run -p jigc -E 'test(/^package_contents::/)'` is green, `the_readme_and_the_license_pair_are_published` included (`README.md` still listed).
+    - A one-byte mutant of `crates/cli/README.md` reddens the new arm (applied, reverted).
+    - `dev/gate` is green.
+- **T3 · The install-line fence treats the crate README as derived; the pending row marked built.**
+  - **The change.** `install_line::the_install_line_has_one_owner_one_copy_and_one_derived_file`, a census over `git ls-files -co --exclude-standard '*.md'`, so an untracked file counts. The files with a line that starts (trimmed) with `cargo install jigc` must be exactly:
+    - `crates/cli/guides/QUICKSTART.md`, the owner;
+    - `README.md`, the one allowed copy;
+    - `crates/cli/README.md`, admitted **only** as derived: its bytes equal `support::crate_readme` output, and its extracted line equals QUICKSTART's.
+
+    Any other file is a second hand-written copy and is named. Also in this task:
+    - `support/install_line.rs`'s doc comment and [release.md](implementation/release.md) → Installing (`:131`) gain the derived file. *No release tooling touches a doc* is kept verbatim.
+    - [decisions-pending.md](implementation/decisions-pending.md) → *The crates.io README's relative links* (`:45`): the generator, fence and regenerated file are marked **built** (M55 Increment 10). The post-publish read stays **owed**, keyed to the `1.0.0-rc.23` publish (every link 200 at its intended target, the M54 publish-proof's method).
+  - *Done:*
+    - `cargo nextest run -p jigc -E 'test(/^(install_line|doc_link_fence)::/)'` is green with the derived file present.
+    - **Mutants, each applied and reverted, each red on the census arm:**
+      - an untracked `design/scratch.md` carrying the line in a ```` ```sh ```` block;
+      - `crates/cli/README.md` with its install line hand-edited by one byte.
+    - `dev/gate` is green.
+- **T4 · The `cheap-vs-robust` hint fold (S14), cell and hint in one commit.**
+  - **The change.** One sentence carrying the S14 clause **verbatim**, *every fork lists the option that removes the artifact that can drift*, is added in identical bytes to:
+    - the `cheap-vs-robust` slot `hint:` in `crates/cli/packs/methodology/schemas/planning-record.yaml`;
+    - that row's *What it requires recorded* cell at [methodology-docs.md](design/methodology-docs.md) → The planning gate-record.
+
+    The sentence points at [milestone-planning-workflow.md](implementation/milestone-planning-workflow.md) → Settle in the `census` cell's link form and does not restate M54's worked instance. The row's Rationale cell gains `M54`. The 12 planning compose goldens are re-pinned with `UPDATE_GOLDENS=1`. `schema-manifest.yaml` is not touched.
+  - *Red:* `planning_record_schema::the_composed_schema_projection_carries_every_gate_cell_verbatim` reddens on the cell edit alone and `compose_goldens::` on the hint edit alone. Each is applied, observed and then completed.
+  - *Done:*
+    - `cargo nextest run -p jigc -E 'test(/^(planning_record_schema|planning_gate_home|compose_goldens|manifest_freeze_fence|doc_link_fence)::/)'` is green.
+    - `git diff --stat` for the commit lists only the YAML, `methodology-docs.md` and the 12 goldens.
+    - In a `dev/jigc-rig` rig composing the methodology pack, `jigc start --workflow planning` prints the clause, and `jigc doc schema planning-record --format json` reports `schema-version` 1.
+    - `dev/gate` is green.
+
+**Why this order and this seam.** The file's creation, its `PENDING` deletion and its byte fence are one gate-green unit, because the link fence reddens on the path alone. The `readme` flip follows because its fence compares against the file T1 creates. The census needs the derived file to exist, and it closes row 13, so the pending row is marked there. Row 14 touches nothing rows 13's tasks read, so it goes last, as a self-contained unit. Its cell and hint are one commit because `planning_record_schema` holds them verbatim (S14, gate-record row 14).
+
+**Every Grouped-scope clause maps to a task.**
+
+| Grouped-scope clause | Task |
+|---|---|
+| A `dev/` script generating committed `crates/cli/README.md`, each relative link → `repository` + `/blob/HEAD/<root path>` | T1 |
+| `jigc`'s `readme` points at it; `jigc-engine` stays readme-less | T2 |
+| A fence: the crate README byte-for-byte the transform of the root | T1 |
+| `install_line.rs` treats it as derived, not a second copy | T3 |
+| The script inside `dev_rig_parity.rs`'s scan of `dev/` | T1 (automatic; proved by mutant) |
+| The link fence's pending entry deleted by the creating commit | T1 |
+| The merge note *resolve the root, regenerate* in dev-workflow.md → Before a pull request to `main` | T1 |
+| decisions-pending.md *Before the next release PR is merged* marked built, the post-publish read left owed | T3 |
+| Row 14: the clause into the slot `hint:` and the methodology-docs row in one commit, pointing at milestone-planning-workflow.md → Settle | T4 |
+
+| Proves clause | Task |
+|---|---|
+| Every generated link resolves to an existing path at its intended target | T1 |
+| `cargo package --list -p jigc` carries `README.md`; the packaged file equals the generated one | T2 |
+| The byte fence red on a one-byte drift of either file (applied) | T1 |
+| The install-line fence green with the derived copy, red on a second hand-written one | T3 |
+| `planning-record`'s `schema-hash` and `schema-version` unchanged; `jigc start --workflow planning` composes the new hint | T4 |
+
+**Declared bounds:**
+
+- The crates.io page is read only after `1.0.0-rc.23` publishes, which follows this build and the human's merge of release PR #2. It is owed in [decisions-pending.md](implementation/decisions-pending.md) (T3).
+- Tag-pinned links stay parked ([version-pinned-readme-links.md](ideas/version-pinned-readme-links.md)).
+- `blob/HEAD` resolves against the default branch, so the tree test proves each target exists here, and the 200-check proves it on GitHub.
+- T2's packaging arm was verified standalone and under a CI-shaped index, not yet inside the gate's process. That is T2's red-step assumption.
+
 ## 2026-10-03 — M55 Increment 9 / T8: the seeded rows point at their seed docs
 
 The eleven seeded [decisions-pending.md](implementation/decisions-pending.md) rows — the M53 Settle's (D) (a)–(f), the two owed `dev/` rows, the three CI rows — each collapse to one line, and the 37 register rows of [planning-findings.md](completions/artifacts/M55/planning-findings.md) each gain a link in their disposition cell; M52 Settle (a), the review READMEs and the declared bounds' design home are untouched (§7). **Pins:** (1) **The pointer form is fixed:** `- **<label>** Seeded as [<home>/<slug>.md](<link>). *Trigger:* <clause>` — the label verbatim (T1's reader finds rows by it), the trigger verbatim, and nothing else, so the finding's text has one home, its seed doc; the status is not restated, since the doc owns it. The CI python3 row's trigger is kept verbatim with its spent M54 arm; its seed doc says the M54 half landed. (2) **`seed_ledger::every_seeded_pending_and_register_row_points_at_its_seed_doc`** holds each `decisions-pending` row to that exact shape and each register disposition cell to a link resolving to the row's own seed doc. Mutants, each applied and reverted: a register row linking a sibling's doc, and text regrown between a pointer and its trigger, each redden it. (3) The M53 Settle's intro gains one sentence saying the rows below are pointers. The red-step assumption was checked before the edit: no suite asserts the collapsed rows' text.
