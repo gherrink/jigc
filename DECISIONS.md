@@ -2,6 +2,18 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-03 — M55 Increment 9 / T1: the seed ledger, counted and fenced
+
+**The deduped count is 91 rows — 79 `jigc-feedback`, 12 `inconsistency` — from 92 source entries.** [seed-ledger.md](completions/artifacts/M55/seed-ledger.md) records every row's sources before anything is filed, and `seed_ledger` (`g_methodology`) reads the sources themselves: the register's ids, the review heads from `### Tier 2` to `## B`, the M53 Settle's `(D)` rows, the owed and CI rows by bold label, and §6's two declared bounds. Every source row must sit in exactly one row's sources or in the exclusions with a reason, and no ledger source may name a row its source lacks, so a parser that reads nothing goes red rather than passing vacuously. [findings-channel.md](design/findings-channel.md) → 7 now points at the ledger in place of *~75* and *counted by the seed increment*. Its register row reads F1–F20 + T1–T5 (25), and it gains the bound row. **The one dedupe:** the declared bound **L3** is register row F6, so it joins `m55-f6`'s sources. Planning's 91 had already folded it in. Every other candidate overlap was read and kept apart, because each pair has different symptoms or a different producer:
+- F6 vs rc.19 `(2, N-4)`: the same shared-`.jigc` root, but a different symptom.
+- F7 vs M52 `(6, D-2)`: a fan-out sub-task, against a standalone `fix-task`.
+- T3 vs the `--private-target` litter: `jigc-trial-rig-fence*` trees, against `jigc-gate-target-*` trees.
+- M52 `(4, DEFECT 2)` vs rc.19 `(3, F-A)`: a host path printed by two different producers.
+- rc.18 `(2, F-1)`, closed on rc.19, vs rc.20 `(2, A2-2)`: a new cell.
+- rc.20 `(3, F-C)` vs M53 Settle (a) and (b): a route, against a code's identity.
+
+**Pins.** (1) **The source grammar.** A source is written `[<tag>](<file>) <id>`, with the id spelt as its source spells it: a register id, a review head's first backticked id, or a bold label. The link must resolve to the tag's file. This is why T8 keeps each collapsed row's opening bold label verbatim. (2) **M52 Settle is read only to prove that the exclusion of (a) names a real row.** Rows (b) and (c) are milestone-keyed design deferrals, which are outside S12's set and stay in decisions-pending. (3) **The ledger's headline count is fenced against its table** (rows, per-doctype rows, source entries). **Mutants, each applied and reverted, each red:** a row dropped, a source in two rows, an id its source lacks, a key prefix that does not match its first source, and a D row filed as `jigc-feedback`.
+
 ## 2026-10-03 — M55 Increment 9 planning: decomposition
 
 Cut [Increment 9](implementation/roadmap.md) (*the seed: two reporters, one store*) into **8 ordered tasks**, grounded at HEAD `a5db4c7f` on `milestone/findings-channel/seed-two-reporters-one-store` (tree clean), Increments 1–8 landed. Cross-ref [roadmap.md](implementation/roadmap.md) → Milestone 55 → Increment 9; the M55 Settle below (S11, S12, S13's bounds; R4 I3; residual R4); [findings-channel.md](design/findings-channel.md) → 1.1–1.6, 7; [planning-gate-record.md](completions/artifacts/M55/planning-gate-record.md) → row 12. **Codes registered: none.** No schema, manifest, version integer, contract or production code moves; the Rust this increment adds is two test suites and one link-fence entry deleted.
