@@ -48,9 +48,9 @@
 //! **absent** ([`every_pending_path_is_still_absent`]), so the increment that creates it
 //! also deletes its entry. Between milestones the list is empty, and
 //! [`the_pending_list_is_empty`] asserts it. M54 seeded the list's one entry and closed it
-//! empty. A later milestone that seeds an entry lifts that assertion in the same commit and
-//! restores it at its own close. A path no increment creates is a defect to fix, never a
-//! pending entry.
+//! empty; M55 seeded two and closed it empty too. A later milestone that seeds an entry
+//! lifts that assertion in the same commit and restores it at its own close. A path no
+//! increment creates is a defect to fix, never a pending entry.
 //!
 //! **Declared bounds.** The scan is a lexer, not a markdown parser. A code span is read on
 //! one line: a backtick run pairs with the next run of the same length on that line, so a
@@ -236,13 +236,13 @@ const ROOT_FILES: &[&str] = &[
 /// M54's one seeded entry, `dev/runner-faithful` (Increment 7, S10), was deleted by the
 /// commit that created the file.
 ///
-/// M55 seeds two, both named by `design/findings-channel.md` (and the crate README by
+/// M55 seeded two, both named by `design/findings-channel.md` (and the crate README by
 /// `implementation/decisions-pending.md`) at the planning commit, ahead of the increments
-/// that create them; `the_pending_list_is_empty` is lifted for M55's build in the same
-/// commit and restored at its close. The seed's entry, `completions/artifacts/M55/seed`
-/// (Increment 9, S11), was deleted by the commit that created the directory, and the crate
-/// README's, `crates/cli/README.md` (Increment 10, S15), by the commit that generated the
-/// file.
+/// that created them; `the_pending_list_is_empty` was lifted for M55's build in the same
+/// commit and restored at its close (Increment 11). The seed's entry,
+/// `completions/artifacts/M55/seed` (Increment 9, S11), was deleted by the commit that
+/// created the directory, and the crate README's, `crates/cli/README.md` (Increment 10,
+/// S15), by the commit that generated the file.
 const PENDING: &[(&str, &str)] = &[];
 
 /// The tree `jigc setup` installs into an adopter's repository (S15's adopter-path class).
@@ -752,7 +752,6 @@ fn every_pending_path_is_still_absent() {
 }
 
 #[test]
-#[ignore = "lifted while M55 is in flight: PENDING carries its seeded path; restore at M55's close (O1)"]
 fn the_pending_list_is_empty() {
     let leftover: Vec<String> = PENDING
         .iter()
