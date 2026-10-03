@@ -476,11 +476,14 @@ fn an_occupied_id_outranks_the_bound_role() {
     );
 
     let out = mint(&corpus, "create", FIRST_TITLE, &task);
-    assert_already_exists(
-        &out,
-        "create",
-        &landed.address,
-        "a create minting the occupied id",
+    let finding = refusal(&out, "a create minting the occupied id");
+    assert_eq!(
+        (
+            finding["key"]["code"].as_str(),
+            finding["key"]["target"].as_str()
+        ),
+        (Some(ALREADY_EXISTS), Some(landed.address.as_str())),
+        "the occupied id answers first; {finding:#}",
     );
     assert!(
         !text(&out).contains("write.identity-change"),
@@ -491,6 +494,151 @@ fn an_occupied_id_outranks_the_bound_role() {
         bound_idea(&corpus, &task).as_deref(),
         Some("idea:fresh-thought")
     );
+}
+
+/// **(e′) The route under a bound role (M55 audit O23).** Once this task holds its doc,
+/// every distinct identity is a *second* doc, refused `write.identity-change` — so
+/// `create.already-exists` may not route at a distinct `--title` / `--slug` / payload
+/// `title:`, which followed would refuse again. It names what is true instead: this task
+/// already holds its doc, finish or abandon it, and file the next one in its own task. By
+/// both minting doors. **Followed verbatim** — the discard, then the `jigc start` with its
+/// `<intent>` filled — the next task's create of the same title meets the gate with *no*
+/// role bound, so its route is the distinct identity, and the `--slug` it names lands.
+#[test]
+fn a_bound_role_routes_an_occupied_id_at_the_next_task_not_a_distinct_identity() {
+    let (corpus, landed) = arrange(Some(NEW_ENTRY));
+    for verb in ["create", "author"] {
+        let task = corpus.start_workflow("park-idea", &format!("bind then re-file by {verb}"));
+        corpus.jigc_ok(&[
+            "doc",
+            "create",
+            "idea",
+            "--title",
+            "Fresh Thought",
+            "--task",
+            &task,
+        ]);
+        let what = format!("`doc {verb}` of the occupied id under a bound role");
+        let out = mint(&corpus, verb, FIRST_TITLE, &task);
+        let finding = refusal(&out, &what);
+        assert_eq!(
+            finding["key"]["code"].as_str(),
+            Some(ALREADY_EXISTS),
+            "{what}: {finding:#}",
+        );
+        let route = finding["route"].as_str().unwrap_or_default();
+        assert!(
+            route.contains("already holds `idea:fresh-thought`"),
+            "{what}: the route names the doc this task already holds; got: {route}",
+        );
+        for dead in [
+            "jigc doc create",
+            "jigc doc author",
+            "jigc doc rename",
+            "<slug>",
+        ] {
+            assert!(
+                !route.contains(dead),
+                "{what}: no in-task mint or rename is offered (`{dead}`) — each would \
+                 meet `write.identity-change`; got: {route}",
+            );
+        }
+        for exit in [
+            format!("jigc task finalize {task}"),
+            format!("jigc task discard {task} --force"),
+            "jigc start --workflow park-idea \"<intent>\"".to_string(),
+        ] {
+            assert!(
+                route.contains(&format!("`{exit}`")),
+                "{what}: the route names `{exit}`; got: {route}"
+            );
+        }
+
+        // Follow it: abandon this task, then start the next one as emitted.
+        let discard = backticked_command(route, "jigc task discard", &what);
+        let discarded = run_emitted(&corpus, discard, None);
+        assert_eq!(discarded.status.code(), Some(0), "{}", text(&discarded));
+        let start = backticked_command(route, "jigc start", &what)
+            .replace("<intent>", &format!("file the next thought by {verb}"));
+        let started = run_emitted(&corpus, &start, None);
+        assert_eq!(started.status.code(), Some(0), "{}", text(&started));
+        let next = migrate_task(&String::from_utf8_lossy(&started.stdout));
+
+        // The next task's same-title mint has no role bound, so it routes at a distinct
+        // identity — and `create`'s `--slug` lands beside the committed idea.
+        let again = mint(&corpus, verb, FIRST_TITLE, &next);
+        assert_already_exists(&again, verb, &landed.address, &what);
+        let beside = format!("{}-{verb}", landed.slug());
+        let landed_beside = corpus.jigc_ok(&[
+            "doc",
+            "create",
+            "idea",
+            "--title",
+            FIRST_TITLE,
+            "--slug",
+            &beside,
+            "--task",
+            &next,
+        ]);
+        assert_eq!(landed_beside.trim(), format!("idea:{beside}"));
+        corpus.jigc_ok(&["task", "discard", &next, "--force"]);
+    }
+}
+
+/// **(e″) `write.identity-change` under a create-only gate (M55 audit O23).** With the role
+/// bound and the minted id *free*, a distinct `--title` — and the committed title under a
+/// distinct `--slug` — are a second doc, refused `write.identity-change`; its route, the
+/// in-task rename of the doc this task holds, is no dead end under `new: true`: run
+/// verbatim, it exits 0 and the held doc carries the asked-for identity.
+#[test]
+fn under_new_the_identity_change_route_runs() {
+    let (corpus, landed) = arrange(Some(NEW_ENTRY));
+    let beside = format!("{}-again", landed.slug());
+    for (args, moved_to) in [
+        (
+            vec!["--title", "Something Else"],
+            "idea:something-else".to_string(),
+        ),
+        (
+            vec!["--title", FIRST_TITLE, "--slug", beside.as_str()],
+            format!("idea:{beside}"),
+        ),
+    ] {
+        let task = corpus.start_workflow("park-idea", "bind then mint another");
+        corpus.jigc_ok(&[
+            "doc",
+            "create",
+            "idea",
+            "--title",
+            "Fresh Thought",
+            "--task",
+            &task,
+        ]);
+        let mut argv = vec!["doc", "create", "idea"];
+        argv.extend(args.iter().copied());
+        argv.extend(["--task", task.as_str(), "--format", "json"]);
+        let what = format!("`doc create {}` under a bound role", args.join(" "));
+        let finding = refusal(&corpus.jigc(&argv), &what);
+        assert_eq!(
+            finding["key"]["code"].as_str(),
+            Some("write.identity-change"),
+            "{what}: {finding:#}",
+        );
+        let route = finding["route"].as_str().unwrap_or_default();
+        let rename = backticked_command(route, "jigc doc rename", &what);
+        let followed = run_emitted(&corpus, rename, None);
+        assert_eq!(
+            followed.status.code(),
+            Some(0),
+            "{what}: the route runs; {rename}\n{}",
+            text(&followed),
+        );
+        assert_eq!(
+            bound_idea(&corpus, &task).as_deref(),
+            Some(moved_to.as_str())
+        );
+        corpus.jigc_ok(&["task", "discard", &task, "--force"]);
+    }
 }
 
 /// **(f)** A committed doc this task already copied in — by `set-slot` — is still on disk

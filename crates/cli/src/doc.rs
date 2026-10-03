@@ -199,7 +199,8 @@ own task. A dropped title over a COMMITTED doc is someone else's doc, so it rout
 distinct `--title` instead, or `--slug <slug>` to mint beside it. Under a create-gate \
 entry carrying `new: true` there is no create-or-update: an id already on disk at the \
 doctype's home is refused before anything is copied in (`create.already-exists`) — \
-choose a distinct `--title`, or pass `--slug <slug>`.";
+choose a distinct `--title`, or pass `--slug <slug>`; once this task already holds its \
+doc, the next one is its own task.";
 
 /// The `doc rename` long help. The fourth soliciting surface that mints a slug, so
 /// it earns the same stated-at fence as `create` / `add-item` / the `{{schema:}}`
@@ -429,7 +430,8 @@ pub enum DocCommand {
     ///
     /// Under a create-gate entry carrying `new: true` there is no create-or-update at all:
     /// a `title:` whose id is already on disk at the doctype's home is refused before
-    /// anything is copied in (`create.already-exists`) — set a distinct `title:`.
+    /// anything is copied in (`create.already-exists`) — set a distinct `title:`; once
+    /// this task already holds its doc, the next one is its own task.
     ///
     /// Payload shape (YAML; `--from-file`), mirroring the document's structure:
     ///
@@ -3425,9 +3427,16 @@ fn title_pre_check(
             state::create_occupied(&task.dir, schema, ty, title, slug_override, &task.jigc_home)
                 .map_err(|f| block(&f, verb, ty))?
     {
+        // Which correction is open depends on whether this task already holds its doc. A
+        // bound role means every distinct identity the agent could choose is a *second*
+        // document, which rank 2 refuses (`write.identity-change`) — so routing at one
+        // would hand over a command that refuses again (M55 audit O23).
+        let route = match held_instance(task, schema, entry)? {
+            Some(held) => one_doc_per_task_route(task, verb, &held, &entry.as_role),
+            None => distinct_identity_route(task, verb, schema, slug_override)?,
+        };
         return Err(DocFailure::block(state::already_exists_finding(
-            &address,
-            distinct_identity_route(task, verb, schema, slug_override)?,
+            &address, route,
         )));
     }
 
@@ -3456,24 +3465,18 @@ fn title_pre_check(
     // orphan as an incumbent refused the retry with a sentence naming a doc that is not
     // there and a `jigc doc rename` route that could not run. A binding whose document is
     // in neither home is stale, so the mint proceeds and re-points it.
-    if !entry.as_role.is_empty() {
-        let roles =
-            state::RolesRecord::load(&task.dir).context("could not read the task's bound roles")?;
-        if let Some(bound) = roles.get(&entry.as_role)
-            && bound.starts_with(&format!("{ty}:"))
-            && bound != incumbent.address
-            && state::bound_instance_present(&task.dir, schema, bound, &task.jigc_home)
-        {
-            return Err(DocFailure::block(identity_divergence_refusal(
-                task,
-                verb,
-                bound,
-                &incumbent.address,
-                &entry.as_role,
-                title,
-                slug_override,
-            )));
-        }
+    if let Some(bound) = held_instance(task, schema, entry)?
+        && bound != incumbent.address
+    {
+        return Err(DocFailure::block(identity_divergence_refusal(
+            task,
+            verb,
+            &bound,
+            &incumbent.address,
+            &entry.as_role,
+            title,
+            slug_override,
+        )));
     }
 
     // Rank 3 — the silent no-op: an incumbent body means the create writes no title.
@@ -3505,6 +3508,70 @@ fn title_pre_check(
         }
     }
     Ok(())
+}
+
+/// The doc this task's create-gate role **holds** — the bound `<type>:<slug>` of this
+/// entry's `as:` role, when it names this doctype and that doc is actually there
+/// ([`state::bound_instance_present`]; a stale binding holds nothing). The premise rank 2
+/// refuses on, read once for rank 0's route.
+fn held_instance(
+    task: &ActiveTask,
+    schema: &Schema,
+    entry: &engine::compose::AllowsCreate,
+) -> Result<Option<String>> {
+    if entry.as_role.is_empty() {
+        return Ok(None);
+    }
+    let roles =
+        state::RolesRecord::load(&task.dir).context("could not read the task's bound roles")?;
+    Ok(roles
+        .get(&entry.as_role)
+        .filter(|bound| bound.starts_with(&format!("{}:", schema.ty)))
+        .filter(|bound| state::bound_instance_present(&task.dir, schema, bound, &task.jigc_home))
+        .map(str::to_owned))
+}
+
+/// The route when the id a create mints is taken **and this task already holds its doc**
+/// (M55 audit O23). A distinct `--title`, a `--slug` or a distinct payload `title:` would
+/// each mint a second doc beside `held`, which the one-doc-per-role rule refuses
+/// (`write.identity-change`) — so [`distinct_identity_route`] would be a route that cannot
+/// be satisfied. What is true is that this task has filed its doc: the route says so, and
+/// names the exits that end this task (the sub-task discriminator asked here, at the
+/// construction site, as `task discard`'s staged-doc refusal asks it — a milestone
+/// sub-task is landed by its milestone's boundary, never by `jigc task finalize`) and the
+/// start of the task the next doc belongs in. A human route: the next task's intent is the
+/// agent's.
+fn one_doc_per_task_route(
+    task: &ActiveTask,
+    verb: &str,
+    held: &str,
+    role: &str,
+) -> engine::finding::Route {
+    let id = &task.id;
+    let distinct = if verb == "create" {
+        "a distinct `--title` or a `--slug`"
+    } else {
+        "a distinct payload `title:`"
+    };
+    let land = match engine::milestone::owning_milestone(&task.jigc_home.join(".jigc"), id) {
+        Some(milestone) => format!(
+            "land it with `jigc milestone finalize {milestone}` (this task is a sub-task of \
+             milestone `{milestone}`, whose boundary is the only one that commits it)"
+        ),
+        None => format!("land it with `jigc task finalize {id}`"),
+    };
+    let workflow = state::read_workflow_id(&task.dir)
+        .ok()
+        .flatten()
+        .map(|id| id.trim().to_string())
+        .unwrap_or_else(|| "<workflow>".to_string());
+    engine::finding::Route::human(format!(
+        "this task already holds `{held}` (its `{role}`), and a task carries one doc per role — \
+         {distinct} would mint a second one beside it, and a second doc in one task is \
+         refused too. Finish this task first: {land}, or abandon it with \
+         `jigc task discard {id} --force`; then file the next one in its own task: \
+         `jigc start --workflow {workflow} \"<intent>\"`"
+    ))
 }
 
 /// The route at a **distinct identity** — the correction when the id a create mints is
