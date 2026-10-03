@@ -237,7 +237,18 @@ its evidence condensed, the repro it drove, and the triage disposition.
 
 The auditor recorded both inside passing scenarios and asked for neither as a finding: the first *for
 triage*, the second as older than M55. **The triage gave neither a disposition** — no commit, no
-register row and no seed doc names them. They are carried here as recorded and remain unfiled.
+register row and no seed doc names them. Both were then fixed now, after the verdict above, one commit each:
+
+- **O23 — scenario 23, `create.already-exists` under a bound role** → fix-now, `4aca049b`. Its route
+  named a distinct `--title` / `--slug` that the one-doc-per-role rule refuses (`write.identity-change`);
+  it now names the doc the task holds, the exits that end the task, and the `jigc start --workflow` the
+  next doc belongs in. Red: `create_only_gate::a_bound_role_routes_an_occupied_id_at_the_next_task_not_a_distinct_identity`;
+  the identity-change route under `new: true` was checked and runs, pinned by
+  `create_only_gate::under_new_the_identity_change_route_runs`.
+- **O24 — scenario 24, `doc list <type>`'s staged note** (pre-existing on rc.22) → fix-now, `1e7382fe`.
+  It named any open task staging anything; it now reads the staged arm's own row predicate, so it names
+  only tasks staging that doctype and its route never lands on an empty listing. Red:
+  `doc_list::a_narrowed_listing_names_only_tasks_staging_that_doctype`.
 
 ## Surfaced by the fixers — two fixed, one filed open
 
@@ -318,7 +329,7 @@ are in [genuine-spawn/](genuine-spawn/README.md).
 - **`jigc task validate <sub>` blocks on the omitted commit doc under `squash=true`** (scenario 17) — the
   declared bound owed to that re-review, reproduced, not new.
 - **F21 is open** and its fix needs an engine API change.
-- **The two e2e observations are unfiled** (scenarios 23 and 24).
+- **The two e2e observations are fixed** (scenarios 23 and 24 → `4aca049b`, `1e7382fe`; → The two observations).
 - **The genuine spawn's blackboard witness rests partly on self-report.**
 
 ## What is next
