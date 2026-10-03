@@ -89,6 +89,8 @@ mod route_followability;
 mod seed_fence;
 #[path = "../seed_ledger.rs"]
 mod seed_ledger;
+#[path = "../structural_delta_resolution.rs"]
+mod structural_delta_resolution;
 #[path = "../sub_task_composition.rs"]
 mod sub_task_composition;
 #[path = "../undeclared_address_writes.rs"]

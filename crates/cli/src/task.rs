@@ -4274,7 +4274,8 @@ impl TaskArea {
             self.pack.as_ref(),
             &self.project_config(),
             &workflow_id,
-            |source| crate::start::composes_step(&def, source, MIGRATION_FINALIZE_STEP),
+            &def,
+            |def, source| crate::start::composes_step(def, source, MIGRATION_FINALIZE_STEP),
         )
     }
 
@@ -4308,7 +4309,8 @@ impl TaskArea {
             self.pack.as_ref(),
             &self.project_config(),
             &workflow_id,
-            |source| doc_only_commit(&def, source, sub_task),
+            &def,
+            |def, source| doc_only_commit(def, source, sub_task),
         )
     }
 

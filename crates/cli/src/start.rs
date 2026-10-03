@@ -1586,7 +1586,14 @@ pub(crate) fn compose_minted_in_repo(
     let (resolved, overrides) = resolve_cascade(pack, project_config)?;
     let defs = CascadeDefs::new(&resolved, project_config);
     let workflow_bytes = defs.read_workflow(pack, workflow_id)?;
-    let def = load_workflow_def(&workflow_bytes).map_err(finding_to_err)?;
+    // The project's phase-4 `structural-op` deltas apply here as at the fresh front door
+    // ([`apply_project_structure`]), so the verb-minted text is the one a resume and the
+    // finalize-time arms read.
+    let (def, scoped) = apply_project_structure(
+        load_workflow_def(&workflow_bytes).map_err(finding_to_err)?,
+        workflow_id,
+        &overrides.deltas,
+    )?;
 
     let origin = pack.origin_pack(PackResourceKind::Workflows, &ResourceId::from(workflow_id));
     let commands = load_catalog(origin)?;
@@ -1606,7 +1613,7 @@ pub(crate) fn compose_minted_in_repo(
     stepsource.scope_to_workflow(workflow_id);
     let findings = compose::workflow_refs_with_fills(
         &workflow_bytes,
-        &[],
+        &scoped,
         &overrides.slot_fills,
         &overrides.fills,
         &stepsource,
@@ -1802,19 +1809,18 @@ fn compose_core(
     slug_override: Option<&str>,
     preview: bool,
 ) -> Result<Composition> {
+    // Phase 4 — the workflow as the project's cascade resolves it: the definition (a
+    // whole-file shadow wins) with the scoped `structural-op` deltas applied to its
+    // include id list, through the one seam every door that composes or decides from a
+    // workflow shares ([`apply_project_structure`]). The gate below re-runs the same
+    // pass over `scoped` to validate the post-phase-4 list for delta-introduced
+    // cycles/dangles.
     let workflow_bytes = defs.read_workflow(pack, workflow_id)?;
-    let mut def = load_workflow_def(&workflow_bytes).map_err(finding_to_err)?;
-    // The manifest's `structural-op` deltas scoped to *this* workflow id — a
-    // manifest may carry deltas for several workflows; only these apply here.
-    let scoped = scoped_deltas(workflow_id, &overrides.deltas);
-    // Phase 4 — apply the scoped deltas to the include id list, before include
-    // expansion. A `replace-step` swaps a pack step id for a project-shadowed one,
-    // so the layer-aware source resolves the new id to the project body. An
-    // orphaned anchor (a delta whose anchor a same-manifest delta removed) surfaces
-    // here as a blocking, routed finding (`overrides.md` → Within-layer manifest
-    // order); the gate below re-runs the same pass to validate the post-phase-4
-    // list for delta-introduced cycles/dangles.
-    def.includes = apply_structural_deltas(&def.includes, &scoped).map_err(finding_to_err)?;
+    let (def, scoped) = apply_project_structure(
+        load_workflow_def(&workflow_bytes).map_err(finding_to_err)?,
+        workflow_id,
+        &overrides.deltas,
+    )?;
     // The command catalog is read against the composing workflow's **origin pack**
     // — the constituent that defines `workflow_id`'s top-level id — so a loser-pack
     // workflow's `{{cli.X}}` resolves against ITS OWN pack's `commands.yaml`, never
@@ -1995,6 +2001,35 @@ fn compose_core(
         also_open: Vec::new(),
         amend: None,
     })
+}
+
+/// **Phase 4 over a workflow definition** — `def` as the project's cascade resolves it:
+/// the manifest's `structural-op` deltas [`scoped_deltas`]-filtered to `workflow_id`,
+/// applied to its include id list **before** include expansion (`overrides.md` →
+/// Resolution algorithm phase 4 / Why structural deltas precede expansion). Returns the
+/// resolved definition and the scoped deltas, which the `workflow-refs` gate re-validates
+/// over the same list.
+///
+/// **The one seam**, because a delta decides *which steps a workflow composes*: the fresh
+/// compose ([`compose_core`]), the verb-minted compose ([`compose_minted_in_repo`]), the
+/// re-compose spine ([`compose_task_workflow`]) and the finalize-time arms keyed on a
+/// composed step ([`with_composing_step_source`]) all resolve through it. Until the M55
+/// completion audit only the fresh compose did, so a project `replace-step` of
+/// `step:finalize-doc-only` composed the minted text on one commit model and finalized on
+/// the other, and a resumed task's text was not its minted text.
+///
+/// A `replace-step` swaps a pack step id for a project-shadowed one, so the layer-aware
+/// source resolves the new id to the project body. An orphaned anchor (a delta whose
+/// anchor a same-manifest delta removed) surfaces as a blocking, routed finding
+/// (`overrides.md` → Within-layer manifest order). A no-delta cascade is the identity.
+fn apply_project_structure(
+    mut def: WorkflowDef,
+    workflow_id: &str,
+    deltas: &[StructuralDelta],
+) -> Result<(WorkflowDef, Vec<StructuralDelta>)> {
+    let scoped = scoped_deltas(workflow_id, deltas);
+    def.includes = apply_structural_deltas(&def.includes, &scoped).map_err(finding_to_err)?;
+    Ok((def, scoped))
 }
 
 /// The manifest's `structural-op` deltas scoped to `workflow_id` — a
@@ -2957,7 +2992,13 @@ fn compose_task_workflow(
     // workflow` block (not a generic "pack is missing" — the recorded/named id may
     // be a not-yet-shipped pack workflow, e.g. `sub-task` before increment 5).
     let workflow_bytes = defs.read_workflow(pack, workflow_id)?;
-    let def = load_workflow_def(&workflow_bytes).map_err(finding_to_err)?;
+    // The project's phase-4 `structural-op` deltas apply on re-compose exactly as at the
+    // mint ([`apply_project_structure`]), so a resumed task's text is its minted text.
+    let (def, scoped) = apply_project_structure(
+        load_workflow_def(&workflow_bytes).map_err(finding_to_err)?,
+        workflow_id,
+        &overrides.deltas,
+    )?;
     // Provision-on-first-entry — the sub-agent re-entry's deferred mirror of mint-time
     // provisioning. Gated on `provision` (re-entry only) and idempotent inside (first
     // entry only, `creates-task`-gated), so a resume / a `creates-task: false` `<W>` /
@@ -3029,7 +3070,7 @@ fn compose_task_workflow(
     // The `{{fill:}}` placeholder); a no-fill cascade is the identity.
     let findings = compose::workflow_refs_with_fills(
         &workflow_bytes,
-        &[],
+        &scoped,
         &overrides.slot_fills,
         &overrides.fills,
         &source,
@@ -3272,19 +3313,23 @@ pub(crate) fn composes_step(def: &WorkflowDef, source: &dyn StepSource, step_id:
     walk_include_tree(def, source, |_, _, _: Vec<()>| ()).contains_key(step_id)
 }
 
-/// Run `read` over the step source a **recorded** workflow composes through — the live
-/// cascade's layer-aware source, scoped to `workflow_id`'s origin pack and carrying the
-/// project's slot-fills, as the re-compose spine ([`compose_task_workflow`]) builds it — so
-/// a door that decides finalize behaviour from a task's recorded workflow walks the include
-/// tree its composed text was expanded from. No task context is bound: the inline
-/// data-value pass substitutes prose tokens and never adds an include.
+/// Run `read` over a **recorded** workflow as it composes — `def` with the project's
+/// phase-4 `structural-op` deltas applied ([`apply_project_structure`]), and the step source
+/// it composes through: the live cascade's layer-aware source, scoped to `workflow_id`'s
+/// origin pack and carrying the project's slot-fills — both exactly as the re-compose spine
+/// ([`compose_task_workflow`]) builds them, so a door that decides finalize behaviour from a
+/// task's recorded workflow walks the include tree its composed text was expanded from. No
+/// task context is bound: the inline data-value pass substitutes prose tokens and never adds
+/// an include.
 pub(crate) fn with_composing_step_source<R>(
     pack: &dyn PackSource,
     project_config: &Path,
     workflow_id: &str,
-    read: impl FnOnce(&dyn StepSource) -> R,
+    def: &WorkflowDef,
+    read: impl FnOnce(&WorkflowDef, &dyn StepSource) -> R,
 ) -> Result<R> {
     let (resolved, overrides) = resolve_cascade(pack, project_config)?;
+    let (def, _) = apply_project_structure(def.clone(), workflow_id, &overrides.deltas)?;
     let source = CascadeStepSource::new(pack, &resolved, project_config);
     source.scope_to_workflow(workflow_id);
     let ctx = ComposeContext::default();
@@ -3293,7 +3338,7 @@ pub(crate) fn with_composing_step_source<R>(
         fills: &overrides.fills,
         ctx: &ctx,
     };
-    Ok(read(&filled))
+    Ok(read(&def, &filled))
 }
 
 /// Whether a catalog entry **writes the commit doc** — one of its arguments is a `from:`
