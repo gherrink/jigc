@@ -3889,3 +3889,51 @@ $ jigc task finalize park-a-thought
 4. **The omitting context.** The shipped `park-idea`, which composes the ordinary `step:finalize`, behaves as it always has over the same three states, driven through its emitted lines: state 1 lands its idea alone, state 2 is refused `finalize.carried-staged` at exit 3 with nothing committed, and state 3's commit carries the idea and both of the code task's files.
 
 **Red** is the mutant the doc-only step exists against: with `report-jigc-feedback`'s body on `step:finalize` in place of `step:finalize-doc-only`, state 2's finalize is refused `finalize.carried-staged` at exit 3, and assertion 1 fails naming it.
+
+## 57. Overwrite refused — the create-only entry, on the shipped report workflow (M55)
+
+**The claim:** *a second report whose create mints the id of a finding already filed is refused before anything is copied in — by `doc create` and by `doc author`, whether it reuses the first's title or a different one that slugs onto the same id — and the route it hands back, followed with a `--slug`, files the second finding beside the first; a workflow whose entry does not carry `new: true` keeps its create-or-update, its different-title misroute now routed at a distinct identity; and an entry misspelling the key is refused at load.* This is flow C of [findings-channel.md](findings-channel.md) → 11, driven over the shipped `report-jigc-feedback` and `park-idea` rather than a fixture shadow. Every write is a line the composed workflow emitted, or the command a refusal's route handed back, run verbatim but for its `<…>` fills.
+
+**What it adds over `create_only_gate`.** That suite (M55 Increment 2, `crates/cli/tests/create_only_gate.rs`) proves every arm — both doors, `--slug`, the different title, the precedence over `write.title-ignored`, the misspelt key, the route fix — on a project shadow of `park-idea` carrying `new: true`, through hand-built commands; `findings_workflows` (d) drives the same-title `doc create` alone on the shipped report. This flow re-drives the `doc author`, different-title, `--slug` and misspelt-key arms on the shipped report workflow, through its emitted lines. It claims no first proof.
+
+**Bounds.** One `State::Fresh` corpus per arm, on the embedded packs. The `doc author` payload is the minimal one — a `title:` and the required `description` — since the refusal precedes every leaf. The misspelt key and the dropped key are project-layer shadows of the shipped report, each its bytes with one entry changed. `report-inconsistency`'s entry carries the same key and is not driven here.
+
+The designs of record live elsewhere and are not restated here: the `new: true` entry, `create.already-exists`, its precedence and the strict entry keys in [findings-channel.md](findings-channel.md) → 4 and [write-commands.md](write-commands.md) → The create-gate; the `write.title-ignored` route in → 4 (F3). Notation illustrative.
+
+### The walk
+
+```text
+$ jigc start --workflow report-jigc-feedback "the finalize sweeps a staged path"
+$ jigc doc create jigc-feedback --title "Finalize sweeps a staged path" --task …
+#   …the fields, the description, the commit doc · finalize: the finding lands
+$ jigc start --workflow report-jigc-feedback "the same thing again"
+$ jigc doc create jigc-feedback --title "Finalize sweeps a staged path" --task same-thing-again
+> blocking · create.already-exists — `jigc-feedback:finalize-sweeps-a-staged-path` already exists on disk at its home, …
+>   at: jigc-feedback:finalize-sweeps-a-staged-path
+>   route: choose a distinct `--title`, or keep this one and pass `--slug <slug>` … `jigc doc create jigc-feedback --title <title> --slug <slug> --task same-thing-again`
+$ jigc doc author jigc-feedback --from-file - --task same-thing-again   # title: the same
+> blocking · create.already-exists — … route: set the payload's `title:` to a distinct title …
+#   …and "Finalize sweeps a staged path!" by both doors: the same refusal, never write.title-ignored
+$ jigc doc create jigc-feedback --title "Finalize sweeps a staged path" --slug finalize-sweeps-a-staged-path-again --task …
+> jigc-feedback:finalize-sweeps-a-staged-path-again
+#   …filled · finalize: both findings read back
+
+$ jigc start --workflow park-idea "retitle the thought"     # no `new: true` on its entry
+$ jigc doc create idea --title "A Parked Thought!" --task …
+> blocking · write.title-ignored — …   route: … `jigc doc create idea --title <title> --slug <slug> --task …`
+$ jigc doc create idea --title "A Parked Thought" --task …   # in a third task
+> idea:parked-thought (already existed — copied in for update)
+
+$ (shadow report-jigc-feedback with `{ type: jigc-feedback, as: feedback, nwe: true }`)
+$ jigc start --workflow report-jigc-feedback "file a third"
+> blocking · workflow-refs.malformed-front-matter — … allows-create[0]: unknown field `nwe`, expected one of `type`, `as`, `new` …
+```
+
+### What it asserts (flow C on the shipped workflows — flow57_overwrite_refused.rs)
+
+1. **Every re-file onto a filed id is refused before copy-in.** In a second `report-jigc-feedback` task, the emitted `doc create` and the emitted `doc author`, each with the first's title and with a different title slugging onto its id, exit 1 refused `create.already-exists` at the first finding's address — never `write.title-ignored` — routed at a distinct identity and never at renaming the existing doc; nothing is staged in the task, the checkout's status is unchanged, and the committed finding is byte-unchanged.
+2. **The route lands beside.** The same-title create's route, its `jigc doc create … --slug <slug>` followed with the title kept and a distinct slug, mints that slug; filled through the emitted lines, it lands, both findings read back with the shared title, and the first is still byte-unchanged.
+3. **The general case.** Under the shipped `park-idea`, whose entry carries no `new: true`, a different title onto a committed idea is refused `write.title-ignored` at exit 1, routed at a distinct `--title` or `--slug` and never at `jigc doc rename`; that route followed lands a second idea beside the first, unchanged. The same title is the create-or-update it always was: `copied in for update`, exit 0.
+4. **The key is the guard, and it is validated.** A committed shadow of `report-jigc-feedback` whose entry drops `new: true` turns the same-title create into the copy-in at exit 0; one whose entry misspells it `nwe: true` is refused at load, `workflow-refs.malformed-front-matter` naming `nwe`, by `jigc start` (nothing minted) and by the emitted `doc create` of a task minted before the typo.
+
+**Red** is the shipped `report-jigc-feedback` with `new: true` dropped from its entry: the second report's same-title create acks `copied in for update` at exit 0, and assertion 1 fails.
