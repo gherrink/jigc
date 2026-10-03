@@ -525,6 +525,39 @@ fn assert_slot_roundtrip(corpus: &TrialCorpus, task: &str, addr: &str) {
     assert_show_parity(corpus, task, addr, &Value::String(prose.to_string()));
 }
 
+/// **The cross-surface property (M55)**: on a created instance, the `doc list --task` row's
+/// `title` and `fields` equal the `doc show --task` whole-doc serve's — both read off the
+/// emitted json of the real binary. `fields` is one helper's map on both surfaces
+/// (`cli::doc::header_fields_json`) and `title` one reader's, so a divergence here is a
+/// second rule grown on one of them (`design/findings-channel.md` → 5).
+fn assert_row_matches_show(corpus: &TrialCorpus, task: &str, ty: &str, slug: &str) {
+    let id = format!("{ty}:{slug}");
+    let listed: Value = serde_json::from_str(
+        &corpus.jigc_ok(&["doc", "list", ty, "--task", task, "--format", "json"]),
+    )
+    .unwrap_or_else(|e| panic!("`doc list {ty} --task` json parses: {e}"));
+    let row = listed["docs"]
+        .as_array()
+        .expect("`docs` is an array")
+        .iter()
+        .find(|row| row["id"] == Value::String(id.clone()))
+        .unwrap_or_else(|| panic!("the staged listing carries `{id}`; got:\n{listed:#}"));
+    let shown: Value = serde_json::from_str(
+        &corpus.jigc_ok(&["doc", "show", &id, "--task", task, "--format", "json"]),
+    )
+    .unwrap_or_else(|e| panic!("`doc show {id} --task` json parses: {e}"));
+    assert!(
+        row["fields"].is_object(),
+        "`{id}` serves whole on `doc show`, so it parses and its staged row carries a \
+         `fields` map; row:\n{row:#}",
+    );
+    assert_eq!(
+        (&row["title"], &row["fields"]),
+        (&shown["title"], &shown["fields"]),
+        "the `doc list --task` row and the `doc show --task` serve of `{id}` disagree",
+    );
+}
+
 // ---------------------------------------------------------------------------
 // The tests.
 // ---------------------------------------------------------------------------
@@ -538,6 +571,7 @@ fn dev_pack_addresses_round_trip_and_settability_parity_holds() {
         let (task, slug) = create_instance(&corpus, ty);
         let proj = projection(&corpus, ty);
         walk_doctype(&corpus, &task, ty, &slug, &proj);
+        assert_row_matches_show(&corpus, &task, ty, &slug);
     }
 }
 
@@ -550,6 +584,7 @@ fn methodology_pack_addresses_round_trip_and_settability_parity_holds() {
         let (task, slug) = create_instance(&corpus, ty);
         let proj = projection(&corpus, ty);
         walk_doctype(&corpus, &task, ty, &slug, &proj);
+        assert_row_matches_show(&corpus, &task, ty, &slug);
     }
 }
 

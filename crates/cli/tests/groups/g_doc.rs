@@ -36,6 +36,8 @@ mod doc_code_probe;
 mod doc_copy_in;
 #[path = "../doc_list.rs"]
 mod doc_list;
+#[path = "../doc_list_triage.rs"]
+mod doc_list_triage;
 #[path = "../doc_read_surface.rs"]
 mod doc_read_surface;
 #[path = "../doc_remove_item.rs"]

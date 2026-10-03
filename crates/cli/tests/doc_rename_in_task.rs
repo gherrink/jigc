@@ -1732,11 +1732,16 @@ fn a_rename_preserves_every_header_field_and_slot_body_of_the_staged_doc() {
     assert_eq!(ack["target"]["slug"], "prefer-the-oldest-sample");
 
     // ── the claim, through the pinned read contract ──
+    // The identity a rename moves is the slug and the `# H1` it was minted from, and the
+    // whole-doc serve carries both (`title`, M55) — so both are stripped here and each
+    // is asserted to have moved, to exactly what the rename named, below.
     let after = show(new_uri);
     let strip_identity = |mut doc: Value| -> Value {
-        doc.as_object_mut()
-            .expect("the read contract emits an object")
-            .remove("slug");
+        let object = doc
+            .as_object_mut()
+            .expect("the read contract emits an object");
+        object.remove("slug");
+        object.remove("title");
         doc
     };
     assert_eq!(
@@ -1748,6 +1753,14 @@ fn a_rename_preserves_every_header_field_and_slot_body_of_the_staged_doc() {
     assert_ne!(
         before["slug"], after["slug"],
         "…and the identity really did move, or the equality above is trivially true"
+    );
+    assert_eq!(
+        (&before["title"], &after["title"]),
+        (
+            &Value::from("Reject The Newest Sample"),
+            &Value::from("Prefer The Oldest Sample")
+        ),
+        "…and the served `title` moved from the old H1 to exactly the new one"
     );
 
     // ── the claim, on the staged bytes ──

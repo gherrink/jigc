@@ -498,8 +498,10 @@ pub enum DocCommand {
     /// --as <doctype>`), or `orphaned` (stamped by jigc and claimed by no
     /// resolved doctype — it lists with a null identity and no item count, and
     /// `jigc validate` blocks on it). `--format json` is the pinned shape
-    /// `{"docs":[{id, path, state, item-count}]}` (no in-band version integer —
-    /// `design/doc-read-surface.md` → the fourth read surface).
+    /// `{"docs":[{id, path, state, item-count, title, fields}]}` (no in-band version
+    /// integer — `design/doc-read-surface.md` → the fourth read surface): `title` is the
+    /// doc's `# H1` or null, and `fields` its header fields as `doc show` serves them on a
+    /// managed row that parses, else null.
     ///
     /// **`--task <id>` lists what that task stages instead** — staged-only, the two
     /// views are never merged. Every staged row is `managed` (a staged working copy
@@ -4542,13 +4544,17 @@ fn run_list(
             } else {
                 "managed"
             };
-            // Best-effort item count: parse against the current schema and sum top-level
-            // repeatable items; a foreign/unregistered or stale-shape instance that does not
-            // parse counts 0 (never a block — `doc list` is a report, and the row already
-            // carries `state` to tell an agent the file is not adopted).
-            let item_count = engine::parse::parse_sections(schema, &source)
-                .map(|doc| item_count(&doc))
-                .unwrap_or(0);
+            // One best-effort parse against the current schema, two reads of it. The item
+            // count sums top-level repeatable items, and an instance that does not parse (a
+            // foreign/unregistered or stale-shape one) counts 0 — never a block: `doc list`
+            // is a report, and the row already carries `state` to tell an agent the file is
+            // not adopted. `fields` is the same map `doc show` serves, on a `managed` row
+            // that parses and `null` on every other (M55; `design/findings-channel.md` → 5).
+            let parsed = engine::parse::parse_sections(schema, &source).ok();
+            let fields = parsed
+                .as_ref()
+                .filter(|_| state == "managed")
+                .map(|doc| header_fields_json(schema, doc));
             docs.push(DocRow {
                 id: Some(id),
                 path: path
@@ -4557,7 +4563,9 @@ fn run_list(
                     .to_string_lossy()
                     .into_owned(),
                 state,
-                item_count: Some(item_count),
+                item_count: Some(parsed.as_ref().map_or(0, item_count)),
+                title: crate::rename::read_h1(&source).map(str::to_owned),
+                fields,
             });
         }
     }
@@ -4607,11 +4615,18 @@ fn run_list(
         );
         for rel in crate::orphan::orphaned_instances(&jigc_home, &schemas, &territory, &spoken_for)
         {
+            // No schema to parse against, so no `fields` — but the H1 needs none, and the
+            // row reads its bytes for it (`design/findings-channel.md` → 5).
+            let path = jigc_home.join(&rel);
+            let bytes = std::fs::read(&path)
+                .with_context(|| format!("reading the orphaned doc at {path:?}"))?;
             docs.push(DocRow {
                 id: None,
                 path: rel,
                 state: "orphaned",
                 item_count: None,
+                title: crate::rename::read_h1(&String::from_utf8_lossy(&bytes)).map(str::to_owned),
+                fields: None,
             });
         }
     }
@@ -4652,6 +4667,9 @@ fn run_list(
 ///   identity — the second of law 1's two legal forms.
 /// - **`item-count` is the same best-effort parse** the committed arm makes; an
 ///   unknown-type instance has no schema to parse against and counts 0.
+/// - **`title` and `fields` are the committed arm's rules over the staged copy** (M55):
+///   the H1 on every row, an unknown-type one included, and `fields` wherever that copy
+///   parses — every staged row being `managed` — else `null`.
 fn run_list_staged(
     cwd: &Path,
     doctype: Option<&str>,
@@ -4684,21 +4702,24 @@ fn run_list_staged(
             .and_then(|schema| engine::store::canonical_path(Path::new(""), schema, slug))
             .map(|path| path.to_string_lossy().into_owned())
             .unwrap_or_else(|| id.clone());
-        let mut count = 0;
-        if let Some(schema) = schema {
-            let file = state::instance_path(&task.dir, ty, slug);
-            let bytes = std::fs::read(&file)
-                .with_context(|| format!("reading the staged doc at {file:?}"))?;
-            let source = String::from_utf8_lossy(&bytes);
-            count = engine::parse::parse_sections(schema, &source)
-                .map(|doc| item_count(&doc))
-                .unwrap_or(0);
-        }
+        let file = state::instance_path(&task.dir, ty, slug);
+        let bytes =
+            std::fs::read(&file).with_context(|| format!("reading the staged doc at {file:?}"))?;
+        let source = String::from_utf8_lossy(&bytes);
+        let parsed = schema.and_then(|schema| {
+            engine::parse::parse_sections(schema, &source)
+                .ok()
+                .map(|doc| (schema, doc))
+        });
         docs.push(DocRow {
             id: Some(id),
             path,
             state: "managed",
-            item_count: Some(count),
+            item_count: Some(parsed.as_ref().map_or(0, |(_, doc)| item_count(doc))),
+            title: crate::rename::read_h1(&source).map(str::to_owned),
+            fields: parsed
+                .as_ref()
+                .map(|(schema, doc)| header_fields_json(schema, doc)),
         });
     }
     let empty_line = match doctype {
@@ -4857,6 +4878,18 @@ struct DocRow {
     /// would be indistinguishable from *parsed, and empty*.
     #[serde(rename = "item-count")]
     item_count: Option<usize>,
+    /// The additive **`title`** key (M55 — `design/findings-channel.md` → 5): the doc's
+    /// `# H1`, read by [`crate::rename::read_h1`] — the reader `doc show`'s whole-doc
+    /// `title` uses — over the listed bytes (the staged copy on `--task`). It needs no
+    /// parse, so it answers on **every** row, `orphaned` and unparseable ones included,
+    /// and is `null` only where the file carries no H1.
+    title: Option<String>,
+    /// The additive **`fields`** key (M55): the header fields in `doc show`'s `fields`
+    /// shape, from the same helper ([`header_fields_json`], an absent defaulted field at
+    /// its default) over the parse `item-count` already pays for. **Only** on a `managed`
+    /// row that parses — every staged row is `managed` — and **`null`** on every other:
+    /// never `{}`, which would read as *a doc with no header fields*.
+    fields: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 /// The `jigc doc schema --format json` shape — the **separately-pinned, explicitly
@@ -5592,6 +5625,7 @@ fn show_long_about() -> String {
 pub const WHOLE_DOC_KEYS: &[&str] = &[
     "type",
     "slug",
+    "title",
     "item-count",
     "schema-version",
     "fields",
@@ -5607,38 +5641,31 @@ pub const STAGED_KEY: &str = "staged";
 /// The whole-doc json wrapper, keyed by [`WHOLE_DOC_KEYS`] (the set `jigc doc show
 /// --help` renders and `crates/cli/tests/doc_show.rs` drives against these bytes — it
 /// is not restated here, which is what let the help's copy go two keys stale).
-/// `fields` flattens
-/// every simple section's fields (the header's front-matter + any body trailing group)
-/// keyed by leaf id; `sections` carries one entry per slot section (its prose string)
+/// `fields` is [`header_fields_json`] — every simple section's fields keyed by leaf id,
+/// an absent defaulted field at its schema default; `sections` carries one entry per slot section (its prose string)
 /// and per repeatable section (its item array) — a header/fields-only section
 /// contributes to `fields` alone. A scalar field serializes as its string, a list-
 /// cardinality field as a json array; slot prose is trimmed (the clean machine value —
 /// the byte-exact form stays the plain path).
 ///
-/// Two additive top-level keys ride beside them, both on **every** whole-doc serve and
+/// Three additive top-level keys ride beside them, all on **every** whole-doc serve and
 /// on **no** fragment slice (a slice is a bare value with no object to hang a key on):
-/// [`item_count`], and the doc's own **`schema-version`** stamp as a json **number**
-/// ([`stamped_schema_version`]).
+/// [`item_count`], the doc's own **`schema-version`** stamp as a json **number**
+/// ([`stamped_schema_version`]), and **`title`** — the `# H1` of the served bytes, read
+/// by [`crate::rename::read_h1`] (the one H1 reader `doc rename` and the title pre-check
+/// share), `null` when the doc has none (M55; `design/findings-channel.md` → 5).
 fn whole_doc_json(
     schema: &Schema,
     doc: &engine::parse::Document,
     source: &str,
     address: &Address,
 ) -> serde_json::Value {
-    let mut fields = serde_json::Map::new();
+    let fields = header_fields_json(schema, doc);
     let mut sections = serde_json::Map::new();
     for section in &schema.sections {
         let parsed = doc.sections.iter().find(|s| s.id == section.id);
         match &section.body {
             SectionBody::Simple { slot, .. } => {
-                if let Some(parsed) = parsed {
-                    for field in &parsed.fields {
-                        fields.insert(
-                            field.key.clone(),
-                            header_field_json(schema, &field.key, &field.value),
-                        );
-                    }
-                }
                 if slot.is_some() {
                     sections.insert(
                         section.id.clone(),
@@ -5656,11 +5683,56 @@ fn whole_doc_json(
     serde_json::json!({
         "type": schema.ty,
         "slug": address.slug.as_str(),
+        "title": crate::rename::read_h1(source),
         "item-count": item_count(doc),
         "schema-version": schema_version,
         "fields": serde_json::Value::Object(fields),
         "sections": serde_json::Value::Object(sections),
     })
+}
+
+/// The whole-doc **`fields`** map — the one home of its rule, which `doc show`'s whole-doc
+/// serve and every parsing `doc list` row share (M55; `design/findings-channel.md` → 5).
+///
+/// It flattens every simple section's parsed fields (the header's front matter and any
+/// body trailing group) keyed by leaf id, through [`header_field_json`]. Then each
+/// declared field of a simple section that carries a `default:` and is **absent** from the
+/// parsed doc is inserted as its declared literal, a json string — the **effective value**
+/// (R4 I5): a reader filtering on a defaulted field wants the value the doctype gives the
+/// doc, so a projected default is indistinguishable from a stored one by design. The
+/// stored bytes are never written. The injected stamp field declares no default, so a
+/// missing `schema-version` is never synthesized. The `#section` fields-only and leaf
+/// slices, item objects and the plain render stay the stored view (`design/
+/// findings-channel.md` → 10, the projection row names the whole doc alone).
+fn header_fields_json(
+    schema: &Schema,
+    doc: &engine::parse::Document,
+) -> serde_json::Map<String, serde_json::Value> {
+    let mut fields = serde_json::Map::new();
+    for section in &schema.sections {
+        let SectionBody::Simple {
+            fields: declared, ..
+        } = &section.body
+        else {
+            continue;
+        };
+        if let Some(parsed) = doc.sections.iter().find(|s| s.id == section.id) {
+            for field in &parsed.fields {
+                fields.insert(
+                    field.key.clone(),
+                    header_field_json(schema, &field.key, &field.value),
+                );
+            }
+        }
+        for field in declared {
+            if let Some(default) = &field.default {
+                fields
+                    .entry(field.id.clone())
+                    .or_insert_with(|| serde_json::Value::String(default.clone()));
+            }
+        }
+    }
+    fields
 }
 
 /// The doc's **own schema-version stamp** as a json **number** — the additive top-level
