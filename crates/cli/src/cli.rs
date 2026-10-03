@@ -1465,6 +1465,11 @@ fn validate_store_in_repo(cwd: &Path) -> Result<StoreSweep> {
         })
         .collect();
 
+    // The L1 store arm's seam (M55 Increment 4, P2/P4): a drifted doc's committed bytes at
+    // `HEAD`. The twin asks it only about a recorded doc that has drifted, so a clean store
+    // shells out zero times; any git failure answers `None`, which keeps the blocking drift.
+    let head = |path: &str| crate::task::git_blob_at(&jigc_home, "HEAD", path);
+
     let mut report = engine::validate::validate_store_families(
         &jigc_home,
         &schemas,
@@ -1473,6 +1478,7 @@ fn validate_store_in_repo(cwd: &Path) -> Result<StoreSweep> {
         &workflows,
         &workflow_source,
         &record,
+        &head,
         &versions,
         &priors,
         &at_prior_homes,

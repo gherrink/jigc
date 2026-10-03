@@ -1,5 +1,5 @@
-//! M55 Increment 4 / T1 — **L1 pull absorption at the task scope**
-//! ([findings-channel.md](../../../design/findings-channel.md) → §6, §10;
+//! M55 Increment 4 — **L1 pull absorption, at the task scope (T1) and the store's (T2)**
+//! ([findings-channel.md](../../../design/findings-channel.md) → §6, §10, §11 Flow E;
 //! [reconciliation.md](../../../design/reconciliation.md) → the `DRIFTED + TOUCHED` row).
 //!
 //! A teammate's committed edit to a managed doc reaches this clone by `git pull`, which
@@ -25,6 +25,18 @@
 //!   `milestone create` is refused and a pull before it lands, leaving no drift behind;
 //! - **(e)** the record door: a pulled edit to the milestone record still conflict-blocks
 //!   the next `add-task` (F3 — the door passes no pin).
+//!
+//! **T2 — the store arm** ([validation.md](../../../design/validation.md) → the reused
+//! `hash-matches` id's store-scope route). The same pull, read by `jigc validate`, is a
+//! baseline that lags `HEAD`, not an out-of-band edit:
+//!
+//! - **(f)** after the pull, `jigc validate` exits 0 with the `VISION.md` row advisory,
+//!   routed *the baseline lags `HEAD`; absorbed at the next finalize*, and no `file-state`
+//!   in `blocking_probes`;
+//! - **(g)** after the task that edits it lands, the next sweep has no row for `VISION.md`;
+//! - **(h)** the control: a non-conformant edit committed with plain git keeps its
+//!   conformance finding and its blocking drift, and is not baselined;
+//! - **(i)** an uncommitted edit keeps the blocking drift.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -449,5 +461,174 @@ fn a_pulled_milestone_record_edit_still_conflict_blocks_add_task() {
         commit_count(corpus),
         before,
         "a refused add-task commits nothing"
+    );
+}
+
+// ───────── T2 — the store arm: the baseline lags `HEAD` ─────────
+
+/// The informational route the store arm carries — the design's words, verbatim.
+const LAG_ROUTE: &str = "the baseline lags `HEAD`; absorbed at the next finalize";
+
+/// `jigc validate --format json` over clone A: the store sweep is report-only, so it exits 0.
+fn store_sweep(corpus: &TrialCorpus, context: &str) -> serde_json::Value {
+    let out = corpus.jigc(&["validate", "--format", "json"]);
+    stdout_json(&out, &[0], context)
+}
+
+/// Every finding in `envelope` carrying `code` at `address`.
+fn rows_at<'a>(
+    envelope: &'a serde_json::Value,
+    code: &str,
+    address: &str,
+) -> Vec<&'a serde_json::Value> {
+    envelope["findings"]
+        .as_array()
+        .unwrap_or_else(|| panic!("the envelope carries `findings`: {envelope}"))
+        .iter()
+        .filter(|f| f["code"] == code && f["location"]["address"] == address)
+        .collect()
+}
+
+fn blocking_probes(envelope: &serde_json::Value) -> Vec<&str> {
+    envelope["blocking_probes"]
+        .as_array()
+        .unwrap_or_else(|| panic!("the envelope carries `blocking_probes`: {envelope}"))
+        .iter()
+        .filter_map(serde_json::Value::as_str)
+        .collect()
+}
+
+/// **(f)** Flow E's L1 half at store scope: after the pull, `jigc validate` exits 0 and the
+/// `VISION.md` row is `file-state.hash-matches` at **advisory**, routed *the baseline lags
+/// `HEAD`* — a pull, not an out-of-band edit — so `file-state` leaves `blocking_probes`. The
+/// sweep stays a pure reader: the baseline is not advanced. Red before M55 Increment 4 / T2
+/// with the row blocking and routed at re-authoring the teammate's edit.
+#[test]
+fn after_a_pull_the_store_sweep_reports_the_lagging_baseline_advisory() {
+    let team = Team::new();
+    team.pull_vision_edit();
+    let at_pull = file_state(&team.repo());
+
+    let swept = store_sweep(&team.corpus, "the store sweep after the pull");
+    let rows = rows_at(&swept, "file-state.hash-matches", VISION);
+    assert_eq!(rows.len(), 1, "one drift row for `{VISION}`; got {swept}");
+    assert_eq!(
+        rows[0]["severity"], "advisory",
+        "the lag is advisory: {}",
+        rows[0]
+    );
+    assert_eq!(rows[0]["route"], LAG_ROUTE, "the lag route: {}", rows[0]);
+    assert!(
+        !blocking_probes(&swept).contains(&"file-state"),
+        "an advisory lag blocks nothing; got {swept}",
+    );
+    assert_eq!(
+        file_state(&team.repo()),
+        at_pull,
+        "`jigc validate` reports the lag and writes no baseline",
+    );
+}
+
+/// **(g)** The advisory's promise is kept: the task that edits the pulled doc lands, and the
+/// next `jigc validate` carries no `file-state.hash-matches` row for `VISION.md` — the landed
+/// finalize advanced the baseline past the pulled bytes.
+#[test]
+fn after_the_landed_finalize_the_store_sweep_no_longer_reports_the_lag() {
+    let team = Team::new();
+    let corpus = &team.corpus;
+    team.pull_vision_edit();
+    let before = store_sweep(corpus, "the store sweep after the pull");
+    assert_eq!(
+        rows_at(&before, "file-state.hash-matches", VISION).len(),
+        1,
+        "precondition: the pull reads as a lagging baseline; got {before}",
+    );
+
+    let task = start_task(corpus, "sharpen the open questions");
+    corpus.set_slot("vision:vision#open-questions", &task, TASK_PROSE);
+    let out = corpus.jigc(&["task", "finalize", &task]);
+    assert_eq!(
+        out.status.code(),
+        Some(i32::from(cli::task::EXIT_SUCCESS)),
+        "finalize lands over the pulled edit:\n{}",
+        rendered(&out),
+    );
+
+    let after = store_sweep(corpus, "the store sweep after the landed finalize");
+    assert!(
+        rows_at(&after, "file-state.hash-matches", VISION).is_empty(),
+        "the landed finalize re-baselined `{VISION}`; got {after}",
+    );
+}
+
+/// **(h)** The control on the store arm's population: bytes at `HEAD` are not on their own a
+/// clean doc. A hand edit that breaks `VISION.md`'s conformance, committed with plain git,
+/// keeps its family-5 conformance finding **and** its blocking `hash-matches` — the lag is
+/// graded behind the conformance check — and the sweep baselines nothing.
+#[test]
+fn a_non_conformant_edit_committed_with_plain_git_keeps_blocking() {
+    let corpus = TrialCorpus::build(State::CommittedSingletons);
+    let repo = corpus.repo();
+    let broken = read(&repo, VISION).replacen("## Open Questions\n", "## Open Puzzles\n", 1);
+    assert_ne!(
+        broken,
+        read(&repo, VISION),
+        "the fixture's heading is there to break"
+    );
+    fs::write(repo.join(VISION), broken).expect("write the non-conformant edit");
+    corpus.git(&["commit", "-qam", "docs: hand edit"]);
+    let at_commit = file_state(&repo);
+
+    let swept = store_sweep(
+        &corpus,
+        "the store sweep over a committed non-conformant edit",
+    );
+    let conformance = rows_at(
+        &swept,
+        "conformance.section-renamed",
+        "vision:vision#open-questions",
+    );
+    assert_eq!(
+        conformance.len(),
+        1,
+        "the conformance finding stands; got {swept}"
+    );
+    assert_eq!(conformance[0]["severity"], "blocking", "{}", conformance[0]);
+    let rows = rows_at(&swept, "file-state.hash-matches", VISION);
+    assert_eq!(rows.len(), 1, "one drift row for `{VISION}`; got {swept}");
+    assert_eq!(
+        rows[0]["severity"], "blocking",
+        "not graded a lag: {}",
+        rows[0]
+    );
+    assert_ne!(rows[0]["route"], LAG_ROUTE, "{}", rows[0]);
+    assert!(
+        blocking_probes(&swept).contains(&"file-state"),
+        "the drift still blocks; got {swept}",
+    );
+    assert_eq!(
+        file_state(&repo),
+        at_commit,
+        "a non-conformant edit is not baselined",
+    );
+}
+
+/// **(i)** An uncommitted edit is not at `HEAD`: the store sweep keeps today's blocking drift,
+/// routed at reviewing the out-of-band edit.
+#[test]
+fn an_uncommitted_edit_keeps_the_blocking_drift() {
+    let corpus = TrialCorpus::build(State::CommittedSingletons);
+    let repo = corpus.repo();
+    fs::write(repo.join(VISION), add_teammate_line(&read(&repo, VISION)))
+        .expect("an uncommitted edit");
+
+    let swept = store_sweep(&corpus, "the store sweep over an uncommitted edit");
+    let rows = rows_at(&swept, "file-state.hash-matches", VISION);
+    assert_eq!(rows.len(), 1, "one drift row for `{VISION}`; got {swept}");
+    assert_eq!(rows[0]["severity"], "blocking", "{}", rows[0]);
+    assert_ne!(rows[0]["route"], LAG_ROUTE, "{}", rows[0]);
+    assert!(
+        blocking_probes(&swept).contains(&"file-state"),
+        "the drift blocks; got {swept}",
     );
 }

@@ -2,7 +2,16 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
-## 2026-10-03 — M55 Increment 4 / T1: the task arm of L1 pull absorption, built
+## 2026-10-03 — M55 Increment 4 / T2: the store arm of L1 pull absorption, built
+
+Built on P2 and P4 below; [reconciliation.md](design/reconciliation.md) (the L1 section's store bullet), [validation.md](design/validation.md) (the reused `hash-matches` store route and its inventory row) and [worked-examples.md](design/worked-examples.md) (flow 43, arm 3) carry it. What the build adds to the plan:
+
+- **The seam is T1's `PinnedBlob`, bound to `HEAD`.** `detect_committed_store` takes it as `head`, after `repo_root`, and `validate_store_families` threads it after `record`. `cli::validate_store_in_repo` binds it to `task::git_blob_at(jigc_home, "HEAD", …)`. Every engine test caller passes `&|_| None`.
+- **The lag finding is the drift finding with two fields changed.** `lagging_baseline_finding` is `Finding { severity: Advisory, route: Some(Route::informational(…)), ..drift_store_finding(path) }`, so the code, message and location cannot diverge from the blocking twin's: the key does not move by construction.
+- **The route's promise was driven, not assumed.** On a `committed-singletons` rig, a conformant `VISION.md` edit committed with plain git read advisory; an unrelated `single-task` editing only `CHANGELOG.md` then landed, and the next `jigc validate` carried no `VISION.md` row. Any landed finalize's sweep walks every committed doc, so *"absorbed at the next finalize"* holds without the task touching the doc.
+- **`absorb_surface.rs`'s fixture drift is committed, so its row is now the advisory grade.** Its predicate asks for the row, not the severity, so it stays green unedited in substance. Its helper doc and three assertion messages said *blocking*, and they are reworded.
+
+
 
 Built on P1–P3 below; [reconciliation.md](design/reconciliation.md) (the `DRIFTED + TOUCHED` row and *Conflict — block at file level*) and [findings-channel.md](design/findings-channel.md) (§6 and §10's L1 rows) carry it. What the build adds to the plan:
 

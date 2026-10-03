@@ -871,7 +871,15 @@ pub fn reconcile_committed_store(
 /// - **content drift** (recorded hash ≠ on-disk hash) → exactly one blocking
 ///   `file-state.hash-matches` finding (the reused check id) carrying a
 ///   **store-scope route** (review / re-author through the owning workflow), never
-///   the task-scope `reconcile <path>` route the mutating path emits.
+///   the task-scope `reconcile <path>` route the mutating path emits — **unless the
+///   baseline merely lags `HEAD`** (M55 Increment 4, L1's store arm): when the on-disk
+///   bytes equal the doc's blob at `HEAD` (`head`, the CLI-supplied
+///   [`PinnedBlob`](crate::validate::PinnedBlob) bound to `HEAD`) **and** pass the
+///   conformance gate, the drift is committed — a pull, or a conformant edit committed with
+///   plain git — so the same finding is **advisory**, routed informationally *"the baseline
+///   lags `HEAD`; absorbed at the next finalize"*. A committed non-conformant edit keeps the
+///   blocking finding (and family 5 its conformance finding); nothing is baselined either
+///   way. `head` is asked only about a drifted doc, so a clean store shells out zero times.
 /// - **un-baselined** (no recorded hash) → exactly one **advisory**
 ///   `file-state.un-baselined` finding — a distinct *not-yet-tracked* outcome,
 ///   neither drift nor silent-clean (informational on a fresh / pre-baseline
@@ -903,13 +911,14 @@ pub fn reconcile_committed_store(
 /// the twin walks on-disk docs and never enumerates recorded-but-absent paths.
 ///
 /// Read-only by construction: `record` is borrowed `&` (no mutation possible) and
-/// the only I/O is reading the committed `.md` bytes — it never routes through the
-/// mutating [`reconcile_committed_store`]. Findings aggregate in a stable order —
+/// the only I/O is reading the committed `.md` bytes (and the caller's `head` lookup, on a
+/// drifted doc) — it never routes through the mutating [`reconcile_committed_store`]. Findings aggregate in a stable order —
 /// persisted schemas by type, then that type's instances in the enumerator's sorted order.
 pub fn detect_committed_store(
     record: &FileStateRecord,
     schemas: &std::collections::BTreeMap<String, crate::schema::Schema>,
     repo_root: &Path,
+    head: &crate::validate::PinnedBlob<'_>,
     versions: &std::collections::BTreeMap<String, u32>,
     priors: &std::collections::BTreeMap<String, Vec<crate::schema::Schema>>,
 ) -> Vec<Finding> {
@@ -950,7 +959,21 @@ pub fn detect_committed_store(
                 // outcomes stand unclassified: an OOB edit that mangles it past parsing is
                 // drift to route, never a file to "adopt".
                 Some(recorded) if recorded == current => {}
-                Some(_) => findings.push(drift_store_finding(&key)),
+                // Drifted. When the on-disk bytes equal the doc's blob at `HEAD` **and** conform,
+                // the baseline merely lags `HEAD` — a pull, or a conformant edit committed with
+                // plain git — and the next landed finalize absorbs it (M55 Increment 4, L1's
+                // store arm): advisory, the same `(code, target)` key. Every other drift keeps
+                // the blocking finding, a committed non-conformant edit included. The seam is
+                // asked only here, so a clean store shells out zero times.
+                Some(_) => {
+                    let lags_head = head(&key).is_some_and(|blob| hash_bytes(&blob) == current)
+                        && conformance_gate(schema, &bytes).is_ok();
+                    findings.push(if lags_head {
+                        lagging_baseline_finding(&key)
+                    } else {
+                        drift_store_finding(&key)
+                    });
+                }
             }
         }
     }
@@ -1066,6 +1089,24 @@ fn drift_store_finding(path: &str) -> Finding {
             "review the out-of-band edit to `{path}` and re-author it through the owning workflow"
         ).into()),
     )
+}
+
+/// The store-scope drift finding **graded by L1's store arm** (M55 Increment 4): a recorded
+/// doc whose on-disk bytes differ from its baseline but equal its blob at `HEAD`, and conform.
+/// The drift is committed, so it is not an out-of-band edit waiting in the worktree — the
+/// baseline lags `HEAD`, and the next landed finalize's sweep absorbs it through the
+/// conformance gate this arm has already passed. It **is** the [`drift_store_finding`] —
+/// the `file-state.hash-matches` id, message and location, so the `(code, target)` key does
+/// not move (the shipped no-new-id pattern) — with only the severity (advisory) and the route
+/// (informational: it directs nothing) changed.
+fn lagging_baseline_finding(path: &str) -> Finding {
+    Finding {
+        severity: Severity::Advisory,
+        route: Some(crate::finding::Route::informational(
+            "the baseline lags `HEAD`; absorbed at the next finalize",
+        )),
+        ..drift_store_finding(path)
+    }
 }
 
 /// The advisory **un-baselined** finding: a committed **managed** doc with no recorded
@@ -3167,6 +3208,7 @@ Referrers must point at the new decision.
             &record,
             &schemas,
             root.path(),
+            &|_| None,
             &std::collections::BTreeMap::new(),
             &std::collections::BTreeMap::new(),
         );
@@ -3282,7 +3324,14 @@ Referrers must point at the new decision.
         // A FRESH CLONE: the file-state record is empty — neither doc is recorded.
         let record = FileStateRecord::new();
 
-        let findings = detect_committed_store(&record, &schemas, root.path(), &versions, &priors);
+        let findings = detect_committed_store(
+            &record,
+            &schemas,
+            root.path(),
+            &|_| None,
+            &versions,
+            &priors,
+        );
 
         let managed: Vec<&Finding> = findings
             .iter()
@@ -3352,6 +3401,7 @@ Referrers must point at the new decision.
             &record,
             &schemas,
             root.path(),
+            &|_| None,
             &std::collections::BTreeMap::new(),
             &std::collections::BTreeMap::new(),
         );
@@ -3408,6 +3458,118 @@ Referrers must point at the new decision.
         assert_eq!(
             record, record_before,
             "the read-only twin must not re-baseline the drift it exists to surface"
+        );
+    }
+
+    /// **L1's store arm** (M55 Increment 4, P4): the twin asks one more fact of a recorded doc
+    /// that has drifted — its committed bytes at `HEAD` — and grades the drift by it.
+    ///
+    /// - **(i)** bytes equal the `HEAD` blob **and** conform → the one finding is
+    ///   `file-state.hash-matches` at **advisory**, keyed and messaged as the blocking drift,
+    ///   with the informational route *"the baseline lags `HEAD`; absorbed at the next
+    ///   finalize"* — a pull, or a conformant edit committed with plain git;
+    /// - **(ii)** bytes equal the `HEAD` blob but do **not** conform → today's blocking drift,
+    ///   unchanged: matching bytes are not on their own a clean doc;
+    /// - **(iii)** bytes that differ from the `HEAD` blob (an uncommitted edit) → today's
+    ///   blocking drift, unchanged;
+    /// - **(iv)** the record is borrowed `&` and byte-identical across the sweep, and the seam
+    ///   is asked only about the drifted docs — never the in-sync one.
+    #[test]
+    fn detect_committed_store_grades_a_drift_that_equals_head_advisory_behind_conformance() {
+        let mut schemas: BTreeMap<String, Schema> = BTreeMap::new();
+        schemas.insert("adr".to_string(), adr_schema());
+
+        let root = TempRoot::new("detect-lag");
+        let decisions = root.path().join("decisions");
+        std::fs::create_dir_all(&decisions).expect("mk decisions/");
+        // Each doc's on-disk bytes, and what `HEAD` carries for it.
+        let docs: [(&str, &str, &str); 4] = [
+            // (i) pulled: the conformant edit is on disk and at HEAD.
+            ("pulled", ADR_B_EDITED_SUPERSEDES, ADR_B_EDITED_SUPERSEDES),
+            // (ii) committed-broken: the non-conformant edit is on disk and at HEAD.
+            ("broken", ADR_B_EDITED_BAD_DATE, ADR_B_EDITED_BAD_DATE),
+            // (iii) uncommitted: the edit is on disk, HEAD still carries the baseline.
+            ("local", ADR_B_EDITED_SUPERSEDES, ADR_B_BASE),
+            // in-sync: no drift, so the seam must not be asked.
+            ("synced", ADR_B_BASE, ADR_B_BASE),
+        ];
+        let mut record = FileStateRecord::new();
+        let mut at_head: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+        for (slug, on_disk, committed) in docs {
+            std::fs::write(decisions.join(format!("{slug}.md")), on_disk).expect("write doc");
+            let key = format!("decisions/{slug}.md");
+            record.record(&key, hash_bytes(ADR_B_BASE.as_bytes()));
+            at_head.insert(key, committed.as_bytes().to_vec());
+        }
+        let record_before = record.clone();
+        let asked = std::cell::RefCell::new(Vec::new());
+        let head = |path: &str| {
+            asked.borrow_mut().push(path.to_string());
+            at_head.get(path).cloned()
+        };
+
+        let findings = detect_committed_store(
+            &record,
+            &schemas,
+            root.path(),
+            &head,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+        );
+
+        let at = |path: &str| -> Vec<&Finding> {
+            findings
+                .iter()
+                .filter(|f| f.location.as_ref().and_then(|l| l.address.as_deref()) == Some(path))
+                .collect()
+        };
+        // (i) HEAD-equal and conformant → one advisory hash-matches, the lag route.
+        let pulled = at("decisions/pulled.md");
+        assert_eq!(
+            pulled.len(),
+            1,
+            "one finding for the pulled doc: {findings:?}"
+        );
+        let lag = pulled[0];
+        assert_eq!(lag.code, "file-state.hash-matches", "no new id: {lag:?}");
+        assert_eq!(
+            lag.severity,
+            Severity::Advisory,
+            "the lag is advisory: {lag:?}"
+        );
+        assert_eq!(
+            lag.message,
+            drift_store_finding("decisions/pulled.md").message,
+            "the message stays the drift's: {lag:?}"
+        );
+        let route = lag.route.as_ref().expect("the lag routes");
+        assert_eq!(
+            route.as_str(),
+            "the baseline lags `HEAD`; absorbed at the next finalize"
+        );
+        assert!(
+            matches!(route.kind(), crate::finding::RouteKind::Informational),
+            "the lag informs and directs nothing: {route:?}"
+        );
+        // (ii) HEAD-equal but non-conformant, and (iii) uncommitted → today's blocking drift.
+        for path in ["decisions/broken.md", "decisions/local.md"] {
+            assert_eq!(
+                at(path),
+                vec![&drift_store_finding(path)],
+                "`{path}` keeps today's blocking drift: {findings:?}"
+            );
+        }
+        assert!(at("decisions/synced.md").is_empty(), "{findings:?}");
+        // (iv) read-only, and the seam is asked about the drifted docs only.
+        assert_eq!(record, record_before, "the twin never baselines the lag");
+        assert_eq!(
+            asked.into_inner(),
+            vec![
+                "decisions/broken.md".to_string(),
+                "decisions/local.md".to_string(),
+                "decisions/pulled.md".to_string(),
+            ],
+            "only a drifted doc consults the seam"
         );
     }
 

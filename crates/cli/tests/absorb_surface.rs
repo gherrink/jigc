@@ -112,8 +112,10 @@ fn drift(repo: &Path, rel: &str) {
     git(repo, &["commit", "-q", "-m", "an out-of-band edit"]);
 }
 
-/// Whether `jigc validate`'s store sweep still carries a blocking `file-state.hash-matches`
-/// for `rel` — the finding the absorb retires, asked before and after each door.
+/// Whether `jigc validate`'s store sweep still carries a `file-state.hash-matches` for `rel`
+/// — the finding the absorb retires, asked before and after each door. The fixture's drift is
+/// committed, so since M55 Increment 4 the row is the advisory *baseline lags `HEAD`* grade;
+/// the predicate asks for the row, never its severity.
 fn drift_reported(repo: &Path, home: &Path, rel: &str) -> bool {
     let out = jigc(repo, home, &["validate"], None);
     let text = String::from_utf8_lossy(&out.stdout).into_owned();
@@ -202,7 +204,7 @@ fn ingest_names_the_edit_it_absorbed() {
     drift(repo.path(), rel);
     assert!(
         drift_reported(repo.path(), home.path(), rel),
-        "the fixture's drift is a blocking `file-state.hash-matches` before the door runs"
+        "the fixture's drift is a `file-state.hash-matches` before the door runs"
     );
 
     let out = jigc(repo.path(), home.path(), &["ingest"], None);
@@ -242,7 +244,7 @@ fn rename_names_the_edit_it_absorbed_at_the_docs_own_path() {
     drift(repo.path(), rel);
     assert!(
         drift_reported(repo.path(), home.path(), rel),
-        "the fixture's drift is a blocking `file-state.hash-matches` before the door runs"
+        "the fixture's drift is a `file-state.hash-matches` before the door runs"
     );
     let out = jigc(repo.path(), home.path(), retitle, None);
     assert!(out.status.success(), "`jigc rename` exits 0 — unchanged");
@@ -268,7 +270,7 @@ fn rename_names_the_edit_it_absorbed_at_a_repointed_referrer() {
     drift(repo.path(), referrer);
     assert!(
         drift_reported(repo.path(), home.path(), referrer),
-        "the referrer's drift is blocking before the door runs"
+        "the referrer's drift is reported before the door runs"
     );
 
     let reslug = &["rename", "adr:use-sqlite", "--to", "Use Postgres"];

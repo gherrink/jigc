@@ -594,7 +594,7 @@ pub struct PriorHomeInstance {
 ///
 /// - **doc↔code** — every committed doc's `code-anchor` leaves resolved against the working tree via the CLI-supplied subprocess `invoke_doc_code` seam (the [`validate_store`] body, lifted to [`store_doc_code`]). The only family that can raise a `pack-probe-integrity.*` meta-finding (it is the one subprocess probe).
 /// - **workflow↔refs** — each cascade-resolved workflow definition (the CLI enumerates + reads them, address-sorted, feeding each as a [`StoreWorkflow`] bundling its id, raw bytes, and **origin-pack** command catalog) run through the **task-independent** store-scope checks ([`crate::compose::workflow_refs_store`]): `include-resolves`, `include-cycle-absent`, `body-include-only`, the three marker-shadow checks, `fan-out-join-paired`, the **catalog-membership-only** command-ref path, and the **doctype-membership-only** schema-ref path (`schema-ref-resolves`, M43 — resolved against the **composed cascade's** doctype set derived from `schemas`, deliberately NOT per-origin: a methodology step legitimately solicits a dev doctype, `surface-contract.md` → The schema projection). The task-data checks stay at `jigc start`. `workflow_source` is the CLI's layer-aware [`StepSource`](crate::compose::StepSource), **scoped per-workflow** to that definition's origin pack via [`StepSource::scope_to_workflow`](crate::compose::StepSource::scope_to_workflow) so a loser-pack workflow's includes + command-refs resolve against ITS OWN pack, never the precedence-winner's catalog (`multi-pack.md` → Pack-local body-reference resolution: `command-ref-resolves` and the include checks fire **per-definition against that definition's own pack**). For a single pack each origin *is* the one pack, so the resolution is byte-identical to a flat catalog (the no-composition floor).
-/// - **file↔CLI-state** — the read-only committed-store hash twin ([`crate::file_state::detect_committed_store`]): each committed managed doc's on-disk hash against its `record` entry, **detect without absorb** (`record` is borrowed `&`, no write, never via `reconcile_committed_store`).
+/// - **file↔CLI-state** — the read-only committed-store hash twin ([`crate::file_state::detect_committed_store`]): each committed managed doc's on-disk hash against its `record` entry, **detect without absorb** (`record` is borrowed `&`, no write, never via `reconcile_committed_store`). `head` is the CLI-supplied [`PinnedBlob`] bound to `HEAD` (M55 Increment 4, L1's store arm): a drift whose bytes equal the doc's `HEAD` blob and conform grades **advisory** — the baseline lags `HEAD` — and `&|_| None` keeps every drift blocking.
 ///
 /// The engine stays **domain-empty**: the caller (CLI) resolves the cascade and feeds in
 /// the schemas, the per-workflow definition bundles (id + bytes + origin catalog), the step
@@ -621,6 +621,7 @@ pub fn validate_store_families(
     workflows: &[StoreWorkflow],
     workflow_source: &dyn crate::compose::StepSource,
     record: &FileStateRecord,
+    head: &PinnedBlob<'_>,
     versions: &BTreeMap<String, u32>,
     priors: &BTreeMap<String, Vec<Schema>>,
     prior_home_instances: &[PriorHomeInstance],
@@ -672,7 +673,7 @@ pub fn validate_store_families(
     // author or finalize that will never touch it (M42; `validation.md` → the same
     // discriminator applies to family 3's `un-baselined` advisory).
     findings.extend(crate::file_state::detect_committed_store(
-        record, schemas, repo_root, versions, priors,
+        record, schemas, repo_root, head, versions, priors,
     ));
 
     // Family 3 (cont.) — recorded-but-missing OOB-rename detection (M35, Component A;
@@ -6915,6 +6916,7 @@ One sentence.
             &[],
             &EmptyStepSource,
             &record,
+            &|_| None,
             &BTreeMap::new(),
             &BTreeMap::new(),
             &[],
@@ -6984,6 +6986,7 @@ One sentence.
             &[],
             &EmptyStepSource,
             &record,
+            &|_| None,
             &BTreeMap::new(),
             &BTreeMap::new(),
             &[],
@@ -7059,6 +7062,7 @@ Old notes.
             &[],
             &EmptyStepSource,
             &record,
+            &|_| None,
             &BTreeMap::new(),
             &BTreeMap::new(),
             &[],
@@ -7433,6 +7437,7 @@ Effects.
             &workflows,
             &source,
             &record,
+            &|_| None,
             &BTreeMap::new(),
             &BTreeMap::new(),
             &[],
@@ -7484,6 +7489,7 @@ Effects.
             &workflows,
             &source,
             &record,
+            &|_| None,
             &BTreeMap::new(),
             &BTreeMap::new(),
             &[],
@@ -7562,6 +7568,7 @@ Effects.
             &workflows,
             &OnlyStepSource("author the doc:\n{{ schema:ghost }}\n"),
             &record,
+            &|_| None,
             &BTreeMap::new(),
             &BTreeMap::new(),
             &[],
@@ -7598,6 +7605,7 @@ Effects.
             &workflows,
             &OnlyStepSource("{{schema:adr}}\n"),
             &record,
+            &|_| None,
             &BTreeMap::new(),
             &BTreeMap::new(),
             &[],
@@ -7670,6 +7678,7 @@ Slightly higher write latency for resilience.
             &[],
             &EmptyStepSource,
             &record,
+            &|_| None,
             &BTreeMap::new(),
             &BTreeMap::new(),
             &[],
@@ -7729,6 +7738,7 @@ Slightly higher write latency for resilience.
             &[],
             &EmptyStepSource,
             &record,
+            &|_| None,
             &BTreeMap::new(),
             &BTreeMap::new(),
             &[],
@@ -7797,6 +7807,7 @@ Slightly higher write latency for resilience.
             &[],
             &EmptyStepSource,
             &record,
+            &|_| None,
             &BTreeMap::new(),
             &BTreeMap::new(),
             &[],
@@ -7870,6 +7881,7 @@ Slightly higher write latency for resilience.
             &[],
             &EmptyStepSource,
             &record,
+            &|_| None,
             &BTreeMap::new(),
             &BTreeMap::new(),
             &[],
@@ -7979,6 +7991,7 @@ sections:
             &[],
             &EmptyStepSource,
             &record,
+            &|_| None,
             &BTreeMap::new(),
             &BTreeMap::new(),
             &[],
@@ -8021,6 +8034,7 @@ sections:
             &[],
             &EmptyStepSource,
             &record,
+            &|_| None,
             &BTreeMap::new(),
             &BTreeMap::new(),
             &[],
@@ -8164,6 +8178,7 @@ Effects.
                 &[],
                 &EmptyStepSource,
                 &record,
+                &|_| None,
                 &versions,
                 &BTreeMap::new(),
                 &[],
@@ -8209,6 +8224,7 @@ Effects.
             &[],
             &EmptyStepSource,
             &record,
+            &|_| None,
             &versions_v1,
             &BTreeMap::new(),
             &[],
@@ -8266,6 +8282,7 @@ Effects.
                 &[],
                 &EmptyStepSource,
                 &record,
+                &|_| None,
                 &versions,
                 &BTreeMap::new(),
                 &[],
@@ -8346,6 +8363,7 @@ Effects.
                 &[],
                 &EmptyStepSource,
                 &record,
+                &|_| None,
                 &versions,
                 &BTreeMap::new(),
                 &[],
@@ -8433,6 +8451,7 @@ Effects.
             &[],
             &EmptyStepSource,
             &record,
+            &|_| None,
             &versions,
             &BTreeMap::new(),
             &[],
@@ -8586,6 +8605,7 @@ Effects.
             &workflows,
             &source,
             &record,
+            &|_| None,
             &BTreeMap::new(),
             &BTreeMap::new(),
             &[],
@@ -8612,6 +8632,7 @@ Effects.
             &dangling,
             &source,
             &record,
+            &|_| None,
             &BTreeMap::new(),
             &BTreeMap::new(),
             &[],
