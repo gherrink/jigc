@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-rc.24](https://github.com/gherrink/jigc/compare/jigc-v1.0.0-rc.23...jigc-v1.0.0-rc.24) - 2026-10-03
+
+### Added
+
+- *(cli)* sign every commit jigc makes under the coding agent with its co-author trailer
+
+### Other
+
+- Merge remote-tracking branch 'origin/main' into fix/agent-co-author-trailer
+
 ## [1.0.0-rc.23](https://github.com/gherrink/jigc/compare/jigc-v1.0.0-rc.22...jigc-v1.0.0-rc.23) - 2026-10-03
 
 ### Added
