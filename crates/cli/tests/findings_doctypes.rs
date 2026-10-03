@@ -13,13 +13,12 @@
 //!   line counted open by projection (§5).
 //! - **(d)** The `inconsistency.sides/says` heading-depth gate, which the shipped-verb
 //!   sweep in `item_slot_ceiling_axis.rs` cannot reach (no `migrate-inconsistency` ships —
-//!   its `UNREACHABLE` entry cites the test here), driven through a project-layer fixture
-//!   workflow.
+//!   its `UNREACHABLE` entry cites the test here), driven through the shipped
+//!   `report-inconsistency` workflow.
 //!
 //! [`doc_list_triage::TRIAGE`]: crate::doc_list_triage::TRIAGE
 
 use crate::doc_list_triage::{TRIAGE, jq};
-use crate::doc_read_surface::{FINDINGS_FIXTURE_WORKFLOW_ID, install_findings_fixture_workflow};
 use crate::support;
 
 use serde_json::{Value, json};
@@ -307,13 +306,13 @@ fn the_triage_query_groups_real_open_feedback_by_found_in() {
 /// (d) **The `inconsistency.sides/says` heading-depth gate, through the shipped verb.** A
 /// `says` item slot is `###`-reserved (`item_slot_ceiling_axis`'s `expected()` claims
 /// `(3, 4)` for it), so a `doc set-slot` carrying an ATX heading at H1, H2 or H3 is refused
-/// `write.slot-heading-depth`, and one at H4 lands. The create door is the project-layer
-/// fixture workflow, since no shipped `migrate-inconsistency` exists for the sweep to take.
+/// `write.slot-heading-depth`, and one at H4 lands. The create door is the shipped
+/// `report-inconsistency` workflow, since no shipped `migrate-inconsistency` exists for the
+/// sweep to take.
 #[test]
 fn a_says_slot_refuses_a_heading_through_h3_and_lands_h4() {
     let corpus = TrialCorpus::build(State::Fresh);
-    install_findings_fixture_workflow(&corpus);
-    let task = corpus.start_workflow(FINDINGS_FIXTURE_WORKFLOW_ID, "probe the says ceiling");
+    let task = corpus.start_workflow("report-inconsistency", "probe the says ceiling");
     let doc = corpus
         .jigc_ok(&[
             "doc",

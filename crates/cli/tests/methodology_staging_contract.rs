@@ -204,3 +204,74 @@ fn the_contract_is_inert_in_a_workflow_that_composes_neither_step() {
         "`increment` must still compose its own body (its Checkpoint halts); got:\n{body}",
     );
 }
+
+/// The four code-less findings workflows (M55 Increment 8; `design/findings-channel.md`
+/// → 2, 3): each composes `step:finalize-doc-only` in place of `step:finalize`, so its
+/// commit takes nothing from the index — the path-scoped doc-only commit. They are the
+/// **opposite** of [`COMMITTING_WORKFLOWS`]: the agent-stage contract would be a lie
+/// here, so it must be absent, and the path-scoped statement present in its place.
+/// Each intent slugs to a distinct task id (a slug keeps five words at most).
+const DOC_ONLY_WORKFLOWS: [(&str, &str); 4] = [
+    ("report-jigc-feedback", "doc show drops a byte"),
+    ("report-inconsistency", "cache doc disagrees"),
+    ("triage-jigc-feedback", "resolve the dropped byte"),
+    ("triage-inconsistency", "settle the cache record"),
+];
+
+/// The path-scoped statement, read off `step:finalize-doc-only`'s own text rather than
+/// restated: its first paragraph, which says the commit takes only this task's docs and
+/// leaves every other staged path staged.
+fn doc_only_statement() -> String {
+    use engine::packsource::{PackResourceKind, PackSource, ResourceId};
+    let pack = cli::pack::EmbeddedPack::methodology();
+    let bytes = pack
+        .read(
+            PackResourceKind::Steps,
+            &ResourceId::from("finalize-doc-only"),
+        )
+        .expect("the methodology pack ships `step:finalize-doc-only`");
+    let def = engine::compose::load_step_def("finalize-doc-only", &bytes)
+        .expect("`step:finalize-doc-only` loads");
+    let paragraph = def
+        .body
+        .split("\n\n")
+        .next()
+        .expect("a split yields one part")
+        .to_owned();
+    assert!(
+        paragraph.contains("path-scoped"),
+        "the first paragraph of `step:finalize-doc-only` is no longer its path-scoped \
+         statement — read the statement from wherever it moved; got:\n{paragraph}",
+    );
+    flowed(&paragraph)
+}
+
+#[test]
+fn every_doc_only_methodology_workflow_composes_the_path_scope_not_the_stage_contract() {
+    // The opposite of the agent-stage contract: a doc-only commit takes nothing from the
+    // index, so "`git add`" and "only what you have staged" would tell the agent to stage
+    // work this commit never takes. Each of the four instead composes the path-scoped
+    // statement of `step:finalize-doc-only`, read from that step's own text.
+    let (repo, home) = marker_repo("doc-only");
+    let statement = doc_only_statement();
+
+    for (workflow, intent) in DOC_ONLY_WORKFLOWS {
+        let body = compose(repo.path(), home.path(), workflow, intent);
+        let flat = flowed(&body);
+        assert!(
+            !flat.contains("`git add`"),
+            "`{workflow}` commits path-scoped, so it must not compose the `git add` \
+             agent-stage contract; got:\n{body}",
+        );
+        assert!(
+            !flat.contains("only what you have staged"),
+            "`{workflow}` commits path-scoped, so it must not say finalize commits only \
+             what you have staged; got:\n{body}",
+        );
+        assert!(
+            flat.contains(&statement),
+            "`{workflow}` must compose `step:finalize-doc-only`'s path-scoped statement:\n  \
+             {statement}\ngot:\n{body}",
+        );
+    }
+}

@@ -1,0 +1,12 @@
+---
+description: Move one filed jigc-feedback finding off `open` — set its status, and its duplicate-of or pinned-by where they apply, author its resolution, and land that doc alone as one commit.
+usage: a filed finding about jigc has been fixed, declined, found a duplicate or refuted, and its record should say so through the binary.
+creates-task: true
+selectable: false
+suppressed:
+  reason: invoked by name with the finding named in plain words (`jigc start --workflow triage-jigc-feedback "<finding in plain words>"`) — triage is a maintainer's act, not a catalog entry
+  expires: never
+---
+{{ include: step:author-jigc-feedback-triage }}
+{{ include: step:author-commit }}
+{{ include: step:finalize-doc-only }}

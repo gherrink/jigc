@@ -41,8 +41,8 @@ fn composite_registry_enumerates_workflows_and_doctypes() {
     let workflows = ids(&pack, PackResourceKind::Workflows);
     assert_eq!(
         workflows.len(),
-        35,
-        "the composed pack-set ships 35 workflows: {workflows:?}"
+        39,
+        "the composed pack-set ships 39 workflows: {workflows:?}"
     );
     assert!(
         is_sorted_and_deduped(&workflows),

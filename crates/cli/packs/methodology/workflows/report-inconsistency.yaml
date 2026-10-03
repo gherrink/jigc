@@ -1,0 +1,12 @@
+---
+when: code and a doc, or two docs, disagree and the disagreement is worth a record until it is reconciled
+description: File one disagreement inside the project — code against a doc, or two docs — as a new inconsistency doc listing each side it spans, and land that doc alone as one commit, so a disagreement found mid-work is recorded rather than lost.
+usage: two or more of the project's own artifacts disagree and you are not reconciling them now, and you want the disagreement carried through the binary to one new committed record that names every side.
+creates-task: true
+selectable: true
+allows-create:
+  - { type: inconsistency, as: inconsistency, new: true }
+---
+{{ include: step:author-inconsistency }}
+{{ include: step:author-commit }}
+{{ include: step:finalize-doc-only }}

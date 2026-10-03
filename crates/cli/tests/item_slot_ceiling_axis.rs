@@ -323,11 +323,11 @@ const UNREACHABLE: &[(&str, &str)] = &[(
     "inconsistency",
     "no `migrate-inconsistency` ships: no foreign corpus of this doctype exists to \
      migrate (implementation/doctype-authoring.md ships `migrate-<ty>` only when foreign \
-     instances are plausible), and its create door is the report workflow, which this \
+     instances are plausible), and its create door is the `report-inconsistency` workflow, which this \
      `migrate-*`-keyed sweep does not read (DECISIONS.md → 2026-10-03 M55 Increment 7 \
      planning, P5). The `sides/says` heading-depth gate is driven through the binary \
      instead by findings_doctypes::a_says_slot_refuses_a_heading_through_h3_and_lands_h4, \
-     through a project-layer fixture workflow.",
+     through that shipped workflow.",
 )];
 
 /// **An unreachable context's gate is paid for elsewhere, and its reason says where.**

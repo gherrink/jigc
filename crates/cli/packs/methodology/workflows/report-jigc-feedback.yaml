@@ -1,0 +1,14 @@
+---
+description: File one finding about jigc itself — a bug, an inconvenience or a piece of feedback — as a new jigc-feedback doc with where it was found, the jigc version in use and how to reproduce it, and land that doc alone as one commit.
+usage: you hit something about jigc itself while working with it — a wrong act, a cost it should not charge, an observation — and you want it recorded through the binary as one new committed finding.
+creates-task: true
+selectable: false
+suppressed:
+  reason: invoked by name (`jigc start --workflow report-jigc-feedback "<what>"`) — jigc's own agents report what they hit about jigc, and a catalog entry would invite reports into a repository the maintainers never see; opened when a feedback interface exists
+  expires: never
+allows-create:
+  - { type: jigc-feedback, as: feedback, new: true }
+---
+{{ include: step:author-jigc-feedback }}
+{{ include: step:author-commit }}
+{{ include: step:finalize-doc-only }}

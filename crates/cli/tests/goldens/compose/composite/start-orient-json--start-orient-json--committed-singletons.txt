@@ -50,6 +50,10 @@ exit: 0
       "when": "capture a choice you have settled, preserving its rationale with no code to write"
     },
     {
+      "id": "report-inconsistency",
+      "when": "code and a doc, or two docs, disagree and the disagreement is worth a record until it is reconciled"
+    },
+    {
       "id": "single-task",
       "when": "implement one scoped change end-to-end, recording its decisions as ADRs and user-facing effects on the changelog"
     }
