@@ -17,6 +17,8 @@ mod completion_record_audit_vocabulary;
 mod embedded_methodology_compose;
 #[path = "../error_remediation.rs"]
 mod error_remediation;
+#[path = "../findings_workflows.rs"]
+mod findings_workflows;
 #[path = "../fix_phase_fanout.rs"]
 mod fix_phase_fanout;
 #[path = "../fix_task_workflow.rs"]
