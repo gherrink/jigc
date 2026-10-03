@@ -232,6 +232,7 @@ fn expected() -> BTreeMap<&'static str, (usize, usize)> {
         ("completion-record.findings", (3, 4)),
         ("decisions-log.entries", (3, 4)),
         ("deferral-ledger.entries", (3, 4)),
+        ("inconsistency.sides", (3, 4)),
         ("milestone-record.tasks", (3, 4)),
         ("prd.requirements", (3, 4)),
         ("roadmap.milestones", (4, 5)),
@@ -313,12 +314,20 @@ const SLOTLESS: &[(&str, &str)] = &[
     ),
 ];
 
-/// Item-slot contexts no shipped workflow can reach through a create gate. **Empty
-/// today** — each of the 7 item-slot doctypes has its own `migrate-<doctype>`
-/// workflow granting the gate — and asserted empty, so a doctype that ever loses
-/// its door reddens here and must be written down with its reason instead of
-/// quietly dropping out of the sweep.
-const UNREACHABLE: &[(&str, &str)] = &[];
+/// Item-slot doctypes no shipped `migrate-*` workflow reaches through a create gate,
+/// each written down with its reason — asserted equal to the computed set, so a
+/// doctype that ever loses its door reddens here instead of quietly dropping out of
+/// the sweep, and the drive loop skips exactly these. Seven of the eight item-slot
+/// doctypes have their own `migrate-<doctype>` workflow granting the gate.
+const UNREACHABLE: &[(&str, &str)] = &[(
+    "inconsistency",
+    "no `migrate-inconsistency` ships: no foreign corpus of this doctype exists to \
+     migrate (implementation/doctype-authoring.md ships `migrate-<ty>` only when foreign \
+     instances are plausible), and its create door is the report workflow, which this \
+     `migrate-*`-keyed sweep does not read (DECISIONS.md → 2026-10-03 M55 Increment 7 \
+     planning, P5). The `sides/says` heading-depth gate is owed a binary-driven test of \
+     its own, that increment's T4, which this reason then cites.",
+)];
 
 /// The `migrate-*` workflow granting each doctype's create gate, read out of the
 /// composite registry — the sweep's door, never a hand-written doctype→workflow
@@ -442,9 +451,17 @@ fn every_item_slot_context_is_gated_at_every_reserved_depth_through_the_shipped_
          in UNREACHABLE with its reason"
     );
 
+    // The drive loop reaches a doctype only through its gate; the named unreachable
+    // ones are skipped here, never filtered silently above.
+    let reachable: Vec<&str> = doctypes
+        .iter()
+        .copied()
+        .filter(|doctype| !unreachable.contains(doctype))
+        .collect();
+
     let corpus = TrialCorpus::build(State::Fresh);
     fs::create_dir_all(corpus.repo().join("docs")).expect("create the foreign source dir");
-    for doctype in &doctypes {
+    for doctype in &reachable {
         fs::write(
             corpus.repo().join(format!("docs/legacy-{doctype}.md")),
             format!("# Legacy {doctype}\n\nfree-form prose the migration rewrites.\n"),
@@ -454,7 +471,7 @@ fn every_item_slot_context_is_gated_at_every_reserved_depth_through_the_shipped_
     corpus.git(&["add", "docs"]);
     corpus.git(&["commit", "-q", "-m", "the foreign sources"]);
 
-    for doctype in &doctypes {
+    for doctype in &reachable {
         // The door: the doctype's own `migrate-*` workflow, composed by the verb
         // that routes to it. The workflow id is read back from the task the binary
         // minted, so the registry lookup above is proven to be the door taken.

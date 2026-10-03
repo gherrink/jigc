@@ -1,0 +1,137 @@
+exit: 0
+--- stdout ---
+{
+  "contract-version": 7,
+  "type": "jigc-feedback",
+  "schema-version": 1,
+  "identity": {
+    "kind": "slugged",
+    "address": "jigc-feedback:<slug>"
+  },
+  "home": {
+    "kind": "location",
+    "path": "docs/jigc-feedback/<slug>.md"
+  },
+  "fields": [
+    {
+      "id": "kind",
+      "type": "enum",
+      "of": [
+        "bug",
+        "inconvenience",
+        "feedback"
+      ],
+      "required": true,
+      "author-required": true,
+      "section": "meta",
+      "set-field": "jigc-feedback:<slug>#meta/kind"
+    },
+    {
+      "id": "found-in",
+      "type": "string",
+      "required": true,
+      "author-required": true,
+      "section": "meta",
+      "set-field": "jigc-feedback:<slug>#meta/found-in"
+    },
+    {
+      "id": "about",
+      "type": "string",
+      "required": false,
+      "author-required": false,
+      "section": "meta",
+      "set-field": "jigc-feedback:<slug>#meta/about"
+    },
+    {
+      "id": "jigc-version",
+      "type": "string",
+      "required": true,
+      "author-required": true,
+      "section": "meta",
+      "set-field": "jigc-feedback:<slug>#meta/jigc-version"
+    },
+    {
+      "id": "status",
+      "type": "enum",
+      "of": [
+        "open",
+        "resolved",
+        "declined",
+        "duplicate",
+        "refuted"
+      ],
+      "required": true,
+      "author-required": false,
+      "default": "open",
+      "section": "meta",
+      "set-field": "jigc-feedback:<slug>#meta/status"
+    },
+    {
+      "id": "tier",
+      "type": "enum",
+      "of": [
+        "tier-1",
+        "tier-2",
+        "tier-3"
+      ],
+      "required": false,
+      "author-required": false,
+      "section": "meta",
+      "set-field": "jigc-feedback:<slug>#meta/tier"
+    },
+    {
+      "id": "duplicate-of",
+      "type": "ref",
+      "to": "jigc-feedback",
+      "required": false,
+      "author-required": false,
+      "section": "meta",
+      "set-field": "jigc-feedback:<slug>#meta/duplicate-of"
+    },
+    {
+      "id": "pinned-by",
+      "type": "string",
+      "required": false,
+      "author-required": false,
+      "section": "meta",
+      "set-field": "jigc-feedback:<slug>#meta/pinned-by"
+    },
+    {
+      "id": "date",
+      "type": "date",
+      "required": true,
+      "author-required": false,
+      "set": "on-create",
+      "section": "meta",
+      "set-field": "jigc-feedback:<slug>#meta/date"
+    },
+    {
+      "id": "schema-version",
+      "type": "int",
+      "required": true,
+      "author-required": false,
+      "set": "schema-version",
+      "section": "meta"
+    }
+  ],
+  "sections": [
+    {
+      "id": "description",
+      "kind": "slot",
+      "set-slot": "jigc-feedback:<slug>#description"
+    },
+    {
+      "id": "repro",
+      "kind": "slot",
+      "optional": true,
+      "set-slot": "jigc-feedback:<slug>#repro"
+    },
+    {
+      "id": "resolution",
+      "kind": "slot",
+      "optional": true,
+      "set-slot": "jigc-feedback:<slug>#resolution"
+    }
+  ]
+}
+--- stderr ---

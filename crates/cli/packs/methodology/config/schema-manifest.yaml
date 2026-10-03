@@ -12,18 +12,21 @@
 # scope pin) is discharged by the M40 methodology `arb_doc()` byte-stability
 # census, landed before this manifest.
 #
-# The v1 frozen set was all TEN shipped methodology schemas; it is ELEVEN since the
-# M49 Inc-9 `planning-record` mint: the TEN persisted work-doc/design-altitude
-# doctypes (stamp-injected, migrate-corpus-owned — `jigc relocate` now refuses them)
-# plus the transient `commit` shadow (listed for the strict set-equality assert,
-# stamp-excluded: no `location:`/`placement:`).
+# The v1 frozen set was all TEN shipped methodology schemas; it became ELEVEN at the
+# M49 Inc-9 `planning-record` mint and is THIRTEEN since M55 Increment 7 minted
+# `jigc-feedback` and `inconsistency` (design/findings-channel.md → 1.7): the TWELVE
+# persisted work-doc/design-altitude/finding doctypes (stamp-injected,
+# migrate-corpus-owned — `jigc relocate` now refuses them) plus the transient `commit`
+# shadow (listed for the strict set-equality assert, stamp-excluded: no
+# `location:`/`placement:`).
 #
 # A NEW doctype is FREE AT THE FREEZE (`planning-record`, M49 Inc-9 / T5 — the
 # per-milestone plan-time gate record, one required slot per planning gate;
 # design/methodology-docs.md -> The planning gate-record). It owes an entry here for
 # the set-equality assert, at schema-version 1 with its own hash — and nothing else:
 # it moves no other doctype's hash, and it owes NO `schema-snapshots/` entry, because
-# at v1 there is no prior shape to diff against.
+# at v1 there is no prior shape to diff against. `jigc-feedback` and `inconsistency`
+# (M55 Increment 7) joined the same way.
 #
 # `schema-snapshots/` was ABSENT at v1 and is first populated by the M41 F4
 # `deferral-ledger` v1→v2 rename (the D/I → Decision/Idea enum-member remap — the
@@ -119,6 +122,12 @@ doctypes:
   - type: idea
     schema-version: 1
     schema-hash: 5068e29981c15944a1b9c97989d3d776d249d1c3d4c21b1f17b3b185541faca1
+  - type: inconsistency
+    schema-version: 1
+    schema-hash: 6b83fd12278eaa769b645d2dc77a7e0195a4ed03fa92d859d509ed235374ac8f
+  - type: jigc-feedback
+    schema-version: 1
+    schema-hash: 7e16fb98352da83768a9ab5751162826af59a6e94e161213cf90ff4b8604305b
   - type: milestone-record
     schema-version: 3
     schema-hash: 545f6dcd4a83229416364f47746a541b92ca657ead4a67369c20c599139b70a3
