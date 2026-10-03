@@ -1,6 +1,6 @@
 [package]
 name = "jigc"
-version = "1.0.0-rc.22"
+version = "1.0.0-rc.23"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -50,7 +50,7 @@ path = "src/main.rs"
 [dependencies]
 # Published as `jigc-engine`, lib `jigc_engine`, renamed back to `engine` here so no
 # path into the engine moves in this crate (M54 S12, release.md → Packages and names).
-engine = { package = "jigc-engine", version = "=0.1.0-rc.1", path = "../engine" }
+engine = { package = "jigc-engine", version = "=0.1.0-rc.2", path = "../engine" }
 clap = { workspace = true }
 include_dir = { workspace = true }
 anyhow = { workspace = true }

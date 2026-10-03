@@ -7,6 +7,83 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-rc.23](https://github.com/gherrink/jigc/compare/jigc-v1.0.0-rc.22...jigc-v1.0.0-rc.23) - 2026-10-03
+
+### Added
+
+- *(methodology)* the cheap-vs-robust gate asks for the option that removes the artifact that can drift
+- *(cli)* jigc's readme names the generated crate README, proved on the packaged bytes
+- *(dev)* dev/crate-readme generates the crate README, fenced by bytes and links
+- *(method)* the seed filed through one fan-out, 91 docs in one commit, fenced as adoptable
+- *(method)* the seed's filing driver, one fan-out into one store, proved on two rows
+- *(methodology)* register the four findings workflows, report and triage
+- *(methodology)* register jigc-feedback and inconsistency at schema-version 1
+- *(cli)* every doc list --format json row carries title and fields
+- *(cli)* doc show's whole-doc fields report an absent defaulted field's default
+- *(cli)* doc show --format json carries the doc's H1 as a top-level title
+- *(engine)* store scope grades a history-less baseline as the task gate does
+- *(engine)* a dangling baseline routes at the branch switch, never at unmanage
+- *(engine)* a store sweep grades a baseline that lags HEAD advisory
+- *(engine)* a touched doc whose drift is a pull lands instead of conflict-blocking
+- *(cli)* a fan-out sub-task is asked for its commit doc only when the join reads it
+- *(cli)* a fan-out sub-task's composed text omits the per-task finalize door
+- *(cli)* an allows-create entry carrying `new: true` refuses an id already on disk
+- *(engine)* allows-create entry keys are closed, a misspelt key refused at load
+- *(cli)* a path the doc-only finalize leaves staged is tagged left-staged
+- *(cli)* the index gate's third spelling, on the doc-only commit model
+- *(cli)* the doc-only finalize narrates what stays staged on its own commit model
+- *(cli)* the doc-only finalize commits a task's own docs, path-scoped
+
+### Fixed
+
+- *(cli)* doc list <type> names only open tasks that stage a doc of that type
+- *(cli)* create.already-exists under a bound role routes at the next task, not a distinct identity
+- *(cli)* unmanage's ack no longer claims a file is left on disk when there is none
+- *(cli)* a project structural-op delta resolves one workflow at every door
+- *(engine)* a history-less baseline no branch carries routes at unmanage, not at a branch switch
+- *(packs)* a planning sub-task is never told the refused per-task door blocks its gates
+- *(cli)* a staged doc written back unchanged is an empty commit, not a hook rejection
+- *(cli)* the doc-only commit and the review hold read the composed include tree at any depth
+- *(cli)* a fan-out sub-task's what's-left line never promises the doc-only path scope
+- *(cli)* the distinct-identity route follows where the id comes from
+- *(cli)* `write.title-ignored` over a committed doc routes at a distinct identity
+- *(cli)* finalize hands git each recorded path as :(literal), never a pattern
+- *(engine)* a shared-cache save never runs without its lock
+- *(probe)* a probe that fails says why, and could-not-start names the program
+
+### Other
+
+- *(m55)* the fold-back says built + audited, and foldback_truth inverts a thirteenth time
+- *(m55)* the fold-back span, and foldback_truth re-aimed to **M55 — built, not audited
+- *(cli)* the link fence's pending list is asserted empty again at M55's close
+- *(cli)* flow 59 — a pulled edit absorbed, then a branch switch advisory, in one corpus's history
+- *(cli)* flow 58 — several reporters into one store through one join, by task id in either filing order
+- *(cli)* flow 57 — overwrite refused through the shipped report workflow's new:true entry
+- *(cli)* flow 56 — the three staging states on the shipped report-jigc-feedback
+- *(cli)* flow 55 — report, read back and triage in one corpus on the shipped workflows
+- *(cli)* the install-line fence admits the crate README as derived, not a second copy
+- *(method)* the seeded decisions-pending and register rows point at their seed docs
+- *(cli)* the seed ledger counts 91 findings from 92 source rows, held to its sources
+- *(cli)* flow D lands three report sub-tasks at one join, each composed free of the omission set
+- *(cli)* both triage workflows move a filed finding off open and land that doc alone
+- *(cli)* flow A's report arm and flow C's first arm on the shipped report workflows
+- *(cli)* the two finding doctypes' acceptance through the real binary
+- *(cli)* the freeze binds jigc-feedback and inconsistency through the real binary
+- *(m55)* findings-channel joins the design reading order, and the link fence reads the Settle's new docs
+- *(cli)* one stdin feeder that tolerates a child exiting before it reads
+- *(cli)* the no-`cd` assertion reads a command, not a short SHA ending in `cd`
+- *(dev)* dev/gate runs the suite on nextest under the real git
+- *(cli)* suites remove the scratch roots they mint, so a gate run leaves no TMPDIR litter
+- *(process)* merge main in before every PR, and start every branch from the remote main
+- exempt pull requests from forks from the branch-name check
+- *(agents)* deny force-pushing any branch, the ones agents may push included
+- *(method)* the branch model in one home, the close as a pull request, the release PR as the release boundary
+- *(agents)* deny every pinned form of pushing to main, and say what agents may push
+- one aggregate ci-ok job, and the branch-name rule in the hygiene job
+- *(m54)* the completion verdict persisted, and the fold-back cites it
+- *(m54)* completion audit closed — five findings, all fixed, the fold-back inverted
+- *(release)* install release-plz against a recorded SHA-256, not through release-plz/action
+
 ## [1.0.0-rc.22](https://github.com/gherrink/jigc/compare/jigc-v0.0.0...jigc-v1.0.0-rc.22) - 2026-10-01
 
 ### Added
