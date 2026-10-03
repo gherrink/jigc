@@ -5,6 +5,8 @@
 #[path = "../support/mod.rs"]
 mod support;
 
+#[path = "../agent_co_author.rs"]
+mod agent_co_author;
 #[path = "../anyhow_route_spans.rs"]
 mod anyhow_route_spans;
 #[path = "../branch_name_fence.rs"]

@@ -7992,10 +7992,7 @@ pub(crate) fn git_run(repo_root: &Path, args: &[&str]) -> Result<()> {
 /// form of the one hook-capable commit seam [`git_commit_capture`]; see there for the
 /// hook posture, the captured-stream contract, and the typed subject.
 pub fn git_commit(subject: &SeamSubject, message_file: &Path) -> Result<String> {
-    git_commit_capture(
-        subject,
-        &[std::ffi::OsStr::new("-F"), message_file.as_os_str()],
-    )
+    git_commit_capture(subject, CommitMessage::File(message_file), &[])
 }
 
 /// `git commit --amend -F <message-file>` (F-10; `design/finalize.md` → The amend arm) —
@@ -8008,15 +8005,53 @@ pub fn git_commit(subject: &SeamSubject, message_file: &Path) -> Result<String> 
 /// (`finalize.amend-index-dirty`). That gate is what makes this a message-only rewrite:
 /// without it git folds the whole index in silently at exit 0, which is the driven hazard
 /// the arm exists to close rather than a corner of it.
+///
+/// **The co-author claim survives the rewrite** (`design/finalize.md` → The amend arm): the
+/// message is re-authored from scratch, so a `Co-Authored-By` trailer the profile declares is
+/// carried over from `HEAD` when `HEAD` carries it — the tree it was claimed for does not
+/// move — as well as added when the agent itself is amending ([`CoAuthorBasis::SessionOrHead`]).
 pub fn git_commit_amend(subject: &SeamSubject, message_file: &Path) -> Result<String> {
-    git_commit_capture(
+    commit_through_seam(
         subject,
-        &[
-            std::ffi::OsStr::new("--amend"),
-            std::ffi::OsStr::new("-F"),
-            message_file.as_os_str(),
-        ],
+        CommitMessage::File(message_file),
+        &[std::ffi::OsStr::new("--amend")],
+        CoAuthorBasis::SessionOrHead,
     )
+}
+
+/// The message a commit through [`git_commit_capture`] records — the seam owns the `-F` / `-m`
+/// flag so it can **sign** the message on the way in (the coding agent's co-author trailer,
+/// `design/assistant-adapter.md` → The co-author trailer), which is why no caller passes it.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum CommitMessage<'a> {
+    /// A message file jigc wrote (`git commit -F <file>`); the signature is written into it.
+    File(&'a Path),
+    /// A literal message (`git commit -m <text>`).
+    Text(&'a str),
+}
+
+/// What decides whether a commit carries the profile's co-author trailer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CoAuthorBasis {
+    /// jigc is running under the agent ([`crate::adapter::session_co_author`]) — every commit
+    /// model but the amend.
+    Session,
+    /// The session, **or** the commit being rewritten already carries the trailer — the amend
+    /// arm, whose tree is the one the original claim was made for.
+    SessionOrHead,
+}
+
+/// The co-author `basis` resolves to in `repo_root`, if any.
+fn co_author_for(repo_root: &Path, basis: CoAuthorBasis) -> Option<crate::adapter::CoAuthor> {
+    if let Some(co_author) = crate::adapter::session_co_author() {
+        return Some(co_author);
+    }
+    if basis == CoAuthorBasis::Session {
+        return None;
+    }
+    let declared = crate::adapter::declared_co_author()?;
+    let head = git_capture(repo_root, &["log", "-1", "--format=%B", "HEAD"]).ok()?;
+    declared.signed(&head).then_some(declared)
 }
 
 /// The **only** exit code a hook failure can reach the seam with — git normalizes every one of
@@ -8102,13 +8137,61 @@ fn relay_git_streams(stdout: &str, stderr: &str) -> String {
 /// this is**, because the seam cannot tell: a fan-out worktree answers `git symbolic-ref
 /// -q HEAD` exactly as a user's detached HEAD does, so a caller must say, from a live
 /// `DedicatedWorktree` handle. A breach refuses here and **no commit is made**.
+///
+/// **It signs the message, at every door at once** (`design/assistant-adapter.md` → The
+/// co-author trailer): the seam owns the message flag ([`CommitMessage`]) so that a commit jigc
+/// makes **under the coding agent** carries the agent's `Co-Authored-By` trailer exactly once
+/// — appended to the trailer block, never doubled where the message already names that
+/// co-author — and a commit a human makes carries none. A door that joins this axis is signed
+/// by joining it.
 pub(crate) fn git_commit_capture(
     subject: &SeamSubject,
+    message: CommitMessage<'_>,
     args: &[&std::ffi::OsStr],
 ) -> Result<String> {
+    commit_through_seam(subject, message, args, CoAuthorBasis::Session)
+}
+
+/// [`git_commit_capture`]'s body, with the co-author basis the amend arm widens.
+fn commit_through_seam(
+    subject: &SeamSubject,
+    message: CommitMessage<'_>,
+    args: &[&std::ffi::OsStr],
+    basis: CoAuthorBasis,
+) -> Result<String> {
     subject.verify(SeamAct::Commit)?;
+    let co_author = co_author_for(subject.path(), basis);
+    let signed_text;
+    let message_args: [&std::ffi::OsStr; 2] = match message {
+        CommitMessage::File(path) => {
+            if let Some(co_author) = &co_author {
+                // No path in either message: it is a host path under the workbench, and the
+                // error surfaces speak repo-relative paths only (`tests/repo_relative_paths.rs`).
+                let text = std::fs::read_to_string(path)
+                    .context("could not read back the commit message jigc rendered to sign it")?;
+                let signed = co_author.sign(&text);
+                if signed != text {
+                    std::fs::write(path, signed)
+                        .context("could not write the signed commit message")?;
+                }
+            }
+            [std::ffi::OsStr::new("-F"), path.as_os_str()]
+        }
+        CommitMessage::Text(text) => {
+            signed_text = match &co_author {
+                Some(co_author) => co_author.sign(text),
+                None => text.to_owned(),
+            };
+            [
+                std::ffi::OsStr::new("-m"),
+                std::ffi::OsStr::new(&signed_text),
+            ]
+        }
+    };
     let out = Command::new("git")
         .arg("commit")
+        // The message flag first: a caller's `args` may end in `-- <pathspec>`.
+        .args(message_args)
         .args(args)
         .current_dir(subject.path())
         .output()

@@ -1,0 +1,8 @@
+# Every process cargo runs — the test binaries, and the `jigc` they spawn — sees the coding
+# agent's session variable EMPTY, so a suite run inside a Claude Code session behaves exactly
+# as it does on a CI runner. The shipped adapter profile signs a commit with the agent's
+# co-author trailer only while `CLAUDECODE` is set and non-empty
+# (design/assistant-adapter.md → The co-author trailer); a test that wants the agent arm sets
+# the variable on the child it spawns (crates/cli/tests/agent_co_author.rs).
+[env]
+CLAUDECODE = { value = "", force = true }

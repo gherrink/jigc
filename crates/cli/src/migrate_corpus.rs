@@ -501,14 +501,13 @@ fn commit_migration(repo_root: &Path, touched: &[String]) -> Result<Option<(Stri
     // producer axis) — never the output-discarding `git_run`, which was this producer's
     // defect. The hook posture is unchanged: never `--no-verify`, a rejection surfaces
     // git's bytes verbatim and fails the run loudly.
-    let mut commit: Vec<&std::ffi::OsStr> = vec![
-        std::ffi::OsStr::new("-m"),
-        std::ffi::OsStr::new(MIGRATION_COMMIT_MESSAGE),
-        std::ffi::OsStr::new("--"),
-    ];
+    let mut commit: Vec<&std::ffi::OsStr> = vec![std::ffi::OsStr::new("--")];
     commit.extend(paths.iter().map(std::ffi::OsStr::new));
-    let hook_output =
-        crate::task::git_commit_capture(&crate::repo::SeamSubject::live(repo_root), &commit)?;
+    let hook_output = crate::task::git_commit_capture(
+        &crate::repo::SeamSubject::live(repo_root),
+        crate::task::CommitMessage::Text(MIGRATION_COMMIT_MESSAGE),
+        &commit,
+    )?;
 
     let sha = git_stdout(repo_root, &["rev-parse", "--short", "HEAD"])?;
     Ok(Some((sha, hook_output)))
