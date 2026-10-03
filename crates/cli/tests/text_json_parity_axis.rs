@@ -928,16 +928,25 @@ fn ingest_parity() {
 }
 
 /// `jigc unmanage` — the drop report, carried whole.
+///
+/// **Declared exclusion: `UnmanageReport.file_absent`** (M55 completion triage). The text
+/// picks between *"the file is left on disk"* and *"there was no file … to leave on disk"*
+/// on it; the envelope is keys-only and pins no message, and whether a repo-relative path
+/// exists is the driver's own stat — re-derivable state, which the Settle's exclusion
+/// covers.
 fn unmanage_parity() {
     let report = UnmanageReport {
         path: "docs/decisions/use-sqlite.md".to_owned(),
         identity: Some("adr:use-sqlite".to_owned()),
         dropped: true,
+        file_absent: false,
     };
     let UnmanageReport {
         path,
         identity,
         dropped,
+        // DECLARED EXCLUSION — see this function's doc comment.
+        file_absent: _file_absent,
     } = &report;
 
     let text = unmanage(Format::Agent, &report);

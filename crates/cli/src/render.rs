@@ -4645,13 +4645,30 @@ const VERDICT_LEGEND: &[(&str, &str)] = &[
 /// Increment 4 / T1; `design/project-setup.md` → Flow 2 hardening → Teardown / cleanup
 /// (G5)). `json` emits the report object (tooling-consumed, no footer); `agent` /
 /// `human` emit one summary line distinguishing a real drop (the doc's edges +
-/// baseline were dropped, the file left on disk) from an idempotent no-op (the doc was
-/// already unmanaged), then the routing footer.
+/// baseline were dropped, the file left on disk — or, when no file sat at the path, saying
+/// there was none to leave) from an idempotent no-op (the doc was already unmanaged), then
+/// the routing footer.
 pub fn unmanage(format: Format, report: &crate::unmanage::UnmanageReport) -> String {
     match format {
         Format::Json => json(report),
         Format::Agent | Format::Human => {
-            let mut out = if report.dropped {
+            let mut out = if report.dropped && report.file_absent {
+                // The baseline outlived its doc (the cell CR2's orphaned-baseline route
+                // sends here): there is no file, so neither the left-on-disk clause nor the
+                // still-at-the-managed-home one is true — say what was dropped and that
+                // there was nothing to leave (M55 completion triage).
+                let dropped = match &report.identity {
+                    Some(id) => format!(
+                        "{} ({id}) — dropped its file-state baseline + forward edges",
+                        report.path
+                    ),
+                    None => format!("{} — dropped its file-state baseline", report.path),
+                };
+                format!(
+                    "unmanaged {dropped}; there was no file at {} to leave on disk\n",
+                    report.path,
+                )
+            } else if report.dropped {
                 match &report.identity {
                     // The still-at-the-managed-home honesty clause (round-2 D2): the
                     // relocation sweeps (a `docs-root` re-point, a `placement-root`

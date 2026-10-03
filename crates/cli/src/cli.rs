@@ -3310,7 +3310,10 @@ pub const PATH_ARG_OCCURRENCES: &[PathArgOccurrence] = &[
                       never joined onto a path jigc reads, writes or unlinks — `unmanage` \
                       leaves the bytes on disk by definition, which is the whole verb. A \
                       spelling no record carries selects nothing and earns the idempotent \
-                      no-op the verb documents.",
+                      no-op the verb documents. Its one filesystem touch is after a real \
+                      drop: a no-follow existence check (`symlink_metadata`) of the \
+                      spelling under the repo root, asked only when every component is a \
+                      normal name, so the ack does not claim a file that is not there.",
             },
         }],
     },
