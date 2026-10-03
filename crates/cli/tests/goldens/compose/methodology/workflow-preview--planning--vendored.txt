@@ -93,9 +93,9 @@ is minted from the title you give (this milestone):
 Run: `jigc doc create planning-record --title <TITLE> --task your-task-id`
 
 EVERY gate slot is required, and that is the whole point of the record rather than a
-side effect of it: `jigc task finalize` BLOCKS on an unfilled one
-(`schema-conformance.required-slot-present`, naming the gate at its own address) and
-lands the record once every gate is answered. jigc checks only that a slot is
+side effect of it: this task's commit boundary — the finalize named below — BLOCKS on
+an unfilled one (`schema-conformance.required-slot-present`, naming the gate at its own
+address) and lands the record once every gate is answered. jigc checks only that a slot is
 FILLED — it never reads, scores or lints the judgment you put inside it — so an
 honest `N/A — <why>` is a complete answer, no phrasing is graded, and what the record
 buys is that no gate goes UNANSWERED.

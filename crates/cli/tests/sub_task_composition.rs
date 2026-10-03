@@ -35,6 +35,14 @@
 //! uncommitted in the main checkout (the author step composed verbatim, followed to a landed
 //! join), a docs-only fan-out landing with no commit doc, the knob flipped between compose and
 //! join (the routed join block), and the fence's unclosed author arm with its own mutant.
+//!
+//! **The M55 completion audit's E2** closes the route around the derivation: a door *named*
+//! in prose is a mention the derived set never omits, so `author-planning-record` told a
+//! `planning` sub-task that the refused `jigc task finalize` BLOCKS and lands its record. The
+//! `e2_*` cases pin the sub-task text (and, through [`assert_sub_task_view`], every Proves
+//! workflow's) free of any mention outside the never-commit discipline, drive the reworded
+//! claim true at the join, and fence both packs' step and workflow text against the literal
+//! spelling.
 
 use crate::support;
 
@@ -76,6 +84,40 @@ const PLANNING_FINALIZE_PROSE: &str = "Committing this plan lands the roadmap en
 /// The per-task door's `Run:` line for `task`, as the composer emits it.
 fn finalize_run_line(task: &str) -> String {
     format!("Run: `jigc task finalize {task}`")
+}
+
+/// The per-task door's literal spelling.
+const PER_TASK_DOOR: &str = "jigc task finalize";
+
+/// The one phrasing pack text may name the per-task door in: the sub-task discipline
+/// *"never `jigc task finalize`"* (`step:sub-task-commit`, `step:fix-finding` — steps only
+/// sub-task-native workflows compose), matched ASCII-case-insensitively.
+const NEVER_THE_DOOR: &str = "never `";
+
+/// `text` with every whitespace run collapsed to one space, so a line wrap neither hides a
+/// mention nor breaks the allowed phrasing.
+fn flat(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Every literal mention of the per-task door in `text` that is **not** the never-commit
+/// phrasing, each with the words leading up to it.
+fn per_task_door_mentions(text: &str) -> Vec<String> {
+    let flat = flat(text);
+    // ASCII lowercasing keeps byte offsets, so an index into `lower` is one into `flat`.
+    let lower = flat.to_ascii_lowercase();
+    lower
+        .match_indices(PER_TASK_DOOR)
+        .filter(|(at, _)| !lower[..*at].ends_with(NEVER_THE_DOOR))
+        .map(|(at, _)| {
+            let start = flat[..at]
+                .char_indices()
+                .rev()
+                .nth(40)
+                .map_or(0, |(i, _)| i);
+            flat[start..at + PER_TASK_DOOR.len()].to_string()
+        })
+        .collect()
 }
 
 /// Run `jigc <args>` in `cwd` with `$HOME = home`, never inheriting a harness `JIGC_PACK_DIR`.
@@ -284,13 +326,22 @@ fn assert_sub_task_view(view: &str, json: &ComposedJson, sub: &str, workflow: &s
                  `jigc milestone finalize {MILESTONE}`; got:\n{text}",
             );
         }
-        // No `Run:` line of the per-task door for any id — a prose *mention* of the door
-        // (`author-planning-record`'s) is a declared bound, not a command line.
+        // No `Run:` line of the per-task door for any id...
         assert!(
             !text
                 .lines()
                 .any(|line| line.starts_with("Run: `jigc task finalize")),
             "{what} must carry no `Run:` line of the per-task door; got:\n{text}",
+        );
+        // ...and no prose mention of it either, but for the sub-task discipline's own
+        // *"never `jigc task finalize`"* (the M55 completion audit, E2: until then
+        // `author-planning-record` told a `planning` sub-task the refused door BLOCKS and lands
+        // its record — a mention, not a command ref, so the derived set never saw it).
+        let mentions = per_task_door_mentions(text);
+        assert!(
+            mentions.is_empty(),
+            "{what} must not name the refused per-task door outside the never-commit \
+             discipline; found {mentions:?} in:\n{text}",
         );
     }
 
@@ -1449,4 +1500,218 @@ fn e1_a_doc_only_workflow_composed_for_a_sub_task_never_promises_the_path_scope(
             "an ordinary `{workflow}` task is on the doc-only model; got:\n{line}",
         );
     }
+}
+
+// ---------------------------------------------------------------------------------------
+// E2 (M55 completion audit) — the per-task door named in prose.
+// ---------------------------------------------------------------------------------------
+
+/// `step:author-planning-record`'s statement of the record's forcing function, naming the
+/// boundary by role rather than by door — true where the boundary is `jigc task finalize` and
+/// where it is the join.
+const PLANNING_GATE_CLAIM: &str =
+    "this task's commit boundary — the finalize named below — BLOCKS on an unfilled one";
+
+/// **E2** — a `planning` sub-task's composed text states the gate record's forcing function
+/// without naming the refused per-task door, and the statement is **true at the boundary it
+/// names below**: the sub-task trailer's `jigc milestone finalize`. Driven, not read: the
+/// record is created through the composed step's own emitted create line, the join BLOCKS with
+/// `schema-conformance.required-slot-present` at every gate's own address (the gate axis read
+/// from the shipped schema through the binary), each block's emitted route is followed
+/// verbatim, and the same join then lands the record. The ordinary-task arm of the same claim
+/// is `planning_gate_forcing::`'s.
+#[cfg(unix)]
+#[test]
+fn e2_a_planning_sub_task_states_the_gate_its_join_enforces() {
+    let fx = Fixture::new("planning-gate-sub-task");
+    let repo = fx.repo();
+    let home = fx.home();
+    let (sub, (_, span)) = fan_out(&fx, &["planning"])
+        .into_iter()
+        .next()
+        .expect("one sub-task");
+    let shim_bin = install_jigc_shim(fx.root.path());
+    let worktree = fx.worktree(&sub);
+    let view = ok(
+        &run_span(&repo, &home, &shim_bin, &span),
+        &format!("the span `{span}`"),
+    );
+
+    let mentions = per_task_door_mentions(&view);
+    assert!(
+        mentions.is_empty(),
+        "a `planning` sub-task's text never names the refused per-task door; found \
+         {mentions:?} in:\n{view}",
+    );
+    assert!(
+        flat(&view).contains(PLANNING_GATE_CLAIM),
+        "the gate record's forcing function is stated by role; got:\n{view}",
+    );
+    let boundary =
+        format!("whose `jigc milestone finalize {MILESTONE}` is its only commit boundary");
+    let claim_at = flat(&view).find(PLANNING_GATE_CLAIM).expect("found above");
+    assert!(
+        flat(&view)[claim_at..].contains(&boundary),
+        "the finalize the claim points below to is the join; got:\n{view}",
+    );
+
+    // The record, created through the composed step's emitted create line.
+    let create = view
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("Run: `"))
+        .filter_map(|rest| rest.strip_suffix('`'))
+        .find(|command| command.starts_with("jigc doc create planning-record "))
+        .unwrap_or_else(|| panic!("the composed step emits the record's create; got:\n{view}"));
+    let create = fill_placeholder(create, "Cache");
+    let ack = ok(
+        &run_emitted(&worktree, &home, &shim_bin, &create, ""),
+        &format!("the emitted `{create}`"),
+    );
+    let address = ack.trim().to_string();
+    assert!(
+        address.starts_with("planning-record:"),
+        "the create acks the record's address; got `{ack}`"
+    );
+
+    // The gate axis, read from the shipped schema through the binary — no gate hand-listed.
+    let projection: serde_json::Value = stdout_json(
+        &jigc(
+            &repo,
+            &home,
+            &["doc", "schema", "planning-record", "--format", "json"],
+        ),
+        &[0],
+        "`jigc doc schema planning-record --format json`",
+    );
+    let gates: Vec<String> = projection["sections"]
+        .as_array()
+        .expect("`sections` is an array")
+        .iter()
+        .filter(|section| section["kind"] == "slot")
+        .map(|section| section["id"].as_str().expect("a section id").to_string())
+        .collect();
+    assert!(
+        gates.len() > 1,
+        "the gate axis is not vacuous; got {gates:?}"
+    );
+
+    // Unfilled: the join BLOCKS, naming each gate at its own address.
+    let blocked = jigc(&repo, &home, &["milestone", "finalize", MILESTONE]);
+    let report = format!(
+        "{}{}",
+        String::from_utf8_lossy(&blocked.stdout),
+        String::from_utf8_lossy(&blocked.stderr)
+    );
+    assert_eq!(
+        blocked.status.code(),
+        Some(3),
+        "the join blocks on an unanswered gate record; got:\n{report}"
+    );
+    let lines: Vec<&str> = report.lines().map(str::trim).collect();
+    for gate in &gates {
+        let at = format!("at: {address}#{gate} ");
+        let found = lines.iter().position(|line| line.starts_with(&at));
+        let found = found.unwrap_or_else(|| {
+            panic!("the join names the unfilled gate `{gate}` at its own address; got:\n{report}")
+        });
+        assert!(
+            lines[found - 1].starts_with("blocking · schema-conformance.required-slot-present"),
+            "`{gate}` blocks as `required-slot-present`; got:\n{report}",
+        );
+        // Answer it by following the block's own emitted route, verbatim.
+        let route = lines[found + 1]
+            .strip_prefix("route: `")
+            .and_then(|rest| rest.split_once('`'))
+            .map(|(command, _)| command)
+            .unwrap_or_else(|| panic!("`{gate}`'s block routes a command; got:\n{report}"));
+        ok(
+            &run_emitted(
+                &repo,
+                &home,
+                &shim_bin,
+                route,
+                &format!("Evidence discharging the {gate} gate.\n"),
+            ),
+            &format!("the routed `{route}`"),
+        );
+    }
+
+    // Answered: the same join lands the record.
+    ok(
+        &jigc(&repo, &home, &["milestone", "finalize", MILESTONE]),
+        "the join over an answered gate record",
+    );
+    let landed = fx.jigc_ok(&repo, &["doc", "show", &address]);
+    for gate in &gates {
+        assert!(
+            landed.contains(&format!("Evidence discharging the {gate} gate.")),
+            "the landed record carries `{gate}`'s answer; got:\n{landed}",
+        );
+    }
+}
+
+/// **E2's fence** — no step or workflow body in either shipped pack names the per-task door
+/// literally, except in the sub-task discipline's *"never `jigc task finalize`"*. The door
+/// carried through `{{ cli.finalize-task }}` is the derived omission set's (fence (c)); this
+/// one closes the **literal-spelling** route around it, which the derivation reads as a mention
+/// and never omits. Matched over whitespace-collapsed, ASCII-lowercased raw text, so a wrapped
+/// or capitalised spelling is caught too.
+///
+/// **What it would miss, declared:** a door named without that literal spelling (`task
+/// finalize` alone, `jigc --format json task finalize`, *"finalize this task"*); the allowed
+/// phrasing placed in a step an **ordinary** task composes, where the never-commit discipline is
+/// itself false — the fence admits the phrasing, not the context; a claim about finalize that
+/// names no door at all (the reworded `author-planning-record` sentence is held true by
+/// [`e2_a_planning_sub_task_states_the_gate_its_join_enforces`] and `planning_gate_forcing::`,
+/// not by this scan); text outside `steps/` and `workflows/` — schema slot hints, the catalog,
+/// adapter and guide text, CLI-emitted renders; and a project-layer step shadow, which no
+/// shipped-pack scan can see.
+#[test]
+fn e2_no_pack_text_names_the_per_task_door_outside_the_never_phrasing() {
+    let mut offending = Vec::new();
+    let mut allowed = 0;
+    for (name, _, dir) in shipped_packs() {
+        for kind in ["steps", "workflows"] {
+            for entry in fs::read_dir(dir.join(kind)).expect("read a shipped pack dir") {
+                let path = entry.expect("a dir entry").path();
+                let raw = fs::read_to_string(&path).expect("read a pack file");
+                let mentions = per_task_door_mentions(&raw);
+                allowed += flat(&raw)
+                    .to_ascii_lowercase()
+                    .matches(PER_TASK_DOOR)
+                    .count()
+                    - mentions.len();
+                offending.extend(mentions.into_iter().map(|mention| {
+                    format!(
+                        "{name}/{kind}/{}: …{mention}",
+                        path.file_name().expect("a file name").to_string_lossy()
+                    )
+                }));
+            }
+        }
+    }
+    assert!(
+        offending.is_empty(),
+        "pack text names the per-task door outside the never-commit discipline — a sub-task \
+         composing it reads a door that refuses it; phrase it by role or through \
+         `{{{{ cli.finalize-task }}}}`:\n{}",
+        offending.join("\n"),
+    );
+    assert!(
+        allowed >= 2,
+        "not vacuous: `sub-task-commit` and `fix-finding` carry the allowed phrasing; counted \
+         {allowed}",
+    );
+
+    // The scan reads what it claims to: a wrapped, capitalised mention is caught; the allowed
+    // phrasing survives a wrap.
+    assert_eq!(
+        per_task_door_mentions("so `jigc task finalize` BLOCKS on it").len(),
+        1
+    );
+    assert_eq!(
+        per_task_door_mentions("run `JIGC task\n  finalize <id>`").len(),
+        1
+    );
+    assert!(per_task_door_mentions("but Never\n`jigc task\nfinalize` here").is_empty());
 }
