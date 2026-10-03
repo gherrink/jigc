@@ -2,6 +2,173 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-03 — M55 Increment 11 planning: decomposition
+
+Cut [Increment 11](implementation/roadmap.md) (*the close*) into **9 ordered tasks**, grounded at HEAD `6acd9d6d` on `milestone/findings-channel/close` (tree clean), Increments 1–10 landed. Cross-ref [roadmap.md](implementation/roadmap.md) → Milestone 55 → Increment 11 and its *Doc moves ride the increment* paragraph; [findings-channel.md](design/findings-channel.md) → 11 (flows A–E), 13 (the twelve rows); [planning-gate-record.md](completions/artifacts/M55/planning-gate-record.md) → row 15; [milestone-completion-workflow.md](implementation/milestone-completion-workflow.md) → *Where the fold-back lands*; the M54 close's entry below (2026-10-01, *M54 Increment 12 planning*), whose census and re-aim method this cut reuses. **Codes registered: none.** No production code, schema, manifest, version integer or contract moves: the increment adds five worked-examples chapters and their suites, one un-ignored test, a census record, a `CLAUDE.md` current-truth edit, the fold-back span and the fence re-aim.
+
+**Basis. Each item was read at HEAD or driven where marked.**
+
+- **Driven, in `dev/jigc-rig fresh` on the debug binary: flow B state 2 holds on the shipped `report-jigc-feedback`.** A `dev-task` held an edit to tracked `src/lib.rs` and a new `src/new.rs`, both staged *before* the report was minted. The report's `doc create jigc-feedback` (no flag), three `set-field … --value`, a `set-slot … --from-file -` and the commit doc's `header/type` + `summary` filled, `jigc task finalize` exited **0**. Its commit held exactly `docs/jigc-feedback/<slug>.md`, its left-out section named both code paths, and `git diff --cached --name-status` was byte-identical before and after. The code task then finalized its own two files at exit 0. Increment 1 proved this only on a fixture workflow; Increment 8 drove the shipped workflow with a path staged *after* (state 3's shape) only.
+- **Driven, same rig: flow C on the shipped workflows.** A second `report-jigc-feedback` task's `doc author` (payload `title:` + `sections: [{id: description, set: …}]`, the `create_only_gate` fixture shape) with the first's title exited 1 `create.already-exists`, routed at the payload's `title:`, nothing staged. `doc create … --slug <s>` with the same title minted `jigc-feedback:<s>` beside it. `doc create` with a different title slugging onto the first's id was refused `create.already-exists`, never `write.title-ignored`. A project shadow `.jigc/config/workflows/report-jigc-feedback.yaml` with `nwe: true` was refused at `jigc start`: `workflow-refs.malformed-front-matter … unknown field \`nwe\`, expected one of \`type\`, \`as\`, \`new\``. The general case (an entry without `new: true`) exists on the shipped `park-idea` (`create_only_gate::without_new_*` drives it), so C needs no fixture workflow.
+- **Read: flows A and D are already driven on the shipped workflows** by `findings_workflows` (Increment 8, `g_methodology`): (a)–(g) the report, catalog, triage and gate arms in separate corpora; (h) three report sub-tasks through `sub_task_composition`'s `pub(crate)` shim (`spawn_spans`, `install_jigc_shim`, `run_span`, `commit_writes`) to one join commit. Every `findings_workflows` helper is a private `fn`. **Flow E** is driven by `l1_pull_absorption` and `l2_branch_switch` (both `g_finalize`) on `single-task` over `State::Fresh` and `State::CommittedSingletons`; neither reads a report workflow.
+- **Read: the chapters.** `design/worked-examples.md`'s last chapter is `## 54.` (flow54, M53); `## 55.`–`## 59.` are free, as findings-channel §11 states (*"the next free flow numbers at planning are 55 onward"*). The file's numbered flow index stops at 16 and is not maintained per wave, so no index line is owed. `worked-examples.md` is a `doc_link_fence` live doc (every cited path must exist) and a `count_fences` home (`Scope::WithRegistryUnits`), so a chapter and the suite it cites land in one commit, and a chapter states no registry count it did not read.
+- **Read: the group roots.** Flow suites sit in eight different roots today (`g_flow` holds flow47–54). `g_flow` is CI's slowest job (430 s warm, [ci-runtime.md](completions/artifacts/M54/ci-runtime.md)); `g_methodology` is its fastest test job (118 s) and holds `findings_workflows`, `sub_task_composition` and `seed_fence`, whose helpers the flows reuse — and a `pub(crate)` item is visible only inside its own group target (Increment 8 / T4, pin 1).
+- **Read: the link fence.** `PENDING` is `&[]` (`doc_link_fence.rs:246`); `the_pending_list_is_empty` carries `#[ignore = "lifted while M55 is in flight: … restore at M55's close (O1)"]` (`:755`), the file's only `#[ignore`; the module doc (`:46–53`) and the `PENDING` doc comment (`:232–245`) already record both seeded entries' deletions.
+- **Read: the fold-back fences.** The claim arm is `foldback_truth::the_record_names_m54_and_claims_exactly_what_the_build_reached` (`:360`), pinned to `**M54 —` in the **post-audit** direction (it requires `completions/artifacts/M54/VERDICT.md`); the module doc says *"it now points at M54"* (`:27`). The version arm derives the newest marker (`newest_milestone_marker`, `:1332`), so it re-aims itself. `milestone_span` cuts at the next `**M<digit>`, so an appended `**M55 —` span leaves the M54 arm green, and a re-aimed arm without the span is red. The record is one line in `implementation/project-history.md`, ending with the M54 span. `count_fences` reads that file `ExplicitOnly`. `crates/cli/Cargo.toml` is `1.0.0-rc.22` and `~/.local/bin/jigc --version` prints `jigc 1.0.0-rc.22`; M55 builds no version, so the span names none as built and installed.
+- **Read: `CLAUDE.md` → `## Project state` (line 7) states three things the build moved.** *"the switch to a branch-per-milestone model … landing as the first pull request under its own rules"* is still "what comes next", but PRs #3 and #4 (`work/branch-per-milestone`) and #5–#8 are merged on `main` and in this branch. *"M55, the findings channel"* is next, and it is built. *"the crates.io README-link fork, the human's, owed before the next release PR"* was taken at the M55 Settle (S15) and built by Increment 10 ([decisions-pending.md](implementation/decisions-pending.md) → *The crates.io README's relative links*, marked built; the post-publish read stays owed). Each phrase occurs exactly once (`command grep -c`).
+- **Measured: the live-doc `M55` census.** Set: tracked `*.md` minus `DECISIONS.md`, `implementation/roadmap.md`, `implementation/project-history.md` and `completions/artifacts/` (the M54 close's set). Count: matching lines. **24 lines in 7 files** at `62c76009` (the baseline ledger's commit), **72 in 18** at `bea46dd8` (the decomposition commit), **152 in 32** at `6acd9d6d` (this increment's base). A forward-tense sample (`until M55|once M55|M55 will|M55 adds|M55 ships|…`) hits eight lines; each is a disposition, not a pre-judged flip.
+- **Read: §13's twelve rows each have build commits since `bea46dd8`.** `git log bea46dd8..HEAD --` per doc: reconciliation 3, validation 3, storage 3, finalize 5, write-commands 3, workflow-dialect 4, command-output-contract 3 (`create.already-exists` at `:246`), doc-read-surface 3, methodology-docs 3, pinning 1, doctype-map 1, worked-examples 3 (route edits from Increments 3–5; the chapters are this increment's). Confirming that each commit revised **its row's rule** is the census's work (T8), not this read.
+
+**Build pins — each a verified fact above, or a decision taken here from the locked docs:**
+
+- **P1 · Five chapters, five suites, one group root.** The roadmap's *"their acceptance suite, registered in one group root"* is read as the five flow suites together. One `flow<NN>_*.rs` per chapter is the convention every chapter since flow 9 keeps, and a single file would make chapters 56–59 cite a file named for 55. The suites are `flow55_report_and_read_back.rs` (A), `flow56_mid_task_report.rs` (B), `flow57_overwrite_refused.rs` (C), `flow58_several_reporters.rs` (D) and `flow59_branch_and_pull.rs` (E), all in **`g_methodology`**, for the reasons read above.
+- **P2 · Reuse, never copy.** A helper a flow suite needs from `findings_workflows`, `sub_task_composition` or `seed_fence` is widened to `pub(crate)` in place, as Increment 8 / T4 did. A helper that lives in another root's suite (`doc_only_finalize`, `l1_pull_absorption`, `l2_branch_switch`) either moves to `support::`, with its old caller switched to it in the same commit, or is written against `support::trial_corpus`'s own methods. It is never a second copy.
+- **P3 · Each chapter's shape.** Each chapter follows flow 54's: `## <NN>. <Flow name> — <claim> (M55)`, then the claim, the bounds, *the designs of record live elsewhere* (findings-channel §§ by pointer, never restated), `### The walk` (illustrative `text` block) and `### What it asserts (… — <suite>.rs)`. Each chapter also states **what its suite adds over the increment suite** that first proved the arm, naming that suite. Each walk is driven through the real binary in one corpus, as an agent would follow the composed text. Every write is a line the composed workflow emitted, run verbatim but for its `<…>` fills (`findings_workflows`' method).
+- **P4 · A red on the shipped workflows is a finding, never a fix here.** The close's scope is docs and tests. If an arm reds and the cause is not the test's own error, the task halts with a `dev/jigc-rig --print-only` repro, and nothing in `crates/*/src` or the packs is touched.
+
+**The tasks.**
+
+- **T1 · Flow 55 (A): report and read back, then triage — one corpus, the whole lifecycle.**
+  - **The change.** `## 55.` in [worked-examples.md](design/worked-examples.md), and `flow55_report_and_read_back.rs`, registered in `g_methodology`. In one `State::Fresh` corpus, in order:
+    - `report-jigc-feedback` is started by name. Its emitted create line carries no flag. `kind`, `found-in`, `jigc-version`, `description` and a fenced `repro` with a `#`-led line are written.
+    - A foreign path is staged with plain git after the report started. Finalize exits 0, its commit holds only the doc, and the foreign path stays staged.
+    - `doc list jigc-feedback --format json` shows the row's `title` and `fields.status == "open"`, and `doc show` carries `title`.
+    - `status:` is hand-deleted and committed with plain git. Both surfaces still project `"open"`.
+    - `report-inconsistency` is reached from the bare `jigc start` catalog (its id read off the catalog line) and lands alone with three sides, each added by `add-item --slug`. The catalog lists none of the three hidden workflows, and each composes by name.
+    - `triage-jigc-feedback`, given a plain-words intent, moves **the row this corpus filed** to `resolved`, with `resolution` and `pinned-by`, and lands that doc alone. The `doc list` row then reads `resolved`.
+  - **Adds over `findings_workflows`:** the triage reads the row the report filed, through the real read surface between them, rather than a row filed in a separate arm.
+  - *Red:* an applied mutant — a project shadow of `report-jigc-feedback` whose body includes `step:finalize` in place of `step:finalize-doc-only` — reddens the one-doc commit, because the foreign path is swept in. Reverted, the suite is green.
+  - *Done:* `cargo nextest run -p jigc -E 'test(/^(flow55_report_and_read_back|findings_workflows|test_target_registration|doc_link_fence|count_fences)::/)'` is green, and `dev/gate` is green.
+- **T2 · Flow 56 (B): reporting mid-code-task — the three states on the shipped report workflow.**
+  - **The change.** `## 56.` and `flow56_mid_task_report.rs`. A `dev-task` holds an edit to a tracked file and a new file, with jigc's `pre-commit` hook asserted installed. `report-jigc-feedback` is driven over the three states (unstaged; staged before the report was minted; staged after), and state 2 again with `--carry-staged`.
+  - **Every state asserts:**
+    - finalize exits 0, and the report's commit holds its doc alone;
+    - `git diff --cached --name-status` is the same before and after;
+    - the left-out section names each code path, tagged `left-staged` in `committed.left_out` where staged;
+    - the code task then finalizes its own two files at exit 0.
+  - **Also asserted:**
+    - a pending `.jigc/config` delta is not in the report's commit;
+    - `triage-jigc-feedback`, in state 2, lands its edited doc alone (the edit shape);
+    - **the omitting context:** shipped `park-idea` in state 2 still refuses `finalize.carried-staged` at exit 3.
+  - **Adds over `doc_only_finalize`:** the states are driven on the workflows that ship the step, not on a fixture.
+  - *Red:* T1's `step:finalize` shadow reddens state 2 (exit 3, `finalize.carried-staged`). Reverted, the suite is green.
+  - *Done:* `cargo nextest run -p jigc -E 'test(/^(flow56_mid_task_report|test_target_registration|doc_link_fence|count_fences)::/)'` is green, and `dev/gate` is green.
+- **T3 · Flow 57 (C): overwrite refused, on the shipped report workflows.**
+  - **The change.** `## 57.` and `flow57_overwrite_refused.rs`.
+  - **The create-only arms**, after a first finding has landed:
+    - a same-title second report is refused `create.already-exists` at exit 1, with nothing staged and the committed bytes unchanged — by `doc create` and by `doc author` alike, on `report-jigc-feedback`, and by `doc create` on `report-inconsistency`;
+    - `--slug` lands the second beside the first, both readable through `doc show` after its finalize;
+    - a different title that slugs onto the first's id gets the same refusal, never `write.title-ignored`;
+    - re-running the create in the same task over its own staged doc stays idempotent.
+  - **The general case,** on shipped `park-idea` (no `new: true`): a different title slugging onto a committed idea's id is refused `write.title-ignored`, routed at a distinct title or `--slug`, and never at `jigc doc rename`.
+  - **The misspelt key:** a project shadow of `report-jigc-feedback` with `nwe: true` is refused at pack-load, naming `nwe`.
+  - **Adds over `create_only_gate`:** the gate is reached through the report workflows' own entries, not a `park-idea` shadow.
+  - *Red:* an applied mutant — a project shadow of `report-jigc-feedback` with `new: true` dropped from its entry — turns the same-title arm into a copy-in for update at exit 0. Reverted, the suite is green.
+  - *Done:* `cargo nextest run -p jigc -E 'test(/^(flow57_overwrite_refused|test_target_registration|doc_link_fence|count_fences)::/)'` is green, and `dev/gate` is green.
+- **T4 · Flow 58 (D): several reporters into one store.**
+  - **The change.** `## 58.` and `flow58_several_reporters.rs`. One milestone gets at least two report sub-tasks, at least one per report workflow, through `add-task --workflow`, `provision` and `execute`. Each `Spawn:` line is run verbatim through `sub_task_composition`'s shim.
+  - **Each sub-task's composed text:**
+    - carries no step of the **derived** omission set, read from `sub_task_composition`'s derivation, never a hand list;
+    - carries no `jigc task finalize` and no `commit:<sub>` write;
+    - ends in the trailer naming `jigc milestone finalize <m>`.
+  - **The join:** each sub-task files its doc in its own worktree. `jigc milestone finalize` exits 0 with one commit holding every doc and the milestone record, and `doc list` lists them all.
+  - **The seed-fence predicate over the flow's own output:** the landed docs, copied into a fresh rig under its `docs-root`, `jigc ingest` and then `jigc validate --format json` with zero findings (`seed_fence`'s helpers, P2).
+  - **Adds over `findings_workflows` (h):** both report doctypes land through one join, and the join's output meets the seed's adoptability predicate.
+  - *Red:* the discriminating control. The same composition checks over `report-jigc-feedback` composed as an **ordinary** task fail every one.
+  - *Done:* `cargo nextest run -p jigc -E 'test(/^(flow58_several_reporters|sub_task_composition|seed_fence|test_target_registration|doc_link_fence|count_fences)::/)'` is green, and `dev/gate` is green.
+- **T5 · Flow 59 (E): branch and pull — L1 and L2 in one walk.**
+  - **The change.** `## 59.` and `flow59_branch_and_pull.rs`.
+  - **L1:**
+    - a teammate's committed edit to `VISION.md` is pulled, and store-scope `jigc validate` exits 0 with the `file-state.hash-matches` advisory routed *the baseline lags `HEAD`*;
+    - a `single-task` editing `vision#open-questions` then finalizes and lands;
+    - the next `jigc validate` is clean.
+  - **L2:**
+    - a doc is created on a milestone branch, then `git switch main`;
+    - `jigc validate` exits 0 with an advisory `reconciliation.rename` row routed at the branch switch;
+    - a task's gate reports the same path advisory under the same route;
+    - neither names `jigc unmanage`.
+  - **Controls:**
+    - an out-of-band edit made during the task still conflict-blocks;
+    - a managed doc with history, deleted and committed, still blocks at exit 1.
+  - **In the same commit,** findings-channel §11's *"the next free flow numbers at planning are 55 onward"* becomes a pointer to chapters 55–59, now that every one exists.
+  - **Adds over `l1_pull_absorption` and `l2_branch_switch`:** both halves in one corpus's history, so the L2 switch runs over a baseline the L1 absorb wrote.
+  - *Red:* the controls are the discriminating reds. The absorb assertion, run against the during-task edit's state, fails, and the advisory assertion, run against the deleted-with-history doc, fails.
+  - *Done:* `cargo nextest run -p jigc -E 'test(/^(flow59_branch_and_pull|test_target_registration|doc_link_fence|count_fences)::/)'` is green, and `dev/gate` is green.
+- **T6 · `the_pending_list_is_empty` restored.**
+  - **The change.** Delete the `#[ignore …]` at `doc_link_fence.rs:755`. Move the module doc's and the `PENDING` doc comment's M55 sentences to the closed tense: M55 seeded two entries, deleted each with its creating commit, and closed the list empty with the assertion restored. The mechanism and the fixture test stay.
+  - *Red:* an applied mutant `PENDING` entry (an absent path) reddens `the_pending_list_is_empty`, naming it. Reverted, the test is green.
+  - *Done:* `cargo nextest run -p jigc -E 'test(/^doc_link_fence::/)'` reports `the_pending_list_is_empty` **passed**, not skipped. `command grep -c '#\[ignore' crates/cli/tests/doc_link_fence.rs` prints 0. `dev/gate` is green.
+- **T7 · `CLAUDE.md` → `## Project state` states current truth.**
+  - **The change.** The three moved statements in the basis are rewritten:
+    - the branch switch is landed;
+    - **M55 is built, not audited**;
+    - the README fork was taken (S15) and built, with the crates.io re-read owed after the `1.0.0-rc.23` publish.
+  - **What comes next, in order:** M55's completion audit; release PR #2 (rc.23, carrying M54's audit fixes and M55), which is the human's merge and deployment approval; the crates.io re-read; the blind trial and the partial re-review over the merged M54 + M55 axes ([findings-channel.md](design/findings-channel.md) → 12, S16); the call, which is the human's; then the port.
+  - **Limits.** A claim about `main`'s ruleset appears only if verified by a read (`gh api`) in this task, and is otherwise dropped. No milestone claim (that is the record's), no built-and-installed version, and no numeral the task did not measure.
+  - *Done:* `command grep -c "the human's, owed before the next release PR" CLAUDE.md` and `command grep -c 'landing as the first pull request under its own rules' CLAUDE.md` each print 0. `cargo nextest run -p jigc -E 'test(/^(foldback_truth|doc_link_fence)::/)'` and `dev/gate` are green. Only `CLAUDE.md` and DECISIONS.md are committed.
+- **T8 · The census: §13's twelve rows confirmed, and every live-doc `M55` line flipped or kept with its reason.**
+  - **§13.** For each row, the commit(s) that revised the row's **rule** in its doc, read off `git log -p bea46dd8..HEAD -- <doc>`, plus a one-line statement of what the doc now says. The worked-examples row names T1–T5. A row with no such commit is a finding: the doc still states the old rule. The task halts with the row and the quote, and does not write the revision.
+  - **Markers.** Recount `command grep -c 'M55'` over the census set at `62c76009`, `bea46dd8` and `6acd9d6d`, then in the working tree. Each matching line gets one disposition:
+    - **flipped**, with its new wording;
+    - **kept**, with its reason. Past-tense history (*"M55 adds …"* stating what shipped, *"since M55"*, *"(M55 Increment N)"*) is true now and is kept.
+
+    The forward-tense lines (*until/once M55*, *M55 will*, *owed by M55*, *at M55's build*, and any line that names an M55 increment as future) are each flipped or kept with a reason.
+  - **Record.** `completions/artifacts/M55/close-census.md`, on [the M54 record's](completions/artifacts/M54/close-census.md) shape: the §13 table, the per-file count table (`62c76009` · `bea46dd8` · base · after) and the per-line dispositions.
+  - *Done:* the census re-runs equal the record. `command grep -n -E 'until M55|once M55|when M55 lands|M55 will|owed by M55|built by M55'` over the set returns only lines the record keeps, each with its reason. `cargo nextest run -p jigc -E 'test(/^(doc_link_fence|count_fences|foldback_truth)::/)'` and `dev/gate` are green. Only the flipped docs, `close-census.md` and DECISIONS.md are committed.
+- **T9 · The fold-back span and `foldback_truth` re-aimed to `**M55 —`. These are atomic, because a re-aimed arm without the span is red.**
+  - **The span.** Append `**M55 — the findings channel — is built, not audited** …` to the end of the record's one line in `implementation/project-history.md`. It claims only what the build reached:
+    - the roadmap's claim, quoted;
+    - the eleven increments in order;
+    - the one code minted (`create.already-exists`);
+    - the two doctypes at `schema-version` 1;
+    - the four workflows;
+    - the seed's filed count, read from [seed-ledger.md](completions/artifacts/M55/seed-ledger.md) and the seed tree, never from memory;
+    - the generated crate README;
+    - the flows 55–59;
+    - T8's census before and after;
+    - the gate totals this task's `dev/gate` printed.
+
+    **Declared bounds:** the completion audit, the rc.23 release (the human's merge and deployment approval), the crates.io re-read and the partial re-review are after this build; the 1.0.0 call is the human's.
+  - **The re-aim.** The arm is renamed `the_record_names_m55_and_claims_exactly_what_the_build_reached` and turned to the **pre-audit** direction.
+    - **Required:** `implementation/roadmap.md`, `Milestone 55`, `built, not audited`.
+    - **Forbidden:** `built + audited`, `audited clean`, `audit is CLEAN`, `audit ran clean`, `VERDICT`, `1.0.0 is called`, `1.0.0 shipped`.
+    - `built_and_installed_versions(span)` must be empty.
+    - The module doc's *"it now points at M54"* and the arm's re-aim history (the twelfth inversion) are updated.
+  - *Red:* the re-aimed arm run before the span is appended fails (`must carry **M55 —`). A `built + audited` mutant inside the span fails. Both reds are recorded.
+  - *Done:* `cargo nextest run -p jigc -E 'test(/^(foldback_truth|count_fences)::/)'` is green, and `dev/gate` is green. Only `project-history.md`, `foldback_truth.rs` and DECISIONS.md are committed.
+
+**Why this order and this seam.** The flows go first because they are the increment's only behaviour proof, and P4's halt is likeliest there. Each chapter lands with the suite it cites, because `doc_link_fence` reddens on a cited path that does not exist. T5 goes last of the five because its §11 pointer is true only once 55–59 exist. T6 is one fence change, independent of the others. T7 moves `CLAUDE.md`, a census-set file, before T8 counts, so the census's *after* is final; T9 touches only the excluded record and a test file. T9 is last because its span claims T1–T8 and the final gate, and its span and re-aim are one gate-green unit.
+
+**Every Grouped-scope clause maps to a task.**
+
+| Grouped-scope clause | Task |
+|---|---|
+| worked-examples chapters for flows A–E, numbered from 55 in A–E order | T1 (55 · A), T2 (56 · B), T3 (57 · C), T4 (58 · D), T5 (59 · E) |
+| their acceptance suite, registered in one group root (`g_methodology`, P1) | T1–T5 |
+| driving the shipped report and triage workflows | T1 (report ×2, triage), T2 (report, triage), T3 (report ×2), T4 (report ×2) |
+| flow B's three states re-driven on the real workflows | T2 |
+| flow C re-driven on the real workflows | T3 |
+| flow D's composition re-driven on the real workflows | T4 |
+| the census: §13's twelve rows confirmed revised by their increments | T8 |
+| every *M55* marker in the live docs flipped or kept with its reason | T8 |
+| `the_pending_list_is_empty` restored, un-ignored, over an empty list | T6 |
+| the fold-back span appended to project-history.md, never CLAUDE.md | T9 |
+| `foldback_truth` re-aimed to `**M55 —` | T9 |
+| `CLAUDE.md`'s `## Project state` touched only where current truth moved | T7 |
+
+| Proves clause | Task |
+|---|---|
+| The flow suite green over the shipped workflows | T1–T5 |
+| `doc_link_fence::the_pending_list_is_empty` green | T6 |
+| `foldback_truth` green | T7, T9 |
+| The full gate green | every task (T9's run is the one the span quotes) |
+
+**Declared bounds:**
+
+- The completion audit, the `1.0.0-rc.23` release (release PR #2: the human's merge and deployment approval), the crates.io page re-read (S15) and the partial re-review over the merged M54 + M55 axes (S16), beside the blind trial, come after this build. The 1.0.0 call is the human's.
+- Flows A, C and D re-drive arms already proved on shipped workflows by `findings_workflows`. Each chapter states what its suite adds, and does not claim a first proof.
+- Flow E drives no report workflow, because L1 and L2 are reconcile arms. It runs on the shipped `single-task`.
+
 ## 2026-10-03 — M55 Increment 10 / T3: the install-line fence admits the crate README as derived, not a second copy
 
 `install_line::the_install_line_has_one_owner_one_copy_and_one_derived_file` is the first fence that counts copies of the install line. It scans `git ls-files -co --exclude-standard '*.md'`, so an untracked file counts, and holds the files with a trimmed line starting `cargo install jigc` to exactly three: `QUICKSTART.md` (the owner), `README.md` (the one allowed copy), and `crates/cli/README.md`. The crate README is admitted only while its bytes equal `dev/crate-readme --stdout` and its extracted line equals QUICKSTART's. The census helper is `support::install_line::install_line_carriers`. [release.md](implementation/release.md) → Installing names the derived file and keeps *no release tooling touches a doc*. The [decisions-pending.md](implementation/decisions-pending.md) row *The crates.io README's relative links* is marked built; the post-publish 200-check stays owed, keyed to the `1.0.0-rc.23` publish.
