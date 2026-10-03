@@ -177,6 +177,42 @@ commands:
       - { from: "task.id" }
     hint: "Park the shaped direction as a fresh idea doc in the current task."
 
+  # The report-jigc-feedback workflow's create command-ref (M55 Increment 8 / T1), on
+  # the create-idea mold. `jigc-feedback` is `id-from: title` (one doc per finding), so
+  # `--title` carries the agent's short name for what it observed. No create-only flag:
+  # the workflow's create-gate entry carries `new: true`, so a title whose slug a doc on
+  # disk already holds is refused `create.already-exists` before copy-in
+  # (design/findings-channel.md → 4). The per-field and per-slot authoring lives in the
+  # author step as literal guidance (the slug is runtime-minted).
+  - id: create-jigc-feedback
+    command: jigc
+    args:
+      - "doc"
+      - "create"
+      - "jigc-feedback"
+      - "--title"
+      - { agent: title, hint: "a short name for what you observed about jigc — its title mints the new finding's slug" }
+      - "--task"
+      - { from: "task.id" }
+    hint: "File one new jigc-feedback finding in the current task."
+
+  # The report-inconsistency workflow's create command-ref (M55 Increment 8 / T1), on
+  # the create-idea mold. `inconsistency` is `id-from: title` (one doc per
+  # disagreement); create-only comes from the workflow's `new: true` gate entry, never
+  # a flag here. The sides (`add-item … --slug`), fields and slots are authored by the
+  # author step as literal guidance.
+  - id: create-inconsistency
+    command: jigc
+    args:
+      - "doc"
+      - "create"
+      - "inconsistency"
+      - "--title"
+      - { agent: title, hint: "a short name for what disagrees — its title mints the new record's slug" }
+      - "--task"
+      - { from: "task.id" }
+    hint: "File one new inconsistency record in the current task."
+
   # The form-vision workflow's idempotent-create command-ref (M37 inc-4 / T3). The
   # `vision` doctype is a SINGLETON (the create-roadmap/create-log shape) — `create`
   # fixes the slug to the type id regardless of `--title`, so the title is a fixed

@@ -1,0 +1,138 @@
+exit: 0
+--- stdout ---
+task minted: sweep-the-compose-surface
+
+File the finding on a fresh jigc-feedback doc. Create it — the slug is minted from
+the title you give (a short name for what you observed):
+
+Run: `jigc doc create jigc-feedback --title <TITLE> --task sweep-the-compose-surface`
+
+This task files exactly one NEW finding. A title whose slug a doc on disk already
+holds is refused `create.already-exists`, with nothing staged — choose a distinct
+title, or keep it and pass `--slug <slug>` to the same create.
+
+The `jigc-feedback` schema is the authority on what you write into it — its required
+slots and fields, each field's enum members, the convention each string field
+follows, and every address a write can take:
+
+jigc doc schema jigc-feedback
+
+Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
+directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which
+jigc itself accepts but an agent harness that statically analyses shell commands
+can refuse to run:
+
+jigc doc set-slot jigc-feedback:<slug>#description --from-file - --task sweep-the-compose-surface <<'EOF'
+<what jigc did, and what you expected instead>
+EOF
+
+Set the `kind` (`bug`, `inconvenience` or `feedback`), where you found it
+(`found-in`, as `<kind>:<label>`) and the jigc version in use (`jigc-version` —
+`jigc --version` prints it). Set `about` too when you can name the surface it
+concerns. The `status` defaults to `open`, and the `date` is CLI-set on create:
+
+jigc doc set-field jigc-feedback:<slug>#meta/kind --value <bug|inconvenience|feedback> --task sweep-the-compose-surface
+jigc doc set-field jigc-feedback:<slug>#meta/found-in --value "<kind>:<label>" --task sweep-the-compose-surface
+jigc doc set-field jigc-feedback:<slug>#meta/jigc-version --value <version> --task sweep-the-compose-surface
+jigc doc set-field jigc-feedback:<slug>#meta/about --value "<surface>" --task sweep-the-compose-surface
+
+Then author the `description` — what was observed — and, when you have one, the
+`repro`. Write the repro as a FENCED code block: an unfenced `#`-led line (a shell
+comment, a Markdown heading) is read as a heading and refused
+`write.slot-heading-depth`:
+
+jigc doc set-slot jigc-feedback:<slug>#description --from-file - --task sweep-the-compose-surface
+jigc doc set-slot jigc-feedback:<slug>#repro --from-file - --task sweep-the-compose-surface
+
+Or make it one call — the batch alternative to the whole sequence above (run it
+instead of the create + per-leaf verbs, or after them — the create it implies
+over a doc this task already staged acks `already existed — copied in for
+update` and changes nothing): the batch verb reads one declarative payload from
+stdin (grammar: `jigc doc author --help`) and places every leaf in a single
+write; the payload's `title:` mints the slug exactly like the create above, and
+is refused `create.already-exists` exactly like it:
+
+jigc doc author jigc-feedback --from-file - --task sweep-the-compose-surface
+
+`<slug>` is the slug the title minted, and this task's own index names it back —
+every doc the task stages, each by the `<type>:<slug>` identity the read takes:
+
+jigc doc list jigc-feedback --task sweep-the-compose-surface
+
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show jigc-feedback:<slug> --task sweep-the-compose-surface
+
+finalize renders the commit doc; it does not fill it, so set its header and prose
+first. Inside slot prose, the reserved heading depths are schema-relative to the
+address you write — the CLI owns the section, item, and sub-label heading levels
+there, so your headings sit below them; Setext headings are rejected at every
+depth, and a rejected write names the shallowest depth free at that address.
+
+Set the Conventional-Commits type:
+
+Run: `jigc doc set-field commit:sweep-the-compose-surface#type --value <TYPE> --task sweep-the-compose-surface`
+The `type` value is one of: feat | fix | docs | style | refactor | perf | test | build | ci | chore | revert
+
+The `commit` schema is the authority on what you write into it — its required
+slots and fields, each field's enum members, and every address a write can take:
+
+jigc doc schema commit
+
+Set the scope — the area this change touches:
+
+Run: `jigc doc set-field commit:sweep-the-compose-surface#scope --value <SCOPE> --task sweep-the-compose-surface`
+
+Set the subject line — it renders as `<type>(<scope>): <summary>`, so write the
+summary without a type or scope prefix of its own (the `type` field already
+carries it):
+
+Every `--from-file -` below reads its payload from stdin — attach it as a heredoc
+directly to the `jigc` command, never as a `cat payload | jigc …` pipeline, which
+jigc itself accepts but an agent harness that statically analyses shell commands
+can refuse to run:
+
+jigc doc set-slot commit:sweep-the-compose-surface#summary --from-file - --task sweep-the-compose-surface <<'EOF'
+<one line saying what changed>
+EOF
+
+Run: `jigc doc set-slot commit:sweep-the-compose-surface#summary --from-file - --task sweep-the-compose-surface`
+
+Set the body — why this change:
+
+Run: `jigc doc set-slot commit:sweep-the-compose-surface#body --from-file - --task sweep-the-compose-surface`
+
+Read your write back before you move on — with `--task` the read serves THIS
+task's staged copy, the write you just made, which the committed store does not
+carry yet:
+
+jigc doc show commit:sweep-the-compose-surface --task sweep-the-compose-surface
+
+Land this task's docs as exactly one commit. This finalize commits path-scoped:
+it stages and commits only the docs this task created or edited, plus any
+owner-artifact paths those docs record — never the whole git index. Anything else
+staged in this checkout, by another task and whether before or after this one was
+minted, stays staged and stays out of this commit, so the carryover gate does not
+fire here and `--carry-staged` changes nothing. Unstaged edits and untracked files
+are left out of the commit too. The finalize names every path it leaves out —
+staged ones included — before it commits and again once it lands: a staged path
+stays staged for the task it belongs to.
+
+To see what's left before committing, run `jigc task validate sweep-the-compose-surface` — it
+previews part of what finalize gates on (the repository posture finalize refuses
+under, this task's content findings, the path scope that leaves every other staged
+path staged, the owner-artifact causes that need no staging, and the
+granted-but-unused changelog gate), without committing anything; the staged set,
+promotion and the commit itself are decided at finalize.
+
+Then validate and commit:
+
+Run: `jigc task finalize sweep-the-compose-surface`
+resume: `jigc start --task sweep-the-compose-surface`   — re-composes this workflow if context is lost
+what's-left: `jigc task validate sweep-the-compose-surface`   — previews part of the finalize gate: the repository posture finalize refuses under, this task's content findings, the path scope that leaves every other staged path staged, the owner-artifact causes that need no staging, and the granted-but-unused changelog gate; the staged set, promotion and the commit surface at finalize
+task scope: `jigc doc` writes default to the single active task; `--task sweep-the-compose-surface` is the explicit override and wins when several are active — several open tasks are legal, each addressed by its own `--task`, so you can run them in parallel while their work stays disjoint; once a sibling task commits a path this one also touches, resuming or finalizing here blocks and names the overlapping paths
+create-gates: jigc-feedback   — the doc-types this task is allowed to create; any other type is refused
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+--- stderr ---

@@ -109,8 +109,6 @@ mod spawn_template_executes;
 mod staged_prose_consent_axis;
 #[path = "../staged_snapshot.rs"]
 mod staged_snapshot;
-#[path = "../sub_task_composition.rs"]
-mod sub_task_composition;
 #[path = "../subtask_discard_record.rs"]
 mod subtask_discard_record;
 #[path = "../task_area_writer_registry.rs"]

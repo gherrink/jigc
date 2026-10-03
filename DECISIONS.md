@@ -2,6 +2,199 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-03 — M55 Increment 8 / T4: flow D through the real binary, and the suite the shim lives in
+
+`findings_workflows` (h) fans three report sub-tasks out of one milestone, runs each `Spawn:` line verbatim, files each doc in its worktree through the emitted lines, and lands all three plus the milestone record in one join commit; (i) is the discriminating control — `report-jigc-feedback` composed as an ordinary task fails all four of (h)'s checks. **Pins:** (1) **`sub_task_composition` moves from `g_milestone` to `g_methodology`.** The plan widened its shim helpers to `pub(crate)` for `findings_workflows` to import, but a `pub(crate)` item is visible only inside its own group target, and the two suites sat in different ones. One of them had to move. The owner moved rather than the importer: `g_methodology` ran 118 s on the runner against `g_milestone`'s 340 s under the 10-minute job timeout ([ci-runtime](completions/artifacts/M54/ci-runtime.md)). (2) **"No line of an omitted step's text" is read off the step files.** It covers every body line of `finalize-doc-only` and `author-commit` except two kinds. A `{{ cli.… }}` ref is left out because the door and commit-write checks own it. A line a surviving report author step also carries is left out too, such as the shared heredoc and read-back wording. So the check follows the steps if they are edited, and does not depend on a hand-copied sentence.
+
+## 2026-10-03 — M55 Increment 8 / T1: the four findings workflows registered, census repaired
+
+`report-jigc-feedback` · `report-inconsistency` · `triage-jigc-feedback` · `triage-inconsistency`, their four steps and the `create-jigc-feedback`/`create-inconsistency` refs land on P1–P5. The census moved exactly as planned: `registry_seam` 35 → 39, the selectables five → six, **48 goldens added and 34 moved** (the 28 catalog carriers + the 6 `describe`), nothing else. **Pins:** (1) **`author-inconsistency` offers no batch `jigc doc author` alternative** — `author-jigc-feedback` does, on the `author-idea` mold — because a batch payload's items mint their ids from their titles with no slug override, so it would undo the short `--slug` per side the step asks for (R4 M1); one call less is not worth a long, path-coupled item id. (2) The triage steps open on `{{ task.intent }}` (the `locate-from-spec` mold) and also print the **committed** `jigc doc list <ty>` beside the task-scoped one, since the finding a triage edits is found among the committed rows before anything is copied in. (3) `methodology_staging_contract`'s `DOC_ONLY_WORKFLOWS` reads `step:finalize-doc-only`'s path-scoped statement as that step's first paragraph, asserting the paragraph still says *path-scoped* so a reshuffle reddens the reader rather than passing over the wrong text; an applied mutant (`report-inconsistency` on `step:finalize`) reddened it.
+
+## 2026-10-03 — M55 Increment 8 planning: decomposition
+
+Cut [Increment 8](implementation/roadmap.md) (*the four workflows: report and triage, each twice*) into **5 ordered tasks**, grounded at HEAD `c5ce68a1` on `milestone/findings-channel/four-workflows-report-and-triage` (tree clean), with Increments 1–7 landed. Cross-ref [roadmap.md](implementation/roadmap.md) → Milestone 55 → Increment 8; the M55 Settle below (S3, S5, S7, S17; R4 I2 · M1 · M3; R5 and residual R2); [findings-channel.md](design/findings-channel.md) → 2, 1.5, 11 (flows A, C, D), 13; [planning-gate-record.md](completions/artifacts/M55/planning-gate-record.md) → rows 3–5. **Codes registered: none.** No schema, manifest, version integer or contract moves.
+
+**Basis. Each item was read at HEAD, or driven where marked — on a workflow spike: a clone of `c5ce68a1` carrying the four workflows, four steps and two command refs and nothing else, built under a private target and run under its own `dev/gate`.**
+
+- **Driven: the registration's census is 8 reds, as the gate-record booked.** With the goldens regenerated first, the spike's full suite ran 4318 tests, 4308 passing and 10 failing:
+  - `registry_seam::composite_registry_enumerates_workflows_and_doctypes` (workflow count `35`; the composite lists 39) and `methodology_increment_off_router::bare_start_over_methodology_lists_the_selectables_never_increment` (the five selectables; `report-inconsistency` makes six). These two, plus the six `compose_goldens::sweep_*`, are the census.
+  - **Three step-text fences the spike's own prose broke**, each a fence the real steps must satisfy rather than a count to move: `stdin_form_naming::every_site_bearing_step_names_the_permitted_form` (it wants the heredoc demonstrated as `<<'EOF'`; the spike wrote `<<'EOF2'`), and `read_back_fence::the_methodology_owe_set_is_exactly_its_read_back_declarers` with `flow48_acceptance::every_write_soliciting_step_names_the_read_back_and_the_read_runs`. Those two are **biconditionals**: a step declares `read.staged-read-back` *iff* it solicits a write through a `{{cli.<id>}}` write ref or a `{{schema:<T>}}` payload. The spike's triage steps write through literal `jigc doc set-field`/`set-slot` lines and declared the code, so they reddened both. With the heredoc respelled and the triage declaration dropped, a targeted rerun of `compose_goldens · stdin_form_naming · read_back_fence · flow48_acceptance · read_surface_naming · commit_solicit_axis · sub_task_composition` was 42/42 green.
+  - **Five reds belong to the spike's environment, not the change.** `dev_gate_report::` ×4 (`cargo` not found on the nested gate's `PATH` in the scratch clone) and `dev_rig_parity::no_emitted_construction_carries_a_recursive_removal_or_escapes_its_root` (the private target path carried a `..`). None of them reads a pack file. The real tree's `dev/gate` is the arbiter.
+  - `read_surface_naming::*` stayed green because the spike's author steps already printed one `jigc doc show <addr> --task <id>` line, `jigc doc schema <ty>` and `jigc doc list <ty> --task`.
+- **Driven: the golden blast is 48 added and 34 moved, not 28.** `UPDATE_GOLDENS=1` over `compose_goldens::` added exactly 48 (`start--<wf>--<state>` and `workflow-preview--<wf>--<state>`, 4 workflows × 6 states, under `goldens/compose/methodology/`) and modified exactly 34:
+  - **the 28 the roadmap names**, each the router catalog gaining `report-inconsistency`'s line: `composite/start-intent` ×6, `composite/start-intent-json` ×6, `composite/start-orient` ×5, `composite/start-orient-json` ×5, `dev/start--router` ×6;
+  - **plus the six `composite/describe--describe--<state>` goldens**, which no catalog line touches: `jigc describe` lists **every** workflow, hidden ones included (with their `suppressed.reason`, as `record-dogfood` reads today), and every catalog command, so all four workflows and both `create-<ty>` refs join it.
+
+  **Adjudicated here, not a halt:** the roadmap's *"exactly 28 moved goldens for `report-inconsistency`'s catalog line"* holds exactly for the catalog line. The describe six are a second population with its own cause, the same one Increment 7 measured for the doctypes (6 describe goldens), and S3 accepted describe presence. A hidden workflow moves no catalog carrier, as [doctype-authoring.md](implementation/doctype-authoring.md) states; it does move describe, which that checklist does not yet say (T5).
+- **Driven through the spike binary in `dev/jigc-rig fresh --binary <spike>`, flow by flow:**
+  - **A, report.** `jigc start --workflow report-jigc-feedback "<what>"` minted the task; its composed `Run:` line for the create is `jigc doc create jigc-feedback --title <TITLE> --task <id>`, with no flag. Fields, a description and a fenced `repro` with a `#`-led line landed. A foreign file staged with plain git after the task started stayed staged: finalize exited 0, the commit held the one doc, and the foreign path was narrated `left-out`. `doc list jigc-feedback --format json` carried `title` and `fields.status: "open"`, and `doc show` carried `title`. With `status:` hand-deleted and committed with plain git, both still read `"open"`.
+  - **A, inconsistency.** `report-inconsistency` was on the bare `jigc start` catalog. Three `add-item … --slug` calls (titles `src/cap.rs`, `docs/cap.md`, `adr:cap#decision`) made items `side1`–`side3`, `#sides/side1/says` took prose, and the commit held the one doc.
+  - **A, catalog posture.** The catalog listed none of the three hidden workflows. Each composed by name.
+  - **A, triage.** The intent `"resolve finalize-sweeps-staging pinned"` minted `resolve-finalize-sweeps-staging-pinned`. `set-field …#meta/status` on the committed finding acked *copied in for update*. `pinned-by` and the `resolution` slot landed, and a foreign staged file stayed staged. Finalize committed that doc alone, `+4` lines, and the row read `status: resolved` with `pinned-by` set. `triage-inconsistency` composed by name; it was not driven to a landing (T3 proves it).
+  - **C, first arm.** A second `report-jigc-feedback` task's `doc create` with the first's title exited 1 with `blocking · create.already-exists`, routed at a distinct `--title` or `--slug`.
+  - **D.** A milestone with three report sub-tasks (two `report-jigc-feedback`, one `report-inconsistency`) went through `add-task --workflow`, `provision` and `execute`. Each sub-task's `jigc workflow <wf> --task <sub>`, from its worktree, carried zero `jigc task finalize`, zero `commit:<sub>` and one `jigc milestone finalize file-findings` (the trailer). `jigc milestone finalize` exited 0, landing one commit with the three docs and the milestone record. `doc list` listed all three.
+- **Driven: the walk and the `says` test run on the shipped workflows.** In `doc_read_surface.rs` `create_instance` was mapped to `jigc-feedback → report-jigc-feedback` and `inconsistency → report-inconsistency` (the methodology walk not installing the fixture). `findings_doctypes::a_says_slot_refuses_a_heading_through_h3_and_lands_h4` was started on `report-inconsistency`. `doc_read_surface:: findings_doctypes:: item_slot_ceiling_axis::` then ran 15/15 green. The fixture workflow, its install fn and its id were then dead code, three `never used` warnings, which `clippy -D warnings` refuses. The `new: true` entries and the one-create grant fit the walk's one create per task in a fresh corpus.
+- **Read at HEAD:**
+  - `step:triage` exists (`methodology/steps/triage.yaml`, the completion workflow's).
+  - `create.already-exists` is a write-door code, outside `AMBUSH_CONTRACTS`' commit-on-behalf derivation, so no step owes a `states-constraints:` declaration of it.
+  - The `when:` fence caps the line at 120 chars, period-less and single-line (`pack.rs:1790`).
+  - `assert_workflow_front_matter` requires `suppressed:` beside `selectable: false`, and `when`/`description`/`usage` on a selectable one.
+  - [finalize.md](design/finalize.md)`:172` names twelve code-less workflows: six dev, six methodology.
+  - [methodology-docs.md](design/methodology-docs.md)`:87` points at findings-channel §2 for the workflows.
+  - The `item_slot_ceiling_axis` `UNREACHABLE` reason (`:324`) and `findings_doctypes`' (d) doc comment both say *through a project-layer fixture workflow*.
+  - [doctype-authoring.md](implementation/doctype-authoring.md)'s "Obligations no list fence names" cites `file-finding-fixture` as the example.
+  - Its step-text half names only `read_surface_naming::*`.
+
+**Build pins. Each one is a verified fact above, or a decision taken here from the locked docs:**
+
+- **P1 · The four workflows** (`crates/cli/packs/methodology/workflows/`), all `creates-task: true`, each with a `description` and a `usage` that reads after *"Reach for it when"*. Each body ends `{{ include: step:author-commit }}` then `{{ include: step:finalize-doc-only }}`.
+
+  | Workflow | Router posture | `allows-create` | First step |
+  |---|---|---|---|
+  | `report-jigc-feedback` | **hidden**, on the `record-dogfood` mold: `selectable: false`, `suppressed: {reason, expires: never}`, no `door` key. The reason names `jigc start --workflow report-jigc-feedback "<what>"` | `[{ type: jigc-feedback, as: feedback, new: true }]` | `step:author-jigc-feedback` |
+  | `report-inconsistency` | **visible**, on the `park-idea` mold: `selectable: true` plus a `when:`, one period-less situation phrase of at most 120 chars | `[{ type: inconsistency, as: inconsistency, new: true }]` | `step:author-inconsistency` |
+  | `triage-jigc-feedback` | **hidden**, on the same mold | none | `step:author-jigc-feedback-triage` |
+  | `triage-inconsistency` | **hidden**, on the same mold | none | `step:author-inconsistency-triage` |
+
+  The triage reasons name the call form with a plain-words intent. The triage step names are findings-channel §2's, distinct from `step:triage` (R4 M3).
+- **P2 · The two command refs** go in `crates/cli/packs/methodology/config/commands.yaml`, on the `create-idea` mold: `create-jigc-feedback` and `create-inconsistency`.
+  - Args: `doc create <ty> --title <agent: title> --task <from: task.id>`, with no create-only flag; `new: true` lives on the entry (S7).
+  - Each entry carries its comment block, like its siblings.
+- **P3 · The two author steps** follow `author-idea`'s mold and declare `states-constraints: [read.staged-read-back]`. Each carries:
+  - the `{{ cli.create-<ty> }}` ref, with the statement that a title whose slug a doc on disk already holds is refused (`create.already-exists`), so the agent chooses a distinct one or passes `--slug`;
+  - `jigc doc schema <ty>`;
+  - the stdin heredoc demonstrated as `<<'EOF'`;
+  - the `set-field`/`set-slot … --task {{task.id}}` lines;
+  - `jigc doc list <ty> --task {{task.id}}`;
+  - **exactly one** `jigc doc show <ty>:<slug> --task {{task.id}}` line.
+
+  `author-jigc-feedback` also sets `kind`, `found-in` and `jigc-version`, and says to author `repro` as a **fenced** block (an unfenced `#` line is refused `write.slot-heading-depth`). `author-inconsistency` sets `kind` and adds each side with `jigc doc add-item inconsistency:<slug>#sides --title "<path or address>" --slug <short> --task {{task.id}}`, saying why it uses a short slug and that two or more sides is the convention (R4 M1). The batch `jigc doc author` alternative is the executor's choice on the `author-idea` mold, safe either way because both create doors consult `new: true`.
+- **P4 · The two triage steps write through literal command lines and declare no `states-constraints:`.** This follows dev's `locate-from-spec` precedent: the doc a triage edits is an already-committed finding whose address the agent supplies, which no `from:`-bound catalog ref can name.
+  - **Why no declaration:** `read.staged-read-back` is fenced as a biconditional with the structural solicit (measured above), so declaring it on a literal-line step reddens two fences.
+  - **What each step states in its own text anyway:** `jigc doc schema <ty>`, `jigc doc list <ty> --task {{task.id}}`, one `jigc doc show <ty>:<slug> --task {{task.id}}` read-back, and the heredoc as `<<'EOF'`.
+  - **The append-only fields, each stated as the only ones that change (§1.5, R4 I2):**
+    - `author-jigc-feedback-triage` sets `status` (`resolved · declined · duplicate · refuted`), `duplicate-of` for a `duplicate`, and `pinned-by` for a fix a test pins, and authors `resolution` — those four and nothing else;
+    - `author-inconsistency-triage` sets `status` (`resolved · intended · refuted`) and authors `resolution` — those two and nothing else.
+  - **The intent form (R5, residual R2):** name the finding in plain words, its slug without the `<type>:` prefix and its colon. The address goes to the `doc` verbs, never to `jigc start`.
+  - T3 fences this text on the composed bytes.
+- **P5 · The parity walk moves to the shipped doors and the fixture is retired.** Increment 7's P6 said the fixture lasts *"until the report workflows ship"*, and this commit ships them.
+  - `doc_read_surface.rs`'s `create_instance` maps `jigc-feedback → report-jigc-feedback` and `inconsistency → report-inconsistency`.
+  - `FINDINGS_FIXTURE_WORKFLOW`, its id and `install_findings_fixture_workflow` are deleted.
+  - `findings_doctypes`' (d) starts `report-inconsistency`.
+  - The `UNREACHABLE` reason keeps its `<suite>::<test_fn>` citation, which `item_slot_ceiling_axis` fences, but no longer says *fixture*.
+
+**The tasks.**
+
+- **T1 · Register the four workflows, their four steps and the two `create-<ty>` refs, in one commit, with every fence the registration turns red repaired and every statement it makes false revised.**
+  - **The change.** P1–P5.
+  - **The census reds, repaired in the same commit and never loosened:**
+    - `registry_seam`'s workflow count, 35 → 39. The doctype count stays 18.
+    - `methodology_increment_off_router`'s selectable list gains `report-inconsistency` in sorted position, and its message says *six*.
+    - `compose_goldens::sweep_*` ×6, regenerated with `UPDATE_GOLDENS=1`, never hand-edited.
+  - **The step-text fences the steps must satisfy:** `read_surface_naming::*`, `stdin_form_naming::every_site_bearing_step_names_the_permitted_form`, `read_back_fence::the_methodology_owe_set_is_exactly_its_read_back_declarers`, `flow48_acceptance::every_write_soliciting_step_names_the_read_back_and_the_read_runs`, plus the pack-load stated-at and named-fact fences.
+  - **New in the same commit — the opposite of the agent-stage contract.** `methodology_staging_contract` gains `DOC_ONLY_WORKFLOWS`, the four. Each is composed through `jigc start --workflow` and asserted:
+    - to carry neither `` `git add` `` nor *"only what you have staged"*;
+    - to carry `step:finalize-doc-only`'s path-scoped statement, with tokens read from that step's own text.
+
+    `COMMITTING_WORKFLOWS` stays four.
+  - **The statements it makes false or newly true, revised in the same commit:**
+    - [finalize.md](design/finalize.md)`:172`'s code-less census: *twelve* → *sixteen*, the methodology list six → ten, naming the four;
+    - [methodology-docs.md](design/methodology-docs.md)`:87`: the four workflows join the work-doc surface, by pointer to findings-channel §2, with the visible/hidden posture stated;
+    - [doctype-authoring.md](implementation/doctype-authoring.md)'s fixture example becomes history: M55's fixture was retired when the report workflows shipped;
+    - the `UNREACHABLE` reason and the (d) doc comment (P5).
+  - *Red at HEAD:* `jigc start --workflow report-jigc-feedback` refuses (no such workflow), and the new staging test fails to compose.
+  - *Done:*
+    - `cargo nextest run -p jigc -E 'test(/^(registry_seam|methodology_increment_off_router|compose_goldens|read_surface_naming|stdin_form_naming|read_back_fence|flow48_acceptance|methodology_staging_contract|doc_read_surface|findings_doctypes|item_slot_ceiling_axis|commit_solicit_axis|sub_task_composition)::/)'` is green.
+    - `git status --short -- crates/cli/tests/goldens` shows exactly **48 added** and **34 modified**: the 28 catalog carriers and the 6 `describe` goldens. Any other moved golden is a finding, not a regeneration.
+    - `command grep -rn 'file-finding-fixture' crates/cli/tests` exits 1.
+    - `dev/gate` is green.
+- **T2 · Flow A's report arm and flow C's first arm, through the real binary.**
+  - **The change.** A new suite, `crates/cli/tests/findings_workflows.rs`, registered in exactly one group root (`g_methodology`), on `TrialCorpus::build(State::Fresh)`.
+  - **(a) `report-jigc-feedback`, end to end:**
+    - The task starts by name. The composed create `Run:` line carries `--title` and `--task` and no other flag.
+    - `doc create`, then `kind`, `found-in`, `jigc-version`, `description`, and a fenced `repro` holding a `#`-led line. The commit doc's leaves are set from the composed text.
+    - A foreign path is staged with plain git after the task started. Finalize exits 0.
+    - `git show --name-only HEAD` lists exactly the doc, and the foreign path is still in `git diff --cached --name-only`.
+    - `doc list jigc-feedback --format json` carries the row with `title` and `fields.status == "open"`. `doc show jigc-feedback:<slug> --format json` carries `title`.
+    - With `status:` hand-deleted and committed with plain git, both surfaces still read `"open"`.
+  - **(b) The catalog posture.** Bare `jigc start`'s catalog lines, scoped as `methodology_increment_off_router` scopes them, include `report-inconsistency` with its `when:`, and none of `report-jigc-feedback`, `triage-jigc-feedback`, `triage-inconsistency`. Each of those three composes by name (exit 0, `task minted:`).
+  - **(c) `report-inconsistency`, reached from that catalog.** The id is read off the catalog line, then started with `--workflow`. Three sides are added by `add-item --slug`: two paths and one address. One carries `says`. The commit holds the one doc. `doc show`'s `sides` ids are the three slugs.
+  - **(d) Flow C's first arm.** A second `report-jigc-feedback` task's `doc create` with the first's title exits 1. The output names `create.already-exists`, `doc list jigc-feedback --task <t2>` stages no row, and the committed file's bytes are unchanged.
+  - *Red:* an applied mutant — `report-jigc-feedback`'s body on `step:finalize`, as a project-layer shadow — reddens (a)'s one-doc commit, because the foreign path is swept. Restored, it is green.
+  - *Done:*
+    - `cargo nextest run -p jigc -E 'test(/^(findings_workflows|test_target_registration)::/)'` is green.
+    - `dev/gate` is green.
+- **T3 · Both triage workflows move a filed finding off `open` and land that doc alone, and their composed text says what P4 pins.**
+  - **The change.** In `findings_workflows.rs`, on rows filed in-test through the report workflows:
+    - **(a) `triage-jigc-feedback`.** The plain-words intent mints a task id that is the slugged intent, with no fused prefix. The composed text names the four leaves, says nothing else changes, and names the intent form. `status: resolved`, `pinned-by` and `resolution` are written through the composed lines, and the first write acks *copied in for update*. A foreign path stays staged. The finalize commit holds that doc alone. The `doc list` row reads `resolved` with `pinned-by`, and `doc show`'s `resolution` is set.
+    - **(b) `triage-inconsistency`.** The same on the filed inconsistency, `status: intended` plus `resolution`. The composed text names its two leaves.
+    - **(c) Neither triage workflow grants a create.** `doc create <ty>` inside a triage task is refused `create.gate-blocked`, exit 1, *allowed doctypes: []* (driven on the spike for `triage-inconsistency`).
+  - *Red:* an applied mutant — a project-layer step shadow of `author-jigc-feedback-triage` without its four-leaves sentence — reddens (a)'s statement assertion. Restored, it is green.
+  - *Done:*
+    - `cargo nextest run -p jigc -E 'test(/^findings_workflows::/)'` is green.
+    - `dev/gate` is green.
+- **T4 · Flow D: several report sub-tasks into one store.**
+  - **The change.** In `findings_workflows.rs`: a milestone with three report sub-tasks (two `report-jigc-feedback`, one `report-inconsistency`), taken through `add-task --workflow`, `provision` and `execute`.
+  - **Each `Spawn:` line is run verbatim,** on `sub_task_composition`'s shim method. Its helpers are widened to `pub(crate)` on the Increment 7 precedent, never copied.
+  - **Each sub-task's composed text carries:**
+    - no `jigc task finalize`;
+    - no `commit:<sub>` write;
+    - no line of `step:finalize-doc-only`'s or `step:author-commit`'s text;
+    - the trailer naming `jigc milestone finalize <m>`.
+  - **The join.** Each sub-task creates and fills its doc in its worktree. `jigc milestone finalize <m>` exits 0, landing one commit holding exactly the three docs and the milestone record. `doc list jigc-feedback` and `doc list inconsistency` list them all.
+  - *Red:* the same composition assertions run over `report-jigc-feedback` composed as an **ordinary** task redden. This is the discriminating control: that text carries the per-task door.
+  - *Done:*
+    - `cargo nextest run -p jigc -E 'test(/^(findings_workflows|sub_task_composition)::/)'` is green.
+    - `dev/gate` is green.
+- **T5 · [doctype-authoring.md](implementation/doctype-authoring.md)'s census checklist states what this increment measured.**
+  - **The change.** Three revisions:
+    - **The workflow half:** every new workflow, hidden or not, and every new catalog command moves the six `describe` goldens. M55's four workflows added exactly 48 goldens and moved 34, the 28 catalog carriers plus the 6 `describe` goldens. The `COMMITTING_WORKFLOWS` bullet names T1's `DOC_ONLY_WORKFLOWS` assertion as the opposite's fence.
+    - **The step-text half:** it gains `stdin_form_naming::every_site_bearing_step_names_the_permitted_form`, `read_back_fence::the_methodology_owe_set_is_exactly_its_read_back_declarers` and `flow48_acceptance::every_write_soliciting_step_names_the_read_back_and_the_read_runs`. Each entry says what reddens it and what satisfies it. Among them: declare `read.staged-read-back` **iff** the step solicits through a catalog write ref or a `{{schema:<T>}}`, so a literal-line step states its read-back and declares nothing.
+  - *Done:*
+    - A shell loop over those three names and `methodology_staging_contract` runs `command grep -qF "<name>" implementation/doctype-authoring.md`, read bare, and exits 0.
+    - `cargo nextest run -p jigc -E 'test(/^(doctype_authoring_fences|doc_link_fence)::/)'` is green.
+    - `dev/gate` is green.
+
+**Why this order and this seam.** T1 is the atomic unit. The four workflow files turn the eight census fences red, and only their repairs turn them green. The steps must satisfy the step-text fences in the same motion. The fixture becomes dead code that clippy refuses. So all of that is one commit. T2–T4 each prove one flow arm over T1's shapes, and T5 records what T1 measured; none reddens the gate for a later task.
+
+**Every Grouped-scope clause maps to a task.**
+
+| Grouped-scope clause | Task |
+|---|---|
+| Row 4 — `creates-task: true`, `allows-create` with `new: true`, exactly one create; `report-jigc-feedback` hidden on the `record-dogfood` mold, no `door`; `report-inconsistency` visible with `when:` | T1 (P1); T2 (a)(b)(d) prove it |
+| Row 4 — bodies `step:author-<ty>` · `step:author-commit` · `step:finalize-doc-only`; `create-jigc-feedback`/`create-inconsistency` refs on the `create-idea` mold | T1 (P1, P2) |
+| Row 4 — author steps: `jigc doc schema`, `--task` writes, exactly one `jigc doc show <addr> --task <id>` line, fence `repro`, sides by `add-item … --slug` | T1 (P3, the `read_surface_naming` fences); T2 (a)(c) drive it |
+| Row 5 — triage hidden on the same mold, no create; a step of its own name; the four leaves (two for `inconsistency`) and nothing else, stated; then `author-commit` and `finalize-doc-only`; the intent form | T1 (P1, P4); T3 proves it |
+| Census workflow half — `registry_seam` 35 → 39, selectables five → six, four workflows × six states of new goldens, exactly 28 moved catalog goldens (plus the 6 `describe`, adjudicated above) | T1 |
+| Census workflow half — `methodology_staging_contract` held to the opposite for the four | T1 |
+| §13 — [methodology-docs.md](design/methodology-docs.md) (the four workflows), [finalize.md](design/finalize.md) (code-less census twelve → sixteen) | T1 |
+
+**Every Proves clause maps too.**
+
+| Proves clause | Task |
+|---|---|
+| A — `report-jigc-feedback` by name, `doc create` with no flag, fields and fenced `repro`, one commit holding only the doc | T2 (a) |
+| A — `doc list` row with `title` and `fields.status == "open"`; `doc show` carries `title`; a hand-deleted committed `status:` still projects `"open"` on both | T2 (a) |
+| A — `report-inconsistency` reached from the catalog, three sides by `add-item --slug` | T2 (c) |
+| A — `report-jigc-feedback` and both triage workflows absent from the catalog, callable by name | T2 (b) |
+| A — `triage-jigc-feedback` sets `resolved` + `resolution` + `pinned-by` and lands that doc alone | T3 (a) |
+| Deliverable — `triage-inconsistency` moves one off `open` | T3 (b) |
+| D — ≥2 report sub-tasks, composed text free of the omission set and ending in the milestone trailer; the join lands every doc; `doc list` lists them all | T4 |
+| C's first arm — a same-title second report refused by the create gate's code | T2 (d) |
+
+**Beyond the bullets, and why.**
+
+- P5 retires a fixture whose own stated reason the registration makes false. Once nothing uses it, it is dead code under `clippy -D warnings`.
+- T3 (c) states row 5's *no create* as a refusal.
+- T5 corrects Increment 7's checklist with three step-text fences and one golden population this planning measured and that checklist did not name.
+
+**Declared bounds:**
+
+- The three hidden workflows are invoked by nothing M55 ships; their invoker is this repository's agents at M56 (roadmap).
+- The triage steps sit outside the structural read-back fence by P4's choice, so their read-back is fenced by T3's composed-text assertions rather than at pack-load.
+- `duplicate-of` is stated in the triage step and not driven to a landing here. The ref's resolution at finalize is existing machinery, and Increment 9's seed files `duplicate` rows if any arise.
+- Flows B and C's other arms, and D's composition on the full seed, are Increment 9's and Increment 11's (roadmap → *Doc moves ride…*, the stated exception).
+
 ## 2026-10-03 — M55 Increment 7 / T4: the two doctypes' acceptance, and P5's cost paid
 
 `crates/cli/tests/findings_doctypes.rs` (in `g_doc`) drives (a) `doc schema` in all three formats, (b) the seed fence's predicate on a hand-placed fenced-`#` `repro` and a three-sided `inconsistency`, (c) Increment 6's triage over four real `jigc-feedback` rows, (d) the `sides/says` depth gate. **Pins:** (1) **Reused, not restated:** (c) imports `doc_list_triage`'s `TRIAGE` and `jq`, (d) `doc_read_surface`'s fixture workflow — visibility widened to `pub(crate)`, the `manifest_freeze_fence` cross-suite precedent — so the filter and the door cannot drift from the ones already pinned. (2) **The `UNREACHABLE` citation is fenced:** a new `item_slot_ceiling_axis` test requires every entry's reason to cite `<suite>::<test_fn>` and checks the fn is a `#[test]` in that suite's source, so P5's paid-elsewhere claim reddens if the test is renamed or dropped (red before the reason was amended). (3) (d) drives H1–H3 refused and H4 landed, the `(3, 4)` the axis's `expected()` claims.

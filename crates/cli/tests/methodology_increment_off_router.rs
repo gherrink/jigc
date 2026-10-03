@@ -263,13 +263,16 @@ fn bare_start_over_methodology_lists_the_selectables_never_increment() {
             "dev-task",
             "do-research",
             "form-vision",
-            "park-idea"
+            "park-idea",
+            "report-inconsistency"
         ],
         "the selectable catalog must be exactly [decided-task, dev-task, do-research, \
-         form-vision, park-idea] — the five selectable work-workflows (`do-research`, \
-         `form-vision`, and `park-idea` are `selectable: true` by design, M37 §3; \
-         `decided-task` joins at M43 fork 2 — the hide's expiry fired); `increment` \
-         must not leak in (M8 catalog-leak class); got:\n{json_out}",
+         form-vision, park-idea, report-inconsistency] — the six selectable \
+         work-workflows (`do-research`, `form-vision`, and `park-idea` are \
+         `selectable: true` by design, M37 §3; `decided-task` joins at M43 fork 2 — the \
+         hide's expiry fired; `report-inconsistency` joins at M55, router-visible by S3 \
+         while `report-jigc-feedback` and both triage workflows stay hidden); \
+         `increment` must not leak in (M8 catalog-leak class); got:\n{json_out}",
     );
     // T3 (planning): the explicit planning-named negative over the same JSON bytes —
     // `ids == [dev-task]` already excludes it by construction, but the named guard
