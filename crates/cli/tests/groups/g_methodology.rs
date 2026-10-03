@@ -33,6 +33,8 @@ mod flow29_acceptance;
 mod flow32_acceptance;
 #[path = "../flow55_report_and_read_back.rs"]
 mod flow55_report_and_read_back;
+#[path = "../flow56_mid_task_report.rs"]
+mod flow56_mid_task_report;
 #[path = "../hook_output_axis.rs"]
 mod hook_output_axis;
 #[path = "../invocation_log.rs"]

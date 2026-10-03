@@ -3834,3 +3834,58 @@ $ jigc doc list jigc-feedback --format json
 5. **`triage-jigc-feedback` moves the row this corpus filed.** Started with the finding's slug as a plain-words intent, its composed text names the four leaves it changes and the intent form; the first write acks the copy-in; `resolved`, `pinned-by` and `resolution` land as one commit holding that doc alone, the foreign path still staged. The `doc list` row then carries the title, `resolved` and the pin, `doc show` the resolution, and every line of the hand-edited finding is kept.
 
 **Red** is the mutant the doc-only step exists against: a project shadow of `report-jigc-feedback` at `.jigc/config/workflows/report-jigc-feedback.yaml` whose body includes `step:finalize` in place of `step:finalize-doc-only` sweeps the foreign path into the report's commit, and assertion 2 fails naming it.
+
+## 56. Mid-code-task reporting — the three staging states, on the shipped report workflow (M55)
+
+**The claim:** *with a code task open in the same checkout — an edit to a tracked file and a new file — a finding filed through the shipped `report-jigc-feedback` lands as one commit holding its doc alone, whether the code task's files are unstaged, staged before the report started, or staged after it; the code task's index is what it was, and the code task then lands its own files.* This is flow B of [findings-channel.md](findings-channel.md) → 11, the S4 spike's three states, driven over the shipped report and triage workflows rather than a fixture. Every write the report and triage tasks make is a line their composed workflow emitted, run verbatim but for its `<…>` fills.
+
+| State | The code task's files | The report's finalize |
+|---|---|---|
+| 1 | unstaged throughout | the doc alone, exit 0 |
+| 2 | staged **before** the report started | the doc alone, exit 0 — and again with `--carry-staged`, which is inert on this arm |
+| 3 | staged **after** the report started | the doc alone, exit 0 |
+
+**What it adds over `doc_only_finalize`.** That suite (M55 Increment 1, `crates/cli/tests/doc_only_finalize.rs`) proves the same three states, the left-out kinds, the `--dry-run` forecast and the rollback cells, through a fixture workflow composing the shipped `step:finalize-doc-only` and writes built by hand. This flow re-drives the states on the shipped `report-jigc-feedback` and `triage-jigc-feedback` through their emitted lines. It claims no first proof.
+
+**Bounds.** One `State::Fresh` corpus per state, on the embedded packs, jigc's own `pre-commit` hook asserted installed. The code task is the shipped `dev-task`, its files written and staged by plain git. `--carry-staged` is appended to the report's emitted finalize line, since the composed text names it only as a route. `triage-inconsistency` composes the same step and is not driven here.
+
+The designs of record live elsewhere and are not restated here: the path-scoped doc-only commit, its left-out narration and the carryover gate's exemption in [findings-channel.md](findings-channel.md) → 3 and [finalize.md](finalize.md); the report and triage workflows in → 2. Notation illustrative.
+
+### The walk
+
+```text
+$ jigc start --workflow dev-task "change the code"
+$ (edit src/lib.rs; write src/new.rs)
+$ git add src/lib.rs src/new.rs              # state 2: before the report starts
+$ jigc start --workflow report-jigc-feedback "the finalize sweeps a staged path"
+$ jigc doc create jigc-feedback --title "Finalize sweeps a staged path" --task …
+#   …kind, found-in, jigc-version, about · description · a fenced repro · the commit doc
+$ git add src/lib.rs src/new.rs              # state 3: after the report started
+$ jigc task finalize finalize-sweeps-a-staged [--carry-staged]
+> … one commit: docs/jigc-feedback/<slug>.md alone
+>   left-out (…)
+>     src/lib.rs
+>     src/new.rs
+$ git diff --cached --name-status            # what it was before the finalize
+$ jigc task finalize change-the-code
+> … one commit: src/lib.rs · src/new.rs
+
+$ jigc start --workflow triage-jigc-feedback "finalize-sweeps-a-staged-path"
+$ jigc doc set-field jigc-feedback:<slug>#meta/status --value resolved --task …
+$ jigc doc set-slot …#resolution --from-file - --task …
+$ jigc task finalize <triage>
+> … one commit: docs/jigc-feedback/<slug>.md alone
+
+$ jigc start --workflow park-idea "park a thought"     # the omitting context, state 2
+$ jigc task finalize park-a-thought
+> blocking · finalize.carried-staged — `src/lib.rs` was already staged before this task existed …
+```
+
+### What it asserts (flow B on the shipped workflows — flow56_mid_task_report.rs)
+
+1. **Every state lands the report's doc alone.** In states 1, 2 and 3, and state 2 again with `--carry-staged`, the report's emitted finalize exits 0 with exactly one commit whose file list is the finding's committed path; `git diff --cached --name-status` is byte-identical before and after; the landed text's left-out section names both of the code task's paths; and the code task's emitted finalize then lands a commit holding its own two files.
+2. **A pending `.jigc/config` delta stays out.** A `jigc config set` written before the report's finalize, in state 3, is not in the report's commit and is still pending after it.
+3. **The triage edit shape.** In each of the three states, the shipped `triage-jigc-feedback` moves the committed finding to `resolved` with a `resolution` through its emitted lines and lands one commit holding that doc alone, the edit landed and the code task's index unchanged; the code task then lands its own files.
+4. **The omitting context.** The shipped `park-idea`, which composes the ordinary `step:finalize`, behaves as it always has over the same three states, driven through its emitted lines: state 1 lands its idea alone, state 2 is refused `finalize.carried-staged` at exit 3 with nothing committed, and state 3's commit carries the idea and both of the code task's files.
+
+**Red** is the mutant the doc-only step exists against: with `report-jigc-feedback`'s body on `step:finalize` in place of `step:finalize-doc-only`, state 2's finalize is refused `finalize.carried-staged` at exit 3, and assertion 1 fails naming it.
