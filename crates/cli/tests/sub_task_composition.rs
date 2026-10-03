@@ -211,7 +211,7 @@ impl Fixture {
 }
 
 /// Every `` Spawn: `…` `` span of a composed view, verbatim.
-fn spawn_spans(view: &str) -> Vec<String> {
+pub(crate) fn spawn_spans(view: &str) -> Vec<String> {
     view.lines()
         .filter_map(|line| line.strip_prefix("Spawn: `"))
         .filter_map(|rest| rest.strip_suffix('`'))
@@ -222,7 +222,7 @@ fn spawn_spans(view: &str) -> Vec<String> {
 /// Install a `jigc` shim on a throwaway `PATH` entry so an emitted span — which names the bare
 /// command `jigc`, as an agent runs it — resolves to the binary under test.
 #[cfg(unix)]
-fn install_jigc_shim(dir: &Path) -> PathBuf {
+pub(crate) fn install_jigc_shim(dir: &Path) -> PathBuf {
     use std::os::unix::fs::PermissionsExt;
     let bin = dir.join("shim-bin");
     fs::create_dir_all(&bin).expect("mk the shim bin dir");
@@ -238,7 +238,7 @@ fn install_jigc_shim(dir: &Path) -> PathBuf {
 
 /// Run an emitted shell span verbatim through `sh -c`, with the shim first on `PATH`.
 #[cfg(unix)]
-fn run_span(cwd: &Path, home: &Path, shim_bin: &Path, span: &str) -> Output {
+pub(crate) fn run_span(cwd: &Path, home: &Path, shim_bin: &Path, span: &str) -> Output {
     let path = match std::env::var("PATH") {
         Ok(rest) => format!("{}:{rest}", shim_bin.display()),
         Err(_) => shim_bin.display().to_string(),
@@ -886,7 +886,7 @@ const AUTHOR_WORKFLOWS: [&str; 4] = ["park-idea", "planning", "sub-task", "fix-t
 /// Every emitted `jigc doc set-…` write against `commit:<sub>#…`, decoration stripped so the
 /// remainder runs verbatim — the `commit_solicit_axis` mold, heredoc demonstrations excluded
 /// (each carries its own payload and is not a second instruction to write).
-fn commit_writes(text: &str, sub: &str, leaf: Option<&str>) -> Vec<String> {
+pub(crate) fn commit_writes(text: &str, sub: &str, leaf: Option<&str>) -> Vec<String> {
     let target = match leaf {
         Some(leaf) => format!("commit:{sub}#{leaf} "),
         None => format!("commit:{sub}#"),

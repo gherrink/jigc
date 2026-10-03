@@ -27,6 +27,14 @@
 //! - **(f)** `triage-inconsistency` does the same for a filed record: `intended` + a
 //!   `resolution`, its three sides kept, the two leaves and the intent form stated.
 //! - **(g)** A triage task allows no create: a `doc create` in one is `create.gate-blocked`.
+//! - **(h)** Flow D (§11 → D, §6 S2): a milestone with three report sub-tasks. Each `Spawn:`
+//!   line is run verbatim through `sub_task_composition`'s `jigc` shim; each composed text
+//!   names no `jigc task finalize`, asks for no `commit:<sub>` write, carries no line of
+//!   `step:finalize-doc-only` or `step:author-commit`, and ends in the trailer naming
+//!   `jigc milestone finalize <m>`. Each sub-task files its doc in its own worktree, and the
+//!   join lands one commit holding exactly the three docs and the milestone record.
+//! - **(i)** (h)'s discriminating control: the same checks over `report-jigc-feedback`
+//!   composed as an ordinary task fail, every one of them.
 //!
 //! **Red** is the mutant the doc-only step exists against: with `report-jigc-feedback`'s body
 //! on `step:finalize` instead of `step:finalize-doc-only`, the report's commit sweeps the
@@ -35,7 +43,13 @@
 
 use crate::support;
 
+use crate::sub_task_composition::commit_writes;
+#[cfg(unix)]
+use crate::sub_task_composition::{install_jigc_shim, run_span, spawn_spans};
+
+use std::collections::BTreeSet;
 use std::fs;
+use std::path::PathBuf;
 use std::process::Output;
 
 use serde_json::{Value, json};
@@ -84,10 +98,13 @@ fn text(out: &Output) -> String {
     )
 }
 
-/// A composed work-workflow: the task id the binary printed it minted, and the composed text.
+/// A composed work-workflow: the task id the binary printed it minted, the composed text,
+/// and the checkout its emitted lines run in — the repository for an ordinary task, the
+/// sub-task's own worktree for a fan-out sub-task.
 struct Composed {
     task: String,
     text: String,
+    cwd: PathBuf,
 }
 
 /// The id `stdout` says was minted — read off the emitted `task minted:` line.
@@ -106,6 +123,7 @@ fn start(corpus: &TrialCorpus, workflow: &str, intent: &str) -> Composed {
     Composed {
         task: minted(&text),
         text,
+        cwd: corpus.repo(),
     }
 }
 
@@ -208,10 +226,7 @@ fn run_emitted_raw(
 ) -> Output {
     let words = argv(&emitted_line(&composed.text, prefix), fills);
     let args: Vec<&str> = words[1..].iter().map(String::as_str).collect();
-    match stdin {
-        Some(payload) => corpus.jigc_stdin(&args, payload),
-        None => corpus.jigc(&args),
-    }
+    corpus.jigc_stdin_from(&composed.cwd, &args, stdin.unwrap_or(""))
 }
 
 /// Run the emitted create with `title`, returning the address the binary acked.
@@ -284,7 +299,15 @@ fn author_jigc_feedback(corpus: &TrialCorpus, title: &str) -> (Composed, String)
         "report-jigc-feedback",
         "the finalize sweeps a staged path",
     );
-    let address = create(corpus, &composed, "jigc-feedback", title);
+    let address = file_jigc_feedback(corpus, &composed, title);
+    fill_commit(corpus, &composed, "feedback");
+    (composed, address)
+}
+
+/// Create and fill a jigc-feedback finding titled `title` in the composed report task,
+/// every write — and the read-back — through its emitted lines. Returns its address.
+fn file_jigc_feedback(corpus: &TrialCorpus, composed: &Composed, title: &str) -> String {
+    let address = create(corpus, composed, "jigc-feedback", title);
     let slug = slug_of(&address);
     let fills = [("<slug>", slug.as_str())];
     for (leaf, hole, value) in [
@@ -295,7 +318,7 @@ fn author_jigc_feedback(corpus: &TrialCorpus, title: &str) -> (Composed, String)
     ] {
         run_emitted(
             corpus,
-            &composed,
+            composed,
             &format!("jigc doc set-field jigc-feedback:<slug>#meta/{leaf} "),
             &[fills[0], (hole, value)],
             None,
@@ -303,21 +326,21 @@ fn author_jigc_feedback(corpus: &TrialCorpus, title: &str) -> (Composed, String)
     }
     run_emitted(
         corpus,
-        &composed,
+        composed,
         "jigc doc set-slot jigc-feedback:<slug>#description ",
         &fills,
         Some("The report's finalize committed a path another task had staged."),
     );
     run_emitted(
         corpus,
-        &composed,
+        composed,
         "jigc doc set-slot jigc-feedback:<slug>#repro ",
         &fills,
         Some(REPRO),
     );
     let read_back = run_emitted(
         corpus,
-        &composed,
+        composed,
         "jigc doc show jigc-feedback:<slug> ",
         &fills,
         None,
@@ -326,14 +349,21 @@ fn author_jigc_feedback(corpus: &TrialCorpus, title: &str) -> (Composed, String)
         read_back.contains(REPRO.trim_end()),
         "the emitted read-back serves the staged, fenced repro; got:\n{read_back}",
     );
-    fill_commit(corpus, &composed, "feedback");
-    (composed, address)
+    address
 }
 
 /// Author the inconsistency titled [`INCONSISTENCY`] with its three [`SIDES`] in the
 /// composed `report-inconsistency` task, every write through the composed text's emitted
 /// lines; the commit doc is filled too, so only the finalize is left. Returns its address.
 fn author_inconsistency(corpus: &TrialCorpus, composed: &Composed) -> String {
+    let address = file_inconsistency(corpus, composed);
+    fill_commit(corpus, composed, "inconsistencies");
+    address
+}
+
+/// Create and fill the inconsistency titled [`INCONSISTENCY`] with its three [`SIDES`] in
+/// the composed report task, every write through its emitted lines. Returns its address.
+fn file_inconsistency(corpus: &TrialCorpus, composed: &Composed) -> String {
     let address = create(corpus, composed, "inconsistency", INCONSISTENCY);
     let slug = slug_of(&address);
     run_emitted(
@@ -377,7 +407,6 @@ fn author_inconsistency(corpus: &TrialCorpus, composed: &Composed) -> String {
         &[("<slug>", &slug)],
         Some("Read all three side by side."),
     );
-    fill_commit(corpus, composed, "inconsistencies");
     address
 }
 
@@ -578,6 +607,7 @@ fn report_inconsistency_is_reached_from_the_catalog_with_three_sides() {
     let composed = Composed {
         task: minted(&reached),
         text: reached,
+        cwd: corpus.repo(),
     };
     assert!(
         composed.text.contains("jigc doc create inconsistency "),
@@ -994,4 +1024,249 @@ fn a_create_inside_a_triage_task_is_gate_blocked() {
             .unwrap_or_default();
         assert_eq!(staged, Vec::<String>::new(), "`{workflow}`: nothing staged");
     }
+}
+
+/// The milestone flow D fans out under, and the id `milestone create` mints from it.
+const MILESTONE_TITLE: &str = "Seed the findings store";
+const MILESTONE: &str = "seed-the-findings-store";
+
+/// Flow D's three report sub-tasks: `(workflow, intent, title)` — two findings into one store,
+/// one inconsistency beside them.
+const REPORTERS: [(&str, &str, &str); 3] = [
+    ("report-jigc-feedback", "Report the staged sweep", TITLE),
+    (
+        "report-jigc-feedback",
+        "Report the dropped title",
+        "Doc show drops the title",
+    ),
+    (
+        "report-inconsistency",
+        "Report the eviction disagreement",
+        INCONSISTENCY,
+    ),
+];
+
+/// The own lines of a step a sub-task omits — `step:finalize-doc-only` and
+/// `step:author-commit`, the methodology pack's — read off the raw step files: every body
+/// line, `{{task.id}}` filled with `task`, but a `{{ cli.… }}` ref (it composes to a `Run:`
+/// line the door and commit-write checks own) and any line a surviving report author step
+/// also carries (the shared heredoc and read-back wording, which is not the omitted step's).
+fn omitted_step_lines(task: &str) -> BTreeSet<String> {
+    let steps = PathBuf::from(cli::pack_path!(methodology)).join("steps");
+    let lines = |id: &str| -> BTreeSet<String> {
+        let raw = fs::read_to_string(steps.join(format!("{id}.yaml")))
+            .unwrap_or_else(|e| panic!("read step:{id}: {e}"));
+        let body = raw
+            .strip_prefix("---\n")
+            .and_then(|rest| rest.split_once("\n---\n"))
+            .map_or(raw.as_str(), |(_, body)| body);
+        body.lines()
+            .map(|line| line.trim().replace("{{task.id}}", task))
+            .filter(|line| !line.is_empty() && !line.contains("{{"))
+            .collect()
+    };
+    let survivors: BTreeSet<String> = ["author-jigc-feedback", "author-inconsistency"]
+        .into_iter()
+        .flat_map(lines)
+        .collect();
+    let own: BTreeSet<String> = ["finalize-doc-only", "author-commit"]
+        .into_iter()
+        .flat_map(lines)
+        .filter(|line| !survivors.contains(line))
+        .collect();
+    assert!(
+        own.contains(
+            "Land this task's docs as exactly one commit. This finalize commits path-scoped:"
+        ) && own.contains(
+            "finalize renders the commit doc; it does not fill it, so set its header and prose"
+        ),
+        "the omitted steps' own lines are read off their files; got {own:#?}",
+    );
+    own
+}
+
+/// Every way `text`, composed for `task`, falls short of a sub-task of `milestone`, keyed by
+/// the check it fails: it names the refused per-task door, asks for a `commit:<task>` write,
+/// carries a line of an omitted step, or lacks the trailer naming the milestone's boundary.
+fn sub_task_violations(text: &str, task: &str, milestone: &str) -> Vec<(&'static str, String)> {
+    let mut found = Vec::new();
+    if text.contains("jigc task finalize") {
+        found.push(("per-task door", "names `jigc task finalize`".to_owned()));
+    }
+    let writes = commit_writes(text, task, None);
+    if !writes.is_empty() {
+        found.push(("commit-doc write", format!("{writes:?}")));
+    }
+    let own = omitted_step_lines(task);
+    let carried: Vec<&str> = text
+        .lines()
+        .map(str::trim)
+        .filter(|line| own.contains(*line))
+        .collect();
+    if !carried.is_empty() {
+        found.push(("omitted step text", format!("{carried:#?}")));
+    }
+    let boundary = format!("`jigc milestone finalize {milestone}` is its only commit boundary");
+    if !text
+        .lines()
+        .any(|line| line.starts_with("task scope: ") && line.contains(&boundary))
+    {
+        found.push((
+            "milestone trailer",
+            format!("no `task scope:` line naming {boundary}"),
+        ));
+    }
+    found
+}
+
+/// **(h)** Flow D: a milestone with three report sub-tasks. Each `Spawn:` line `milestone
+/// execute` prints is run verbatim; each composed text is free of the derived omission set
+/// and ends in the trailer naming `jigc milestone finalize`; each sub-task files its doc in
+/// its own worktree through its emitted lines; the join lands one commit holding exactly
+/// the three docs and the milestone record, and `doc list` lists them all.
+#[cfg(unix)]
+#[test]
+fn flow_d_three_report_sub_tasks_land_every_doc_at_the_join() {
+    let corpus = TrialCorpus::build(State::Fresh);
+    let created = corpus.jigc_ok(&["milestone", "create", MILESTONE_TITLE]);
+    let record = created
+        .lines()
+        .find_map(|line| line.strip_prefix("record: "))
+        .and_then(|rest| rest.split_whitespace().next())
+        .unwrap_or_else(|| panic!("`milestone create` names its record; got:\n{created}"))
+        .to_owned();
+    let subs: Vec<(String, &str, &str)> = REPORTERS
+        .iter()
+        .map(|(workflow, intent, title)| {
+            let ack = corpus.jigc_ok(&[
+                "milestone",
+                "add-task",
+                MILESTONE,
+                intent,
+                "--workflow",
+                workflow,
+            ]);
+            let sub = ack
+                .split_once("task:")
+                .and_then(|(_, rest)| rest.split_whitespace().next())
+                .unwrap_or_else(|| panic!("the add-task ack names the sub-task; got:\n{ack}"))
+                .to_owned();
+            (sub, *workflow, *title)
+        })
+        .collect();
+    corpus.jigc_ok(&["milestone", "provision", MILESTONE]);
+    let executed = corpus.jigc_ok(&["milestone", "execute", MILESTONE]);
+    let spans = spawn_spans(&executed);
+    assert_eq!(
+        spans.len(),
+        REPORTERS.len(),
+        "one `Spawn:` line per sub-task; got:\n{executed}",
+    );
+
+    let shim_bin = install_jigc_shim(&corpus.home());
+    let mut filed = Vec::new();
+    for (sub, workflow, title) in &subs {
+        let span = spans
+            .iter()
+            .find(|span| span.ends_with(&format!(" --task {sub}")))
+            .unwrap_or_else(|| panic!("a `Spawn:` line for `{sub}`; got:\n{executed}"));
+        let out = run_span(&corpus.repo(), &corpus.home(), &shim_bin, span);
+        assert!(
+            out.status.success(),
+            "the span `{span}` runs at exit 0; {}",
+            text(&out)
+        );
+        let composed = Composed {
+            task: sub.clone(),
+            text: String::from_utf8(out.stdout).expect("utf-8 composed text"),
+            cwd: corpus.repo().join(".jigc/worktrees").join(sub),
+        };
+        let violations = sub_task_violations(&composed.text, sub, MILESTONE);
+        assert!(
+            violations.is_empty(),
+            "the `{workflow}` sub-task `{sub}`'s composed text carries no step of the omission \
+             set and ends in the milestone trailer; violations {violations:#?} in:\n{}",
+            composed.text,
+        );
+        let (ty, address) = match *workflow {
+            "report-jigc-feedback" => (
+                "jigc-feedback",
+                file_jigc_feedback(&corpus, &composed, title),
+            ),
+            _ => ("inconsistency", file_inconsistency(&corpus, &composed)),
+        };
+        filed.push((ty, address));
+    }
+
+    let before = commit_count(&corpus);
+    let out = corpus.jigc(&["milestone", "finalize", MILESTONE]);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "the join lands every report; {}",
+        text(&out)
+    );
+    assert_eq!(commit_count(&corpus), before + 1, "exactly one commit");
+    let mut expected: Vec<String> = filed
+        .iter()
+        .map(|(ty, address)| {
+            listed_row(&corpus, ty, address)["path"]
+                .as_str()
+                .expect("a row has a path")
+                .to_owned()
+        })
+        .chain([record])
+        .collect();
+    expected.sort();
+    let mut landed = head_files(&corpus);
+    landed.sort();
+    assert_eq!(
+        landed,
+        expected,
+        "the join's commit holds exactly the three docs and the milestone record; {}",
+        text(&out),
+    );
+    for ty in ["jigc-feedback", "inconsistency"] {
+        let listing: Value = stdout_json(
+            &corpus.jigc(&["doc", "list", ty, "--format", "json"]),
+            &[0],
+            &format!("`doc list {ty}`"),
+        );
+        let listed: BTreeSet<&str> = listing["docs"]
+            .as_array()
+            .expect("`docs` is an array")
+            .iter()
+            .filter_map(|row| row["id"].as_str())
+            .collect();
+        let want: BTreeSet<&str> = filed
+            .iter()
+            .filter(|(t, _)| *t == ty)
+            .map(|(_, address)| address.as_str())
+            .collect();
+        assert_eq!(listed, want, "`doc list {ty}` lists every filed doc");
+    }
+}
+
+/// **(i)** The discriminating control for (h): `report-jigc-feedback` composed as an
+/// **ordinary** task fails every one of (h)'s composition checks — it carries the per-task
+/// door, the commit-doc writes, both omitted steps' text, and no milestone trailer.
+#[test]
+fn an_ordinary_report_task_fails_every_sub_task_composition_check() {
+    let corpus = TrialCorpus::build(State::Fresh);
+    let composed = start(&corpus, "report-jigc-feedback", "report it as a task");
+    let failed: BTreeSet<&str> = sub_task_violations(&composed.text, &composed.task, MILESTONE)
+        .into_iter()
+        .map(|(check, _)| check)
+        .collect();
+    assert_eq!(
+        failed,
+        BTreeSet::from([
+            "per-task door",
+            "commit-doc write",
+            "omitted step text",
+            "milestone trailer",
+        ]),
+        "an ordinary report task fails every sub-task check; got:\n{}",
+        composed.text,
+    );
 }
