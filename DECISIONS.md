@@ -2,6 +2,136 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-03 — M55 Increment 3 planning: decomposition
+
+Cut [Increment 3](implementation/roadmap.md) (*sub-task composition, and the commit-boundary steps a sub-task omits*) into **2 ordered tasks**, grounded at HEAD `4fdf8ff7` on `milestone/findings-channel/sub-task-composition` (tree clean), with Increments 1 and 2 landed. Cross-ref [roadmap.md](implementation/roadmap.md) → Milestone 55 → Increment 3; the M55 Settle below (S13's S2 as revised by R3, O2 resolved by R5); [findings-channel.md](design/findings-channel.md) → 6, 10, Open questions; [planning-gate-record.md](completions/artifacts/M55/planning-gate-record.md) → row 11, O2 and residual R1. **Codes registered: none.** **No contract moves:** the `--format json` shape stays `{task, text}`, and only a sub-task's `text` changes.
+
+**Basis: read at HEAD here, and driven on the debug binary in `dev/jigc-rig fresh` rigs where marked.**
+
+- **Two doors compose a sub-task, through one spine.** `jigc start --task <sub>` (`resume_in_repo`) and `jigc workflow <W> --task <sub>` (`reenter_in_repo`) both call `compose_task_workflow` (`start.rs:2928`). That spine already holds the resolved cascade and computes `sub_task_of` from `engine::milestone::owning_milestone`, the same membership test the `finalize.milestone-sub-task` refusal uses.
+- **Driven: `jigc milestone execute` composes no sub-task body.** It composes `milestone-execution` (`creates-task: false`) and emits one `Spawn: cd <worktree> && jigc workflow <W> --task <sub>` per sub-task. The rule therefore reaches execute's sub-tasks through the re-entry door, and execute's own text does not change.
+- **Driven: the trailer is already there.** Composing eight sub-tasks through their `Spawn:` door (`park-idea`, `amend`, `migrate-idea`, `planning`, `sub-task`, `fix-task`, `single-task`, `dev-task`) ended every one in `task_state_lines`' `resume:` / `what's-left:` / `task scope:` lines naming `jigc milestone finalize <m>`, followed by `create-gates:` and the footer. *"In their place"* therefore needs no new emitter. The omission alone makes the trailer follow the last surviving step. Six of the eight also carried `Run: \`jigc task finalize <sub>\`` above it. `migrate-idea` carried the *"re-run the same finalize with `--approve`"* prose, and `park-idea`, `planning`, `fix-task` and `dev-task` carried *"finalize renders the commit doc"*.
+- **The engine expands includes in one place.** `expand_includes` / `expand_step` (`engine/src/compose.rs:2754`) walk the include tree recursively, in place, with `continues` boundary bookkeeping. A step source cannot express *skip this subtree*, because a missing step is `workflow-refs.include-resolves`. So an omission has to be an input to expansion.
+- **The carriers, by catalog.** In both packs `finalize-task` is `args: ["task", "finalize", {from: task.id}]`, and the dev pack's `milestone-finalize` is `["milestone", "finalize", …]`. Every `set-commit-*` entry (dev: `type`, `summary`; methodology: `type`, `scope`, `summary`, `body`) carries a `{from: "task.commit#…"}` argument, and no other entry does.
+- **Today's derived members**, by grep over both packs' `steps/`:
+  - **Carry the per-task door:** `finalize` (dev), `finalize` (methodology), `finalize-doc-only` (methodology), `amend-message` (dev).
+  - **Wrap one:** `migration-finalize` (both packs), `planning-finalize`, and `project-finalize`. `project-finalize` is a text-less `{{ include: step:finalize }}` that `project-setup` reaches; the design's list did not name it, and the derivation finds it.
+  - **Write the commit doc through a catalog ref:** `author-commit` (both packs), and `amend-message` (already a member).
+- **Steps that are not members, and why:**
+  - **`sub-task-commit`** includes `author-commit`. Its own text is the never-commit discipline that `workflow_reentry::` pins (*"never \`git commit\` and never \`jigc task finalize\`"*).
+  - **`locate-from-spec`** writes `commit:<id>#implements` as literal text, not through a catalog ref. Its subject is locating code.
+  - **`fix-finding`** and **`author-planning-record`** name `jigc task finalize` in prose, not as a command ref.
+- **Driven, the join's gate (Open question 2's test):**
+  - **Under `squash: false`,** a code-carrying `single-task` sub-task with its commit doc unfilled was refused by `jigc milestone finalize` at **exit 3**, with `schema-conformance.field-value-conformant` (`type`) and `schema-conformance.required-slot-present` (`summary`) at `commit:code-change`.
+  - **Under `squash: true`,** the same shape **landed at exit 0** with the synthesized `Finalize milestone oq2t (1 sub-task)`, reading no commit doc.
+  - **A docs-only sub-task's commit doc is read under neither mode.** The gate-record drove this for `squash: true`. For `squash: false`, `milestone_boundary_gate` and `subtask_patches_and_messages` key on `code_carrying_worktrees` (`milestone.rs:6440`, `:6729`).
+- **Driven: the knob is knowable where the sub-task composes.** After an uncommitted `jigc config set finalize.fan-out.squash false` in the main checkout, `jigc config get` run inside a provisioned sub-task worktree answered `false (project)`, the value `resolve_squash(jigc_home)` reads at the join.
+- **The two sub-task-native workflows author for the join.** `fix-task` composes `step:author-commit` directly. `fix-gate` runs `jigc config set finalize.fan-out.squash false` before `milestone create`, so that each fix lands its own authored commit. `sub-task`, the `add-task` default (`DEFAULT_SUB_TASK_WORKFLOW`), composes it through `step:sub-task-commit`.
+- **Goldens.** `compose_goldens::` sweeps `jigc workflow <id> --preview` and `jigc start --workflow <id>`, and neither composes a sub-task. So no golden moves on the omission. A golden moves only when a step's own text changes.
+
+**Open question 2, settled here (the increment the roadmap assigns it to): the third option. The commit-doc authors are in the omission set exactly when `finalize.fan-out.squash` resolves `true` at compose.** The join's gate was the test:
+
+- **Under `squash: true`, no boundary reads any sub-task's commit doc**, docs-only or code-carrying (driven). So every commit-doc author leaves the sub-task's text, and R5's placement of `step:author-commit` in the set holds in the default mode.
+- **Under `squash: false`, the join renders and gates the commit doc of every code-carrying sub-task** (driven: exit 3 unfilled). Code-carrying is decided at the join, not at compose. So the authors stay, and the line *"finalize renders the commit doc"* is true there.
+
+**The other two options fail that test:**
+
+- **Option 1 (keep the author, respell only its line)** keeps a docs-only sub-task in the default mode authoring a doc nobody reads. That is R1's residue, which R5 removed. It also needs either text substitution inside step content, which is a conditional in all but name, or a step-text change that moves the goldens of the nine methodology workflows composing `author-commit`. The Proves forbids the second.
+- **Option 2 (the join stops reading a doc no step asked for)** removes the authoring from `fix-task` and `sub-task` too, because they are always sub-tasks. `squash: false`'s per-sub-task message would then have to be synthesized. That changes the join, which is the finalize axis, and drops the authored message that the mode exists to carry (M8, M31).
+
+**Costs of the chosen option, stated as bounds:**
+
+- **A docs-only sub-task under `squash: false`** still composes an author step whose doc the join will not read.
+- **A knob flipped from `true` to `false` between compose and join** meets the join's existing routed block (`required-slot-present` at `commit:<sub>`, routed at `jigc doc set-slot`). Re-composing through the `Spawn:` door then shows the author step.
+
+**Build pins. Each is a verified fact or a decision taken here from the locked design:**
+
+- **P1 · One derivation, two clauses, over the composed packs.** The CLI walks the composing workflow's include tree. It uses the step source the compose expands, which is cascade-resolved, scoped to the origin pack and filled, so a project-layer step shadow is honoured. Each step is classified by the **catalog entry** its `{{ cli.<id> }}` refs resolve to in the origin pack's catalog, never by the ref's spelling. The clauses:
+  - **The door clause:** argv `task finalize`. It is closed under inclusion, so a step that includes a member is a member.
+  - **The author clause:** an argument `from: task.commit#…`. It is *not* closed under inclusion. The scope's *"or includes a step that does"* binds the finalize clause only, and the one includer, `sub-task-commit`, carries its own true text.
+- **P2 · The omission is an expansion input.** `expand_includes` takes an omission set as a pure input. An omitted id, at any depth, emits neither its prose nor its subtree. The engine names no step and reads no catalog. Every existing caller passes the empty set, so its bytes do not move. The `workflow-refs` gate is unchanged, because it validates the whole workflow.
+- **P3 · Decided once, at the spine.** `compose_task_workflow` passes the set iff `sub_task_of` is `Some`. That is the one predicate both doors already share, so no door decides the rule separately, `milestone execute` included.
+- **P4 · The knob is read through the join's own reader.** `finalize.fan-out.squash` is resolved through one function shared with `resolve_squash`, so compose and join cannot read different layers.
+- **P5 · `step:sub-task-commit` loses its first sentence.** *"Author this sub-task's own commit prose."* would stand alone with nothing to author in the default mode. The rest of its text, the never-commit discipline, is kept verbatim. Its preview goldens are re-pinned in the same commit. The `sub-task` workflow is always a sub-task, so no ordinary compose of the four Proves workflows moves.
+- **P6 · The fence is independent and holds no member list.** For every shipped workflow, enumerated from the registry over `[dev ▸ methodology]`, the production derivation must equal a **text scan of the origin pack's raw step files**: `{{ cli.finalize-task }}` closed over raw include lines, and `{{ cli.set-commit-` unclosed. It never compares against a literal list of ids. A new catalog carrier the scan does not know reddens it, which is the fence doing its job.
+
+**The tasks.** Both grow one new suite, `crates/cli/tests/sub_task_composition.rs`, registered in `g_milestone`. T1 creates it. Each sub-task is added with `milestone add-task --workflow <W>`, provisioned, and composed from its own worktree through the `Spawn:` line `milestone execute` prints, run verbatim, and through `jigc start --task <sub>`.
+
+- **T1 · The per-task door clause: derived, omitted at the shared spine, fenced.**
+  - **The change.** P1's door clause, P2's expansion input and P3's spine wiring. [workflow-dialect.md](design/workflow-dialect.md) → Emitted format gains the sub-task composition rule on the `create-gates:` line's mold: CLI-decided, no dialect conditional, no catalog entry changed.
+  - *Done:* `cargo test -p jigc sub_task_composition::` is green on:
+    - **(a) The four Proves workflows as sub-tasks, plus `migrate-adr`, through both doors.** `amend`, `migrate-idea`, `planning` and `park-idea`, plus `migrate-adr` for the dev pack's wrapper. The emitted bytes carry no `Run: \`jigc task finalize <sub>\``, none of the migration wrapper's *"re-run the same finalize with \`--approve\`"* prose and none of `planning-finalize`'s *"Committing this plan lands the roadmap entry"*. The last surviving step's text is followed directly by the `resume:` / `what's-left:` / `task scope:` trailer, whose `task scope:` line names `jigc milestone finalize <m>`. Only the existing `create-gates:` line and the footer follow. `--format json`'s `text` omits the same steps.
+    - **(b) The omitting context.** The same workflows composed as ordinary tasks carry those lines: `park-idea` and `planning` through `jigc start --workflow`, `amend` through `jigc task amend`, `migrate-idea` through `jigc migrate`. `compose_goldens::` stays green with no golden edited.
+    - **(c) The fence** (P6) is green over the shipped packs.
+    - **(d) The mutant.** Over a copy of the shipped step files in which `methodology:author-idea` gains `{{ cli.finalize-task }}`, the fence is **red** when handed the set derived from the unmutated packs, and **green** when handed the set derived from the copy.
+    - **(e) The composed-pack mutant through the binary.** A project-layer shadow `.jigc/config/steps/author-idea.yaml` gaining `{{ cli.finalize-task }}` drops author-idea's text from a `park-idea` sub-task, while an ordinary `park-idea` task composes it with a second `Run:` line.
+    - **(f) `jigc milestone execute`'s** composed text is unchanged.
+  - **Red-step assumptions, proved by these tests and not trusted:**
+    - An `amend` sub-task, whose only step is omitted, composes without error to an empty body followed by the trailer.
+    - `workflow_reentry::` (d) stays green unedited, since `sub-task` has no door-clause member.
+    - Any existing pin of a sub-task's per-task `Run:` line reddens and is repaired in T1.
+  - `dev/gate` is green.
+- **T2 · The commit-doc author clause, keyed on the squash knob (Open question 2).**
+  - **The change.** P1's author clause joins the set iff the knob resolves `true` (P4). It comes with P5's `sub-task-commit` edit and P6's author arm.
+  - **The docs.**
+    - [findings-channel.md](design/findings-channel.md): Open question 2 is marked settled, pointing here, and the S2 rows of §6 and §10 gain the knob key and its two bounds.
+    - [workflow-dialect.md](design/workflow-dialect.md): the Emitted-format rule gains the clause. The `sub-task` paragraph (`:266`) says the nested author is omitted when `squash` resolves `true`. *"sub-agents author their own commit doc"* (`:298`) is scoped to `squash: false`.
+    - [worked-examples.md](design/worked-examples.md) `:626`: *"authors its own \`commit\` doc"* is scoped likewise.
+  - *Done:* `sub_task_composition::` is green on:
+    - **(a) The default knob.** `park-idea` and `planning` sub-tasks carry no *"finalize renders the commit doc"* line and no `commit:<sub>` write. `sub-task` and `fix-task` sub-tasks carry no `commit:<sub>` write, and `sub-task` still carries *"never \`git commit\` and never \`jigc task finalize\`"*.
+    - **(b) `squash: false`, set uncommitted in the main checkout and composed in the worktree.** The same four carry their author step's `set-commit` lines verbatim. Red-step assumption: the spine resolves the knob from the layer the join reads.
+    - **(c) The join under `squash: false`.** A code-carrying `sub-task` sub-task and a code-carrying `fix-task` sub-task each run their composed commit-doc writes verbatim (the `commit_solicit_axis` followability mold) and stage code. `jigc milestone finalize` lands at exit 0, with each chain commit's subject the authored summary and no unfilled-commit-doc block.
+    - **(d) The docs-only fan-out under the default knob.** Two `park-idea` sub-tasks, asked for no commit doc, each create their idea through their composed commands. `jigc milestone finalize` lands both at exit 0.
+    - **(e) The flip bound.** Compose under `true`, then set `false`, then `jigc milestone finalize` exits 3 with `required-slot-present` at `commit:<sub>`, routed `jigc doc set-slot`. Re-composing through the `Spawn:` door then shows the author step.
+    - **(f) The omitting context.** `compose_goldens::` is green with only the `workflow-preview--sub-task--*` goldens re-pinned. `commit_solicit_axis::` and `workflow_reentry::` stay green unedited.
+    - `dev/gate` is green.
+
+**Why this order and these seams.** The set has two clauses with different keys, and each is gate-green alone:
+
+- **T1** removes a line that is false in every mode, the per-task door, with no knob in play.
+- **T2** adds the clause whose truth depends on the knob, and with it the one step-text edit (P5) and the decided Open question.
+
+T1 alone leaves the author step composed exactly as today, so it ships no regression. Neither task leaves a fence for the other to repair. Each extends P6's fence by its own clause.
+
+**Every Grouped-scope clause maps to a task.**
+
+| Grouped-scope clause | Task |
+|---|---|
+| Omission when composing for a fan-out sub-task, at `jigc start --task` and `jigc workflow <W> --task` | T1 (P3) |
+| …and at `jigc milestone execute` | T1 (f); execute composes `Spawn:` lines only (driven), so its sub-tasks are composed by the re-entry door |
+| The existing trailer in their place, CLI-emitted after step content | T1 (a): already emitted (driven), and asserted to follow the last surviving step |
+| The set: steps carrying a finalize command, or including one | T1 (P1) |
+| The set: every step that authors the commit doc | T2 (P1, keyed by Open question 2) |
+| Derived from the composed packs | T1 (e), T2 (b) |
+| The fence against an independent scan | T1 (c, d), T2 |
+| No dialect conditional, no catalog entry changed, one rule | T1, T2 (P2–P4) |
+| Open question 2 settled with evidence, recorded in DECISIONS.md | here; T2 builds it and marks the design |
+
+**Every Proves clause maps too.**
+
+| Proves clause | Task |
+|---|---|
+| `amend`, a `migrate-*`, `planning`, `park-idea` as sub-tasks: no `Run:` line and no `--approve` prose | T1 (a) |
+| …and no *"finalize renders the commit doc"* line | T2 (a) |
+| Each ends in the trailer, asserted on the emitted bytes | T1 (a), T2 (a) |
+| The omitting context, byte-identical to the goldens | T1 (b), T2 (f) |
+| The fence red on an applied mutant | T1 (d) |
+| A code-carrying sub-task under `squash: false` lands without an unfilled-commit-doc block | T2 (c) |
+| A docs-only fan-out lands with no commit doc asked for | T2 (d) |
+
+**Beyond the bullets, and why:**
+
+- **The `sub-task-commit` sentence (P5) and the three doc sentences in T2** are statements the decided rule makes false where they stand, so each is revised in the commit that falsifies it.
+- **`project-finalize`** joins the set by derivation, not by an edit.
+
+**Declared bounds, recorded and not fixed:**
+
+- Whether `amend` should instead be refused at `add-task` is still not decided, as the roadmap says.
+- An `implement-from-spec` sub-task under the default knob keeps `locate-from-spec`'s `commit.implements` wiring paragraph. The omission is step-granular, and that step's subject is locating code.
+- `author-planning-record`'s *"`jigc task finalize` BLOCKS on an unfilled one"* names the per-task door in prose inside a `planning` sub-task. It is a mention, not a command ref, so it is outside the set this scope defines.
+- The `what's-left:` line of a sub-task, which names the carryover gate, is outside every grouped-scope clause.
+- The two costs of Open question 2's option above.
+
 ## 2026-10-03 — M55 Increment 2 / T3: the `write.title-ignored` committed arm re-routed, built
 
 Built on P5 below: `title_ignored_refusal`'s committed arm routes through `distinct_identity_route`; the staged arm keeps its mechanical `jigc doc rename … --task`. Two facts the build found:
