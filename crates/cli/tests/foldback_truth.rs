@@ -24,7 +24,7 @@
 //!      the law-1 lie, the completed claim is required, and the cited verdict artifact must
 //!      actually exist. It has run in both directions at every wave since M47, and at each
 //!      new wave's close it is **re-aimed rather than duplicated**, so the suite carries one
-//!      live pin rather than one dead pin per wave — it now points at M54.
+//!      live pin rather than one dead pin per wave — it now points at M55.
 //!
 //! A fourth claim joined at M48 Increment 12 (T1):
 //!
@@ -356,72 +356,76 @@ fn milestone_span<'a>(body: &'a str, marker: &str) -> &'a str {
 /// post-audit wave took: the span must cite the path, and the file must exist. The
 /// conditional is gone rather than kept beside it — with the file on disk it could never
 /// fire again, and a leg that cannot fire is a dead pin.
+///
+/// **At M55 Increment 11 (T9) it moves forward again, and is inverted for the twelfth time**
+/// ([roadmap.md](../../../implementation/roadmap.md) → Milestone 55, Increment 11). M54's
+/// claim is settled prose: its audit ran, its verdict is persisted, `1.0.0-rc.22` is
+/// published, and the paragraphs above are that arm's history. M55's eleven build increments
+/// have landed and no completion act has: no audit, no persisted verdict, no `1.0.0-rc.23`
+/// release, no crates.io re-read, no partial re-review over the merged M54 + M55 axes. So the
+/// marker moves to `**M55 —` and the assertions flip back to the pre-audit direction in the
+/// same edit — `built, not audited` required, `built + audited`, the clean-audit trio and any
+/// `VERDICT` citation forbidden, and the two 1.0.0-call phrasings forbidden as at every wave.
+///
+/// **The installed leg stays, and binds for a different reason.** M55 builds no version: the
+/// crate is still `1.0.0-rc.22`, and its next release is release PR #2, the human's merge and
+/// deployment approval. So the span may name `1.0.0-rc.23` only as the release still owed, and
+/// [`built_and_installed_versions`] over the span must be **empty**. The version arm below
+/// already refuses a premature `1.0.0-rc.23 built and installed` (the crate has not reached
+/// it); this leg also refuses `1.0.0-rc.22 built and installed`, which the version arm would
+/// pass and which this build did not do. When M55's audit lands this arm goes red, which is
+/// the fence working rather than failing, and it inverts a thirteenth time.
 #[test]
-fn the_record_names_m54_and_claims_exactly_what_the_build_reached() {
+fn the_record_names_m55_and_claims_exactly_what_the_build_reached() {
     let body = read_doc(RECORD);
     // The project-state record is a single line; the header above it is not a milestone
-    // claim, and M54 is the last marker on the line — so the span is bounded at the
+    // claim, and M55 is the last marker on the line — so the span is bounded at the
     // paragraph's own end rather than running to EOF and forbidding these words to the
     // whole file.
-    let span = milestone_span(&body, "**M54 —")
+    let span = milestone_span(&body, "**M55 —")
         .split('\n')
         .next()
         .expect("splitting a str always yields at least one part");
     for owed in [
         "implementation/roadmap.md",
-        "Milestone 54",
-        // Inverted 2026-10-01 at M54's completion fold-back — the eleventh time. The audit
-        // ran, and the claim must say what it found, no more and no less: every e2e
-        // scenario green, five review findings, all fixed, none of them clean.
-        "is complete",
-        "built + audited",
-        "15 of 15 scenarios",
-        "five findings, all fixed",
-        // The audit's record is persisted, and the claim must cite it.
-        "completions/artifacts/M54/VERDICT.md",
-        // What the build reached: the first real publish. Named as published, never as
-        // built and installed — the installed binary is still the one M53 shipped.
-        "1.0.0-rc.22",
+        "Milestone 55",
+        // Inverted 2026-10-03 at M55's build close — the twelfth time. No completion audit
+        // has run over this build, so the bound is required in as many words.
+        "built, not audited",
     ] {
         assert!(
             span.contains(owed),
-            "the M54 project-state claim must name `{owed}`; it reads:\n{span}",
+            "the M55 project-state claim must name `{owed}`; it reads:\n{span}",
         );
     }
 
     for forbidden in [
-        // The pre-audit bound is now the lie: the audit has run over this build.
-        "built, not audited",
-        // Five findings were found and fixed; a clean audit is not what the record shows.
+        // The post-audit claim is now the lie: no audit has run over this build.
+        "built + audited",
+        // A build cannot pre-announce what its audit will find.
         "audited clean",
         "audit is CLEAN",
         "audit ran clean",
-        // The 1.0.0 call is the human's, and an rc publish takes it no more than a wave does.
+        // No verdict is persisted, so none may be cited.
+        "VERDICT",
+        // The 1.0.0 call is the human's, and a build close takes it no more than a wave does.
         "1.0.0 is called",
         "1.0.0 shipped",
     ] {
         assert!(
             !span.contains(forbidden),
-            "the M54 claim may not say `{forbidden}`:\n{span}",
+            "the M55 claim may not say `{forbidden}`:\n{span}",
         );
     }
 
-    // The citation required above must point at a file that exists.
-    let verdict = repo_root().join("completions/artifacts/M54/VERDICT.md");
-    assert!(
-        verdict.is_file(),
-        "the M54 claim cites a verdict at {} that must exist",
-        verdict.display()
-    );
-
-    // `1.0.0-rc.22` is published and not installed on the host: the span may name the
-    // version only as what crates.io carries.
+    // M55 built no version and installed none: the span may name a version only as what
+    // crates.io carries or what the owed release will publish.
     let installed = built_and_installed_versions(span);
     assert!(
         installed.is_empty(),
-        "the M54 claim states a version built and installed ({installed:?}); M54 \
-         published `1.0.0-rc.22` and installed nothing — the installed binary is still \
-         `1.0.0-rc.21`:\n{span}",
+        "the M55 claim states a version built and installed ({installed:?}); M55 built no \
+         version — the crate is still `1.0.0-rc.22`, and `1.0.0-rc.23` is release PR #2's, \
+         the human's merge and deployment approval:\n{span}",
     );
 }
 
