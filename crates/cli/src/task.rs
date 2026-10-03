@@ -35,7 +35,7 @@ use crate::repo::discover_repo_root;
 use crate::repo::{SeamAct, SeamSubject};
 use anyhow::{Context, Result, bail};
 use engine::address::Address;
-use engine::compose::{WorkflowDef, load_workflow_def};
+use engine::compose::{StepSource, WorkflowDef, load_workflow_def};
 use engine::file_state::{self, FileStateRecord};
 use engine::finalize::{
     CarryoverBoundary, Promotion, RepinDecision, decide_base_repin, decide_carryover, plan_finalize,
@@ -1384,14 +1384,27 @@ const MIGRATION_FINALIZE_STEP: &str = "migration-finalize";
 /// stays staged. Keyed on the composed contract, on [`MIGRATION_FINALIZE_STEP`]'s mold.
 const DOC_ONLY_FINALIZE_STEP: &str = "finalize-doc-only";
 
-/// Whether a composed workflow promises the doc-only commit — its own `includes` name
-/// [`DOC_ONLY_FINALIZE_STEP`]. The **one** predicate every door asks of a definition, so
-/// the arm a committing door takes and the arm a preview describes cannot be decided by two
-/// different readings of the same workflow.
-pub(crate) fn composes_doc_only_finalize(def: &WorkflowDef) -> bool {
-    def.includes
-        .iter()
-        .any(|step| step == DOC_ONLY_FINALIZE_STEP)
+/// Whether a composed workflow takes the doc-only commit — its composition reaches
+/// [`DOC_ONLY_FINALIZE_STEP`] **at any depth** of its include tree, through `source`, and
+/// the task is not a fan-out sub-task. The **one** predicate every door asks of a
+/// definition, so the arm a committing door takes and the arm a composed `what's-left:`
+/// line or a preview describes cannot be decided by two different readings of the same
+/// workflow.
+///
+/// **Over the expanded tree, not the top-level `includes`** (the M55 completion audit,
+/// CR1): composition expands includes at every depth, so a workflow reaching the step
+/// through a wrapping step composed the path-scoped promise while this predicate — then a
+/// scan of `def.includes` — answered `false`, and the finalize swept the index. The walk is
+/// [`crate::start::composes_step`], the one the sub-task omission set walks too; `source`
+/// is the cascade-resolved, origin-scoped, filled step source the compose expands. **Keyed
+/// on the step id, never its body:** a project shadow rewriting the step's text keeps the
+/// arm (`design/finalize.md` → Which arm, decided once).
+///
+/// **`sub_task`** carries the fan-out exclusion here, in the one place (E1): a sub-task's
+/// commit boundary is the milestone join, never this arm (`design/findings-channel.md` →
+/// the doc-only commit row).
+pub(crate) fn doc_only_commit(def: &WorkflowDef, source: &dyn StepSource, sub_task: bool) -> bool {
+    !sub_task && crate::start::composes_step(def, source, DOC_ONLY_FINALIZE_STEP)
 }
 
 /// The changelog-gate advisory's finding code — one source for the finding it grades,
@@ -4213,12 +4226,20 @@ impl TaskArea {
     ///
     /// A task that recorded no workflow composes no such promise — `false`, never a
     /// fault.
+    ///
+    /// **At any depth** (the M55 completion audit, CR1): the step is looked for over the
+    /// recorded workflow's expanded include tree ([`crate::start::composes_step`]), because
+    /// a body reaching it through a wrapping step composes the same promise.
     fn composes_review_hold(&self, id: &str) -> Result<bool> {
-        Ok(self.recorded_workflow(id)?.is_some_and(|(_, def)| {
-            def.includes
-                .iter()
-                .any(|step| step == MIGRATION_FINALIZE_STEP)
-        }))
+        let Some((workflow_id, def)) = self.recorded_workflow(id)? else {
+            return Ok(false);
+        };
+        crate::start::with_composing_step_source(
+            self.pack.as_ref(),
+            &self.project_config(),
+            &workflow_id,
+            |source| crate::start::composes_step(&def, source, MIGRATION_FINALIZE_STEP),
+        )
     }
 
     /// Whether this task's finalize takes the **doc-only commit** (M55;
@@ -4231,8 +4252,10 @@ impl TaskArea {
     /// precedence statement rather than a reachable conflict.
     ///
     /// The subject is the composed contract, as for [`Self::composes_review_hold`]: the
-    /// recorded workflow, cascade-resolved, includes [`DOC_ONLY_FINALIZE_STEP`]. A task that
-    /// recorded no workflow composes no such promise — `false`, never a fault.
+    /// recorded workflow, cascade-resolved, reaches [`DOC_ONLY_FINALIZE_STEP`] at any depth
+    /// of its include tree, asked through [`doc_only_commit`] with the step source the
+    /// re-compose expands and the task's own sub-task membership. A task that recorded no
+    /// workflow composes no such promise — `false`, never a fault.
     fn commits_doc_only(&self, id: &str) -> Result<bool> {
         if state::read_amend_pin(&self.dir)
             .with_context(|| format!("could not read the amend marker for task `{id}`"))?
@@ -4241,9 +4264,16 @@ impl TaskArea {
         {
             return Ok(false);
         }
-        Ok(self
-            .recorded_workflow(id)?
-            .is_some_and(|(_, def)| composes_doc_only_finalize(&def)))
+        let Some((workflow_id, def)) = self.recorded_workflow(id)? else {
+            return Ok(false);
+        };
+        let sub_task = engine::milestone::owning_milestone(&self.jigc_root, id).is_some();
+        crate::start::with_composing_step_source(
+            self.pack.as_ref(),
+            &self.project_config(),
+            &workflow_id,
+            |source| doc_only_commit(&def, source, sub_task),
+        )
     }
 
     /// The **granted-and-unused changelog gate** finding (M42 Settle fork 6;

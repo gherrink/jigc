@@ -1031,3 +1031,139 @@ fn a_rejected_commit_restores_the_index_a_glob_byte_owner_artifact_found() {
         );
     }
 }
+
+/// **(CR1, the M55 completion audit) The doc-only step at any depth of the composed include
+/// tree.** A project-layer step that only wraps `step:finalize-doc-only`, and a report
+/// workflow whose last include is that wrapper: composition expands the wrapper, so the
+/// composed body states the path-scoped commit — and the commit model is decided over the
+/// same expanded tree, never the workflow's top-level includes alone.
+const WRAPPER_STEP_ID: &str = "file-report-final";
+const WRAPPER_STEP: &str = "{{ include: step:finalize-doc-only }}\n";
+const NESTED_WORKFLOW_ID: &str = "file-report-nested";
+
+/// **(CR1) A project shadow of the step's body.** It keeps the step id and rewrites its
+/// text — no path-scope sentence in it. The arm is keyed on the step **id** the composition
+/// reaches, never on what a body says (`design/finalize.md` → Which arm, decided once): the
+/// CLI cannot read meaning out of prose, and the `what's-left:` line it emits itself names
+/// the model either way.
+const SHADOWED_DOC_ONLY_BODY: &str = "\
+Land this task's docs as one commit.
+
+{{ cli.finalize-task }}
+";
+
+/// The fixture corpus plus the CR1 project-layer members, committed: `extra_steps` written
+/// under `.jigc/config/steps/`, and a report workflow `workflow_id` whose last include is
+/// `last_step`.
+fn corpus_with(extra_steps: &[(&str, &str)], workflow_id: &str, last_step: &str) -> TrialCorpus {
+    let corpus = corpus();
+    let steps = corpus.repo().join(".jigc/config/steps");
+    fs::create_dir_all(&steps).expect("mk the project steps dir");
+    for (id, body) in extra_steps {
+        fs::write(steps.join(format!("{id}.yaml")), body).expect("write a project step");
+    }
+    let workflow = REPORT_WORKFLOW.replace(
+        "{{ include: step:finalize-doc-only }}",
+        &format!("{{{{ include: step:{last_step} }}}}"),
+    );
+    fs::write(
+        corpus
+            .repo()
+            .join(".jigc/config/workflows")
+            .join(format!("{workflow_id}.yaml")),
+        workflow,
+    )
+    .expect("write the CR1 workflow");
+    corpus.git(&["add", "--", ".jigc/config"]);
+    corpus.git(&["commit", "-q", "-m", "chore: the CR1 project-layer members"]);
+    corpus
+}
+
+/// Drive one CR1 cell in states 2 and 3: the composed `what's-left:` line states the
+/// doc-only model, and the finalize lands the report doc alone at exit 0 with the code
+/// task's index untouched.
+fn lands_doc_only(label: &str, build: impl Fn() -> TrialCorpus, workflow_id: &str) {
+    use cli::gate_coverage::whats_left_coverage;
+    use cli::render::CommitModel;
+
+    for staging in [Staging::Before, Staging::After] {
+        let corpus = build();
+        let _code = open_code_task(&corpus);
+        if staging == Staging::Before {
+            stage_code(&corpus);
+        }
+        let composed = corpus.jigc_ok(&["start", "--workflow", workflow_id, "file a finding"]);
+        let line = composed
+            .lines()
+            .find(|line| line.starts_with("what's-left: "))
+            .unwrap_or_else(|| panic!("[{label}] a composed what's-left line; got:\n{composed}"));
+        assert!(
+            line.contains(&whats_left_coverage(CommitModel::DocOnly)),
+            "[{label}, {staging:?}] the composed line states the doc-only model:\n  {line}",
+        );
+        let report = composed
+            .lines()
+            .find_map(|line| line.strip_prefix("task minted: "))
+            .unwrap_or_else(|| panic!("[{label}] a minted task id; got:\n{composed}"))
+            .trim()
+            .to_owned();
+        if staging == Staging::After {
+            stage_code(&corpus);
+        }
+        let doc = author_idea(&corpus, &report, "Reports Land Alone");
+        let before_index = cached(&corpus);
+
+        let out = corpus.jigc(&["task", "finalize", report.as_str()]);
+        assert!(
+            out.status.success(),
+            "[{label}, {staging:?}] the report's finalize lands at exit 0; {}",
+            text(&out),
+        );
+        assert_eq!(
+            head_files(&corpus),
+            vec![doc],
+            "[{label}, {staging:?}] the report's commit holds its doc alone",
+        );
+        assert_eq!(
+            cached(&corpus),
+            before_index,
+            "[{label}, {staging:?}] the code task's index is what it was",
+        );
+    }
+}
+
+/// **(CR1) Nested:** the doc-only step reached through a wrapping project step takes the
+/// doc-only commit — it was decided off the top-level includes, so state 2 refused
+/// `finalize.carried-staged` and state 3 swept the code task's files into the report's
+/// commit, beneath a composed body that promised neither.
+#[test]
+fn the_doc_only_step_reached_through_a_wrapping_step_commits_path_scoped() {
+    lands_doc_only(
+        "nested",
+        || {
+            corpus_with(
+                &[(WRAPPER_STEP_ID, WRAPPER_STEP)],
+                NESTED_WORKFLOW_ID,
+                WRAPPER_STEP_ID,
+            )
+        },
+        NESTED_WORKFLOW_ID,
+    );
+}
+
+/// **(CR1) Shadowed body:** a project shadow of `step:finalize-doc-only` that rewrites its
+/// text keeps the arm — the model follows the step id the composition reaches.
+#[test]
+fn a_project_shadow_of_the_doc_only_step_body_keeps_the_doc_only_commit() {
+    lands_doc_only(
+        "shadowed body",
+        || {
+            corpus_with(
+                &[("finalize-doc-only", SHADOWED_DOC_ONLY_BODY)],
+                NESTED_WORKFLOW_ID,
+                "finalize-doc-only",
+            )
+        },
+        NESTED_WORKFLOW_ID,
+    );
+}

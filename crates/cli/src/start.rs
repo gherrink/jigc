@@ -1643,9 +1643,10 @@ pub(crate) fn compose_minted_in_repo(
         },
         gates: create_gates(&def),
         // Whether this workflow's finalize is the doc-only commit — the compose-time input
-        // to the `what's-left:` line's commit model, asked of the same `def` through
-        // `cli::task`'s one predicate (M55).
-        doc_only: crate::task::composes_doc_only_finalize(&def),
+        // to the `what's-left:` line's commit model, asked of the same `def` and the same
+        // filled step source the compose above expanded, through `cli::task`'s one
+        // predicate (M55; at any include depth since the completion audit's CR1).
+        doc_only: crate::task::doc_only_commit(&def, &filled, false),
         // The calling verb minted this task in *this* invocation (just above the compose),
         // so the announcement is true here exactly as on the front door.
         minted: true,
@@ -1980,9 +1981,10 @@ fn compose_core(
         // renderer names on the `create-gates:` line (never the pinned JSON).
         gates: create_gates(&def),
         // Whether this workflow's finalize is the doc-only commit — the compose-time input
-        // to the `what's-left:` line's commit model, asked of the same `def` through
-        // `cli::task`'s one predicate (M55).
-        doc_only: crate::task::composes_doc_only_finalize(&def),
+        // to the `what's-left:` line's commit model, asked of the same `def` and the same
+        // filled step source the compose above expanded, through `cli::task`'s one
+        // predicate (M55; at any include depth since the completion audit's CR1).
+        doc_only: crate::task::doc_only_commit(&def, &filled, false),
         // The fresh front door either mints a brand-new task or composes none at all;
         // either way this compose is never a milestone sub-task's (membership is
         // `jigc milestone add-task`'s alone, and it does not compose).
@@ -3098,13 +3100,15 @@ fn compose_task_workflow(
         gates: create_gates(&def),
         // Whether this workflow's finalize is the doc-only commit — the compose-time input
         // to the `what's-left:` line's commit model, asked of the same `def` through
-        // `cli::task`'s one predicate (M55). **Never for a fan-out sub-task** (the M55
-        // completion audit, E1): the doc-only model applies only when the task is not one
+        // `cli::task`'s one predicate (M55), over the filled step source the compose above
+        // expanded (CR1). **Never for a fan-out sub-task** (the M55 completion audit, E1):
+        // the doc-only model applies only when the task is not one
         // (`design/findings-channel.md` → the doc-only commit row) — its boundary is the
         // join, which commits whatever its worktree staged, and S2 omits the very
-        // `step:finalize-doc-only` the predicate reads off `def.includes`. This is the one
-        // compose site that can see a sub-task; the mint and fresh-compose sites cannot.
-        doc_only: owning_milestone.is_none() && crate::task::composes_doc_only_finalize(&def),
+        // `step:finalize-doc-only` the predicate looks for. The predicate owns that
+        // condition; this is the one compose site that can see a sub-task, so it is the one
+        // that passes `true`.
+        doc_only: crate::task::doc_only_commit(&def, &filled, owning_milestone.is_some()),
         // ...but the *mint* announcement does not: an earlier invocation minted this id,
         // and the caller supplied it. A `task minted:` header here would state a mint that
         // did not happen (`design/workflow-dialect.md` → The `task minted:` header).
@@ -3160,10 +3164,10 @@ fn compose_task_workflow(
 /// under inclusion — a step that merely includes an author keeps its own text, and only the
 /// author leaves.
 ///
-/// The walk runs over `def`'s include tree through `source` — the caller passes the
-/// cascade-resolved, origin-scoped, filled step source its compose expands, and the
-/// origin pack's `catalog` — so a project-layer step shadow is classified exactly as it
-/// composes. Every reachable step is classified, so the set is the whole tree's, not
+/// The walk is [`walk_include_tree`] over `def`'s include tree through `source` — the
+/// caller passes the cascade-resolved, origin-scoped, filled step source its compose
+/// expands, and the origin pack's `catalog` — so a project-layer step shadow is classified
+/// exactly as it composes. Every reachable step is classified, so the set is the whole tree's, not
 /// only its outermost members. A cycle or a dangling include classifies as a
 /// non-member here; the `workflow-refs` gate reports both before any compose.
 pub fn sub_task_omission_set(
@@ -3180,52 +3184,116 @@ pub fn sub_task_omission_set(
         author: bool,
     }
 
-    /// Classify `id` and every step below it into `memo`, returning whether `id` is a
-    /// door member. `on_path` breaks a cycle (the gate's to report, a non-member here).
-    fn classify(
-        id: &str,
-        source: &dyn StepSource,
-        catalog: &CommandCatalog,
-        memo: &mut BTreeMap<String, Class>,
-        on_path: &mut Vec<String>,
-    ) -> bool {
-        if let Some(known) = memo.get(id) {
-            return known.door;
-        }
-        if on_path.iter().any(|step| step == id) {
-            return false;
-        }
-        let Some(step) = source.step(id) else {
-            let none = Class {
+    let tree = walk_include_tree(def, source, |_, step, children: Vec<Class>| {
+        let Some(step) = step else {
+            return Class {
                 door: false,
                 author: false,
             };
-            memo.insert(id.to_owned(), none);
-            return false;
         };
-        on_path.push(id.to_owned());
         let entries: Vec<&compose::CommandRef> = compose::command_ref_ids_in(&step.body)
             .into_iter()
             .filter_map(|cli| catalog.get(cli))
             .collect();
-        let author = entries.iter().any(|entry| writes_commit_doc(entry));
-        let mut door = entries.iter().any(|entry| runs_task_finalize(entry));
-        // Every child is classified, member or not, so the set covers the whole tree.
-        for child in compose::include_ids_in(&step.body) {
-            door |= classify(&child, source, catalog, memo, on_path);
+        Class {
+            author: entries.iter().any(|entry| writes_commit_doc(entry)),
+            door: entries.iter().any(|entry| runs_task_finalize(entry))
+                || children.iter().any(|child| child.door),
         }
+    });
+    tree.into_iter()
+        .filter_map(|(id, class)| (class.door || (squash && class.author)).then_some(id))
+        .collect()
+}
+
+/// **The composed include tree** — every step a workflow's composition reaches, at any
+/// depth, each visited once, **post-order**: `visit` sees a step's id, its definition
+/// (`None` for an include no layer resolves) and the values its own children produced.
+///
+/// The **one walker** over what the compose expands (`engine::compose`'s `expand_step`
+/// recurses through every `{{include: step:<id>}}`), so a reading of *which steps a
+/// workflow composes* is never a second rule beside the compose's: the sub-task omission
+/// set ([`sub_task_omission_set`]) and the finalize arms' step predicates
+/// ([`composes_step`]) both walk it. It reads bodies with the engine's own recognizer
+/// ([`compose::include_ids_in`]) through the `source` the caller composes with — the
+/// cascade-resolved, origin-scoped, filled source — so a project-layer step, or a shadow
+/// that adds or drops an include, is walked exactly as it composes.
+///
+/// A cycle's back edge is skipped and a dangling include is visited with `None`; the
+/// `workflow-refs` gate reports both before any compose.
+fn walk_include_tree<T: Clone>(
+    def: &WorkflowDef,
+    source: &dyn StepSource,
+    mut visit: impl FnMut(&str, Option<&StepDef>, Vec<T>) -> T,
+) -> BTreeMap<String, T> {
+    type Visit<'v, T> = dyn FnMut(&str, Option<&StepDef>, Vec<T>) -> T + 'v;
+
+    fn walk<T: Clone>(
+        id: &str,
+        source: &dyn StepSource,
+        visit: &mut Visit<'_, T>,
+        memo: &mut BTreeMap<String, T>,
+        on_path: &mut Vec<String>,
+    ) -> Option<T> {
+        if let Some(known) = memo.get(id) {
+            return Some(known.clone());
+        }
+        if on_path.iter().any(|step| step == id) {
+            return None;
+        }
+        let step = source.step(id);
+        on_path.push(id.to_owned());
+        let children = step
+            .as_ref()
+            .map(|step| compose::include_ids_in(&step.body))
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|child| walk(child, source, visit, memo, on_path))
+            .collect();
         on_path.pop();
-        memo.insert(id.to_owned(), Class { door, author });
-        door
+        let value = visit(id, step.as_ref(), children);
+        memo.insert(id.to_owned(), value.clone());
+        Some(value)
     }
 
     let mut memo = BTreeMap::new();
     for id in &def.includes {
-        classify(id, source, catalog, &mut memo, &mut Vec::new());
+        walk(id, source, &mut visit, &mut memo, &mut Vec::new());
     }
-    memo.into_iter()
-        .filter_map(|(id, class)| (class.door || (squash && class.author)).then_some(id))
-        .collect()
+    memo
+}
+
+/// Whether `def`'s composition reaches the step `step_id` **at any depth** of its include
+/// tree ([`walk_include_tree`]) — the question every finalize arm keyed on a composed step
+/// asks (`cli::task`'s review hold and doc-only commit; `design/finalize.md` → Which arm,
+/// decided once). Keyed on the step's **id**, never its body: a project shadow that
+/// rewrites `step_id`'s text still composes `step_id`.
+pub(crate) fn composes_step(def: &WorkflowDef, source: &dyn StepSource, step_id: &str) -> bool {
+    walk_include_tree(def, source, |_, _, _: Vec<()>| ()).contains_key(step_id)
+}
+
+/// Run `read` over the step source a **recorded** workflow composes through — the live
+/// cascade's layer-aware source, scoped to `workflow_id`'s origin pack and carrying the
+/// project's slot-fills, as the re-compose spine ([`compose_task_workflow`]) builds it — so
+/// a door that decides finalize behaviour from a task's recorded workflow walks the include
+/// tree its composed text was expanded from. No task context is bound: the inline
+/// data-value pass substitutes prose tokens and never adds an include.
+pub(crate) fn with_composing_step_source<R>(
+    pack: &dyn PackSource,
+    project_config: &Path,
+    workflow_id: &str,
+    read: impl FnOnce(&dyn StepSource) -> R,
+) -> Result<R> {
+    let (resolved, overrides) = resolve_cascade(pack, project_config)?;
+    let source = CascadeStepSource::new(pack, &resolved, project_config);
+    source.scope_to_workflow(workflow_id);
+    let ctx = ComposeContext::default();
+    let filled = FillStepSource {
+        inner: &source,
+        fills: &overrides.fills,
+        ctx: &ctx,
+    };
+    Ok(read(&filled))
 }
 
 /// Whether a catalog entry **writes the commit doc** — one of its arguments is a `from:`
