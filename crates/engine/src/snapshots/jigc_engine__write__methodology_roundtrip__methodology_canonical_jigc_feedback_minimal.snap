@@ -1,0 +1,22 @@
+---
+source: crates/engine/src/write.rs
+expression: rendered
+---
+---
+kind: feedback
+found-in: milestone:M55 findings channel
+jigc-version: 1.0.0-rc.22
+date: 2026-10-03
+---
+
+# Describe weaves usage awkwardly
+
+## Description
+
+The catalog line reads oddly when a usage sentence opens with a frame.
+
+## Repro
+
+
+
+## Resolution
