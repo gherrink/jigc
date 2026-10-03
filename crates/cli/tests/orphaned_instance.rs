@@ -195,7 +195,8 @@ fn the_shipped_corpus_under_the_embedded_pair_carries_no_orphan() {
 /// defines the type its stamp was written under, and a stamp carries a version and no type —
 /// so there is no honest identity to print), **`state: "orphaned"`**, and **`item-count:
 /// null`** (no schema to parse against — a third answer for a third population, not a
-/// revision of the best-effort `0` a parse *failure* yields).
+/// revision of the best-effort `0` a parse *failure* yields) — and, since M55, its **`title`**
+/// (the H1, which needs no schema) beside **`fields: null`**.
 ///
 /// **The two surfaces are asserted to agree as sets**, not merely to be non-empty each: the
 /// orphan paths the listing reports are exactly the paths the sweep's findings located.
@@ -211,16 +212,20 @@ fn doc_list_reports_every_orphaned_instance_the_sweep_blocks_on() {
         printed(&listed),
     );
     let json = String::from_utf8_lossy(&listed.stdout).into_owned();
-    for rel in ORPHANED {
+    // Each orphan's `# H1`, in `ORPHANED`'s order: an orphan has no schema to parse against,
+    // so its `fields` is null, but its title needs no parse (M55 — `design/
+    // findings-channel.md` → 5).
+    for (rel, title) in ORPHANED.iter().zip(["Decisions Log", "Roadmap"]) {
         let row = format!(
             "{{\n      \"id\": null,\n      \"path\": \"{rel}\",\n      \"state\": \
-             \"orphaned\",\n      \"item-count\": null\n    }}"
+             \"orphaned\",\n      \"item-count\": null,\n      \"title\": \"{title}\",\n      \
+             \"fields\": null\n    }}"
         );
         assert!(
             json.contains(&row),
             "`{rel}` is stamped, committed, and claimed by no resolved doctype — the \
-             listing must carry it as an orphaned row with a null identity and no item \
-             count; got:\n{json}",
+             listing must carry it as an orphaned row with a null identity, no item \
+             count, its H1 and no fields; got:\n{json}",
         );
     }
     assert!(

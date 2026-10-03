@@ -498,8 +498,10 @@ pub enum DocCommand {
     /// --as <doctype>`), or `orphaned` (stamped by jigc and claimed by no
     /// resolved doctype — it lists with a null identity and no item count, and
     /// `jigc validate` blocks on it). `--format json` is the pinned shape
-    /// `{"docs":[{id, path, state, item-count}]}` (no in-band version integer —
-    /// `design/doc-read-surface.md` → the fourth read surface).
+    /// `{"docs":[{id, path, state, item-count, title, fields}]}` (no in-band version
+    /// integer — `design/doc-read-surface.md` → the fourth read surface): `title` is the
+    /// doc's `# H1` or null, and `fields` its header fields as `doc show` serves them on a
+    /// managed row that parses, else null.
     ///
     /// **`--task <id>` lists what that task stages instead** — staged-only, the two
     /// views are never merged. Every staged row is `managed` (a staged working copy
@@ -4542,13 +4544,17 @@ fn run_list(
             } else {
                 "managed"
             };
-            // Best-effort item count: parse against the current schema and sum top-level
-            // repeatable items; a foreign/unregistered or stale-shape instance that does not
-            // parse counts 0 (never a block — `doc list` is a report, and the row already
-            // carries `state` to tell an agent the file is not adopted).
-            let item_count = engine::parse::parse_sections(schema, &source)
-                .map(|doc| item_count(&doc))
-                .unwrap_or(0);
+            // One best-effort parse against the current schema, two reads of it. The item
+            // count sums top-level repeatable items, and an instance that does not parse (a
+            // foreign/unregistered or stale-shape one) counts 0 — never a block: `doc list`
+            // is a report, and the row already carries `state` to tell an agent the file is
+            // not adopted. `fields` is the same map `doc show` serves, on a `managed` row
+            // that parses and `null` on every other (M55; `design/findings-channel.md` → 5).
+            let parsed = engine::parse::parse_sections(schema, &source).ok();
+            let fields = parsed
+                .as_ref()
+                .filter(|_| state == "managed")
+                .map(|doc| header_fields_json(schema, doc));
             docs.push(DocRow {
                 id: Some(id),
                 path: path
@@ -4557,7 +4563,9 @@ fn run_list(
                     .to_string_lossy()
                     .into_owned(),
                 state,
-                item_count: Some(item_count),
+                item_count: Some(parsed.as_ref().map_or(0, item_count)),
+                title: crate::rename::read_h1(&source).map(str::to_owned),
+                fields,
             });
         }
     }
@@ -4607,11 +4615,18 @@ fn run_list(
         );
         for rel in crate::orphan::orphaned_instances(&jigc_home, &schemas, &territory, &spoken_for)
         {
+            // No schema to parse against, so no `fields` — but the H1 needs none, and the
+            // row reads its bytes for it (`design/findings-channel.md` → 5).
+            let path = jigc_home.join(&rel);
+            let bytes = std::fs::read(&path)
+                .with_context(|| format!("reading the orphaned doc at {path:?}"))?;
             docs.push(DocRow {
                 id: None,
                 path: rel,
                 state: "orphaned",
                 item_count: None,
+                title: crate::rename::read_h1(&String::from_utf8_lossy(&bytes)).map(str::to_owned),
+                fields: None,
             });
         }
     }
@@ -4652,6 +4667,9 @@ fn run_list(
 ///   identity — the second of law 1's two legal forms.
 /// - **`item-count` is the same best-effort parse** the committed arm makes; an
 ///   unknown-type instance has no schema to parse against and counts 0.
+/// - **`title` and `fields` are the committed arm's rules over the staged copy** (M55):
+///   the H1 on every row, an unknown-type one included, and `fields` wherever that copy
+///   parses — every staged row being `managed` — else `null`.
 fn run_list_staged(
     cwd: &Path,
     doctype: Option<&str>,
@@ -4684,21 +4702,24 @@ fn run_list_staged(
             .and_then(|schema| engine::store::canonical_path(Path::new(""), schema, slug))
             .map(|path| path.to_string_lossy().into_owned())
             .unwrap_or_else(|| id.clone());
-        let mut count = 0;
-        if let Some(schema) = schema {
-            let file = state::instance_path(&task.dir, ty, slug);
-            let bytes = std::fs::read(&file)
-                .with_context(|| format!("reading the staged doc at {file:?}"))?;
-            let source = String::from_utf8_lossy(&bytes);
-            count = engine::parse::parse_sections(schema, &source)
-                .map(|doc| item_count(&doc))
-                .unwrap_or(0);
-        }
+        let file = state::instance_path(&task.dir, ty, slug);
+        let bytes =
+            std::fs::read(&file).with_context(|| format!("reading the staged doc at {file:?}"))?;
+        let source = String::from_utf8_lossy(&bytes);
+        let parsed = schema.and_then(|schema| {
+            engine::parse::parse_sections(schema, &source)
+                .ok()
+                .map(|doc| (schema, doc))
+        });
         docs.push(DocRow {
             id: Some(id),
             path,
             state: "managed",
-            item_count: Some(count),
+            item_count: Some(parsed.as_ref().map_or(0, |(_, doc)| item_count(doc))),
+            title: crate::rename::read_h1(&source).map(str::to_owned),
+            fields: parsed
+                .as_ref()
+                .map(|(schema, doc)| header_fields_json(schema, doc)),
         });
     }
     let empty_line = match doctype {
@@ -4857,6 +4878,18 @@ struct DocRow {
     /// would be indistinguishable from *parsed, and empty*.
     #[serde(rename = "item-count")]
     item_count: Option<usize>,
+    /// The additive **`title`** key (M55 — `design/findings-channel.md` → 5): the doc's
+    /// `# H1`, read by [`crate::rename::read_h1`] — the reader `doc show`'s whole-doc
+    /// `title` uses — over the listed bytes (the staged copy on `--task`). It needs no
+    /// parse, so it answers on **every** row, `orphaned` and unparseable ones included,
+    /// and is `null` only where the file carries no H1.
+    title: Option<String>,
+    /// The additive **`fields`** key (M55): the header fields in `doc show`'s `fields`
+    /// shape, from the same helper ([`header_fields_json`], an absent defaulted field at
+    /// its default) over the parse `item-count` already pays for. **Only** on a `managed`
+    /// row that parses — every staged row is `managed` — and **`null`** on every other:
+    /// never `{}`, which would read as *a doc with no header fields*.
+    fields: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 /// The `jigc doc schema --format json` shape — the **separately-pinned, explicitly
