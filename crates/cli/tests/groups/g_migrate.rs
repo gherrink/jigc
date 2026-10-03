@@ -11,6 +11,8 @@ mod adapter_artifact;
 mod anchor_root_truth;
 #[path = "../config_layer_preimage.rs"]
 mod config_layer_preimage;
+#[path = "../crate_readme.rs"]
+mod crate_readme;
 #[path = "../dev_gate_report.rs"]
 mod dev_gate_report;
 #[path = "../dev_rig_parity.rs"]

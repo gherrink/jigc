@@ -278,7 +278,7 @@ The port runs on 1.0.0 with a branch per milestone, `origin/main` merged before 
 
 **Settled — generated at commit time:**
 
-- A `dev/` script generates a committed `crates/cli/README.md` from the root `README.md`, rewriting each relative link to the workspace `repository` URL + `/blob/HEAD/<root path>` — the base crates.io itself uses, so a link means on crates.io what it means on GitHub.
+- A `dev/` script, [`dev/crate-readme`](../dev/crate-readme), generates a committed `crates/cli/README.md` from the root `README.md`, rewriting each relative link to the workspace `repository` URL + `/blob/HEAD/<root path>` — the base crates.io itself uses, so a link means on crates.io what it means on GitHub.
 - `jigc`'s `crates/cli/Cargo.toml` `readme` points at the generated file; `jigc-engine` stays readme-less.
 - A fence asserts the crate README is byte-for-byte the transform of the root README; the one-allowed-install-line-copy fence (`crates/cli/tests/install_line.rs`) treats the generated file as a derived artifact, not a second copy.
 - After rc.23 publishes, its crates.io page is re-read and **every link must answer 200 at its intended target** — the M54 publish-proof's method.
