@@ -270,7 +270,7 @@ The port runs on 1.0.0 with a branch per milestone, `origin/main` merged before 
 
 **Rules.** Every row is **re-driven against the M55 build before filing** → `open`, `resolved` (with `resolution` and `pinned-by`) or `refuted`. A fixed row is seeded `resolved`, never dropped. `found-in` points at the source (`review:M52-per-axis/(2,DEFECT C)`, `milestone:M55-planning/F4` — free-text labels, §1.3). A seeded `decisions-pending.md` row becomes a one-line pointer; the dated review READMEs are untouched; a seeded register row gets a pointer and is not edited again. The `date` is the filing date by construction (`set: on-create`); the origin's date is reachable through `found-in`. A seeded row's `jigc-version` is the version the row was **first seen** on; the M55 re-drive's result goes into `resolution` (or `description`), never into `jigc-version`.
 
-**At M56.** `jigc setup` → place the seed at the port's `docs-root` → `jigc ingest` — and commit, since `ingest` leaves adopted files untracked (F20) — then file the re-review and blind-trial rows through 1.0.0. That act is keyed to **M56's Settle** as a row of its own ([decisions-pending.md](../implementation/decisions-pending.md) → M56 — the port; R5), because a deferral left only in prose has no trigger. `DECISIONS.md`'s 2026-09-27 *"go to the ledger M55 mints"* gets a dated correction to *"the seed M56 adopts"* at the planning commit.
+**At M56.** `jigc setup` → place the seed at the port's `docs-root` → `jigc ingest` — and commit, since `ingest` leaves adopted files untracked (F20) — then file the re-review and blind-trial rows through 1.0.0. That act is keyed to **M56's Settle** as a row of its own ([decisions-pending.md](../implementation/decisions-pending.md) → M56 — the port; R5), because a deferral left only in prose has no trigger. `DECISIONS.md`'s 2026-09-27 *"go to the ledger M55 mints"* got a dated correction to *"the seed M56 adopts"* at the planning commit (*Corrected 2026-10-02*, in that entry).
 
 ## 8. The crates.io README (S15)
 
@@ -353,7 +353,7 @@ Owed on the release candidate carrying M54 and M55, beside the blind trial and b
 
 ## 13. Docs this milestone revises (R4, B2)
 
-Each row is a rule a shipped doc states that M55 changes; the doc is revised **by the increment that changes the rule**, in the same commit, so no doc states the old rule over the new binary. This design is their pointer until then, never their replacement. This doc itself joined `doc_link_fence`'s live-doc list in the planning commit.
+Each row is a rule a shipped doc states that M55 changes; the doc is revised **by the increment that changes the rule**, in the same commit, so no doc states the old rule over the new binary. This design was their pointer until then, never their replacement: all twelve were revised by their increments, confirmed at the close ([close-census.md](../completions/artifacts/M55/close-census.md) → §13). This doc itself joined `doc_link_fence`'s live-doc list in the planning commit.
 
 | Doc | The rule it changes | § |
 |---|---|---|

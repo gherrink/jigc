@@ -2,6 +2,15 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-03 — M55 Increment 11 / T8: the close census — §13's twelve rows confirmed, 162 `M55` lines disposed, three flipped
+
+[close-census.md](completions/artifacts/M55/close-census.md) records the census on the M54 close's method and set. **§13:** each of [findings-channel.md](design/findings-channel.md) → 13's twelve rows has a rule-revising commit from the increment that changed its rule, read off `git log -p bea46dd8..HEAD` and `git blame`, so nothing halts. **The counts reproduce the planning's:** 24 lines in 7 files at `62c76009`, 72/18 at `bea46dd8`, 152/32 at `6acd9d6d`, and 162/32 after. The ten added lines are T1–T5's chapters. The narrow forward-tense pattern matches one line, `doctype-authoring.md:91` (*until M55 this file named none of them*), which is past tense and kept. **159 lines are kept and 3 flipped:**
+- `findings-channel.md:273`: *gets a dated correction* becomes *got*. The correction is in the 2026-09-27 entry, landed at `c5eb795f`.
+- `findings-channel.md:356`: *This design is their pointer until then* becomes *was*, followed by the close's confirmation.
+- `decisions-pending.md:163` (axis-8 `CX-3`): the M54 note left *the confirmation and the close* to M55's Settle, and the Settle recorded neither. **The close records both, and does not leave it owed:** the seed's sources take no M51 row, so the row was not seeded as open, and QUICKSTART → Install still carries the landed line. That is the whole of what the note asked for, and leaving it owed would make it a deferral with no trigger.
+
+Lines that name an act still owed after the build are kept, since they are still true: rc.23's publish (`release.md:67`, `:108`, `decisions-pending.md:37`), the crates.io 200-check (`version-pinned-readme-links.md:21`), the partial re-review and the blind trial.
+
 ## 2026-10-03 — M55 Increment 11 / T7: `## Project state` says the branch switch landed, M55 is built and not audited, and the README fork is built
 
 `CLAUDE.md` → `## Project state` no longer lists the branch switch as *what comes next*, and no longer says the crates.io README-link fork is *the human's, owed before the next release PR*. It now says the switch landed, M55 is built and not audited, and the fork was taken at the M55 Settle (S15) and built by Increment 10, with the crates.io re-read still owed. Then, in order: M55's completion audit; its PR to `main`; release PR #2 as `1.0.0-rc.23`, carrying M54's audit fixes and M55, merged by the human; the crates.io re-read; the blind trial and the partial re-review over the merged S18 + S16 axes; the call; the 1.0.0 publish; the port. The red step was the two `command grep -c` phrases, each 1 before the edit and 0 after. `foldback_truth::` and `doc_link_fence::` are green. **Each claim was read for this edit:**
