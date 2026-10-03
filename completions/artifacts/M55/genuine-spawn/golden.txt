@@ -1,0 +1,2 @@
+tree=d30d6110b5b4ec4eb9fed298f4db51942503122e
+source=sim.sh (flow58 fixture), 6 runs: by-id/reverse x exact/heredoc x join/nojoin, all equal; UTC day 2026-10-03; jigc 1.0.0-rc.22 at HEAD 72f54033 (cargo-build sha256 771116a4…, cargo-test sha256 1abbf9ad… lands the same tree); flow58_several_reporters:: 2/2 green at HEAD
