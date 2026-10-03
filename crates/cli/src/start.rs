@@ -3075,8 +3075,12 @@ fn compose_task_workflow(
     // `design/workflow-dialect.md` → Emitted format). Decided here, iff the id is a
     // sub-task, over the same filled, origin-scoped step source and catalog the
     // compose below expands — so a project-layer step shadow is classified as composed.
+    // The commit-doc-author clause is keyed on `finalize.fan-out.squash`, read through the
+    // join's own reader off this same resolved cascade — the main checkout's project layer,
+    // the one `jigc milestone finalize` resolves (`jigc_home`, never the worktree's).
     let omit = if owning_milestone.is_some() {
-        sub_task_omission_set(&def, &filled, &commands)
+        let squash = crate::milestone::squash_of(&resolved)?;
+        sub_task_omission_set(&def, &filled, &commands, squash)
     } else {
         BTreeSet::new()
     };
@@ -3141,6 +3145,16 @@ fn compose_task_workflow(
 /// classified by the **catalog entry** its ref resolves to, never by the ref's spelling,
 /// and a door merely *named* in prose is a mention, not a member.
 ///
+/// **The commit-doc-author clause, iff `squash`** (M55 Increment 3, Open question 2): a
+/// step is also a member when its own body carries a `{{cli.<id>}}` whose catalog entry
+/// writes the commit doc — an argument `from: task.commit#…`. `squash` is the resolved
+/// `finalize.fan-out.squash` ([`crate::milestone::squash_of`], the join's own reader): under
+/// `true` the boundary synthesizes one aggregate message and reads no sub-task's commit doc,
+/// so asking for one is asking for prose nothing reads; under `false` the join renders and
+/// gates every code-carrying sub-task's, so the author stays. This clause is **not** closed
+/// under inclusion — a step that merely includes an author keeps its own text, and only the
+/// author leaves.
+///
 /// The walk runs over `def`'s include tree through `source` — the caller passes the
 /// cascade-resolved, origin-scoped, filled step source its compose expands, and the
 /// origin pack's `catalog` — so a project-layer step shadow is classified exactly as it
@@ -3151,37 +3165,53 @@ pub fn sub_task_omission_set(
     def: &WorkflowDef,
     source: &dyn StepSource,
     catalog: &CommandCatalog,
+    squash: bool,
 ) -> BTreeSet<String> {
+    /// One classified step: `door` is the closed finalize-door clause, `author` the step's
+    /// own commit-doc writes.
+    #[derive(Clone, Copy)]
+    struct Class {
+        door: bool,
+        author: bool,
+    }
+
     /// Classify `id` and every step below it into `memo`, returning whether `id` is a
-    /// member. `on_path` breaks a cycle (the gate's to report, a non-member here).
+    /// door member. `on_path` breaks a cycle (the gate's to report, a non-member here).
     fn classify(
         id: &str,
         source: &dyn StepSource,
         catalog: &CommandCatalog,
-        memo: &mut BTreeMap<String, bool>,
+        memo: &mut BTreeMap<String, Class>,
         on_path: &mut Vec<String>,
     ) -> bool {
         if let Some(known) = memo.get(id) {
-            return *known;
+            return known.door;
         }
         if on_path.iter().any(|step| step == id) {
             return false;
         }
         let Some(step) = source.step(id) else {
-            memo.insert(id.to_owned(), false);
+            let none = Class {
+                door: false,
+                author: false,
+            };
+            memo.insert(id.to_owned(), none);
             return false;
         };
         on_path.push(id.to_owned());
-        let mut member = compose::command_ref_ids_in(&step.body)
+        let entries: Vec<&compose::CommandRef> = compose::command_ref_ids_in(&step.body)
             .into_iter()
-            .any(|cli| catalog.get(cli).is_some_and(runs_task_finalize));
+            .filter_map(|cli| catalog.get(cli))
+            .collect();
+        let author = entries.iter().any(|entry| writes_commit_doc(entry));
+        let mut door = entries.iter().any(|entry| runs_task_finalize(entry));
         // Every child is classified, member or not, so the set covers the whole tree.
         for child in compose::include_ids_in(&step.body) {
-            member |= classify(&child, source, catalog, memo, on_path);
+            door |= classify(&child, source, catalog, memo, on_path);
         }
         on_path.pop();
-        memo.insert(id.to_owned(), member);
-        member
+        memo.insert(id.to_owned(), Class { door, author });
+        door
     }
 
     let mut memo = BTreeMap::new();
@@ -3189,8 +3219,22 @@ pub fn sub_task_omission_set(
         classify(id, source, catalog, &mut memo, &mut Vec::new());
     }
     memo.into_iter()
-        .filter_map(|(id, member)| member.then_some(id))
+        .filter_map(|(id, class)| (class.door || (squash && class.author)).then_some(id))
         .collect()
+}
+
+/// Whether a catalog entry **writes the commit doc** — one of its arguments is a `from:`
+/// data value under `task.commit#`. Read off the entry's argv, so a ref is classified by
+/// what it writes, never by its id.
+fn writes_commit_doc(entry: &compose::CommandRef) -> bool {
+    use compose::CommandArg::{Agent, From};
+    entry.args.iter().any(|arg| match arg {
+        From { from }
+        | Agent {
+            from: Some(from), ..
+        } => from.starts_with("task.commit#"),
+        _ => false,
+    })
 }
 
 /// Whether a catalog entry is the **per-task finalize door** — it runs `jigc task

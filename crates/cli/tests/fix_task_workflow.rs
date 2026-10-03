@@ -156,6 +156,21 @@ fn a_confirmed_finding_fans_out_as_a_fix_task_sub_task() {
     let root = repo.path();
     let home = home.path();
 
+    // The round's own first command (`step:fix-gate`): `squash: false`, so each fix lands
+    // its own authored commit. That is the mode in which the join reads a sub-task's commit
+    // doc, and so the mode in which the walk asks for one (M55 Increment 3 — under the
+    // default `true` the author step is omitted; `sub_task_composition::` drives both).
+    let out = run_in(
+        root,
+        home,
+        &["config", "set", "finalize.fan-out.squash", "false"],
+    );
+    assert!(
+        out.status.success(),
+        "`config set finalize.fan-out.squash false` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+
     let out = run_in(root, home, &["milestone", "create", MILESTONE]);
     assert!(
         out.status.success(),

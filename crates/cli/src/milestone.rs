@@ -6357,6 +6357,14 @@ fn resolve_squash(repo_root: &Path) -> Result<bool> {
     let project_config = repo_root.join(".jigc").join("config");
     let pack = make_pack()?;
     let resolved = crate::start::resolve_severity_cascade(pack.as_ref(), &project_config)?;
+    squash_of(&resolved)
+}
+
+/// Read `finalize.fan-out.squash` off a resolved cascade — the **one reader** the join
+/// ([`resolve_squash`]) and the sub-task compose share (M55 Increment 3, P4), so the
+/// compose that decides whether a sub-task is asked for its commit doc and the boundary
+/// that decides whether to read it cannot answer from different layers.
+pub(crate) fn squash_of(resolved: &engine::cascade::Resolved) -> Result<bool> {
     // The knob is a declared `bool`; the closed surface guarantees it resolves. Anything
     // other than `true` is the opt-in `false` (the knob's enum-of-bool is `true`/`false`).
     Ok(resolved.scalar_required("finalize.fan-out.squash")? == "true")

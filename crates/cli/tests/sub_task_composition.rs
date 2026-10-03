@@ -27,6 +27,14 @@
 //!   the door drops `author-idea` from a sub-task and doubles the `Run:` line of an ordinary task;
 //! * **(f)** `jigc milestone execute`'s own text is unchanged — it composes `Spawn:` lines, not
 //!   sub-task bodies.
+//!
+//! **T2 adds the commit-doc-author clause** (Open question 2, settled on its third option): a
+//! step whose own body writes the commit doc through a catalog ref joins the set exactly when
+//! `finalize.fan-out.squash` resolves `true` at compose, read through the join's own reader. The
+//! `t2_*` cases drive the default knob (no commit doc asked for), `squash: false` set
+//! uncommitted in the main checkout (the author step composed verbatim, followed to a landed
+//! join), a docs-only fan-out landing with no commit doc, the knob flipped between compose and
+//! join (the routed join block), and the fence's unclosed author arm with its own mutant.
 
 use crate::support;
 
@@ -614,28 +622,35 @@ impl StepSource for DirSteps {
 /// The derived set per workflow, keyed `<pack>:<workflow>`.
 type Derived = BTreeMap<String, BTreeSet<String>>;
 
-/// The **production** derivation for every shipped workflow, each over the step source
-/// `steps_of(pack)` yields.
-fn derive<'a>(steps_of: impl Fn(&'static str) -> Box<dyn StepSource + 'a>) -> Derived {
+/// The **production** derivation for every shipped workflow under the knob value `squash`,
+/// each over the step source `steps_of(pack)` yields.
+fn derive<'a>(
+    squash: bool,
+    steps_of: impl Fn(&'static str) -> Box<dyn StepSource + 'a>,
+) -> Derived {
     shipped_workflows()
         .into_iter()
         .map(|w| {
             let source = steps_of(w.pack);
             (
                 format!("{}:{}", w.pack, w.id),
-                cli::start::sub_task_omission_set(&w.def, source.as_ref(), &w.catalog),
+                cli::start::sub_task_omission_set(&w.def, source.as_ref(), &w.catalog, squash),
             )
         })
         .collect()
 }
 
-/// **The independent scan** (P6): a raw-text read of `<steps_root>/<pack>/<id>.yaml`. A step is
-/// a member when its file carries `{{ cli.finalize-task }}`, or includes a member over raw
-/// `{{ include: step:<id> }}` lines. No engine recognizer, no catalog, no member list.
-fn scan(steps_root: &Path) -> Derived {
-    fn member(dir: &Path, id: &str, memo: &mut BTreeMap<String, bool>) -> bool {
-        if let Some(known) = memo.get(id) {
-            return *known;
+/// **The independent scan** (P6): a raw-text read of `<steps_root>/<pack>/<id>.yaml` under the
+/// knob value `squash`. **The door arm:** a step carrying `{{ cli.finalize-task }}`, or
+/// including a door member over raw `{{ include: step:<id> }}` lines. **The author arm (T2),
+/// unclosed and only when `squash`:** a step whose own file carries `{{ cli.set-commit-`. No
+/// engine recognizer, no catalog, no member list.
+fn scan(steps_root: &Path, squash: bool) -> Derived {
+    /// Whether `id` is a door member (closed under inclusion); every step visited is recorded
+    /// in `memo` as `(door, author)`.
+    fn member(dir: &Path, id: &str, memo: &mut BTreeMap<String, (bool, bool)>) -> bool {
+        if let Some((door, _)) = memo.get(id) {
+            return *door;
         }
         let path = dir.join(format!("{id}.yaml"));
         let raw = fs::read_to_string(&path).unwrap_or_else(|e| {
@@ -654,7 +669,7 @@ fn scan(steps_root: &Path) -> Derived {
                 is |= member(dir, child, memo);
             }
         }
-        memo.insert(id.to_string(), is);
+        memo.insert(id.to_string(), (is, raw.contains("{{ cli.set-commit-")));
         is
     }
     shipped_workflows()
@@ -667,7 +682,7 @@ fn scan(steps_root: &Path) -> Derived {
             }
             let set = memo
                 .into_iter()
-                .filter(|(_, is)| *is)
+                .filter(|(_, (door, author))| *door || (squash && *author))
                 .map(|(id, _)| id)
                 .collect();
             (format!("{}:{}", w.pack, w.id), set)
@@ -675,9 +690,10 @@ fn scan(steps_root: &Path) -> Derived {
         .collect()
 }
 
-/// The fence: `derived` must equal the scan of `steps_root`, workflow for workflow.
-fn fence(derived: &Derived, steps_root: &Path) -> Result<(), String> {
-    let scanned = scan(steps_root);
+/// The fence: `derived` must equal the scan of `steps_root` under the same knob value,
+/// workflow for workflow.
+fn fence(derived: &Derived, steps_root: &Path, squash: bool) -> Result<(), String> {
+    let scanned = scan(steps_root, squash);
     let drift: Vec<String> = scanned
         .iter()
         .filter(|(w, set)| derived.get(*w) != Some(set))
@@ -709,28 +725,57 @@ fn c_the_derived_omission_set_equals_a_raw_scan_of_the_shipped_steps() {
         .into_iter()
         .map(|(n, p, _)| (n, p))
         .collect();
-    let derived = derive(|pack| Box::new(EmbeddedSteps(&embedded[pack])));
-
     let root = ScratchDir::new("sub-task-composition-fence");
     copy_shipped_steps(root.path());
-    if let Err(drift) = fence(&derived, root.path()) {
-        panic!("the derived sub-task omission set drifted from the shipped steps:\n{drift}");
+    let mut by_knob = BTreeMap::new();
+    for squash in [true, false] {
+        let derived = derive(squash, |pack| Box::new(EmbeddedSteps(&embedded[pack])));
+        if let Err(drift) = fence(&derived, root.path(), squash) {
+            panic!(
+                "the derived sub-task omission set (squash: {squash}) drifted from the shipped \
+                 steps:\n{drift}"
+            );
+        }
+        // Not vacuous: the door reaches the Proves workflows through every carrier shape.
+        for (workflow, member) in [
+            ("dev:amend", "amend-message"),
+            ("dev:migrate-adr", "migration-finalize"),
+            ("methodology:migrate-idea", "migration-finalize"),
+            ("methodology:planning", "planning-finalize"),
+            ("methodology:park-idea", "finalize"),
+            ("dev:project-setup", "project-finalize"),
+        ] {
+            assert!(
+                derived[workflow].contains(member),
+                "{workflow}'s derived set (squash: {squash}) holds `{member}`; got {:?}",
+                derived[workflow],
+            );
+        }
+        by_knob.insert(squash, derived);
     }
-    // Not vacuous: the door reaches the Proves workflows through every carrier shape.
+    // The author arm (T2) is keyed on the knob, and unclosed: `sub-task-commit` keeps its own
+    // never-commit text while its nested `author-commit` leaves.
     for (workflow, member) in [
-        ("dev:amend", "amend-message"),
-        ("dev:migrate-adr", "migration-finalize"),
-        ("methodology:migrate-idea", "migration-finalize"),
-        ("methodology:planning", "planning-finalize"),
-        ("methodology:park-idea", "finalize"),
-        ("dev:project-setup", "project-finalize"),
+        ("methodology:park-idea", "author-commit"),
+        ("methodology:planning", "author-commit"),
+        ("methodology:fix-task", "author-commit"),
+        ("dev:sub-task", "author-commit"),
     ] {
         assert!(
-            derived[workflow].contains(member),
-            "{workflow}'s derived set holds `{member}`; got {:?}",
-            derived[workflow],
+            by_knob[&true][workflow].contains(member),
+            "{workflow}'s set under squash: true holds `{member}`; got {:?}",
+            by_knob[&true][workflow],
+        );
+        assert!(
+            !by_knob[&false][workflow].contains(member),
+            "{workflow}'s set under squash: false keeps `{member}`; got {:?}",
+            by_knob[&false][workflow],
         );
     }
+    assert!(
+        !by_knob[&true]["dev:sub-task"].contains("sub-task-commit"),
+        "the author clause is not closed under inclusion"
+    );
 }
 
 /// **(d)** — the mutant: `methodology:author-idea` gains the door. The fence is red against the
@@ -752,20 +797,560 @@ fn d_a_step_gaining_the_door_reddens_the_fence_until_re_derived() {
         .into_iter()
         .map(|(n, p, _)| (n, p))
         .collect();
-    let unmutated = derive(|pack| Box::new(EmbeddedSteps(&embedded[pack])));
-    let drift = fence(&unmutated, root.path()).expect_err("the fence reddens on the mutant");
+    let unmutated = derive(true, |pack| Box::new(EmbeddedSteps(&embedded[pack])));
+    let drift = fence(&unmutated, root.path(), true).expect_err("the fence reddens on the mutant");
     assert!(
         drift.contains("methodology:park-idea"),
         "the drift names the workflow composing the mutated step; got:\n{drift}"
     );
 
     let copy = root.path().to_path_buf();
-    let rederived = derive(|pack| Box::new(DirSteps(copy.join(pack))));
+    let rederived = derive(true, |pack| Box::new(DirSteps(copy.join(pack))));
     assert!(
         rederived["methodology:park-idea"].contains("author-idea"),
         "the re-derived set follows the mutant"
     );
-    if let Err(drift) = fence(&rederived, root.path()) {
+    if let Err(drift) = fence(&rederived, root.path(), true) {
         panic!("the re-derived set must satisfy the fence over the mutant:\n{drift}");
     }
+}
+
+/// **T2's mutant** — `methodology:author-idea` gains a commit-doc write. The author arm reddens
+/// the fence under `squash: true` until re-derived, and is inert under `squash: false`.
+#[test]
+fn t2_a_step_gaining_a_commit_doc_write_reddens_the_fence_only_under_squash() {
+    let root = ScratchDir::new("sub-task-composition-author-mutant");
+    copy_shipped_steps(root.path());
+    let author_idea = root.path().join("methodology/author-idea.yaml");
+    let mut body = fs::read_to_string(&author_idea).expect("read author-idea");
+    assert!(
+        !body.contains("{{ cli.set-commit-"),
+        "the mutant starts unmutated"
+    );
+    body.push_str("\n{{ cli.set-commit-summary }}\n");
+    fs::write(&author_idea, body).expect("apply the mutant");
+
+    let embedded: BTreeMap<&str, EmbeddedPack> = shipped_packs()
+        .into_iter()
+        .map(|(n, p, _)| (n, p))
+        .collect();
+    let drift = fence(
+        &derive(true, |pack| Box::new(EmbeddedSteps(&embedded[pack]))),
+        root.path(),
+        true,
+    )
+    .expect_err("the author arm reddens on the mutant under squash: true");
+    assert!(
+        drift.contains("methodology:park-idea"),
+        "the drift names the workflow composing the mutated step; got:\n{drift}"
+    );
+    if let Err(drift) = fence(
+        &derive(false, |pack| Box::new(EmbeddedSteps(&embedded[pack]))),
+        root.path(),
+        false,
+    ) {
+        panic!("under squash: false the author arm is inert:\n{drift}");
+    }
+
+    let copy = root.path().to_path_buf();
+    let rederived = derive(true, |pack| Box::new(DirSteps(copy.join(pack))));
+    assert!(
+        rederived["methodology:park-idea"].contains("author-idea"),
+        "the re-derived set follows the mutant"
+    );
+    if let Err(drift) = fence(&rederived, root.path(), true) {
+        panic!("the re-derived set must satisfy the fence over the mutant:\n{drift}");
+    }
+}
+
+// ---------------------------------------------------------------------------------------
+// T2 — the commit-doc-author clause, keyed on `finalize.fan-out.squash` (Open question 2).
+// ---------------------------------------------------------------------------------------
+
+/// The methodology `author-commit`'s opening claim — true only where a boundary reads the
+/// sub-task's commit doc.
+const RENDERS_COMMIT_DOC: &str = "finalize renders the commit doc";
+
+/// `step:sub-task-commit`'s never-commit discipline, kept in every mode (P5).
+const NEVER_COMMIT: &str = "never `git commit` and never `jigc task finalize`";
+
+/// The sentence P5 drops from `step:sub-task-commit`: under the default knob the nested author
+/// is omitted, so it would ask for prose nothing reads.
+const AUTHOR_OWN_PROSE: &str = "Author this sub-task's own commit prose.";
+
+/// The four sub-task workflows the author clause reaches: two through the methodology
+/// `author-commit` at the top level, `sub-task` through the dev one nested in
+/// `sub-task-commit`, `fix-task` through the methodology one directly.
+const AUTHOR_WORKFLOWS: [&str; 4] = ["park-idea", "planning", "sub-task", "fix-task"];
+
+/// Every emitted `jigc doc set-…` write against `commit:<sub>#…`, decoration stripped so the
+/// remainder runs verbatim — the `commit_solicit_axis` mold, heredoc demonstrations excluded
+/// (each carries its own payload and is not a second instruction to write).
+fn commit_writes(text: &str, sub: &str, leaf: Option<&str>) -> Vec<String> {
+    let target = match leaf {
+        Some(leaf) => format!("commit:{sub}#{leaf} "),
+        None => format!("commit:{sub}#"),
+    };
+    text.lines()
+        .filter(|line| line.contains(&target))
+        .filter(|line| !line.trim_end().ends_with("<<'EOF'"))
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            let command = trimmed
+                .strip_prefix("Run: `")
+                .and_then(|rest| rest.strip_suffix('`'))
+                .unwrap_or(trimmed);
+            command
+                .starts_with("jigc doc set-")
+                .then(|| command.to_string())
+        })
+        .collect()
+}
+
+/// A fan-out over `workflows`, added, provisioned and executed: the sub-task id per workflow
+/// and the `Spawn:` span `jigc milestone execute` printed for each.
+fn fan_out(fx: &Fixture, workflows: &[&str]) -> BTreeMap<String, (String, String)> {
+    let repo = fx.repo();
+    fx.jigc_ok(&repo, &["milestone", "create", MILESTONE_TITLE]);
+    let subs: Vec<(String, String)> = workflows
+        .iter()
+        .enumerate()
+        .map(|(n, w)| {
+            (
+                (*w).to_string(),
+                fx.add_task(&format!("Fan {n} composes {w}"), w),
+            )
+        })
+        .collect();
+    fx.jigc_ok(&repo, &["milestone", "provision", MILESTONE]);
+    let executed = fx.jigc_ok(&repo, &["milestone", "execute", MILESTONE]);
+    let spans = spawn_spans(&executed);
+    subs.into_iter()
+        .map(|(workflow, sub)| {
+            let span = spans
+                .iter()
+                .find(|span| span.ends_with(&format!(" --task {sub}")))
+                .unwrap_or_else(|| panic!("a `Spawn:` line for `{sub}`; got:\n{executed}"))
+                .clone();
+            (sub, (workflow, span))
+        })
+        .collect()
+}
+
+/// `jigc config set finalize.fan-out.squash <value>` in the **main** checkout, left
+/// uncommitted — the layer `jigc milestone finalize` resolves the knob from.
+fn set_squash(fx: &Fixture, value: &str) {
+    fx.jigc_ok(
+        &fx.repo(),
+        &["config", "set", "finalize.fan-out.squash", value],
+    );
+}
+
+/// Substitute the author-owned `<…>` placeholder of an emitted field write — the token is read
+/// off the emitted bytes, never typed here (the `commit_solicit_axis` mold).
+fn fill_placeholder(command: &str, value: &str) -> String {
+    let (Some(open), Some(close)) = (command.find('<'), command.find('>')) else {
+        return command.to_string();
+    };
+    format!("{}{value}{}", &command[..open], &command[close + 1..])
+}
+
+/// Run one emitted command verbatim through `sh -c` in `cwd`, `stdin` piped in, the shim first
+/// on `PATH`.
+#[cfg(unix)]
+fn run_emitted(cwd: &Path, home: &Path, shim_bin: &Path, command: &str, stdin: &str) -> Output {
+    use std::process::Stdio;
+    assert!(
+        !command.contains('<'),
+        "an unsubstituted placeholder survives in `{command}` — it would read as a redirect",
+    );
+    let path = match std::env::var("PATH") {
+        Ok(rest) => format!("{}:{rest}", shim_bin.display()),
+        Err(_) => shim_bin.display().to_string(),
+    };
+    let mut child = Command::new("sh")
+        .arg("-c")
+        .arg(command)
+        .current_dir(cwd)
+        .env("HOME", home)
+        .env("PATH", path)
+        .env_remove("JIGC_PACK_DIR")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn the emitted command");
+    support::child_stdin::feed(&mut child, stdin.as_bytes());
+    child
+        .wait_with_output()
+        .expect("wait for the emitted command")
+}
+
+/// Follow a composed view's `#type` and `#summary` commit writes verbatim, then stage a code
+/// change in the sub-task's worktree.
+#[cfg(unix)]
+fn author_and_stage(fx: &Fixture, shim_bin: &Path, sub: &str, view: &str, summary: &str) {
+    let worktree = fx.worktree(sub);
+    for (leaf, payload) in [("type", ""), ("summary", summary)] {
+        let writes = commit_writes(view, sub, Some(leaf));
+        assert_eq!(
+            writes.len(),
+            1,
+            "the composed view carries exactly one `#{leaf}` write; got:\n{view}"
+        );
+        let command = fill_placeholder(&writes[0], "fix");
+        ok(
+            &run_emitted(
+                &worktree,
+                &fx.home(),
+                shim_bin,
+                &command,
+                &format!("{payload}\n"),
+            ),
+            &format!("the emitted `{command}`"),
+        );
+    }
+    let file = format!("src/{sub}.rs");
+    fs::create_dir_all(worktree.join("src")).expect("mk src");
+    fs::write(worktree.join(&file), format!("// {sub}\n")).expect("write the code change");
+    git(&worktree, &["add", &file]);
+}
+
+/// The subject lines of the last `n` commits at the main checkout's HEAD.
+fn subjects(repo: &Path, n: usize) -> Vec<String> {
+    let out = Command::new("git")
+        .args(["log", "--format=%s", &format!("-{n}")])
+        .current_dir(repo)
+        .output()
+        .expect("run git log");
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(str::to_owned)
+        .collect()
+}
+
+/// **T2 (a) + (b)** — under the default knob the four author-reaching sub-tasks are asked for
+/// no commit doc; with `squash: false` set uncommitted in the main checkout, the same
+/// sub-tasks composed in their worktrees carry their author step's writes verbatim.
+#[cfg(unix)]
+#[test]
+fn t2_ab_the_commit_doc_author_follows_the_squash_knob() {
+    let fx = Fixture::new("author-knob");
+    let repo = fx.repo();
+    let home = fx.home();
+    let subs = fan_out(&fx, &AUTHOR_WORKFLOWS);
+    let shim_bin = install_jigc_shim(fx.root.path());
+
+    // (a) The default knob: no boundary reads a sub-task's commit doc.
+    for (sub, (workflow, span)) in &subs {
+        let view = ok(
+            &run_span(&repo, &home, &shim_bin, span),
+            &format!("the span `{span}`"),
+        );
+        let json: ComposedJson = stdout_json(
+            &jigc(
+                &fx.worktree(sub),
+                &home,
+                &["--format", "json", "workflow", workflow, "--task", sub],
+            ),
+            &[0],
+            "the re-entry door's json",
+        );
+        assert_sub_task_view(
+            &view,
+            &json,
+            sub,
+            workflow,
+            "its `Spawn:` line (squash: true)",
+        );
+        for text in [view.as_str(), json.text.as_str()] {
+            assert!(
+                !text.contains(RENDERS_COMMIT_DOC),
+                "a `{workflow}` sub-task under the default knob must not say `{RENDERS_COMMIT_DOC}` \
+                 — no boundary reads its commit doc; got:\n{text}",
+            );
+            assert_eq!(
+                commit_writes(text, sub, None),
+                Vec::<String>::new(),
+                "a `{workflow}` sub-task under the default knob is asked for no `commit:{sub}` \
+                 write; got:\n{text}",
+            );
+            assert!(
+                !text.contains(AUTHOR_OWN_PROSE),
+                "no sub-task is told to author commit prose nothing reads; got:\n{text}",
+            );
+        }
+        if workflow == "sub-task" {
+            assert!(
+                view.contains(NEVER_COMMIT),
+                "the `sub-task` sub-task keeps its never-commit discipline; got:\n{view}",
+            );
+        }
+    }
+
+    // (b) `squash: false`, set in the main checkout and left uncommitted; each sub-task is
+    // composed from its own worktree, which resolves the knob from that same layer.
+    set_squash(&fx, "false");
+    let porcelain = Command::new("git")
+        .args(["status", "--porcelain", "--", ".jigc/config"])
+        .current_dir(&repo)
+        .output()
+        .expect("git status");
+    assert!(
+        !porcelain.stdout.is_empty(),
+        "the knob is an uncommitted project-layer write in the main checkout"
+    );
+    for (sub, (workflow, span)) in &subs {
+        let view = ok(
+            &run_span(&repo, &home, &shim_bin, span),
+            &format!("the span `{span}` under squash: false"),
+        );
+        let json: ComposedJson = stdout_json(
+            &jigc(
+                &fx.worktree(sub),
+                &home,
+                &["--format", "json", "workflow", workflow, "--task", sub],
+            ),
+            &[0],
+            "the re-entry door's json",
+        );
+        assert_sub_task_view(
+            &view,
+            &json,
+            sub,
+            workflow,
+            "its `Spawn:` line (squash: false)",
+        );
+        assert!(
+            view.contains(&format!(
+                "Run: `jigc doc set-slot commit:{sub}#summary --from-file - --task {sub}`"
+            )) && view.lines().any(|line| line.starts_with(&format!(
+                "Run: `jigc doc set-field commit:{sub}#type --value <"
+            ))),
+            "a `{workflow}` sub-task under `squash: false` carries its author step's set-commit \
+             lines verbatim; got:\n{view}",
+        );
+        if workflow == "park-idea" || workflow == "planning" {
+            assert!(
+                view.contains(RENDERS_COMMIT_DOC),
+                "under `squash: false` the join renders the commit doc, so `{workflow}` says so; \
+                 got:\n{view}",
+            );
+        }
+        if workflow == "sub-task" {
+            assert!(
+                view.contains(NEVER_COMMIT) && !view.contains(AUTHOR_OWN_PROSE),
+                "the `sub-task` sub-task keeps the discipline without P5's dropped sentence; \
+                 got:\n{view}",
+            );
+        }
+    }
+}
+
+/// **T2 (c)** — the join under `squash: false`: a code-carrying `sub-task` sub-task and a
+/// code-carrying `fix-task` sub-task follow their composed commit writes verbatim, and the
+/// milestone lands one commit per sub-task, each titled by its authored summary.
+#[cfg(unix)]
+#[test]
+fn t2_c_code_carrying_sub_tasks_land_their_authored_commits_under_squash_false() {
+    let fx = Fixture::new("author-join");
+    let repo = fx.repo();
+    let home = fx.home();
+    set_squash(&fx, "false");
+    let subs = fan_out(&fx, &["sub-task", "fix-task"]);
+    let shim_bin = install_jigc_shim(fx.root.path());
+
+    let mut summaries = BTreeMap::new();
+    for (sub, (workflow, span)) in &subs {
+        let view = ok(
+            &run_span(&repo, &home, &shim_bin, span),
+            &format!("the span `{span}`"),
+        );
+        let summary = format!("land the {workflow} change");
+        author_and_stage(&fx, &shim_bin, sub, &view, &summary);
+        summaries.insert(sub.clone(), summary);
+    }
+
+    let out = jigc(&repo, &home, &["milestone", "finalize", MILESTONE]);
+    let output = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "the join lands both authored sub-tasks; got:\n{output}"
+    );
+    assert!(
+        !output.contains("required-slot-present"),
+        "no unfilled-commit-doc block; got:\n{output}"
+    );
+    let landed = subjects(&repo, 3);
+    for (sub, summary) in &summaries {
+        assert!(
+            landed.contains(&format!("fix: {summary}")),
+            "`{sub}`'s chain commit is titled by its authored summary; got {landed:?}",
+        );
+    }
+}
+
+/// **T2 (d)** — the docs-only fan-out under the default knob: two `park-idea` sub-tasks, asked
+/// for no commit doc, create their ideas through their composed commands, and the milestone
+/// lands both.
+#[cfg(unix)]
+#[test]
+fn t2_d_a_docs_only_fan_out_lands_with_no_commit_doc_asked_for() {
+    let fx = Fixture::new("author-docs-only");
+    let repo = fx.repo();
+    let home = fx.home();
+    let subs = fan_out(&fx, &["park-idea", "park-idea"]);
+    let shim_bin = install_jigc_shim(fx.root.path());
+
+    let mut slugs = Vec::new();
+    for (n, (sub, (_, span))) in subs.iter().enumerate() {
+        let worktree = fx.worktree(sub);
+        let view = ok(
+            &run_span(&repo, &home, &shim_bin, span),
+            &format!("the span `{span}`"),
+        );
+        assert!(
+            !view.contains(&format!("commit:{sub}")),
+            "a docs-only sub-task is asked for no commit doc; got:\n{view}",
+        );
+        // The create, verbatim but for its title.
+        let create = view
+            .lines()
+            .find_map(|line| line.strip_prefix("Run: `jigc doc create idea"))
+            .and_then(|rest| rest.strip_suffix('`'))
+            .map(|rest| format!("jigc doc create idea{rest}"))
+            .unwrap_or_else(|| panic!("the composed view creates the idea; got:\n{view}"));
+        let title = format!("Warm cache {n}");
+        let created = ok(
+            &run_emitted(
+                &worktree,
+                &home,
+                &shim_bin,
+                &fill_placeholder(&create, &format!("\"{title}\"")),
+                "",
+            ),
+            "the emitted create",
+        );
+        let slug = format!("warm-cache-{n}");
+        assert!(
+            created.contains(&format!("idea:{slug}")),
+            "the create acks `idea:{slug}`; got:\n{created}"
+        );
+        // The two per-leaf writes, verbatim but for `<slug>` and the author's payload.
+        for (prefix, payload) in [
+            ("jigc doc set-field idea:<slug>#trigger", ""),
+            (
+                "jigc doc set-slot idea:<slug>#description",
+                "Cache the hot reads.\n",
+            ),
+        ] {
+            let line = view
+                .lines()
+                .map(str::trim)
+                .find(|line| line.starts_with(prefix) && !line.ends_with("<<'EOF'"))
+                .unwrap_or_else(|| panic!("the composed view carries `{prefix}`; got:\n{view}"));
+            let command = line.replacen("<slug>", &slug, 1);
+            let command = fill_placeholder(&command, "when the reads get slow");
+            ok(
+                &run_emitted(&worktree, &home, &shim_bin, &command, payload),
+                &format!("the emitted `{command}`"),
+            );
+        }
+        slugs.push(slug);
+    }
+
+    let out = jigc(&repo, &home, &["milestone", "finalize", MILESTONE]);
+    let output = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "the docs-only fan-out lands; got:\n{output}"
+    );
+    let tree = Command::new("git")
+        .args(["ls-tree", "-r", "--name-only", "HEAD"])
+        .current_dir(&repo)
+        .output()
+        .expect("git ls-tree");
+    let tree = String::from_utf8_lossy(&tree.stdout);
+    for slug in &slugs {
+        assert!(
+            tree.lines()
+                .any(|path| path.ends_with(&format!("/{slug}.md"))),
+            "the milestone lands `idea:{slug}`; HEAD's tree:\n{tree}",
+        );
+    }
+}
+
+/// **T2 (e)** — the flip bound: composed under the default knob, the code-carrying sub-task
+/// authors nothing; flipping the knob to `false` before the join meets the join's routed block
+/// at `commit:<sub>`, and re-composing through the `Spawn:` line shows the author step.
+#[cfg(unix)]
+#[test]
+fn t2_e_a_knob_flipped_after_compose_meets_the_routed_join_block() {
+    let fx = Fixture::new("author-flip");
+    let repo = fx.repo();
+    let home = fx.home();
+    let subs = fan_out(&fx, &["sub-task"]);
+    let shim_bin = install_jigc_shim(fx.root.path());
+    let (sub, (_, span)) = subs.iter().next().expect("one sub-task");
+
+    let before = ok(&run_span(&repo, &home, &shim_bin, span), "the span");
+    assert_eq!(
+        commit_writes(&before, sub, None),
+        Vec::<String>::new(),
+        "composed under the default knob, the sub-task is asked for no commit doc"
+    );
+    let worktree = fx.worktree(sub);
+    fs::create_dir_all(worktree.join("src")).expect("mk src");
+    fs::write(worktree.join("src/flip.rs"), "// flip\n").expect("write code");
+    git(&worktree, &["add", "src/flip.rs"]);
+
+    set_squash(&fx, "false");
+    let out = jigc(
+        &repo,
+        &home,
+        &["--format", "json", "milestone", "finalize", MILESTONE],
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(3),
+        "the flipped knob meets the join's block; got:\n{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let envelope: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("a findings envelope");
+    let findings = envelope["findings"].as_array().cloned().unwrap_or_default();
+    let unfilled = findings
+        .iter()
+        .find(|f| {
+            f["code"].as_str() == Some("schema-conformance.required-slot-present")
+                && f["key"]["target"]
+                    .as_str()
+                    .is_some_and(|t| t.starts_with(&format!("commit:{sub}")))
+        })
+        .unwrap_or_else(|| panic!("`required-slot-present` at `commit:{sub}`; got {findings:#?}"));
+    assert!(
+        unfilled.to_string().contains("jigc doc set-slot"),
+        "the block is routed at `jigc doc set-slot`; got {unfilled:#}",
+    );
+
+    let after = ok(
+        &run_span(&repo, &home, &shim_bin, span),
+        "the span re-composed",
+    );
+    assert!(
+        !commit_writes(&after, sub, Some("summary")).is_empty()
+            && !commit_writes(&after, sub, Some("type")).is_empty(),
+        "re-composed under `squash: false`, the sub-task shows its author step; got:\n{after}",
+    );
 }

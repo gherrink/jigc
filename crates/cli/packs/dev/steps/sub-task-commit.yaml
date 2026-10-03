@@ -1,4 +1,4 @@
-Author this sub-task's own commit prose. The parent milestone's finalize is
+The parent milestone's finalize is
 the only commit boundary: `git add` your code edits so the milestone can fold
 this worktree's staged index, but never `git commit` and never `jigc task finalize`
 here — either lands a commit on this worktree's detached HEAD and strands the

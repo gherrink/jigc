@@ -2,6 +2,19 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-03 — M55 Increment 3 / T2: the commit-doc-author clause, keyed on `finalize.fan-out.squash`, built
+
+Built on P1's author clause, P4, P5 and P6's author arm below; Open question 2 is marked settled in [findings-channel.md](design/findings-channel.md), and [workflow-dialect.md](design/workflow-dialect.md) and [worked-examples.md](design/worked-examples.md) scope *"sub-agents author their own commit doc"* to `squash: false`. What the build adds to the plan:
+
+- **P4's reader is `milestone::squash_of(&Resolved)`.** `resolve_squash` now calls it, and the spine calls it on the cascade it already resolved from `jigc_home`'s `.jigc/config` — the layer `resolve_squash(jigc_home)` reads. The red-step assumption held, driven: `squash: false` set uncommitted in the main checkout reaches a compose run in the sub-task's worktree.
+- **The author clause reads `from:` on `agent:` arguments too.** `writes_commit_doc` matches any argument whose `from:` is under `task.commit#`. No shipped entry carries one on an `agent:` argument, so today's set is the same either way.
+- **The plan's "`commit_solicit_axis::` green unedited" did not hold, and the axis was taught the rule instead.** Since M52 the axis composes `sub-task` through its declared door, which re-enters a real provisioned sub-task. Under the default knob that sub-task now solicits nothing, and Proves (a) requires exactly that. So the axis's derived expectation gains one arm — a workflow whose `door:` re-enters `<task-id>` solicits zero when the winning pack's `finalize.fan-out.squash` default is `true` — read from `config/knobs`, never typed. This is the axis's own rule (*"exactly as its gate demands"*), and under `true` no gate reads that doc. `squash: false` followability for `sub-task` and `fix-task` is `sub_task_composition::` (c).
+- **`fix_task_workflow::` composes its `fix-task` sub-task under `squash: false`.** Its happy path asserted the walk's commit-doc read-back under the default knob. A real fix round sets the knob to `false` first, because `step:fix-gate`'s first command does it. So the test now runs that command before `milestone create`, and the read-back is asserted in the mode that asks for it.
+- **No golden moved.** The `workflow-preview--sub-task--*` goldens are the `workflow.verb-routed` refusal and carry no step text, so P5's edit re-pins nothing.
+- **`worked-examples.md` flow 10's Half B, step 3,** repeats the `:626` claim, and is scoped the same way.
+
+**A declared bound found by driving it, not fixed:** under the default knob, a sub-task's `what's-left:` line names `jigc task validate <sub>`. That still reports `schema-conformance.field-value-conformant` (`type`) and `required-slot-present` (`summary`) at `commit:<sub>`, and exits 3 for a commit doc the composed text no longer asks for and the join will not read. This was already true of every sub-task before this change; it is now visible because the author step has gone. Following the routes is harmless, and the join is unaffected. Whether the per-task validate should scope a sub-task's commit doc by the knob is outside this increment's grouped scope, and it is owed to the S2 partial re-review.
+
 ## 2026-10-03 — M55 Increment 3 / T1: the per-task finalize-door clause of the sub-task omission set, built
 
 Built on P1's door clause, P2, P3 and P6 below ([workflow-dialect.md](design/workflow-dialect.md) → Emitted format). Three elaborations the plan left open:
