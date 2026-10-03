@@ -1,0 +1,183 @@
+staged inconsistency/m55-d1 as inconsistency:record-only-names-two-different in sub-task m55-d1
+staged inconsistency/m55-d10 as inconsistency:reconciliation-calls-start-a-pure in sub-task m55-d10
+staged inconsistency/m55-d11 as inconsistency:worked-examples-index-lists in sub-task m55-d11
+staged inconsistency/m55-d12 as inconsistency:release-docs-cite-a-stale in sub-task m55-d12
+staged inconsistency/m55-d2 as inconsistency:two-definitions-of-pinned-by in sub-task m55-d2
+staged inconsistency/m55-d3 as inconsistency:three-finding-vocabularies-and-tier in sub-task m55-d3
+staged inconsistency/m55-d4 as inconsistency:m55-charter-miscounts-its in sub-task m55-d4
+staged inconsistency/m55-d5 as inconsistency:methodology-docs-call-remove-item in sub-task m55-d5
+staged inconsistency/m55-d6 as inconsistency:methodology-docs-show-the-deferral in sub-task m55-d6
+staged inconsistency/m55-d7 as inconsistency:project-guide-miscounts in sub-task m55-d7
+staged inconsistency/m55-d8 as inconsistency:staging-contract-test-hand in sub-task m55-d8
+staged inconsistency/m55-d9 as inconsistency:registration-checklist-names-none in sub-task m55-d9
+staged jigc-feedback/ci-git-marker-contract as jigc-feedback:git-marker-contract-still in sub-task ci-git-marker-contract
+staged jigc-feedback/ci-gpg-signed-test-commits as jigc-feedback:test-repositories-sign-their-throwaway in sub-task ci-gpg-signed-test-commits
+staged jigc-feedback/ci-undeclared-python3 as jigc-feedback:dogfood-apparatus-tests-fail in sub-task ci-undeclared-python3
+staged jigc-feedback/m53-rc17-3-f-1 as jigc-feedback:symlinked-staged-doc-is in sub-task m53-rc17-3-f-1
+staged jigc-feedback/m53-rc17-3-f-2 as jigc-feedback:leftover-area-note-calls in sub-task m53-rc17-3-f-2
+staged jigc-feedback/m53-rc17-5-defect-a as jigc-feedback:doc-show-keys-an-unknown in sub-task m53-rc17-5-defect-a
+staged jigc-feedback/m53-rc18-2-f-1 as jigc-feedback:aimed-git-c-route in sub-task m53-rc18-2-f-1
+staged jigc-feedback/m53-rc18-2-f-2 as jigc-feedback:milestone-finalize-commits-a-foreign in sub-task m53-rc18-2-f-2
+staged jigc-feedback/m53-rc18-3-f-3 as jigc-feedback:uninstall-from-a-fan-out in sub-task m53-rc18-3-f-3
+staged jigc-feedback/m53-rc18-3-f-4 as jigc-feedback:fan-out-teardown-calls in sub-task m53-rc18-3-f-4
+staged jigc-feedback/m53-rc18-3-f-5 as jigc-feedback:settled-sub-tasks-restored in sub-task m53-rc18-3-f-5
+staged jigc-feedback/m53-rc19-2-n-1 as jigc-feedback:pre-commit-hook-announces in sub-task m53-rc19-2-n-1
+staged jigc-feedback/m53-rc19-2-n-2 as jigc-feedback:hooks-rename-block-never in sub-task m53-rc19-2-n-2
+staged jigc-feedback/m53-rc19-2-n-3 as jigc-feedback:provision-acks-the-milestone-base in sub-task m53-rc19-2-n-3
+staged jigc-feedback/m53-rc19-2-n-4 as jigc-feedback:linked-worktree-finalize-leaves in sub-task m53-rc19-2-n-4
+staged jigc-feedback/m53-rc19-3-f-a as jigc-feedback:task-finalize-prints-host-absolute in sub-task m53-rc19-3-f-a
+staged jigc-feedback/m53-rc19-3-f-b as jigc-feedback:leftover-file-consent-warning in sub-task m53-rc19-3-f-b
+staged jigc-feedback/m53-rc20-2-a2-1 as jigc-feedback:dry-run-help-says-its in sub-task m53-rc20-2-a2-1
+staged jigc-feedback/m53-rc20-2-a2-2 as jigc-feedback:previews-call-a-fan-out in sub-task m53-rc20-2-a2-2
+staged jigc-feedback/m53-rc20-2-a2-3 as jigc-feedback:f-10-settle-said in sub-task m53-rc20-2-a2-3
+staged jigc-feedback/m53-rc20-3-f-c as jigc-feedback:task-amends-unslugable-title-route in sub-task m53-rc20-3-f-c
+staged jigc-feedback/m53-rc20-5-defect-2 as jigc-feedback:amend-head-shape-locus-prints in sub-task m53-rc20-5-defect-2
+staged jigc-feedback/m53-settle-a as jigc-feedback:empty-add-item-title in sub-task m53-settle-a
+staged jigc-feedback/m53-settle-b as jigc-feedback:empty-title-at-doc in sub-task m53-settle-b
+staged jigc-feedback/m53-settle-c as jigc-feedback:task-with-no-recorded in sub-task m53-settle-c
+staged jigc-feedback/m53-settle-d as jigc-feedback:displacement-suffix-walk-has in sub-task m53-settle-d
+staged jigc-feedback/m53-settle-e as jigc-feedback:task-mint-writes-its in sub-task m53-settle-e
+staged jigc-feedback/m53-settle-f as jigc-feedback:m52-reviews-r-i in sub-task m53-settle-f
+staged jigc-feedback/m55-bound-two-code-tasks as jigc-feedback:two-tasks-on-the-ordinary in sub-task m55-bound-two-code-tasks
+staged jigc-feedback/m55-f1 as jigc-feedback:code-less-finalize-commits in sub-task m55-f1
+staged jigc-feedback/m55-f10 as jigc-feedback:doc-show-json-omits in sub-task m55-f10
+staged jigc-feedback/m55-f11 as jigc-feedback:card-on-a-non in sub-task m55-f11
+staged jigc-feedback/m55-f12 as jigc-feedback:type-change-rides in sub-task m55-f12
+staged jigc-feedback/m55-f13 as jigc-feedback:same-id-built-in in sub-task m55-f13
+staged jigc-feedback/m55-f14 as jigc-feedback:any-task-can-edit-any in sub-task m55-f14
+staged jigc-feedback/m55-f15 as jigc-feedback:setup-re-enables-the-methodology in sub-task m55-f15
+staged jigc-feedback/m55-f16 as jigc-feedback:project-workflow-shadow-goes in sub-task m55-f16
+staged jigc-feedback/m55-f17 as jigc-feedback:rig-cannot-prototype in sub-task m55-f17
+staged jigc-feedback/m55-f18 as jigc-feedback:listing-open-findings-costs in sub-task m55-f18
+staged jigc-feedback/m55-f19 as jigc-feedback:task-can-create-only in sub-task m55-f19
+staged jigc-feedback/m55-f2 as jigc-feedback:create-over-an-existing in sub-task m55-f2
+staged jigc-feedback/m55-f20 as jigc-feedback:ingest-adopts-files-and-leaves in sub-task m55-f20
+staged jigc-feedback/m55-f3 as jigc-feedback:slug-collision-is-routed in sub-task m55-f3
+staged jigc-feedback/m55-f4 as jigc-feedback:pulled-edit-conflict-blocks in sub-task m55-f4
+staged jigc-feedback/m55-f5 as jigc-feedback:store-validate-blocks in sub-task m55-f5
+staged jigc-feedback/m55-f6 as jigc-feedback:user-created-worktree in sub-task m55-f6
+staged jigc-feedback/m55-f7 as jigc-feedback:fan-out-sub-task in sub-task m55-f7
+staged jigc-feedback/m55-f8 as jigc-feedback:union-resolved-singleton-loses in sub-task m55-f8
+staged jigc-feedback/m55-f9 as jigc-feedback:required-on-create-date in sub-task m55-f9
+staged jigc-feedback/m55-t1 as jigc-feedback:no-cd-assertion-trips in sub-task m55-t1
+staged jigc-feedback/m55-t2 as jigc-feedback:test-helpers-panic-when-jigc in sub-task m55-t2
+staged jigc-feedback/m55-t3 as jigc-feedback:every-gate-run-leaks-scratch in sub-task m55-t3
+staged jigc-feedback/m55-t4 as jigc-feedback:gate-pays-the-xcrun in sub-task m55-t4
+staged jigc-feedback/m55-t5 as jigc-feedback:batch-apply-growth-ratio in sub-task m55-t5
+staged jigc-feedback/owed-private-target-litter as jigc-feedback:gate-private-targets-pile-up in sub-task owed-private-target-litter
+staged jigc-feedback/owed-rig-eval-capture as jigc-feedback:rig-capture-that-folds in sub-task owed-rig-eval-capture
+staged jigc-feedback/rc16-1-a1-n1 as jigc-feedback:routes-whose-operand-starts-with in sub-task rc16-1-a1-n1
+staged jigc-feedback/rc16-1-a1-n2 as jigc-feedback:dash-root-knob-value in sub-task rc16-1-a1-n2
+staged jigc-feedback/rc16-1-a1-n3 as jigc-feedback:flatten-exemption-list-omits-write in sub-task rc16-1-a1-n3
+staged jigc-feedback/rc16-2-defect-b as jigc-feedback:conflicted-squash-merge-is-named in sub-task rc16-2-defect-b
+staged jigc-feedback/rc16-2-defect-c as jigc-feedback:commit-seam-posture-breach-prints in sub-task rc16-2-defect-c
+staged jigc-feedback/rc16-3-a3-3 as jigc-feedback:boundary-displacement-suite-never-tests in sub-task rc16-3-a3-3
+staged jigc-feedback/rc16-4-defect-1 as jigc-feedback:stage-failed-route-at-task in sub-task rc16-4-defect-1
+staged jigc-feedback/rc16-4-defect-2 as jigc-feedback:repoint-failed-message-prints in sub-task rc16-4-defect-2
+staged jigc-feedback/rc16-4-defect-3 as jigc-feedback:hook-rejected-milestone-create-keeps in sub-task rc16-4-defect-3
+staged jigc-feedback/rc16-5-c1 as jigc-feedback:orientation-json-omits-its-declared in sub-task rc16-5-c1
+staged jigc-feedback/rc16-5-d1 as jigc-feedback:start-explain-json-is in sub-task rc16-5-d1
+staged jigc-feedback/rc16-5-defect-2 as jigc-feedback:config-remove-step-and-replace in sub-task rc16-5-defect-2
+staged jigc-feedback/rc16-5-defect-3 as jigc-feedback:renames-colon-less-address-refusal in sub-task rc16-5-defect-3
+staged jigc-feedback/rc16-5-defect-4 as jigc-feedback:doc-show-calls-a-declared in sub-task rc16-5-defect-4
+staged jigc-feedback/rc16-6-d-1 as jigc-feedback:orientation-omits-the-repository-posture in sub-task rc16-6-d-1
+staged jigc-feedback/rc16-6-d-2 as jigc-feedback:fix-task-composes-by-name in sub-task rc16-6-d-2
+staged jigc-feedback/rc16-6-d-3 as jigc-feedback:orientation-preview-footer-misses in sub-task rc16-6-d-3
+staged jigc-feedback/rc16-6-d-4 as jigc-feedback:empty-milestone-execute-walk-never in sub-task rc16-6-d-4
+staged jigc-feedback/rc16-7-a7-f1 as jigc-feedback:validate-trailer-asserts-a-commit in sub-task rc16-7-a7-f1
+staged jigc-feedback/rc16-7-a7-f2 as jigc-feedback:ingest-says-no-action-needed in sub-task rc16-7-a7-f2
+staged jigc-feedback/rc16-7-a7-f3 as jigc-feedback:doc-show-over-a-relocated in sub-task rc16-7-a7-f3
+staged jigc-feedback/rc16-8-n-1 as jigc-feedback:uninstall-force-help-names-three in sub-task rc16-8-n-1
+staged jigc-feedback/rc16-8-n-2 as jigc-feedback:retitle-only-rename-acks in sub-task rc16-8-n-2
+filed inconsistency/m55-d1 as docs/inconsistencies/record-only-names-two-different.md -> inconsistencies/record-only-names-two-different.md
+filed inconsistency/m55-d10 as docs/inconsistencies/reconciliation-calls-start-a-pure.md -> inconsistencies/reconciliation-calls-start-a-pure.md
+filed inconsistency/m55-d11 as docs/inconsistencies/worked-examples-index-lists.md -> inconsistencies/worked-examples-index-lists.md
+filed inconsistency/m55-d12 as docs/inconsistencies/release-docs-cite-a-stale.md -> inconsistencies/release-docs-cite-a-stale.md
+filed inconsistency/m55-d2 as docs/inconsistencies/two-definitions-of-pinned-by.md -> inconsistencies/two-definitions-of-pinned-by.md
+filed inconsistency/m55-d3 as docs/inconsistencies/three-finding-vocabularies-and-tier.md -> inconsistencies/three-finding-vocabularies-and-tier.md
+filed inconsistency/m55-d4 as docs/inconsistencies/m55-charter-miscounts-its.md -> inconsistencies/m55-charter-miscounts-its.md
+filed inconsistency/m55-d5 as docs/inconsistencies/methodology-docs-call-remove-item.md -> inconsistencies/methodology-docs-call-remove-item.md
+filed inconsistency/m55-d6 as docs/inconsistencies/methodology-docs-show-the-deferral.md -> inconsistencies/methodology-docs-show-the-deferral.md
+filed inconsistency/m55-d7 as docs/inconsistencies/project-guide-miscounts.md -> inconsistencies/project-guide-miscounts.md
+filed inconsistency/m55-d8 as docs/inconsistencies/staging-contract-test-hand.md -> inconsistencies/staging-contract-test-hand.md
+filed inconsistency/m55-d9 as docs/inconsistencies/registration-checklist-names-none.md -> inconsistencies/registration-checklist-names-none.md
+filed jigc-feedback/ci-git-marker-contract as docs/jigc-feedback/git-marker-contract-still.md -> jigc-feedback/git-marker-contract-still.md
+filed jigc-feedback/ci-gpg-signed-test-commits as docs/jigc-feedback/test-repositories-sign-their-throwaway.md -> jigc-feedback/test-repositories-sign-their-throwaway.md
+filed jigc-feedback/ci-undeclared-python3 as docs/jigc-feedback/dogfood-apparatus-tests-fail.md -> jigc-feedback/dogfood-apparatus-tests-fail.md
+filed jigc-feedback/m53-rc17-3-f-1 as docs/jigc-feedback/symlinked-staged-doc-is.md -> jigc-feedback/symlinked-staged-doc-is.md
+filed jigc-feedback/m53-rc17-3-f-2 as docs/jigc-feedback/leftover-area-note-calls.md -> jigc-feedback/leftover-area-note-calls.md
+filed jigc-feedback/m53-rc17-5-defect-a as docs/jigc-feedback/doc-show-keys-an-unknown.md -> jigc-feedback/doc-show-keys-an-unknown.md
+filed jigc-feedback/m53-rc18-2-f-1 as docs/jigc-feedback/aimed-git-c-route.md -> jigc-feedback/aimed-git-c-route.md
+filed jigc-feedback/m53-rc18-2-f-2 as docs/jigc-feedback/milestone-finalize-commits-a-foreign.md -> jigc-feedback/milestone-finalize-commits-a-foreign.md
+filed jigc-feedback/m53-rc18-3-f-3 as docs/jigc-feedback/uninstall-from-a-fan-out.md -> jigc-feedback/uninstall-from-a-fan-out.md
+filed jigc-feedback/m53-rc18-3-f-4 as docs/jigc-feedback/fan-out-teardown-calls.md -> jigc-feedback/fan-out-teardown-calls.md
+filed jigc-feedback/m53-rc18-3-f-5 as docs/jigc-feedback/settled-sub-tasks-restored.md -> jigc-feedback/settled-sub-tasks-restored.md
+filed jigc-feedback/m53-rc19-2-n-1 as docs/jigc-feedback/pre-commit-hook-announces.md -> jigc-feedback/pre-commit-hook-announces.md
+filed jigc-feedback/m53-rc19-2-n-2 as docs/jigc-feedback/hooks-rename-block-never.md -> jigc-feedback/hooks-rename-block-never.md
+filed jigc-feedback/m53-rc19-2-n-3 as docs/jigc-feedback/provision-acks-the-milestone-base.md -> jigc-feedback/provision-acks-the-milestone-base.md
+filed jigc-feedback/m53-rc19-2-n-4 as docs/jigc-feedback/linked-worktree-finalize-leaves.md -> jigc-feedback/linked-worktree-finalize-leaves.md
+filed jigc-feedback/m53-rc19-3-f-a as docs/jigc-feedback/task-finalize-prints-host-absolute.md -> jigc-feedback/task-finalize-prints-host-absolute.md
+filed jigc-feedback/m53-rc19-3-f-b as docs/jigc-feedback/leftover-file-consent-warning.md -> jigc-feedback/leftover-file-consent-warning.md
+filed jigc-feedback/m53-rc20-2-a2-1 as docs/jigc-feedback/dry-run-help-says-its.md -> jigc-feedback/dry-run-help-says-its.md
+filed jigc-feedback/m53-rc20-2-a2-2 as docs/jigc-feedback/previews-call-a-fan-out.md -> jigc-feedback/previews-call-a-fan-out.md
+filed jigc-feedback/m53-rc20-2-a2-3 as docs/jigc-feedback/f-10-settle-said.md -> jigc-feedback/f-10-settle-said.md
+filed jigc-feedback/m53-rc20-3-f-c as docs/jigc-feedback/task-amends-unslugable-title-route.md -> jigc-feedback/task-amends-unslugable-title-route.md
+filed jigc-feedback/m53-rc20-5-defect-2 as docs/jigc-feedback/amend-head-shape-locus-prints.md -> jigc-feedback/amend-head-shape-locus-prints.md
+filed jigc-feedback/m53-settle-a as docs/jigc-feedback/empty-add-item-title.md -> jigc-feedback/empty-add-item-title.md
+filed jigc-feedback/m53-settle-b as docs/jigc-feedback/empty-title-at-doc.md -> jigc-feedback/empty-title-at-doc.md
+filed jigc-feedback/m53-settle-c as docs/jigc-feedback/task-with-no-recorded.md -> jigc-feedback/task-with-no-recorded.md
+filed jigc-feedback/m53-settle-d as docs/jigc-feedback/displacement-suffix-walk-has.md -> jigc-feedback/displacement-suffix-walk-has.md
+filed jigc-feedback/m53-settle-e as docs/jigc-feedback/task-mint-writes-its.md -> jigc-feedback/task-mint-writes-its.md
+filed jigc-feedback/m53-settle-f as docs/jigc-feedback/m52-reviews-r-i.md -> jigc-feedback/m52-reviews-r-i.md
+filed jigc-feedback/m55-bound-two-code-tasks as docs/jigc-feedback/two-tasks-on-the-ordinary.md -> jigc-feedback/two-tasks-on-the-ordinary.md
+filed jigc-feedback/m55-f1 as docs/jigc-feedback/code-less-finalize-commits.md -> jigc-feedback/code-less-finalize-commits.md
+filed jigc-feedback/m55-f10 as docs/jigc-feedback/doc-show-json-omits.md -> jigc-feedback/doc-show-json-omits.md
+filed jigc-feedback/m55-f11 as docs/jigc-feedback/card-on-a-non.md -> jigc-feedback/card-on-a-non.md
+filed jigc-feedback/m55-f12 as docs/jigc-feedback/type-change-rides.md -> jigc-feedback/type-change-rides.md
+filed jigc-feedback/m55-f13 as docs/jigc-feedback/same-id-built-in.md -> jigc-feedback/same-id-built-in.md
+filed jigc-feedback/m55-f14 as docs/jigc-feedback/any-task-can-edit-any.md -> jigc-feedback/any-task-can-edit-any.md
+filed jigc-feedback/m55-f15 as docs/jigc-feedback/setup-re-enables-the-methodology.md -> jigc-feedback/setup-re-enables-the-methodology.md
+filed jigc-feedback/m55-f16 as docs/jigc-feedback/project-workflow-shadow-goes.md -> jigc-feedback/project-workflow-shadow-goes.md
+filed jigc-feedback/m55-f17 as docs/jigc-feedback/rig-cannot-prototype.md -> jigc-feedback/rig-cannot-prototype.md
+filed jigc-feedback/m55-f18 as docs/jigc-feedback/listing-open-findings-costs.md -> jigc-feedback/listing-open-findings-costs.md
+filed jigc-feedback/m55-f19 as docs/jigc-feedback/task-can-create-only.md -> jigc-feedback/task-can-create-only.md
+filed jigc-feedback/m55-f2 as docs/jigc-feedback/create-over-an-existing.md -> jigc-feedback/create-over-an-existing.md
+filed jigc-feedback/m55-f20 as docs/jigc-feedback/ingest-adopts-files-and-leaves.md -> jigc-feedback/ingest-adopts-files-and-leaves.md
+filed jigc-feedback/m55-f3 as docs/jigc-feedback/slug-collision-is-routed.md -> jigc-feedback/slug-collision-is-routed.md
+filed jigc-feedback/m55-f4 as docs/jigc-feedback/pulled-edit-conflict-blocks.md -> jigc-feedback/pulled-edit-conflict-blocks.md
+filed jigc-feedback/m55-f5 as docs/jigc-feedback/store-validate-blocks.md -> jigc-feedback/store-validate-blocks.md
+filed jigc-feedback/m55-f6 as docs/jigc-feedback/user-created-worktree.md -> jigc-feedback/user-created-worktree.md
+filed jigc-feedback/m55-f7 as docs/jigc-feedback/fan-out-sub-task.md -> jigc-feedback/fan-out-sub-task.md
+filed jigc-feedback/m55-f8 as docs/jigc-feedback/union-resolved-singleton-loses.md -> jigc-feedback/union-resolved-singleton-loses.md
+filed jigc-feedback/m55-f9 as docs/jigc-feedback/required-on-create-date.md -> jigc-feedback/required-on-create-date.md
+filed jigc-feedback/m55-t1 as docs/jigc-feedback/no-cd-assertion-trips.md -> jigc-feedback/no-cd-assertion-trips.md
+filed jigc-feedback/m55-t2 as docs/jigc-feedback/test-helpers-panic-when-jigc.md -> jigc-feedback/test-helpers-panic-when-jigc.md
+filed jigc-feedback/m55-t3 as docs/jigc-feedback/every-gate-run-leaks-scratch.md -> jigc-feedback/every-gate-run-leaks-scratch.md
+filed jigc-feedback/m55-t4 as docs/jigc-feedback/gate-pays-the-xcrun.md -> jigc-feedback/gate-pays-the-xcrun.md
+filed jigc-feedback/m55-t5 as docs/jigc-feedback/batch-apply-growth-ratio.md -> jigc-feedback/batch-apply-growth-ratio.md
+filed jigc-feedback/owed-private-target-litter as docs/jigc-feedback/gate-private-targets-pile-up.md -> jigc-feedback/gate-private-targets-pile-up.md
+filed jigc-feedback/owed-rig-eval-capture as docs/jigc-feedback/rig-capture-that-folds.md -> jigc-feedback/rig-capture-that-folds.md
+filed jigc-feedback/rc16-1-a1-n1 as docs/jigc-feedback/routes-whose-operand-starts-with.md -> jigc-feedback/routes-whose-operand-starts-with.md
+filed jigc-feedback/rc16-1-a1-n2 as docs/jigc-feedback/dash-root-knob-value.md -> jigc-feedback/dash-root-knob-value.md
+filed jigc-feedback/rc16-1-a1-n3 as docs/jigc-feedback/flatten-exemption-list-omits-write.md -> jigc-feedback/flatten-exemption-list-omits-write.md
+filed jigc-feedback/rc16-2-defect-b as docs/jigc-feedback/conflicted-squash-merge-is-named.md -> jigc-feedback/conflicted-squash-merge-is-named.md
+filed jigc-feedback/rc16-2-defect-c as docs/jigc-feedback/commit-seam-posture-breach-prints.md -> jigc-feedback/commit-seam-posture-breach-prints.md
+filed jigc-feedback/rc16-3-a3-3 as docs/jigc-feedback/boundary-displacement-suite-never-tests.md -> jigc-feedback/boundary-displacement-suite-never-tests.md
+filed jigc-feedback/rc16-4-defect-1 as docs/jigc-feedback/stage-failed-route-at-task.md -> jigc-feedback/stage-failed-route-at-task.md
+filed jigc-feedback/rc16-4-defect-2 as docs/jigc-feedback/repoint-failed-message-prints.md -> jigc-feedback/repoint-failed-message-prints.md
+filed jigc-feedback/rc16-4-defect-3 as docs/jigc-feedback/hook-rejected-milestone-create-keeps.md -> jigc-feedback/hook-rejected-milestone-create-keeps.md
+filed jigc-feedback/rc16-5-c1 as docs/jigc-feedback/orientation-json-omits-its-declared.md -> jigc-feedback/orientation-json-omits-its-declared.md
+filed jigc-feedback/rc16-5-d1 as docs/jigc-feedback/start-explain-json-is.md -> jigc-feedback/start-explain-json-is.md
+filed jigc-feedback/rc16-5-defect-2 as docs/jigc-feedback/config-remove-step-and-replace.md -> jigc-feedback/config-remove-step-and-replace.md
+filed jigc-feedback/rc16-5-defect-3 as docs/jigc-feedback/renames-colon-less-address-refusal.md -> jigc-feedback/renames-colon-less-address-refusal.md
+filed jigc-feedback/rc16-5-defect-4 as docs/jigc-feedback/doc-show-calls-a-declared.md -> jigc-feedback/doc-show-calls-a-declared.md
+filed jigc-feedback/rc16-6-d-1 as docs/jigc-feedback/orientation-omits-the-repository-posture.md -> jigc-feedback/orientation-omits-the-repository-posture.md
+filed jigc-feedback/rc16-6-d-2 as docs/jigc-feedback/fix-task-composes-by-name.md -> jigc-feedback/fix-task-composes-by-name.md
+filed jigc-feedback/rc16-6-d-3 as docs/jigc-feedback/orientation-preview-footer-misses.md -> jigc-feedback/orientation-preview-footer-misses.md
+filed jigc-feedback/rc16-6-d-4 as docs/jigc-feedback/empty-milestone-execute-walk-never.md -> jigc-feedback/empty-milestone-execute-walk-never.md
+filed jigc-feedback/rc16-7-a7-f1 as docs/jigc-feedback/validate-trailer-asserts-a-commit.md -> jigc-feedback/validate-trailer-asserts-a-commit.md
+filed jigc-feedback/rc16-7-a7-f2 as docs/jigc-feedback/ingest-says-no-action-needed.md -> jigc-feedback/ingest-says-no-action-needed.md
+filed jigc-feedback/rc16-7-a7-f3 as docs/jigc-feedback/doc-show-over-a-relocated.md -> jigc-feedback/doc-show-over-a-relocated.md
+filed jigc-feedback/rc16-8-n-1 as docs/jigc-feedback/uninstall-force-help-names-three.md -> jigc-feedback/uninstall-force-help-names-three.md
+filed jigc-feedback/rc16-8-n-2 as docs/jigc-feedback/retitle-only-rename-acks.md -> jigc-feedback/retitle-only-rename-acks.md
+filed 91 docs (79 jigc-feedback, 12 inconsistency) in one commit

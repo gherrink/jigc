@@ -24,6 +24,11 @@
 //! **The verdicts are held to the filing inputs** (T2, P3 and P4): a row with a verdict has
 //! an input directory under `seed-filing/input/<doctype>/<key>/` whose `fields` `status` is
 //! that verdict, a row without one has none, and no input names a row the ledger lacks.
+//!
+//! **The filed seed is the ledger, row for row** (T7): every row carries a verdict; the
+//! rows' seed docs and the files under `seed/jigc-feedback/` and `seed/inconsistencies/`
+//! (the only two entries of `seed/`) are a bijection, each doc titled as its row's input;
+//! and each seed doc's `status` is its row's verdict.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -264,6 +269,8 @@ struct Row {
     sources: Vec<Source>,
     /// The re-drive's verdict, empty until the row is re-driven.
     verdict: String,
+    /// The seed doc cell, empty until the seed is filed.
+    seed_doc: String,
 }
 
 /// The ledger's rows and its exclusions.
@@ -300,6 +307,7 @@ fn ledger() -> (Vec<Row>, Vec<(Source, String)>) {
                     })
                     .collect(),
                 verdict: cells[3].to_owned(),
+                seed_doc: cells[4].to_owned(),
             }
         })
         .collect();
@@ -541,6 +549,164 @@ fn every_redriven_row_has_an_input_carrying_its_verdict() {
     assert!(
         problems.is_empty(),
         "the inputs and the ledger's verdicts disagree:\n  {}",
+        problems.join("\n  ")
+    );
+}
+
+/// The committed seed, repo-relative (P1).
+const SEED: &str = "completions/artifacts/M55/seed";
+
+/// Each doctype's home under `seed/`, as the doctype lays its instances out.
+fn home(doctype: &str) -> &'static str {
+    match doctype {
+        "inconsistency" => "inconsistencies",
+        _ => "jigc-feedback",
+    }
+}
+
+/// A row's seed doc, repo-relative: its cell is `[<home>/<slug>.md](seed/<home>/<slug>.md)`,
+/// the link's text its target under `seed/`, and the target a `.md` under its doctype's home.
+fn seed_doc(row: &Row) -> Result<String, String> {
+    let cell = &row.seed_doc;
+    let (text, rest) = delimited(cell, "[", "](")
+        .ok_or_else(|| format!("`{}`: the seed doc cell `{cell}` is no link", row.key))?;
+    let target = rest
+        .strip_suffix(')')
+        .ok_or_else(|| format!("`{}`: the seed doc cell `{cell}` is no link", row.key))?;
+    if target.strip_prefix("seed/") != Some(text) {
+        return Err(format!(
+            "`{}`: the seed doc link `{cell}` must read its own target under `seed/`",
+            row.key
+        ));
+    }
+    let path = resolve(LEDGER, target);
+    let slug = path
+        .strip_prefix(&format!("{SEED}/{}/", home(&row.doctype)))
+        .and_then(|rest| rest.strip_suffix(".md"))
+        .filter(|slug| !slug.is_empty() && !slug.contains('/'));
+    match slug {
+        Some(_) => Ok(path),
+        None => Err(format!(
+            "`{}`: the seed doc `{path}` is no `.md` under `{SEED}/{}/`",
+            row.key,
+            home(&row.doctype)
+        )),
+    }
+}
+
+/// Every re-driven row carries its verdict, so every row is filed (T7).
+#[test]
+fn every_row_carries_a_verdict() {
+    let (rows, _) = ledger();
+    let blank: Vec<&str> = rows
+        .iter()
+        .filter(|r| r.verdict.is_empty())
+        .map(|r| r.key.as_str())
+        .collect();
+    assert!(blank.is_empty(), "rows without a verdict: {blank:?}");
+}
+
+/// **The number of filed docs equals the recorded set, row for row** (T7): `seed/` holds
+/// only the two homes; each row names one seed doc under its doctype's home, which exists,
+/// is named by no other row, and is titled as the row's input; and every file under the two
+/// homes is some row's seed doc.
+#[test]
+fn the_ledger_rows_and_the_seed_files_are_a_bijection() {
+    let (rows, _) = ledger();
+    let root = repo_root();
+    let seed = root.join(SEED);
+    let mut problems = Vec::new();
+
+    let homes: BTreeSet<String> = ["inconsistencies", "jigc-feedback"]
+        .map(str::to_owned)
+        .into();
+    if entries(&seed) != homes {
+        problems.push(format!(
+            "`{SEED}` holds {:?}; it holds only the two homes {homes:?}",
+            entries(&seed)
+        ));
+    }
+    let mut on_disk = BTreeSet::new();
+    for home in &homes {
+        for name in entries(&seed.join(home)) {
+            on_disk.insert(format!("{SEED}/{home}/{name}"));
+        }
+    }
+
+    let mut named: BTreeMap<String, &str> = BTreeMap::new();
+    for row in &rows {
+        let path = match seed_doc(row) {
+            Ok(path) => path,
+            Err(problem) => {
+                problems.push(problem);
+                continue;
+            }
+        };
+        if let Some(other) = named.insert(path.clone(), &row.key) {
+            problems.push(format!(
+                "`{path}` is the seed doc of `{other}` and `{}`",
+                row.key
+            ));
+        }
+        let Ok(doc) = fs::read_to_string(root.join(&path)) else {
+            problems.push(format!(
+                "`{}`: its seed doc `{path}` is unreadable",
+                row.key
+            ));
+            continue;
+        };
+        let input = format!("{INPUTS}/{}/{}/title", row.doctype, row.key);
+        let title = read(&input);
+        let h1 = doc.lines().find_map(|l| l.strip_prefix("# "));
+        if h1 != Some(title.trim_end()) {
+            problems.push(format!(
+                "`{path}` is titled {h1:?}; `{}`'s input `{input}` is {:?}",
+                row.key,
+                title.trim_end()
+            ));
+        }
+    }
+    for path in on_disk.iter().filter(|p| !named.contains_key(*p)) {
+        problems.push(format!("`{path}` is no ledger row's seed doc"));
+    }
+    assert!(
+        problems.is_empty(),
+        "the ledger and the filed seed disagree:\n  {}",
+        problems.join("\n  ")
+    );
+}
+
+/// Each seed doc's `status` is its row's verdict (T7): the filed record says what the
+/// re-drive found.
+#[test]
+fn each_seed_doc_status_equals_its_verdict() {
+    let (rows, _) = ledger();
+    let mut problems = Vec::new();
+    for row in &rows {
+        let path = match seed_doc(row) {
+            Ok(path) => path,
+            Err(problem) => {
+                problems.push(problem);
+                continue;
+            }
+        };
+        let doc = fs::read_to_string(repo_root().join(&path)).unwrap_or_default();
+        let front: Vec<&str> = doc
+            .lines()
+            .skip(1)
+            .take_while(|l| *l != "---")
+            .filter_map(|l| l.strip_prefix("status: "))
+            .collect();
+        if front != [row.verdict.as_str()] {
+            problems.push(format!(
+                "`{path}` carries status {front:?}; `{}`'s verdict is `{}`",
+                row.key, row.verdict
+            ));
+        }
+    }
+    assert!(
+        problems.is_empty(),
+        "the seed docs and the ledger's verdicts disagree:\n  {}",
         problems.join("\n  ")
     );
 }

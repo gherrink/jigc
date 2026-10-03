@@ -1,0 +1,36 @@
+---
+kind: bug
+found-in: review:M52-per-axis/(7,A7-F1)
+about: jigc validate
+jigc-version: 1.0.0-rc.16
+status: open
+tier: tier-3
+date: 2026-10-03
+schema-version: 1
+---
+
+# Validate trailer asserts a commit and git mv that never happened
+
+## Description
+
+The store sweep's exit-flip trailer asserts a commit and a `git mv` that never happened. After an uncommitted, unstaged `rm CHANGELOG.md`, `jigc validate` exits 1 and its findings' routes are right: `jigc unmanage CHANGELOG.md`, and restoring with `git checkout -- CHANGELOG.md`. The trailer, though, reads *out-of-band rename detected — a structural-identity change this commit introduced; … revert the `git mv` or adopt it via `jigc rename`*. HEAD is unchanged, and no commit carries a rename. The review drove it over all three `orphan::Removal` cells (committed, staged and worktree-only), and the same trailer appeared verbatim where the act was a `git rm`. `first_store_exit_flip` documents that *table order is precedence*, so only the first matching trailer renders, and that is the one the reader gets.
+
+Re-driven on this build (`jigc 1.0.0-rc.22`, the debug binary built from `a768fe75`): **still open**. In the worktree-only cell, HEAD is unmoved, `git status --short` shows ` D CHANGELOG.md`, and `validate` prints the trailer verbatim. The staged `git rm` cell prints it too. That cell was driven in `rc16-1-a1-n1`'s repro, after `git rm -q -- -/decisions/dash-probe.md`.
+
+## Repro
+
+```sh
+rig=$(dev/jigc-rig committed-singletons) || exit; eval "$rig"
+git rev-parse --short HEAD
+rm CHANGELOG.md                              # uncommitted, unstaged worktree deletion
+$JIGC validate                               # exit 1
+#   … route: `jigc unmanage CHANGELOG.md`                                  (fine)
+#   … route: the removal is not committed — restore it: `git -C … checkout -- CHANGELOG.md` (fine)
+#   out-of-band rename detected — a structural-identity change this commit introduced; the
+#   sweep exits non-zero (revert the `git mv` or adopt it via `jigc rename`).
+git rev-parse --short HEAD                   # unchanged
+git status --short                           #  D CHANGELOG.md
+git log -1 --name-status --diff-filter=R     # no rename rows
+```
+
+## Resolution

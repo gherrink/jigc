@@ -239,17 +239,12 @@ const ROOT_FILES: &[&str] = &[
 /// M55 seeds two, both named by `design/findings-channel.md` (and the crate README by
 /// `implementation/decisions-pending.md`) at the planning commit, ahead of the increments
 /// that create them; `the_pending_list_is_empty` is lifted for M55's build in the same
-/// commit and restored at its close.
-const PENDING: &[(&str, &str)] = &[
-    (
-        "completions/artifacts/M55/seed",
-        "M55, the seed increment (S11): the generated jigc-feedback and inconsistency docs",
-    ),
-    (
-        "crates/cli/README.md",
-        "M55, the crate README increment (S15): generated from the root README",
-    ),
-];
+/// commit and restored at its close. The seed's entry, `completions/artifacts/M55/seed`
+/// (Increment 9, S11), was deleted by the commit that created the directory.
+const PENDING: &[(&str, &str)] = &[(
+    "crates/cli/README.md",
+    "M55, the crate README increment (S15): generated from the root README",
+)];
 
 /// The tree `jigc setup` installs into an adopter's repository (S15's adopter-path class).
 const ADOPTER_INSTALL_TREE: &str = ".claude/skills/";
@@ -758,7 +753,7 @@ fn every_pending_path_is_still_absent() {
 }
 
 #[test]
-#[ignore = "lifted while M55 is in flight: PENDING carries its two seeded paths; restore at M55's close (O1)"]
+#[ignore = "lifted while M55 is in flight: PENDING carries its seeded path; restore at M55's close (O1)"]
 fn the_pending_list_is_empty() {
     let leftover: Vec<String> = PENDING
         .iter()

@@ -73,6 +73,8 @@ mod project_pack_composition;
 mod revise_safe_author_steps;
 #[path = "../route_followability.rs"]
 mod route_followability;
+#[path = "../seed_fence.rs"]
+mod seed_fence;
 #[path = "../seed_ledger.rs"]
 mod seed_ledger;
 #[path = "../sub_task_composition.rs"]
