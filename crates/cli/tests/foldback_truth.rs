@@ -375,6 +375,16 @@ fn milestone_span<'a>(body: &'a str, marker: &str) -> &'a str {
 /// it); this leg also refuses `1.0.0-rc.22 built and installed`, which the version arm would
 /// pass and which this build did not do. When M55's audit lands this arm goes red, which is
 /// the fence working rather than failing, and it inverts a thirteenth time.
+///
+/// **Inverted 2026-10-03, at the completion fold-back — the thirteenth time.** The audit ran:
+/// e2e 22 of 24 scenarios green, the other two defects, and a code review of three findings —
+/// five audit findings, all fixed, one commit each, plus two the fixers surfaced, fixed, and
+/// one report-only gap, F21, filed open; the genuine spawn matched the sim's golden. So the
+/// pre-audit bound is now the law-1 lie, and the assertions flip: `built + audited`, the
+/// counts and the persisted verdict's path required, the file held to existing, and `built,
+/// not audited` and the clean-audit trio forbidden — five findings is not clean — with the
+/// two 1.0.0-call phrasings forbidden as at every wave. **The installed leg stays**: M55
+/// still built no version, and `1.0.0-rc.23` is release PR #2's.
 #[test]
 fn the_record_names_m55_and_claims_exactly_what_the_build_reached() {
     let body = read_doc(RECORD);
@@ -389,9 +399,17 @@ fn the_record_names_m55_and_claims_exactly_what_the_build_reached() {
     for owed in [
         "implementation/roadmap.md",
         "Milestone 55",
-        // Inverted 2026-10-03 at M55's build close — the twelfth time. No completion audit
-        // has run over this build, so the bound is required in as many words.
-        "built, not audited",
+        // Inverted 2026-10-03 at M55's completion fold-back — the thirteenth time. The audit
+        // ran, and the claim must say what it found, no more and no less: two e2e scenarios
+        // failed, five audit findings were fixed, F21 is open, and the genuine spawn matched.
+        "is complete",
+        "built + audited",
+        "22 of 24 scenarios",
+        "five audit findings, all fixed",
+        "one filed open",
+        "MATCH",
+        // The audit's record is persisted, and the claim must cite it.
+        "completions/artifacts/M55/VERDICT.md",
     ] {
         assert!(
             span.contains(owed),
@@ -400,15 +418,13 @@ fn the_record_names_m55_and_claims_exactly_what_the_build_reached() {
     }
 
     for forbidden in [
-        // The post-audit claim is now the lie: no audit has run over this build.
-        "built + audited",
-        // A build cannot pre-announce what its audit will find.
+        // The pre-audit bound is now the lie: the audit has run over this build.
+        "built, not audited",
+        // Five findings were found and fixed; a clean audit is not what the record shows.
         "audited clean",
         "audit is CLEAN",
         "audit ran clean",
-        // No verdict is persisted, so none may be cited.
-        "VERDICT",
-        // The 1.0.0 call is the human's, and a build close takes it no more than a wave does.
+        // The 1.0.0 call is the human's, and a completed wave takes it no more than a build does.
         "1.0.0 is called",
         "1.0.0 shipped",
     ] {
@@ -417,6 +433,14 @@ fn the_record_names_m55_and_claims_exactly_what_the_build_reached() {
             "the M55 claim may not say `{forbidden}`:\n{span}",
         );
     }
+
+    // The citation required above must point at a file that exists.
+    let verdict = repo_root().join("completions/artifacts/M55/VERDICT.md");
+    assert!(
+        verdict.is_file(),
+        "the M55 claim cites a verdict at {} that must exist",
+        verdict.display()
+    );
 
     // M55 built no version and installed none: the span may name a version only as what
     // crates.io carries or what the owed release will publish.
