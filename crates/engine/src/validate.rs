@@ -105,8 +105,10 @@ const OWNED_ARTIFACT_HOME: &str = "completions/artifacts/";
 pub type TrackedPredicate<'a> = dyn Fn(&str) -> bool + 'a;
 
 /// The CLI-supplied git **history** predicate the engine threads through [`validate_task`]
-/// into [`crate::file_state::reconcile_committed_store`] → [`crate::file_state::detect_rename`]
-/// — a `Fn(&str) -> bool` taking a **repo-relative** path and answering whether HEAD carries
+/// into [`crate::file_state::reconcile_committed_store`] → [`crate::file_state::detect_rename`],
+/// and through [`validate_store_families`] into its read-only twin
+/// [`crate::file_state::detect_committed_store_renames`] (M55 Increment 5 / T2, so both scopes
+/// grade one cell alike) — a `Fn(&str) -> bool` taking a **repo-relative** path and answering whether HEAD carries
 /// any history for it (`git log HEAD -1 -- <path>` is non-empty). Built on the same shell-free
 /// seam as [`TrackedPredicate`]: the CLI owns the `git log` shell-out, the engine only consults
 /// the boolean.
@@ -595,7 +597,7 @@ pub struct PriorHomeInstance {
 ///
 /// - **doc↔code** — every committed doc's `code-anchor` leaves resolved against the working tree via the CLI-supplied subprocess `invoke_doc_code` seam (the [`validate_store`] body, lifted to [`store_doc_code`]). The only family that can raise a `pack-probe-integrity.*` meta-finding (it is the one subprocess probe).
 /// - **workflow↔refs** — each cascade-resolved workflow definition (the CLI enumerates + reads them, address-sorted, feeding each as a [`StoreWorkflow`] bundling its id, raw bytes, and **origin-pack** command catalog) run through the **task-independent** store-scope checks ([`crate::compose::workflow_refs_store`]): `include-resolves`, `include-cycle-absent`, `body-include-only`, the three marker-shadow checks, `fan-out-join-paired`, the **catalog-membership-only** command-ref path, and the **doctype-membership-only** schema-ref path (`schema-ref-resolves`, M43 — resolved against the **composed cascade's** doctype set derived from `schemas`, deliberately NOT per-origin: a methodology step legitimately solicits a dev doctype, `surface-contract.md` → The schema projection). The task-data checks stay at `jigc start`. `workflow_source` is the CLI's layer-aware [`StepSource`](crate::compose::StepSource), **scoped per-workflow** to that definition's origin pack via [`StepSource::scope_to_workflow`](crate::compose::StepSource::scope_to_workflow) so a loser-pack workflow's includes + command-refs resolve against ITS OWN pack, never the precedence-winner's catalog (`multi-pack.md` → Pack-local body-reference resolution: `command-ref-resolves` and the include checks fire **per-definition against that definition's own pack**). For a single pack each origin *is* the one pack, so the resolution is byte-identical to a flat catalog (the no-composition floor).
-/// - **file↔CLI-state** — the read-only committed-store hash twin ([`crate::file_state::detect_committed_store`]): each committed managed doc's on-disk hash against its `record` entry, **detect without absorb** (`record` is borrowed `&`, no write, never via `reconcile_committed_store`). `head` is the CLI-supplied [`PinnedBlob`] bound to `HEAD` (M55 Increment 4, L1's store arm): a drift whose bytes equal the doc's `HEAD` blob and conform grades **advisory** — the baseline lags `HEAD` — and `&|_| None` keeps every drift blocking.
+/// - **file↔CLI-state** — the read-only committed-store hash twin ([`crate::file_state::detect_committed_store`]): each committed managed doc's on-disk hash against its `record` entry, **detect without absorb** (`record` is borrowed `&`, no write, never via `reconcile_committed_store`). `head` is the CLI-supplied [`PinnedBlob`] bound to `HEAD` (M55 Increment 4, L1's store arm): a drift whose bytes equal the doc's `HEAD` blob and conform grades **advisory** — the baseline lags `HEAD` — and `&|_| None` keeps every drift blocking. Its rename twin ([`crate::file_state::detect_committed_store_renames`]) takes `history`, the CLI-supplied [`HistoryPredicate`] the task gate consults too (M55 Increment 5 / T2): a recorded doc missing with no history at `HEAD` is the **advisory** dangling baseline a branch switch leaves behind, routed at switching back, at both scopes; `&|_| true` keeps every such row the blocking weak deletion.
 ///
 /// The engine stays **domain-empty**: the caller (CLI) resolves the cascade and feeds in
 /// the schemas, the per-workflow definition bundles (id + bytes + origin catalog), the step
@@ -623,6 +625,7 @@ pub fn validate_store_families(
     workflow_source: &dyn crate::compose::StepSource,
     record: &FileStateRecord,
     head: &PinnedBlob<'_>,
+    history: &HistoryPredicate<'_>,
     versions: &BTreeMap<String, u32>,
     priors: &BTreeMap<String, Vec<Schema>>,
     prior_home_instances: &[PriorHomeInstance],
@@ -685,9 +688,10 @@ pub fn validate_store_families(
     // move no dangling-ref check can find. Fires **before** Family 4 (`ref-resolves`) and
     // returns the renamed `<type>:<slug>` identities, whose inbound edges are then
     // **scope-subtracted** from the ref-resolves walk below — so a moved-with-referrers doc
-    // surfaces one `reconciliation.rename` finding, never N competing dangling refs.
+    // surfaces one `reconciliation.rename` finding, never N competing dangling refs. The weak
+    // signal is graded by `history` exactly as at task scope (M55 Increment 5 / T2).
     let (rename_findings, renamed_targets) =
-        crate::file_state::detect_committed_store_renames(record, schemas, repo_root);
+        crate::file_state::detect_committed_store_renames(record, schemas, repo_root, history);
     findings.extend(rename_findings);
 
     // Family 4 — cross-doc forward-ref integrity (the store-wide analog of the task-scope
@@ -6918,6 +6922,7 @@ One sentence.
             &EmptyStepSource,
             &record,
             &|_| None,
+            &|_| true,
             &BTreeMap::new(),
             &BTreeMap::new(),
             &[],
@@ -6988,6 +6993,7 @@ One sentence.
             &EmptyStepSource,
             &record,
             &|_| None,
+            &|_| true,
             &BTreeMap::new(),
             &BTreeMap::new(),
             &[],
@@ -7064,6 +7070,7 @@ Old notes.
             &EmptyStepSource,
             &record,
             &|_| None,
+            &|_| true,
             &BTreeMap::new(),
             &BTreeMap::new(),
             &[],
@@ -7439,6 +7446,7 @@ Effects.
             &source,
             &record,
             &|_| None,
+            &|_| true,
             &BTreeMap::new(),
             &BTreeMap::new(),
             &[],
@@ -7491,6 +7499,7 @@ Effects.
             &source,
             &record,
             &|_| None,
+            &|_| true,
             &BTreeMap::new(),
             &BTreeMap::new(),
             &[],
@@ -7570,6 +7579,7 @@ Effects.
             &OnlyStepSource("author the doc:\n{{ schema:ghost }}\n"),
             &record,
             &|_| None,
+            &|_| true,
             &BTreeMap::new(),
             &BTreeMap::new(),
             &[],
@@ -7607,6 +7617,7 @@ Effects.
             &OnlyStepSource("{{schema:adr}}\n"),
             &record,
             &|_| None,
+            &|_| true,
             &BTreeMap::new(),
             &BTreeMap::new(),
             &[],
@@ -7680,6 +7691,7 @@ Slightly higher write latency for resilience.
             &EmptyStepSource,
             &record,
             &|_| None,
+            &|_| true,
             &BTreeMap::new(),
             &BTreeMap::new(),
             &[],
@@ -7740,6 +7752,7 @@ Slightly higher write latency for resilience.
             &EmptyStepSource,
             &record,
             &|_| None,
+            &|_| true,
             &BTreeMap::new(),
             &BTreeMap::new(),
             &[],
@@ -7809,6 +7822,7 @@ Slightly higher write latency for resilience.
             &EmptyStepSource,
             &record,
             &|_| None,
+            &|_| true,
             &BTreeMap::new(),
             &BTreeMap::new(),
             &[],
@@ -7883,6 +7897,7 @@ Slightly higher write latency for resilience.
             &EmptyStepSource,
             &record,
             &|_| None,
+            &|_| true,
             &BTreeMap::new(),
             &BTreeMap::new(),
             &[],
@@ -7993,6 +8008,7 @@ sections:
             &EmptyStepSource,
             &record,
             &|_| None,
+            &|_| true,
             &BTreeMap::new(),
             &BTreeMap::new(),
             &[],
@@ -8036,6 +8052,7 @@ sections:
             &EmptyStepSource,
             &record,
             &|_| None,
+            &|_| true,
             &BTreeMap::new(),
             &BTreeMap::new(),
             &[],
@@ -8180,6 +8197,7 @@ Effects.
                 &EmptyStepSource,
                 &record,
                 &|_| None,
+                &|_| true,
                 &versions,
                 &BTreeMap::new(),
                 &[],
@@ -8226,6 +8244,7 @@ Effects.
             &EmptyStepSource,
             &record,
             &|_| None,
+            &|_| true,
             &versions_v1,
             &BTreeMap::new(),
             &[],
@@ -8284,6 +8303,7 @@ Effects.
                 &EmptyStepSource,
                 &record,
                 &|_| None,
+                &|_| true,
                 &versions,
                 &BTreeMap::new(),
                 &[],
@@ -8365,6 +8385,7 @@ Effects.
                 &EmptyStepSource,
                 &record,
                 &|_| None,
+                &|_| true,
                 &versions,
                 &BTreeMap::new(),
                 &[],
@@ -8453,6 +8474,7 @@ Effects.
             &EmptyStepSource,
             &record,
             &|_| None,
+            &|_| true,
             &versions,
             &BTreeMap::new(),
             &[],
@@ -8607,6 +8629,7 @@ Effects.
             &source,
             &record,
             &|_| None,
+            &|_| true,
             &BTreeMap::new(),
             &BTreeMap::new(),
             &[],
@@ -8634,6 +8657,7 @@ Effects.
             &source,
             &record,
             &|_| None,
+            &|_| true,
             &BTreeMap::new(),
             &BTreeMap::new(),
             &[],

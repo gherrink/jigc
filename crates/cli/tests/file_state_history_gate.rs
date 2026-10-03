@@ -89,12 +89,13 @@
 //!
 //! Also driven here (the audit's remaining holes): the **milestone-create baseline
 //! writer** — the trial's actual §1.3 repro writer
-//! (`milestone_create_baseline_reset_downgrades_to_advisory`) — and the **store/task
-//! severity split** (`store_scope_stays_blocking_where_task_scope_is_advisory`): the
-//! read-only store twin passes an always-history-present predicate, so `jigc validate`
-//! keeps the blocking weak finding (and its rename exit-flip) over the exact state the
-//! task gate downgrades. Decided at `DECISIONS.md` → 2026-07-24 M45 Increment 7 planning
-//! (the deliberate-boundary verified base) — not in Decision 7's own text.
+//! (`milestone_create_baseline_reset_downgrades_to_advisory`) — and **store scope's
+//! agreement** (`store_scope_agrees_with_task_scope_on_a_history_less_baseline`): the
+//! read-only store twin consults the same history predicate, so `jigc validate` reports the
+//! advisory row the task gate does, under the same route, and exits 0. M45 Increment 7 had
+//! split the scopes — the store twin kept the blocking weak finding and its rename
+//! exit-flip — and M55 Increment 5 / T2 retired the split (`DECISIONS.md` → its build
+//! entry, and the bracketed pointer at the M45 Increment 7 planning entry).
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -1024,13 +1025,14 @@ fn milestone_create_baseline_reset_downgrades_to_advisory() {
     assert_dangling_advisory(&out, &findings, RECORD_PATH, "milestone-writer");
 }
 
-/// The **store/task severity split** — over the exact state the task gate downgrades
-/// (reset past creation, history-less), the read-only store twin passes an
-/// always-history-present predicate: `jigc validate` keeps the **blocking** weak finding
-/// and its `reconciliation.rename` exit-flip (exit 1). Decided at `DECISIONS.md` →
-/// 2026-07-24 M45 Increment 7 planning (the deliberate-boundary verified base).
+/// **Store scope agrees with task scope** (M55 Increment 5 / T2, revising the M45 Increment 7
+/// store/task split) — over the exact state the task gate downgrades (reset past creation,
+/// history-less), the read-only store twin consults the same history predicate: `jigc
+/// validate` reports the same `(code, target)` key **advisory**, exits **0** with
+/// `report_only: true` (the `oob-rename` exit flip is the blocking arm only), and carries a
+/// message and route byte-identical to the task scope's.
 #[test]
-fn store_scope_stays_blocking_where_task_scope_is_advisory() {
+fn store_scope_agrees_with_task_scope_on_a_history_less_baseline() {
     let repo = TempDir::new("scope-split");
     let home = TempDir::new("home");
     init_repo(repo.path());
@@ -1041,23 +1043,36 @@ fn store_scope_stays_blocking_where_task_scope_is_advisory() {
     // Task scope: advisory, exit 0.
     let task = "warm-the-read-cache";
     stage_commit_only(repo.path(), home.path(), task, "warm the read cache");
-    let (out, findings) = validate_task_json(repo.path(), home.path(), task, "split/task-scope");
-    assert_dangling_advisory(&out, &findings, ADR_PATH, "split/task-scope");
+    let (out, findings) = validate_task_json(repo.path(), home.path(), task, "agree/task-scope");
+    let task_rename = assert_dangling_advisory(&out, &findings, ADR_PATH, "agree/task-scope");
 
-    // Store scope: the same state keeps the blocking weak finding and flips the exit.
+    // Store scope: the same state, the same advisory row, and the sweep stays report-only.
     let out = jigc(repo.path(), home.path(), &["validate", "--format", "json"]);
     let stdout = String::from_utf8_lossy(&out.stdout);
-    let findings = parse_envelope(&stdout, "split/store-scope");
-    let rename = rename_finding(&findings, ADR_PATH, "split/store-scope");
-    assert_eq!(
-        rename["severity"], "blocking",
-        "store scope stays blocking (always-history-present twin); got:\n{rename:#?}",
-    );
     assert_eq!(
         out.status.code(),
-        Some(1),
-        "a store-scope rename finding flips the exit; stdout:\n{stdout}",
+        Some(0),
+        "an advisory dangling baseline flips no store exit; stdout:\n{stdout}",
     );
+    let envelope: serde_json::Value =
+        serde_json::from_str(&stdout).expect("the store sweep's JSON envelope");
+    assert_eq!(
+        envelope["report_only"], true,
+        "the sweep stays report-only; stdout:\n{stdout}",
+    );
+    let findings = parse_envelope(&stdout, "agree/store-scope");
+    let store_rename = rename_finding(&findings, ADR_PATH, "agree/store-scope");
+    assert_eq!(
+        store_rename["severity"], "advisory",
+        "store scope grades the history-less baseline advisory too; got:\n{store_rename:#?}",
+    );
+    assert_branch_switch_route(&store_rename, ADR_PATH, "agree/store-scope");
+    for field in ["key", "message", "route"] {
+        assert_eq!(
+            store_rename[field], task_rename[field],
+            "one producer, one route: the {field} is byte-identical at both scopes",
+        );
+    }
 }
 
 /// The **conservative default is provoked, not just written** (confidence-audit minor

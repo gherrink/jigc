@@ -1075,10 +1075,12 @@ pub const STORE_EXIT_FLIPS: &[StoreExitFlip] = &[
     },
     // An out-of-band `git mv` (M35): a structural-identity change this commit introduced.
     // The sweep worked — it is reporting a real event — so this member is **not** an
-    // untrustworthy sweep, and the class may not be stated as one.
+    // untrustworthy sweep, and the class may not be stated as one. The **blocking** arm only
+    // (M55 Increment 5 / T2): the strong signal and the history-present weak deletion flip;
+    // the advisory dangling baseline a branch switch leaves behind exits 0, as at task scope.
     StoreExitFlip {
         id: "oob-rename",
-        matches: |f| f.code == "reconciliation.rename",
+        matches: |f| f.code == "reconciliation.rename" && f.severity == Severity::Blocking,
         witness: || {
             Finding::graded(
                 Severity::Blocking,
@@ -9858,6 +9860,59 @@ mod tests {
         let json_out = validation_store(Format::Json, &rename, &BTreeSet::new());
         let value: serde_json::Value = serde_json::from_str(&json_out).expect("valid JSON");
         assert_eq!(value["report_only"], serde_json::Value::Bool(false));
+    }
+
+    /// M55 Increment 5 / T2 (P3) — **the `oob-rename` flip is the blocking arm only.** A
+    /// history-less dangling baseline reaches store scope as an **advisory**
+    /// `reconciliation.rename` (the store twin grades by history, as the task gate does), and
+    /// it must exit 0 there as it does at task scope: it matches **no** `STORE_EXIT_FLIPS`
+    /// member, so `report_only` stays true. The blocking witness — the strong signal and the
+    /// history-present weak deletion share its severity — still matches `oob-rename`.
+    #[test]
+    fn an_advisory_rename_flips_no_exit_and_the_blocking_witness_still_does() {
+        use engine::finding::{Finding, Location, Route, Severity};
+
+        let resolved = crate::cascade_util::no_delta_resolved().expect("resolves");
+        let dangling = ValidationReport::new(
+            vec![Finding::graded(
+                Severity::Advisory,
+                "reconciliation.rename",
+                "tracked managed doc adr:cache (decisions/cache.md) is missing, but the path \
+                 has no history — the checkout moved underneath the file-state cache, not a \
+                 deletion",
+                Some(Location::addressed("decisions/cache.md", 1, 1)),
+                Some(Route::informational(
+                    "nothing on this checkout needs to change — a branch switch left this \
+                     baseline behind, and decisions/cache.md lives on a branch this checkout \
+                     does not carry: switch back to that branch to work on it again",
+                )),
+            )],
+            &resolved,
+        );
+        assert!(
+            first_store_exit_flip(&dangling).is_none(),
+            "an advisory rename matches no exit flip; matched {:?}",
+            first_store_exit_flip(&dangling).map(|flip| flip.id),
+        );
+        let json_out = validation_store(Format::Json, &dangling, &BTreeSet::new());
+        let value: serde_json::Value = serde_json::from_str(&json_out).expect("valid JSON");
+        assert_eq!(value["report_only"], serde_json::Value::Bool(true));
+        let agent = validation_store(Format::Agent, &dangling, &BTreeSet::new());
+        assert!(
+            agent.contains("report-only at store scope (exit 0)"),
+            "the advisory row closes on the report-only line: {agent}",
+        );
+
+        let oob = STORE_EXIT_FLIPS
+            .iter()
+            .find(|flip| flip.id == "oob-rename")
+            .expect("the oob-rename member stays on the axis");
+        let witness = ValidationReport::new(vec![(oob.witness)()], &resolved);
+        assert_eq!(
+            first_store_exit_flip(&witness).map(|flip| flip.id),
+            Some("oob-rename"),
+            "the blocking rename witness still flips the exit as `oob-rename`",
+        );
     }
 
     /// M47 Inc 10 / T6 (D12) — **the severity label says whose grading it is.** The trial

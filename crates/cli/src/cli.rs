@@ -1470,6 +1470,13 @@ fn validate_store_in_repo(cwd: &Path) -> Result<StoreSweep> {
     // shells out zero times; any git failure answers `None`, which keeps the blocking drift.
     let head = |path: &str| crate::task::git_blob_at(&jigc_home, "HEAD", path);
 
+    // The rename twin's history seam (M55 Increment 5 / T2, P2): the task scope's own
+    // predicate and its conservative default — a `git log` failure reads history-present, so
+    // a possible deletion keeps blocking. Asked only of a recorded doc missing on disk with
+    // no content-matching candidate, so a store with no missing baseline shells out zero
+    // more times.
+    let history = |path: &str| crate::task::git_path_has_history(&jigc_home, path).unwrap_or(true);
+
     let mut report = engine::validate::validate_store_families(
         &jigc_home,
         &schemas,
@@ -1479,6 +1486,7 @@ fn validate_store_in_repo(cwd: &Path) -> Result<StoreSweep> {
         &workflow_source,
         &record,
         &head,
+        &history,
         &versions,
         &priors,
         &at_prior_homes,

@@ -1006,10 +1006,17 @@ pub fn detect_committed_store(
 /// never resurrects a deliberately-renamed-away doc via the weak-signal restore, and never
 /// mutates the record. The only I/O is reading the committed `.md` bytes (for the untracked
 /// candidates' hashes). Findings + identities aggregate in path-sorted order.
+///
+/// `history` is the CLI-supplied [`HistoryPredicate`](crate::validate::HistoryPredicate) the
+/// task gate's twin consults too (M55 Increment 5 / T2): a missing path with no content-
+/// matching candidate and no history at `HEAD` is the **advisory** dangling baseline a branch
+/// switch leaves behind, one with history the **blocking** weak deletion. It is asked only of
+/// such a path, so a store with no missing baseline never consults it.
 pub fn detect_committed_store_renames(
     record: &FileStateRecord,
     schemas: &std::collections::BTreeMap<String, crate::schema::Schema>,
     repo_root: &Path,
+    history: &crate::validate::HistoryPredicate<'_>,
 ) -> (Vec<Finding>, std::collections::BTreeSet<String>) {
     let mut findings = Vec::new();
     let mut renamed: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
@@ -1049,13 +1056,11 @@ pub fn detect_committed_store_renames(
             continue;
         }
         let from = identity_of(&path, schemas).unwrap_or_else(|| path.clone());
-        // The read-only store twin passes an always-history-present predicate: `jigc validate`
-        // store scope stays byte-identical to today (it keeps reporting the blocking weak
-        // finding). The M45 advisory downgrade is scoped to the task/finalize gate — a
-        // deliberate boundary, decided at `DECISIONS.md` → 2026-07-24 M45 Increment 7
-        // planning (the "only the task path is decided" verified base; Decision 7's own text
-        // does not state the split). Pinned by
-        // `file_state_history_gate::store_scope_stays_blocking_where_task_scope_is_advisory`.
+        // The store twin grades the weak signal by the caller's history predicate, exactly as
+        // the task gate does (M55 Increment 5 / T2, revising the M45 Increment 7 store/task
+        // split): a path with no history at `HEAD` is the advisory dangling baseline, routed at
+        // the branch switch, so both scopes report one key at one severity under one route.
+        // Pinned by `file_state_history_gate::store_scope_agrees_with_task_scope_on_a_history_less_baseline`.
         // No live record at store scope: this twin sweeps no task, so no work unit owns the
         // sweep and the caller-supplied carve-out has no subject (`LiveRecord::none`).
         let detected = detect_rename(
@@ -1063,7 +1068,7 @@ pub fn detect_committed_store_renames(
             &from,
             &recorded_hash,
             &untracked_refs,
-            &|_| true,
+            history,
             &LiveRecord::none(),
             repo_root,
         );
@@ -2858,6 +2863,116 @@ Referrers must point at the new decision.
             !route.contains("jigc unmanage") && !route.contains('`'),
             "the route never offers an index drop and carries no command span: {route:?}"
         );
+    }
+
+    /// A committed store whose record baselines `decisions/gone.md` (absent on disk) at
+    /// [`ADR_B_BASE`]'s hash, and — when `moved` — carries those same bytes at the untracked
+    /// `decisions/moved.md`, the strong-signal `git mv` shape. The store twin's fixture.
+    fn store_with_missing_baseline(tag: &str, moved: bool) -> (TempRoot, FileStateRecord) {
+        let root = TempRoot::new(tag);
+        let decisions = root.path().join("decisions");
+        std::fs::create_dir_all(&decisions).expect("mk decisions/");
+        if moved {
+            std::fs::write(decisions.join("moved.md"), ADR_B_BASE).expect("write moved ADR");
+        }
+        let mut record = FileStateRecord::new();
+        record.record("decisions/gone.md", hash_bytes(ADR_B_BASE.as_bytes()));
+        (root, record)
+    }
+
+    fn adr_schemas() -> std::collections::BTreeMap<String, Schema> {
+        std::collections::BTreeMap::from([("adr".to_string(), adr_schema())])
+    }
+
+    /// (M55 Increment 5 / T2, i) **The store twin grades by history, as the task gate does.**
+    /// A recorded doc missing on disk, no content-matching candidate, and **no** history at
+    /// `HEAD` (a branch switch left the baseline behind): [`detect_committed_store_renames`]
+    /// emits the advisory dangling-baseline finding — the task scope's own producer, so the
+    /// route is the branch switch's and the key is the same — and still reports the identity
+    /// as missing, so its inbound edges are subtracted from `ref-resolves` exactly as before.
+    #[test]
+    fn store_twin_history_less_baseline_is_the_advisory_dangling_finding() {
+        let (root, record) = store_with_missing_baseline("store-twin-history-less", false);
+        let (findings, renamed) =
+            detect_committed_store_renames(&record, &adr_schemas(), root.path(), &|_| false);
+
+        assert_eq!(
+            findings.len(),
+            1,
+            "one finding for the one baseline: {findings:?}"
+        );
+        let f = &findings[0];
+        assert_eq!(f.code, "reconciliation.rename");
+        assert_eq!(
+            f.severity,
+            Severity::Advisory,
+            "a history-less dangling baseline is advisory at store scope too: {f:?}"
+        );
+        assert_eq!(
+            f,
+            &rename_dangling_baseline_finding("decisions/gone.md", "adr:gone"),
+            "one producer at both scopes: the store row is the task row, byte for byte"
+        );
+        assert!(
+            !f.route
+                .as_deref()
+                .unwrap_or_default()
+                .contains("jigc unmanage"),
+            "the store row never offers an index drop: {f:?}"
+        );
+        assert_eq!(
+            renamed,
+            std::collections::BTreeSet::from(["adr:gone".to_string()]),
+            "the identity is still reported missing, so `ref-resolves` subtracts its edges"
+        );
+    }
+
+    /// (M55 Increment 5 / T2, ii) **A path with history keeps the blocking weak finding.**
+    /// The same state with `HEAD` history for the path is a genuine deletion: the store
+    /// twin's emission is unchanged from before the predicate was threaded.
+    #[test]
+    fn store_twin_history_present_baseline_keeps_the_blocking_weak_finding() {
+        let (root, record) = store_with_missing_baseline("store-twin-history-present", false);
+        let (findings, _) =
+            detect_committed_store_renames(&record, &adr_schemas(), root.path(), &|_| true);
+
+        assert_eq!(
+            findings,
+            vec![rename_weak_finding("decisions/gone.md", "adr:gone")],
+            "a genuine deletion keeps the blocking weak finding at store scope"
+        );
+        assert_eq!(findings[0].severity, Severity::Blocking);
+    }
+
+    /// (M55 Increment 5 / T2, iii) **The strong signal never consults history.** A
+    /// content-preserving bare `git mv` is the same blocking strong finding whatever the
+    /// predicate answers, and the predicate is not even asked.
+    #[test]
+    fn store_twin_strong_signal_is_unchanged_under_either_history() {
+        let (root, record) = store_with_missing_baseline("store-twin-strong", true);
+        for history in [false, true] {
+            let asked = std::cell::Cell::new(false);
+            let predicate = |_: &str| {
+                asked.set(true);
+                history
+            };
+            let (findings, _) =
+                detect_committed_store_renames(&record, &adr_schemas(), root.path(), &predicate);
+            assert_eq!(
+                findings,
+                vec![rename_strong_finding(
+                    "decisions/gone.md",
+                    "adr:gone",
+                    "decisions/moved.md",
+                    root.path(),
+                )],
+                "history {history}: the strong `git mv` finding is unchanged"
+            );
+            assert!(
+                !asked.get(),
+                "history {history}: the strong arm never asks the history predicate"
+            );
+        }
     }
 
     /// The command-surface sweep [`reconcile_committed_store`] routes committed-store
