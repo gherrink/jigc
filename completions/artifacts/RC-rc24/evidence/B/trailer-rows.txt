@@ -1,0 +1,5 @@
+session since 2026-10-03T22:21:47Z · 2 committing-door record(s) at exit 0 · 2 commit(s) created since
+commit    row        at      door  ·  subject  ·  Co-Authored-By lines
+7757a4c7  exact      reflog  task finalize fix-get-summary-with-empty --format json  ·  fix(summary): reject GET /summary/ with no serie  ·  Co-Authored-By: Claude <noreply@anthropic.com>
+4b80510a  exact      HEAD    task finalize amend-7757a4c --format json  ·  fix(summary): reject GET /summary/ with no serie  ·  Co-Authored-By: Claude <noreply@anthropic.com>
+tally: exact 2
