@@ -13,7 +13,8 @@
 //! The pull is real: a local bare `origin`, this corpus as clone A, a second clone B that
 //! commits and pushes, and clone A that `git pull --ff-only`s. Clone A is a
 //! `[dev ▸ methodology]` corpus whose `VISION.md` a landed finalize has baselined
-//! ([`State::CommittedSingletons`]).
+//! ([`State::CommittedSingletons`]). The pull and the readers live in
+//! `support::branch_and_pull`, shared with flow 59 (M55 Increment 11 / T5).
 //!
 //! - **(a)** after the pull, a `single-task` editing `vision#open-questions` reads advisory
 //!   `reconciliation.absorb` at `VISION.md` from `task validate`, and `task finalize` lands
@@ -39,161 +40,22 @@
 //! - **(i)** an uncommitted edit keeps the blocking drift.
 
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::path::Path;
+use std::process::Output;
 
+use crate::support::branch_and_pull::{
+    LAG_ROUTE, TASK_PROSE, TEAMMATE_LINE, Team, VISION, add_teammate_line, blocking_probes,
+    commit_count, rows_at, start_task, store_sweep,
+};
 use crate::support::run_then_parse::stdout_json;
-use crate::support::trial_corpus::{State, TrialCorpus};
-
-/// The managed doc the teammate edits and the task touches.
-const VISION: &str = "VISION.md";
-
-/// The line the teammate's commit adds to `VISION.md`'s thesis — conformant prose.
-const TEAMMATE_LINE: &str = "A teammate's pulled line.";
-
-/// The prose the task writes into `vision#open-questions`.
-const TASK_PROSE: &str = "Which domains earn a pack, and when.";
+use crate::support::trial_corpus::{State, TrialCorpus, read};
 
 /// The file-state record every assertion about baselines reads.
 const FILE_STATE: &str = ".jigc/state/file-state.json";
 
-/// Clone A (the corpus) wired to a local bare `origin`, plus clone B — the teammate.
-struct Team {
-    corpus: TrialCorpus,
-    teammate: PathBuf,
-}
-
-impl Team {
-    /// Build a baselined `[dev ▸ methodology]` corpus and give it a teammate.
-    fn new() -> Self {
-        let corpus = TrialCorpus::build(State::CommittedSingletons);
-        let root = corpus
-            .repo()
-            .parent()
-            .expect("the corpus root")
-            .to_path_buf();
-        let origin = root.join("origin.git");
-        let teammate = root.join("teammate");
-        git_in(
-            &root,
-            &corpus,
-            &["clone", "-q", "--bare", "repo", "origin.git"],
-        );
-        corpus.git(&["remote", "add", "origin", path_str(&origin)]);
-        corpus.git(&["fetch", "-q", "origin"]);
-        corpus.git(&["branch", "-q", "--set-upstream-to=origin/main", "main"]);
-        git_in(&root, &corpus, &["clone", "-q", "origin.git", "teammate"]);
-        git_in(
-            &teammate,
-            &corpus,
-            &["config", "user.email", "mate@example.com"],
-        );
-        git_in(&teammate, &corpus, &["config", "user.name", "Teammate"]);
-        Team { corpus, teammate }
-    }
-
-    /// The teammate edits `rel` with `edit`, commits and pushes it, and clone A pulls it.
-    /// Clone A pushes first, so whatever it committed since (a milestone record) is what
-    /// the teammate builds on and the pull is a fast-forward.
-    fn pull_teammate_edit(&self, rel: &str, edit: impl Fn(&str) -> String) {
-        self.corpus.git(&["push", "-q", "origin", "main"]);
-        git_in(&self.teammate, &self.corpus, &["pull", "-q", "--ff-only"]);
-        let path = self.teammate.join(rel);
-        let before = fs::read_to_string(&path).expect("read the teammate's copy");
-        let after = edit(&before);
-        assert_ne!(before, after, "the teammate's edit must change {rel}");
-        fs::write(&path, after).expect("write the teammate's edit");
-        git_in(
-            &self.teammate,
-            &self.corpus,
-            &["commit", "-qam", "docs: teammate edit"],
-        );
-        git_in(
-            &self.teammate,
-            &self.corpus,
-            &["push", "-q", "origin", "main"],
-        );
-        self.corpus.git(&["pull", "-q", "--ff-only"]);
-        assert_eq!(
-            read(&self.corpus.repo(), rel),
-            read(&self.teammate, rel),
-            "the pull brought the teammate's {rel} into clone A",
-        );
-    }
-
-    /// The teammate's conformant `VISION.md` edit, pulled.
-    fn pull_vision_edit(&self) {
-        self.pull_teammate_edit(VISION, add_teammate_line);
-    }
-
-    fn repo(&self) -> PathBuf {
-        self.corpus.repo()
-    }
-}
-
-/// Run `git <args>` in `dir` under the corpus's `$HOME`, asserting success.
-fn git_in(dir: &Path, corpus: &TrialCorpus, args: &[&str]) -> String {
-    let out = Command::new("git")
-        .args(args)
-        .current_dir(dir)
-        .env("HOME", corpus.home())
-        .output()
-        .expect("spawn git");
-    assert!(
-        out.status.success(),
-        "git {args:?} in {} failed: {}",
-        dir.display(),
-        String::from_utf8_lossy(&out.stderr),
-    );
-    String::from_utf8_lossy(&out.stdout).trim().to_string()
-}
-
-fn path_str(path: &Path) -> &str {
-    path.to_str().expect("a UTF-8 temp path")
-}
-
-fn read(dir: &Path, rel: &str) -> String {
-    fs::read_to_string(dir.join(rel)).unwrap_or_else(|e| panic!("read {rel}: {e}"))
-}
-
-/// The teammate's edit: one conformant line appended to the thesis.
-fn add_teammate_line(vision: &str) -> String {
-    vision.replacen(
-        "A deterministic CLI assembles exactly the context a task needs.\n",
-        &format!(
-            "A deterministic CLI assembles exactly the context a task needs.\n{TEAMMATE_LINE}\n"
-        ),
-        1,
-    )
-}
-
 /// The `file-state` record's bytes, as a pure reader must leave them.
 fn file_state(repo: &Path) -> Vec<u8> {
     fs::read(repo.join(FILE_STATE)).expect("read the file-state record")
-}
-
-fn commit_count(corpus: &TrialCorpus) -> u32 {
-    corpus
-        .git(&["rev-list", "--count", "HEAD"])
-        .parse()
-        .expect("a commit count")
-}
-
-/// Mint a `single-task`, fill its commit doc, and return its id.
-fn start_task(corpus: &TrialCorpus, intent: &str) -> String {
-    let task = corpus.start_workflow("single-task", intent);
-    fill_commit(corpus, &task);
-    task
-}
-
-fn fill_commit(corpus: &TrialCorpus, task: &str) {
-    corpus.set_field(&format!("commit:{task}#type"), task, "docs");
-    corpus.set_field(&format!("commit:{task}#scope"), task, "vision");
-    corpus.set_slot(
-        &format!("commit:{task}#summary"),
-        task,
-        "sharpen the open questions",
-    );
 }
 
 /// `(code, severity, address)` of every finding in a `--format json` envelope.
@@ -465,38 +327,6 @@ fn a_pulled_milestone_record_edit_still_conflict_blocks_add_task() {
 }
 
 // ───────── T2 — the store arm: the baseline lags `HEAD` ─────────
-
-/// The informational route the store arm carries — the design's words, verbatim.
-const LAG_ROUTE: &str = "the baseline lags `HEAD`; absorbed at the next finalize";
-
-/// `jigc validate --format json` over clone A: the store sweep is report-only, so it exits 0.
-fn store_sweep(corpus: &TrialCorpus, context: &str) -> serde_json::Value {
-    let out = corpus.jigc(&["validate", "--format", "json"]);
-    stdout_json(&out, &[0], context)
-}
-
-/// Every finding in `envelope` carrying `code` at `address`.
-fn rows_at<'a>(
-    envelope: &'a serde_json::Value,
-    code: &str,
-    address: &str,
-) -> Vec<&'a serde_json::Value> {
-    envelope["findings"]
-        .as_array()
-        .unwrap_or_else(|| panic!("the envelope carries `findings`: {envelope}"))
-        .iter()
-        .filter(|f| f["code"] == code && f["location"]["address"] == address)
-        .collect()
-}
-
-fn blocking_probes(envelope: &serde_json::Value) -> Vec<&str> {
-    envelope["blocking_probes"]
-        .as_array()
-        .unwrap_or_else(|| panic!("the envelope carries `blocking_probes`: {envelope}"))
-        .iter()
-        .filter_map(serde_json::Value::as_str)
-        .collect()
-}
 
 /// **(f)** Flow E's L1 half at store scope: after the pull, `jigc validate` exits 0 and the
 /// `VISION.md` row is `file-state.hash-matches` at **advisory**, routed *the baseline lags

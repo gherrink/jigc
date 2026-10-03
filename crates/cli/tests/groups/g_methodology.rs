@@ -31,6 +31,16 @@ mod flow25_migrate_changelog;
 mod flow29_acceptance;
 #[path = "../flow32_acceptance.rs"]
 mod flow32_acceptance;
+#[path = "../flow55_report_and_read_back.rs"]
+mod flow55_report_and_read_back;
+#[path = "../flow56_mid_task_report.rs"]
+mod flow56_mid_task_report;
+#[path = "../flow57_overwrite_refused.rs"]
+mod flow57_overwrite_refused;
+#[path = "../flow58_several_reporters.rs"]
+mod flow58_several_reporters;
+#[path = "../flow59_branch_and_pull.rs"]
+mod flow59_branch_and_pull;
 #[path = "../hook_output_axis.rs"]
 mod hook_output_axis;
 #[path = "../invocation_log.rs"]

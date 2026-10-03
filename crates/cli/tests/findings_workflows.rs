@@ -57,20 +57,20 @@ use support::run_then_parse::stdout_json;
 use support::trial_corpus::{State, TrialCorpus};
 
 /// The three workflows the router catalog leaves out, each reached by name (§2).
-const HIDDEN: [&str; 3] = [
+pub(crate) const HIDDEN: [&str; 3] = [
     "report-jigc-feedback",
     "triage-jigc-feedback",
     "triage-inconsistency",
 ];
 
 /// The router-visible report workflow (§2).
-const VISIBLE: &str = "report-inconsistency";
+pub(crate) const VISIBLE: &str = "report-inconsistency";
 
 /// The jigc-feedback finding every arm files first.
-const TITLE: &str = "Finalize sweeps a staged path";
+pub(crate) const TITLE: &str = "Finalize sweeps a staged path";
 
 /// A path another task staged in the same checkout — never the report's to commit.
-const FOREIGN: &str = "src/foreign.rs";
+pub(crate) const FOREIGN: &str = "src/foreign.rs";
 
 /// A fenced repro whose `#`-led line would be refused unfenced (the author step says so).
 const REPRO: &str =
@@ -80,7 +80,7 @@ const REPRO: &str =
 const INCONSISTENCY: &str = "Cache eviction disagrees";
 
 /// The three sides of the inconsistency: `(title, --slug, says)`.
-const SIDES: [(&str, &str, &str); 3] = [
+pub(crate) const SIDES: [(&str, &str, &str); 3] = [
     ("src/cache.rs", "code", "The cache evicts the oldest entry."),
     (
         "adr:cache-strategy#decision",
@@ -90,7 +90,7 @@ const SIDES: [(&str, &str, &str); 3] = [
     ("docs/cache.md", "guide", "The cache never evicts."),
 ];
 
-fn text(out: &Output) -> String {
+pub(crate) fn text(out: &Output) -> String {
     format!(
         "--- stdout ---\n{}\n--- stderr ---\n{}",
         String::from_utf8_lossy(&out.stdout),
@@ -101,14 +101,14 @@ fn text(out: &Output) -> String {
 /// A composed work-workflow: the task id the binary printed it minted, the composed text,
 /// and the checkout its emitted lines run in — the repository for an ordinary task, the
 /// sub-task's own worktree for a fan-out sub-task.
-struct Composed {
-    task: String,
-    text: String,
-    cwd: PathBuf,
+pub(crate) struct Composed {
+    pub(crate) task: String,
+    pub(crate) text: String,
+    pub(crate) cwd: PathBuf,
 }
 
 /// The id `stdout` says was minted — read off the emitted `task minted:` line.
-fn minted(stdout: &str) -> String {
+pub(crate) fn minted(stdout: &str) -> String {
     stdout
         .lines()
         .find_map(|line| line.strip_prefix("task minted: "))
@@ -118,7 +118,7 @@ fn minted(stdout: &str) -> String {
 }
 
 /// `jigc start --workflow <workflow> <intent>` — the by-name door.
-fn start(corpus: &TrialCorpus, workflow: &str, intent: &str) -> Composed {
+pub(crate) fn start(corpus: &TrialCorpus, workflow: &str, intent: &str) -> Composed {
     let text = corpus.jigc_ok(&["start", "--workflow", workflow, intent]);
     Composed {
         task: minted(&text),
@@ -130,7 +130,7 @@ fn start(corpus: &TrialCorpus, workflow: &str, intent: &str) -> Composed {
 /// The one emitted command line of `text` that begins with `prefix`, its `Run: \`…\``
 /// decoration stripped. A heredoc-opening example line (`… <<'EOF'`) is the illustrated form
 /// of a line the step also emits bare, so it is skipped; the bare line is the one run.
-fn emitted_line(text: &str, prefix: &str) -> String {
+pub(crate) fn emitted_line(text: &str, prefix: &str) -> String {
     let lines: Vec<&str> = text
         .lines()
         .map(str::trim)
@@ -152,7 +152,7 @@ fn emitted_line(text: &str, prefix: &str) -> String {
 /// Split an emitted line into argv the way a shell would for these lines — whitespace
 /// separates, a double-quoted run is one word — then fill every `<…>` placeholder from
 /// `fills`. An unfilled placeholder panics: a line is run only once nothing is left to fill.
-fn argv(line: &str, fills: &[(&str, &str)]) -> Vec<String> {
+pub(crate) fn argv(line: &str, fills: &[(&str, &str)]) -> Vec<String> {
     let mut words = Vec::new();
     let mut word = String::new();
     let mut quoted = false;
@@ -201,7 +201,7 @@ fn argv(line: &str, fills: &[(&str, &str)]) -> Vec<String> {
 
 /// Run the emitted line beginning with `prefix`, its placeholders filled, `stdin` fed when
 /// given; asserts it succeeded and returns its stdout.
-fn run_emitted(
+pub(crate) fn run_emitted(
     corpus: &TrialCorpus,
     composed: &Composed,
     prefix: &str,
@@ -248,7 +248,7 @@ fn create(corpus: &TrialCorpus, composed: &Composed, ty: &str, title: &str) -> S
 }
 
 /// The `<slug>` half of a `type:slug` address.
-fn slug_of(address: &str) -> String {
+pub(crate) fn slug_of(address: &str) -> String {
     address
         .split_once(':')
         .unwrap_or_else(|| panic!("a `type:slug` address; got `{address}`"))
@@ -257,7 +257,7 @@ fn slug_of(address: &str) -> String {
 }
 
 /// Fill the task's commit doc through the commit step's emitted lines.
-fn fill_commit(corpus: &TrialCorpus, composed: &Composed, scope: &str) {
+pub(crate) fn fill_commit(corpus: &TrialCorpus, composed: &Composed, scope: &str) {
     let commit = format!("jigc doc set-field commit:{}", composed.task);
     run_emitted(
         corpus,
@@ -293,7 +293,7 @@ fn fill_commit(corpus: &TrialCorpus, composed: &Composed, scope: &str) {
 /// Author a jigc-feedback finding titled `title` in a fresh `report-jigc-feedback` task,
 /// every write through the composed text's emitted lines; the commit doc is filled too, so
 /// only the finalize is left. Returns the composed task and the finding's address.
-fn author_jigc_feedback(corpus: &TrialCorpus, title: &str) -> (Composed, String) {
+pub(crate) fn author_jigc_feedback(corpus: &TrialCorpus, title: &str) -> (Composed, String) {
     let composed = start(
         corpus,
         "report-jigc-feedback",
@@ -306,7 +306,7 @@ fn author_jigc_feedback(corpus: &TrialCorpus, title: &str) -> (Composed, String)
 
 /// Create and fill a jigc-feedback finding titled `title` in the composed report task,
 /// every write — and the read-back — through its emitted lines. Returns its address.
-fn file_jigc_feedback(corpus: &TrialCorpus, composed: &Composed, title: &str) -> String {
+pub(crate) fn file_jigc_feedback(corpus: &TrialCorpus, composed: &Composed, title: &str) -> String {
     let address = create(corpus, composed, "jigc-feedback", title);
     let slug = slug_of(&address);
     let fills = [("<slug>", slug.as_str())];
@@ -355,7 +355,7 @@ fn file_jigc_feedback(corpus: &TrialCorpus, composed: &Composed, title: &str) ->
 /// Author the inconsistency titled [`INCONSISTENCY`] with its three [`SIDES`] in the
 /// composed `report-inconsistency` task, every write through the composed text's emitted
 /// lines; the commit doc is filled too, so only the finalize is left. Returns its address.
-fn author_inconsistency(corpus: &TrialCorpus, composed: &Composed) -> String {
+pub(crate) fn author_inconsistency(corpus: &TrialCorpus, composed: &Composed) -> String {
     let address = file_inconsistency(corpus, composed);
     fill_commit(corpus, composed, "inconsistencies");
     address
@@ -363,7 +363,7 @@ fn author_inconsistency(corpus: &TrialCorpus, composed: &Composed) -> String {
 
 /// Create and fill the inconsistency titled [`INCONSISTENCY`] with its three [`SIDES`] in
 /// the composed report task, every write through its emitted lines. Returns its address.
-fn file_inconsistency(corpus: &TrialCorpus, composed: &Composed) -> String {
+pub(crate) fn file_inconsistency(corpus: &TrialCorpus, composed: &Composed) -> String {
     let address = create(corpus, composed, "inconsistency", INCONSISTENCY);
     let slug = slug_of(&address);
     run_emitted(
@@ -411,7 +411,7 @@ fn file_inconsistency(corpus: &TrialCorpus, composed: &Composed) -> String {
 }
 
 /// Run the composed text's emitted finalize line.
-fn finalize(corpus: &TrialCorpus, composed: &Composed) -> Output {
+pub(crate) fn finalize(corpus: &TrialCorpus, composed: &Composed) -> Output {
     run_emitted_raw(
         corpus,
         composed,
@@ -422,7 +422,7 @@ fn finalize(corpus: &TrialCorpus, composed: &Composed) -> Output {
 }
 
 /// The paths HEAD's commit changed.
-fn head_files(corpus: &TrialCorpus) -> Vec<String> {
+pub(crate) fn head_files(corpus: &TrialCorpus) -> Vec<String> {
     corpus
         .git(&["show", "--name-only", "--pretty=format:", "HEAD"])
         .lines()
@@ -431,7 +431,7 @@ fn head_files(corpus: &TrialCorpus) -> Vec<String> {
         .collect()
 }
 
-fn commit_count(corpus: &TrialCorpus) -> usize {
+pub(crate) fn commit_count(corpus: &TrialCorpus) -> usize {
     corpus
         .git(&["rev-list", "--count", "HEAD"])
         .parse()
@@ -439,7 +439,7 @@ fn commit_count(corpus: &TrialCorpus) -> usize {
 }
 
 /// The committed `doc list <ty> --format json` row for `address`.
-fn listed_row(corpus: &TrialCorpus, ty: &str, address: &str) -> Value {
+pub(crate) fn listed_row(corpus: &TrialCorpus, ty: &str, address: &str) -> Value {
     let listing: Value = stdout_json(
         &corpus.jigc(&["doc", "list", ty, "--format", "json"]),
         &[0],
@@ -455,7 +455,7 @@ fn listed_row(corpus: &TrialCorpus, ty: &str, address: &str) -> Value {
 }
 
 /// The committed `doc show <address> --format json` serve.
-fn shown(corpus: &TrialCorpus, address: &str) -> Value {
+pub(crate) fn shown(corpus: &TrialCorpus, address: &str) -> Value {
     stdout_json(
         &corpus.jigc(&["doc", "show", address, "--format", "json"]),
         &[0],
@@ -464,7 +464,13 @@ fn shown(corpus: &TrialCorpus, address: &str) -> Value {
 }
 
 /// Assert both read surfaces carry `title` and project `fields.status == "open"`.
-fn assert_reads_open(corpus: &TrialCorpus, ty: &str, address: &str, title: &str, when: &str) {
+pub(crate) fn assert_reads_open(
+    corpus: &TrialCorpus,
+    ty: &str,
+    address: &str,
+    title: &str,
+    when: &str,
+) {
     let row = listed_row(corpus, ty, address);
     let show = shown(corpus, address);
     for (surface, value) in [("`doc list` row", &row), ("`doc show`", &show)] {
@@ -478,7 +484,7 @@ fn assert_reads_open(corpus: &TrialCorpus, ty: &str, address: &str, title: &str,
 }
 
 /// The router catalog `jigc start "<intent>"` composes — every `- <id> — <when>` line's id.
-fn catalog(corpus: &TrialCorpus) -> (String, Vec<String>) {
+pub(crate) fn catalog(corpus: &TrialCorpus) -> (String, Vec<String>) {
     let text = corpus.jigc_ok(&["start", "a disagreement turned up mid-work"]);
     let ids: Vec<String> = text
         .lines()
@@ -728,7 +734,7 @@ const PINNED_BY: &str =
     "findings_workflows::report_jigc_feedback_lands_its_doc_alone_and_reads_back_open";
 
 /// The `resolution` a triage authors.
-const RESOLUTION: &str = "Fixed: the report's finalize commits its doc alone.";
+pub(crate) const RESOLUTION: &str = "Fixed: the report's finalize commits its doc alone.";
 
 /// `text` with every whitespace run folded to one space — composed prose wraps its lines,
 /// so a sentence is asserted on its words, not on where the step file broke it.
@@ -737,7 +743,7 @@ fn prose(text: &str) -> String {
 }
 
 /// Assert the composed triage text states the leaves it changes and the intent form for `ty`.
-fn assert_triage_text(composed: &Composed, ty: &str, leaves: &str) {
+pub(crate) fn assert_triage_text(composed: &Composed, ty: &str, leaves: &str) {
     let words = prose(&composed.text);
     for sentence in [
         format!("This step changes {leaves} — and nothing else"),
@@ -763,7 +769,7 @@ fn assert_triage_text(composed: &Composed, ty: &str, leaves: &str) {
 
 /// Start `workflow` the way its step says to — the finding named in plain words, its slug
 /// alone — and assert the task id is minted from that slug, unmangled.
-fn start_triage(corpus: &TrialCorpus, workflow: &str, address: &str) -> Composed {
+pub(crate) fn start_triage(corpus: &TrialCorpus, workflow: &str, address: &str) -> Composed {
     let slug = slug_of(address);
     let composed = start(corpus, workflow, &slug);
     assert!(
@@ -787,7 +793,7 @@ fn land_report(corpus: &TrialCorpus, composed: &Composed, ty: &str, address: &st
 
 /// Stage a foreign path, run the triage task's emitted finalize, and assert it lands one
 /// commit holding `path` alone, the foreign path left staged.
-fn assert_lands_alone(corpus: &TrialCorpus, composed: &Composed, path: &str) {
+pub(crate) fn assert_lands_alone(corpus: &TrialCorpus, composed: &Composed, path: &str) {
     fs::create_dir_all(corpus.repo().join("src")).expect("mk src/");
     fs::write(corpus.repo().join(FOREIGN), "pub fn other_task() {}\n").expect("foreign file");
     corpus.git(&["add", "--", FOREIGN]);
