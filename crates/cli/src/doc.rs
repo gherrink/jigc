@@ -5608,9 +5608,8 @@ pub const STAGED_KEY: &str = "staged";
 /// The whole-doc json wrapper, keyed by [`WHOLE_DOC_KEYS`] (the set `jigc doc show
 /// --help` renders and `crates/cli/tests/doc_show.rs` drives against these bytes — it
 /// is not restated here, which is what let the help's copy go two keys stale).
-/// `fields` flattens
-/// every simple section's fields (the header's front-matter + any body trailing group)
-/// keyed by leaf id; `sections` carries one entry per slot section (its prose string)
+/// `fields` is [`header_fields_json`] — every simple section's fields keyed by leaf id,
+/// an absent defaulted field at its schema default; `sections` carries one entry per slot section (its prose string)
 /// and per repeatable section (its item array) — a header/fields-only section
 /// contributes to `fields` alone. A scalar field serializes as its string, a list-
 /// cardinality field as a json array; slot prose is trimmed (the clean machine value —
@@ -5628,20 +5627,12 @@ fn whole_doc_json(
     source: &str,
     address: &Address,
 ) -> serde_json::Value {
-    let mut fields = serde_json::Map::new();
+    let fields = header_fields_json(schema, doc);
     let mut sections = serde_json::Map::new();
     for section in &schema.sections {
         let parsed = doc.sections.iter().find(|s| s.id == section.id);
         match &section.body {
             SectionBody::Simple { slot, .. } => {
-                if let Some(parsed) = parsed {
-                    for field in &parsed.fields {
-                        fields.insert(
-                            field.key.clone(),
-                            header_field_json(schema, &field.key, &field.value),
-                        );
-                    }
-                }
                 if slot.is_some() {
                     sections.insert(
                         section.id.clone(),
@@ -5665,6 +5656,50 @@ fn whole_doc_json(
         "fields": serde_json::Value::Object(fields),
         "sections": serde_json::Value::Object(sections),
     })
+}
+
+/// The whole-doc **`fields`** map — the one home of its rule, which `doc show`'s whole-doc
+/// serve and every parsing `doc list` row share (M55; `design/findings-channel.md` → 5).
+///
+/// It flattens every simple section's parsed fields (the header's front matter and any
+/// body trailing group) keyed by leaf id, through [`header_field_json`]. Then each
+/// declared field of a simple section that carries a `default:` and is **absent** from the
+/// parsed doc is inserted as its declared literal, a json string — the **effective value**
+/// (R4 I5): a reader filtering on a defaulted field wants the value the doctype gives the
+/// doc, so a projected default is indistinguishable from a stored one by design. The
+/// stored bytes are never written. The injected stamp field declares no default, so a
+/// missing `schema-version` is never synthesized. The `#section` fields-only and leaf
+/// slices, item objects and the plain render stay the stored view (`design/
+/// findings-channel.md` → 10, the projection row names the whole doc alone).
+fn header_fields_json(
+    schema: &Schema,
+    doc: &engine::parse::Document,
+) -> serde_json::Map<String, serde_json::Value> {
+    let mut fields = serde_json::Map::new();
+    for section in &schema.sections {
+        let SectionBody::Simple {
+            fields: declared, ..
+        } = &section.body
+        else {
+            continue;
+        };
+        if let Some(parsed) = doc.sections.iter().find(|s| s.id == section.id) {
+            for field in &parsed.fields {
+                fields.insert(
+                    field.key.clone(),
+                    header_field_json(schema, &field.key, &field.value),
+                );
+            }
+        }
+        for field in declared {
+            if let Some(default) = &field.default {
+                fields
+                    .entry(field.id.clone())
+                    .or_insert_with(|| serde_json::Value::String(default.clone()));
+            }
+        }
+    }
+    fields
 }
 
 /// The doc's **own schema-version stamp** as a json **number** — the additive top-level
