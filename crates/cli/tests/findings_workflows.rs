@@ -306,7 +306,7 @@ pub(crate) fn author_jigc_feedback(corpus: &TrialCorpus, title: &str) -> (Compos
 
 /// Create and fill a jigc-feedback finding titled `title` in the composed report task,
 /// every write — and the read-back — through its emitted lines. Returns its address.
-fn file_jigc_feedback(corpus: &TrialCorpus, composed: &Composed, title: &str) -> String {
+pub(crate) fn file_jigc_feedback(corpus: &TrialCorpus, composed: &Composed, title: &str) -> String {
     let address = create(corpus, composed, "jigc-feedback", title);
     let slug = slug_of(&address);
     let fills = [("<slug>", slug.as_str())];
@@ -363,7 +363,7 @@ pub(crate) fn author_inconsistency(corpus: &TrialCorpus, composed: &Composed) ->
 
 /// Create and fill the inconsistency titled [`INCONSISTENCY`] with its three [`SIDES`] in
 /// the composed report task, every write through its emitted lines. Returns its address.
-fn file_inconsistency(corpus: &TrialCorpus, composed: &Composed) -> String {
+pub(crate) fn file_inconsistency(corpus: &TrialCorpus, composed: &Composed) -> String {
     let address = create(corpus, composed, "inconsistency", INCONSISTENCY);
     let slug = slug_of(&address);
     run_emitted(

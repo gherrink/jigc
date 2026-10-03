@@ -16,6 +16,9 @@
 //!
 //! Both verbs exit 0 over a non-conformant file (driven at planning), so the fence reads the
 //! JSON `findings` array and never an exit code for its verdict.
+//!
+//! (a)'s predicate is [`assert_adoptable`], over any directory laid out as the doctypes' homes;
+//! flow 58 (`flow58_several_reporters`) runs it over the docs its own join landed.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -42,7 +45,7 @@ fn seed_dir() -> PathBuf {
         .join(SEED)
 }
 
-/// One committed seed file: its doctype, its home and its slug.
+/// One doc under a home: its doctype, its home and its slug.
 struct SeedFile {
     doctype: &'static str,
     home: &'static str,
@@ -59,23 +62,25 @@ impl SeedFile {
     }
 }
 
-/// Every committed seed file, sorted by home then slug. Each home must hold at least one.
-fn seed_files() -> Vec<SeedFile> {
+/// Every doc laid out under `root` as the doctypes' homes, sorted by home then slug. Each home
+/// must hold at least one. The committed seed is one such `root`; a corpus's `docs-root` after
+/// a join is another (flow 58).
+fn docs_under(root: &Path) -> Vec<SeedFile> {
     let mut files = Vec::new();
     for (doctype, home) in HOMES {
-        let dir = seed_dir().join(home);
+        let dir = root.join(home);
         let mut slugs: Vec<String> = fs::read_dir(&dir)
-            .unwrap_or_else(|e| panic!("the committed seed's `{SEED}/{home}/` is unreadable: {e}"))
+            .unwrap_or_else(|e| panic!("`{}` is unreadable: {e}", dir.display()))
             .map(|entry| {
                 let name = entry.expect("a readable entry").file_name();
                 let name = name.into_string().expect("a utf-8 file name");
                 name.strip_suffix(".md")
-                    .unwrap_or_else(|| panic!("`{SEED}/{home}/{name}` is not a `.md` doc"))
+                    .unwrap_or_else(|| panic!("`{}/{name}` is not a `.md` doc", dir.display()))
                     .to_owned()
             })
             .collect();
         slugs.sort();
-        assert!(!slugs.is_empty(), "`{SEED}/{home}/` holds no seed doc");
+        assert!(!slugs.is_empty(), "`{}` holds no doc", dir.display());
         files.extend(slugs.into_iter().map(|slug| SeedFile {
             doctype,
             home,
@@ -85,14 +90,18 @@ fn seed_files() -> Vec<SeedFile> {
     files
 }
 
-/// A fresh corpus with every seed file copied under `docs/<home>/`, `edit` applied to each
-/// file's bytes on the way, then `jigc ingest` run over it. Returns the corpus.
-fn adopt_seed(files: &[SeedFile], edit: impl Fn(&SeedFile, String) -> String) -> TrialCorpus {
+/// A fresh corpus with every file of `files` (laid out under `root`) copied under
+/// `docs/<home>/`, `edit` applied to each file's bytes on the way, then `jigc ingest` run over
+/// it. Returns the corpus.
+fn adopt(
+    root: &Path,
+    files: &[SeedFile],
+    edit: impl Fn(&SeedFile, String) -> String,
+) -> TrialCorpus {
     let corpus = TrialCorpus::build(State::Fresh);
     for file in files {
-        let bytes =
-            fs::read_to_string(seed_dir().join(file.home).join(format!("{}.md", file.slug)))
-                .expect("a seed file is readable");
+        let bytes = fs::read_to_string(root.join(file.home).join(format!("{}.md", file.slug)))
+            .expect("a doc to adopt is readable");
         let to = corpus.repo().join(file.placed());
         fs::create_dir_all(to.parent().expect("a placed file has a parent")).expect("the home");
         fs::write(&to, edit(file, bytes)).expect("place the seed file");
@@ -100,7 +109,7 @@ fn adopt_seed(files: &[SeedFile], edit: impl Fn(&SeedFile, String) -> String) ->
     let _: Value = stdout_json(
         &corpus.jigc(&["ingest", "--format", "json"]),
         &[0],
-        "jigc ingest over the seed",
+        "jigc ingest over the adopted docs",
     );
     corpus
 }
@@ -110,7 +119,7 @@ fn findings(corpus: &TrialCorpus) -> Vec<Value> {
     let report: Value = stdout_json(
         &corpus.jigc(&["validate", "--format", "json"]),
         &[0],
-        "jigc validate over the seed",
+        "jigc validate over the adopted docs",
     );
     report["findings"]
         .as_array()
@@ -122,13 +131,22 @@ fn findings(corpus: &TrialCorpus) -> Vec<Value> {
 /// exactly its docs.**
 #[test]
 fn the_committed_seed_ingests_and_validates_with_zero_findings() {
-    let files = seed_files();
-    let corpus = adopt_seed(&files, |_, bytes| bytes);
+    assert_adoptable(&seed_dir());
+}
+
+/// **The seed fence's predicate**, over the docs laid out under `root` as the doctypes' homes:
+/// copied into a fresh corpus under its `docs-root`, `jigc ingest` then `jigc validate --format
+/// json` carries zero findings, and `jigc doc list <ty> --format json` lists exactly those
+/// docs' ids, all `managed`.
+pub(crate) fn assert_adoptable(root: &Path) {
+    let files = docs_under(root);
+    let corpus = adopt(root, &files, |_, bytes| bytes);
 
     let findings = findings(&corpus);
     assert!(
         findings.is_empty(),
-        "the adopted seed carries {} finding(s):\n{:#}",
+        "the docs adopted from `{}` carry {} finding(s):\n{:#}",
+        root.display(),
         findings.len(),
         Value::Array(findings),
     );
@@ -163,7 +181,7 @@ fn the_committed_seed_ingests_and_validates_with_zero_findings() {
             .collect();
         assert_eq!(
             listed, seeded,
-            "`doc list {doctype}` must list exactly the seed's `{doctype}` docs, each managed"
+            "`doc list {doctype}` must list exactly the adopted `{doctype}` docs, each managed"
         );
     }
 }
@@ -172,9 +190,9 @@ fn the_committed_seed_ingests_and_validates_with_zero_findings() {
 /// its `#meta/kind` as `schema-conformance.required-field-present`.
 #[test]
 fn a_seed_doc_without_its_kind_line_carries_required_field_present() {
-    let files = seed_files();
+    let files = docs_under(&seed_dir());
     let broken = &files[0];
-    let corpus = adopt_seed(&files, |file, bytes| {
+    let corpus = adopt(&seed_dir(), &files, |file, bytes| {
         if file.id() != broken.id() {
             return bytes;
         }

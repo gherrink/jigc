@@ -3937,3 +3937,53 @@ $ jigc start --workflow report-jigc-feedback "file a third"
 4. **The key is the guard, and it is validated.** A committed shadow of `report-jigc-feedback` whose entry drops `new: true` turns the same-title create into the copy-in at exit 0; one whose entry misspells it `nwe: true` is refused at load, `workflow-refs.malformed-front-matter` naming `nwe`, by `jigc start` (nothing minted) and by the emitted `doc create` of a task minted before the typo.
 
 **Red** is the shipped `report-jigc-feedback` with `new: true` dropped from its entry: the second report's same-title create acks `copied in for update` at exit 0, and assertion 1 fails.
+
+## 58. Several reporters into one store — the report fan-out, one join (M55)
+
+**The claim:** *a milestone whose sub-tasks are report workflows composes each sub-task without a step of the derived omission set — no per-task finalize, no commit-doc authoring — and with the trailer naming `jigc milestone finalize` as its only boundary; the join lands every report as one commit, two reporters that minted the same id land side by side by task id whichever order they filed in, and what the join landed is adoptable exactly as the committed seed is.* This is flow D of [findings-channel.md](findings-channel.md) → 11, driven over the shipped `report-jigc-feedback` and `report-inconsistency` as sub-tasks. Every compose is a `Spawn:` line `jigc milestone execute` printed, run verbatim through a `jigc` shim, and every write a line the composed text emitted, run verbatim but for its `<…>` fills.
+
+**What it adds over `findings_workflows` (h) and (i).** Those arms (M55 Increment 8, `crates/cli/tests/findings_workflows.rs`) drive three report sub-tasks to one join commit and check each composed text against two omitted steps named by hand; `sub_task_composition` (M55 Increment 3) proves the omission set's derivation equal to a raw scan of the shipped steps. This flow checks the composed text against the **derived** set itself, under the `finalize.fan-out.squash` value the corpus resolves; it makes two reporters collide on one id and runs the walk under two filing orders; and it runs the seed fence's predicate over the join's output. It claims no first proof.
+
+**Bounds.** One `State::Fresh` corpus per filing order, on the embedded packs, under the default knob. The two colliding findings differ only in their title's trailing `!`, so the collision is the join's colliding-new-instance rule and never the create gate's — neither finding exists at its home when the other is created. The order axis is the filing order; the `add-task` order, which the milestone record keeps, is held fixed.
+
+The designs of record live elsewhere and are not restated here: the derived omission set and the sub-task trailer in [findings-channel.md](findings-channel.md) → 6 (S2) and [workflow-dialect.md](workflow-dialect.md) → Emitted format; the colliding-new-instance suffix in [storage.md](storage.md) → The by-task-id join; the seed fence in [findings-channel.md](findings-channel.md) → 7. Notation illustrative.
+
+### The walk
+
+```text
+$ jigc milestone create "File the findings together"
+$ jigc milestone add-task file-the-findings-together "Report the staged sweep" --workflow report-jigc-feedback
+$ jigc milestone add-task file-the-findings-together "Report the sweep again" --workflow report-jigc-feedback
+$ jigc milestone add-task file-the-findings-together "Report the eviction disagreement" --workflow report-inconsistency
+$ jigc milestone provision file-the-findings-together
+$ jigc milestone execute file-the-findings-together
+> Spawn: `cd …/.jigc/worktrees/report-the-staged-sweep && jigc workflow report-jigc-feedback --task report-the-staged-sweep`
+> …one per sub-task
+$ (run each Spawn: line)
+> …the author step's lines; no `step:author-commit`, no `step:finalize-doc-only`
+> resume: `jigc workflow report-jigc-feedback --task report-the-staged-sweep` …
+> task scope: … whose `jigc milestone finalize file-the-findings-together` is its only commit boundary
+$ jigc doc create jigc-feedback --title "Finalize sweeps a staged path" --task report-the-staged-sweep
+$ jigc doc create jigc-feedback --title "Finalize sweeps a staged path!" --task report-the-sweep-again
+#   both mint jigc-feedback:finalize-sweeps-a-staged-path · …the fields, the slots, the sides
+$ jigc milestone finalize file-the-findings-together
+> finalized … — Finalize milestone file-the-findings-together (3 sub-tasks)
+>   promoted docs/jigc-feedback/finalize-sweeps-a-staged-path-2.md
+>   promoted docs/jigc-feedback/finalize-sweeps-a-staged-path.md
+>   promoted docs/inconsistencies/cache-eviction-disagrees.md
+#   the lower task id keeps the bare slug · the same bytes when the sub-tasks file in reverse
+
+$ (copy docs/jigc-feedback/ and docs/inconsistencies/ into a fresh corpus's docs/)
+$ jigc ingest && jigc validate --format json
+> "findings": []
+```
+
+### What it asserts (flow D on the shipped workflows — flow58_several_reporters.rs)
+
+1. **Each sub-task composes no step of the derived omission set.** For each sub-task, the set is read from the production derivation (`sub_task_composition::derive_embedded`) under the knob value `jigc config get` resolves, never a hand list; the composed text carries no line of any member's own, names no `jigc task finalize`, asks for no `commit:<sub>` write, and carries the `task scope:` line naming `jigc milestone finalize <m>` as its only commit boundary.
+2. **One join commit lands every report.** `jigc milestone finalize` exits 0 with exactly one commit, its file list exactly the three landed docs and the milestone record, and `doc list` lists every landed doc of both doctypes.
+3. **Colliding reporters land by task id.** The two `jigc-feedback` reporters minted one id; the lower task id's finding keeps it and the higher's lands at `-2`, each read back with its own reporter's title.
+4. **Filing order does not reach the output.** The walk runs with the sub-tasks filing in task-id order and in reverse, and every landed doc is byte-identical path for path, the join committing the same paths.
+5. **The join's output is adoptable as the seed is.** The landed docs, copied into a fresh corpus under its `docs-root`, `jigc ingest` then `jigc validate --format json` carry zero findings, and `doc list` lists exactly those docs, each `managed` — `seed_fence`'s own predicate (`assert_adoptable`).
+
+**Red** is the discriminating control: each report workflow composed as an **ordinary** task fails every one of assertion 1's checks — it names the per-task door, asks for the commit-doc writes, carries each derived member's own lines, and has no milestone trailer.

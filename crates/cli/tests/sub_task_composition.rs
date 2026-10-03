@@ -620,7 +620,18 @@ impl StepSource for DirSteps {
 }
 
 /// The derived set per workflow, keyed `<pack>:<workflow>`.
-type Derived = BTreeMap<String, BTreeSet<String>>;
+pub(crate) type Derived = BTreeMap<String, BTreeSet<String>>;
+
+/// The production derivation for every shipped workflow under the knob value `squash`, over
+/// the embedded packs the binary composes from — what flow 58 (`flow58_several_reporters`)
+/// reads a report workflow's omission set from, never a hand list.
+pub(crate) fn derive_embedded(squash: bool) -> Derived {
+    let embedded: BTreeMap<&str, EmbeddedPack> = shipped_packs()
+        .into_iter()
+        .map(|(n, p, _)| (n, p))
+        .collect();
+    derive(squash, |pack| Box::new(EmbeddedSteps(&embedded[pack])))
+}
 
 /// The **production** derivation for every shipped workflow under the knob value `squash`,
 /// each over the step source `steps_of(pack)` yields.
