@@ -10070,7 +10070,8 @@ Done.
 // The M40 methodology byte-stability census — the M33 `roundtrip` pattern over
 // the NINE persisted methodology doctypes (`roadmap`, `deferral-ledger`,
 // `decisions-log`, `completion-record`, `dogfood-record`, `vision`, `research`,
-// `idea`, `milestone-record`). Discharges the recorded freeze precondition
+// `idea`, `milestone-record`) — twelve since `planning-record` (M49) and
+// `jigc-feedback`/`inconsistency` (M55) joined. Discharges the recorded freeze precondition
 // (`implementation/doctype-map.md` → the revised scope pin; `DECISIONS.md`
 // 2026-07-10 M40 Settle item 1): the methodology pack's manifest (T4) may only
 // hash-freeze shapes proven byte-stable, and M33's census deliberately scoped
@@ -10081,7 +10082,8 @@ Done.
 //      canonicalization ledger across LF/CRLF.
 //   2. **Surgical on edits** where a settable `meta` front-matter scalar exists
 //      (`completion-record`/`dogfood-record` `verdict`, `research` `date`,
-//      `idea` `trigger`, `milestone-record` `base`) — a single `set_field`
+//      `idea` `trigger`, `milestone-record` `base`, `jigc-feedback` `found-in`,
+//      `inconsistency` `kind`) — a single `set_field`
 //      changes only that field's value bytes.
 //
 // The schema bytes are loaded test-only via `include_bytes!` from
@@ -10096,8 +10098,10 @@ mod methodology_roundtrip {
     //! pack shapes — the multi-slot repeatable (`roadmap`), slot+field items
     //! (`deferral-ledger`/`decisions-log`), fields-only items
     //! (`completion-record` findings, `milestone-record` tasks), the 14-field
-    //! header (`dogfood-record`), and the optional front-matter ref-list
-    //! (`vision.grounded-in`).
+    //! header (`dogfood-record`), the optional front-matter ref-list
+    //! (`vision.grounded-in`), the optional header scalars and fenced `#`-led
+    //! `repro` of `jigc-feedback`, and the optional-slot repeatable
+    //! (`inconsistency.sides`).
 
     use super::*;
     use crate::parse::parse_sections;
@@ -10120,10 +10124,14 @@ mod methodology_roundtrip {
         include_bytes!(pack_path!(methodology, "schemas/milestone-record.yaml"));
     const PLANNING_RECORD_YAML: &[u8] =
         include_bytes!(pack_path!(methodology, "schemas/planning-record.yaml"));
+    const JIGC_FEEDBACK_YAML: &[u8] =
+        include_bytes!(pack_path!(methodology, "schemas/jigc-feedback.yaml"));
+    const INCONSISTENCY_YAML: &[u8] =
+        include_bytes!(pack_path!(methodology, "schemas/inconsistency.yaml"));
 
     /// Load the shipped schema for one methodology doctype. Every methodology
     /// doctype declares **engine-native** field types only (`string`/`enum`/
-    /// `date`/`int`/`ref`/`owned-location`), so all ten load bare — no pack
+    /// `date`/`int`/`ref`/`owned-location`), so all twelve load bare — no pack
     /// field-type registration (unlike the dev pack's `code-anchor`).
     fn schema_for(ty: &str) -> Schema {
         let bytes: &[u8] = match ty {
@@ -10137,6 +10145,8 @@ mod methodology_roundtrip {
             "idea" => IDEA_YAML,
             "milestone-record" => MILESTONE_RECORD_YAML,
             "planning-record" => PLANNING_RECORD_YAML,
+            "jigc-feedback" => JIGC_FEEDBACK_YAML,
+            "inconsistency" => INCONSISTENCY_YAML,
             other => panic!("unknown methodology doctype {other:?}"),
         };
         crate::schema::load_schema(bytes)
@@ -10660,7 +10670,136 @@ mod methodology_roundtrip {
         render(&schema_for("milestone-record"), &instance)
     }
 
-    /// The generator: an arbitrary conformant doc of one of the NINE persisted
+    /// Build a canonical-LF `jigc-feedback`: a `meta` header of the filing leaves
+    /// (handed in schema order — the optional `about`/`status`/`tier`/`duplicate-of`/
+    /// `pinned-by` present or omitted by the caller), then the required
+    /// `description` slot and the two optional slots `repro` and `resolution`, each
+    /// rendered as an empty section when absent.
+    fn build_jigc_feedback(
+        title: &str,
+        header: &[(&str, String)],
+        description: &str,
+        repro: Option<&str>,
+        resolution: Option<&str>,
+    ) -> String {
+        let instance = Instance {
+            title: title.to_string(),
+            sections: vec![
+                SectionContent {
+                    id: "meta".to_string(),
+                    fields: header
+                        .iter()
+                        .map(|(key, value)| Field {
+                            key: (*key).to_string(),
+                            value: Value::Scalar(value.clone()),
+                        })
+                        .collect(),
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "description".to_string(),
+                    slot: Some(description.to_string()),
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "repro".to_string(),
+                    slot: repro.map(str::to_string),
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "resolution".to_string(),
+                    slot: resolution.map(str::to_string),
+                    ..Default::default()
+                },
+            ],
+        };
+        render(&schema_for("jigc-feedback"), &instance)
+    }
+
+    /// One generated `inconsistency` side: `(title, says)` — the title a path or
+    /// address, `says` the optional single-slot item prose.
+    type GenSide = (String, Option<String>);
+
+    /// Build a canonical-LF `inconsistency`: a `meta` header (`kind`, the optional
+    /// `status`, `date`), the `sides` repeatable — one `id-from: title` item per side,
+    /// whose optional `says` slot is the single-slot bare-prose body (an absent one
+    /// renders the slotless heading) — then `description` and the optional
+    /// `evidence`/`resolution` slots. `0..` sides covers the EMPTY repeatable.
+    fn build_inconsistency(
+        title: &str,
+        header: &[(&str, String)],
+        sides: &[GenSide],
+        description: &str,
+        evidence: Option<&str>,
+        resolution: Option<&str>,
+    ) -> String {
+        let items: Vec<ItemContent> = sides
+            .iter()
+            .map(|(s_title, says)| ItemContent {
+                id: crate::slug::slugify(s_title),
+                title: s_title.clone(),
+                slot: says.clone(),
+                ..Default::default()
+            })
+            .collect();
+        let instance = Instance {
+            title: title.to_string(),
+            sections: vec![
+                SectionContent {
+                    id: "meta".to_string(),
+                    fields: header
+                        .iter()
+                        .map(|(key, value)| Field {
+                            key: (*key).to_string(),
+                            value: Value::Scalar(value.clone()),
+                        })
+                        .collect(),
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "sides".to_string(),
+                    items,
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "description".to_string(),
+                    slot: Some(description.to_string()),
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "evidence".to_string(),
+                    slot: evidence.map(str::to_string),
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "resolution".to_string(),
+                    slot: resolution.map(str::to_string),
+                    ..Default::default()
+                },
+            ],
+        };
+        render(&schema_for("inconsistency"), &instance)
+    }
+
+    /// A `jigc-feedback` `repro` body: a fenced block whose first line is
+    /// `#`-led — the shape the slot hint asks for, and the one an unfenced form
+    /// would turn into a heading — optionally led by a paragraph.
+    fn repro_prose() -> impl Strategy<Value = String> {
+        (
+            prop::option::of("[a-zA-Z][a-zA-Z0-9 .,]{0,30}"),
+            "[a-z][a-z0-9 ]{0,20}",
+            "[a-z][a-z0-9 -]{0,20}",
+        )
+            .prop_map(|(lead, comment, args)| {
+                let block = format!("```sh\n# {comment}\njigc {args}\n```");
+                match lead {
+                    Some(lead) => format!("{lead}\n\n{block}"),
+                    None => block,
+                }
+            })
+    }
+
+    /// The generator: an arbitrary conformant doc of one of the TWELVE persisted
     /// methodology doctypes — one named arm per doctype — with a chosen EOL.
     /// Item titles are index-suffixed so slugified `{#id}` anchors stay distinct
     /// (a repeatable rejects duplicate anchors; the M33 discipline).
@@ -10912,6 +11051,174 @@ mod methodology_roundtrip {
                 )
             });
 
+        // `jigc-feedback` — the 1.3 string grammars as real values, every optional
+        // header field and both optional slots present or absent (an absent
+        // `status` is the `default: open` arm), and `repro` the fenced `#`-led block.
+        let jigc_feedback = (
+            (
+                scalar_value(),
+                prop::sample::select(vec!["bug", "inconvenience", "feedback"]),
+                (
+                    prop::sample::select(vec!["milestone", "task", "workflow", "review", "trial"]),
+                    scalar_value(),
+                ),
+                prop::option::of((
+                    prop::sample::select(vec![
+                        "jigc ",
+                        "workflow:",
+                        "step:",
+                        "doctype:",
+                        "guide:",
+                        "dev:",
+                        "test:",
+                    ]),
+                    "[a-z][a-z0-9_-]{0,12}",
+                )),
+                (
+                    (0u32..3, 0u32..20, 0u32..20),
+                    prop::option::of(0u32..30),
+                    prop::option::of("[0-9a-f]{7}"),
+                ),
+                prop::option::of(prop::sample::select(vec![
+                    "open",
+                    "resolved",
+                    "declined",
+                    "duplicate",
+                    "refuted",
+                ])),
+            ),
+            (
+                prop::option::of(prop::sample::select(vec!["tier-1", "tier-2", "tier-3"])),
+                prop::option::of("[a-z][a-z0-9]{0,12}"),
+                prop::option::of(prop_oneof![
+                    ("[a-z][a-z0-9_]{0,12}", "[a-z][a-z0-9_]{0,16}")
+                        .prop_map(|(module, test)| format!("{module}::{test}")),
+                    scalar_value().prop_map(|why| format!("UNPINNED: {why}")),
+                ]),
+                date_value(),
+                section_prose(),
+                prop::option::of(repro_prose()),
+                prop::option::of(section_prose()),
+            ),
+        )
+            .prop_map(
+                |(
+                    (title, kind, (found_kind, found_label), about, version, status),
+                    (tier, duplicate, pinned_by, date, description, repro, resolution),
+                )| {
+                    let ((major, minor, patch), rc, sha) = version;
+                    let mut jigc_version = format!("{major}.{minor}.{patch}");
+                    if let Some(rc) = rc {
+                        jigc_version.push_str(&format!("-rc.{rc}"));
+                    }
+                    if let Some(sha) = sha {
+                        jigc_version.push_str(&format!("+{sha}"));
+                    }
+                    let mut header: Vec<(&str, String)> = vec![
+                        ("kind", kind.to_string()),
+                        ("found-in", format!("{found_kind}:{found_label}")),
+                    ];
+                    if let Some((form, target)) = about {
+                        header.push(("about", format!("{form}{target}")));
+                    }
+                    header.push(("jigc-version", jigc_version));
+                    if let Some(status) = status {
+                        header.push(("status", status.to_string()));
+                    }
+                    if let Some(tier) = tier {
+                        header.push(("tier", tier.to_string()));
+                    }
+                    if let Some(slug) = duplicate {
+                        header.push(("duplicate-of", format!("jigc-feedback:{slug}")));
+                    }
+                    if let Some(pinned_by) = pinned_by {
+                        header.push(("pinned-by", pinned_by));
+                    }
+                    header.push(("date", date));
+                    (
+                        "jigc-feedback".to_string(),
+                        build_jigc_feedback(
+                            &title,
+                            &header,
+                            &description,
+                            repro.as_deref(),
+                            resolution.as_deref(),
+                        ),
+                        // `found-in` is always present; the fresh value is one the
+                        // label generator does not mint in practice (the clause-2
+                        // no-op guard covers a collision).
+                        Some((
+                            "found-in".to_string(),
+                            "trial:a fresh adoption trial".to_string(),
+                        )),
+                    )
+                },
+            );
+
+        // `inconsistency` — `0..` sides (the EMPTY repeatable included), each side a
+        // path or an address with `says` present or absent, then the optional slots.
+        let inconsistency = (
+            scalar_value(),
+            prop::sample::select(vec!["code-doc", "doc-doc"]),
+            prop::option::of(prop::sample::select(vec![
+                "open", "resolved", "intended", "refuted",
+            ])),
+            date_value(),
+            prop::collection::vec(
+                (
+                    prop::sample::select(vec!["src", "docs", "adr"]),
+                    "[a-z][a-z0-9]{0,10}",
+                    prop::option::of(section_prose()),
+                ),
+                0..4,
+            ),
+            section_prose(),
+            prop::option::of(section_prose()),
+            prop::option::of(section_prose()),
+        )
+            .prop_map(
+                |(title, kind, status, date, raw, description, evidence, resolution)| {
+                    // Index-suffix each side so the slugified `{#id}` anchors are
+                    // distinct (a repeatable rejects duplicate anchors).
+                    let sides: Vec<GenSide> = raw
+                        .into_iter()
+                        .enumerate()
+                        .map(|(i, (form, stem, says))| {
+                            let side = match form {
+                                "src" => format!("src/{stem}-{i}.rs"),
+                                "docs" => format!("docs/{stem}-{i}.md"),
+                                _ => format!("adr:{stem}-{i}#decision"),
+                            };
+                            (side, says)
+                        })
+                        .collect();
+                    let mut header: Vec<(&str, String)> = vec![("kind", kind.to_string())];
+                    if let Some(status) = status {
+                        header.push(("status", status.to_string()));
+                    }
+                    header.push(("date", date));
+                    // Re-set `kind` to the *other* enum member so the edit always
+                    // changes a byte.
+                    let flipped = if kind == "code-doc" {
+                        "doc-doc"
+                    } else {
+                        "code-doc"
+                    };
+                    (
+                        "inconsistency".to_string(),
+                        build_inconsistency(
+                            &title,
+                            &header,
+                            &sides,
+                            &description,
+                            evidence.as_deref(),
+                            resolution.as_deref(),
+                        ),
+                        Some(("kind".to_string(), flipped.to_string())),
+                    )
+                },
+            );
+
         (
             prop_oneof![
                 roadmap,
@@ -10924,6 +11231,8 @@ mod methodology_roundtrip {
                 idea,
                 milestone_record,
                 planning_record,
+                jigc_feedback,
+                inconsistency,
             ],
             eol,
         )
@@ -11094,21 +11403,22 @@ mod methodology_roundtrip {
     // schemas was proptest-only here, with deterministic backup for just four
     // doctypes and only externally (`crates/cli/tests/migrate_methodology.rs`).
     //
-    // The table below is that fence, uniform across all nine and sitting beside the
+    // The table below is that fence, uniform across every persisted methodology
+    // doctype (twelve since M55) and sitting beside the
     // invariant it guards. One row per canonical fixture, hand-authored in the
     // frozen byte form the writer emits; a future doctype is one row. Per row:
     //   1. `render(parse(src)) == src` — byte-identical, plus an insta golden of
     //      the rendered bytes so a canonical-form drift reads as a reviewable diff.
     //   2. The **absent** arm of every optional shape — `vision.grounded-in` at
     //      zero refs (the empty `---\n---` fence pair) and the EMPTY repeatable
-    //      (the fresh-mint shape) for all five repeatable-bearing doctypes. The
+    //      (the fresh-mint shape) for all six repeatable-bearing doctypes. The
     //      un-sampled shapes.
     //   3. ≥2 items in every populated repeatable, so item ordering and `{#id}`
     //      anchor emission are pinned (both `roadmap` leaves filled; both
     //      `deferral-ledger.kind` enum members exercised).
     //   4. The canonicalization ledger (BOM + doubled trailing newline) and the
     //      LF/CRLF **parsed-shape equality** — the only guard on the front-matter
-    //      field-drop class for these nine types (`parse.rs`'s deterministic
+    //      field-drop class for these twelve types (`parse.rs`'s deterministic
     //      `crlf_front_matter_parses_every_field` pins `adr` alone).
     // ========================================================================
 
@@ -11524,7 +11834,222 @@ The justification was re-read against the latest trial record, not the charter.
 Driven by the orchestrator: every count in this record came from a command whose output is quoted.
 ",
             },
+            // `jigc-feedback` — every header leaf present in schema order (the 1.3
+            // grammars as real values, `duplicate-of` the self-ref, `pinned-by` the
+            // `UNPINNED: <why>` form), and a `repro` whose fenced block holds a
+            // `#`-led line: unfenced, that line is a heading and is refused.
+            Fixture {
+                name: "jigc_feedback_resolved_duplicate",
+                ty: "jigc-feedback",
+                src: "\
+---
+kind: bug
+found-in: trial:rc.22 blind adoption
+about: jigc doc show
+jigc-version: 1.0.0-rc.22+fab91e9
+status: duplicate
+tier: tier-2
+duplicate-of: jigc-feedback:doc-show-drops-crlf
+pinned-by: UNPINNED: the original carries the pin
+date: 2026-10-03
+---
+
+# Doc show drops a trailing CR
+
+## Description
+
+`jigc doc show` printed the slot without its last line under CRLF.
+
+## Repro
+
+Run it on a CRLF corpus:
+
+```sh
+# a hash-led line inside the fence is prose, never a heading
+jigc doc show adr:cache#decision
+```
+
+## Resolution
+
+The same defect as the earlier finding, filed from the same trial.
+",
+            },
+            // The ABSENT arms: only the required leaves (no `about`/`status`/`tier`/
+            // `duplicate-of`/`pinned-by` — an absent `status` is the `default: open`
+            // arm) and both optional slots empty, each an empty `## …` section in the
+            // writer's frozen form (the `provisioned_empty_commit` golden's).
+            Fixture {
+                name: "jigc_feedback_minimal",
+                ty: "jigc-feedback",
+                src: "\
+---
+kind: feedback
+found-in: milestone:M55 findings channel
+jigc-version: 1.0.0-rc.22
+date: 2026-10-03
+---
+
+# Describe weaves usage awkwardly
+
+## Description
+
+The catalog line reads oddly when a usage sentence opens with a frame.
+
+## Repro
+
+
+
+## Resolution
+",
+            },
+            // `inconsistency` — three `sides` (a path, a doc path, an address), only
+            // the middle one carrying `says`: a slotless side heading is followed
+            // directly by the next, a filled one by its prose.
+            Fixture {
+                name: "inconsistency_three_sides",
+                ty: "inconsistency",
+                src: "\
+---
+kind: code-doc
+status: open
+date: 2026-10-03
+---
+
+# Gate runtime disagrees
+
+## Sides
+
+### src/gate.rs  {#src-gate-rs}
+
+### docs/dev-workflow.md  {#docs-dev-workflow-md}
+
+The gate takes about five minutes on a warm tree.
+
+### adr:gate-budget#decision  {#adr-gate-budget-decision}
+
+## Description
+
+The script's own timeout assumes a gate three times longer than the doc states.
+
+## Evidence
+
+Measured with `time dev/gate` on a warm tree: four minutes and thirty-four seconds.
+
+## Resolution
+",
+            },
+            // The EMPTY `sides` repeatable (the fresh-mint shape), `status` absent
+            // (the `default: open` arm), and both optional slots empty. Each empty
+            // section keeps the writer's frozen blank-line form before the next `##`
+            // (the changelog's empty `## Unreleased Changes` precedent).
+            Fixture {
+                name: "inconsistency_no_sides",
+                ty: "inconsistency",
+                src: "\
+---
+kind: doc-doc
+date: 2026-10-03
+---
+
+# Two counts of the shipped schemas
+
+## Sides
+
+
+## Description
+
+One guide counts eleven methodology schemas where the manifest lists thirteen.
+
+## Evidence
+
+
+
+## Resolution
+",
+            },
         ]
+    }
+
+    /// Fetch one canonical fixture by name.
+    fn fixture(name: &str) -> Fixture {
+        methodology_fixtures()
+            .into_iter()
+            .find(|fx| fx.name == name)
+            .unwrap_or_else(|| panic!("no methodology fixture named {name:?}"))
+    }
+
+    /// **The fenced `#`-led `repro` line survives the no-op write.** A `jigc-feedback`
+    /// repro is a fenced block, and its first line is `#`-led (a shell comment) — the
+    /// line an unfenced form would read as a heading and refuse. Parsed, it is prose of
+    /// the `repro` slot, not a section; rendered back and no-op-written under both line
+    /// endings, it is byte-identical.
+    #[test]
+    fn jigc_feedback_fenced_hash_led_repro_line_survives_the_no_op_write() {
+        let fx = fixture("jigc_feedback_resolved_duplicate");
+        let hash_line = "# a hash-led line inside the fence is prose, never a heading";
+        assert!(
+            fx.src.contains(&format!("```sh\n{hash_line}\n")),
+            "the fixture's repro holds the fenced `#`-led line"
+        );
+
+        let schema = schema_for(fx.ty);
+        let instance = instance_from_source(&schema, fx.src)
+            .unwrap_or_else(|f| panic!("the jigc-feedback fixture parses: {f:?}"));
+        let repro = instance
+            .sections
+            .iter()
+            .find(|s| s.id == "repro")
+            .and_then(|s| s.slot.as_deref())
+            .expect("the repro slot is present");
+        assert!(
+            repro.contains(hash_line),
+            "the `#`-led line is repro prose, not a heading: {repro:?}"
+        );
+        assert_eq!(render(&schema, &instance), fx.src);
+
+        for eol in ["\n", "\r\n"] {
+            let canonical = with_eol(fx.src, eol);
+            let written = first_touch_canonicalize(&canonical);
+            assert_eq!(written, canonical, "no-op write under {eol:?}");
+            assert!(
+                written.contains(&format!("{hash_line}{eol}")),
+                "the `#`-led line survives the no-op write under {eol:?}"
+            );
+        }
+    }
+
+    /// **Three sides, one with `says`.** The `inconsistency` fixture parses to three
+    /// `sides` items in physical order, and exactly one — the middle — carries `says`
+    /// prose; the two slotless ones read back empty, not as each other's body.
+    #[test]
+    fn inconsistency_three_sides_fixture_parses_one_side_with_says() {
+        let fx = fixture("inconsistency_three_sides");
+        let schema = schema_for(fx.ty);
+        let instance = instance_from_source(&schema, fx.src)
+            .unwrap_or_else(|f| panic!("the inconsistency fixture parses: {f:?}"));
+        let sides = &instance
+            .sections
+            .iter()
+            .find(|s| s.id == "sides")
+            .expect("the sides section is present")
+            .items;
+        let ids: Vec<&str> = sides.iter().map(|s| s.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            [
+                "src-gate-rs",
+                "docs-dev-workflow-md",
+                "adr-gate-budget-decision"
+            ]
+        );
+        let says: Vec<&str> = sides
+            .iter()
+            .map(|s| s.slot.as_deref().unwrap_or("").trim())
+            .collect();
+        assert_eq!(
+            says,
+            ["", "The gate takes about five minutes on a warm tree.", ""]
+        );
     }
 
     /// **The fence.** For every canonical fixture: `render(parse(src)) == src`,
@@ -11559,7 +12084,7 @@ Driven by the orchestrator: every count in this record came from a command whose
     /// Then the clause a parse-ok check cannot make: the LF and CRLF forms parse to
     /// the SAME structure — same sections, same field keys, same item anchors. This
     /// is the only deterministic guard on the front-matter field-drop class for
-    /// these nine doctypes (the CRLF metadata-scan defect the M40 census surfaced
+    /// these twelve doctypes (the CRLF metadata-scan defect the M40 census surfaced
     /// dropped every front-matter field after the first while still parsing "ok" —
     /// `dogfood_record_greenfield`'s 14-field header is the loud canary).
     #[test]

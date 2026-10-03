@@ -1,0 +1,107 @@
+exit: 0
+--- stdout ---
+{
+  "contract-version": 7,
+  "type": "inconsistency",
+  "schema-version": 1,
+  "identity": {
+    "kind": "slugged",
+    "address": "inconsistency:<slug>"
+  },
+  "home": {
+    "kind": "location",
+    "path": "docs/inconsistencies/<slug>.md"
+  },
+  "fields": [
+    {
+      "id": "kind",
+      "type": "enum",
+      "of": [
+        "code-doc",
+        "doc-doc"
+      ],
+      "required": true,
+      "author-required": true,
+      "section": "meta",
+      "set-field": "inconsistency:<slug>#meta/kind"
+    },
+    {
+      "id": "status",
+      "type": "enum",
+      "of": [
+        "open",
+        "resolved",
+        "intended",
+        "refuted"
+      ],
+      "required": true,
+      "author-required": false,
+      "default": "open",
+      "section": "meta",
+      "set-field": "inconsistency:<slug>#meta/status"
+    },
+    {
+      "id": "date",
+      "type": "date",
+      "required": true,
+      "author-required": false,
+      "set": "on-create",
+      "section": "meta",
+      "set-field": "inconsistency:<slug>#meta/date"
+    },
+    {
+      "id": "schema-version",
+      "type": "int",
+      "required": true,
+      "author-required": false,
+      "set": "schema-version",
+      "section": "meta"
+    }
+  ],
+  "sections": [
+    {
+      "id": "sides",
+      "kind": "repeatable",
+      "add-item": "inconsistency:<slug>#sides",
+      "item": {
+        "fields": [
+          {
+            "id": "title",
+            "type": "string",
+            "required": true,
+            "author-required": true,
+            "add-item": "inconsistency:<slug>#sides",
+            "retitle-item": "inconsistency:<slug>#sides/<id>",
+            "write-key": "--title"
+          }
+        ],
+        "slots": [
+          {
+            "id": "says",
+            "optional": true,
+            "set-slot": "inconsistency:<slug>#sides/<id>/says"
+          }
+        ],
+        "nested": []
+      }
+    },
+    {
+      "id": "description",
+      "kind": "slot",
+      "set-slot": "inconsistency:<slug>#description"
+    },
+    {
+      "id": "evidence",
+      "kind": "slot",
+      "optional": true,
+      "set-slot": "inconsistency:<slug>#evidence"
+    },
+    {
+      "id": "resolution",
+      "kind": "slot",
+      "optional": true,
+      "set-slot": "inconsistency:<slug>#resolution"
+    }
+  ]
+}
+--- stderr ---

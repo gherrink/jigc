@@ -260,7 +260,7 @@ fn include_still_resolves_and_an_unmutated_pack_loads_clean() {
 }
 
 /// **No re-pin.** Every schema both packs ship — and every versioned snapshot
-/// the corpus migration reads — loads unchanged under the strict check: 17
+/// the corpus migration reads — loads unchanged under the strict check: 19
 /// schemas + 6 snapshots, all `Ok`. A stray key in any of them would redden
 /// here rather than at an adopter.
 #[test]
@@ -283,8 +283,8 @@ fn every_shipped_schema_and_snapshot_loads_unchanged() {
         }
     }
     assert_eq!(
-        loaded, 23,
-        "both packs ship 17 schemas + 6 versioned snapshots",
+        loaded, 25,
+        "both packs ship 19 schemas + 6 versioned snapshots",
     );
 }
 

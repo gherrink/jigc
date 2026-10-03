@@ -70,7 +70,46 @@ const METHODOLOGY_DOCTYPES: &[&str] = &[
     "idea",
     "dogfood-record",
     "planning-record",
+    "jigc-feedback",
+    "inconsistency",
 ];
+
+/// The project-layer fixture workflow that grants `jigc-feedback` and `inconsistency`
+/// their create (M55 Increment 7, P6): no shipped workflow grants either until the
+/// report workflows ship, so the methodology walk writes this one into its own corpus
+/// — the `doc_only_finalize.rs` door — and runs on both schemas from the commit that
+/// registers them.
+const FINDINGS_FIXTURE_WORKFLOW: &str = "\
+---
+when: file one finding of either kind for the settability walk
+description: A fixture workflow — one jigc-feedback or inconsistency doc, created by name.
+usage: the fixture cell for the parity walk over the two finding doctypes, reached by name.
+creates-task: true
+selectable: false
+suppressed:
+  reason: fixture-only — the parity walk's create door for the finding doctypes
+  expires: never
+allows-create:
+  - { type: jigc-feedback, as: feedback }
+  - { type: inconsistency, as: inconsistency }
+---
+{{ include: step:finalize }}
+";
+
+pub(crate) const FINDINGS_FIXTURE_WORKFLOW_ID: &str = "file-finding-fixture";
+
+/// Write and commit [`FINDINGS_FIXTURE_WORKFLOW`] into `corpus`'s project layer.
+pub(crate) fn install_findings_fixture_workflow(corpus: &TrialCorpus) {
+    let workflows = corpus.repo().join(".jigc/config/workflows");
+    std::fs::create_dir_all(&workflows).expect("mk the project workflows dir");
+    std::fs::write(
+        workflows.join(format!("{FINDINGS_FIXTURE_WORKFLOW_ID}.yaml")),
+        FINDINGS_FIXTURE_WORKFLOW,
+    )
+    .expect("write the findings fixture workflow");
+    corpus.git(&["add", "--", ".jigc/config/workflows"]);
+    corpus.git(&["commit", "-q", "-m", "chore: the findings fixture workflow"]);
+}
 
 // ---------------------------------------------------------------------------
 // Concretization — the projection advertises placeheld addresses (`<slug>` for the
@@ -158,6 +197,7 @@ fn create_instance(corpus: &TrialCorpus, ty: &str) -> (String, String) {
         "research" => "do-research",
         "idea" => "park-idea",
         "dogfood-record" => "record-dogfood",
+        "jigc-feedback" | "inconsistency" => FINDINGS_FIXTURE_WORKFLOW_ID,
         other => panic!("no create workflow mapped for doctype `{other}`"),
     };
     let task = corpus.start_workflow(workflow, &format!("probe {ty}"));
@@ -580,6 +620,7 @@ fn dev_pack_addresses_round_trip_and_settability_parity_holds() {
 #[test]
 fn methodology_pack_addresses_round_trip_and_settability_parity_holds() {
     let corpus = TrialCorpus::build(State::Fresh);
+    install_findings_fixture_workflow(&corpus);
     for &ty in METHODOLOGY_DOCTYPES {
         let (task, slug) = create_instance(&corpus, ty);
         let proj = projection(&corpus, ty);

@@ -1,0 +1,20 @@
+exit: 0
+--- stdout ---
+doctype: jigc-feedback (schema-version 1)
+* = author-required
+fields:
+  - kind: enum [bug|inconvenience|feedback] (section: meta) (set-field: jigc-feedback:<slug>#meta/kind) *
+  - found-in: string (section: meta) (set-field: jigc-feedback:<slug>#meta/found-in) *
+  - about: string (section: meta) (set-field: jigc-feedback:<slug>#meta/about)
+  - jigc-version: string (section: meta) (set-field: jigc-feedback:<slug>#meta/jigc-version) *
+  - status: enum [open|resolved|declined|duplicate|refuted] (section: meta) (default: open) (set-field: jigc-feedback:<slug>#meta/status)
+  - tier: enum [tier-1|tier-2|tier-3] (section: meta) (set-field: jigc-feedback:<slug>#meta/tier)
+  - duplicate-of: ref -> jigc-feedback (section: meta) (set-field: jigc-feedback:<slug>#meta/duplicate-of)
+  - pinned-by: string (section: meta) (set-field: jigc-feedback:<slug>#meta/pinned-by)
+  - date: date (section: meta) (set: on-create) (set-field: jigc-feedback:<slug>#meta/date)
+  - schema-version: int (section: meta) (set: schema-version)
+sections:
+  - description: slot (set-slot: jigc-feedback:<slug>#description)
+  - repro: slot (optional) (set-slot: jigc-feedback:<slug>#repro)
+  - resolution: slot (optional) (set-slot: jigc-feedback:<slug>#resolution)
+--- stderr ---

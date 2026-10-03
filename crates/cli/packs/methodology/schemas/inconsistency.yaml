@@ -1,0 +1,50 @@
+# inconsistency — the methodology pack's one-per-doc disagreement IN THE PROJECT (M55
+# Increment 7 / T1; design/findings-channel.md §1, 1.2, 1.5). A code↔doc or doc↔doc
+# disagreement an adoption, a migration or later work surfaces — the adopter's own,
+# generic and not named after migration, because drift found later is the same
+# thing (S2). Mints fresh per document (`id-from: title`, `location:
+# inconsistencies/`, resolved through `docs-root`). The id stays PLAIN: an adopter's
+# same-named doctype would be shadowed, but that is F13's general defect, true of
+# every built-in id, and is seeded as such rather than dodged here.
+#
+# The `meta` header carries `kind`, `status` (default `open`) and the CLI-set filing
+# `date`. `sides` is a REPEATABLE section — one item per artifact in the
+# disagreement, the item title its path or address, with an optional `says` slot.
+# A list, not `left`/`right`: three- to five-sided cases exist, and two fields → a
+# list later would be a refused removal. Two or more sides is a convention stated in
+# `usage:`, unenforced. No `found-in` (the sides locate it) and no `tier` (the scale
+# grades defects in the binary, not disagreements in a project).
+#
+# `sides` is a new item-slot context with no `migrate-inconsistency` workflow: no
+# foreign corpus of this doctype exists to migrate, so it is named in
+# `item_slot_ceiling_axis.rs`'s unreachable set with its reason (DECISIONS.md →
+# 2026-10-03 M55 Increment 7 planning, P5).
+#
+# Manifest-FROZEN at schema-version 1 (the methodology schema-manifest.yaml); a
+# new doctype owes no snapshot and no migration. See design/findings-channel.md →
+# 1.2 and 1.7.
+type: inconsistency
+location: inconsistencies/
+id-from: title
+description: One disagreement inside the project — between code and a doc, or between two docs — with each side it spans and how it was established.
+usage: "two or more of the project's own artifacts disagree — code and a doc, or two docs — and the disagreement deserves a record until it is reconciled or declared intended. Its `kind` is `code-doc` or `doc-doc`. List each artifact in the disagreement under `sides`, the item title its path or address and `says` what that side states; a disagreement has two or more sides by convention, which nothing enforces. A record is append-only by convention, which the engine does not enforce: after filing only `status` and `resolution` change, and a status other than `open` carries a `resolution`."
+
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: kind, type: enum, of: [code-doc, doc-doc] }
+      - { id: status, type: enum, of: [open, resolved, intended, refuted], default: open }
+      - { id: date, type: date, set: on-create }
+  - id: sides
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: says, slot: { optional: true, hint: "What this side states — quote or paraphrase it. Leave it empty when the title says enough." } }
+  - id: description
+    slot: { hint: "What disagrees — the claim each side makes and why they cannot both hold." }
+  - id: evidence
+    slot: { optional: true, hint: "How the disagreement was established — the command, the read, the test. Leave it empty when the sides make it plain." }
+  - id: resolution
+    slot: { optional: true, hint: "Why the status left `open` — which side was corrected, or why the difference is intended or the record refuted. Leave it empty while it is open." }

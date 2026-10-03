@@ -1,0 +1,31 @@
+---
+source: crates/engine/src/write.rs
+expression: rendered
+---
+---
+kind: code-doc
+status: open
+date: 2026-10-03
+---
+
+# Gate runtime disagrees
+
+## Sides
+
+### src/gate.rs  {#src-gate-rs}
+
+### docs/dev-workflow.md  {#docs-dev-workflow-md}
+
+The gate takes about five minutes on a warm tree.
+
+### adr:gate-budget#decision  {#adr-gate-budget-decision}
+
+## Description
+
+The script's own timeout assumes a gate three times longer than the doc states.
+
+## Evidence
+
+Measured with `time dev/gate` on a warm tree: four minutes and thirty-four seconds.
+
+## Resolution

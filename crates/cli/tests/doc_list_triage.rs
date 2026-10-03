@@ -62,7 +62,7 @@ allows-create: [{type: finding, as: finding}]
 ";
 
 /// The triage, verbatim: every open finding, grouped by the version it was found in.
-const TRIAGE: &str =
+pub(crate) const TRIAGE: &str =
     r#"[.docs[] | select(.fields.status == "open")] | group_by(.fields["found-in"])"#;
 
 /// The repo-relative path the committed listing prints for `id` — read off the emitted row,
@@ -137,7 +137,7 @@ fn assert_stored_as_committed(corpus: &TrialCorpus, rel: &str, committed: &str) 
 }
 
 /// Run `jq <filter>` over `input`, verbatim, and parse what it prints.
-fn jq(filter: &str, input: &str) -> Value {
+pub(crate) fn jq(filter: &str, input: &str) -> Value {
     let mut child = Command::new("jq")
         .arg(filter)
         .stdin(Stdio::piped())

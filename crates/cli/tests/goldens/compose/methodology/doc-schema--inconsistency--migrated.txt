@@ -1,0 +1,17 @@
+exit: 0
+--- stdout ---
+doctype: inconsistency (schema-version 1)
+* = author-required
+fields:
+  - kind: enum [code-doc|doc-doc] (section: meta) (set-field: inconsistency:<slug>#meta/kind) *
+  - status: enum [open|resolved|intended|refuted] (section: meta) (default: open) (set-field: inconsistency:<slug>#meta/status)
+  - date: date (section: meta) (set: on-create) (set-field: inconsistency:<slug>#meta/date)
+  - schema-version: int (section: meta) (set: schema-version)
+sections:
+  - sides: repeatable (add-item: inconsistency:<slug>#sides)
+    - title: string (add-item: inconsistency:<slug>#sides) (retitle-item: inconsistency:<slug>#sides/<id>) (write-key: --title) *
+    - says: slot (optional) (set-slot: inconsistency:<slug>#sides/<id>/says)
+  - description: slot (set-slot: inconsistency:<slug>#description)
+  - evidence: slot (optional) (set-slot: inconsistency:<slug>#evidence)
+  - resolution: slot (optional) (set-slot: inconsistency:<slug>#resolution)
+--- stderr ---
