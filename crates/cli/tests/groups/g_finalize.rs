@@ -63,6 +63,8 @@ mod flow37_rename;
 mod freeze_enforcement;
 #[path = "../git_span_aim.rs"]
 mod git_span_aim;
+#[path = "../l1_pull_absorption.rs"]
+mod l1_pull_absorption;
 #[path = "../ledger_entry_seven_discharged.rs"]
 mod ledger_entry_seven_discharged;
 #[path = "../ledger_record_truth.rs"]

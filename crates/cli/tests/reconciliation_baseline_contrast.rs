@@ -283,23 +283,7 @@ fn drive(arm: Arm) -> Outcome {
         "task 0 must promote {ADR_PATH}"
     );
 
-    // ── The human channel: an out-of-band, conformant, prose-only edit to the
-    //    committed ADR, committed in git directly. Drift lands BEFORE the warm task
-    //    starts so its base == this HEAD (a `finalize.base-mismatch` would pre-empt
-    //    the reconcile gate and the arms would prove nothing about reconciliation).
-    let path = repo.join(ADR_PATH);
-    let body = fs::read_to_string(&path).expect("read the committed ADR");
-    let edited = body.replacen("A cold node loses its sessions.", HUMAN_PROSE, 1);
-    assert_ne!(body, edited, "the OOB edit must change the committed ADR");
-    fs::write(&path, edited).expect("apply the OOB edit");
-    git(repo, &["add", ADR_PATH]);
-    git(
-        repo,
-        &["commit", "-q", "-m", "docs: tighten the consequences"],
-    );
-
-    // ── The warm task touches the SAME doc through the CLI (copy-in for update), so
-    //    both sides have moved: the committed file and this task's staged writes.
+    // ── The warm task is minted over the committed ADR.
     assert_ok(
         &jigc(
             repo,
@@ -314,6 +298,23 @@ fn drive(arm: Arm) -> Outcome {
         "`jigc start` (warm task)",
     );
     let warm = "revise-the-cache-decision";
+
+    // ── The human channel: an out-of-band, conformant, prose-only edit to the
+    //    committed ADR, written on disk AFTER the warm task is minted and left
+    //    uncommitted. HEAD stays at the task's base (a `finalize.base-mismatch` would
+    //    pre-empt the reconcile gate and the arms would prove nothing about
+    //    reconciliation), and the edit is not the base pin's blob — a change made during
+    //    the task, which M55 Increment 4's pulled-edit absorb leaves to this arm's
+    //    conflict-block. It lands BEFORE the task's first touch, so the copy-in below
+    //    carries it: arm B's silent merge is a commit carrying both sides' prose.
+    let path = repo.join(ADR_PATH);
+    let body = fs::read_to_string(&path).expect("read the committed ADR");
+    let edited = body.replacen("A cold node loses its sessions.", HUMAN_PROSE, 1);
+    assert_ne!(body, edited, "the OOB edit must change the committed ADR");
+    fs::write(&path, edited).expect("apply the OOB edit");
+
+    // ── The warm task touches the SAME doc through the CLI (copy-in for update), so
+    //    both sides have moved: the committed file and this task's staged writes.
     set_slot(repo, home, "adr:single-node-cache#decision", TASK_PROSE);
     fill_commit(repo, home, warm, "revise the decision");
 

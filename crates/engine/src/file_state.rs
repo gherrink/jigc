@@ -460,7 +460,13 @@ impl LiveRecord {
 /// - **`DRIFTED + TOUCHED`** (`task_touched`) → **conflict-block**: both sides moved.
 ///   A blocking `reconciliation.conflict-block` finding carrying the **caller-supplied**
 ///   [`ConflictBlock`] presentation (the classifier has no task and no verb of its own);
-///   no silent merge, the hash and edge index are left untouched.
+///   no silent merge, the hash and edge index are left untouched. **Except a pulled edit**
+///   (M55 Increment 4, L1): when the on-disk bytes equal the doc's blob at the caller's
+///   base pin (`pinned`, [`crate::validate::PinnedBlob`]), the drift predates the task, so
+///   the `DRIFTED + UNTOUCHED` absorb below runs whole; a pinned edit that fails the
+///   conformance gate keeps the caller's conflict-block unchanged, never a
+///   conformance-block. A `None` lookup — no pin, absent blob, git failure, the record
+///   door — keeps the conflict-block.
 /// - **`DRIFTED + UNTOUCHED`** → the **parse classifier**: re-parse + schema-validate
 ///   the on-disk bytes against `schema`.
 ///   - clean → **absorb**: re-hash the recorded baseline forward, incrementally
@@ -483,6 +489,7 @@ pub fn reconcile_committed(
     from: &str,
     bytes: &[u8],
     task_touched: bool,
+    pinned: &crate::validate::PinnedBlob<'_>,
     conflict: &ConflictBlock,
     adoption: &crate::validate::AdoptionInputs<'_>,
 ) -> Vec<Finding> {
@@ -529,21 +536,48 @@ pub fn reconcile_committed(
         },
         // IN_SYNC → clean / task-only change: nothing to reconcile here.
         Some(recorded) if recorded == current => Vec::new(),
-        // DRIFTED + TOUCHED → conflict-block (both sides moved; no silent merge).
-        Some(_) if task_touched => vec![conflict_block_finding(path, conflict)],
+        // DRIFTED + TOUCHED → conflict-block (both sides moved; no silent merge) — unless
+        // the on-disk bytes equal the doc's blob at the caller's base pin (M55 Increment 4,
+        // L1): then the drift predates the task (a pull), only the task moved since, and the
+        // UNTOUCHED arm's whole absorb body runs. A pinned edit that does not conform is
+        // never baselined: it keeps the caller's conflict-block unchanged (P1), so a
+        // migration's path-keyed exit survives. The seam is asked only here.
+        Some(_) if task_touched => {
+            let at_pin = pinned(path).is_some_and(|blob| hash_bytes(&blob) == current);
+            match at_pin
+                .then(|| conformance_gate(schema, bytes).ok())
+                .flatten()
+            {
+                Some(doc) => absorb(record, index, schema, path, from, current, &doc),
+                None => vec![conflict_block_finding(path, conflict)],
+            }
+        }
         // DRIFTED + UNTOUCHED → the parse classifier (the same conformance gate the
         // UNKNOWN arm above runs; here a fail is **blocking**, not advisory).
         Some(_) => match conformance_gate(schema, bytes) {
-            Ok(doc) => {
-                // Clean → absorb: re-hash + incrementally update the index.
-                record.record(path, current);
-                index.absorb_doc(schema, from, &doc);
-                vec![absorb_finding(path)]
-            }
+            // Clean → absorb: re-hash + incrementally update the index.
+            Ok(doc) => absorb(record, index, schema, path, from, current, &doc),
             // Schema-invalid / parse fail → conformance-block, naming the first error.
             Err(cause) => vec![conformance_block_finding(path, cause)],
         },
     }
+}
+
+/// The **absorb** body both drifted arms of [`reconcile_committed`] share: re-hash the
+/// recorded baseline forward to `current`, incrementally update the committed `index` with the
+/// conformant `doc`'s edges (lifecycle site 3), and emit the advisory `reconciliation.absorb`.
+fn absorb(
+    record: &mut FileStateRecord,
+    index: &mut crate::index::EdgeIndex,
+    schema: &crate::schema::Schema,
+    path: &str,
+    from: &str,
+    current: String,
+    doc: &crate::parse::Document,
+) -> Vec<Finding> {
+    record.record(path, current);
+    index.absorb_doc(schema, from, doc);
+    vec![absorb_finding(path)]
 }
 
 /// The shared **conformance gate** — re-parse the on-disk `bytes` against `schema` and
@@ -645,7 +679,10 @@ pub fn committed_path_recordable(
 ///
 /// `conflict` is the caller's [`ConflictBlock`] — the sweep knows the working area's
 /// *path*, never which task (or join) owns it, so the naming and the way out come from the
-/// caller that does (M47 inc-2 / T4). `adoption` is the caller's
+/// caller that does (M47 inc-2 / T4). `pinned` is the caller's
+/// [`PinnedBlob`](crate::validate::PinnedBlob) — a doc's committed bytes at the caller's base
+/// pin, which turns a touched doc's pulled drift into an absorb (M55 Increment 4). `adoption`
+/// is the caller's
 /// [`AdoptionInputs`](crate::validate::AdoptionInputs) — three pack facts the engine cannot
 /// produce, feeding [`reconcile_committed`]'s `UNKNOWN` + non-conformant arm so a foreign
 /// squatter draws the same code and route here it draws at store scope (M48 Inc 4 / T1).
@@ -666,6 +703,7 @@ pub fn reconcile_committed_store(
     repo_root: &Path,
     task_dir: &Path,
     history: &crate::validate::HistoryPredicate<'_>,
+    pinned: &crate::validate::PinnedBlob<'_>,
     conflict: &ConflictBlock,
     adoption: &crate::validate::AdoptionInputs<'_>,
     live: &LiveRecord,
@@ -706,6 +744,7 @@ pub fn reconcile_committed_store(
                     &from,
                     &bytes,
                     task_touched,
+                    pinned,
                     conflict,
                     adoption,
                 ));
@@ -744,6 +783,7 @@ pub fn reconcile_committed_store(
                 &from,
                 &bytes,
                 task_touched,
+                pinned,
                 conflict,
                 adoption,
             ));
@@ -831,7 +871,15 @@ pub fn reconcile_committed_store(
 /// - **content drift** (recorded hash ≠ on-disk hash) → exactly one blocking
 ///   `file-state.hash-matches` finding (the reused check id) carrying a
 ///   **store-scope route** (review / re-author through the owning workflow), never
-///   the task-scope `reconcile <path>` route the mutating path emits.
+///   the task-scope `reconcile <path>` route the mutating path emits — **unless the
+///   baseline merely lags `HEAD`** (M55 Increment 4, L1's store arm): when the on-disk
+///   bytes equal the doc's blob at `HEAD` (`head`, the CLI-supplied
+///   [`PinnedBlob`](crate::validate::PinnedBlob) bound to `HEAD`) **and** pass the
+///   conformance gate, the drift is committed — a pull, or a conformant edit committed with
+///   plain git — so the same finding is **advisory**, routed informationally *"the baseline
+///   lags `HEAD`; absorbed at the next finalize"*. A committed non-conformant edit keeps the
+///   blocking finding (and family 5 its conformance finding); nothing is baselined either
+///   way. `head` is asked only about a drifted doc, so a clean store shells out zero times.
 /// - **un-baselined** (no recorded hash) → exactly one **advisory**
 ///   `file-state.un-baselined` finding — a distinct *not-yet-tracked* outcome,
 ///   neither drift nor silent-clean (informational on a fresh / pre-baseline
@@ -863,13 +911,14 @@ pub fn reconcile_committed_store(
 /// the twin walks on-disk docs and never enumerates recorded-but-absent paths.
 ///
 /// Read-only by construction: `record` is borrowed `&` (no mutation possible) and
-/// the only I/O is reading the committed `.md` bytes — it never routes through the
-/// mutating [`reconcile_committed_store`]. Findings aggregate in a stable order —
+/// the only I/O is reading the committed `.md` bytes (and the caller's `head` lookup, on a
+/// drifted doc) — it never routes through the mutating [`reconcile_committed_store`]. Findings aggregate in a stable order —
 /// persisted schemas by type, then that type's instances in the enumerator's sorted order.
 pub fn detect_committed_store(
     record: &FileStateRecord,
     schemas: &std::collections::BTreeMap<String, crate::schema::Schema>,
     repo_root: &Path,
+    head: &crate::validate::PinnedBlob<'_>,
     versions: &std::collections::BTreeMap<String, u32>,
     priors: &std::collections::BTreeMap<String, Vec<crate::schema::Schema>>,
 ) -> Vec<Finding> {
@@ -910,7 +959,21 @@ pub fn detect_committed_store(
                 // outcomes stand unclassified: an OOB edit that mangles it past parsing is
                 // drift to route, never a file to "adopt".
                 Some(recorded) if recorded == current => {}
-                Some(_) => findings.push(drift_store_finding(&key)),
+                // Drifted. When the on-disk bytes equal the doc's blob at `HEAD` **and** conform,
+                // the baseline merely lags `HEAD` — a pull, or a conformant edit committed with
+                // plain git — and the next landed finalize absorbs it (M55 Increment 4, L1's
+                // store arm): advisory, the same `(code, target)` key. Every other drift keeps
+                // the blocking finding, a committed non-conformant edit included. The seam is
+                // asked only here, so a clean store shells out zero times.
+                Some(_) => {
+                    let lags_head = head(&key).is_some_and(|blob| hash_bytes(&blob) == current)
+                        && conformance_gate(schema, &bytes).is_ok();
+                    findings.push(if lags_head {
+                        lagging_baseline_finding(&key)
+                    } else {
+                        drift_store_finding(&key)
+                    });
+                }
             }
         }
     }
@@ -1026,6 +1089,24 @@ fn drift_store_finding(path: &str) -> Finding {
             "review the out-of-band edit to `{path}` and re-author it through the owning workflow"
         ).into()),
     )
+}
+
+/// The store-scope drift finding **graded by L1's store arm** (M55 Increment 4): a recorded
+/// doc whose on-disk bytes differ from its baseline but equal its blob at `HEAD`, and conform.
+/// The drift is committed, so it is not an out-of-band edit waiting in the worktree — the
+/// baseline lags `HEAD`, and the next landed finalize's sweep absorbs it through the
+/// conformance gate this arm has already passed. It **is** the [`drift_store_finding`] —
+/// the `file-state.hash-matches` id, message and location, so the `(code, target)` key does
+/// not move (the shipped no-new-id pattern) — with only the severity (advisory) and the route
+/// (informational: it directs nothing) changed.
+fn lagging_baseline_finding(path: &str) -> Finding {
+    Finding {
+        severity: Severity::Advisory,
+        route: Some(crate::finding::Route::informational(
+            "the baseline lags `HEAD`; absorbed at the next finalize",
+        )),
+        ..drift_store_finding(path)
+    }
 }
 
 /// The advisory **un-baselined** finding: a committed **managed** doc with no recorded
@@ -1869,6 +1950,7 @@ Referrers must point at the new decision.
             ADR_B_FROM,
             edited,
             /* task_touched */ false,
+            &|_| None,
             &test_conflict(),
             &crate::validate::AdoptionInputs::inert(),
         );
@@ -1926,6 +2008,7 @@ Referrers must point at the new decision.
             ADR_B_FROM,
             edited,
             /* task_touched */ false,
+            &|_| None,
             &test_conflict(),
             &crate::validate::AdoptionInputs::inert(),
         );
@@ -1990,6 +2073,7 @@ Referrers must point at the new decision.
             ADR_B_FROM,
             edited,
             /* task_touched */ true,
+            &|_| None,
             &test_conflict(),
             &crate::validate::AdoptionInputs::inert(),
         );
@@ -2067,6 +2151,7 @@ Referrers must point at the new decision.
             ADR_B_FROM,
             ADR_B_EDITED_SUPERSEDES.as_bytes(),
             /* task_touched */ true,
+            &|_| None,
             &ConflictBlock::new(detail, crate::finding::Route::human(route_text)),
             &crate::validate::AdoptionInputs::inert(),
         );
@@ -2089,6 +2174,225 @@ Referrers must point at the new decision.
                 && !route.as_str().contains("jigc task discard"),
             "the classifier contributes no task language of its own: {f:?}"
         );
+    }
+
+    /// **L1 pull absorption, (i)** (M55 Increment 4, P1): a committed doc drifted from its
+    /// recorded baseline **and** touched by the task, whose on-disk bytes equal its blob at the
+    /// task's base pin, was moved by a pull *before* the task began — so the touched arm runs
+    /// the untouched arm's whole absorb body, never only the re-hash: the conformance gate
+    /// passes, the record advances, the committed index gains the doc's edges, and the one
+    /// finding is the advisory `reconciliation.absorb`. The seam is asked about exactly the
+    /// drifted path.
+    #[test]
+    fn a_touched_doc_whose_drift_equals_the_pin_absorbs() {
+        let schema = adr_schema();
+        let mut record = FileStateRecord::new();
+        record.record(ADR_B_PATH, hash_bytes(ADR_B_BASE.as_bytes()));
+        let mut index = EdgeIndex::default();
+        let asked = std::cell::RefCell::new(Vec::new());
+
+        let pulled = ADR_B_EDITED_SUPERSEDES.as_bytes();
+        let findings = reconcile_committed(
+            &mut record,
+            &mut index,
+            &schema,
+            ADR_B_PATH,
+            ADR_B_FROM,
+            pulled,
+            /* task_touched */ true,
+            &|path: &str| {
+                asked.borrow_mut().push(path.to_string());
+                Some(pulled.to_vec())
+            },
+            &test_conflict(),
+            &crate::validate::AdoptionInputs::inert(),
+        );
+
+        assert_eq!(
+            findings,
+            vec![absorb_finding(ADR_B_PATH)],
+            "a pulled edit at the pin is absorbed, advisory, with no conflict-block"
+        );
+        assert_eq!(findings[0].severity, Severity::Advisory);
+        assert_eq!(
+            record.get(ADR_B_PATH),
+            Some(hash_bytes(pulled).as_str()),
+            "the absorb re-hashes the recorded baseline to the pulled bytes"
+        );
+        assert_eq!(
+            index.edges,
+            vec![Edge {
+                from: ADR_B_FROM.to_string(),
+                relation: "supersedes".to_string(),
+                to: "adr:single-node-cache".to_string(),
+            }],
+            "the absorb folds the pulled doc's edges into the committed index"
+        );
+        assert_eq!(
+            asked.into_inner(),
+            vec![ADR_B_PATH.to_string()],
+            "the seam is asked about the drifted path, once"
+        );
+    }
+
+    /// **L1 pull absorption, (ii)** (M55 Increment 4, P1): bytes that equal the pin but do
+    /// **not** conform are never baselined — the arm returns the **caller's** conflict-block,
+    /// byte-identical to what it returned before the pin existed, never a conformance-block.
+    /// Driven with a migration task's `ConflictBlock` keyed on this very path, so the M46
+    /// path-keyed third exit (`jigc unmanage <source>`) is the route that survives: a break
+    /// committed before `jigc migrate` equals the pin, and grading it a conformance-block would
+    /// silently retire that exit.
+    #[test]
+    fn a_touched_doc_at_the_pin_that_does_not_conform_keeps_the_callers_conflict_block() {
+        let schema = adr_schema();
+        let mut record = FileStateRecord::new();
+        let baseline = hash_bytes(ADR_B_BASE.as_bytes());
+        record.record(ADR_B_PATH, baseline.clone());
+        let mut index = EdgeIndex::default();
+        let conflict = ConflictBlock::task("migrate-adr-distributed-cache", Some(ADR_B_PATH));
+
+        let broken = ADR_B_EDITED_BAD_DATE.as_bytes();
+        let findings = reconcile_committed(
+            &mut record,
+            &mut index,
+            &schema,
+            ADR_B_PATH,
+            ADR_B_FROM,
+            broken,
+            /* task_touched */ true,
+            &|_| Some(broken.to_vec()),
+            &conflict,
+            &crate::validate::AdoptionInputs::inert(),
+        );
+
+        assert_eq!(
+            findings,
+            vec![conflict_block_finding(ADR_B_PATH, &conflict)],
+            "a non-conformant pulled edit keeps the caller's conflict-block, unchanged"
+        );
+        let route = findings[0].route.as_ref().expect("the conflict routes");
+        assert!(
+            route
+                .as_str()
+                .starts_with(&format!("`jigc unmanage {ADR_B_PATH}`")),
+            "the migration source's path-keyed exit survives: {route:?}"
+        );
+        assert_eq!(
+            record.get(ADR_B_PATH),
+            Some(baseline.as_str()),
+            "a non-conformant edit is never baselined"
+        );
+        assert!(index.edges.is_empty(), "nor is it folded into the index");
+    }
+
+    /// **L1 pull absorption, (iii)** (M55 Increment 4): bytes that differ from the pin's blob
+    /// moved **during** the task — the pin predates them — so the touched arm conflict-blocks
+    /// exactly as before, the record and index untouched.
+    #[test]
+    fn a_touched_doc_whose_drift_differs_from_the_pin_conflict_blocks() {
+        let schema = adr_schema();
+        let mut record = FileStateRecord::new();
+        let baseline = hash_bytes(ADR_B_BASE.as_bytes());
+        record.record(ADR_B_PATH, baseline.clone());
+        let mut index = EdgeIndex::default();
+
+        let findings = reconcile_committed(
+            &mut record,
+            &mut index,
+            &schema,
+            ADR_B_PATH,
+            ADR_B_FROM,
+            ADR_B_EDITED_SUPERSEDES.as_bytes(),
+            /* task_touched */ true,
+            &|_| Some(ADR_B_BASE.as_bytes().to_vec()),
+            &test_conflict(),
+            &crate::validate::AdoptionInputs::inert(),
+        );
+
+        assert_eq!(
+            findings,
+            vec![conflict_block_finding(ADR_B_PATH, &test_conflict())],
+            "an edit made after the pin conflict-blocks"
+        );
+        assert_eq!(record.get(ADR_B_PATH), Some(baseline.as_str()));
+        assert!(index.edges.is_empty());
+    }
+
+    /// **L1 pull absorption, (iv)** (M55 Increment 4, P2/P3): a `None` lookup — no pin, an
+    /// absent blob, a git failure, the record door — leaves **every** arm's verdict as it was,
+    /// and only the drifted + touched arm ever consults the seam, so a clean sweep shells out
+    /// zero times.
+    #[test]
+    fn a_none_lookup_keeps_every_arm_and_only_the_touched_drift_asks() {
+        let schema = adr_schema();
+        let base = ADR_B_BASE.as_bytes();
+        let edited = ADR_B_EDITED_SUPERSEDES.as_bytes();
+        let broken = ADR_B_EDITED_BAD_DATE.as_bytes();
+        let asked = std::cell::Cell::new(0usize);
+        let none = |_: &str| {
+            asked.set(asked.get() + 1);
+            None
+        };
+        // (recorded baseline, on-disk bytes, touched) → the codes today's classifier emits,
+        // and how many times the seam is asked.
+        type Cell<'a> = (Option<&'a [u8]>, &'a [u8], bool, &'a [&'a str], usize);
+        let cells: [Cell<'_>; 6] = [
+            (None, base, true, &["file-state.baseline-adopt"], 0),
+            (Some(base), base, true, &[], 0),
+            (Some(base), edited, false, &["reconciliation.absorb"], 0),
+            (
+                Some(base),
+                broken,
+                false,
+                &["reconciliation.conformance-block"],
+                0,
+            ),
+            (
+                Some(base),
+                edited,
+                true,
+                &["reconciliation.conflict-block"],
+                1,
+            ),
+            (
+                Some(base),
+                broken,
+                true,
+                &["reconciliation.conflict-block"],
+                1,
+            ),
+        ];
+        for (recorded, bytes, touched, codes, asks) in cells {
+            asked.set(0);
+            let mut record = FileStateRecord::new();
+            if let Some(recorded) = recorded {
+                record.record(ADR_B_PATH, hash_bytes(recorded));
+            }
+            let mut index = EdgeIndex::default();
+            let findings = reconcile_committed(
+                &mut record,
+                &mut index,
+                &schema,
+                ADR_B_PATH,
+                ADR_B_FROM,
+                bytes,
+                touched,
+                &none,
+                &test_conflict(),
+                &crate::validate::AdoptionInputs::inert(),
+            );
+            let got: Vec<&str> = findings.iter().map(|f| f.code.as_str()).collect();
+            assert_eq!(got, codes, "touched={touched}: {findings:?}");
+            assert_eq!(asked.get(), asks, "touched={touched}: the seam's asks");
+            if touched && recorded.is_some() && bytes != base {
+                assert_eq!(
+                    findings,
+                    vec![conflict_block_finding(ADR_B_PATH, &test_conflict())],
+                    "a `None` lookup keeps the conflict-block byte-identically"
+                );
+                assert_eq!(record.get(ADR_B_PATH), Some(hash_bytes(base).as_str()));
+            }
+        }
     }
 
     /// The **migration-source exit is scoped to the one path it is true of** (M46 inc-5 / T2).
@@ -2253,6 +2557,7 @@ Referrers must point at the new decision.
             from,
             foreign,
             false,
+            &|_| None,
             &test_conflict(),
             &crate::validate::AdoptionInputs::inert(),
         );
@@ -2300,6 +2605,7 @@ Referrers must point at the new decision.
             from,
             foreign,
             false,
+            &|_| None,
             &test_conflict(),
             &crate::validate::AdoptionInputs::inert(),
         );
@@ -2336,6 +2642,7 @@ Referrers must point at the new decision.
             ADR_B_FROM,
             ADR_B_BASE.as_bytes(),
             false,
+            &|_| None,
             &test_conflict(),
             &crate::validate::AdoptionInputs::inert(),
         );
@@ -2561,6 +2868,7 @@ Referrers must point at the new decision.
             root.path(),
             task.path(),
             &|_| true,
+            &|_| None,
             &test_conflict(),
             &crate::validate::AdoptionInputs::inert(),
             &LiveRecord::none(),
@@ -2639,6 +2947,7 @@ Referrers must point at the new decision.
             root.path(),
             task.path(),
             &|_| true,
+            &|_| None,
             &test_conflict(),
             &crate::validate::AdoptionInputs::inert(),
             &LiveRecord::none(),
@@ -2694,6 +3003,7 @@ Referrers must point at the new decision.
             root.path(),
             task.path(),
             &|_| true,
+            &|_| None,
             &test_conflict(),
             &crate::validate::AdoptionInputs::inert(),
             &LiveRecord::none(),
@@ -2717,6 +3027,7 @@ Referrers must point at the new decision.
             root.path(),
             task.path(),
             &|_| true,
+            &|_| None,
             &test_conflict(),
             &crate::validate::AdoptionInputs::inert(),
             &LiveRecord::none(),
@@ -2800,6 +3111,7 @@ Referrers must point at the new decision.
             root.path(),
             task.path(),
             &|_| true,
+            &|_| None,
             &test_conflict(),
             &crate::validate::AdoptionInputs::inert(),
             &LiveRecord::none(),
@@ -2832,6 +3144,7 @@ Referrers must point at the new decision.
             root.path(),
             task.path(),
             &|_| true,
+            &|_| None,
             &test_conflict(),
             &crate::validate::AdoptionInputs::inert(),
             &LiveRecord::none(),
@@ -2895,6 +3208,7 @@ Referrers must point at the new decision.
             &record,
             &schemas,
             root.path(),
+            &|_| None,
             &std::collections::BTreeMap::new(),
             &std::collections::BTreeMap::new(),
         );
@@ -3010,7 +3324,14 @@ Referrers must point at the new decision.
         // A FRESH CLONE: the file-state record is empty — neither doc is recorded.
         let record = FileStateRecord::new();
 
-        let findings = detect_committed_store(&record, &schemas, root.path(), &versions, &priors);
+        let findings = detect_committed_store(
+            &record,
+            &schemas,
+            root.path(),
+            &|_| None,
+            &versions,
+            &priors,
+        );
 
         let managed: Vec<&Finding> = findings
             .iter()
@@ -3080,6 +3401,7 @@ Referrers must point at the new decision.
             &record,
             &schemas,
             root.path(),
+            &|_| None,
             &std::collections::BTreeMap::new(),
             &std::collections::BTreeMap::new(),
         );
@@ -3136,6 +3458,118 @@ Referrers must point at the new decision.
         assert_eq!(
             record, record_before,
             "the read-only twin must not re-baseline the drift it exists to surface"
+        );
+    }
+
+    /// **L1's store arm** (M55 Increment 4, P4): the twin asks one more fact of a recorded doc
+    /// that has drifted — its committed bytes at `HEAD` — and grades the drift by it.
+    ///
+    /// - **(i)** bytes equal the `HEAD` blob **and** conform → the one finding is
+    ///   `file-state.hash-matches` at **advisory**, keyed and messaged as the blocking drift,
+    ///   with the informational route *"the baseline lags `HEAD`; absorbed at the next
+    ///   finalize"* — a pull, or a conformant edit committed with plain git;
+    /// - **(ii)** bytes equal the `HEAD` blob but do **not** conform → today's blocking drift,
+    ///   unchanged: matching bytes are not on their own a clean doc;
+    /// - **(iii)** bytes that differ from the `HEAD` blob (an uncommitted edit) → today's
+    ///   blocking drift, unchanged;
+    /// - **(iv)** the record is borrowed `&` and byte-identical across the sweep, and the seam
+    ///   is asked only about the drifted docs — never the in-sync one.
+    #[test]
+    fn detect_committed_store_grades_a_drift_that_equals_head_advisory_behind_conformance() {
+        let mut schemas: BTreeMap<String, Schema> = BTreeMap::new();
+        schemas.insert("adr".to_string(), adr_schema());
+
+        let root = TempRoot::new("detect-lag");
+        let decisions = root.path().join("decisions");
+        std::fs::create_dir_all(&decisions).expect("mk decisions/");
+        // Each doc's on-disk bytes, and what `HEAD` carries for it.
+        let docs: [(&str, &str, &str); 4] = [
+            // (i) pulled: the conformant edit is on disk and at HEAD.
+            ("pulled", ADR_B_EDITED_SUPERSEDES, ADR_B_EDITED_SUPERSEDES),
+            // (ii) committed-broken: the non-conformant edit is on disk and at HEAD.
+            ("broken", ADR_B_EDITED_BAD_DATE, ADR_B_EDITED_BAD_DATE),
+            // (iii) uncommitted: the edit is on disk, HEAD still carries the baseline.
+            ("local", ADR_B_EDITED_SUPERSEDES, ADR_B_BASE),
+            // in-sync: no drift, so the seam must not be asked.
+            ("synced", ADR_B_BASE, ADR_B_BASE),
+        ];
+        let mut record = FileStateRecord::new();
+        let mut at_head: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+        for (slug, on_disk, committed) in docs {
+            std::fs::write(decisions.join(format!("{slug}.md")), on_disk).expect("write doc");
+            let key = format!("decisions/{slug}.md");
+            record.record(&key, hash_bytes(ADR_B_BASE.as_bytes()));
+            at_head.insert(key, committed.as_bytes().to_vec());
+        }
+        let record_before = record.clone();
+        let asked = std::cell::RefCell::new(Vec::new());
+        let head = |path: &str| {
+            asked.borrow_mut().push(path.to_string());
+            at_head.get(path).cloned()
+        };
+
+        let findings = detect_committed_store(
+            &record,
+            &schemas,
+            root.path(),
+            &head,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+        );
+
+        let at = |path: &str| -> Vec<&Finding> {
+            findings
+                .iter()
+                .filter(|f| f.location.as_ref().and_then(|l| l.address.as_deref()) == Some(path))
+                .collect()
+        };
+        // (i) HEAD-equal and conformant → one advisory hash-matches, the lag route.
+        let pulled = at("decisions/pulled.md");
+        assert_eq!(
+            pulled.len(),
+            1,
+            "one finding for the pulled doc: {findings:?}"
+        );
+        let lag = pulled[0];
+        assert_eq!(lag.code, "file-state.hash-matches", "no new id: {lag:?}");
+        assert_eq!(
+            lag.severity,
+            Severity::Advisory,
+            "the lag is advisory: {lag:?}"
+        );
+        assert_eq!(
+            lag.message,
+            drift_store_finding("decisions/pulled.md").message,
+            "the message stays the drift's: {lag:?}"
+        );
+        let route = lag.route.as_ref().expect("the lag routes");
+        assert_eq!(
+            route.as_str(),
+            "the baseline lags `HEAD`; absorbed at the next finalize"
+        );
+        assert!(
+            matches!(route.kind(), crate::finding::RouteKind::Informational),
+            "the lag informs and directs nothing: {route:?}"
+        );
+        // (ii) HEAD-equal but non-conformant, and (iii) uncommitted → today's blocking drift.
+        for path in ["decisions/broken.md", "decisions/local.md"] {
+            assert_eq!(
+                at(path),
+                vec![&drift_store_finding(path)],
+                "`{path}` keeps today's blocking drift: {findings:?}"
+            );
+        }
+        assert!(at("decisions/synced.md").is_empty(), "{findings:?}");
+        // (iv) read-only, and the seam is asked about the drifted docs only.
+        assert_eq!(record, record_before, "the twin never baselines the lag");
+        assert_eq!(
+            asked.into_inner(),
+            vec![
+                "decisions/broken.md".to_string(),
+                "decisions/local.md".to_string(),
+                "decisions/pulled.md".to_string(),
+            ],
+            "only a drifted doc consults the seam"
         );
     }
 
@@ -3269,6 +3703,7 @@ sections: []
             root.path(),
             task.path(),
             &|_| true,
+            &|_| None,
             &test_conflict(),
             &crate::validate::AdoptionInputs::inert(),
             &LiveRecord::none(),
@@ -3324,6 +3759,7 @@ sections: []
             root.path(),
             task.path(),
             &|_| true,
+            &|_| None,
             &test_conflict(),
             &crate::validate::AdoptionInputs::inert(),
             &LiveRecord::none(),
@@ -3796,6 +4232,7 @@ sections: []
             root.path(),
             task.path(),
             &|_| true,
+            &|_| None,
             &test_conflict(),
             &crate::validate::AdoptionInputs::inert(),
             &LiveRecord::none(),
@@ -3838,6 +4275,7 @@ sections: []
             root.path(),
             task.path(),
             &|_| true,
+            &|_| None,
             &test_conflict(),
             &crate::validate::AdoptionInputs::inert(),
             &LiveRecord::none(),

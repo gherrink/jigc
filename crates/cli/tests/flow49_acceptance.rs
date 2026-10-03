@@ -674,18 +674,6 @@ fn drive_contrast(baseline_present: bool) -> ContrastOutcome {
         "`jigc task finalize` (task 0)",
     );
 
-    // The human channel: an out-of-band, conformant, prose-only edit, committed in git
-    // directly and **before** the warm task mints (so its base is this HEAD and a
-    // base-mismatch cannot pre-empt the reconcile gate).
-    let path = repo.join(CONTRAST_ADR);
-    let body = fs::read_to_string(&path).expect("read the committed ADR");
-    let edited = body.replacen("A cold node loses its sessions.", HUMAN_PROSE, 1);
-    assert_ne!(body, edited, "the out-of-band edit must change the ADR");
-    fs::write(&path, edited).expect("apply the out-of-band edit");
-    git_ok(repo, &["add", CONTRAST_ADR]);
-    git_ok(repo, &["commit", "-q", "-m", "tighten the consequences"]);
-
-    // The warm task touches the SAME doc through the CLI, so both sides have moved.
     let warm = minted_task(&run_jigc_ok(
         repo,
         home,
@@ -697,6 +685,20 @@ fn drive_contrast(baseline_present: bool) -> ContrastOutcome {
         ],
         "`jigc start` (warm task)",
     ));
+
+    // The human channel: an out-of-band, conformant, prose-only edit, written on disk
+    // **after** the warm task mints and left uncommitted — so HEAD stays at the task's
+    // base (a base-mismatch cannot pre-empt the reconcile gate) and the edit is not the
+    // base pin's blob, a change made during the task that M55 Increment 4's pulled-edit
+    // absorb leaves to arm A's conflict-block. It lands **before** the task's first touch,
+    // so the copy-in below carries it into arm B's commit.
+    let path = repo.join(CONTRAST_ADR);
+    let body = fs::read_to_string(&path).expect("read the committed ADR");
+    let edited = body.replacen("A cold node loses its sessions.", HUMAN_PROSE, 1);
+    assert_ne!(body, edited, "the out-of-band edit must change the ADR");
+    fs::write(&path, edited).expect("apply the out-of-band edit");
+
+    // The warm task touches the SAME doc through the CLI, so both sides have moved.
     run_jigc_stdin_ok(
         repo,
         home,

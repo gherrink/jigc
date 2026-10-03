@@ -531,13 +531,18 @@ fn warm_edit_over_an_oob_drifted_singleton_conflict_blocks_at_finalize() {
         "`task finalize` (drift/run1 cold) — records the baseline FIRST",
     );
 
-    // OOB drift: a human hand-edits the committed runlog/runlog.md and commits it.
-    // The cold finalize recorded the baseline hash in the file-state record; this raw
-    // `git commit` advances HEAD + the on-disk bytes but does NOT touch that record, so
-    // the recorded baseline now diverges from disk (DRIFTED). Drift BEFORE the warm task
-    // starts so the warm task's base == this drifted HEAD (no `finalize.base-mismatch`,
-    // which would pre-empt the reconcile gate). This rides the existing reconcile
-    // machinery — no reconcile code is added by this task.
+    // ── Run 2: a warm task touches the singleton (copy-in via create + edit) ──────
+    let warm = "drift-the-running-log";
+    start_keep_runlog(repo.path(), home.path(), "drift the running log", warm);
+
+    // OOB drift: a human hand-edits the committed runlog/runlog.md on disk, AFTER the
+    // warm task is minted and left uncommitted. The cold finalize recorded the baseline
+    // hash in the file-state record; this edit moves the on-disk bytes but not that
+    // record, so the recorded baseline now diverges from disk (DRIFTED). Uncommitted, so
+    // HEAD still equals the warm task's base (no `finalize.base-mismatch` pre-empting the
+    // reconcile gate) and the drift is not the base pin's blob — a change made DURING the
+    // task, which M55 Increment 4's pulled-edit absorb leaves conflict-blocking. A drift
+    // committed before the mint would be at the pin and absorbed (`l1_pull_absorption`).
     let committed_path = repo.path().join("docs").join("runlog").join("runlog.md");
     let on_disk = fs::read_to_string(&committed_path).expect("read committed runlog on disk");
     fs::write(
@@ -548,15 +553,6 @@ fn warm_edit_over_an_oob_drifted_singleton_conflict_blocks_at_finalize() {
         ),
     )
     .expect("apply OOB drift");
-    git(repo.path(), &["add", "docs/runlog/runlog.md"]);
-    git(
-        repo.path(),
-        &["commit", "-q", "-m", "oob: hand-edit the runlog"],
-    );
-
-    // ── Run 2: a warm task touches the singleton (copy-in via create + edit) ──────
-    let warm = "drift-the-running-log";
-    start_keep_runlog(repo.path(), home.path(), "drift the running log", warm);
     assert_ok(
         &jigc_doc(
             repo.path(),
