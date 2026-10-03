@@ -29,6 +29,10 @@
 //! rows' seed docs and the files under `seed/jigc-feedback/` and `seed/inconsistencies/`
 //! (the only two entries of `seed/`) are a bijection, each doc titled as its row's input;
 //! and each seed doc's `status` is its row's verdict.
+//!
+//! **The seeded sources point at the seed** (T8): each register row's disposition links its
+//! seed doc, and each seeded `decisions-pending.md` row is one pointer line — its label,
+//! the link, and its trigger.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -709,4 +713,97 @@ fn each_seed_doc_status_equals_its_verdict() {
         "the seed docs and the ledger's verdicts disagree:\n  {}",
         problems.join("\n  ")
     );
+}
+
+/// The sources a seeded row points back from (§7, T8): a `decisions-pending.md` row and a
+/// register row each link the seed doc that now carries them. A review README is dated and
+/// never edited, and a declared bound stays stated in its design home, so neither points.
+const POINTING: &[&str] = &["M53 Settle", "owed", "CI", "register"];
+
+/// The relative link targets on `line`, each resolved against `base` (repo-relative).
+fn link_targets(base: &str, line: &str) -> Vec<String> {
+    line.split("](")
+        .skip(1)
+        .filter_map(|rest| rest.split_once(')'))
+        .map(|(target, _)| resolve(base, target))
+        .collect()
+}
+
+/// The one line carrying a source row, read where [`source_rows`] reads it.
+fn source_line<'a>(pending: &'a str, register: &'a str, tag: &str, id: &str) -> Option<&'a str> {
+    let rows = |heading: &str, stop: fn(&str) -> bool| section(pending, heading, stop);
+    let lines = match tag {
+        "register" => register.lines().collect(),
+        "M53 Settle" => rows("### Deferred at the M53 Settle", |l| l.starts_with("### ")),
+        "owed" => rows("### Owed after M53's post-review arcs", |l| {
+            l.starts_with("### ")
+        }),
+        "CI" => rows("**CI — ", |l| {
+            l.starts_with("**") || l.starts_with("### ")
+        }),
+        _ => return None,
+    };
+    let label = |l: &&str| match tag {
+        "register" => l.starts_with(&format!("| {id} |")),
+        "M53 Settle" => row_label(l).is_some_and(|label| label.starts_with(id)),
+        _ => row_label(l) == Some(id),
+    };
+    lines.into_iter().find(label)
+}
+
+/// **A seeded row points at its seed doc, and a `decisions-pending.md` row is only the
+/// pointer** (§1.6, §7; T8). Each register row's disposition cell links its seed doc. Each
+/// seeded `decisions-pending.md` row collapses to one line — its opening bold label, kept
+/// verbatim so [`source_rows`] still finds it, then `Seeded as [<home>/<slug>.md](<link>).`
+/// and the row's `*Trigger:*` clause where it had one — so the finding's text has one home,
+/// the seed doc, and the row keeps only what makes it a deferral.
+#[test]
+fn every_seeded_pending_and_register_row_points_at_its_seed_doc() {
+    let (rows, _) = ledger();
+    let pending = read(PENDING);
+    let register = read(REGISTER);
+    let mut problems = Vec::new();
+    for row in &rows {
+        let Ok(doc) = seed_doc(row) else { continue };
+        for (tag, id) in row
+            .sources
+            .iter()
+            .filter(|(t, _)| POINTING.contains(&t.as_str()))
+        {
+            let Some(line) = source_line(&pending, &register, tag, id) else {
+                problems.push(format!("`{tag}` row `{id}` is not found"));
+                continue;
+            };
+            if tag == "register" {
+                let disposition = line.trim_end_matches('|').rsplit(" | ").next().unwrap();
+                if !link_targets(REGISTER, disposition).contains(&doc) {
+                    problems.push(format!(
+                        "register row `{id}`'s disposition cell does not link `{doc}`"
+                    ));
+                }
+                continue;
+            }
+            let text = doc.strip_prefix(&format!("{SEED}/")).unwrap();
+            let link = format!("[{text}]({})", relative_from(PENDING, &doc));
+            let label = row_label(line).unwrap();
+            let pointer = format!("- **{label}** Seeded as {link}.");
+            let rest = line.strip_prefix(&pointer);
+            if !rest.is_some_and(|r| r.is_empty() || r.starts_with(" *Trigger:* ")) {
+                problems.push(format!(
+                    "`{tag}` row `{id}` is not one pointer line `{pointer}[ *Trigger:* …]`: `{line}`"
+                ));
+            }
+        }
+    }
+    assert!(
+        problems.is_empty(),
+        "the seeded rows and their seed docs disagree:\n  {}",
+        problems.join("\n  ")
+    );
+}
+
+/// `target` (repo-relative) as a link from `base`'s directory.
+fn relative_from(base: &str, target: &str) -> String {
+    let ups = base.matches('/').count();
+    format!("{}{target}", "../".repeat(ups))
 }
