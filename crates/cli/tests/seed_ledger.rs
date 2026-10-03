@@ -20,6 +20,10 @@
 //! keys are unique, filesystem-safe and prefixed by their first source's tag, which the
 //! re-drive batches glob on. A bold label is matched verbatim, which is why the pointer
 //! rewrite of the `decisions-pending.md` rows (T8) keeps each row's opening label.
+//!
+//! **The verdicts are held to the filing inputs** (T2, P3 and P4): a row with a verdict has
+//! an input directory under `seed-filing/input/<doctype>/<key>/` whose `fields` `status` is
+//! that verdict, a row without one has none, and no input names a row the ledger lacks.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -258,6 +262,8 @@ struct Row {
     key: String,
     doctype: String,
     sources: Vec<Source>,
+    /// The re-drive's verdict, empty until the row is re-driven.
+    verdict: String,
 }
 
 /// The ledger's rows and its exclusions.
@@ -293,6 +299,7 @@ fn ledger() -> (Vec<Row>, Vec<(Source, String)>) {
                         source
                     })
                     .collect(),
+                verdict: cells[3].to_owned(),
             }
         })
         .collect();
@@ -431,5 +438,109 @@ fn the_ledger_states_its_own_count() {
             entries
         ],
         "`{line}` must state the rows, the two doctypes' rows and the source entries the table carries"
+    );
+}
+
+/// The per-row filing inputs, repo-relative: `input/<doctype>/<key>/` (P4).
+const INPUTS: &str = "completions/artifacts/M55/seed-filing/input";
+
+/// The verdicts a re-drive may give each doctype (P3): an `inconsistency` may also be
+/// `intended`.
+fn verdicts(doctype: &str) -> &'static [&'static str] {
+    match doctype {
+        "inconsistency" => &["open", "resolved", "refuted", "intended"],
+        _ => &["open", "resolved", "refuted"],
+    }
+}
+
+/// The names of the entries of `dir`, or none when it does not exist yet.
+fn entries(dir: &Path) -> BTreeSet<String> {
+    match fs::read_dir(dir) {
+        Ok(read) => read
+            .map(|e| {
+                e.expect("a readable entry")
+                    .file_name()
+                    .into_string()
+                    .unwrap()
+            })
+            .collect(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => BTreeSet::new(),
+        Err(e) => panic!("`{}` must be readable: {e}", dir.display()),
+    }
+}
+
+/// A re-driven row's verdict is its input's `status`, and only a re-driven row has an input
+/// (P3, P4): a ledger row with a verdict has `input/<doctype>/<key>/`, whose `fields` carries
+/// exactly one `status <value>` line equal to the verdict; a row without one has no input; and
+/// every input directory is a ledger key under its own doctype. The driver files what the
+/// input says, so this is what holds the filed status to the ledger before T7's bijection.
+#[test]
+fn every_redriven_row_has_an_input_carrying_its_verdict() {
+    let (rows, _) = ledger();
+    let inputs = repo_root().join(INPUTS);
+    let mut problems = Vec::new();
+
+    for row in &rows {
+        let dir = inputs.join(&row.doctype).join(&row.key);
+        let rel = format!("{INPUTS}/{}/{}", row.doctype, row.key);
+        if row.verdict.is_empty() {
+            if dir.exists() {
+                problems.push(format!("`{rel}` exists, but its ledger row has no verdict"));
+            }
+            continue;
+        }
+        if !verdicts(&row.doctype).contains(&row.verdict.as_str()) {
+            problems.push(format!(
+                "`{}`: the verdict `{}` is not one of {:?}",
+                row.key,
+                row.verdict,
+                verdicts(&row.doctype)
+            ));
+        }
+        let fields = match fs::read_to_string(dir.join("fields")) {
+            Ok(fields) => fields,
+            Err(e) => {
+                problems.push(format!(
+                    "`{}` is re-driven (`{}`), but `{rel}/fields` is unreadable: {e}",
+                    row.key, row.verdict
+                ));
+                continue;
+            }
+        };
+        let status: Vec<&str> = fields
+            .lines()
+            .filter_map(|l| l.strip_prefix("status "))
+            .collect();
+        if status != [row.verdict.as_str()] {
+            problems.push(format!(
+                "`{rel}/fields` sets status {status:?}; its ledger verdict is `{}`",
+                row.verdict
+            ));
+        }
+    }
+
+    let keys: BTreeSet<(&str, &str)> = rows
+        .iter()
+        .map(|r| (r.doctype.as_str(), r.key.as_str()))
+        .collect();
+    for doctype in entries(&inputs) {
+        if !["jigc-feedback", "inconsistency"].contains(&doctype.as_str()) {
+            problems.push(format!(
+                "`{INPUTS}/{doctype}` is not a doctype's input home"
+            ));
+            continue;
+        }
+        for key in entries(&inputs.join(&doctype)) {
+            if !keys.contains(&(doctype.as_str(), key.as_str())) {
+                problems.push(format!(
+                    "`{INPUTS}/{doctype}/{key}` is no `{doctype}` row of the ledger"
+                ));
+            }
+        }
+    }
+    assert!(
+        problems.is_empty(),
+        "the inputs and the ledger's verdicts disagree:\n  {}",
+        problems.join("\n  ")
     );
 }
