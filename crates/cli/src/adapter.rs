@@ -69,6 +69,192 @@ pub struct AdapterProfile {
     /// put a guide declares none and the install is inert there, never an error.
     #[serde(default)]
     pub guide: Option<GuideTarget>,
+
+    /// The **co-author** this assistant's agent signs the commits jigc makes under it with
+    /// (`design/assistant-adapter.md` → The co-author trailer). **Optional**: a profile
+    /// declaring none adds no trailer to any commit, whoever runs jigc.
+    #[serde(default, rename = "co-author")]
+    pub co_author: Option<CoAuthor>,
+}
+
+/// The coding agent's **co-author identity** and the environment variable that says jigc is
+/// running under it — rendered as one `Co-Authored-By: <name> <<email>>` git trailer on every
+/// commit jigc makes while that variable is set and non-empty.
+///
+/// **Why the variable is part of the identity** (`design/assistant-adapter.md` → The co-author
+/// trailer): the trailer claims the agent co-authored the commit, and a human running
+/// `jigc task finalize` by hand made that commit alone — a static trailer would put a false
+/// co-author on it, a law-1 lie (`design/surface-contract.md`). Which variable an assistant
+/// sets for the processes its agent runs is assistant knowledge, so the profile declares it
+/// and the neutral core only reads the name it is given; the engine is never consulted.
+///
+/// Validated **at deserialization**, so a malformed declaration fails the profile load — the
+/// `setup.profile-load` refusal at install, and no trailer at a commit — rather than ever
+/// rendering a trailer git would not read as one.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "RawCoAuthor")]
+pub struct CoAuthor {
+    /// The display name (`Claude`) — the trailer value's name half.
+    pub name: String,
+    /// The address (`noreply@anthropic.com`) — the trailer value's `<…>` half, and the
+    /// co-author's **identity**: an existing co-author trailer with the same address is the
+    /// same co-author, whatever name it spells.
+    pub email: String,
+    /// The environment variable the assistant sets, non-empty, in its agent's processes
+    /// (`CLAUDECODE` for Claude Code).
+    #[serde(rename = "when-env")]
+    pub when_env: String,
+}
+
+/// The unvalidated wire shape of [`CoAuthor`], checked by its `TryFrom`.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawCoAuthor {
+    name: String,
+    email: String,
+    #[serde(rename = "when-env")]
+    when_env: String,
+}
+
+impl TryFrom<RawCoAuthor> for CoAuthor {
+    type Error = String;
+
+    fn try_from(raw: RawCoAuthor) -> Result<Self, Self::Error> {
+        let name = raw.name.trim();
+        if name.is_empty() || name.contains(['<', '>', '\n', '\r']) {
+            return Err(
+                "the `co-author` `name` must be a non-empty single line without `<` or `>`"
+                    .to_owned(),
+            );
+        }
+        let email = raw.email.trim();
+        if email.is_empty() || email.contains(|c: char| c == '<' || c == '>' || c.is_whitespace()) {
+            return Err("the `co-author` `email` must be a non-empty address without `<`, `>` or whitespace".to_owned());
+        }
+        let var = raw.when_env.as_str();
+        let mut chars = var.chars();
+        let leads = chars
+            .next()
+            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_');
+        if !leads || !chars.all(|c| c.is_ascii_alphanumeric() || c == '_') {
+            return Err("the `co-author` `when-env` must name an environment variable (`[A-Za-z_][A-Za-z0-9_]*`)".to_owned());
+        }
+        Ok(CoAuthor {
+            name: name.to_owned(),
+            email: email.to_owned(),
+            when_env: raw.when_env,
+        })
+    }
+}
+
+/// The git trailer key the co-author renders under — the spelling GitHub and `git shortlog`
+/// read co-authors from.
+pub const CO_AUTHOR_KEY: &str = "Co-Authored-By";
+
+impl CoAuthor {
+    /// The one trailer line: `Co-Authored-By: <name> <<email>>`.
+    pub fn trailer(&self) -> String {
+        format!("{CO_AUTHOR_KEY}: {} <{}>", self.name, self.email)
+    }
+
+    /// Whether jigc is running under this agent right now — `when-env` set and non-empty in
+    /// the environment `lookup` reads (the process environment in production; a closure in
+    /// the unit tests, so they never mutate global state).
+    pub fn active_under(&self, lookup: impl Fn(&str) -> Option<std::ffi::OsString>) -> bool {
+        lookup(&self.when_env).is_some_and(|value| !value.is_empty())
+    }
+
+    /// Whether `message`'s **trailer block** already names this co-author — a
+    /// `Co-Authored-By` trailer (key compared ASCII-case-insensitively, as git does) whose
+    /// `<address>` is this one's. A line outside the trailer block is prose, not a trailer,
+    /// and does not count.
+    pub fn signed(&self, message: &str) -> bool {
+        trailer_block(message.trim_end())
+            .is_some_and(|block| block.iter().any(|line| self.names(line)))
+    }
+
+    /// `message` with this co-author's trailer appended — into the message's existing
+    /// trailer block when it ends in one, else as a new block after one blank line, the
+    /// placement `git interpret-trailers` gives a trailer it adds at the end — or `message`
+    /// **unchanged** when the block already names this co-author ([`signed`](Self::signed)).
+    /// An empty message is returned unchanged: there is no subject to sign under.
+    pub fn sign(&self, message: &str) -> String {
+        let body = message.trim_end();
+        if body.is_empty() || self.signed(body) {
+            return message.to_owned();
+        }
+        let gap = if trailer_block(body).is_some() {
+            "\n"
+        } else {
+            "\n\n"
+        };
+        format!("{body}{gap}{}", self.trailer())
+    }
+
+    /// Whether one trailer `line` names this co-author.
+    fn names(&self, line: &str) -> bool {
+        let Some((token, value)) = trailer_parts(line) else {
+            return false;
+        };
+        if !token.eq_ignore_ascii_case(CO_AUTHOR_KEY) {
+            return false;
+        }
+        value
+            .rfind('<')
+            .and_then(|open| {
+                let rest = &value[open + 1..];
+                rest.find('>').map(|close| &rest[..close])
+            })
+            .is_some_and(|address| address.trim().eq_ignore_ascii_case(&self.email))
+    }
+}
+
+/// A git trailer line's `(token, value)`: a token of `[A-Za-z0-9-]`, optional blanks, then
+/// `:` — the default `trailer.separators`. `None` for any other line.
+fn trailer_parts(line: &str) -> Option<(&str, &str)> {
+    let end = line.find(|c: char| !(c.is_ascii_alphanumeric() || c == '-'))?;
+    if end == 0 {
+        return None;
+    }
+    let rest = line[end..].trim_start_matches([' ', '\t']);
+    let value = rest.strip_prefix(':')?;
+    Some((&line[..end], value.trim()))
+}
+
+/// The message's **trailer block**: its last paragraph, when that paragraph is not the
+/// subject's and every line of it is a trailer or a continuation (a line opening with
+/// whitespace after a trailer). git also accepts a mixed paragraph in some configurations;
+/// this reads only the all-trailer shape jigc's own renderer emits, so a mixed paragraph
+/// gets the trailer in a block of its own — which git reads as the trailer block either way.
+fn trailer_block(body: &str) -> Option<Vec<&str>> {
+    let lines: Vec<&str> = body.lines().collect();
+    let blank = lines.iter().rposition(|line| line.trim().is_empty())?;
+    if !lines[..blank].iter().any(|line| !line.trim().is_empty()) {
+        return None;
+    }
+    let block = &lines[blank + 1..];
+    let first = block.first()?;
+    trailer_parts(first)?;
+    block
+        .iter()
+        .all(|line| trailer_parts(line).is_some() || line.starts_with([' ', '\t']))
+        .then(|| block.to_vec())
+}
+
+/// The co-author the commit jigc is about to make carries **because of who is making it**:
+/// the profile `jigc setup` installs declares one ([`crate::setup::SETUP_ASSISTANT`] — one
+/// assistant today, so there is no per-repo record to read) **and** jigc is running under that
+/// agent. `None` otherwise — including a profile that will not load, which contributes
+/// nothing rather than failing a commit (the [`crate::config::installed_artifact_roots`]
+/// precedent; the shipped profile is embedded, so that state is the test seam's alone).
+pub fn session_co_author() -> Option<CoAuthor> {
+    declared_co_author().filter(|co_author| co_author.active_under(|var| std::env::var_os(var)))
+}
+
+/// The co-author the installed profile declares, whoever is running jigc — what an amend
+/// reads `HEAD` against to carry a claim the rewritten commit's tree still makes.
+pub fn declared_co_author() -> Option<CoAuthor> {
+    load_profile(crate::setup::SETUP_ASSISTANT).ok()?.co_author
 }
 
 impl AdapterProfile {
@@ -1638,7 +1824,136 @@ mod tests {
           front-matter:
             name: jigc
             description: How to work in a jigc-managed repository — the setup/start/finalize loop, adopting an existing project, and upgrading a corpus.
+        # The coding agent's co-author trailer: every commit jigc makes while running under Claude
+        # Code carries `Co-Authored-By: Claude <noreply@anthropic.com>`, exactly once. `when-env` is
+        # the variable Claude Code sets in the processes its agent runs, so a commit a human makes
+        # by hand carries no co-author claim. Static by necessity: Claude Code exposes no model name.
+        # Optional — a profile declaring none adds no trailer to any commit.
+        co-author:
+          name: Claude
+          email: noreply@anthropic.com
+          when-env: CLAUDECODE
         "###);
+    }
+
+    /// The shipped profile's co-author renders the trailer the decision of 2026-10-03 names,
+    /// keyed on the variable Claude Code sets — and only while it is set **and non-empty**.
+    #[test]
+    fn shipped_co_author_is_claude_keyed_on_claudecode() {
+        let profile = load_profile("claude-code").expect("the shipped profile loads");
+        let co_author = profile
+            .co_author
+            .expect("the shipped profile declares a co-author");
+        assert_eq!(
+            co_author.trailer(),
+            "Co-Authored-By: Claude <noreply@anthropic.com>"
+        );
+        assert_eq!(co_author.when_env, "CLAUDECODE");
+        let set = |value: &'static str| {
+            move |var: &str| (var == "CLAUDECODE").then(|| OsString::from(value))
+        };
+        assert!(co_author.active_under(set("1")));
+        assert!(
+            !co_author.active_under(set("")),
+            "an empty variable is not a session"
+        );
+        assert!(
+            !co_author.active_under(|_| None),
+            "an absent variable is not a session"
+        );
+    }
+
+    fn claude() -> CoAuthor {
+        CoAuthor {
+            name: "Claude".to_owned(),
+            email: "noreply@anthropic.com".to_owned(),
+            when_env: "CLAUDECODE".to_owned(),
+        }
+    }
+
+    /// Placement: a new block after one blank line when the message ends in prose (or is a
+    /// bare subject), the existing block when it ends in one — the shape jigc's own commit
+    /// renderer emits for a doc with `#trailers`.
+    #[test]
+    fn sign_places_the_trailer_in_the_trailer_block() {
+        let co = claude();
+        assert_eq!(
+            co.sign("feat(cache): add it"),
+            "feat(cache): add it\n\nCo-Authored-By: Claude <noreply@anthropic.com>"
+        );
+        assert_eq!(
+            co.sign("feat: add it\n\nWhy it matters.\n"),
+            "feat: add it\n\nWhy it matters.\n\nCo-Authored-By: Claude <noreply@anthropic.com>"
+        );
+        assert_eq!(
+            co.sign("feat: add it\n\nWhy.\n\nRefs: TKT-1\nSigned-off-by: A <a@example.com>"),
+            "feat: add it\n\nWhy.\n\nRefs: TKT-1\nSigned-off-by: A <a@example.com>\n\
+             Co-Authored-By: Claude <noreply@anthropic.com>"
+        );
+        // A subject that happens to look like a trailer is still the subject, never a block.
+        assert_eq!(
+            co.sign("Refs: TKT-1"),
+            "Refs: TKT-1\n\nCo-Authored-By: Claude <noreply@anthropic.com>"
+        );
+        assert_eq!(co.sign(""), "", "no subject, nothing to sign under");
+    }
+
+    /// Dedupe: the block already naming this co-author — by address, whatever the name or the
+    /// key's case — leaves the message byte-identical; the same line in prose does not count.
+    #[test]
+    fn sign_never_doubles_a_co_author_the_block_already_names() {
+        let co = claude();
+        for message in [
+            "feat: x\n\nCo-Authored-By: Claude <noreply@anthropic.com>",
+            "feat: x\n\nRefs: TKT-1\nco-authored-by: Claude Opus <NoReply@Anthropic.com>\n",
+            "feat: x\n\nbody\n\nCo-Authored-By : Claude <noreply@anthropic.com>",
+        ] {
+            assert_eq!(co.sign(message), message, "unchanged: {message:?}");
+            assert!(co.signed(message));
+        }
+        let prose = "feat: x\n\nCo-Authored-By: Claude <noreply@anthropic.com> wrote this.\n\
+                     Thanks to everyone.";
+        assert!(
+            !co.signed(prose),
+            "a prose paragraph is not a trailer block"
+        );
+        assert!(
+            co.sign(prose)
+                .ends_with("\n\nCo-Authored-By: Claude <noreply@anthropic.com>")
+        );
+        let other = "feat: x\n\nCo-Authored-By: Ada <ada@example.com>";
+        assert_eq!(
+            co.sign(other),
+            "feat: x\n\nCo-Authored-By: Ada <ada@example.com>\n\
+             Co-Authored-By: Claude <noreply@anthropic.com>",
+            "a different co-author is a different identity",
+        );
+    }
+
+    /// A malformed declaration fails the load — at install that is `setup.profile-load` — so
+    /// no trailer git would not read as one is ever rendered.
+    #[test]
+    fn malformed_co_author_fails_the_profile_load() {
+        let base = include_str!("../adapters/claude-code.yaml");
+        for (from, to) in [
+            ("  name: Claude\n", "  name: \"Cl<aude\"\n"),
+            (
+                "  email: noreply@anthropic.com\n",
+                "  email: \"no reply@x\"\n",
+            ),
+            ("  when-env: CLAUDECODE\n", "  when-env: 1CLAUDE\n"),
+            (
+                "  when-env: CLAUDECODE\n",
+                "  when-env: CLAUDECODE\n  extra: x\n",
+            ),
+        ] {
+            let yaml = base.replacen(from, to, 1);
+            assert_ne!(yaml, base, "the mutation applies: {from:?}");
+            assert!(
+                serde_yaml_ng::from_str::<AdapterProfile>(&yaml).is_err(),
+                "`{to:?}` must fail the profile load",
+            );
+        }
     }
 
     /// The floor's **two human-owned destroyers** (M50 Increment 3, Settle D9). This

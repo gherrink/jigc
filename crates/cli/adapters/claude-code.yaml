@@ -47,3 +47,12 @@ guide:
   front-matter:
     name: jigc
     description: How to work in a jigc-managed repository — the setup/start/finalize loop, adopting an existing project, and upgrading a corpus.
+# The coding agent's co-author trailer: every commit jigc makes while running under Claude
+# Code carries `Co-Authored-By: Claude <noreply@anthropic.com>`, exactly once. `when-env` is
+# the variable Claude Code sets in the processes its agent runs, so a commit a human makes
+# by hand carries no co-author claim. Static by necessity: Claude Code exposes no model name.
+# Optional — a profile declaring none adds no trailer to any commit.
+co-author:
+  name: Claude
+  email: noreply@anthropic.com
+  when-env: CLAUDECODE

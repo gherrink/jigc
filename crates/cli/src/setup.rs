@@ -2677,7 +2677,16 @@ fn commit_install(
 
     // Commit only our paths: a pathspec-limited commit commits exactly those files and
     // leaves the user's other staged changes uncommitted and untouched.
-    let mut commit: Vec<&str> = vec!["commit", "--no-verify", "-m", INSTALL_COMMIT_MESSAGE, "--"];
+    //
+    // The install commit is outside the hook-capable seam (`--no-verify`), so it signs its own
+    // message the way the seam signs every other door's: the coding agent's co-author trailer
+    // when `setup` runs under it, none when a human does (`design/assistant-adapter.md` → The
+    // co-author trailer).
+    let message = match crate::adapter::session_co_author() {
+        Some(co_author) => co_author.sign(INSTALL_COMMIT_MESSAGE),
+        None => INSTALL_COMMIT_MESSAGE.to_owned(),
+    };
+    let mut commit: Vec<&str> = vec!["commit", "--no-verify", "-m", &message, "--"];
     commit.extend(paths.iter().map(String::as_str));
     match git_output(jigc_home, commit) {
         Some(out) if out.status.success() => {}

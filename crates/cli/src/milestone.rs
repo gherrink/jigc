@@ -1350,12 +1350,8 @@ fn commit_record_transaction(
 fn git_commit_pathspec(repo_root: &Path, message_file: &Path, pathspec: &str) -> Result<String> {
     crate::task::git_commit_capture(
         &crate::repo::SeamSubject::live(repo_root),
-        &[
-            std::ffi::OsStr::new("-F"),
-            message_file.as_os_str(),
-            std::ffi::OsStr::new("--"),
-            std::ffi::OsStr::new(pathspec),
-        ],
+        crate::task::CommitMessage::File(message_file),
+        &[std::ffi::OsStr::new("--"), std::ffi::OsStr::new(pathspec)],
     )
 }
 
@@ -1391,13 +1387,13 @@ pub(crate) fn git_commit_paths(
         .iter()
         .map(|path| crate::task::literal_pathspec(path))
         .collect();
-    let mut args = vec![
-        std::ffi::OsStr::new("-F"),
-        message_file.as_os_str(),
-        std::ffi::OsStr::new("--"),
-    ];
+    let mut args = vec![std::ffi::OsStr::new("--")];
     args.extend(literals.iter().map(std::ffi::OsStr::new));
-    crate::task::git_commit_capture(subject, &args)
+    crate::task::git_commit_capture(
+        subject,
+        crate::task::CommitMessage::File(message_file),
+        &args,
+    )
 }
 
 /// The committed record's **file-state key** — the repo-relative `<location><id>.md` path
