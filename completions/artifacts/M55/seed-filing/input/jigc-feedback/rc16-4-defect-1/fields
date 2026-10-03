@@ -1,0 +1,7 @@
+kind bug
+found-in review:M52-per-axis/(4,DEFECT 1)
+about finalize.stage-failed
+jigc-version 1.0.0-rc.16
+tier tier-2
+status resolved
+pinned-by migrate_rollback::stage_phase_git_failure_yields_a_routed_finding_and_rolls_back

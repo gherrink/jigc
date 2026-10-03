@@ -1,0 +1,6 @@
+kind bug
+found-in review:M53-per-axis-rc19/(3,F-A)
+about jigc task finalize
+jigc-version 1.0.0-rc.19
+status resolved
+pinned-by finalize_displacement::every_displace_surface_is_repo_relative_from_a_linked_worktree

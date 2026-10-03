@@ -1,0 +1,5 @@
+Settled at the M55 Settle (S1, S2, S6; `9fd644b7`) and registered by M55 Increment 7 (`9dcb664d`). `jigc-feedback` and `inconsistency` each take one field set (`findings-channel.md` → 1.1, 1.2). `tier` is the enum `tier-1 · tier-2 · tier-3`. `findings-channel.md` → 1.4 gives its meaning one home, the rc.16 charter's three headings, and states that the charter's 0 to 2 and the review's `tier-1` to `tier-3` number the same predicate. The port paragraph is kept as recorded under a `[Settled differently 2026-10-02 …]` bracket, and the idea file under its head note. `completion-record` keeps its own vocabulary for its own purpose, and `findings-channel.md` → 1.6 routes a deferred completion finding about jigc into `jigc-feedback` through `found-in`. UNPINNED: the vocabularies are prose. The two field sets are held by the methodology manifest's `schema-hash` at pack-load, which is not a test of this disagreement.
+
+Not changed: `decisions-pending.md:213` still uses *Tier* for M50's work batches. It is a dated record, left as written.
+
+Re-driven at `a7a742d3`: the sides read as quoted.

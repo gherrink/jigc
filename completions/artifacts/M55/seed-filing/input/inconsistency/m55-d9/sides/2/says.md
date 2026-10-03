@@ -1,0 +1,1 @@
+The hand-listed fences that registering a methodology doctype turns red: 14 measured on the planning spike and 19 at the gate-record (R5). Among them are `registry_seam`, `count_fences`, `doctype_map_versions`, `roundtrip_registry_fence` and `item_slot_ceiling_axis`.

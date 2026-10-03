@@ -1,0 +1,351 @@
+#!/usr/bin/env bash
+#
+# file-seed — file seed rows through the real binary, as one fan-out into one store.
+#
+#     completions/artifacts/M55/seed-filing/file-seed --out <new dir> <row dir>…
+#
+# Each <row dir> is `…/input/<doctype>/<key>/`, in the format README.md beside this script
+# states (DECISIONS.md → 2026-10-03 M55 Increment 9 planning, P4). The driver (P5):
+#
+#   1. builds a `dev/jigc-rig fresh` corpus (stdout only, the two-step eval) and puts the
+#      rig binary's directory first on PATH, so every emitted `jigc …` line runs it;
+#   2. creates ONE milestone and one `milestone add-task --workflow report-<doctype>`
+#      sub-task per row, then `provision` and `execute`;
+#   3. runs each `Spawn:` line `execute` printed VERBATIM, and asserts the composed text it
+#      prints names no `jigc task finalize`, asks for no `commit:<sub>#` write, carries
+#      neither omitted step's signature line, and ends in the `task scope:` trailer naming
+#      `jigc milestone finalize <m>` as its only commit boundary;
+#   4. files each row in its sub-task's worktree through the composed author step's
+#      per-verb lines — the create, `set-field` per field, `add-item --slug side<n>` per
+#      side, `set-slot --from-file <abs path>` per slot — and reads it back with the
+#      emitted `doc show … --task`;
+#   5. runs `jigc milestone finalize <m>` and asserts exit 0 and exactly ONE new commit
+#      whose files are the N filed docs and the milestone record, nothing else;
+#   6. copies each doc's committed bytes to <out>/<home>/<slug>.md (<home> is
+#      `jigc-feedback` or `inconsistencies`, as the doctypes lay their homes out) and prints
+#      `filed <N> docs (<a> jigc-feedback, <b> inconsistency) in one commit`.
+#
+# A row the binary refuses — a non-member enum value, an unknown field — stops the run
+# non-zero, naming the row. Every path printed on stdout is relative (to the rig's repo, or
+# to <out>), because the stdout is committed as the filing log. <out> must not exist; the
+# driver creates it and removes nothing, here or anywhere: the rig's root is a fresh
+# `mktemp -d`, so there is nothing to tear down.
+
+set -u
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P) || exit 2
+repo_root=$(CDPATH= cd -- "$script_dir/../../../.." && pwd -P) || exit 2
+
+die() { printf 'file-seed: %s\n' "$*" >&2; exit 2; }
+usage() { die "usage: file-seed --out <new dir> <row dir>…"; }
+
+# --- arguments ---------------------------------------------------------------
+out=
+rows=()
+while [ $# -gt 0 ]; do
+    case $1 in
+        --out) [ $# -ge 2 ] || usage; out=$2; shift 2 ;;
+        --*) die "unknown option \`$1\`" ;;
+        *) rows+=("$1"); shift ;;
+    esac
+done
+[ -n "$out" ] || usage
+[ ${#rows[@]} -gt 0 ] || usage
+[ ! -e "$out" ] && [ ! -L "$out" ] || die "--out \`$out\` already exists; name a new directory"
+case $out in /*) ;; *) out=$PWD/$out ;; esac
+
+# --- the rows: read and checked before anything is built ---------------------
+# Parallel arrays (bash 3.2 has no associative ones): one slot per row.
+row_dir=(); row_ty=(); row_key=(); row_title=()
+is_slug() { [[ $1 =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]]; }
+for arg in "${rows[@]}"; do
+    [ -d "$arg" ] || die "row \`$arg\` is not a directory"
+    dir=$(CDPATH= cd -- "$arg" && pwd -P) || die "row \`$arg\` is unreadable"
+    key=$(basename -- "$dir")
+    ty=$(basename -- "$(dirname -- "$dir")")
+    name="$ty/$key"
+    case $ty in
+        jigc-feedback) allowed=" title fields description.md repro.md resolution.md " ;;
+        inconsistency) allowed=" title fields description.md evidence.md resolution.md sides " ;;
+        *) die "row \`$name\`: its parent directory names no doctype (jigc-feedback or inconsistency)" ;;
+    esac
+    is_slug "$key" || die "row \`$name\`: the key is not \`a-z0-9\` words joined by \`-\`"
+    for seen in ${row_key[@]+"${row_key[@]}"}; do
+        [ "$seen" != "$key" ] || die "row \`$name\`: the key is given twice"
+    done
+    for entry in "$dir"/* "$dir"/.[!.]*; do
+        [ -e "$entry" ] || continue
+        case $allowed in *" $(basename -- "$entry") "*) ;;
+            *) die "row \`$name\`: \`$(basename -- "$entry")\` is not an input file of a $ty row" ;;
+        esac
+    done
+    for need in title fields description.md; do
+        [ -f "$dir/$need" ] || die "row \`$name\`: \`$need\` is missing"
+    done
+    title=$(cat -- "$dir/title")
+    case $title in ''|*$'\n'*) die "row \`$name\`: \`title\` must be one non-empty line" ;; esac
+    while IFS= read -r line || [ -n "$line" ]; do
+        [[ $line =~ ^[a-z][a-z0-9-]*\ [^\ ].*$ ]] \
+            || die "row \`$name\`: \`fields\` line \`$line\` is not \`<leaf> <value>\`"
+    done < "$dir/fields"
+    if [ -e "$dir/sides" ]; then
+        for side in "$dir/sides"/*; do
+            n=$(basename -- "$side")
+            [[ $n =~ ^[1-9][0-9]*$ ]] && [ -d "$side" ] \
+                || die "row \`$name\`: \`sides/$n\` is not a numbered side directory"
+            [ -f "$side/title" ] || die "row \`$name\`: \`sides/$n/title\` is missing"
+            for entry in "$side"/*; do
+                case $(basename -- "$entry") in title|says.md) ;;
+                    *) die "row \`$name\`: \`sides/$n/$(basename -- "$entry")\` is not a side input" ;;
+                esac
+            done
+        done
+    fi
+    row_dir+=("$dir"); row_ty+=("$ty"); row_key+=("$key"); row_title+=("$title")
+done
+
+# --- the rig ------------------------------------------------------------------
+# Its construction log is stderr by design; kept in a file and shown only on failure,
+# because its paths are absolute and this driver's output is committed.
+rig_log=$(mktemp "${TMPDIR:-/tmp}/file-seed-rig-log.XXXXXX") || die "no temp file for the rig's log"
+rig=$("$repo_root/dev/jigc-rig" fresh 2>"$rig_log") || { cat -- "$rig_log" >&2; die "the rig failed to build"; }
+eval "$rig"
+JIGC_BIN_DIR=$(dirname -- "$JIGC")
+PATH=$JIGC_BIN_DIR:$PATH
+export PATH
+[ "$(command -v jigc)" = "$JIGC_BIN_DIR/jigc" ] || die "\`jigc\` on PATH is not the rig's binary"
+
+scratch=$RIG/file-seed
+mkdir -p "$scratch" || die "cannot create the driver's scratch directory in the rig"
+
+# fail <row name> <what> <status> — print the binary's own output and stop, naming the row.
+fail() {
+    printf 'file-seed: row `%s`: %s failed (exit %s)\n' "$1" "$2" "$3" >&2
+    cat -- "$scratch/stdout" "$scratch/stderr" >&2
+    exit 1
+}
+
+# run <cwd> <argv…> — run, stdout to $scratch/stdout, stderr to $scratch/stderr.
+run() {
+    local cwd=$1; shift
+    (cd -- "$cwd" && "$@") >"$scratch/stdout" 2>"$scratch/stderr"
+}
+
+# --- the emitted lines --------------------------------------------------------
+# emitted_line <text> <prefix>: the ONE line of the composed text starting with <prefix>,
+# its `Run: \`…\`` decoration stripped. A heredoc-opening example (`… <<'EOF'`) is the
+# illustrated form of a line the step also emits bare, so it is skipped.
+emitted_line() {
+    local line found= n=0
+    while IFS= read -r line; do
+        line=${line#"${line%%[![:space:]]*}"}
+        line=${line%"${line##*[![:space:]]}"}
+        case $line in 'Run: `'*'`') line=${line#'Run: `'}; line=${line%'`'} ;; esac
+        case $line in *"<<'EOF'") continue ;; esac
+        case $line in "$2"*) found=$line; n=$((n + 1)) ;; esac
+    done <<<"$1"
+    [ "$n" -eq 1 ] || return 1
+    printf '%s\n' "$found"
+}
+
+# fill <line> <fill>… — split <line> as a shell splits these lines (whitespace separates,
+# a double-quoted run is one word) into WORDS, then apply each fill: `<hole>=<value>`
+# replaces a placeholder inside any word, `--flag:=<value>` replaces the word after
+# `--flag`. Refuses a placeholder left unfilled and a line that is not a `jigc` call.
+fill() {
+    local s=$1 w= started=0 quoted=0 c i f hole value; shift
+    WORDS=()
+    for ((i = 0; i < ${#s}; i++)); do
+        c=${s:i:1}
+        if [ "$c" = '"' ]; then
+            quoted=$((1 - quoted)); started=1
+        elif [ $quoted -eq 0 ] && [[ $c == [[:space:]] ]]; then
+            [ $started -eq 0 ] || WORDS+=("$w")
+            w=; started=0
+        else
+            w+=$c; started=1
+        fi
+    done
+    [ $quoted -eq 0 ] || return 1
+    [ $started -eq 0 ] || WORDS+=("$w")
+    for f in "$@"; do
+        case $f in --*:=*) continue ;; esac
+        hole=${f%%=*}; value=${f#*=}
+        # The replacement is an unquoted variable: bash 3.2 keeps quotes written there.
+        for i in "${!WORDS[@]}"; do WORDS[i]=${WORDS[i]//"$hole"/$value}; done
+    done
+    local skip=
+    for i in "${!WORDS[@]}"; do
+        if [ -n "$skip" ]; then skip=; continue; fi
+        for f in "$@"; do
+            case $f in "${WORDS[i]}:="*) skip=1 ;; esac
+        done
+        [ -n "$skip" ] && continue
+        case ${WORDS[i]} in *'<'*'>'*) return 1 ;; esac
+    done
+    for f in "$@"; do
+        case $f in --*:=*) ;; *) continue ;; esac
+        for i in "${!WORDS[@]}"; do
+            if [ "${WORDS[i]}" = "${f%%:=*}" ] && [ $((i + 1)) -lt ${#WORDS[@]} ]; then
+                WORDS[i + 1]=${f#*:=}
+            fi
+        done
+    done
+    [ "${WORDS[0]}" = jigc ]
+}
+
+# write <row name> <cwd> <what> <text> <prefix> <fill>… — run the emitted line.
+write() {
+    local name=$1 cwd=$2 what=$3 text=$4 line prefix=$5; shift 5
+    line=$(emitted_line "$text" "$prefix") \
+        || { printf 'file-seed: row `%s`: the composed text emits no single `%s…` line\n' "$name" "$prefix" >&2; exit 1; }
+    fill "$line" "$@" \
+        || { printf 'file-seed: row `%s`: cannot fill the emitted line `%s`\n' "$name" "$line" >&2; exit 1; }
+    run "$cwd" "${WORDS[@]}" || fail "$name" "$what" $?
+}
+
+# The prefix of a verb line the step emits for <leaf>, or the emitted line for <taught>
+# with its address's leaf swapped — the same verb line, for a leaf the step does not name
+# (`status`, `tier`, `pinned-by`, `duplicate-of`; the `resolution` slot). Prints the line.
+line_for() {
+    local text=$1 prefix=$2 taught=$3 leaf=$4 line to
+    if line=$(emitted_line "$text" "$prefix$leaf "); then
+        printf '%s\n' "$line"
+    elif line=$(emitted_line "$text" "$prefix$taught "); then
+        to="$prefix$leaf "
+        printf '%s\n' "${line/"$prefix$taught "/$to}"
+    else
+        return 1
+    fi
+}
+
+# --- one milestone, one sub-task per row ---------------------------------------
+cd -- "$REPO" || die "the rig's repo is unreachable"
+created=$(jigc milestone create "File the seed" 2>"$scratch/stderr") || { cat -- "$scratch/stderr" >&2; die "milestone create failed"; }
+milestone=$(sed -n 's/^minted milestone:\([^ ]*\) .*/\1/p' <<<"$created")
+record=$(sed -n 's/^record: \([^ ]*\) .*/\1/p' <<<"$created")
+[ -n "$milestone" ] && [ -n "$record" ] || die "\`milestone create\` named no milestone and record: $created"
+
+row_sub=()
+for i in "${!row_key[@]}"; do
+    name="${row_ty[i]}/${row_key[i]}"
+    run "$REPO" jigc milestone add-task "$milestone" "${row_key[i]}" --workflow "report-${row_ty[i]}" \
+        || fail "$name" "milestone add-task" $?
+    sub=$(sed -n 's/^added task:\([^ ]*\) to milestone:.*/\1/p' "$scratch/stdout")
+    [ -n "$sub" ] || fail "$name" "reading the add-task ack" 0
+    row_sub+=("$sub")
+done
+run "$REPO" jigc milestone provision "$milestone" || fail "(all)" "milestone provision" $?
+run "$REPO" jigc milestone execute "$milestone" || fail "(all)" "milestone execute" $?
+executed=$(cat -- "$scratch/stdout")
+
+# The omitted steps' signature lines (step:finalize-doc-only, step:author-commit).
+omitted=(
+    "Land this task's docs as exactly one commit. This finalize commits path-scoped:"
+    "finalize renders the commit doc; it does not fill it, so set its header and prose"
+)
+boundary="\`jigc milestone finalize $milestone\` is its only commit boundary"
+
+# --- each row, filed in its own worktree ------------------------------------------
+n_fb=0; n_inc=0
+for i in "${!row_key[@]}"; do
+    ty=${row_ty[i]}; dir=${row_dir[i]}; sub=${row_sub[i]}; name="$ty/${row_key[i]}"
+    span=$(sed -n "s/^Spawn: \`\(.* --task $sub\)\`\$/\1/p" <<<"$executed")
+    [ -n "$span" ] && [ "$(wc -l <<<"$span")" -eq 1 ] \
+        || { printf 'file-seed: row `%s`: `execute` printed no single Spawn line for `%s`\n' "$name" "$sub" >&2; exit 1; }
+    text=$(bash -c "$span" 2>"$scratch/stderr") \
+        || { printf 'file-seed: row `%s`: its Spawn line failed\n' "$name" >&2; cat -- "$scratch/stderr" >&2; exit 1; }
+    cwd=${span#cd }; cwd=${cwd%% && *}
+
+    bad=()
+    case $text in *"jigc task finalize"*) bad+=("it names \`jigc task finalize\`") ;; esac
+    case $text in *"commit:$sub#"*) bad+=("it asks for a \`commit:$sub#\` write") ;; esac
+    trailer=
+    while IFS= read -r l; do
+        l=${l#"${l%%[![:space:]]*}"}
+        l=${l%"${l##*[![:space:]]}"}
+        for sig in "${omitted[@]}"; do
+            [ "$l" != "$sig" ] || bad+=("it carries the omitted line \`$sig\`")
+        done
+        case $l in "task scope: "*"$boundary"*) trailer=1 ;; esac
+    done <<<"$text"
+    [ -n "$trailer" ] || bad+=("no \`task scope:\` trailer names $boundary")
+    if [ ${#bad[@]} -gt 0 ]; then
+        printf 'file-seed: row `%s`: the composed text of sub-task `%s` is not a sub-task'"'"'s:\n' "$name" "$sub" >&2
+        printf '  - %s\n' "${bad[@]}" >&2
+        exit 1
+    fi
+
+    write "$name" "$cwd" "doc create" "$text" "jigc doc create $ty " "--title:=${row_title[i]}"
+    address=$(head -n 1 "$scratch/stdout")
+    case $address in "$ty:"?*) ;; *) fail "$name" "reading the create's address" 0 ;; esac
+    slug=${address#"$ty:"}
+
+    while IFS= read -r line || [ -n "$line" ]; do
+        leaf=${line%% *}; value=${line#* }
+        l=$(line_for "$text" "jigc doc set-field $ty:<slug>#meta/" kind "$leaf") \
+            || { printf 'file-seed: row `%s`: the composed text emits no set-field line\n' "$name" >&2; exit 1; }
+        write "$name" "$cwd" "set-field meta/$leaf" "$l" "$l" "<slug>=$slug" "--value:=$value"
+    done < "$dir/fields"
+
+    if [ -d "$dir/sides" ]; then
+        for side in $(ls -- "$dir/sides" | sort -n); do
+            write "$name" "$cwd" "add-item sides/side$side" "$text" "jigc doc add-item $ty:<slug>#sides " \
+                "<slug>=$slug" "--title:=$(cat -- "$dir/sides/$side/title")" "--slug:=side$side"
+            if [ -f "$dir/sides/$side/says.md" ]; then
+                write "$name" "$cwd" "set-slot sides/side$side/says" "$text" \
+                    "jigc doc set-slot $ty:<slug>#sides/<side>/says " \
+                    "<slug>=$slug" "<side>=side$side" "--from-file:=$dir/sides/$side/says.md"
+            fi
+        done
+    fi
+
+    for slot in description repro evidence resolution; do
+        [ -f "$dir/$slot.md" ] || continue
+        l=$(line_for "$text" "jigc doc set-slot $ty:<slug>#" description "$slot") \
+            || { printf 'file-seed: row `%s`: the composed text emits no set-slot line\n' "$name" >&2; exit 1; }
+        write "$name" "$cwd" "set-slot $slot" "$l" "$l" "<slug>=$slug" "--from-file:=$dir/$slot.md"
+    done
+
+    write "$name" "$cwd" "doc show (the read-back)" "$text" "jigc doc show $ty:<slug> " "<slug>=$slug"
+    grep -qxF -- "# ${row_title[i]}" "$scratch/stdout" || fail "$name" "the read-back serving its title" 0
+
+    row_slug[i]=$slug
+    case $ty in jigc-feedback) n_fb=$((n_fb + 1)) ;; *) n_inc=$((n_inc + 1)) ;; esac
+    printf 'staged %s as %s in sub-task %s\n' "$name" "$address" "$sub"
+done
+
+# --- the join: one commit, the N docs and the record ----------------------------
+before=$(git -C "$REPO" rev-list --count HEAD)
+run "$REPO" jigc milestone finalize "$milestone" || fail "(all)" "milestone finalize" $?
+after=$(git -C "$REPO" rev-list --count HEAD)
+[ "$after" -eq $((before + 1)) ] \
+    || die "\`milestone finalize\` made $((after - before)) commits, not one"
+landed=$(git -C "$REPO" diff-tree --no-commit-id --name-only -r HEAD | sort)
+
+home_of() { case $1 in jigc-feedback) printf 'jigc-feedback' ;; *) printf 'inconsistencies' ;; esac; }
+expected=$record
+paths=()
+for i in "${!row_key[@]}"; do
+    home=$(home_of "${row_ty[i]}")
+    path=$(grep -E "(^|/)$home/${row_slug[i]}\.md\$" <<<"$landed")
+    [ -n "$path" ] && [ "$(wc -l <<<"$path")" -eq 1 ] \
+        || die "row \`${row_ty[i]}/${row_key[i]}\`: the commit holds no single \`$home/${row_slug[i]}.md\`"
+    paths[i]=$path
+    expected=$expected$'\n'$path
+done
+expected=$(sort <<<"$expected")
+[ "$landed" = "$expected" ] || die "the commit holds other than the ${#row_key[@]} docs and the record:
+$landed"
+
+# --- the out tree: the committed bytes, under each doctype's home -------------------
+mkdir -p "$out" || die "cannot create --out"
+for i in "${!row_key[@]}"; do
+    home=$(home_of "${row_ty[i]}")
+    mkdir -p "$out/$home" || die "cannot create \`$home/\` under --out"
+    git -C "$REPO" show "HEAD:${paths[i]}" > "$out/$home/${row_slug[i]}.md" \
+        || die "cannot copy \`${paths[i]}\` out"
+    printf 'filed %s/%s as %s -> %s/%s.md\n' "${row_ty[i]}" "${row_key[i]}" "${paths[i]}" "$home" "${row_slug[i]}"
+done
+printf 'filed %d docs (%d jigc-feedback, %d inconsistency) in one commit\n' \
+    "${#row_key[@]}" "$n_fb" "$n_inc"

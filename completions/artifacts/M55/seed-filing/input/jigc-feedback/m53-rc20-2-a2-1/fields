@@ -1,0 +1,7 @@
+kind bug
+found-in review:M53-per-axis-rc20/(2,A2-1)
+about jigc task finalize
+jigc-version 1.0.0-rc.20
+tier tier-3
+status resolved
+pinned-by dry_run_findings_equal_set::the_forecast_names_every_gate_it_refuses_on_that_the_preview_does_not_report

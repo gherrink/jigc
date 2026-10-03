@@ -1,0 +1,7 @@
+kind bug
+found-in review:M53-per-axis-rc19/(2,N-1)
+about jigc setup
+jigc-version 1.0.0-rc.19
+tier tier-3
+status resolved
+pinned-by precommit_hook_acceptance::commit_deleting_a_managed_placement_doc_announces_no_rename

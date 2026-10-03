@@ -1,0 +1,5 @@
+kind feedback
+found-in milestone:road-to-1.0.0/CI-git-marker-contract
+about test:git_state_fixtures
+jigc-version 1.0.0-rc.21
+status open

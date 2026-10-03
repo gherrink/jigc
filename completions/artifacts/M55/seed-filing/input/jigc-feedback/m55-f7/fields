@@ -1,0 +1,6 @@
+kind bug
+found-in milestone:M55-planning/F7
+about step:finalize
+jigc-version 1.0.0-rc.22
+status resolved
+pinned-by sub_task_composition::a_sub_task_composes_no_per_task_finalize_door_through_either_door

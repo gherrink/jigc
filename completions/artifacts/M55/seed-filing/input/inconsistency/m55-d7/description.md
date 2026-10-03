@@ -1,0 +1,1 @@
+`CLAUDE.md` said the methodology manifest freeze-asserts *all ten shipped schemas*, but the manifest listed eleven. The count is prose that no fence reads. The docs gap-detector found it, and the registration census in `gap-list.md` names it again.

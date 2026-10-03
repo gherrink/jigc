@@ -1,0 +1,36 @@
+---
+kind: bug
+found-in: review:M52-per-axis/(2,DEFECT B)
+about: repo.operation-in-progress
+jigc-version: 1.0.0-rc.16
+status: open
+tier: tier-3
+date: 2026-10-03
+schema-version: 1
+---
+
+# Conflicted squash merge is named a staged squash merge
+
+## Description
+
+A conflicted `git merge --squash` is answered by the wrong posture member, whose predicate is false of the state. `design/validation.md` → *The M52 widening* attributes exactly this cell to `UnmergedIndex` (*unmerged paths with no operation marker at all — … or a conflicted `git merge --squash`*), and `repo.rs`'s doc-comment says the same. But `SQUASH_MSG` **is** a marker, so `SquashMerge` answers first. It tells the user the squash *is staged and not committed* when it is conflicted with unmerged entries and nothing is staged. The route is effective: `git reset --merge` clears it. What is wrong is the claim, on the member whose whole purpose is naming which state the user is in. The M53 re-reviews kept it open through `1.0.0-rc.20`.
+
+Re-driven on this build (`jigc 1.0.0-rc.22`, the debug binary built from `a768fe75`): **still open**. After a conflicting `git merge --squash`, `.git` holds `MERGE_MSG` and `SQUASH_MSG` and no `MERGE_HEAD`, and `git ls-files -u` lists 2 unmerged entries (an add/add conflict). `jigc milestone create CS1` exits 1 with *a squash merge is staged and not committed*.
+
+## Repro
+
+```sh
+rig=$(dev/jigc-rig fresh) || exit; eval "$rig"
+git checkout -qb cb; echo b > conf.txt; git add conf.txt
+git -c core.hooksPath=/dev/null commit -qm b
+git checkout -q main; echo m > conf.txt; git add conf.txt
+git -c core.hooksPath=/dev/null commit -qm m
+git merge --squash cb                          # exit 1, CONFLICT (add/add)
+ls "$(git rev-parse --git-dir)"                # MERGE_MSG SQUASH_MSG, no MERGE_HEAD
+git ls-files -u | wc -l                        # 2
+$JIGC milestone create CS1                     # exit 1
+#   blocking · repo.operation-in-progress — a squash merge is staged and not committed —
+#     the repository is not in a committable state
+```
+
+## Resolution

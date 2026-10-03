@@ -1,0 +1,1 @@
+Dogfood apparatus tests fail at spawn without python3 and never skip

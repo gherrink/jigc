@@ -1,0 +1,6 @@
+kind inconvenience
+found-in milestone:M55-planning/T4
+about dev:gate
+jigc-version 1.0.0-rc.22
+status resolved
+pinned-by dev_gate_report::the_gate_names_the_git_the_suite_runs_under

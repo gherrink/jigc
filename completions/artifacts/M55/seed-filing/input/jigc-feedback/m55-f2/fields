@@ -1,0 +1,6 @@
+kind bug
+found-in milestone:M55-planning/F2
+about jigc doc create
+jigc-version 1.0.0-rc.22
+status resolved
+pinned-by create_only_gate::a_reused_title_is_refused_by_both_doors_with_nothing_staged

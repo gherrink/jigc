@@ -2,6 +2,255 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-03 — M55 Increment 9 / T8: the seeded rows point at their seed docs
+
+The eleven seeded [decisions-pending.md](implementation/decisions-pending.md) rows — the M53 Settle's (D) (a)–(f), the two owed `dev/` rows, the three CI rows — each collapse to one line, and the 37 register rows of [planning-findings.md](completions/artifacts/M55/planning-findings.md) each gain a link in their disposition cell; M52 Settle (a), the review READMEs and the declared bounds' design home are untouched (§7). **Pins:** (1) **The pointer form is fixed:** `- **<label>** Seeded as [<home>/<slug>.md](<link>). *Trigger:* <clause>` — the label verbatim (T1's reader finds rows by it), the trigger verbatim, and nothing else, so the finding's text has one home, its seed doc; the status is not restated, since the doc owns it. The CI python3 row's trigger is kept verbatim with its spent M54 arm; its seed doc says the M54 half landed. (2) **`seed_ledger::every_seeded_pending_and_register_row_points_at_its_seed_doc`** holds each `decisions-pending` row to that exact shape and each register disposition cell to a link resolving to the row's own seed doc. Mutants, each applied and reverted: a register row linking a sibling's doc, and text regrown between a pointer and its trigger, each redden it. (3) The M53 Settle's intro gains one sentence saying the rows below are pointers. The red-step assumption was checked before the edit: no suite asserts the collapsed rows' text.
+
+## 2026-10-03 — M55 Increment 9 / T7: the seed filed through one fan-out — 91 docs in one commit — and fenced as adoptable
+
+`file-seed` over every input (`seed-filing/input/*/*`), as one milestone of 91 report sub-tasks on `jigc 1.0.0-rc.22` (the debug build from `159a5ccd`), exited 0 and printed `filed 91 docs (79 jigc-feedback, 12 inconsistency) in one commit`, the ledger's row count; the run took about 3 minutes. Its `--out` tree is committed unchanged as [seed/jigc-feedback/](completions/artifacts/M55/seed/jigc-feedback/) and [seed/inconsistencies/](completions/artifacts/M55/seed/inconsistencies/), its stdout as [filing-log.txt](completions/artifacts/M55/seed-filing/filing-log.txt), and the ledger's seed doc column is filled from that log. `doc_link_fence`'s `PENDING` entry for the seed is deleted in the same commit. **Pins:** (1) **The seed doc cell is a link,** `[<home>/<slug>.md](seed/<home>/<slug>.md)`, its text its target under `seed/`. `seed_ledger` reads it in three checks: every row carries a verdict; rows and files are a bijection with `seed/` holding only the two homes, each doc's H1 being its row's input `title`, so the pairing is the row's own doc, not just a count; and each doc's `status` is the verdict. (2) **`seed_fence` (a) also asserts each listed doc is `managed`,** beside the ids. Driven: a `needs-reconcile` file still lists as `managed`, so the ids and `findings: []` carry the check, and the state costs nothing to hold. (3) The control deletes `kind:` from the first seed doc in sorted order, and asserts the exact finding key, `schema-conformance.required-field-present` at `<id>#meta/kind`. **Mutants, each applied and reverted:** `status: fixed` written into one seed doc reddens `seed_fence` (a) on `field-value-conformant` and `each_seed_doc_status_equals_its_verdict`; one seed doc renamed reddens the bijection on both sides, the row's missing doc and the file no row names.
+
+## 2026-10-03 — M55 Increment 9 / T6: the D rows re-driven as `inconsistency` — 7 resolved, 5 open, 0 refuted
+
+All 12 `m55-d*` rows were re-driven at `a7a742d3`. Each side was read in the checkout, and a side that is the binary was driven on the `jigc 1.0.0-rc.22` debug build from that commit, in a `dev/jigc-rig` rig. Their verdicts are in [seed-ledger.md](completions/artifacts/M55/seed-ledger.md), and their inputs are under [seed-filing/input/inconsistency/](completions/artifacts/M55/seed-filing/input/inconsistency/). `file-seed` over the batch exits 0 and prints `filed 12 docs (0 jigc-feedback, 12 inconsistency) in one commit`.
+
+**Resolved, each by the commit that corrected a side.**
+- D1 (*record-only*), D2 (`pinned-by`) and D3 (the finding vocabularies and *tier*) were settled at the M55 Settle (`9fd644b7`) and registered by Increment 7 (`9dcb664d`).
+- D4 (the charter's seed count) was resolved by T1's ledger (`914df03d`), D7 (CLAUDE.md's schema count) by `9dcb664d`, and D9 (the registration checklist) by `582f045a` and `524f7dec`.
+- D12 (the deployment-policy id) was resolved by M54 Increment 9 (`e9e52ee4`), two days before the register recorded it.
+
+**Open.** D5 (`remove-item` called unwired), D6 (the deferral-ledger `kind` shown as `D/I`), D8 (`COMMITTING_WORKFLOWS` hand-lists four), D10 (*start is a pure reader*) and D11 (the worked-examples index lists 16 of 54) still read as recorded. Each `description` ends with what the re-drive showed.
+
+**Pins.**
+1. **A resolved row's pin goes in `resolution`.** `inconsistency` has no `pinned-by` leaf (findings-channel.md → 1.2), so `resolution` names the pinning test in pinning.md's grammar or says `UNPINNED: <why>`. D4 names `seed_ledger::the_ledger_carries_every_source_row_exactly_once` and `seed_ledger::the_ledger_states_its_own_count`, as planned. The other six are `UNPINNED`: each corrected side is prose that no test reads.
+2. **`kind` is `code-doc` when any side is shipped code, a pack file or a live setting**, and `doc-doc` otherwise. That makes D3 `code-doc`, because one vocabulary is `completion-record`'s schema, and D12 `code-doc`, because the other side is the `release` environment.
+3. **A side's title is its `path:line` at the re-drive**, and its `says` quotes it, so a line that moves still leaves a quote to find. A side that spans a directory names the directory (D8, D9). D12's live side is its API address.
+4. **D3 is `resolved`, with one residue stated in its `resolution`.** `decisions-pending.md:213` still uses *Tier* for M50's work batches. It is a dated record, and the field's meaning now has one home.
+5. **D12 is `resolved`, not `refuted`.** The disagreement was real until `e9e52ee4`. The register recorded it after the fix, from notes taken before it.
+6. **D8 is `open`, not `intended`.** doctype-authoring.md reads the list as *workflows that carry a task to a code commit*, which would exclude the four code-less workflows on `step:finalize`. The test's own comment says *a commit*. Which reading holds is for triage to decide.
+7. **Every evidence block was run verbatim from its input file before filing.** That run caught D10's `start` printing the whole composed workflow, so that line now redirects its output.
+
+**Observed, not seeded.** M55 Increment 4 (`8b4f012f`) answered findings-channel.md → 13's *"start is a pure reader" (D10) is engaged where it stands* by restating it at reconciliation.md:82 (*`start` … write nothing*). D10's `description` records that. It is a prose sentence, not a retired invariant, so it is recorded here for the completion audit rather than halted on.
+
+## 2026-10-03 — M55 Increment 9 / T5: the owed, CI, F, T and bound rows re-driven — 12 resolved, 19 open, 0 refuted
+
+All 31 rows (`owed-*` 2 · `ci-*` 3 · `m55-f*` 20 · `m55-t*` 5 · `m55-bound-*` 1) were re-driven on `jigc 1.0.0-rc.22`, the debug binary built from `982f910f`, each in a `dev/jigc-rig` rig or, for a tooling row, from the checkout. Their verdicts are in [seed-ledger.md](completions/artifacts/M55/seed-ledger.md), and their inputs are under [seed-filing/input/jigc-feedback/](completions/artifacts/M55/seed-filing/input/jigc-feedback/). `file-seed` over the five globs exits 0 and prints `filed 31 docs (31 jigc-feedback, 0 inconsistency) in one commit`, and over every `jigc-feedback` input it files 79 docs with no slug collision.
+
+**Resolved, each pinned by the test that pins its fix.**
+- M55 Increments 1–6: F1 (`doc_only_finalize::every_flow_b_state_lands_the_report_doc_alone`), F2 (`create_only_gate::a_reused_title_is_refused_by_both_doors_with_nothing_staged`), F3 (`create_only_gate::without_new_a_different_title_onto_a_committed_id_routes_at_a_distinct_identity`), F4 (`l1_pull_absorption::a_pulled_edit_lands_through_the_task_that_edits_the_doc`), F5 (`l2_branch_switch::after_a_branch_switch_both_scopes_report_the_same_advisory_row`), F7 (`sub_task_composition::a_sub_task_composes_no_per_task_finalize_door_through_either_door`), F10 (`doc_show::an_absent_defaulted_field_projects_its_default_on_the_whole_doc_serve`) and F18 (`doc_list_triage::one_listing_groups_the_open_findings_by_found_in`).
+- The gate-speed PR (#8): T1 (`validate_previews_posture::the_cd_detector_reads_a_command_not_a_short_sha`), T2 (`child_stdin_feed::a_child_that_exits_without_reading_its_stdin_is_judged_on_its_exit`), T4 (`dev_gate_report::the_gate_names_the_git_the_suite_runs_under`), and T3, which is `UNPINNED`: no test counts what a gate run leaves in `$TMPDIR`. Its re-drive was one full `dev/gate` in a fresh `$TMPDIR` (PASS, 4332 passed), which left 10 entries: the gate's five logs and the five the fix names.
+
+**Open.** The two owed and three CI rows; L3 (F6), F9, F13, F14 and the bound row, as P3 seeds them; and F8, F11, F12, F15, F16, F17, F19, F20 and T5, which still reproduce. Each `description` ends with what the re-drive showed.
+
+**Pins.**
+1. **`found-in`.** The register rows are `milestone:M55-planning/<id>`, as P3's example spells F4. The bound row's first source is §6's declared bound, which S13 declared, so it is `milestone:M55-planning/S13`. The owed rows are `milestone:M53-post-review/<label>`, and the CI rows are `milestone:road-to-1.0.0/CI-<label>`, after the section each was recorded under.
+2. **`jigc-version`.** The five owed and CI rows take `1.0.0-rc.21`, the workspace version when they were recorded on 2026-09-27 (`c49e2e6e`, `acf12ca9`). The register, T5 and the bound row take `1.0.0-rc.22`, the binary planning drove.
+3. **`tier` is carried by none of the 31**, because no source grades them.
+4. **F1 is `resolved` and the bound row `open`, and the line between them is the commit model, not code-vs-code-less.** The doc-only finalize covers the report and triage workflows. A `park-idea` task, code-less but on the ordinary `step:finalize`, still sweeps a code task's staged files, and `doc_only_finalize::park_idea_over_the_same_states_behaves_as_today` pins that as unchanged. The bound row's text therefore names every workflow on `step:finalize`, not only two code tasks.
+5. **T5 is `open` and not `refuted`.** It did not recur in this re-drive's full gate, in three runs alone, or in six concurrent copies. But it was a single red under load, and neither the test nor its 5.5 bound has changed, so its absence in ten runs does not show that it cannot happen.
+6. **Halves that moved, recorded in the row and not split.** F11's two pieces of evidence, the missing card in the schema JSON and the refused list payload, no longer tell a `ref` from a non-`ref` on this build. The loader accepting the key stands. F20's sweep did not reproduce when the later migration was unrelated: `migrate-corpus` commits *only the migrated paths*. Its untracked half stands. F17's second half was driven, not assumed: a listed pack with only its own files fails `pack.resource-missing` on `config/commands`.
+7. **Every repro was run verbatim from its input file before the batch was filed**, except T3's, whose repro is the full gate run this re-drive already made. That run caught F15's revert being *committed*, as `setup`'s own install commit, which the register had not said.
+
+**Observed, not seeded.** F8 and F9 compound through M55 Increment 4's new store arm. After a union resolve drops an entry's `date`, `jigc validate` routes the lossy doc *the baseline lags `HEAD`; absorbed at the next finalize*. The arm runs the conformance check before it absorbs, but a missing `set: on-create` date is not a conformance finding (F9), so nothing on the absorb's path refuses the loss. That last step was read from the design, not driven. Both rows' descriptions carry it. It is a consequence of two open rows, not a retired invariant, so it is recorded here for the completion audit rather than halted on.
+
+## 2026-10-03 — M55 Increment 9 / T4: the M53 rows re-driven — 10 resolved, 15 open, 0 refuted
+
+All 25 `m53-*` rows were re-driven on `jigc 1.0.0-rc.22`, the debug binary built from `47e6d8a9`, each in a `dev/jigc-rig` rig. Their verdicts are in [seed-ledger.md](completions/artifacts/M55/seed-ledger.md), and their inputs are under [seed-filing/input/jigc-feedback/](completions/artifacts/M55/seed-filing/input/jigc-feedback/). `file-seed` over the batch exits 0 and prints `filed 25 docs (25 jigc-feedback, 0 inconsistency) in one commit`, and over `rc16-*` and `m53-*` together it files 48 docs with no slug collision.
+
+**Resolved: every row a later M53 stamp fixed, re-driven rather than assumed, each pinned by the test that pins its fix.**
+- rc.18 `(2, F-1)` (`git_span_aim::the_fan_out_posture_site_keys_repo_relative_and_routes_absolute`) and `(3, F-3)` (`cwd_verb_subject::uninstall_removes_the_workbench_home_install_from_every_cwd`), fixed by the cwd arc in rc.19.
+- rc.19 `(3, F-A)` (`finalize_displacement::every_displace_surface_is_repo_relative_from_a_linked_worktree`), `(2, N-1)` (`precommit_hook_acceptance::commit_deleting_a_managed_placement_doc_announces_no_rename`) and `(2, N-2)` (`precommit_hook_acceptance::commit_blocks_on_this_commit_oob_rename_of_a_placement_doc`), fixed by the usability batch in rc.20.
+- All five rc.20 rows, fixed by the last batch in rc.21: `(2, A2-2)` (`validate_previews_posture::an_ordinary_task_in_a_fan_out_worktree_is_previewed_as_the_door_refuses_it`), `(2, A2-1)` (`dry_run_findings_equal_set::the_forecast_names_every_gate_it_refuses_on_that_the_preview_does_not_report`), `(3, F-C)` (`work_unit_id_axis::a_mint_door_whose_title_is_optional_routes_at_the_exit_that_omits_it`), `(5, DEFECT 2 · rc.20)` (`task_amend::the_head_shape_refusal_names_the_id_the_mint_would_have_taken`), and `(2, A2-3)`, which is `UNPINNED`: its fix struck a sentence in `f10-amend-settle.md`, which no test reads.
+
+**Open.** The Settle's six, rc.17's three, rc.18's `(2, F-2)`, `(3, F-4)` and `(3, F-5)`, and rc.19's `(2, N-3)`, `(2, N-4)` and `(3, F-B)` still reproduce. Each `description` ends with what the re-drive showed.
+
+**Pins.**
+1. **`jigc-version` is the stamp whose review first drove the row:** `1.0.0-rc.17` through `rc.20` for the re-review rows. The Settle's six take `1.0.0-rc.16`, because the M53 baseline that surfaced them drove the installed rc.16.
+2. **`found-in` names the review by its stamp:** `review:M53-per-axis-rc17/(3,F-1)` through `review:M53-per-axis-rc20/…`, the rc.17 run's directory being `per-axis-review` with no suffix. A head with two ids (`(2, A2-2)` = `(5, DEFECT 1 · rc.20)`, `(2, N-1)` = `(6, A6-R1)`, `(2, A2-3)` = `(3, F-D)`) is found-in its first id, and the other is named in the `description`. The Settle's rows are `milestone:M53-settle/(D)(a)` through `(D)(f)`.
+3. **`tier` is carried only where the source grades the row by itself.** rc.19's `(3, F-A)` is graded *tier 2 / 3*, and the review declined to collapse it, so its doc carries none and says why. The Settle graded its six *tier-2/3* as a set, so only `(D) (b)`, which grades itself tier 3, carries one.
+4. **`kind`.** The two record rows, `(2, A2-3)` and `(D) (f)`, are `feedback`: the binary does nothing wrong in either, as both sources say. So is `(D) (e)`, an asymmetry no racer has driven. `(3, F-C)` is `inconvenience`, because its route says nothing false and the reader pays for the exit it leaves out. Every other row is `bug`.
+5. **`(D) (d)` and `(D) (e)` were re-driven by reading the source**, as the Settle found them, and their repros say so. Nothing drove the unbounded walk or a torn read of the pin.
+6. **Every repro was run verbatim from its input file before the batch was filed.** That run caught `(5, DEFECT A)`'s envelope going to stderr, not stdout. It also caught `(D) (f)`'s plant: `.jigc/` itself is not ignored, only its work areas are, so the plant moved to `.jigc/tasks/`.
+
+**Observed, not seeded.** rc.19 `(2, N-4)` is open with a different false diagnosis, and the new one is **M55 Increment 4's own new code** (`2c284c48`). Main's `jigc validate` no longer names an out-of-band edit. It grades the drift advisory and routes it *the baseline lags `HEAD`*, while the baseline holds a commit that `HEAD` is an ancestor of. The row carries this in its `description`. It is a tier-3 surface sentence, not a retired invariant, so it is recorded here for the completion audit rather than halted on.
+
+## 2026-10-03 — M55 Increment 9 / T3: the rc.16 rows re-driven — 4 resolved, 19 open, 0 refuted
+
+All 23 `rc16-*` rows were re-driven on `jigc 1.0.0-rc.22`, the debug binary built from `a768fe75`, each in a `dev/jigc-rig` rig. Their verdicts are in [seed-ledger.md](completions/artifacts/M55/seed-ledger.md), and their inputs are under [seed-filing/input/jigc-feedback/](completions/artifacts/M55/seed-filing/input/jigc-feedback/). `file-seed` over the batch exits 0 and prints `filed 23 docs (23 jigc-feedback, 0 inconsistency) in one commit`.
+
+**Resolved, each pinned by the test that pins its fix.**
+- The three names fixed in the 2026-09-23 batch were re-driven, not assumed fixed: `(4, DEFECT 1)` (`migrate_rollback::stage_phase_git_failure_yields_a_routed_finding_and_rolls_back`), `(6, D-1)` (`validate_previews_posture::orientation_reports_every_posture_finalize_refuses_without_refusing`) and `(7, A7-F3)` (`doc_show_relocated::a_doc_at_a_recorded_prior_home_is_routed_at_the_migration`).
+- `(3, A3-3)` was closed by M53 Increment 1 / T4 (`0afc1295`), pinned by `milestone_boundary_displacement::a_landed_milestone_boundary_keeps_every_byte_of_its_own_area_it_did_not_write`.
+
+**Open.** The other 19 still reproduce. Each `description` ends with what the re-drive showed.
+
+**Pins.**
+1. **`jigc-version` is the first version a row's own symptom was driven on.** That is `1.0.0-rc.16` for 22 rows. `(7, A7-F2)` takes `1.0.0-rc.15`, because the M52 record names it half 2 of M51's lead `(7, D-4)`, which was driven on rc.15. `(4, DEFECT 3)`'s M51 ancestor, C4, was a different cell (a refused `provision`), so that row keeps rc.16.
+2. **`found-in` copies the review's head without the space after the comma**, as in `review:M52-per-axis/(4,DEFECT 1)`, §1.3's example.
+3. **`kind` follows §1.1's members.** A false statement, a wrong route or a false registry claim is `bug`. `(6, D-4)` is `inconvenience`: the empty walk says nothing false, and the reader pays for the missing sentence.
+4. **Every repro was run verbatim from the input file before the batch was filed.** That run caught `rc16-1-a1-n1`'s second `dev/jigc-rig`, which failed with exit 127 because the first rig's `eval` had changed directory into `$REPO`. The repro now records the checkout as `src=$PWD` first.
+
+**Observed, not seeded.** At `(1, A1-N1)`'s `migrate` producer, a source typed `-- -dash-note.md` makes the debug binary's route fence panic at exit 101. The fence is doing its job by catching the unrunnable span, so this is the row's own symptom. A release binary has no such fence. The panic is recorded in that row's `description`.
+
+## 2026-10-03 — M55 Increment 9 / T2: the filing driver, proved on a two-row sample
+
+[`file-seed`](completions/artifacts/M55/seed-filing/file-seed) and [its README](completions/artifacts/M55/seed-filing/README.md) are P4 and P5 as written. Over a scratch two-row input (not committed), it exits 0 and prints `filed 2 docs (1 jigc-feedback, 1 inconsistency) in one commit`, and `--out` holds both docs with every leaf set: a `resolved` `jigc-feedback` with `tier`, `pinned-by`, a fenced `#`-led `repro` and a `resolution`, and an `open` `inconsistency` with three sides, two of them with `says`. A scratch row with `status fixed` stops it at exit 1, naming the row and printing the binary's `write.malformed-value`, and `--out` is never created. **Mutants, each applied and reverted, each red:** the driver with one omitted-line signature swapped for a line the composed text carries, and with the boundary naming another milestone, refuses the row and names both checks; `seed_ledger::every_redriven_row_has_an_input_carrying_its_verdict` reddens on an input whose row has no verdict, a verdict with no input, an input whose `status` differs from the verdict, a verdict outside its doctype's set, and an input under a key its doctype lacks.
+
+**Pins.** (1) **A leaf or slot the author step does not teach is written through the same verb line, with the address's leaf swapped.** `status`, `tier`, `pinned-by` and `duplicate-of` use the emitted `#meta/kind` set-field line, and `resolution` uses the emitted `#description` set-slot line. The report steps teach only the leaves a new finding needs, but a seeded row is re-driven, so it can carry more. (2) **Every input states its `status`, `open` included**, because the test holds that line to the ledger's verdict. (3) **The input format is checked before the rig is built**, at exit 2, by name: the doctype parent, the slug key and its uniqueness, the required files, and no file the format does not name. A misspelt `repo.md` would otherwise be silently skipped. (4) **The rig's construction log goes to a temp file and is shown only on failure**, because it carries absolute paths and T7 commits the driver's stdout. (5) **bash 3.2, which macOS ships, keeps double quotes written in a `${v//pat/"rep"}` replacement**, so every replacement in the driver is an unquoted variable. The driver runs on 3.2.
+
+## 2026-10-03 — M55 Increment 9 / T1: the seed ledger, counted and fenced
+
+**The deduped count is 91 rows — 79 `jigc-feedback`, 12 `inconsistency` — from 92 source entries.** [seed-ledger.md](completions/artifacts/M55/seed-ledger.md) records every row's sources before anything is filed, and `seed_ledger` (`g_methodology`) reads the sources themselves: the register's ids, the review heads from `### Tier 2` to `## B`, the M53 Settle's `(D)` rows, the owed and CI rows by bold label, and §6's two declared bounds. Every source row must sit in exactly one row's sources or in the exclusions with a reason, and no ledger source may name a row its source lacks, so a parser that reads nothing goes red rather than passing vacuously. [findings-channel.md](design/findings-channel.md) → 7 now points at the ledger in place of *~75* and *counted by the seed increment*. Its register row reads F1–F20 + T1–T5 (25), and it gains the bound row. **The one dedupe:** the declared bound **L3** is register row F6, so it joins `m55-f6`'s sources. Planning's 91 had already folded it in. Every other candidate overlap was read and kept apart, because each pair has different symptoms or a different producer:
+- F6 vs rc.19 `(2, N-4)`: the same shared-`.jigc` root, but a different symptom.
+- F7 vs M52 `(6, D-2)`: a fan-out sub-task, against a standalone `fix-task`.
+- T3 vs the `--private-target` litter: `jigc-trial-rig-fence*` trees, against `jigc-gate-target-*` trees.
+- M52 `(4, DEFECT 2)` vs rc.19 `(3, F-A)`: a host path printed by two different producers.
+- rc.18 `(2, F-1)`, closed on rc.19, vs rc.20 `(2, A2-2)`: a new cell.
+- rc.20 `(3, F-C)` vs M53 Settle (a) and (b): a route, against a code's identity.
+
+**Pins.** (1) **The source grammar.** A source is written `[<tag>](<file>) <id>`, with the id spelt as its source spells it: a register id, a review head's first backticked id, or a bold label. The link must resolve to the tag's file. This is why T8 keeps each collapsed row's opening bold label verbatim. (2) **M52 Settle is read only to prove that the exclusion of (a) names a real row.** Rows (b) and (c) are milestone-keyed design deferrals, which are outside S12's set and stay in decisions-pending. (3) **The ledger's headline count is fenced against its table** (rows, per-doctype rows, source entries). **Mutants, each applied and reverted, each red:** a row dropped, a source in two rows, an id its source lacks, a key prefix that does not match its first source, and a D row filed as `jigc-feedback`.
+
+## 2026-10-03 — M55 Increment 9 planning: decomposition
+
+Cut [Increment 9](implementation/roadmap.md) (*the seed: two reporters, one store*) into **8 ordered tasks**, grounded at HEAD `a5db4c7f` on `milestone/findings-channel/seed-two-reporters-one-store` (tree clean), Increments 1–8 landed. Cross-ref [roadmap.md](implementation/roadmap.md) → Milestone 55 → Increment 9; the M55 Settle below (S11, S12, S13's bounds; R4 I3; residual R4); [findings-channel.md](design/findings-channel.md) → 1.1–1.6, 7; [planning-gate-record.md](completions/artifacts/M55/planning-gate-record.md) → row 12. **Codes registered: none.** No schema, manifest, version integer, contract or production code moves; the Rust this increment adds is two test suites and one link-fence entry deleted.
+
+**Basis. Each item was driven at HEAD against the debug binary built from it (`jigc --version` → `1.0.0-rc.22`), in `dev/jigc-rig fresh` rigs captured stdout-only and eval'd in two steps, or read where marked.**
+
+- **Driven: the full-scale fan-out works.** One milestone, **90** report sub-tasks (78 `report-jigc-feedback`, 12 `report-inconsistency`) through `add-task --workflow` · `provision` · `execute`; each `Spawn:` line run verbatim with the binary first on `PATH`; zero composed texts carried `jigc task finalize`; each sub-task filed its doc in its worktree; `jigc milestone finalize` exited 0 with **exactly one new commit of 91 files** — the 90 docs and the milestone record. The whole run took ~90 s. *Noted, not a defect claim:* the finalize narration reads `<sub>: 2 docs` per sub-task while the commit holds one doc per sub-task; the commit is the authority.
+- **Driven: every leaf a seeded row needs lands at filing.** Through `doc author` and through the per-verb lines alike: `status: resolved` (and `refuted`) at create, `tier`, `pinned-by`, a `resolution`, a fenced `repro` holding a `#`-led line; an `inconsistency` with `status: resolved`, sides by `add-item … --slug side<n>`, a `says` on one. Paths land at `docs/jigc-feedback/<slug>.md` and `docs/inconsistencies/<slug>.md` under the fresh rig's default `docs-root`.
+- **Driven: the seed fence's predicate, both ways.** Two filed docs copied into a second fresh rig's `docs/<home>/`, then `jigc ingest` (both rows `adoptable … adopted`) and `jigc validate --format json` → `"findings": []`. With `kind:` deleted from one and `status: fixed` written into the other, `ingest` still **exits 0** (`needs-reconcile`) and `validate --format json` still **exits 0** but carries `schema-conformance.required-field-present` and `schema-conformance.field-value-conformant` (plus two `file-state.un-baselined` advisories). A front-matter-less note in `docs/jigc-feedback/` is reported too. **So the fence asserts on the JSON `findings` array, never an exit code.**
+- **Driven: `duplicate-of` cannot name a sibling sub-task's doc.** Sub-task B filed `status: duplicate` with `duplicate-of: jigc-feedback:<A's slug>`, A's doc filed in sub-task A of the same milestone. `jigc milestone finalize` exited 1, `schema-conformance.ref-resolves` — *resolves in neither the committed store nor this task's working area*. Recorded here as a datum; it is outside the recorded set, so it is not seeded. It decides P2's dedupe rule.
+- **Driven: the link fence binds the seed's creation.** `doc_link_fence::every_pending_path_is_still_absent` fails the moment `completions/artifacts/M55/seed` exists while its `PENDING` entry stands, so the commit that creates the path deletes the entry (`doc_link_fence.rs:243`). `completions/` is not a link-fence home (`HOMES`), so seed and ledger contents are unscanned; [decisions-pending.md](implementation/decisions-pending.md) **is** a live doc, so its pointers must resolve.
+- **Counted at planning — the size, before dedupe, is 91 source rows:**
+  - **23** — the rc.16 tier-2/3 row heads `` **`(<axis>, <id>)` `` under the M52 README's `### Tier 2` (8, `:555`) and `### Tier 3` (15, `:710`).
+  - **6** — `(D) (a)`–`(f)` under `### Deferred at the M53 Settle` in [decisions-pending.md](implementation/decisions-pending.md).
+  - **19** — the `` #### `(…)` `` heads under the tier-2/3 headings of M53's four re-review READMEs: rc.17 **3**, rc.18 **5**, rc.19 **6**, rc.20 **5**. Every one is a tier-2/3 row, which the charter sends to the 1.x ledger (each README's header); a row a later M53 stamp fixed is seeded `resolved`, never dropped.
+  - **5** — the owed and CI rows: the rig's `eval` capture and the `--private-target` litter (*Owed after M53's post-review arcs*; the blind trial is an owed act, excluded); and the GPG-signed test commits, the undeclared `python3` (its M57 half), and the git-marker contract (the 2026-09-27 CI rows).
+  - **25 + 12** — the register's F1–F20 and T1–T5 → `jigc-feedback`, and D1–D12 → `inconsistency`.
+  - **1** — the declared bound *two code tasks in one checkout* (S13). It is its own row, because F1's report arm is fixed and seeded `resolved`. The other four bounds are register rows already: L3 is F6, then F9, F13 and F14 (C7).
+- **Read: `T5` is in the register, `T1–T4` in the scope line.** T5 (the `author_batch_scaling` timing flake) was added at the R5 fold after the roadmap text was written, and its own disposition reads *seed as jigc-feedback*. **Included:** the Deliverable is *every finding this repository has recorded*, so this widens the set by one row the record itself routes here, and narrows nothing.
+- **Read: M52 Settle row (a) is the git-marker contract's origin, not a member of the set.** The CI row cross-references it, and its text and trigger *stand unchanged*. It gets no pointer.
+
+**Build pins — each a verified fact above, or a decision taken here from the locked docs:**
+
+- **P1 · Layout.**
+  - The ledger is `completions/artifacts/M55/seed-ledger.md`.
+  - The filing driver, its README and the per-row inputs live in `completions/artifacts/M55/seed-filing/`.
+  - The committed seed is `completions/artifacts/M55/seed/jigc-feedback/` and `…/seed/inconsistencies/` and **nothing else** — no README, because M56 places the tree under its `docs-root` unchanged (§7).
+  - Nothing is written under `seed/` before T7, because of the link-fence entry.
+- **P2 · The ledger: one row per distinct finding.**
+  - **Columns:** key · doctype · sources (each with its file anchor and the row's own id) · verdict · seed doc.
+  - **Keys** are stable and filesystem-safe, prefixed by source tag: `rc16-…` · `m53-…` · `owed-…`/`ci-…` · `m55-f<n>`/`m55-t<n>`/`m55-d<n>`/`m55-bound-…`. The batch tasks glob on these prefixes.
+  - **Dedupe.** A source row that restates a finding already in the ledger joins that row's sources and is not filed twice. The one doc's `description` names the other source. `duplicate-of` cannot be used inside the one fan-out (Basis), so a duplicate is never filed as a second doc.
+  - **Exclusions** carry a reason in the ledger: the blind trial, and M52 Settle (a).
+- **P3 · Re-drive and field rules, from §1.3 and §7.**
+  - **Status.** Each row is re-driven on this build and gets `open`, `resolved` (with `resolution` and `pinned-by`, `<module>::<test_name>` or `UNPINNED: <why>`) or `refuted`; an `inconsistency` may also be `intended`.
+  - **Provenance.** `found-in` is the first source (`review:M52-per-axis/(2,DEFECT C)`, `milestone:M55-planning/F4`, …). `jigc-version` is the version the row was **first seen** on. The re-drive's result goes in `resolution` or `description`, never in `jigc-version`. `tier` is carried where the source grades it.
+  - **Bounds.** The five declared bounds are seeded `open`.
+  - **Repros** are rig-relative (`$REPO`, `$JIGC`) and carry no machine-absolute path ([public-hygiene.md](implementation/public-hygiene.md)).
+- **P4 · The input format: one directory per row,** `seed-filing/input/<jigc-feedback|inconsistency>/<key>/`, parsed by nothing but the binary and the shell:
+  - `title`;
+  - `fields`, one `<leaf> <value>` line per `#meta/<leaf>`;
+  - `description.md`;
+  - optionally `repro.md` and `resolution.md` (`jigc-feedback`), or `evidence.md` and `resolution.md` (`inconsistency`);
+  - for an `inconsistency`, `sides/<n>/title` with an optional `sides/<n>/says.md`.
+
+  Every write is one of the composed author step's per-verb lines (`set-slot … --from-file <abs path>`, sides by `add-item … --slug side<n>`, as `author-inconsistency` teaches — not `doc author`, whose items mint path-coupled ids). After filing, the seed doc is the record and its input is not edited again, on the register's pointer rule.
+- **P5 · The driver,** `seed-filing/file-seed --out <new dir> <row-dir>…`, bash:
+  - **Setup.** It builds `dev/jigc-rig fresh` (`rig=$(dev/jigc-rig fresh) || exit; eval "$rig"`, stdout only), puts `$JIGC`'s directory first on `PATH`, and creates one milestone with one `add-task --workflow report-<ty>` per row, then runs `provision` and `execute`.
+  - **Each `Spawn:` line, run verbatim, is asserted to carry:**
+    - no `jigc task finalize`;
+    - no `commit:<sub>#` write;
+    - neither omitted step's signature line (*Land this task's docs as exactly one commit. This finalize commits path-scoped:* · *finalize renders the commit doc; it does not fill it, so set its header and prose*);
+    - the `task scope:` trailer naming `` `jigc milestone finalize <m>` is its only commit boundary ``.
+  - **Filing.** It files each row in its worktree, reads each back with `doc show … --task`, then runs `milestone finalize` and asserts exit 0 and **one** new commit whose file list is exactly N docs plus the record.
+  - **Output.** It copies the two homes to `--out` (refusing an existing one, and removing nothing) and prints `filed <N> docs (<a> jigc-feedback, <b> inconsistency) in one commit`. Every path it prints is repo-relative.
+- **P6 · Two suites,** each registered in exactly one group root, `g_methodology`:
+  - `crates/cli/tests/seed_ledger.rs` (T1, grown by T2 and T7);
+  - `crates/cli/tests/seed_fence.rs` (T7), on `TrialCorpus::build(State::Fresh)`.
+
+**The tasks.**
+
+- **T1 · The count: the seed ledger, recorded with every row's source before anything is filed, and fenced.**
+  - **The change.** `seed-ledger.md` per P2, every row's verdict and seed doc still blank. Then `seed_ledger::the_ledger_carries_every_source_row_exactly_once`, which reads the sources themselves:
+    - the register ids off [planning-findings.md](completions/artifacts/M55/planning-findings.md), with D* → `inconsistency` and the rest → `jigc-feedback`;
+    - the 23 M52 tier-2/3 heads;
+    - the 19 M53 re-review tier-2/3 heads;
+    - the six `(D) (a)`–`(f)` labels;
+    - the five owed and CI rows, by their bold labels.
+
+    It asserts that each appears in exactly one ledger row's sources, and that the keys are unique. [findings-channel.md](design/findings-channel.md) → 7's *~75* and its *counted by the seed increment* cell then point at the ledger rather than restating a number (§13's *doc moves ride the increment*, here for §7 itself).
+  - *Red:* the suite fails at HEAD (no ledger).
+  - *Done:*
+    - `cargo nextest run -p jigc -E 'test(/^(seed_ledger|test_target_registration|doc_link_fence)::/)'` is green.
+    - The task's DECISIONS entry states the deduped count and every dedupe.
+    - `dev/gate` is green.
+- **T2 · The filing driver and its input format, proved on a sample.**
+  - **The change.** `file-seed` and `seed-filing/README.md` per P4–P5. Plus `seed_ledger::every_redriven_row_has_an_input_carrying_its_verdict`: a ledger row with a verdict has an input directory whose `fields` `status` equals it, a row without one has none, and every input directory is a ledger key. It is vacuously green here.
+  - *Red:* the driver over a scratch two-row input (one per doctype, not committed) cannot run before it exists.
+  - *Done:*
+    - That run exits 0 and prints `filed 2 docs (1 jigc-feedback, 1 inconsistency) in one commit`, and `--out` holds the two files.
+    - A scratch row whose `fields` sets `status fixed` makes it exit non-zero, naming the row.
+    - `dev/gate` is green.
+- **T3 · Re-drive the rc.16 tier-2/3 rows (`rc16-*`).**
+  - **The change.** Each row is re-driven per P3. Its verdict goes into the ledger and its input per P4. The three D4 names fixed in the 2026-09-23 batch are among those expected `resolved`, but each is re-driven, not assumed.
+  - *Done:*
+    - `file-seed --out "$(mktemp -d)/out" completions/artifacts/M55/seed-filing/input/*/rc16-*` exits 0, and the `filed <N>` it prints equals the batch's ledger rows.
+    - `seed_ledger::` is green.
+    - `dev/gate` is green.
+- **T4 · Re-drive the M53 rows (`m53-*`): the Settle six and the four re-reviews' tier-2/3 rows.** The change and *Done* are T3's, over `m53-*`.
+- **T5 · Re-drive the owed and CI rows, F1–F20, T1–T5 and the bound row (`owed-* ci-* m55-f* m55-t* m55-bound-*`).** The change and *Done* are T3's over those globs. Rows fixed in M55 Increments 1–8 or by the gate-speed PR are seeded `resolved`, `pinned-by` the test that pins the fix. L3 (F6), F9, F13, F14 and the bound row are seeded `open`.
+- **T6 · Re-drive D1–D12 (`m55-d*`) as `inconsistency` rows, each side a path or address.** The change and *Done* are T3's over `m55-d*`. D4 is resolved by T1's count, `pinned-by` T1's test.
+- **T7 · File the seed through one fan-out, commit it, and fence it as adoptable — one commit.**
+  - **The filing.** `file-seed` over **every** input, in one milestone. The out tree goes in as `seed/jigc-feedback/` and `seed/inconsistencies/`. The driver's stdout is committed as `seed-filing/filing-log.txt`, and the ledger's seed doc column is filled.
+  - **The link fence.** `doc_link_fence.rs` loses the `completions/artifacts/M55/seed` `PENDING` entry, and its doc comment says so on M54's mold.
+  - **New, `seed_fence`:**
+    - **(a)** The committed seed is copied into a fresh corpus under `docs/`, then `jigc ingest`, then `jigc validate --format json`. It passes iff `findings` is empty **and** `doc list <ty> --format json`'s ids equal the seed files' ids for both doctypes, so an unadopted file cannot hide.
+    - **(b)** The standing control: the same with one seed file's `kind:` line deleted carries `schema-conformance.required-field-present`.
+  - **`seed_ledger` gains row for row:**
+    - the ledger rows and the seed files are a bijection;
+    - every row carries a verdict;
+    - each seed doc's `status` equals it.
+  - *Red:* `seed_fence` fails before the seed exists. `every_pending_path_is_still_absent` fails if the seed lands without the entry's deletion.
+  - *Done:*
+    - The driver printed `filed <N> docs … in one commit`, with N the ledger's row count.
+    - `cargo nextest run -p jigc -E 'test(/^(seed_fence|seed_ledger|doc_link_fence|test_target_registration)::/)'` is green.
+    - `dev/gate` is green.
+- **T8 · Pointers: each seeded `decisions-pending.md` row and each seeded register row points at its seed doc.**
+  - **[decisions-pending.md](implementation/decisions-pending.md).** The six `(D) (a)`–`(f)`, the two owed `dev/` rows and the three CI rows each become **one line**. The line keeps the row's opening bold label verbatim, so T1's test still finds it, and links its seed doc. It also keeps the row's `*Trigger:*` clause verbatim where it had one, because the seed doc has no trigger field and a deferral without a trigger is forgotten (CLAUDE.md → Decisions log). Section heads and their intro paragraphs stay.
+  - **[planning-findings.md](completions/artifacts/M55/planning-findings.md).** Every F/T/D row's disposition cell gains a `seed:` link, and the row is otherwise unedited. The dated review READMEs are untouched.
+  - *Red-step assumption to prove, not trust:* no suite that reads `decisions-pending.md` (`ledger_record_truth`, `leg_two_refusal_homed`, `record_stale_reasons`, `count_fences`, `doc_link_fence` among them) asserts the collapsed rows' text. Any that does is repaired in this commit.
+  - *Done:*
+    - `git diff --stat milestone/findings-channel/main -- completions/artifacts/M52 completions/artifacts/M53` is empty.
+    - `cargo nextest run -p jigc -E 'test(/^(seed_ledger|doc_link_fence)::/)'` is green.
+    - `dev/gate` is green.
+
+**Why this order and this seam.** The count precedes every filing (the scope's *first, the count*). The driver precedes the re-drives so each batch proves its rows file conformant the moment they are written. The re-drive is cut by source into four batches of about 12–31 rows, which answers residual R4's sizing. The seed's creation, its `PENDING` deletion and its fence are one gate-green unit, because the link fence reddens on the path alone. Pointers come last, because they need the seed paths to resolve.
+
+**Every Grouped-scope clause maps to a task.**
+
+| Grouped-scope clause | Task |
+|---|---|
+| The count — every source with its rows, → doctype, recorded before anything is filed; the size known once counted | T1 |
+| Each row re-driven → `open`/`resolved` (with `resolution`, `pinned-by`)/`refuted`; fixed rows seeded `resolved`; `found-in`, `jigc-version`, the result in `resolution`/`description` | T3–T6 (P3) |
+| The declared bounds seeded open — L3, two code tasks in one checkout, F9, F13, F14 (C7) | T1 (the bound row), T5 |
+| Filed in a rig as one milestone, one `report-*` sub-task per row, joined by `jigc milestone finalize`; conformant files under `seed/jigc-feedback/` and `seed/inconsistencies/` | T2 (driver), T7 (the run and the commit) |
+| The seed fence; the pending entry deleted by the commit that creates the seed | T7 |
+| Pointers in `decisions-pending.md` and the register; the review READMEs untouched | T8 |
+
+| Proves clause | Task |
+|---|---|
+| The join lands every sub-task's doc in one commit, each composed text free of the omission set | T7 (P5's assertions, `filing-log.txt`) |
+| Every real row fits the v1 shapes — fence green, red on an applied non-conformant file | T7 (a), (b) |
+| The number of filed docs equals the recorded set, row for row | T7 (`seed_ledger` bijection) |
+
+**Declared bounds:**
+
+- The seed's adoption is M56's ([decisions-pending.md](implementation/decisions-pending.md) → M56 — the port, cited, unchanged).
+- The pre-call re-review and blind trial record their rows as today (§1.6).
+- The `duplicate-of`-across-sub-tasks refusal above is recorded, not seeded or fixed.
+- The re-drive is honest only to its repros. A row driven by source read alone says so in its `description` (*READ, not driven*), on decisions-pending's own convention.
+
 ## 2026-10-03 — M55 Increment 8 / T4: flow D through the real binary, and the suite the shim lives in
 
 `findings_workflows` (h) fans three report sub-tasks out of one milestone, runs each `Spawn:` line verbatim, files each doc in its worktree through the emitted lines, and lands all three plus the milestone record in one join commit; (i) is the discriminating control — `report-jigc-feedback` composed as an ordinary task fails all four of (h)'s checks. **Pins:** (1) **`sub_task_composition` moves from `g_milestone` to `g_methodology`.** The plan widened its shim helpers to `pub(crate)` for `findings_workflows` to import, but a `pub(crate)` item is visible only inside its own group target, and the two suites sat in different ones. One of them had to move. The owner moved rather than the importer: `g_methodology` ran 118 s on the runner against `g_milestone`'s 340 s under the 10-minute job timeout ([ci-runtime](completions/artifacts/M54/ci-runtime.md)). (2) **"No line of an omitted step's text" is read off the step files.** It covers every body line of `finalize-doc-only` and `author-commit` except two kinds. A `{{ cli.… }}` ref is left out because the door and commit-write checks own it. A line a surviving report author step also carries is left out too, such as the shared heredoc and read-back wording. So the check follows the steps if they are edited, and does not depend on a hand-copied sentence.

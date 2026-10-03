@@ -1,0 +1,7 @@
+kind bug
+found-in review:M52-per-axis/(7,A7-F3)
+about jigc doc show
+jigc-version 1.0.0-rc.16
+tier tier-2
+status resolved
+pinned-by doc_show_relocated::a_doc_at_a_recorded_prior_home_is_routed_at_the_migration

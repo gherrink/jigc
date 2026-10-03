@@ -1,0 +1,1 @@
+On macOS, `/usr/bin/git` is an `xcrun` trampoline that costs about 11 ms a call, and a full gate makes about 174k git calls. Putting the real git first on `PATH` broke tree-sitter's C build unless `SDKROOT` was exported. The gate-speed measurement found it.

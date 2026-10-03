@@ -1,0 +1,1 @@
+`validate_previews_posture.rs:602` asserted that stderr carries no `"cd "`, so any short SHA ending in `cd` followed by a space tripped it, about 1 run in 256. The gate-speed measurement caught it as a nextest failure on `base d80f6cd but`.

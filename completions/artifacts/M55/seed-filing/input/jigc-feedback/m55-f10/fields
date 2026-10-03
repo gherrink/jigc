@@ -1,0 +1,6 @@
+kind bug
+found-in milestone:M55-planning/F10
+about jigc doc show
+jigc-version 1.0.0-rc.22
+status resolved
+pinned-by doc_show::an_absent_defaulted_field_projects_its_default_on_the_whole_doc_serve

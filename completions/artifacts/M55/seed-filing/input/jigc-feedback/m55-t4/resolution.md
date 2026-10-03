@@ -1,0 +1,3 @@
+Fixed by the gate-speed PR (#8, `56d9307a`, *dev/gate runs the suite on nextest under the real git*). When `git` resolves to the trampoline, `dev/gate` puts `dirname $(xcrun --find git)` first on `PATH`, exports `SDKROOT` from `xcrun --show-sdk-path` unless one is set, and names the git it runs under in a `gate: git` header line. The PR measured −29 % from this lever alone. A bare `cargo test` outside `dev/gate` still runs under whatever git is first on `PATH`.
+
+Re-driven on this build (the checkout at `982f910f`). The full gate run of this re-drive printed `gate: git` naming the CommandLineTools git 2.54.0, not `/usr/bin/git`, and the `SDKROOT` line. Its test step took 448 s and passed.

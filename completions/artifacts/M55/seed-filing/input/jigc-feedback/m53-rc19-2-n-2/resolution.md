@@ -1,0 +1,3 @@
+Fixed in M53's pre-v1 usability batch (`be40738e`), stamped `1.0.0-rc.20`. It was a census bug, not a hook filter: a placement singleton's rename candidates were enumerated at its one declared path, the path a rename empties. The census now widens only when the declared home is absent, gated by an exact content-hash match. The rc.20 re-review recorded it *CLOSED*, with all four placement singletons blocked at exit 1.
+
+Re-driven on this build (`jigc 1.0.0-rc.22`, the debug binary built from `47e6d8a9`). `git mv VISION.md VISION-OOB.md` and then `git commit` exits 1 with *out-of-band managed-doc rename staged in this commit — a bare `git mv` bypasses jigc identity tracking; use `jigc rename` instead (commit blocked)*, and the rename stays staged.

@@ -1,0 +1,3 @@
+Fixed in M55 Increment 6: `489353a3` (*doc show --format json carries the doc's H1 as a top-level title*) and `7976d7fa` (*every doc list --format json row carries title and fields*). One `jigc doc list <ty> --format json` now answers *all open findings* grouped by `found-in`, with no per-doc read (`design/findings-channel.md` → 5).
+
+Re-driven on this build (`jigc 1.0.0-rc.22`, the debug binary built from `982f910f`). For a committed `jigc-feedback` doc, `jigc doc show --format json` carries `"title": "Probe finding"`, and the `jigc doc list jigc-feedback --format json` row carries the title and the fields, `status` `open` and `found-in` `task:probe` among them.

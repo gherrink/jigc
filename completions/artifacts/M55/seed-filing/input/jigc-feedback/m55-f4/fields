@@ -1,0 +1,6 @@
+kind bug
+found-in milestone:M55-planning/F4
+about reconciliation.conflict-block
+jigc-version 1.0.0-rc.22
+status resolved
+pinned-by l1_pull_absorption::a_pulled_edit_lands_through_the_task_that_edits_the_doc

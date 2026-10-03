@@ -1,0 +1,3 @@
+Fixed in M53's pre-v1 usability batch (`be40738e`), stamped `1.0.0-rc.20`. The hook's awk is now its single decision point, with a three-way verdict (block, warn, silent), so its two printed branches cannot disagree about what a move is. The rc.20 re-review recorded it *CLOSED*: a committed `git rm VISION.md` exits 0 and the hook prints nothing.
+
+Re-driven on this build (`jigc 1.0.0-rc.22`, the debug binary built from `47e6d8a9`). In a `committed-singletons` rig, an ordinary commit, a commit of `git rm VISION.md`, and an unrelated commit after it all exit 0, and the hook prints nothing on any of them.

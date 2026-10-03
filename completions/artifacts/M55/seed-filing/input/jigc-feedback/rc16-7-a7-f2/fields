@@ -1,0 +1,6 @@
+kind bug
+found-in review:M52-per-axis/(7,A7-F2)
+about jigc ingest
+jigc-version 1.0.0-rc.15
+tier tier-3
+status open
