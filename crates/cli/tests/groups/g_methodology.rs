@@ -43,6 +43,8 @@ mod flow58_several_reporters;
 mod flow59_branch_and_pull;
 #[path = "../hook_output_axis.rs"]
 mod hook_output_axis;
+#[path = "../identical_staged_doc.rs"]
+mod identical_staged_doc;
 #[path = "../invocation_log.rs"]
 mod invocation_log;
 #[path = "../located_finding_text.rs"]

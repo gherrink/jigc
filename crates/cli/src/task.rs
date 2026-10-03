@@ -3174,26 +3174,48 @@ impl TaskArea {
                 || !self.staged_docs()?.is_empty()
                 || !git_untracked(&self.repo_root)?.trim().is_empty()
         } else {
-            // A staged doc counts toward the diff exactly when it will PROMOTE — mirroring
-            // `plan_promotions`' promotability: a `location:` doctype OR a **placement**
-            // doctype (`design/storage.md` → Placement, `location: None`). Testing only
-            // `location` here would drop a placement singleton (e.g. the `vision` managed at
-            // root `VISION.md`) through the transient arm, tripping the empty-commit guard on
-            // a doc-only task whose sole diff IS that promotion. The transient commit doc
-            // (neither location nor placement) is still excluded.
+            // A staged doc counts toward the diff exactly when its PROMOTION CHANGES A BYTE —
+            // its destination is the planner's own ([`engine::finalize::promote_destination`]:
+            // a `location:` doctype, or a **placement** doctype at its literal file, so the
+            // `vision` managed at root `VISION.md` is counted; the transient commit doc has
+            // neither and never is), and its would-be-committed blob differs from `HEAD`'s
+            // there ([`promotion_changes_head`]). Promotability alone is not a diff (M55
+            // completion audit CR3): a task that copied a committed doc in and wrote it back
+            // unchanged — a triage re-setting the `status` it was filed with — would reach
+            // `git commit`, meet git's own "nothing to commit", and be routed as a hook's
+            // rejection, though nothing rejected it. Asked here, it is the honest empty commit.
             let staged_promotable = self.staged_docs()?.iter().any(|(name, _)| {
                 name.strip_suffix(".md")
                     .and_then(|stem| stem.split_once(':'))
-                    .and_then(|(ty, _)| schemas.get(ty))
-                    .is_some_and(|schema| schema.location.is_some() || schema.placement.is_some())
+                    .is_some_and(|(ty, slug)| {
+                        schemas
+                            .get(ty)
+                            .and_then(|schema| engine::finalize::promote_destination(schema, slug))
+                            .is_some_and(|destination| {
+                                promotion_changes_head(
+                                    &self.repo_root,
+                                    &state::instance_path(&self.dir, ty, slug),
+                                    &destination,
+                                )
+                            })
+                    })
             });
+            // The recorded owner-artifacts both arms stage, on the same byte question: one
+            // counts when git sees it differ from `HEAD` ([`owner_artifacts_change_head`]).
+            // Until CR3 the ordinary arm never asked — every owner-artifact is recorded by a
+            // promotable doc, which the byte-blind term above always counted — so a recording
+            // doc written back unchanged beside a re-captured artifact must still read as a
+            // diff, here, rather than now reading empty.
+            let owner_changed = owner_artifacts_change_head(
+                &self.repo_root,
+                &engine::finalize::plan_owner_artifacts(&self.dir, &schemas),
+            );
             // **The doc-only arm's diff is its path set and nothing else** (M55): a doc that
             // promotes, or a recorded owner-artifact. Anyone's staged code and a pending
             // `.jigc/config` delta are outside the set the commit takes, so counting them would
             // let a task with no doc of its own reach a path-scoped commit over nothing.
             if doc_only {
-                staged_promotable
-                    || !engine::finalize::plan_owner_artifacts(&self.dir, &schemas).is_empty()
+                staged_promotable || owner_changed
             } else {
                 let staged_code = !git_capture(&self.repo_root, &["diff", "--cached"])?.is_empty();
                 let config_pending = !git_capture(
@@ -3207,7 +3229,7 @@ impl TaskArea {
                     ],
                 )?
                 .is_empty();
-                staged_code || staged_promotable || config_pending
+                staged_code || staged_promotable || config_pending || owner_changed
             }
         };
 
@@ -5433,7 +5455,14 @@ fn owner_artifact_stage_specs(
     repo_root: &Path,
     plan: &engine::finalize::FinalizePlan,
 ) -> Vec<String> {
-    plan.owner_artifacts
+    stageable_owner_artifacts(repo_root, &plan.owner_artifacts)
+}
+
+/// [`owner_artifact_stage_specs`]' filter over a bare path list — the one predicate for
+/// *which recorded owner-artifacts a stage hands to git*, shared with the empty-commit
+/// signal ([`owner_artifacts_change_head`]), which runs before any plan exists.
+fn stageable_owner_artifacts(repo_root: &Path, paths: &[String]) -> Vec<String> {
+    paths
         .iter()
         .filter(|path| {
             owner_artifact_is_stageable_shape(path)
@@ -5442,6 +5471,58 @@ fn owner_artifact_stage_specs(
         })
         .cloned()
         .collect()
+}
+
+/// Whether **promoting** the staged doc at `source` to the repo-relative `destination` would
+/// change what `HEAD` records there — the empty-commit signal's per-doc question (M55
+/// completion audit CR3). The would-be-committed bytes are the staged bytes (promotion is a
+/// byte-stable copy), hashed as `git add` would hash them at `destination`
+/// (`git hash-object --path=<destination>`, so that path's clean filters apply); `HEAD`'s side
+/// is the blob `HEAD:<destination>` names. A destination `HEAD` has no blob at is a change.
+///
+/// **Fails toward "changed"**: a git that cannot answer reads `true`, so the commit runs and git
+/// decides — the behaviour before this question existed — and never a claimed no-op.
+fn promotion_changes_head(repo_root: &Path, source: &Path, destination: &str) -> bool {
+    let Ok(committed) = git_capture(
+        repo_root,
+        &[
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            &format!("HEAD:{destination}"),
+        ],
+    ) else {
+        return true;
+    };
+    let Some(source) = source.to_str() else {
+        return true;
+    };
+    let path = format!("--path={destination}");
+    git_capture(repo_root, &["hash-object", &path, "--", source])
+        .map_or(true, |staged| staged != committed)
+}
+
+/// Whether any recorded owner-artifact a stage would hand to git
+/// ([`stageable_owner_artifacts`]) differs from `HEAD` — modified, staged or untracked, as
+/// `git status --porcelain` reports it over the literal path. An unchanged artifact is no diff:
+/// the stage re-adds the bytes `HEAD` already has. Fails toward "changed", as
+/// [`promotion_changes_head`] does.
+fn owner_artifacts_change_head(repo_root: &Path, paths: &[String]) -> bool {
+    stageable_owner_artifacts(repo_root, paths)
+        .iter()
+        .any(|path| {
+            git_capture(
+                repo_root,
+                &[
+                    "status",
+                    "--porcelain",
+                    "--untracked-files=all",
+                    "--",
+                    &literal_pathspec(path),
+                ],
+            )
+            .map_or(true, |status| !status.is_empty())
+        })
 }
 
 /// Whether an owner-artifact path is shaped for a safe `git add` / index probe — **repo-

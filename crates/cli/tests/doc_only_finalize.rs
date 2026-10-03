@@ -1167,3 +1167,76 @@ fn a_project_shadow_of_the_doc_only_step_body_keeps_the_doc_only_commit() {
         NESTED_WORKFLOW_ID,
     );
 }
+
+// --- a recording written back unchanged (M55 completion audit CR3) ------------------------
+
+/// **(CR3)** On both arms, a second task that writes a landed `dogfood-record` back unchanged
+/// beside its unchanged owner-artifact changes nothing: the `--dry-run` forecast and the
+/// finalize both block at `finalize.empty-commit` (exit 3), and git is never asked — it was,
+/// and its "nothing to commit" came back routed as a hook's rejection. Re-capturing the
+/// artifact **is** a change, so the same task then lands one commit holding the artifact
+/// alone: the empty-commit signal asks the owner-artifact the byte question too, on the
+/// ordinary arm as on the doc-only one.
+#[test]
+fn an_unchanged_recording_is_an_empty_commit_and_a_recaptured_artifact_lands() {
+    for (workflow, _) in OWNER_WORKFLOWS {
+        let corpus = owner_corpus();
+        let (first, doc, artifact) = author_dogfood(&corpus, workflow, "capture.md");
+        let out = corpus.jigc(&["task", "finalize", &first]);
+        assert!(
+            out.status.success(),
+            "[{workflow}] the first record lands; {}",
+            text(&out)
+        );
+        let slug = std::path::Path::new(&doc)
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .expect("a promoted doc path");
+
+        let task = corpus.start_workflow(workflow, "rerun the capture");
+        corpus.set_field(
+            &format!("dogfood-record:{slug}#meta/verdict"),
+            &task,
+            "green",
+        );
+        fill_commit(&corpus, &task);
+
+        let before = commit_count(&corpus);
+        for args in [
+            vec!["task", "finalize", task.as_str(), "--dry-run"],
+            vec!["task", "finalize", task.as_str()],
+        ] {
+            let out = corpus.jigc(&args);
+            let all = text(&out);
+            assert_eq!(
+                out.status.code(),
+                Some(3),
+                "[{workflow}] `{}` blocks at the empty-commit guard; {all}",
+                args.join(" "),
+            );
+            assert!(
+                all.contains("finalize.empty-commit") && !all.contains("nothing to commit"),
+                "[{workflow}] `{}` names the empty commit and never reaches git; {all}",
+                args.join(" "),
+            );
+        }
+        assert_eq!(
+            commit_count(&corpus),
+            before,
+            "[{workflow}] no commit was made"
+        );
+
+        fs::write(corpus.repo().join(&artifact), "recaptured\n").expect("re-capture");
+        let out = corpus.jigc(&["task", "finalize", &task]);
+        assert!(
+            out.status.success(),
+            "[{workflow}] the re-captured artifact lands; {}",
+            text(&out)
+        );
+        assert_eq!(
+            head_files(&corpus),
+            vec![artifact.clone()],
+            "[{workflow}] the commit holds the re-captured artifact alone",
+        );
+    }
+}
