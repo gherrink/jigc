@@ -1340,9 +1340,11 @@ fn adr_repo(tag: &str) -> (TempDir, TempDir) {
 /// carries history for the path:
 ///
 ///   * **history-absent** (`git reset --hard` past the ADR's creating commit) → the
-///     dangling baseline downgrades to an **advisory** routed at the branch switch —
-///     never at `jigc unmanage` (M55 Increment 5 / T1) — and the next task's `task
-///     validate` does **not** block (exit 0);
+///     dangling baseline downgrades to an **advisory** and the next task's `task validate`
+///     does **not** block (exit 0). The repo has one branch, so no branch carries the doc
+///     and the route offers `jigc unmanage` — never the switch back to a branch that does
+///     not exist (M55 completion triage, CR2; the branch-switch arm, which never offers the
+///     drop, is `file_state_history_gate`'s and `l2_branch_switch`'s);
 ///   * **history-present** (`git rm` + commit) → the same weak finding still
 ///     **blocks** (exit 3), a genuine deletion detected and routed.
 ///
@@ -1387,17 +1389,18 @@ fn file_state_history_gates_the_dangling_baseline_over_the_corpus_state_axis() {
             .as_str()
             .expect("the advisory carries a route");
         assert!(
-            !route.contains("jigc unmanage"),
-            "the dangling baseline never routes at `jigc unmanage`; got:\n{rename:#?}",
+            !route.contains("switch back"),
+            "no branch carries the doc, so no switch back is offered; got:\n{rename:#?}",
         );
         assert_eq!(
             route,
             format!(
-                "nothing on this checkout needs to change — a branch switch left this \
-                 baseline behind, and {ADR_PATH} lives on a branch this checkout does not \
-                 carry: switch back to that branch to work on it again"
+                "no branch, local or remote-tracking, can bring {ADR_PATH} back — a hard \
+                 reset or a rebase past its creating commit, or deleting it before it was \
+                 ever committed, leaves this baseline behind: drop it with `jigc unmanage \
+                 {ADR_PATH}`"
             ),
-            "the advisory routes at the branch switch; got:\n{rename:#?}",
+            "the advisory routes at `jigc unmanage`; got:\n{rename:#?}",
         );
     }
 

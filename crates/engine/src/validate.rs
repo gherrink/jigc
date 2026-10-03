@@ -118,9 +118,25 @@ pub type TrackedPredicate<'a> = dyn Fn(&str) -> bool + 'a;
 /// that moves underneath the gitignored cache (`git reset --hard` / branch switch / rebase
 /// past a doc's creating commit) leaves a recorded baseline pointing at a path that no longer
 /// exists. When HEAD has **no** history for the path, nothing was deleted — the dangling
-/// baseline downgrades to advisory, routed at the branch switch (M55 Increment 5 / T1);
-/// when it **has** history, the path was genuinely deleted and keeps blocking.
+/// baseline downgrades to advisory, routed by [`OtherRefsPredicate`] at the branch switch or at
+/// `jigc unmanage` (M55 Increment 5 / T1; M55 completion triage, CR2); when it **has** history, the path was genuinely deleted and keeps blocking.
 pub type HistoryPredicate<'a> = dyn Fn(&str) -> bool + 'a;
+
+/// The CLI-supplied **other-branch** predicate, threaded beside [`HistoryPredicate`] to the
+/// same two consumers — a `Fn(&str) -> bool` taking a **repo-relative** path and answering
+/// whether the tip of some **branch**, local or remote-tracking, carries it (the CLI reads
+/// `<ref>:<path>` for every `refs/heads/*` and `refs/remotes/*`). Same shell-free seam: the
+/// CLI owns the git reads, the engine only consults the boolean.
+///
+/// It splits the advisory dangling-baseline cell [`HistoryPredicate`] selects by cause (M55
+/// completion triage, CR2; `design/findings-channel.md` → §6 L2). **Carried** — the doc lives
+/// on a branch this checkout does not carry, the branch-switch case — routes at switching
+/// back and never offers an index drop. **Not carried** — no branch brings the doc back (a
+/// `git reset --hard` or rebase past its creating commit, or a doc ingested and deleted
+/// before it was ever committed) — routes at `jigc unmanage <path>`, the one way to clear the
+/// stale baseline. Asked only inside that already-cold arm, after `history` reads empty; a
+/// failing git read answers **carried**, so the index drop is never offered on a guess.
+pub type OtherRefsPredicate<'a> = dyn Fn(&str) -> bool + 'a;
 
 /// The CLI-supplied **committed bytes at a pin** — a `Fn(&str) -> Option<Vec<u8>>` taking a
 /// **repo-relative** path and answering its blob at the caller's base pin (`git cat-file blob
@@ -194,8 +210,10 @@ pub type PinnedBlob<'a> = dyn Fn(&str) -> Option<Vec<u8>> + 'a;
 /// only inside that already-cold path (a recorded-but-missing doc), so a healthy task never
 /// shells out for it: history present (the path was genuinely deleted) keeps the blocking
 /// weak-signal finding; history empty (the checkout moved underneath the gitignored cache)
-/// downgrades to advisory with an informational route that names the branch switch and
-/// offers switching back, never an index drop (M55 Increment 5 / T1).
+/// downgrades to advisory. `other_refs` ([`OtherRefsPredicate`]) then picks its route (M55
+/// completion triage, CR2): a doc some branch still carries is routed at the branch switch
+/// and offered switching back, never an index drop (M55 Increment 5 / T1); a doc no branch
+/// carries is routed at `jigc unmanage <path>`, the way to clear a baseline that outlived it.
 ///
 /// `conflict` is the CLI-supplied [`ConflictBlock`](crate::file_state::ConflictBlock) the
 /// committed-store sweep hands to its `DRIFTED + TOUCHED` classifier (M47 inc-2 / T4). The
@@ -294,6 +312,7 @@ pub fn validate_task(
     invoke_doc_code: &ProbeInvoker<'_>,
     _tracked: &TrackedPredicate<'_>,
     history: &HistoryPredicate<'_>,
+    other_refs: &OtherRefsPredicate<'_>,
     changed_code: &BTreeSet<String>,
     base_code_tree_root: &Path,
     pinned: &PinnedBlob<'_>,
@@ -359,6 +378,7 @@ pub fn validate_task(
         repo_root,
         dir,
         history,
+        other_refs,
         pinned,
         conflict,
         adoption,
@@ -597,7 +617,7 @@ pub struct PriorHomeInstance {
 ///
 /// - **doc↔code** — every committed doc's `code-anchor` leaves resolved against the working tree via the CLI-supplied subprocess `invoke_doc_code` seam (the [`validate_store`] body, lifted to [`store_doc_code`]). The only family that can raise a `pack-probe-integrity.*` meta-finding (it is the one subprocess probe).
 /// - **workflow↔refs** — each cascade-resolved workflow definition (the CLI enumerates + reads them, address-sorted, feeding each as a [`StoreWorkflow`] bundling its id, raw bytes, and **origin-pack** command catalog) run through the **task-independent** store-scope checks ([`crate::compose::workflow_refs_store`]): `include-resolves`, `include-cycle-absent`, `body-include-only`, the three marker-shadow checks, `fan-out-join-paired`, the **catalog-membership-only** command-ref path, and the **doctype-membership-only** schema-ref path (`schema-ref-resolves`, M43 — resolved against the **composed cascade's** doctype set derived from `schemas`, deliberately NOT per-origin: a methodology step legitimately solicits a dev doctype, `surface-contract.md` → The schema projection). The task-data checks stay at `jigc start`. `workflow_source` is the CLI's layer-aware [`StepSource`](crate::compose::StepSource), **scoped per-workflow** to that definition's origin pack via [`StepSource::scope_to_workflow`](crate::compose::StepSource::scope_to_workflow) so a loser-pack workflow's includes + command-refs resolve against ITS OWN pack, never the precedence-winner's catalog (`multi-pack.md` → Pack-local body-reference resolution: `command-ref-resolves` and the include checks fire **per-definition against that definition's own pack**). For a single pack each origin *is* the one pack, so the resolution is byte-identical to a flat catalog (the no-composition floor).
-/// - **file↔CLI-state** — the read-only committed-store hash twin ([`crate::file_state::detect_committed_store`]): each committed managed doc's on-disk hash against its `record` entry, **detect without absorb** (`record` is borrowed `&`, no write, never via `reconcile_committed_store`). `head` is the CLI-supplied [`PinnedBlob`] bound to `HEAD` (M55 Increment 4, L1's store arm): a drift whose bytes equal the doc's `HEAD` blob and conform grades **advisory** — the baseline lags `HEAD` — and `&|_| None` keeps every drift blocking. Its rename twin ([`crate::file_state::detect_committed_store_renames`]) takes `history`, the CLI-supplied [`HistoryPredicate`] the task gate consults too (M55 Increment 5 / T2): a recorded doc missing with no history at `HEAD` is the **advisory** dangling baseline a branch switch leaves behind, routed at switching back, at both scopes; `&|_| true` keeps every such row the blocking weak deletion.
+/// - **file↔CLI-state** — the read-only committed-store hash twin ([`crate::file_state::detect_committed_store`]): each committed managed doc's on-disk hash against its `record` entry, **detect without absorb** (`record` is borrowed `&`, no write, never via `reconcile_committed_store`). `head` is the CLI-supplied [`PinnedBlob`] bound to `HEAD` (M55 Increment 4, L1's store arm): a drift whose bytes equal the doc's `HEAD` blob and conform grades **advisory** — the baseline lags `HEAD` — and `&|_| None` keeps every drift blocking. Its rename twin ([`crate::file_state::detect_committed_store_renames`]) takes `history`, the CLI-supplied [`HistoryPredicate`] the task gate consults too (M55 Increment 5 / T2): a recorded doc missing with no history at `HEAD` is the **advisory** dangling baseline, at both scopes; `&|_| true` keeps every such row the blocking weak deletion. `other_refs` ([`OtherRefsPredicate`]) routes that advisory as the task gate does (M55 completion triage, CR2): at switching back when a branch still carries the doc, at `jigc unmanage <path>` when none does.
 ///
 /// The engine stays **domain-empty**: the caller (CLI) resolves the cascade and feeds in
 /// the schemas, the per-workflow definition bundles (id + bytes + origin catalog), the step
@@ -626,6 +646,7 @@ pub fn validate_store_families(
     record: &FileStateRecord,
     head: &PinnedBlob<'_>,
     history: &HistoryPredicate<'_>,
+    other_refs: &OtherRefsPredicate<'_>,
     versions: &BTreeMap<String, u32>,
     priors: &BTreeMap<String, Vec<Schema>>,
     prior_home_instances: &[PriorHomeInstance],
@@ -690,8 +711,9 @@ pub fn validate_store_families(
     // **scope-subtracted** from the ref-resolves walk below — so a moved-with-referrers doc
     // surfaces one `reconciliation.rename` finding, never N competing dangling refs. The weak
     // signal is graded by `history` exactly as at task scope (M55 Increment 5 / T2).
-    let (rename_findings, renamed_targets) =
-        crate::file_state::detect_committed_store_renames(record, schemas, repo_root, history);
+    let (rename_findings, renamed_targets) = crate::file_state::detect_committed_store_renames(
+        record, schemas, repo_root, history, other_refs,
+    );
     findings.extend(rename_findings);
 
     // Family 4 — cross-doc forward-ref integrity (the store-wide analog of the task-scope
@@ -5327,6 +5349,7 @@ kind: memo
             &unused_invoker(),
             &never_tracked(),
             &|_| true,
+            &|_| true,
             &BTreeSet::new(),
             area.dir(),
             &|_| None,
@@ -5368,6 +5391,7 @@ kind: memo
             &no_delta_resolved(),
             &unused_invoker(),
             &never_tracked(),
+            &|_| true,
             &|_| true,
             &BTreeSet::new(),
             clean.dir(),
@@ -5481,6 +5505,7 @@ Bursty-but-honest clients see occasional 429s.
             &unused_invoker(),
             &never_tracked(),
             &|_| true,
+            &|_| true,
             &BTreeSet::new(),
             area.dir(),
             &|_| None,
@@ -5588,6 +5613,7 @@ Bursty-but-honest clients see occasional 429s.
             &unused_invoker(),
             &never_tracked(),
             &|_| true,
+            &|_| true,
             &BTreeSet::new(),
             area.dir(),
             &|_| None,
@@ -5640,6 +5666,7 @@ Bursty-but-honest clients see occasional 429s.
             &no_delta_resolved(),
             &unused_invoker(),
             &never_tracked(),
+            &|_| true,
             &|_| true,
             &BTreeSet::new(),
             area.dir(),
@@ -5695,6 +5722,7 @@ Bursty-but-honest clients see occasional 429s.
             &no_delta_resolved(),
             &unused_invoker(),
             &never_tracked(),
+            &|_| true,
             &|_| true,
             &BTreeSet::new(),
             area.dir(),
@@ -5757,6 +5785,7 @@ Bursty-but-honest clients see occasional 429s.
             &unused_invoker(),
             &never_tracked(),
             &|_| true,
+            &|_| true,
             &BTreeSet::new(),
             area.dir(),
             &|_| None,
@@ -5818,6 +5847,7 @@ sections:
             &no_delta_resolved(),
             &unused_invoker(),
             &never_tracked(),
+            &|_| true,
             &|_| true,
             &BTreeSet::new(),
             area.dir(),
@@ -6057,6 +6087,7 @@ A failed node's sessions are re-routed on next request.
             &unused_invoker(),
             &never_tracked(),
             &|_| true,
+            &|_| true,
             &BTreeSet::new(),
             repo.path(),
             &|_| None,
@@ -6118,6 +6149,7 @@ A failed node's sessions are re-routed on next request.
             &unused_invoker(),
             &never_tracked(),
             &|_| true,
+            &|_| true,
             &BTreeSet::new(),
             repo.path(),
             &|_| None,
@@ -6175,6 +6207,7 @@ A failed node's sessions are re-routed on next request.
             &unused_invoker(),
             &never_tracked(),
             &|_| true,
+            &|_| true,
             &BTreeSet::new(),
             repo.path(),
             &|_| None,
@@ -6229,6 +6262,7 @@ A failed node's sessions are re-routed on next request.
             &no_delta_resolved(),
             &unused_invoker(),
             &never_tracked(),
+            &|_| true,
             &|_| true,
             &BTreeSet::new(),
             repo.path(),
@@ -6655,6 +6689,7 @@ The audit landed green.
             &unused_invoker(),
             &|_p| true, // the _tracked param is no longer consulted here.
             &|_| true,
+            &|_| true,
             &BTreeSet::new(),
             repo.path(),
             &|_| None,
@@ -6923,6 +6958,7 @@ One sentence.
             &record,
             &|_| None,
             &|_| true,
+            &|_| true,
             &BTreeMap::new(),
             &BTreeMap::new(),
             &[],
@@ -6993,6 +7029,7 @@ One sentence.
             &EmptyStepSource,
             &record,
             &|_| None,
+            &|_| true,
             &|_| true,
             &BTreeMap::new(),
             &BTreeMap::new(),
@@ -7070,6 +7107,7 @@ Old notes.
             &EmptyStepSource,
             &record,
             &|_| None,
+            &|_| true,
             &|_| true,
             &BTreeMap::new(),
             &BTreeMap::new(),
@@ -7447,6 +7485,7 @@ Effects.
             &record,
             &|_| None,
             &|_| true,
+            &|_| true,
             &BTreeMap::new(),
             &BTreeMap::new(),
             &[],
@@ -7499,6 +7538,7 @@ Effects.
             &source,
             &record,
             &|_| None,
+            &|_| true,
             &|_| true,
             &BTreeMap::new(),
             &BTreeMap::new(),
@@ -7580,6 +7620,7 @@ Effects.
             &record,
             &|_| None,
             &|_| true,
+            &|_| true,
             &BTreeMap::new(),
             &BTreeMap::new(),
             &[],
@@ -7617,6 +7658,7 @@ Effects.
             &OnlyStepSource("{{schema:adr}}\n"),
             &record,
             &|_| None,
+            &|_| true,
             &|_| true,
             &BTreeMap::new(),
             &BTreeMap::new(),
@@ -7692,6 +7734,7 @@ Slightly higher write latency for resilience.
             &record,
             &|_| None,
             &|_| true,
+            &|_| true,
             &BTreeMap::new(),
             &BTreeMap::new(),
             &[],
@@ -7752,6 +7795,7 @@ Slightly higher write latency for resilience.
             &EmptyStepSource,
             &record,
             &|_| None,
+            &|_| true,
             &|_| true,
             &BTreeMap::new(),
             &BTreeMap::new(),
@@ -7822,6 +7866,7 @@ Slightly higher write latency for resilience.
             &EmptyStepSource,
             &record,
             &|_| None,
+            &|_| true,
             &|_| true,
             &BTreeMap::new(),
             &BTreeMap::new(),
@@ -7897,6 +7942,7 @@ Slightly higher write latency for resilience.
             &EmptyStepSource,
             &record,
             &|_| None,
+            &|_| true,
             &|_| true,
             &BTreeMap::new(),
             &BTreeMap::new(),
@@ -8009,6 +8055,7 @@ sections:
             &record,
             &|_| None,
             &|_| true,
+            &|_| true,
             &BTreeMap::new(),
             &BTreeMap::new(),
             &[],
@@ -8052,6 +8099,7 @@ sections:
             &EmptyStepSource,
             &record,
             &|_| None,
+            &|_| true,
             &|_| true,
             &BTreeMap::new(),
             &BTreeMap::new(),
@@ -8198,6 +8246,7 @@ Effects.
                 &record,
                 &|_| None,
                 &|_| true,
+                &|_| true,
                 &versions,
                 &BTreeMap::new(),
                 &[],
@@ -8244,6 +8293,7 @@ Effects.
             &EmptyStepSource,
             &record,
             &|_| None,
+            &|_| true,
             &|_| true,
             &versions_v1,
             &BTreeMap::new(),
@@ -8303,6 +8353,7 @@ Effects.
                 &EmptyStepSource,
                 &record,
                 &|_| None,
+                &|_| true,
                 &|_| true,
                 &versions,
                 &BTreeMap::new(),
@@ -8385,6 +8436,7 @@ Effects.
                 &EmptyStepSource,
                 &record,
                 &|_| None,
+                &|_| true,
                 &|_| true,
                 &versions,
                 &BTreeMap::new(),
@@ -8474,6 +8526,7 @@ Effects.
             &EmptyStepSource,
             &record,
             &|_| None,
+            &|_| true,
             &|_| true,
             &versions,
             &BTreeMap::new(),
@@ -8630,6 +8683,7 @@ Effects.
             &record,
             &|_| None,
             &|_| true,
+            &|_| true,
             &BTreeMap::new(),
             &BTreeMap::new(),
             &[],
@@ -8657,6 +8711,7 @@ Effects.
             &source,
             &record,
             &|_| None,
+            &|_| true,
             &|_| true,
             &BTreeMap::new(),
             &BTreeMap::new(),
@@ -8789,6 +8844,7 @@ Effects.
                 &content_aware_invoker(&seen),
                 &no_op_tracked,
                 &|_| true,
+                &|_| true,
                 changed,
                 base,
                 &|_| None,
@@ -8860,6 +8916,7 @@ Effects.
             &no_delta_resolved(),
             &content_aware_invoker(&seen),
             &|_: &str| false,
+            &|_| true,
             &|_| true,
             &change_set(&["src/foo.rs"]),
             base.path(),
@@ -8935,6 +8992,7 @@ Effects.
             &invoker,
             &|_: &str| false,
             &|_| true,
+            &|_| true,
             &change_set(&["src/foo.rs"]),
             base.path(),
             &|_| None,
@@ -9009,6 +9067,7 @@ Effects.
             &invoker,
             &|_: &str| false,
             &|_| true,
+            &|_| true,
             &change_set(&["src/foo.rs"]),
             base.path(),
             &|_| None,
@@ -9067,6 +9126,7 @@ Effects.
             &no_delta_resolved(),
             &invoker,
             &|_: &str| false,
+            &|_| true,
             &|_| true,
             &change_set(&["src/foo.rs"]),
             base.path(),

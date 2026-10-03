@@ -1476,6 +1476,12 @@ fn validate_store_in_repo(cwd: &Path) -> Result<StoreSweep> {
     // no content-matching candidate, so a store with no missing baseline shells out zero
     // more times.
     let history = |path: &str| crate::task::git_path_has_history(&jigc_home, path).unwrap_or(true);
+    // Its route seam (M55 completion triage, CR2): whether a branch tip still carries a
+    // history-less missing doc — the switch-back route if so, `jigc unmanage` if not — with
+    // the same conservative default the task gate uses (a git failure reads *carried*, so the
+    // index drop is never offered on a guess).
+    let other_refs =
+        |path: &str| crate::task::git_path_on_a_branch(&jigc_home, path).unwrap_or(true);
 
     let mut report = engine::validate::validate_store_families(
         &jigc_home,
@@ -1487,6 +1493,7 @@ fn validate_store_in_repo(cwd: &Path) -> Result<StoreSweep> {
         &record,
         &head,
         &history,
+        &other_refs,
         &versions,
         &priors,
         &at_prior_homes,

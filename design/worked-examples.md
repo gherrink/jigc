@@ -2980,9 +2980,10 @@ $ jigc task finalize record-the-completion
 # ── Arm 5 · the dangling baseline is history-gated across the corpus-state axis. ──
 $ git reset --hard <root>   (past the ADR's creating commit; HEAD has no history for the path)
 $ jigc task validate <next> --format json
-> advisory · reconciliation.rename · route: … a branch switch left this baseline behind … switch back to that branch …   # exit 0
-#   (M45–M54: routed prune-first at `jigc unmanage <path>`; since M55 the route names the branch switch and
-#    offers switching back, never an index drop)
+> advisory · reconciliation.rename · route: no branch, local or remote-tracking, can bring … back … `jigc unmanage <path>`   # exit 0
+#   (M45–M54: routed prune-first at `jigc unmanage <path>`; M55's build routed every such row at the branch
+#    switch; since the M55 completion triage (CR2) the route asks whether a branch still carries the doc —
+#    here none does, the repo has one branch — and only a carried doc is routed at switching back)
 $ git rm docs/decisions/single-node-cache.md && git commit   (HEAD now HAS history for the path)
 $ jigc task validate <next> --format json
 > blocking · reconciliation.rename                          # exit 3 — a genuine deletion still blocks

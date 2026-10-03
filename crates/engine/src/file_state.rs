@@ -389,8 +389,10 @@ impl ConflictBlock {
 /// there — the record reads history-less while it is live, current, and the state the
 /// milestone is run from. The carve-out was cut when that arm still routed prune-first at
 /// `jigc unmanage <path>`, which would have unmanaged exactly that; the arm routes at the
-/// branch switch since M55 (Increment 5 / T1), and the carve-out still says the one true
-/// thing about this path — it is the live record, not a doc left on another branch.
+/// branch switch since M55 (Increment 5 / T1), and — where no branch carries the path — at
+/// `jigc unmanage` again since the M55 completion triage (CR2), which the carve-out still
+/// precedes: it says the one true thing about this path — it is the live record, neither a
+/// doc left on another branch nor one gone from every branch.
 ///
 /// Like [`ConflictBlock`], the fact belongs to the **caller, not the classifier**: the engine
 /// sees a path and a hash, never which work unit owns the task whose area it is sweeping. So
@@ -677,7 +679,8 @@ pub fn committed_path_recordable(
 ///   candidates (the on-disk `.md` files of that type with no recorded hash), routing
 ///   a suspected `git mv` (strong signal) or a restore (weak signal). `history` grades
 ///   the weak signal (M45, Decision 7): a path with no HEAD history is a dangling
-///   baseline (advisory, routed at the branch switch), a path with history is a genuine
+///   baseline (advisory — routed at the branch switch when `other_refs` finds a branch
+///   carrying it, at `jigc unmanage` when none does), a path with history is a genuine
 ///   deletion (block).
 ///
 /// `conflict` is the caller's [`ConflictBlock`] — the sweep knows the working area's
@@ -706,6 +709,7 @@ pub fn reconcile_committed_store(
     repo_root: &Path,
     task_dir: &Path,
     history: &crate::validate::HistoryPredicate<'_>,
+    other_refs: &crate::validate::OtherRefsPredicate<'_>,
     pinned: &crate::validate::PinnedBlob<'_>,
     conflict: &ConflictBlock,
     adoption: &crate::validate::AdoptionInputs<'_>,
@@ -840,6 +844,7 @@ pub fn reconcile_committed_store(
                 &recorded_hash,
                 &untracked_refs,
                 history,
+                other_refs,
                 live,
                 repo_root,
             ));
@@ -1009,14 +1014,18 @@ pub fn detect_committed_store(
 ///
 /// `history` is the CLI-supplied [`HistoryPredicate`](crate::validate::HistoryPredicate) the
 /// task gate's twin consults too (M55 Increment 5 / T2): a missing path with no content-
-/// matching candidate and no history at `HEAD` is the **advisory** dangling baseline a branch
-/// switch leaves behind, one with history the **blocking** weak deletion. It is asked only of
-/// such a path, so a store with no missing baseline never consults it.
+/// matching candidate and no history at `HEAD` is the **advisory** dangling baseline, one with
+/// history the **blocking** weak deletion. It is asked only of such a path, so a store with no
+/// missing baseline never consults it. `other_refs`
+/// ([`OtherRefsPredicate`](crate::validate::OtherRefsPredicate)) routes that advisory exactly as
+/// at task scope (M55 completion triage, CR2): switch back when a branch carries the doc,
+/// `jigc unmanage` when none does.
 pub fn detect_committed_store_renames(
     record: &FileStateRecord,
     schemas: &std::collections::BTreeMap<String, crate::schema::Schema>,
     repo_root: &Path,
     history: &crate::validate::HistoryPredicate<'_>,
+    other_refs: &crate::validate::OtherRefsPredicate<'_>,
 ) -> (Vec<Finding>, std::collections::BTreeSet<String>) {
     let mut findings = Vec::new();
     let mut renamed: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
@@ -1058,8 +1067,10 @@ pub fn detect_committed_store_renames(
         let from = identity_of(&path, schemas).unwrap_or_else(|| path.clone());
         // The store twin grades the weak signal by the caller's history predicate, exactly as
         // the task gate does (M55 Increment 5 / T2, revising the M45 Increment 7 store/task
-        // split): a path with no history at `HEAD` is the advisory dangling baseline, routed at
-        // the branch switch, so both scopes report one key at one severity under one route.
+        // split): a path with no history at `HEAD` is the advisory dangling baseline, its route
+        // picked by the same `other_refs` (switch back, or `jigc unmanage` when no branch
+        // carries it — M55 completion triage, CR2), so both scopes report one key at one
+        // severity under one route.
         // Pinned by `file_state_history_gate::store_scope_agrees_with_task_scope_on_a_history_less_baseline`.
         // No live record at store scope: this twin sweeps no task, so no work unit owns the
         // sweep and the caller-supplied carve-out has no subject (`LiveRecord::none`).
@@ -1069,6 +1080,7 @@ pub fn detect_committed_store_renames(
             &recorded_hash,
             &untracked_refs,
             history,
+            other_refs,
             &LiveRecord::none(),
             repo_root,
         );
@@ -1426,9 +1438,13 @@ fn rename_landing_present(
 ///   unmanage`). A path with **no** history is a **dangling baseline** — the recorded
 ///   baseline pointing at a path the checkout moved out from under the gitignored
 ///   file↔state cache (`git reset --hard` / branch switch / rebase past the creating
-///   commit) — which downgrades to an **advisory** whose informational route names the
-///   branch switch and offers switching back, never an index drop (M55 Increment 5 / T1),
-///   so a moved checkout no longer wedges every subsequent task. The one exception is the
+///   commit), or an ingested doc deleted before it was ever committed — which downgrades
+///   to an **advisory**, so a moved checkout no longer wedges every subsequent task. Its
+///   route is picked by the CLI-supplied `other_refs` (M55 completion triage, CR2): a doc
+///   some branch still carries is the branch switch, routed informationally at switching
+///   back, never an index drop (M55 Increment 5 / T1); a doc no branch carries is gone
+///   from everything a checkout can switch to, routed at `jigc unmanage <path>`
+///   ([`rename_orphaned_baseline_finding`]). The one exception is the
 ///   caller's [`LiveRecord`] (M52 Inc 10 / T6): when the history-less path **is** the
 ///   committed record of the work unit the swept task belongs to, the same id and severity
 ///   carry the live-record claim and its own informational route instead
@@ -1443,13 +1459,15 @@ fn rename_landing_present(
 /// CLI-supplied `history` predicate) and returns findings.
 ///
 /// **The op-axis collapse argument** (the 2026-07-24 confidence audit, sibling-hunt
-/// finding 7). This oracle consults exactly three observables — the path is absent from
+/// finding 7). This oracle consults exactly four observables — the path is absent from
 /// disk (the caller's precondition), an untracked candidate carries the recorded hash,
-/// and `history(path)` — and nothing else: no git object existence (a `gc` changes
-/// nothing), no other-ref reachability (a branch delete changes nothing), no reflog, no
+/// `history(path)`, and (in the history-less cell only, where it picks the route and never
+/// the severity) `other_refs(path)`, whether some branch tip carries the path — and nothing
+/// else: no git object existence (a `gc` changes nothing), no tag, stash or reflog, no
 /// sparse state. So every orphaning git *operation* projects onto one row of the
-/// (candidate × history) table, and testing the observables covers the ops — **for this
-/// oracle**. The collapse does NOT survive an oracle change: the ops are exactly where
+/// (candidate × history × branch-carried) table, and testing the observables covers the
+/// ops — **for this oracle**. (`other_refs` arrived at the M55 completion triage, CR2: a
+/// branch delete now moves its row from the switch-back route to the `unmanage` route.) The collapse does NOT survive an oracle change: the ops are exactly where
 /// oracle *choice* diverges (e.g. `git log --all` re-blocks the branch-switch row Decision
 /// 7 chose HEAD-scoping to downgrade), which is why
 /// `crates/cli/tests/file_state_history_gate.rs` iterates the distinct **ops as real git
@@ -1469,12 +1487,17 @@ fn rename_landing_present(
 /// sparse detection is deliberately not built — re-weigh only if a sparse-checkout user
 /// exists (`DECISIONS.md` → 2026-07-23 M45 Settle, Decision 7, the bracketed 2026-07-24
 /// note).
+// Each parameter is a distinct observable or caller fact the classification reads (the
+// path, its identity and hash, the candidates, the two CLI-supplied git predicates, the
+// caller's live record, the checkout root); bundling them would only relocate the arity.
+#[allow(clippy::too_many_arguments)]
 pub fn detect_rename(
     path: &str,
     from: &str,
     recorded_hash: &str,
     untracked: &[(&str, String)],
     history: &crate::validate::HistoryPredicate<'_>,
+    other_refs: &crate::validate::OtherRefsPredicate<'_>,
     live: &LiveRecord,
     home: &Path,
 ) -> Vec<Finding> {
@@ -1495,7 +1518,12 @@ pub fn detect_rename(
         // reader, differ.
         None => match live.unit_at(path) {
             Some(unit) => vec![live_record_finding(path, from, unit)],
-            None => vec![rename_dangling_baseline_finding(path, from)],
+            // The cause split (M55 completion triage, CR2): a branch that still carries the
+            // doc is the branch switch, whose route never drops the index; no branch
+            // carrying it means nothing the checkout can switch to brings it back, and the
+            // route names the one way to clear the baseline.
+            None if other_refs(path) => vec![rename_dangling_baseline_finding(path, from)],
+            None => vec![rename_orphaned_baseline_finding(path, from)],
         },
     }
 }
@@ -1559,10 +1587,11 @@ fn rename_weak_finding(path: &str, from: &str) -> Finding {
 /// **One route at both scopes, and never an index drop** (M55 Increment 5 / T1;
 /// `design/findings-channel.md` → §6 L2, R5). The route names the branch switch and offers
 /// switching back to the branch that carries the path, and says nothing on this checkout
-/// needs to change. M45's prune-first route (`jigc unmanage <path>`) is retired: under a
-/// branch-per-milestone model the ordinary cause of this cell is a switch away from the
-/// branch that created the doc, where pruning would drop the identity of a doc that is
-/// alive on its branch. Like [`live_record_finding`], the route is
+/// needs to change. It is selected only where that is true — some branch, local or
+/// remote-tracking, still carries the path (the CLI's `other_refs`; M55 completion triage,
+/// CR2) — so pruning here would drop the identity of a doc that is alive on its branch. A
+/// path no branch carries takes [`rename_orphaned_baseline_finding`] instead. Like
+/// [`live_record_finding`], the route is
 /// [`Informational`](crate::finding::RouteKind::Informational) and carries no backticked
 /// command, so neither the route fence nor the pre-commit hook's `mv` scan reads anything
 /// in it. The message, code, severity and location are M45's, so the `(code, target)` key
@@ -1582,6 +1611,41 @@ fn rename_dangling_baseline_finding(path: &str, from: &str) -> Finding {
              behind, and {path} lives on a branch this checkout does not carry: switch back \
              to that branch to work on it again"
         ))),
+    )
+}
+
+/// The **advisory orphaned-baseline** finding (M55 completion triage, CR2;
+/// `design/findings-channel.md` → §6 L2): the recorded path is missing, has no history at
+/// `HEAD`, and **no branch, local or remote-tracking, carries it** — so no checkout this
+/// repository can switch to brings the doc back. Its causes are a `git reset --hard` or a
+/// rebase past the creating commit, or a doc ingested and then deleted before it was ever
+/// committed; the message and route claim none of them as fact.
+///
+/// The same `reconciliation.rename` id, [`Severity::Advisory`] and location as
+/// [`rename_dangling_baseline_finding`], so the `(code, target)` key and the exit behaviour
+/// are the branch-switch arm's; what differs is the claim, and the route, which names the
+/// one way to clear the baseline — `jigc unmanage <path>`, the index drop M55 Increment 5
+/// retired for the branch-switch case and which is true here, where no branch holds the
+/// doc whose identity it drops. A human route (the default `String` route kind), exactly
+/// as [`rename_weak_finding`] carries the same command.
+fn rename_orphaned_baseline_finding(path: &str, from: &str) -> Finding {
+    Finding::graded(
+        Severity::Advisory,
+        "reconciliation.rename",
+        format!(
+            "tracked managed doc {from} ({path}) is missing, has no history at HEAD, and no \
+             branch carries it — the baseline outlived the doc"
+        ),
+        Some(Location::addressed(path, 1, 1)),
+        Some(
+            format!(
+                "no branch, local or remote-tracking, can bring {path} back — a hard reset or a \
+             rebase past its creating commit, or deleting it before it was ever committed, \
+             leaves this baseline behind: drop it with `jigc unmanage {token}`",
+                token = crate::finding::shell_token(path)
+            )
+            .into(),
+        ),
     )
 }
 
@@ -2722,6 +2786,7 @@ Referrers must point at the new decision.
             &recorded,
             &untracked,
             &|_| true,
+            &|_| true,
             &LiveRecord::none(),
             std::path::Path::new("/repo"),
         );
@@ -2774,6 +2839,7 @@ Referrers must point at the new decision.
             &recorded,
             &untracked,
             &|_| true,
+            &|_| true,
             &LiveRecord::none(),
             std::path::Path::new("/repo"),
         );
@@ -2806,10 +2872,10 @@ Referrers must point at the new decision.
     /// Decision 7). The detector downgrades to an **advisory** `reconciliation.rename`,
     /// never the blocking weak finding — so a moved checkout no longer wedges the gate.
     ///
-    /// The route names the branch switch and offers switching back, as an
-    /// **informational** route with no backticked command and no `jigc unmanage` (M55
-    /// Increment 5 / T1, R5): one producer, one route at task and store scope, and never
-    /// an index drop.
+    /// With a branch still carrying the path (`other_refs` true), the route names the
+    /// branch switch and offers switching back, as an **informational** route with no
+    /// backticked command and no `jigc unmanage` (M55 Increment 5 / T1, R5): one producer,
+    /// one route at task and store scope, and never an index drop.
     #[test]
     fn rename_weak_signal_history_less_downgrades_to_advisory() {
         const TRACKED: &str = "decisions/rate-limit.md";
@@ -2826,6 +2892,7 @@ Referrers must point at the new decision.
             &recorded,
             &untracked,
             &|_| false,
+            &|_| true,
             &LiveRecord::none(),
             std::path::Path::new("/repo"),
         );
@@ -2865,6 +2932,90 @@ Referrers must point at the new decision.
         );
     }
 
+    /// (M55 completion triage, CR2) **No branch carries the path — the `unmanage` route.**
+    /// The same history-less cell, but `other_refs` finds no branch, local or
+    /// remote-tracking, carrying it (a hard reset or rebase past the creating commit, or a
+    /// doc ingested and deleted before it was ever committed). The severity, code and
+    /// location are the branch-switch arm's, so the `(code, target)` key does not move; the
+    /// message claims no branch switch, and the route offers `jigc unmanage <path>`, the one
+    /// way to clear a baseline that outlived its doc.
+    #[test]
+    fn rename_weak_signal_history_less_on_no_branch_routes_at_unmanage() {
+        const TRACKED: &str = "decisions/rate-limit.md";
+        const FROM: &str = "adr:rate-limit";
+
+        let recorded = hash_bytes(ADR_B_BASE.as_bytes());
+        let findings = detect_rename(
+            TRACKED,
+            FROM,
+            &recorded,
+            &[],
+            &|_| false,
+            &|_| false,
+            &LiveRecord::none(),
+            std::path::Path::new("/repo"),
+        );
+
+        assert_eq!(findings.len(), 1, "one finding for the one baseline");
+        let f = &findings[0];
+        let switch = rename_dangling_baseline_finding(TRACKED, FROM);
+        assert_eq!(
+            (&f.code, f.severity, &f.location),
+            (&switch.code, switch.severity, &switch.location),
+            "the orphaned arm keeps the branch-switch arm's key and advisory severity: {f:?}"
+        );
+        assert!(
+            !f.message.contains("branch switch") && !f.message.contains("checkout moved"),
+            "the message claims no cause it did not observe: {f:?}"
+        );
+        let route = f.route.as_ref().expect("the advisory carries a route");
+        assert_eq!(
+            route.as_str(),
+            format!(
+                "no branch, local or remote-tracking, can bring {TRACKED} back — a hard reset \
+                 or a rebase past its creating commit, or deleting it before it was ever \
+                 committed, leaves this baseline behind: drop it with `jigc unmanage {TRACKED}`"
+            ),
+            "the route offers the index drop, cause-neutrally"
+        );
+        assert!(
+            !route.contains("switch back"),
+            "no branch carries the doc, so the route offers no switch back: {route:?}"
+        );
+    }
+
+    /// (M55 completion triage, CR2) **`other_refs` is asked only in the history-less cell.**
+    /// A genuine deletion (history present) and a strong `git mv` never consult it, so a
+    /// gate over either pays no extra git read and its finding is unchanged.
+    #[test]
+    fn rename_other_refs_is_asked_only_when_history_is_empty() {
+        const TRACKED: &str = "decisions/rate-limit.md";
+        let recorded = hash_bytes(ADR_B_BASE.as_bytes());
+        let strong: Vec<(&str, String)> = vec![("decisions/moved.md", recorded.clone())];
+        for (what, untracked, history) in [
+            ("weak, history present", Vec::new(), true),
+            ("strong", strong.clone(), true),
+            ("strong, history-less", strong, false),
+        ] {
+            let asked = std::cell::Cell::new(false);
+            let other_refs = |_: &str| {
+                asked.set(true);
+                false
+            };
+            detect_rename(
+                TRACKED,
+                "adr:rate-limit",
+                &recorded,
+                &untracked,
+                &|_| history,
+                &other_refs,
+                &LiveRecord::none(),
+                std::path::Path::new("/repo"),
+            );
+            assert!(!asked.get(), "{what}: `other_refs` must not be asked");
+        }
+    }
+
     /// A committed store whose record baselines `decisions/gone.md` (absent on disk) at
     /// [`ADR_B_BASE`]'s hash, and — when `moved` — carries those same bytes at the untracked
     /// `decisions/moved.md`, the strong-signal `git mv` shape. The store twin's fixture.
@@ -2893,8 +3044,13 @@ Referrers must point at the new decision.
     #[test]
     fn store_twin_history_less_baseline_is_the_advisory_dangling_finding() {
         let (root, record) = store_with_missing_baseline("store-twin-history-less", false);
-        let (findings, renamed) =
-            detect_committed_store_renames(&record, &adr_schemas(), root.path(), &|_| false);
+        let (findings, renamed) = detect_committed_store_renames(
+            &record,
+            &adr_schemas(),
+            root.path(),
+            &|_| false,
+            &|_| true,
+        );
 
         assert_eq!(
             findings.len(),
@@ -2933,8 +3089,13 @@ Referrers must point at the new decision.
     #[test]
     fn store_twin_history_present_baseline_keeps_the_blocking_weak_finding() {
         let (root, record) = store_with_missing_baseline("store-twin-history-present", false);
-        let (findings, _) =
-            detect_committed_store_renames(&record, &adr_schemas(), root.path(), &|_| true);
+        let (findings, _) = detect_committed_store_renames(
+            &record,
+            &adr_schemas(),
+            root.path(),
+            &|_| true,
+            &|_| true,
+        );
 
         assert_eq!(
             findings,
@@ -2942,6 +3103,35 @@ Referrers must point at the new decision.
             "a genuine deletion keeps the blocking weak finding at store scope"
         );
         assert_eq!(findings[0].severity, Severity::Blocking);
+    }
+
+    /// (M55 completion triage, CR2) **The store twin routes a branchless baseline at
+    /// `unmanage`, as the task gate does.** History-less and carried by no branch: the
+    /// store row is the orphaned arm's producer, byte for byte, still advisory, and the
+    /// identity is still reported missing.
+    #[test]
+    fn store_twin_history_less_baseline_on_no_branch_is_the_orphaned_finding() {
+        let (root, record) = store_with_missing_baseline("store-twin-orphaned", false);
+        let (findings, renamed) = detect_committed_store_renames(
+            &record,
+            &adr_schemas(),
+            root.path(),
+            &|_| false,
+            &|_| false,
+        );
+        assert_eq!(
+            findings,
+            vec![rename_orphaned_baseline_finding(
+                "decisions/gone.md",
+                "adr:gone"
+            )],
+            "one producer at both scopes for the orphaned arm too"
+        );
+        assert_eq!(findings[0].severity, Severity::Advisory);
+        assert_eq!(
+            renamed,
+            std::collections::BTreeSet::from(["adr:gone".to_string()]),
+        );
     }
 
     /// (M55 Increment 5 / T2, iii) **The strong signal never consults history.** A
@@ -2956,8 +3146,13 @@ Referrers must point at the new decision.
                 asked.set(true);
                 history
             };
-            let (findings, _) =
-                detect_committed_store_renames(&record, &adr_schemas(), root.path(), &predicate);
+            let (findings, _) = detect_committed_store_renames(
+                &record,
+                &adr_schemas(),
+                root.path(),
+                &predicate,
+                &|_| true,
+            );
             assert_eq!(
                 findings,
                 vec![rename_strong_finding(
@@ -3020,6 +3215,7 @@ Referrers must point at the new decision.
             &schemas,
             root.path(),
             task.path(),
+            &|_| true,
             &|_| true,
             &|_| None,
             &test_conflict(),
@@ -3100,6 +3296,7 @@ Referrers must point at the new decision.
             root.path(),
             task.path(),
             &|_| true,
+            &|_| true,
             &|_| None,
             &test_conflict(),
             &crate::validate::AdoptionInputs::inert(),
@@ -3156,6 +3353,7 @@ Referrers must point at the new decision.
             root.path(),
             task.path(),
             &|_| true,
+            &|_| true,
             &|_| None,
             &test_conflict(),
             &crate::validate::AdoptionInputs::inert(),
@@ -3179,6 +3377,7 @@ Referrers must point at the new decision.
             &schemas,
             root.path(),
             task.path(),
+            &|_| true,
             &|_| true,
             &|_| None,
             &test_conflict(),
@@ -3264,6 +3463,7 @@ Referrers must point at the new decision.
             root.path(),
             task.path(),
             &|_| true,
+            &|_| true,
             &|_| None,
             &test_conflict(),
             &crate::validate::AdoptionInputs::inert(),
@@ -3296,6 +3496,7 @@ Referrers must point at the new decision.
             &schemas,
             root.path(),
             task.path(),
+            &|_| true,
             &|_| true,
             &|_| None,
             &test_conflict(),
@@ -3856,6 +4057,7 @@ sections: []
             root.path(),
             task.path(),
             &|_| true,
+            &|_| true,
             &|_| None,
             &test_conflict(),
             &crate::validate::AdoptionInputs::inert(),
@@ -3911,6 +4113,7 @@ sections: []
             &schemas,
             root.path(),
             task.path(),
+            &|_| true,
             &|_| true,
             &|_| None,
             &test_conflict(),
@@ -4026,6 +4229,7 @@ sections: []
                 "foo:foo",
                 &hash_bytes(bytes),
                 &untracked_refs,
+                &|_| true,
                 &|_| true,
                 &LiveRecord::none(),
                 root.path(),
@@ -4385,6 +4589,7 @@ sections: []
             root.path(),
             task.path(),
             &|_| true,
+            &|_| true,
             &|_| None,
             &test_conflict(),
             &crate::validate::AdoptionInputs::inert(),
@@ -4427,6 +4632,7 @@ sections: []
             &schemas,
             root.path(),
             task.path(),
+            &|_| true,
             &|_| true,
             &|_| None,
             &test_conflict(),

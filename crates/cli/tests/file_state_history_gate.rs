@@ -8,11 +8,13 @@
 //!
 //! The fix history-gates the weak-signal severity: a dangling baseline downgrades to an
 //! **advisory** **only when `git log HEAD -1 -- <path>` is empty** (HEAD has no history for
-//! the path — nothing was deleted). Its route names the branch switch and offers switching
-//! back, never an index drop (M55 Increment 5 / T1 retired M45's `jigc unmanage` prune
-//! route; [`branch_switch_route`] carries the exact bytes every dangling arm here compares).
-//! Every genuine-deletion case (the path *has* history and is now gone) keeps blocking,
-//! and the strong-signal (content-preserving `git mv`) arm is untouched.
+//! the path — nothing was deleted). Its route depends on whether a branch still carries the
+//! doc (M55 completion triage, CR2): a branch tip, local or remote-tracking, that carries it
+//! is the branch switch, routed at switching back and never at an index drop (M55 Increment
+//! 5 / T1; [`branch_switch_route`] carries those bytes); no branch carrying it means nothing a
+//! checkout can switch to brings it back, routed at `jigc unmanage <path>`
+//! ([`orphaned_route`]). Every genuine-deletion case (the path *has* history and is now gone)
+//! keeps blocking, and the strong-signal (content-preserving `git mv`) arm is untouched.
 //!
 //! Three proofs, driving the REAL binary against throwaway git repos, each red before the
 //! change:
@@ -20,8 +22,10 @@
 //!   (a) **reset --hard past the creating commit → advisory, no block.** An ADR is
 //!       committed and baselined, then HEAD is moved back past its creating commit
 //!       (`git reset --hard <root>`, so `git log HEAD -1 -- <path>` is empty). The next
-//!       task's `jigc task validate` reports the dangling baseline **Advisory**, routed at
-//!       the branch switch, and **exits 0** (red today: Blocking, exit 3).
+//!       task's `jigc task validate` reports the dangling baseline **Advisory** and **exits
+//!       0** (red at M45: Blocking, exit 3). One branch, so no branch carries the doc: the
+//!       route offers `jigc unmanage`, and running it verbatim clears the row at both scopes
+//!       (red at M55's build: the route claimed a branch switch that never happened).
 //!
 //!   (b) **`git rm` + commit (history present) → still blocks.** The same ADR is deleted
 //!       via `git rm` and committed, so HEAD carries history for the path. The weak
@@ -37,39 +41,45 @@
 //!
 //! The oracle collapse argument lives at the oracle itself
 //! ([`engine::file_state::detect_rename`]'s doc): the shipped classification consults
-//! exactly three observables — file absent × strong-candidate hash match ×
-//! `git log HEAD -1 -- <path>` non-empty — so every orphaning git *operation* projects onto
-//! one row of that table. This suite iterates the **distinct rows as real git ops** so that
-//! an oracle *choice* change (consulting any further observable: object existence,
-//! other-ref reachability, reflog, sparse state) reddens here. The blind-derived op table
+//! exactly four observables — file absent × strong-candidate hash match ×
+//! `git log HEAD -1 -- <path>` non-empty × (in the history-less cell only, for the route)
+//! some branch tip, local or remote-tracking, carrying the path — so every orphaning git
+//! *operation* projects onto one row of that table. This suite iterates the **distinct rows
+//! as real git ops** so that an oracle *choice* change (consulting any further observable:
+//! object existence, tags, the stash, the reflog, sparse state) reddens here. The fourth
+//! observable arrived at the M55 completion triage (CR2), and the table was re-derived with
+//! it: the severity column is unchanged; the route column is new. The blind-derived op table
 //! (`completions/artifacts/M45/sibling-hunt.md` → Appendix) maps to tests as:
 //!
-//! | op | classification | test |
-//! |---|---|---|
-//! | `reset --hard` past creation | advisory | (a) above |
-//! | `reset --hard` to after a committed delete | block | `reset_hard_to_after_committed_delete_still_blocks` |
-//! | branch switch to a pre-creation point | advisory | `branch_switch_to_pre_creation_and_branch_delete_stay_advisory` |
-//! | branch switch to a branch where the doc was deleted | block | `branch_switch_to_deletion_branch_still_blocks` |
-//! | rebase dropping the creating commit | advisory | `rebase_dropping_creating_commit_downgrades_to_advisory` |
-//! | `commit --amend` removing the file from its only creating commit | advisory | `amend_removing_from_creating_commit_downgrades_to_advisory` |
-//! | `commit --amend` turning the tip into a deletion | block | `amend_turning_tip_into_deletion_still_blocks` |
-//! | `gc` after reset (object existence never consulted) | unchanged | `gc_pruning_the_objects_never_changes_the_classification` |
-//! | committed `git mv`, content unchanged | strong block | `committed_git_mv_still_surfaces_the_strong_finding` |
-//! | `stash -u` sweeping an untracked rename candidate | history decides | `stash_u_sweeping_the_candidate_flips_strong_to_history_graded_weak` |
-//! | branch delete orphaning the sole ref | advisory | folded into the branch-switch advisory test (second act) |
-//! | history rewrite dropping the doc (`filter-repo`-shaped) | advisory | `history_rewrite_dropping_the_doc_downgrades_to_advisory` |
-//! | sparse-checkout excluding the path | **block (declared bound)** | `sparse_checkout_absence_classifies_as_weak_deletion_block` |
+//! | op | classification | route | test |
+//! |---|---|---|---|
+//! | `reset --hard` past creation | advisory | unmanage | (a) above |
+//! | `reset --hard` to after a committed delete | block | restore | `reset_hard_to_after_committed_delete_still_blocks` |
+//! | branch switch to a pre-creation point | advisory | switch back | `branch_switch_routes_back_while_a_branch_carries_the_doc_and_at_unmanage_once_none_does` |
+//! | branch switch to a branch where the doc was deleted | block | restore | `branch_switch_to_deletion_branch_still_blocks` |
+//! | rebase dropping the creating commit | advisory | unmanage | `rebase_dropping_creating_commit_downgrades_to_advisory` |
+//! | `commit --amend` removing the file from its only creating commit | advisory | unmanage | `amend_removing_from_creating_commit_downgrades_to_advisory` |
+//! | `commit --amend` turning the tip into a deletion | block | restore | `amend_turning_tip_into_deletion_still_blocks` |
+//! | `gc` after reset (object existence and reflog never consulted) | unchanged | unmanage | `gc_pruning_the_objects_never_changes_the_classification` |
+//! | committed `git mv`, content unchanged | strong block | `jigc rename` | `committed_git_mv_still_surfaces_the_strong_finding` |
+//! | `stash -u` sweeping an untracked rename candidate | history decides | unmanage | `stash_u_sweeping_the_candidate_flips_strong_to_history_graded_weak` |
+//! | local branch deleted, its remote-tracking branch kept | advisory | switch back | the branch-switch test (second act) |
+//! | every branch carrying the doc deleted, a tag kept | advisory | unmanage | the branch-switch test (third act) |
+//! | a doc ingested, then deleted before any commit | advisory | unmanage | `ingested_then_deleted_doc_routes_at_unmanage_and_following_it_clears` |
+//! | history rewrite dropping the doc (`filter-repo`-shaped) | advisory | unmanage | `history_rewrite_dropping_the_doc_downgrades_to_advisory` |
+//! | sparse-checkout excluding the path | **block (declared bound)** | restore | `sparse_checkout_absence_classifies_as_weak_deletion_block` |
 //!
 //! **Rows collapsed, with the argument** (each names the row it collapses onto — the
 //! collapse holds *for the shipped oracle only*, which is why the rows above are driven as
 //! ops, not observables):
 //!
 //! - **detached checkout to a pre-creation point** — byte-identical observables to the
-//!   branch-switch advisory row: the oracle reads HEAD, never *how* HEAD moved (the
-//!   branch-delete second act pins that other-ref reachability is never consulted).
+//!   branch-switch advisory row: the oracle reads HEAD and the branch tips, never *how* HEAD
+//!   moved.
 //! - **force-pull (fetch + reset to a rewritten remote)** — locally indistinguishable from
-//!   `reset --hard` past creation; the remote's involvement leaves no extra local
-//!   observable the oracle could read.
+//!   `reset --hard` past creation once the fetch has moved the remote-tracking branch past
+//!   the doc too; the fourth observable reads that branch's tip, which the rewrite left
+//!   without the doc.
 //! - **history rewrite renaming the doc / leaving a deletion** — the rename arm lands the
 //!   committed-`git mv` row (same-hash candidate → strong), the deletion arm the
 //!   `git rm`-with-history row (b); only the drop arm is a distinct row and is driven.
@@ -91,7 +101,7 @@
 //! writer** — the trial's actual §1.3 repro writer
 //! (`milestone_create_baseline_reset_downgrades_to_advisory`) — and **store scope's
 //! agreement** (`store_scope_agrees_with_task_scope_on_a_history_less_baseline`): the
-//! read-only store twin consults the same history predicate, so `jigc validate` reports the
+//! read-only store twin consults the same two predicates, so `jigc validate` reports the
 //! advisory row the task gate does, under the same route, and exits 0. M45 Increment 7 had
 //! split the scopes — the store twin kept the blocking weak finding and its rename
 //! exit-flip — and M55 Increment 5 / T2 retired the split (`DECISIONS.md` → its build
@@ -337,6 +347,72 @@ fn branch_switch_route(path: &str) -> String {
     )
 }
 
+/// The route a history-less baseline no branch carries draws (M55 completion triage, CR2),
+/// byte for byte: it claims no cause it did not observe and offers the index drop, the one
+/// way to clear a baseline that outlived its doc.
+fn orphaned_route(path: &str) -> String {
+    format!(
+        "no branch, local or remote-tracking, can bring {path} back — a hard reset or a \
+         rebase past its creating commit, or deleting it before it was ever committed, \
+         leaves this baseline behind: drop it with `jigc unmanage {path}`"
+    )
+}
+
+/// Assert the **advisory orphaned-baseline** classification for `path`: `task validate`
+/// exits 0, the single rename finding is advisory, and its route is [`orphaned_route`] —
+/// never the switch back no branch could honour. Returns the finding.
+fn assert_orphaned_advisory(
+    out: &std::process::Output,
+    findings: &[serde_json::Value],
+    path: &str,
+    what: &str,
+) -> serde_json::Value {
+    let rename = assert_history_less_advisory(out, findings, path, what);
+    assert_eq!(
+        rename["route"]
+            .as_str()
+            .expect("the advisory carries a route"),
+        orphaned_route(path),
+        "{what}: no branch carries the doc, so the route offers `jigc unmanage`; \
+         got:\n{rename:#?}",
+    );
+    rename
+}
+
+/// Run the one backticked command of an emitted route **verbatim** (`sh -c`, with the
+/// binary under test first on `PATH`) in `repo` — the bytes an operator copies, never a
+/// reconstruction of them.
+fn run_route_command(repo: &Path, home: &Path, route: &str) -> std::process::Output {
+    let command = route
+        .split('`')
+        .nth(1)
+        .unwrap_or_else(|| panic!("the route carries one backticked command: {route:?}"));
+    let bin_dir = Path::new(env!("CARGO_BIN_EXE_jigc"))
+        .parent()
+        .expect("the binary sits in a directory");
+    let path = format!(
+        "{}:{}",
+        bin_dir.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    Command::new("sh")
+        .args(["-c", command])
+        .current_dir(repo)
+        .env("HOME", home)
+        .env("PATH", path)
+        .env_remove("JIGC_PACK_DIR")
+        .output()
+        .expect("run the route's command")
+}
+
+/// Whether `findings` carries any `reconciliation.rename` row naming `path`.
+fn names_rename(findings: &[serde_json::Value], path: &str) -> bool {
+    findings.iter().any(|f| {
+        f["code"] == "reconciliation.rename"
+            && f["message"].as_str().is_some_and(|m| m.contains(path))
+    })
+}
+
 /// Assert `rename`'s emitted route is the dangling-baseline route for `path`, whole-string,
 /// and offers no index drop.
 fn assert_branch_switch_route(rename: &serde_json::Value, path: &str, what: &str) {
@@ -354,10 +430,23 @@ fn assert_branch_switch_route(rename: &serde_json::Value, path: &str, what: &str
     );
 }
 
-/// Assert the **advisory dangling-baseline** classification for `path`: `task validate`
-/// exits 0, the single rename finding is advisory and routes at the branch switch, never
-/// at `jigc unmanage`. Returns the finding (for byte-wise re-comparison across ops).
+/// Assert the **advisory dangling-baseline** classification for `path` where a branch still
+/// carries the doc: `task validate` exits 0, the single rename finding is advisory and
+/// routes at the branch switch, never at `jigc unmanage`. Returns the finding (for
+/// byte-wise re-comparison across ops).
 fn assert_dangling_advisory(
+    out: &std::process::Output,
+    findings: &[serde_json::Value],
+    path: &str,
+    what: &str,
+) -> serde_json::Value {
+    let rename = assert_history_less_advisory(out, findings, path, what);
+    assert_branch_switch_route(&rename, path, what);
+    rename
+}
+
+/// The severity half both history-less arms share: exit 0, one advisory rename row.
+fn assert_history_less_advisory(
     out: &std::process::Output,
     findings: &[serde_json::Value],
     path: &str,
@@ -375,7 +464,6 @@ fn assert_dangling_advisory(
         rename["severity"], "advisory",
         "{what}: the history-less dangling baseline downgrades to advisory; got:\n{rename:#?}",
     );
-    assert_branch_switch_route(&rename, path, what);
     rename
 }
 
@@ -422,8 +510,12 @@ fn git_fails(repo: &Path, args: &[&str]) -> bool {
 }
 
 /// (a) A `git reset --hard` past the ADR's creating commit — the path has no HEAD history,
-/// so the dangling baseline downgrades to an **advisory** routed at the branch switch, and
-/// the next task's `task validate` does **not** block.
+/// so the dangling baseline downgrades to an **advisory**, and the next task's `task
+/// validate` does **not** block. The repository has one branch, so no branch carries the
+/// doc and nothing a checkout can switch to brings it back (M55 completion triage, CR2):
+/// the route says so and offers `jigc unmanage`, and the command it backticks, run
+/// verbatim, clears the row at task scope and at store scope — the way out the
+/// branch-switch route left the advisory without.
 #[test]
 fn reset_hard_past_creating_commit_downgrades_to_advisory() {
     let repo = TempDir::new("reset");
@@ -481,7 +573,138 @@ fn reset_hard_past_creating_commit_downgrades_to_advisory() {
         rename["severity"], "advisory",
         "the history-less dangling baseline downgrades to advisory; got:\n{rename:#?}",
     );
-    assert_branch_switch_route(&rename, ADR_PATH, "history-less validate");
+    assert_eq!(
+        rename["route"]
+            .as_str()
+            .expect("the advisory carries a route"),
+        orphaned_route(ADR_PATH),
+        "one branch, and the reset took the doc off it: the route offers `jigc unmanage`, \
+         never a switch back to a branch that does not exist; got:\n{rename:#?}",
+    );
+
+    // Follow the route, verbatim: the baseline drops and the row is gone at both scopes.
+    let unmanage = run_route_command(
+        repo.path(),
+        home.path(),
+        rename["route"].as_str().expect("route"),
+    );
+    assert_ok(&unmanage, "the route's own `jigc unmanage`");
+    let (out, findings) = validate_task_json(repo.path(), home.path(), task, "after unmanage");
+    assert!(
+        out.status.success(),
+        "the task gate stays clean after the drop"
+    );
+    assert!(
+        !names_rename(&findings, ADR_PATH),
+        "following the route clears the advisory at task scope; got:\n{findings:#?}",
+    );
+    let out = jigc(repo.path(), home.path(), &["validate", "--format", "json"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "store sweep exits 0; stdout:\n{stdout}"
+    );
+    assert!(
+        !names_rename(&parse_envelope(&stdout, "store after unmanage"), ADR_PATH),
+        "following the route clears the advisory at store scope; stdout:\n{stdout}",
+    );
+}
+
+/// (M55 completion triage, CR2) **A doc ingested, then deleted before it was ever
+/// committed.** `jigc ingest` baselines a conformant ADR the working tree carries
+/// uncommitted; deleting the file leaves the baseline with no history at `HEAD` and on no
+/// branch — not a branch switch, and not a checkout moving underneath the cache. Both
+/// scopes grade it advisory and route at `jigc unmanage`, and the route's command, run
+/// verbatim, clears the row at both.
+#[test]
+fn ingested_then_deleted_doc_routes_at_unmanage_and_following_it_clears() {
+    let repo = TempDir::new("ingest-delete");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    let dir = repo.path().join("docs").join("decisions");
+    fs::create_dir_all(&dir).expect("mk docs/decisions/");
+    fs::write(
+        repo.path().join(ADR_PATH),
+        "---\nstatus: accepted\ndate: 2026-07-26\nschema-version: 2\n---\n\n# Single-node \
+         cache\n\n## Context\n\nSession lookups must stay sub-millisecond.\n\n## Options\n\nA \
+         distributed cache was weighed.\n\n## Decision\n\nKeep sessions in one node.\n\n## \
+         Consequences\n\nA cold node loses its sessions.\n",
+    )
+    .expect("write the uncommitted ADR");
+    assert_ok(
+        &jigc(repo.path(), home.path(), &["ingest"]),
+        "`jigc ingest` of the uncommitted ADR",
+    );
+    let record = repo
+        .path()
+        .join(".jigc")
+        .join("state")
+        .join("file-state.json");
+    assert!(
+        fs::read_to_string(&record)
+            .expect("ingest writes the file-state record")
+            .contains(ADR_PATH),
+        "ingest baselines the uncommitted ADR",
+    );
+    fs::remove_file(repo.path().join(ADR_PATH)).expect("delete the ADR");
+
+    // Store scope.
+    let out = jigc(repo.path(), home.path(), &["validate", "--format", "json"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "an advisory row flips no store exit; stdout:\n{stdout}",
+    );
+    let store = rename_finding(
+        &parse_envelope(&stdout, "ingest-delete/store"),
+        ADR_PATH,
+        "ingest-delete/store",
+    );
+    assert_eq!(store["severity"], "advisory", "got:\n{store:#?}");
+    assert_eq!(
+        store["route"]
+            .as_str()
+            .expect("the advisory carries a route"),
+        orphaned_route(ADR_PATH),
+        "no branch ever carried the doc: no branch switch is claimed; got:\n{store:#?}",
+    );
+
+    // Task scope: the same row under the same route.
+    let task = "warm-the-read-cache";
+    stage_commit_only(repo.path(), home.path(), task, "warm the read cache");
+    let (out, findings) = validate_task_json(repo.path(), home.path(), task, "ingest-delete");
+    let rename = assert_orphaned_advisory(&out, &findings, ADR_PATH, "ingest-delete/task");
+    for field in ["key", "message", "route"] {
+        assert_eq!(
+            store[field], rename[field],
+            "one producer at both scopes: the {field} is byte-identical",
+        );
+    }
+
+    // Follow it, verbatim.
+    let unmanage = run_route_command(
+        repo.path(),
+        home.path(),
+        rename["route"].as_str().expect("route"),
+    );
+    assert_ok(&unmanage, "the route's own `jigc unmanage`");
+    let (out, findings) = validate_task_json(repo.path(), home.path(), task, "after unmanage");
+    assert!(
+        out.status.success(),
+        "the task gate stays clean after the drop"
+    );
+    assert!(
+        !names_rename(&findings, ADR_PATH),
+        "following the route clears the advisory at task scope; got:\n{findings:#?}",
+    );
+    let out = jigc(repo.path(), home.path(), &["validate", "--format", "json"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !names_rename(&parse_envelope(&stdout, "store after unmanage"), ADR_PATH),
+        "following the route clears the advisory at store scope; stdout:\n{stdout}",
+    );
 }
 
 /// (b) A `git rm <ADR>` + commit leaves the path with HEAD history — the weak-signal
@@ -615,23 +838,44 @@ fn reset_hard_to_after_committed_delete_still_blocks() {
     assert_weak_deletion_block(&out, &findings, ADR_PATH, "reset-after-delete");
 }
 
-/// Op rows — **branch switch to a pre-creation point → advisory**, and (second act)
-/// **branch delete orphaning the sole ref → the classification is byte-identical.** The
-/// ADR lands on a feature branch; switching back to the default branch leaves the path
-/// history-less at HEAD → advisory. Deleting the feature branch (the only ref reaching the
-/// creating commit) changes nothing — the oracle reads HEAD only, never other-ref
-/// reachability, which the equality of the two findings pins.
+/// Op rows — **branch switch to a pre-creation point → advisory, routed by which branches
+/// still carry the doc** (M55 completion triage, CR2). The ADR lands on a feature branch
+/// pushed to a bare `origin`; switching back to the default branch leaves the path
+/// history-less at HEAD → advisory, and the severity never moves across the three acts.
+/// The route does:
+///
+/// 1. **the local branch carries it** → switch back, never `jigc unmanage`;
+/// 2. **the local branch deleted, `origin/feature` kept** → still switch back (a
+///    remote-tracking branch is a `git switch` away), byte-identical to act 1;
+/// 3. **every branch carrying it deleted, a tag on its commit kept** → `jigc unmanage`:
+///    no branch brings the doc back, and a tag is not one (tags, the stash and the reflog
+///    are never consulted — `crate::task::git_path_on_a_branch` says why).
 #[test]
-fn branch_switch_to_pre_creation_and_branch_delete_stay_advisory() {
+fn branch_switch_routes_back_while_a_branch_carries_the_doc_and_at_unmanage_once_none_does() {
     let repo = TempDir::new("branch-switch");
+    let origin = TempDir::new("origin");
     let home = TempDir::new("home");
     init_repo(repo.path());
+    git(origin.path(), &["init", "-q", "--bare"]);
+    git(
+        repo.path(),
+        &[
+            "remote",
+            "add",
+            "origin",
+            &origin.path().display().to_string(),
+        ],
+    );
     let default_branch = git(repo.path(), &["rev-parse", "--abbrev-ref", "HEAD"])
         .trim()
         .to_string();
 
     git(repo.path(), &["checkout", "-q", "-b", "feature"]);
     commit_prior_adr(repo.path(), home.path());
+    git(repo.path(), &["push", "-q", "origin", "feature"]);
+    let feature_tip = git(repo.path(), &["rev-parse", "feature"])
+        .trim()
+        .to_string();
     git(repo.path(), &["checkout", "-q", &default_branch]);
     assert!(
         !repo.path().join(ADR_PATH).exists(),
@@ -641,16 +885,31 @@ fn branch_switch_to_pre_creation_and_branch_delete_stay_advisory() {
     let task = "warm-the-read-cache";
     stage_commit_only(repo.path(), home.path(), task, "warm the read cache");
     let (out, findings) = validate_task_json(repo.path(), home.path(), task, "branch-switch");
-    let before = assert_dangling_advisory(&out, &findings, ADR_PATH, "branch-switch");
+    let local = assert_dangling_advisory(&out, &findings, ADR_PATH, "branch-switch");
 
-    // Second act: delete the sole ref reaching the creating commit. HEAD is unchanged, so
-    // the shipped oracle must classify byte-identically (other refs are never consulted).
+    // Second act: the local branch goes, its remote-tracking branch stays.
     git(repo.path(), &["branch", "-q", "-D", "feature"]);
-    let (out, findings) = validate_task_json(repo.path(), home.path(), task, "branch-delete");
-    let after = assert_dangling_advisory(&out, &findings, ADR_PATH, "branch-delete");
+    let (out, findings) = validate_task_json(repo.path(), home.path(), task, "remote-tracking");
+    let remote = assert_dangling_advisory(&out, &findings, ADR_PATH, "remote-tracking");
     assert_eq!(
-        before, after,
-        "deleting the orphaned branch must not change the classification (HEAD-only oracle)",
+        local, remote,
+        "a remote-tracking branch carries the doc as a local one does: the row is unchanged",
+    );
+
+    // Third act: no branch carries it any more — only a tag on its commit does.
+    // `update-ref`, not `git tag`: a lightweight tag no ambient `tag.gpgSign` can turn
+    // into an annotated one that asks for a message.
+    git(
+        repo.path(),
+        &["update-ref", "refs/tags/feature-tag", &feature_tip],
+    );
+    git(repo.path(), &["branch", "-q", "-r", "-d", "origin/feature"]);
+    let (out, findings) = validate_task_json(repo.path(), home.path(), task, "no-branch");
+    let gone = assert_orphaned_advisory(&out, &findings, ADR_PATH, "no-branch");
+    assert_eq!(
+        (&gone["key"], &gone["severity"]),
+        (&local["key"], &local["severity"]),
+        "the route moves, the `(code, target)` key and the advisory severity do not",
     );
 }
 
@@ -717,7 +976,7 @@ fn rebase_dropping_creating_commit_downgrades_to_advisory() {
     let task = "warm-the-read-cache";
     stage_commit_only(repo.path(), home.path(), task, "warm the read cache");
     let (out, findings) = validate_task_json(repo.path(), home.path(), task, "rebase-drop");
-    assert_dangling_advisory(&out, &findings, ADR_PATH, "rebase-drop");
+    assert_orphaned_advisory(&out, &findings, ADR_PATH, "rebase-drop");
 }
 
 /// Op row — **`commit --amend` removing the file from its only creating commit →
@@ -742,7 +1001,7 @@ fn amend_removing_from_creating_commit_downgrades_to_advisory() {
     let task = "warm-the-read-cache";
     stage_commit_only(repo.path(), home.path(), task, "warm the read cache");
     let (out, findings) = validate_task_json(repo.path(), home.path(), task, "amend-remove");
-    assert_dangling_advisory(&out, &findings, ADR_PATH, "amend-remove");
+    assert_orphaned_advisory(&out, &findings, ADR_PATH, "amend-remove");
 }
 
 /// Op row — **`commit --amend` turning the tip into a deletion → block.** The amended tip
@@ -793,7 +1052,7 @@ fn gc_pruning_the_objects_never_changes_the_classification() {
     let task = "warm-the-read-cache";
     stage_commit_only(repo.path(), home.path(), task, "warm the read cache");
     let (out, findings) = validate_task_json(repo.path(), home.path(), task, "pre-gc");
-    let before = assert_dangling_advisory(&out, &findings, ADR_PATH, "pre-gc");
+    let before = assert_orphaned_advisory(&out, &findings, ADR_PATH, "pre-gc");
 
     git(repo.path(), &["reflog", "expire", "--expire=now", "--all"]);
     git(repo.path(), &["gc", "--prune=now", "-q"]);
@@ -803,10 +1062,11 @@ fn gc_pruning_the_objects_never_changes_the_classification() {
     );
 
     let (out, findings) = validate_task_json(repo.path(), home.path(), task, "post-gc");
-    let after = assert_dangling_advisory(&out, &findings, ADR_PATH, "post-gc");
+    let after = assert_orphaned_advisory(&out, &findings, ADR_PATH, "post-gc");
     assert_eq!(
         before, after,
-        "pruning the objects must not change the classification (object existence never consulted)",
+        "pruning the objects must not change the classification (object existence and the \
+         reflog — which reached the creating commit before the expiry — are never consulted)",
     );
 }
 
@@ -897,7 +1157,7 @@ fn stash_u_sweeping_the_candidate_flips_strong_to_history_graded_weak() {
     );
 
     let (out, findings) = validate_task_json(repo.path(), home.path(), task, "post-stash");
-    assert_dangling_advisory(&out, &findings, ADR_PATH, "post-stash");
+    assert_orphaned_advisory(&out, &findings, ADR_PATH, "post-stash");
 }
 
 /// Op row — **history rewrite dropping the doc (the `filter-repo` shape, cheapest
@@ -936,7 +1196,7 @@ fn history_rewrite_dropping_the_doc_downgrades_to_advisory() {
     let task = "warm-the-read-cache";
     stage_commit_only(repo.path(), home.path(), task, "warm the read cache");
     let (out, findings) = validate_task_json(repo.path(), home.path(), task, "rewrite-drop");
-    assert_dangling_advisory(&out, &findings, ADR_PATH, "rewrite-drop");
+    assert_orphaned_advisory(&out, &findings, ADR_PATH, "rewrite-drop");
 }
 
 /// Op row — **sparse-checkout excluding the path → the weak-deletion block (the declared
@@ -974,7 +1234,8 @@ fn sparse_checkout_absence_classifies_as_weak_deletion_block() {
 /// milestone create` (under the `[dev ▸ methodology]` compose marker) materializes +
 /// path-scoped-commits the `milestone-record` AND baselines it in the file-state record;
 /// a `git reset --hard` past that commit then leaves the baseline dangling with no HEAD
-/// history — advisory, routed at the branch switch, not the wedge the trial hit.
+/// history — advisory, not the wedge the trial hit, and routed at `jigc unmanage`, since
+/// the reset took the record off the only branch.
 #[test]
 fn milestone_create_baseline_reset_downgrades_to_advisory() {
     const RECORD_PATH: &str = "docs/milestone-records/cache-rework.md";
@@ -1022,7 +1283,7 @@ fn milestone_create_baseline_reset_downgrades_to_advisory() {
     let task = "warm-the-read-cache";
     stage_commit_only(repo.path(), home.path(), task, "warm the read cache");
     let (out, findings) = validate_task_json(repo.path(), home.path(), task, "milestone-writer");
-    assert_dangling_advisory(&out, &findings, RECORD_PATH, "milestone-writer");
+    assert_orphaned_advisory(&out, &findings, RECORD_PATH, "milestone-writer");
 }
 
 /// **Store scope agrees with task scope** (M55 Increment 5 / T2, revising the M45 Increment 7
@@ -1044,7 +1305,7 @@ fn store_scope_agrees_with_task_scope_on_a_history_less_baseline() {
     let task = "warm-the-read-cache";
     stage_commit_only(repo.path(), home.path(), task, "warm the read cache");
     let (out, findings) = validate_task_json(repo.path(), home.path(), task, "agree/task-scope");
-    let task_rename = assert_dangling_advisory(&out, &findings, ADR_PATH, "agree/task-scope");
+    let task_rename = assert_orphaned_advisory(&out, &findings, ADR_PATH, "agree/task-scope");
 
     // Store scope: the same state, the same advisory row, and the sweep stays report-only.
     let out = jigc(repo.path(), home.path(), &["validate", "--format", "json"]);
@@ -1066,7 +1327,11 @@ fn store_scope_agrees_with_task_scope_on_a_history_less_baseline() {
         store_rename["severity"], "advisory",
         "store scope grades the history-less baseline advisory too; got:\n{store_rename:#?}",
     );
-    assert_branch_switch_route(&store_rename, ADR_PATH, "agree/store-scope");
+    assert_eq!(
+        store_rename["route"].as_str().expect("route"),
+        orphaned_route(ADR_PATH),
+        "store scope routes the branchless baseline as the task gate does",
+    );
     for field in ["key", "message", "route"] {
         assert_eq!(
             store_rename[field], task_rename[field],

@@ -2442,6 +2442,7 @@ impl TaskArea {
         })?;
         let tracked = self.tracked_predicate()?;
         let history = self.history_predicate();
+        let other_refs = self.other_refs_predicate();
         // The L1 pull-absorption seam (M55 Increment 4, P2): a committed doc's bytes at this
         // task's base pin — a sub-task's pin is its milestone's (engine `add_task`) — read at
         // `jigc_home`, the checkout the committed-store sweep reads. Consulted only on a
@@ -2494,6 +2495,7 @@ impl TaskArea {
             &doc_code_invoker,
             &tracked,
             &history,
+            &other_refs,
             &changed_code,
             base_tree.path(),
             &pinned,
@@ -2851,6 +2853,18 @@ impl TaskArea {
     fn history_predicate(&self) -> impl Fn(&str) -> bool {
         let repo_root = self.repo_root.clone();
         move |path: &str| git_path_has_history(&repo_root, path).unwrap_or(true)
+    }
+
+    /// Build the **other-branch** predicate that routes the advisory a history-less baseline
+    /// draws ([`engine::validate::OtherRefsPredicate`]; M55 completion triage, CR2): whether
+    /// some branch tip, local or remote-tracking, carries the path ([`git_path_on_a_branch`]).
+    /// Carried routes at switching back; not carried routes at `jigc unmanage`. Asked only
+    /// after [`Self::history_predicate`] read empty for a missing path, so a healthy task never
+    /// shells out for it, and a git failure answers **carried** — the conservative default that
+    /// never offers the index drop on a guess.
+    fn other_refs_predicate(&self) -> impl Fn(&str) -> bool {
+        let repo_root = self.repo_root.clone();
+        move |path: &str| git_path_on_a_branch(&repo_root, path).unwrap_or(true)
     }
 
     /// The **live milestone record** the committed-store sweep's dangling-baseline arm
@@ -7684,6 +7698,88 @@ pub(crate) fn git_path_has_history(repo_root: &Path, path: &str) -> Result<bool>
         );
     }
     Ok(!String::from_utf8_lossy(&out.stdout).trim().is_empty())
+}
+
+/// Whether the tip of some **branch** — a local branch (`refs/heads/*`) or a remote-tracking
+/// one (`refs/remotes/*`) — carries `path` as a file: the other-branch half of the dangling-
+/// baseline cell ([`engine::validate::OtherRefsPredicate`]; M55 completion triage, CR2),
+/// asked only after [`git_path_has_history`] read empty for the path.
+///
+/// **Which refs, and why.** The two routes it chooses between each make one claim, and the
+/// ref set is exactly the one that makes each claim true. *Carried* routes at switching back
+/// to a branch, so it counts every ref one can switch back to: local branches, and
+/// remote-tracking branches (a branch deleted locally after its push is still a `git switch`
+/// away). *Not carried* routes at `jigc unmanage`, and must never fire where a switch would
+/// bring the doc back. Left out, deliberately: the **reflog and `ORIG_HEAD`**, which are
+/// precisely what a `git reset --hard` or a rebase leaves behind — counting them would read
+/// every reset as "lives elsewhere" and leave the advisory with no way out, the defect this
+/// splits; **tags**, which mark a release rather than a line of work one switches back to;
+/// and **the stash**, which no switch reaches. A doc a tag or the stash still holds is
+/// therefore routed at `unmanage`, which drops a cache entry, never bytes: checking the tag
+/// out or popping the stash brings the file back as an un-baselined doc the next author or
+/// finalize baselines again. It reads the **tip**, never history — `git log --all` would also
+/// count a branch that created the path and later deleted it, where switching back brings
+/// nothing back.
+///
+/// Two git reads: `git for-each-ref` lists the branches, and one `git cat-file --batch-check`
+/// asks `<ref>:<path>` for each. Errors are returned for the caller to default — the
+/// predicate answers *carried* on any failure, so the index drop is never offered on a guess.
+pub(crate) fn git_path_on_a_branch(repo_root: &Path, path: &str) -> Result<bool> {
+    if path.contains('\n') {
+        bail!("a path carrying a newline cannot be asked of `git cat-file --batch-check`");
+    }
+    let refs = Command::new("git")
+        .args([
+            "for-each-ref",
+            "--format=%(refname)",
+            "refs/heads",
+            "refs/remotes",
+        ])
+        .current_dir(repo_root)
+        .output()
+        .context("could not run `git` (is it on PATH?)")?;
+    if !refs.status.success() {
+        bail!(
+            "`git for-each-ref` failed: {}",
+            String::from_utf8_lossy(&refs.stderr).trim()
+        );
+    }
+    let queries: String = String::from_utf8_lossy(&refs.stdout)
+        .lines()
+        .map(str::trim)
+        .filter(|refname| !refname.is_empty())
+        .map(|refname| format!("{refname}:{path}\n"))
+        .collect();
+    if queries.is_empty() {
+        return Ok(false);
+    }
+    let mut child = Command::new("git")
+        .args(["cat-file", "--batch-check=%(objecttype)"])
+        .current_dir(repo_root)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("could not run `git cat-file` (is git on PATH?)")?;
+    let mut stdin = child.stdin.take().expect("stdin was piped");
+    // Written from its own thread while this one drains stdout, so a repository with more
+    // branches than a pipe buffer holds cannot deadlock the two ends against each other.
+    let out = std::thread::scope(|scope| {
+        let writer = scope.spawn(move || stdin.write_all(queries.as_bytes()));
+        let out = child.wait_with_output();
+        let written = writer.join().expect("the stdin writer does not panic");
+        out.and_then(|out| written.map(|()| out))
+    })
+    .context("could not ask `git cat-file --batch-check` for the branch tips")?;
+    if !out.status.success() {
+        bail!(
+            "`git cat-file --batch-check` failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    Ok(String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .any(|line| line.trim() == "blob"))
 }
 
 /// The committed bytes of `path` (repo-relative) **at `pin`** — `git cat-file blob

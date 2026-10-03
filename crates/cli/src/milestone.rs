@@ -6573,6 +6573,13 @@ fn milestone_boundary_gate(
     let history = move |path: &str| {
         crate::task::git_path_has_history(&repo_root_for_history, path).unwrap_or(true)
     };
+    // Its route seam (M55 completion triage, CR2), the per-task gate's own: a history-less
+    // missing doc a branch tip still carries routes at switching back, one no branch carries
+    // at `jigc unmanage`; a git failure reads *carried*.
+    let repo_root_for_branches = repo_root.to_path_buf();
+    let other_refs = move |path: &str| {
+        crate::task::git_path_on_a_branch(&repo_root_for_branches, path).unwrap_or(true)
+    };
     // The L1 pull-absorption seam (M55 Increment 4, P2), bound to the milestone's shared base
     // — the pin every sub-task inherited — so a pull before `milestone create` is absorbed at
     // the join and a pull after it (the bytes no longer equal the base's blob) still
@@ -6603,6 +6610,7 @@ fn milestone_boundary_gate(
         &crate::task::doc_code_invoker,
         &tracked,
         &history,
+        &other_refs,
         &changed_code,
         base_tree.path(),
         &pinned,
