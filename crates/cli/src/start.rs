@@ -38,7 +38,7 @@ use engine::packsource::{PackResourceKind, PackSource, ResourceId};
 use engine::result::CatalogEntry;
 use engine::schema::Schema;
 use engine::state::{self, BasePin, MintedTask, RolesRecord};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -3065,7 +3065,26 @@ fn compose_task_workflow(
         fills: &overrides.fills,
         ctx: &ctx,
     };
-    let composed = compose::compose_with_store(&def, &filled, &commands, &ctx, Some(&store))
+    // The unit kind of the id being re-composed, read once at this **shared** spine so
+    // both re-compose doors (resume and sub-agent re-entry) decide the sub-task rules
+    // below from one membership test — the same `owning_milestone` test the sub-task
+    // finalize refusal is minted from, never a second rule.
+    let owning_milestone = engine::milestone::owning_milestone(&jigc_root, id);
+    // A fan-out sub-task's commit boundary is the milestone's, so its composed text
+    // omits the steps that send it to a per-task one (M55, S2;
+    // `design/workflow-dialect.md` → Emitted format). Decided here, iff the id is a
+    // sub-task, over the same filled, origin-scoped step source and catalog the
+    // compose below expands — so a project-layer step shadow is classified as composed.
+    // The commit-doc-author clause is keyed on `finalize.fan-out.squash`, read through the
+    // join's own reader off this same resolved cascade — the main checkout's project layer,
+    // the one `jigc milestone finalize` resolves (`jigc_home`, never the worktree's).
+    let omit = if owning_milestone.is_some() {
+        let squash = crate::milestone::squash_of(&resolved)?;
+        sub_task_omission_set(&def, &filled, &commands, squash)
+    } else {
+        BTreeSet::new()
+    };
+    let composed = compose::compose_with_store(&def, &filled, &commands, &ctx, Some(&store), &omit)
         .map_err(finding_to_err)?;
     Ok(Composition {
         view: ComposedWorkflow {
@@ -3085,14 +3104,12 @@ fn compose_task_workflow(
         // and the caller supplied it. A `task minted:` header here would state a mint that
         // did not happen (`design/workflow-dialect.md` → The `task minted:` header).
         minted: false,
-        // The unit kind of the id being re-composed, read at the **shared** spine so both
-        // re-compose doors (resume and sub-agent re-entry) carry it — the same
-        // `owning_milestone` membership test the sub-task finalize refusal is minted from,
-        // never a second rule. The `task scope:` footer scopes its parallel-work claim on
+        // The unit kind of the id being re-composed ([`owning_milestone`], read once
+        // above). The `task scope:` footer scopes its parallel-work claim on
         // it: a sub-task's commit boundary is the milestone's, so the top-level
         // "resuming or finalizing here blocks and names the overlapping paths" would be a
         // law-1 lie there (M47 Inc 8 / N7; `design/surface-contract.md` → law 1).
-        sub_task_of: engine::milestone::owning_milestone(&jigc_root, id).map(|milestone| {
+        sub_task_of: owning_milestone.map(|milestone| {
             SubTaskOf {
                 milestone,
                 // The composed workflow id — the recorded one on both doors (see
@@ -3113,6 +3130,124 @@ fn compose_task_workflow(
         // repaired, exactly as the mint does, and neither can drift from the other.
         amend: amend_target_of(repo_root, task_dir, None)?,
     })
+}
+
+/// **The sub-task omission set** (M55, S2; `design/workflow-dialect.md` → Emitted
+/// format): the ids of the steps a fan-out sub-task's composed text withholds, derived
+/// from the composed packs rather than listed.
+///
+/// A sub-task has no per-task commit — `jigc task finalize <sub>` refuses
+/// (`finalize.milestone-sub-task`) and `jigc milestone finalize <m>` is its only
+/// boundary — so a step that sends it to the per-task door states a falsehood there, and
+/// so does every step wrapped around one. **The finalize-door clause:** a step is a
+/// member when its own body carries a lone `{{cli.<id>}}` whose entry in `catalog`
+/// runs `jigc task finalize`, or when it includes a member at any depth. A step is
+/// classified by the **catalog entry** its ref resolves to, never by the ref's spelling,
+/// and a door merely *named* in prose is a mention, not a member.
+///
+/// **The commit-doc-author clause, iff `squash`** (M55 Increment 3, Open question 2): a
+/// step is also a member when its own body carries a `{{cli.<id>}}` whose catalog entry
+/// writes the commit doc — an argument `from: task.commit#…`. `squash` is the resolved
+/// `finalize.fan-out.squash` ([`crate::milestone::squash_of`], the join's own reader): under
+/// `true` the boundary synthesizes one aggregate message and reads no sub-task's commit doc,
+/// so asking for one is asking for prose nothing reads; under `false` the join renders and
+/// gates every code-carrying sub-task's, so the author stays. This clause is **not** closed
+/// under inclusion — a step that merely includes an author keeps its own text, and only the
+/// author leaves.
+///
+/// The walk runs over `def`'s include tree through `source` — the caller passes the
+/// cascade-resolved, origin-scoped, filled step source its compose expands, and the
+/// origin pack's `catalog` — so a project-layer step shadow is classified exactly as it
+/// composes. Every reachable step is classified, so the set is the whole tree's, not
+/// only its outermost members. A cycle or a dangling include classifies as a
+/// non-member here; the `workflow-refs` gate reports both before any compose.
+pub fn sub_task_omission_set(
+    def: &WorkflowDef,
+    source: &dyn StepSource,
+    catalog: &CommandCatalog,
+    squash: bool,
+) -> BTreeSet<String> {
+    /// One classified step: `door` is the closed finalize-door clause, `author` the step's
+    /// own commit-doc writes.
+    #[derive(Clone, Copy)]
+    struct Class {
+        door: bool,
+        author: bool,
+    }
+
+    /// Classify `id` and every step below it into `memo`, returning whether `id` is a
+    /// door member. `on_path` breaks a cycle (the gate's to report, a non-member here).
+    fn classify(
+        id: &str,
+        source: &dyn StepSource,
+        catalog: &CommandCatalog,
+        memo: &mut BTreeMap<String, Class>,
+        on_path: &mut Vec<String>,
+    ) -> bool {
+        if let Some(known) = memo.get(id) {
+            return known.door;
+        }
+        if on_path.iter().any(|step| step == id) {
+            return false;
+        }
+        let Some(step) = source.step(id) else {
+            let none = Class {
+                door: false,
+                author: false,
+            };
+            memo.insert(id.to_owned(), none);
+            return false;
+        };
+        on_path.push(id.to_owned());
+        let entries: Vec<&compose::CommandRef> = compose::command_ref_ids_in(&step.body)
+            .into_iter()
+            .filter_map(|cli| catalog.get(cli))
+            .collect();
+        let author = entries.iter().any(|entry| writes_commit_doc(entry));
+        let mut door = entries.iter().any(|entry| runs_task_finalize(entry));
+        // Every child is classified, member or not, so the set covers the whole tree.
+        for child in compose::include_ids_in(&step.body) {
+            door |= classify(&child, source, catalog, memo, on_path);
+        }
+        on_path.pop();
+        memo.insert(id.to_owned(), Class { door, author });
+        door
+    }
+
+    let mut memo = BTreeMap::new();
+    for id in &def.includes {
+        classify(id, source, catalog, &mut memo, &mut Vec::new());
+    }
+    memo.into_iter()
+        .filter_map(|(id, class)| (class.door || (squash && class.author)).then_some(id))
+        .collect()
+}
+
+/// Whether a catalog entry **writes the commit doc** — one of its arguments is a `from:`
+/// data value under `task.commit#`. Read off the entry's argv, so a ref is classified by
+/// what it writes, never by its id.
+fn writes_commit_doc(entry: &compose::CommandRef) -> bool {
+    use compose::CommandArg::{Agent, From};
+    entry.args.iter().any(|arg| match arg {
+        From { from }
+        | Agent {
+            from: Some(from), ..
+        } => from.starts_with("task.commit#"),
+        _ => false,
+    })
+}
+
+/// Whether a catalog entry is the **per-task finalize door** — it runs `jigc task
+/// finalize`. Read off the entry's command and leading literal argv, so a ref is
+/// classified by what it runs, never by its id.
+fn runs_task_finalize(entry: &compose::CommandRef) -> bool {
+    use compose::CommandArg::Literal;
+    entry.command == "jigc"
+        && matches!(
+            entry.args.as_slice(),
+            [Literal { literal: verb }, Literal { literal: sub }, ..]
+                if verb == "task" && sub == "finalize"
+        )
 }
 
 /// Decide a sub-task compose's [`SubTaskPosture`]: is `composed_in` — the checkout the

@@ -364,7 +364,9 @@ pub fn composed(format: Format, view: &Composition) -> String {
             out.push_str(&header);
             out.push_str(&amending);
             out.push_str(text);
-            if !text.ends_with('\n') {
+            // An empty composition — a sub-task whose every step is omitted (M55) — leaves
+            // no line to terminate, so the trailer opens the view with no blank line.
+            if !text.is_empty() && !text.ends_with('\n') {
                 out.push('\n');
             }
             out.push_str(&state);
