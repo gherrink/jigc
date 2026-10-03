@@ -594,6 +594,14 @@ const MIGRATE_SPAN_SITES: &[(&str, &str, Aim, &str)] = &[
          both spellings of the verb rather than the one a command-line grep can see",
     ),
     (
+        "crates/cli/src/doc.rs",
+        "distinct_identity_route",
+        Aim::Aimed,
+        "the distinct-identity route under a migration's recorded `--slug` (M55): the id is \
+         the override, so the correction is a re-migrate of the task's recorded source under \
+         a distinct slug — a path jigc recorded, run from wherever the agent stands",
+    ),
+    (
         "crates/cli/src/migrate.rs",
         "adjudicate_source_tracked",
         Aim::DeclaredOut,

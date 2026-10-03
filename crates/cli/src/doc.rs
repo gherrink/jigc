@@ -192,9 +192,14 @@ rewrite its `# H1`. So a title that would be silently dropped is refused \
 (`write.title-ignored`), as is a singleton's, whose `# H1` is the schema's own \
 `display-title`. And a title (or `--slug`) that would mint a DIFFERENT identity beside \
 the one this task's create-gate role already binds is refused as well \
-(`write.identity-change`) — that is a second document, not a correction. Both refusals \
-route at `jigc doc rename`, the in-task title change; a genuinely separate second \
-document is its own task.";
+(`write.identity-change`) — that is a second document, not a correction. \
+`write.identity-change`, and a dropped title over a doc this task stages, route at \
+`jigc doc rename`, the in-task title change; a genuinely separate second document is its \
+own task. A dropped title over a COMMITTED doc is someone else's doc, so it routes at a \
+distinct `--title` instead, or `--slug <slug>` to mint beside it. Under a create-gate \
+entry carrying `new: true` there is no create-or-update: an id already on disk at the \
+doctype's home is refused before anything is copied in (`create.already-exists`) — \
+choose a distinct `--title`, or pass `--slug <slug>`.";
 
 /// The `doc rename` long help. The fourth soliciting surface that mints a slug, so
 /// it earns the same stated-at fence as `create` / `add-item` / the `{{schema:}}`
@@ -417,8 +422,14 @@ pub enum DocCommand {
     /// silently dropped is refused (`write.title-ignored`) — as is a singleton's, whose
     /// `# H1` is the schema's own `display-title`. A `title:` that mints a DIFFERENT id
     /// is refused too (`write.identity-change`): that is a second document, not a
-    /// correction. Both reject the whole payload with nothing staged, and both route at
-    /// `jigc doc rename`, the in-task title change.
+    /// correction. Both reject the whole payload with nothing staged.
+    /// `write.identity-change`, and a dropped title over a doc this task stages, route at
+    /// `jigc doc rename`, the in-task title change; a dropped title over a COMMITTED doc is
+    /// someone else's doc, so it routes at a distinct `title:` instead.
+    ///
+    /// Under a create-gate entry carrying `new: true` there is no create-or-update at all:
+    /// a `title:` whose id is already on disk at the doctype's home is refused before
+    /// anything is copied in (`create.already-exists`) — set a distinct `title:`.
     ///
     /// Payload shape (YAML; `--from-file`), mirroring the document's structure:
     ///
@@ -3389,7 +3400,10 @@ fn ref_relations(schema: &Schema) -> Vec<String> {
 ///
 /// **Ranking:** doctype admission (unknown / gate-blocked, [`state::create_admission`])
 /// outranks all of it — a title complaint about a doctype this workflow cannot create is
-/// a misdirection — and the payload-shape parse outranks that, unchanged.
+/// a misdirection — and the payload-shape parse outranks that, unchanged. Inside the
+/// pre-check the **create-only gate** comes first (M55): an entry carrying `new: true`
+/// refuses a minted identity already on disk at its home ([`state::create_occupied`]) with
+/// `create.already-exists`, ahead of the fixed-title arm and of both instance arms.
 fn title_pre_check(
     task: &ActiveTask,
     schema: &Schema,
@@ -3399,6 +3413,22 @@ fn title_pre_check(
     slug_override: Option<&str>,
 ) -> Result<(), DocFailure> {
     let ty = schema.ty.as_str();
+    // Rank 0 — the create-only gate (M55): an entry carrying `new: true` creates and never
+    // updates, so a minted identity already on disk at its home is refused before anything
+    // is copied in. It outranks every arm below (pin P4): under it neither the overwrite
+    // nor a title complaint can arise, and when this task's role is also bound elsewhere,
+    // `write.identity-change`'s route would move the task's doc onto an id that is taken.
+    if entry.new
+        && let Some(address) =
+            state::create_occupied(&task.dir, schema, ty, title, slug_override, &task.jigc_home)
+                .map_err(|f| block(&f, verb, ty))?
+    {
+        return Err(DocFailure::block(state::already_exists_finding(
+            &address,
+            distinct_identity_route(task, verb, schema, slug_override)?,
+        )));
+    }
+
     // Rank 1 — the doctype-wide refusal: a singleton's `# H1` is the schema's own.
     if let Some(fixed) = schema.fixed_title() {
         if title != fixed {
@@ -3463,14 +3493,94 @@ fn title_pre_check(
             return Err(DocFailure::block(title_ignored_refusal(
                 task,
                 verb,
+                schema,
+                slug_override,
                 &incumbent.address,
                 current.trim(),
                 title,
                 staged,
-            )));
+            )?));
         }
     }
     Ok(())
+}
+
+/// The route at a **distinct identity** — the correction when the id a create mints is
+/// someone else's doc (M55 pin P5): `create.already-exists`'s route, and
+/// `write.title-ignored`'s over a committed doc (F3). A human route: the new identity is
+/// the agent's choice.
+/// It splits by **where the id comes from**, because a route at an input the id does not
+/// come from is one that cannot be satisfied — followed, it hands back the same refusal
+/// forever (`design/surface-contract.md` law 1 — `fixed_title_refusal` is the precedent).
+/// Four sources, each its own correction:
+///
+/// - a **fixed identity** (a singleton / `placement` doctype): one instance at one home,
+///   whatever the title or `--slug`, so no distinct identity exists to route at — the
+///   route says so instead of naming a create that would refuse again;
+/// - `author` under a **migration's recorded `--slug`** ([`state::read_slug_override`]):
+///   the id is that override, not the payload's `title:`, and no in-task verb moves an
+///   override whose doc is not staged — so the route is discarding this task (its id is
+///   derived from the source path, so a re-migrate collides with it while it lives) and
+///   re-running `jigc migrate` with a distinct `--slug`;
+/// - `create` with a **`--slug`** in force: the id is that slug, so a distinct `--title`
+///   alone changes nothing — the route is a distinct `--slug`;
+/// - otherwise the id is the title's slug: `create` takes a distinct `--title`, or a
+///   `--slug` that mints beside the existing doc; `author` mints from its payload's
+///   `title:` and has no `--slug`, so naming one would be a route that cannot run.
+fn distinct_identity_route(
+    task: &ActiveTask,
+    verb: &str,
+    schema: &Schema,
+    slug_override: Option<&str>,
+) -> Result<engine::finding::Route> {
+    let ty = schema.ty.as_str();
+    if schema.has_fixed_identity() {
+        return Ok(engine::finding::Route::human(format!(
+            "`{ty}` has a fixed identity — one instance at one home, whatever the title or \
+             `--slug` — so no distinct identity exists for this create to mint, and this \
+             workflow creates a new `{ty}` only; changing the existing one is the work of a \
+             workflow whose `allows-create` entry for `{ty}` does not carry `new: true`. If \
+             this task holds nothing else, `jigc task discard {}` abandons it",
+            task.id,
+        )));
+    }
+    if let Some(slug) = slug_override {
+        if verb == "create" {
+            return Ok(engine::finding::Route::human(format!(
+                "the id comes from `--slug {slug}`, not the title, so pass a distinct \
+                 `--slug`: `jigc doc create {ty} --title <title> --slug <slug> --task {}`",
+                task.id,
+            )));
+        }
+        let source = state::read_migration_source(&task.dir)
+            .context("could not read the task's migration source path")?;
+        let migrate = match &source {
+            Some(source) => engine::finding::migrate_at(&task.jigc_home, source.recorded()),
+            None => "jigc migrate <path>".to_string(),
+        };
+        return Ok(engine::finding::Route::human(format!(
+            "the id comes from this migration's recorded `--slug {slug}`, not the payload's \
+             `title:`, so no payload changes it — discard this task with `jigc task discard \
+             {} --force` (it removes the working area, including the commit doc the re-run \
+             provisions again), then re-migrate under a distinct slug: `{migrate} --as {ty} \
+             --slug <slug>`",
+            task.id,
+        )));
+    }
+    Ok(if verb == "create" {
+        engine::finding::Route::human(format!(
+            "choose a distinct `--title`, or keep this one and pass `--slug <slug>` to mint \
+             beside the existing doc: `jigc doc create {ty} --title <title> --slug <slug> \
+             --task {}`",
+            task.id,
+        ))
+    } else {
+        engine::finding::Route::human(format!(
+            "set the payload's `title:` to a distinct title (its slug becomes the doc id) \
+             and re-run the same `jigc doc author {ty} --from-file <payload> --task {}`",
+            task.id,
+        ))
+    })
 }
 
 /// The **fixed-title refusal**: a `placement` / `display-title` singleton carries the
@@ -3575,22 +3685,55 @@ fn identity_divergence_refusal(
 /// The **silent-no-op refusal**: the call lands on an identity that already has a body,
 /// so the create hands that body back and the supplied title is never written. Not an
 /// identity change (the id does not move — `design/storage.md` → Identity), hence its own
-/// code; the route is the verb that *does* move a staged doc's title, after which this
-/// very write re-runs unchanged.
+/// code. The route splits by arm (M55 F3): over the task's **own staged** doc it is the
+/// verb that *does* move a staged doc's title, after which this very write re-runs
+/// unchanged (carrying a `--slug` in force, so the rename keeps the id the re-run mints);
+/// over a **committed** doc that doc is someone else's work, so renaming it is the wrong
+/// correction and the route is P5's distinct identity ([`distinct_identity_route`]), split
+/// by where the id comes from.
+#[allow(clippy::too_many_arguments)]
 fn title_ignored_refusal(
     task: &ActiveTask,
     verb: &str,
+    schema: &Schema,
+    slug_override: Option<&str>,
     address: &str,
     current: &str,
     title: &str,
     staged: bool,
-) -> Finding {
+) -> Result<Finding> {
     let held = if staged {
         "is already staged in this task"
     } else {
         "is already committed and would be copied in for update"
     };
-    Finding::graded(
+    let route = if staged {
+        // A `--slug` in force (`create`'s, or a migration's recorded one under `author`) is
+        // carried through: a bare `--to` re-slugs the doc from the title, so the re-run —
+        // which still mints the override — would meet `write.identity-change` instead of
+        // landing (the [`identity_divergence_refusal`] precedent).
+        let mut argv = vec![
+            "jigc".to_string(),
+            "doc".to_string(),
+            "rename".to_string(),
+            address.to_string(),
+            "--to".to_string(),
+            crate::task::shell_token(title),
+        ];
+        if let Some(slug) = slug_override {
+            argv.push("--slug".to_string());
+            argv.push(slug.to_string());
+        }
+        argv.push("--task".to_string());
+        argv.push(task.id.clone());
+        engine::finding::Route::mechanical(
+            argv,
+            " retitles the doc in place; then re-run this write unchanged",
+        )
+    } else {
+        distinct_identity_route(task, verb, schema, slug_override)?
+    };
+    Ok(Finding::graded(
         Severity::Blocking,
         "write.title-ignored",
         format!(
@@ -3599,20 +3742,8 @@ fn title_ignored_refusal(
              a retitle that did not happen"
         ),
         Some(Location::addressed(address, 1, 1)),
-        Some(engine::finding::Route::mechanical(
-            [
-                "jigc",
-                "doc",
-                "rename",
-                address,
-                "--to",
-                &crate::task::shell_token(title),
-                "--task",
-                &task.id,
-            ],
-            " retitles the doc in place; then re-run this write unchanged",
-        )),
-    )
+        Some(route),
+    ))
 }
 
 /// The `--slug` grammar reject the three `jigc doc` mint doors share — `create`,

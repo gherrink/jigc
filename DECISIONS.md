@@ -2,6 +2,127 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-03 — M55 Increment 2 / T3: the `write.title-ignored` committed arm re-routed, built
+
+Built on P5 below: `title_ignored_refusal`'s committed arm routes through `distinct_identity_route`; the staged arm keeps its mechanical `jigc doc rename … --task`. Two facts the build found:
+
+- **No existing test pinned the committed arm's route.** The planned red-step assumption (`write_title_divergence`, `write_miss_shape_axis`'s title-miss cells, `flow48_acceptance` redden) was false: every one of those cells drives the **staged** arm, which is unchanged, and they stayed green untouched. The committed arm was reached by no test before `create_only_gate::` — so its new pins (create, author, and the staged control, each following the emitted route) are the first.
+- **`help_truth` is repaired by strengthening, not by deletion.** `jigc doc rename` stays a true token of both helps (identity-change and the staged arm still route there); the split sentence adds *someone else's doc*, now fenced at both verbs.
+
+## 2026-10-03 — M55 Increment 2 / T2: `new: true` and `create.already-exists`, built
+
+Built on pins P3–P6 below ([write-commands.md](design/write-commands.md) → The create-gate). Three elaborations the plan left open:
+
+- **`new` serializes only when `true`** (`skip_serializing_if`), so every entry without it projects byte-identically — the inline snapshot and any JSON projection of a shipped workflow are unchanged, rather than re-pinned.
+- **The probe is its own function, `state::create_occupied`, not a field on `create_incumbent`.** The incumbent probe answers the staged copy first, which is exactly what P3 must not do, and it is read below the fixed-title rank, which the new check precedes (P4); one more `mint_instance` caller keeps the slug identical.
+- **`create.serial-collision` joins the URI form's Members list beside `create.already-exists`.** It has keyed at its instance address since M42 and sat in no form's row; naming the pair is the statement P6 makes, and the fence in `create_only_gate::` holds the new member to it.
+
+## 2026-10-03 — M55 Increment 2 planning: decomposition
+
+Cut [Increment 2](implementation/roadmap.md) (*the create-only gate, and the `write.title-ignored` route*) into **3 ordered tasks**, grounded at HEAD `5ac7443c` on `milestone/findings-channel/create-only-gate` (tree clean). Cross-ref [roadmap.md](implementation/roadmap.md) → Milestone 55 → Increment 2; the M55 Settle below (S7 as revised by R2, O3 resolved by R5); [findings-channel.md](design/findings-channel.md) → 4, 10, 11 (flow C); [planning-gate-record.md](completions/artifacts/M55/planning-gate-record.md) → row 7 and O3. **Codes registered: one** — `create.already-exists` (T2). **The strict-key refusal mints none** (below).
+
+**Basis: read at HEAD here, and driven on the debug binary in `dev/jigc-rig fresh` rigs where marked.**
+
+- **The entry.** `AllowsCreate` (`compose.rs:52`) is `{type, as}` with no `deny_unknown_fields`. `load_workflow_def` (`:2149`) parses the front-matter with serde, mapping any error to `workflow-refs.malformed-front-matter`. Then it runs the type-uniqueness fence (`:2181`). `AllowsCreate` serializes only in the inline snapshot `workflow_def_parses_includes_and_front_matter`, and it is built as a struct literal at 8 sites (engine tests and compose).
+- **The two create doors.** `title_pre_check` (`doc.rs:3393`) is called by `run_create` (`:3672`) and `run_author` (`:3785`). Both call it after `state::create_admission` and before `state::create_gated`, and those are the only two production callers of `create_gated`. So a refusal there stages nothing and binds no role. Its ranks are: (1) fixed-title, which returns early; (2) `write.identity-change`; (3) `write.title-ignored`, whose staged/committed split is `path.starts_with(&task.dir)`.
+- **The incumbent probe.** `state::create_incumbent` (`state.rs:2470`) returns the **staged** path when one exists, and only otherwise the committed home (`store::canonical_path(repo_root, …).is_file()`, the predicate `state::create` copies in from). A staged copy-in of a committed doc therefore hides the home behind the incumbent path.
+- **Driven: a project-layer shadow reaches the gate.** A shadow of `park-idea` granting only `research` refuses `doc create idea` with `create.gate-blocked`. `workflow_gate` (`doc.rs:6402`) loads through `start::resolved_workflow`, which is cascade-resolved. `gate_blocked_finding`'s route prose saying a shadow does not reach the gate is stale, and is not this increment's.
+- **Driven: today's behaviour.** A shadow entry `{ type: idea, as: idea, new: true, nwe: true }` loads, and `jigc validate` reports *no findings*, exit 0. A same-title re-create acks `(already existed — copied in for update)`. A different title onto the task's own staged id is refused `write.title-ignored`, routed `jigc doc rename … --task`.
+- **Driven: how a malformed shadow surfaces.** `jigc start` (bare and `--workflow`) and `jigc describe` exit 1 with `workflow-refs.malformed-front-matter` at `workflow:park-idea`. `jigc validate` lists that finding and still exits **0**: *report-only at store scope; these gate at compose*.
+- **`doc author` has no `--slug`** (`jigc doc author --help`; `cli.rs` gives `--slug` to `create`/`rename`/`migrate` only). `fixed_title_refusal` already splits its route by verb for this reason.
+- **The help states the old rule.** Both minting helps say a create over a committed doc *is a create-or-update* and that *both refusals route at `jigc doc rename`*. `help_truth::both_minting_verbs_state_the_title_contract_before_the_write` fences their tokens.
+- **The join never reads the entry.** No `allows_create` read exists in `engine::milestone` or the join, and a sub-task's working area is not the doctype's home.
+
+**Build pins — each a verified fact or a decision taken here from the locked design:**
+
+- **P1 · The strict-key refusal reuses `workflow-refs.malformed-front-matter`.** It is `#[serde(deny_unknown_fields)]` on `AllowsCreate`, so serde's own message names the key (`unknown field \`nwe\``) inside `load_workflow_def`. *Why:* the milestone boundary mints exactly one code, the create gate's ([roadmap.md](implementation/roadmap.md) → M55 decomposition, *The boundary*), and this is the code every load door already refuses a malformed front-matter with.
+- **P2 · `jigc validate`'s exit is not changed.** *"Refused at pack-load"* is proved by the compose doors, `jigc start` and the `doc` doors' `workflow_gate`, at exit 1 naming `nwe`. `jigc validate` reports the finding where today it reports none, and keeps exit 0. *Why:* store-scope report-only is a settled rule ([validation.md](design/validation.md) → Exit semantics), and no grouped-scope clause flips it.
+- **P3 · *Exists* means the minted identity's canonical home is a file on disk.** That is `store::canonical_path(jigc_home, schema, slug)`, the predicate `state::create` copies in from, and it is probed **independently of any staged copy**. A task's own fresh mint lives only in its working area, so a re-run stays idempotent. A committed doc the task has already copied in (via `set-slot`, say) is still on disk at its home, so it is refused. *Why:* the *"own staged copy"* exemption exists for the re-run, and reading it literally would let a copy-in overwrite an earlier finding, which is the Deliverable's own defect. An untracked conformant file at the home is refused too: *on disk*, wider than *committed*, the safe direction.
+- **P4 · The `new` refusal is the first check in `title_pre_check`, ahead of rank 1.** It therefore precedes every `write.title-ignored` arm, fixed-title included, and also `write.identity-change` **when both hold** (the order the scope leaves to this increment). *Why:* the design puts it *"ahead of every write check"* (findings-channel.md §4). When the minted id is occupied, identity-change's route (`jigc doc rename <bound> --to …`) points the task's doc at an id that is already on disk, so the first answer would send the agent the wrong way. And ranking after rank 1 would silently switch the guard off for a fixed-title singleton entry.
+- **P5 · One route builder, split by verb, shared by `create.already-exists` (T2) and the F3 arm (T3).** `create` names a distinct `--title`, or `--slug <slug>`. `author` names a distinct payload `title:`, then re-running the same `jigc doc author … --task <id>`. It never names `--slug`, which `author` lacks. It is a human route: the new identity is the agent's choice. *Why:* surface-contract law 1. A route naming a flag the verb does not take is false, and `fixed_title_refusal` is the shipped precedent.
+- **P6 · The new code keys at the doc's URI.** `Location::addressed("<type>:<slug>")` sits beside `create.serial-collision`, and the constructor lives in `engine::state` with the rest of the `create.*` family. Its contract home is the **URI form's Members list** in [command-output-contract.md](design/command-output-contract.md) → The stable finding key, which names the instance-scoped `create.*` pair. The doctype-scoped row is unchanged. Its registry home is [write-commands.md](design/write-commands.md) → The create-gate's enforcement list.
+
+**The tasks.** All three grow one new suite, `crates/cli/tests/create_only_gate.rs`, registered in `g_doc`. T1 creates it. The fixture is a committed project-layer shadow of `park-idea` at `.jigc/config/workflows/park-idea.yaml` over the default `[dev ▸ methodology]` corpus, on `doc_only_finalize.rs`'s fixture mold, plus one committed `idea` landed through the unshadowed `park-idea` first.
+
+- **T1 · Strict `allows-create` entry keys (O3).**
+  - **The change.** `deny_unknown_fields` on `AllowsCreate`, with the key set `type`·`as` until T2 adds `new` (P1).
+  - **The doc.** [workflow-dialect.md](design/workflow-dialect.md) → On-disk definition format states that the entry's keys are closed and that an unknown key is refused at load, naming it.
+  - *Done:*
+    - **Engine unit test** `unknown_allows_create_key_is_blocking_finding`, beside `duplicate_allows_create_type_is_blocking_finding`: `{type: adr, as: decision, nwe: true}` gives `Err` with code `workflow-refs.malformed-front-matter`, and the message contains `nwe`.
+    - **`create_only_gate::` on a shadow whose entry carries `nwe: true`:**
+      - `jigc start --workflow park-idea "<intent>"` exits 1 naming `nwe`. Today it mints.
+      - `jigc validate` lists that finding at `workflow:park-idea` naming `nwe`, exit 0 (P2). Today it reports no findings.
+      - A task minted from the clean shadow, whose entry is then misspelt, refuses `jigc doc create idea …` at exit 1 naming `nwe`.
+    - **Red-step assumption:** every shipped workflow and test fixture loads under the strict entry. The scan found no entry key beyond `type`/`as`, but only the full gate proves it, and any fixture it reddens is repaired in T1.
+    - `dev/gate` is green.
+- **T2 · The `new` key and `create.already-exists`, refused before copy-in at both create doors.**
+  - **The key.** `AllowsCreate` gains `new: bool`, serde key `new`, default `false`. The strict set becomes `type`·`as`·`new`. In the same commit, the 8 struct literals and the inline snapshot follow, either through `skip_serializing_if` on `false` or through a re-pinned snapshot.
+  - **The check.** It goes first in `title_pre_check` (P4), over P3's predicate, which is exposed from `engine::state` through the shared `mint_instance` so the probed slug cannot differ from the minted one.
+  - **The constructor, route and docs.** The constructor and its target follow P6, and the route is P5's builder. The docs revised are:
+    - write-commands.md → The create-gate: the `new` key, its enforcement step, and the ranking sentence.
+    - workflow-dialect.md: the `new` key.
+    - command-output-contract.md: the URI form's Members list.
+    - findings-channel.md §4 and §10: *committed store* becomes *on disk at the doctype's location* (P3).
+    - Both minting helps, whose create-or-update sentence would otherwise be false under such an entry (law 3): they gain *an entry carrying `new: true` refuses instead, `create.already-exists`*.
+  - *Done:* engine unit tests for the probe and the constructor (code, target, blocking). Then `create_only_gate::` on the `new: true` shadow:
+    - **(a)** The committed idea's title, by `doc create` and by `doc author`, gives exit 1 with `--format json` key `{create.already-exists, idea:<slug>}`. Nothing is staged in the task's working area, `roles.json` binds no `idea`, and the committed file is byte-unchanged.
+    - **(b)** With `--slug <other>` it lands beside the first, and after finalize both are `doc show`-readable.
+    - **(c)** A different title that slugs onto the committed id gives `create.already-exists`, never `write.title-ignored`.
+    - **(d)** A fresh create re-run in its own task acks `(already existed — copied in for update)` at exit 0, by both verbs.
+    - **(e)** P4's precedence: with `idea` bound to a fresh staged doc, a create minting the committed id gives `create.already-exists`, not `write.identity-change`.
+    - **(f)** P3's copy-in case: after `doc set-slot` on the committed idea, `doc create` with its title is refused.
+    - **(g)** An untracked conformant file hand-placed at the home is refused.
+    - **(h)** The omitting context: under the unshadowed `park-idea`, the same title over the committed idea acks `copied in for update` at exit 0, so create-or-update is unchanged.
+    - **(i)** Fan-out: a milestone whose two sub-tasks are added `--workflow park-idea` (the shadow) each `doc create` one title at exit 0. `jigc milestone finalize` lands `<slug>` and `<slug>-2` by task id, so suffixing is unchanged.
+    - **`help_truth`** asserts that both helps state `create.already-exists` and `new: true`.
+    - **A contract fence** on `commit_seam_posture`'s (i) mold asserts that the URI form's row names `create.already-exists`.
+    - `dev/gate` is green.
+- **T3 · The `write.title-ignored` committed-arm route (F3).**
+  - **The route.** `title_ignored_refusal`'s committed arm (`staged == false`) routes through P5's builder, never `jigc doc rename` of the existing doc. The staged arm, whose subject is the task's own doc, keeps its route. Code, severity, exit, message and target are unchanged.
+  - **The docs.** write-commands.md's *"Both route at `jigc doc rename`"* and both helps' *"Both refusals route at `jigc doc rename`"* are split by arm.
+  - *Done:* `create_only_gate::` under the unshadowed `park-idea`:
+    - **Create:** a different title slugging onto the committed id gives `write.title-ignored`, exit 1, target `idea:<slug>`. The route names `--slug` and carries no `doc rename`, and following it with a `--slug` lands a second doc.
+    - **Author:** the same case routes at the payload `title:` with no `--slug`.
+    - **The staged arm** still routes `jigc doc rename … --task <id>`, and running that route lands.
+    - **Red-step assumption:** any existing pin of the committed arm's old route (`write_title_divergence`, `write_miss_shape_axis`'s title-miss cells, `flow48_acceptance`, `help_truth`) reddens, and is repaired in this commit.
+    - `dev/gate` is green.
+
+**Why this order and these seams.** T1 is the pack-load fence on its own. It is gate-green alone because no shipped or fixture entry carries a third key, so `new` itself is refused until T2 adds it, and no commit loads `new: true` and ignores it. T2 needs T1's strictness so that a misspelt `new` can never ship beside a working one. It also builds the route that T3 reuses. T3 only changes route text, and the pins it reddens are repaired in its own commit. No task leaves a fence for a later one.
+
+**Every Grouped-scope clause maps to a task.**
+
+| Grouped-scope clause | Task |
+|---|---|
+| The optional `new` key on `AllowsCreate` | T2 |
+| Consulted in `title_pre_check`, before copy-in, nothing staged, at both doors | T2 |
+| The minted identity on disk at the doctype's location is refused, with the wording saying *on disk* | T2 (P3) |
+| One new code in the `create` family, at the `type:slug` address, blocked, exit 1, routed at a distinct title or `--slug` | T2 (P5, P6) |
+| The task's own staged copy is not *existing*, so a re-run is idempotent | T2 (d) |
+| An entry without `new: true` keeps create-or-update | T2 (h) |
+| It precedes `write.title-ignored` | T2 (c, P4) |
+| Its order against `write.identity-change`, pinned and recorded | P4 here, T2 (e) |
+| Strict entry keys at `load_workflow_def`, naming the key, fenced in the same commit | T1 |
+| The F3 route fix on the committed arm, the staged arm unchanged, no new code | T3 |
+| Fan-out join suffixing unchanged | T2 (i) |
+
+**Every Proves clause maps too.**
+
+| Proves clause | Task |
+|---|---|
+| A second create with the first's title is refused, exit 1, nothing staged, by `doc create` and `doc author` | T2 (a) |
+| With `--slug` it lands beside the first, both readable | T2 (b) |
+| A different title onto the same id gets the same refusal, never `write.title-ignored` | T2 (c) |
+| A re-run over its own staged doc is idempotent | T2 (d) |
+| The unshadowed `park-idea`'s create-or-update is unchanged | T2 (h) |
+| The unshadowed `park-idea`'s different title is refused `write.title-ignored`, routed at a distinct title or `--slug` | T3 |
+| An `nwe: true` shadow is refused at load, naming `nwe` | T1 (P2 states what `jigc validate` does) |
+
+**Beyond the bullets, and why:**
+
+- **The two helps' sentences** (T2, T3) are a contract the increment makes false where it stands, so each is revised in the commit that falsifies it.
+- **findings-channel.md §4 and §10's *committed store*** (T2) is narrower than the driven probe and the roadmap's wording, so it is corrected to *on disk*.
+- **`gate_blocked_finding`'s stale *"a project workflow shadow does not reach this enforcement point"*** is false at HEAD, but it is outside every grouped-scope clause. It is noted here and not fixed.
+
 ## 2026-10-02 — M55 Increment 1 / T4: `left-staged`, Open question 1 settled, two build pins
 
 Built as decomposed below ([command-output-contract.md](design/command-output-contract.md) → The M55 additive kind; [findings-channel.md](design/findings-channel.md) → Open questions, 1). Two elaborations the plan left open:

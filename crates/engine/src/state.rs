@@ -2500,6 +2500,34 @@ pub fn create_incumbent(
     })
 }
 
+/// **The create-only probe** (M55, an `allows-create` entry carrying `new: true`): the
+/// `<type>:<slug>` a create is about to mint when that identity's canonical home is
+/// already a **file on disk** — `None` when the home is free, or the doctype has none.
+/// Writes nothing.
+///
+/// The home is probed **independently of any staged copy** (M55 pin P3), which is what
+/// separates it from [`create_incumbent`]: that probe answers the staged copy first and
+/// so hides a committed doc the task has already copied in (by `set-slot`, say) — the
+/// very overwrite a create-only entry exists to refuse. A task's own fresh mint lives
+/// only in its working area, never at the home, so re-running that create stays
+/// idempotent. *On disk* is wider than *committed* — an untracked file at the home is
+/// occupied too — which is the safe direction. The identity comes from the shared
+/// [`mint_instance`], so the probed slug cannot differ from the one the create mints.
+pub fn create_occupied(
+    task_dir: &Path,
+    schema: &Schema,
+    type_name: &str,
+    id_source: &str,
+    slug_override: Option<&str>,
+    repo_root: &Path,
+) -> Result<Option<String>, Finding> {
+    let MintedInstance { slug, address, .. } =
+        mint_instance(task_dir, schema, type_name, id_source, slug_override)?;
+    let occupied =
+        crate::store::canonical_path(repo_root, schema, &slug).is_some_and(|path| path.is_file());
+    Ok(occupied.then_some(address))
+}
+
 /// Does a **bound context role**'s recorded address still name a document this task can
 /// act on? — the state probe the identity-divergence rank owes its own premise. Writes
 /// nothing.
@@ -2628,6 +2656,29 @@ fn instance_collision_finding(address: &str) -> Finding {
         format!("instance `{address}` already exists in the working area"),
         Some(Location::addressed(address, 1, 1)),
         Some(format!("edit the existing `{address}` instead of re-creating it").into()),
+    )
+}
+
+/// The **create-only refusal** (M55): the create-gate entry carries `new: true` and the
+/// identity this create mints already exists on disk at its home ([`create_occupied`]), so
+/// the create is refused before anything is copied in — nothing staged, no role bound.
+/// Instance-scoped like its sibling [`instance_collision_finding`]: an identity exists,
+/// so the key is that doc's `<type>:<slug>` address
+/// (`design/command-output-contract.md` → The stable finding key, the URI form). The
+/// route is the caller's, because the correction differs by verb — `doc create` takes a
+/// `--slug`, `doc author` does not.
+pub fn already_exists_finding(address: &str, route: crate::finding::Route) -> Finding {
+    let ty = address.split_once(':').map_or(address, |(ty, _)| ty);
+    Finding::graded(
+        Severity::Blocking,
+        "create.already-exists",
+        format!(
+            "`{address}` already exists on disk at its home, and this workflow's \
+             `allows-create` entry for `{ty}` carries `new: true` — it creates a new doc \
+             only, so the existing one is never copied in for update"
+        ),
+        Some(Location::addressed(address, 1, 1)),
+        Some(route),
     )
 }
 
@@ -4124,6 +4175,113 @@ sections:
         );
     }
 
+    /// **The create-only probe** (M55 pin P3): *occupied* means the minted identity's
+    /// canonical home is a file on disk, probed independently of any staged copy. A
+    /// committed home is occupied — and stays occupied after the task copied it in, which
+    /// is the case [`create_incumbent`]'s staged-first answer would hide. The task's own
+    /// fresh mint lives only in its working area, so it is not occupied (a re-run stays
+    /// idempotent); an untracked file at the home is (on disk, not only committed).
+    #[test]
+    fn create_occupied_probes_the_home_on_disk_whatever_is_staged() {
+        let root = TempRoot::new("create-occupied");
+        let task_dir = root.path().join("tasks").join("probe");
+        let adr = crate::schema::load_schema(
+            b"type: adr\nlocation: decisions/\nid-from: title\nsections:\n  - id: decision\n    slot: {}\n",
+        )
+        .expect("adr fixture loads");
+        let mut schemas = std::collections::BTreeMap::new();
+        schemas.insert("adr".to_string(), adr.clone());
+        let occupied = |title: &str, slug: Option<&str>| {
+            create_occupied(&task_dir, &adr, "adr", title, slug, root.path())
+                .expect("the probe answers")
+        };
+
+        // A committed home → occupied, at the address the create would mint.
+        let home = crate::store::canonical_path(root.path(), &adr, "rate-limit").expect("a home");
+        std::fs::create_dir_all(home.parent().unwrap()).expect("mk decisions/");
+        std::fs::write(&home, "---\n---\n\n# Rate limit\n\n## Decision\n\nX.\n").expect("commit");
+        assert_eq!(
+            occupied("Rate limit", None).as_deref(),
+            Some("adr:rate-limit")
+        );
+        // A different title slugging onto it, and a `--slug` naming it, are the same identity.
+        assert_eq!(
+            occupied("Rate  Limit!", None).as_deref(),
+            Some("adr:rate-limit")
+        );
+        assert_eq!(
+            occupied("Other", Some("rate-limit")).as_deref(),
+            Some("adr:rate-limit")
+        );
+
+        // Copied in by an earlier write → the staged copy does not hide the home.
+        create(
+            &task_dir,
+            &schemas,
+            "adr",
+            "Rate limit",
+            root.path(),
+            &[],
+            None,
+        )
+        .expect("copy the committed adr in");
+        assert_eq!(
+            occupied("Rate limit", None).as_deref(),
+            Some("adr:rate-limit")
+        );
+
+        // The task's own fresh mint is staged only → not occupied; a `--slug` beside the
+        // committed doc is free too.
+        create(
+            &task_dir,
+            &schemas,
+            "adr",
+            "Burst limit",
+            root.path(),
+            &[],
+            None,
+        )
+        .expect("a fresh mint");
+        assert_eq!(occupied("Burst limit", None), None);
+        assert_eq!(occupied("Rate limit", Some("rate-limit-2")), None);
+
+        // An untracked file hand-placed at a home is on disk → occupied.
+        let placed = crate::store::canonical_path(root.path(), &adr, "hand-placed").expect("home");
+        std::fs::write(&placed, "# Hand placed\n").expect("place");
+        assert_eq!(
+            occupied("Hand placed", None).as_deref(),
+            Some("adr:hand-placed")
+        );
+    }
+
+    /// The create-only refusal's constructor: its own code in the `create.*` family,
+    /// **blocking**, keyed at the doc's `<type>:<slug>` URI (instance-scoped, beside
+    /// `create.serial-collision`), carrying the caller's route verbatim.
+    #[test]
+    fn already_exists_finding_is_a_blocking_instance_scoped_create_member() {
+        let finding = already_exists_finding(
+            "idea:a-parked-thought",
+            Route::human("choose a distinct `--title`"),
+        );
+        assert_eq!(finding.code, "create.already-exists");
+        assert_eq!(finding.severity, Severity::Blocking);
+        assert_eq!(
+            finding.key().target.as_deref(),
+            Some("idea:a-parked-thought"),
+            "keyed at the doc's URI: {finding:?}",
+        );
+        assert!(
+            finding.message.contains("new: true") && finding.message.contains("on disk"),
+            "the message names the entry key and the on-disk reading: {}",
+            finding.message,
+        );
+        assert_eq!(
+            finding.route,
+            Some(Route::human("choose a distinct `--title`")),
+            "the route is the caller's, unchanged",
+        );
+    }
+
     /// (M26 shakedown fix) An `id-from: title` create renders the **human title**
     /// in the `# H1`, while the id/address/filename stay the **slug** — the
     /// stable-id invariant is untouched, only the H1 display text gains its proper
@@ -4301,6 +4459,7 @@ sections:
         let gate = [AllowsCreate {
             doc_type: "adr".to_string(),
             as_role: "decision".to_string(),
+            new: false,
         }];
 
         // In the gate → proceeds (mints + provisions).
@@ -4405,6 +4564,7 @@ sections:
         let gate = [AllowsCreate {
             doc_type: "adr".to_string(),
             as_role: String::new(),
+            new: false,
         }];
         let create_it = |id_source: &str| {
             create_gated(
@@ -4572,6 +4732,7 @@ sections:
         let gate = [crate::compose::AllowsCreate {
             doc_type: "commit".to_string(),
             as_role: "commit".to_string(),
+            new: false,
         }];
         let empty = create_gated(
             &task_dir,
@@ -4640,6 +4801,7 @@ sections:
         let gate = [AllowsCreate {
             doc_type: "adr".to_string(),
             as_role: "decision".to_string(),
+            new: false,
         }];
 
         // No roles.json before any create.
@@ -4679,6 +4841,7 @@ sections:
         let bare_gate = [AllowsCreate {
             doc_type: "commit".to_string(),
             as_role: String::new(), // the bare form: create permission, no role
+            new: false,
         }];
         let _ = create_gated(
             &bare_dir,
