@@ -16,12 +16,24 @@
 //                     create it from `origin/main`), check it out; its fork point from
 //                     `origin/main` is the audit base. Runs BEFORE the reader, because the
 //                     decomposition the reader enumerates lives on that branch.
-//   per increment     open `milestone/<slug>/<increment-slug>` from the milestone branch ->
+//   per increment     OPEN `milestone/<slug>/<increment-slug>` from the milestone branch ->
 //                     plan -> execute (one agent per task, full dev-workflow, one commit,
-//                     all on the increment branch) -> validate (independent, read-only) ->
-//                     fix (one agent per blocking finding, bounded 3 rounds) -> LAND:
-//                     merge it back `--no-ff`, delete it locally, then PUSH the milestone
-//                     branch (one CI run per increment; increment branches stay local).
+//                     all on the increment branch) -> validate (independent, read-only; it
+//                     also re-drives every EARLIER increment's claims on a surface this one
+//                     touches, over the milestone's diff so far) -> fix (one agent per
+//                     blocking finding, bounded 3 rounds) -> LAND, ONE step: merge it
+//                     `--no-ff` into the milestone branch's CURRENT tip, delete it locally,
+//                     PUSH the milestone branch by name (one CI run per increment; increment
+//                     branches stay local). Open and land stay two steps on purpose: open is
+//                     the increment's first act and land its last, and neither is coupled to
+//                     another increment's — the land is the one serialized act on the shared
+//                     milestone branch, so it already merges onto a tip that moved after the
+//                     increment branched (a conflict confined to the append-only logs is
+//                     resolved by `dev/merge-logs`, any other one is `git merge --abort` +
+//                     HALT). That is what lets increments run in parallel later
+//                     (implementation/increment-workflow.md -> Branches -> Parallel increments).
+//                     Every build-git step runs on Sonnet (GIT_MODEL, below); every other
+//                     role on the run's `model`.
 //   planned halt      an increment whose roadmap entry ends in a human halt (`Ends in H2
 //                     (the human's)`) is a STAGE BOUNDARY: once it has landed and been
 //                     pushed, the run RETURNS `{status:'planned-halt'}` with the human's
@@ -29,7 +41,9 @@
 //                     never an agent waiting. Resume per PLANNED HALTS below.
 //   close             the milestone-completion audit (code review + e2e, parallel) over
 //                     `<fork point>..milestone/<slug>/main`; its findings come back for
-//                     triage, the fixes land on the milestone branch, and then, in order:
+//                     triage, the fixes land on the milestone branch, the rest of the close
+//                     (re-verify, VERDICT.md, a spawn-class genuine spawn, the fold-back flip,
+//                     clean-litter — milestone-completion-workflow.md) follows, and then, in order:
 //                     the SYNC step merges `origin/main` into the milestone branch (a merge
 //                     commit, never a rebase; a conflict confined to the append-only logs is
 //                     resolved keeping both sides by `dev/merge-logs`, any other conflict
@@ -61,6 +75,13 @@
 // started before that change misses at its first call: resume such a run with the fresh-run
 // `skipThrough` fallback (note 6), not resumeFromRunId. The close's sync step, added the same
 // day, is returned rather than run and changed no other call's prompt.
+//
+// THE GIT STEPS AND THE VALIDATOR CHANGED ON 2026-10-03 (DECISIONS.md -> one land step per
+// increment): every build-git call now carries `model: 'sonnet'` in its opts, the land and
+// push steps are one land step, and the validator's prompt carries the milestone's diff so
+// far. The milestone-branch step is the run's FIRST call and its opts changed, so a run
+// started before that day misses the cache at call #1: resume it with the fresh-run
+// `skipThrough` fallback (note 6), never resumeFromRunId.
 //
 // RESUMING — RULE 0 (the M13 root cause, get this right or nothing replays): ALWAYS
 //   re-pass the SAME `args` ({ milestone, slug, model? }) on EVERY resume invocation. The
@@ -138,8 +159,9 @@
 //      inline here is the mistake to avoid: it bloats the orchestrator's context and
 //      can exhaust it before the milestone finishes. (The halted agent left a clean
 //      tree, so the fixer starts from a known base.) A halt in a GIT step (phase
-//      'branch', 'land' or 'push') has no code blocker: its report says what git refused —
-//      a moved milestone branch, a rejected push — and the human reconciles the branches.
+//      'branch' or 'land') has no code blocker: its report says what git refused — a
+//      diverged branch, a conflict outside the logs, a rejected push — and the human
+//      reconciles the branches.
 //   2. A naive resume REPLAYS THE CACHED HALT. resumeFromRunId returns each prior
 //      agent() call's cached result for an unchanged (prompt, opts) — and the
 //      halted executor's cached result *is* the halt, so it re-halts immediately
@@ -173,10 +195,13 @@
 //      (a) if the halted increment is only PARTLY done, finish its remaining tasks on its
 //      increment branch with direct `build-executor` subagents (Agent tool) + one
 //      `increment-validator`, exactly as the harness would — bringing that increment to
-//      fully-built + validated-clean — then LAND it by hand, the three git acts the harness
-//      would run: `git switch milestone/<slug>/main && git merge --no-ff --no-edit
+//      fully-built + validated-clean — then LAND it by hand, the acts the harness's land
+//      step would run: `git switch milestone/<slug>/main && git merge --no-ff --no-edit
 //      <increment branch> && git branch -d <increment branch> && git push origin
-//      milestone/<slug>/main`; (b) then re-invoke a FRESH run (NO resumeFromRunId) with
+//      milestone/<slug>/main` (a merge that stops on a conflict confined to DECISIONS.md /
+//      implementation/project-history.md is resolved by `dev/merge-logs` + `git commit
+//      --no-edit`; any other conflict is `git merge --abort` and the human's); (b) then
+//      re-invoke a FRESH run (NO resumeFromRunId) with
 //      `args: { milestone, slug, skipThrough: <highest increment built, validated AND
 //      merged into the milestone branch>, cleared }`. The harness skips the done prefix
 //      (no re-plan, so no spurious already-built halt) and builds only the remainder; the
@@ -227,8 +252,9 @@
 //               point. Use a fresh run (no resumeFromRunId). Default 0 (build everything).
 //   cleared   — OPTIONAL list of planned-halt ids the human has cleared (e.g. ['H1']); a
 //               planned halt whose id is listed is passed instead of returned.
-//   model     — OPTIONAL model class pinned onto every agent() call ('opus' by default).
-//               Part of each call's cache key: re-pass the same value on every resume.
+//   model     — OPTIONAL model class pinned onto every agent() call but the build-git steps
+//               ('opus' by default); the git steps are pinned to GIT_MODEL ('sonnet') whatever
+//               it says. Part of each call's cache key: re-pass the same value on every resume.
 
 export const meta = {
   name: 'milestone-build',
@@ -284,6 +310,14 @@ const skipThrough = a.skipThrough != null ? Number(a.skipThrough) : 0
 // so the pin has to ride the agent() opts. It is part of the (prompt, opts) cache key, so a
 // resume must re-pass the same value (RULE 0 applies to `model` exactly as to `milestone`).
 const model = a.model ? String(a.model) : 'opus'
+// GIT_MODEL — the model every build-git step runs on, whatever `model` says (the human's
+// decision of 2026-10-03). A git step runs a fixed command list, so it needs no Opus: M55's
+// 34 git agents spent ~30–55k fresh tokens each on that. Not Haiku: the step's safety net is
+// that it HALTS on any surprise rather than improvising past it, and that judgment is the one
+// thing the step is trusted with. Passed in each git call's own opts, which win over agentR's
+// `model` default; the close's sync step, which the orchestrator spawns, carries it in
+// `close.sync.model`.
+const GIT_MODEL = 'sonnet'
 
 // The two refusals that run BEFORE any agent: no slug (a fresh run that forgot it, or a
 // resume of a run started before the branching switch, whose args had none), or a slug
@@ -404,8 +438,8 @@ function haltMode(transient) {
 // It states what to do to the TREE and never when to resume — the caller owns the timing
 // (the breaker's is "not until the window resets", everyone else's is "now").
 function treeGuidance(haltPhase) {
-  if (haltPhase === 'branch' || haltPhase === 'land' || haltPhase === 'push') {
-    return 'The git steps edit no file and commit nothing but a merge, and each checks the tree is clean before it acts, so a dirty tree here is not theirs — explain it before anything else. If `git status` reports a merge in progress, the land step stopped inside one: `git merge --abort` returns the milestone branch to where it was. Never resume onto a dirty tree or a half-done merge. '
+  if (haltPhase === 'branch' || haltPhase === 'land') {
+    return 'The git steps edit no file but the append-only logs `dev/merge-logs` resolves, commit nothing but a merge, and each checks the tree is clean before it acts, so a dirty tree here is not theirs — explain it before anything else. If `git status` reports a merge in progress, the land step stopped inside one: `git merge --abort` returns the milestone branch to where it was. If the land step\'s report carries a merge_commit, the merge IS on the milestone branch locally and only what followed it (the checks, the delete or the push) stopped. Never resume onto a dirty tree or a half-done merge. '
   }
   if (haltPhase === 'read') {
     return 'The milestone-reader is READ-ONLY, so nothing in the tree is its work: a dirty tree here predates this run and is yours to explain — the harness has nothing to commit or revert on its behalf. '
@@ -448,9 +482,9 @@ function resumeLine(id, mode, haltPhase, branch) {
   // A git step's refusal is a CACHED result like any halt, so a plain resume replays it and
   // refuses again; and there is no agent call to cache-bust, because the fix is the
   // human's, on the branches. So the deterministic path is the primary one here.
-  if (mode === 'blocker' && (haltPhase === 'branch' || haltPhase === 'land' || haltPhase === 'push')) {
+  if (mode === 'blocker' && (haltPhase === 'branch' || haltPhase === 'land')) {
     return (
-      'TO RESUME — there is no CODE blocker and a `build-fixer` is the wrong instrument: a git step refused (its halt report says what — a dirty tree, a moved or diverged branch, a rejected push), and reconciling the branches is the human\'s. A plain resumeFromRunId would REPLAY this cached refusal. So: reconcile, leave the tree CLEAN; if the halted increment is validated but not yet merged, land it by hand (header note 6(a)); push ' + milestoneBranch + ' by name; then start a FRESH run (no resumeFromRunId) with args: '
+      'TO RESUME — there is no CODE blocker and a `build-fixer` is the wrong instrument: a git step refused (its halt report says what — a dirty tree, a diverged branch, a merge conflict outside the append-only logs, a rejected push), and reconciling the branches is the human\'s. A plain resumeFromRunId would REPLAY this cached refusal. So: reconcile, leave the tree CLEAN; if the halted increment is validated but not yet merged, land it by hand (header note 6(a)); push ' + milestoneBranch + ' by name; then start a FRESH run (no resumeFromRunId) with args: '
       + argsLiteral(id, null, '<highest increment built, validated AND merged into ' + milestoneBranch + '>') + ' — the same milestone, slug and cleared (RULE 0).'
     )
   }
@@ -513,9 +547,9 @@ const HALT = {
     recommendation: { type: 'string', description: 'the suggested resolution — e.g. a task to insert before this one, or the decision the human must make' },
   },
 }
-// The three git steps' reports. `status: 'halted'` carries the HALT report like any other
-// role; the git steps halt rather than improvise whenever the branches are not in the shape
-// the step expects.
+// The git steps' reports (milestone branch, open, land; the close's sync below). `status:
+// 'halted'` carries the HALT report like any other role; the git steps halt rather than
+// improvise whenever the branches are not in the shape the step expects.
 const BRANCH_SCHEMA = {
   type: 'object',
   required: ['status', 'branch', 'head'],
@@ -528,22 +562,19 @@ const BRANCH_SCHEMA = {
     fork_point: { type: 'string', description: 'milestone-branch step only: the full sha `git merge-base origin/main HEAD` printed' },
   },
 }
+// The land step merges AND pushes (one act since 2026-10-03), so its report carries both
+// halves: `merge_commit` as the old land report had it, `remote_head` as the old push report
+// had it. `status: 'merged'` means the whole step ran — merged, checked, deleted, pushed.
 const LAND_SCHEMA = {
   type: 'object',
   required: ['status'],
   properties: {
     status: { type: 'string', enum: ['merged', 'halted'] },
     halt: HALT,
-    merge_commit: { type: 'string', description: 'the full sha of the --no-ff merge commit (empty if halted)' },
-  },
-}
-const PUSH_SCHEMA = {
-  type: 'object',
-  required: ['status'],
-  properties: {
-    status: { type: 'string', enum: ['pushed', 'halted'] },
-    halt: HALT,
-    remote_head: { type: 'string', description: 'the full sha `git ls-remote` reports for the pushed branch (empty if halted)' },
+    merge_commit: { type: 'string', description: 'the full sha of the --no-ff merge commit — set whenever that commit exists, INCLUDING a halt after it (a failed check, a refused delete or push); empty when the step halted before merging' },
+    remote_head: { type: 'string', description: 'the full sha `git ls-remote` reports for the pushed milestone branch (empty if the step halted before the push verified)' },
+    tip_moved: { type: 'boolean', description: 'true when the milestone branch\'s tip was NOT an ancestor of the increment branch — it moved after the increment branched — so the merge joined two lines of work' },
+    resolved_logs: { type: 'array', items: { type: 'string' }, description: 'the append-only logs whose merge conflict `dev/merge-logs` resolved (empty when the merge was clean)' },
   },
 }
 // The close's sync step (syncMainPrompt) — returned to the orchestrator in `close.sync`, not
@@ -668,29 +699,33 @@ function openIncrementPrompt(inc) {
     '5. Report branch, head = `git rev-parse HEAD`, created.',
   ].join('\n')
 }
+// The LAND step — one act since 2026-10-03 (the human's decision; DECISIONS.md -> one land
+// step per increment): merge the increment `--no-ff` into the milestone branch's CURRENT tip,
+// delete it, push the milestone branch by name. It is the serialized critical section on the
+// shared milestone branch, so it does not assume the increment branch descends from that tip:
+// a tip that moved after the increment branched is merged onto, a conflict confined to the
+// append-only logs (SYNC_LOGS, below — the same two the close's sync step lets conflict) is
+// resolved by `dev/merge-logs`, and any other conflict is `git merge --abort` + HALT. Its own
+// rules line, because it may run `dev/merge-logs`, which writes the logs it resolves.
+const LAND_RULES = 'Run exactly the commands below, in order, and nothing else: no other branch, no commit beyond the merge this step names, no file edit (`dev/merge-logs` is the only thing that writes a file), no `git stash`, no reset, no rebase, no pull, never `--force`, and `main` is never checked out, merged into or pushed. Any check that fails, or any command that fails, is a HALT: stop, leave everything as the step says, and fill the halt report (root_cause = which check, evidence = the command and its output, tree_state = `git status` and `git branch --show-current`) — and report merge_commit whenever the merge commit exists, so the human knows the merge is on the branch.'
 function landPrompt(inc) {
   const m = milestoneBranch
   const b = branches[inc.n]
+  const logs = SYNC_LOGS.map((p) => '`' + p + '`').join(' or ')
   return [
-    'GIT STEP — land increment ' + inc.n + ' (' + inc.title + ') of ' + milestone + ': merge `' + b + '` into `' + m + '` with a merge commit, then delete it. It has been validated clean. ' + GIT_RULES,
+    'GIT STEP — land increment ' + inc.n + ' (' + inc.title + ') of ' + milestone + ', ONE act: merge `' + b + '` into the CURRENT tip of `' + m + '` with a merge commit, delete `' + b + '`, then push `' + m + '` by name. It has been validated clean. The milestone branch may have moved since the increment branched (another increment landed first): that is expected, not a halt — the increment is merged onto whatever the tip is now. ' + LAND_RULES,
     '1. `git status --porcelain` must print nothing.',
-    '2. `git switch ' + m + '`.',
-    '3. `git merge-base --is-ancestor ' + m + ' ' + b + '` must succeed — the increment was built on the milestone branch\'s current tip, so the merge cannot conflict; if it fails, the milestone branch moved under the increment and the human reconciles it.',
-    '4. `git rev-list --count ' + m + '..' + b + '` must print a number above 0.',
-    '5. `git merge --no-ff --no-edit ' + b + '`. If it fails: `git merge --abort`, then HALT.',
-    '6. Check the merge: `git rev-parse \'HEAD^{tree}\'` must equal `git rev-parse \'' + b + '^{tree}\'`, and `git rev-list --parents -n 1 HEAD` must list exactly two parents, the second equal to `git rev-parse ' + b + '`. On a mismatch HALT and undo nothing.',
-    '7. `git branch -d ' + b + '` — the safe delete, which refuses an unmerged branch; never `-D`.',
-    '8. Report merge_commit = `git rev-parse HEAD`.',
-  ].join('\n')
-}
-function pushPrompt(inc) {
-  const m = milestoneBranch
-  return [
-    'GIT STEP — push `' + m + '` after increment ' + inc.n + ' of ' + milestone + ' landed. ' + GIT_RULES,
-    '1. `git branch --show-current` must print `' + m + '` and `git status --porcelain` must print nothing.',
-    '2. `git push origin ' + m + '` — the branch named in full, exactly so: a bare `git push`, `HEAD`, `main` or any force flag is denied or forbidden. A rejected push (someone else pushed the branch) is a HALT — never force, pull or rebase.',
-    '3. `git ls-remote --exit-code --heads origin ' + m + '` must report the sha `git rev-parse ' + m + '` prints.',
-    '4. Report remote_head.',
+    '2. `git switch ' + m + '`; pre = `git rev-parse HEAD`.',
+    '3. If `git ls-remote --exit-code --heads origin ' + m + '` exits 0 (exit 2 means the branch is not pushed yet — skip to step 4): `git fetch origin ' + m + '`, then `git merge-base --is-ancestor origin/' + m + ' ' + m + '` must succeed — else the pushed milestone branch has commits the local one lacks: HALT; never pull, merge or rebase it here.',
+    '4. `git rev-list --count ' + m + '..' + b + '` must print a number above 0 (the increment has work the milestone branch lacks). Then tip_moved = false if `git merge-base --is-ancestor ' + m + ' ' + b + '` succeeds, true if it exits 1 — record it and go on; it is NOT a halt.',
+    '5. `git merge --no-ff --no-edit ' + b + '`. If it exits 0, go to step 8.',
+    '6. It stopped. `git diff --name-only --diff-filter=U` lists the conflicted paths. If that list is empty, or names any path other than ' + logs + ': `git merge --abort`, then HALT — a conflict outside the append-only logs is the human\'s, never resolved here (under declared-independent increments it is a planning error).',
+    '7. `dev/merge-logs` — it resolves each conflicted log by keeping both sides\' entries whole in the file\'s date order, and stages it; it refuses, writing nothing, a hunk where either side changed text that was already there. If it exits non-zero: `git merge --abort`, then HALT with its stderr as evidence. If it exits 0: `git diff --name-only --diff-filter=U` must print nothing, then `git commit --no-edit`; resolved_logs = the paths step 6 listed.',
+    '8. Check the merge; merge_commit = `git rev-parse HEAD`. `git rev-list --parents -n 1 HEAD` must list exactly two parents, the first equal to pre and the second equal to `git rev-parse ' + b + '`; `git status --porcelain` must print nothing. When tip_moved is false AND resolved_logs is empty, also `git rev-parse \'HEAD^{tree}\'` must equal `git rev-parse \'' + b + '^{tree}\'` (nothing else came in, so the merge is exactly the increment). On a mismatch HALT and undo nothing.',
+    '9. `git branch -d ' + b + '` — the safe delete, which refuses an unmerged branch; never `-D`.',
+    '10. `git push origin ' + m + '` — the branch named in full, exactly so: a bare `git push`, `HEAD`, `main` or any force flag is denied or forbidden. A rejected push (someone else pushed the branch) is a HALT — never force, pull or rebase; the merge stays on the local branch, and merge_commit says so.',
+    '11. `git ls-remote --exit-code --heads origin ' + m + '` must report the sha `git rev-parse ' + m + '` prints.',
+    '12. Report status = merged, merge_commit, remote_head = the sha step 11 reported, tip_moved, resolved_logs (empty after a clean merge).',
   ].join('\n')
 }
 // The close's SYNC step — the fixed step before any pull request to main (the human's
@@ -700,7 +735,8 @@ function pushPrompt(inc) {
 // cache key — moves with it. A conflict confined to the append-only logs is resolved by
 // `dev/merge-logs`, deterministically (both sides kept, in the file's date order; anything
 // but a pure append refused), never by the agent's own edit. SYNC_LOGS mirrors that tool's
-// LOGS, and crates/cli/tests/merge_logs_fence.rs holds the two equal.
+// LOGS, and crates/cli/tests/merge_logs_fence.rs holds the two equal; the land step (above)
+// lets the same two logs conflict, so it reads this list too.
 const SYNC_LOGS = ['DECISIONS.md', 'implementation/project-history.md']
 const SYNC_RULES = 'Run exactly the commands below, in order, and nothing else: no other branch, no commit beyond the merge this step names, no file edit (step 6\'s `dev/merge-logs` is the only thing that writes a file), no `git stash`, no reset, no rebase, never `--force`, and `main` is never checked out, merged into or pushed — `origin/main` is merged INTO the branch, which is all this step does with it. Any check that fails, or any command that fails, is a HALT: stop, leave everything as the step says, and fill the halt report (root_cause = which check, evidence = the command and its output, tree_state = `git status` and `git branch --show-current`).'
 function syncMainPrompt() {
@@ -740,9 +776,38 @@ function execPrompt(inc, task, all) {
 }
 // `addendum` — a corrective for the NEXT round only (empty on round 0, so that call stays
 // cache-key-identical on resume). Appended, never interleaved, so the base prompt is byte-
-// identical to what it has always been.
+// identical across the rounds of one increment.
 function validatePrompt(inc, addendum) {
-  return [milestone + ' — ' + header(inc), '', 'Validate this increment against that roadmap spec per your validator role; exercise every grouped-scope bullet through the real binary or tests.', '', 'GATE IS A FACT, NOT A CLAIM: run the FULL gate yourself with `dev/gate` — never `--quick`, which skips the tests. It runs fmt/clippy/build/test each BARE with its exit code captured, and it accepts no scope arguments at all, so a dev/gate run cannot be the scoped `cargo test` that has landed a red gate before (M23 inc-1). Paste its summary block VERBATIM into `gate_evidence` — at minimum the `tests   passed=… failed=…  (over N test binaries)` totals line AND the `GATE: PASS` line. gate_green=true is INVALID without both pasted lines (a `--quick` run omits the totals line and does not count); any `GATE: FAIL` / any non-zero exit / any `FAILED` is a BLOCKING finding. Do not trust the executor\'s claim — re-run it.'].join('\n') + (addendum ? '\n\n' + addendum : '')
+  return [milestone + ' — ' + header(inc), '', 'Validate this increment against that roadmap spec per your validator role; exercise every grouped-scope bullet through the real binary or tests.', '', crossIncrementBlock(inc), '', 'GATE IS A FACT, NOT A CLAIM: run the FULL gate yourself with `dev/gate` — never `--quick`, which skips the tests. It runs fmt/clippy/build/test each BARE with its exit code captured, and it accepts no scope arguments at all, so a dev/gate run cannot be the scoped `cargo test` that has landed a red gate before (M23 inc-1). Paste its summary block VERBATIM into `gate_evidence` — at minimum the `tests   passed=… failed=…  (over N test binaries)` totals line AND the `GATE: PASS` line. gate_green=true is INVALID without both pasted lines (a `--quick` run omits the totals line and does not count); any `GATE: FAIL` / any non-zero exit / any `FAILED` is a BLOCKING finding. Do not trust the executor\'s claim — re-run it.'].join('\n') + (addendum ? '\n\n' + addendum : '')
+}
+// crossIncrementBlock — the validator's second input since 2026-10-03 (the human's decision):
+// the milestone's diff so far, and the duty to re-drive every EARLIER increment's acceptance
+// claims on a surface this increment also touches. M55 validated all eleven increments clean
+// and its audit still found five defects, the clearest an INTERACTION — Increment 1's doc-only
+// text against Increment 3's sub-task composition — which no validator saw because each one
+// looked at its own increment alone. The earlier increments' claims are embedded from the
+// reader's decomposition (deterministic, so the prompt stays a pure function of the run's
+// cached results); the diff is named by command, from the milestone branch's fork point.
+function crossIncrementBlock(inc) {
+  const m = milestoneBranch
+  const b = branches[inc.n]
+  const earlier = increments.filter((e) => e.n < inc.n)
+  const out = [
+    'CROSS-INCREMENT — this increment is not validated alone: it lands on top of every earlier increment of ' + milestone + ', and two increments whose work holds alone can break together (M55\'s audit found exactly that: Increment 1\'s doc-only text against Increment 3\'s sub-task composition, both validated clean). The milestone\'s diff so far — the earlier increments\' landed work plus this one — runs from the milestone branch\'s fork point `' + forkPoint + '` to this increment\'s tip: `git diff --stat ' + forkPoint + '..' + b + '`, with `git log --oneline --first-parent ' + forkPoint + '..' + m + '` showing one merge per landed increment. The paths this increment touches: `git diff --name-only ' + m + '...' + b + '`; the paths the earlier increments touched: `git diff --name-only ' + forkPoint + '..' + m + '`.',
+    'YOUR DUTY: for every surface this increment touches that an EARLIER increment of this milestone also built or changed — a path both diffs name, or a verb, doctype, schema, step, workflow, flag, finding code or printed output an earlier increment built and this one composes with, reads or changes — RE-DRIVE that earlier increment\'s acceptance claims (its Proves and Grouped scope, below, and the acceptance tests or flows it added) against THIS increment\'s tip, through the real binary. An earlier claim that no longer holds is a REGRESSION; two increments\' work that holds alone and breaks together is an INTERACTION DEFECT. Either one is a BLOCKING finding: title it `cross-increment: …`, and its evidence names the earlier increment, the claim, the command and its observed output. In your verdict, name the earlier increments whose claims you re-drove — or say none overlapped, citing the two name-only diffs that show it. Read-only as ever: you re-drive, you never fix.',
+  ]
+  if (earlier.length === 0) {
+    out.push('This is the milestone\'s first increment: no earlier increment has landed, so there is nothing to re-drive — the diff so far is this increment\'s own.')
+  } else {
+    out.push('THE EARLIER INCREMENTS\' CLAIMS (from the roadmap decomposition; the roadmap on `' + m + '` is the source if anything here reads short):')
+    for (const e of earlier) {
+      out.push('- Increment ' + e.n + ': ' + e.title)
+      out.push('  Deliverable: ' + e.deliverable)
+      out.push('  Proves: ' + e.proves)
+      for (const sc of (e.scope || [])) out.push('  - ' + sc)
+    }
+  }
+  return out.join('\n')
 }
 function fixPrompt(inc, f) {
   return [
@@ -867,7 +932,7 @@ async function agentR(prompt, opts) {
 // main. Its fork point from origin/main is the audit base.
 phase('Milestone branch')
 log('Ensuring ' + milestoneBranch + ' (reused if it exists locally or on origin, else created from origin/main)')
-const mb = await agentR(milestoneBranchPrompt(), { label: 'git:milestone-branch', phase: 'Milestone branch', agentType: 'build-git', schema: BRANCH_SCHEMA })
+const mb = await agentR(milestoneBranchPrompt(), { label: 'git:milestone-branch', phase: 'Milestone branch', agentType: 'build-git', schema: BRANCH_SCHEMA, model: GIT_MODEL })
 if (!mb || mb.status !== 'ready' || mb.branch !== milestoneBranch || !mb.fork_point) {
   const transient = !mb
   const mode = haltMode(transient)
@@ -948,7 +1013,7 @@ for (const inc of increments) {
   // Open the increment's branch. For a never-run increment this call is new, so it runs
   // live even on a resume — which is what puts a resumed run back on the right branch
   // after a planned halt, whatever the human had checked out in between.
-  const ob = await agentR(openIncrementPrompt(inc), { label: 'git:open:inc' + inc.n, phase: 'Build increments', agentType: 'build-git', schema: BRANCH_SCHEMA })
+  const ob = await agentR(openIncrementPrompt(inc), { label: 'git:open:inc' + inc.n, phase: 'Build increments', agentType: 'build-git', schema: BRANCH_SCHEMA, model: GIT_MODEL })
   if (!ob || ob.status !== 'ready' || ob.branch !== branches[inc.n]) {
     halted = { increment: inc.n, phase: 'branch', transient: !ob, branch: branches[inc.n], halt: ob && ob.halt ? ob.halt : { root_cause: ob ? 'the open-increment step reported branch ' + JSON.stringify(ob.branch) + ', status ' + ob.status + ' — not ' + branches[inc.n] : 'the open-increment step returned no result' } }
     incrementReports.push({ increment: inc.n, branch: ob })
@@ -1108,22 +1173,33 @@ for (const inc of increments) {
     break
   }
 
-  // ---- land: merge back --no-ff, delete the increment branch, push the milestone branch ----
-  log('Increment ' + inc.n + ' — landing ' + branches[inc.n] + ' on ' + milestoneBranch + ' (--no-ff)')
-  const landed = await agentR(landPrompt(inc), { label: 'git:land:inc' + inc.n, phase: 'Build increments', agentType: 'build-git', schema: LAND_SCHEMA })
-  if (!landed || landed.status !== 'merged' || !landed.merge_commit) {
-    halted = { increment: inc.n, phase: 'land', transient: !landed, branch: branches[inc.n], halt: landed && landed.halt ? landed.halt : { root_cause: landed ? 'the land step reported status ' + landed.status + ' with no merge commit' : 'the land step returned no result' } }
+  // ---- land, ONE step: merge onto the milestone branch's current tip --no-ff, delete the
+  // increment branch, push the milestone branch by name ----
+  log('Increment ' + inc.n + ' — landing ' + branches[inc.n] + ' on ' + milestoneBranch + ' (--no-ff) and pushing it')
+  const landed = await agentR(landPrompt(inc), { label: 'git:land:inc' + inc.n, phase: 'Build increments', agentType: 'build-git', schema: LAND_SCHEMA, model: GIT_MODEL })
+  if (!landed || landed.status !== 'merged' || !landed.merge_commit || landed.remote_head !== landed.merge_commit) {
+    // A land that halted AFTER its merge commit exists (a failed check, a refused push) says so
+    // in merge_commit: the increment IS on the milestone branch locally, and the recovery is
+    // the push, not the merge.
+    const mergedLocally = !!(landed && landed.merge_commit)
+    const rootCause = !landed
+      ? 'the land step returned no result'
+      : landed.status !== 'merged' || !landed.merge_commit
+      ? 'the land step reported status ' + landed.status + (landed.merge_commit ? ', merge commit ' + landed.merge_commit : ' with no merge commit')
+      : 'the land step reported merged, but the remote head ' + JSON.stringify(landed.remote_head) + ' is not the merge commit ' + landed.merge_commit
+    const fallback = { root_cause: rootCause }
+    if (mergedLocally) fallback.recommendation = 'increment ' + inc.n + ' IS merged into ' + milestoneBranch + ' locally (' + landed.merge_commit + '). If a CHECK of that merge failed, inspect the merge before anything is pushed — it is the human\'s. If only the delete or the push stopped, finish it — `git branch -d ' + branches[inc.n] + '` if it still exists, `git push origin ' + milestoneBranch + '` — and resume with skipThrough: ' + inc.n
+    const haltReport = landed && landed.halt ? Object.assign({}, landed.halt) : fallback
+    if (mergedLocally && !haltReport.recommendation) haltReport.recommendation = fallback.recommendation
+    halted = { increment: inc.n, phase: 'land', transient: !landed, branch: mergedLocally ? milestoneBranch : branches[inc.n], merge_commit: mergedLocally ? landed.merge_commit : null, halt: haltReport }
     incrementReports.push({ increment: inc.n, plan, execResults, validation: lastValidation, fixRounds: round, land: landed })
     break
   }
-  const pushed = await agentR(pushPrompt(inc), { label: 'git:push:inc' + inc.n, phase: 'Build increments', agentType: 'build-git', schema: PUSH_SCHEMA })
-  if (!pushed || pushed.status !== 'pushed' || pushed.remote_head !== landed.merge_commit) {
-    halted = { increment: inc.n, phase: 'push', transient: !pushed, branch: milestoneBranch, halt: pushed && pushed.halt ? pushed.halt : { root_cause: pushed ? 'the push step reported status ' + pushed.status + ', remote head ' + JSON.stringify(pushed.remote_head) + ' against merge commit ' + landed.merge_commit : 'the push step returned no result', recommendation: 'increment ' + inc.n + ' IS merged into ' + milestoneBranch + ' (' + landed.merge_commit + '); push it by name and resume with skipThrough: ' + inc.n } }
-    incrementReports.push({ increment: inc.n, plan, execResults, validation: lastValidation, fixRounds: round, land: landed, push: pushed })
-    break
+  if (landed.tip_moved || (landed.resolved_logs && landed.resolved_logs.length)) {
+    log('Increment ' + inc.n + ' — merged onto a milestone tip that moved after it branched' + (landed.resolved_logs && landed.resolved_logs.length ? '; dev/merge-logs resolved ' + landed.resolved_logs.join(', ') : ''))
   }
   log('Increment ' + inc.n + ' — landed as ' + landed.merge_commit + ' and pushed ' + milestoneBranch)
-  incrementReports.push({ increment: inc.n, branch: branches[inc.n], plan, execResults, validation: lastValidation, fixRounds: round, merge_commit: landed.merge_commit })
+  incrementReports.push({ increment: inc.n, branch: branches[inc.n], plan, execResults, validation: lastValidation, fixRounds: round, merge_commit: landed.merge_commit, tip_moved: !!landed.tip_moved, resolved_logs: landed.resolved_logs || [] })
 
   // ---- a planned human halt is a stage boundary: return, with the human's checklist ----
   const h = inc.halt_after
@@ -1174,14 +1250,14 @@ const audit = await parallel([
 
 return {
   status: 'built-and-audited',
-  message: builtMilestone + ' fully built and independently validated clean, every increment merged into ' + milestoneBranch + ' and pushed. Milestone-completion audit complete. THE CLOSE (milestone-completion-workflow.md → The loop, and → Close): the triage fixes below land on ' + milestoneBranch + ' — each fixer is told that branch and commits there. THEN, IN THIS ORDER, before any pull request (implementation/dev-workflow.md → Before a pull request to main): (1) SYNC — spawn a `build-git` subagent (Agent tool, agentType build-git) with `close.sync.prompt` VERBATIM; it merges `origin/main` into ' + milestoneBranch + ' with a merge commit (never a rebase — agents may not force-push), resolving a conflict confined to the append-only logs by keeping both sides (`dev/merge-logs`), and its report has the shape of `close.sync.schema`. A sync that HALTS (a conflict outside the logs) goes to the human — open no PR. (2) GATE — `dev/gate` green on the merged tree (a red one is a defect `main` brought in: a `build-fixer`, committing on ' + milestoneBranch + '). (3) PUSH it by name (`git push origin ' + milestoneBranch + '`). (4) Only then does the ORCHESTRATOR open the pull request: `gh pr create --base main --head ' + milestoneBranch + '`. While that PR touches the shared logs, start no second branch that touches them (CLAUDE.md → Branches). The human merges it (agents never merge a PR or push main); the release PR updates from that merge. NOW: verify each finding is real (reproduce it), then AUTO-FIX every confirmed finding — delegate each to a `build-fixer` subagent (dev-workflow, one commit), the SAME autonomy the build phase has. Do NOT ask the human per finding and do NOT present a fix-vs-defer menu: leaving a confirmed finding unfixed degrades the milestone, so "defer / known-limitation" is NOT a default disposition. The human gate fires for EXACTLY two cases, and only after you have confirmed the finding: (a) too-big — the fix genuinely warrants its own increment (still scheduled, never dropped); (b) contested — the fix would revise a settled decision or change intended behavior. Size, not severity, decides the lane: a HIGH that is a bounded fix is still fix-now, and a pre-existing defect the milestone’s own flow exercises + a builder test masked is fix-now (not defer). CHEAP-VS-ROBUST FIRES AT TRIAGE TOO: a defer that leaves a KNOWN HOLE in the milestone declared/goal-complete surface (a capability reachable only through the engine/tests, not the shipped verb/CLI — the deliverable-reachable lens), or trips a ONE-WAY-DOOR tell, is NOT a valid defer even when large — it means the declared deliverable is hollow and the milestone IS NOT DONE, so the robust fix is fix-now (or, if genuinely huge, the milestone is BLOCKED, never quietly shipped hollow). Two rationalizations are BARRED: "no live case to test" is NOT "not needed" (a reconstructed/synthetic case proves a now-needed capability), and "premature generality" holds only if the trajectory does not commit. AND this fork is NEVER self-framed: before you surface any too-big->defer OR contested->document-it recommendation, spawn a `robust-advocate` subagent (Agent tool, agentType robust-advocate) to argue the vision-robust case at full strength, and present ITS case beside the cheap one — never your lone cheap recommendation (the M34 failure: the orchestrator self-framed the fork and led the human to defer the milestone declared deliverable). Everything else is a tested commit the human reviews AFTER. See milestone-completion-workflow.md → Plan (triage); methodology-docs.md → the independent robust-case advocate.',
+  message: builtMilestone + ' fully built and independently validated clean, every increment merged into ' + milestoneBranch + ' and pushed. Milestone-completion audit complete. THE CLOSE (milestone-completion-workflow.md → The loop, and → Close): the triage fixes below land on ' + milestoneBranch + ' — each fixer is told that branch and commits there. AFTER TRIAGE, the rest of the close milestone-completion-workflow.md requires — each named there, not restated here, and every commit gated with `dev/gate`, none exempt by its path (dev-workflow.md → Gate): (a) RE-VERIFY — the full gate green and the affected audit slice re-run (→ The loop, step 4). (b) VERDICT — persist `completions/artifacts/' + builtMilestone + '/VERDICT.md`, the audit\'s full record: every finding\'s evidence and repro, its triage disposition, and the e2e scenarios (→ The loop, step 1). (c) GENUINE SPAWN — for a spawn-class milestone (a fan-out, any assistant-driven launch the CLI does not execute), the orchestrator-driven artifact: run in YOUR main session with a real Agent-tool spawn, never from a subagent, its committed tree-hash equal to the automated golden (→ The loop, step 1, Spawn-class milestones; exemplar `completions/artifacts/M55/genuine-spawn/`). (d) FOLD-BACK — flip the milestone\'s span in `implementation/project-history.md` from `built, not audited` to the audited state, re-aiming its `crates/cli/tests/foldback_truth.rs` arm in the same edit, and move CLAUDE.md → Project state to current truth (→ Close, Where the fold-back lands). (e) LITTER — `dev/clean-litter` (→ The loop, step 5). THEN, IN THIS ORDER, before any pull request (implementation/dev-workflow.md → Before a pull request to main): (1) SYNC — spawn a `build-git` subagent (Agent tool, agentType build-git, model `close.sync.model` = sonnet — every git step runs on Sonnet, never Opus and never Haiku) with `close.sync.prompt` VERBATIM; it merges `origin/main` into ' + milestoneBranch + ' with a merge commit (never a rebase — agents may not force-push), resolving a conflict confined to the append-only logs by keeping both sides (`dev/merge-logs`), and its report has the shape of `close.sync.schema`. A sync that HALTS (a conflict outside the logs) goes to the human — open no PR. (2) GATE — `dev/gate` green on the merged tree (a red one is a defect `main` brought in: a `build-fixer`, committing on ' + milestoneBranch + '). (3) PUSH it by name (`git push origin ' + milestoneBranch + '`). (4) Only then does the ORCHESTRATOR open the pull request: `gh pr create --base main --head ' + milestoneBranch + '`. While that PR touches the shared logs, start no second branch that touches them (CLAUDE.md → Branches). The human merges it (agents never merge a PR or push main); the release PR updates from that merge. NOW: verify each finding is real (reproduce it), then AUTO-FIX every confirmed finding — delegate each to a `build-fixer` subagent (dev-workflow, one commit), the SAME autonomy the build phase has. Do NOT ask the human per finding and do NOT present a fix-vs-defer menu: leaving a confirmed finding unfixed degrades the milestone, so "defer / known-limitation" is NOT a default disposition. The human gate fires for EXACTLY two cases, and only after you have confirmed the finding: (a) too-big — the fix genuinely warrants its own increment (still scheduled, never dropped); (b) contested — the fix would revise a settled decision or change intended behavior. Size, not severity, decides the lane: a HIGH that is a bounded fix is still fix-now, and a pre-existing defect the milestone’s own flow exercises + a builder test masked is fix-now (not defer). CHEAP-VS-ROBUST FIRES AT TRIAGE TOO: a defer that leaves a KNOWN HOLE in the milestone declared/goal-complete surface (a capability reachable only through the engine/tests, not the shipped verb/CLI — the deliverable-reachable lens), or trips a ONE-WAY-DOOR tell, is NOT a valid defer even when large — it means the declared deliverable is hollow and the milestone IS NOT DONE, so the robust fix is fix-now (or, if genuinely huge, the milestone is BLOCKED, never quietly shipped hollow). Two rationalizations are BARRED: "no live case to test" is NOT "not needed" (a reconstructed/synthetic case proves a now-needed capability), and "premature generality" holds only if the trajectory does not commit. AND this fork is NEVER self-framed: before you surface any too-big->defer OR contested->document-it recommendation, spawn a `robust-advocate` subagent (Agent tool, agentType robust-advocate) to argue the vision-robust case at full strength, and present ITS case beside the cheap one — never your lone cheap recommendation (the M34 failure: the orchestrator self-framed the fork and led the human to defer the milestone declared deliverable). Everything else is a tested commit the human reviews AFTER. See milestone-completion-workflow.md → Plan (triage); methodology-docs.md → the independent robust-case advocate.',
   milestone: builtMilestone,
   branch: milestoneBranch,
   base: forkPoint,
   incrementReports,
   audit: { code_review: audit[0], e2e: audit[1] },
   close: {
-    order: ['triage fixes on ' + milestoneBranch, 'sync: close.sync, spawned verbatim', 'dev/gate green on the merged tree', 'git push origin ' + milestoneBranch, 'gh pr create --base main --head ' + milestoneBranch],
-    sync: { agentType: 'build-git', label: 'git:sync-main', prompt: syncMainPrompt(), schema: SYNC_SCHEMA },
+    order: ['triage fixes on ' + milestoneBranch, 're-verify: dev/gate + the affected audit slice', 'persist completions/artifacts/' + builtMilestone + '/VERDICT.md', 'spawn-class only: the genuine-spawn artifact, main session', 'fold-back: project-history span + foldback_truth arm + CLAUDE.md project state', 'dev/clean-litter', 'sync: close.sync, spawned verbatim on model close.sync.model', 'dev/gate green on the merged tree', 'git push origin ' + milestoneBranch, 'gh pr create --base main --head ' + milestoneBranch],
+    sync: { agentType: 'build-git', model: GIT_MODEL, label: 'git:sync-main', prompt: syncMainPrompt(), schema: SYNC_SCHEMA },
   },
 }

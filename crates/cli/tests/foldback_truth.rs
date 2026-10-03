@@ -385,6 +385,15 @@ fn milestone_span<'a>(body: &'a str, marker: &str) -> &'a str {
 /// not audited` and the clean-audit trio forbidden — five findings is not clean — with the
 /// two 1.0.0-call phrasings forbidden as at every wave. **The installed leg stays**: M55
 /// still built no version, and `1.0.0-rc.23` is release PR #2's.
+///
+/// **Re-aimed 2026-10-03, at the release fold-back — not an inversion.** Release PR #2
+/// merged and published `jigc 1.0.0-rc.23` and `jigc-engine 0.1.0-rc.2`, and the crates.io
+/// page that publish renders was read back. So the span now owes what M54's owed for
+/// `1.0.0-rc.22` — the published pair, named — and the re-read's record, held to existing.
+/// **The installed leg stays, and its reason narrows:** the version reached this host from
+/// the registry through QUICKSTART's install line, which the span states as published and
+/// installed from crates.io, never in the from-source `built and installed` grammar — M55's
+/// build bumped no version; the release pipeline did.
 #[test]
 fn the_record_names_m55_and_claims_exactly_what_the_build_reached() {
     let body = read_doc(RECORD);
@@ -410,6 +419,10 @@ fn the_record_names_m55_and_claims_exactly_what_the_build_reached() {
         "MATCH",
         // The audit's record is persisted, and the claim must cite it.
         "completions/artifacts/M55/VERDICT.md",
+        // Re-aimed 2026-10-03 at the release fold-back: the published pair, and the re-read
+        // of the page that publish renders (S15).
+        "`jigc 1.0.0-rc.23` and `jigc-engine 0.1.0-rc.2`",
+        "completions/artifacts/M55/crates-page-reread.md",
     ] {
         assert!(
             span.contains(owed),
@@ -442,14 +455,21 @@ fn the_record_names_m55_and_claims_exactly_what_the_build_reached() {
         verdict.display()
     );
 
-    // M55 built no version and installed none: the span may name a version only as what
-    // crates.io carries or what the owed release will publish.
+    let reread = repo_root().join("completions/artifacts/M55/crates-page-reread.md");
+    assert!(
+        reread.is_file(),
+        "the M55 claim cites the crates.io re-read at {} that must exist",
+        reread.display()
+    );
+
+    // M55's build bumped no version: the span names `1.0.0-rc.23` as what release PR #2
+    // published and what the registry installed, never as built and installed from source.
     let installed = built_and_installed_versions(span);
     assert!(
         installed.is_empty(),
-        "the M55 claim states a version built and installed ({installed:?}); M55 built no \
-         version — the crate is still `1.0.0-rc.22`, and `1.0.0-rc.23` is release PR #2's, \
-         the human's merge and deployment approval:\n{span}",
+        "the M55 claim states a version built and installed ({installed:?}); M55's build \
+         bumped no version — `1.0.0-rc.23` is what release PR #2 published and QUICKSTART's \
+         install line installed from crates.io:\n{span}",
     );
 }
 

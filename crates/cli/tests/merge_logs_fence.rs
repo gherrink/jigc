@@ -29,6 +29,12 @@
 //!   → Starting a branch from `main`): the harness's milestone-branch step halts on a local
 //!   `main` that is not an ancestor of `origin/main`, and checks that a branch it creates
 //!   starts exactly at `origin/main`.
+//! - **(i)** the per-increment land step (one act since 2026-10-03 — [DECISIONS.md](../../../DECISIONS.md)
+//!   → *one land step per increment*) merges onto the milestone branch's current tip, lets the
+//!   same logs conflict and resolves them with the script, aborts any other conflict, deletes
+//!   the increment branch and pushes the milestone branch — and no separate push step exists.
+//! - **(j)** every `build-git` step the harness spawns or returns carries `model: GIT_MODEL`,
+//!   which is Sonnet.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -375,6 +381,60 @@ fn h_the_branch_step_starts_from_the_current_remote_main() {
         assert!(
             step.contains(needle),
             "the milestone-branch step lists {needle}"
+        );
+    }
+}
+
+#[test]
+fn i_the_land_step_merges_onto_the_current_tip_and_pushes_in_one_act() {
+    let harness = fs::read_to_string(repo_root().join(HARNESS)).expect("read the harness");
+    let step = &harness[harness
+        .find("function landPrompt(inc)")
+        .expect("the land step")..];
+    let step = &step[..step.find("\n}\n").expect("its end")];
+    for needle in [
+        "`git merge --no-ff --no-edit ' + b + '`",
+        "SYNC_LOGS",
+        "`dev/merge-logs`",
+        "`git merge --abort`, then HALT",
+        "`git commit --no-edit`",
+        "`git branch -d ' + b + '`",
+        "`git push origin ' + m + '`",
+        "tip_moved",
+    ] {
+        assert!(step.contains(needle), "the land step lists {needle}");
+    }
+    // A milestone tip that moved after the increment branched is merged onto, never refused:
+    // the old land step's ancestry precondition must not come back.
+    assert!(
+        !step.contains("`git merge-base --is-ancestor ' + m + ' ' + b + '` must succeed"),
+        "the land step does not require the increment to descend from the milestone tip"
+    );
+    assert!(
+        !harness.contains("function pushPrompt("),
+        "the push is part of the land step, not a step of its own"
+    );
+}
+
+#[test]
+fn j_every_git_step_runs_on_sonnet() {
+    let harness = fs::read_to_string(repo_root().join(HARNESS)).expect("read the harness");
+    assert!(
+        harness.contains("const GIT_MODEL = 'sonnet'"),
+        "the harness pins its git steps to Sonnet"
+    );
+    let git_calls: Vec<&str> = harness
+        .lines()
+        .filter(|l| l.contains("agentType: 'build-git'"))
+        .collect();
+    assert!(
+        git_calls.len() >= 4,
+        "milestone branch, open, land and the close's sync are build-git steps: {git_calls:#?}"
+    );
+    for call in git_calls {
+        assert!(
+            call.contains("model: GIT_MODEL"),
+            "a build-git step without `model: GIT_MODEL`: {call}"
         );
     }
 }
