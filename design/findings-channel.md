@@ -309,7 +309,7 @@ The port runs on 1.0.0 with a branch per milestone, `origin/main` merged before 
 
 ## 11. Acceptance flows
 
-Driven through the real binary in throwaway repos ([worked-examples.md](worked-examples.md); the next free flow numbers at planning are 55 onward). Sketches, illustrative:
+Driven through the real binary in throwaway repos, one chapter each in [worked-examples.md](worked-examples.md) → 55–59, A–E in order (55 · A, 56 · B, 57 · C, 58 · D, 59 · E), each naming its suite. Sketches, illustrative:
 
 **A · Report and read back.** In a `[dev ▸ methodology]` repo: `jigc start --workflow report-jigc-feedback "<what>"` → `jigc doc create` (the gate entry carries `new: true`; no flag) → set `kind`, `found-in`, `jigc-version`, `description`, `repro` → finalize lands one commit containing only the doc. `jigc doc list jigc-feedback --format json` shows the row with `title` and `fields.status == "open"`; `jigc doc show jigc-feedback:<slug> --format json` carries `title`. Hand-delete `status:` and commit → both surfaces still project `"open"`. The same arm for `report-inconsistency` with three `sides`, each added with `add-item --slug`, reached from the router catalog; `report-jigc-feedback` absent from it, reachable by name. Then `jigc start --workflow triage-jigc-feedback` on the filed row → `status: resolved` + a `resolution` + a `pinned-by` → finalize lands that doc alone; both triage workflows absent from the catalog.
 

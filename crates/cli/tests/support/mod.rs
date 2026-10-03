@@ -15,6 +15,7 @@
 //! shape, not a licence for dead code in the suites themselves.
 #![allow(dead_code)]
 
+pub mod branch_and_pull;
 pub mod child_stdin;
 pub mod committing_doors;
 pub mod composed;

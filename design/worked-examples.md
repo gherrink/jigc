@@ -3987,3 +3987,51 @@ $ jigc ingest && jigc validate --format json
 5. **The join's output is adoptable as the seed is.** The landed docs, copied into a fresh corpus under its `docs-root`, `jigc ingest` then `jigc validate --format json` carry zero findings, and `doc list` lists exactly those docs, each `managed` — `seed_fence`'s own predicate (`assert_adoptable`).
 
 **Red** is the discriminating control: each report workflow composed as an **ordinary** task fails every one of assertion 1's checks — it names the per-task door, asks for the commit-doc writes, carries each derived member's own lines, and has no milestone trailer.
+
+## 59. Branch and pull — a pulled edit absorbed, a branch switch advisory, in one history (M55)
+
+**The claim:** *a teammate's committed edit to a managed doc, pulled, is a baseline that lags `HEAD` — advisory at store scope, absorbed by the next task that edits the doc, which lands both sides — and after that task lands, a doc created on a milestone branch and left behind by `git switch main` is advisory at both scopes under one route that names the branch switch and never `jigc unmanage`; an edit made while the task is open still conflict-blocks, and a doc deleted with history still blocks.* This is flow E of [findings-channel.md](findings-channel.md) → 11, driven over the shipped `single-task` in a `[dev ▸ methodology]` corpus wired to a local bare `origin` and a teammate's clone — the pull is a real `git pull --ff-only`. Every finding is read off `--format json`.
+
+**What it adds over `l1_pull_absorption` and `l2_branch_switch`.** Those suites (M55 Increments 4 and 5, `crates/cli/tests/l1_pull_absorption.rs` and `crates/cli/tests/l2_branch_switch.rs`) prove each half from its own fresh corpus. This flow runs both halves in one corpus's history, so the branch switch is graded over the baseline the absorb wrote, and the store sweep after it differs from the sweep before the pull by the branch switch's row alone. The pull, the milestone branch and the row readers are theirs, moved to `crates/cli/tests/support/branch_and_pull.rs` and shared. It claims no first proof.
+
+**Bounds.** One `State::CommittedSingletons` corpus per test, on the embedded packs. The corpus's own residue — an advisory on its empty `decisions-log` — is read before the pull and is the reference "clean" returns to. The milestone branch is a plain git branch named on the branch model's grammar; no `jigc milestone` is minted, since L2 is a property of the checkout, not of the milestone. Flow E files no report: L1 and L2 are reconcile arms.
+
+The designs of record live elsewhere and are not restated here: the absorb at the task's base pin and the store arm's reused `file-state.hash-matches` in [findings-channel.md](findings-channel.md) → 6 (L1) and [reconciliation.md](reconciliation.md); the history predicate at store scope and the one route at both scopes in → 6 (L2) and [validation.md](validation.md) → Exit semantics. Notation illustrative.
+
+### The walk
+
+```text
+$ git pull --ff-only                       # the teammate's VISION.md edit
+$ jigc validate
+> advisory · file-state.hash-matches — VISION.md …
+>   route: the baseline lags `HEAD`; absorbed at the next finalize
+$ jigc start --workflow single-task "sharpen the open questions"
+$ jigc doc set-slot vision:vision#open-questions --from-file - --task sharpen-the-open-questions
+$ jigc task validate sharpen-the-open-questions
+> advisory · reconciliation.absorb — VISION.md …
+$ jigc task finalize sharpen-the-open-questions
+#   one commit: the teammate's line and the task's prose
+$ jigc validate
+#   the findings it carried before the pull, and no more
+
+$ git switch -c milestone/x/main
+$ jigc start --workflow single-task "record the cache decision"
+$ jigc doc create adr --title "Single-node cache" --task record-the-cache-decision
+#   …the slots, the commit doc · finalize: docs/decisions/single-node-cache.md lands
+$ git switch main
+$ jigc validate                            # exit 0
+> advisory · reconciliation.rename — … docs/decisions/single-node-cache.md …
+>   route: nothing on this checkout needs to change — a branch switch left this baseline behind, … switch back to that branch to work on it again
+$ jigc start --workflow single-task "warm the read cache"
+$ jigc task validate warm-the-read-cache
+#   the same row: key, severity, message and route
+```
+
+### What it asserts (flow E on the shipped single-task — flow59_branch_and_pull.rs)
+
+1. **The pull reads as a lag.** After the pull, `jigc validate` exits 0 with one `file-state.hash-matches` row at `VISION.md`, advisory, routed *the baseline lags `HEAD`; absorbed at the next finalize*, and `file-state` is not a blocking probe.
+2. **The next task absorbs it.** A `single-task` writing `vision#open-questions` reads an advisory `reconciliation.absorb` at `VISION.md` from `task validate` and no conflict-block; its finalize exits 0 with one commit whose `VISION.md` carries the teammate's line and the task's prose; the next sweep's findings are exactly the pre-pull sweep's.
+3. **The branch switch is advisory at both scopes, over that baseline.** After an ADR is finalized on `milestone/x/main` and the checkout switches to `main`, `jigc validate` exits 0, `report_only: true`, with one advisory `reconciliation.rename` row at the ADR's path routed at the branch switch, and no other row beyond the pre-pull residue; its agent view exits 0 and names no `jigc unmanage`. A task's `task validate` carries the same row, its key, severity, message and route equal to the store's.
+4. **The controls block.** After the same pull, an out-of-band `VISION.md` edit made while the task is open fails the absorb predicate: finalize exits 3 with one blocking `reconciliation.conflict-block` at `VISION.md` and commits nothing. After the same L1 half, the ADR `git rm`'d and committed on its own branch fails the branch-switch predicate: `jigc validate` exits 1, `report_only: false`, its `reconciliation.rename` row blocking.
+
+**Red** is the controls themselves: assertion 2's absorb predicate, run over the during-task edit's finalize, fails on its conflict-block, and assertion 3's branch-switch predicate, run over the deleted-with-history sweep, fails on its blocking row.

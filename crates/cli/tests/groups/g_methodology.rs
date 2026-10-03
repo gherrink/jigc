@@ -39,6 +39,8 @@ mod flow56_mid_task_report;
 mod flow57_overwrite_refused;
 #[path = "../flow58_several_reporters.rs"]
 mod flow58_several_reporters;
+#[path = "../flow59_branch_and_pull.rs"]
+mod flow59_branch_and_pull;
 #[path = "../hook_output_axis.rs"]
 mod hook_output_axis;
 #[path = "../invocation_log.rs"]
