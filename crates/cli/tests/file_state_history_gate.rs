@@ -7,8 +7,10 @@
 //! every subsequent task.
 //!
 //! The fix history-gates the weak-signal severity: a dangling baseline downgrades to an
-//! **advisory** with a route to the existing `jigc unmanage` **only when `git log HEAD -1
-//! -- <path>` is empty** (HEAD has no history for the path — nothing was deleted).
+//! **advisory** **only when `git log HEAD -1 -- <path>` is empty** (HEAD has no history for
+//! the path — nothing was deleted). Its route names the branch switch and offers switching
+//! back, never an index drop (M55 Increment 5 / T1 retired M45's `jigc unmanage` prune
+//! route; [`branch_switch_route`] carries the exact bytes every dangling arm here compares).
 //! Every genuine-deletion case (the path *has* history and is now gone) keeps blocking,
 //! and the strong-signal (content-preserving `git mv`) arm is untouched.
 //!
@@ -18,8 +20,8 @@
 //!   (a) **reset --hard past the creating commit → advisory, no block.** An ADR is
 //!       committed and baselined, then HEAD is moved back past its creating commit
 //!       (`git reset --hard <root>`, so `git log HEAD -1 -- <path>` is empty). The next
-//!       task's `jigc task validate` reports the dangling baseline **Advisory** with a
-//!       `jigc unmanage` prune route and **exits 0** (red today: Blocking, exit 3).
+//!       task's `jigc task validate` reports the dangling baseline **Advisory**, routed at
+//!       the branch switch, and **exits 0** (red today: Blocking, exit 3).
 //!
 //!   (b) **`git rm` + commit (history present) → still blocks.** The same ADR is deleted
 //!       via `git rm` and committed, so HEAD carries history for the path. The weak
@@ -323,9 +325,37 @@ fn validate_task_json(
     (out, findings)
 }
 
+/// The dangling-baseline route for `path`, byte for byte (M55 Increment 5 / T1): it names
+/// the branch switch and offers switching back, and carries no command — never `jigc
+/// unmanage`, the index drop M45's route offered.
+fn branch_switch_route(path: &str) -> String {
+    format!(
+        "nothing on this checkout needs to change — a branch switch left this baseline \
+         behind, and {path} lives on a branch this checkout does not carry: switch back to \
+         that branch to work on it again"
+    )
+}
+
+/// Assert `rename`'s emitted route is the dangling-baseline route for `path`, whole-string,
+/// and offers no index drop.
+fn assert_branch_switch_route(rename: &serde_json::Value, path: &str, what: &str) {
+    let route = rename["route"]
+        .as_str()
+        .expect("the advisory carries a route");
+    assert!(
+        !route.contains("jigc unmanage"),
+        "{what}: the dangling baseline must never route at `jigc unmanage`; got:\n{rename:#?}",
+    );
+    assert_eq!(
+        route,
+        branch_switch_route(path),
+        "{what}: the advisory routes at the branch switch; got:\n{rename:#?}",
+    );
+}
+
 /// Assert the **advisory dangling-baseline** classification for `path`: `task validate`
-/// exits 0, the single rename finding is advisory and routes prune-first to `jigc
-/// unmanage <path>`. Returns the finding (for byte-wise re-comparison across ops).
+/// exits 0, the single rename finding is advisory and routes at the branch switch, never
+/// at `jigc unmanage`. Returns the finding (for byte-wise re-comparison across ops).
 fn assert_dangling_advisory(
     out: &std::process::Output,
     findings: &[serde_json::Value],
@@ -344,13 +374,7 @@ fn assert_dangling_advisory(
         rename["severity"], "advisory",
         "{what}: the history-less dangling baseline downgrades to advisory; got:\n{rename:#?}",
     );
-    assert!(
-        rename["route"]
-            .as_str()
-            .expect("the advisory carries a route")
-            .contains(&format!("jigc unmanage {path}")),
-        "{what}: the advisory routes prune-first to `jigc unmanage {path}`; got:\n{rename:#?}",
-    );
+    assert_branch_switch_route(&rename, path, what);
     rename
 }
 
@@ -397,8 +421,8 @@ fn git_fails(repo: &Path, args: &[&str]) -> bool {
 }
 
 /// (a) A `git reset --hard` past the ADR's creating commit — the path has no HEAD history,
-/// so the dangling baseline downgrades to an **advisory** with a `jigc unmanage` prune
-/// route, and the next task's `task validate` does **not** block.
+/// so the dangling baseline downgrades to an **advisory** routed at the branch switch, and
+/// the next task's `task validate` does **not** block.
 #[test]
 fn reset_hard_past_creating_commit_downgrades_to_advisory() {
     let repo = TempDir::new("reset");
@@ -456,13 +480,7 @@ fn reset_hard_past_creating_commit_downgrades_to_advisory() {
         rename["severity"], "advisory",
         "the history-less dangling baseline downgrades to advisory; got:\n{rename:#?}",
     );
-    assert!(
-        rename["route"]
-            .as_str()
-            .expect("the advisory carries a route")
-            .contains(&format!("jigc unmanage {ADR_PATH}")),
-        "the advisory routes prune-first to `jigc unmanage {ADR_PATH}`; got:\n{rename:#?}",
-    );
+    assert_branch_switch_route(&rename, ADR_PATH, "history-less validate");
 }
 
 /// (b) A `git rm <ADR>` + commit leaves the path with HEAD history — the weak-signal
@@ -955,7 +973,7 @@ fn sparse_checkout_absence_classifies_as_weak_deletion_block() {
 /// milestone create` (under the `[dev ▸ methodology]` compose marker) materializes +
 /// path-scoped-commits the `milestone-record` AND baselines it in the file-state record;
 /// a `git reset --hard` past that commit then leaves the baseline dangling with no HEAD
-/// history — advisory + `jigc unmanage` route, not the wedge the trial hit.
+/// history — advisory, routed at the branch switch, not the wedge the trial hit.
 #[test]
 fn milestone_create_baseline_reset_downgrades_to_advisory() {
     const RECORD_PATH: &str = "docs/milestone-records/cache-rework.md";
@@ -1143,15 +1161,17 @@ fn unborn_head_keeps_the_conservative_weak_deletion_block() {
 /// **M52 Increment 10 / T6 — the live milestone record.** A sub-task standing in the shared
 /// checkout at its milestone's **base pin** reads its own milestone record as an absent,
 /// history-less baseline: the pin predates the record commit `jigc milestone create` lands,
-/// by construction. That is the dangling-baseline cell exactly — and the shipped route,
-/// followed, runs `jigc unmanage` over the record the milestone is run from.
+/// by construction. That is the dangling-baseline cell exactly — and the route M45 shipped
+/// for it, followed, ran `jigc unmanage` over the record the milestone is run from (the
+/// cell routes at the branch switch since M55 Increment 5 / T1, which is not true of this
+/// path either: the record is live, not left on another branch).
 ///
 /// The carve-out is **path-keyed on the task's own milestone**, never blanket, so the state
 /// is built to discriminate in one repo: two milestones are created in sequence, the
 /// sub-task is added to the **first**, and the checkout returns to that first milestone's
 /// base pin — which predates **both** record commits, so both baselines dangle identically
 /// and the only difference between them is which milestone owns the task being swept. The
-/// other milestone's record must keep the shipped advisory and its prune route
+/// other milestone's record must keep the shipped advisory and its branch-switch route
 /// **byte-identically** (asserted as whole strings, not as a substring probe); the task's
 /// own record must say what it is and route at no destructive verb.
 ///
@@ -1228,11 +1248,10 @@ fn sub_task_at_its_milestone_base_pin_is_never_routed_to_unmanage_its_own_record
     );
     assert_eq!(
         other["route"].as_str().expect("the control has a route"),
-        format!(
-            "prune the stale baseline: `jigc unmanage {OTHER_RECORD}`; or restore \
-             {OTHER_RECORD} if it should still exist"
-        ),
-        "live-record/other: the shipped prune route is unchanged",
+        "nothing on this checkout needs to change — a branch switch left this baseline \
+         behind, and docs/milestone-records/ledger-rework.md lives on a branch this checkout \
+         does not carry: switch back to that branch to work on it again",
+        "live-record/other: the shipped branch-switch route is unchanged",
     );
 
     // The subject — the task's OWN milestone record.

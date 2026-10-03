@@ -116,8 +116,8 @@ pub type TrackedPredicate<'a> = dyn Fn(&str) -> bool + 'a;
 /// that moves underneath the gitignored cache (`git reset --hard` / branch switch / rebase
 /// past a doc's creating commit) leaves a recorded baseline pointing at a path that no longer
 /// exists. When HEAD has **no** history for the path, nothing was deleted — the dangling
-/// baseline downgrades to advisory; when it **has** history, the path was genuinely deleted
-/// and keeps blocking.
+/// baseline downgrades to advisory, routed at the branch switch (M55 Increment 5 / T1);
+/// when it **has** history, the path was genuinely deleted and keeps blocking.
 pub type HistoryPredicate<'a> = dyn Fn(&str) -> bool + 'a;
 
 /// The CLI-supplied **committed bytes at a pin** — a `Fn(&str) -> Option<Vec<u8>>` taking a
@@ -192,7 +192,8 @@ pub type PinnedBlob<'a> = dyn Fn(&str) -> Option<Vec<u8>> + 'a;
 /// only inside that already-cold path (a recorded-but-missing doc), so a healthy task never
 /// shells out for it: history present (the path was genuinely deleted) keeps the blocking
 /// weak-signal finding; history empty (the checkout moved underneath the gitignored cache)
-/// downgrades to advisory with a `jigc unmanage` prune route.
+/// downgrades to advisory with an informational route that names the branch switch and
+/// offers switching back, never an index drop (M55 Increment 5 / T1).
 ///
 /// `conflict` is the CLI-supplied [`ConflictBlock`](crate::file_state::ConflictBlock) the
 /// committed-store sweep hands to its `DRIFTED + TOUCHED` classifier (M47 inc-2 / T4). The
@@ -220,8 +221,8 @@ pub type PinnedBlob<'a> = dyn Fn(&str) -> Option<Vec<u8>> + 'a;
 /// committed-store sweep hands to its dangling-baseline arm (M52 Inc 10 / T6): the committed
 /// record of the work unit the validated task belongs to, if any. A sub-task stands at its
 /// milestone's **base pin**, which by construction predates the record commit, so the record
-/// reads absent-and-history-less there while it is live — and the shipped prune route would
-/// unmanage the state the milestone is run from. The engine cannot know which work unit owns
+/// reads absent-and-history-less there while it is live — no doc another branch carries, but
+/// the state the milestone is run from. The engine cannot know which work unit owns
 /// a task, so the caller that does names the path;
 /// [`LiveRecord::none`](crate::file_state::LiveRecord::none) leaves the arm byte-identical to
 /// its shipped classification.

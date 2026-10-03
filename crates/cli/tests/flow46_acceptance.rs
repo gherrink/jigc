@@ -45,9 +45,10 @@
 //!
 //!   (5) **File-state history-gating** — the dangling-baseline severity swept over
 //!       the corpus-state axis (history-absent vs history-present): a `git reset
-//!       --hard` past a doc's creating commit downgrades to an **advisory** with a
-//!       `jigc unmanage` prune route and does not block, while a `git rm` + commit
-//!       (history present) still **blocks** (exit 3) (Inc 7).
+//!       --hard` past a doc's creating commit downgrades to an **advisory**, routed at
+//!       the branch switch and never at `jigc unmanage` (M55 Increment 5 / T1), and does
+//!       not block, while a `git rm` + commit (history present) still **blocks** (exit 3)
+//!       (Inc 7).
 //!
 //! Every arm asserts on the EMITTED bytes / exit codes / committed files of the real
 //! binary (`CARGO_BIN_EXE_jigc`). The registry is read through the M45 enumeration
@@ -1339,8 +1340,9 @@ fn adr_repo(tag: &str) -> (TempDir, TempDir) {
 /// carries history for the path:
 ///
 ///   * **history-absent** (`git reset --hard` past the ADR's creating commit) → the
-///     dangling baseline downgrades to an **advisory** with a `jigc unmanage` prune
-///     route, and the next task's `task validate` does **not** block (exit 0);
+///     dangling baseline downgrades to an **advisory** routed at the branch switch —
+///     never at `jigc unmanage` (M55 Increment 5 / T1) — and the next task's `task
+///     validate` does **not** block (exit 0);
 ///   * **history-present** (`git rm` + commit) → the same weak finding still
 ///     **blocks** (exit 3), a genuine deletion detected and routed.
 ///
@@ -1381,12 +1383,21 @@ fn file_state_history_gates_the_dangling_baseline_over_the_corpus_state_axis() {
             rename["severity"], "advisory",
             "the history-less dangling baseline downgrades to advisory; got:\n{rename:#?}",
         );
+        let route = rename["route"]
+            .as_str()
+            .expect("the advisory carries a route");
         assert!(
-            rename["route"]
-                .as_str()
-                .expect("the advisory carries a route")
-                .contains(&format!("jigc unmanage {ADR_PATH}")),
-            "the advisory routes prune-first to `jigc unmanage {ADR_PATH}`; got:\n{rename:#?}",
+            !route.contains("jigc unmanage"),
+            "the dangling baseline never routes at `jigc unmanage`; got:\n{rename:#?}",
+        );
+        assert_eq!(
+            route,
+            format!(
+                "nothing on this checkout needs to change — a branch switch left this \
+                 baseline behind, and {ADR_PATH} lives on a branch this checkout does not \
+                 carry: switch back to that branch to work on it again"
+            ),
+            "the advisory routes at the branch switch; got:\n{rename:#?}",
         );
     }
 

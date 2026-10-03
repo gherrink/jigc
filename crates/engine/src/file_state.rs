@@ -381,14 +381,16 @@ impl ConflictBlock {
 /// T6).
 ///
 /// The rename detector's dangling-baseline arm reads *absent on disk × no HEAD history* and
-/// concludes the recorded baseline outlived its checkout, so it routes **prune-first** at
-/// `jigc unmanage <path>`. That conclusion is wrong for exactly one path: the committed
-/// record of the milestone the task under validation belongs to. A sub-task is pinned to its
-/// milestone's **base**, which by construction predates the record commit, so wherever the
-/// checkout stands at that pin — the provisioned worktree does by construction, the shared
-/// checkout whenever it is put there — the record reads history-less while it is live,
-/// current, and the state the milestone is run from. Following the prune route there would
-/// unmanage exactly that.
+/// concludes the recorded baseline outlived its checkout — left behind by a branch switch.
+/// That conclusion is wrong for exactly one path: the committed record of the milestone the
+/// task under validation belongs to. A sub-task is pinned to its milestone's **base**, which
+/// by construction predates the record commit, so wherever the checkout stands at that pin —
+/// the provisioned worktree does by construction, the shared checkout whenever it is put
+/// there — the record reads history-less while it is live, current, and the state the
+/// milestone is run from. The carve-out was cut when that arm still routed prune-first at
+/// `jigc unmanage <path>`, which would have unmanaged exactly that; the arm routes at the
+/// branch switch since M55 (Increment 5 / T1), and the carve-out still says the one true
+/// thing about this path — it is the live record, not a doc left on another branch.
 ///
 /// Like [`ConflictBlock`], the fact belongs to the **caller, not the classifier**: the engine
 /// sees a path and a hash, never which work unit owns the task whose area it is sweeping. So
@@ -675,7 +677,8 @@ pub fn committed_path_recordable(
 ///   candidates (the on-disk `.md` files of that type with no recorded hash), routing
 ///   a suspected `git mv` (strong signal) or a restore (weak signal). `history` grades
 ///   the weak signal (M45, Decision 7): a path with no HEAD history is a dangling
-///   baseline (advisory + prune route), a path with history is a genuine deletion (block).
+///   baseline (advisory, routed at the branch switch), a path with history is a genuine
+///   deletion (block).
 ///
 /// `conflict` is the caller's [`ConflictBlock`] — the sweep knows the working area's
 /// *path*, never which task (or join) owns it, so the naming and the way out come from the
@@ -687,8 +690,8 @@ pub fn committed_path_recordable(
 /// produce, feeding [`reconcile_committed`]'s `UNKNOWN` + non-conformant arm so a foreign
 /// squatter draws the same code and route here it draws at store scope (M48 Inc 4 / T1).
 /// `live` is the caller's [`LiveRecord`] — the committed record of the work unit the swept
-/// task belongs to, if any, so the one history-less path whose prune route would unmanage
-/// the milestone's own state is graded as the live record it is (M52 Inc 10 / T6).
+/// task belongs to, if any, so the one history-less path that is the milestone's own state,
+/// and no doc left on another branch, is graded as the live record it is (M52 Inc 10 / T6).
 ///
 /// Mutating: `record` (baseline-adopt / absorb) and `index` (absorb) advance in place;
 /// the caller persists them. Findings aggregate in a stable order: persisted schemas
@@ -1418,18 +1421,19 @@ fn rename_landing_present(
 ///   unmanage`). A path with **no** history is a **dangling baseline** — the recorded
 ///   baseline pointing at a path the checkout moved out from under the gitignored
 ///   file↔state cache (`git reset --hard` / branch switch / rebase past the creating
-///   commit) — which downgrades to an **advisory** with a `jigc unmanage` prune route, so
-///   a moved checkout no longer wedges every subsequent task. The one exception is the
+///   commit) — which downgrades to an **advisory** whose informational route names the
+///   branch switch and offers switching back, never an index drop (M55 Increment 5 / T1),
+///   so a moved checkout no longer wedges every subsequent task. The one exception is the
 ///   caller's [`LiveRecord`] (M52 Inc 10 / T6): when the history-less path **is** the
-///   committed record of the work unit the swept task belongs to, the prune route would
-///   unmanage the state the milestone is run from, so the same id and severity carry the
-///   live-record claim and an informational route instead ([`live_record_finding`]).
+///   committed record of the work unit the swept task belongs to, the same id and severity
+///   carry the live-record claim and its own informational route instead
+///   ([`live_record_finding`]).
 ///
 /// **No auto-rewrite.** A path rename is an identity change; the MVP blocks and routes
 /// to revert, and **never** rewrites referrer refs or mutates the edge index
-/// (`reconciliation.md` → No silent rename). The prune is likewise **never** automatic:
-/// silently forgetting a genuinely deleted managed doc would regress *"detected and
-/// routed, never silently absorbed."* This function is pure of I/O and of any
+/// (`reconciliation.md` → No silent rename). Dropping a baseline is likewise **never**
+/// automatic: silently forgetting a genuinely deleted managed doc would regress *"detected
+/// and routed, never silently absorbed."* This function is pure of I/O and of any
 /// edge/referrer mutation by construction — it reads its inputs (including the
 /// CLI-supplied `history` predicate) and returns findings.
 ///
@@ -1481,9 +1485,9 @@ pub fn detect_rename(
         // this arm downgrades a genuine deletion. It under-blocks, never over-blocks.
         None if history(path) => vec![rename_weak_finding(path, from)],
         // The caller's live-record carve-out (M52 Inc 10 / T6): the one history-less path
-        // whose prune route would unmanage the record the milestone is run from. Same id,
-        // same advisory severity — only what it says about the state, and what it asks the
-        // reader to do, differ.
+        // that is no other branch's doc but the record the milestone is run from. Same id,
+        // same advisory severity — only what it says about the state, and what it tells the
+        // reader, differ.
         None => match live.unit_at(path) {
             Some(unit) => vec![live_record_finding(path, from, unit)],
             None => vec![rename_dangling_baseline_finding(path, from)],
@@ -1544,8 +1548,20 @@ fn rename_weak_finding(path: &str, from: &str) -> Finding {
 /// gitignored file↔state cache (a `git reset --hard` / branch switch / rebase past the
 /// creating commit). Reuses the `reconciliation.rename` check id at [`Severity::Advisory`]
 /// (the established no-new-id advisory pattern in this file, cf.
-/// [`conformance_advisory_finding`]) and routes **prune-first** to `jigc unmanage {path}`, so
-/// a moved checkout no longer wedges every subsequent task.
+/// [`conformance_advisory_finding`]), so a moved checkout no longer wedges every subsequent
+/// task.
+///
+/// **One route at both scopes, and never an index drop** (M55 Increment 5 / T1;
+/// `design/findings-channel.md` → §6 L2, R5). The route names the branch switch and offers
+/// switching back to the branch that carries the path, and says nothing on this checkout
+/// needs to change. M45's prune-first route (`jigc unmanage <path>`) is retired: under a
+/// branch-per-milestone model the ordinary cause of this cell is a switch away from the
+/// branch that created the doc, where pruning would drop the identity of a doc that is
+/// alive on its branch. Like [`live_record_finding`], the route is
+/// [`Informational`](crate::finding::RouteKind::Informational) and carries no backticked
+/// command, so neither the route fence nor the pre-commit hook's `mv` scan reads anything
+/// in it. The message, code, severity and location are M45's, so the `(code, target)` key
+/// does not move.
 fn rename_dangling_baseline_finding(path: &str, from: &str) -> Finding {
     Finding::graded(
         Severity::Advisory,
@@ -1554,10 +1570,13 @@ fn rename_dangling_baseline_finding(path: &str, from: &str) -> Finding {
             "tracked managed doc {from} ({path}) is missing, but the path has no history — the checkout moved underneath the file-state cache, not a deletion"
         ),
         Some(Location::addressed(path, 1, 1)),
-        Some(format!(
-            "prune the stale baseline: `jigc unmanage {token}`; or restore {path} if it should still exist",
-            token = crate::finding::shell_token(path)
-        ).into()),
+        // `Route::informational` explicitly, never `String::into` — that `From` impl files a
+        // route as a direction a human must take, and nothing on this checkout is owed.
+        Some(crate::finding::Route::informational(format!(
+            "nothing on this checkout needs to change — a branch switch left this baseline \
+             behind, and {path} lives on a branch this checkout does not carry: switch back \
+             to that branch to work on it again"
+        ))),
     )
 }
 
@@ -1571,8 +1590,10 @@ fn rename_dangling_baseline_finding(path: &str, from: &str) -> Finding {
 /// no-new-id pattern [`rename_dangling_baseline_finding`] already uses, so the
 /// `(code, target)` key and the exit behaviour are unchanged; what moves is the claim and
 /// the route. The route is **[`Informational`](crate::finding::RouteKind::Informational)**
-/// and names no verb: the only jigc act the shipped sibling offers here is the prune that
-/// would unmanage the milestone's own state, and there is nothing else to do.
+/// and names no verb: there is nothing to do. (When this carve-out was cut the sibling
+/// routed prune-first at `jigc unmanage`, which here would have unmanaged the milestone's
+/// own state; since M55 Increment 5 / T1 the sibling routes at the branch switch, which is
+/// not true of this path either — the record is current on this branch's milestone.)
 fn live_record_finding(path: &str, from: &str, unit: &str) -> Finding {
     Finding::graded(
         Severity::Advisory,
@@ -2777,9 +2798,13 @@ Referrers must point at the new decision.
     /// **Weak signal, history-less** — the same missing tracked path with **no** content-
     /// matching suspect, but the `history` predicate reports no HEAD history for it: a
     /// dangling baseline the checkout moved out from under the gitignored cache (M45,
-    /// Decision 7). The detector downgrades to an **advisory** `reconciliation.rename` that
-    /// routes prune-first to `jigc unmanage`, never the blocking weak finding — so a moved
-    /// checkout no longer wedges the gate.
+    /// Decision 7). The detector downgrades to an **advisory** `reconciliation.rename`,
+    /// never the blocking weak finding — so a moved checkout no longer wedges the gate.
+    ///
+    /// The route names the branch switch and offers switching back, as an
+    /// **informational** route with no backticked command and no `jigc unmanage` (M55
+    /// Increment 5 / T1, R5): one producer, one route at task and store scope, and never
+    /// an index drop.
     #[test]
     fn rename_weak_signal_history_less_downgrades_to_advisory() {
         const TRACKED: &str = "decisions/rate-limit.md";
@@ -2814,11 +2839,24 @@ Referrers must point at the new decision.
         );
         let route = f
             .route
-            .as_deref()
-            .expect("the advisory carries a prune route");
+            .as_ref()
+            .expect("the advisory-route floor: the dangling baseline carries a route");
         assert!(
-            route.contains(&format!("jigc unmanage {TRACKED}")),
-            "the advisory routes prune-first to `jigc unmanage`: {route:?}"
+            matches!(route.kind(), crate::finding::RouteKind::Informational),
+            "nothing on this checkout is owed, so the route is informational: {route:?}"
+        );
+        assert_eq!(
+            route.as_str(),
+            format!(
+                "nothing on this checkout needs to change — a branch switch left this \
+                 baseline behind, and {TRACKED} lives on a branch this checkout does not \
+                 carry: switch back to that branch to work on it again"
+            ),
+            "the route names the branch switch and offers switching back"
+        );
+        assert!(
+            !route.contains("jigc unmanage") && !route.contains('`'),
+            "the route never offers an index drop and carries no command span: {route:?}"
         );
     }
 
