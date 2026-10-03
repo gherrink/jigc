@@ -2,6 +2,82 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-03 — M55 Increment 5 planning: decomposition
+
+Cut [Increment 5](implementation/roadmap.md) (*L2 branch switch, and the one route at both scopes*) into **2 ordered tasks**, grounded at HEAD `324e1e88` on `milestone/findings-channel/l2-branch-switch` (tree clean), with Increments 1–4 landed. Cross-ref [roadmap.md](implementation/roadmap.md) → Milestone 55 → Increment 5; the M55 Settle below (S13's L2, O1 resolved by R5); [findings-channel.md](design/findings-channel.md) → 6, 10, 11 (flow E), 13; [planning-gate-record.md](completions/artifacts/M55/planning-gate-record.md) → row 10 and O1. **Codes registered: none.** `reconciliation.rename` changes route on its dangling arm, and store-scope severity on that arm; its `(code, target)` key does not move. **No contract moves.**
+
+**Basis. Each item was read at HEAD, or driven on the debug binary where marked.**
+
+- **Driven, the defect at both scopes.** In a `dev/jigc-rig committed-singletons` rig, a `single-task` on `milestone/x/main` created and finalized `adr:single-node-cache`, then `git switch main`:
+  - `jigc validate --format json` exits **1**: one **blocking** `reconciliation.rename` at `docs/decisions/single-node-cache.md`, *"… is missing"*, routed *"restore …, or confirm the deletion by dropping it from the index: `jigc unmanage …`"*; `report_only: false`; the closing line is the `oob-rename` trailer.
+  - A `single-task`'s `task validate --format json` over the same state exits **0** with the same key **advisory**, routed *"prune the stale baseline: `jigc unmanage …`; or restore … if it should still exist"*.
+- **The stub and the producer.** The store twin `detect_committed_store_renames` (`file_state.rs:1006`) passes `&|_| true` to `detect_rename`; its one production caller is `validate_store_families` (`validate.rs:689`), called by `cli::validate_store_in_repo` (`cli.rs:1473`) at `jigc_home`. Task scope builds its predicate in `task.rs:2840` from `git_path_has_history(..).unwrap_or(true)` (`task.rs:7562`). The dangling arm's producer is `rename_dangling_baseline_finding` (`file_state.rs:1549`), shared by both scopes through `detect_rename`; the live-record carve-out (`live_record_finding`, `Route::informational`) sits beside it and is untouched.
+- **The exit flip matches on the code alone.** `STORE_EXIT_FLIPS`' `oob-rename` member is `matches: |f| f.code == "reconciliation.rename"` (`render.rs:1080`); its witness is already `Severity::Blocking`, so the witness-driven fences (`bootstrap_clause_covers_every_store_exit_flip`, `text_json_parity_axis`'s census) keep their subject when the matcher narrows. `Severity` is already imported in `render.rs`.
+- **An advisory emission survives the severity post-pass.** `result::assign_severity` re-grades only an inventory row, and `(reconciliation, rename)` is not one of `CHECK_INVENTORY`'s (`result.rs:331`) — the un-keyed, untunable class [validation.md](design/validation.md) `:621` states — so the emitted severity is the reported one at both scopes.
+- **The pre-commit hook does not read this route.** `PRECOMMIT_RENAME_BLOCK` (`setup.rs`) greps `git -C …` spans and decides on an `mv` token with both operands staged; a route carrying no backticked `git` span leaves its verdict untouched.
+- **The route fence binds every constructor.** `fence_command_spans` (`engine/src/finding.rs:1455`) panics, debug-only, on a backticked span that is not shell-safe or a `git` span with a path operand not aimed through `git_at`.
+- **Driven, the gate cost of the change, by a throwaway prototype reverted before this entry** (route text replaced, the store twin given a real `git log HEAD -1` predicate, the matcher narrowed by severity; full `cargo nextest run --workspace`, 4297 tests): exactly **12** reds, and `jigc validate` over the rig state above exited 0 with the advisory row.
+  - **11 are the route.** Every test asserting the prune route: `file_state::tests::rename_weak_signal_history_less_downgrades_to_advisory` (engine); in `file_state_history_gate.rs`, the shared `assert_dangling_advisory` helper and the tests that call it or assert the route inline (`reset_hard_past_creating_commit…`, `branch_switch_to_pre_creation…`, `rebase_dropping…`, `amend_removing…`, `gc_pruning…`, `history_rewrite_dropping…`, `stash_u_sweeping…`, `milestone_create_baseline_reset…`, the live-record test's byte-exact control route, and the task-scope half of `store_scope_stays_blocking_where_task_scope_is_advisory`); and `flow46_acceptance::file_state_history_gates_the_dangling_baseline_over_the_corpus_state_axis`.
+  - **1 is the store scope:** the store half of `store_scope_stays_blocking_where_task_scope_is_advisory`. No other suite reddened, `precommit_hook_acceptance`, `exit_flip_count_record`, `flow37_rename` and `home_vacated` included.
+
+**Build pins. Each is a verified fact above, or a decision taken here from the locked docs:**
+
+- **P1 · The route.** `rename_dangling_baseline_finding`'s route becomes a **`Route::informational`** (the M52 live-record precedent the design names) that names the branch switch and offers switching back to the branch that carries the path, and states that nothing on this checkout needs to change. It names **no** `jigc unmanage` and no other verb that drops a baseline or deletes, and carries **no backticked command span**, so neither the route fence nor the pre-commit hook's `mv` scan has anything new to read. The message, the code, the severity and the location are byte-identical to today, so the key does not move. The exact words are T1's; its build entry records them.
+- **P2 · The store predicate.** `detect_committed_store_renames` takes a `history: &HistoryPredicate` in place of `&|_| true`, threaded through `validate_store_families` after `head`; `cli::validate_store_in_repo` binds it to `crate::task::git_path_has_history(&jigc_home, path).unwrap_or(true)` — the task scope's own predicate and its conservative failure default. It is asked only inside the recorded-but-missing arm, so a store with no missing baseline shells out zero more times. Engine test callers pass `&|_| true`, keeping their bytes. `LiveRecord::none()` at store scope is unchanged.
+- **P3 · The flip.** The `oob-rename` matcher becomes `f.code == "reconciliation.rename" && f.severity == Severity::Blocking`. The strong signal and the history-present weak signal are blocking and keep flipping; the dangling arm does not.
+- **P4 · The pinned test flips, and is renamed with what it now asserts.** `store_scope_stays_blocking_where_task_scope_is_advisory` becomes `store_scope_agrees_with_task_scope_on_a_history_less_baseline`. Its live references (the suite's module doc, the `file_state.rs` comment) move with it; the dated records that cite the old name (this file, the roadmap, the gate-record, the planning register) are records and are not edited.
+- **P5 · M45 Increment 7's decision is engaged, not silently reversed.** T2's build entry revises it by name, and the basis bullet at that entry (*"the store twin passes an internal always-history-present predicate … deferred"*) gains a bracketed *[Revised 2026-10-03 (M55 Increment 5 / T2) …]* pointer in place, the 2026-09-27 entry's correction mold.
+
+**The tasks.** T2 grows one new suite, `crates/cli/tests/l2_branch_switch.rs`, registered in `g_finalize` beside `file_state_history_gate` and `l1_pull_absorption`.
+
+- **T1 · One route at both scopes: the shared dangling-baseline producer names the branch switch, plus the repairs it forces.**
+  - **The change.** P1 in `rename_dangling_baseline_finding`. The doc comments that state the prune route move with it: `detect_rename`'s and the producer's (`file_state.rs`), `live_record_finding`'s *"the only jigc act the shipped sibling offers here is the prune"*, `validate.rs`'s `HistoryPredicate` docs, and `task.rs`'s two (`history_predicate`/`live_milestone_record`, `git_path_has_history`).
+  - **The repairs, in the same commit** (the 11 route reds above): each assertion of `jigc unmanage <path>` on the dangling arm is **re-aimed** at the new route — asserting it carries the branch-switch words and **no** `jigc unmanage` — never deleted; the live-record control stays a byte-exact whole-string comparison, against the new route. The pinned store-scope test keeps its store half (still blocking in T1) and changes only its task-scope route assertion.
+  - **The docs.** [storage.md](design/storage.md) → Derived caches: `:313`'s *"a prune route to the existing `jigc unmanage`"* retired for the branch-switch route, and `:315`'s carve-out paragraph, whose *"keep the prune route byte-identically"* is now the branch-switch route. [validation.md](design/validation.md) → The M45 registrations (`:621`): the row's *"routed to the existing `jigc unmanage`"* replaced, the M52 bracket kept. [worked-examples.md](design/worked-examples.md) → flow 46's arm 5 and *What it asserts* item 5, annotated in place (M55), as Increment 4 annotated flow 43.
+  - *Done:* `cargo test -p jigc-engine file_state::` is green, with `rename_weak_signal_history_less_downgrades_to_advisory` asserting the informational branch-switch route and no `jigc unmanage`, red before the change; `cargo test -p jigc file_state_history_gate:: flow46_acceptance::` is green over the re-aimed assertions (every dangling-arm route asserted free of `jigc unmanage`, the blocking weak arm's restore-or-`unmanage` route unchanged); `jigc validate` store scope is byte-identical to HEAD (still blocking — T2's); `dev/gate` is green.
+- **T2 · The store scope agrees: the history predicate threaded through the store twin, the `oob-rename` flip narrowed to the blocking arm, the pinned test flipped — plus Flow E's L2 half end to end.** One task, because the predicate alone grades the row advisory while the code-only matcher still exits 1, and the pinned test reddens on either half: none of the three reaches a green gate without the others.
+  - **The change.** P2, P3, P4, P5.
+  - **The docs.** [validation.md](design/validation.md) → *Exit semantics* (`:386`): the rename exception is the blocking arm — a doc with no history at `HEAD` is advisory at store scope, as at task scope — and the `:621` row states the grading holds at both scopes. [reconciliation.md](design/reconciliation.md): the store-scope rename bullets (*Component B*, `:126`–`:129`; the summary bullet `:187`) gain the history-graded weak arm. [storage.md](design/storage.md) `:313`: *at both scopes*. The `detect_committed_store_renames` and `validate_store_families` doc comments and `file_state_history_gate.rs`'s module doc (*the store/task severity split*) say what is now true.
+  - *Done:* `cargo test -p jigc-engine` is green with new unit tests — **(i)** the store twin under a history-less predicate emits the advisory dangling finding; **(ii)** under a history-present one, today's blocking weak finding; **(iii)** the strong signal is unchanged under either — and `cargo test -p jigc render::` with **(iv)** an advisory `reconciliation.rename` matching no `STORE_EXIT_FLIPS` member and the blocking witness still matching `oob-rename`. `cargo test -p jigc file_state_history_gate::` is green with the renamed test asserting store-scope **advisory**, `jigc validate` exit **0**, and a route byte-identical to the task scope's over the same state. `cargo test -p jigc l2_branch_switch::` is green on Flow E's L2 half (§11), through the real binary:
+    - **(a)** An ADR created and finalized on `milestone/x/main`, then `git switch main` → `jigc validate --format json` exits 0, `report_only: true`, one `reconciliation.rename` at the ADR path at `advisory`, routed at the branch switch; neither its route nor its message names `jigc unmanage`. Red at HEAD (exit 1, blocking).
+    - **(b)** On the same state a task's `task validate --format json` exits 0 and carries the same `(code, target)` key at `advisory` with a message and route byte-identical to (a)'s.
+    - **(c)** `git switch milestone/x/main` → `jigc validate` carries no `reconciliation.rename` row: the route's promise, driven.
+    - **(d)** The control: on the milestone branch, the ADR `git rm`'d and committed → `jigc validate` exits **1**, the blocking weak finding, the `oob-rename` closing line.
+
+    `flow37_rename::`, `precommit_hook_acceptance::`, `exit_flip_count_record::`, `home_vacated::` and `validate_envelope::` are green unedited, and `dev/gate` is green.
+
+**Why this order and this seam.** T1 changes the producer only, so task scope moves and store scope is byte-identical, and every red it causes is a route assertion it repairs; T2 then turns on a store emission that already carries the settled route, so no commit ever ships a store-scope advisory naming `jigc unmanage`. The reverse order would.
+
+**Every Grouped-scope clause maps to a task.**
+
+| Grouped-scope clause | Task |
+|---|---|
+| M45 Decision 7's history predicate threaded through the store twin in place of its always-true stub | T2 (P2, i–ii) |
+| The `oob-rename` member of `STORE_EXIT_FLIPS` narrowed by severity to the blocking arm | T2 (P3, iv, d) |
+| The shared producer names the branch switch and offers switching back — one producer, one route, one key at both scopes | T1 (P1); T2 (b) proves the two scopes read the same |
+| …and never offers an index drop | T1 (P1, every re-aimed assertion); T2 (a, b) |
+| The exact text, on the M52 live-record carve-out's precedent | T1 (P1: informational, no verb; recorded in its build entry) |
+| The pinned `store_scope_stays_blocking_where_task_scope_is_advisory` flips in the same commit | T2 (P4) |
+| The M45 Increment 7 decision engaged in DECISIONS.md, not silently reversed | T2 (P5) |
+
+**Every Proves clause maps too.**
+
+| Proves clause | Task |
+|---|---|
+| A doc created on a milestone branch, then a switch to `main` → `jigc validate` exits 0 with an advisory row routed at the branch switch | T2 (a) |
+| A task's gate reports the same path advisory under the same route | T2 (b) |
+| Neither names `jigc unmanage` | T2 (a, b); T1's re-aimed suites |
+| The control — a managed doc with history, deleted and committed — still blocks, exit 1 | T2 (d) |
+
+**Beyond the bullets, and why.** The `storage.md`, `validation.md` and `reconciliation.md` sentences, the flow 46 annotation and the code comments are statements each task's change makes false where they stand, so each is revised in the commit that falsifies it (§13's rule); (c) is the route's own claim, driven rather than assumed, as Increment 4 drove its lag route.
+
+**Declared bounds, recorded and not fixed:**
+
+- The genuine-deletion arm still blocks, at both scopes; only a path with no history at `HEAD` is downgraded (the roadmap's bound).
+- A baseline whose branch is gone for good — deleted unmerged, or a reset past commits nothing else carries — stays an advisory row on every sweep, because the route no longer offers the index drop that cleared it. That is the settled *never offers an index drop* (R5), accepted: an advisory exits 0 and blocks nothing, and `jigc unmanage` remains a verb an operator can choose.
+- The sparse-checkout over-block and the shallow-clone false-prune are M45's, now at both scopes, unchanged.
+- L3 (a user-created git worktree) is untouched.
+
 ## 2026-10-03 — M55 Increment 4 / T2: the store arm of L1 pull absorption, built
 
 Built on P2 and P4 below; [reconciliation.md](design/reconciliation.md) (the L1 section's store bullet), [validation.md](design/validation.md) (the reused `hash-matches` store route and its inventory row) and [worked-examples.md](design/worked-examples.md) (flow 43, arm 3) carry it. What the build adds to the plan:
