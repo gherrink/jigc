@@ -5592,6 +5592,7 @@ fn show_long_about() -> String {
 pub const WHOLE_DOC_KEYS: &[&str] = &[
     "type",
     "slug",
+    "title",
     "item-count",
     "schema-version",
     "fields",
@@ -5615,10 +5616,12 @@ pub const STAGED_KEY: &str = "staged";
 /// cardinality field as a json array; slot prose is trimmed (the clean machine value —
 /// the byte-exact form stays the plain path).
 ///
-/// Two additive top-level keys ride beside them, both on **every** whole-doc serve and
+/// Three additive top-level keys ride beside them, all on **every** whole-doc serve and
 /// on **no** fragment slice (a slice is a bare value with no object to hang a key on):
-/// [`item_count`], and the doc's own **`schema-version`** stamp as a json **number**
-/// ([`stamped_schema_version`]).
+/// [`item_count`], the doc's own **`schema-version`** stamp as a json **number**
+/// ([`stamped_schema_version`]), and **`title`** — the `# H1` of the served bytes, read
+/// by [`crate::rename::read_h1`] (the one H1 reader `doc rename` and the title pre-check
+/// share), `null` when the doc has none (M55; `design/findings-channel.md` → 5).
 fn whole_doc_json(
     schema: &Schema,
     doc: &engine::parse::Document,
@@ -5656,6 +5659,7 @@ fn whole_doc_json(
     serde_json::json!({
         "type": schema.ty,
         "slug": address.slug.as_str(),
+        "title": crate::rename::read_h1(source),
         "item-count": item_count(doc),
         "schema-version": schema_version,
         "fields": serde_json::Value::Object(fields),

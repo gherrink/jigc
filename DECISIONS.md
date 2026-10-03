@@ -2,6 +2,10 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-10-03 — M55 Increment 6 / T1: `doc show` carries `title`, built
+
+Built on P1 below: `whole_doc_json` adds `"title": crate::rename::read_h1(source)` over the served bytes, so the committed and the staged serve share its one call site, and `null` stands where there is no H1. `WHOLE_DOC_KEYS` and both `WholeDoc` rows of `ENVELOPE_ARMS` gain the key. The `VISION_JSON`/`PRD_JSON` goldens and `doc_show_staged.rs`'s two key sets are re-pinned to seven keys; [doc-read-surface.md](design/doc-read-surface.md), [command-output-contract.md](design/command-output-contract.md) and [team-ready-state.md](design/team-ready-state.md)'s witness name it. **One elaboration:** the doc-read-surface ledger called M49's `schema-version` *"this … contract's last additive key"*, a wave-keyed premise like the M48 one its own discharge withdrew; the M55 ledger paragraph corrects it in place, since the window is keyed to the 1.0 pin.
+
 ## 2026-10-03 — M55 Increment 6 planning: decomposition
 
 Cut [Increment 6](implementation/roadmap.md) (*the read surface — `title` and `fields` on the rows a triage reads*) into **3 ordered tasks**, grounded at HEAD `f6616865` on `milestone/findings-channel/read-surface-title-and-fields` (tree clean), with Increments 1–5 landed. Cross-ref [roadmap.md](implementation/roadmap.md) → Milestone 55 → Increment 6; the M55 Settle below (S10 as corrected, R4 B5 · I5); [findings-channel.md](design/findings-channel.md) → 5, 10, 13; [planning-gate-record.md](completions/artifacts/M55/planning-gate-record.md) → row 8 and acceptance row A; [planning-findings.md](completions/artifacts/M55/planning-findings.md) → F10, F18. **Codes registered: none. No version integer moves:** `doc show` and `doc list` carry none, and `doc schema` with its `contract-version` is not touched.

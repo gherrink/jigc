@@ -313,6 +313,7 @@ const VISION_JSON: &str = r#"{
     "thesis": "A deterministic context compiler for coding agents."
   },
   "slug": "vision",
+  "title": "Vision",
   "type": "vision"
 }"#;
 
@@ -339,6 +340,7 @@ const PRD_JSON: &str = r#"{
     "vision": "A tracker that turns intentions into daily streaks."
   },
   "slug": "habit-tracker",
+  "title": "Habit tracker",
   "type": "prd"
 }"#;
 
@@ -1149,5 +1151,139 @@ fn the_driven_whole_doc_key_set_is_the_pinned_const() {
         "the staged whole-doc serve's top-level keys must be the pinned set plus the \
          one `{}` marker — the committed/staged discriminator",
         cli::doc::STAGED_KEY,
+    );
+}
+
+/// M55 Increment 6 / T1 — **the whole-doc serve carries the doc's `# H1` as a top-level
+/// `title`**, committed and staged alike, and `null` when the doc has no H1
+/// (`design/findings-channel.md` → 5; `design/doc-read-surface.md` → The pinned
+/// `--format json` contract).
+///
+/// Before it, a per-instance doc's title reached a driver only through the markdown. The
+/// value is the H1 of the **served** bytes, so the staged serve reads the staged copy's.
+/// The `null` arm is reachable, not theoretical: an ADR with its H1 hand-deleted still
+/// parses and serves at exit 0, and its `title` is the honest absence — present as `null`,
+/// never an absent key. A `#fragment` slice is a bare value and carries no `title`, the
+/// same bound `item-count` and `staged` state.
+#[test]
+fn the_whole_doc_serve_carries_the_h1_as_title() {
+    let repo = TempDir::new("title");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    let decisions = repo.path().join("decisions");
+    fs::create_dir_all(&decisions).expect("mk decisions/");
+    fs::write(decisions.join("single-node-cache.md"), COMMITTED_ADR).expect("write committed adr");
+    let untitled = COMMITTED_ADR.replace("# Single-node cache\n\n", "");
+    assert_ne!(untitled, COMMITTED_ADR, "the fixture's H1 was deleted");
+    fs::write(decisions.join("untitled-cache.md"), untitled).expect("write the H1-less adr");
+    git(repo.path(), &["add", "decisions"]);
+    git(repo.path(), &["commit", "-q", "-m", "adrs"]);
+
+    let json_of = |args: &[&str], what: &str| -> serde_json::Value {
+        let out = jigc(repo.path(), home.path(), args, None);
+        assert_ok(&out, what);
+        serde_json::from_str(&stdout_of(&out)).expect("the `--format json` serve is json")
+    };
+
+    // (1) Committed: the H1 rides the whole-doc serve as `title`.
+    let committed = json_of(
+        &["doc", "show", "adr:single-node-cache", "--format", "json"],
+        "`jigc doc show adr:single-node-cache --format json`",
+    );
+    assert_eq!(
+        committed["title"],
+        serde_json::json!("Single-node cache"),
+        "the committed whole-doc serve carries the doc's H1 as `title`; got:\n{committed}",
+    );
+
+    // (2) Committed, H1 hand-deleted: the doc still serves at exit 0, `title` is null.
+    let untitled = json_of(
+        &["doc", "show", "adr:untitled-cache", "--format", "json"],
+        "`jigc doc show adr:untitled-cache --format json` (no H1)",
+    );
+    assert!(
+        untitled
+            .as_object()
+            .expect("a whole-doc serve is an object")
+            .get("title")
+            .is_some_and(serde_json::Value::is_null),
+        "an H1-less doc serves `\"title\": null` — present, never absent; got:\n{untitled}",
+    );
+
+    // (3) Staged: the same doc, staged into a task, serves the same title beside `staged`.
+    assert_ok(
+        &jigc(
+            repo.path(),
+            home.path(),
+            &[
+                "start",
+                "--workflow",
+                "single-task",
+                "revise the cache decision",
+            ],
+            None,
+        ),
+        "`jigc start --workflow single-task` (the revision task)",
+    );
+    let task = only_task(repo.path());
+    assert_ok(
+        &jigc(
+            repo.path(),
+            home.path(),
+            &[
+                "doc",
+                "set-slot",
+                "adr:single-node-cache#decision",
+                "--from-file",
+                "-",
+                "--task",
+                &task,
+            ],
+            Some(b"Two in-memory nodes.\n"),
+        ),
+        "`jigc doc set-slot adr:single-node-cache#decision` (stage the doc)",
+    );
+    let staged = json_of(
+        &[
+            "doc",
+            "show",
+            "adr:single-node-cache",
+            "--format",
+            "json",
+            "--task",
+            &task,
+        ],
+        "`jigc doc show adr:single-node-cache --format json --task`",
+    );
+    assert_eq!(
+        staged[cli::doc::STAGED_KEY],
+        serde_json::json!(task),
+        "the staged serve carries its marker; got:\n{staged}",
+    );
+    assert_eq!(
+        staged["sections"]["decision"], "Two in-memory nodes.",
+        "the serve came from the staged copy; got:\n{staged}",
+    );
+    assert_eq!(
+        staged["title"],
+        serde_json::json!("Single-node cache"),
+        "the staged whole-doc serve carries the staged copy's H1 as `title`; got:\n{staged}",
+    );
+
+    // (4) The omitting context: a `#fragment` slice is a bare value and carries no title.
+    let slice = json_of(
+        &[
+            "doc",
+            "show",
+            "adr:single-node-cache#status",
+            "--format",
+            "json",
+        ],
+        "`jigc doc show adr:single-node-cache#status --format json`",
+    );
+    assert!(
+        slice.get("title").is_none(),
+        "a fields-only slice is the section's leaves alone — no `title`; got:\n{slice}",
     );
 }
