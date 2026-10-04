@@ -693,8 +693,29 @@ fn finalize_passes_when_staged_symbol_has_unrelated_unstaged_hunk() {
 ///
 /// The block before the repair is asserted too — a pass with no block first would prove
 /// the floor is gone rather than that the route clears it.
+///
+/// **The repair-shape axis** (the completion audit's F2). The route's *update the citation*
+/// has two shapes at this field — repoint it, or remove it — and only the first leaves an
+/// address on the staged side. The blast-radius walk deduped against the task surface by
+/// address, so removing the citation (`--unset`) left the committed anchor in the blast
+/// set: driven, exit 3 on a citation the task's own finalize deletes. Both shapes run.
 #[test]
 fn an_in_task_citation_repair_clears_the_floor_under_a_role_binding_workflow() {
+    for repair in [Repair::Repoint, Repair::Unset] {
+        an_in_task_citation_repair_clears_the_floor(repair);
+    }
+}
+
+/// How the task repairs the citation its rename dangled.
+#[derive(Clone, Copy, Debug)]
+enum Repair {
+    /// `set-field … --value <the renamed symbol>`.
+    Repoint,
+    /// `set-field … --unset` — the citation is gone from the staged copy.
+    Unset,
+}
+
+fn an_in_task_citation_repair_clears_the_floor(repair: Repair) {
     let repo = TempDir::new("repair-clears-repo");
     let home = TempDir::new("repair-clears-home");
     init_repo(repo.path());
@@ -736,19 +757,18 @@ fn an_in_task_citation_repair_clears_the_floor_under_a_role_binding_workflow() {
     );
 
     // The floor's route, followed in this task: update the citation.
+    let argv: &[&str] = match repair {
+        Repair::Repoint => &[
+            "set-field",
+            "adr:cited-symbol#cites-code",
+            "--value",
+            "src/lib.rs#renamed_symbol",
+        ],
+        Repair::Unset => &["set-field", "adr:cited-symbol#cites-code", "--unset"],
+    };
     assert_ok(
-        &jigc_doc(
-            repo.path(),
-            home.path(),
-            &[
-                "set-field",
-                "adr:cited-symbol#cites-code",
-                "--value",
-                "src/lib.rs#renamed_symbol",
-            ],
-            None,
-        ),
-        "the citation repair",
+        &jigc_doc(repo.path(), home.path(), argv, None),
+        &format!("the citation repair ({repair:?})"),
     );
     // The cell's precondition, read back rather than assumed: the copy-in bound the role.
     let roles = fs::read_to_string(
@@ -773,7 +793,10 @@ fn an_in_task_citation_repair_clears_the_floor_under_a_role_binding_workflow() {
     );
     assert_ok(
         &landed,
-        &format!("the repaired task must land the rename and the citation together; got:\n{seen}"),
+        &format!(
+            "{repair:?}: the repaired task must land the rename and the citation together; \
+             got:\n{seen}"
+        ),
     );
     assert!(
         !seen.contains("doc-code.symbol-exists"),
@@ -798,8 +821,15 @@ fn an_in_task_citation_repair_clears_the_floor_under_a_role_binding_workflow() {
         paths.lines().any(|path| path == "src/lib.rs"),
         "HEAD must carry the rename in the same commit; its paths:\n{paths}",
     );
-    assert!(
-        show(&["show", &format!("HEAD:{adr}")]).contains("src/lib.rs#renamed_symbol"),
-        "HEAD's ADR carries the repaired citation",
-    );
+    let landed_adr = show(&["show", &format!("HEAD:{adr}")]);
+    match repair {
+        Repair::Repoint => assert!(
+            landed_adr.contains("src/lib.rs#renamed_symbol"),
+            "HEAD's ADR carries the repointed citation; got:\n{landed_adr}",
+        ),
+        Repair::Unset => assert!(
+            !landed_adr.contains("cites-code"),
+            "HEAD's ADR carries no citation; got:\n{landed_adr}",
+        ),
+    }
 }

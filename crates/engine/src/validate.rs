@@ -2133,6 +2133,16 @@ fn schedule_doc_code(
     // an anchor the task itself authored stays a task-surface anchor (always its own
     // responsibility), so only the *committed, task-untouched* anchors take the
     // newly-dangled treatment below.
+    //
+    // **A doc this task has staged contributes nothing from its committed bytes** (the
+    // rc.24 fix pass, the completion audit's F2) — `enumerate_target_surface`'s rule for a
+    // bound doc, at the second reader of the same bytes. The address dedup above covers a
+    // staged copy that *repoints* a citation and misses one that *removes* it (an `--unset`,
+    // a removed item): the staged side then has no address to dedupe against, the committed
+    // anchor entered the blast set, and the floor blocked on a citation this task's own
+    // finalize deletes — its route, *update the citation*, unable to clear it. The staged
+    // copy is the doc's whole effective state: every anchor it carries is on the task
+    // surface, never filtered, and the committed bytes are the ones the finalize replaces.
     let mut blast_addresses: BTreeSet<String> = BTreeSet::new();
     if !changed_code.is_empty() {
         let changed_norm: BTreeSet<std::path::PathBuf> = changed_code
@@ -2150,6 +2160,15 @@ fn schedule_doc_code(
         let (committed, _committed_guard_is_store_scoped) =
             enumerate_committed_surface(repo_root, schemas)?;
         for anchor in committed {
+            let staged_in_this_task = anchor
+                .address
+                .split('#')
+                .next()
+                .and_then(|doc| doc.split_once(':'))
+                .is_some_and(|(ty, slug)| crate::state::instance_path(dir, ty, slug).is_file());
+            if staged_in_this_task {
+                continue;
+            }
             let file =
                 crate::store::lexical_normalize(Path::new(anchor_file(&anchor.anchor_value)));
             if changed_norm.contains(&file) && !anchors.iter().any(|a| a.address == anchor.address)
@@ -8921,6 +8940,102 @@ Effects.
             !blast_blocks(&run(&BTreeSet::new(), base_clean.path())),
             "a task that changes no code must NOT block on committed drift",
         );
+    }
+
+    /// **The blast walk reads a doc the task has staged at its staged bytes only** (the rc.24
+    /// fix pass, the completion audit's F2) — the second reader of a staged doc's committed
+    /// bytes, closed the way `a88f71cc` closed the first.
+    ///
+    /// The walk enumerates the committed store and dedupes against the task surface by
+    /// anchor **address**. That covers a repair that *repoints* the citation — the staged
+    /// copy still has the address — and misses every repair that *removes* it (an
+    /// `--unset`, a removed item): the staged side then has no address to dedupe against,
+    /// so the committed anchor entered the blast set and blocked on a citation this task's
+    /// own finalize deletes. Driven: rename the symbol, unset the citation, exit 3.
+    ///
+    /// The axis is the repair shape, and the two controls are the floor itself: with the
+    /// doc **not** staged the newly-dangled anchor still blocks, and staging some *other*
+    /// doc exempts nothing.
+    #[test]
+    fn finalize_floor_reads_a_staged_doc_at_its_staged_bytes_only() {
+        const DANGLED: &str = "src/foo.rs#vanished_symbol";
+        let committed = adr_citing(DANGLED);
+        let removed = committed.replace(&format!("cites-code: {DANGLED}\n"), "");
+        assert_ne!(removed, committed, "the fixture must drop the citation");
+        let repointed = adr_citing("src/foo.rs#other");
+        let index = code_tree(
+            "staged-blast-index",
+            &[("src/foo.rs", "pub fn other() {}\n")],
+        );
+        let base = code_tree(
+            "staged-blast-base",
+            &[("src/foo.rs", "pub fn vanished_symbol() {}\n")],
+        );
+        let changed = change_set(&["src/foo.rs"]);
+        let no_op_tracked = |_: &str| false;
+
+        // (what the task stages, under which doc id, whether the floor must block)
+        let cells = [
+            ("nothing staged — the floor's own cell", None, true),
+            (
+                "the citation removed (an unset, a removed item)",
+                Some(("adr:cited", removed.as_str())),
+                false,
+            ),
+            (
+                "the citation repointed at a symbol the index carries",
+                Some(("adr:cited", repointed.as_str())),
+                false,
+            ),
+            (
+                "the staged copy still cites the vanished symbol",
+                Some(("adr:cited", committed.as_str())),
+                true,
+            ),
+            (
+                "a different doc staged exempts nothing",
+                Some(("adr:another", removed.as_str())),
+                true,
+            ),
+        ];
+        for (cell, staged, blocks) in cells {
+            let repo = TempRoot::new("staged-blast-repo");
+            repo.commit("decisions", "cited", &committed);
+            let task = TempRoot::new("staged-blast-task");
+            if let Some((id, body)) = staged {
+                let docs = task.path().join("docs");
+                std::fs::create_dir_all(&docs).expect("mk the staged docs dir");
+                std::fs::write(docs.join(format!("{id}.md")), body).expect("stage the doc");
+            }
+            let seen = RefCell::new(Vec::new());
+            let report = validate_task(
+                task.path(),
+                &schemas(),
+                &mut FileStateRecord::new(),
+                repo.path(),
+                index.path(),
+                repo.path(),
+                "HEAD",
+                &no_delta_resolved(),
+                &content_aware_invoker(&seen),
+                &no_op_tracked,
+                &|_| true,
+                &|_| true,
+                &changed,
+                base.path(),
+                &|_| None,
+                &test_conflict(),
+                &AdoptionInputs::inert(),
+                &crate::file_state::LiveRecord::none(),
+            )
+            .expect("sweep runs");
+            assert_eq!(
+                blast_blocks(&report),
+                blocks,
+                "{cell}: findings {:?}",
+                report.findings,
+            );
+        }
     }
 
     /// The path-normalization fix (Codex P1 false-negative): a committed anchor written with
