@@ -205,6 +205,18 @@ class K-1 points at is inside the predicate, which clause of the exit rule the u
 and the scope of the fix pass are all the human's to decide. This section reports what the re-drive
 found; it decides none of them, and the 1.0.0 call is not taken here.
 
+### Leads the re-drive raised and did not grade
+
+Four things the verifiers drove or noted outside the row each was given, collected here because no
+row of this record carries them. **They are leads — for the fix pass's class derivation and for
+triage — not graded rows, and nothing here rules on them**: none is in the count box, and none has a
+tier from this record.
+
+- **[tier1-verification/R3-F7.md](tier1-verification/R3-F7.md)** (§3 last row; §7, class 5) — the sibling loss **with the baseline present**: a task driven from inside a user-made `git worktree add` of the rig finalizes at exit 0 with only `file-state.staged-copy` on the path (*"no `baseline-adopt`, no conflict row"*) and the hand edit is *"0 · 0 in the linked worktree, no blob anywhere"* — *"driven once, not bounded, not graded here"*, and, in the verifier's words, *"This should be triaged as its own lead."*
+- **[tier1-verification/R6-K-1.md](tier1-verification/R6-K-1.md)** (§7, class 3) — `task finalize`'s **own** check-then-use window, between its clobber-guard probe at plan time and the promote copy: against an external writer planting a file at a random delay after the door was spawned, delay 0–160 ms, N=60 → 60 refused `promote-clobber`; delay 140–300 ms, N=80 → 26 refused · *"13 exit 0 with the planted file's bytes gone"* · 41 planted after — a window the verifier computes as 160 ms × 13/80 ≈ 26 ms, any workflow, pre-M55, and *"Not in the review record"*: it is in none of the findings below.
+- **[tier1-verification/R6-D-1.md](tier1-verification/R6-D-1.md)** (§3, V9) — with a directory at the suffixed home, `milestone finalize` exits 1 on `blocking milestone-finalize.commit-rejected` (*"could not read … before promoting over it: Is a directory"*), nothing committed, and the verifier's side datum, *"not this row's"*, is that *"the message prints an absolute host path"*.
+- **[tier1-verification-L-22.md](../../RC-rc24/tier1-verification-L-22.md)**, in [the trial record](../../RC-rc24/README.md) (§7, *`uninstall` driven*) — on a fresh rig with no milestone and one prunable foreign worktree, `jigc uninstall` exits 0 with the record gone and acks ``- pruned git's worktree registrations for the fan-out worktrees `.jigc/` held``, where *"`.jigc/` held no fan-out worktree; the only record dropped was foreign"*: the one door that narrates the prune attributes it to worktrees `.jigc/` did not hold (the verifier's passing word for the sentence is *tier-3*; no row here or there carries it).
+
 ---
 
 ## The staffing

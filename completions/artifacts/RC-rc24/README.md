@@ -506,6 +506,13 @@ this repository has no store.
 `tier:` tier-1 **by the predicate, for the confirmed variant** — its verifier also states what
 argues it down to 3; the lead as filed (a *live* foreign worktree) is `none`.
 `door:` `jigc milestone provision` · `jigc milestone finalize` · `jigc milestone discard`
+**[Corrected 2026-10-04 by the adversarial re-drive:** the doors are **four**, not three —
+`jigc milestone provision`, `jigc milestone finalize` (landing *and* refusing: on a never-provisioned
+milestone it exits 3, `milestone.zero-contribution`, and the foreign records are gone all the same),
+`jigc milestone discard` (landing only — also at exit 0 on a never-provisioned milestone; a refused
+discard does not prune) and `jigc uninstall` (driven: exit 0, the foreign record gone). So the
+precondition on jigc's side is not a provisioned fan-out; it is any run of one of these doors
+([tier1-verification-L-22.md](tier1-verification-L-22.md) → 1, 7).**]**
 `found-in:` `trial:RC-rc24/a` — raised by what the session did around jigc (it made and removed a
 raw linked worktree); **no jigc command ran while that worktree existed, so the session itself is
 no evidence either way.**
@@ -578,6 +585,16 @@ narrates."* And what argues the other way, from the same row: *"The plausible ev
 not exotic, though it was **not driven**: a repository bind-mounted into a container (how this
 trial's sessions ran), whose host-side linked worktrees live at paths the container cannot see, is
 `prunable` in every one of them from where jigc runs."*
+**[Corrected 2026-10-04 by the adversarial re-drive:** that trigger — this record's O-1 — **was
+driven, and it holds.** A live host worktree, never moved and never deleted, answered `git status`
+at exit 0 before; in a container that saw the repository and not the worktree's path, ordinary git
+left the `prunable` record in place and `jigc milestone provision` exited 0 with its one
+`provisioned 2 worktree(s)…` line; afterwards, on the host, the worktree's record under
+`.git/worktrees/` was gone, `git status` there answered `fatal: not a git repository` at exit 128,
+`git worktree repair` exited 1, and the commit only that worktree's `HEAD` reached was unreachable.
+A worktree moved with plain `mv` and still working at its new path is orphaned the same way
+([tier1-verification-L-22.md](tier1-verification-L-22.md) → 6). The verifier's sentence above is
+kept as written; *"not driven"* was true of the first pass only.**]**
 
 ### Tier 2
 
@@ -1449,6 +1466,12 @@ CLI.
    foreign worktree. L-22 exists because one worker's workaround raised a question and a verifier
    drove it on rigs. Its precondition did not occur in the trial, and its most plausible everyday
    trigger (O-1) was not driven.
+   **[Corrected 2026-10-04 by the adversarial re-drive:** O-1 **was driven** after this bound was
+   written — a live host worktree, never moved or deleted, went from `git status` exit 0 to
+   `fatal: not a git repository`, exit 128, once `jigc milestone provision` ran (exit 0) in a
+   container that saw the repository and not the worktree's path
+   ([tier1-verification-L-22.md](tier1-verification-L-22.md) → 6). The rest of the bound stands as
+   written: the row was derived, not observed, and it did not occur in the trial.**]**
 2. **Two forks were not run as their recommendations read**, and [forks.md](forks.md) says so
    under each. **F4** recommended rehearsing arm (b)'s turn 1 on a spare corpus: no rehearsal
    exists — no out-dir, no corpus, no log step. The scored turn 1 left the occasion the rehearsal
